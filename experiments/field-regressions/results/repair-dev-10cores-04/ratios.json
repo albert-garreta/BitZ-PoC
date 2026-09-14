@@ -1,0 +1,296 @@
+[
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "tiled_half",
+    "ratio": 1.3637934661599884,
+    "run_ratios": [
+      1.3882081478456396,
+      1.3393787844743372
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "depth_first",
+    "ratio": 1.5557278373332852,
+    "run_ratios": [
+      1.5360275270013122,
+      1.5754281476652583
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.6686952882764454,
+    "run_ratios": [
+      0.6662203550343875,
+      0.6711702215185033
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.8714131541998558,
+    "run_ratios": [
+      0.8670701124295678,
+      0.8757561959701436
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "tiled_half",
+    "ratio": 0.6035500036644759,
+    "run_ratios": [
+      0.6090893885707569,
+      0.5980106187581948
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "depth_first",
+    "ratio": 0.5183258467716957,
+    "run_ratios": [
+      0.5369248182169306,
+      0.4997268753264608
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "depth_first",
+    "ratio": 0.7266759225491887,
+    "run_ratios": [
+      0.6877105930317987,
+      0.7656412520665786
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "tiled_half",
+    "ratio": 0.959336860494017,
+    "run_ratios": [
+      0.9384306542907108,
+      0.9802430666973232
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9309991639102507,
+    "run_ratios": [
+      0.9283037119395395,
+      0.9336946158809619
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "tiled_half",
+    "ratio": 1.0141009408963826,
+    "run_ratios": [
+      0.997476799417041,
+      1.0307250823757244
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9884438108383075,
+    "run_ratios": [
+      0.9884143623191347,
+      0.9884732593574802
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "tiled_half",
+    "ratio": 1.0832853791210224,
+    "run_ratios": [
+      1.0754075693709908,
+      1.091163188871054
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.9790908962563023,
+    "run_ratios": [
+      0.9865019980050936,
+      0.9716797945075111
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.930679918055266,
+    "run_ratios": [
+      0.9439640073647605,
+      0.9173958287457714
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  }
+]

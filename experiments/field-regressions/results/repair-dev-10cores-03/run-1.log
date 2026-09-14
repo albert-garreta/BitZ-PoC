@@ -1,0 +1,117 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=971912
+RUNTIME {"aes":true,"arch":"aarch64","arithmetic_campaign":true,"avx512f":false,"baseline_all_core_threads":10,"caller_threads":10,"candidate_all_core_threads":0,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":false,"flock_kernel":"arm-pmull","pclmulqdq":false,"seed":971912,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed opt_ood/log10: 5 variants, 8 paired samples
+completed opt_ood/log16: 5 variants, 8 paired samples
+completed opt_ood/log18: 5 variants, 8 paired samples
+completed opt_ntt/log8_lanes1: 3 variants, 8 paired samples
+completed opt_ntt/log8_lanes32: 3 variants, 8 paired samples
+completed opt_ntt/log12_lanes8: 3 variants, 8 paired samples
+ALLOCATION_DIAGNOSTIC    0: std::backtrace_rs::backtrace::libunwind::trace
+             at /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+   1: std::backtrace_rs::backtrace::trace_unsynchronized::<<std::backtrace::Backtrace>::create::{closure#0}>
+   2: <std::backtrace::Backtrace>::create
+   3: <std::backtrace::Backtrace>::force_capture
+   4: field_regressions::allocation::record
+             at ./experiments/field-regressions/src/allocation.rs:19:51
+   5: <field_regressions::allocation::Counting as core::alloc::global::GlobalAlloc>::alloc_zeroed
+             at ./experiments/field-regressions/src/allocation.rs:32:9
+   6: __rustc::__rust_alloc_zeroed
+             at ./experiments/field-regressions/src/allocation.rs:11:19
+   7: alloc::alloc::alloc_zeroed
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/alloc.rs:198:9
+   8: <crossbeam_deque::deque::Block<rayon_core::job::JobRef>>::new
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crossbeam-deque-0.8.8/src/deque.rs:1271:28
+   9: <crossbeam_deque::deque::Injector<rayon_core::job::JobRef>>::push
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crossbeam-deque-0.8.8/src/deque.rs:1423:35
+  10: <rayon_core::registry::Registry>::inject
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0/src/registry.rs:442:28
+  11: <rayon_core::registry::Registry>::in_worker_cold::<rayon_core::join::join_context<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>::{closure#0}, ((), ())>::{closure#0}
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0/src/registry.rs:535:18
+  12: <std::thread::local::LocalKey<rayon_core::latch::LockLatch>>::try_with::<<rayon_core::registry::Registry>::in_worker_cold<rayon_core::join::join_context<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>::{closure#0}, ((), ())>::{closure#0}, ((), ())>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/thread/local.rs:463:12
+  13: <std::thread::local::LocalKey<rayon_core::latch::LockLatch>>::with::<<rayon_core::registry::Registry>::in_worker_cold<rayon_core::join::join_context<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>::{closure#0}, ((), ())>::{closure#0}, ((), ())>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/thread/local.rs:427:20
+  14: <rayon_core::registry::Registry>::in_worker_cold::<rayon_core::join::join_context<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>::{closure#0}, ((), ())>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0/src/registry.rs:524:20
+  15: <rayon_core::registry::Registry>::in_worker::<rayon_core::join::join_context<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>::{closure#0}, ((), ())>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0/src/registry.rs:504:22
+  16: rayon_core::registry::in_worker::<rayon_core::join::join_context<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>::{closure#0}, ((), ())>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0/src/registry.rs:959:31
+  17: rayon_core::join::join_context::<rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#0}, rayon::iter::plumbing::bridge_producer_consumer::helper<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>::{closure#1}, (), ()>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0/src/join/mod.rs:132:5
+  18: rayon::iter::plumbing::bridge_producer_consumer::helper::<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/plumbing/mod.rs:410:47
+  19: rayon::iter::plumbing::bridge_producer_consumer::<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/plumbing/mod.rs:391:12
+  20: <rayon::iter::plumbing::bridge::Callback<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>> as rayon::iter::plumbing::ProducerCallback<(&mut [flock_core::field::gf2_128::F128], &mut [flock_core::field::gf2_128::F128])>>::callback::<rayon::iter::zip::ZipProducer<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/plumbing/mod.rs:368:13
+  21: <<rayon::iter::zip::Zip<_, _> as rayon::iter::IndexedParallelIterator>::with_producer::CallbackB<rayon::iter::plumbing::bridge::Callback<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>> as rayon::iter::plumbing::ProducerCallback<&mut [flock_core::field::gf2_128::F128]>>::callback::<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/zip.rs:107:31
+  22: <rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128> as rayon::iter::IndexedParallelIterator>::with_producer::<<rayon::iter::zip::Zip<_, _> as rayon::iter::IndexedParallelIterator>::with_producer::CallbackB<rayon::iter::plumbing::bridge::Callback<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>, rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/slice/chunks.rs:235:18
+  23: <<rayon::iter::zip::Zip<_, _> as rayon::iter::IndexedParallelIterator>::with_producer::CallbackA<rayon::iter::plumbing::bridge::Callback<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>> as rayon::iter::plumbing::ProducerCallback<&mut [flock_core::field::gf2_128::F128]>>::callback::<rayon::slice::chunks::ChunksMutProducer<flock_core::field::gf2_128::F128>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/zip.rs:84:24
+  24: <rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128> as rayon::iter::IndexedParallelIterator>::with_producer::<<rayon::iter::zip::Zip<_, _> as rayon::iter::IndexedParallelIterator>::with_producer::CallbackA<rayon::iter::plumbing::bridge::Callback<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/slice/chunks.rs:235:18
+  25: <rayon::iter::zip::Zip<rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>> as rayon::iter::IndexedParallelIterator>::with_producer::<rayon::iter::plumbing::bridge::Callback<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/zip.rs:63:23
+  26: rayon::iter::plumbing::bridge::<rayon::iter::zip::Zip<rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>>, rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/plumbing/mod.rs:352:21
+  27: <rayon::iter::zip::Zip<rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>> as rayon::iter::ParallelIterator>::drive_unindexed::<rayon::iter::for_each::ForEachConsumer<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/zip.rs:35:9
+  28: rayon::iter::for_each::for_each::<rayon::iter::zip::Zip<rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>>, field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}, (&mut [flock_core::field::gf2_128::F128], &mut [flock_core::field::gf2_128::F128])>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/for_each.rs:12:8
+  29: <rayon::iter::zip::Zip<rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>, rayon::slice::chunks::ChunksMut<flock_core::field::gf2_128::F128>> as rayon::iter::ParallelIterator>::for_each::<field_regressions::campaign::candidates::composite::tiled_ntt::{closure#0}>
+             at /Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0/src/iter/mod.rs:378:9
+  30: field_regressions::campaign::candidates::composite::tiled_ntt
+             at ./experiments/field-regressions/src/campaign/candidates/composite.rs:342:18
+  31: field_regressions::campaign::candidates::composite::ntt_cases::{closure#3}
+             at ./experiments/field-regressions/src/campaign/candidates/composite.rs:390:17
+  32: field_regressions::allocation::audit
+             at ./experiments/field-regressions/src/allocation.rs:52:9
+  33: field_regressions::measure::{closure#1}
+             at ./experiments/field-regressions/src/main.rs:110:21
+  34: core::iter::adapters::map::map_fold::<&mut field_regressions::Case, (u64, u64), (), field_regressions::measure::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<(u64, u64), <alloc::vec::Vec<(u64, u64)>>::extend_trusted<core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/adapters/map.rs:88:28
+  35: <core::slice::iter::IterMut<field_regressions::Case> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::adapters::map::map_fold<&mut field_regressions::Case, (u64, u64), (), field_regressions::measure::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<(u64, u64), <alloc::vec::Vec<(u64, u64)>>::extend_trusted<core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:279:27
+  36: <core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<(u64, u64), <alloc::vec::Vec<(u64, u64)>>::extend_trusted<core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>::{closure#0}>::{closure#0}>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/adapters/map.rs:128:19
+  37: <core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}> as core::iter::traits::iterator::Iterator>::for_each::<<alloc::vec::Vec<(u64, u64)>>::extend_trusted<core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>::{closure#0}>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/traits/iterator.rs:887:14
+  38: <alloc::vec::Vec<(u64, u64)>>::extend_trusted::<core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs:4077:26
+  39: <alloc::vec::Vec<(u64, u64)> as alloc::vec::spec_extend::SpecExtend<(u64, u64), core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>>::spec_extend
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/spec_extend.rs:27:14
+  40: <alloc::vec::Vec<(u64, u64)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(u64, u64), core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>>::from_iter
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/spec_from_iter_nested.rs:60:16
+  41: <alloc::vec::Vec<(u64, u64)> as alloc::vec::spec_from_iter::SpecFromIter<(u64, u64), core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>>::from_iter
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/spec_from_iter.rs:33:9
+  42: <alloc::vec::Vec<(u64, u64)> as core::iter::traits::collect::FromIterator<(u64, u64)>>::from_iter::<core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}>>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs:3941:9
+  43: <core::iter::adapters::map::Map<core::slice::iter::IterMut<field_regressions::Case>, field_regressions::measure::{closure#1}> as core::iter::traits::iterator::Iterator>::collect::<alloc::vec::Vec<(u64, u64)>>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/traits/iterator.rs:2090:9
+  44: field_regressions::measure
+             at ./experiments/field-regressions/src/main.rs:111:10
+  45: field_regressions::campaign::candidates::composite::ntt_cases
+             at ./experiments/field-regressions/src/campaign/candidates/composite.rs:394:9
+  46: field_regressions::campaign::candidates::composite::run
+             at ./experiments/field-regressions/src/campaign/candidates/composite.rs:526:5
+  47: field_regressions::campaign::candidates::run
+             at ./experiments/field-regressions/src/campaign/candidates/mod.rs:32:5
+  48: field_regressions::campaign::optimize
+             at ./experiments/field-regressions/src/campaign.rs:16:5
+  49: field_regressions::main
+             at ./experiments/field-regressions/src/main.rs:476:9
+  50: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+  51: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+             at /Users/johnwu/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:166:18
+  52: _main
+
+completed opt_ntt/log15_lanes8: 3 variants, 8 paired samples
+completed opt_ntt/log15_lanes32: 3 variants, 8 paired samples
+completed opt_ntt/log16_lanes32: 3 variants, 8 paired samples
+completed opt_ntt/log18_lanes32: 3 variants, 8 paired samples
+CORRECTNESS_COMPLETE

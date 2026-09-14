@@ -1,0 +1,4538 @@
+[
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n16",
+    "variant": "products2",
+    "ratio": 1.2541813895423481,
+    "run_ratios": [
+      1.2630416781672646,
+      1.2453211009174314
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n16",
+    "variant": "products4",
+    "ratio": 1.0333822478034915,
+    "run_ratios": [
+      1.023645229551937,
+      1.043119266055046
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n16",
+    "variant": "incumbent",
+    "ratio": 1.0566397025122372,
+    "run_ratios": [
+      1.056306927960254,
+      1.0569724770642204
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n16",
+    "variant": "native_word",
+    "ratio": 1.031005954144478,
+    "run_ratios": [
+      1.0299935596651026,
+      1.0320183486238532
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n16",
+    "variant": "deferred_columns",
+    "ratio": 1.0199560107400814,
+    "run_ratios": [
+      1.033581746250805,
+      1.006330275229358
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n1024",
+    "variant": "products2",
+    "ratio": 1.0263568027428485,
+    "run_ratios": [
+      1.0325606832507548,
+      1.020152922234942
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n1024",
+    "variant": "products4",
+    "ratio": 1.002251762823461,
+    "run_ratios": [
+      1.0006774088799604,
+      1.003826116766962
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n1024",
+    "variant": "deferred_columns",
+    "ratio": 0.9948324567730156,
+    "run_ratios": [
+      1.001228968862497,
+      0.9884359446835341
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n1024",
+    "variant": "incumbent",
+    "ratio": 1.0005189939744177,
+    "run_ratios": [
+      1.004524345546891,
+      0.9965136424019443
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n1024",
+    "variant": "native_word",
+    "ratio": 1.0011507066486363,
+    "run_ratios": [
+      1.0057035963264551,
+      0.9965978169708175
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n65536",
+    "variant": "incumbent",
+    "ratio": 0.996125623901106,
+    "run_ratios": [
+      0.9956935145690476,
+      0.9965577332331645
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n65536",
+    "variant": "deferred_columns",
+    "ratio": 0.9984897062940747,
+    "run_ratios": [
+      0.9978548635352428,
+      0.9991245490529066
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n65536",
+    "variant": "native_word",
+    "ratio": 0.9989315590614529,
+    "run_ratios": [
+      0.9988657851369656,
+      0.9989973329859404
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n65536",
+    "variant": "products4",
+    "ratio": 0.9988338668191731,
+    "run_ratios": [
+      0.9973254263276548,
+      1.0003423073106914
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n65536",
+    "variant": "products2",
+    "ratio": 0.9990389692432594,
+    "run_ratios": [
+      0.9992876769730247,
+      0.9987902615134941
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_signed16_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n16",
+    "variant": "products4",
+    "ratio": 1.1143594257883875,
+    "run_ratios": [
+      1.0123547176718222,
+      1.216364133904953
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n16",
+    "variant": "native_word",
+    "ratio": 1.0192382130193391,
+    "run_ratios": [
+      1.0226960739452733,
+      1.015780352093405
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n16",
+    "variant": "incumbent",
+    "ratio": 1.051935430523434,
+    "run_ratios": [
+      1.0482291571337057,
+      1.0556417039131625
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n16",
+    "variant": "deferred_columns",
+    "ratio": 1.0089774751802283,
+    "run_ratios": [
+      1.023336688935664,
+      0.9946182614247924
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n16",
+    "variant": "products2",
+    "ratio": 1.2377938994797353,
+    "run_ratios": [
+      1.2463622220188524,
+      1.2292255769406182
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n1024",
+    "variant": "products2",
+    "ratio": 1.0093782461279002,
+    "run_ratios": [
+      1.011938032961786,
+      1.0068184592940144
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n1024",
+    "variant": "deferred_columns",
+    "ratio": 1.0003228156830097,
+    "run_ratios": [
+      1.001903615469675,
+      0.9987420158963445
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n1024",
+    "variant": "incumbent",
+    "ratio": 1.002471010638197,
+    "run_ratios": [
+      1.0026516865815327,
+      1.0022903346948615
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n1024",
+    "variant": "native_word",
+    "ratio": 1.0049037255814135,
+    "run_ratios": [
+      1.0044308827394643,
+      1.0053765684233626
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n1024",
+    "variant": "products4",
+    "ratio": 0.998975575628155,
+    "run_ratios": [
+      0.9998180367565751,
+      0.9981331144997349
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n65536",
+    "variant": "deferred_columns",
+    "ratio": 0.998693748785286,
+    "run_ratios": [
+      0.9998363248692292,
+      0.997551172701343
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n65536",
+    "variant": "products4",
+    "ratio": 0.9990081713825743,
+    "run_ratios": [
+      0.9997603258351873,
+      0.9982560169299611
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n65536",
+    "variant": "native_word",
+    "ratio": 0.9999386556531646,
+    "run_ratios": [
+      1.0003511950198014,
+      0.9995261162865278
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n65536",
+    "variant": "products2",
+    "ratio": 1.0010717670653781,
+    "run_ratios": [
+      1.0005509071360492,
+      1.001592626994707
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l1_full_n65536",
+    "variant": "incumbent",
+    "ratio": 1.0033304614297487,
+    "run_ratios": [
+      0.9998441749954052,
+      1.0068167478640924
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n16",
+    "variant": "deferred_columns",
+    "ratio": 1.5988110703850982,
+    "run_ratios": [
+      1.617908517860029,
+      1.5797136229101671
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n16",
+    "variant": "incumbent",
+    "ratio": 0.8514400115163892,
+    "run_ratios": [
+      0.859867464037498,
+      0.8430125589952804
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n16",
+    "variant": "products2",
+    "ratio": 0.8933108464301682,
+    "run_ratios": [
+      0.8980927751737513,
+      0.8885289176865852
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n16",
+    "variant": "products4",
+    "ratio": 0.9374129090199697,
+    "run_ratios": [
+      0.9425004040730565,
+      0.9323254139668827
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n1024",
+    "variant": "deferred_columns",
+    "ratio": 1.6853602197085493,
+    "run_ratios": [
+      1.682743910677384,
+      1.6879765287397146
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n1024",
+    "variant": "incumbent",
+    "ratio": 0.9509145329452172,
+    "run_ratios": [
+      0.9487345888881259,
+      0.9530944770023085
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n1024",
+    "variant": "products4",
+    "ratio": 0.9538079121413959,
+    "run_ratios": [
+      0.9512315230929499,
+      0.956384301189842
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n1024",
+    "variant": "products2",
+    "ratio": 0.9529643270055947,
+    "run_ratios": [
+      0.9502746849115625,
+      0.9556539690996271
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n65536",
+    "variant": "deferred_columns",
+    "ratio": 1.6769191719600378,
+    "run_ratios": [
+      1.6793080371677471,
+      1.6745303067523285
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n65536",
+    "variant": "products2",
+    "ratio": 0.9531163229228709,
+    "run_ratios": [
+      0.9543887965472063,
+      0.9518438492985354
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n65536",
+    "variant": "incumbent",
+    "ratio": 0.949566747091501,
+    "run_ratios": [
+      0.9528042870510408,
+      0.9463292071319612
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n65536",
+    "variant": "products4",
+    "ratio": 0.9533050044806295,
+    "run_ratios": [
+      0.954818254828817,
+      0.9517917541324421
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_signed16_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n16",
+    "variant": "products2",
+    "ratio": 0.9183150532092237,
+    "run_ratios": [
+      0.9164992365185244,
+      0.9201308698999231
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n16",
+    "variant": "deferred_columns",
+    "ratio": 1.5873547765802822,
+    "run_ratios": [
+      1.5831391143614884,
+      1.5915704387990763
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n16",
+    "variant": "products4",
+    "ratio": 1.0454519908705173,
+    "run_ratios": [
+      0.9375552519488869,
+      1.1533487297921476
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n16",
+    "variant": "incumbent",
+    "ratio": 0.8992095626572953,
+    "run_ratios": [
+      0.8527686249296793,
+      0.9456505003849114
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n1024",
+    "variant": "deferred_columns",
+    "ratio": 1.693359499694775,
+    "run_ratios": [
+      1.6942401069341004,
+      1.6924788924554495
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n1024",
+    "variant": "incumbent",
+    "ratio": 0.9553694602786865,
+    "run_ratios": [
+      0.9505274701740264,
+      0.9602114503833467
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n1024",
+    "variant": "products2",
+    "ratio": 0.9593646943443594,
+    "run_ratios": [
+      0.954197052665783,
+      0.964532336022936
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n1024",
+    "variant": "products4",
+    "ratio": 0.9666130184883848,
+    "run_ratios": [
+      0.9522969045975016,
+      0.980929132379268
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n65536",
+    "variant": "products2",
+    "ratio": 0.9551431267469195,
+    "run_ratios": [
+      0.9497018818827487,
+      0.9605843716110902
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n65536",
+    "variant": "incumbent",
+    "ratio": 0.9496666917250673,
+    "run_ratios": [
+      0.9443226373547536,
+      0.9550107460953811
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n65536",
+    "variant": "deferred_columns",
+    "ratio": 1.677899643008962,
+    "run_ratios": [
+      1.6742077652248872,
+      1.681591520793037
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l2_full_n65536",
+    "variant": "products4",
+    "ratio": 0.9468788076534442,
+    "run_ratios": [
+      0.9450448899025948,
+      0.9487127254042937
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "incumbent",
+    "ratio": 1.0979038628300657,
+    "run_ratios": [
+      1.096570249916055,
+      1.0992374757440762
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "products2",
+    "ratio": 1.1155183187557514,
+    "run_ratios": [
+      1.1005420444188612,
+      1.1304945930926418
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "native128x2",
+    "ratio": 0.9200867949229258,
+    "run_ratios": [
+      0.9190770854319567,
+      0.9210965044138949
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "native128x2_acc2",
+    "ratio": 0.9183782116129884,
+    "run_ratios": [
+      0.9170720007674965,
+      0.9196844224584803
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "deferred_columns",
+    "ratio": 1.2506595201274875,
+    "run_ratios": [
+      1.246798100446107,
+      1.2545209398088677
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n16",
+    "variant": "products4",
+    "ratio": 1.1180362073417005,
+    "run_ratios": [
+      1.1171295630066675,
+      1.1189428516767335
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "native128x2_acc2",
+    "ratio": 0.9348480291590844,
+    "run_ratios": [
+      0.9371998951610093,
+      0.9324961631571593
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "products2",
+    "ratio": 1.0768899502568425,
+    "run_ratios": [
+      1.0783963572324056,
+      1.0753835432812793
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "products4",
+    "ratio": 1.117720011206619,
+    "run_ratios": [
+      1.1203789180667796,
+      1.1150611043464584
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "native128x2",
+    "ratio": 0.9142875603021638,
+    "run_ratios": [
+      0.915522303462398,
+      0.9130528171419295
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "deferred_columns",
+    "ratio": 1.2807978103782138,
+    "run_ratios": [
+      1.2902537503824945,
+      1.2713418703739332
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n1024",
+    "variant": "incumbent",
+    "ratio": 1.329273978168699,
+    "run_ratios": [
+      1.3324073846932492,
+      1.3261405716441492
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "products4",
+    "ratio": 1.0936779056093835,
+    "run_ratios": [
+      1.1041413268099114,
+      1.0832144844088556
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "deferred_columns",
+    "ratio": 1.27547060882958,
+    "run_ratios": [
+      1.288971253779574,
+      1.261969963879586
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "native128x2",
+    "ratio": 0.9114923673538701,
+    "run_ratios": [
+      0.9202316543426236,
+      0.9027530803651166
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "products2",
+    "ratio": 1.06929825592972,
+    "run_ratios": [
+      1.0762631784514654,
+      1.0623333334079745
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "incumbent",
+    "ratio": 1.2961445757465355,
+    "run_ratios": [
+      1.3111503644415463,
+      1.2811387870515247
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_signed16_n65536",
+    "variant": "native128x2_acc2",
+    "ratio": 0.9007315031935046,
+    "run_ratios": [
+      0.9177484734272758,
+      0.8837145329597332
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "products4",
+    "ratio": 1.1263607897716748,
+    "run_ratios": [
+      1.1203990235839083,
+      1.1323225559594414
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "products2",
+    "ratio": 1.1139468314396614,
+    "run_ratios": [
+      1.104945509062602,
+      1.122948153816721
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "incumbent",
+    "ratio": 1.0969655046662004,
+    "run_ratios": [
+      1.0957771926115285,
+      1.0981538167208724
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "deferred_columns",
+    "ratio": 1.2632629452245125,
+    "run_ratios": [
+      1.2490053241586099,
+      1.2775205662904154
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "native128x2",
+    "ratio": 0.9291683941137994,
+    "run_ratios": [
+      0.9208391796567168,
+      0.937497608570882
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "native128x2_acc2",
+    "ratio": 0.9279310257474771,
+    "run_ratios": [
+      0.9152651507870913,
+      0.9405969007078631
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "incumbent",
+    "ratio": 1.3455162459592935,
+    "run_ratios": [
+      1.3337393534442368,
+      1.3572931384743503
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "products2",
+    "ratio": 1.0705500271872217,
+    "run_ratios": [
+      1.0754875381076576,
+      1.0656125162667855
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "products4",
+    "ratio": 1.105162361917026,
+    "run_ratios": [
+      1.1217619158181036,
+      1.0885628080159488
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "native128x2",
+    "ratio": 0.9102083603893993,
+    "run_ratios": [
+      0.9173969929930538,
+      0.9030197277857448
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "native128x2_acc2",
+    "ratio": 0.9389718761666395,
+    "run_ratios": [
+      0.9362396537327392,
+      0.9417040986005397
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n1024",
+    "variant": "deferred_columns",
+    "ratio": 1.2969209045791792,
+    "run_ratios": [
+      1.2890638308697868,
+      1.3047779782885716
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "deferred_columns",
+    "ratio": 1.304962613216646,
+    "run_ratios": [
+      1.2932175915265944,
+      1.316707634906698
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "native128x2_acc2",
+    "ratio": 0.9193819219105488,
+    "run_ratios": [
+      0.9175301251055338,
+      0.9212337187155637
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "products4",
+    "ratio": 1.104555771240195,
+    "run_ratios": [
+      1.0963619593215135,
+      1.1127495831588765
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "products2",
+    "ratio": 1.0859326397118423,
+    "run_ratios": [
+      1.0843246616010438,
+      1.0875406178226406
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "incumbent",
+    "ratio": 1.3181590740011444,
+    "run_ratios": [
+      1.3144844565200704,
+      1.3218336914822184
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l4_full_n65536",
+    "variant": "native128x2",
+    "ratio": 0.9399829430901929,
+    "run_ratios": [
+      0.945640495510016,
+      0.9343253906703697
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n16",
+    "variant": "incumbent",
+    "ratio": 0.7925690798042038,
+    "run_ratios": [
+      0.7733508119685673,
+      0.8117873476398402
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n16",
+    "variant": "products4",
+    "ratio": 1.2414943224084334,
+    "run_ratios": [
+      1.436154986783573,
+      1.0468336580332938
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n16",
+    "variant": "products2",
+    "ratio": 1.2141671548201918,
+    "run_ratios": [
+      1.391627447188017,
+      1.0367068624523665
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n16",
+    "variant": "deferred_columns",
+    "ratio": 2.4109979277304223,
+    "run_ratios": [
+      2.351870715406271,
+      2.470125140054573
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n1024",
+    "variant": "products2",
+    "ratio": 1.2067461504404087,
+    "run_ratios": [
+      1.401280346558615,
+      1.0122119543222023
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n1024",
+    "variant": "deferred_columns",
+    "ratio": 2.4003110203248452,
+    "run_ratios": [
+      2.3434619235738627,
+      2.4571601170758273
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n1024",
+    "variant": "incumbent",
+    "ratio": 0.7925994665634146,
+    "run_ratios": [
+      0.774170474337454,
+      0.8110284587893752
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n1024",
+    "variant": "products4",
+    "ratio": 1.1917703835679934,
+    "run_ratios": [
+      1.3769731679651906,
+      1.006567599170796
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n65536",
+    "variant": "products4",
+    "ratio": 1.1834029291455666,
+    "run_ratios": [
+      1.3698550977463284,
+      0.9969507605448048
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n65536",
+    "variant": "products2",
+    "ratio": 1.2046159928476836,
+    "run_ratios": [
+      1.4007290251534612,
+      1.008502960541906
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n65536",
+    "variant": "deferred_columns",
+    "ratio": 2.4043730774269285,
+    "run_ratios": [
+      2.36102724685718,
+      2.4477189079966775
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_signed16_n65536",
+    "variant": "incumbent",
+    "ratio": 0.7891853324809297,
+    "run_ratios": [
+      0.7762283546125582,
+      0.8021423103493012
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n16",
+    "variant": "incumbent",
+    "ratio": 0.7741427163636794,
+    "run_ratios": [
+      0.7738797038820687,
+      0.7744057288452901
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n16",
+    "variant": "deferred_columns",
+    "ratio": 2.3739416472182286,
+    "run_ratios": [
+      2.3500025082593394,
+      2.3978807861771174
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n16",
+    "variant": "products4",
+    "ratio": 1.2339387035782243,
+    "run_ratios": [
+      1.4348103397616436,
+      1.0330670673948052
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n16",
+    "variant": "products2",
+    "ratio": 1.2092578020266789,
+    "run_ratios": [
+      1.3916539462085868,
+      1.026861657844771
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n1024",
+    "variant": "products2",
+    "ratio": 1.203819389810536,
+    "run_ratios": [
+      1.4020375625681025,
+      1.0056012170529698
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n1024",
+    "variant": "deferred_columns",
+    "ratio": 2.4026604524010793,
+    "run_ratios": [
+      2.3431833079911533,
+      2.4621375968110053
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n1024",
+    "variant": "incumbent",
+    "ratio": 0.7880235250244609,
+    "run_ratios": [
+      0.7748258036647294,
+      0.8012212463841925
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n1024",
+    "variant": "products4",
+    "ratio": 1.1876372681643792,
+    "run_ratios": [
+      1.3757641383151595,
+      0.9995103980135991
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n65536",
+    "variant": "incumbent",
+    "ratio": 0.796918888435997,
+    "run_ratios": [
+      0.7786444003387591,
+      0.815193376533235
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n65536",
+    "variant": "products2",
+    "ratio": 1.208202253492269,
+    "run_ratios": [
+      1.4017125592590827,
+      1.014691947725455
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n65536",
+    "variant": "deferred_columns",
+    "ratio": 2.414397481137656,
+    "run_ratios": [
+      2.374363246329187,
+      2.454431715946125
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n65536",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_integer_mac",
+    "size": "l9_full_n65536",
+    "variant": "products4",
+    "ratio": 1.196664165761936,
+    "run_ratios": [
+      1.3716240164611881,
+      1.0217043150626839
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l1_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l1_n16",
+    "variant": "native_batch",
+    "ratio": 1.6295606795797313,
+    "run_ratios": [
+      1.374238114587566,
+      1.8848832445718968
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l1_n16",
+    "variant": "word_carry",
+    "ratio": 1.0421413251974556,
+    "run_ratios": [
+      1.025802519301097,
+      1.0584801310938141
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l1_n16",
+    "variant": "native_option",
+    "ratio": 0.48829754347655663,
+    "run_ratios": [
+      0.49348149668942154,
+      0.4831135902636918
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l1_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l1_n16",
+    "variant": "word_option",
+    "ratio": 0.45449176957099646,
+    "run_ratios": [
+      0.45424215983164806,
+      0.4547413793103449
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l1_n16",
+    "variant": "native_batch",
+    "ratio": 1.1446528196445849,
+    "run_ratios": [
+      1.1506653019447288,
+      1.1386403373444411
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l1_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l1_n16",
+    "variant": "word_carry",
+    "ratio": 1.0623849463296042,
+    "run_ratios": [
+      1.0609007164790174,
+      1.0638691761801913
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l1_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l1_n16",
+    "variant": "native_option",
+    "ratio": 0.5295760050873275,
+    "run_ratios": [
+      0.5310531550447564,
+      0.5280988551298987
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l1_n16",
+    "variant": "word_option",
+    "ratio": 0.48681000571817057,
+    "run_ratios": [
+      0.4889766825063543,
+      0.4846433289299868
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l1_n1024",
+    "variant": "native_batch",
+    "ratio": 1.0054663939760193,
+    "run_ratios": [
+      1.01355506402128,
+      0.9973777239307586
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l1_n1024",
+    "variant": "word_carry",
+    "ratio": 1.0006680872043594,
+    "run_ratios": [
+      1.0029507946647345,
+      0.9983853797439844
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l1_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l1_n1024",
+    "variant": "native_option",
+    "ratio": 1.014337511402858,
+    "run_ratios": [
+      1.0124734979079586,
+      1.0162015248977578
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l1_n1024",
+    "variant": "word_option",
+    "ratio": 0.9663240049216008,
+    "run_ratios": [
+      0.978703210319989,
+      0.9539447995232125
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l1_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l1_n1024",
+    "variant": "word_carry",
+    "ratio": 1.0077528816465604,
+    "run_ratios": [
+      0.9996524518693125,
+      1.0158533114238082
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l1_n1024",
+    "variant": "native_batch",
+    "ratio": 1.0031890663350391,
+    "run_ratios": [
+      1.0011088440360032,
+      1.005269288634075
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l1_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l1_n1024",
+    "variant": "native_option",
+    "ratio": 1.009136385907425,
+    "run_ratios": [
+      0.9980185402636707,
+      1.0202542315511793
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l1_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l1_n1024",
+    "variant": "word_option",
+    "ratio": 1.0325556543426373,
+    "run_ratios": [
+      1.0355554168330439,
+      1.0295558918522305
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l2_n16",
+    "variant": "native_batch",
+    "ratio": 0.9245885637041903,
+    "run_ratios": [
+      0.9242391351539095,
+      0.924937992254471
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l2_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l2_n16",
+    "variant": "word_carry",
+    "ratio": 1.023424194888877,
+    "run_ratios": [
+      1.0264837407198368,
+      1.0203646490579172
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l2_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l2_n16",
+    "variant": "native_option",
+    "ratio": 1.197329204926679,
+    "run_ratios": [
+      1.2461312258775963,
+      1.1485271839757616
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l2_n16",
+    "variant": "word_option",
+    "ratio": 1.4850011822126055,
+    "run_ratios": [
+      1.5495680941003496,
+      1.4204342703248614
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l2_n16",
+    "variant": "native_batch",
+    "ratio": 0.9133866823763275,
+    "run_ratios": [
+      0.9261405089910303,
+      0.9006328557616246
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l2_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l2_n16",
+    "variant": "word_carry",
+    "ratio": 1.031109817841215,
+    "run_ratios": [
+      1.0315437105703618,
+      1.0306759251120683
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l2_n16",
+    "variant": "native_option",
+    "ratio": 0.6397827803750262,
+    "run_ratios": [
+      0.6601397953987871,
+      0.6194257653512653
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l2_n16",
+    "variant": "word_option",
+    "ratio": 0.9650456789285502,
+    "run_ratios": [
+      0.9708142387631347,
+      0.9592771190939656
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l2_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l2_n1024",
+    "variant": "word_carry",
+    "ratio": 0.9939533101914345,
+    "run_ratios": [
+      0.9999660069753686,
+      0.9879406134075004
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l2_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l2_n1024",
+    "variant": "native_batch",
+    "ratio": 0.6885870636419014,
+    "run_ratios": [
+      0.6902487609542521,
+      0.6869253663295507
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l2_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l2_n1024",
+    "variant": "word_option",
+    "ratio": 1.6792469669652785,
+    "run_ratios": [
+      1.6713395430626903,
+      1.6871543908678666
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l2_n1024",
+    "variant": "native_option",
+    "ratio": 1.301562935821269,
+    "run_ratios": [
+      1.2990727575710508,
+      1.304053114071487
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l2_n1024",
+    "variant": "native_batch",
+    "ratio": 0.6906031762743168,
+    "run_ratios": [
+      0.6922538098559268,
+      0.6889525426927069
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l2_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l2_n1024",
+    "variant": "word_carry",
+    "ratio": 0.9961770023808115,
+    "run_ratios": [
+      1.0027542311980793,
+      0.9895997735635438
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l2_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l2_n1024",
+    "variant": "word_option",
+    "ratio": 0.9848074056656999,
+    "run_ratios": [
+      0.9732733875673174,
+      0.9963414237640824
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l2_n1024",
+    "variant": "native_option",
+    "ratio": 0.6216502398623875,
+    "run_ratios": [
+      0.6191409524703737,
+      0.6241595272544015
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l4_n16",
+    "variant": "word_carry",
+    "ratio": 0.7980481064697184,
+    "run_ratios": [
+      0.7922488461781626,
+      0.8038473667612741
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l4_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l4_n16",
+    "variant": "native_batch",
+    "ratio": 0.8947180537201878,
+    "run_ratios": [
+      0.8949864070304102,
+      0.8944497004099653
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l4_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l4_n16",
+    "variant": "native_option",
+    "ratio": 0.5874322493365752,
+    "run_ratios": [
+      0.5688521063774384,
+      0.606012392295712
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l4_n16",
+    "variant": "word_option",
+    "ratio": 0.6009341993684758,
+    "run_ratios": [
+      0.5841135779546458,
+      0.6177548207823057
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l4_n16",
+    "variant": "word_carry",
+    "ratio": 1.0068058605002057,
+    "run_ratios": [
+      1.0031503780453654,
+      1.0104613429550457
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l4_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l4_n16",
+    "variant": "native_batch",
+    "ratio": 1.0165468526429902,
+    "run_ratios": [
+      1.0216792681788482,
+      1.011414437107132
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l4_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l4_n16",
+    "variant": "native_option",
+    "ratio": 0.6200795396133713,
+    "run_ratios": [
+      0.6162234819706621,
+      0.6239355972560804
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l4_n16",
+    "variant": "word_option",
+    "ratio": 0.6069173340858678,
+    "run_ratios": [
+      0.599298696744784,
+      0.6145359714269517
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l4_n1024",
+    "variant": "native_batch",
+    "ratio": 0.7460398633117457,
+    "run_ratios": [
+      0.7429605717278303,
+      0.749119154895661
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l4_n1024",
+    "variant": "word_carry",
+    "ratio": 0.7584755616767769,
+    "run_ratios": [
+      0.7418533748950326,
+      0.7750977484585211
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l4_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l4_n1024",
+    "variant": "word_option",
+    "ratio": 0.4098730233636841,
+    "run_ratios": [
+      0.41855973784843303,
+      0.40118630887893514
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l4_n1024",
+    "variant": "native_option",
+    "ratio": 0.4150534640460489,
+    "run_ratios": [
+      0.4200679451841486,
+      0.4100389829079493
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l4_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l4_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l4_n1024",
+    "variant": "native_batch",
+    "ratio": 0.9920948819168383,
+    "run_ratios": [
+      0.9932442187725592,
+      0.9909455450611173
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l4_n1024",
+    "variant": "word_carry",
+    "ratio": 0.9982710265440953,
+    "run_ratios": [
+      0.9964674183090484,
+      1.000074634779142
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l4_n1024",
+    "variant": "native_option",
+    "ratio": 0.5551036566951932,
+    "run_ratios": [
+      0.5896338079098247,
+      0.5205735054805618
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l4_n1024",
+    "variant": "word_option",
+    "ratio": 0.5596946756974543,
+    "run_ratios": [
+      0.5899247904491981,
+      0.5294645609457106
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l4_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l9_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l9_n16",
+    "variant": "word_carry",
+    "ratio": 0.9017530944946228,
+    "run_ratios": [
+      0.8856209448545852,
+      0.9178852441346603
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l9_n16",
+    "variant": "native_batch",
+    "ratio": 0.8977835656702593,
+    "run_ratios": [
+      0.8891251380232335,
+      0.9064419933172853
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l9_n16",
+    "variant": "word_option",
+    "ratio": 0.6629593931759028,
+    "run_ratios": [
+      0.7240899256890226,
+      0.6018288606627828
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l9_n16",
+    "variant": "native_option",
+    "ratio": 0.6541175384775739,
+    "run_ratios": [
+      0.7311698491832064,
+      0.5770652277719416
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l9_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l9_n16",
+    "variant": "native_batch",
+    "ratio": 0.8336846586069392,
+    "run_ratios": [
+      0.9690952280233637,
+      0.6982740891905147
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l9_n16",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l9_n16",
+    "variant": "word_carry",
+    "ratio": 0.7908395578340481,
+    "run_ratios": [
+      0.9701039649870654,
+      0.6115751506810309
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l9_n16",
+    "variant": "word_option",
+    "ratio": 0.7214435023613676,
+    "run_ratios": [
+      0.7149973455026037,
+      0.7278896592201314
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l9_n16",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l9_n16",
+    "variant": "native_option",
+    "ratio": 0.6992135799509581,
+    "run_ratios": [
+      0.7022049271989969,
+      0.6962222327029194
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l9_n1024",
+    "variant": "word_carry",
+    "ratio": 0.9041173922500199,
+    "run_ratios": [
+      0.908415752436055,
+      0.8998190320639848
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l9_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_add",
+    "size": "l9_n1024",
+    "variant": "native_batch",
+    "ratio": 0.8981183031521561,
+    "run_ratios": [
+      0.9128647840764671,
+      0.8833718222278452
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l9_n1024",
+    "variant": "word_option",
+    "ratio": 0.5716567427545849,
+    "run_ratios": [
+      0.5680242468025698,
+      0.5752892387066
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l9_n1024",
+    "variant": "native_option",
+    "ratio": 0.5795900711400448,
+    "run_ratios": [
+      0.5689374256304576,
+      0.5902427166496319
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_add",
+    "size": "l9_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l9_n1024",
+    "variant": "word_carry",
+    "ratio": 0.979053245058375,
+    "run_ratios": [
+      0.9885232678087258,
+      0.9695832223080242
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l9_n1024",
+    "variant": "native_batch",
+    "ratio": 0.9763936255376285,
+    "run_ratios": [
+      0.9830130117293034,
+      0.9697742393459536
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_sub",
+    "size": "l9_n1024",
+    "variant": "circuit_z",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l9_n1024",
+    "variant": "vendor_option",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l9_n1024",
+    "variant": "native_option",
+    "ratio": 0.5583201193418779,
+    "run_ratios": [
+      0.5592062588007224,
+      0.5574339798830333
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_uint_checked_sub",
+    "size": "l9_n1024",
+    "variant": "word_option",
+    "ratio": 0.5551287157697071,
+    "run_ratios": [
+      0.5616834902159127,
+      0.5485739413235017
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l2_n16",
+    "variant": "fused_exact",
+    "ratio": 0.8905485737342144,
+    "run_ratios": [
+      0.8942129132505464,
+      0.8868842342178823
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l2_n16",
+    "variant": "column_exact",
+    "ratio": 0.8547803403687602,
+    "run_ratios": [
+      0.8592200507838654,
+      0.850340629953655
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l2_n16",
+    "variant": "wide_then_add",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l2_n1024",
+    "variant": "wide_then_add",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l2_n1024",
+    "variant": "column_exact",
+    "ratio": 0.846576898926001,
+    "run_ratios": [
+      0.8529237278373318,
+      0.84023007001467
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l2_n1024",
+    "variant": "fused_exact",
+    "ratio": 0.8735518581457289,
+    "run_ratios": [
+      0.8769795002517831,
+      0.8701242160396746
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l4_n16",
+    "variant": "column_exact",
+    "ratio": 0.8661808284718082,
+    "run_ratios": [
+      0.8677281880120266,
+      0.86463346893159
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l4_n16",
+    "variant": "wide_then_add",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l4_n16",
+    "variant": "fused_exact",
+    "ratio": 1.0327115187741938,
+    "run_ratios": [
+      1.0294734228891402,
+      1.035949614659247
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l4_n1024",
+    "variant": "fused_exact",
+    "ratio": 1.030996576053556,
+    "run_ratios": [
+      1.0317215633720158,
+      1.030271588735096
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l4_n1024",
+    "variant": "wide_then_add",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l4_n1024",
+    "variant": "column_exact",
+    "ratio": 0.854865644551692,
+    "run_ratios": [
+      0.8608478039196235,
+      0.8488834851837606
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l9_n16",
+    "variant": "column_exact",
+    "ratio": 0.7507301476085219,
+    "run_ratios": [
+      0.7626435198683472,
+      0.7388167753486965
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l9_n16",
+    "variant": "wide_then_add",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l9_n16",
+    "variant": "fused_exact",
+    "ratio": 1.4371869771625663,
+    "run_ratios": [
+      1.4452120861505273,
+      1.4291618681746052
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l9_n1024",
+    "variant": "wide_then_add",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l9_n1024",
+    "variant": "fused_exact",
+    "ratio": 1.389224442499566,
+    "run_ratios": [
+      1.4054184761671407,
+      1.373030408831991
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_exact_unsigned_mac",
+    "size": "l9_n1024",
+    "variant": "column_exact",
+    "ratio": 0.7306018242309147,
+    "run_ratios": [
+      0.7408293938937619,
+      0.7203742545680675
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_dense_n16",
+    "variant": "fixed_schedule",
+    "ratio": 0.47769879065207854,
+    "run_ratios": [
+      0.4691810081777127,
+      0.4862165731264444
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_dense_n16",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_dense_n16",
+    "variant": "public_fused",
+    "ratio": 0.9541481881057262,
+    "run_ratios": [
+      0.9399487367264738,
+      0.9683476394849786
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_dense_n1024",
+    "variant": "fixed_schedule",
+    "ratio": 0.3825144455097351,
+    "run_ratios": [
+      0.3864752056011415,
+      0.3785536854183287
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_dense_n1024",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_dense_n1024",
+    "variant": "public_fused",
+    "ratio": 0.9645523499989297,
+    "run_ratios": [
+      0.970985245003513,
+      0.9581194549943464
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_sparse_n16",
+    "variant": "fixed_schedule",
+    "ratio": 0.4143007545792011,
+    "run_ratios": [
+      0.4456920077972709,
+      0.3829095013611314
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_sparse_n16",
+    "variant": "public_fused",
+    "ratio": 0.6777794422241041,
+    "run_ratios": [
+      0.7630019493177388,
+      0.5925569351304695
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_sparse_n16",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_sparse_n1024",
+    "variant": "fixed_schedule",
+    "ratio": 0.3427958521290362,
+    "run_ratios": [
+      0.32895152829546576,
+      0.3566401759626066
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_sparse_n1024",
+    "variant": "public_fused",
+    "ratio": 0.6289580929069486,
+    "run_ratios": [
+      0.6084063801981076,
+      0.6495098056157896
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a1_b1_sparse_n1024",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_dense_n16",
+    "variant": "public_fused",
+    "ratio": 1.1109086380121367,
+    "run_ratios": [
+      1.1031037750750277,
+      1.118713500949246
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_dense_n16",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_dense_n16",
+    "variant": "fixed_schedule",
+    "ratio": 0.6123156237719825,
+    "run_ratios": [
+      0.6106639766804038,
+      0.6139672708635612
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_dense_n1024",
+    "variant": "public_fused",
+    "ratio": 1.1710683085273086,
+    "run_ratios": [
+      1.1746836563190006,
+      1.1674529607356163
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_dense_n1024",
+    "variant": "fixed_schedule",
+    "ratio": 0.795343061222775,
+    "run_ratios": [
+      0.7985071702940253,
+      0.7921789521515247
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_dense_n1024",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_sparse_n16",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_sparse_n16",
+    "variant": "public_fused",
+    "ratio": 0.8816205490043632,
+    "run_ratios": [
+      0.9039840920389177,
+      0.8592570059698087
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_sparse_n16",
+    "variant": "fixed_schedule",
+    "ratio": 1.3888523761229048,
+    "run_ratios": [
+      1.4832220722960017,
+      1.294482679949808
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_sparse_n1024",
+    "variant": "fixed_schedule",
+    "ratio": 1.9285992046816198,
+    "run_ratios": [
+      1.9310086681836114,
+      1.926189741179628
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_sparse_n1024",
+    "variant": "public_fused",
+    "ratio": 0.8692902502776761,
+    "run_ratios": [
+      0.8766401526344288,
+      0.8619403479209234
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a3_b7_sparse_n1024",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_dense_n16",
+    "variant": "fixed_schedule",
+    "ratio": 0.42969689737820554,
+    "run_ratios": [
+      0.42684458688315136,
+      0.43254920787325973
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_dense_n16",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_dense_n16",
+    "variant": "public_fused",
+    "ratio": 0.9939454024398656,
+    "run_ratios": [
+      0.9918231106628725,
+      0.9960676942168587
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_dense_n1024",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_dense_n1024",
+    "variant": "fixed_schedule",
+    "ratio": 0.4299381546438734,
+    "run_ratios": [
+      0.43022230075213347,
+      0.4296540085356133
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_dense_n1024",
+    "variant": "public_fused",
+    "ratio": 1.0003486588402128,
+    "run_ratios": [
+      0.9946747878947906,
+      1.0060225297856353
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_sparse_n16",
+    "variant": "public_fused",
+    "ratio": 0.9759891637964554,
+    "run_ratios": [
+      0.9848863148208316,
+      0.9670920127720792
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_sparse_n16",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_sparse_n16",
+    "variant": "fixed_schedule",
+    "ratio": 3.740819271106813,
+    "run_ratios": [
+      3.616507955890979,
+      3.865130586322647
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_sparse_n1024",
+    "variant": "public_fused",
+    "ratio": 0.8798107353104268,
+    "run_ratios": [
+      0.8399331887854502,
+      0.9196882818354032
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_sparse_n1024",
+    "variant": "production_zero_skip",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_f2_poly_dot",
+    "size": "a9_b9_sparse_n1024",
+    "variant": "fixed_schedule",
+    "ratio": 2.0915499894177607,
+    "run_ratios": [
+      2.0881910215557378,
+      2.0949089572797837
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "reuse_products",
+    "ratio": 0.7067208562856214,
+    "run_ratios": [
+      0.7156023633756389,
+      0.697839349195604
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      13,
+      32832
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "indexed_products",
+    "ratio": 0.7226708671881845,
+    "run_ratios": [
+      0.7297385069904824,
+      0.7156032273858868
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log10",
+    "variant": "indexed_scratch",
+    "ratio": 0.8675945131874991,
+    "run_ratios": [
+      0.8602366200935475,
+      0.8749524062814508
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log10",
+    "variant": "scratch",
+    "ratio": 0.8223073500759572,
+    "run_ratios": [
+      0.8253667707251291,
+      0.8192479294267855
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log10",
+    "variant": "allocate",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "indexed_products",
+    "ratio": 0.973543620823585,
+    "run_ratios": [
+      0.9780777147402205,
+      0.9690095269069495
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      19,
+      131808
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "reuse_products",
+    "ratio": 0.9138142828606522,
+    "run_ratios": [
+      0.8960837812745396,
+      0.9315447844467649
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log16",
+    "variant": "indexed_scratch",
+    "ratio": 1.033936070462851,
+    "run_ratios": [
+      1.0272653911869463,
+      1.0406067497387559
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log16",
+    "variant": "allocate",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log16",
+    "variant": "scratch",
+    "ratio": 0.9592784426138635,
+    "run_ratios": [
+      0.9437295311466283,
+      0.9748273540810988
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      21,
+      134112
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "reuse_products",
+    "ratio": 0.8768613773142477,
+    "run_ratios": [
+      0.909907969797007,
+      0.8438147848314885
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "indexed_products",
+    "ratio": 0.9931674617586119,
+    "run_ratios": [
+      1.040482355686386,
+      0.9458525678308377
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log18",
+    "variant": "indexed_scratch",
+    "ratio": 1.0721148363484931,
+    "run_ratios": [
+      1.0930355102668066,
+      1.0511941624301795
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log18",
+    "variant": "scratch",
+    "ratio": 0.9644047333735449,
+    "run_ratios": [
+      0.99818965005382,
+      0.9306198166932699
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log18",
+    "variant": "allocate",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs9_9",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      16384
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs9_9",
+    "variant": "single_write",
+    "ratio": 0.16787403517408056,
+    "run_ratios": [
+      0.18357399314503392,
+      0.1521740772031272
+    ],
+    "allocations": [
+      1,
+      16384
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs9_9",
+    "variant": "tiled_write",
+    "ratio": 0.1313468793424441,
+    "run_ratios": [
+      0.14869424176952556,
+      0.11399951691536263
+    ],
+    "allocations": [
+      1,
+      16384
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs9_9",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      14,
+      49216
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs9_9",
+    "variant": "single_write_ood",
+    "ratio": 0.33676985259406944,
+    "run_ratios": [
+      0.3738195158907671,
+      0.2997201892973717
+    ],
+    "allocations": [
+      3,
+      32784
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs9_9",
+    "variant": "tiled_indexed_ood",
+    "ratio": 0.33010010483926966,
+    "run_ratios": [
+      0.3703564267077612,
+      0.2898437829707781
+    ],
+    "allocations": [
+      3,
+      32784
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs16_14",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      2097152
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs16_14",
+    "variant": "single_write",
+    "ratio": 0.8627093618895717,
+    "run_ratios": [
+      0.8697169789813067,
+      0.8557017447978367
+    ],
+    "allocations": [
+      1,
+      2097152
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs16_14",
+    "variant": "tiled_write",
+    "ratio": 0.6264368563526614,
+    "run_ratios": [
+      0.6500284688883262,
+      0.6028452438169967
+    ],
+    "allocations": [
+      1,
+      2097152
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs16_14",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      22,
+      2231248
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs16_14",
+    "variant": "single_write_ood",
+    "ratio": 0.8786974793444652,
+    "run_ratios": [
+      0.9087282738110316,
+      0.8486666848778988
+    ],
+    "allocations": [
+      3,
+      2163200
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs16_14",
+    "variant": "tiled_indexed_ood",
+    "ratio": 0.8139558725699085,
+    "run_ratios": [
+      0.8353859909165818,
+      0.7925257542232353
+    ],
+    "allocations": [
+      3,
+      2163200
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs18_18",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      8390128
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs18_18",
+    "variant": "tiled_write",
+    "ratio": 0.731696277347091,
+    "run_ratios": [
+      0.7556801440680426,
+      0.7077124106261393
+    ],
+    "allocations": [
+      1,
+      8388608
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs18_18",
+    "variant": "single_write",
+    "ratio": 1.1491046752532492,
+    "run_ratios": [
+      1.1584392834875819,
+      1.1397700670189164
+    ],
+    "allocations": [
+      1,
+      8388608
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs18_18",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      24,
+      8527312
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs18_18",
+    "variant": "tiled_indexed_ood",
+    "ratio": 0.8890971838646234,
+    "run_ratios": [
+      0.8827971268326281,
+      0.8953972408966188
+    ],
+    "allocations": [
+      3,
+      8456192
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs18_18",
+    "variant": "single_write_ood",
+    "ratio": 1.0360115002426415,
+    "run_ratios": [
+      1.0352850142674408,
+      1.0367379862178423
+    ],
+    "allocations": [
+      3,
+      8456192
+    ]
+  }
+]

@@ -1,0 +1,506 @@
+[
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      13,
+      32832
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "indexed_products",
+    "ratio": 0.7495876359174307,
+    "run_ratios": [
+      0.7545440079562408,
+      0.7446312638786206
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "reuse_products",
+    "ratio": 0.7382370471641653,
+    "run_ratios": [
+      0.7490000000000001,
+      0.7274740943283303
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log10",
+    "variant": "allocate",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log10",
+    "variant": "scratch",
+    "ratio": 0.8214056413518789,
+    "run_ratios": [
+      0.8158110719103663,
+      0.8270002107933915
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log10",
+    "variant": "indexed_scratch",
+    "ratio": 0.8573404061532248,
+    "run_ratios": [
+      0.8558041576858745,
+      0.8588766546205753
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "indexed_products",
+    "ratio": 1.1524304744556662,
+    "run_ratios": [
+      1.1639255915778461,
+      1.1409353573334864
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      19,
+      131808
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "reuse_products",
+    "ratio": 1.1524287187634812,
+    "run_ratios": [
+      1.1523047108484064,
+      1.152552726678556
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log16",
+    "variant": "allocate",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log16",
+    "variant": "scratch",
+    "ratio": 0.9870466498657503,
+    "run_ratios": [
+      0.9550549721069541,
+      1.0190383276245465
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log16",
+    "variant": "indexed_scratch",
+    "ratio": 0.9678428551668672,
+    "run_ratios": [
+      0.9258416581914534,
+      1.009844052142281
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "indexed_products",
+    "ratio": 1.1025666935874052,
+    "run_ratios": [
+      1.173405800664297,
+      1.0317275865105138
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "reuse_products",
+    "ratio": 1.0793302452387588,
+    "run_ratios": [
+      1.1245501049298596,
+      1.034110385547658
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      21,
+      134112
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log18",
+    "variant": "indexed_scratch",
+    "ratio": 1.031337768218422,
+    "run_ratios": [
+      0.9961537990030067,
+      1.0665217374338372
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log18",
+    "variant": "scratch",
+    "ratio": 1.0325210422886562,
+    "run_ratios": [
+      1.0026867321412873,
+      1.0623553524360252
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ood_reuse",
+    "size": "log18",
+    "variant": "allocate",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs9_9",
+    "variant": "tiled_write",
+    "ratio": 0.01578296090370148,
+    "run_ratios": [
+      0.015830566889109065,
+      0.015735354918293896
+    ],
+    "allocations": [
+      1,
+      16384
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs9_9",
+    "variant": "single_write",
+    "ratio": 0.01912365117607239,
+    "run_ratios": [
+      0.019145195141267803,
+      0.019102107210876976
+    ],
+    "allocations": [
+      1,
+      16384
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs9_9",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      16384
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs9_9",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      14,
+      49216
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs9_9",
+    "variant": "single_write_ood",
+    "ratio": 0.04867872756271896,
+    "run_ratios": [
+      0.04997832986730632,
+      0.0473791252581316
+    ],
+    "allocations": [
+      3,
+      32784
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs9_9",
+    "variant": "tiled_indexed_ood",
+    "ratio": 0.046993305449967535,
+    "run_ratios": [
+      0.04791433109530574,
+      0.04607227980462932
+    ],
+    "allocations": [
+      3,
+      32784
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs16_14",
+    "variant": "single_write",
+    "ratio": 0.4792612633651707,
+    "run_ratios": [
+      0.47074724288907294,
+      0.48777528384126856
+    ],
+    "allocations": [
+      1,
+      2097152
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs16_14",
+    "variant": "tiled_write",
+    "ratio": 0.417618457642583,
+    "run_ratios": [
+      0.41454092066072473,
+      0.4206959946244412
+    ],
+    "allocations": [
+      1,
+      2097152
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs16_14",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      2,
+      2098672
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs16_14",
+    "variant": "single_write_ood",
+    "ratio": 0.8305691228461748,
+    "run_ratios": [
+      0.8308949276115988,
+      0.8302433180807508
+    ],
+    "allocations": [
+      3,
+      2163200
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs16_14",
+    "variant": "tiled_indexed_ood",
+    "ratio": 0.6095330676147301,
+    "run_ratios": [
+      0.6029747108624204,
+      0.61609142436704
+    ],
+    "allocations": [
+      4,
+      2164720
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs16_14",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      21,
+      2229728
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs18_18",
+    "variant": "single_write",
+    "ratio": 1.1043614062444926,
+    "run_ratios": [
+      1.1152315305947476,
+      1.0934912818942375
+    ],
+    "allocations": [
+      1,
+      8388608
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs18_18",
+    "variant": "tiled_write",
+    "ratio": 0.36785605447038683,
+    "run_ratios": [
+      0.3600836067445194,
+      0.37562850219625427
+    ],
+    "allocations": [
+      1,
+      8388608
+    ]
+  },
+  {
+    "family": "opt_pack",
+    "size": "logs18_18",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      8388608
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs18_18",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      23,
+      8525792
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs18_18",
+    "variant": "single_write_ood",
+    "ratio": 1.2526105492222153,
+    "run_ratios": [
+      1.2375920981214559,
+      1.2676290003229747
+    ],
+    "allocations": [
+      4,
+      8457712
+    ]
+  },
+  {
+    "family": "opt_packed_ood",
+    "size": "logs18_18",
+    "variant": "tiled_indexed_ood",
+    "ratio": 0.5710290455051321,
+    "run_ratios": [
+      0.5578950870643556,
+      0.5841630039459087
+    ],
+    "allocations": [
+      3,
+      8456192
+    ]
+  }
+]

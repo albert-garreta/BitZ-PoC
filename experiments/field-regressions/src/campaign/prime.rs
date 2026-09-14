@@ -63,7 +63,7 @@ fn configured(a: &[MontyField<2>], b: &[MontyField<2>], out: &mut [MontyField<2>
     }
 }
 #[inline(never)]
-fn product_sum<const K: usize, const CHECK: bool>(q: u128, a: &[u128], b: &[u128]) -> Product {
+pub(super) fn product_sum<const K: usize, const CHECK: bool>(q: u128, a: &[u128], b: &[u128]) -> Product {
     assert_eq!(a.len(), b.len());
     // On a 64-bit host the slice length establishes the five-limb capacity:
     // fewer than 2^64 terms, each strictly below 2^256.
@@ -79,7 +79,7 @@ fn product_sum<const K: usize, const CHECK: bool>(q: u128, a: &[u128], b: &[u128
     acc.into_iter().fold(Product::zero(), |a, b| a + b)
 }
 #[inline(never)]
-fn linear_sum<const K: usize>(a: &[u128], b: &[u64]) -> Linear {
+pub(super) fn linear_sum<const K: usize>(a: &[u128], b: &[u64]) -> Linear {
     assert_eq!(a.len(), b.len());
     let mut acc = [Linear::zero(); K];
     for (aa, bb) in a.chunks(K).zip(b.chunks(K)) {

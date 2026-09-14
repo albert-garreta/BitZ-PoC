@@ -1,0 +1,4571 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ]
+  },
+  "families": [
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l1_signed16_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native_word"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l1_signed16_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native_word"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l1_signed16_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native_word"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l1_full_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native_word"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l1_full_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native_word"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l1_full_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native_word"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l2_signed16_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l2_signed16_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l2_signed16_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l2_full_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l2_full_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l2_full_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l9_signed16_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l9_signed16_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l9_signed16_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l9_full_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l9_full_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l9_full_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incumbent"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l4_signed16_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native128x2",
+        "native128x2_acc2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native128x2"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l4_signed16_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native128x2",
+        "native128x2_acc2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native128x2"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l4_signed16_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native128x2",
+        "native128x2_acc2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native128x2"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l4_full_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native128x2",
+        "native128x2_acc2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native128x2"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l4_full_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native128x2",
+        "native128x2_acc2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native128x2"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_integer_mac",
+      "sizes": [
+        "l4_full_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "products2",
+        "products4",
+        "deferred_columns",
+        "incumbent",
+        "native128x2",
+        "native128x2_acc2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native128x2"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q100_l2_n16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q100_l2_n1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q128_l2_n16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q128_l2_n1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q100_l4_n16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q100_l4_n1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q128_l4_n16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q128_l4_n1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q100_l9_n16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q100_l9_n1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q128_l9_n16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection",
+      "sizes": [
+        "q128_l9_n1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "public_divisor",
+        "horner_prepared",
+        "horner_one_shot"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner_prepared",
+          "horner_one_shot"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_projection_setup",
+      "sizes": [
+        "q100_l2"
+      ],
+      "baseline": "horner",
+      "variants": [
+        "horner"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_projection_setup",
+      "sizes": [
+        "q128_l2"
+      ],
+      "baseline": "horner",
+      "variants": [
+        "horner"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_projection_setup",
+      "sizes": [
+        "q100_l4"
+      ],
+      "baseline": "horner",
+      "variants": [
+        "horner"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_projection_setup",
+      "sizes": [
+        "q128_l4"
+      ],
+      "baseline": "horner",
+      "variants": [
+        "horner"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_projection_setup",
+      "sizes": [
+        "q100_l9"
+      ],
+      "baseline": "horner",
+      "variants": [
+        "horner"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_projection_setup",
+      "sizes": [
+        "q128_l9"
+      ],
+      "baseline": "horner",
+      "variants": [
+        "horner"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "horner"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l32_n16"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l32_n1024"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l64_n16"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_divrem64",
+      "sizes": [
+        "l64_n1024"
+      ],
+      "baseline": "public_divisor",
+      "variants": [
+        "generic",
+        "public_divisor",
+        "prepared_reciprocal",
+        "prepare_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_reciprocal"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l1_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l1_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_add",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l1_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l1_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_sub",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "word_carry",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "circuit_z"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l1_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l1_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "vendor_option"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_add",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "limb_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l1_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l1_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "vendor_option"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_uint_checked_sub",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option",
+        "limb_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_option"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l1_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l1_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_add",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l1_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l1_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_int_checked_sub",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "vendor_option",
+      "variants": [
+        "vendor_option",
+        "word_option",
+        "native_option"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "word_option"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a1_b1_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a1_b1_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a2_b2_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a2_b2_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a4_b4_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a4_b4_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a9_b9_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a9_b9_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a2_b9_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a2_b9_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a32_b32_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a32_b32_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a64_b64_n16"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_product",
+      "sizes": [
+        "a64_b64_n1024"
+      ],
+      "baseline": "crypto_bigint",
+      "variants": [
+        "crypto_bigint",
+        "schoolbook"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "crypto_bigint"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "fused_exact"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "fused_exact"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "fused_exact"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "fused_exact"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "wide_then_add"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "wide_then_add"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_exact_unsigned_mac",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "column_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "column_exact"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_exact_unsigned_mac",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "column_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "column_exact"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_exact_unsigned_mac",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "column_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "column_exact"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_exact_unsigned_mac",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "column_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "column_exact"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_exact_unsigned_mac",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "column_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "column_exact"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_exact_unsigned_mac",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "column_exact"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "column_exact"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_prime_dot",
+      "sizes": [
+        "q100_n16"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4",
+        "length_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_dot",
+      "sizes": [
+        "q100_n1024"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4",
+        "length_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_dot",
+      "sizes": [
+        "q100_n65536"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4",
+        "length_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_dot",
+      "sizes": [
+        "q128_n16"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4",
+        "length_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_dot",
+      "sizes": [
+        "q128_n1024"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4",
+        "length_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_dot",
+      "sizes": [
+        "q128_n65536"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4",
+        "length_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_linear",
+      "sizes": [
+        "q100_n16"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_linear",
+      "sizes": [
+        "q100_n1024"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "acc4"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_prime_linear",
+      "sizes": [
+        "q100_n65536"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "acc4"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_prime_linear",
+      "sizes": [
+        "q128_n16"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "one_acc"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_linear",
+      "sizes": [
+        "q128_n1024"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "acc4"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_prime_linear",
+      "sizes": [
+        "q128_n65536"
+      ],
+      "baseline": "one_acc",
+      "variants": [
+        "one_acc",
+        "acc4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "acc4"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_nonzero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_nonzero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_mixed_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_mixed_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_zero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_zero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_nonzero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_nonzero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_mixed_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_mixed_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_zero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_zero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_one_inverse"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q100_nonzero_n16"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q100_nonzero_n1024"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q100_mixed_n16"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q100_mixed_n1024"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q100_zero_n16"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q100_zero_n1024"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q128_nonzero_n16"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q128_nonzero_n1024"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q128_mixed_n16"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q128_mixed_n1024"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q128_zero_n16"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_batch_inverse_reuse",
+      "sizes": [
+        "q128_zero_n1024"
+      ],
+      "baseline": "compact_vartime",
+      "variants": [
+        "compact_vartime",
+        "compact_ct"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "compact_vartime"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_prime_public_pow",
+      "sizes": [
+        "e17_n16"
+      ],
+      "baseline": "bounded_window",
+      "variants": [
+        "bounded_window",
+        "public_binary"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_binary"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_prime_public_pow",
+      "sizes": [
+        "e17_n1024"
+      ],
+      "baseline": "bounded_window",
+      "variants": [
+        "bounded_window",
+        "public_binary"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_binary"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_prime_public_pow",
+      "sizes": [
+        "e127_n16"
+      ],
+      "baseline": "bounded_window",
+      "variants": [
+        "bounded_window",
+        "public_binary"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_binary"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_prime_public_pow",
+      "sizes": [
+        "e127_n1024"
+      ],
+      "baseline": "bounded_window",
+      "variants": [
+        "bounded_window",
+        "public_binary"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_binary"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "zero_n16"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "zero_n1024"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "zero_n65536"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "half_n16"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "half_n1024"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "half_n65536"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "full_n16"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "actual_fixed_gf"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "full_n1024"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "actual_fixed_gf"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_fixed",
+      "sizes": [
+        "full_n65536"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "prepared_formula",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "actual_fixed_gf"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "zero_n16"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "zero_n1024"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "zero_n65536"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "half_n16"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "half_n1024"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "half_n65536"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_scalar_dispatch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "full_n16"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "actual_fixed_gf"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "full_n1024"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "actual_fixed_gf"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_butterfly",
+      "sizes": [
+        "full_n65536"
+      ],
+      "baseline": "actual_fixed_gf",
+      "variants": [
+        "actual_fixed_gf",
+        "public_scalar_dispatch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "actual_fixed_gf"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_round",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "wide1",
+        "wide2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "wide1"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_round",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "wide1",
+        "wide2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "wide1"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_round",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "wide1",
+        "wide2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "wide1"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf8_mul",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "flock_scalar",
+      "variants": [
+        "flock_scalar",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf8_mul",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "flock_scalar",
+      "variants": [
+        "flock_scalar",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf8_mul",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "flock_scalar",
+      "variants": [
+        "flock_scalar",
+        "native_batch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "native_batch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_phi8",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "table_public_input",
+      "variants": [
+        "table_public_input",
+        "fixed_basis"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "table_public_input"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_phi8",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "table_public_input",
+      "variants": [
+        "table_public_input",
+        "fixed_basis"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "table_public_input"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_phi8",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "table_public_input",
+      "variants": [
+        "table_public_input",
+        "fixed_basis"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "table_public_input"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_b127_mul",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "karatsuba",
+        "pfold"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_b127_mul",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "karatsuba",
+        "pfold"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_b127_mul",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "karatsuba",
+        "pfold"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log10"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "reuse_products"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log16"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "reuse_products"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log18"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "reuse_products"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_ood_reuse",
+      "sizes": [
+        "log10"
+      ],
+      "baseline": "allocate",
+      "variants": [
+        "allocate",
+        "scratch",
+        "indexed_scratch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "scratch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_ood_reuse",
+      "sizes": [
+        "log16"
+      ],
+      "baseline": "allocate",
+      "variants": [
+        "allocate",
+        "scratch",
+        "indexed_scratch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "allocate"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ood_reuse",
+      "sizes": [
+        "log18"
+      ],
+      "baseline": "allocate",
+      "variants": [
+        "allocate",
+        "scratch",
+        "indexed_scratch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "allocate"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log8_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log12_lanes8"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log15_lanes8"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log15_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log16_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log18_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log8_lanes1"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_pack",
+      "sizes": [
+        "logs9_9"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write",
+        "tiled_write"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_write"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_pack",
+      "sizes": [
+        "logs16_14"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write",
+        "tiled_write"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_write"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_pack",
+      "sizes": [
+        "logs18_18"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write",
+        "tiled_write"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_write"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_packed_ood",
+      "sizes": [
+        "logs9_9"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write_ood",
+        "tiled_indexed_ood"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_indexed_ood"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_packed_ood",
+      "sizes": [
+        "logs16_14"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write_ood",
+        "tiled_indexed_ood"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_indexed_ood"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_packed_ood",
+      "sizes": [
+        "logs18_18"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write_ood",
+        "tiled_indexed_ood"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_indexed_ood"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_gf_two_pair",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "separate_wide"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "separate_wide"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_two_pair",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "separate_wide"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "separate_wide"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fold_round",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "fold_then_wide"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "fold_then_wide"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_fold_round",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "fold_then_wide"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "fold_then_wide"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf_grid",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "chunked"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_fused"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf_grid",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "chunked"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_fused"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_gf8_inverse",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "flock_scalar",
+      "variants": [
+        "flock_scalar",
+        "vector_chain"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "vector_chain"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf8_inverse",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "flock_scalar",
+      "variants": [
+        "flock_scalar",
+        "vector_chain"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "vector_chain"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_gf8_inverse",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "flock_scalar",
+      "variants": [
+        "flock_scalar",
+        "vector_chain"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "vector_chain"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a1_b1_dense_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a1_b1_dense_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a1_b1_sparse_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a1_b1_sparse_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a9_b9_dense_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a9_b9_dense_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a9_b9_sparse_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a9_b9_sparse_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_adaptive"
+        ]
+      },
+      "selection_reason": "explicit public-input contract; fixed_schedule remains the separate private-input kernel"
+    }
+  ],
+  "revision": "regression-repair-1",
+  "threads": 1,
+  "allocation_audit_passes": 64,
+  "selection_note": "Frozen before confirmation. Baseline retentions are explicit, not candidate speedups. No timing/privacy contract downgrade."
+}

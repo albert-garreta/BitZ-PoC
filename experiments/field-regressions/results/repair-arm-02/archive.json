@@ -1,0 +1,8 @@
+{
+  "archive": "source-and-binary.tar.gz",
+  "sha256": "1cda9b661c64b8abd336d28f6304d20dbea1936edc7e0dc3380472b56c63fe83",
+  "bytes": 3221961,
+  "binary_sha256": "9d118faf1c2cb03e28e8cc23cadd3825780642e96eb98b6151ffc3fdf6d74815",
+  "executable": "snapshot/field-regressions",
+  "description": "Frozen source snapshot and exact executable used by both final thread-count campaigns; build caches excluded."
+}

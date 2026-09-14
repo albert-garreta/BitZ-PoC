@@ -1,5 +1,20 @@
 # GF128 and complete NTT regression gate
 
+The current optimization phase is isolated ARM/Apple Silicon and portable
+candidate benchmarking, with no production integration or x86 kernel work.
+See [baseline comparisons and source locations](BASELINES.md) for the concrete
+implementations, benchmark call sites, matching contracts and coverage gaps.
+
+The latest [regression repair results](REPAIR_RESULTS.md) pass the frozen gates
+at one and ten threads. See [repair notes and replay commands](REPAIR_NOTES.md)
+for the implementation changes, explicit baseline retentions, and frozen archive.
+
+The new [optimization candidates](OPTIMIZATION.md) run with
+`run.py --suite optimization`. That suite extracts the private production
+baselines locally and benchmarks 34 operation families. Its scope and
+selections are independent of the historical GF/NTT campaign below. Read the
+[confirmed results and regression decisions](OPTIMIZATION_RESULTS.md).
+
 The arithmetic-only F2Z/circuit/Flock campaign is documented in [ARITHMETIC.md](ARITHMETIC.md); run it with `run.py --suite arithmetic`.
 
 The focused two-limb MAC and bounded-product optimization is documented in
@@ -85,9 +100,11 @@ preserved. Dot and unrolled-product tests cover empty, odd, and incomplete tails
 Every timed arithmetic candidate checks its output, and every NTT output is
 compared with Flock's scalar transform reference.
 
-Allocation audits execute warmed kernels three times outside timing and record
+Allocation audits execute warmed kernels 64 times outside timing and record
 the maximum allocation calls and requested bytes per invocation. They include
-worker-thread allocations. Pools, inputs, outputs, and prepared constants are
+worker-thread allocations. Historical runs used three passes; the repair notes
+explain the correction for periodic Rayon queue allocations.
+Pools, inputs, outputs, and prepared constants are
 created before the timed region. No candidate may add hot-path allocations or
 allocated bytes relative to its paired baseline. These checks measure observed
 allocation behavior for these workloads, not every possible execution.

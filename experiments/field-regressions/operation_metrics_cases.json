@@ -1,0 +1,455 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64",
+    "x86_64"
+  ],
+  "required_features": {
+    "aarch64": [],
+    "x86_64": []
+  },
+  "families": [
+    {
+      "name": "metrics_gf_mul",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z",
+        "flock",
+        "shared"
+      ],
+      "arm_variants": [
+        "scalar_lanes"
+      ],
+      "selected": {
+        "aarch64": "scalar_lanes",
+        "x86_64": "shared"
+      }
+    },
+    {
+      "name": "metrics_gf_add",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z",
+        "flock",
+        "shared"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "shared",
+        "x86_64": "shared"
+      }
+    },
+    {
+      "name": "metrics_gf_square",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z",
+        "flock",
+        "shared"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "shared",
+        "x86_64": "shared"
+      }
+    },
+    {
+      "name": "metrics_gf_inverse",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z",
+        "flock",
+        "shared"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "shared",
+        "x86_64": "shared"
+      }
+    },
+    {
+      "name": "gf8_add",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "gf8_mul",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "gf8_inverse",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "b127_add",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "b127_mul",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "b127_square",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "b127_inverse",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z",
+      "variants": [
+        "f2z"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "gf128_round",
+      "sizes": [
+        "16",
+        "1024"
+      ],
+      "baseline": "f2z_single_pair",
+      "variants": [
+        "f2z_single_pair"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_integer_add",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_integer_sub",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_uint_checked_add",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_uint_checked_sub",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_uint_checked_mul",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_int_checked_add",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_int_checked_sub",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_int_checked_mul",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_uint_compare",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_uint_wide_mul",
+      "sizes": [
+        "l2_n16",
+        "l2_n1024",
+        "l4_n16",
+        "l4_n1024",
+        "l9_n16",
+        "l9_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "metrics_uint_divrem",
+      "sizes": [
+        "l2_d64_n16",
+        "l2_dfull_n16",
+        "l2_d64_n1024",
+        "l2_dfull_n1024",
+        "l4_d64_n16",
+        "l4_dfull_n16",
+        "l4_d64_n1024",
+        "l4_dfull_n1024",
+        "l9_d64_n16",
+        "l9_dfull_n16",
+        "l9_d64_n1024",
+        "l9_dfull_n1024"
+      ],
+      "baseline": "existing_prevalidated_divisor",
+      "variants": [
+        "existing_prevalidated_divisor"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "prime_context_setup",
+      "sizes": [
+        "q127"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "prime_inverse_each",
+      "sizes": [
+        "q127_n16",
+        "q127_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "prime_canonical_encode_into",
+      "sizes": [
+        "q127_n16",
+        "q127_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "prime_canonical_decode_into",
+      "sizes": [
+        "q127_n16",
+        "q127_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "prime_pow_each",
+      "sizes": [
+        "q127_e17_sparse_n16",
+        "q127_e127_alternating_n16",
+        "q127_e17_sparse_n1024",
+        "q127_e127_alternating_n1024"
+      ],
+      "baseline": "existing",
+      "variants": [
+        "existing"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    }
+  ]
+}

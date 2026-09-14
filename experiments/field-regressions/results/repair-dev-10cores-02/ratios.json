@@ -1,0 +1,464 @@
+[
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "indexed_products",
+    "ratio": 0.7482479961719519,
+    "run_ratios": [
+      0.7336769020488555,
+      0.7628190902950485
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "reuse_products",
+    "ratio": 0.7161566704768363,
+    "run_ratios": [
+      0.6995844590119058,
+      0.7327288819417667
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      13,
+      32832
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "collect_products",
+    "ratio": 0.7653396482319923,
+    "run_ratios": [
+      0.7311031974398883,
+      0.7995760990240962
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "indexed_products",
+    "ratio": 1.2073556213523648,
+    "run_ratios": [
+      1.2307918815188752,
+      1.1839193611858547
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      19,
+      131808
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "collect_products",
+    "ratio": 1.1991396507409933,
+    "run_ratios": [
+      1.1943706859423302,
+      1.2039086155396566
+    ],
+    "allocations": [
+      3,
+      66048
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "reuse_products",
+    "ratio": 1.1517515156608766,
+    "run_ratios": [
+      1.1481191692493828,
+      1.1553838620723704
+    ],
+    "allocations": [
+      2,
+      65792
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "collect_products",
+    "ratio": 1.1084663827249321,
+    "run_ratios": [
+      1.0687208365068979,
+      1.1482119289429666
+    ],
+    "allocations": [
+      3,
+      67584
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "indexed_products",
+    "ratio": 1.038815214895252,
+    "run_ratios": [
+      1.0027997916625317,
+      1.0748306381279724
+    ],
+    "allocations": [
+      2,
+      66560
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      21,
+      134112
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "reuse_products",
+    "ratio": 0.9909118791493035,
+    "run_ratios": [
+      0.9516185180490867,
+      1.0302052402495203
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "depth_first",
+    "ratio": 1.3780719542074644,
+    "run_ratios": [
+      1.486989598133233,
+      1.2691543102816956
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "tiled_half",
+    "ratio": 1.228966435528839,
+    "run_ratios": [
+      1.2642923405663797,
+      1.1936405304912983
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.8595001188169002,
+    "run_ratios": [
+      0.863909638164536,
+      0.8550905994692646
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.6408196909292565,
+    "run_ratios": [
+      0.6339098050090515,
+      0.6477295768494614
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "depth_first",
+    "ratio": 0.49877555017985853,
+    "run_ratios": [
+      0.4944381416285029,
+      0.5031129587312141
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "tiled_half",
+    "ratio": 0.7935212722830369,
+    "run_ratios": [
+      0.7705135202797009,
+      0.8165290242863729
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "tiled_half",
+    "ratio": 1.1419615828029812,
+    "run_ratios": [
+      1.086106293217504,
+      1.1978168723884581
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "depth_first",
+    "ratio": 0.7093669290420641,
+    "run_ratios": [
+      0.7257253551012257,
+      0.6930085029829024
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9156997952509527,
+    "run_ratios": [
+      0.8876974020236467,
+      0.9437021884782586
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "tiled_half",
+    "ratio": 1.0216762851291998,
+    "run_ratios": [
+      0.9872088805579171,
+      1.0561436897004826
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9888017127196053,
+    "run_ratios": [
+      0.9330722586509121,
+      1.0445311667882984
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "tiled_half",
+    "ratio": 1.023668946131976,
+    "run_ratios": [
+      1.0133234651258414,
+      1.0340144271381104
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9922174966652908,
+    "run_ratios": [
+      0.9986538920397838,
+      0.9857811012907978
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.9941804731712134,
+    "run_ratios": [
+      0.9875615086336335,
+      1.0007994377087932
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  }
+]

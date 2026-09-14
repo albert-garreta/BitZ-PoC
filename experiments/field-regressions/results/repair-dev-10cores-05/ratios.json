@@ -1,0 +1,646 @@
+[
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "indexed_products",
+    "ratio": 0.7508462654809478,
+    "run_ratios": [
+      0.7490475913328598,
+      0.7526449396290358
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "collect_products",
+    "ratio": 0.7567022600190241,
+    "run_ratios": [
+      0.7426832809418945,
+      0.7707212390961538
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      13,
+      32832
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "vector_products",
+    "ratio": 0.7514822155080478,
+    "run_ratios": [
+      0.7358745553475642,
+      0.7670898756685314
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "reuse_products",
+    "ratio": 0.7165605428049742,
+    "run_ratios": [
+      0.6973333189939579,
+      0.7357877666159904
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "prepared_products",
+    "ratio": 0.7506697609283484,
+    "run_ratios": [
+      0.7424836894875719,
+      0.7588558323691247
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "prepared_products",
+    "ratio": 1.1395330961416006,
+    "run_ratios": [
+      1.146752792878575,
+      1.1323133994046262
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "indexed_products",
+    "ratio": 1.1439973363298193,
+    "run_ratios": [
+      1.1263921922816411,
+      1.1616024803779976
+    ],
+    "allocations": [
+      3,
+      67312
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "reuse_products",
+    "ratio": 1.1444913956871083,
+    "run_ratios": [
+      1.139167471597041,
+      1.1498153197771757
+    ],
+    "allocations": [
+      3,
+      67312
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "collect_products",
+    "ratio": 1.1116818096577235,
+    "run_ratios": [
+      1.121493239242238,
+      1.1018703800732088
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      20,
+      133328
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "vector_products",
+    "ratio": 1.1437018250036748,
+    "run_ratios": [
+      1.1346439907684307,
+      1.1527596592389189
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      22,
+      135632
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "vector_products",
+    "ratio": 1.099559898734902,
+    "run_ratios": [
+      1.1100586784055284,
+      1.0890611190642756
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "collect_products",
+    "ratio": 1.1017282993283553,
+    "run_ratios": [
+      1.0934718750868984,
+      1.1099847235698121
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "indexed_products",
+    "ratio": 1.1193783112072526,
+    "run_ratios": [
+      1.1194740847047497,
+      1.1192825377097555
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "reuse_products",
+    "ratio": 1.0774302289327098,
+    "run_ratios": [
+      1.0838539595686254,
+      1.0710064982967942
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "prepared_products",
+    "ratio": 1.1180065477796406,
+    "run_ratios": [
+      1.1467238250879308,
+      1.0892892704713504
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "depth_first",
+    "ratio": 1.4170484947050928,
+    "run_ratios": [
+      1.4294801468253386,
+      1.4046168425848469
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "half_depth",
+    "ratio": 1.2015961977177323,
+    "run_ratios": [
+      1.2311935082865457,
+      1.1719988871489186
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes1",
+    "variant": "tiled_half",
+    "ratio": 1.1954165994736172,
+    "run_ratios": [
+      1.1898455722549248,
+      1.2009876266923099
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.667248840930674,
+    "run_ratios": [
+      0.6650613287973788,
+      0.6694363530639694
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.8658430650177955,
+    "run_ratios": [
+      0.8585588863445844,
+      0.8731272436910065
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log8_lanes32",
+    "variant": "half_depth",
+    "ratio": 0.6629043445372937,
+    "run_ratios": [
+      0.6637812616433841,
+      0.6620274274312035
+    ],
+    "allocations": [
+      0,
+      0
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "depth_first",
+    "ratio": 0.5119879615776032,
+    "run_ratios": [
+      0.49046735858131824,
+      0.5335085645738882
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "tiled_half",
+    "ratio": 0.6310316096939511,
+    "run_ratios": [
+      0.5984836332394026,
+      0.6635795861484997
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log12_lanes8",
+    "variant": "half_depth",
+    "ratio": 0.5040917514427105,
+    "run_ratios": [
+      0.4785969662897288,
+      0.5295865365956921
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "tiled_half",
+    "ratio": 0.8791557540037713,
+    "run_ratios": [
+      0.9629290504479509,
+      0.7953824575595917
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "half_depth",
+    "ratio": 0.6740190883111424,
+    "run_ratios": [
+      0.6910551367133912,
+      0.6569830399088936
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes8",
+    "variant": "depth_first",
+    "ratio": 0.6841317285734049,
+    "run_ratios": [
+      0.6830225277260489,
+      0.6852409294207609
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.9647040921549139,
+    "run_ratios": [
+      0.9838188857625852,
+      0.9455892985472425
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "half_depth",
+    "ratio": 0.8619478106265128,
+    "run_ratios": [
+      0.8616562852888796,
+      0.8622393359641461
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log15_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9390852858290686,
+    "run_ratios": [
+      0.9717964062900074,
+      0.9063741653681296
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "depth_first",
+    "ratio": 0.9133323659884401,
+    "run_ratios": [
+      0.898740980440085,
+      0.9279237515367953
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.9763523979556724,
+    "run_ratios": [
+      0.9437123481623839,
+      1.008992447748961
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log16_lanes32",
+    "variant": "half_depth",
+    "ratio": 0.8621197846201117,
+    "run_ratios": [
+      0.8325627821668671,
+      0.8916767870733564
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "depth_first",
+    "ratio": 1.0432471052651573,
+    "run_ratios": [
+      1.098794419051997,
+      0.9876997914783178
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "half_depth",
+    "ratio": 0.925709452970364,
+    "run_ratios": [
+      0.9178903968887533,
+      0.9335285090519747
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "tiled_half",
+    "ratio": 0.9898939938113016,
+    "run_ratios": [
+      0.9735856559873214,
+      1.0062023316352817
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  },
+  {
+    "family": "opt_ntt",
+    "size": "log18_lanes32",
+    "variant": "production",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      1,
+      1520
+    ]
+  }
+]

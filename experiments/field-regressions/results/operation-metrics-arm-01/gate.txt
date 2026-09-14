@@ -1,0 +1,8 @@
+BLOCKED inconclusive: aarch64/metrics_gf_add/16/shared: median upper=1.0162, P95 upper=1.0319, worst process=1.0175, allocations=OK
+BLOCKED inconclusive: aarch64/metrics_gf_add/1024/shared: median upper=1.0033, P95 upper=1.0105, worst process=1.0029, allocations=OK
+BLOCKED inconclusive: aarch64/metrics_gf_square/16/shared: median upper=1.0070, P95 upper=1.0184, worst process=1.0075, allocations=OK
+BLOCKED inconclusive: aarch64/metrics_gf_square/1024/shared: median upper=1.0105, P95 upper=1.0944, worst process=1.0101, allocations=OK
+BLOCKED inconclusive: aarch64/metrics_gf_inverse/16/shared: median upper=1.0042, P95 upper=1.0153, worst process=1.0016, allocations=OK
+BLOCKED inconclusive: aarch64/metrics_gf_inverse/1024/shared: median upper=1.0045, P95 upper=1.0161, worst process=1.0021, allocations=OK
+BLOCKED: frozen selections, 1.0% margin, all required cases.
+This applies only to the frozen manifest, measured host workloads and build; production behavior is unchanged.

@@ -1,0 +1,1804 @@
+{
+  "schema": 1,
+  "description": "Source-linked baseline catalogue; documentation, not a runnable case manifest.",
+  "scope": "Isolated benchmark candidates; ARM native and portable only; no x86 kernels or production integration.",
+  "source_head": "6714cf9e5b01194810754f2b40710f2df79d33cf",
+  "line_number_basis": "Current working tree; each location records an anchor and file SHA256. Regenerate links if sources move.",
+  "entries": [
+    {
+      "id": "gf128_add",
+      "operation": "GF128 add",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "F2Z add",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 311,
+          "anchor": "impl Add<Self> for BinaryFieldGF128",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "Flock add",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/gf2_128.rs",
+          "line": 81,
+          "anchor": "impl Add for F128",
+          "sha256": "88e967b0d7547fd0b5dfe321de434374797ef422576574db5d2469a9c613e4d0"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "F2Z adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 22,
+          "anchor": "impl Native for F2z",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        },
+        {
+          "label": "Flock adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 47,
+          "anchor": "impl Native for Flock",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        }
+      ],
+      "contract": "Same GF(2^128), native 16-byte layouts.",
+      "secondary_comparison": "Shared implementation. Compare against both consumers independently.",
+      "coverage_note": "16 and 1,024 elements measured. Other sizes need direct F2Z/Flock comparisons.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_gf_add"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf128_mul",
+      "operation": "GF128 mul",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "F2Z mul",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 398,
+          "anchor": "impl Mul<Self> for BinaryFieldGF128",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "Flock mul",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/gf2_128.rs",
+          "line": 100,
+          "anchor": "impl Mul for F128",
+          "sha256": "88e967b0d7547fd0b5dfe321de434374797ef422576574db5d2469a9c613e4d0"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "F2Z adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 22,
+          "anchor": "impl Native for F2z",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        },
+        {
+          "label": "Flock adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 47,
+          "anchor": "impl Native for Flock",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        }
+      ],
+      "contract": "Same GF(2^128), native 16-byte layouts.",
+      "secondary_comparison": "Shared implementation; ARM scalar_lanes. Compare against both consumers independently.",
+      "coverage_note": "16 and 1,024 elements measured. Other sizes need direct F2Z/Flock comparisons.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_gf_mul"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf128_square",
+      "operation": "GF128 square",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "F2Z square",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 160,
+          "anchor": "pub fn square(&self)",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "Flock square",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/gf2_128.rs",
+          "line": 55,
+          "anchor": "pub fn square(self)",
+          "sha256": "88e967b0d7547fd0b5dfe321de434374797ef422576574db5d2469a9c613e4d0"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "F2Z adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 22,
+          "anchor": "impl Native for F2z",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        },
+        {
+          "label": "Flock adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 47,
+          "anchor": "impl Native for Flock",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        }
+      ],
+      "contract": "Same GF(2^128), native 16-byte layouts.",
+      "secondary_comparison": "Shared implementation. Compare against both consumers independently.",
+      "coverage_note": "16 and 1,024 elements measured. Other sizes need direct F2Z/Flock comparisons.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_gf_square"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf128_inverse",
+      "operation": "GF128 inverse",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "F2Z inverse",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 219,
+          "anchor": "pub fn inverse(&self)",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "Flock inverse",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/gf2_128.rs",
+          "line": 69,
+          "anchor": "pub fn inv(self)",
+          "sha256": "88e967b0d7547fd0b5dfe321de434374797ef422576574db5d2469a9c613e4d0"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "F2Z adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 22,
+          "anchor": "impl Native for F2z",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        },
+        {
+          "label": "Flock adapter",
+          "path": "experiments/field-regressions/src/campaign/binary_metrics.rs",
+          "line": 47,
+          "anchor": "impl Native for Flock",
+          "sha256": "52233186b26ea53ec7d8644e419d3d9cb0e85169a64a16189934bad06a4c0fba"
+        }
+      ],
+      "contract": "Same GF(2^128), native 16-byte layouts. Inverse uses nonzero inputs.",
+      "secondary_comparison": "Shared implementation. Compare against both consumers independently.",
+      "coverage_note": "16 and 1,024 elements measured. Other sizes need direct F2Z/Flock comparisons.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_gf_inverse"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf128_dot",
+      "operation": "GF128 delayed dot / MAC",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "F2Z wide accumulation",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 763,
+          "anchor": "impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Actual F2Z dot loop",
+          "path": "experiments/field-regressions/src/campaign.rs",
+          "line": 20,
+          "anchor": "fn f2z_dot(",
+          "sha256": "9c930e4fe12ece16246808c3435b8db2a084bfa79d4aeec621ff6dfc5d6a2d79"
+        }
+      ],
+      "contract": "XOR sum of unreduced products, one final field reduction.",
+      "secondary_comparison": "Retain shared_wide1 incumbent and eager Flock as a secondary comparison.",
+      "coverage_note": "Existing F2Z delayed arithmetic is the primary baseline; eager multiplication alone is weaker.",
+      "evidence": [
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "gf_dot"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf128_fixed",
+      "operation": "GF128 fixed multiplier and butterfly",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "FixedGfMul preparation",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 1198,
+          "anchor": "pub(crate) fn new(scalar: BinaryFieldGF128)",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "FixedGfMul execution",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 1220,
+          "anchor": "pub(crate) fn mul(&self, a: BinaryFieldGF128)",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured prepared formula adaptation",
+          "path": "experiments/field-regressions/src/arithmetic.rs",
+          "line": 239,
+          "anchor": "impl Prepared {",
+          "sha256": "7a388b818c9f23f843f2f4da1953906569a7c6e7d7c924d72c4c78ec9c1ef1c5"
+        },
+        {
+          "label": "Fixed-product call site",
+          "path": "experiments/field-regressions/src/extra_cases.rs",
+          "line": 45,
+          "anchor": "fn fixed<const K: usize>",
+          "sha256": "9feb1e590e28c985d72110c0cd8aca31d884f2d7b1037eb7dc1dab41bd1cfa1a"
+        },
+        {
+          "label": "Butterfly call site",
+          "path": "experiments/field-regressions/src/extra_cases.rs",
+          "line": 51,
+          "anchor": "fn butterfly<const K: usize>",
+          "sha256": "9feb1e590e28c985d72110c0cd8aca31d884f2d7b1037eb7dc1dab41bd1cfa1a"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/binary.rs",
+          "line": 47,
+          "anchor": "fn fixed_cases(",
+          "sha256": "7eaa6ceb9f2bbe1ba516211843aaa8168a7a0f12737126649b4a702d88b45371"
+        }
+      ],
+      "contract": "Same scalar/product or pair butterfly; scalar is explicitly public and fixed for the pass.",
+      "secondary_comparison": "Benchmark actual private FixedGfMul through a frozen extraction; retain existing prepared formula as a control.",
+      "coverage_note": "Actual private FixedGfMul and prepared-formula controls are now measured for zero/half/full scalars, at 16/1024/65536. Dedicated actual-constructor timing is still separate work.",
+      "evidence": [
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "fixed",
+            "butterfly",
+            "fixed_prepare"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_gf_fixed",
+            "opt_gf_butterfly"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf_fused_rounds",
+      "operation": "GF128/B127 fused sumcheck rounds and folds",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "GF128 hook implementations",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 763,
+          "anchor": "impl crate::utils::wide_mul::WideMulAcc for BinaryFieldGF128",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "B127 hook implementations",
+          "path": "src/poly/univariate/binary_b127.rs",
+          "line": 872,
+          "anchor": "impl crate::utils::wide_mul::WideMulAcc for BinaryFieldB127",
+          "sha256": "9d6ba697bbdb0d789ab6e4b640cc0ee1989d6fae0adde726404b0734023f9a0c"
+        },
+        {
+          "label": "Fused fold contract",
+          "path": "src/utils/wide_mul.rs",
+          "line": 123,
+          "anchor": "fn eqf_fused_fold_round(",
+          "sha256": "6af97c611681e8307e2df22bc0ef0864541345a49be67ad3f1cc9d625c65ade4"
+        },
+        {
+          "label": "Double-fold contract",
+          "path": "src/utils/wide_mul.rs",
+          "line": 146,
+          "anchor": "fn eqf_grid_pass(",
+          "sha256": "6af97c611681e8307e2df22bc0ef0864541345a49be67ad3f1cc9d625c65ade4"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured single-pair round",
+          "path": "experiments/field-regressions/src/campaign/binary_baselines.rs",
+          "line": 334,
+          "anchor": "pub(super) fn run(",
+          "sha256": "05bf6ec92f7d7d4474271ce6da572394a33320207b1b0ada1b24d3cba2b42e1b"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/binary.rs",
+          "line": 212,
+          "anchor": "fn hook_cases(",
+          "sha256": "7eaa6ceb9f2bbe1ba516211843aaa8168a7a0f12737126649b4a702d88b45371"
+        }
+      ],
+      "contract": "Identical weighted coefficients and output buffers; a weighted pair is not one multiplication.",
+      "secondary_comparison": "Generic unfused formula is a diagnostic; actual native fused hooks are the regression baseline.",
+      "coverage_note": "GF128 single/two-pair, fused fold-round and pending-two grid hooks measured with matched resets. B127 fused hooks and standalone Flock slice fold remain separate work.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "gf128_round"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_gf_round",
+            "opt_gf_two_pair",
+            "opt_gf_fold_round",
+            "opt_gf_grid"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf128_slice_fold",
+      "operation": "Flock GF128 out-of-place pair folds",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "Flock architecture-selected fold",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/f128_slice.rs",
+          "line": 33,
+          "anchor": "pub(crate) fn fold_pairs(",
+          "sha256": "96ec196570bb0ffe4c1553201e0dd3abdb2265bb8bf46afefb1e25f38d9016c6"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Same source offset, destination length and output layout.",
+      "secondary_comparison": "F2Z in-place fold is a separate lifecycle, not a direct timing denominator.",
+      "coverage_note": "Add an isolated wrapper; portable versus native on ARM only.",
+      "evidence": []
+    },
+    {
+      "id": "gf8",
+      "operation": "GF8 scalar operations",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Flock multiplication",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/gf2_8.rs",
+          "line": 70,
+          "anchor": "impl Mul for F8",
+          "sha256": "dc460bdfa08ed831178319d57c62907429104439debc8de75273fdf4bcc5524f"
+        },
+        {
+          "label": "Flock inversion",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/gf2_8.rs",
+          "line": 38,
+          "anchor": "pub fn inv(self)",
+          "sha256": "dc460bdfa08ed831178319d57c62907429104439debc8de75273fdf4bcc5524f"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "GF8 cases",
+          "path": "experiments/field-regressions/src/campaign/binary_baselines.rs",
+          "line": 334,
+          "anchor": "pub(super) fn run(",
+          "sha256": "05bf6ec92f7d7d4474271ce6da572394a33320207b1b0ada1b24d3cba2b42e1b"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/binary.rs",
+          "line": 471,
+          "anchor": "fn small_fields(",
+          "sha256": "7eaa6ceb9f2bbe1ba516211843aaa8168a7a0f12737126649b4a702d88b45371"
+        }
+      ],
+      "contract": "AES polynomial basis; nonzero inverse domain for current measurements.",
+      "secondary_comparison": "Existing ARM vector GF8 multiplication, exposed separately through a frozen wrapper, is a stronger batch control.",
+      "coverage_note": "Scalar and existing ARM vector batch multiplication, and a new vector inverse chain are measured. Exhaustive byte correctness includes zero; inverse is totalized to zero as in Flock.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "gf8_add",
+            "gf8_mul",
+            "gf8_inverse"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_gf8_mul",
+            "opt_gf8_inverse"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b127",
+      "operation": "B127 scalar operations",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "F2Z multiplication",
+          "path": "src/poly/univariate/binary_b127.rs",
+          "line": 495,
+          "anchor": "impl Mul<Self> for BinaryFieldB127",
+          "sha256": "9d6ba697bbdb0d789ab6e4b640cc0ee1989d6fae0adde726404b0734023f9a0c"
+        },
+        {
+          "label": "F2Z square",
+          "path": "src/poly/univariate/binary_b127.rs",
+          "line": 220,
+          "anchor": "pub fn square(&self)",
+          "sha256": "9d6ba697bbdb0d789ab6e4b640cc0ee1989d6fae0adde726404b0734023f9a0c"
+        },
+        {
+          "label": "F2Z inverse",
+          "path": "src/poly/univariate/binary_b127.rs",
+          "line": 283,
+          "anchor": "pub fn inverse(&self)",
+          "sha256": "9d6ba697bbdb0d789ab6e4b640cc0ee1989d6fae0adde726404b0734023f9a0c"
+        },
+        {
+          "label": "F2Z power",
+          "path": "src/poly/univariate/binary_b127.rs",
+          "line": 335,
+          "anchor": "pub fn pow_u32(&self",
+          "sha256": "9d6ba697bbdb0d789ab6e4b640cc0ee1989d6fae0adde726404b0734023f9a0c"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "B127 cases",
+          "path": "experiments/field-regressions/src/campaign/binary_baselines.rs",
+          "line": 334,
+          "anchor": "pub(super) fn run(",
+          "sha256": "05bf6ec92f7d7d4474271ce6da572394a33320207b1b0ada1b24d3cba2b42e1b"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/binary.rs",
+          "line": 471,
+          "anchor": "fn small_fields(",
+          "sha256": "7eaa6ceb9f2bbe1ba516211843aaa8168a7a0f12737126649b4a702d88b45371"
+        }
+      ],
+      "contract": "GF(2^127) modulo X^127+X+1; high padding bit canonical.",
+      "secondary_comparison": "Retain existing mul_karatsuba and mul_pfold as controls; all have the same field contract.",
+      "coverage_note": "Existing multiplication, Karatsuba and polynomial-fold controls compared. The native implementation remains faster; existing square/inverse metrics remain valid.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "b127_add",
+            "b127_mul",
+            "b127_square",
+            "b127_inverse"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_b127_mul"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bit_f2",
+      "operation": "Bit and F2 arithmetic",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "F2 XOR addition",
+          "path": "vendor/crypto-primitives/src/field/f2.rs",
+          "line": 230,
+          "anchor": "impl AddAssign<&Self> for F2",
+          "sha256": "defed0a1d6845a1039ffb72cddb95b8e10ea1c52189371d3d82c0a53d1d3a704"
+        },
+        {
+          "label": "F2 AND multiplication",
+          "path": "vendor/crypto-primitives/src/field/f2.rs",
+          "line": 247,
+          "anchor": "impl MulAssign<&Self> for F2",
+          "sha256": "defed0a1d6845a1039ffb72cddb95b8e10ea1c52189371d3d82c0a53d1d3a704"
+        },
+        {
+          "label": "Boolean arithmetic",
+          "path": "vendor/crypto-primitives/src/semiring/boolean.rs",
+          "line": 202,
+          "anchor": "impl Add for Boolean",
+          "sha256": "41f5b2d1df7afa5dda99cb76d1401cb03676d91e5d294cbd7eaaf59c2edca458"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Benchmark Boolean and F2 contracts separately; integer bit lifting is not a field embedding into odd characteristic.",
+      "secondary_comparison": "Native bool/u64 packed operations as controls after matching lane and output contracts.",
+      "coverage_note": "Add measured loops and output checks; one scalar bit and a packed word are not equivalent work units.",
+      "evidence": []
+    },
+    {
+      "id": "f2_polynomial",
+      "operation": "Packed F2 polynomial multiply and dot",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Actual F2Z carryless product",
+          "path": "src/poly/univariate/binary_f2_wide.rs",
+          "line": 259,
+          "anchor": "pub fn f2_poly_mul<",
+          "sha256": "d496fe3ae146195552b94a64c4dc1601e5d5ab6b58b305e9abdc98b3e96fbb8c"
+        },
+        {
+          "label": "Actual F2Z polynomial dot",
+          "path": "src/poly/univariate/binary_f2_wide.rs",
+          "line": 360,
+          "anchor": "pub fn f2_inner_product<",
+          "sha256": "d496fe3ae146195552b94a64c4dc1601e5d5ab6b58b305e9abdc98b3e96fbb8c"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/binary.rs",
+          "line": 584,
+          "anchor": "fn polynomial<",
+          "sha256": "7eaa6ceb9f2bbe1ba516211843aaa8168a7a0f12737126649b4a702d88b45371"
+        }
+      ],
+      "contract": "Full carryless product with W_OUT >= W_A+W_B; no field reduction.",
+      "secondary_comparison": "Bit-serial oracle outside timing; current native and portable product schedules as timed controls.",
+      "coverage_note": "Dense/sparse fixed-schedule dot products compared with production zero skipping at widths 1x1, 3x7 and 9x9. Standalone product timing remains separate work.",
+      "evidence": [
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_f2_poly_dot"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "field_embedding",
+      "operation": "GF8 to GF128 embedding and explicit lifts",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Actual Flock embedding",
+          "path": "vendor/flock-mod/crates/flock-core/src/field/phi8.rs",
+          "line": 1047,
+          "anchor": "pub fn phi8(a: F8)",
+          "sha256": "5b90571b87ad76fa46a9e070d3c2cc72c448a28c1c43bfd9a24a16ea7957bea2"
+        },
+        {
+          "label": "Boolean integer lift",
+          "path": "vendor/crypto-primitives/src/semiring/boolean.rs",
+          "line": 64,
+          "anchor": "pub fn widen<T: One + Zero>",
+          "sha256": "41f5b2d1df7afa5dda99cb76d1401cb03676d91e5d294cbd7eaaf59c2edca458"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/binary.rs",
+          "line": 471,
+          "anchor": "fn small_fields(",
+          "sha256": "7eaa6ceb9f2bbe1ba516211843aaa8168a7a0f12737126649b4a702d88b45371"
+        }
+      ],
+      "contract": "Exact existing embedding basis; zero extension is not phi8.",
+      "secondary_comparison": "Fixed-address basis combination against current table embedding; classify private timing contract separately.",
+      "coverage_note": "GF8-to-GF128 fixed-address basis combination compared with existing table embedding at 16/1024/65536. Other lifts are not covered by this measurement.",
+      "evidence": [
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_phi8"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gf_power",
+      "operation": "Binary-field powers and fixed-base preparation",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "F2Z GF128 power",
+          "path": "src/poly/univariate/binary_gf128.rs",
+          "line": 238,
+          "anchor": "pub fn pow_u32(&self",
+          "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+        },
+        {
+          "label": "Shared full-width power",
+          "path": "crates/field/src/gf128/pow.rs",
+          "line": 34,
+          "anchor": "impl Pow<u128> for F128",
+          "sha256": "9ce0cf98b5feb0d3c46c5bc92c998b5f6e49ef0594f6c2abeb6881037dde5922"
+        },
+        {
+          "label": "Fixed-base setup",
+          "path": "crates/field/src/gf128/pow.rs",
+          "line": 143,
+          "anchor": "pub fn new(alpha: F128, win: u32)",
+          "sha256": "9ce0cf98b5feb0d3c46c5bc92c998b5f6e49ef0594f6c2abeb6881037dde5922"
+        },
+        {
+          "label": "Fixed-base execution",
+          "path": "crates/field/src/gf128/pow.rs",
+          "line": 164,
+          "anchor": "pub fn pow(&self, exp: u128)",
+          "sha256": "9ce0cf98b5feb0d3c46c5bc92c998b5f6e49ef0594f6c2abeb6881037dde5922"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Same exponent capacity/pattern, base reuse and output field.",
+      "secondary_comparison": "Individual power and prepared FixedBasePow are separate public-input baselines.",
+      "coverage_note": "Existing fixed-base code is variable-time; do not certify a private fixed-schedule candidate by comparison with that path alone.",
+      "evidence": []
+    },
+    {
+      "id": "integer_wrapping",
+      "operation": "Wrapping integer arithmetic and MAC",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "Circuit addition",
+          "path": "crates/circuit/src/witgen.rs",
+          "line": 135,
+          "anchor": "impl<const LIMBS: usize> Add for Z<LIMBS>",
+          "sha256": "a945c359af90984b96cb9617ed64c39e58c239484ca37a2c45c683accda19fc4"
+        },
+        {
+          "label": "Circuit subtraction",
+          "path": "crates/circuit/src/witgen.rs",
+          "line": 157,
+          "anchor": "impl<const LIMBS: usize> Sub for Z<LIMBS>",
+          "sha256": "a945c359af90984b96cb9617ed64c39e58c239484ca37a2c45c683accda19fc4"
+        },
+        {
+          "label": "Circuit multiplication",
+          "path": "crates/circuit/src/witgen.rs",
+          "line": 179,
+          "anchor": "impl<const LIMBS: usize> Mul for Z<LIMBS>",
+          "sha256": "a945c359af90984b96cb9617ed64c39e58c239484ca37a2c45c683accda19fc4"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Add/sub loops",
+          "path": "experiments/field-regressions/src/campaign/integer_metrics.rs",
+          "line": 28,
+          "anchor": "fn wrapping<const L: usize",
+          "sha256": "4efd9f0b9a6e80e4057579c93770c424b63647c5908632250f0cfa2e215594a0"
+        },
+        {
+          "label": "MAC loop",
+          "path": "experiments/field-regressions/src/campaign/integer.rs",
+          "line": 34,
+          "anchor": "pub(super) fn existing<const L: usize",
+          "sha256": "dd8c8881cf0b0c14ce38afa3a36c5db72505964121ec015ee2ac962d4fd90a08"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/integer.rs",
+          "line": 109,
+          "anchor": "fn mac_cases<",
+          "sha256": "f38732984260901d0a6be13a80a5397325a232ae0d1d172d6ece3d073131db42"
+        }
+      ],
+      "contract": "Arithmetic modulo 2^(64L); bounded fixtures may additionally have exact mathematical results.",
+      "secondary_comparison": "Keep the winning two_limb_mac/selected and nine-limb fused kernel in every relevant development comparison.",
+      "coverage_note": "Wrapping MAC widths 1/2/4/9, full-width and signed16 fixtures, old incumbents and new four-limb native schedule measured; add/sub comparisons included.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_integer_add",
+            "metrics_integer_sub"
+          ]
+        },
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "integer_mac"
+          ]
+        },
+        {
+          "suite": "integer-focus-arm-03",
+          "families": [
+            "two_limb_mac"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_integer_mac",
+            "opt_uint_add",
+            "opt_uint_sub"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_checked",
+      "operation": "Checked signed and unsigned integer arithmetic",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "Unsigned checked add",
+          "path": "vendor/crypto-primitives/src/semiring/crypto_bigint_uint.rs",
+          "line": 350,
+          "anchor": "impl<const LIMBS: usize> CheckedAdd for Uint<LIMBS>",
+          "sha256": "54050ebf6eb4dc9e64e131353793f5b09296c8ba63359328e3ea0d71e1950ed2"
+        },
+        {
+          "label": "Unsigned checked multiply",
+          "path": "vendor/crypto-primitives/src/semiring/crypto_bigint_uint.rs",
+          "line": 372,
+          "anchor": "impl<const LIMBS: usize> CheckedMul for Uint<LIMBS>",
+          "sha256": "54050ebf6eb4dc9e64e131353793f5b09296c8ba63359328e3ea0d71e1950ed2"
+        },
+        {
+          "label": "Signed checked add",
+          "path": "vendor/crypto-primitives/src/ring/crypto_bigint_int.rs",
+          "line": 366,
+          "anchor": "impl_checked_op!(CheckedAdd, checked_add);",
+          "sha256": "bfb92cbdcc848fc9e3c9c7e8c98da169c2e2ae24be19ef3f35b2caff1ba5cf38"
+        },
+        {
+          "label": "Signed checked multiply",
+          "path": "vendor/crypto-primitives/src/ring/crypto_bigint_int.rs",
+          "line": 368,
+          "anchor": "impl_checked_op!(CheckedMul, checked_mul);",
+          "sha256": "bfb92cbdcc848fc9e3c9c7e8c98da169c2e2ae24be19ef3f35b2caff1ba5cf38"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Checked loops",
+          "path": "experiments/field-regressions/src/campaign/integer_metrics.rs",
+          "line": 35,
+          "anchor": "macro_rules! checked_kernel",
+          "sha256": "4efd9f0b9a6e80e4057579c93770c424b63647c5908632250f0cfa2e215594a0"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/words.rs",
+          "line": 57,
+          "anchor": "fn primitives<",
+          "sha256": "27bfeb1c63993bf53d9375a5b9c751551b6e1bfc17395ed44bd481edbeffe2a9"
+        }
+      ],
+      "contract": "Existing Option values include success/failure representation and mixed overflow classes.",
+      "secondary_comparison": "Raw crypto-bigint CtOption checked operations for masked private-result comparisons; keep Option API timing separate.",
+      "coverage_note": "Checked signed/unsigned add/sub candidates compared at widths 1/2/4/9. Checked multiplication retains prior metrics; Option comparisons are not a private-result timing certification.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_uint_checked_add",
+            "metrics_uint_checked_sub",
+            "metrics_uint_checked_mul",
+            "metrics_int_checked_add",
+            "metrics_int_checked_sub",
+            "metrics_int_checked_mul"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_uint_checked_add",
+            "opt_uint_checked_sub",
+            "opt_int_checked_add",
+            "opt_int_checked_sub"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_compare",
+      "operation": "Integer comparison and masked selection",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Measured derived unsigned Ord",
+          "path": "vendor/crypto-primitives/src/semiring/crypto_bigint_uint.rs",
+          "line": 24,
+          "anchor": "#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]",
+          "sha256": "54050ebf6eb4dc9e64e131353793f5b09296c8ba63359328e3ea0d71e1950ed2"
+        },
+        {
+          "label": "Unsigned masked equality",
+          "path": "vendor/crypto-primitives/src/semiring/crypto_bigint_uint.rs",
+          "line": 634,
+          "anchor": "fn ct_eq(&self",
+          "sha256": "54050ebf6eb4dc9e64e131353793f5b09296c8ba63359328e3ea0d71e1950ed2"
+        },
+        {
+          "label": "Unsigned masked ordering",
+          "path": "vendor/crypto-primitives/src/semiring/crypto_bigint_uint.rs",
+          "line": 648,
+          "anchor": "fn ct_lt(&self",
+          "sha256": "54050ebf6eb4dc9e64e131353793f5b09296c8ba63359328e3ea0d71e1950ed2"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured Ordering loop",
+          "path": "experiments/field-regressions/src/campaign/integer_metrics.rs",
+          "line": 60,
+          "anchor": "fn compare<const L: usize",
+          "sha256": "4efd9f0b9a6e80e4057579c93770c424b63647c5908632250f0cfa2e215594a0"
+        }
+      ],
+      "contract": "Ordering, equality masks and selection are separate output contracts.",
+      "secondary_comparison": "Native comparisons for 1/2 limbs; direct raw signed/unsigned masked operations for matching Ct results.",
+      "coverage_note": "Only unsigned Ordering loop is measured. Add signed comparison, CtEq/CtOrd/CtSelect and bit operations.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_uint_compare"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_bits",
+      "operation": "Integer shifts, bitwise operations and narrowing",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "Signed shifts",
+          "path": "vendor/crypto-primitives/src/ring/crypto_bigint_int.rs",
+          "line": 315,
+          "anchor": "impl<const LIMBS: usize> Shl<u32>",
+          "sha256": "bfb92cbdcc848fc9e3c9c7e8c98da169c2e2ae24be19ef3f35b2caff1ba5cf38"
+        },
+        {
+          "label": "Unsigned checked narrowing",
+          "path": "vendor/crypto-primitives/src/semiring/crypto_bigint_uint.rs",
+          "line": 104,
+          "anchor": "pub const fn checked_resize<",
+          "sha256": "54050ebf6eb4dc9e64e131353793f5b09296c8ba63359328e3ea0d71e1950ed2"
+        },
+        {
+          "label": "Circuit sign extension",
+          "path": "crates/circuit/src/witgen.rs",
+          "line": 80,
+          "anchor": "pub fn sign_extend<const TO_LIMBS: usize>",
+          "sha256": "a945c359af90984b96cb9617ed64c39e58c239484ca37a2c45c683accda19fc4"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Public versus private shift amounts and checked versus unchecked conversion are separate cases.",
+      "secondary_comparison": "Raw crypto-bigint operations and primitive controls at matching width.",
+      "coverage_note": "Add measured cases; no dynamic-width trimming from secret values.",
+      "evidence": []
+    },
+    {
+      "id": "integer_wide",
+      "operation": "Exact unsigned wide products",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "crypto-bigint 0.7.5 widening_mul",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/uint/mul.rs",
+          "line": 41,
+          "anchor": "pub const fn widening_mul<const RHS_LIMBS: usize>",
+          "sha256": "7e7581771de9a3b9a7c328fe5dea7df14f57c86b28e58860748c26ce3baa357f"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Full product loop",
+          "path": "experiments/field-regressions/src/campaign/integer_metrics.rs",
+          "line": 69,
+          "anchor": "fn wide<const L: usize>",
+          "sha256": "4efd9f0b9a6e80e4057579c93770c424b63647c5908632250f0cfa2e215594a0"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/words.rs",
+          "line": 182,
+          "anchor": "fn products<",
+          "sha256": "27bfeb1c63993bf53d9375a5b9c751551b6e1bfc17395ed44bd481edbeffe2a9"
+        }
+      ],
+      "contract": "All 2L output limbs, identical layout and no reduction.",
+      "secondary_comparison": "Existing P-256 product is a separate 18-limb-output comparison; do not compare its time to a shorter output without accounting for writes.",
+      "coverage_note": "Exact products at widths 1/2/4/9, asymmetric 2x9, and 2048/4096 bits are measured against crypto-bigint. The generic schoolbook candidate loses at large widths.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_uint_wide_mul"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_exact_product"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_bounded",
+      "operation": "P-256 bounded wide products",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "Actual P-256 multiply",
+          "path": "crates/circuit/src/p256.rs",
+          "line": 855,
+          "anchor": "fn multiply_wide(left: Wide<9>",
+          "sha256": "41ab60045dbc20e38dd7c95a36f8b918a5c532bb52774dc30866e8c05d0bb652"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Verbatim baseline extraction",
+          "path": "experiments/field-regressions/build.rs",
+          "line": 52,
+          "anchor": "let body = section(&p256",
+          "sha256": "31efc931f11ca8042d3695829aad5fc6bcc8bfb18c0692a84db4c89e09de2bb6"
+        },
+        {
+          "label": "Prepared and one-shot comparisons",
+          "path": "experiments/field-regressions/src/campaign/bounded_product.rs",
+          "line": 410,
+          "anchor": "pub fn run(",
+          "sha256": "92f5405ed78488ad12e2d68cfd5d575fba0149a7cb87e771b685fa08a35aca32"
+        }
+      ],
+      "contract": "Four or nine public active limbs in nine-limb storage; all 18 output limbs written.",
+      "secondary_comparison": "Compare with prepared_selected and validate_execute_selected from integer-focus-arm-03, plus raw widening multiplication at matching output width.",
+      "coverage_note": "Public-bound preparation and execution have separate timings. Existing value-scanning baseline is not a private fixed-schedule implementation.",
+      "evidence": [
+        {
+          "suite": "integer-focus-arm-03",
+          "families": [
+            "bounded_product"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_exact_signed",
+      "operation": "Exact signed/mixed products and exact MAC",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Signed widening reference",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/int/mul.rs",
+          "line": 31,
+          "anchor": "pub const fn widening_mul<const RHS_LIMBS: usize>",
+          "sha256": "c9d9e3ce1deab5022972a2864b6f0d4217e04554c107fd17573ed91988056593"
+        },
+        {
+          "label": "Unsigned widening reference",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/uint/mul.rs",
+          "line": 41,
+          "anchor": "pub const fn widening_mul<const RHS_LIMBS: usize>",
+          "sha256": "7e7581771de9a3b9a7c328fe5dea7df14f57c86b28e58860748c26ce3baa357f"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/words.rs",
+          "line": 322,
+          "anchor": "fn exact_cases<",
+          "sha256": "27bfeb1c63993bf53d9375a5b9c751551b6e1bfc17395ed44bd481edbeffe2a9"
+        }
+      ],
+      "contract": "A+B product limbs, A+B+1 accumulator limbs; bounded total product count.",
+      "secondary_comparison": "Build a fixed-storage product-then-add reference; BigInt remains an independent oracle outside timing.",
+      "coverage_note": "Exact signed/unsigned MACs with an extra accumulator limb measured at 2/4/9 limbs, including sign conversion in the reference. Mixed signed/unsigned products remain separate work.",
+      "evidence": [
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_exact_signed_mac",
+            "opt_exact_unsigned_mac"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_divrem",
+      "operation": "Unsigned division and remainder",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Measured generic div_rem",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/uint/div.rs",
+          "line": 46,
+          "anchor": "pub const fn div_rem<const RHS_LIMBS: usize>",
+          "sha256": "cbbebd308666f9c48f5b2bec4a77825ba88df731293bf330f94b817c1ddd5052"
+        },
+        {
+          "label": "Prepared single-limb divisor",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/uint/div.rs",
+          "line": 13,
+          "anchor": "pub const fn div_rem_limb_with_reciprocal",
+          "sha256": "cbbebd308666f9c48f5b2bec4a77825ba88df731293bf330f94b817c1ddd5052"
+        },
+        {
+          "label": "Public-divisor control",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/uint/div.rs",
+          "line": 63,
+          "anchor": "pub const fn div_rem_vartime<const RHS_LIMBS: usize>",
+          "sha256": "cbbebd308666f9c48f5b2bec4a77825ba88df731293bf330f94b817c1ddd5052"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Current generic division loop",
+          "path": "experiments/field-regressions/src/campaign/integer_metrics.rs",
+          "line": 78,
+          "anchor": "fn divrem<const L: usize>",
+          "sha256": "4efd9f0b9a6e80e4057579c93770c424b63647c5908632250f0cfa2e215594a0"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/integer.rs",
+          "line": 327,
+          "anchor": "fn division<",
+          "sha256": "f38732984260901d0a6be13a80a5397325a232ae0d1d172d6ece3d073131db42"
+        }
+      ],
+      "contract": "Same quotient and remainder, divisor public for preparation; normalization/output padding included when required.",
+      "secondary_comparison": "For 64-bit divisors compare prepared reciprocal; for public multi-limb divisors also compare div_rem_vartime, documented variable only in divisor.",
+      "coverage_note": "Generic, public-divisor, prepared-reciprocal and batch-preparation comparisons now measured for 64-bit divisors through 4096-bit numerators. Multi-limb prepared divisor and signed division remain separate work.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "metrics_uint_divrem"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_divrem64"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integer_signed_div",
+      "operation": "Signed division and remainder",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "Signed truncating division",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/int/div.rs",
+          "line": 53,
+          "anchor": "pub const fn checked_div_rem<const RHS_LIMBS: usize>",
+          "sha256": "5451586a899481e2506a022a00985fc28d108c0ed2a9eae66a5cde4059b0637c"
+        },
+        {
+          "label": "Checked arbitrary-divisor wrapper",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/int/div.rs",
+          "line": 71,
+          "anchor": "pub fn checked_div<const RHS_LIMBS: usize>",
+          "sha256": "5451586a899481e2506a022a00985fc28d108c0ed2a9eae66a5cde4059b0637c"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Truncation toward zero, signed remainder, MIN/-1 and zero-divisor validity.",
+      "secondary_comparison": "Public-divisor variant separately; distinguish truncating remainder from canonical modular reduction.",
+      "coverage_note": "Add benchmark wrapper with matching validity output. Do not use unsigned division or floor division as the denominator.",
+      "evidence": []
+    },
+    {
+      "id": "projection",
+      "operation": "Signed integer-to-prime projection",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "RuntimeModulus reduction",
+          "path": "crates/circuit/src/matrix_products.rs",
+          "line": 59,
+          "anchor": "pub(crate) fn reduce(&self, value: &StoredInteger)",
+          "sha256": "c98be58640a9127bde71fba097a7a537a55092fb8bccd6e90817b896b4f2da70"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Projection cases",
+          "path": "experiments/field-regressions/src/campaign/integer.rs",
+          "line": 218,
+          "anchor": "fn projection",
+          "sha256": "dd8c8881cf0b0c14ce38afa3a36c5db72505964121ec015ee2ac962d4fd90a08"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/integer.rs",
+          "line": 193,
+          "anchor": "struct Projection<",
+          "sha256": "f38732984260901d0a6be13a80a5397325a232ae0d1d172d6ece3d073131db42"
+        }
+      ],
+      "contract": "Canonical nonnegative residue of the same signed integer; q100/q128 and widths 2/4/9.",
+      "secondary_comparison": "Fixed-storage crypto-bigint vartime division is an additional control, not an owned replacement.",
+      "coverage_note": "Fixed-width signed Horner reduction measured at q100/q128, widths 2/4/9, including preparation, prepared reuse and one-shot calls. Frozen ARM correction uses CtSelect. Fixtures are predominantly full-width, not tiny relation coefficients.",
+      "evidence": [
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "projection"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_projection",
+            "opt_projection_setup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_scalar",
+      "operation": "Prime scalar arithmetic",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Raw add",
+          "path": "src/piop/spartan/raw_monty.rs",
+          "line": 184,
+          "anchor": "pub(crate) fn add(&self",
+          "sha256": "c026f89205c30444aed21906178e94b4a8e9743c98edeb1c5081b349d7ac58e7"
+        },
+        {
+          "label": "Raw subtract",
+          "path": "src/piop/spartan/raw_monty.rs",
+          "line": 191,
+          "anchor": "pub(crate) fn sub(&self",
+          "sha256": "c026f89205c30444aed21906178e94b4a8e9743c98edeb1c5081b349d7ac58e7"
+        },
+        {
+          "label": "Raw multiply",
+          "path": "src/piop/spartan/raw_monty.rs",
+          "line": 209,
+          "anchor": "pub(crate) fn mul(&self",
+          "sha256": "c026f89205c30444aed21906178e94b4a8e9743c98edeb1c5081b349d7ac58e7"
+        },
+        {
+          "label": "Configured multiply",
+          "path": "vendor/crypto-primitives/src/field/crypto_bigint_monty.rs",
+          "line": 269,
+          "anchor": "fn mul_assign(&mut self, rhs: &Self)",
+          "sha256": "1026d9f029857d42d7f009038ae6baab3f1530fcbbd6c6025ed95ac412bbfb99"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Raw scalar loop",
+          "path": "experiments/field-regressions/src/campaign/prime.rs",
+          "line": 39,
+          "anchor": "fn products<const CHECK: bool>",
+          "sha256": "eb6ea5cfd701596f93cddc8a4cc01501a2d8e466783468031af37ac913b05b94"
+        },
+        {
+          "label": "Configured control",
+          "path": "experiments/field-regressions/src/campaign/prime.rs",
+          "line": 58,
+          "anchor": "fn configured(",
+          "sha256": "eb6ea5cfd701596f93cddc8a4cc01501a2d8e466783468031af37ac913b05b94"
+        }
+      ],
+      "contract": "Reduced Montgomery residues and same public modulus; compact versus configured layouts explicitly identified.",
+      "secondary_comparison": "RawMontyCtx is the primary compact arithmetic baseline; configured MontyField and invariant-brand wrappers remain controls.",
+      "coverage_note": "Multiplication measured; add/sub/neg/square/division need their own timings. Shared Fq inverse/pow/div stubs are not baselines.",
+      "evidence": [
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "prime_mul"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_mac",
+      "operation": "Prime product and native linear MAC",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "R\u00b2 product accumulator",
+          "path": "src/utils/delayed_reduction.rs",
+          "line": 212,
+          "anchor": "impl MontyProductAccumulator128 {",
+          "sha256": "a1344e325e2f3bf078822fe782d17cfc156dea9fc17b7fe1315b2c88a411f284"
+        },
+        {
+          "label": "R linear accumulator",
+          "path": "src/utils/delayed_reduction.rs",
+          "line": 251,
+          "anchor": "impl MontyLinearAccumulator128 {",
+          "sha256": "a1344e325e2f3bf078822fe782d17cfc156dea9fc17b7fe1315b2c88a411f284"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Product sum loop",
+          "path": "experiments/field-regressions/src/campaign/prime.rs",
+          "line": 66,
+          "anchor": "fn product_sum<const K: usize",
+          "sha256": "eb6ea5cfd701596f93cddc8a4cc01501a2d8e466783468031af37ac913b05b94"
+        },
+        {
+          "label": "Native sum loop",
+          "path": "experiments/field-regressions/src/campaign/prime.rs",
+          "line": 82,
+          "anchor": "fn linear_sum<const K: usize>",
+          "sha256": "eb6ea5cfd701596f93cddc8a4cc01501a2d8e466783468031af37ac913b05b94"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/prime.rs",
+          "line": 175,
+          "anchor": "fn mac(",
+          "sha256": "30a3645d90111fee044b9e07257e241967686ea983ebcc0c266cc125ded98837"
+        }
+      ],
+      "contract": "Field\u00d7field has R\u00b2 scale, field\u00d7native integer has R scale; preserve the appropriate final reduction.",
+      "secondary_comparison": "Keep one accumulator and acc4; small and large batches choose no winner until confirmation.",
+      "coverage_note": "One accumulator, four accumulators and public batch-length dispatch measured at q100/q128 and 16/1024/65536 terms. Small batches remain independently gated.",
+      "evidence": [
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "prime_dot",
+            "prime_linear"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_prime_dot",
+            "opt_prime_linear"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_reduce",
+      "operation": "Prime accumulator reduction",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "Optimized R\u00b2 reduction",
+          "path": "src/utils/delayed_reduction.rs",
+          "line": 280,
+          "anchor": "impl Reduce<MontyField<2>, OptimizedMonty128Reducer> for MontyProductAccumulator128",
+          "sha256": "a1344e325e2f3bf078822fe782d17cfc156dea9fc17b7fe1315b2c88a411f284"
+        },
+        {
+          "label": "Optimized R reduction",
+          "path": "src/utils/delayed_reduction.rs",
+          "line": 293,
+          "anchor": "impl Reduce<MontyField<2>, OptimizedMonty128Reducer> for MontyLinearAccumulator128",
+          "sha256": "a1344e325e2f3bf078822fe782d17cfc156dea9fc17b7fe1315b2c88a411f284"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Reduction cases",
+          "path": "experiments/field-regressions/src/campaign/prime.rs",
+          "line": 166,
+          "anchor": "pub(super) fn run(",
+          "sha256": "eb6ea5cfd701596f93cddc8a4cc01501a2d8e466783468031af37ac913b05b94"
+        }
+      ],
+      "contract": "One reduction of an accumulator constructed from 1,024 terms, not 1,024 reductions.",
+      "secondary_comparison": "Crypto-bigint reference is retained as a slower control.",
+      "coverage_note": "Optimized existing reducer is the primary baseline.",
+      "evidence": [
+        {
+          "suite": "arithmetic-arm-01",
+          "families": [
+            "prime_reduce_product",
+            "prime_reduce_linear"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_signed_linear",
+      "operation": "Prime \u00d7 signed coefficient MAC",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "Existing bounded signed-native helper",
+          "path": "src/piop/spartan/sumcheck.rs",
+          "line": 2421,
+          "anchor": "fn multiply_accumulate_signed_linear<R>",
+          "sha256": "aaef22090355099b21e13949857ebf95d5c5442b65ea0768d1ed79bb3ebec2db"
+        },
+        {
+          "label": "Native linear accumulator",
+          "path": "src/utils/delayed_reduction.rs",
+          "line": 251,
+          "anchor": "impl MontyLinearAccumulator128 {",
+          "sha256": "a1344e325e2f3bf078822fe782d17cfc156dea9fc17b7fe1315b2c88a411f284"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Existing helper requires coefficient magnitude <= u64::MAX despite an i128 argument.",
+      "secondary_comparison": "For larger signed coefficients build a matching full-width reference; do not reinterpret a full-width unsigned Montgomery residue as signed.",
+      "coverage_note": "Add a timed wrapper for the actual bounded helper; general signed coefficient accumulation needs a new reference.",
+      "evidence": []
+    },
+    {
+      "id": "prime_inverse",
+      "operation": "Prime inverse and division",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Existing variable-time inverse",
+          "path": "vendor/crypto-primitives/src/field/crypto_bigint_monty.rs",
+          "line": 207,
+          "anchor": "impl<const LIMBS: usize> Inv for &MontyField<LIMBS>",
+          "sha256": "1026d9f029857d42d7f009038ae6baab3f1530fcbbd6c6025ed95ac412bbfb99"
+        },
+        {
+          "label": "Constant-time API control",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/modular/fixed_monty_form/invert.rs",
+          "line": 24,
+          "anchor": "pub const fn invert(&self)",
+          "sha256": "f910cc6bd2413389c910c0293469e70b177cf5302b802213daefa822f8d702a2"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured independent inversions",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 45,
+          "anchor": "fn inverse_each(",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        }
+      ],
+      "contract": "Nonzero elements for current loop; masked zero/nonunit outputs receive separate tests and timings.",
+      "secondary_comparison": "Benchmark existing FixedMontyForm::invert as the matching private-input API control, plus prepared SafeGcdInverter reuse.",
+      "coverage_note": "Existing variable-time independent inversions measured; CT control, prepared inversion and division need timings.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "prime_inverse_each"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_power",
+      "operation": "Prime powers",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "Existing bounded exponentiation",
+          "path": "vendor/crypto-primitives/src/field/crypto_bigint_monty.rs",
+          "line": 84,
+          "anchor": "pub const fn pow_bounded_exp<const RHS_LIMBS: usize>",
+          "sha256": "1026d9f029857d42d7f009038ae6baab3f1530fcbbd6c6025ed95ac412bbfb99"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured power loop",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 53,
+          "anchor": "fn pow_each(",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/prime.rs",
+          "line": 260,
+          "anchor": "fn powers(",
+          "sha256": "30a3645d90111fee044b9e07257e241967686ea983ebcc0c266cc125ded98837"
+        }
+      ],
+      "contract": "Identical exponent value, public bit bound, field and base reuse.",
+      "secondary_comparison": "Prepared fixed-base candidate gets distinct setup and repeated-execution comparisons.",
+      "coverage_note": "Public binary exponentiation compared with bounded window exponentiation at sparse 17-bit and alternating 127-bit public exponents. Private exponent and fixed-base preparation are not covered.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "prime_pow_each"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_prime_public_pow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "batch_inverse",
+      "operation": "True batch inversion",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "Existing one-inversion batch routine",
+          "path": "src/piop/spartan/sumcheck.rs",
+          "line": 2825,
+          "anchor": "pub(super) fn batch_invert_nonzero<F>",
+          "sha256": "aaef22090355099b21e13949857ebf95d5c5442b65ea0768d1ed79bb3ebec2db"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured independent loop: secondary only",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 45,
+          "anchor": "fn inverse_each(",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/prime.rs",
+          "line": 83,
+          "anchor": "fn inversions(",
+          "sha256": "30a3645d90111fee044b9e07257e241967686ea983ebcc0c266cc125ded98837"
+        }
+      ],
+      "contract": "One shared inversion; current helper leaves zeros zero and allocates prefix/output buffers.",
+      "secondary_comparison": "Compare equivalent allocating calls, then separate scratch-reuse implementations with preparation cost reported.",
+      "coverage_note": "Actual production one-inversion routine compared with configured-output compact allocated candidates; separate compact scratch reuse. Nonzero, mixed and all-zero q100/q128 fixtures included. Masking has a measurable cost on zeros.",
+      "evidence": [
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_batch_inverse",
+            "opt_batch_inverse_reuse"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_setup",
+      "operation": "Prime context setup",
+      "status": "measured",
+      "baseline_sources": [
+        {
+          "label": "RawMontyCtx setup",
+          "path": "src/piop/spartan/raw_monty.rs",
+          "line": 113,
+          "anchor": "pub(crate) fn new(config: &FieldConfig)",
+          "sha256": "c026f89205c30444aed21906178e94b4a8e9743c98edeb1c5081b349d7ac58e7"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Montgomery constants",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 33,
+          "anchor": "fn config(modulus: u128)",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        },
+        {
+          "label": "Measured combined setup",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 159,
+          "anchor": "if case_requested(\"prime_context_setup\"",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        }
+      ],
+      "contract": "Known public prime; setup includes Montgomery constants and RawMontyCtx, not prime search.",
+      "secondary_comparison": "Raw reuse measured separately from fresh construction.",
+      "coverage_note": "Known q127 measured; additional widths/moduli need coverage. Prime selection is lower priority.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "prime_context_setup"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prime_codec",
+      "operation": "Prime canonical codecs",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Actual allocating encoder",
+          "path": "src/piop/spartan/mod.rs",
+          "line": 271,
+          "anchor": "fn canonical_element_encoding(&self) -> Vec<u8> {",
+          "sha256": "c700488e77334bc8f76539f97f1914eea784c271dfd509ed9f2c440199adf413"
+        },
+        {
+          "label": "Actual proof reader",
+          "path": "src/hybrid/codec.rs",
+          "line": 37,
+          "anchor": "fn read_q(",
+          "sha256": "7ee65e352bc2ff5e386a1c37754b5f395599e2fbd0a84f9fba7e37a4050df63c"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured encoding component",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 61,
+          "anchor": "fn encode_into(",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        },
+        {
+          "label": "Measured decoding component",
+          "path": "experiments/field-regressions/src/campaign/prime_metrics.rs",
+          "line": 71,
+          "anchor": "fn decode_into(",
+          "sha256": "41d3f725a3d36efc0953b1afa973a22f14f7745f37fd9404afbf2378b3c1fce5"
+        }
+      ],
+      "contract": "Canonical standard residues, not raw Montgomery words; match width and validation.",
+      "secondary_comparison": "Allocating wrapper and whole proof framing are separate baselines; private masked decoding needs a matching result contract.",
+      "coverage_note": "Current timings are preallocated conversion components only.",
+      "evidence": [
+        {
+          "suite": "operation-metrics-arm-01",
+          "families": [
+            "prime_canonical_encode_into",
+            "prime_canonical_decode_into"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other_codecs",
+      "operation": "Integer/binary codecs and conversion",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "GF128 encoder",
+          "path": "crates/field/src/gf128.rs",
+          "line": 92,
+          "anchor": "pub fn to_bytes(self)",
+          "sha256": "307a005ee08930dd952bae1a68b7380bed2d6f12d1b3b0802d454db91a88dfaf"
+        },
+        {
+          "label": "GF128 decoder",
+          "path": "crates/field/src/gf128.rs",
+          "line": 99,
+          "anchor": "pub fn from_bytes(bytes: [u8; 16])",
+          "sha256": "307a005ee08930dd952bae1a68b7380bed2d6f12d1b3b0802d454db91a88dfaf"
+        },
+        {
+          "label": "B127 canonical word validation",
+          "path": "src/poly/univariate/binary_b127.rs",
+          "line": 176,
+          "anchor": "pub const fn try_from_words(words: [u64; 2])",
+          "sha256": "9d6ba697bbdb0d789ab6e4b640cc0ee1989d6fae0adde726404b0734023f9a0c"
+        },
+        {
+          "label": "Unsigned integer codec",
+          "path": "src/transcript/traits.rs",
+          "line": 486,
+          "anchor": "impl<const LIMBS: usize> GenTranscribable for Uint<LIMBS>",
+          "sha256": "12e6ce9876659580e48b2bce5feb64622cf816b13235bd1b78125c1f5d5ccce1"
+        },
+        {
+          "label": "Signed integer codec",
+          "path": "src/transcript/traits.rs",
+          "line": 520,
+          "anchor": "impl<const LIMBS: usize> GenTranscribable for Int<LIMBS>",
+          "sha256": "12e6ce9876659580e48b2bce5feb64622cf816b13235bd1b78125c1f5d5ccce1"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Exact declared width/endianness, signed representation and padding-bit validation.",
+      "secondary_comparison": "Raw copy controls measure transport only; retain canonical-validation and allocation costs in their own comparisons.",
+      "coverage_note": "Correctness checks exist, but dedicated complete codec timings are still needed.",
+      "evidence": []
+    },
+    {
+      "id": "ntt",
+      "operation": "Complete additive NTT and setup",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Actual Flock forward NTT",
+          "path": "vendor/flock-mod/crates/flock-core/src/ntt/additive_ntt_f128.rs",
+          "line": 188,
+          "anchor": "pub fn forward_transform_interleaved(&self",
+          "sha256": "89cae28be73484aeda021f9021a04f92a2badfa53041e3ebd5d54df3b9d432d1"
+        },
+        {
+          "label": "Actual Flock inverse NTT",
+          "path": "vendor/flock-mod/crates/flock-core/src/ntt/additive_ntt_f128.rs",
+          "line": 755,
+          "anchor": "pub fn inverse_transform(&self",
+          "sha256": "89cae28be73484aeda021f9021a04f92a2badfa53041e3ebd5d54df3b9d432d1"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Measured NTT cases",
+          "path": "experiments/field-regressions/src/main.rs",
+          "line": 327,
+          "anchor": "fn ntt_benches(",
+          "sha256": "7a23d4d2108c4eec8ee2e3a6f00bfb2faad9656cfbcd45c5d5242dd348ab0906"
+        },
+        {
+          "label": "Actual baseline dispatch",
+          "path": "experiments/field-regressions/src/arithmetic.rs",
+          "line": 317,
+          "anchor": "pub fn transform(",
+          "sha256": "7a388b818c9f23f843f2f4da1953906569a7c6e7d7c924d72c4c78ec9c1ef1c5"
+        },
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/composite.rs",
+          "line": 157,
+          "anchor": "fn ntt_cases(",
+          "sha256": "3ac3bea0ffe404283c0abe04f8f5066c1f9656e015280eb0cd2c0866f89c5601"
+        }
+      ],
+      "contract": "Identical transform shape, lane order, thread counts and reset lifecycle.",
+      "secondary_comparison": "Keep native fused schedule primary; generic/scalar transforms are correctness or diagnostic controls.",
+      "coverage_note": "Complete reset-plus-transform comparisons through log18 with 32 lanes; one and ten caller threads measured. Setup is outside these timings. Parallel recommendations remain shape-specific.",
+      "evidence": [
+        {
+          "suite": "arm-gated-01",
+          "families": [
+            "ntt"
+          ]
+        },
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_ntt"
+          ]
+        },
+        {
+          "suite": "optimization-arm-10cores-01",
+          "families": [
+            "opt_ntt"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ood",
+      "operation": "Hybrid OOD evaluation and packed-buffer lifecycle",
+      "status": "partial",
+      "baseline_sources": [
+        {
+          "label": "Actual blocked OOD evaluation",
+          "path": "src/ligerito_flock.rs",
+          "line": 2520,
+          "anchor": "fn ood_eval(p_msg:",
+          "sha256": "088fe054a2dd6f96ef36d748329a5ffeca11fa98994c3dc8d806665fe2c693a1"
+        },
+        {
+          "label": "Equality-weight construction",
+          "path": "src/ligerito_flock.rs",
+          "line": 2503,
+          "anchor": "fn build_eq_scaled(point:",
+          "sha256": "088fe054a2dd6f96ef36d748329a5ffeca11fa98994c3dc8d806665fe2c693a1"
+        },
+        {
+          "label": "Packed construction",
+          "path": "src/hybrid/opening.rs",
+          "line": 135,
+          "anchor": "pub fn virtual_packed(&self",
+          "sha256": "8969922c324e55c562d93d669a0ccdea3dfcfbbe891d5aa353e29a01dee1a760"
+        },
+        {
+          "label": "Actual OOD call",
+          "path": "src/hybrid/mod.rs",
+          "line": 324,
+          "anchor": "let ood = opening::prove_ood",
+          "sha256": "0a29ac515fbc7aa8dd52e7f6d57fb7f316ba1135b55a6f1e67bf970318db895e"
+        }
+      ],
+      "benchmark_sources": [
+        {
+          "label": "Optimization comparisons",
+          "path": "experiments/field-regressions/src/campaign/candidates/composite.rs",
+          "line": 64,
+          "anchor": "fn ood_cases(",
+          "sha256": "3ac3bea0ffe404283c0abe04f8f5066c1f9656e015280eb0cd2c0866f89c5601"
+        }
+      ],
+      "contract": "Identical packed layout/point, final field value and lifecycle; separate evaluation, packing, and composite costs.",
+      "secondary_comparison": "Keep current blocked delayed-reduction evaluation; naive per-element multiplication is not the primary speed baseline.",
+      "coverage_note": "Real blocked OOD evaluation, scratch reuse, packing and packing-plus-OOD measured at one and ten threads. The packed Vec is retained for the later consumer; grinding and the later opening proof are excluded.",
+      "evidence": [
+        {
+          "suite": "optimization-arm-01",
+          "families": [
+            "opt_ood",
+            "opt_ood_reuse",
+            "opt_pack",
+            "opt_packed_ood"
+          ]
+        },
+        {
+          "suite": "optimization-arm-10cores-01",
+          "families": [
+            "opt_ood",
+            "opt_ood_reuse",
+            "opt_pack",
+            "opt_packed_ood"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modular_ring",
+      "operation": "General modular-ring arithmetic",
+      "status": "unmeasured",
+      "baseline_sources": [
+        {
+          "label": "General remainder primitive",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/uint/div.rs",
+          "line": 46,
+          "anchor": "pub const fn div_rem<const RHS_LIMBS: usize>",
+          "sha256": "cbbebd308666f9c48f5b2bec4a77825ba88df731293bf330f94b817c1ddd5052"
+        },
+        {
+          "label": "Prepared odd-modulus inverse",
+          "path": "/Users/johnwu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-bigint-0.7.5/src/modular/safegcd.rs",
+          "line": 85,
+          "anchor": "pub const fn invert(&self, value:",
+          "sha256": "539bb7cb44a885e245b0d1e66280be077df69141ec90019e62b700d86c394050"
+        }
+      ],
+      "benchmark_sources": [],
+      "contract": "Canonical residues for explicit odd/even/composite moduli; nonunits produce invalid inverse results.",
+      "secondary_comparison": "Build fixed-storage add/mul/reduce reference compositions for absent owned-ring APIs.",
+      "coverage_note": "Prime-field timings do not establish composite/even-modulus coverage. No dedicated ring benchmark is wired yet.",
+      "evidence": []
+    }
+  ]
+}

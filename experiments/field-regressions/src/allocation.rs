@@ -38,7 +38,11 @@ pub fn audit(run: &mut dyn FnMut()) -> (u64, u64) {
     let mut maximum = (0, 0);
     // Lazy pools and caches are initialized before counting.
     run();
-    for _ in 0..3 {
+    // The external Rayon injector periodically allocates a 31-job block.
+    // Three passes can observe that allocation in only one variant by chance.
+    // Cover at least two complete periods, retaining MAX allocations/bytes for
+    // a single pass (not an average or an exemption for scheduler allocations).
+    for _ in 0..64 {
         CALLS.store(0, Relaxed);
         BYTES.store(0, Relaxed);
         ACTIVE.store(true, Relaxed);

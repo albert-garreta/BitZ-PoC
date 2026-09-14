@@ -112,7 +112,7 @@ def run_round(out, metadata, spec, binary, env, cases=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=["gf-ntt","arithmetic","integer-focus"], default="gf-ntt")
+    parser.add_argument("--suite", choices=["gf-ntt","arithmetic","integer-focus","operation-metrics","optimization"], default="gf-ntt")
     parser.add_argument("--arch", choices=["aarch64","x86_64"], help="Host campaign scope; other architecture is a separate run")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--runs", type=int, default=5)
@@ -122,10 +122,19 @@ def main():
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--flags", default="-C target-cpu=native")
     parser.add_argument("--target-dir", type=Path, help="Optional experiment-owned build cache")
+    parser.add_argument("--manifest", type=Path, help="Explicit frozen case/selection manifest for a new revision")
     parser.add_argument("--cases", help="Comma-separated family/size IDs; omitted cases remain unmeasured")
     parser.add_argument("--no-retry", action="store_true", help="Development run: disable the one inconclusive-case retry")
     args = parser.parse_args()
-    spec_path = HERE / "integer_focus_cases.json" if args.suite=="integer-focus" else HERE / "arithmetic_cases.json" if args.suite!="gf-ntt" else SPEC_PATH
+    spec_path = {
+        "gf-ntt": SPEC_PATH,
+        "arithmetic": HERE / "arithmetic_cases.json",
+        "integer-focus": HERE / "integer_focus_cases.json",
+        "operation-metrics": HERE / "operation_metrics_cases.json",
+        "optimization": HERE / "optimization_cases.json",
+    }[args.suite]
+    if args.manifest:
+        spec_path = args.manifest.resolve()
     spec = json.loads(spec_path.read_text())
     arch = {"arm64": "aarch64", "AMD64": "x86_64"}.get(platform.machine(), platform.machine())
     if args.arch and arch!=args.arch:

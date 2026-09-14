@@ -1,0 +1,106 @@
+{
+  "binary": "/private/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-6lkppdze/field-regressions",
+  "binary_sha256": "505453b9cc6c223f22879cff439a88c357ca36ff0df6243098c2f0845a936724",
+  "tool": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-objdump",
+  "format": "\n/private/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-6lkppdze/field-regressions:\tfile format mach-o arm64\n\nSYMBOL TABLE:\n0000000100000870 l     F __TEXT,__text __RINvMNtNtCs4rJR5Xg1K3s_13crypto_bigint4uint3divINtB5_4UintKj20_E7div_remKBV_ECs8IeiyMGxmWr_17field_regressions",
+  "kernels": [
+    {
+      "symbol": "__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_",
+      "assembly": "kernel-00.asm",
+      "assembly_sha256": "6f9e2f1f3ff01622602a5d1d9beaa5cc3af5faf0ca8e0150b360d5c280188220",
+      "instructions_requiring_review": [
+        "10002b590: 54001e41    \tb.ne\t0x10002b958 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x3ec>",
+        "10002b5a4: 54001e61    \tb.ne\t0x10002b970 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x404>",
+        "10002b5bc: b4000977    \tcbz\tx23, 0x10002b6e8 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x17c>",
+        "10002b6e0: 54fff7e1    \tb.ne\t0x10002b5dc <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x70>",
+        "10002b70c: 9400b1e0    \tbl\t0x100057e8c <__RNvMNtNtNtCs4rJR5Xg1K3s_13crypto_bigint7modular16fixed_monty_form6invertINtB4_14FixedMontyFormKj2_E6invertCs8IeiyMGxmWr_17field_regressions>",
+        "10002b720: 34001348    \tcbz\tw8, 0x10002b988 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x41c>",
+        "10002b724: b40010d7    \tcbz\tx23, 0x10002b93c <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x3d0>",
+        "10002b938: 54fff061    \tb.ne\t0x10002b744 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x1d8>",
+        "10002b96c: 94040380    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>",
+        "10002b984: 9404037a    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>",
+        "10002b99c: 9404035c    \tbl\t0x10012c70c <__RNvNtCs8Mbv00yxnRz_4core9panicking9panic_fmt>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_",
+      "assembly": "kernel-01.asm",
+      "assembly_sha256": "c81725b4a41c859d1a343d02245a1fc506a67a47f4fcb0b180229bd6451c949f",
+      "instructions_requiring_review": [
+        "10002ff84: 54000841    \tb.ne\t0x10003008c <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_+0x124>",
+        "10002ff88: b40006c2    \tcbz\tx2, 0x100030060 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_+0xf8>",
+        "100030058: 54fffa61    \tb.ne\t0x10002ffa4 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_+0x3c>",
+        "1000300a0: 9403f1b3    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_",
+      "assembly": "kernel-02.asm",
+      "assembly_sha256": "ece6f70b21a087e25dd8395dbc4e20ecd48eee30fdc540ff02391a5b4606ae28",
+      "instructions_requiring_review": [
+        "1000300bc: 540009e1    \tb.ne\t0x1000301f8 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_+0x154>",
+        "1000300d0: b4000762    \tcbz\tx2, 0x1000301bc <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_+0x118>",
+        "10003019c: 54fffa21    \tb.ne\t0x1000300e0 <__RINvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_+0x3c>",
+        "10003020c: 9403f158    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_",
+      "assembly": "kernel-03.asm",
+      "assembly_sha256": "a41f0bd37e75c6eaafc7cebcf79bec271e3863426b51ddbd4adca21f6e9ed736",
+      "instructions_requiring_review": [
+        "100030bc4: 54000ca1    \tb.ne\t0x100030d58 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_+0x1ac>",
+        "100030bd0: b4000a82    \tcbz\tx2, 0x100030d20 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_+0x174>",
+        "100030d18: 54fff681    \tb.ne\t0x100030be8 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_+0x3c>",
+        "100030d6c: 9403ee80    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_",
+      "assembly": "kernel-04.asm",
+      "assembly_sha256": "20865542287d0c6cdc646d056958df8d64357d4ca92485d813788e8c54f8c1fc",
+      "instructions_requiring_review": [
+        "100030d84: 54000b01    \tb.ne\t0x100030ee4 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x174>",
+        "100030da0: b4000882    \tcbz\tx2, 0x100030eb0 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x140>",
+        "100030e9c: 54fffae1    \tb.ne\t0x100030df8 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x88>",
+        "100030eac: 54fff841    \tb.ne\t0x100030db4 <__RINvNvNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x44>",
+        "100030ef8: 9403ee1d    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_",
+      "assembly": "kernel-05.asm",
+      "assembly_sha256": "5f7541040bb368aa2181c6a16f920f2ee1ce7201e0ffb36b2d9a6ba50fd372bf",
+      "instructions_requiring_review": [
+        "1000584a0: 54000ba1    \tb.ne\t0x100058614 <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_+0x194>",
+        "1000584a4: b4000ac2    \tcbz\tx2, 0x1000585fc <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_+0x17c>",
+        "1000585f8: 54fff6a1    \tb.ne\t0x1000584cc <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_+0x4c>",
+        "100058628: 94035051    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_",
+      "assembly": "kernel-06.asm",
+      "assembly_sha256": "b8396902edec849d22114830068d3b4259ded392089004043e2fa045d4f81dea",
+      "instructions_requiring_review": [
+        "100058b04: 54001c81    \tb.ne\t0x100058e94 <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_+0x3b0>",
+        "100058b08: b4001ba2    \tcbz\tx2, 0x100058e7c <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_+0x398>",
+        "100058e78: 54ffe5c1    \tb.ne\t0x100058b30 <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_+0x4c>",
+        "100058ea8: 94034e31    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_",
+      "assembly": "kernel-07.asm",
+      "assembly_sha256": "8e67b2ead1981ead4f408bbe15032f1e93c306b797593937472dcf193a92c03a",
+      "instructions_requiring_review": [
+        "100059158: 54000ec1    \tb.ne\t0x100059330 <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x200>",
+        "10005915c: b4000da2    \tcbz\tx2, 0x100059310 <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x1e0>",
+        "1000592b4: 54fff741    \tb.ne\t0x10005919c <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x6c>",
+        "10005930c: 54fff3e1    \tb.ne\t0x100059188 <__RNvMNtNtNtCs8IeiyMGxmWr_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x58>",
+        "100059344: 94034d0a    \tbl\t0x10012c76c <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    }
+  ],
+  "scope": "Manual ARM instruction/dataflow review; no automatic constant-time verdict"
+}

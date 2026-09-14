@@ -1,0 +1,12 @@
+{
+  "kind": "development; not confirmation",
+  "binary": "/private/tmp/f2z-arithmetic-target/release/field-regressions",
+  "binary_sha256": "bd461080bb5b78a42791dd70eba0991154146aa5091519ceaa0bee6c50e20d0c",
+  "threads": 10,
+  "families": [
+    "opt_ntt",
+    "opt_ood"
+  ],
+  "samples": 8,
+  "runs": 2
+}

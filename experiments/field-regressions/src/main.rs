@@ -22,6 +22,18 @@ mod production_raw {
 mod production_p256 {
     include!(concat!(env!("OUT_DIR"), "/p256_mul.rs"));
 }
+#[cfg(feature = "arithmetic-campaign")]
+mod production_batch {
+    include!(concat!(env!("OUT_DIR"), "/batch_inverse.rs"));
+}
+#[cfg(feature = "arithmetic-campaign")]
+mod production_fixed { include!(concat!(env!("OUT_DIR"), "/fixed_gf.rs")); }
+#[cfg(feature = "arithmetic-campaign")]
+mod production_ood { include!(concat!(env!("OUT_DIR"), "/ood.rs")); }
+#[cfg(feature = "arithmetic-campaign")]
+mod production_packing { include!(concat!(env!("OUT_DIR"), "/packing.rs")); }
+#[cfg(feature = "arithmetic-campaign")]
+mod utils { pub use f2z::utils::*; }
 use flock_core::{field::F128, ntt::AdditiveNttF128};
 use num_traits::Inv;
 use std::{hint::black_box, time::Instant};
@@ -454,6 +466,14 @@ fn main() {
     #[cfg(feature = "arithmetic-campaign")]
     if mode == "integer-focus" {
         campaign::integer_focus(samples, &mut rng);
+    }
+    #[cfg(feature = "arithmetic-campaign")]
+    if mode == "operation-metrics" {
+        campaign::operation_metrics(samples, &mut rng);
+    }
+    #[cfg(feature = "arithmetic-campaign")]
+    if mode == "optimization" {
+        campaign::optimize(samples, &mut rng);
     }
     #[cfg(feature = "legacy-matrix")]
     if mode == "all" || mode == "matrix" {

@@ -252,7 +252,7 @@ impl Prepared {
     }
 }
 #[inline(always)]
-fn clmul(a: u64, b: u64) -> u128 {
+pub(crate) fn clmul(a: u64, b: u64) -> u128 {
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
     {
         unsafe { core::mem::transmute(core::arch::aarch64::vmull_p64(a, b)) }
