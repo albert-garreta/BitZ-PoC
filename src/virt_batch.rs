@@ -338,6 +338,8 @@ fn monomial(u: usize) -> Gf {
 /// costs 16 row gathers of 128 elements.
 pub(crate) struct RhoTables {
     t: Vec<Gf>,
+    /// `C_{u,a}` at `u·128 + a`.
+    c: Vec<Gf>,
 }
 
 impl RhoTables {
@@ -376,6 +378,7 @@ impl RhoTables {
             .map(|u| core::array::from_fn(|a| by_a[a][u]))
             .collect();
         let _ = rho_tables;
+        let flat: Vec<Gf> = c.iter().flat_map(|row| row.iter().copied()).collect();
         let mut t = vec![Gf::zero(); 16 * 256 * PACK];
         cfg_chunks_mut!(t, 256 * PACK)
             .enumerate()
@@ -393,7 +396,13 @@ impl RhoTables {
                     }
                 }
             });
-        Self { t }
+        Self { t, c: flat }
+    }
+
+    /// `C_{u,·}`: the coefficient row of the monomial `X^u`.
+    #[inline]
+    fn row(&self, u: usize) -> &[Gf] {
+        &self.c[u << LOG_PACKING..(u + 1) << LOG_PACKING]
     }
 
     /// `ρ′_a(e)` for `a = 0..128` into `out`.
@@ -958,16 +967,35 @@ impl AffineTailPlanes {
 
     /// Adds the tail's basis to `basis` (one entry per source pack); packs
     /// in tasks of `task_packs`, each pack owned by one task (the sum is
-    /// deterministic whatever the task size or thread count).
+    /// deterministic whatever the task size or thread count). Full packs go
+    /// through the per-block lookup tables when the tail spans at least
+    /// [`LOOKUP_MIN_HIGH_PER_BLOCK`] high indices per block (their build is
+    /// `2^{t−7}·128` products per chunk, amortized over the tail's packs),
+    /// else through the plane products; the two agree exactly
+    /// (`affine_tail_lookup_matches_products`).
     pub(crate) fn add_a_prime(
         &self,
         coefficient_tables: &RhoTables,
         basis: &mut [Gf],
         task_packs: usize,
     ) {
+        let highs = (self.len >> self.t).saturating_sub(1);
+        let lookup = highs >= LOOKUP_MIN_HIGH_PER_BLOCK;
+        self.add_a_prime_with(coefficient_tables, basis, task_packs, lookup);
+    }
+
+    /// [`Self::add_a_prime`] with the full-pack mode chosen by the caller.
+    pub(crate) fn add_a_prime_with(
+        &self,
+        coefficient_tables: &RhoTables,
+        basis: &mut [Gf],
+        task_packs: usize,
+        lookup: bool,
+    ) {
         if self.len == 0 {
             return;
         }
+        let tables = lookup.then(|| self.lookup_tables(coefficient_tables));
         let first_pack = self.source_start >> LOG_PACKING;
         let last_pack = (self.source_start + self.len - 1) >> LOG_PACKING;
         cfg_chunks_mut!(basis, task_packs)
@@ -984,12 +1012,84 @@ impl AffineTailPlanes {
                     let column_lo = (y << LOG_PACKING).max(self.source_start);
                     let column_hi = ((y + 1) << LOG_PACKING).min(self.source_start + self.len);
                     if column_hi - column_lo == PACK {
-                        *slot += self.full_pack(coefficient_tables, &mut cache, y);
+                        *slot += match &tables {
+                            Some(tables) => self.full_pack_lookup(tables, y),
+                            None => self.full_pack(coefficient_tables, &mut cache, y),
+                        };
                     } else {
                         *slot += self.partial_pack(coefficient_tables, &mut cache, y, column_lo, column_hi);
                     }
                 }
             });
+    }
+
+    /// The per-block lookup tables: for chunk `l` and block `m` (the
+    /// straddling halves as two extra blocks when the phase is nonzero),
+    /// `D_{l,m}[u] = Σ_a C_{u,a}·R_{l,a}(m)` and its 16 byte-position
+    /// subset-sum tables, so that a full pack at high index `c` costs
+    /// `Φ`-style 16 gathers: `Σ_a ρ′_{l,a}(zc_l[c])·R_{l,a}(m)
+    /// = Σ_a Σ_u bit_u(zc_l[c])·C_{u,a}·R_{l,a}(m) = Σ_u bit_u(zc_l[c])·D_{l,m}[u]`
+    /// (`ρ′_{l,a}(e) = Σ_{u : bit_u(e)} C_{u,a}` is F₂-linear in `e`).
+    fn lookup_tables(&self, coefficient_tables: &RhoTables) -> TailLookupTables {
+        let chunks = self.zc.len();
+        let blocks = 1usize << (self.t - LOG_PACKING);
+        let straddle = !self.r_low.is_empty();
+        let per_chunk = blocks + if straddle { 2 } else { 0 };
+        let plane = |l: usize, block: usize| -> &[Gf] {
+            if block < blocks {
+                &self.r_tables[l][block << LOG_PACKING..(block + 1) << LOG_PACKING]
+            } else if block == blocks {
+                &self.r_low[l]
+            } else {
+                &self.r_high[l]
+            }
+        };
+        let d: Vec<Gf> = cfg_into_iter!(0..chunks * per_chunk * PACK)
+            .map(|index| {
+                let u = index & (PACK - 1);
+                let block = (index >> LOG_PACKING) % per_chunk;
+                let l = (index >> LOG_PACKING) / per_chunk;
+                let r = plane(l, block);
+                let mut acc = kernel::zero();
+                for (c_ua, r_a) in coefficient_tables.row(u).iter().zip(r.iter()) {
+                    kernel::mul_acc(&mut acc, r_a, &kernel::fixed(c_ua));
+                }
+                kernel::reduce(&acc)
+            })
+            .collect();
+        let mut tables = vec![Gf::zero(); chunks * per_chunk * 16 * 256];
+        cfg_chunks_mut!(tables, 16 * 256)
+            .enumerate()
+            .for_each(|(block, table)| {
+                phi_byte_tables_into(table, &d[block << LOG_PACKING..(block + 1) << LOG_PACKING]);
+            });
+        TailLookupTables {
+            tables,
+            per_chunk,
+            blocks,
+        }
+    }
+
+    /// A full pack by the lookup tables.
+    fn full_pack_lookup(&self, tables: &TailLookupTables, y: usize) -> Gf {
+        let rows = 1usize << self.t;
+        let r0 = self.row(y << LOG_PACKING);
+        let c = r0 >> self.t;
+        let b0 = r0 & (rows - 1);
+        let m = b0 >> LOG_PACKING;
+        let phase = b0 & (PACK - 1);
+        let mut acc = Gf::zero();
+        if phase == 0 || m + 1 < tables.blocks {
+            for (l, zc_l) in self.zc.iter().enumerate() {
+                acc += phi_from_words(*zc_l[c].words(), tables.table(l, m));
+            }
+        } else {
+            for (l, zc_l) in self.zc.iter().enumerate() {
+                acc += phi_from_words(*zc_l[c].words(), tables.table(l, tables.blocks));
+                acc += phi_from_words(*zc_l[c + 1].words(), tables.table(l, tables.blocks + 1));
+            }
+        }
+        acc
     }
 
     /// A pack entirely inside the tail: the tabulated planes.
@@ -1073,6 +1173,29 @@ impl AffineTailPlanes {
                 out[column - base] += zc_l[c] * eq_l[b];
             }
         }
+    }
+}
+
+/// High indices per block from which [`AffineTailPlanes::add_a_prime`]
+/// builds the lookup tables: the build costs `128·128` products per block,
+/// the plane products `128` per pack, and a block serves one pack per high
+/// index.
+const LOOKUP_MIN_HIGH_PER_BLOCK: usize = 256;
+
+/// The affine tail's per-block byte tables (see
+/// [`AffineTailPlanes::lookup_tables`]).
+struct TailLookupTables {
+    /// Per chunk, per block, 16 byte positions × 256 values.
+    tables: Vec<Gf>,
+    per_chunk: usize,
+    blocks: usize,
+}
+
+impl TailLookupTables {
+    #[inline]
+    fn table(&self, l: usize, block: usize) -> &[Gf] {
+        let start = (l * self.per_chunk + block) * 16 * 256;
+        &self.tables[start..start + 16 * 256]
     }
 }
 
@@ -1315,8 +1438,9 @@ mod tests {
                         *slot = sample(0x4_0000 + y as u64); // the engine ADDS
                     }
                     let before = basis.clone();
-                    // Three packs per task: task boundaries fall inside the tail.
-                    tail.add_a_prime(&coefficient_tables, &mut basis, 3);
+                    // Three packs per task: task boundaries fall inside the tail;
+                    // alternate the full-pack mode so both are checked cellwise.
+                    tail.add_a_prime_with(&coefficient_tables, &mut basis, 3, trial.is_multiple_of(2));
                     for y in 0..n_packs {
                         let mut expect = before[y];
                         let mut weights = [Gf::zero(); PACK];
@@ -1337,6 +1461,44 @@ mod tests {
                         }
                         assert_eq!(basis[y], expect, "trial {trial} t {t} chunks {chunks} pack {y}");
                     }
+                }
+            }
+        }
+    }
+
+    /// The lookup-table mode and the plane-product mode of the affine tail
+    /// agree pack for pack, on random tensors at every phase class, with
+    /// one and two chunks (the lookup mode is otherwise selected only for
+    /// tails spanning hundreds of high indices).
+    #[test]
+    fn affine_tail_lookup_matches_products() {
+        let rho: Vec<Gf> = (0..PACK).map(|i| sample(0x5_0000 + i as u64)).collect();
+        let rho_tables = phi_byte_tables(&rho, Gf::one());
+        let coefficient_tables = RhoTables::new(&rho, &rho_tables);
+        let mut trial = 0u64;
+        for t in [7usize, 9] {
+            let rows = 1usize << t;
+            for chunks in [1usize, 2] {
+                for (source_start, len, row_start) in [
+                    (0usize, 40 * rows + 3, 0usize),
+                    (5, 33 * rows, 2 * rows + 9),
+                    (129, 20 * rows + 1, 65),
+                ] {
+                    trial += 1;
+                    let eq: Vec<Vec<Gf>> = (0..chunks)
+                        .map(|l| (0..rows).map(|b| sample(0x6_0000 + trial * 4096 + (l * rows + b) as u64)).collect())
+                        .collect();
+                    let highs = (row_start + len).div_ceil(rows) + 1;
+                    let zc: Vec<Vec<Gf>> = (0..chunks)
+                        .map(|l| (0..highs).map(|c| sample(0x7_0000 + trial * 64 + (l * highs + c) as u64)).collect())
+                        .collect();
+                    let tail = AffineTailPlanes::new(source_start, len, row_start, &eq, &zc);
+                    let n_packs = (source_start + len).div_ceil(PACK) + 1;
+                    let mut products = vec![Gf::zero(); n_packs];
+                    let mut lookup = vec![Gf::zero(); n_packs];
+                    tail.add_a_prime_with(&coefficient_tables, &mut products, 5, false);
+                    tail.add_a_prime_with(&coefficient_tables, &mut lookup, 7, true);
+                    assert_eq!(lookup, products, "trial {trial} t {t} chunks {chunks}");
                 }
             }
         }
