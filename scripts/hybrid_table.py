@@ -39,17 +39,17 @@ from pathlib import Path
 # Naming rules (user directive 2026-09-13): the F2Z rows are \ftwoz-SNARK
 # (never "(this work)"), and no \cite{...} after a scheme name in the table.
 ROWS = [
-    (("hybrid", 1), r"\ftwoz-SNARK, $\rho = 1/2$"),
-    (("hybrid", 3), r"\ftwoz-SNARK, $\rho = 1/8$"),
-    (("all-binius", 1), r"Binius64, $\rho = 1/2$"),
-    (("all-binius", 3), r"Binius64, $\rho = 1/8$"),
-    (("binius-ligerito", 1), r"Binius64 + \ftwoz\ opener, $\rho = 1/2$"),
-    (("binius-ligerito", 3), r"Binius64 + \ftwoz\ opener, $\rho = 1/8$"),
+    (("hybrid", 1), r"\ftwoz-SNARK, rate $1/2$"),
+    (("hybrid", 3), r"\ftwoz-SNARK, rate $1/8$"),
+    (("all-binius", 1), r"Binius (UDR), rate $1/2$"),
+    (("all-binius", 3), r"Binius (UDR), rate $1/8$"),
+    (("binius-ligerito", 1), r"Binius (Johnson), rate $1/2$"),
+    (("binius-ligerito", 3), r"Binius (Johnson), rate $1/8$"),
 ]
 
 SCHEMES = (
-    r" \ftwoz-SNARK proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito with the out-of-domain Round~0, at the row's rate $\rho$); its whole-protocol union bound is gated at $\lambda = 100$. Binius64 proves the same SHA-256 chain and a native four-limb multiplication gadget in one proof with ring switching and FRI at the row's rate and a $100$-bit query-phase target. The opener rows prove the same all-Binius circuit with Binius64's PIOP and the \ftwoz\ opener at the row's rate, every round-by-round error term gated at $100$ bits on its own."
-    r" \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes); $^{\dagger}$ marks cases that paged. Apple M5, 24\,GB; threads per group as shown; medians of the verified runs."
+    r" \ftwoz-SNARK proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito with the out-of-domain Round~0, at the row's rate); its whole-protocol union bound is gated at $\lambda = 100$. Binius (UDR) proves the same SHA-256 chain and a native four-limb multiplication gadget in one Binius64 proof with ring switching and FRI at the row's rate and a $100$-bit query-phase target. Binius (Johnson) proves the same all-Binius circuit with Binius64's PIOP and the \ftwoz\ opener at the row's rate, every round-by-round error term gated at $100$ bits on its own."
+    r" \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes); $^{\dagger}$ marks cases that paged. Apple M5, 24\,GB; medians of the verified runs."
 )
 
 VARIANTS = {
@@ -276,7 +276,7 @@ def main() -> None:
         "%   round-by-round accounting gated at 100 bits.",
         f"% Machine: {platform.machine()} {platform.platform()}. Columns: prover = total_prover_ms (witness synthesis, commitments, PIOPs, opening, encoding; setup excluded);",
         "%   verifier = verify_ms; proof = proof_bytes, KB = 1000 bytes; peak mem. = external RSS sample of the child process, GB = 2^30 bytes.",
-        "% Bold = best of the schemes for that (shape, threads) group and column; dagger = the case paged (swap-outs > 0). Raw medians:",
+        "% Bold = best of the schemes for that shape and column (each thread count is its own column); dagger = the case paged (swap-outs > 0). Raw medians:",
     ]
     for shape in shapes:
         for threads in thread_counts:
@@ -296,53 +296,61 @@ def main() -> None:
         r"  \centering",
         r"  \small",
         r"  \setlength{\tabcolsep}{4pt}",
-        r"  \begin{tabular}{@{}rrrlrrrr@{}}",
+        r"  \begin{tabular}{@{}rrl" + "r" * (2 * len(thread_counts) + 2) + "@{}}",
         r"    \toprule",
-        r"    $N$ & $M$ & Threads & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\",
+        r"     & & & \multicolumn{%d}{c}{Prover (ms)} & \multicolumn{%d}{c}{Verifier (ms)} & Proof & Peak mem. \\" % (len(thread_counts), len(thread_counts)),
+        r"    \cmidrule(lr){4-%d} \cmidrule(lr){%d-%d}" % (3 + len(thread_counts), 4 + len(thread_counts), 3 + 2 * len(thread_counts)),
+        r"    $N$ & $M$ & Scheme & " + " & ".join(f"{t} thr" for t in thread_counts) + " & " + " & ".join(f"{t} thr" for t in thread_counts) + r" & (KB) & (GB) \\",
         r"    \midrule",
     ]
+    ref_t = max(thread_counts)
+    order_t = [ref_t] + [t for t in thread_counts if t != ref_t]
+    cols = ([("prover", t, sig3) for t in thread_counts] + [("verify", t, sig3) for t in thread_counts]
+            + [("proof", None, lambda v: f"{v / 1000:.0f}"), ("peak_mib", None, lambda v: sig3(v / 1024))])
     first_group = True
     for shape in shapes:
-        first_threads = True
-        for threads in thread_counts:
-            present = [
-                (label, data[(mode, rate)][threads][shape])
-                for (mode, rate), label in ROWS
-                if shape in data.get((mode, rate), {}).get(threads, {})
-            ]
-            if not present:
-                continue
-            if not first_group:
-                lines.append(r"    \addlinespace")
-            first_group = False
-            best = {}
-            for key in ("prover", "verify", "proof", "peak_mib"):
-                values = [r[key] for _, r in present if r[key] is not None]
-                best[key] = min(values) if values else None
-            for j, (label, row) in enumerate(present):
-                dagger = r"$^{\dagger}$" if row["pressured"] else ""
-                cells = []
-                for key, text in (
-                    ("prover", sig3(row["prover"])),
-                    ("verify", sig3(row["verify"])),
-                    ("proof", f"{row['proof'] / 1000:.0f}"),
-                    ("peak_mib", sig3(row["peak_mib"] / 1024) if row["peak_mib"] is not None else "--"),
-                ):
-                    bold = row[key] is not None and row[key] == best[key]
-                    cell = rf"\textbf{{{text}}}" if bold else text
-                    cells.append(cell + (dagger if key in ("prover", "verify", "peak_mib") and dagger else ""))
-                head = (
-                    rf"    $2^{{{shape[0]}}}$ & $2^{{{shape[1]}}}$"
-                    if j == 0 and first_threads
-                    else "     &"
-                )
-                thread_cell = str(threads) if j == 0 else ""
-                lines.append(f"{head} & {thread_cell} & {label} & " + " & ".join(cells) + r" \\")
-            first_threads = False
+        present = [((mode, rate), label) for (mode, rate), label in ROWS
+                   if any(shape in data.get((mode, rate), {}).get(t, {}) for t in thread_counts)]
+        if not present:
+            continue
+        if not first_group:
+            lines.append(r"    \addlinespace")
+        first_group = False
+        def pick(key, t):
+            for u in (order_t if t is None else [t]):
+                r = data.get(key, {}).get(u, {}).get(shape)
+                if r is not None:
+                    return r
+            return None
+        grid = {}
+        for key, _ in present:
+            row_cells = []
+            for metric, t, _ in cols:
+                r = pick(key, t)
+                row_cells.append((None if r is None else r[metric], bool(r is not None and r["pressured"])))
+            grid[key] = row_cells
+        best = []
+        for ci, (_, _, fmt) in enumerate(cols):
+            vals = [grid[k][ci][0] for k, _ in present if grid[k][ci][0] is not None]
+            best.append(fmt(min(vals)) if len(vals) > 1 else None)
+        for j, (key, label) in enumerate(present):
+            out_cells = []
+            for ci, (metric, t, fmt) in enumerate(cols):
+                v, pressured = grid[key][ci]
+                if v is None:
+                    out_cells.append("--")
+                    continue
+                text = fmt(v)
+                cell = rf"\textbf{{{text}}}" if best[ci] is not None and text == best[ci] else text
+                if pressured and metric in ("prover", "verify", "peak_mib"):
+                    cell += r"$^{\dagger}$"
+                out_cells.append(cell)
+            head = rf"    $2^{{{shape[0]}}}$ & $2^{{{shape[1]}}}$" if j == 0 else "     &"
+            lines.append(f"{head} & {label} & " + " & ".join(out_cells) + r" \\")
     lines += [
         r"    \bottomrule",
         r"  \end{tabular}",
-        rf"  \caption{{{variant['caption']}}}",
+        rf"  \caption{{{variant['caption']} Prover and verifier times are given for {' and '.join(map(str, thread_counts))} threads; proof size does not depend on the thread count, and peak memory is from the {max(thread_counts)}-thread runs.}}",
         rf"  \label{{{variant['label']}}}",
         r"\end{table}",
     ]

@@ -34,15 +34,16 @@ from native_mul_results import SAMPLE_SCHEMA, finite_number, require_compatible,
 # the pinned 100-bit Brakedown target. Naming per the user's directive: no
 # \cite after a scheme name, and the F2Z rows are \ftwoz-SNARK.
 SCHEMES = [
-    ("f2z@1", "\\ftwoz-SNARK, $\\rho = 1/2$"),
-    ("f2z@3", "\\ftwoz-SNARK, $\\rho = 1/8$"),
-    ("binius64@1", "Binius64, $\\rho = 1/2$"),
-    ("binius64@3", "Binius64, $\\rho = 1/8$"),
-    ("binius64-ligerito-rbr@1", "Binius64 + \\ftwoz\\ opener, $\\rho = 1/2$"),
-    ("binius64-ligerito-rbr@3", "Binius64 + \\ftwoz\\ opener, $\\rho = 1/8$"),
-    ("plonky3-fri", "Plonky3 (FRI), $\\rho = 1/2$"),
+    ("f2z@1", "\\ftwoz-SNARK, rate $1/2$"),
+    ("f2z@3", "\\ftwoz-SNARK, rate $1/8$"),
+    ("binius64@1", "Binius (UDR), rate $1/2$"),
+    ("binius64@3", "Binius (UDR), rate $1/8$"),
+    ("binius64-ligerito-rbr@1", "Binius (Johnson), rate $1/2$"),
+    ("binius64-ligerito-rbr@3", "Binius (Johnson), rate $1/8$"),
+    ("plonky3-fri", "Plonky3 (FRI), rate $1/2$"),
     ("plonky3-whir", "Plonky3 (WHIR)"),
     ("limber", "Limber (Brakedown)"),
+    ("zinc-plus", "Zinc+, rate $1/4$"),
 ]
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
@@ -73,7 +74,7 @@ def f2z_caption(rows):
     for rate, (profile, regime, ood) in sorted(policies.items()):
         bound = "Johnson" if regime == "johnson" else "unique decoding radius"
         evaluation = "early Round-0 OOD" if ood else "without OOD"
-        clauses.append(rf"$\rho = 1/{1 << rate}$ is {bound}, {profile}, {evaluation}")
+        clauses.append(rf"at rate $1/{1 << rate}$ is {bound}, {profile}, {evaluation}")
     shifts = {int(row["config"].get("u64_split_shift", 0)) for row in rows if row["backend"] == "f2z"}
     shift_note = ""
     if shifts - {0}:
@@ -100,13 +101,14 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber"}
+    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber",
+             "zinc-plus": "Zinc+"}
     if key in names:
         return names[key]
     family, _, rate = key.partition("@")
-    prefix = {"f2z": "\\ftwoz-SNARK at ", "binius64": "Binius64 at ",
-              "binius64-ligerito-rbr": "Binius64 with the \\ftwoz\\ opener at "}[family]
-    return prefix + ("$\\rho = 1/%d$" % (1 << int(rate)) if rate else "any rate")
+    prefix = {"f2z": "\\ftwoz-SNARK at ", "binius64": "Binius (UDR) at ",
+              "binius64-ligerito-rbr": "Binius (Johnson) at "}[family]
+    return prefix + ("rate $1/%d$" % (1 << int(rate)) if rate else "any rate")
 PLACEHOLDER = "--"
 
 
@@ -263,7 +265,7 @@ def main() -> int:
         raise ValueError("comparison mixes measurement machines")
     for row in by.values():
         source = row["provenance"]
-        source_identity = (source["source_sha256"], source["build"])
+        source_identity = (source["source_sha256"], {k: v for k, v in source["build"].items() if k != "threads"})
         backend = row["backend"]
         if backend in source_by_backend and source_by_backend[backend] != source_identity:
             if backend not in drift_allowed:
@@ -367,7 +369,7 @@ def main() -> int:
     w("%   overlaps the prover column); prover = online_prover_ms (the complete native prover call after witness generation,")
     w("%   i.e. commitment + PIOP + PCS opening); verifier = verify_ms; proof = median proof_bytes of the samples, KB = 1000 bytes;")
     w("%   peak mem. = peak_rss_bytes of the separate single-proof memory child, GB = 2^30 bytes (`--` where the run predates it).")
-    w("% Bold = best of the schemes for that (size, threads) group and column.")
+    w("% Bold = best of the schemes for that size and column (each thread count is its own column).")
     w("% Medians (ms) as recorded in summary.json (`--` rows below = scheme not run at that size and thread count):")
     for e in exps:
         for t in threads_list:
@@ -439,57 +441,66 @@ def main() -> int:
         parts = [f"{scheme_name(slug)} at {sizes_text(sizes)}" for slug, sizes in reported.items()]
         paging_sentence = ("The prover's working set exceeds the machine's memory for "
                            + join(parts) + ", so those rows are reported but paging-dominated "
-                           "and are not comparable with the rest. ")
+                           "and are not comparable with the rest; their peak memory is capped by memory pressure and not shown. ")
     w("")
     w("\\begin{table}[H]")
     w("  \\centering")
     w("  \\small")
-    w("  \\setlength{\\tabcolsep}{4.5pt}")
-    w("  \\begin{tabular}{@{}rrlrrrrr@{}}")
+    w("  \\setlength{\\tabcolsep}{4pt}")
+    span = len(threads_list)
+    w("  \\begin{tabular}{@{}rl" + "r" * (1 + 2 * span + 2) + "@{}}")
     w("    \\toprule")
-    w("    $N$ & Threads & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\\ (GB) \\\\")
+    pstart = 4
+    vstart = pstart + span
+    w("     &  & Witgen & \\multicolumn{%d}{c}{Prover (ms)} & \\multicolumn{%d}{c}{Verifier (ms)} & Proof & Peak mem. \\\\" % (span, span))
+    w("    \\cmidrule(lr){%d-%d} \\cmidrule(lr){%d-%d}" % (pstart, vstart - 1, vstart, vstart + span - 1))
+    thr = " & ".join(f"{t} thr" for t in threads_list)
+    w("    $N$ & Scheme & (ms) & " + thr + " & " + thr + " & (KB) & (GB) \\\\")
     w("    \\midrule")
-    first_group = True
-    for e in exps:
-        n_cell_pending = f"$2^{{{e}}}$"
-        for t in threads_list:
-            present = {slug: by[(slug, e, t)]["medians"] for slug, _ in SCHEMES if (slug, e, t) in by}
-            if not present:
+    ref_t = max(threads_list)
+    order_t = [ref_t] + [t for t in threads_list if t != ref_t]
+    for gi, e in enumerate(exps):
+        present = [slug for slug, _ in SCHEMES if any((slug, e, t) in by for t in threads_list)]
+        def single(slug, getter):
+            # Thread-independent columns: the largest thread count's run, else any.
+            for t in order_t:
+                r = by.get((slug, e, t))
+                if r is not None:
+                    return getter(r, t)
+            return None
+        witgen = {s: single(s, lambda r, t: r["medians"]["witness_ms"]) for s in present}
+        peak = {s: single(s, lambda r, t: r.get("peak_rss_bytes") or None) for s in present}
+        size = {s: single(s, lambda r, t, s=s: sizes.get((s, e, t))) for s in present}
+        # Paging rows: the peak resident set is capped by memory pressure, so it is not shown.
+        peak = {s: (None if selected((s, e), paging) else v) for s, v in peak.items()}
+        def med(s, t, k):
+            r = by.get((s, e, t))
+            return None if r is None else r["medians"][k]
+        prov = {(s, t): med(s, t, "online_prover_ms") for s in present for t in threads_list}
+        ver = {(s, t): med(s, t, "verify_ms") for s in present for t in threads_list}
+        def best(values):
+            vs = [v for v in values if v is not None]
+            return min(vs) if len(vs) > 1 else None
+        b_w, b_pk, b_sz = best(witgen.values()), best(peak.values()), best(size.values())
+        b_pr = {t: best(prov[(s, t)] for s in present) for t in threads_list}
+        b_vr = {t: best(ver[(s, t)] for s in present) for t in threads_list}
+        def cell(v, bst, fmt):
+            if v is None:
+                return PLACEHOLDER
+            txt = fmt(v)
+            return f"\\textbf{{{txt}}}" if bst is not None and txt == fmt(bst) else txt
+        for ri, (slug, label) in enumerate(schemes):
+            n_cell = f"$2^{{{e}}}$" if ri == 0 else ""
+            if slug not in present:
+                w(f"    {n_cell} & {label} & " + " & ".join([PLACEHOLDER] * (1 + 2 * span + 2)) + " \\\\")
                 continue
-            if not first_group:
-                w("    \\addlinespace")
-            first_group = False
-            best = {k: min(m[k] for m in present.values()) for k in ("witness_ms", "online_prover_ms", "verify_ms")}
-            present_sizes = {slug: sizes[(slug, e, t)] for slug in present if (slug, e, t) in sizes}
-            best_size = min(present_sizes.values()) if present_sizes else None
-            present_peaks = {slug: by[(slug, e, t)]["peak_rss_bytes"] for slug in present
-                             if by[(slug, e, t)].get("peak_rss_bytes")}
-            best_peak = min(present_peaks.values()) if present_peaks else None
-            t_cell_pending = str(t)
-            for slug, label in schemes:
-                n_cell, n_cell_pending = n_cell_pending, ""
-                t_cell, t_cell_pending = t_cell_pending, ""
-                m = present.get(slug)
-                if m is None:
-                    w(f"    {n_cell} & {t_cell} & {label} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} & {PLACEHOLDER} \\\\")
-                    continue
-                cells = []
-                for k in ("witness_ms", "online_prover_ms", "verify_ms"):
-                    s = fmt_ms(m[k])
-                    cells.append(f"\\textbf{{{s}}}" if m[k] == best[k] and len(present) > 1 else s)
-                size = present_sizes.get(slug)
-                if size is None:
-                    size_cell = PLACEHOLDER
-                else:
-                    s = fmt_ms(size / 1000)
-                    size_cell = f"\\textbf{{{s}}}" if size == best_size and len(present_sizes) > 1 else s
-                peak = present_peaks.get(slug)
-                if peak is None:
-                    peak_cell = PLACEHOLDER
-                else:
-                    s = fmt_gb(peak)
-                    peak_cell = f"\\textbf{{{s}}}" if peak == best_peak and len(present_peaks) > 1 else s
-                w(f"    {n_cell} & {t_cell} & {label} & {cells[0]} & {cells[1]} & {cells[2]} & {size_cell} & {peak_cell} \\\\")
+            cells = [cell(witgen[slug], b_w, fmt_ms)]
+            cells += [cell(prov[(slug, t)], b_pr[t], fmt_ms) for t in threads_list]
+            cells += [cell(ver[(slug, t)], b_vr[t], fmt_ms) for t in threads_list]
+            cells += [cell(size[slug], b_sz, lambda v: fmt_ms(v / 1000)), cell(peak[slug], b_pk, fmt_gb)]
+            w(f"    {n_cell} & {label} & " + " & ".join(cells) + " \\\\")
+        if gi + 1 < len(exps):
+            w("    \\addlinespace")
     w("    \\bottomrule")
     w("  \\end{tabular}")
     statement = {
@@ -506,9 +517,9 @@ def main() -> int:
         for key in binius_keys:
             log_rate = int(key.split("@")[1])
             queries = next((int(r["config"].get("fri_queries", BINIUS_QUERIES.get(log_rate, 0))) for r in rows if scheme_key(r) == key), BINIUS_QUERIES.get(log_rate, 0))
-            parts.append(f"$\\rho = 1/{1 << log_rate}$ with ${queries}$ queries")
+            parts.append(f"rate $1/{1 << log_rate}$ with ${queries}$ queries")
         binius_rate_text = " and ".join(parts) + " for $100$ bits"
-    binius_note = "Binius64 (native multiplication" + (" and bit constraints" if args.workload not in ("u64", "u128") else "") + f", ring switching and BaseFold at {binius_rate_text})"
+    binius_note = "Binius (UDR) (Binius64 with native multiplication" + (" and bit constraints" if args.workload not in ("u64", "u128") else "") + f", ring switching and BaseFold at {binius_rate_text})"
     # The opener geometry of the binius64-ligerito rows as the runs recorded
     # it, one clause per rate (queries are size-independent; fold grinding and
     # the achieved bound move with N, so both are given as ranges).
@@ -533,21 +544,21 @@ def main() -> int:
             union = span(cfgs, "union_bound_bits", lambda v: f"{v:.1f}")
             inner = [t for t in [f"{gated} bits achieved" if gated else "",
                                  f"the union bound over the same terms is {union} bits" if union else ""] if t]
-            parts.append(f"$\\rho = 1/{1 << log_rate}$"
+            parts.append(f"rate $1/{1 << log_rate}$"
                          + (f" with {queries} level-0 queries" if queries else "")
                          + (f", {fold} bits of fold grinding" if fold else "")
                          + (f" and a {comp}-bit per-round target" if comp else "")
                          + (" (" + "; ".join(inner) + ")" if inner else ""))
-        return ("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP; every oracle committed and opened by "
+        return ("Binius (Johnson) (the same Binius64 circuit and PIOP; every oracle committed and opened by "
                 "ring switching and Johnson-regime Ligerito with Round~0 at " + " and at ".join(parts)
                 + "; every error term is gated at $100$ bits on its own --- the round-by-round minimum the \\ftwoz-SNARK rows report)")
     fri_rows = [r for r in rows if r["backend"] == "plonky3-fri"]
-    fri_note = ("Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at $\\rho = 1/2$, the smallest query count "
+    fri_note = ("Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at rate $1/2$, the smallest query count "
                 "clearing a proven round-by-round $100$-bit report per size)")
     if fri_rows:
         fri_queries = sorted({int(r["config"]["num_queries"]) for r in fri_rows})
         qtext = f"${fri_queries[0]}$" if len(fri_queries) == 1 else f"${fri_queries[0]}$--${fri_queries[-1]}$"
-        fri_note = ("Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at $\\rho = 1/2$ with the smallest query "
+        fri_note = ("Plonky3 (Goldilocks AIR, degree-$5$ extension, FRI at rate $1/2$ with the smallest query "
                     f"count clearing a proven round-by-round $100$-bit report per size: {qtext} queries)")
     limber_rows = [r for r in rows if r["backend"] == "limber"]
     limber_note = ("Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown, "
@@ -559,8 +570,29 @@ def main() -> int:
         limber_note = ("Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown; "
                        f"Brakedown column-open target ${targets.pop()}$ bits, its native IntEval $128$-bit, "
                        "challenge $117$-bit and $2^{-114}$ fingerprint terms unchanged)")
+    zinc_rows = [r for r in rows if r["backend"] == "zinc-plus"]
+    zinc_note = "Zinc+ (Zip+/IPRS commitments over $\\FF_{65537}$)"
+    if zinc_rows:
+        cfgs = [r["config"] for r in zinc_rows]
+
+        def one(name):
+            """A configuration value every Zinc+ row agrees on."""
+            values = {c[name] for c in cfgs}
+            if len(values) != 1:
+                raise ValueError(f"Zinc+ rows disagree on {name}: {sorted(values)}")
+            return values.pop()
+
+        logup = min(c["logup_bits"] for c in cfgs)
+        zinc_note = ("Zinc+ (one integer constraint $xy = z + 2^{32} w$ per multiplication over "
+                     f"${one('columns')}$ int columns of ${one('limb_bits')}$-bit limbs, every column "
+                     "range-checked by a GKR-LogUp word lookup; Zip+/IPRS over $\\FF_{65537}$ at rate "
+                     f"$1/{one('inverse_rate')}$ with ${one('column_openings')}$ column openings for "
+                     f"${one('target_bits')}$ bits, the projecting prime ${one('prime_bits')}$-bit and drawn "
+                     f"from the transcript, the range-check term at least ${logup:.0f}$ bits; rows of "
+                     f"${one('row_len')}$ columns, and the generic multi-row opening path)")
     scheme_notes = {
         "f2z": f2z_caption(rows),
+        "zinc-plus": zinc_note,
         "binius64": binius_note,
         "binius64-ligerito-rbr": ligerito_family_note("binius64-ligerito-rbr"),
         "plonky3-fri": fri_note,
@@ -579,6 +611,7 @@ def main() -> int:
       + "\\emph{Witgen} is the native witness generation; \\emph{prover} is the complete prover call after witness generation, "
       + "commitment included; \\emph{verifier} is the complete verification; \\emph{peak mem.} is the high-water resident set "
       + "of a separate child process proving and verifying once ($1$\\,GB $= 2^{30}$ bytes). "
+      + f"\\emph{{Witgen}} and \\emph{{peak mem.}} are from the {max(threads_list)}-thread runs; proof sizes do not depend on the thread count. "
       + "".join(f"{scheme_name(slug)} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
       + "".join(wall_sentence(e, slugs) for e, slugs in sorted(walls.items()))
       + unsupported_sentence + paging_sentence

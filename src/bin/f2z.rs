@@ -470,7 +470,7 @@ fn usage() -> ! {
          [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
-       f2z --sweep <lo>-<hi>|<n,n,…> [--threads N] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--latex <path>]\n\
+       f2z --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
          (paper-table mode: one fresh process per n, then the LaTeX table is written —\n\
           default paper/raw-performance-table.tex in the crate; t/s do not apply)\n\
        f2z --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr] [--word-bits 1|8]\n\
@@ -526,6 +526,15 @@ struct Opts {
     /// `--cooldown <s>`: idle seconds between the sweep's child processes
     /// (lets the OS reclaim the previous shape's memory and the chip cool).
     cooldown_s: u64,
+    /// `--sweep-threads 1,10`: run every `--sweep` shape once per listed
+    /// thread count (one child per shape and count) and write the split
+    /// table: per-step prover columns at the largest count, prover total and
+    /// verifier at every count. Overrides `--threads` for `--sweep`.
+    sweep_threads: Option<Vec<usize>>,
+    /// `--rep-cooldown <s>`: idle seconds between the timed prove/verify reps
+    /// inside a child (limits thermal creep on fanless machines; outside all
+    /// timers).
+    rep_cooldown_s: u64,
 }
 
 fn parse_args() -> Opts {
@@ -550,6 +559,8 @@ fn parse_args() -> Opts {
         mul_sweep: None,
         lambda: 100,
         cooldown_s: 0,
+        sweep_threads: None,
+        rep_cooldown_s: 0,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -619,6 +630,25 @@ fn parse_args() -> Opts {
             }
             "--cooldown" => {
                 o.cooldown_s =
+                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+            }
+            "--sweep-threads" => {
+                let spec = args.next().unwrap_or_else(|| usage());
+                let ts: Option<Vec<usize>> = spec
+                    .split(',')
+                    .map(|v| v.trim().parse::<usize>().ok().filter(|&t| t > 0))
+                    .collect();
+                match ts {
+                    Some(mut ts) if !ts.is_empty() => {
+                        ts.sort_unstable();
+                        ts.dedup();
+                        o.sweep_threads = Some(ts);
+                    }
+                    _ => usage(),
+                }
+            }
+            "--rep-cooldown" => {
+                o.rep_cooldown_s =
                     args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
             }
             other => match other.parse::<usize>() {
@@ -1067,6 +1097,9 @@ fn main() {
     let mut verify_steps = StepTable::default();
     let mut last_proof = None;
     for rep in 0..o.reps {
+        if rep > 0 && o.rep_cooldown_s > 0 {
+            std::thread::sleep(std::time::Duration::from_secs(o.rep_cooldown_s));
+        }
         let t1 = Instant::now();
         let proof = prove_once(&hint);
         prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
@@ -1147,6 +1180,7 @@ fn main() {
         // so the split sums to the total exactly.
         proof_nonlig_bytes: bytes - lig_b,
         proof_lig_bytes: lig_b,
+        peak_rss_bytes: process_peak_rss_bytes(),
     };
     println!("{}", result.to_line());
 }
@@ -1208,6 +1242,10 @@ struct CliResult {
     proof_bytes: usize,
     proof_nonlig_bytes: usize,
     proof_lig_bytes: usize,
+    /// High-water resident set of the child process in bytes (warm-up, peak
+    /// probes and timed reps included); `None` for lines written before the
+    /// key existed.
+    peak_rss_bytes: Option<u64>,
 }
 
 const RESULT_SCHEMA: &str = "f2z-cli/2";
@@ -1227,7 +1265,7 @@ impl CliResult {
              ood_bits={} threads={} reps={} \
              commit_ms={:.3} commit_peak_mb={:.2} prove_ms={:.3} prove_gp_ms={:.3} \
              prove_rs_ms={:.3} prove_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} \
-             verify_ms={:.3} proof_bytes={} proof_nonlig_bytes={} proof_lig_bytes={}",
+             verify_ms={:.3} proof_bytes={} proof_nonlig_bytes={} proof_lig_bytes={} peak_rss_bytes={}",
             f2z::ligerito_flock::ResolvedLigerito::encode_report(&self.ligerito),
             self.n,
             self.t,
@@ -1257,6 +1295,7 @@ impl CliResult {
             self.proof_bytes,
             self.proof_nonlig_bytes,
             self.proof_lig_bytes,
+            self.peak_rss_bytes.map_or_else(|| "na".to_string(), |b| b.to_string()),
         )
     }
 
@@ -1316,7 +1355,40 @@ impl CliResult {
             proof_bytes: int("proof_bytes")?,
             proof_nonlig_bytes: int("proof_nonlig_bytes")?,
             proof_lig_bytes: int("proof_lig_bytes")?,
+            peak_rss_bytes: match kv.get("peak_rss_bytes") {
+                None | Some(&"na") => None,
+                Some(v) => Some(v.parse::<u64>().map_err(|e| format!("peak_rss_bytes: {e}"))?),
+            },
         })
+    }
+}
+
+/// High-water resident set of this process in bytes: `getrusage` reports
+/// bytes on macOS; on Linux read `VmHWM`, since `getrusage` there can reflect
+/// the pre-exec image. `None` when unavailable.
+fn process_peak_rss_bytes() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        let kb: u64 = status
+            .lines()
+            .find_map(|l| l.strip_prefix("VmHWM:"))?
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()?;
+        Some(kb * 1024)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+        // SAFETY: getrusage writes a complete rusage on success; the return
+        // code is checked before the value is read.
+        if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
+            return None;
+        }
+        // SAFETY: initialized by the successful call above.
+        u64::try_from(unsafe { usage.assume_init() }.ru_maxrss).ok()
     }
 }
 
@@ -1410,13 +1482,43 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
         ns.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
         o.reps,
         o.profile,
-        o.threads.map_or_else(|| "default".to_string(), |t| t.to_string()),
+        o.sweep_threads
+            .as_ref()
+            .map(|ts| ts.iter().map(ToString::to_string).collect::<Vec<_>>().join(","))
+            .or_else(|| o.threads.map(|t| t.to_string()))
+            .unwrap_or_else(|| "default".to_string()),
         o.word_bits,
         latex_path.display(),
     );
-    let lines = run_children(&exe, ns, "n", o.cooldown_s, |n| {
+    // One child per (n, thread count), interleaved by n, under the same
+    // cooldown schedule; `--sweep-threads` overrides `--threads` per child.
+    let thread_counts: Vec<Option<usize>> = match &o.sweep_threads {
+        Some(ts) => ts.iter().map(|&t| Some(t)).collect(),
+        None => vec![o.threads],
+    };
+    let cases: Vec<(usize, Option<usize>)> =
+        ns.iter().flat_map(|&n| thread_counts.iter().map(move |&t| (n, t))).collect();
+    let case_ids: Vec<usize> = (0..cases.len()).collect();
+    let lines = run_children(&exe, &case_ids, "case", o.cooldown_s, |i| {
+        let (n, threads) = cases[i];
+        println!(
+            "(n = {n}, threads = {})",
+            threads.map_or_else(|| "default".to_string(), |t| t.to_string())
+        );
+        let mut common = common_child_args(o);
+        if let Some(pos) = common.iter().position(|x| x == "--threads") {
+            common.drain(pos..pos + 2);
+        }
         let mut a = vec![n.to_string()];
-        a.extend(common_child_args(o));
+        if let Some(t) = threads {
+            a.push("--threads".to_string());
+            a.push(t.to_string());
+        }
+        a.extend(common);
+        if o.rep_cooldown_s > 0 {
+            a.push("--rep-cooldown".to_string());
+            a.push(o.rep_cooldown_s.to_string());
+        }
         a.push("--profile".to_string());
         a.push(o.profile.clone());
         a
@@ -1487,7 +1589,10 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
     let mut cmdline = format!(
         "RUSTFLAGS=\"-C target-cpu=native\" cargo run --release --features unchecked -- \\\n%       {mode} {spec}"
     );
-    if let Some(th) = o.threads {
+    if let (true, Some(ts)) = (mode == "--sweep", &o.sweep_threads) {
+        let list = ts.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
+        let _ = write!(cmdline, " --sweep-threads {list}");
+    } else if let Some(th) = o.threads {
         let _ = write!(cmdline, " --threads {th}");
     }
     let _ = write!(cmdline, " --reps {} --profile {}", o.reps, o.profile);
@@ -1500,6 +1605,9 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
     if o.cooldown_s > 0 {
         let _ = write!(cmdline, " --cooldown {}", o.cooldown_s);
     }
+    if mode == "--sweep" && o.rep_cooldown_s > 0 {
+        let _ = write!(cmdline, " --rep-cooldown {}", o.rep_cooldown_s);
+    }
     if let Some(l) = &o.latex {
         let _ = write!(cmdline, " --latex {l}");
     }
@@ -1509,14 +1617,15 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
 fn print_sweep_summary(rows: &[CliResult]) {
     println!("\nsweep summary (medians; ms unless noted; proof KB = 1000 B; total = commit + prove):");
     println!(
-        "  {:>3} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
-        "n", "commit", "prove", "total", "grand-pr", "ring-sw", "ligerito", "verify", "proofKB",
-        "nonlig", "lig", "peakMB", "lig-b"
+        "  {:>3} {:>3} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7} {:>7}",
+        "n", "thr", "commit", "prove", "total", "grand-pr", "ring-sw", "ligerito", "verify", "proofKB",
+        "nonlig", "lig", "peakMB", "rssGB", "lig-b"
     );
     for r in rows {
         println!(
-            "  {:>3} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>8.3} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7}",
+            "  {:>3} {:>3} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>9.2} {:>8.3} {:>8.1} {:>8.1} {:>8.1} {:>9.1} {:>7} {:>7}",
             r.n,
+            r.threads,
             r.commit_ms,
             r.prove_ms,
             r.commit_ms + r.prove_ms,
@@ -1528,6 +1637,8 @@ fn print_sweep_summary(rows: &[CliResult]) {
             r.proof_nonlig_bytes as f64 / 1000.0,
             r.proof_lig_bytes as f64 / 1000.0,
             r.prove_peak_mb,
+            r.peak_rss_bytes
+                .map_or_else(|| "na".to_string(), |b| format!("{:.2}", b as f64 / (1u64 << 30) as f64)),
             na_f64(r.lig_achieved_bits),
         );
     }
@@ -1565,6 +1676,17 @@ fn fmt_kb(bytes: usize) -> String {
     let kb = bytes as f64 / 1000.0;
     if kb >= 100.0 { format!("{kb:.0}") } else { format!("{kb:.1}") }
 }
+/// Gigabytes (2^30 B) for the table: 1 decimal from 10, 2 from 1, else 3.
+fn fmt_gb_bytes(bytes: u64) -> String {
+    let gb = bytes as f64 / (1u64 << 30) as f64;
+    if gb >= 10.0 {
+        format!("{gb:.1}")
+    } else if gb >= 1.0 {
+        format!("{gb:.2}")
+    } else {
+        format!("{gb:.3}")
+    }
+}
 
 /// Write the paper's raw-performance table. The file is self-documenting:
 /// its header records the exact command, machine, date, commit, and every
@@ -1580,7 +1702,27 @@ fn write_latex_table(
         std::fs::create_dir_all(dir)?;
     }
     let Provenance { cpu, cores, mem_gb, date, commit, rustc } = probe_provenance();
-    let threads = rows.first().map_or(0, |r| r.threads);
+    let thread_counts: Vec<usize> = {
+        let mut v: Vec<usize> = rows.iter().map(|r| r.threads).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    let split = thread_counts.len() > 1;
+    let threads = thread_counts.iter().map(ToString::to_string).collect::<Vec<_>>().join(" and ");
+    let hi = thread_counts.last().copied().unwrap_or(0);
+    let split_note = if split {
+        format!(
+            " The per-step prover columns (\\emph{{commit}}, \\emph{{grand products}}, \\emph{{ring switch}}, \\emph{{Ligerito}}) are from the {hi}-thread runs; the prover \\emph{{total}} and the verifier time are given for {threads} threads; proof sizes do not depend on the thread count; \\emph{{peak mem.}} is the high-water resident set of the {hi}-thread child process, warm-up and peak probes included ($1$\\,GB $= 2^{{30}}$ bytes).{}",
+            if o.rep_cooldown_s > 0 {
+                format!(" Timed repetitions are separated by ${}$\\,s of idle time to limit thermal throttling.", o.rep_cooldown_s)
+            } else {
+                String::new()
+            }
+        )
+    } else {
+        String::new()
+    };
     let reps = rows.first().map_or(o.reps, |r| r.reps);
     let cmdline = reproduce_cmdline(o, "--sweep", spec);
     let lig_tag = rows.first().map_or("?", |r| r.lig.as_str());
@@ -1666,39 +1808,104 @@ fn write_latex_table(
         let _ = writeln!(out, "% {}", r.to_line());
     }
     let _ = writeln!(out);
-    let _ = writeln!(out, "\\begin{{table}}[H]");
-    let _ = writeln!(out, "  \\centering");
-    let _ = writeln!(out, "  \\small");
-    let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{4.5pt}}");
-    // Bold columns: prover Total (6), Verifier (7), proof-size Total (10).
-    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrr>{{\\bfseries}}r>{{\\bfseries}}rrr>{{\\bfseries}}r@{{}}}}");
-    let _ = writeln!(out, "    \\toprule");
-    let _ = writeln!(out, "    & \\multicolumn{{5}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\");
-    let _ = writeln!(out, "    \\cmidrule(lr){{2-6}} \\cmidrule(lr){{8-10}}");
-    let _ = writeln!(out, "    $\\log_2 \\codedim$ & Commit & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\");
-    let _ = writeln!(out, "    \\midrule");
-    for r in rows {
+    if split {
+        let mut ns: Vec<usize> = rows.iter().map(|r| r.n).collect();
+        ns.sort_unstable();
+        ns.dedup();
+        let find = |n: usize, t: usize| rows.iter().find(|r| r.n == n && r.threads == t);
+        let span = thread_counts.len();
+        let bold = ">{\\bfseries}r";
+        let thr = thread_counts.iter().map(|t| format!("{t} thr")).collect::<Vec<_>>().join(" & ");
+        let _ = writeln!(out, "\\begin{{table}}[H]");
+        let _ = writeln!(out, "  \\centering");
+        let _ = writeln!(out, "  \\footnotesize");
+        let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{3pt}}");
+        // Bold columns: prover totals, verifier times and the proof total.
+        let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrr{}{}rr>{{\\bfseries}}rr@{{}}}}", bold.repeat(span), bold.repeat(span));
+        let _ = writeln!(out, "    \\toprule");
         let _ = writeln!(
             out,
-            "    {} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\",
-            r.n,
-            fmt_ms(r.commit_ms),
-            fmt_ms(r.prove_gp_ms),
-            fmt_ms(r.prove_rs_ms),
-            fmt_ms(r.prove_lig_ms),
-            // Prover Total = the commitment plus the end-to-end prove (both medians).
-            fmt_ms(r.commit_ms + r.prove_ms),
-            fmt_ms(r.verify_ms),
-            fmt_kb(r.proof_nonlig_bytes),
-            fmt_kb(r.proof_lig_bytes),
-            fmt_kb(r.proof_bytes),
+            "    & \\multicolumn{{4}}{{c}}{{Prover steps, {hi} thr (ms)}} & \\multicolumn{{{span}}}{{c}}{{Prover total (ms)}} & \\multicolumn{{{span}}}{{c}}{{Verifier (ms)}} & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} & Peak mem. \\\\"
         );
+        let _ = writeln!(
+            out,
+            "    \\cmidrule(lr){{2-5}} \\cmidrule(lr){{6-{}}} \\cmidrule(lr){{{}-{}}} \\cmidrule(lr){{{}-{}}}",
+            5 + span,
+            6 + span,
+            5 + 2 * span,
+            6 + 2 * span,
+            8 + 2 * span
+        );
+        let _ = writeln!(
+            out,
+            "    $\\log_2 \\codedim$ & Commit & Grand prod. & Ring switch & Ligerito & {thr} & {thr} & Non-Lig. & Ligerito & Total & (GB) \\\\"
+        );
+        let _ = writeln!(out, "    \\midrule");
+        for &n in &ns {
+            let Some(r_hi) = find(n, hi) else { continue };
+            for &t in &thread_counts {
+                if let Some(r) = find(n, t) {
+                    if r.proof_bytes != r_hi.proof_bytes {
+                        eprintln!("warning: n={n}: proof bytes differ between {t} and {hi} threads ({} vs {})", r.proof_bytes, r_hi.proof_bytes);
+                    }
+                }
+            }
+            let mut cells = vec![
+                n.to_string(),
+                fmt_ms(r_hi.commit_ms),
+                fmt_ms(r_hi.prove_gp_ms),
+                fmt_ms(r_hi.prove_rs_ms),
+                fmt_ms(r_hi.prove_lig_ms),
+            ];
+            for &t in &thread_counts {
+                // Prover Total = the commitment plus the end-to-end prove (both medians).
+                cells.push(find(n, t).map_or_else(|| "--".to_string(), |r| fmt_ms(r.commit_ms + r.prove_ms)));
+            }
+            for &t in &thread_counts {
+                cells.push(find(n, t).map_or_else(|| "--".to_string(), |r| fmt_ms(r.verify_ms)));
+            }
+            cells.push(fmt_kb(r_hi.proof_nonlig_bytes));
+            cells.push(fmt_kb(r_hi.proof_lig_bytes));
+            cells.push(fmt_kb(r_hi.proof_bytes));
+            cells.push(r_hi.peak_rss_bytes.map_or_else(|| "--".to_string(), fmt_gb_bytes));
+            let _ = writeln!(out, "    {} \\\\", cells.join(" & "));
+        }
+        let _ = writeln!(out, "    \\bottomrule");
+    } else {
+        let _ = writeln!(out, "\\begin{{table}}[H]");
+        let _ = writeln!(out, "  \\centering");
+        let _ = writeln!(out, "  \\small");
+        let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{4.5pt}}");
+        // Bold columns: prover Total (6), Verifier (7), proof-size Total (10).
+        let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrr>{{\\bfseries}}r>{{\\bfseries}}rrr>{{\\bfseries}}r@{{}}}}");
+        let _ = writeln!(out, "    \\toprule");
+        let _ = writeln!(out, "    & \\multicolumn{{5}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\");
+        let _ = writeln!(out, "    \\cmidrule(lr){{2-6}} \\cmidrule(lr){{8-10}}");
+        let _ = writeln!(out, "    $\\log_2 \\codedim$ & Commit & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\");
+        let _ = writeln!(out, "    \\midrule");
+        for r in rows {
+            let _ = writeln!(
+                out,
+                "    {} & {} & {} & {} & {} & {} & {} & {} & {} & {} \\\\",
+                r.n,
+                fmt_ms(r.commit_ms),
+                fmt_ms(r.prove_gp_ms),
+                fmt_ms(r.prove_rs_ms),
+                fmt_ms(r.prove_lig_ms),
+                // Prover Total = the commitment plus the end-to-end prove (both medians).
+                fmt_ms(r.commit_ms + r.prove_ms),
+                fmt_ms(r.verify_ms),
+                fmt_kb(r.proof_nonlig_bytes),
+                fmt_kb(r.proof_lig_bytes),
+                fmt_kb(r.proof_bytes),
+            );
+        }
+        let _ = writeln!(out, "    \\bottomrule");
     }
-    let _ = writeln!(out, "    \\bottomrule");
     let _ = writeln!(out, "  \\end{{tabular}}");
     let _ = writeln!(
         out,
-        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes. {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
+        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes.{split_note} {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
     );
     let _ = writeln!(out, "  \\label{{tab:f2z-raw-performance}}");
     let _ = writeln!(out, "\\end{{table}}");

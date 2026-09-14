@@ -22,6 +22,63 @@ which run while paging unless the slowdown is unreasonable. Table naming: no
 `\cite` after scheme names; the F2Z rows are `\ftwoz-SNARK`, never
 "\ftwoz\ (this work)".
 
+Zinc+ joins the u32 table at rate 1/4 (see below); it is measured outside
+this runner, by its own bench in a pinned zinc-plus checkout.
+
+## Zinc+ (u32 only)
+
+f2z-pcs and zinc-plus pin incompatible `crypto-bigint` releases (`=0.7.5`
+against `=0.7.0-rc.9`), so Zinc+ cannot be linked into
+`benches/mul_e2e_compare.rs`. Instead it is measured by
+`protocol/benches/f2z_u32_mod32.rs` inside a private clone of zinc-plus at
+`origin/main-beta` (609c18c), and converted into a run directory afterwards:
+
+```sh
+# In the clone: one process per (size, threads); 1 thread uses the
+# non-parallel build, 10 threads the `parallel` one, as in the MultiSwap row.
+CARGO_TARGET_DIR=/tmp/zinc-u32-st cargo bench --no-run --offline \
+    --bench f2z_u32_mod32 --features "simd unchecked"
+EXPONENT=15 REPS=5 SEED=<the suite corpus seed> <binary>
+
+# In f2z-pcs: campaign directory -> run directory the exporter reads.
+python3 scripts/zinc_plus_summary.py bench_results/zinc-plus-u32-<date> \
+    --clone <clone> --revision 609c18c --toolchain "$(rustc --version)" \
+    --machine-from PerfRuns/suite-u32-f2z-r2-t1 --out PerfRuns/zinc-plus-u32
+```
+
+The statement is one integer constraint per multiplication,
+`x·y = z + 2^32·w`, over 8 int columns holding the 16-bit limbs of x, y, z
+and w, every column range-checked by a `Word { width: 16 }` GKR-LogUp
+lookup. Range-checking `w` is what makes it sound: without it
+`w = (x·y − z)·2^-32 mod q` satisfies the constraint for any `z`. With all
+limbs in range, `|x·y − z − 2^32·w| < 2^65 < q`, so the equation holds over
+the integers and `z = x·y mod 2^32` exactly.
+
+The bench derives its operands from `native-mul/mod32/inputs/v1` with the
+campaign's seed and recomputes the table's row digest from the limbs it
+proved, so its `corpus_digest` equals the other schemes' at every size; the
+converter refuses a campaign where the two digests disagree.
+
+Geometry and types, both established by CHECKED runs (the `unchecked`
+feature off), not by argument:
+
+- Rows are 8192 columns wide. The IPRS NTT over F65537 needs
+  `row_len · inverse_rate < 65537` (2^14 at rate 1/4), and the narrow int
+  code — whose base layer and first radix-8 stage run over `i64`/`i128` —
+  is exact for 16-bit cells only up to the depth-3 code at 8192.
+- The int lane uses the PLAIN IPRS code, not the narrow one. With more than
+  one Zip+ row the verifier's `encode_wide` of an alpha-combined row
+  (128-bit alphas over 16-bit cells) overflows the narrow lanes; the plain
+  code encodes over the combination ring instead.
+- The combination ring is `Int<6>` (384 bits). `Int<4>` overflows in the
+  prover's row combination and `Int<5>` in the verifier's `encode_wide`.
+
+Security at the suite's 100-bit target: 150 column openings at rate 1/4
+(`num_column_openings(4, 100)`), no grinding, a 128-bit projecting prime
+drawn from the transcript, and the LogUp range-check term
+`127 − log2(8·2^L + 2^16)` ≥ 100 bits for `L ≤ 23`. The opening runs the
+generic multi-row path, as decided; it is not the fast single-row path.
+
 ## Run
 
 Use Rust 1.98.1. Every backend, Limber included, runs inside the comparison
@@ -294,6 +351,7 @@ negative tests still independently check operand bounds and product correctness.
 ## Deferred work
 
 - Spartan2 integration.
+- Zinc+ beyond u32, and its fast single-row opening path.
 - Wider-workload security changes.
 - The remaining all-benchmark Johnson/Round-0 OOD audit.
 - SHA-chain and SHA+ECDSA comparisons, including smaller SHA sizes.

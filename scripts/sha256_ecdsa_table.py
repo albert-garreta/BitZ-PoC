@@ -26,12 +26,12 @@ SCHEMA = "f2z/sha256-ecdsa-compare/v1"
 # level-0 rate, the Binius-family rows by their commitment rate. Naming
 # follows the 2026-09-13 directive: no `(this work)`, no \cite after names.
 SCHEMES = [
-    ("f2z-split@1", "\\ftwoz-SNARK, $\\rho = 1/2$"),
-    ("f2z-split@3", "\\ftwoz-SNARK, $\\rho = 1/8$"),
-    ("binius64@1", "Binius64, $\\rho = 1/2$"),
-    ("binius64@3", "Binius64, $\\rho = 1/8$"),
-    ("binius64-ligerito@1", "Binius64 + \\ftwoz\\ opener, $\\rho = 1/2$"),
-    ("binius64-ligerito@3", "Binius64 + \\ftwoz\\ opener, $\\rho = 1/8$"),
+    ("f2z-split@1", "\\ftwoz-SNARK, rate $1/2$"),
+    ("f2z-split@3", "\\ftwoz-SNARK, rate $1/8$"),
+    ("binius64@1", "Binius (UDR), rate $1/2$"),
+    ("binius64@3", "Binius (UDR), rate $1/8$"),
+    ("binius64-ligerito@1", "Binius (Johnson), rate $1/2$"),
+    ("binius64-ligerito@3", "Binius (Johnson), rate $1/8$"),
 ]
 PLACEHOLDER = "--"
 
@@ -186,7 +186,7 @@ def main() -> int:
         "%   excluded), KB = 1000 bytes; peak mem. = peak_rss_bytes of the whole worker process (setup, warm-up and all",
         "%   samples included), GB = 2^30 bytes.",
         "% Scheme ids are method@log_inv_rate (@1 = rate 1/2, @3 = rate 1/8); binius64-ligerito rows are gated round-by-round at 100 bits.",
-        "% Bold = best of the schemes for that (target, threads) group and column.",
+        "% Bold = best of the schemes for that (size, target) group and column (each thread count is its own column).",
         "% Medians as recorded (ms unless noted):",
     ]
     for key in sorted(by, key=lambda k: (k[0], k[1] if k[1] is not None else -1, k[2], methods.index(k[3]))):
@@ -202,40 +202,54 @@ def main() -> int:
     for method, circuit in circuits.items():
         header.append(f"%   circuit {method}: {circuit}")
 
-    lines = ["", "\\begin{table}[H]", "  \\centering", "  \\small", "  \\setlength{\\tabcolsep}{4.5pt}",
-             "  \\begin{tabular}{@{}" + "".join(a for _, a in lead) + "l" + "r" * len(metrics) + "@{}}", "    \\toprule",
-             "    " + " & ".join([h for h, _ in lead] + ["Scheme"] + [h for _, h, _ in metrics]) + " \\\\", "    \\midrule"]
+    ref_th = max(threads)
+    order_th = [ref_th] + [x for x in threads if x != ref_th]
+    lead = ([("$N$", "r")] if show_n else []) + ([("$\\lambda$ (bits)", "r")] if show_t else [])
+    span = len(threads)
+    thr = " & ".join(f"{x} thr" for x in threads)
+    c0 = len(lead) + 3
+    lines = ["", "\\begin{table}[H]", "  \\centering", "  \\small", "  \\setlength{\\tabcolsep}{4pt}",
+             "  \\begin{tabular}{@{}" + "".join(a for _, a in lead) + "l" + "r" * (1 + 2 * span + 2) + "@{}}", "    \\toprule",
+             "    " + " & ".join([""] * len(lead) + ["", "Witgen"]) + f" & \\multicolumn{{{span}}}{{c}}{{Prover (ms)}} & \\multicolumn{{{span}}}{{c}}{{Verifier (ms)}} & Proof & Peak mem. \\\\",
+             f"    \\cmidrule(lr){{{c0}-{c0 + span - 1}}} \\cmidrule(lr){{{c0 + span}-{c0 + 2 * span - 1}}}",
+             "    " + " & ".join([h for h, _ in lead] + ["Scheme", "(ms)"]) + f" & {thr} & {thr} & (KB) & (GB) \\\\", "    \\midrule"]
+    cols = ([("witness_ms", None, fmt_ms)] + [("prove_ms", x, fmt_ms) for x in threads]
+            + [("verify_ms", x, fmt_ms) for x in threads] + [("proof_bytes", None, fmt_kb), ("peak_rss_bytes", None, fmt_gb)])
     first_group = True
     for n in exponents:
         first_n = True
         for t in targets + ([None] if any(k[1] is None for k in by) else []):
+            present = [m for m in methods if any((n, t, x, m) in by for x in threads)]
+            if not present:
+                continue
+            if not first_group:
+                lines.append("    \\addlinespace")
+            first_group = False
+            def value(m, k, x):
+                for y in (order_th if x is None else [x]):
+                    r = by.get((n, t, y, m))
+                    if r is not None:
+                        return r.get(k)
+                return None
+            grid = {m: [value(m, k, x) for k, x, _ in cols] for m in present}
+            best = []
+            for ci, (_, _, f) in enumerate(cols):
+                vals = [grid[m][ci] for m in present if grid[m][ci] is not None]
+                best.append(f(min(vals)) if len(vals) > 1 else None)
             first_t = True
-            for th in threads:
-                rows = [(m, by[(n, t, th, m)]) for m in methods if (n, t, th, m) in by]
-                if not rows:
-                    continue
-                if not first_group:
-                    lines.append("    \\addlinespace")
-                first_group = False
-                best = {}
-                for k, _, _ in metrics:
-                    values = [r[k] for _, r in rows if r.get(k) is not None]
-                    best[k] = min(values) if len(values) > 1 else None
-                for i, (m, r) in enumerate(rows):
-                    cells = []
-                    if show_n:
-                        cells.append(f"$2^{{{n}}}$" if first_n else "")
-                    if show_t:
-                        cells.append(("$%d$" % t if t is not None else "n/a") if first_t else "")
-                    if show_th:
-                        cells.append(str(th) if i == 0 else "")
-                    first_n = first_t = False
-                    cells.append(dict(SCHEMES)[m])
-                    for k, _, f in metrics:
-                        v = r.get(k)
-                        s = PLACEHOLDER if v is None else f(v)
-                        cells.append(f"\\textbf{{{s}}}" if best[k] is not None and v == best[k] else s)
-                    lines.append("    " + " & ".join(cells) + " \\\\")
+            for m in present:
+                cells = []
+                if show_n:
+                    cells.append(f"$2^{{{n}}}$" if first_n else "")
+                if show_t:
+                    cells.append(("$%d$" % t if t is not None else "n/a") if first_t else "")
+                first_n = first_t = False
+                cells.append(dict(SCHEMES)[m])
+                for ci, (_, _, f) in enumerate(cols):
+                    v = grid[m][ci]
+                    txt = PLACEHOLDER if v is None else f(v)
+                    cells.append(f"\\textbf{{{txt}}}" if v is not None and best[ci] is not None and txt == best[ci] else txt)
+                lines.append("    " + " & ".join(cells) + " \\\\")
     lines += ["    \\bottomrule", "  \\end{tabular}"]
 
     any_row = next(iter(by.values()))
@@ -257,7 +271,7 @@ def main() -> int:
             if clause not in policies:
                 policies.append(clause)
         s = binius_rows[0]["security"]
-        clauses.append(f"Binius64 (fixed SHA-256 circuit and complete-arithmetic P-256 gadget, ring switching and BaseFold with "
+        clauses.append(f"Binius (UDR) (Binius64's fixed SHA-256 circuit and complete-arithmetic P-256 gadget, ring switching and BaseFold with "
                        f"{s.get('merkle_hash', 'SHA-256')} Merkle hashing; FRI query target only, " + "; ".join(policies) + ")")
     if opener_rows:
         policies = []
@@ -265,7 +279,7 @@ def main() -> int:
             clause = opener_security(r)
             if clause not in policies:
                 policies.append(clause)
-        clauses.append("Binius64 with the \\ftwoz\\ opener (the same circuit and PIOP, every oracle committed and opened by the "
+        clauses.append("Binius (Johnson) (the same Binius64 circuit and PIOP, every oracle committed and opened by the "
                        "\\ftwoz\\ opener --- Johnson regime, early Round-0 OOD, fold and query grinding --- gated at $100$ bits "
                        "under the round-by-round model, every error term at most $2^{-100}$ on its own; " + "; ".join(policies) + ")")
     compressions = any_row["compressions"]
@@ -281,7 +295,7 @@ def main() -> int:
                "\\emph{proof} is the complete proof material, commitments included ($1$\\,KB $= 1000$ bytes); \\emph{peak mem.} is the "
                "high-water resident set of the worker process, setup and warm-up included ($1$\\,GB $= 2^{30}$ bytes). "
                f"Apple M5; threads per run: {threads_desc}; medians of {' or '.join(map(str, reps))} runs after one warm-up.")
-    lines += ["  \\caption{" + caption + "}", f"  \\label{{{args.label}}}", "\\end{table}", ""]
+    lines += ["  \\caption{" + caption + (" Prover and verifier times are given for %s threads; witgen and peak memory are from the %d-thread runs, and proof size does not depend on the thread count." % (" and ".join(map(str, threads)), max(threads))) + "}", f"  \\label{{{args.label}}}", "\\end{table}", ""]
     args.out.write_text("\n".join(header + lines))
     print(f"wrote {args.out} ({len(by)} cases)")
     return 0

@@ -38,15 +38,32 @@ has() { case " $phases " in *" $1 "*) return 0;; *) return 1;; esac; }
 # One hybrid sweep = one (mode, rate) at one thread count over the variant's
 # shapes; the table script joins them per (row, threads). Leading KEY=VAL
 # arguments become environment for the bench; the rest are bench arguments.
+# The bench binary is built once, before any measurement, and each sweep runs
+# it under scripts/rss_sampler.py: the sampler writes the per-case peak
+# resident set and swap-out counts the table's Peak mem. column reads.
+hybrid_binary() {
+  RUSTFLAGS="-C target-cpu=native" cargo +1.98.1 bench --bench hybrid_u32_sha256 \
+    --features hybrid --no-run > /dev/null 2>&1 || return 1
+  ls -t "${CARGO_TARGET_DIR:-target}"/release/deps/hybrid_u32_sha256-* \
+    | grep -E 'hybrid_u32_sha256-[0-9a-f]+$' | head -1
+}
+
 hybrid_sweep() { # label swap_gb threads shapes [KEY=VAL...] --mode ...
   local label=$1 guard=$2 threads=$3 shapes=$4; shift 4
   local envs=()
   while [ $# -gt 0 ] && [[ $1 == *=* && $1 != --* ]]; do envs+=("$1"); shift; done
+  local dir="PerfRuns/suite-$label"
+  # The bench refuses an existing results directory, so the sampler writes its
+  # TSV beside it and the file is moved in once the sweep has created the dir.
+  local tsv="PerfRuns/$label-peak-rss-and-swap.tsv"
   python3 scripts/bench_gate.py run --label "$label" --swap-grow-gb "$guard" -- \
     env RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS="$threads" \
       ${envs[@]+"${envs[@]}"} \
-      cargo +1.98.1 bench --bench hybrid_u32_sha256 --features hybrid -- \
-      --sweep --shapes "$shapes" --results-dir "PerfRuns/suite-$label" "$@"
+      python3 scripts/rss_sampler.py --output "$tsv" -- \
+        "$HYBRID_BIN" --sweep --shapes "$shapes" --results-dir "$dir" "$@"
+  local code=$?
+  [ -d "$dir" ] && [ -f "$tsv" ] && mv "$tsv" "$dir/peak-rss-and-swap.tsv"
+  return $code
 }
 HY_COUNTS="9:9,10:10,11:11,12:12,13:13,14:14"
 HY_WITNESS="15:7,16:8,17:9,18:10,19:11,20:12"
@@ -73,10 +90,15 @@ campaign() { # label swap_guard_gb shapes env...
 
 if has sha-ecdsa; then
   # The complete SHA+ECDSA matrix (F2Z rho=1/2,1/8; Binius64 rho=1/2,1/8;
-  # opener rho=1/2,1/8 rbr) at threads 1 and 10, one runner invocation.
+  # opener rho=1/2,1/8 rbr) at threads 1 and 10, over the message sizes the
+  # paper table groups by (2^4..2^7 compressions), one runner invocation.
   python3 scripts/bench_gate.py run --label sha-ecdsa --swap-grow-gb 12 -- \
     python3 scripts/run_sha256_ecdsa_compare.py \
-      --output "bench_results/suite-sha256-ecdsa-$(date +%Y%m%d)" --exponents 7
+      --output "bench_results/suite-sha256-ecdsa-$(date +%Y%m%d)" --exponents 4 5 6 7
+fi
+if has hybrid-counts || has hybrid-witness; then
+  HYBRID_BIN=$(hybrid_binary) || { echo "hybrid bench build failed" >&2; exit 1; }
+  [ -x "$HYBRID_BIN" ] || { echo "hybrid bench binary not found" >&2; exit 1; }
 fi
 if has hybrid-counts;  then hybrid_phase hy-counts  "$HY_COUNTS";  fi
 if has hybrid-witness; then hybrid_phase hy-witness "$HY_WITNESS"; fi

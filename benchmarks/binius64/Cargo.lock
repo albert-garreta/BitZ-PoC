@@ -930,6 +930,7 @@ dependencies = [
  "derive_more",
  "flock-core",
  "itertools 0.14.0",
+ "libc",
  "num-bigint 0.4.8",
  "num-integer",
  "num-traits",
