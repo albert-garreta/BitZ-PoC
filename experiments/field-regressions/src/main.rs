@@ -9,7 +9,12 @@ mod production_delayed;
 mod witgen {
     pub use circuit::witgen::Z;
 }
+#[cfg(all(test, feature = "arithmetic-campaign"))]
+mod production_projection {
+    include!(concat!(env!("OUT_DIR"), "/projection_test.rs"));
+}
 #[cfg(feature = "arithmetic-campaign")]
+#[cfg(not(test))]
 #[allow(dead_code, unexpected_cfgs)]
 #[path = "../../../crates/circuit/src/matrix_products.rs"]
 mod production_projection;

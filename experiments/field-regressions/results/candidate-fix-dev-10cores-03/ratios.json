@@ -1,0 +1,506 @@
+[
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "vector_2048",
+    "ratio": 0.7720926022031432,
+    "run_ratios": [
+      0.7736022849115308,
+      0.7705829194947557
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      13,
+      32832
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "tiled_1024",
+    "ratio": 0.734634311137838,
+    "run_ratios": [
+      0.7361225071163253,
+      0.7331461151593507
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "tiled_collect",
+    "ratio": 0.7240443038826085,
+    "run_ratios": [
+      0.7114197219929245,
+      0.7366688857722925
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "tiled_256",
+    "ratio": 0.39378988489381817,
+    "run_ratios": [
+      0.4011894794628574,
+      0.3863902903247789
+    ],
+    "allocations": [
+      2,
+      4160
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "prepared_products",
+    "ratio": 0.7714782848835304,
+    "run_ratios": [
+      0.7655930673988764,
+      0.7773635023681844
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "vector_products",
+    "ratio": 0.7652126479104059,
+    "run_ratios": [
+      0.7489122088955693,
+      0.7815130869252425
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "indexed_products",
+    "ratio": 0.7575246988873646,
+    "run_ratios": [
+      0.751472784066375,
+      0.7635766137083543
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "reuse_products",
+    "ratio": 0.742299990246519,
+    "run_ratios": [
+      0.7421074117964696,
+      0.7424925686965685
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "collect_products",
+    "ratio": 0.7797095118642483,
+    "run_ratios": [
+      0.7806465401934821,
+      0.7787724835350146
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "vector_1024",
+    "ratio": 0.7552253243783053,
+    "run_ratios": [
+      0.7554899469410263,
+      0.7549607018155842
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "tiled_grouped",
+    "ratio": 0.7340386902592917,
+    "run_ratios": [
+      0.7299864880489444,
+      0.738090892469639
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "vector_products",
+    "ratio": 1.1640743032871206,
+    "run_ratios": [
+      1.130024064156646,
+      1.1981245424175955
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "vector_1024",
+    "ratio": 0.577115104193063,
+    "run_ratios": [
+      0.5645731273087783,
+      0.5896570810773477
+    ],
+    "allocations": [
+      2,
+      17408
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "tiled_collect",
+    "ratio": 0.5153745539060928,
+    "run_ratios": [
+      0.5060693740510298,
+      0.5246797337611558
+    ],
+    "allocations": [
+      2,
+      17408
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      20,
+      133328
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "indexed_products",
+    "ratio": 1.1599840221593238,
+    "run_ratios": [
+      1.141291526460517,
+      1.1786765178581309
+    ],
+    "allocations": [
+      3,
+      67312
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "tiled_1024",
+    "ratio": 0.519601938091399,
+    "run_ratios": [
+      0.5057182471821612,
+      0.5334856290006368
+    ],
+    "allocations": [
+      2,
+      17408
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "tiled_grouped",
+    "ratio": 0.5130986786372754,
+    "run_ratios": [
+      0.49489478091364697,
+      0.5313025763609038
+    ],
+    "allocations": [
+      2,
+      17408
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "reuse_products",
+    "ratio": 1.1657916647706466,
+    "run_ratios": [
+      1.163717048645775,
+      1.1678662808955182
+    ],
+    "allocations": [
+      3,
+      67312
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "tiled_256",
+    "ratio": 0.5220522195078402,
+    "run_ratios": [
+      0.5045917314708558,
+      0.5395127075448246
+    ],
+    "allocations": [
+      2,
+      8192
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "collect_products",
+    "ratio": 1.1149746174773134,
+    "run_ratios": [
+      1.081187690895752,
+      1.1487615440588745
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "vector_2048",
+    "ratio": 0.5781630611108717,
+    "run_ratios": [
+      0.5775003931546193,
+      0.5788257290671242
+    ],
+    "allocations": [
+      2,
+      33280
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "prepared_products",
+    "ratio": 1.1473197684298748,
+    "run_ratios": [
+      1.12788068450387,
+      1.1667588523558794
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "collect_products",
+    "ratio": 1.0863927605362407,
+    "run_ratios": [
+      1.1129246276714113,
+      1.05986089340107
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "vector_products",
+    "ratio": 1.1267343311750109,
+    "run_ratios": [
+      1.138903791352776,
+      1.1145648709972455
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "tiled_collect",
+    "ratio": 1.0395973880527682,
+    "run_ratios": [
+      1.0414747717528343,
+      1.037720004352702
+    ],
+    "allocations": [
+      4,
+      26096
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "prepared_products",
+    "ratio": 1.0745359482260948,
+    "run_ratios": [
+      1.0789343744526085,
+      1.070137521999581
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "tiled_grouped",
+    "ratio": 0.8985698922840786,
+    "run_ratios": [
+      0.9133203893239338,
+      0.8838193952442235
+    ],
+    "allocations": [
+      3,
+      22000
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "vector_1024",
+    "ratio": 1.0599229324753097,
+    "run_ratios": [
+      1.065085683540074,
+      1.0547601814105454
+    ],
+    "allocations": [
+      3,
+      22000
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "indexed_products",
+    "ratio": 1.110344426922008,
+    "run_ratios": [
+      1.1079319513490367,
+      1.1127569024949795
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "tiled_256",
+    "ratio": 1.085012484122573,
+    "run_ratios": [
+      1.0740508146613164,
+      1.0959741535838297
+    ],
+    "allocations": [
+      3,
+      22000
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "tiled_1024",
+    "ratio": 1.004469925533709,
+    "run_ratios": [
+      1.058688022078243,
+      0.9502518289891749
+    ],
+    "allocations": [
+      3,
+      22000
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "reuse_products",
+    "ratio": 1.095176115577031,
+    "run_ratios": [
+      1.1134229472724586,
+      1.0769292838816031
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "vector_2048",
+    "ratio": 1.0342039225191249,
+    "run_ratios": [
+      1.0597892253663752,
+      1.0086186196718747
+    ],
+    "allocations": [
+      3,
+      36336
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      22,
+      135632
+    ]
+  }
+]

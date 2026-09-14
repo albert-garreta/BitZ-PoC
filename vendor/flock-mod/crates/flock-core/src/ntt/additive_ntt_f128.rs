@@ -67,6 +67,10 @@ pub static NTT_DEEP_NOFUSE: std::sync::atomic::AtomicBool =
 fn generate_evals_from_subspace(basis: &[F128]) -> Vec<Vec<F128>> {
     let l = basis.len();
     let mut evals: Vec<Vec<F128>> = Vec::with_capacity(l);
+    // The zero-dimensional domain has one point and no butterfly layers.
+    if basis.is_empty() {
+        return evals;
+    }
 
     // evals[0] = [W_0(β_0), W_0(β_1), …, W_0(β_{ℓ-1})] = basis.
     evals.push(basis.to_vec());
@@ -1073,6 +1077,25 @@ fn log2_pow2(n: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_dimensional_transforms_are_identity() {
+        for ntt in [AdditiveNttF128::new(&[]), AdditiveNttF128::standard(0)] {
+            assert_eq!(ntt.log_domain_size(), 0);
+            let value = F128::new(u64::MAX, 0x1234_5678_9abc_def0);
+            let mut scalar = [value];
+            ntt.forward_transform(&mut scalar);
+            assert_eq!(scalar, [value]);
+            ntt.inverse_transform(&mut scalar);
+            assert_eq!(scalar, [value]);
+            for lanes in [1, 2, 8, 32] {
+                let input: Vec<_> = (0..lanes).map(|i| F128::new(i as u64, u64::MAX)).collect();
+                let mut output = input.clone();
+                ntt.forward_transform_interleaved(&mut output, lanes);
+                assert_eq!(output, input);
+            }
+        }
+    }
 
     struct Rng(u64);
     impl Rng {

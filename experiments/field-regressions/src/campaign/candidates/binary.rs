@@ -9,6 +9,10 @@ use f2z::{
 use flock_core::field::{F8, F128};
 use std::hint::black_box;
 
+#[cfg(test)]
+#[path = "correctness/binary.rs"]
+mod tests;
+
 #[inline(always)]
 pub(super) fn half(a: F128, b: u64) -> F128 {
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
@@ -211,6 +215,13 @@ fn add_coefficients(a: (Gf, Gf, Gf), b: (Gf, Gf, Gf)) -> (Gf, Gf, Gf) {
 }
 fn hook_cases(samples: usize, rng: &mut Rng) {
     for n in [16, 1024] {
+        #[cfg(test)]
+        if samples == 0 {
+            tests::check_grid_kernel(chunks);
+            tests::check_grid_kernel(super::grid::run::<128>);
+            tests::check_grid_kernel(super::grid::run::<4096>);
+            return;
+        }
         let size = n.to_string();
         if !["opt_gf_two_pair", "opt_gf_fold_round", "opt_gf_grid"]
             .iter()
@@ -352,7 +363,43 @@ fn hook_cases(samples: usize, rng: &mut Rng) {
         assert_eq!(chunks(&mut l1, &mut r1, &challenges, &w), expected);
         assert_eq!(&l0[..4 * n], &l1[..4 * n]);
         assert_eq!(&r0[..4 * n], &r1[..4 * n]);
+        let mut l2 = l.clone();
+        let mut r2 = r.clone();
+        let mut l3 = l.clone();
+        let mut r3 = r.clone();
+        assert_eq!(
+            super::grid::run::<128>(&mut l2, &mut r2, &challenges, &w),
+            expected
+        );
+        assert_eq!(
+            super::grid::run::<4096>(&mut l3, &mut r3, &challenges, &w),
+            expected
+        );
+        assert_eq!(&l2[..4 * n], &l0[..4 * n]);
+        assert_eq!(&r2[..4 * n], &r0[..4 * n]);
         let mut cases = vec![
+            Case::new("direct_tiles", n * 1024, || {
+                l2.copy_from_slice(black_box(&l));
+                r2.copy_from_slice(black_box(&r));
+                black_box(super::grid::run::<128>(
+                    black_box(&mut l2),
+                    black_box(&mut r2),
+                    black_box(&challenges),
+                    black_box(&w),
+                ));
+                black_box((&l2[..4 * n], &r2[..4 * n]));
+            }),
+            Case::new("direct_pass", n * 1024, || {
+                l3.copy_from_slice(black_box(&l));
+                r3.copy_from_slice(black_box(&r));
+                black_box(super::grid::run::<4096>(
+                    black_box(&mut l3),
+                    black_box(&mut r3),
+                    black_box(&challenges),
+                    black_box(&w),
+                ));
+                black_box((&l3[..4 * n], &r3[..4 * n]));
+            }),
             Case::new("production_fused", n * 1024, || {
                 l0.copy_from_slice(black_box(&l));
                 r0.copy_from_slice(black_box(&r));
@@ -743,6 +790,213 @@ fn polynomial<const A: usize, const B: usize, const O: usize>(samples: usize, rn
         }
         Poly::from_words(out)
     }
+    fn public_classified<const A: usize, const B: usize, const O: usize>(
+        a: &[Poly<A>],
+        b: &[Poly<B>],
+    ) -> Poly<O> {
+        assert!(O >= A + B);
+        assert_eq!(a.len(), b.len());
+        let mut out = [0; O];
+        for (a, b) in a.iter().zip(b) {
+            let aw = a.words();
+            let bw = b.words();
+            if aw.iter().fold(0, |s, &w| s | w) == 0 {
+                continue;
+            }
+            let dense = aw.iter().fold(true, |ok, &w| ok & (w != 0))
+                & bw.iter().fold(true, |ok, &w| ok & (w != 0));
+            if dense {
+                for i in 0..A {
+                    for j in 0..B {
+                        let p = arithmetic::clmul(aw[i], bw[j]);
+                        out[i + j] ^= p as u64;
+                        out[i + j + 1] ^= (p >> 64) as u64;
+                    }
+                }
+            } else if B >= 9 {
+                let mut values = [0; B];
+                let mut indices = [0; B];
+                let mut count = 0;
+                for (j, &w) in bw.iter().enumerate() {
+                    if w != 0 {
+                        values[count] = w;
+                        indices[count] = j;
+                        count += 1;
+                    }
+                }
+                for (i, &x) in aw.iter().enumerate() {
+                    if x == 0 {
+                        continue;
+                    }
+                    for k in 0..count {
+                        let p = arithmetic::clmul(x, values[k]);
+                        let j = indices[k];
+                        out[i + j] ^= p as u64;
+                        out[i + j + 1] ^= (p >> 64) as u64;
+                    }
+                }
+            } else {
+                for (i, &x) in aw.iter().enumerate() {
+                    if x == 0 {
+                        continue;
+                    }
+                    for (j, &y) in bw.iter().enumerate() {
+                        if y == 0 {
+                            continue;
+                        }
+                        let p = arithmetic::clmul(x, y);
+                        out[i + j] ^= p as u64;
+                        out[i + j + 1] ^= (p >> 64) as u64;
+                    }
+                }
+            }
+        }
+        Poly::from_words(out)
+    }
+    // Classify each public row once. Sparse multiplication visits only set
+    // positions instead of testing every possible limb pair repeatedly.
+    fn public_masks<const A: usize, const B: usize, const O: usize>(
+        a: &[Poly<A>],
+        b: &[Poly<B>],
+    ) -> Poly<O> {
+        assert!(A < 64 && B < 64 && O >= A + B);
+        assert_eq!(a.len(), b.len());
+        let mut out = [0; O];
+        for (a, b) in a.iter().zip(b) {
+            let mut am = 0u64;
+            for (i, &x) in a.words().iter().enumerate() {
+                am |= ((x != 0) as u64) << i;
+            }
+            if am == 0 {
+                continue;
+            }
+            let mut bm = 0u64;
+            for (j, &y) in b.words().iter().enumerate() {
+                bm |= ((y != 0) as u64) << j;
+            }
+            if am == (1 << A) - 1 && bm == (1 << B) - 1 {
+                for i in 0..A {
+                    for j in 0..B {
+                        let p = arithmetic::clmul(a.words()[i], b.words()[j]);
+                        out[i + j] ^= p as u64;
+                        out[i + j + 1] ^= (p >> 64) as u64;
+                    }
+                }
+            } else {
+                while am != 0 {
+                    let i = am.trailing_zeros() as usize;
+                    am &= am - 1;
+                    let mut mask = bm;
+                    while mask != 0 {
+                        let j = mask.trailing_zeros() as usize;
+                        mask &= mask - 1;
+                        let p = arithmetic::clmul(a.words()[i], b.words()[j]);
+                        out[i + j] ^= p as u64;
+                        out[i + j + 1] ^= (p >> 64) as u64;
+                    }
+                }
+            }
+        }
+        Poly::from_words(out)
+    }
+    fn public_blocks<const A: usize, const B: usize, const O: usize, const BLOCK: usize>(
+        a: &[Poly<A>],
+        b: &[Poly<B>],
+    ) -> Poly<O> {
+        assert_eq!(a.len(), b.len());
+        let mut out = [0; O];
+        for (a, b) in a.chunks(BLOCK).zip(b.chunks(BLOCK)) {
+            let dense = a.iter().all(|a| a.words().iter().all(|&x| x != 0))
+                && b.iter().all(|b| b.words().iter().all(|&x| x != 0));
+            let part = if dense {
+                fixed::<A, B, O>(a, b)
+            } else {
+                public_fused::<A, B, O>(a, b)
+            };
+            for (o, &p) in out.iter_mut().zip(part.words()) {
+                *o ^= p;
+            }
+        }
+        Poly::from_words(out)
+    }
+    // Inspect complete rows, stopping at the first genuinely sparse row.
+    // Wholly zero rows do not make a dense batch sparse. No sampled prefix is
+    // treated as evidence about unread rows; both kernels accept all inputs.
+    fn public_scan<const A: usize, const B: usize, const O: usize>(
+        a: &[Poly<A>],
+        b: &[Poly<B>],
+    ) -> Poly<O> {
+        assert_eq!(a.len(), b.len());
+        let mut nonzero = false;
+        for (x, y) in a.iter().zip(b) {
+            if x.words().iter().fold(0, |s, &x| s | x) == 0 {
+                continue;
+            }
+            nonzero = true;
+            if x.words().iter().any(|&x| x == 0) || y.words().iter().any(|&x| x == 0) {
+                return public_fused::<A, B, O>(a, b);
+            }
+        }
+        if nonzero {
+            public_rows::<A, B, O>(a, b)
+        } else {
+            Poly::from_words([0; O])
+        }
+    }
+    // Consume dense/zero public rows directly, then keep the sparse suffix in
+    // a separate sparse kernel. Classification never rereads a prefix.
+    fn public_prefix<const A: usize, const B: usize, const O: usize>(
+        a: &[Poly<A>],
+        b: &[Poly<B>],
+    ) -> Poly<O> {
+        assert!(O >= A + B);
+        assert_eq!(a.len(), b.len());
+        let mut out = [0; O];
+        let mut split = a.len();
+        for (row, (x, y)) in a.iter().zip(b).enumerate() {
+            let aw = x.words();
+            let bw = y.words();
+            if aw.iter().fold(0, |s, &w| s | w) == 0 {
+                continue;
+            }
+            if aw.iter().any(|&w| w == 0) || bw.iter().any(|&w| w == 0) {
+                split = row;
+                break;
+            }
+            for i in 0..A {
+                for j in 0..B {
+                    let p = arithmetic::clmul(aw[i], bw[j]);
+                    out[i + j] ^= p as u64;
+                    out[i + j + 1] ^= (p >> 64) as u64;
+                }
+            }
+        }
+        if split < a.len() {
+            let suffix = public_fused::<A, B, O>(&a[split..], &b[split..]);
+            for (out, &word) in out.iter_mut().zip(suffix.words()) {
+                *out ^= word;
+            }
+        }
+        Poly::from_words(out)
+    }
+    // Test the actual nested kernels without moving or changing their measured bodies.
+    #[cfg(test)]
+    if samples == 0 {
+        tests::check_polynomial::<A, B, O>(&[
+            fixed::<A, B, O>,
+            public_fused::<A, B, O>,
+            public_compact::<A, B, O>,
+            public_adaptive::<A, B, O>,
+            public_rows::<A, B, O>,
+            public_masks::<A, B, O>,
+            public_scan::<A, B, O>,
+            public_prefix::<A, B, O>,
+            public_classified::<A, B, O>,
+            public_blocks::<A, B, O, 8>,
+            public_blocks::<A, B, O, 32>,
+        ]);
+        return;
+    }
     // Exercise misleading samples as well as all-zero input: adaptation may
     // change cost, but must never change arithmetic or omit later terms.
     for n in [0, 1, 4, 17] {
@@ -777,6 +1031,12 @@ fn polynomial<const A: usize, const B: usize, const O: usize>(samples: usize, rn
             assert_eq!(public_fused::<A, B, O>(&a, &b), expected);
             assert_eq!(public_adaptive::<A, B, O>(&a, &b), expected);
             assert_eq!(public_rows::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_masks::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_scan::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_prefix::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_classified::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_blocks::<A, B, O, 8>(&a, &b), expected);
+            assert_eq!(public_blocks::<A, B, O, 32>(&a, &b), expected);
         }
     }
     for class in [
@@ -815,6 +1075,12 @@ fn polynomial<const A: usize, const B: usize, const O: usize>(samples: usize, rn
             assert_eq!(public_fused::<A, B, O>(&a, &b), expected);
             assert_eq!(public_adaptive::<A, B, O>(&a, &b), expected);
             assert_eq!(public_rows::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_masks::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_scan::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_prefix::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_classified::<A, B, O>(&a, &b), expected);
+            assert_eq!(public_blocks::<A, B, O, 8>(&a, &b), expected);
+            assert_eq!(public_blocks::<A, B, O, 32>(&a, &b), expected);
             if ![16, 1024].contains(&n) {
                 continue;
             }
@@ -830,6 +1096,24 @@ fn polynomial<const A: usize, const B: usize, const O: usize>(samples: usize, rn
                 }),
                 Case::new("public_adaptive", n * (A + B) * 8, || {
                     black_box(public_adaptive::<A, B, O>(black_box(&a), black_box(&b)));
+                }),
+                Case::new("public_blocks8", n * (A + B) * 8, || {
+                    black_box(public_blocks::<A, B, O, 8>(black_box(&a), black_box(&b)));
+                }),
+                Case::new("public_blocks32", n * (A + B) * 8, || {
+                    black_box(public_blocks::<A, B, O, 32>(black_box(&a), black_box(&b)));
+                }),
+                Case::new("public_classified", n * (A + B) * 8, || {
+                    black_box(public_classified::<A, B, O>(black_box(&a), black_box(&b)));
+                }),
+                Case::new("public_prefix", n * (A + B) * 8, || {
+                    black_box(public_prefix::<A, B, O>(black_box(&a), black_box(&b)));
+                }),
+                Case::new("public_scan", n * (A + B) * 8, || {
+                    black_box(public_scan::<A, B, O>(black_box(&a), black_box(&b)));
+                }),
+                Case::new("public_masks", n * (A + B) * 8, || {
+                    black_box(public_masks::<A, B, O>(black_box(&a), black_box(&b)));
                 }),
                 Case::new("row_density", n * (A + B) * 8, || {
                     black_box(public_rows::<A, B, O>(black_box(&a), black_box(&b)));

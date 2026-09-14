@@ -3,9 +3,13 @@ use crate::Case;
 use std::{fmt::Debug, hint::black_box};
 mod binary;
 mod composite;
+mod grid;
 mod integer;
 mod prime;
 mod words;
+
+#[cfg(test)]
+mod correctness;
 
 /// An owned output per variant, checked before timing and observed after each pass.
 fn pass<'a, I: ?Sized, O: Clone + Default + Debug + PartialEq + 'a>(

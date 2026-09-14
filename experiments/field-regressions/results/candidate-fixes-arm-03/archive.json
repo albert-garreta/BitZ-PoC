@@ -1,0 +1,9 @@
+{
+  "archive": "source-and-binary.tar.gz",
+  "sha256": "71f90c83c061293eda8dc51fc3d1a02514f12d750e81a2fdaca663713ba46af2",
+  "bytes": 3336946,
+  "binary_sha256": "4d16fca6e2611020cdaaf5d709e46dedf65af9889ed3414a3da620f897fe9b4d",
+  "executable": "snapshot/field-regressions",
+  "verified_source_files": 527,
+  "description": "Frozen revision-3 source and exact ARM executable used for both final thread-count campaigns. Every source and executable hash verified before and after archiving; build caches excluded."
+}

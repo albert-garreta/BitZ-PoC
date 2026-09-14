@@ -9,6 +9,10 @@ use num_bigint::{BigInt, BigUint};
 use num_traits::Zero;
 use std::{array, hint::black_box};
 
+#[cfg(test)]
+#[path = "correctness/integer.rs"]
+mod tests;
+
 fn big<const L: usize>(a: &[u64; L]) -> BigUint {
     BigUint::from_bytes_le(&a.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>())
 }

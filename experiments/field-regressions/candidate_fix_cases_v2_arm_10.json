@@ -1,0 +1,106 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ]
+  },
+  "families": [
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log10"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products",
+        "tiled_1024",
+        "tiled_256",
+        "vector_1024",
+        "vector_2048",
+        "tiled_collect",
+        "tiled_grouped"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_grouped"
+        ]
+      },
+      "selection_reason": "candidate selected before confirmation from development probes; matches the same public/private arithmetic contract"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log16"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products",
+        "tiled_1024",
+        "tiled_256",
+        "vector_1024",
+        "vector_2048",
+        "tiled_collect",
+        "tiled_grouped"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_grouped"
+        ]
+      },
+      "selection_reason": "candidate selected before confirmation from development probes; matches the same public/private arithmetic contract"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log18"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products",
+        "tiled_1024",
+        "tiled_256",
+        "vector_1024",
+        "vector_2048",
+        "tiled_collect",
+        "tiled_grouped"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_grouped"
+        ]
+      },
+      "selection_reason": "candidate selected before confirmation from development probes; matches the same public/private arithmetic contract"
+    }
+  ],
+  "revision": "candidate-fixes-2-10threads",
+  "threads": 10,
+  "allocation_audit_passes": 64,
+  "selection_note": "Same executable and OOD policy as single-thread confirmation, with ten Rayon workers. Signed column masks use CtSelect after instruction review rejected compiler-generated sign branches in revision 1."
+}

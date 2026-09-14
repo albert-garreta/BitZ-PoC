@@ -1,0 +1,2 @@
+PASS: frozen selections, 1.0% margin, all required cases.
+This applies only to the frozen manifest, measured host workloads and build; production behavior is unchanged.

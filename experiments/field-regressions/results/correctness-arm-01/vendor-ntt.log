@@ -1,0 +1,40 @@
+     Locking 46 packages to latest compatible versions
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding rand_core v0.9.5 (available: v0.10.1)
+      Adding sha2 v0.10.9 (available: v0.11.0)
+      Adding toml v0.8.23 (available: v0.9.12+spec-1.1.0)
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling syn v3.0.5
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+   Compiling blake3 v1.8.7
+   Compiling serde_json v1.0.151
+   Compiling either v1.18.0
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling toml_edit v0.22.27
+   Compiling bincode v1.3.3
+   Compiling rayon v1.12.0
+   Compiling toml v0.8.23
+   Compiling flock-core v0.1.0 (/Users/johnwu/code/zk/f2z-pcs/vendor/flock-mod/crates/flock-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.39s
+     Running unittests src/lib.rs (/tmp/f2z-arithmetic-correctness-target/debug/deps/flock_core-c852776798e04fc6)
+
+running 12 tests
+test ntt::additive_ntt_f128::tests::batched_matches_scalar ... ok
+test ntt::additive_ntt_f128::tests::deepest_layer_twiddle_count ... ok
+test ntt::additive_ntt_f128::tests::forward_inverse_roundtrip ... ok
+test ntt::additive_ntt_f128::tests::forward_is_linear ... ok
+test ntt::additive_ntt_f128::tests::interleaved_matches_per_lane ... ok
+test ntt::additive_ntt_f128::tests::interleaved_parallel_matches_scalar ... ok
+test ntt::additive_ntt_f128::tests::inverse_forward_roundtrip ... ok
+test ntt::additive_ntt_f128::tests::neon_matches_scalar ... ok
+test ntt::additive_ntt_f128::tests::ntt_of_zero_is_zero ... ok
+test ntt::additive_ntt_f128::tests::parallel_matches_scalar ... ok
+test ntt::additive_ntt_f128::tests::twiddle_at_layer_0_uses_full_basis_minus_one ... ok
+test ntt::additive_ntt_f128::tests::zero_dimensional_transforms_are_identity ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 335 filtered out; finished in 31.84s
+

@@ -1,0 +1,7 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=971912
+RUNTIME {"aes":true,"arch":"aarch64","arithmetic_campaign":true,"avx512f":false,"baseline_all_core_threads":10,"caller_threads":10,"candidate_all_core_threads":0,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":false,"flock_kernel":"arm-pmull","pclmulqdq":false,"seed":971912,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed opt_ood/log10: 8 variants, 8 paired samples
+completed opt_ood/log16: 8 variants, 8 paired samples
+completed opt_ood/log18: 8 variants, 8 paired samples
+CORRECTNESS_COMPLETE

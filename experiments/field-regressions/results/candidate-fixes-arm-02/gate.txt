@@ -1,0 +1,3 @@
+BLOCKED inconclusive: aarch64/opt_f2_poly_dot/a3_b7_dense_prefix_n16/public_scan: median upper=1.0126, P95 upper=1.0135, worst process=1.0144, allocations=OK
+BLOCKED: frozen selections, 1.0% margin, all required cases.
+This applies only to the frozen manifest, measured host workloads and build; production behavior is unchanged.

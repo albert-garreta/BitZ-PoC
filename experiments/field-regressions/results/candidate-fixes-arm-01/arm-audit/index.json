@@ -1,0 +1,220 @@
+{
+  "binary": "/private/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-pycl0nhx/field-regressions",
+  "binary_sha256": "6364e8d7109822508eef6be346bf69b6e6c902c9d59751bde4af8a39b51f7773",
+  "tool": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-objdump",
+  "format": "\n/private/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-pycl0nhx/field-regressions:\tfile format mach-o arm64\n\nSYMBOL TABLE:\n0000000100000870 l     F __TEXT,__text __RINvMNtNtCs4rJR5Xg1K3s_13crypto_bigint4uint3divINtB5_4UintKj20_E7div_remKBV_ECsagpXUhzPPpl_17field_regressions",
+  "kernels": [
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_",
+      "assembly": "kernel-00.asm",
+      "assembly_sha256": "e6e305c09dfdbefcb42757358cb36b0e2e4d3a9bc1cbb42019854a93897f2092",
+      "instructions_requiring_review": [
+        "10002c344: 54001e41    \tb.ne\t0x10002c70c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x3ec>",
+        "10002c358: 54001e61    \tb.ne\t0x10002c724 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x404>",
+        "10002c370: b4000977    \tcbz\tx23, 0x10002c49c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x17c>",
+        "10002c494: 54fff7e1    \tb.ne\t0x10002c390 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x70>",
+        "10002c4c0: 94013b60    \tbl\t0x10007b240 <__RNvMNtNtNtCs4rJR5Xg1K3s_13crypto_bigint7modular16fixed_monty_form6invertINtB4_14FixedMontyFormKj2_E6invertCsagpXUhzPPpl_17field_regressions>",
+        "10002c4d4: 34001348    \tcbz\tw8, 0x10002c73c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x41c>",
+        "10002c4d8: b40010d7    \tcbz\tx23, 0x10002c6f0 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x3d0>",
+        "10002c6ec: 54fff061    \tb.ne\t0x10002c4f8 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5prime5batchKb1_EB8_+0x1d8>",
+        "10002c720: 9404bbcc    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>",
+        "10002c738: 9404bbc6    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>",
+        "10002c750: 9404bba8    \tbl\t0x10015b5f0 <__RNvNtCs8Mbv00yxnRz_4core9panicking9panic_fmt>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj2_Kj5_EB8_",
+      "assembly": "kernel-01.asm",
+      "assembly_sha256": "d2254948579fc1a80d8a1e97bf68461445fc0707d415cb1466c173f81f23e0c4",
+      "instructions_requiring_review": [
+        "100037e44: 540006c1    \tb.ne\t0x100037f1c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj2_Kj5_EB8_+0xec>",
+        "100037e68: b4000422    \tcbz\tx2, 0x100037eec <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj2_Kj5_EB8_+0xbc>",
+        "100037ee8: 54fffc61    \tb.ne\t0x100037e74 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj2_Kj5_EB8_+0x44>",
+        "100037f30: 94048dc8    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj4_Kj9_EB8_",
+      "assembly": "kernel-02.asm",
+      "assembly_sha256": "cd6c8c86e96a17bdfb72e2b7e0cace1aedf72b345203f94c6c917a6d5ac90443",
+      "instructions_requiring_review": [
+        "100037f5c: 540012a1    \tb.ne\t0x1000381b0 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj4_Kj9_EB8_+0x27c>",
+        "100037fa0: b4000d22    \tcbz\tx2, 0x100038144 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj4_Kj9_EB8_+0x210>",
+        "100038140: 54fff361    \tb.ne\t0x100037fac <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj4_Kj9_EB8_+0x78>",
+        "1000381c4: 94048d23    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj9_Kj13_EB8_",
+      "assembly": "kernel-03.asm",
+      "assembly_sha256": "e7b948899bddf3fd422e6814d9cd8001cad38eade96f396493434ccb7c871e91",
+      "instructions_requiring_review": [
+        "1000381f0: 54001d61    \tb.ne\t0x10003859c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj9_Kj13_EB8_+0x3d4>",
+        "100038224: b40010a2    \tcbz\tx2, 0x100038438 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj9_Kj13_EB8_+0x270>",
+        "10003838c: 54fff641    \tb.ne\t0x100038254 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj9_Kj13_EB8_+0x8c>",
+        "10003839c: 54fff4c1    \tb.ne\t0x100038234 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words13exact_columnsKj9_Kj13_EB8_+0x6c>",
+        "1000385b0: 94048c28    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj2_Kj5_EB8_",
+      "assembly": "kernel-04.asm",
+      "assembly_sha256": "03e08ef1fcf9234c4fdd8aef12400b270d6981562ea583dce1398a87653399a9",
+      "instructions_requiring_review": [
+        "1000385d4: 54000b61    \tb.ne\t0x100038740 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj2_Kj5_EB8_+0x18c>",
+        "1000385fc: b40007c2    \tcbz\tx2, 0x1000386f4 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj2_Kj5_EB8_+0x140>",
+        "1000386f0: 54fff8e1    \tb.ne\t0x10003860c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj2_Kj5_EB8_+0x58>",
+        "100038754: 94048bbf    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj4_Kj9_EB8_",
+      "assembly": "kernel-05.asm",
+      "assembly_sha256": "df8148c3b90e291b0d421e0734ae8ea8b3c11d0fa323a567d40421f91124ecd6",
+      "instructions_requiring_review": [
+        "100038780: 540019e1    \tb.ne\t0x100038abc <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj4_Kj9_EB8_+0x364>",
+        "1000387c4: b40012e2    \tcbz\tx2, 0x100038a20 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj4_Kj9_EB8_+0x2c8>",
+        "100038854: 54000ea0    \tb.eq\t0x100038a28 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj4_Kj9_EB8_+0x2d0>",
+        "1000389f0: b7ffef58    \ttbnz\tx24, #0x3f, 0x1000387d8 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj4_Kj9_EB8_+0x80>",
+        "1000389f4: b6fff217    \ttbz\tx23, #0x3f, 0x100038834 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj4_Kj9_EB8_+0xdc>",
+        "100038ad0: 94048ae0    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_",
+      "assembly": "kernel-06.asm",
+      "assembly_sha256": "a77c8d25dac43fdf13a2eb7ed0eb3389c63ce58c3b6fc0c9033d1d09bdea0934",
+      "instructions_requiring_review": [
+        "100038afc: 54002f01    \tb.ne\t0x1000390dc <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_+0x608>",
+        "100038b30: b4001fe2    \tcbz\tx2, 0x100038f2c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_+0x458>",
+        "100038c74: 540010c0    \tb.eq\t0x100038e8c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_+0x3b8>",
+        "100038ddc: 54fff641    \tb.ne\t0x100038ca4 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_+0x1d0>",
+        "100038de4: b7ffeb0e    \ttbnz\tx14, #0x3f, 0x100038b44 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_+0x70>",
+        "100038de8: b6fff36b    \ttbz\tx11, #0x3f, 0x100038c54 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates5words20exact_signed_columnsKj9_Kj13_EB8_+0x180>",
+        "1000390f0: 94048958    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_",
+      "assembly": "kernel-07.asm",
+      "assembly_sha256": "de80de238615d487c54e47451cf7c2312d7264c8e1694ebba0f9d05497dac641",
+      "instructions_requiring_review": [
+        "100043614: 54000841    \tb.ne\t0x10004371c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_+0x124>",
+        "100043618: b40006c2    \tcbz\tx2, 0x1000436f0 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_+0xf8>",
+        "1000436e8: 54fffa61    \tb.ne\t0x100043634 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj1_EB8_+0x3c>",
+        "100043730: 94045fc8    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_",
+      "assembly": "kernel-08.asm",
+      "assembly_sha256": "c0ab25ba5f271faa547a9970f019f0aa37382fc0e2cac07f641329a2b8366a41",
+      "instructions_requiring_review": [
+        "10004374c: 540009e1    \tb.ne\t0x100043888 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_+0x154>",
+        "100043760: b4000762    \tcbz\tx2, 0x10004384c <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_+0x118>",
+        "10004382c: 54fffa21    \tb.ne\t0x100043770 <__RINvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integer7native4Kj4_Kj2_EB8_+0x3c>",
+        "10004389c: 94045f6d    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_",
+      "assembly": "kernel-09.asm",
+      "assembly_sha256": "e8e00f15ca40ae786668d58f9840513b46200fe35db7d03d6a73a80bfbe3529c",
+      "instructions_requiring_review": [
+        "10004b96c: 54000ca1    \tb.ne\t0x10004bb00 <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_+0x1ac>",
+        "10004b978: b4000a82    \tcbz\tx2, 0x10004bac8 <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_+0x174>",
+        "10004bac0: 54fff681    \tb.ne\t0x10004b990 <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj3_Kj7_Kja_EBa_+0x3c>",
+        "10004bb14: 94043ecf    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_",
+      "assembly": "kernel-10.asm",
+      "assembly_sha256": "119ca9c723168ac03eb41b14e72fb346339d328866031b00bab66f60e160f8ba",
+      "instructions_requiring_review": [
+        "10004bb2c: 54000b01    \tb.ne\t0x10004bc8c <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x174>",
+        "10004bb48: b4000882    \tcbz\tx2, 0x10004bc58 <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x140>",
+        "10004bc44: 54fffae1    \tb.ne\t0x10004bba0 <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x88>",
+        "10004bc54: 54fff841    \tb.ne\t0x10004bb5c <__RINvNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates6binary10polynomial5fixedKj9_KB1s_Kj12_EBa_+0x44>",
+        "10004bca0: 94043e6c    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_",
+      "assembly": "kernel-11.asm",
+      "assembly_sha256": "e25bb97916828525e25ff2f4703376a4f07955bd97f2a755665ed96a8bd64543",
+      "instructions_requiring_review": [
+        "10007b854: 54000ba1    \tb.ne\t0x10007b9c8 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_+0x194>",
+        "10007b858: b4000ac2    \tcbz\tx2, 0x10007b9b0 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_+0x17c>",
+        "10007b9ac: 54fff6a1    \tb.ne\t0x10007b880 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj2_E5batchB8_+0x4c>",
+        "10007b9dc: 94037f1d    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_",
+      "assembly": "kernel-12.asm",
+      "assembly_sha256": "bcfd5a5c839fd422f2f5256e4edd1f28a0c402623c39181985f913976d96996b",
+      "instructions_requiring_review": [
+        "10007beb8: 54001c81    \tb.ne\t0x10007c248 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_+0x3b0>",
+        "10007bebc: b4001ba2    \tcbz\tx2, 0x10007c230 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_+0x398>",
+        "10007c22c: 54ffe5c1    \tb.ne\t0x10007bee4 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj4_E5batchB8_+0x4c>",
+        "10007c25c: 94037cfd    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_",
+      "assembly": "kernel-13.asm",
+      "assembly_sha256": "74652c99d072add14b6589c3dce41e2e84fea045963aa1922ceea4172b929209",
+      "instructions_requiring_review": [
+        "10007c50c: 54000ec1    \tb.ne\t0x10007c6e4 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x200>",
+        "10007c510: b4000da2    \tcbz\tx2, 0x10007c6c4 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x1e0>",
+        "10007c668: 54fff741    \tb.ne\t0x10007c550 <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x6c>",
+        "10007c6c0: 54fff3e1    \tb.ne\t0x10007c53c <__RNvMNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates7integerINtB2_10ProjectionKj9_E5batchB8_+0x58>",
+        "10007c6f8: 94037bd6    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates9composite4dot3",
+      "assembly": "kernel-14.asm",
+      "assembly_sha256": "0fb95eddaf00c0d935551890675d789c2a1de9f4caffafc7482ef0e94881a588",
+      "instructions_requiring_review": [
+        "1000e3b78: 54000621    \tb.ne\t0x1000e3c3c <__RNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates9composite4dot3+0xd8>",
+        "1000e3bcc: 54fffe01    \tb.ne\t0x1000e3b8c <__RNvNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates9composite4dot3+0x28>",
+        "1000e3c50: 9401de80    \tbl\t0x10015b650 <__RINvNtCs8Mbv00yxnRz_4core9panicking13assert_failedjjEB4_>"
+      ]
+    },
+    {
+      "symbol": "__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon10accumulate",
+      "assembly": "kernel-15.asm",
+      "assembly_sha256": "1e83da03fc9bc2cc01494304c910fcc8290c2a9415b2e24ef12afea55611b0ff",
+      "instructions_requiring_review": [
+        "1000e4d64: b4001968    \tcbz\tx8, 0x1000e5090 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon10accumulate+0x344>",
+        "1000e5054: 54ffeb41    \tb.ne\t0x1000e4dbc <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon10accumulate+0x70>"
+      ]
+    },
+    {
+      "symbol": "__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile",
+      "assembly": "kernel-16.asm",
+      "assembly_sha256": "1992f7ac808769f1cb81136849c5f9f5d0bce3a731ad652ae7633e2cc0f3c108",
+      "instructions_requiring_review": [
+        "1000e50b8: 54001002    \tb.hs\t0x1000e52b8 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x224>",
+        "1000e5174: 97fc9035    \tbl\t0x100009248 <__RINvNtCs8Mbv00yxnRz_4core5array11try_from_fnINtNtNtB4_3ops9try_trait17NeverShortCircuitNtNtNtNtB4_9core_arch10arm_shared4neon10uint64x2_tEKj4_NCINvMBJ_BG_10wrap_mut_1jNCNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon17fold_quad_logicals0_0E0EB2R_>",
+        "1000e51f8: 97fc9014    \tbl\t0x100009248 <__RINvNtCs8Mbv00yxnRz_4core5array11try_from_fnINtNtNtB4_3ops9try_trait17NeverShortCircuitNtNtNtNtB4_9core_arch10arm_shared4neon10uint64x2_tEKj4_NCINvMBJ_BG_10wrap_mut_1jNCNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon17fold_quad_logicals0_0E0EB2R_>",
+        "1000e5204: 540006a2    \tb.hs\t0x1000e52d8 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x244>",
+        "1000e5220: 54000802    \tb.hs\t0x1000e5320 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x28c>",
+        "1000e5234: 54000542    \tb.hs\t0x1000e52dc <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x248>",
+        "1000e5248: 540006e2    \tb.hs\t0x1000e5324 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x290>",
+        "1000e5260: 540003c2    \tb.hs\t0x1000e52d8 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x244>",
+        "1000e5274: 540004a2    \tb.hs\t0x1000e5308 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x274>",
+        "1000e5288: 54000282    \tb.hs\t0x1000e52d8 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x244>",
+        "1000e5298: 540002c2    \tb.hs\t0x1000e52f0 <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x25c>",
+        "1000e52b4: 54fff241    \tb.ne\t0x1000e50fc <__RNvNtNtNtNtCsagpXUhzPPpl_17field_regressions8campaign10candidates4grid4neon9fold_tile+0x68>",
+        "1000e52ec: 9401d8cb    \tbl\t0x10015b618 <__RNvNtCs8Mbv00yxnRz_4core9panicking18panic_bounds_check>",
+        "1000e5304: 9401d8c5    \tbl\t0x10015b618 <__RNvNtCs8Mbv00yxnRz_4core9panicking18panic_bounds_check>",
+        "1000e531c: 9401d8bf    \tbl\t0x10015b618 <__RNvNtCs8Mbv00yxnRz_4core9panicking18panic_bounds_check>",
+        "1000e5334: 9401d8b9    \tbl\t0x10015b618 <__RNvNtCs8Mbv00yxnRz_4core9panicking18panic_bounds_check>"
+      ]
+    }
+  ],
+  "scope": "Manual ARM instruction/dataflow review; no automatic constant-time verdict"
+}

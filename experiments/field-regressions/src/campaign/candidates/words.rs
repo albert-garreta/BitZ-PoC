@@ -1,10 +1,14 @@
 //! Fixed-width primitive candidates; signed results use two's-complement bits.
 use super::pass;
 use crate::{Case, Rng, case_requested, measure};
-use crypto_bigint::{Int, Uint};
+use crypto_bigint::{Choice, CtSelect, Int, Uint};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{CheckedAdd, CheckedSub, Zero};
 use std::{array, hint::black_box};
+
+#[cfg(test)]
+#[path = "correctness/words.rs"]
+mod tests;
 
 #[inline(always)]
 fn add<const L: usize>(a: &[u64; L], b: &[u64; L]) -> ([u64; L], bool) {
@@ -469,6 +473,9 @@ fn exact_cases<const L: usize, const O: usize>(samples: usize, rng: &mut Rng) {
             ($signed:literal,$family:literal) => {{
                 let expected = exact::<L, O, $signed, false>(&a, &b);
                 assert_eq!(exact::<L, O, $signed, true>(&a, &b), expected);
+                if $signed {
+                    assert_eq!(exact_signed_columns::<L, O>(&a, &b), expected);
+                }
                 if !$signed {
                     assert_eq!(exact_columns::<L, O>(&a, &b), expected);
                 }
@@ -496,6 +503,11 @@ fn exact_cases<const L: usize, const O: usize>(samples: usize, rng: &mut Rng) {
                             black_box(exact::<L, O, $signed, true>(black_box(&a), black_box(&b)));
                         }),
                     ];
+                    if $signed {
+                        cases.push(Case::new("signed_columns", n * L * 16, || {
+                            black_box(exact_signed_columns::<L, O>(black_box(&a), black_box(&b)));
+                        }));
+                    }
                     if !$signed {
                         assert_eq!(exact_columns::<L, O>(&a, &b), expected);
                         cases.push(Case::new("column_exact", n * L * 16, || {
@@ -529,6 +541,49 @@ fn exact_columns<const L: usize, const O: usize>(a: &[[u64; L]], b: &[[u64; L]])
         }
     }
     let mut carry = 0;
+    array::from_fn(|i| {
+        let v = columns[i] + carry;
+        carry = v >> 64;
+        v as u64
+    })
+}
+
+// For radix B=2^64, a signed value is U - sign*B^L. Accumulate the
+// unsigned product and both sign corrections in signed columns, then carry
+// once. Each column gets at most 2L product words and two correction words
+// per term. The public bound leaves i128 headroom, including the final carry.
+// Input signs select masks only; every term executes the same limb schedule.
+#[inline(never)]
+fn exact_signed_columns<const L: usize, const O: usize>(
+    a: &[[u64; L]],
+    b: &[[u64; L]],
+) -> [u64; O] {
+    assert!(L > 0);
+    assert_eq!(O, 2 * L + 1);
+    assert_eq!(a.len(), b.len());
+    assert!(a.len() <= (u64::MAX / (4 * L + 8) as u64) as usize);
+    let mut columns = [0i128; O];
+    for (a, b) in a.iter().zip(b) {
+        for i in 0..L {
+            for j in 0..L {
+                let p = a[i] as u128 * b[j] as u128;
+                columns[i + j] += (p as u64) as i128;
+                columns[i + j + 1] += (p >> 64) as i128;
+            }
+        }
+        let sa = a[L - 1] >> 63;
+        let sb = b[L - 1] >> 63;
+        // The compiler turned ordinary 0-sign masks into branches that
+        // skipped correction limbs. CtSelect's backend keeps these masks
+        // opaque to that optimization and emits conditional selection.
+        let ma = 0u64.ct_select(&u64::MAX, Choice::from_u8_lsb(sa as u8));
+        let mb = 0u64.ct_select(&u64::MAX, Choice::from_u8_lsb(sb as u8));
+        for j in 0..L {
+            columns[L + j] -= (b[j] & ma) as i128 + (a[j] & mb) as i128;
+        }
+        columns[2 * L] += (sa & sb) as i128;
+    }
+    let mut carry = 0i128;
     array::from_fn(|i| {
         let v = columns[i] + carry;
         carry = v >> 64;

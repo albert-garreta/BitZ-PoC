@@ -1,0 +1,338 @@
+[
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "tiled_256",
+    "ratio": 0.3887826405309766,
+    "run_ratios": [
+      0.38244124398895357,
+      0.39512403707299965
+    ],
+    "allocations": [
+      2,
+      4160
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "reuse_products",
+    "ratio": 0.7165897280368114,
+    "run_ratios": [
+      0.7088727552430699,
+      0.724306700830553
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "collect_products",
+    "ratio": 0.7713364964460346,
+    "run_ratios": [
+      0.7627630783624375,
+      0.7799099145296318
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "indexed_products",
+    "ratio": 0.7518402769040469,
+    "run_ratios": [
+      0.7406379277984368,
+      0.763042626009657
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      13,
+      32832
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "prepared_products",
+    "ratio": 0.7466696637726794,
+    "run_ratios": [
+      0.7401035454509626,
+      0.7532357820943962
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "tiled_1024",
+    "ratio": 0.7197783139267645,
+    "run_ratios": [
+      0.7087006173860142,
+      0.7308560104675148
+    ],
+    "allocations": [
+      2,
+      16400
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log10",
+    "variant": "vector_products",
+    "ratio": 0.7621575517479617,
+    "run_ratios": [
+      0.7514456182534983,
+      0.772869485242425
+    ],
+    "allocations": [
+      3,
+      16464
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "vector_products",
+    "ratio": 1.282248355653012,
+    "run_ratios": [
+      1.3370979082593941,
+      1.2273988030466298
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "tiled_256",
+    "ratio": 0.5871778018031326,
+    "run_ratios": [
+      0.6440239761112931,
+      0.530331627494972
+    ],
+    "allocations": [
+      2,
+      8192
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "tiled_1024",
+    "ratio": 0.5967095302065482,
+    "run_ratios": [
+      0.6418656086017328,
+      0.5515534518113636
+    ],
+    "allocations": [
+      2,
+      17408
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      20,
+      133328
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "indexed_products",
+    "ratio": 1.225540354447594,
+    "run_ratios": [
+      1.2604826226455583,
+      1.1905980862496295
+    ],
+    "allocations": [
+      3,
+      67312
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "reuse_products",
+    "ratio": 1.2435087901972175,
+    "run_ratios": [
+      1.2923107438731376,
+      1.1947068365212974
+    ],
+    "allocations": [
+      3,
+      67312
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "collect_products",
+    "ratio": 1.2239490829336082,
+    "run_ratios": [
+      1.2824239760452654,
+      1.1654741898219512
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log16",
+    "variant": "prepared_products",
+    "ratio": 1.2362305604905832,
+    "run_ratios": [
+      1.2926509798232064,
+      1.1798101411579602
+    ],
+    "allocations": [
+      4,
+      67568
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "prepared_products",
+    "ratio": 1.1459354774165873,
+    "run_ratios": [
+      1.1345952259958019,
+      1.1572757288373727
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "vector_products",
+    "ratio": 1.0960240471270444,
+    "run_ratios": [
+      1.1135346911396995,
+      1.0785134031143895
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "reuse_products",
+    "ratio": 1.0936652267458624,
+    "run_ratios": [
+      1.0864444907238988,
+      1.100885962767826
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "tiled_1024",
+    "ratio": 1.0154338706542296,
+    "run_ratios": [
+      0.9630479281718242,
+      1.067819813136635
+    ],
+    "allocations": [
+      3,
+      22000
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "indexed_products",
+    "ratio": 1.120430537576155,
+    "run_ratios": [
+      1.1237151896588076,
+      1.1171458854935021
+    ],
+    "allocations": [
+      3,
+      68080
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "tiled_256",
+    "ratio": 1.0807273258261838,
+    "run_ratios": [
+      1.038962087315639,
+      1.1224925643367285
+    ],
+    "allocations": [
+      3,
+      22000
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "production_blocked",
+    "ratio": 1.0,
+    "run_ratios": [
+      1.0,
+      1.0
+    ],
+    "allocations": [
+      22,
+      135632
+    ]
+  },
+  {
+    "family": "opt_ood",
+    "size": "log18",
+    "variant": "collect_products",
+    "ratio": 1.1485345976319947,
+    "run_ratios": [
+      1.105620182736182,
+      1.1914490125278072
+    ],
+    "allocations": [
+      4,
+      69104
+    ]
+  }
+]

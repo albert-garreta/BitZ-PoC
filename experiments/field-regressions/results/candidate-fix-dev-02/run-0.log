@@ -1,0 +1,22 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=971911
+RUNTIME {"aes":true,"arch":"aarch64","arithmetic_campaign":true,"avx512f":false,"baseline_all_core_threads":1,"caller_threads":1,"candidate_all_core_threads":0,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":false,"flock_kernel":"arm-pmull","pclmulqdq":false,"seed":971911,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed opt_gf_grid/16: 4 variants, 8 paired samples
+completed opt_gf_grid/1024: 4 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_dense_n16: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_dense_n1024: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_sparse_n16: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_sparse_n1024: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_zero_n16: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_zero_n1024: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_dense_prefix_n16: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_dense_prefix_n1024: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_sparse_prefix_n16: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_sparse_prefix_n1024: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_alternating_n16: 8 variants, 8 paired samples
+completed opt_f2_poly_dot/a3_b7_alternating_n1024: 8 variants, 8 paired samples
+completed opt_ood/log10: 10 variants, 8 paired samples
+completed opt_ood/log16: 10 variants, 8 paired samples
+completed opt_ood/log18: 10 variants, 8 paired samples
+completed opt_ntt/log8_lanes1: 5 variants, 8 paired samples
+CORRECTNESS_COMPLETE

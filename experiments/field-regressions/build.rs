@@ -132,4 +132,19 @@ pub fn offset(&self,b:usize)->usize{b<<(self.virtual_lane_log-1)}
         "out.par_chunks_mut(lanes)",
     );
     fs::write(out.join("packing.rs"), format!("{geometry}\n{pack}\n}}\n")).unwrap();
+    // The production module's own tests use circuit-private witness types.
+    // Keep the implementation verbatim for this crate's independent tests,
+    // excluding only those original tests and converting inner doc comments.
+    let projection_path = root.join("crates/circuit/src/matrix_products.rs");
+    println!("cargo:rerun-if-changed={}", projection_path.display());
+    let projection = fs::read_to_string(projection_path).unwrap();
+    let (implementation, _) = projection
+        .split_once("\n#[cfg(test)]\nmod tests {")
+        .expect("projection test boundary changed");
+    let implementation = implementation
+        .lines()
+        .map(|line| line.strip_prefix("//!").map_or(line.to_owned(), |doc| format!("//{doc}")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(out.join("projection_test.rs"), implementation).unwrap();
 }

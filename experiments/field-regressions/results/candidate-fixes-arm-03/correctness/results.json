@@ -1,0 +1,38 @@
+{
+  "benchmark_binary_sha256": "4d16fca6e2611020cdaaf5d709e46dedf65af9889ed3414a3da620f897fe9b4d",
+  "source_snapshot": "/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-h_tggvge",
+  "frozen_metadata_sha256": "f0a13fb7b1f9e0db3f055fa1d675fe7d75faf7013bdea60fec4459f04189b05f",
+  "runs": [
+    {
+      "mode": "debug",
+      "flags": "-C target-cpu=native",
+      "passed": 39,
+      "failed": 0,
+      "log": "debug.log",
+      "log_sha256": "6fa5edd70f176e31682cd6e3e9212f41d40706ddb1348dbc449228a909a1e092"
+    },
+    {
+      "mode": "release",
+      "flags": "-C target-cpu=native",
+      "passed": 39,
+      "failed": 0,
+      "log": "release.log",
+      "log_sha256": "9d7e8817eaef42e510775db20a9c57cbdefd4750323aa38f7fd90aa8a2f77044"
+    },
+    {
+      "mode": "fallback",
+      "flags": "-C target-cpu=generic -C target-feature=-aes",
+      "passed": 39,
+      "failed": 0,
+      "log": "fallback.log",
+      "log_sha256": "5b2fc5a77cae4808361e954a85996f1b7e16b7167094d75729ec5813fa0c72da"
+    }
+  ],
+  "harness": {
+    "passed": 17,
+    "failed": 0,
+    "log": "harness.log",
+    "log_sha256": "8c41ecf6a90d775e2c74a75a59f029d864737ac5cd88e341219753131a087797"
+  },
+  "note": "All Rust tests built from the exact frozen source snapshot with arithmetic-campaign enabled and test-threads=1. Fallback disables AES-gated candidate selection on ARM; it is not an x86 run or a claim that every dependency disables SIMD."
+}

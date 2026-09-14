@@ -5,9 +5,18 @@ candidate benchmarking, with no production integration or x86 kernel work.
 See [baseline comparisons and source locations](BASELINES.md) for the concrete
 implementations, benchmark call sites, matching contracts and coverage gaps.
 
-The latest [regression repair results](REPAIR_RESULTS.md) pass the frozen gates
-at one and ten threads. See [repair notes and replay commands](REPAIR_NOTES.md)
-for the implementation changes, explicit baseline retentions, and frozen archive.
+The latest [candidate regression fixes](CANDIDATE_FIX_RESULTS.md) pass all 35
+focused checks at one and ten threads, with no baseline retentions. The exact
+measured executable also passes the signed-MAC instruction review, and its
+frozen sources pass 39 correctness tests in three build configurations.
+
+The earlier [regression repair results](REPAIR_RESULTS.md) and
+[repair notes](REPAIR_NOTES.md) preserve the broader campaign, its explicit
+baseline retentions, and its original frozen archive.
+
+The subsequent [arithmetic correctness audit](CORRECTNESS.md) adds independent
+oracles and a rerunnable test suite. It also fixes a vendored NTT constructor
+panic for the zero-dimensional domain; the optimized kernel bodies stay isolated.
 
 The new [optimization candidates](OPTIMIZATION.md) run with
 `run.py --suite optimization`. That suite extracts the private production
@@ -22,8 +31,8 @@ The focused two-limb MAC and bounded-product optimization is documented in
 
 
 This experiment measures the proposed shared arithmetic against vendored Flock.
-The current campaign is **ARM only**, with a **1% maximum slowdown**. Production
-sources and dispatch are unchanged. Matrix layouts and full-prover benchmarks
+The performance campaign is **ARM only**, with a **1% maximum slowdown**. It does
+not integrate candidate dispatch into production. Matrix layouts and full-prover benchmarks
 are outside this campaign; `matrix.rs` and older reports remain historical work.
 
 Run from the repository root:

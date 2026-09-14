@@ -27,7 +27,9 @@ def main():
         if ("7native4" in symbol or ("10Projection" in symbol and "5batch" in symbol)
                 or "5prime5batchKb1_" in symbol
                 or ("10polynomial5fixed" in symbol)
-                or "13exact_columns" in symbol or "4dot3" in symbol):
+                or "13exact_columns" in symbol or "exact_signed_columns" in symbol
+                or ("4grid" in symbol and ("fold_tile" in symbol or "accumulate" in symbol))
+                or "4dot3" in symbol):
             selected.add(symbol)
     if not selected:
         parser.error("No candidate symbols found; inspect the compiler's symbol naming")

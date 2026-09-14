@@ -4,6 +4,10 @@ use flock_core::{field::F128, ntt::AdditiveNttF128};
 use rayon::prelude::*;
 use std::hint::black_box;
 
+#[cfg(test)]
+#[path = "correctness/composite.rs"]
+mod tests;
+
 // Write each equality weight once per coordinate, reuse its product for both
 // children, and allocate the final table once. Index bit k belongs to point[k].
 fn eq_into(point: &[Gf], out: &mut [Gf]) {
@@ -216,6 +220,108 @@ fn ood_prepared(p: &[F128], point: &[Gf]) -> Gf {
         .zip(&head)
         .fold(Gf::zero(), |a, (&i, &h)| a + i * h)
 }
+// Public-size scheduling: small tables stay on the caller; larger tables
+// expose more independent jobs with a smaller equality table per tile.
+fn ood_tiled<const TILE_LOG: usize>(p: &[F128], point: &[Gf]) -> Gf {
+    assert!(point.len() < usize::BITS as usize);
+    assert_eq!(p.len(), 1usize << point.len());
+    let lo = point.len().min(TILE_LOG);
+    let block = 1 << lo;
+    let tail = eq(&point[..lo]);
+    let mut head = eq(&point[lo..]);
+    let product = |m: &[F128], h: &mut Gf| {
+        let mut acc = Gf::wide_zero(&Gf::zero());
+        for (&x, t) in m.iter().zip(&tail) {
+            Gf::wide_add_assign(&mut acc, &Gf::mul_wide(&Gf::from_words([x.lo, x.hi]), t));
+        }
+        *h *= Gf::from_wide(acc);
+    };
+    if p.len() <= 1 << 16 || rayon::current_num_threads() == 1 {
+        for (m, h) in p.chunks_exact(block).zip(&mut head) {
+            product(m, h);
+        }
+    } else {
+        p.par_chunks_exact(block)
+            .zip(head.par_iter_mut())
+            .for_each(|(m, h)| product(m, h));
+    }
+    head.into_iter().fold(Gf::zero(), |a, b| a + b)
+}
+fn ood_tiled_vector<const TILE_LOG: usize>(p: &[F128], point: &[Gf]) -> Gf {
+    assert!(point.len() < usize::BITS as usize);
+    assert_eq!(p.len(), 1usize << point.len());
+    let lo = point.len().min(TILE_LOG);
+    let block = 1 << lo;
+    let tail = eq(&point[..lo]);
+    let mut head = eq(&point[lo..]);
+    let product = |m: &[F128], h: &mut Gf| {
+        *h *= dot3(m, &tail);
+    };
+    if p.len() <= 1 << 16 || rayon::current_num_threads() == 1 {
+        for (m, h) in p.chunks_exact(block).zip(&mut head) {
+            product(m, h);
+        }
+    } else {
+        p.par_chunks_exact(block)
+            .zip(head.par_iter_mut())
+            .for_each(|(m, h)| product(m, h));
+    }
+    head.into_iter().fold(Gf::zero(), |a, b| a + b)
+}
+
+fn ood_tiled_collect(p: &[F128], point: &[Gf]) -> Gf {
+    assert!(point.len() < usize::BITS as usize);
+    assert_eq!(p.len(), 1usize << point.len());
+    if p.len() <= 1 << 16 || rayon::current_num_threads() == 1 {
+        return ood_tiled::<10>(p, point);
+    }
+    let lo = point.len().min(10);
+    let block = 1 << lo;
+    let tail = eq(&point[..lo]);
+    let head = eq(&point[lo..]);
+    let inner: Vec<Gf> = (0..head.len())
+        .into_par_iter()
+        .map(|hi| {
+            let mut acc = Gf::wide_zero(&Gf::zero());
+            for (j, t) in tail.iter().enumerate() {
+                let m = p[hi * block + j];
+                Gf::wide_add_assign(&mut acc, &Gf::mul_wide(&Gf::from_words([m.lo, m.hi]), t));
+            }
+            Gf::from_wide(acc)
+        })
+        .collect();
+    inner
+        .iter()
+        .zip(&head)
+        .fold(Gf::zero(), |a, (&i, &h)| a + i * h)
+}
+
+fn ood_grouped(p: &[F128], point: &[Gf]) -> Gf {
+    assert!(point.len() < usize::BITS as usize);
+    assert_eq!(p.len(), 1usize << point.len());
+    if p.len() <= 1 << 16 || rayon::current_num_threads() == 1 {
+        return ood_tiled::<10>(p, point);
+    }
+    let lo = point.len().min(10);
+    let block = 1 << lo;
+    let tail = eq(&point[..lo]);
+    let mut head = eq(&point[lo..]);
+    head.par_chunks_mut(4)
+        .enumerate()
+        .for_each(|(group, weights)| {
+            for (i, h) in weights.iter_mut().enumerate() {
+                let base = (group * 4 + i) * block;
+                let mut acc = Gf::wide_zero(&Gf::zero());
+                for (j, t) in tail.iter().enumerate() {
+                    let m = p[base + j];
+                    Gf::wide_add_assign(&mut acc, &Gf::mul_wide(&Gf::from_words([m.lo, m.hi]), t));
+                }
+                *h *= Gf::from_wide(acc);
+            }
+        });
+    head.into_iter().fold(Gf::zero(), |a, b| a + b)
+}
+
 fn ood_cases(samples: usize, rng: &mut Rng) {
     for log in [0, 1, 3, 10, 16, 18] {
         let size = format!("log{log}");
@@ -238,6 +344,12 @@ fn ood_cases(samples: usize, rng: &mut Rng) {
         assert_eq!(ood_collect(&p, &point), expected);
         assert_eq!(ood_vector(&p, &point), expected);
         assert_eq!(ood_prepared(&p, &point), expected);
+        assert_eq!(ood_tiled::<10>(&p, &point), expected);
+        assert_eq!(ood_tiled::<8>(&p, &point), expected);
+        assert_eq!(ood_tiled_vector::<10>(&p, &point), expected);
+        assert_eq!(ood_tiled_vector::<11>(&p, &point), expected);
+        assert_eq!(ood_tiled_collect(&p, &point), expected);
+        assert_eq!(ood_grouped(&p, &point), expected);
         let weights = eq(&point);
         let oracle = p.iter().zip(&weights).fold(Gf::zero(), |acc, (p, w)| {
             acc + Gf::from_words([p.lo, p.hi]) * *w
@@ -267,6 +379,24 @@ fn ood_cases(samples: usize, rng: &mut Rng) {
             }),
             Case::new("prepared_products", p.len() * 16, || {
                 black_box(ood_prepared(black_box(&p), black_box(&point)));
+            }),
+            Case::new("tiled_1024", p.len() * 16, || {
+                black_box(ood_tiled::<10>(black_box(&p), black_box(&point)));
+            }),
+            Case::new("tiled_collect", p.len() * 16, || {
+                black_box(ood_tiled_collect(black_box(&p), black_box(&point)));
+            }),
+            Case::new("tiled_grouped", p.len() * 16, || {
+                black_box(ood_grouped(black_box(&p), black_box(&point)));
+            }),
+            Case::new("vector_1024", p.len() * 16, || {
+                black_box(ood_tiled_vector::<10>(black_box(&p), black_box(&point)));
+            }),
+            Case::new("vector_2048", p.len() * 16, || {
+                black_box(ood_tiled_vector::<11>(black_box(&p), black_box(&point)));
+            }),
+            Case::new("tiled_256", p.len() * 16, || {
+                black_box(ood_tiled::<8>(black_box(&p), black_box(&point)));
             }),
         ];
         measure("opt_ood", &size, &mut cases, samples, rng);
@@ -420,6 +550,36 @@ fn tiled_ntt_worker(
         .enumerate()
         .for_each(|(block, data)| serial_tree(ntt, data, lanes, top, block));
 }
+fn incremental_ntt(ntt: &AdditiveNttF128, data: &mut [F128], lanes: usize) {
+    assert!(lanes.is_power_of_two());
+    assert!(data.len().is_power_of_two() && data.len() >= lanes);
+    let log = (data.len() / lanes).ilog2() as usize;
+    assert!(log <= ntt.log_domain_size());
+    if data.len() > 4096 {
+        half_depth(ntt, data, lanes, 0, 0);
+        return;
+    }
+    let mut changes = [F128::ZERO; 12];
+    for layer in 0..log {
+        // Twiddle evaluation is F2-linear in the public block index. Advancing
+        // b-1 to b flips exactly bits 0..=trailing_zeros(b).
+        let mut change = F128::ZERO;
+        for (bit, delta) in changes[..layer].iter_mut().enumerate() {
+            change += ntt.twiddle(layer, 1 << bit);
+            *delta = change;
+        }
+        let mut t = F128::ZERO;
+        let len = data.len() >> layer;
+        for (block, values) in data.chunks_exact_mut(len).enumerate() {
+            if block != 0 {
+                t += changes[block.trailing_zeros() as usize];
+            }
+            let (a, b) = values.split_at_mut(len / 2);
+            improved_pairs(a, b, t);
+        }
+    }
+}
+
 fn ntt_cases(samples: usize, rng: &mut Rng) {
     for (log, lanes) in [
         (8, 1),
@@ -443,6 +603,7 @@ fn ntt_cases(samples: usize, rng: &mut Rng) {
         let mut candidate = input.clone();
         let mut tiled = input.clone();
         let mut half_depth_data = input.clone();
+        let mut incremental_data = input.clone();
         ntt.forward_transform_interleaved(&mut old, lanes);
         subtree(&ntt, &mut candidate, lanes, 0, 0);
         assert_eq!(old, candidate);
@@ -450,7 +611,14 @@ fn ntt_cases(samples: usize, rng: &mut Rng) {
         assert_eq!(old, tiled);
         half_depth(&ntt, &mut half_depth_data, lanes, 0, 0);
         assert_eq!(old, half_depth_data);
+        incremental_ntt(&ntt, &mut incremental_data, lanes);
+        assert_eq!(old, incremental_data);
         let mut cases = vec![
+            Case::new("incremental", input.len() * 48, || {
+                incremental_data.copy_from_slice(black_box(&input));
+                incremental_ntt(black_box(&ntt), black_box(&mut incremental_data), lanes);
+                black_box(&incremental_data);
+            }),
             Case::new("production", input.len() * 48, || {
                 old.copy_from_slice(black_box(&input));
                 ntt.forward_transform_interleaved(black_box(&mut old), lanes);

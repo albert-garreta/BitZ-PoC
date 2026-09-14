@@ -8,6 +8,10 @@ use crypto_bigint::{
 use num_traits::Inv;
 use std::hint::black_box;
 
+#[cfg(test)]
+#[path = "correctness/prime.rs"]
+mod tests;
+
 type Config = FixedMontyParams<2>;
 fn cfg(q: u128) -> Config {
     Config::new_vartime(Odd::new(Uint::from_words([q as u64, (q >> 64) as u64])).unwrap())
@@ -80,6 +84,44 @@ fn batch_fields<const CT: bool>(
     output
 }
 
+// Variable-time public-input API, matching production_one_inverse's contract.
+// An all-zero batch needs no inversion or prefix allocation. For a nonempty
+// product, omit the first multiplication by one and the last unused update.
+fn batch_public_nonzero(
+    ctx: &Ctx,
+    fields: &[crypto_primitives::crypto_bigint_monty::MontyField<2>],
+) -> Vec<crypto_primitives::crypto_bigint_monty::MontyField<2>> {
+    let mut output = vec![ctx.field(0); fields.len()];
+    let Some(first) = fields.iter().position(|x| ctx.raw(x) != 0) else {
+        return output;
+    };
+    let mut product = ctx.raw(&fields[first]);
+    let rest = &fields[first + 1..];
+    let mut prefixes = Vec::with_capacity(rest.len());
+    for x in rest {
+        prefixes.push(product);
+        let x = ctx.raw(x);
+        if x != 0 {
+            product = ctx.mul(product, x);
+        }
+    }
+    let mut inverse = ctx.raw(&ctx.field(product).inv().unwrap());
+    for ((x, &prefix), out) in rest
+        .iter()
+        .zip(&prefixes)
+        .zip(&mut output[first + 1..])
+        .rev()
+    {
+        let x = ctx.raw(x);
+        if x != 0 {
+            *out = ctx.field(ctx.mul(inverse, prefix));
+            inverse = ctx.mul(inverse, x);
+        }
+    }
+    output[first] = ctx.field(inverse);
+    output
+}
+
 fn inversions(samples: usize, rng: &mut Rng) {
     for (bits, q) in [(100, (1u128 << 100) + 277), (128, u128::MAX - 158)] {
         let cfg = cfg(q);
@@ -109,6 +151,7 @@ fn inversions(samples: usize, rng: &mut Rng) {
                 let expected: Vec<_> = old.iter().map(|x| ctx.raw(x)).collect();
                 assert_eq!(batch_fields::<true>(&ctx, &fields), old);
                 assert_eq!(batch_fields::<false>(&ctx, &fields), old);
+                assert_eq!(batch_public_nonzero(&ctx, &fields), old);
                 for ((&x, &y), &p) in input.iter().zip(&expected).zip(&plain) {
                     assert_eq!(ctx.mul(x, y), if p == 0 { 0 } else { ctx.one() });
                 }
@@ -129,6 +172,9 @@ fn inversions(samples: usize, rng: &mut Rng) {
                         black_box(&cfg),
                     ));
                 })];
+                cases.push(Case::new("public_nonzero", 0, || {
+                    black_box(batch_public_nonzero(black_box(&ctx), black_box(&fields)));
+                }));
                 for (name, ct) in [("compact_vartime", false), ("compact_ct", true)] {
                     let fields = &fields;
                     let ctx = &ctx;
