@@ -19,8 +19,12 @@ pub use security::{ChallengeSecurity, Sha256EcdsaSecurity};
 pub use witness::{Sha256EcdsaWitness, generate_sha256_ecdsa_witness};
 
 use crate::piop::spartan::f2z::SpartanF2zField as F;
-use crypto_primitives::{FromWithConfig, PrimeField};
+#[cfg(test)]
+use crypto_primitives::FromWithConfig;
+use crypto_primitives::PrimeField;
+#[cfg(test)]
 use num_bigint::BigInt;
+#[cfg(test)]
 use num_traits::ToPrimitive;
 use std::fmt::Display;
 
@@ -35,6 +39,9 @@ pub(crate) fn error(value: impl Display) -> Sha256EcdsaError {
     Sha256EcdsaError(value.to_string())
 }
 
+/// The arbitrary-precision reduction the native word kernels replaced; the
+/// oracle of the coefficient and outer-product tests.
+#[cfg(test)]
 fn reduce_integer_mod_q(value: &BigInt, modulus: u128, cfg: &Config) -> F {
     let modulus = BigInt::from(modulus);
     let residue = ((value % &modulus) + &modulus) % modulus;

@@ -5,8 +5,10 @@
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(test)]
+use super::reduce_integer_mod_q;
 use super::{
-    Config, Result, error, reduce_integer_mod_q,
+    Config, Result, error,
     relation::{OuterMode, PreparedSha256Ecdsa, SHA_H, Sha256EcdsaStatement},
 };
 use crate::{
@@ -127,11 +129,33 @@ impl<'a> ModQCoefficients<'a> {
     ) -> Self {
         let _scope = crate::utils::prof::scope("ecdsa:matrix_projection");
         let ctx = RawMontyCtx::new(cfg);
+        // The distinct coefficients reduce natively from their two's-complement
+        // words (Horner by the residue of 2^64, `signed_words_residue`), rows in
+        // parallel; `bigint_residues` is the test oracle.
+        let two_pow_64 = ctx.two_pow_64_residue();
+        let max_words = relation
+            .local
+            .coefficient_words
+            .iter()
+            .map(|words| words.len())
+            .max()
+            .unwrap_or(0);
+        let powers = ctx.two_pow_64_plain_powers(two_pow_64, max_words);
+        let residue = |words: &[u64]| ctx.signed_words_residue(words, two_pow_64, &powers);
+        #[cfg(feature = "parallel")]
         let residues = relation
             .local
-            .coefficients
+            .coefficient_words
+            .par_iter()
+            .with_min_len(256)
+            .map(|words| residue(words))
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let residues = relation
+            .local
+            .coefficient_words
             .iter()
-            .map(|coefficient| ctx.raw(&reduce_integer_mod_q(coefficient, modulus, cfg)))
+            .map(|words| residue(words))
             .collect();
         // The sampled prime is odd and below 2^113, so both constructions succeed.
         let runtime_modulus = RuntimeModulus::<2>::new(BigUint::from(modulus))
@@ -328,6 +352,19 @@ impl<'a> ModQCoefficients<'a> {
             public_bits,
             constant,
         })
+    }
+
+    /// The arbitrary-precision projection of the distinct coefficients the
+    /// native word reduction replaced; kept as the test oracle.
+    #[cfg(test)]
+    fn bigint_residues(relation: &PreparedSha256Ecdsa, modulus: u128, cfg: &Config) -> Vec<Raw> {
+        let ctx = RawMontyCtx::new(cfg);
+        relation
+            .local
+            .coefficients
+            .iter()
+            .map(|coefficient| ctx.raw(&reduce_integer_mod_q(coefficient, modulus, cfg)))
+            .collect()
     }
 
     /// The expanded-entry gather the tape replaced; kept as the test oracle.
@@ -533,6 +570,48 @@ mod tests {
         sumcheck::SumcheckProof,
     };
     use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_uint::Uint};
+
+    /// A 113-bit prime drawn the way the protocol draws it (from a fresh
+    /// transcript): the modulus class the verifier runs on, next to the wider
+    /// Mersenne prime the other oracle tests use.
+    pub(super) fn sampled_prime() -> u128 {
+        crate::ext_proj::sample_prime_in_interval(
+            &mut crate::transcript::Blake3Transcript::new(),
+            1u128 << 112,
+            (1u128 << 113) - 1,
+        )
+        .unwrap()
+    }
+
+    /// The native word reduction of the distinct coefficients equals the
+    /// arbitrary-precision projection residue for residue, at a sampled
+    /// 113-bit prime and at `2^127 − 1`; the stored words round-trip to the
+    /// integers they encode.
+    #[test]
+    fn coefficient_residues_match_bigint_projection() {
+        use num_bigint::BigInt;
+        for modulus in [sampled_prime(), (1u128 << 127) - 1] {
+            let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+            for mode in [OuterMode::Split, OuterMode::AllRows] {
+                let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+                for (value, words) in relation
+                    .local
+                    .coefficients
+                    .iter()
+                    .zip(&relation.local.coefficient_words)
+                {
+                    let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+                    assert_eq!(&BigInt::from_signed_bytes_le(&bytes), value);
+                }
+                let coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
+                assert_eq!(
+                    coefficients.residues,
+                    ModQCoefficients::bigint_residues(&relation, modulus, &cfg),
+                    "{mode:?} modulus {modulus}"
+                );
+            }
+        }
+    }
 
     /// The tape's tail must equal the expanded-entry gather element by element,
     /// for both outer modes (Split weights only the linear rows' `C` slot).

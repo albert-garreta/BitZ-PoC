@@ -646,8 +646,24 @@ impl WengertTape {
         let odd = Option::<Odd<U128>>::from(Odd::new(modulus_uint))
             .ok_or(WengertApplyError::EvenModulus)?;
         let params = FixedMontyParams::new_vartime(odd);
+        // Above `2^64` every word is already a residue, so the coefficients
+        // reduce by the word-Horner kernel; smaller moduli keep the generic path.
+        let two_pow_64 = (modulus_words[1] != 0).then(|| {
+            FixedMontyForm::new(&U128::from_words([0, 1]), &params)
+                .to_montgomery()
+                .to_words()
+        });
         let coefficients = parallel_map(&self.coefficients, force_parallel, |coefficient| {
-            FixedMontyForm::new(&U128::from_words(modulus.reduce(coefficient)), &params)
+            let reduced = match two_pow_64 {
+                Some(two_pow_64) => horner_reduce_2(
+                    coefficient.words(),
+                    modulus_words,
+                    params.mod_neg_inv().0,
+                    two_pow_64,
+                ),
+                None => modulus.reduce(coefficient),
+            };
+            FixedMontyForm::new(&U128::from_words(reduced), &params)
                 .to_montgomery()
                 .to_words()
         });
@@ -1150,6 +1166,38 @@ fn montgomery_retrieve_2(value: [u64; 2], modulus: [u64; 2], mod_neg_inv: u64) -
         (output[0], output[1]) = carrying_mul_add(multiplier, modulus[1], output[1], carry);
     }
     output
+}
+
+/// `x mod q` for a normalized two's-complement `x` (little-endian words, the
+/// sign in the top bit of the last word, zero empty) and an odd two-limb
+/// `q > 2^64`: Horner over the words, where each step is one Montgomery
+/// product of the running residue by `2^64·R mod q`
+/// (`REDC(r · (2^64·R mod q)) = r · 2^64 mod q`, a plain-domain result) plus
+/// the word, itself a residue because `q > 2^64`; a negative value is then
+/// corrected by `2^{64·len} mod q`, produced by the same base. The result is
+/// the canonical residue, so it equals the bit-serial
+/// [`RuntimeModulus::reduce`] (the test oracle) word for word. Local F2Z
+/// addition; not part of upstream f2z-benchmark.
+fn horner_reduce_2(
+    words: &[u64],
+    modulus: [u64; 2],
+    mod_neg_inv: u64,
+    two_pow_64_montgomery: [u64; 2],
+) -> [u64; 2] {
+    debug_assert_ne!(modulus[1], 0, "the word-Horner reduction needs q > 2^64");
+    let mut plain = [0_u64; 2];
+    for &word in words.iter().rev() {
+        plain = montgomery_mul_2(plain, two_pow_64_montgomery, modulus, mod_neg_inv);
+        plain = add_mod_words(plain, [word, 0], modulus);
+    }
+    if words.last().is_some_and(|word| word >> 63 == 1) {
+        let mut width_power = [1_u64, 0];
+        for _ in 0..words.len() {
+            width_power = montgomery_mul_2(width_power, two_pow_64_montgomery, modulus, mod_neg_inv);
+        }
+        plain = add_mod_words(plain, neg_mod_words(width_power, modulus), modulus);
+    }
+    plain
 }
 
 pub(crate) fn add_mod_words(left: [u64; 2], right: [u64; 2], modulus: [u64; 2]) -> [u64; 2] {
@@ -1663,6 +1711,63 @@ mod tests {
         );
         assert!(tape.node_count() <= tape.edge_count());
         assert!(tape.payload_bytes() < 4 * 1024 * 1024);
+    }
+
+    /// The word-Horner coefficient reduction is the bit-serial reduction,
+    /// residue for residue: random two's-complement values of every width
+    /// the P-256 coefficients use, both signs, extreme words, at a 113-bit
+    /// prime, the Mersenne prime `2^127 − 1` and `2^128 − 159`.
+    #[test]
+    fn horner_reduction_matches_bit_serial_reduce() {
+        let moduli = [
+            (BigUint::one() << 112_usize) + BigUint::from(0x1a2b_3c4d_5e6f_7081_u64) * BigUint::from(2_u64) + BigUint::one(),
+            (BigUint::one() << 127_usize) - BigUint::one(),
+            (BigUint::one() << 128_usize) - BigUint::from(159_u64),
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut random = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for modulus in moduli {
+            let runtime = RuntimeModulus::<2>::new(modulus.clone()).unwrap();
+            let modulus_words = *runtime.modulus_words();
+            let params =
+                FixedMontyParams::new_vartime(Odd::new(U128::from_words(modulus_words)).unwrap());
+            let two_pow_64 = FixedMontyForm::new(&U128::from_words([0, 1]), &params)
+                .to_montgomery()
+                .to_words();
+            let mod_neg_inv = params.mod_neg_inv().0;
+            for len in 0..=9_usize {
+                let mut cases: Vec<Vec<u64>> =
+                    (0..24).map(|_| (0..len).map(|_| random()).collect()).collect();
+                cases.push(vec![u64::MAX; len]);
+                cases.push(vec![0; len]);
+                if len > 0 {
+                    let mut minimum = vec![0; len];
+                    minimum[len - 1] = 1 << 63;
+                    cases.push(minimum);
+                    let mut maximum = vec![u64::MAX; len];
+                    maximum[len - 1] = (1 << 63) - 1;
+                    cases.push(maximum);
+                }
+                for words in cases {
+                    let negative = words.last().is_some_and(|word| word >> 63 == 1);
+                    let mut extended = [if negative { u64::MAX } else { 0 }; 10];
+                    extended[..len].copy_from_slice(&words);
+                    let stored = StoredInteger::from_fixed(Z::<10>::from_le_words(&extended));
+                    let expected = runtime.reduce(&stored);
+                    let actual = if stored.words().is_empty() {
+                        [0, 0]
+                    } else {
+                        horner_reduce_2(stored.words(), modulus_words, mod_neg_inv, two_pow_64)
+                    };
+                    assert_eq!(actual, expected, "modulus {modulus} words {words:?}");
+                }
+            }
+        }
     }
 
     #[test]

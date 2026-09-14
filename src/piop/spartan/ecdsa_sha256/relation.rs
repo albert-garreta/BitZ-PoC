@@ -9,7 +9,7 @@ use circuit::{
     matrix_wengert::{WengertGenerator, WengertTape},
     p256, sha256,
 };
-use num_bigint::{BigInt, BigUint};
+use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::Zero;
 
 use super::{Result, error};
@@ -192,8 +192,13 @@ pub(crate) struct LocalRelation {
     pub a: CompactRows,
     pub b: CompactRows,
     pub c: CompactRows,
-    /// The distinct integer coefficients of `sha_c`, `a`, `b` and `c`.
+    /// The distinct integer coefficients of `sha_c`, `a`, `b` and `c` (the
+    /// test oracles' form; the protocol reads `coefficient_words`).
+    #[cfg(test)]
     pub coefficients: Vec<BigInt>,
+    /// The same coefficients as normalized two's-complement words (the form
+    /// `RawMontyCtx::signed_words_residue` reduces natively per proof).
+    pub coefficient_words: Vec<Box<[u64]>>,
     /// `a`, `b`, `c` column by column over the P-256 assignment tail.
     pub tail: TailColumns,
     /// The P-256 circuit's Z-side linear arithmetic as a reverse-mode tape:
@@ -212,6 +217,26 @@ impl LocalRelation {
     pub(crate) fn rows(&self) -> usize {
         self.a.rows()
     }
+}
+
+/// The little-endian two's-complement words of `value`: zero is empty, and
+/// the top bit of the last word is the sign (the final partial word is
+/// padded with the sign byte), which is what
+/// `RawMontyCtx::signed_words_residue` expects.
+pub(crate) fn signed_words(value: &BigInt) -> Box<[u64]> {
+    if value.is_zero() {
+        return Box::default();
+    }
+    let fill = if value.sign() == Sign::Minus { 0xFF } else { 0 };
+    value
+        .to_signed_bytes_le()
+        .chunks(8)
+        .map(|chunk| {
+            let mut word = [fill; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            u64::from_le_bytes(word)
+        })
+        .collect()
 }
 
 fn bool_map(columns: usize, rows: Vec<Vec<usize>>) -> Result<PreparedVirtualMap> {
@@ -303,6 +328,7 @@ fn build_local() -> Result<LocalRelation> {
         return Err(error("P-256 tape shape disagrees with the constraint matrices"));
     }
     let coefficients = interner.table;
+    let coefficient_words = coefficients.iter().map(signed_words).collect();
     let (linear, nonlinear): (Vec<_>, Vec<_>) =
         (0..a.rows()).partition(|&i| a.is_empty_row(i) || b.is_empty_row(i));
     let magnitudes: Vec<BigUint> = coefficients.iter().map(|c| c.magnitude().clone()).collect();
@@ -351,7 +377,9 @@ fn build_local() -> Result<LocalRelation> {
         a,
         b,
         c,
+        #[cfg(test)]
         coefficients,
+        coefficient_words,
         tail,
         tape,
         nonlinear,

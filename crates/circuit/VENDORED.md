@@ -20,3 +20,8 @@ apply_weighted`, the reverse pass driven by one Montgomery weight triple per row
 instead of one challenge and `x`, so a row can be weighted on `C` alone. Used by
 `f2z::piop::spartan::ecdsa_sha256` for both the prover's batched matrix MLE and
 the verifier's evaluation of it.
+
+Local addition (2026-09-14, not upstream): `WengertTape::prepare` reduces its
+coefficients by a word-Horner kernel (`horner_reduce_2`: one Montgomery product by
+`2^64·R mod q` per word) for moduli above `2^64`; `RuntimeModulus::reduce` (bit-serial
+below `2^127`) stays as the test oracle.

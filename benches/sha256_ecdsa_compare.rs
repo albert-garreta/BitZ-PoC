@@ -249,6 +249,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
         let codec = Instant::now();
         let proof_bytes = proof.to_bytes();
         let object_bytes = proof_bytes.len();
+        let proof_digest = blake3::hash(&proof_bytes).to_hex().to_string();
         let wire = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .serialize(&F2zWire {
@@ -288,6 +289,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 "e2e_prover_ms": e2e_prover_ms, "ligerito_profile": ligerito_profile,
                 "protocol_ms": protocol_ms, "verify_ms": verify_ms, "codec_ms": codec_ms,
                 "proof_object_bytes": object_bytes, "proof_material_bytes": wire.len(),
+                "proof_digest": proof_digest,
                 "outer_ms": phase("ecdsa:outer_prove"), "inner_ms": phase("ecdsa:shared_inner_prove"),
                 "opening_ms": phase("ecdsa:f2z_prove"), "folding_ms": null,
                 "phases_seconds": phases, "verify_phases_seconds": prof::take_totals(),
