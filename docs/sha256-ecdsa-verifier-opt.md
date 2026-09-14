@@ -488,3 +488,27 @@ verifications. The serial sections run 10–15 % slower at 10 threads than at
 (1 thr | 10 thr). Its verifier is dominated by terms outside the ring-switch
 read-off, and the prover differences are within the 10-thread drift of that
 bench (its 10-thread samples spread 66–74 ms).
+
+## Reruns for the paper tables (2026-09-14, branch tip e354897)
+
+All campaigns ran from the branch worktree with its own target directory (never
+the shared one), through `scripts/bench_gate.py`; the previous tables are kept
+in `bench_results/paper-tables-before-vopt-20260914/`. The native SHA-256
+comparison was not rerun (user decision).
+
+| table | what was rerun | where | result |
+|---|---|---|---|
+| `tab:sha256-ecdsa-f2z-opt` | every cell (F2Z both rates, Binius rows; 1 and 10 threads; 2^4..2^7; reps 3) | `bench_results/suite-sha256-ecdsa-20260914-vopt` | F2Z verifier 2^7: 4.48 \| 4.14 ms (Binius UDR 12.7 \| 6.27); prover 85.8 \| 41.4 |
+| `tab:f2z-u32-mul`, `-u64`, `-u128` | the 10-thread F2Z cells (both rates), two passes with 90 s cool-downs, `--pick-least-disturbed` across the passes, `--allow-source-drift f2z` for the 1-thread rows from the previous suite | `PerfRuns/suite-u{32,64,128}-f2z-r{2,8}-t10-vopt{,2}` | 10-thread verifiers −10…−25 % (u32 2^23 9.12 → 8.26; u64 2^21 5.90 → 4.96; u128 2^21 12.5 → 11.7); top-size 10-thread provers within the 3–8 % drift |
+| `tab:hybrid-sha256-mul`, equal counts | the 10-thread F2Z rows (both rates), 120 s cool-down before each sweep | `PerfRuns/suite-hy-{witness,counts}-f2z-r{2,8}-t10-vopt2` | verifier −4…−12 %, prover −2…−8 % at small shapes, top shapes within drift |
+| MultiSwap (F2Z row) | README historical setup, 1 and 10 threads | `bench_results/multiswap-historical-20260914-vopt` | 241 \| 91 ms prover, 8.77 \| 10.98 ms verifier (was 240 \| 96, 8.8 \| 11.9); proof 268,940 B |
+| `tab:f2z-raw-performance` | the full sweep 2^20..2^30, 1 and 10 threads | `bench_results/raw-performance-20260914-vopt` | 10-thread verifier −10…−35 % (2^21 4.55 → 2.94; 2^30 10.3 → 9.37); 1-thread cells within drift |
+
+Two measurement lessons recorded for the next campaign: (1) a campaign that
+starts right after a build runs hot on this fanless box — the first hybrid
+pass and the first u128 pass came out 1.5–2× slow at the top shapes; a 120 s
+idle cool-down after the build (and between campaigns) fixed it; (2) cargo
+keys local-crate artifacts by package id, so a second worktree built into a
+shared target directory silently reuses the first's binary — every state was
+rebuilt after `cargo clean --release -p f2z -p circuit`, and the bench rows'
+proof digests were checked.
