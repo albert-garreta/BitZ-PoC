@@ -1536,9 +1536,9 @@ For example, $T\leq D+1$ if $k=1$, and $T\leq 2$ if $D\leq 1$. In general we hav
 
 \item For every prime $q\in \cP$, let $\cM_q$ be a set of ring homomorphisms $$\pirand:\ZZ[X_1,\ldots, X_{k}] \to \FF_q,$$ and let $\cM\defeq (\cM_q)_{q\in \cP}$. The verifier will sample primes and morphisms from $\cP$ and $\cM_q$. We let $\theta(\cP,\cM,\codedim)$ be the maximum probability that $\pirand(h)=0$, over random $q\gets \cP$, $\pirand\gets \cM_q$, and where the maximum is taken over nonzero polynomials $h\in \ZZ[X_1, \ldots, X_{k}]$ of total degree at most $2\cdot D$, with $\lVert h\rVert_{\infty} \leq 2\cdot T\cdot \codedim\cdot N_R^2$, and such that $\picanon^{R}(h)\neq 0$. Precisely:
 %
-$$
+\begin{equation}\label{e:theta_def}
 \theta(\cP,\cM,\codedim) \defeq  \max_{h}\left\{\Pr_{q\gets \cP, \pirand\gets \cM_q}[ \pirand(h)=0] \right\},
-$$
+\end{equation}
 %
 where $h$ ranges over the polynomials just described. See \cref{l:examples_morphisms} for an example. The quantities $D$, $N_R$, $T$ and  $\theta(\cP,\cM,\codedim)$ depend on $R$ and on the instance vector $\vv$. We omit this dependence from the notation.
 \end{itemize}
@@ -1777,7 +1777,11 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
         $$
     \kappa_0 = \theta(\cP,\cM,\codedim)
     $$
-    (see \cref{l:examples_morphisms}).
+    is the quantity defined in \eqref{e:theta_def}. In particular, if the sets $\cM_q$ are as in \cref{l:examples_morphisms}, then one can take
+    $$
+    \kappa_0 = \frac{2\cdot D}{q_{\min}} + \frac{\log\left(2\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
+    $$
+    where $q_{\min}$ is the smallest prime in $\cP$ and $D$, $T$, $N_R$ are as in \eqref{e:ring_theta_params}.
     If Round 1 is not executed, the error term $\kappa_0$ and its round are absent, and \cref{c:core_iop} has $t_\red+t_\iopp$ rounds. % The case where $\delta$ exceeds the unique decoding radius of $\cC$, so that Round 0 is executed, is treated in \cref{a:OOD} (\cref{t:thm_core_IOPP_OOD}) under additional hypotheses on $\Pi_\red$ and $\Pi_\iopp$; it adds one round and an error term $\kappa_{\mathsf{OOD}}$.
     %Recall that $q$ is either the characteristic of $R$ if $R$ is a finite field, or $q=\codedim_1 \cdot \lVert \vv\rVert_{\infty} +1$ if $R=\ZZ$.
 %
@@ -2126,7 +2130,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \begin{theorem}\label{t:thm_LinModFieldBits}
     Under the same hypotheses and notation as in \cref{t:thm_core_IOPP} for the parameters $(\codedim,\codedim_1,\codedim_2, \Pi_\iopp,\Pi_\red, \cP, (\cM_q)_{q\in \cP})$, the  ring $R$, the code $\cC$, and the binary field $\comfield$ with packing map $\pack$, \cref{c:LinModFieldBin} is a perfectly complete $(1+t_\red + t_\iopp)$-round IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC,L)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $
     \kappa_0 = \theta(\cP,\cM,\codedim). %\frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
-    $ (see \cref{t:thm_core_IOPP}; here $\theta(\cP,\cM,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u} used in \cref{c:core_iop}, i.e.\ the quantities $D$, $T$, $N_R$ are determined by the lifts of the entries of $\uu^{(1)}$ and $\uu^{(2)}$).
+    $ (as in \cref{t:thm_core_IOPP}, including its explicit expression when the sets $\cM_q$ are as in \cref{l:examples_morphisms}; here $\theta(\cP,\cM,\codedim)$ is computed with respect to the tensor decomposition $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u} used in \cref{c:core_iop}, i.e.\ the quantities $D$, $T$, $N_R$ are determined by the lifts of the entries of $\uu^{(1)}$ and $\uu^{(2)}$).
     
     The error term $\kappa_0$ and its round are absent if Round 1 of \cref{c:core_iop} is not executed. If Round 0 of \cref{c:core_iop} is executed, the same holds under the hypotheses of \cref{t:thm_core_IOPP_OOD}, with the additional round and the additional error term $\kappa_{\mathsf{OOD}}$ of that theorem.
     %If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
@@ -3038,15 +3042,15 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     \toprule
     Scheme &  \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof \\
     \cmidrule(lr){3-4} \cmidrule(lr){5-6}
-     & 1 thr & 10 thr & 1 thr & 10 thr & (KB) \\
+      & 1 thr & 10 thr & 1 thr & 10 thr & (KB) \\
     \midrule
-    \ftwoz-SNARK                     & \textbf{240}  & \textbf{96} & \textbf{8.8} & \textbf{11.9} & 269 \\
-    Zinc+                  & 1906          & 527          & 16.4         & 12.5 & 1272 \\
-    Limber (Brakedown)                            & 1056          & 529          & 38.9         & 37.5 & 5769 \\
-    Limber (Hyrax)                          & 1116          & 356          & 34.3         & 20.3 & \textbf{175} \\
+    \ftwoz-SNARK                     & \textbf{241}  & \textbf{91} & \textbf{8.8} & \textbf{11.0} & 269 \\
+    Zinc+                & 1906          & 527          & 16.4         & 12.5 & 1272 \\
+    Limber (Brakedown)                   & 1056          & 529          & 38.9         & 37.5 & 5769 \\
+    Limber (Hyrax)                        & 1116          & 356          & 34.3         & 20.3 & \textbf{175} \\
     \midrule
-    Arkworks/Garuda$^{\dagger}$      & 231000        & --           & 25           & --   & 7.2 \\
-    MultiSwap-xJsnark$^{\dagger}$    & 88500         & --           & 2            & --   & 0.2 \\
+    Arkworks/Garuda$^{\dagger}$      &  231000        & --           & 25           & --   & 7.2 \\
+    MultiSwap-xJsnark$^{\dagger}$     & 88500         & --           & 2            & --   & 0.2 \\
     \bottomrule
   \end{tabular}
   \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M5 $24$GB. ``Thr'' stands for ``threads''.  The first four schemes achieve $114$ bits of round-by-round knowledge soundness. 
@@ -3118,47 +3122,47 @@ Our end-to-end \ftwoz-SNARK is an hybrid construction combining a the PIOP over 
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & $M$ & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{43.6} & \textbf{25.3} & 3.71 & 4.27 & 179 & -- \\
-     & & \ftwoz-SNARK, rate $1/8$ & 57.0 & 27.5 & 3.53 & 4.06 & \textbf{107} & -- \\
-     & & Binius (UDR), rate $1/2$ & 67.3 & 34.6 & 3.30 & 3.18 & 353 & -- \\
-     & & Binius (UDR), rate $1/8$ & 83.7 & 38.8 & \textbf{3.15} & \textbf{3.05} & 264 & -- \\
-     & & Binius (Johnson), rate $1/2$ & 75.1 & 39.2 & 4.01 & 4.22 & 345 & -- \\
-     & & Binius (Johnson), rate $1/8$ & 90.6 & 42.6 & 3.55 & 3.73 & 181 & -- \\
+    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{43.8} & \textbf{23.6} & 3.66 & 3.79 & 179 & \textbf{0.155} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 57.1 & 25.6 & 3.54 & 3.52 & \textbf{107} & 0.162 \\
+     & & Binius (UDR), rate $1/2$ & 66.9 & 34.5 & 3.32 & 3.16 & 353 & 0.403 \\
+     & & Binius (UDR), rate $1/8$ & 84.0 & 38.5 & \textbf{3.18} & \textbf{3.05} & 264 & 0.408 \\
+     & & Binius (Johnson), rate $1/2$ & 75.2 & 39.5 & 3.98 & 4.18 & 345 & 0.413 \\
+     & & Binius (Johnson), rate $1/8$ & 90.7 & 43.0 & 3.58 & 3.67 & 181 & 0.420 \\
     \addlinespace
-    $2^{16}$ & $2^{8}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{78.9} & \textbf{35.5} & 5.29 & 5.18 & 200 & -- \\
-     & & \ftwoz-SNARK, rate $1/8$ & 95.9 & 38.0 & \textbf{5.02} & 4.79 & \textbf{119} & -- \\
-     & & Binius (UDR), rate $1/2$ & 127 & 53.4 & 5.80 & 3.88 & 388 & -- \\
-     & & Binius (UDR), rate $1/8$ & 157 & 59.5 & 5.69 & \textbf{3.71} & 282 & -- \\
-     & & Binius (Johnson), rate $1/2$ & 138 & 58.6 & 6.67 & 5.02 & 357 & -- \\
-     & & Binius (Johnson), rate $1/8$ & 162 & 63.6 & 6.17 & 4.51 & 187 & -- \\
+    $2^{16}$ & $2^{8}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{79.4} & \textbf{33.2} & 5.24 & 4.57 & 200 & -- \\
+     & & \ftwoz-SNARK, rate $1/8$ & 96.8 & 35.6 & \textbf{4.99} & 4.42 & \textbf{119} & -- \\
+     & & Binius (UDR), rate $1/2$ & 127 & 52.6 & 5.78 & 3.90 & 388 & \textbf{0.628} \\
+     & & Binius (UDR), rate $1/8$ & 157 & 60.3 & 5.62 & \textbf{3.72} & 282 & 0.812 \\
+     & & Binius (Johnson), rate $1/2$ & 137 & 59.0 & 6.62 & 5.12 & 357 & 0.807 \\
+     & & Binius (Johnson), rate $1/8$ & 162 & 64.0 & 6.20 & 4.50 & 187 & 0.705 \\
     \addlinespace
-    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{162} & \textbf{56.5} & 9.50 & 6.38 & 219 & -- \\
-     & & \ftwoz-SNARK, rate $1/8$ & 201 & 63.9 & \textbf{9.19} & 5.81 & \textbf{127} & -- \\
-     & & Binius (UDR), rate $1/2$ & 252 & 91.3 & 10.9 & 5.50 & 423 & -- \\
-     & & Binius (UDR), rate $1/8$ & 312 & 104 & 10.7 & \textbf{4.95} & 309 & -- \\
-     & & Binius (Johnson), rate $1/2$ & 263 & 96.3 & 11.8 & 6.59 & 369 & -- \\
-     & & Binius (Johnson), rate $1/8$ & 310 & 106 & 11.2 & 6.09 & 194 & -- \\
+    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{163} & \textbf{54.2} & 9.43 & 5.80 & 219 & \textbf{0.658} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 202 & 61.7 & \textbf{9.13} & 5.31 & \textbf{127} & 0.702 \\
+     & & Binius (UDR), rate $1/2$ & 252 & 91.6 & 10.8 & 5.31 & 423 & 1.60 \\
+     & & Binius (UDR), rate $1/8$ & 312 & 105 & 10.6 & \textbf{5.02} & 309 & 1.61 \\
+     & & Binius (Johnson), rate $1/2$ & 262 & 97.1 & 11.8 & 6.70 & 369 & 1.72 \\
+     & & Binius (Johnson), rate $1/8$ & 311 & 106 & 11.2 & 5.97 & 194 & 1.71 \\
     \addlinespace
-    $2^{18}$ & $2^{10}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{303} & \textbf{91.9} & 15.0 & 7.23 & 250 & -- \\
-     & & \ftwoz-SNARK, rate $1/8$ & 377 & 106 & \textbf{14.8} & 6.90 & \textbf{150} & -- \\
-     & & Binius (UDR), rate $1/2$ & 502 & 167 & 20.9 & \textbf{6.80} & 471 & -- \\
-     & & Binius (UDR), rate $1/8$ & 624 & 191 & 20.6 & 7.06 & 334 & -- \\
-     & & Binius (Johnson), rate $1/2$ & 517 & 174 & 21.4 & 8.48 & 389 & -- \\
-     & & Binius (Johnson), rate $1/8$ & 610 & 194 & 20.8 & 7.73 & 206 & -- \\
+    $2^{18}$ & $2^{10}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{306} & \textbf{89.2} & 14.9 & 6.71 & 250 & \textbf{1.01} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 379 & 103 & \textbf{14.7} & \textbf{6.46} & \textbf{150} & 1.09 \\
+     & & Binius (UDR), rate $1/2$ & 501 & 166 & 20.7 & 7.40 & 471 & 3.19 \\
+     & & Binius (UDR), rate $1/8$ & 621 & 191 & 20.6 & 7.00 & 334 & 3.23 \\
+     & & Binius (Johnson), rate $1/2$ & 515 & 175 & 21.4 & 8.40 & 389 & 3.37 \\
+     & & Binius (Johnson), rate $1/8$ & 611 & 193 & 20.8 & 8.00 & 206 & 3.43 \\
     \addlinespace
-    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{688} & \textbf{178} & 28.4 & 10.6 & 272 & -- \\
-     & & \ftwoz-SNARK, rate $1/8$ & 808 & 198 & \textbf{28.3} & \textbf{10.3} & \textbf{160} & -- \\
-     & & Binius (UDR), rate $1/2$ & 997 & 317 & 43.1 & 14.6 & 516 & -- \\
-     & & Binius (UDR), rate $1/8$ & 1216 & 363 & 43.1 & 14.0 & 360 & -- \\
-     & & Binius (Johnson), rate $1/2$ & 1014 & 330 & 43.8 & 15.6 & 404 & -- \\
-     & & Binius (Johnson), rate $1/8$ & 1221 & 371 & 43.8 & 15.5 & 214 & -- \\
+    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{689} & \textbf{175} & 28.3 & 10.3 & 272 & \textbf{2.02} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 810 & 195 & \textbf{28.2} & \textbf{9.90} & \textbf{160} & 2.73 \\
+     & & Binius (UDR), rate $1/2$ & 994 & 315 & 42.7 & 14.7 & 516 & 5.97 \\
+     & & Binius (UDR), rate $1/8$ & 1213 & 362 & 42.3 & 14.3 & 360 & 5.94 \\
+     & & Binius (Johnson), rate $1/2$ & 1013 & 328 & 43.2 & 15.3 & 404 & 6.46 \\
+     & & Binius (Johnson), rate $1/8$ & 1218 & 368 & 42.9 & 14.9 & 214 & 6.41 \\
     \addlinespace
-    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1230} & \textbf{306} & 51.7 & 16.7 & 305 & -- \\
-     & & \ftwoz-SNARK, rate $1/8$ & 1553 & 366 & \textbf{51.2} & \textbf{16.1} & \textbf{175} & -- \\
-     & & Binius (UDR), rate $1/2$ & 1984 & 607 & 84.5 & 25.5 & 569 & -- \\
-     & & Binius (UDR), rate $1/8$ & 2412 & 704 & 85.1 & 25.5 & 387 & -- \\
-     & & Binius (Johnson), rate $1/2$ & 2028 & 630 & 86.2 & 27.3 & 419 & -- \\
-     & & Binius (Johnson), rate $1/8$ & 2441 & 723 & 85.4 & 26.7 & 222 & -- \\
+    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1236} & \textbf{304} & 51.6 & 15.9 & 305 & \textbf{5.28} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 1556 & 363 & \textbf{51.3} & \textbf{15.8} & \textbf{175} & 5.45 \\
+     & & Binius (UDR), rate $1/2$ & 1977 & 611 & 83.8 & 25.1 & 569 & 12.7 \\
+     & & Binius (UDR), rate $1/8$ & 2406 & 704 & 83.8 & 25.4 & 387 & 12.7 \\
+     & & Binius (Johnson), rate $1/2$ & 2029 & 635 & 86.0 & 26.9 & 419 & 12.8 \\
+     & & Binius (Johnson), rate $1/8$ & 2439 & 720 & 85.5 & 26.2 & 222 & 12.8 \\
     \bottomrule
   \end{tabular}
   \caption{Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$  chained SHA-256 compressions (equal packed witnesses for the two branches). Configured at $\lambda = 100$ bits of round-by-round knowledge soundness. \emph{Prover} includes witness synthesis and the commitments. The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Ran on a MacBook Air M5, 24\,GB.}
@@ -3234,45 +3238,55 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.05} & \textbf{33.9} & \textbf{17.6} & 2.39 & 2.94 & 118 & \textbf{0.060} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.05} & 35.8 & 18.4 & 2.18 & 2.69 & \textbf{70.4} & 0.065 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.05} & \textbf{33.9} & \textbf{15.5} & 2.39 & 2.22 & 118 & \textbf{0.060} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.05} & 35.8 & 16.4 & 2.18 & 2.02 & \textbf{70.4} & 0.063 \\
      & Binius (UDR), rate $1/2$ & 0.58 & 59.9 & 30.8 & 1.62 & 1.62 & 324 & 0.282 \\
      & Binius (UDR), rate $1/8$ & 0.59 & 73.6 & 33.9 & \textbf{1.49} & \textbf{1.49} & 243 & 0.285 \\
      & Binius (Johnson), rate $1/2$ & 0.55 & 68.1 & 35.8 & 2.61 & 2.98 & 346 & 0.292 \\
      & Binius (Johnson), rate $1/8$ & 0.55 & 82.0 & 38.6 & 2.17 & 2.46 & 180 & 0.289 \\
+     & Plonky3 (FRI), rate $1/2$ & 1.83 & 1389 & 241 & 14.4 & 16.0 & 622 & 0.106 \\
      & Limber (Brakedown) & 0.41 & 237 & 139 & 33.3 & 32.0 & 3354 & 0.340 \\
+     & Zinc+, rate $1/4$ & 1.28 & 189 & 116 & 28.7 & 13.2 & 632 & 0.101 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & 0.19 & \textbf{107} & \textbf{39.6} & 3.36 & 3.37 & 150 & \textbf{0.155} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.17} & 124 & 42.5 & \textbf{3.19} & 3.09 & \textbf{92.0} & 0.170 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & 0.19 & \textbf{107} & \textbf{36.9} & 3.36 & 2.65 & 150 & \textbf{0.156} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.17} & 124 & 40.0 & \textbf{3.19} & \textbf{2.36} & \textbf{92.0} & 0.169 \\
      & Binius (UDR), rate $1/2$ & 2.47 & 219 & 81.1 & 4.77 & 2.63 & 388 & 0.919 \\
-     & Binius (UDR), rate $1/8$ & 2.46 & 268 & 89.7 & 4.66 & \textbf{2.54} & 283 & 1.00 \\
+     & Binius (UDR), rate $1/8$ & 2.46 & 268 & 89.7 & 4.66 & 2.54 & 283 & 1.00 \\
      & Binius (Johnson), rate $1/2$ & 2.28 & 232 & 86.7 & 6.25 & 4.51 & 371 & 0.945 \\
      & Binius (Johnson), rate $1/8$ & 2.28 & 282 & 94.7 & 5.66 & 3.86 & 193 & 1.01 \\
+     & Plonky3 (FRI), rate $1/2$ & 7.52 & 5664 & 975 & 17.7 & 18.8 & 764 & 0.393 \\
      & Limber (Brakedown) & 1.65 & 1146 & 419 & 67.4 & 57.3 & 5514 & 1.05 \\
+     & Zinc+, rate $1/4$ & 4.66 & 732 & 258 & 29.6 & 14.3 & 866 & 0.343 \\
     \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & 0.72 & \textbf{411} & \textbf{114} & 5.45 & 4.19 & 188 & \textbf{0.514} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.71} & 467 & 123 & \textbf{5.26} & \textbf{3.99} & \textbf{116} & 0.570 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & 0.78 & \textbf{411} & \textbf{110} & 5.45 & 3.47 & 188 & \textbf{0.509} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.71} & 467 & 120 & \textbf{5.26} & \textbf{3.16} & \textbf{116} & 0.568 \\
      & Binius (UDR), rate $1/2$ & 9.70 & 861 & 269 & 20.4 & 8.84 & 472 & 3.67 \\
      & Binius (UDR), rate $1/8$ & 9.66 & 1050 & 311 & 19.3 & 8.84 & 330 & 3.93 \\
      & Binius (Johnson), rate $1/2$ & 9.13 & 884 & 281 & 21.3 & 10.4 & 405 & 3.76 \\
      & Binius (Johnson), rate $1/8$ & 9.12 & 1086 & 319 & 20.7 & 10.1 & 215 & 3.98 \\
+     & Plonky3 (FRI), rate $1/2$ & 28.9 & 22872 & 4124 & 21.5 & 24.1 & 938 & 1.55 \\
      & Limber (Brakedown) & 6.77 & 4438 & 1357 & 194 & 147 & 12193 & 3.65 \\
+     & Zinc+, rate $1/4$ & 9.09 & 2842 & 781 & 30.7 & 14.2 & 1791 & 1.23 \\
     \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 3.05 & \textbf{1649} & \textbf{403} & 10.0 & 6.13 & 227 & \textbf{1.88} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.65} & 1886 & 437 & \textbf{9.87} & \textbf{5.60} & \textbf{140} & 2.13 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 2.86 & \textbf{1649} & \textbf{392} & 10.0 & 5.28 & 227 & \textbf{1.86} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.80} & 1886 & 445 & \textbf{9.87} & \textbf{4.94} & \textbf{140} & 2.11 \\
      & Binius (UDR), rate $1/2$ & 38.9 & 3483 & 1034 & 83.8 & 26.8 & 559 & 14.7 \\
      & Binius (UDR), rate $1/8$ & 38.8 & 4209 & 1249 & 80.1 & 28.3 & 383 & 14.9 \\
      & Binius (Johnson), rate $1/2$ & 36.7 & 3607 & 1159 & 81.1 & 29.1 & 440 & 12.7 \\
      & Binius (Johnson), rate $1/8$ & 36.7 & 4761 & 1322 & 95.0 & 34.3 & 238 & 12.5 \\
+     & Plonky3 (FRI), rate $1/2$ & 114 & 92417 & 17572 & 25.4 & 28.6 & 1140 & 8.28 \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
+     & Zinc+, rate $1/4$ & 28.6 & 11669 & 2889 & 35.8 & 15.8 & 5552 & 4.85 \\
     \addlinespace
-    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & 12.0 & \textbf{7369} & \textbf{1911} & 18.4 & 9.12 & 276 & \textbf{7.09} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{11.2} & 8288 & 2015 & \textbf{18.1} & \textbf{8.12} & \textbf{179} & 8.21 \\
+    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & 12.5 & \textbf{7369} & \textbf{1931} & 18.4 & 8.26 & 276 & \textbf{7.09} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{12.4} & 8288 & 2106 & \textbf{18.1} & \textbf{7.65} & \textbf{179} & 8.11 \\
      & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
+     & Plonky3 (FRI), rate $1/2$ & 926 & 550595 & 153132 & 36.3 & 34.6 & 1347 & 13.8 \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
+     & Zinc+, rate $1/4$ & 108 & 50847 & 14831 & 51.7 & 19.5 & 20325 & 15.7 \\
     \bottomrule
   \end{tabular}
   \caption{ \ftwoz-SNARK cost of proving $N=2^n$ integer multiplications $x \cdot y = z$ for random $32$-bit non-negative integers $x, y$ (with $z$  a $64$-bit integer). Configured at $100$ bits of round-by-round knowledge soundness (cf.\ \cref{s:instantiation}). Cells with ``---'' indicate the computer ran out of memory. Ran on a MacBook Air  M5, 24\,GB. }
@@ -3300,33 +3314,37 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.04} & \textbf{57.4} & \textbf{27.1} & 3.18 & 3.17 & 137 & \textbf{0.090} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.04} & 63.1 & 27.3 & 3.00 & 2.95 & \textbf{83.3} & 0.098 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.04} & \textbf{57.4} & \textbf{24.3} & 3.18 & 2.49 & 137 & \textbf{0.090} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.04} & 63.1 & 25.3 & 3.00 & 2.23 & \textbf{83.3} & 0.098 \\
      & Binius (UDR), rate $1/2$ & 0.42 & 60.1 & 31.7 & 1.32 & 1.30 & 324 & 0.223 \\
      & Binius (UDR), rate $1/8$ & 0.42 & 74.0 & 35.6 & \textbf{1.19} & \textbf{1.15} & 242 & 0.241 \\
      & Binius (Johnson), rate $1/2$ & 0.38 & 80.5 & 38.3 & 2.32 & 2.65 & 346 & 0.239 \\
      & Binius (Johnson), rate $1/8$ & 0.38 & 83.0 & 39.1 & 1.87 & 2.10 & 180 & 0.248 \\
+     & Limber (Brakedown) & 0.41 & 381 & 185 & 34.3 & 33.7 & 4053 & 0.478 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.13} & \textbf{211} & \textbf{66.6} & 5.66 & 4.35 & 164 & \textbf{0.260} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.13} & 236 & 71.1 & 5.39 & 4.16 & \textbf{98.6} & 0.287 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.13} & \textbf{211} & \textbf{63.8} & 5.66 & 3.56 & 164 & \textbf{0.257} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.13} & 236 & 68.2 & 5.39 & 3.22 & \textbf{98.6} & 0.286 \\
      & Binius (UDR), rate $1/2$ & 1.79 & 217 & 79.9 & 3.61 & 2.09 & 387 & 0.839 \\
      & Binius (UDR), rate $1/8$ & 1.82 & 269 & 90.2 & \textbf{3.51} & \textbf{1.96} & 283 & 0.915 \\
      & Binius (Johnson), rate $1/2$ & 1.59 & 228 & 85.4 & 5.07 & 4.06 & 370 & 0.872 \\
      & Binius (Johnson), rate $1/8$ & 1.59 & 275 & 93.8 & 4.49 & 3.30 & 192 & 0.932 \\
+     & Limber (Brakedown) & 1.63 & 1834 & 583 & 72.8 & 63.1 & 7310 & 1.39 \\
     \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.53} & \textbf{831} & \textbf{210} & 9.75 & 5.65 & 202 & \textbf{0.901} \\
-     & \ftwoz-SNARK, rate $1/8$ & 0.54 & 948 & 237 & \textbf{9.52} & \textbf{5.32} & \textbf{124} & 1.03 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.53} & \textbf{831} & \textbf{207} & 9.75 & 4.72 & 202 & \textbf{0.897} \\
+     & \ftwoz-SNARK, rate $1/8$ & 0.54 & 948 & 229 & \textbf{9.52} & \textbf{4.47} & \textbf{124} & 1.01 \\
      & Binius (UDR), rate $1/2$ & 7.01 & 854 & 270 & 14.9 & 7.33 & 472 & 3.17 \\
      & Binius (UDR), rate $1/8$ & 6.90 & 1050 & 310 & 15.3 & 7.13 & 330 & 3.41 \\
      & Binius (Johnson), rate $1/2$ & 6.32 & 881 & 281 & 17.0 & 9.10 & 403 & 3.29 \\
      & Binius (Johnson), rate $1/8$ & 6.37 & 1081 & 320 & 15.6 & 8.01 & 213 & 3.51 \\
+     & Limber (Brakedown) & 6.61 & 7240 & 2037 & 215 & 172 & 19135 & 4.90 \\
     \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 2.10 & \textbf{3232} & \textbf{749} & 9.97 & 5.90 & 262 & \textbf{3.44} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.09} & 3730 & 850 & \textbf{9.72} & \textbf{5.58} & \textbf{171} & 3.99 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2.10} & \textbf{3232} & \textbf{787} & 9.97 & 4.96 & 262 & \textbf{3.41} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.10} & 3730 & 863 & \textbf{9.72} & \textbf{4.73} & \textbf{171} & 3.96 \\
      & Binius (UDR), rate $1/2$ & 27.8 & 3427 & 1034 & 60.3 & 20.1 & 559 & 11.7 \\
      & Binius (UDR), rate $1/8$ & 27.9 & 4177 & 1221 & 59.6 & 20.0 & 383 & 12.7 \\
      & Binius (Johnson), rate $1/2$ & 25.6 & 3597 & 1121 & 64.5 & 22.7 & 441 & 11.7 \\
      & Binius (Johnson), rate $1/8$ & 26.0 & 4513 & 1425 & 61.6 & 23.4 & 237 & 12.2 \\
+     & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
   \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$ bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of round-by-round knowledge soundness (Binius64 is at 96 bits). Ran on a MacBook Air M5.}
@@ -3343,33 +3361,37 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.07} & \textbf{115} & \textbf{42.5} & 5.36 & 4.09 & 151 & \textbf{0.148} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.07} & 129 & 44.8 & \textbf{5.10} & 3.79 & \textbf{90.6} & 0.170 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.08} & \textbf{115} & \textbf{40.0} & 5.36 & 3.21 & 151 & \textbf{0.150} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.08} & 129 & 42.4 & \textbf{5.10} & \textbf{2.98} & \textbf{90.6} & 0.161 \\
      & Binius (UDR), rate $1/2$ & 1.65 & 240 & 84.1 & 7.82 & 3.64 & 388 & 1.01 \\
-     & Binius (UDR), rate $1/8$ & 1.63 & 287 & 94.6 & 7.43 & \textbf{3.57} & 283 & 1.09 \\
+     & Binius (UDR), rate $1/8$ & 1.63 & 287 & 94.6 & 7.43 & 3.57 & 283 & 1.09 \\
      & Binius (Johnson), rate $1/2$ & 1.46 & 246 & 91.1 & 8.96 & 5.70 & 370 & 1.05 \\
      & Binius (Johnson), rate $1/8$ & 1.46 & 300 & 99.5 & 8.46 & 4.85 & 193 & 1.10 \\
+     & Limber (Brakedown) & 0.94 & 1043 & 372 & 42.5 & 38.5 & 5550 & 0.778 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.27} & \textbf{426} & \textbf{118} & 9.34 & 5.53 & 186 & \textbf{0.468} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.27} & 483 & 131 & \textbf{9.13} & \textbf{5.06} & \textbf{113} & 0.525 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.29} & \textbf{426} & \textbf{116} & 9.34 & 4.70 & 186 & \textbf{0.478} \\
+     & \ftwoz-SNARK, rate $1/8$ & 0.30 & 483 & 126 & \textbf{9.13} & \textbf{4.34} & \textbf{113} & 0.523 \\
      & Binius (UDR), rate $1/2$ & 6.79 & 944 & 287 & 31.0 & 11.3 & 472 & 3.92 \\
      & Binius (UDR), rate $1/8$ & 6.78 & 1134 & 330 & 30.8 & 11.5 & 331 & 4.16 \\
      & Binius (Johnson), rate $1/2$ & 6.23 & 967 & 304 & 32.2 & 13.6 & 403 & 4.04 \\
      & Binius (Johnson), rate $1/8$ & 6.17 & 1171 & 338 & 31.9 & 12.6 & 215 & 4.26 \\
+     & Limber (Brakedown) & 3.87 & 4040 & 1183 & 95.5 & 81.9 & 12233 & 2.60 \\
     \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.97} & \textbf{1767} & \textbf{448} & 17.8 & 8.07 & 218 & \textbf{1.59} \\
-     & \ftwoz-SNARK, rate $1/8$ & 0.98 & 2009 & 500 & \textbf{17.5} & \textbf{7.73} & \textbf{132} & 1.84 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.98} & \textbf{1767} & \textbf{450} & 17.8 & \textbf{7.25} & 218 & \textbf{1.59} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.98} & 2009 & 503 & \textbf{17.5} & 7.35 & \textbf{132} & 1.83 \\
      & Binius (UDR), rate $1/2$ & 28.5 & 3790 & 1113 & 122 & 34.6 & 559 & 12.5 \\
      & Binius (UDR), rate $1/8$ & 28.7 & 4630 & 1327 & 121 & 35.3 & 383 & 13.6 \\
      & Binius (Johnson), rate $1/2$ & 25.4 & 3911 & 1242 & 126 & 40.9 & 441 & 12.9 \\
      & Binius (Johnson), rate $1/8$ & 25.0 & 4794 & 1425 & 126 & 41.3 & 238 & 13.3 \\
+     & Limber (Brakedown) & 15.5 & 16461 & 4593 & 297 & 242 & 37022 & 9.43 \\
     \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{3.94} & \textbf{7764} & \textbf{2083} & 33.4 & 12.5 & 263 & \textbf{6.14} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{3.94} & 8687 & 2276 & \textbf{32.8} & \textbf{12.3} & \textbf{165} & 7.16 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{3.97} & \textbf{7764} & \textbf{2211} & 33.4 & \textbf{11.7} & 263 & \textbf{6.03} \\
+     & \ftwoz-SNARK, rate $1/8$ & 4.03 & 8687 & 2375 & \textbf{32.8} & 11.9 & \textbf{165} & 7.15 \\
      & Binius (UDR), rate $1/2$ & 3904 & 216381 & 81970 & 8030 & 3444 & 655 & -- \\
      & Binius (UDR), rate $1/8$ & 3824 & 237644 & 99732 & 8524 & 4642 & 437 & -- \\
      & Binius (Johnson), rate $1/2$ & 3972 & 238374 & 90724 & 8478 & 3663 & 472 & -- \\
      & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
+     & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
   \caption{  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$ bit nonnegative integers $x$ and $y$ (with $z$  a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
@@ -3466,7 +3488,7 @@ $$
 \Relation_{\mathsf{gen}}\defeq \LinModFieldBin(\moduleonebound,\modulemorphism,\moduletwo,  \cC,L), \qquad \Relation_{\mathsf{core}}\defeq \LinBitsDual(\bits,\pi, R,\cC), \qquad \inp'\defeq (\mu,\uu),
 $$
 %
-and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in (\moduleonebound)^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then, by definition of $\Relation_{\mathsf{gen}}$ and $\Relation_{\mathsf{gen}}^{\delta}$, we have that  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The same statement holds for $\Relation_{\mathsf{gen}}$ (with $\delta=0$). Recall from \cref{d:bitification} that $L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$.
+and $\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$, $\LIN = \LIN(\comfield, \cC, \pack)$ (as  in \cref{s:soundness_core_iop}). Recall from \cref{d:bitification} that a bitification of $\bff\in (\moduleonebound)^{\codedim_0}$ is any $\bfg\in \bits^{\codedim}$ with $\bff=L\cdot \bfg_S$. For such $\bfg$, we say that $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ \emph{via} $\bfg$ if $\hamming(f,\Enc_{\cC}\circ \pack\circ \pi_2(\bfg))<\delta$ and $\langle \psi(\bff),\vv\rangle=\mu$. Then, by definition of $\Relation_{\mathsf{gen}}$ and $\Relation_{\mathsf{gen}}^{\delta}$, we have that  $((\mu,\vv),f,\bff)\in \Relation_{\mathsf{gen}}^{\delta}$ if and only if $((\mu,\vv),f,\bff)$ belongs to $\Relation_{\mathsf{gen}}^{\delta}$ via some bitification $\bfg$ of $\bff$. The same statement holds for $\Relation_{\mathsf{gen}}$  (with $\delta=0$). Recall from \cref{d:bitification} that $L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$ for all $\bfg\in \bits^{\codedim}$.
 
 Given $\bfg\in \bits^{\codedim}$, let $\bff_{\bfg}\defeq L\cdot \bfg_S\in (\moduleonebound)^{\codedim_0}$. By \cref{l:bitify}, $\langle \psi(\bff_{\bfg}), \vv\rangle = \langle \psi(\bfg_S), \psi(L)^{\mathsf{T}}\cdot \vv\rangle = \langle \pi(\bfg),\uu\rangle$, and hence
 %
@@ -3478,14 +3500,14 @@ and likewise for $\Relation_{\mathsf{core}}$ and $\Relation_{\mathsf{gen}}$. Com
 
 \bigskip
 
-\noindent \emph{\underline{Round-by-round knowledge soundness.}} We decompose \cref{c:LinModFieldBin} as in the proof of \cref{t:thm_core_IOPP}: the first IOR $\Pi_1'$ consists in computing $\inp'$ given the input $(\mu,\vv)$, and then apply the IOR $\Pi_1$ of that proof (together with OOD sampling if Round 0 is executed, cf.\  \cref{a:OOD}). The remaining IORs are $\Pi_\red$ and $\Pi_\iopp$.  By the IOR composition result \cref{r:ior_compositoin}, it suffices to show that $\Pi_1'$ has round-by-round knowledge soundness with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta})$ (resp.\ $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$) and with the same errors as $\Pi_1$, i.e.\ $\kappa_0=\theta(\cP,\cM,\codedim)$. We assume no OOD (Round 0) is performed, for simplicity and because OOD can be analysed via standard arguments (e.g.\ see \cref{a:OOD}). We also assume Round 1 triggers, so that in $\Pi_1'$ the verifier sends  one single challenge $\rho=(q,\pirand)$ for $q\in\cP$ and $\pirand\in\cM_q$. If Round 1 does not trigger, then the analysis below is the same, except that the last paragraph is not required.   \albertimportant{In the statements of the theorems, provide exact value of $\theta$}
+\noindent \emph{\underline{Round-by-round knowledge soundness.}} We decompose \cref{c:LinModFieldBin} as in the proof of \cref{t:thm_core_IOPP}: the first IOR $\Pi_1'$ consists in computing $\inp'$ given the input $(\mu,\vv)$, and then applying the IOR $\Pi_1$ of that proof (together with OOD sampling if Round 0 is executed, cf.\  \cref{a:OOD}). $\Pi_1'$  is perfectly complete by \eqref{e:appendix_bitify}. The remaining IORs are $\Pi_\red$ and $\Pi_\iopp$.  By the IOR composition result \cref{r:ior_compositoin}, it suffices to show that $\Pi_1'$ has round-by-round knowledge soundness with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta})$ (resp.\ $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$) and with the same errors as $\Pi_1$, i.e.\ $\kappa_0=\theta(\cP,\cM,\codedim)$. We assume first no OOD (Round 0) is performed, for simplicity. We also assume Round 1 triggers, so that in $\Pi_1'$ the verifier sends  one single challenge $\rho=(q,\pirand)$ for $q\in\cP$ and $\pirand\in\cM_q$. If Round 1 does not trigger, then the analysis below is the same, with the first verifier message $\rho$ being empty and the error $\kappa_0$ replaced by $0$.
 
-Let $\kstate_1$ be the knowledge state function of $\Pi_1$; recall that its extractor is the identity map. We define a  state function $\kstate$ for $\Pi_1'$ by setting $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \Relation_{\mathsf{gen}}^{\delta}$ when $\tr$ contains no verifier message, and $\kstate(\inp,\oracle,\tr,\ww)\defeq \kstate_1(\inp',\oracle,\tr,\ww)$ otherwise. We set $\rbrextractor(\inp,\oracle,\tr,\ww)\defeq \bff_{\ww}$ if $\ww\in \bits^{\codedim}$. Otherwise we set $\rbrextractor(\inp,\oracle,\tr,\ww)\defeq \ww$. The conditions of \cref{def:knowledge-state-function} hold: the first one (empty  transcript) holds by construction; the second one (prover moves)  holds because $\kstate$ is constant before the  verifier message, and coincides with $\kstate_1$ afterwards (and $\kstate_1$ satisfies the condition); the  third one (full transcript) holds because $\Pi_1'$ and $\Pi_1$ have the same output. 
+Let $\kstate_1$ be the knowledge state function of $\Pi_1$. Recall that its extractor is the identity map. We define a  state function $\kstate$ for $\Pi_1'$ by setting $\kstate(\inp,\oracle,\tr,\ww)=1$ if and only if $(\inp,\oracle,\ww)\in \Relation_{\mathsf{gen}}^{\delta}$ when $\tr$ contains no verifier message, and $\kstate(\inp,\oracle,\tr,\ww)\defeq \kstate_1(\inp',\oracle,\tr,\ww)$ otherwise. We set $\rbrextractor(\inp,\oracle,\tr,\ww)\defeq \bff_{\ww}$ if $\tr$ ends with the first and only verifier message $(q,\pirand)$ and  $\ww\in \bits^{\codedim}$. Otherwise we set $\rbrextractor(\inp,\oracle,\tr,\ww)\defeq \ww$. The conditions of \cref{def:knowledge-state-function} hold: the first one (empty  transcript) holds by construction; the second one (prover moves)  holds because $\kstate$ is constant before the  verifier message, and coincides with $\kstate_1$ afterwards (and $\kstate_1$ satisfies the condition); the  third one (full transcript) holds because $\Pi_1'$ and $\Pi_1$ have the same output. 
 
-%At every verifier message after the first one, $\kstate$ coincides with $\kstate_1$ before and after the message and $\rbrextractor$ is the identity map, so the error of $\Pi_1'$ is that of $\Pi_1$. 
-Let $\rho=(q,\pirand)$ be the first verifier message and $\tr$ the prover message preceding it. Suppose  that $\kstate(\inp,\oracle,\tr\Vert\rho,\ww)=1$ and $\kstate(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr\Vert\rho,\ww))=0$. We claim that then $(\inp',\oracle,\ww)$ is not in  $\Relation_{\mathsf{core}}^{\delta}$. Indeed, if it was, then $\ww\in\bits^{\codedim}$, hence  $\rbrextractor$ outputs $\bff_{\bfg}$. Since   $(\inp',\oracle,\ww) \in \Relation_{\mathsf{core}}^{\delta}$, we have by \eqref{e:appendix_bitify}  that $(\inp,\oracle,\bff_\ww) \in \Relation_{\mathsf{gen}}^{\delta}$. By definition of $\kstate$ we then obtain  $\kstate(\inp,\oracle,\tr,\bff_{\bfg})=1$, constradicting the assumption $\kstate(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr\Vert\rho,\ww))=\kstate(\inp,\oracle,\tr,\bff_{\bfg})=0$. Hence $(\inp',\oracle,\ww)\not\in\Relation_{\mathsf{core}}^{\delta}$. By  definition of $\kstate_1$, $\kstate_1(\inp',\oracle,\tr,\ww)=0$. On the other hand, $1=\kstate(\inp,\oracle,\tr\Vert\rho,\cE_{\mathsf{rbr}}(\inp,\oracle,\tr||\rho,\ww))=\kstate_1(\inp',\oracle,\tr\Vert\rho,\ww)$. The later two conditions hold with probability at most $\kappa_0$ by the proof of \cref{t:thm_core_IOPP}. Hence the round-by-round knowledge error of $\Pi_1'$ is at most $\kappa_0$.
+%At every verifier message after the first one, $\kstate$ coincides with $\kstate_1$ before and after the message and $\rbrextractor$ is the identity map, so the error of $\Pi_1'$ at that message is that of $\Pi_1$. 
+Let $\rho=(q,\pirand)$ be the first verifier message and $\tr=(\mu')$ the first prover message. Suppose  that $\kstate(\inp,\oracle,\tr\Vert\rho,\ww)=1$ and $\kstate(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr\Vert\rho,\ww))=0$. We claim that then $(\inp',\oracle,\ww)$ is not in  $\Relation_{\mathsf{core}}^{\delta}$. Indeed, if it was, then $\ww\in\bits^{\codedim}$, hence  $\rbrextractor(\inp,\oracle,\tr\Vert\rho,\ww)$ outputs $\bff_{\ww}$. Since   $(\inp',\oracle,\ww) \in \Relation_{\mathsf{core}}^{\delta}$, we have by \eqref{e:appendix_bitify}  that $(\inp,\oracle,\bff_\ww) \in \Relation_{\mathsf{gen}}^{\delta}$. By definition of $\kstate$ we then obtain  $\kstate(\inp,\oracle,\tr,\bff_{\ww})=1$, contradicting the assumption $\kstate(\inp,\oracle,\tr,\rbrextractor(\inp,\oracle,\tr\Vert\rho,\ww))=\kstate(\inp,\oracle,\tr,\bff_{\ww})=0$. Hence $(\inp',\oracle,\ww)\not\in\Relation_{\mathsf{core}}^{\delta}$. By  definition of $\kstate_1$, $\kstate_1(\inp',\oracle,\tr,\ww)=0$. On the other hand, $1=\kstate(\inp,\oracle,\tr\Vert\rho,\ww)=\kstate_1(\inp',\oracle,\tr\Vert\rho,\ww)$. The latter two conditions hold with probability at most $\kappa_0$ by the proof of \cref{t:thm_core_IOPP}. Hence the round-by-round knowledge error of $\Pi_1'$ at $\rho$ is at most $\kappa_0$.
 
-
+ If Round 0 is executed, the analysis above is the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD})
 
 \subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}\label{a:OOD}
 \albertimportant{Review: AI written} 
