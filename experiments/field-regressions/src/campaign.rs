@@ -5,12 +5,14 @@ use std::hint::black_box;
 mod binary_baselines;
 mod binary_metrics;
 mod bounded_product;
+mod candidates;
 mod integer;
 mod integer_metrics;
 mod prime;
 mod prime_metrics;
 mod two_limb_mac;
-mod candidates;
+
+pub(crate) use candidates::tiled_ntt;
 
 pub fn optimize(samples: usize, rng: &mut Rng) {
     candidates::run(samples, rng);
@@ -75,6 +77,10 @@ fn gf(samples: usize, rng: &mut Rng) {
 
 pub fn run(samples: usize, rng: &mut Rng) {
     gf(samples, rng);
+    run_numeric(samples, rng);
+}
+
+pub fn run_numeric(samples: usize, rng: &mut Rng) {
     prime::run(samples, rng);
     integer::run(samples, rng);
 }

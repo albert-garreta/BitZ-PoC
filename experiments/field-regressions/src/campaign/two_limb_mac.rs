@@ -64,7 +64,7 @@ fn seeded_product<const L: usize>(a: &[Z<L>], b: &[Z<L>]) -> Z<L> {
 }
 
 #[inline(never)]
-fn split_cross<const L: usize, const K: usize>(a: &[Z<L>], b: &[Z<L>]) -> Z<L> {
+pub(super) fn split_cross<const L: usize, const K: usize>(a: &[Z<L>], b: &[Z<L>]) -> Z<L> {
     assert_eq!(L, 2);
     assert_eq!(a.len(), b.len());
     let mut diagonal = [0u128; K];

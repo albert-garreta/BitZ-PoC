@@ -17,6 +17,14 @@ def evaluate(report, margin=DEFAULT_MARGIN):
     if not manifest.exists() or hashlib.sha256(manifest.read_bytes()).hexdigest() != metadata.get("manifest_sha256"):
         return ["unmeasured: frozen required-case manifest is missing or changed"]
     spec = json.loads(manifest.read_text())
+    if spec.get("campaign") == "x86" and (metadata.get("phase") != "confirm" or spec.get("phase") != "confirm"):
+        return ["unmeasured: exploration is not independent confirmation"]
+    if spec.get("campaign") == "x86":
+        for filename,key in [("benchmark.bin","archived_binary_sha256"),("sources.tar.gz","sources_archive_sha256"),
+                             ("Cargo.lock","lockfile_sha256"),("rankings.json","rankings_sha256"),("selection.json","selection_sha256")]:
+            path=report/filename
+            if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest()!=metadata.get(key):
+                return [f"unmeasured: missing or changed {filename}"]
     # Hashes bind the displayed statistics to complete, frozen raw runs. A
     # report copied without its measurements is not usable for promotion.
     rounds = metadata.get("round_metadata_sha256", {})
@@ -65,6 +73,15 @@ def evaluate(report, margin=DEFAULT_MARGIN):
                 issues.append(f'{status}: {label}: median upper={row["median_ci_high"]:.4f}, '
                               f'P95 upper={row["p95_ci_high"]:.4f}, worst process={max(row["per_run_medians"]):.4f}, '
                               f'allocations={"OK" if row["allocations_ok"] else "increased"}')
+    if spec.get("campaign") == "x86":
+        rankings={(r["family"],r["size"]):r for r in json.loads((report/"rankings.json").read_text())}
+        for group in spec["families"]:
+            if group.get("diagnostic") or not group.get("challenger"):continue
+            for size in group["sizes"]:
+                row=rankings.get((group["name"],size),{})
+                if (row.get("selected")!=group["selected"]["x86_64"] or row.get("challenger")!=group["challenger"]
+                        or row.get("head_to_head",{}).get("decision") not in ("faster","within_1_percent")):
+                    issues.append(f"inconclusive: {group['name']}/{size}: challenger not cleared")
     return issues
 
 

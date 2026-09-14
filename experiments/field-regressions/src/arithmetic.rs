@@ -257,7 +257,21 @@ pub(crate) fn clmul(a: u64, b: u64) -> u128 {
     {
         unsafe { core::mem::transmute(core::arch::aarch64::vmull_p64(a, b)) }
     }
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
+    #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+    {
+        // SAFETY: compile-time PCLMUL gate; register-only polynomial product.
+        unsafe {
+            use core::arch::x86_64::*;
+            core::mem::transmute(_mm_clmulepi64_si128::<0>(
+                _mm_set_epi64x(0, a as i64),
+                _mm_set_epi64x(0, b as i64),
+            ))
+        }
+    }
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_feature = "aes"),
+        all(target_arch = "x86_64", target_feature = "pclmulqdq")
+    )))]
     {
         let mut out = 0u128;
         for i in 0..64 {

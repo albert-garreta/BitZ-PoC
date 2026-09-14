@@ -1,0 +1,39 @@
+[
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "selected": "preserved_schedule",
+    "challenger": "flock",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 5321048.25,
+        "median_ns": 5321048.25,
+        "production_ratio": 0.9878149921218222
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 5392123.0,
+        "median_ns": 5392123.0,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.9878149921218222,
+      "p95_ratio": 0.9880444134217428,
+      "median_ci_low": 0.9838352431847925,
+      "median_ci_high": 0.9901110063009838,
+      "p95_ci_low": 0.9803394625306449,
+      "p95_ci_high": 0.9913650978135207,
+      "per_run_medians": [
+        0.9839187023344725,
+        0.9899522233556264,
+        0.9853521072520189,
+        0.9878149921218222,
+        0.988902402192577
+      ],
+      "decision": "faster"
+    }
+  }
+]

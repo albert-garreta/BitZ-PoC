@@ -1,0 +1,68 @@
+[
+  {
+    "placement": "l3-32m",
+    "cpus": "8",
+    "threads": 1,
+    "complete_variant_cases": 1257,
+    "non_diagnostic_correctness_failures": 0,
+    "runs": 1,
+    "samples": 2,
+    "binary_sha256": "6eedaa365ffd90bc4fb3055aea912ccbc2d18f7075b03e2ad6694cd1512e3850",
+    "artifacts": "/tmp/bitz-ryzen-validation-01/l3-32m"
+  },
+  {
+    "placement": "l3-32m-8t",
+    "cpus": "8-15",
+    "threads": 8,
+    "complete_variant_cases": 119,
+    "non_diagnostic_correctness_failures": 0,
+    "runs": 1,
+    "samples": 2,
+    "binary_sha256": "f480af9e576d2fe15ce89be1230d9f10b3d98a04440d324739fa41593a7c8fdb",
+    "artifacts": "/tmp/bitz-ryzen-validation-01/l3-32m-8t"
+  },
+  {
+    "placement": "l3-96m",
+    "cpus": "0",
+    "threads": 1,
+    "complete_variant_cases": 1257,
+    "non_diagnostic_correctness_failures": 0,
+    "runs": 1,
+    "samples": 2,
+    "binary_sha256": "8ebea6f13c4fd5b640f676b4d5180e78738e1f5c6ad9d0d1806c53c795293816",
+    "artifacts": "/tmp/bitz-ryzen-validation-01/l3-96m"
+  },
+  {
+    "placement": "l3-96m-8t",
+    "cpus": "0-7",
+    "threads": 8,
+    "complete_variant_cases": 119,
+    "non_diagnostic_correctness_failures": 0,
+    "runs": 1,
+    "samples": 2,
+    "binary_sha256": "b37d3671852ebe4aa295578af9e9d195d204f7d9c1a94c959c2230540f20a3f9",
+    "artifacts": "/tmp/bitz-ryzen-validation-01/l3-96m-8t"
+  },
+  {
+    "placement": "physical-16t",
+    "cpus": "0-15",
+    "threads": 16,
+    "complete_variant_cases": 119,
+    "non_diagnostic_correctness_failures": 0,
+    "runs": 1,
+    "samples": 2,
+    "binary_sha256": "eb9b19f87efb1988a489e319424efb3d8991b49df6415e78855a1fae9ad6dae2",
+    "artifacts": "/tmp/bitz-ryzen-validation-01/physical-16t"
+  },
+  {
+    "placement": "smt-32t",
+    "cpus": "0-31",
+    "threads": 32,
+    "complete_variant_cases": 119,
+    "non_diagnostic_correctness_failures": 0,
+    "runs": 1,
+    "samples": 2,
+    "binary_sha256": "397e765a84205fc3ce2be2b4e94b8d150e079b08c329067442ffed376ed7689a",
+    "artifacts": "/tmp/bitz-ryzen-validation-01/smt-32t"
+  }
+]

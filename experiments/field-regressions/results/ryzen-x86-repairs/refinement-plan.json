@@ -1,0 +1,178 @@
+{
+  "policy": "New choices use the primary data only for development; five fresh processes and 32 paired samples (one predeclared 64-sample retry) independently confirm them. No source changes or threshold changes.",
+  "jobs": [
+    {
+      "label": "l3-96m",
+      "refinements": [
+        {
+          "case": "ntt/log15_lanes32",
+          "previous": "flock",
+          "proposed": "preserved_schedule",
+          "challenger": "flock"
+        },
+        {
+          "case": "integer_full_mac/full_l2_n33",
+          "previous": "fused1",
+          "proposed": "fused4",
+          "challenger": "fused1",
+          "public_shape_group": "l2_n33"
+        },
+        {
+          "case": "integer_full_mac/carry_l2_n33",
+          "previous": "fused1",
+          "proposed": "fused4",
+          "challenger": "fused1",
+          "public_shape_group": "l2_n33"
+        }
+      ],
+      "command": [
+        "/home/john-wu/.local/bin/python3",
+        "/home/john-wu/code/BitZ-pcs/experiments/field-regressions/run.py",
+        "--suite",
+        "x86",
+        "--arch",
+        "x86_64",
+        "--scope",
+        "regressions",
+        "--cpu-set",
+        "0",
+        "--threads",
+        "1",
+        "--phase",
+        "confirm",
+        "--selection",
+        "/tmp/bitz-x86-repair-refine02/l3-96m-selection.json",
+        "--seed-offset",
+        "77182817",
+        "--cases",
+        "ntt/log15_lanes32,integer_full_mac/full_l2_n33,integer_full_mac/carry_l2_n33",
+        "--out",
+        "/tmp/bitz-x86-repair-refine02/l3-96m",
+        "--target-dir",
+        "/tmp/bitz-ryzen-target",
+        "--streaming"
+      ],
+      "development": "/tmp/bitz-x86-repair-confirm04/l3-96m",
+      "development_summary_sha256": "86a21be335b28cc3f0ba24141e5a450066a6fb26bce34672f7fa5d1a532e7879"
+    },
+    {
+      "label": "l3-32m",
+      "refinements": [
+        {
+          "case": "ntt/log15_lanes32",
+          "previous": "flock",
+          "proposed": "preserved_schedule",
+          "challenger": "flock"
+        }
+      ],
+      "command": [
+        "/home/john-wu/.local/bin/python3",
+        "/home/john-wu/code/BitZ-pcs/experiments/field-regressions/run.py",
+        "--suite",
+        "x86",
+        "--arch",
+        "x86_64",
+        "--scope",
+        "regressions",
+        "--cpu-set",
+        "8",
+        "--threads",
+        "1",
+        "--phase",
+        "confirm",
+        "--selection",
+        "/tmp/bitz-x86-repair-refine02/l3-32m-selection.json",
+        "--seed-offset",
+        "78182820",
+        "--cases",
+        "ntt/log15_lanes32",
+        "--out",
+        "/tmp/bitz-x86-repair-refine02/l3-32m",
+        "--target-dir",
+        "/tmp/bitz-ryzen-target",
+        "--streaming"
+      ],
+      "development": "/tmp/bitz-x86-repair-confirm04/l3-32m",
+      "development_summary_sha256": "50e51752dfb832a10d0467fb61d9c3d7c35858f07668740fb472cd0462a9305f"
+    },
+    {
+      "label": "physical-16t",
+      "refinements": [
+        {
+          "case": "ntt/log18_lanes32",
+          "previous": "flock",
+          "proposed": "preserved_schedule",
+          "challenger": "flock"
+        }
+      ],
+      "command": [
+        "/home/john-wu/.local/bin/python3",
+        "/home/john-wu/code/BitZ-pcs/experiments/field-regressions/run.py",
+        "--suite",
+        "x86",
+        "--arch",
+        "x86_64",
+        "--scope",
+        "regressions-consumers",
+        "--cpu-set",
+        "0-15",
+        "--threads",
+        "16",
+        "--phase",
+        "confirm",
+        "--selection",
+        "/tmp/bitz-x86-repair-refine02/physical-16t-selection.json",
+        "--seed-offset",
+        "81182829",
+        "--cases",
+        "ntt/log18_lanes32",
+        "--out",
+        "/tmp/bitz-x86-repair-refine02/physical-16t",
+        "--target-dir",
+        "/tmp/bitz-ryzen-target"
+      ],
+      "development": "/tmp/bitz-x86-repair-confirm04/physical-16t",
+      "development_summary_sha256": "d24f5ae81b8573219253301eaa0d4b94271f7823cd8ffe2cb6f574d2da3eff7a"
+    },
+    {
+      "label": "smt-32t",
+      "refinements": [
+        {
+          "case": "ntt/log17_lanes32",
+          "previous": "flock",
+          "proposed": "preserved_schedule",
+          "challenger": "flock"
+        }
+      ],
+      "command": [
+        "/home/john-wu/.local/bin/python3",
+        "/home/john-wu/code/BitZ-pcs/experiments/field-regressions/run.py",
+        "--suite",
+        "x86",
+        "--arch",
+        "x86_64",
+        "--scope",
+        "regressions-consumers",
+        "--cpu-set",
+        "0-31",
+        "--threads",
+        "32",
+        "--phase",
+        "confirm",
+        "--selection",
+        "/tmp/bitz-x86-repair-refine02/smt-32t-selection.json",
+        "--seed-offset",
+        "82182832",
+        "--cases",
+        "ntt/log17_lanes32",
+        "--out",
+        "/tmp/bitz-x86-repair-refine02/smt-32t",
+        "--target-dir",
+        "/tmp/bitz-ryzen-target"
+      ],
+      "development": "/tmp/bitz-x86-repair-confirm04/smt-32t",
+      "development_summary_sha256": "ed2db0c41cd7961dbc2653d4b0fc7716abd409cb8b7dbf144a296e35b3ea8b43"
+    }
+  ],
+  "status": "complete"
+}

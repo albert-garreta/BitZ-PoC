@@ -96,6 +96,16 @@ def summarize_round(directory, metadata, spec, draws=2000):
     def runtime_valid(r):
         common=(r.get("arch")==actual_arch and r.get("caller_threads")==metadata["threads"]
                 and all(r.get(feature) for feature in spec["required_features"][actual_arch]))
+        if spec.get("campaign") == "x86":
+            from host import cpu_set
+            try:
+                affinity_ok = cpu_set(r.get("affinity", "")) == cpu_set(metadata["cpu_set"])
+            except (ValueError, KeyError):
+                affinity_ok = False
+            common = (common and affinity_ok and r.get("flock_kernel") == "x86-karatsuba-barrett"
+                      and r.get("candidate_mul_kernel") == "x86-karatsuba-barrett")
+            if any(g.get("consumer") and g["name"] == "ntt" for g in spec["families"]):
+                common = common and r.get("candidate_snapshot") and r.get("baseline_all_core_threads") == r.get("candidate_all_core_threads") == metadata["threads"]
         if spec.get("suite")=="arithmetic":
             return common and r.get("arithmetic_campaign")
         return (common and r.get("candidate_snapshot")
@@ -111,7 +121,7 @@ def summarize_round(directory, metadata, spec, draws=2000):
         base=groups.get(base_key,{})
         needed={(r,i) for r in range(metadata["runs"]) for i in range(metadata["samples"])}
         if (set(samples)==needed and set(base)==needed and all(finished) and runtime_ok
-                and metadata["runs"]>=minimum_runs and metadata["samples"]>=minimum_samples
+                and ((metadata["runs"]>=minimum_runs and metadata["samples"]>=minimum_samples) or (spec.get("campaign")=="x86" and metadata.get("phase")=="explore"))
                 and all(math.isfinite(v["ns"]) and v["ns"]>0 for v in [*samples.values(),*base.values()])):
             cand=[[samples[(r,i)]["ns"] for i in range(metadata["samples"])] for r in range(metadata["runs"])]
             ref=[[base[(r,i)]["ns"] for i in range(metadata["samples"])] for r in range(metadata["runs"])]
@@ -129,6 +139,16 @@ def summarize_round(directory, metadata, spec, draws=2000):
             if item["variant"]==item["baseline"]:
                 row.update(median_ratio=1.,p95_ratio=1.,median_ci_low=1.,median_ci_high=1.,p95_ci_low=1.,p95_ci_high=1.,per_run_medians=[1.]*metadata["runs"])
             else:row.update(paired_stats(cand,ref,draws))
+            import re
+            matches=re.findall(r'(?:^|_)n?(\d+)$', row["size"])
+            terms=int(matches[-1]) if matches else 1
+            if row["family"].startswith("prime_reduce") or row["family"] == "prime_setup":
+                terms=1
+            if row["family"] == "x86_square_chain":
+                terms *= int(row["size"].split('_')[0][1:])
+            row.update(terms=terms, ns_per_term=row["median_ns"]/terms,
+                       terms_per_second=terms*1e9/row["median_ns"],
+                       logical_gib_per_second=row["payload_bytes"]*1e9/row["median_ns"]/2**30)
             row["status"]=classify(row,metadata["margin"])
         output.append(row)
     return output,runtimes

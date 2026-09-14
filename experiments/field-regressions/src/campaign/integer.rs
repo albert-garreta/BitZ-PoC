@@ -238,7 +238,7 @@ fn projection<const L: usize>(samples: usize, rng: &mut Rng) {
                 modulus.reduce(&StoredInteger::from_fixed(x))
             );
         }
-        for n in [16, 1024] {
+        for n in [16, 1024, 65536] {
             let size = format!("q{bits}_l{L}_n{n}");
             if !case_requested("projection", &size) {
                 continue;
@@ -294,8 +294,134 @@ pub(super) fn run(samples: usize, rng: &mut Rng) {
     integers::<2>(samples, rng);
     integers::<4>(samples, rng);
     integers::<9>(samples, rng);
+    full_width::<1>(samples, rng);
+    full_width::<2>(samples, rng);
+    full_width::<4>(samples, rng);
+    full_width::<9>(samples, rng);
     p256(samples, rng);
     projection::<2>(samples, rng);
     projection::<4>(samples, rng);
     projection::<9>(samples, rng);
+}
+
+fn full_width<const L: usize>(samples: usize, rng: &mut Rng) {
+    for pattern in ["full", "carry"] {
+        for n in [1, 3, 7, 16, 17, 31, 32, 33, 1024, 65536, 1048576] {
+            let size = format!("{pattern}_l{L}_n{n}");
+            if ![
+                "integer_full_mac",
+                "integer_add",
+                "integer_sub",
+                "integer_mul",
+            ]
+            .iter()
+            .any(|f| case_requested(f, &size))
+            {
+                continue;
+            }
+            let a: Vec<_> = (0..n)
+                .map(|_| {
+                    Z::<L>::from_le_words(&array::from_fn::<_, L, _>(|_| {
+                        if pattern == "carry" {
+                            u64::MAX
+                        } else {
+                            rng.next()
+                        }
+                    }))
+                })
+                .collect();
+            let b: Vec<_> = (0..n)
+                .map(|_| Z::<L>::from_le_words(&array::from_fn::<_, L, _>(|_| rng.next())))
+                .collect();
+            let modulus = BigUint::from(1u8) << (64 * L);
+            if case_requested("integer_full_mac", &size) {
+                let expected = a.iter().zip(&b).fold(BigUint::zero(), |s, (a, b)| {
+                    s + biguint(*a.words()) * biguint(*b.words())
+                }) % &modulus;
+                let baseline = existing(&a, &b);
+                assert_eq!(biguint(*baseline.words()), expected);
+                let mut cases = vec![Case::new("circuit_z", n * L * 16, || {
+                    black_box(existing(black_box(&a), black_box(&b)));
+                })];
+                macro_rules! variant {
+                    ($name:literal,$k:literal) => {{
+                        assert_eq!(full_mac::<L, $k>(&a, &b), baseline);
+                        cases.push(Case::new($name, n * L * 16, || {
+                            black_box(full_mac::<L, $k>(black_box(&a), black_box(&b)));
+                        }));
+                    }};
+                }
+                variant!("fused1", 1);
+                variant!("fused2", 2);
+                variant!("fused4", 4);
+                variant!("fused8", 8);
+                measure("integer_full_mac", &size, &mut cases, samples, rng);
+            }
+            for family in ["integer_add", "integer_sub", "integer_mul"] {
+                if !case_requested(family, &size) {
+                    continue;
+                }
+                let mut out = vec![Z::<L>::zero(); n];
+                for ((a, b), o) in a.iter().zip(&b).zip(&mut out) {
+                    *o = match family {
+                        "integer_add" => *a + *b,
+                        "integer_sub" => *a - *b,
+                        _ => *a * *b,
+                    };
+                }
+                for ((a, b), o) in a.iter().zip(&b).zip(&out) {
+                    let (a, b) = (biguint(*a.words()), biguint(*b.words()));
+                    let expected = match family {
+                        "integer_add" => a + b,
+                        "integer_sub" => a + &modulus - b,
+                        _ => a * b,
+                    } % &modulus;
+                    assert_eq!(biguint(*o.words()), expected);
+                }
+                let mut cases = vec![Case::new("circuit_z", n * L * 24, || {
+                    match family {
+                        "integer_add" => binary(&a, &b, &mut out, |a, b| a + b),
+                        "integer_sub" => binary(&a, &b, &mut out, |a, b| a - b),
+                        _ => binary(&a, &b, &mut out, |a, b| a * b),
+                    }
+                    black_box(&out);
+                })];
+                measure(family, &size, &mut cases, samples, rng);
+            }
+        }
+    }
+}
+
+#[inline(never)]
+fn full_mac<const L: usize, const K: usize>(a: &[Z<L>], b: &[Z<L>]) -> Z<L> {
+    #[cfg(target_arch = "x86_64")]
+    if L == 2 {
+        if a.len() < 32 {
+            return existing(a, b);
+        }
+        // Accumulate high cross-products separately: no carry dependency from
+        // each low-limb product into both cross-products of the same term.
+        return super::two_limb_mac::split_cross::<L, K>(a, b);
+    }
+    assert_eq!(a.len(), b.len());
+    let mut acc = [[0; L]; K];
+    for (aa, bb) in a.chunks(K).zip(b.chunks(K)) {
+        for j in 0..aa.len() {
+            fused(&mut acc[j], aa[j].words(), bb[j].words());
+        }
+    }
+    acc.iter()
+        .fold(Z::<L>::zero(), |s, w| s + Z::from_le_words(w))
+}
+
+#[inline(never)]
+fn binary<const L: usize>(
+    a: &[Z<L>],
+    b: &[Z<L>],
+    out: &mut [Z<L>],
+    op: impl Fn(Z<L>, Z<L>) -> Z<L>,
+) {
+    for ((&a, &b), o) in black_box(a).iter().zip(black_box(b)).zip(black_box(out)) {
+        *o = op(a, b);
+    }
 }

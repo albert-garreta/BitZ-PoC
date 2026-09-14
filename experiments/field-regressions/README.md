@@ -1,7 +1,7 @@
 # GF128 and complete NTT regression gate
 
-The current optimization phase is isolated ARM/Apple Silicon and portable
-candidate benchmarking, with no production integration or x86 kernel work.
+The ARM/Apple Silicon optimization campaign and the Ryzen x86 campaign are
+isolated candidate benchmarks, with no production integration.
 See [baseline comparisons and source locations](BASELINES.md) for the concrete
 implementations, benchmark call sites, matching contracts and coverage gaps.
 
@@ -23,6 +23,9 @@ The new [optimization candidates](OPTIMIZATION.md) run with
 baselines locally and benchmarks 34 operation families. Its scope and
 selections are independent of the historical GF/NTT campaign below. Read the
 [confirmed results and regression decisions](OPTIMIZATION_RESULTS.md).
+
+The current Ryzen x86 campaign is documented in [X86.md](X86.md); use
+`ryzen.py` for per-cache-group exploration and independent confirmation.
 
 The arithmetic-only F2Z/circuit/Flock campaign is documented in [ARITHMETIC.md](ARITHMETIC.md); run it with `run.py --suite arithmetic`.
 

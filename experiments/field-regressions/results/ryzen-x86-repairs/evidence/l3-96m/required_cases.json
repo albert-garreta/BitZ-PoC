@@ -1,0 +1,1652 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "campaign": "x86",
+  "phase": "confirm",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "x86_64"
+  ],
+  "required_features": {
+    "x86_64": [
+      "pclmulqdq",
+      "sse4.1",
+      "avx512f",
+      "vpclmulqdq"
+    ]
+  },
+  "compiled_features": [
+    "adx",
+    "aes",
+    "avx",
+    "avx2",
+    "avx512bf16",
+    "avx512bitalg",
+    "avx512bw",
+    "avx512cd",
+    "avx512dq",
+    "avx512f",
+    "avx512ifma",
+    "avx512vbmi",
+    "avx512vbmi2",
+    "avx512vl",
+    "avx512vnni",
+    "avx512vp2intersect",
+    "avx512vpopcntdq",
+    "avxvnni",
+    "bmi1",
+    "bmi2",
+    "cmpxchg16b",
+    "f16c",
+    "fma",
+    "fxsr",
+    "gfni",
+    "lzcnt",
+    "movbe",
+    "pclmulqdq",
+    "popcnt",
+    "rdrand",
+    "rdseed",
+    "sha",
+    "sse",
+    "sse2",
+    "sse3",
+    "sse4.1",
+    "sse4.2",
+    "sse4a",
+    "ssse3",
+    "vaes",
+    "vpclmulqdq",
+    "xsave",
+    "xsavec",
+    "xsaveopt",
+    "xsaves"
+  ],
+  "families": [
+    {
+      "name": "x86_products",
+      "sizes": [
+        "1"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett",
+        "binius"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "binius"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "3"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "binius",
+        "barrett_u2"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "binius"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "4"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "binius",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "binius"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "5"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "binius",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "binius"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "7"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "binius",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "binius"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "8"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "9"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "15"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "17"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "1023"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u8",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u8"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "1025"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u8",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u8"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "1048576"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "flock"
+    },
+    {
+      "name": "x86_products",
+      "sizes": [
+        "stream_n8388608"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "barrett_u2",
+        "vpclmul4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "vpclmul4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "barrett_u2"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q100_n16"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "borrowed_delayed"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "acc2"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q100_n1024"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "acc2"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "borrowed_delayed"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q100_n65536"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "acc2"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "borrowed_delayed"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q100_n1048576"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "borrowed_delayed"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "acc2"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q128_n16"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "borrowed_delayed"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "acc2"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q128_n1024"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "acc2"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "borrowed_delayed"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q128_n65536"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "borrowed_delayed"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "acc2"
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q128_n1048576"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "borrowed_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "acc2"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "borrowed_delayed"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n1"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n3"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n7"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n17"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n31"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n32"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused1",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused1"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n33"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused1",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused1"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused4"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused2",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused2"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused2",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused2"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "full_l2_n1048576"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused2",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused2"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n1"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n3"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n7"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n16"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n17"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n31"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "circuit_z"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": null
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n32"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused1",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused1"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n33"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused1",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused1"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused4"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n1024"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused2",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused2"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused2",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused2"
+    },
+    {
+      "name": "integer_full_mac",
+      "sizes": [
+        "carry_l2_n1048576"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused2",
+        "fused4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "fused4"
+      },
+      "diagnostic": false,
+      "consumer": false,
+      "challenger": "fused2"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "1"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "barrett",
+        "binius"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "barrett"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "binius"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "3"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "barrett",
+        "binius"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "binius"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "barrett"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "4"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "5"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "7"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "8"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "9"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "15"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "17"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "1023"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "1025"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_single",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "1"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "binius"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "production"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "binius"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "3"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "binius"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "production"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "binius"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "4"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "5"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "7"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "8"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "9"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "15"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "17"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "1023"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "1025"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "gf_round_two",
+      "sizes": [
+        "65536"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "native"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "native"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "production"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log8_lanes1"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "tiled_half",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "tiled_half"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "preserved_schedule"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log8_lanes32"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "tiled_half",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "tiled_half"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "preserved_schedule"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log12_lanes8"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "tiled_half",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "tiled_half"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "preserved_schedule"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log15_lanes32"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "flock"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "preserved_schedule"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log16_lanes32"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "flock"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "preserved_schedule"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log17_lanes32"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "preserved_schedule"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "flock"
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log18_lanes32"
+      ],
+      "baseline": "flock",
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "reset_only"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "x86_64": "flock"
+      },
+      "diagnostic": false,
+      "consumer": true,
+      "challenger": "preserved_schedule"
+    }
+  ],
+  "modulus_fixtures": {
+    "q100": "1267650600228229401496703205653",
+    "q128": "340282366920938463463374607431768211297"
+  },
+  "note": "q100 is the historical fixture ID; its actual bit length is 101.",
+  "implementation_aliases": {
+    "integer_full_mac/full_l2_n1": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/full_l2_n3": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/full_l2_n7": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/full_l2_n16": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/full_l2_n17": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/full_l2_n31": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/carry_l2_n1": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/carry_l2_n3": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/carry_l2_n7": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/carry_l2_n16": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/carry_l2_n17": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "integer_full_mac/carry_l2_n31": {
+      "fused1": "circuit_z",
+      "fused2": "circuit_z",
+      "fused4": "circuit_z",
+      "fused8": "circuit_z"
+    },
+    "gf_round_single/1": {
+      "native": "barrett"
+    },
+    "gf_round_single/3": {
+      "native": "barrett"
+    },
+    "gf_round_two/1": {
+      "native": "production"
+    },
+    "gf_round_two/3": {
+      "native": "production"
+    }
+  }
+}
