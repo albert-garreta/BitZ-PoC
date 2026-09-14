@@ -201,7 +201,29 @@ pub(crate) fn dual_pack(u: [u64; 2]) -> Gf {
 
 /// `A⁻¹(s)`: the slot vector with `bit_a = c₀(X^a·s)`, so that
 /// `s = Σ_a bit_a(ŝ)·A(e_a)` and `c₀(g·s) = Σ_a bit_a(g)·bit_a(ŝ)`.
+///
+/// [`dual_pack`] is a bit reversal of the slots `1..=127` onto the
+/// monomials `X^127..=X^1`, the slot `0` onto `X^0`, plus the seven
+/// corrections `DUAL_CORR` on `X^1..=X^6` selected by slots `1..=6`; this
+/// inverts it step by step: slot `0` is bit `0` of the low word, slots
+/// `1..=63` are the reversal of the high word's bits `63..=1` (which the
+/// corrections never touch), the corrections are then known, and slots
+/// `64..=127` are the reversal of the corrected low word's bits `63..=1`
+/// together with bit `0` of the high word. `dual_unpack_by_multiplication`
+/// (the defining `c₀(X^a·s)` scan) is the test oracle.
+#[inline]
 pub(crate) fn dual_unpack(s: Gf) -> [u64; 2] {
+    let [lo, hi] = *s.words();
+    let u0 = (hi >> 1).reverse_bits() | (lo & 1);
+    let corrections = DUAL_CORR[((u0 >> 1) & 63) as usize];
+    let r0 = ((lo ^ corrections) >> 1) | ((hi & 1) << 63);
+    [u0, r0.reverse_bits()]
+}
+
+/// The defining scan of [`dual_unpack`]: `bit_a(ŝ) = c₀(X^a·s)` by a
+/// multiply-by-`X` chain. Kept as the test oracle.
+#[cfg(test)]
+pub(crate) fn dual_unpack_by_multiplication(s: Gf) -> [u64; 2] {
     let mut z = s;
     let mut out = [0u64; 2];
     for a in 0..PACK {
@@ -738,6 +760,21 @@ mod tests {
             let mut u = [0u64; 2];
             u[v >> 6] = 1u64 << (v & 63);
             assert_eq!(dual_pack(u), cols[v], "unit vector {v}");
+        }
+    }
+
+    /// The closed-form `dual_unpack` IS the defining `c₀(X^a·s)` scan: on
+    /// random elements, every monomial, every dual-basis column and the
+    /// all-ones element.
+    #[test]
+    fn dual_unpack_closed_form_matches_multiplication_chain() {
+        let mut inputs: Vec<Gf> = (0..2048u64).map(|t| sample(0xF000 + t)).collect();
+        inputs.extend((0..PACK).map(monomial));
+        inputs.extend(dual_basis_cols());
+        inputs.push(Gf::from_words([u64::MAX, u64::MAX]));
+        inputs.push(Gf::zero());
+        for (index, &s) in inputs.iter().enumerate() {
+            assert_eq!(dual_unpack(s), dual_unpack_by_multiplication(s), "input {index}");
         }
     }
 
