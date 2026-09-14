@@ -312,6 +312,27 @@ the field-domain builders, so it is independent of every new piece);
 **Shared with the prover:** the two builders (`build_row_weights`,
 `build_sha_factors`); the prover's `coefficient_combine` gains their share.
 
+## Which benches to rerun
+
+- **SHA-256 + ECDSA (`tab:sha256-ecdsa-f2z-opt`, suite phase `sha-ecdsa`)**: every
+  F2Z cell — both rates, both thread counts, every size. Verifier ≈ 4.4× lower,
+  prover −2 % at 1 thread and −9 % at 10 threads. The Binius rows are
+  unchanged.
+- **Native SHA-256 comparison (`sha256_compressions` / `sha256_chain`,
+  `run_native_sha256_compare.sh`)**, if it returns to the paper: the F2Z rows —
+  verifier −67 % at 1 thread and −42 % at 10 threads (2^10), prover unchanged
+  at 1 thread and −8 % at 10 threads.
+- **Integer multiplication (`tab:f2z-u32-mul`, `tab:native-mul-u64`,
+  `tab:native-mul-u128`), hybrid (`tab:hybrid-sha256-mul`, equal counts),
+  MultiSwap (F2Z row), raw performance (`tab:f2z-raw-performance`)**: the base
+  opener or a repeated/generic map, so only the eq-table gate applies —
+  the 10-thread columns move (verifier −10 % class at u32 2^21; the MultiSwap
+  10-thread verifier, 11.9 ms against 8.8 at 1 thread, is the same dispatch
+  overhead), the 1-thread columns do not. Rerun the 10-thread F2Z cells.
+- Binius64 native rows and the Binius64-with-F2Z-opener rows do not run any
+  changed code except the eq-table builder inside the opener's verifier; not
+  re-measured, expected within noise.
+
 ## Tried and dropped: the tape's Montgomery kernel
 
 Replacing the vendored tape's two-limb FIOS Montgomery product by the
@@ -369,6 +390,62 @@ Sub-scopes of `ecdsa:coefficient_evaluate` after commit 5 (1 thr | 10 thr):
 The 10-thread verifier's serial sections run 10–15 % slower than at 1 thread
 throughout (`mv:lig` 0.35 → 0.41, `mv:rhat` 0.09 → 0.15): the main thread
 shares the cores with the idle pool.
+
+### Round 3: the states after commits 5, 6, 7
+
+| state | thr | verify | `mv:rswitch` | `mqv:vaprime` | tail | `coefficient_evaluate` | `ce_forward` | `ce_sha_factors` | `ce_rows` | `ce_sha_eval` | prove |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 1 | 19.57 | 13.37 | 10.14 | — | 3.87 | — | — | — | — | 87.8 |
+| commit 5 | 1 | 5.45 | 2.61 | 2.46 | 1.09 | 1.71 | 0.92 | 0.25 | 0.15 | 0.29 | 85.2 |
+| + commit 6 (tail lookup) | 1 | 4.70 | **1.92** | **1.78** | **0.38** | 1.68 | 0.92 | 0.25 | 0.15 | 0.29 | 84.9 |
+| + commit 7 (raw evaluation) | 1 | **4.42** | 1.93 | 1.79 | 0.38 | **1.36** | 0.93 | **0.23** | **0.09** | **0.08** | 84.5 |
+| baseline | 10 | 9.70 | 3.98 | 1.77 | — | 2.59 | — | — | — | — | 45.5 |
+| commit 5 | 10 | 4.61 | 1.40 | 1.16 | 0.36 | 1.91 | 1.05 | 0.29 | 0.17 | 0.33 | 41.3 |
+| + commit 6 | 10 | 4.52 | 1.28 | 1.01 | **0.23** | 1.91 | 1.05 | 0.29 | 0.17 | 0.33 | 40.6 |
+| + commit 7 | 10 | **4.22** | 1.29 | 1.04 | 0.22 | **1.54** | 1.05 | 0.26 | 0.11 | 0.09 | 40.7 |
+
+### Round 4: the final state re-measured, and the dropped kernel change
+
+| state | thr | verify | `mv:rswitch` | `mqv:vaprime` | `coefficient_evaluate` | prove |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 1 | 19.60 | 13.37 | 10.15 | 3.86 | 88.1 |
+| commit 7 (the branch tip) | 1 | **4.45** | 1.94 | 1.79 | 1.38 | 85.0 |
+| + kernel change (dropped) | 1 | 4.44 | 1.92 | 1.78 | 1.39 | 85.4 |
+| baseline | 10 | 9.66 | 4.01 | 1.82 | 2.57 | 46.6 |
+| commit 7 (the branch tip) | 10 | **4.19** | 1.28 | 1.04 | 1.55 | 40.8 |
+| + kernel change (dropped) | 10 | 4.16 | 1.30 | 1.04 | 1.55 | 41.1 |
+
+What remains at the tip (1 thr | 10 thr, ms): `mqv:vaprime` 1.79 | 1.04
+(`vaprime_plain` 0.57 | 0.16 — the SHA repetition's 6,888 packs at one
+multiply-accumulate per cell; `vaprime_tail` 0.38 | 0.24; `vrho` 0.33 | 0.35 —
+the 8 MiB byte tables; `vplanes` 0.23 | 0.17; `vaprime_extra` 0.26 | 0.08),
+`coefficient_evaluate` 1.36 | 1.54 (`ce_forward` 0.92 | 1.05, the tape's
+serial dependent chain; `ce_sha_factors` 0.23), `mv:lig` 0.36 | 0.42 (left
+alone), `ecdsa:matrix_projection` 0.16, the forest/presum/roots/rhat
+verification ≈ 0.3, the prime sampling 0.10, and the Spartan sumcheck
+verifications. The serial sections run 10–15 % slower at 10 threads than at
+1 (the main thread shares the cores with the pool).
+
+**Shared code (other benches) — corrected.** The first check of the chained
+SHA-256 bench reported here (and in commit `01d51a2`'s message: 40.60 → 40.63 ms
+at 2^10) was invalid: the second worktree's build had silently reused the
+baseline's artifacts (cargo keys local crates by package id, not by path), so
+it compared the baseline with itself. Rebuilt with the local crates cleaned
+and re-measured (2^10, λ = 100, fat LTO, interleaved 2 × 5, ms; 1 thr | 10 thr):
+
+| bench | verifier before → after | prover before → after |
+|---|---:|---:|
+| chained SHA-256 (`sha256_chain`) | 41.35 → **12.38** \| 13.54 → **8.20** | 158.6 → 157.5 \| 70.0 → 64.7 |
+| independent SHA-256 (`sha256_compressions`) | 48.97 → **16.32** \| 17.54 → **10.20** | 371.8 → 367.7 \| 111.1 → 102.2 |
+| u32 multiplication (`f2z --mul 21`, base opener, no virtual map) | 10.01 → 9.86 \| 5.99 → **5.33** | 1664 → 1654 \| 399 → 394 |
+
+The SHA benches take the plane engines for their basis (their maps are
+packed-source repetitions): `mqv:vaprime` 37.2 → 7.6 ms at 2^10 in the
+chained verifier's scope profile (`vaprime_plain` 4.7, `vaprime_extra` 2.2 —
+the 1,024 chained terms). The u32 relation opens through the base path and
+only sees the eq-table gate: at 10 threads `mv:rhat` 2.79 → 2.30 and
+`mv:rswitch` 0.32 → 0.07 ms; at 1 thread nothing moves. The 10-thread provers
+of all three gain 1–8 % from the same gate.
 
 ### Round 3: the states after commits 5, 6, 7
 
