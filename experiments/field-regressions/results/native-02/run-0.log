@@ -1,0 +1,35 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=42
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed dot/16: 8 variants, 24 paired samples
+completed products/16: 5 variants, 24 paired samples
+completed dot/1024: 8 variants, 24 paired samples
+completed products/1024: 5 variants, 24 paired samples
+completed dot/65536: 8 variants, 24 paired samples
+completed products/65536: 5 variants, 24 paired samples
+completed dot/1048576: 8 variants, 24 paired samples
+completed products/1048576: 5 variants, 24 paired samples
+completed chain/1024: 5 variants, 24 paired samples
+NTT setup log=8: 32042 ns
+completed ntt/log8_lanes1: 5 variants, 24 paired samples
+NTT setup log=8: 10375 ns
+completed ntt/log8_lanes32: 5 variants, 24 paired samples
+NTT setup log=12: 15125 ns
+completed ntt/log12_lanes8: 5 variants, 24 paired samples
+NTT setup log=15: 21667 ns
+completed ntt/log15_lanes32: 5 variants, 24 paired samples
+P256 synthesis+interning setup: 1238038625 ns
+P256 fixture: rows=21183 entries=4241586 coefficients=3358 columns=1215663 entry_bytes=8 z9_bytes=72 inline_aos_bytes=80
+P256 setup compact rows=8: 2375 ns
+P256 setup inline_aos rows=8: 4042 ns
+P256 setup inline_soa values rows=8: 1416 ns
+completed matrix/rows8_entries512: 4 variants, 24 paired samples
+P256 setup compact rows=256: 14333 ns
+P256 setup inline_aos rows=256: 87208 ns
+P256 setup inline_soa values rows=256: 42958 ns
+completed matrix/rows256_entries20986: 4 variants, 24 paired samples
+P256 setup compact rows=21183: 2250833 ns
+P256 setup inline_aos rows=21183: 36590250 ns
+P256 setup inline_soa values rows=21183: 26195958 ns
+completed matrix/rows21183_entries4241586: 4 variants, 24 paired samples
+completed public_coefficient_reduction/complete: 2 variants, 12 paired samples
+correctness: all complete P256 rows and coefficient reductions matched BigInt

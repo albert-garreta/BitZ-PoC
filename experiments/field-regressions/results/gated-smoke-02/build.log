@@ -1,0 +1,3 @@
+error: package `/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-70irmd9k/experiments/field-regressions/candidate-flock/crates/flock-core/Cargo.toml` is a member of the wrong workspace
+expected: /var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-70irmd9k/experiments/field-regressions/Cargo.toml
+actual:   /var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-70irmd9k/experiments/field-regressions/candidate-flock/Cargo.toml

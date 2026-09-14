@@ -1,0 +1,19 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=7961
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed dot/16: 8 variants, 32 paired samples
+completed products/16: 8 variants, 32 paired samples
+completed dot/1024: 8 variants, 32 paired samples
+completed products/1024: 8 variants, 32 paired samples
+completed dot/65536: 8 variants, 32 paired samples
+completed products/65536: 8 variants, 32 paired samples
+completed dot/1048576: 8 variants, 32 paired samples
+completed products/1048576: 8 variants, 32 paired samples
+completed chain/1024: 5 variants, 32 paired samples
+NTT setup log=8: 10500 ns
+completed ntt/log8_lanes1: 5 variants, 32 paired samples
+NTT setup log=8: 10541 ns
+completed ntt/log8_lanes32: 5 variants, 32 paired samples
+NTT setup log=12: 16167 ns
+completed ntt/log12_lanes8: 5 variants, 32 paired samples
+NTT setup log=15: 20042 ns
+completed ntt/log15_lanes32: 5 variants, 32 paired samples

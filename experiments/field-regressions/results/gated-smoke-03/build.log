@@ -1,0 +1,18 @@
+     Locking 88 packages to latest Rust 1.98.1 compatible versions
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding num-bigint v0.4.8 (available: v0.5.1)
+   Compiling num-integer v0.1.47
+   Compiling crypto-bigint v0.7.5
+   Compiling num-bigint v0.4.8
+   Compiling ark-serialize v0.5.0
+   Compiling zmij v1.0.23
+   Compiling ark-ff v0.5.0
+   Compiling serde_json v1.0.151
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling flock-core v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-0meazx_j/vendor/flock-mod/crates/flock-core)
+   Compiling crypto-primitives v0.1.0 (https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b#3c4232bf)
+   Compiling field v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-0meazx_j/crates/field)
+   Compiling flock-core-candidate v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-0meazx_j/vendor/flock-candidate/crates/flock-core)
+   Compiling field-regressions v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-0meazx_j/experiments/field-regressions)
+    Finished `release` profile [optimized + debuginfo] target(s) in 33.04s

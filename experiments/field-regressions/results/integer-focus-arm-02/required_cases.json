@@ -1,0 +1,118 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [],
+    "x86_64": []
+  },
+  "families": [
+    {
+      "name": "two_limb_mac",
+      "sizes": [
+        "signed16_n1",
+        "signed16_n3",
+        "signed16_n7",
+        "signed16_n16",
+        "signed16_n17",
+        "signed16_n1024",
+        "signed16_n65536",
+        "signed16_n1048576",
+        "full128_n1",
+        "full128_n3",
+        "full128_n7",
+        "full128_n16",
+        "full128_n17",
+        "full128_n1024",
+        "full128_n65536",
+        "full128_n1048576"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "legacy_fused",
+        "product1",
+        "product2",
+        "product4",
+        "split1",
+        "split2",
+        "split4",
+        "selected"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "selected",
+        "x86_64": "selected"
+      }
+    },
+    {
+      "name": "bounded_product",
+      "sizes": [
+        "active4_n16",
+        "active4_n1024",
+        "active4_n65536"
+      ],
+      "baseline": "existing_p256",
+      "variants": [
+        "existing_p256",
+        "fixed9",
+        "prepared_bound",
+        "validate_execute",
+        "prepared_direct",
+        "validate_execute_direct",
+        "public_bound4",
+        "prepared_comba4",
+        "validate_execute_comba4",
+        "prepared_selected",
+        "validate_execute_selected"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_selected",
+          "validate_execute_selected"
+        ],
+        "x86_64": [
+          "prepared_selected",
+          "validate_execute_selected"
+        ]
+      }
+    },
+    {
+      "name": "bounded_product",
+      "sizes": [
+        "active9_n16",
+        "active9_n1024",
+        "active9_n65536"
+      ],
+      "baseline": "existing_p256",
+      "variants": [
+        "existing_p256",
+        "fixed9",
+        "prepared_bound",
+        "validate_execute",
+        "prepared_direct",
+        "validate_execute_direct",
+        "prepared_selected",
+        "validate_execute_selected"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "prepared_selected",
+          "validate_execute_selected"
+        ],
+        "x86_64": [
+          "prepared_selected",
+          "validate_execute_selected"
+        ]
+      }
+    }
+  ]
+}

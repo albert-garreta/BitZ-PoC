@@ -1,0 +1,27 @@
+{
+  "binary_sha256": "0953e4f1cd7cc92920cb8be75aa4093066d90f113a9b59b5e1fb8f6785f26d05",
+  "baseline_loop": "0x100020270..0x1000202b8",
+  "candidate_loop": "0x100020388..0x1000203d0",
+  "identical_instruction_words": [
+    "6d7f8d02",
+    "6d7f9524",
+    "0ee3e086",
+    "0ee3e0a3",
+    "0ee2e0a5",
+    "6e261ca5",
+    "6e034006",
+    "4ee1e063",
+    "ce050cc3",
+    "6e034005",
+    "0ee2e082",
+    "6e221ca2",
+    "4ee1e063",
+    "6e231c42",
+    "3c8104a2",
+    "91004108",
+    "91004129",
+    "f1000442",
+    "54fffdc1"
+  ],
+  "note": "Only the 19-instruction repeated product loops are identical. Dispatch and entry blocks differ."
+}

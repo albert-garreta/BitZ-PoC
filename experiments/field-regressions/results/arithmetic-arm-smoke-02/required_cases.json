@@ -1,0 +1,411 @@
+{
+  "schema": 2,
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ],
+    "x86_64": [
+      "pclmulqdq"
+    ]
+  },
+  "suite": "arithmetic",
+  "families": [
+    {
+      "name": "products",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "scalar_lanes",
+        "x86_64": "shared"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "shared_unroll2",
+        "shared_unroll4",
+        "shared_unroll8"
+      ],
+      "arm_variants": [
+        "scalar_lanes",
+        "schoolbook",
+        "karatsuba",
+        "karatsuba_barrett"
+      ]
+    },
+    {
+      "name": "chain",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "scalar_lanes",
+        "x86_64": "shared"
+      },
+      "variants": [
+        "flock",
+        "shared"
+      ],
+      "arm_variants": [
+        "scalar_lanes",
+        "schoolbook",
+        "karatsuba",
+        "karatsuba_barrett"
+      ]
+    },
+    {
+      "name": "square",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "shared",
+        "x86_64": "shared"
+      },
+      "variants": [
+        "flock",
+        "shared"
+      ],
+      "arm_variants": []
+    },
+    {
+      "name": "inverse",
+      "sizes": [
+        "1",
+        "16",
+        "1024"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "shared",
+        "x86_64": "shared"
+      },
+      "variants": [
+        "flock",
+        "shared"
+      ],
+      "arm_variants": []
+    },
+    {
+      "name": "fixed_prepare",
+      "sizes": [
+        "zero",
+        "half",
+        "full"
+      ],
+      "baseline": "existing_prepare",
+      "selected": {},
+      "variants": [
+        "existing_prepare"
+      ],
+      "arm_variants": []
+    },
+    {
+      "name": "fixed",
+      "sizes": [
+        "zero_n16",
+        "zero_n1024",
+        "zero_n65536",
+        "zero_n1048576",
+        "half_n16",
+        "half_n1024",
+        "half_n65536",
+        "half_n1048576",
+        "full_n16",
+        "full_n1024",
+        "full_n65536",
+        "full_n1048576"
+      ],
+      "baseline": "prepared",
+      "selected": {
+        "aarch64": "specialized"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "prepared",
+        "specialized"
+      ],
+      "arm_variants": [
+        "scalar_lanes"
+      ]
+    },
+    {
+      "name": "butterfly",
+      "sizes": [
+        "zero_n16",
+        "zero_n1024",
+        "zero_n65536",
+        "zero_n1048576",
+        "half_n16",
+        "half_n1024",
+        "half_n65536",
+        "half_n1048576",
+        "full_n16",
+        "full_n1024",
+        "full_n65536",
+        "full_n1048576"
+      ],
+      "baseline": "prepared",
+      "selected": {
+        "aarch64": "specialized"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "prepared",
+        "specialized"
+      ],
+      "arm_variants": [
+        "scalar_lanes"
+      ]
+    },
+    {
+      "name": "gf_dot",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "f2z_wide",
+      "variants": [
+        "f2z_wide",
+        "flock_eager",
+        "shared_wide1",
+        "shared_wide2",
+        "shared_wide4",
+        "shared_wide8"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "shared_wide1",
+        "x86_64": "shared_wide1"
+      }
+    },
+    {
+      "name": "prime_setup",
+      "sizes": [
+        "100",
+        "128"
+      ],
+      "baseline": "existing_contexts",
+      "variants": [
+        "existing_contexts"
+      ],
+      "arm_variants": [],
+      "selected": {},
+      "diagnostic": true
+    },
+    {
+      "name": "prime_mul",
+      "sizes": [
+        "q100_n16",
+        "q100_n1024",
+        "q100_n1048576",
+        "q128_n16",
+        "q128_n1024",
+        "q128_n1048576"
+      ],
+      "baseline": "raw_ctx",
+      "variants": [
+        "raw_ctx",
+        "branded",
+        "checked_per_term",
+        "configured_field"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "branded",
+        "x86_64": "branded"
+      }
+    },
+    {
+      "name": "prime_dot",
+      "sizes": [
+        "q100_n16",
+        "q100_n1024",
+        "q100_n1048576",
+        "q128_n16",
+        "q128_n1024",
+        "q128_n1048576"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "acc4",
+        "acc8",
+        "checked_per_term",
+        "eager_raw",
+        "crypto_bigint_reduce",
+        "convert_then_delayed"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "acc4",
+        "x86_64": "acc4"
+      }
+    },
+    {
+      "name": "prime_linear",
+      "sizes": [
+        "q100_n16",
+        "q100_n1024",
+        "q100_n1048576",
+        "q128_n16",
+        "q128_n1024",
+        "q128_n1048576"
+      ],
+      "baseline": "existing_delayed",
+      "variants": [
+        "existing_delayed",
+        "acc2",
+        "acc4",
+        "acc8",
+        "crypto_bigint_reduce"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "acc4",
+        "x86_64": "acc4"
+      }
+    },
+    {
+      "name": "prime_reduce_product",
+      "sizes": [
+        "100",
+        "128"
+      ],
+      "baseline": "existing_optimized",
+      "variants": [
+        "existing_optimized",
+        "crypto_bigint"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "prime_reduce_linear",
+      "sizes": [
+        "100",
+        "128"
+      ],
+      "baseline": "existing_optimized",
+      "variants": [
+        "existing_optimized",
+        "crypto_bigint"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    },
+    {
+      "name": "integer_mac",
+      "sizes": [
+        "l1_n16",
+        "l1_n1024",
+        "l1_n65536",
+        "l2_n16",
+        "l2_n1024",
+        "l2_n65536",
+        "l4_n16",
+        "l4_n1024",
+        "l4_n65536",
+        "l9_n16",
+        "l9_n1024",
+        "l9_n65536"
+      ],
+      "baseline": "circuit_z",
+      "variants": [
+        "circuit_z",
+        "fused",
+        "checked_per_term"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "fused",
+        "x86_64": "fused"
+      }
+    },
+    {
+      "name": "p256_product",
+      "sizes": [
+        "active4_n16",
+        "active4_n1024",
+        "active4_n65536"
+      ],
+      "baseline": "existing_p256",
+      "variants": [
+        "existing_p256",
+        "fixed9",
+        "public_bound4"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "public_bound4",
+        "x86_64": "public_bound4"
+      }
+    },
+    {
+      "name": "p256_product",
+      "sizes": [
+        "active9_n16",
+        "active9_n1024",
+        "active9_n65536"
+      ],
+      "baseline": "existing_p256",
+      "variants": [
+        "existing_p256",
+        "fixed9"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": "fixed9",
+        "x86_64": "fixed9"
+      }
+    },
+    {
+      "name": "projection",
+      "sizes": [
+        "q100_l2_n16",
+        "q100_l2_n1024",
+        "q100_l4_n16",
+        "q100_l4_n1024",
+        "q100_l9_n16",
+        "q100_l9_n1024",
+        "q128_l2_n16",
+        "q128_l2_n1024",
+        "q128_l4_n16",
+        "q128_l4_n1024",
+        "q128_l9_n16",
+        "q128_l9_n1024"
+      ],
+      "baseline": "runtime_modulus",
+      "variants": [
+        "runtime_modulus",
+        "fixed_crypto_bigint_vartime"
+      ],
+      "arm_variants": [],
+      "selected": {}
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=112648
+RUNTIME {"aes":true,"arch":"aarch64","arithmetic_campaign":true,"avx512f":false,"baseline_all_core_threads":1,"caller_threads":1,"candidate_all_core_threads":0,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":false,"flock_kernel":"arm-pmull","pclmulqdq":false,"seed":112648,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed products/16: 9 variants, 64 paired samples
+completed products/1024: 9 variants, 64 paired samples
+completed products/1048576: 9 variants, 64 paired samples
+completed butterfly/full_n1024: 5 variants, 64 paired samples
+completed fixed/full_n65536: 5 variants, 64 paired samples
+completed butterfly/full_n65536: 5 variants, 64 paired samples
+completed fixed/full_n1048576: 5 variants, 64 paired samples
+completed butterfly/full_n1048576: 5 variants, 64 paired samples
+completed prime_mul/q100_n16: 4 variants, 64 paired samples
+completed prime_mul/q100_n1024: 4 variants, 64 paired samples
+completed prime_dot/q100_n1024: 8 variants, 64 paired samples
+completed prime_mul/q128_n16: 4 variants, 64 paired samples
+completed prime_mul/q128_n1024: 4 variants, 64 paired samples
+completed integer_mac/l1_n1024: 3 variants, 64 paired samples
+completed integer_mac/l1_n65536: 3 variants, 64 paired samples
+CORRECTNESS_COMPLETE

@@ -1,0 +1,11 @@
+{
+  "cpu": "Apple M1 Max",
+  "memory_bytes": 68719476736,
+  "physical_cores": 10,
+  "logical_cores": 10,
+  "source": "sysctl, read separately after the sandbox denied the runner hardware query",
+  "x86_attempt": {
+    "host": "will",
+    "result": "SSH connection timed out after 8 seconds; no x86 measurement"
+  }
+}

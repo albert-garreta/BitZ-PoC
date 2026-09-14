@@ -1,0 +1,10 @@
+error: failed to load manifest for dependency `flock-core-candidate`
+
+Caused by:
+  failed to parse manifest at `/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-xfwvljtl/experiments/field-regressions/candidate-flock/crates/flock-core/Cargo.toml`
+
+Caused by:
+  error inheriting `edition` from workspace root manifest's `workspace.package.edition`
+
+Caused by:
+  `workspace.package.edition` was not defined

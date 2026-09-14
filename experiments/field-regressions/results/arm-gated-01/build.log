@@ -1,0 +1,8 @@
+     Locking 88 packages to latest Rust 1.98.1 compatible versions
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding num-bigint v0.4.8 (available: v0.5.1)
+   Compiling field v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-v191dh9r/crates/field)
+   Compiling flock-core v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-v191dh9r/vendor/flock-mod/crates/flock-core)
+   Compiling flock-core-candidate v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-v191dh9r/vendor/flock-candidate/crates/flock-core)
+   Compiling field-regressions v0.1.0 (/var/folders/q0/v7l8dzd13k7f_q6j80sy03lm0000gn/T/f2z-field-gated-v191dh9r/experiments/field-regressions)
+    Finished `release` profile [optimized + debuginfo] target(s) in 27.15s

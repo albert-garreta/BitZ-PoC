@@ -1,0 +1,71 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=15880
+RUNTIME {"aes":true,"arch":"aarch64","avx512f":false,"baseline_all_core_threads":1,"caller_threads":1,"candidate_all_core_threads":1,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":true,"flock_kernel":"arm-pmull-binius6","pclmulqdq":false,"seed":15880,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed dot/16: 9 variants, 32 paired samples
+completed products/16: 9 variants, 32 paired samples
+completed dot/1024: 9 variants, 32 paired samples
+completed products/1024: 9 variants, 32 paired samples
+completed dot/65536: 9 variants, 32 paired samples
+completed products/65536: 9 variants, 32 paired samples
+completed dot/1048576: 9 variants, 32 paired samples
+completed products/1048576: 9 variants, 32 paired samples
+completed chain/16: 6 variants, 32 paired samples
+completed chain/1024: 6 variants, 32 paired samples
+completed chain/65536: 6 variants, 32 paired samples
+completed chain/1048576: 6 variants, 32 paired samples
+completed square/16: 2 variants, 32 paired samples
+completed square/1024: 2 variants, 32 paired samples
+completed square/65536: 2 variants, 32 paired samples
+completed square/1048576: 2 variants, 32 paired samples
+completed inverse/1: 2 variants, 32 paired samples
+completed inverse/16: 2 variants, 32 paired samples
+completed inverse/1024: 2 variants, 32 paired samples
+completed fixed_prepare/zero: 1 variants, 32 paired samples
+completed fixed/zero_n16: 5 variants, 32 paired samples
+completed butterfly/zero_n16: 5 variants, 32 paired samples
+completed fixed/zero_n1024: 5 variants, 32 paired samples
+completed butterfly/zero_n1024: 5 variants, 32 paired samples
+completed fixed/zero_n65536: 5 variants, 32 paired samples
+completed butterfly/zero_n65536: 5 variants, 32 paired samples
+completed fixed/zero_n1048576: 5 variants, 32 paired samples
+completed butterfly/zero_n1048576: 5 variants, 32 paired samples
+completed fixed_prepare/half: 1 variants, 32 paired samples
+completed fixed/half_n16: 5 variants, 32 paired samples
+completed butterfly/half_n16: 5 variants, 32 paired samples
+completed fixed/half_n1024: 5 variants, 32 paired samples
+completed butterfly/half_n1024: 5 variants, 32 paired samples
+completed fixed/half_n65536: 5 variants, 32 paired samples
+completed butterfly/half_n65536: 5 variants, 32 paired samples
+completed fixed/half_n1048576: 5 variants, 32 paired samples
+completed butterfly/half_n1048576: 5 variants, 32 paired samples
+completed fixed_prepare/full: 1 variants, 32 paired samples
+completed fixed/full_n16: 5 variants, 32 paired samples
+completed butterfly/full_n16: 5 variants, 32 paired samples
+completed fixed/full_n1024: 5 variants, 32 paired samples
+completed butterfly/full_n1024: 5 variants, 32 paired samples
+completed fixed/full_n65536: 5 variants, 32 paired samples
+completed butterfly/full_n65536: 5 variants, 32 paired samples
+completed fixed/full_n1048576: 5 variants, 32 paired samples
+completed butterfly/full_n1048576: 5 variants, 32 paired samples
+NTT setup log=8: 10542 ns
+NTT candidate setup log=8: 9833 ns
+completed ntt/log8_lanes1: 6 variants, 32 paired samples
+NTT setup log=8: 12500 ns
+NTT candidate setup log=8: 11209 ns
+completed ntt/log8_lanes32: 6 variants, 32 paired samples
+NTT setup log=12: 15084 ns
+NTT candidate setup log=12: 14708 ns
+completed ntt/log12_lanes8: 6 variants, 32 paired samples
+NTT setup log=15: 18542 ns
+NTT candidate setup log=15: 21833 ns
+completed ntt/log15_lanes32: 6 variants, 32 paired samples
+NTT setup log=16: 31250 ns
+NTT candidate setup log=16: 22708 ns
+completed ntt/log16_lanes32: 6 variants, 32 paired samples
+NTT setup log=17: 22166 ns
+NTT candidate setup log=17: 33000 ns
+completed ntt/log17_lanes32: 6 variants, 32 paired samples
+NTT setup log=18: 23125 ns
+NTT candidate setup log=18: 39167 ns
+completed ntt/log18_lanes32: 6 variants, 32 paired samples
+CORRECTNESS_COMPLETE

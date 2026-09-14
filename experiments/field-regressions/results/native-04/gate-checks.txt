@@ -1,0 +1,17 @@
+PASS dot:wide1/1024: upper time ratio 0.8142; matrix storage OK
+PASS dot:wide1/1048576: upper time ratio 0.8145; matrix storage OK
+PASS dot:wide1/16: upper time ratio 0.8807; matrix storage OK
+PASS dot:wide1/65536: upper time ratio 0.8136; matrix storage OK
+This gate applies only to the recorded workloads, build and host; it does not authorize production migration.
+
+BLOCKED products:shared/1024: upper time ratio 1.0754; matrix storage OK
+BLOCKED products:shared/1048576: upper time ratio 1.0654; matrix storage OK
+BLOCKED products:shared/16: upper time ratio 1.0282; matrix storage OK
+BLOCKED products:shared/65536: upper time ratio 1.0693; matrix storage OK
+This gate applies only to the recorded workloads, build and host; it does not authorize production migration.
+
+BLOCKED ntt:reset_only: diagnostic does not compute the consumer output
+This gate applies only to the recorded workloads, build and host; it does not authorize production migration.
+
+BLOCKED products:absent: missing measured sizes
+This gate applies only to the recorded workloads, build and host; it does not authorize production migration.

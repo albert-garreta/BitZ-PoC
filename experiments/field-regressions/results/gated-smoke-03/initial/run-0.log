@@ -1,0 +1,10 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=42
+RUNTIME {"aes":true,"arch":"aarch64","avx512f":false,"baseline_all_core_threads":1,"caller_threads":1,"candidate_all_core_threads":1,"candidate_snapshot":true,"pclmulqdq":false,"seed":42,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed square/16: 2 variants, 2 paired samples
+completed inverse/1: 2 variants, 2 paired samples
+completed fixed/full_n16: 5 variants, 2 paired samples
+completed butterfly/full_n16: 5 variants, 2 paired samples
+NTT setup log=8: 11416 ns
+completed ntt/log8_lanes1: 6 variants, 2 paired samples
+CORRECTNESS_COMPLETE

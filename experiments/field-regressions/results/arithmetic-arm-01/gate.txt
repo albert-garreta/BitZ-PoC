@@ -1,0 +1,31 @@
+BLOCKED inconclusive: aarch64/products/1048576/scalar_lanes: median upper=1.0020, P95 upper=1.0500, worst process=1.0025, allocations=OK
+BLOCKED regression: aarch64/fixed/half_n16/specialized: median upper=1.1100, P95 upper=1.1097, worst process=1.1114, allocations=OK
+BLOCKED regression: aarch64/fixed/half_n1024/specialized: median upper=1.2781, P95 upper=1.2869, worst process=1.2795, allocations=OK
+BLOCKED regression: aarch64/fixed/half_n65536/specialized: median upper=1.1868, P95 upper=1.2121, worst process=1.1861, allocations=OK
+BLOCKED regression: aarch64/fixed/half_n1048576/specialized: median upper=1.1323, P95 upper=1.1862, worst process=1.1309, allocations=OK
+BLOCKED regression: aarch64/fixed/full_n16/specialized: median upper=1.0400, P95 upper=1.0458, worst process=1.0399, allocations=OK
+BLOCKED regression: aarch64/butterfly/half_n16/specialized: median upper=1.1836, P95 upper=1.1846, worst process=1.1835, allocations=OK
+BLOCKED regression: aarch64/butterfly/half_n1024/specialized: median upper=1.0558, P95 upper=1.0629, worst process=1.0567, allocations=OK
+BLOCKED regression: aarch64/butterfly/half_n65536/specialized: median upper=1.0885, P95 upper=1.1056, worst process=1.0902, allocations=OK
+BLOCKED regression: aarch64/butterfly/half_n1048576/specialized: median upper=1.0825, P95 upper=1.0828, worst process=1.0823, allocations=OK
+BLOCKED regression: aarch64/butterfly/full_n16/specialized: median upper=1.0282, P95 upper=1.0313, worst process=1.0281, allocations=OK
+BLOCKED inconclusive: aarch64/prime_mul/q100_n16/branded: median upper=1.0095, P95 upper=1.0247, worst process=1.0097, allocations=OK
+BLOCKED inconclusive: aarch64/prime_mul/q100_n1024/branded: median upper=1.0012, P95 upper=1.0121, worst process=1.0007, allocations=OK
+BLOCKED inconclusive: aarch64/prime_mul/q128_n16/branded: median upper=1.0301, P95 upper=1.0324, worst process=1.0304, allocations=OK
+BLOCKED inconclusive: aarch64/prime_mul/q128_n1024/branded: median upper=1.0006, P95 upper=1.0126, worst process=1.0007, allocations=OK
+BLOCKED regression: aarch64/prime_dot/q100_n16/acc4: median upper=1.0470, P95 upper=1.0597, worst process=1.0467, allocations=OK
+BLOCKED regression: aarch64/prime_dot/q128_n16/acc4: median upper=1.0462, P95 upper=1.0671, worst process=1.0462, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l1_n16/fused: median upper=1.0696, P95 upper=1.0783, worst process=1.0699, allocations=OK
+BLOCKED inconclusive: aarch64/integer_mac/l1_n1024/fused: median upper=1.0032, P95 upper=1.0206, worst process=1.0034, allocations=OK
+BLOCKED inconclusive: aarch64/integer_mac/l1_n65536/fused: median upper=1.0006, P95 upper=1.0202, worst process=1.0003, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l2_n16/fused: median upper=1.5603, P95 upper=1.5630, worst process=1.5608, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l2_n1024/fused: median upper=2.3814, P95 upper=2.3745, worst process=2.3828, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l2_n65536/fused: median upper=2.3755, P95 upper=2.3875, worst process=2.3759, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l4_n16/fused: median upper=1.0892, P95 upper=1.0989, worst process=1.0890, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l4_n1024/fused: median upper=1.3299, P95 upper=1.3304, worst process=1.3301, allocations=OK
+BLOCKED regression: aarch64/integer_mac/l4_n65536/fused: median upper=1.3120, P95 upper=1.3127, worst process=1.3119, allocations=OK
+BLOCKED regression: aarch64/p256_product/active9_n16/fixed9: median upper=1.0732, P95 upper=1.1098, worst process=1.0688, allocations=OK
+BLOCKED regression: aarch64/p256_product/active9_n1024/fixed9: median upper=1.0952, P95 upper=1.1371, worst process=1.0948, allocations=OK
+BLOCKED regression: aarch64/p256_product/active9_n65536/fixed9: median upper=1.1184, P95 upper=1.1425, worst process=1.1171, allocations=OK
+BLOCKED: frozen selections, 1.0% margin, all required cases.
+This applies only to the frozen manifest, measured host workloads and build; production behavior is unchanged.

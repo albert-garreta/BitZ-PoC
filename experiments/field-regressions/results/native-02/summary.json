@@ -1,0 +1,1731 @@
+[
+  {
+    "family": "chain",
+    "size": "1024",
+    "variant": "flock",
+    "payload_bytes": 16384,
+    "median_ns": 8225.342,
+    "p10_ns": 8060.7423,
+    "p90_ns": 8529.573499999999,
+    "p99_ns": 9144.623610000008,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "chain",
+    "size": "1024",
+    "variant": "karatsuba",
+    "payload_bytes": 16384,
+    "median_ns": 9012.492999999999,
+    "p10_ns": 8862.1578,
+    "p90_ns": 9306.982100000001,
+    "p99_ns": 9694.529559999999,
+    "relative_time": 1.095210931828352,
+    "ratio_ci_low": 1.089910496262602,
+    "ratio_ci_high": 1.1039284600607948,
+    "per_run_ratios": [
+      1.0957040797854063,
+      1.095210931828352,
+      1.0941897242360545
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "chain",
+    "size": "1024",
+    "variant": "karatsuba_barrett",
+    "payload_bytes": 16384,
+    "median_ns": 10116.415,
+    "p10_ns": 9944.263400000002,
+    "p90_ns": 10519.6777,
+    "p99_ns": 10885.28246,
+    "relative_time": 1.2297788969115837,
+    "ratio_ci_low": 1.2239483113150658,
+    "ratio_ci_high": 1.2359084967643454,
+    "per_run_ratios": [
+      1.2297788969115837,
+      1.2299419419553606,
+      1.224605744761183
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "chain",
+    "size": "1024",
+    "variant": "schoolbook",
+    "payload_bytes": 16384,
+    "median_ns": 10398.3155,
+    "p10_ns": 10210.8395,
+    "p90_ns": 10785.124800000001,
+    "p99_ns": 11228.74035,
+    "relative_time": 1.2592776248532223,
+    "ratio_ci_low": 1.250779981470499,
+    "ratio_ci_high": 1.2642412519310224,
+    "per_run_ratios": [
+      1.2591074646396747,
+      1.2593804851741592,
+      1.2592776248532223
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "chain",
+    "size": "1024",
+    "variant": "shared",
+    "payload_bytes": 16384,
+    "median_ns": 7987.4675,
+    "p10_ns": 7823.674599999999,
+    "p90_ns": 8345.8493,
+    "p99_ns": 8620.193100000002,
+    "relative_time": 0.9708358748223205,
+    "ratio_ci_low": 0.9659494103999527,
+    "ratio_ci_high": 0.9788333071219029,
+    "per_run_ratios": [
+      0.9755758814935995,
+      0.9708358748223205,
+      0.9697984426326662
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "flock",
+    "payload_bytes": 32768,
+    "median_ns": 867.2945,
+    "p10_ns": 858.707,
+    "p90_ns": 895.6085,
+    "p99_ns": 957.9249900000002,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "shared",
+    "payload_bytes": 32768,
+    "median_ns": 870.402,
+    "p10_ns": 857.5883,
+    "p90_ns": 886.0949999999999,
+    "p99_ns": 1202.0181900000005,
+    "relative_time": 0.9986038999083264,
+    "ratio_ci_low": 0.9956559568608012,
+    "ratio_ci_high": 1.0053103026038646,
+    "per_run_ratios": [
+      1.0008681875047298,
+      0.9972327073613578,
+      0.9986038999083264
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "vec2",
+    "payload_bytes": 32768,
+    "median_ns": 1721.7305000000001,
+    "p10_ns": 1707.9915,
+    "p90_ns": 1754.3725,
+    "p99_ns": 2058.9240600000007,
+    "relative_time": 1.9905675539544558,
+    "ratio_ci_low": 1.971714378326093,
+    "ratio_ci_high": 1.9969578934750656,
+    "per_run_ratios": [
+      1.9905675539544558,
+      1.9783047392036661,
+      1.99351159763656
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "wide1",
+    "payload_bytes": 32768,
+    "median_ns": 701.3344999999999,
+    "p10_ns": 694.3601,
+    "p90_ns": 731.3717,
+    "p99_ns": 817.5423800000003,
+    "relative_time": 0.8069598963501701,
+    "ratio_ci_low": 0.8007110580441227,
+    "ratio_ci_high": 0.8148970070083954,
+    "per_run_ratios": [
+      0.8069598963501701,
+      0.8035407718088936,
+      0.8131449672379294
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "wide16",
+    "payload_bytes": 32768,
+    "median_ns": 1107.7269999999999,
+    "p10_ns": 1097.7142,
+    "p90_ns": 1133.4579,
+    "p99_ns": 1420.6649800000007,
+    "relative_time": 1.2763281710109884,
+    "ratio_ci_low": 1.2675506129293133,
+    "ratio_ci_high": 1.2843576023169343,
+    "per_run_ratios": [
+      1.2697614970828415,
+      1.2763281710109884,
+      1.278938735860738
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "wide2",
+    "payload_bytes": 32768,
+    "median_ns": 703.2925,
+    "p10_ns": 694.9632,
+    "p90_ns": 724.5714,
+    "p99_ns": 759.85053,
+    "relative_time": 0.8086483259557965,
+    "ratio_ci_low": 0.8029072630105796,
+    "ratio_ci_high": 0.8177208773521307,
+    "per_run_ratios": [
+      0.8073590287058203,
+      0.8086483259557965,
+      0.8132701533709481
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "wide4",
+    "payload_bytes": 32768,
+    "median_ns": 699.4069999999999,
+    "p10_ns": 695.2629999999999,
+    "p90_ns": 719.6367,
+    "p99_ns": 798.9733600000014,
+    "relative_time": 0.8076981571740344,
+    "ratio_ci_low": 0.8031855586776727,
+    "ratio_ci_high": 0.8116362410286637,
+    "per_run_ratios": [
+      0.8066711424270481,
+      0.8076981571740344,
+      0.8092577068356719
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1024",
+    "variant": "wide8",
+    "payload_bytes": 32768,
+    "median_ns": 744.919,
+    "p10_ns": 736.1231,
+    "p90_ns": 770.8004,
+    "p99_ns": 981.3452100000013,
+    "relative_time": 0.8578282448209636,
+    "ratio_ci_low": 0.8529049968299787,
+    "ratio_ci_high": 0.8664807522561973,
+    "per_run_ratios": [
+      0.8593218548794643,
+      0.8544388260078497,
+      0.8578282448209636
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "flock",
+    "payload_bytes": 33554432,
+    "median_ns": 889015.625,
+    "p10_ns": 882459.375,
+    "p90_ns": 930403.125,
+    "p99_ns": 979066.1600000001,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "shared",
+    "payload_bytes": 33554432,
+    "median_ns": 889953.125,
+    "p10_ns": 881825.0,
+    "p90_ns": 925227.075,
+    "p99_ns": 1025231.25,
+    "relative_time": 1.0011742618149748,
+    "ratio_ci_low": 0.9896375076111223,
+    "ratio_ci_high": 1.0045975481734652,
+    "per_run_ratios": [
+      1.0027253967098804,
+      1.0011742618149748,
+      0.992438365324559
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "vec2",
+    "payload_bytes": 33554432,
+    "median_ns": 1773031.25,
+    "p10_ns": 1759052.1,
+    "p90_ns": 1818583.4,
+    "p99_ns": 1915434.1325000003,
+    "relative_time": 1.9852970737829443,
+    "ratio_ci_low": 1.9501468804155144,
+    "ratio_ci_high": 1.9947198179532413,
+    "per_run_ratios": [
+      1.9852970737829443,
+      1.9910568231783787,
+      1.9573397151701055
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "wide1",
+    "payload_bytes": 33554432,
+    "median_ns": 724776.125,
+    "p10_ns": 717671.8,
+    "p90_ns": 766555.2,
+    "p99_ns": 820610.3125000002,
+    "relative_time": 0.8122562104185593,
+    "ratio_ci_low": 0.8050349766514688,
+    "ratio_ci_high": 0.8182623905926221,
+    "per_run_ratios": [
+      0.8122562104185593,
+      0.8138116310485872,
+      0.8095170714559199
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "wide16",
+    "payload_bytes": 33554432,
+    "median_ns": 1110239.625,
+    "p10_ns": 1104824.05,
+    "p90_ns": 1162536.55,
+    "p99_ns": 1338593.7400000023,
+    "relative_time": 1.2519539828979238,
+    "ratio_ci_low": 1.2373574572805102,
+    "ratio_ci_high": 1.2545690002853678,
+    "per_run_ratios": [
+      1.25212803011464,
+      1.2519539828979238,
+      1.2419714540555082
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "wide2",
+    "payload_bytes": 33554432,
+    "median_ns": 723505.25,
+    "p10_ns": 717464.5,
+    "p90_ns": 765876.125,
+    "p99_ns": 800448.2850000003,
+    "relative_time": 0.813179391978571,
+    "ratio_ci_low": 0.8103118105810441,
+    "ratio_ci_high": 0.8168811551910481,
+    "per_run_ratios": [
+      0.8107789094973024,
+      0.8136143016097597,
+      0.813179391978571
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "wide4",
+    "payload_bytes": 33554432,
+    "median_ns": 724802.125,
+    "p10_ns": 718219.925,
+    "p90_ns": 767509.3,
+    "p99_ns": 808357.9375000002,
+    "relative_time": 0.8142413781298108,
+    "ratio_ci_low": 0.8029586013100496,
+    "ratio_ci_high": 0.8186808059205286,
+    "per_run_ratios": [
+      0.8175851940030953,
+      0.8142413781298108,
+      0.8082365315091355
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "1048576",
+    "variant": "wide8",
+    "payload_bytes": 33554432,
+    "median_ns": 765151.0,
+    "p10_ns": 759858.325,
+    "p90_ns": 808821.875,
+    "p99_ns": 863122.1425000001,
+    "relative_time": 0.8623901494923892,
+    "ratio_ci_low": 0.8461123395081854,
+    "ratio_ci_high": 0.8667061913777384,
+    "per_run_ratios": [
+      0.8640495559329199,
+      0.8623901494923892,
+      0.8491774027245493
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "flock",
+    "payload_bytes": 512,
+    "median_ns": 15.263000000000002,
+    "p10_ns": 15.1101,
+    "p90_ns": 15.7257,
+    "p99_ns": 16.683540000000015,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "shared",
+    "payload_bytes": 512,
+    "median_ns": 15.282499999999999,
+    "p10_ns": 15.101700000000001,
+    "p90_ns": 15.7614,
+    "p99_ns": 17.20273000000002,
+    "relative_time": 0.9980234439165967,
+    "ratio_ci_low": 0.9923381598597494,
+    "ratio_ci_high": 1.0086478343790597,
+    "per_run_ratios": [
+      1.0019567374519895,
+      0.9980234439165967,
+      0.9956751634816828
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "vec2",
+    "payload_bytes": 512,
+    "median_ns": 28.552,
+    "p10_ns": 28.2345,
+    "p90_ns": 29.7945,
+    "p99_ns": 33.61390000000006,
+    "relative_time": 1.8792327484845726,
+    "ratio_ci_low": 1.8593101023272314,
+    "ratio_ci_high": 1.8985412223902063,
+    "per_run_ratios": [
+      1.882549562633999,
+      1.8792327484845726,
+      1.861789960990709
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "wide1",
+    "payload_bytes": 512,
+    "median_ns": 13.361,
+    "p10_ns": 13.171,
+    "p90_ns": 13.8034,
+    "p99_ns": 17.6251,
+    "relative_time": 0.8725435401537208,
+    "ratio_ci_low": 0.8694445953348763,
+    "ratio_ci_high": 0.8774801912121013,
+    "per_run_ratios": [
+      0.8754758059860246,
+      0.8721072679646729,
+      0.8725435401537208
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "wide16",
+    "payload_bytes": 512,
+    "median_ns": 31.810499999999998,
+    "p10_ns": 31.502399999999998,
+    "p90_ns": 32.4554,
+    "p99_ns": 35.933830000000015,
+    "relative_time": 2.0909321869060715,
+    "ratio_ci_low": 2.066165904637492,
+    "ratio_ci_high": 2.0957924707371087,
+    "per_run_ratios": [
+      2.0909321869060715,
+      2.092907210125129,
+      2.0737374054835453
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "wide2",
+    "payload_bytes": 512,
+    "median_ns": 13.7955,
+    "p10_ns": 13.593,
+    "p90_ns": 14.2318,
+    "p99_ns": 16.015020000000032,
+    "relative_time": 0.900681560932844,
+    "ratio_ci_low": 0.8957395120069827,
+    "ratio_ci_high": 0.9043449637919684,
+    "per_run_ratios": [
+      0.9022791143493598,
+      0.900681560932844,
+      0.8963009926161057
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "wide4",
+    "payload_bytes": 512,
+    "median_ns": 13.974,
+    "p10_ns": 13.8021,
+    "p90_ns": 14.5156,
+    "p99_ns": 16.874320000000008,
+    "relative_time": 0.9165807576168798,
+    "ratio_ci_low": 0.9088646949471069,
+    "ratio_ci_high": 0.9193457215245764,
+    "per_run_ratios": [
+      0.9165807576168798,
+      0.91717580468024,
+      0.9095364719721486
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "16",
+    "variant": "wide8",
+    "payload_bytes": 512,
+    "median_ns": 15.349499999999999,
+    "p10_ns": 15.1721,
+    "p90_ns": 15.843599999999999,
+    "p99_ns": 18.45246000000001,
+    "relative_time": 1.0051583687531458,
+    "ratio_ci_low": 0.9983411376327632,
+    "ratio_ci_high": 1.0134027138330666,
+    "per_run_ratios": [
+      1.008633840050055,
+      1.0051583687531458,
+      1.0021318576097547
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "flock",
+    "payload_bytes": 2097152,
+    "median_ns": 54994.1405,
+    "p10_ns": 54536.393500000006,
+    "p90_ns": 56307.4173,
+    "p99_ns": 57481.74364,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "shared",
+    "payload_bytes": 2097152,
+    "median_ns": 54829.4295,
+    "p10_ns": 54509.8956,
+    "p90_ns": 56084.9704,
+    "p99_ns": 57714.612010000004,
+    "relative_time": 0.9959964850855959,
+    "ratio_ci_low": 0.9892305481480748,
+    "ratio_ci_high": 1.0042484592281726,
+    "per_run_ratios": [
+      0.9959964850855959,
+      0.9920863174198467,
+      1.0022522446900055
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "vec2",
+    "payload_bytes": 2097152,
+    "median_ns": 109683.59349999999,
+    "p10_ns": 109050.6563,
+    "p90_ns": 111080.6028,
+    "p99_ns": 112523.2596,
+    "relative_time": 1.9937519626167304,
+    "ratio_ci_low": 1.9822578390715422,
+    "ratio_ci_high": 2.0037271963992227,
+    "per_run_ratios": [
+      1.9913422572085464,
+      1.9937519626167304,
+      1.9979820916068025
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "wide1",
+    "payload_bytes": 2097152,
+    "median_ns": 44600.9065,
+    "p10_ns": 44065.4862,
+    "p90_ns": 45799.6826,
+    "p99_ns": 46512.678380000005,
+    "relative_time": 0.8091409924667763,
+    "ratio_ci_low": 0.8016462168983488,
+    "ratio_ci_high": 0.8174424648955743,
+    "per_run_ratios": [
+      0.8046240197708259,
+      0.8091409924667763,
+      0.8144580125481828
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "wide16",
+    "payload_bytes": 2097152,
+    "median_ns": 69421.867,
+    "p10_ns": 68804.2279,
+    "p90_ns": 71011.4547,
+    "p99_ns": 71722.29899,
+    "relative_time": 1.261086855216123,
+    "ratio_ci_low": 1.2520635951407368,
+    "ratio_ci_high": 1.2675914182937569,
+    "per_run_ratios": [
+      1.2618479851833535,
+      1.2577498140675107,
+      1.261086855216123
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "wide2",
+    "payload_bytes": 2097152,
+    "median_ns": 44321.289000000004,
+    "p10_ns": 44036.0058,
+    "p90_ns": 44984.4441,
+    "p99_ns": 46483.244,
+    "relative_time": 0.8065021006083111,
+    "ratio_ci_low": 0.7998303517942662,
+    "ratio_ci_high": 0.8087331791211456,
+    "per_run_ratios": [
+      0.8066057245362577,
+      0.8009202776141661,
+      0.8065021006083111
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "wide4",
+    "payload_bytes": 2097152,
+    "median_ns": 44379.234,
+    "p10_ns": 44042.317500000005,
+    "p90_ns": 45651.4266,
+    "p99_ns": 46371.43838,
+    "relative_time": 0.8073489989075766,
+    "ratio_ci_low": 0.8032426195703777,
+    "ratio_ci_high": 0.8135816807514605,
+    "per_run_ratios": [
+      0.8085767253271094,
+      0.8073489989075766,
+      0.8072087652661557
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "dot",
+    "size": "65536",
+    "variant": "wide8",
+    "payload_bytes": 2097152,
+    "median_ns": 47081.710999999996,
+    "p10_ns": 46666.411199999995,
+    "p90_ns": 47847.404899999994,
+    "p99_ns": 49622.736990000005,
+    "relative_time": 0.8562238230963073,
+    "ratio_ci_low": 0.8484836895388076,
+    "ratio_ci_high": 0.8650871320352753,
+    "per_run_ratios": [
+      0.8562238230963073,
+      0.8558361474964711,
+      0.857084485057473
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows21183_entries4241586",
+    "variant": "indexed_u16",
+    "payload_bytes": 25860764,
+    "median_ns": 21455729.0,
+    "p10_ns": 21065324.4,
+    "p90_ns": 21811574.4,
+    "p99_ns": 22119059.18,
+    "relative_time": 1.0235492757151727,
+    "ratio_ci_low": 1.0193576778595888,
+    "ratio_ci_high": 1.0334212117828698,
+    "per_run_ratios": [
+      1.0235492757151727,
+      1.032234453875534,
+      1.0216514590731247
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows21183_entries4241586",
+    "variant": "indexed_u32",
+    "payload_bytes": 34343936,
+    "median_ns": 20956563.0,
+    "p10_ns": 20501946.2,
+    "p90_ns": 21332471.1,
+    "p99_ns": 21701121.75,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "matrix",
+    "size": "rows21183_entries4241586",
+    "variant": "inline_aos",
+    "payload_bytes": 339496352,
+    "median_ns": 18802687.5,
+    "p10_ns": 18481183.3,
+    "p90_ns": 19046587.8,
+    "p99_ns": 19456607.82,
+    "relative_time": 0.8968550235321722,
+    "ratio_ci_low": 0.8919772920662261,
+    "ratio_ci_high": 0.9015485680092615,
+    "per_run_ratios": [
+      0.8951262222056793,
+      0.9007624714083605,
+      0.8968550235321722
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows21183_entries4241586",
+    "variant": "inline_soa",
+    "payload_bytes": 322530008,
+    "median_ns": 18890458.5,
+    "p10_ns": 18665620.6,
+    "p90_ns": 19515983.3,
+    "p99_ns": 22998225.320000008,
+    "relative_time": 0.9046721267809215,
+    "ratio_ci_low": 0.899501013421372,
+    "ratio_ci_high": 0.9092932577464838,
+    "per_run_ratios": [
+      0.9046721267809215,
+      0.9064705445190543,
+      0.9009777752493148
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows256_entries20986",
+    "variant": "indexed_u16",
+    "payload_bytes": 369748,
+    "median_ns": 105182.9375,
+    "p10_ns": 103529.0248,
+    "p90_ns": 107283.7248,
+    "p99_ns": 109575.62525,
+    "relative_time": 1.0464092939217986,
+    "ratio_ci_low": 1.0340049988958042,
+    "ratio_ci_high": 1.0499251062075907,
+    "per_run_ratios": [
+      1.049401532437105,
+      1.0464092939217986,
+      1.0362309706955555
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows256_entries20986",
+    "variant": "indexed_u32",
+    "payload_bytes": 411720,
+    "median_ns": 100629.5625,
+    "p10_ns": 98546.75600000001,
+    "p90_ns": 102983.2125,
+    "p99_ns": 104363.56501,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "matrix",
+    "size": "rows256_entries20986",
+    "variant": "inline_aos",
+    "payload_bytes": 1680936,
+    "median_ns": 90429.6715,
+    "p10_ns": 88951.3027,
+    "p90_ns": 92318.2467,
+    "p99_ns": 95326.84576000003,
+    "relative_time": 0.9026272038619982,
+    "ratio_ci_low": 0.8982818246815978,
+    "ratio_ci_high": 0.907049803150008,
+    "per_run_ratios": [
+      0.9017833253868845,
+      0.9026272038619982,
+      0.9031718333322388
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows256_entries20986",
+    "variant": "inline_soa",
+    "payload_bytes": 1596992,
+    "median_ns": 91307.313,
+    "p10_ns": 89673.83799999999,
+    "p90_ns": 92838.8223,
+    "p99_ns": 94159.73674000001,
+    "relative_time": 0.908666733688212,
+    "ratio_ci_low": 0.9008874210459085,
+    "ratio_ci_high": 0.9121393165001235,
+    "per_run_ratios": [
+      0.908666733688212,
+      0.9096530274177336,
+      0.9044859968829857
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows8_entries512",
+    "variant": "indexed_u16",
+    "payload_bytes": 244920,
+    "median_ns": 2572.0315,
+    "p10_ns": 2524.5524,
+    "p90_ns": 2609.8131000000003,
+    "p99_ns": 2694.9488900000006,
+    "relative_time": 1.0467348666803233,
+    "ratio_ci_low": 1.0453716711306822,
+    "ratio_ci_high": 1.0490295495491186,
+    "per_run_ratios": [
+      1.047447079105623,
+      1.0467348666803233,
+      1.0466521218429503
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows8_entries512",
+    "variant": "indexed_u32",
+    "payload_bytes": 245944,
+    "median_ns": 2456.4415,
+    "p10_ns": 2408.4735,
+    "p90_ns": 2486.2079,
+    "p99_ns": 2529.23109,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "matrix",
+    "size": "rows8_entries512",
+    "variant": "inline_aos",
+    "payload_bytes": 41032,
+    "median_ns": 2174.5095,
+    "p10_ns": 2129.8607,
+    "p90_ns": 2207.5811,
+    "p99_ns": 2229.22239,
+    "relative_time": 0.8821511246500233,
+    "ratio_ci_low": 0.880736307739083,
+    "ratio_ci_high": 0.8867946136998385,
+    "per_run_ratios": [
+      0.8817269177089657,
+      0.8847691097156041,
+      0.8821511246500233
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "matrix",
+    "size": "rows8_entries512",
+    "variant": "inline_soa",
+    "payload_bytes": 38984,
+    "median_ns": 2201.772,
+    "p10_ns": 2165.4782,
+    "p90_ns": 2235.4388,
+    "p99_ns": 2326.8899499999998,
+    "relative_time": 0.8975754644320226,
+    "ratio_ci_low": 0.8951233143004953,
+    "ratio_ci_high": 0.8996242646362012,
+    "per_run_ratios": [
+      0.8985689454342203,
+      0.8964830755545521,
+      0.8975754644320226
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log12_lanes8",
+    "variant": "flock",
+    "payload_bytes": 1048576,
+    "median_ns": 412112.0,
+    "p10_ns": 405308.825,
+    "p90_ns": 422628.0875,
+    "p99_ns": 435580.85250000004,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "ntt",
+    "size": "log12_lanes8",
+    "variant": "prepared_twiddle",
+    "payload_bytes": 1048576,
+    "median_ns": 383658.875,
+    "p10_ns": 377770.275,
+    "p90_ns": 402932.8125,
+    "p99_ns": 420048.7850000001,
+    "relative_time": 0.9280716825033032,
+    "ratio_ci_low": 0.9060359412717942,
+    "ratio_ci_high": 0.9657811111022618,
+    "per_run_ratios": [
+      0.9198968161002253,
+      0.9648630496237363,
+      0.9280716825033032
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log12_lanes8",
+    "variant": "reset_only",
+    "payload_bytes": 1048576,
+    "median_ns": 8461.0,
+    "p10_ns": 8276.0125,
+    "p90_ns": 9273.3625,
+    "p99_ns": 11579.062500000022,
+    "relative_time": 0.020644452377532877,
+    "ratio_ci_low": 0.02015223918700466,
+    "ratio_ci_high": 0.021278014638079674,
+    "per_run_ratios": [
+      0.02031707538464559,
+      0.02109123931220863,
+      0.020644452377532877
+    ],
+    "status": "overhead diagnostic"
+  },
+  {
+    "family": "ntt",
+    "size": "log12_lanes8",
+    "variant": "shared_generic",
+    "payload_bytes": 1048576,
+    "median_ns": 385656.25,
+    "p10_ns": 380309.9,
+    "p90_ns": 399941.7,
+    "p99_ns": 423242.24125000025,
+    "relative_time": 0.9356267104136817,
+    "ratio_ci_low": 0.9208119645473195,
+    "ratio_ci_high": 0.9493105378157704,
+    "per_run_ratios": [
+      0.9274304009043062,
+      0.9487726885453516,
+      0.9356267104136817
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log12_lanes8",
+    "variant": "shared_twiddle",
+    "payload_bytes": 1048576,
+    "median_ns": 400429.6875,
+    "p10_ns": 388663.0125,
+    "p90_ns": 410964.1375,
+    "p99_ns": 436364.085,
+    "relative_time": 0.9667176808431972,
+    "ratio_ci_low": 0.9568521795110866,
+    "ratio_ci_high": 0.9808373345839413,
+    "per_run_ratios": [
+      0.959208748259755,
+      0.9800917956663431,
+      0.9667176808431972
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "variant": "flock",
+    "payload_bytes": 33554432,
+    "median_ns": 11119187.5,
+    "p10_ns": 10945570.6,
+    "p90_ns": 11409934.0,
+    "p99_ns": 11580260.14,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "variant": "prepared_twiddle",
+    "payload_bytes": 33554432,
+    "median_ns": 12355875.0,
+    "p10_ns": 12265566.9,
+    "p90_ns": 12727171.5,
+    "p99_ns": 15396374.070000041,
+    "relative_time": 1.1212993763102184,
+    "ratio_ci_low": 1.109784812205324,
+    "ratio_ci_high": 1.1309066795282263,
+    "per_run_ratios": [
+      1.1217521285721725,
+      1.1212993763102184,
+      1.1123439842192813
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "variant": "reset_only",
+    "payload_bytes": 33554432,
+    "median_ns": 373166.5,
+    "p10_ns": 359716.4,
+    "p90_ns": 424867.2,
+    "p99_ns": 471580.0,
+    "relative_time": 0.03381523987845344,
+    "ratio_ci_low": 0.03303347606895709,
+    "ratio_ci_high": 0.034134083064755766,
+    "per_run_ratios": [
+      0.03387491978441867,
+      0.03314496547549263,
+      0.03381523987845344
+    ],
+    "status": "overhead diagnostic"
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "variant": "shared_generic",
+    "payload_bytes": 33554432,
+    "median_ns": 12560687.5,
+    "p10_ns": 12390912.2,
+    "p90_ns": 12947491.4,
+    "p99_ns": 19177465.46000006,
+    "relative_time": 1.134730993108579,
+    "ratio_ci_low": 1.1246720625239057,
+    "ratio_ci_high": 1.1413309507139682,
+    "per_run_ratios": [
+      1.1369398055808277,
+      1.134730993108579,
+      1.1275563395010408
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "variant": "shared_twiddle",
+    "payload_bytes": 33554432,
+    "median_ns": 12804333.5,
+    "p10_ns": 12655758.3,
+    "p90_ns": 13127075.3,
+    "p99_ns": 16124462.820000041,
+    "relative_time": 1.15262390004027,
+    "ratio_ci_low": 1.145016342577084,
+    "ratio_ci_high": 1.1622322795949622,
+    "per_run_ratios": [
+      1.156742079256805,
+      1.15262390004027,
+      1.1472834479127578
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes1",
+    "variant": "flock",
+    "payload_bytes": 8192,
+    "median_ns": 2586.2529999999997,
+    "p10_ns": 2528.7313,
+    "p90_ns": 2851.815,
+    "p99_ns": 3966.2470500000036,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes1",
+    "variant": "prepared_twiddle",
+    "payload_bytes": 8192,
+    "median_ns": 2383.1785,
+    "p10_ns": 2337.3066,
+    "p90_ns": 2505.8390999999997,
+    "p99_ns": 4088.1853400000014,
+    "relative_time": 0.9187268591657176,
+    "ratio_ci_low": 0.9097264252027146,
+    "ratio_ci_high": 0.9290383445585783,
+    "per_run_ratios": [
+      0.9187268591657176,
+      0.9184447845418484,
+      0.9262368001833539
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes1",
+    "variant": "reset_only",
+    "payload_bytes": 8192,
+    "median_ns": 54.565,
+    "p10_ns": 53.4341,
+    "p90_ns": 117.895,
+    "p99_ns": 150.43846000000002,
+    "relative_time": 0.021143672372241684,
+    "ratio_ci_low": 0.020546356319434668,
+    "ratio_ci_high": 0.021398365674012126,
+    "per_run_ratios": [
+      0.020688986501079285,
+      0.021159873455209113,
+      0.021143672372241684
+    ],
+    "status": "overhead diagnostic"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes1",
+    "variant": "shared_generic",
+    "payload_bytes": 8192,
+    "median_ns": 2319.285,
+    "p10_ns": 2265.713,
+    "p90_ns": 2512.2005,
+    "p99_ns": 7062.403670000059,
+    "relative_time": 0.8947480855455044,
+    "ratio_ci_low": 0.8894672458123374,
+    "ratio_ci_high": 0.9032074539821184,
+    "per_run_ratios": [
+      0.8966716868029878,
+      0.8937261252039888,
+      0.8947480855455044
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes1",
+    "variant": "shared_twiddle",
+    "payload_bytes": 8192,
+    "median_ns": 2461.0595,
+    "p10_ns": 2416.6304,
+    "p90_ns": 2608.1479999999997,
+    "p99_ns": 3078.398970000003,
+    "relative_time": 0.9510832176246256,
+    "ratio_ci_low": 0.9339503730510592,
+    "ratio_ci_high": 0.9614114043916817,
+    "per_run_ratios": [
+      0.9484522624747701,
+      0.9510832176246256,
+      0.956162865940144
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes32",
+    "variant": "flock",
+    "payload_bytes": 262144,
+    "median_ns": 46264.156,
+    "p10_ns": 45830.6285,
+    "p90_ns": 47124.9674,
+    "p99_ns": 47821.945719999996,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes32",
+    "variant": "prepared_twiddle",
+    "payload_bytes": 262144,
+    "median_ns": 39520.835999999996,
+    "p10_ns": 38999.8376,
+    "p90_ns": 40260.5843,
+    "p99_ns": 44155.134620000004,
+    "relative_time": 0.8554701338329117,
+    "ratio_ci_low": 0.8521664914948475,
+    "ratio_ci_high": 0.8575501725331054,
+    "per_run_ratios": [
+      0.8554701338329117,
+      0.8543539840228827,
+      0.8556906965151279
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes32",
+    "variant": "reset_only",
+    "payload_bytes": 262144,
+    "median_ns": 1986.4925,
+    "p10_ns": 1935.3566,
+    "p90_ns": 2185.1261999999997,
+    "p99_ns": 5869.331230000067,
+    "relative_time": 0.04271654535875988,
+    "ratio_ci_low": 0.042365401702659844,
+    "ratio_ci_high": 0.04543592888779855,
+    "per_run_ratios": [
+      0.04271654535875988,
+      0.04491261705889714,
+      0.04261648495280858
+    ],
+    "status": "overhead diagnostic"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes32",
+    "variant": "shared_generic",
+    "payload_bytes": 262144,
+    "median_ns": 43669.4335,
+    "p10_ns": 43264.7156,
+    "p90_ns": 44507.1266,
+    "p99_ns": 47894.74587000004,
+    "relative_time": 0.9478900856772372,
+    "ratio_ci_low": 0.9419296170957655,
+    "ratio_ci_high": 0.9509758182777133,
+    "per_run_ratios": [
+      0.9434328683844355,
+      0.950143047835581,
+      0.9478900856772372
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes32",
+    "variant": "shared_twiddle",
+    "payload_bytes": 262144,
+    "median_ns": 39500.6565,
+    "p10_ns": 39163.833999999995,
+    "p90_ns": 40150.2906,
+    "p99_ns": 40883.510070000004,
+    "relative_time": 0.8544238687830511,
+    "ratio_ci_low": 0.8500775980833579,
+    "ratio_ci_high": 0.8582118729112145,
+    "per_run_ratios": [
+      0.8544238687830511,
+      0.8521731064501967,
+      0.8550081852181687
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "products",
+    "size": "1024",
+    "variant": "flock",
+    "payload_bytes": 49152,
+    "median_ns": 868.7185,
+    "p10_ns": 858.066,
+    "p90_ns": 888.9502,
+    "p99_ns": 903.98852,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "products",
+    "size": "1024",
+    "variant": "karatsuba",
+    "payload_bytes": 49152,
+    "median_ns": 3080.6835,
+    "p10_ns": 3054.7203,
+    "p90_ns": 3124.2466,
+    "p99_ns": 3287.9464500000013,
+    "relative_time": 3.5553442878231403,
+    "ratio_ci_low": 3.5338554464263052,
+    "ratio_ci_high": 3.5702283461760134,
+    "per_run_ratios": [
+      3.5553442878231403,
+      3.5471148743289276,
+      3.564766761194413
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "1024",
+    "variant": "karatsuba_barrett",
+    "payload_bytes": 49152,
+    "median_ns": 1615.692,
+    "p10_ns": 1603.289,
+    "p90_ns": 1639.6959,
+    "p99_ns": 1679.6373200000003,
+    "relative_time": 1.8659080612789753,
+    "ratio_ci_low": 1.8503581941085563,
+    "ratio_ci_high": 1.8847562013332555,
+    "per_run_ratios": [
+      1.8736023240541022,
+      1.8560496129932667,
+      1.8659080612789753
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "1024",
+    "variant": "schoolbook",
+    "payload_bytes": 49152,
+    "median_ns": 2639.0789999999997,
+    "p10_ns": 2615.5212,
+    "p90_ns": 2666.5631,
+    "p99_ns": 2697.56115,
+    "relative_time": 3.042553885967414,
+    "ratio_ci_low": 3.0156354827644583,
+    "ratio_ci_high": 3.053518409278947,
+    "per_run_ratios": [
+      3.0470154427738256,
+      3.0311426873773284,
+      3.042553885967414
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "1024",
+    "variant": "shared",
+    "payload_bytes": 49152,
+    "median_ns": 919.5505,
+    "p10_ns": 911.918,
+    "p90_ns": 944.5445,
+    "p99_ns": 970.21477,
+    "relative_time": 1.0599007221932386,
+    "ratio_ci_low": 1.0489070626669532,
+    "ratio_ci_high": 1.0715790164206183,
+    "per_run_ratios": [
+      1.0710009669867673,
+      1.0510017806765828,
+      1.0599007221932386
+    ],
+    "status": "inconclusive"
+  },
+  {
+    "family": "products",
+    "size": "1048576",
+    "variant": "flock",
+    "payload_bytes": 50331648,
+    "median_ns": 897822.875,
+    "p10_ns": 891470.775,
+    "p90_ns": 946219.875,
+    "p99_ns": 1064882.5450000002,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "products",
+    "size": "1048576",
+    "variant": "karatsuba",
+    "payload_bytes": 50331648,
+    "median_ns": 3161843.75,
+    "p10_ns": 3155919.875,
+    "p90_ns": 3344142.775,
+    "p99_ns": 4059840.2675,
+    "relative_time": 3.533110466844775,
+    "ratio_ci_low": 3.518071172669891,
+    "ratio_ci_high": 3.5390474256118614,
+    "per_run_ratios": [
+      3.5365583597696295,
+      3.533110466844775,
+      3.518532128684522
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "1048576",
+    "variant": "karatsuba_barrett",
+    "payload_bytes": 50331648,
+    "median_ns": 1705880.125,
+    "p10_ns": 1699344.7,
+    "p90_ns": 1825310.275,
+    "p99_ns": 1861328.4025,
+    "relative_time": 1.9052558445514998,
+    "ratio_ci_low": 1.8939749545449718,
+    "ratio_ci_high": 1.9096498072786452,
+    "per_run_ratios": [
+      1.9065808470175978,
+      1.9052558445514998,
+      1.8978707396133014
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "1048576",
+    "variant": "schoolbook",
+    "payload_bytes": 50331648,
+    "median_ns": 2702796.875,
+    "p10_ns": 2694848.975,
+    "p90_ns": 2829831.4,
+    "p99_ns": 3572837.142500014,
+    "relative_time": 3.018263239415633,
+    "ratio_ci_low": 3.0086496321023697,
+    "ratio_ci_high": 3.02334416463313,
+    "per_run_ratios": [
+      3.018263239415633,
+      3.019986237367269,
+      3.014671696838991
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "1048576",
+    "variant": "shared",
+    "payload_bytes": 50331648,
+    "median_ns": 953807.375,
+    "p10_ns": 948192.775,
+    "p90_ns": 1058660.25,
+    "p99_ns": 1152694.0275,
+    "relative_time": 1.0662762398236687,
+    "ratio_ci_low": 1.058089271862269,
+    "ratio_ci_high": 1.0697641725443012,
+    "per_run_ratios": [
+      1.0662762398236687,
+      1.0667650914653164,
+      1.05864970885459
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "16",
+    "variant": "flock",
+    "payload_bytes": 768,
+    "median_ns": 16.5195,
+    "p10_ns": 16.1889,
+    "p90_ns": 17.412,
+    "p99_ns": 20.38638000000002,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "products",
+    "size": "16",
+    "variant": "karatsuba",
+    "payload_bytes": 768,
+    "median_ns": 51.786,
+    "p10_ns": 50.9164,
+    "p90_ns": 55.8654,
+    "p99_ns": 91.08153000000061,
+    "relative_time": 3.1571454932790415,
+    "ratio_ci_low": 3.127194027196776,
+    "ratio_ci_high": 3.1715728013623647,
+    "per_run_ratios": [
+      3.167395347589946,
+      3.133029774627321,
+      3.1571454932790415
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "16",
+    "variant": "karatsuba_barrett",
+    "payload_bytes": 768,
+    "median_ns": 28.4595,
+    "p10_ns": 28.0532,
+    "p90_ns": 30.9876,
+    "p99_ns": 33.73572,
+    "relative_time": 1.7354189674411333,
+    "ratio_ci_low": 1.7226355524997166,
+    "ratio_ci_high": 1.747485697079193,
+    "per_run_ratios": [
+      1.742859132453014,
+      1.7266987435623213,
+      1.7354189674411333
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "16",
+    "variant": "schoolbook",
+    "payload_bytes": 768,
+    "median_ns": 44.1155,
+    "p10_ns": 43.3458,
+    "p90_ns": 47.3829,
+    "p99_ns": 51.48305,
+    "relative_time": 2.6774871165391017,
+    "ratio_ci_low": 2.6632611478447923,
+    "ratio_ci_high": 2.6986478539443066,
+    "per_run_ratios": [
+      2.690488146389233,
+      2.6774871165391017,
+      2.6725599418754604
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "16",
+    "variant": "shared",
+    "payload_bytes": 768,
+    "median_ns": 17.028,
+    "p10_ns": 16.6563,
+    "p90_ns": 18.1756,
+    "p99_ns": 45.160350000000534,
+    "relative_time": 1.0355392978765265,
+    "ratio_ci_low": 1.0213476797032366,
+    "ratio_ci_high": 1.0417145583803018,
+    "per_run_ratios": [
+      1.0383565184963357,
+      1.0240890733435202,
+      1.0355392978765265
+    ],
+    "status": "within margin"
+  },
+  {
+    "family": "products",
+    "size": "65536",
+    "variant": "flock",
+    "payload_bytes": 3145728,
+    "median_ns": 55317.055,
+    "p10_ns": 54678.389500000005,
+    "p90_ns": 56868.420600000005,
+    "p99_ns": 59882.35099000006,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  },
+  {
+    "family": "products",
+    "size": "65536",
+    "variant": "karatsuba",
+    "payload_bytes": 3145728,
+    "median_ns": 198151.3675,
+    "p10_ns": 197161.71860000002,
+    "p90_ns": 201771.03329999998,
+    "p99_ns": 208067.25550000006,
+    "relative_time": 3.5902602816089404,
+    "ratio_ci_low": 3.550676220658751,
+    "ratio_ci_high": 3.608353690328882,
+    "per_run_ratios": [
+      3.5902602816089404,
+      3.5626558324454436,
+      3.604702174818488
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "65536",
+    "variant": "karatsuba_barrett",
+    "payload_bytes": 3145728,
+    "median_ns": 105340.82,
+    "p10_ns": 104398.5575,
+    "p90_ns": 107744.7168,
+    "p99_ns": 115899.35061000002,
+    "relative_time": 1.9093596132648223,
+    "ratio_ci_low": 1.8838059775473481,
+    "ratio_ci_high": 1.9201777568204523,
+    "per_run_ratios": [
+      1.9093596132648223,
+      1.8889248875529974,
+      1.9189003556409703
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "65536",
+    "variant": "schoolbook",
+    "payload_bytes": 3145728,
+    "median_ns": 169028.648,
+    "p10_ns": 168214.458,
+    "p90_ns": 171387.9561,
+    "p99_ns": 173559.18888,
+    "relative_time": 3.0506552346522913,
+    "ratio_ci_low": 3.0297585154834725,
+    "ratio_ci_high": 3.0822548288125304,
+    "per_run_ratios": [
+      3.0506552346522913,
+      3.0499857429027206,
+      3.081332594004998
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "products",
+    "size": "65536",
+    "variant": "shared",
+    "payload_bytes": 3145728,
+    "median_ns": 59161.453,
+    "p10_ns": 58214.128600000004,
+    "p90_ns": 60723.5016,
+    "p99_ns": 63437.82463000001,
+    "relative_time": 1.0607581611158476,
+    "ratio_ci_low": 1.0563168595894727,
+    "ratio_ci_high": 1.07651927135172,
+    "per_run_ratios": [
+      1.0607581611158476,
+      1.0602319320706197,
+      1.0703332778712737
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "public_coefficient_reduction",
+    "size": "complete",
+    "variant": "per_entry",
+    "payload_bytes": 305394192,
+    "median_ns": 1157195375.0,
+    "p10_ns": 1144618562.0,
+    "p90_ns": 1190259875.0,
+    "p99_ns": 1328513660.3,
+    "relative_time": 1113.1271765210709,
+    "ratio_ci_low": 1100.281831432736,
+    "ratio_ci_high": 1124.7537961756725,
+    "per_run_ratios": [
+      1108.5913577823733,
+      1113.1271765210709,
+      1120.0877656127677
+    ],
+    "status": "regression"
+  },
+  {
+    "family": "public_coefficient_reduction",
+    "size": "complete",
+    "variant": "pool_once",
+    "payload_bytes": 241776,
+    "median_ns": 1046791.5,
+    "p10_ns": 1018021.0,
+    "p90_ns": 1091374.5,
+    "p99_ns": 1149698.25,
+    "relative_time": 1.0,
+    "ratio_ci_low": 1.0,
+    "ratio_ci_high": 1.0,
+    "per_run_ratios": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "status": "baseline"
+  }
+]

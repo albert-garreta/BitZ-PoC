@@ -1,0 +1,3 @@
+BLOCKED inconclusive: aarch64/two_limb_mac/full128_n3/selected: median upper=1.0068, P95 upper=1.0101, worst process=1.0059, allocations=OK
+BLOCKED: frozen selections, 1.0% margin, all required cases.
+This applies only to the frozen manifest, measured host workloads and build; production behavior is unchanged.

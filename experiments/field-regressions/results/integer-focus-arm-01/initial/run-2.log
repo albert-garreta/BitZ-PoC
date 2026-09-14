@@ -1,0 +1,26 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=15880
+RUNTIME {"aes":true,"arch":"aarch64","arithmetic_campaign":true,"avx512f":false,"baseline_all_core_threads":1,"caller_threads":1,"candidate_all_core_threads":0,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":false,"flock_kernel":"arm-pmull","pclmulqdq":false,"seed":15880,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed two_limb_mac/signed16_n1: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n3: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n7: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n16: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n17: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n1024: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n65536: 9 variants, 32 paired samples
+completed two_limb_mac/signed16_n1048576: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n1: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n3: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n7: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n16: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n17: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n1024: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n65536: 9 variants, 32 paired samples
+completed two_limb_mac/full128_n1048576: 9 variants, 32 paired samples
+completed bounded_product/active4_n16: 11 variants, 32 paired samples
+completed bounded_product/active4_n1024: 11 variants, 32 paired samples
+completed bounded_product/active4_n65536: 11 variants, 32 paired samples
+completed bounded_product/active9_n16: 8 variants, 32 paired samples
+completed bounded_product/active9_n1024: 8 variants, 32 paired samples
+completed bounded_product/active9_n65536: 8 variants, 32 paired samples
+CORRECTNESS_COMPLETE

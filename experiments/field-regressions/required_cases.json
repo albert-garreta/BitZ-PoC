@@ -1,0 +1,226 @@
+{
+  "schema": 2,
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ]
+  },
+  "families": [
+    {
+      "name": "dot",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "wide1"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "wide1",
+        "wide2",
+        "wide4",
+        "wide8",
+        "wide16"
+      ],
+      "arm_variants": [
+        "scalar_lanes",
+        "vec2"
+      ]
+    },
+    {
+      "name": "products",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "scalar_lanes"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "shared_unroll2",
+        "shared_unroll4",
+        "shared_unroll8"
+      ],
+      "arm_variants": [
+        "scalar_lanes",
+        "schoolbook",
+        "karatsuba",
+        "karatsuba_barrett"
+      ]
+    },
+    {
+      "name": "chain",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "scalar_lanes"
+      },
+      "variants": [
+        "flock",
+        "shared"
+      ],
+      "arm_variants": [
+        "scalar_lanes",
+        "schoolbook",
+        "karatsuba",
+        "karatsuba_barrett"
+      ]
+    },
+    {
+      "name": "square",
+      "sizes": [
+        "16",
+        "1024",
+        "65536",
+        "1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "shared"
+      },
+      "variants": [
+        "flock",
+        "shared"
+      ],
+      "arm_variants": []
+    },
+    {
+      "name": "inverse",
+      "sizes": [
+        "1",
+        "16",
+        "1024"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "shared"
+      },
+      "variants": [
+        "flock",
+        "shared"
+      ],
+      "arm_variants": []
+    },
+    {
+      "name": "fixed_prepare",
+      "sizes": [
+        "zero",
+        "half",
+        "full"
+      ],
+      "baseline": "existing_prepare",
+      "selected": {},
+      "variants": [
+        "existing_prepare"
+      ],
+      "arm_variants": []
+    },
+    {
+      "name": "fixed",
+      "sizes": [
+        "zero_n16",
+        "zero_n1024",
+        "zero_n65536",
+        "zero_n1048576",
+        "half_n16",
+        "half_n1024",
+        "half_n65536",
+        "half_n1048576",
+        "full_n16",
+        "full_n1024",
+        "full_n65536",
+        "full_n1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "scalar_lanes"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "prepared",
+        "specialized"
+      ],
+      "arm_variants": [
+        "scalar_lanes"
+      ]
+    },
+    {
+      "name": "butterfly",
+      "sizes": [
+        "zero_n16",
+        "zero_n1024",
+        "zero_n65536",
+        "zero_n1048576",
+        "half_n16",
+        "half_n1024",
+        "half_n65536",
+        "half_n1048576",
+        "full_n16",
+        "full_n1024",
+        "full_n65536",
+        "full_n1048576"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "scalar_lanes"
+      },
+      "variants": [
+        "flock",
+        "shared",
+        "prepared",
+        "specialized"
+      ],
+      "arm_variants": [
+        "scalar_lanes"
+      ]
+    },
+    {
+      "name": "ntt",
+      "sizes": [
+        "log8_lanes1",
+        "log8_lanes32",
+        "log12_lanes8",
+        "log15_lanes32",
+        "log16_lanes32",
+        "log17_lanes32",
+        "log18_lanes32"
+      ],
+      "baseline": "flock",
+      "selected": {
+        "aarch64": "preserved_schedule"
+      },
+      "variants": [
+        "flock",
+        "preserved_schedule",
+        "shared_generic",
+        "shared_twiddle",
+        "prepared_twiddle",
+        "reset_only"
+      ],
+      "arm_variants": []
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+arch=aarch64 shared_kernel=neon sha3=true seed=2718281
+RUNTIME {"aes":true,"arch":"aarch64","arithmetic_campaign":true,"avx512f":false,"baseline_all_core_threads":1,"caller_threads":1,"candidate_all_core_threads":0,"candidate_mul_kernel":"arm-pmull-scalar-lanes","candidate_snapshot":false,"flock_kernel":"arm-pmull","pclmulqdq":false,"seed":2718281,"sha3":true,"shared_kernel":"neon","vpclmulqdq":false}
+correctness: all basis products, 4096 random products, square/encoding/inversion, dot tails passed
+completed two_limb_mac/signed16_n1: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n3: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n7: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n16: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n17: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n1024: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n65536: 10 variants, 8 paired samples
+completed two_limb_mac/signed16_n1048576: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n1: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n3: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n7: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n16: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n17: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n1024: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n65536: 10 variants, 8 paired samples
+completed two_limb_mac/full128_n1048576: 10 variants, 8 paired samples
+CORRECTNESS_COMPLETE
