@@ -15,7 +15,7 @@ use crate::{
     piop::spartan::{
         f2z::SpartanF2zField as F,
         matrix::{eq_table, make_equality_factors},
-        raw_monty::{Raw, RawMontyCtx},
+        raw_monty::{Raw, RawMontyCtx, make_equality_factors_raw},
         sumcheck::OuterSumcheckProof,
     },
     poly::mle::{CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension},
@@ -258,16 +258,18 @@ impl<'a> ModQCoefficients<'a> {
             .collect();
         #[cfg(not(feature = "parallel"))]
         let p256_evaluations = tail.iter().map(|&value| self.ctx.field(value)).collect();
-        let (instance_weights, sha_local_evaluations) =
-            self.build_sha_factors(relation, claim, cfg)?;
+        let (instance_weights, sha_local_evaluations) = self.build_sha_factors(relation, claim, cfg)?;
         Ok(BatchedMatrixMle {
             ctx: self.ctx,
             num_vars: relation.h_layout.row_vars + relation.h_layout.col_vars,
-            instance_weights,
-            sha_local_evaluations,
+            instance_weights: instance_weights.iter().map(|&value| self.ctx.field(value)).collect(),
+            sha_local_evaluations: sha_local_evaluations
+                .iter()
+                .map(|&value| self.ctx.field(value))
+                .collect(),
             p256_evaluations,
             p256_montgomery_evaluations: tail,
-            constant_weight: weights.constant,
+            constant_weight: self.ctx.field(weights.constant),
             p256_assignment_offset: relation.map.h_offset,
             tail_runs,
         })
@@ -293,6 +295,7 @@ impl<'a> ModQCoefficients<'a> {
             relation.h_layout.row_vars + relation.h_layout.col_vars,
             assignment_point,
         )?;
+        let ctx = self.ctx;
         let weights = {
             let _scope = crate::utils::prof::scope("ecdsa:ce_rows");
             self.build_row_weights(relation, claim, cfg)?
@@ -301,30 +304,34 @@ impl<'a> ModQCoefficients<'a> {
             let _scope = crate::utils::prof::scope("ecdsa:ce_sha_factors");
             self.build_sha_factors(relation, claim, cfg)?
         };
-        let equality = {
-            let _scope = crate::utils::prof::scope("ecdsa:ce_eq");
-            equality_weights(assignment_point, cfg)?
-        };
-        let mut value = {
-            let _scope = crate::utils::prof::scope("ecdsa:ce_sha_eval");
-            evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?
-        };
-        value += &(weights.constant * &equality.at(0));
         let columns = {
             let _scope = crate::utils::prof::scope("ecdsa:ce_columns");
-            TailEqualityColumns::new(self.ctx, relation.map.h_offset, &equality)
+            TailEqualityColumns::new(ctx, relation.map.h_offset, assignment_point)
         };
+        // The SHA part `Σ_{i,j} instances[i]·sha[j]·eq(i + N·j)` factors over
+        // the low `log N` and the remaining coordinates.
+        let mut value = {
+            let _scope = crate::utils::prof::scope("ecdsa:ce_sha_eval");
+            let eq_instances = ctx.raw_vec(&eq_table(&assignment_point[..relation.log_n], cfg).map_err(error)?);
+            let dot_instances = instances
+                .iter()
+                .zip(&eq_instances)
+                .fold(0 as Raw, |sum, (&value, &weight)| ctx.add(sum, ctx.mul(value, weight)));
+            let local = RawEqualityWeights::new(ctx, &assignment_point[relation.log_n..]);
+            ctx.mul(dot_instances, local.dot(&sha))
+        };
+        value = ctx.add(value, ctx.mul(weights.constant, columns.eq_at(0)));
         let tail = {
             let _scope = crate::utils::prof::scope("ecdsa:ce_forward");
             self.tape
                 .apply_forward_weighted(&row_triples(&weights.matrix_rows), &columns)
                 .map_err(|e| error(format!("P-256 tape: {e}")))?
         };
-        value += &self.ctx.field(words_raw(tail));
+        value = ctx.add(value, words_raw(tail));
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
-            value += &(self.ctx.field(weight) * &equality.at(relation.map.h_offset + cell));
+            value = ctx.add(value, ctx.mul(weight, columns.eq_at(relation.map.h_offset + cell)));
         }
-        Ok(value)
+        Ok(ctx.field(value))
     }
 
     /// The reverse-mode evaluation the forward pass replaced: the tape's
@@ -342,12 +349,12 @@ impl<'a> ModQCoefficients<'a> {
             relation.h_layout.row_vars + relation.h_layout.col_vars,
             assignment_point,
         )?;
-        let weights = self.build_row_weights(relation, claim, cfg)?;
+        let weights = self.build_row_weights_field(relation, claim, cfg)?;
         let tail = self.tape_tail(relation, &weights.matrix_rows)?;
         // The verifier adds the public-bit weights separately below, so the
         // tape's runs describe `tail` unsplit.
         let runs = self.tail_runs(relation, cfg, false);
-        let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
+        let (instances, sha) = self.build_sha_factors_field(relation, claim, cfg)?;
         let equality = equality_weights(assignment_point, cfg)?;
         let mut value = evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?;
         value += &(weights.constant * &equality.at(0));
@@ -358,12 +365,65 @@ impl<'a> ModQCoefficients<'a> {
         Ok(value)
     }
 
+    /// The per-row `[A, B, C]` weights, the public-bit weights and the constant
+    /// weight, in raw residues throughout (the equality weights as raw
+    /// `low · high` products); `build_row_weights_field` is the test oracle.
     fn build_row_weights(
         &self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        cfg: &Config,
+        _cfg: &Config,
     ) -> Result<RowWeights> {
+        let ctx = self.ctx;
+        let linear = RawEqualityWeights::new(ctx, &claim.linear_row_point);
+        let outer = RawEqualityWeights::new(ctx, &claim.outer_row_point);
+        let batch = ctx.raw(&claim.matrix_batch_challenge);
+        let batch_squared = ctx.mul(batch, batch);
+        let linear_batch = ctx.raw(&claim.linear_batch_weight);
+        let mut matrix_rows = vec![0 as Raw; 3 * relation.local.rows()];
+        let matrix_weights = |slots: &mut [Raw], weight| {
+            slots[0] = weight;
+            slots[1] = ctx.mul(weight, batch);
+            slots[2] = ctx.mul(weight, batch_squared);
+        };
+        match relation.mode {
+            OuterMode::Split => {
+                for (index, &row) in relation.local.nonlinear.iter().enumerate() {
+                    matrix_weights(&mut matrix_rows[3 * row..3 * row + 3], outer.at(index));
+                }
+                for (index, &row) in relation.local.linear.iter().enumerate() {
+                    matrix_rows[3 * row + 2] =
+                        ctx.mul(linear.at(256 * relation.compressions() + index), linear_batch);
+                }
+            }
+            OuterMode::AllRows => {
+                for row in 0..relation.local.rows() {
+                    let weight = outer.at(256 * relation.compressions() + row);
+                    matrix_weights(&mut matrix_rows[3 * row..3 * row + 3], weight);
+                }
+            }
+        }
+        let public_start = public_row_start(relation);
+        let constant = ctx.mul(linear.at(public_start), linear_batch);
+        let public_bits = (0..1024)
+            .map(|bit| ctx.mul(linear.at(public_start + 1 + bit), linear_batch))
+            .collect();
+        Ok(RowWeights {
+            matrix_rows,
+            public_bits,
+            constant,
+        })
+    }
+
+    /// [`Self::build_row_weights`] with the equality weights and the products
+    /// taken in the field domain; kept as the test oracle.
+    #[cfg(test)]
+    fn build_row_weights_field(
+        &self,
+        relation: &PreparedSha256Ecdsa,
+        claim: &InnerSumcheckClaim,
+        cfg: &Config,
+    ) -> Result<RowWeightsField> {
         let ctx = self.ctx;
         let linear = equality_weights(&claim.linear_row_point, cfg)?;
         let outer = equality_weights(&claim.outer_row_point, cfg)?;
@@ -401,7 +461,7 @@ impl<'a> ModQCoefficients<'a> {
         let public_bits = (0..1024)
             .map(|bit| ctx.raw(&(linear.at(public_start + 1 + bit) * &claim.linear_batch_weight)))
             .collect();
-        Ok(RowWeights {
+        Ok(RowWeightsField {
             matrix_rows,
             public_bits,
             constant,
@@ -441,7 +501,36 @@ impl<'a> ModQCoefficients<'a> {
             })
     }
 
+    /// The SHA part's factors `(instances, sha)` in raw residues: the
+    /// batched matrix MLE's entry `i + N·j` is `instances[i] · sha[j]`.
+    /// `build_sha_factors_field` is the test oracle.
     fn build_sha_factors(
+        &self,
+        relation: &PreparedSha256Ecdsa,
+        claim: &InnerSumcheckClaim,
+        cfg: &Config,
+    ) -> Result<(Vec<Raw>, Vec<Raw>)> {
+        let ctx = self.ctx;
+        let batch = ctx.raw(&claim.matrix_batch_challenge);
+        let (point, multiplier) = match relation.mode {
+            OuterMode::Split => (&claim.linear_row_point, ctx.raw(&claim.linear_batch_weight)),
+            OuterMode::AllRows => (&claim.outer_row_point, ctx.mul(batch, batch)),
+        };
+        let instances = ctx.raw_vec(&eq_table(&point[..relation.log_n], cfg).map_err(error)?);
+        let local_weights = RawEqualityWeights::new(ctx, &point[relation.log_n..]);
+        let mut sha = vec![0 as Raw; SHA_H];
+        for row in 0..relation.local.sha_c.rows() {
+            let weight = ctx.mul(local_weights.at(row), multiplier);
+            for (column, coefficient) in relation.local.sha_c.row(row) {
+                sha[column] = ctx.add(sha[column], ctx.mul(weight, self.residues[coefficient]));
+            }
+        }
+        Ok((instances, sha))
+    }
+
+    /// [`Self::build_sha_factors`] in the field domain; kept as the test oracle.
+    #[cfg(test)]
+    fn build_sha_factors_field(
         &self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
@@ -549,8 +638,10 @@ struct TailEqualityColumns {
 }
 
 impl TailEqualityColumns {
-    fn new(ctx: RawMontyCtx, offset: usize, equality: &EqualityWeights<F>) -> Self {
-        let (low, high) = (ctx.raw_vec(equality.low()), ctx.raw_vec(equality.high()));
+    /// The equality tables of `point`, split at half the point (as
+    /// `make_equality_factors` splits them).
+    fn new(ctx: RawMontyCtx, offset: usize, point: &[F]) -> Self {
+        let (low, high) = make_equality_factors_raw(&ctx, point);
         let block = low.len();
         let mut suffix = vec![0 as Raw; block + 1];
         for t in (0..block).rev() {
@@ -575,13 +666,18 @@ impl TailEqualityColumns {
     }
 }
 
+impl TailEqualityColumns {
+    /// `eq(point, index)` over the whole assignment domain.
+    #[inline]
+    fn eq_at(&self, index: usize) -> Raw {
+        self.ctx
+            .mul(self.low[index & self.mask], self.high[index >> self.shift])
+    }
+}
+
 impl ForwardColumns for TailEqualityColumns {
     fn scalar(&self, column: usize) -> [u64; 2] {
-        let index = self.offset + column;
-        raw_words(
-            self.ctx
-                .mul(self.low[index & self.mask], self.high[index >> self.shift]),
-        )
+        raw_words(self.eq_at(self.offset + column))
     }
 
     fn power_sum(&self, first: usize, len: usize) -> [u64; 2] {
@@ -613,7 +709,61 @@ struct RowWeights {
     /// Slot `3 * row + matrix` for A/B/C.
     matrix_rows: Vec<Raw>,
     public_bits: Vec<Raw>,
+    constant: Raw,
+}
+
+/// The field-domain oracle's form of [`RowWeights`].
+#[cfg(test)]
+struct RowWeightsField {
+    matrix_rows: Vec<Raw>,
+    public_bits: Vec<Raw>,
     constant: F,
+}
+
+/// [`EqualityWeights`] in raw residues: `eq(index) = low[index mod L] · high[index / L]`
+/// with the tables split at half the point, as `make_equality_factors` splits
+/// them, so every weight is the same residue one raw product later.
+struct RawEqualityWeights {
+    ctx: RawMontyCtx,
+    low: Vec<Raw>,
+    high: Vec<Raw>,
+    shift: u32,
+    mask: usize,
+}
+
+impl RawEqualityWeights {
+    fn new(ctx: RawMontyCtx, point: &[F]) -> Self {
+        let (low, high) = make_equality_factors_raw(&ctx, point);
+        let block = low.len();
+        Self {
+            ctx,
+            low,
+            high,
+            shift: block.ilog2(),
+            mask: block - 1,
+        }
+    }
+
+    #[inline]
+    fn at(&self, index: usize) -> Raw {
+        self.ctx
+            .mul(self.low[index & self.mask], self.high[index >> self.shift])
+    }
+
+    /// `Σ_j values[j] · eq(j)`, with the high factor applied once per block:
+    /// `Σ_h high[h] · Σ_l low[l] · values[h·L + l]`.
+    fn dot(&self, values: &[Raw]) -> Raw {
+        let ctx = self.ctx;
+        let mut sum = 0 as Raw;
+        for (h, block) in values.chunks(self.low.len()).enumerate() {
+            let inner = block
+                .iter()
+                .zip(&self.low)
+                .fold(0 as Raw, |acc, (&value, &low)| ctx.add(acc, ctx.mul(value, low)));
+            sum = ctx.add(sum, ctx.mul(inner, self.high[h]));
+        }
+        sum
+    }
 }
 
 fn equality_weights(point: &[F], cfg: &Config) -> Result<EqualityWeights<F>> {
@@ -854,6 +1004,74 @@ mod tests {
             assert!(end <= prepared.p256_evaluations.len());
             // The lifts cover most of the P-256 witness; the rest are scalar columns.
             assert!(covered * 10 > prepared.p256_evaluations.len() * 8, "{mode:?}: only {covered} of {} covered", prepared.p256_evaluations.len());
+        }
+    }
+
+    /// The raw-residue row weights and SHA factors are the field-domain ones
+    /// residue for residue (both outer modes, random claims, a sampled 113-bit
+    /// prime and `2^127 − 1`).
+    #[test]
+    fn raw_factor_builders_match_field_builders() {
+        let (statement, _) = fixture();
+        for modulus in [sampled_prime(), (1u128 << 127) - 1] {
+            let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let mut state = 0x1357_9BDF_2468_ACE0_u64 ^ modulus as u64;
+            let mut random = move || {
+                state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = state;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^ (z >> 31)
+            };
+            let mut element = || {
+                let value = (u128::from(random()) << 64) | u128::from(random());
+                F::from_with_cfg(value % modulus, &cfg)
+            };
+            for mode in [OuterMode::Split, OuterMode::AllRows] {
+                let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+                let outer = OuterSumcheckProof {
+                    sumcheck: SumcheckProof {
+                        round_polynomials: Vec::new(),
+                    },
+                    az_mle_claim: element(),
+                    bz_mle_claim: element(),
+                    cz_mle_claim: element(),
+                };
+                let claim = InnerSumcheckClaim::from_outer_claims(
+                    &relation,
+                    &statement,
+                    &outer,
+                    (0..relation.outer_sumcheck_num_vars()).map(|_| element()).collect(),
+                    element(),
+                    (0..relation.linear_vars()).map(|_| element()).collect(),
+                    element(),
+                    &cfg,
+                )
+                .unwrap();
+                let coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
+                let ctx = coefficients.ctx;
+                let raw = coefficients.build_row_weights(&relation, &claim, &cfg).unwrap();
+                let field = coefficients.build_row_weights_field(&relation, &claim, &cfg).unwrap();
+                assert_eq!(raw.matrix_rows, field.matrix_rows, "{mode:?} rows");
+                assert_eq!(raw.public_bits, field.public_bits, "{mode:?} public bits");
+                assert_eq!(ctx.field(raw.constant), field.constant, "{mode:?} constant");
+                let (instances, sha) = coefficients.build_sha_factors(&relation, &claim, &cfg).unwrap();
+                let (instances_field, sha_field) =
+                    coefficients.build_sha_factors_field(&relation, &claim, &cfg).unwrap();
+                assert_eq!(ctx.raw_vec(&instances_field), instances, "{mode:?} instances");
+                assert_eq!(ctx.raw_vec(&sha_field), sha, "{mode:?} sha");
+                // The grouped raw dot is the factored MLE's evaluation.
+                let vars = relation.h_layout.row_vars + relation.h_layout.col_vars;
+                let point: Vec<F> = (0..vars).map(|_| element()).collect();
+                let expected = evaluate_sha_factors(&instances_field, &sha_field, &point, &cfg).unwrap();
+                let eq_instances = ctx.raw_vec(&eq_table(&point[..relation.log_n], &cfg).unwrap());
+                let dot_instances = instances
+                    .iter()
+                    .zip(&eq_instances)
+                    .fold(0 as Raw, |sum, (&v, &w)| ctx.add(sum, ctx.mul(v, w)));
+                let local = RawEqualityWeights::new(ctx, &point[relation.log_n..]);
+                assert_eq!(ctx.field(ctx.mul(dot_instances, local.dot(&sha))), expected, "{mode:?} sha dot");
+            }
         }
     }
 
