@@ -68,6 +68,7 @@ use crate::ligerito::{
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
+use crate::virt_batch::{AffineTailPlanes, RhoTables};
 use crate::pcs::{
     IntegerMatrixLayout, ModQWeightChunks, ModQWeightSource, ShaF2Layout, final_eval_ring,
 };
@@ -11082,18 +11083,11 @@ where
 
         let weights = {
             let _g = crate::utils::prof::scope("mqv:vwprep");
-            VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
+            VirtColumnWeights::new_factored_tail(self.map, points, &etas, self.derived_row_bits)
         };
-        let a_cols = crate::dual_basis::dual_basis_cols();
         let a_prime = {
             let _g = crate::utils::prof::scope("mqv:vaprime");
-            virtual_a_prime(
-                self.map,
-                &weights,
-                &rho,
-                &a_cols,
-                1usize << self.source_packed_vars,
-            )
+            verifier_a_prime(self.map, &weights, &rho, 1usize << self.source_packed_vars)
         };
         Ok(PreparedLigeritoClaim {
             packed_vars: self.source_packed_vars,
@@ -11402,6 +11396,75 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
     }
 }
 
+/// The verifier's factored weights and plane-engine basis on the real
+/// SHA-256 + ECDSA map are the prover's folded weights and the streamed
+/// basis: at 2^3 (tail phase 8 — straddling packs) and 2^7 (phase 0), both
+/// outer modes, one and two weight chunks, random points and a random ρ
+/// as well as the protocol's eq-tensor ρ. (No modulus enters: the weights
+/// live in GF(2^128).)
+#[cfg(all(test, feature = "ecdsa"))]
+#[test]
+fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
+    use crate::{
+        f2map::VirtualMap,
+        piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+    };
+    let splitmix = |x: u64| {
+        let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    };
+    let sample = |seed: u64| Gf::from_words([splitmix(seed), splitmix(seed ^ 0xD1CE)]);
+    for (log_n, mode) in [
+        (3usize, OuterMode::Split),
+        (3, OuterMode::AllRows),
+        (7, OuterMode::Split),
+        (7, OuterMode::AllRows),
+    ] {
+        let prepared = prepare_sha256_ecdsa(log_n, 100, mode).unwrap();
+        let map = prepared.map();
+        let t_wh = prepared.assignment_params().row_vars;
+        let vars = map.rows().ilog2() as usize;
+        let n_packs = map.cols() >> LOG_PACKING;
+        for chunks in [1usize, 2] {
+            let points: Vec<Vec<Gf>> = (0..chunks as u64)
+                .map(|l| (0..vars as u64).map(|i| sample(0x7A00 + (log_n as u64) * 977 + l * 131 + i)).collect())
+                .collect();
+            let etas: Vec<Gf> = (0..chunks as u64).map(|l| sample(0x9B00 + l)).collect();
+            let dense = VirtColumnWeights::new(map, &points, &etas, t_wh);
+            let factored = VirtColumnWeights::new_factored_tail(map, &points, &etas, t_wh);
+            assert!(
+                matches!(
+                    factored,
+                    VirtColumnWeights::PackedSourceRepeated {
+                        affine_tail: Some(_),
+                        ..
+                    }
+                ),
+                "the P-256 tail is an identity map and must stay factored"
+            );
+            let mut expected = [Gf::zero(); 128];
+            let mut actual = expected;
+            for pack in 0..n_packs {
+                let live = dense.pack_weights(pack, &mut expected);
+                assert_eq!(factored.pack_weights(pack, &mut actual), live, "pack {pack}");
+                assert_eq!(actual, expected, "2^{log_n} {mode:?} chunks {chunks} pack {pack}");
+            }
+            let a_cols = crate::dual_basis::dual_basis_cols();
+            let rhos = [
+                (0..128u64).map(|i| sample(0xC000 + i)).collect::<Vec<_>>(),
+                crate::poly::utils::build_eq_x_r_vec(&points[0][..LOG_PACKING], &()).unwrap(),
+            ];
+            for rho in &rhos {
+                let streamed = virtual_a_prime(map, &dense, rho, &a_cols, n_packs);
+                let engines = verifier_a_prime(map, &factored, rho, n_packs);
+                assert_eq!(engines, streamed, "2^{log_n} {mode:?} chunks {chunks}");
+            }
+        }
+    }
+}
+
 /// Per-prove column-weight engine for the batching passes: fills whole
 /// 128-column source packs with `W_j = Σ_{r:M[r,j]=1} E_r`
 /// (`E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`).
@@ -11477,6 +11540,48 @@ impl ExtraWeightTerm {
     }
 }
 
+/// Verifier-side factored form of an identity compact tail
+/// ([`crate::f2map::ChainedSourceTail`] whose local map is the identity):
+/// source column `j ∈ [source_start, source_start + len)` carries the
+/// derived-row weight `E_{row_start + (j − source_start)}` — one
+/// [`VirtRowCoeffs::coeff`] per cell, evaluated on demand by
+/// [`VirtColumnWeights::pack_weights`] and consumed by the affine-tail plane
+/// engine ([`AffineTailPlanes`]) without ever being materialized.
+struct AffineTailWeights {
+    source_start: usize,
+    len: usize,
+    row_start: usize,
+    coeffs: VirtRowCoeffs,
+}
+
+impl AffineTailWeights {
+    fn end(&self) -> usize {
+        self.source_start + self.len
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    fn add_pack(&self, pack: usize, out: &mut [Gf; 128]) {
+        let base = pack << LOG_PACKING;
+        let lo = base.max(self.source_start);
+        let hi = (base + 128).min(self.end());
+        for column in lo..hi {
+            out[column - base] += self
+                .coeffs
+                .coeff(self.row_start + (column - self.source_start));
+        }
+    }
+
+    fn planes(&self) -> AffineTailPlanes {
+        AffineTailPlanes::new(
+            self.source_start,
+            self.len,
+            self.row_start,
+            &self.coeffs.eq_rs,
+            &self.coeffs.scaled_zc,
+        )
+    }
+}
+
 struct DenseWeightCorrection {
     start: usize,
     weights: Vec<Gf>,
@@ -11542,6 +11647,9 @@ enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
         extra: Vec<ExtraWeightTerm>,
         /// Appended compact relation and its source aliases, including column zero.
         corrections: Vec<DenseWeightCorrection>,
+        /// Verifier-side: an identity compact tail kept factored instead of
+        /// folded into `corrections` (see [`Self::new_factored_tail`]).
+        affine_tail: Option<AffineTailWeights>,
         _map: core::marker::PhantomData<&'a M>,
     },
     /// The streamed per-nonzero fold (any map).
@@ -11567,8 +11675,30 @@ fn packed_source_point_split<'p>(
 }
 
 impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
-    #[allow(clippy::arithmetic_side_effects)]
+    /// The weights with every compact-tail column folded (the prover's form:
+    /// its batching message reads the tail weights per cell).
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
+        Self::new_with_tail(map, points, etas, t_wh, false)
+    }
+
+    /// The verifier's form: an identity compact tail stays factored
+    /// ([`AffineTailWeights`]) — its alias columns still fold, the dense
+    /// remainder is never materialized — so the ρ-batched basis can take it
+    /// through the affine-tail plane engine. Every weight is the same value
+    /// as in [`Self::new`] (pinned by
+    /// `verifier_basis_matches_streamed_basis_on_the_ecdsa_map`).
+    fn new_factored_tail(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
+        Self::new_with_tail(map, points, etas, t_wh, true)
+    }
+
+    #[allow(clippy::arithmetic_side_effects)]
+    fn new_with_tail(
+        map: &'a M,
+        points: &[Vec<Gf>],
+        etas: &[Gf],
+        t_wh: usize,
+        factored_tail: bool,
+    ) -> Self {
         use crate::poly::utils::build_eq_x_r_vec;
         if let Some(parts) = map.chained_packed_source()
             && parts.instances.is_power_of_two()
@@ -11667,12 +11797,22 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     .filter(|term| !term.is_empty())
                     .collect();
                 let mut corrections = Vec::new();
+                let mut affine_tail = None;
                 if let Some(tail) = map.chained_packed_source_tail() {
                     let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
-                    // One weight per tail column (1.2M for P-256); the columns
-                    // are independent, so they are folded in parallel.
                     let matrix = tail.map.matrix();
-                    let weights: Vec<Gf> = cfg_into_iter!(0..matrix.columns().len(), 1 << 12)
+                    let aliases_len = tail.aliases.len();
+                    // An identity tail's dense part is `coeff(row_offset + c)`
+                    // column for column; the verifier keeps it factored and
+                    // folds only the alias columns.
+                    let factored = factored_tail
+                        && tail.map.is_identity()
+                        && matrix.column_count() >= aliases_len;
+                    let folded = if factored { aliases_len } else { matrix.column_count() };
+                    // One weight per folded tail column (1.2M for P-256 when
+                    // dense); the columns are independent, so they are folded
+                    // in parallel.
+                    let weights: Vec<Gf> = cfg_into_iter!(0..folded, 1 << 12)
                         .map(|column| {
                             matrix.column(column).map_or(Gf::zero(), |col| {
                                 col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
@@ -11699,10 +11839,19 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                             });
                         }
                     }
-                    corrections.push(DenseWeightCorrection {
-                        start: tail.source_offset,
-                        weights: weights[tail.aliases.len()..].to_vec(),
-                    });
+                    if factored {
+                        affine_tail = Some(AffineTailWeights {
+                            source_start: tail.source_offset,
+                            len: matrix.column_count() - aliases_len,
+                            row_start: tail.row_offset + aliases_len,
+                            coeffs,
+                        });
+                    } else {
+                        corrections.push(DenseWeightCorrection {
+                            start: tail.source_offset,
+                            weights: weights[aliases_len..].to_vec(),
+                        });
+                    }
                 }
                 return Self::PackedSourceRepeated {
                     local_width,
@@ -11714,6 +11863,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     constant_weight,
                     extra,
                     corrections,
+                    affine_tail,
                     _map: core::marker::PhantomData,
                 };
             }
@@ -11792,6 +11942,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     constant_weight,
                     extra: Vec::new(),
                     corrections: Vec::new(),
+                    affine_tail: None,
                     _map: core::marker::PhantomData,
                 };
             }
@@ -11930,6 +12081,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 constant_weight,
                 extra,
                 corrections,
+                affine_tail,
                 ..
             } => {
                 out.fill(Gf::zero());
@@ -11963,6 +12115,9 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 }
                 for correction in corrections {
                     correction.add_pack(pack, out);
+                }
+                if let Some(tail) = affine_tail {
+                    tail.add_pack(pack, out);
                 }
                 out.iter().any(|weight| *weight != Gf::zero())
             }
@@ -12098,6 +12253,27 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         }
     }
 
+    /// The extra terms' (chained nonconstant terms and corrections)
+    /// contribution to the ρ-batched basis `a′`, per touched pack: the
+    /// pack's extra weights through `Φ_ρ` (`phi_tables`) and the dual-basis
+    /// combination — exactly the per-cell kernel restricted to those packs.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn extra_a_prime_deltas(&self, phi_tables: &[Gf]) -> Vec<(usize, Gf)> {
+        let packs = self.extra_packs();
+        cfg_iter!(packs)
+            .map(|&pack| {
+                let mut pack_w = [Gf::zero(); 128];
+                if !self.pack_weights_extra(pack, &mut pack_w) {
+                    return (pack, Gf::zero());
+                }
+                for value in &mut pack_w {
+                    *value = phi_from_words(*value.words(), phi_tables);
+                }
+                (pack, crate::dual_basis::dual_basis_linear_combination(&pack_w))
+            })
+            .collect()
+    }
+
     /// Adds the extra terms' contribution to the ρ-batched basis `a′` and
     /// to flock's round-0 pair computed by the plane engine for the plain
     /// part (both are linear in `a′`).
@@ -12109,23 +12285,11 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         rho: &[Gf],
         p_msg: &[F128],
     ) {
-        let packs = self.extra_packs();
-        if packs.is_empty() {
+        let phi_tables = phi_byte_tables(rho, Gf::one());
+        let deltas = self.extra_a_prime_deltas(&phi_tables);
+        if deltas.is_empty() {
             return;
         }
-        let phi_tables = phi_byte_tables(rho, Gf::one());
-        let deltas: Vec<(usize, Gf)> = cfg_iter!(packs)
-            .map(|&pack| {
-                let mut pack_w = [Gf::zero(); 128];
-                if !self.pack_weights_extra(pack, &mut pack_w) {
-                    return (pack, Gf::zero());
-                }
-                for value in &mut pack_w {
-                    *value = phi_from_words(*value.words(), &phi_tables);
-                }
-                (pack, crate::dual_basis::dual_basis_linear_combination(&pack_w))
-            })
-            .collect();
         for &(pack, delta) in &deltas {
             basis[pack] += delta;
         }
@@ -12246,10 +12410,12 @@ where
         VirtColumnWeights::PackedSourceRepeated {
             live_cols,
             corrections,
+            affine_tail,
             ..
         } => corrections
             .iter()
             .map(DenseWeightCorrection::end)
+            .chain(affine_tail.iter().map(AffineTailWeights::end))
             .fold(*live_cols, usize::max)
             .div_ceil(1usize << LOG_PACKING)
             .min(n_packs),
@@ -12325,6 +12491,61 @@ where
         F128::ZERO,
         gf_to_f128,
     )
+}
+
+/// The verifier's ρ-batched Ligerito basis `a′`: the packed-source plane
+/// engine for the plain repetition (with the constant column), the
+/// affine-tail engine for an identity compact tail, and the per-pack kernel
+/// for the chained terms and the alias corrections — three exact
+/// rearrangements of [`virtual_a_prime`]'s per-cell sum
+/// `a′(y) = Σ_v Φ_ρ(W_{(y,v)})·A(e_v)` over the three parts of the weights
+/// (`W = W_plain + W_tail + W_extra` cell for cell, and both `Φ_ρ` and the
+/// dual-basis combination are additive), so the basis is the same field
+/// vector [`virtual_a_prime`] returns on the folded weights (pinned by
+/// `verifier_basis_matches_streamed_basis_on_the_ecdsa_map`). Any other
+/// shape, or the plane engine opted out, takes [`virtual_a_prime`] itself.
+fn verifier_a_prime<M>(
+    map: &M,
+    weights: &VirtColumnWeights<'_, M>,
+    rho: &[Gf],
+    n_packs: usize,
+) -> Vec<Gf>
+where
+    M: crate::f2map::VirtualMap,
+{
+    let planes = {
+        let _g = crate::utils::prof::scope("mqv:vplanes");
+        weights.packed_source_planes()
+    };
+    let Some(planes) = planes else {
+        let a_cols = crate::dual_basis::dual_basis_cols();
+        return virtual_a_prime(map, weights, rho, &a_cols, n_packs);
+    };
+    let rho_tables = phi_byte_tables(rho, Gf::one());
+    let coefficient_tables = {
+        let _g = crate::utils::prof::scope("mqv:vrho");
+        RhoTables::new(&rho_tables)
+    };
+    let mut basis = vec![Gf::zero(); n_packs];
+    {
+        let _g = crate::utils::prof::scope("mqv:vaprime_plain");
+        planes.add_a_prime(&coefficient_tables, &rho_tables, &mut basis);
+    }
+    if let VirtColumnWeights::PackedSourceRepeated {
+        affine_tail: Some(tail),
+        ..
+    } = weights
+    {
+        let _g = crate::utils::prof::scope("mqv:vaprime_tail");
+        tail.planes().add_a_prime(&coefficient_tables, &mut basis);
+    }
+    {
+        let _g = crate::utils::prof::scope("mqv:vaprime_extra");
+        for (pack, delta) in weights.extra_a_prime_deltas(&rho_tables) {
+            basis[pack] += delta;
+        }
+    }
+    basis
 }
 
 /// General virtual commitment bridge: apply `M^T` to the batched residual
