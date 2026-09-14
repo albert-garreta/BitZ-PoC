@@ -381,7 +381,7 @@ fn half_depth(ntt: &AdditiveNttF128, data: &mut [F128], lanes: usize, layer: usi
         serial_tree(ntt, b, lanes, layer + 1, block * 2 + 1);
     }
 }
-fn tiled_ntt(ntt: &AdditiveNttF128, data: &mut [F128], lanes: usize) {
+pub(crate) fn tiled_ntt(ntt: &AdditiveNttF128, data: &mut [F128], lanes: usize) {
     assert!(lanes.is_power_of_two());
     assert!(data.len().is_power_of_two() && data.len() >= lanes);
     let log = (data.len() / lanes).ilog2() as usize;

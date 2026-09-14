@@ -1,0 +1,51 @@
+[
+  {
+    "family": "ntt",
+    "scalar_calls": 1024,
+    "scalar_substitution_exercised": true,
+    "size": "log8_lanes1",
+    "specialized_kernels": "unchanged production"
+  },
+  {
+    "family": "ntt",
+    "scalar_calls": 32768,
+    "scalar_substitution_exercised": true,
+    "size": "log8_lanes32",
+    "specialized_kernels": "unchanged production"
+  },
+  {
+    "family": "ntt",
+    "scalar_calls": 196608,
+    "scalar_substitution_exercised": true,
+    "size": "log12_lanes8",
+    "specialized_kernels": "unchanged production"
+  },
+  {
+    "family": "ntt",
+    "scalar_calls": 305664,
+    "scalar_substitution_exercised": true,
+    "size": "log15_lanes32",
+    "specialized_kernels": "unchanged production"
+  },
+  {
+    "family": "ntt",
+    "scalar_calls": 43520,
+    "scalar_substitution_exercised": true,
+    "size": "log16_lanes32",
+    "specialized_kernels": "unchanged production"
+  },
+  {
+    "family": "ntt",
+    "scalar_calls": 43520,
+    "scalar_substitution_exercised": true,
+    "size": "log17_lanes32",
+    "specialized_kernels": "unchanged production"
+  },
+  {
+    "family": "ntt",
+    "scalar_calls": 174592,
+    "scalar_substitution_exercised": true,
+    "size": "log18_lanes32",
+    "specialized_kernels": "unchanged production"
+  }
+]

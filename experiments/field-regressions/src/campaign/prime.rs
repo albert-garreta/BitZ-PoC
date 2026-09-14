@@ -165,6 +165,7 @@ fn verify(rng: &mut Rng) {
 
 pub(super) fn run(samples: usize, rng: &mut Rng) {
     verify(rng);
+    extra(samples, rng);
     for (bits, q) in MODULI {
         let cfg = config(q);
         let ctx = Ctx::new(&cfg);
@@ -218,7 +219,7 @@ pub(super) fn run(samples: usize, rng: &mut Rng) {
             },
         )];
         measure("prime_setup", &bits.to_string(), &mut setup, samples, rng);
-        for n in [16, 1024, 1048576] {
+        for n in [16, 1024, 65536, 1048576] {
             let size = format!("q{bits}_n{n}");
             if !["prime_mul", "prime_dot", "prime_linear"]
                 .iter()
@@ -331,6 +332,14 @@ pub(super) fn run(samples: usize, rng: &mut Rng) {
                     let bb = black_box(&b).clone();
                     black_box(product_sum::<1, false>(q, &aa, &bb).reduce_raw(black_box(&red)));
                 }));
+                // Inputs already have the raw representation. Borrowing keeps
+                // conversion out of both allocation and traversal costs.
+                cases.push(Case::new("borrowed_delayed", n * 32, || {
+                    black_box(
+                        product_sum::<2, false>(q, black_box(&a), black_box(&b))
+                            .reduce_raw(black_box(&red)),
+                    );
+                }));
                 measure("prime_dot", &size, &mut cases, samples, rng);
             }
             if case_requested("prime_linear", &size) {
@@ -367,5 +376,262 @@ pub(super) fn run(samples: usize, rng: &mut Rng) {
                 measure("prime_linear", &size, &mut cases, samples, rng);
             }
         }
+    }
+}
+
+#[inline(never)]
+fn bit_sum<const K: usize>(ctx: &Ctx, a: &[u128], bits: &[bool]) -> Linear {
+    use crate::production_delayed::Accumulatable;
+    let mut acc = [Linear::zero(); K];
+    for (aa, bb) in a.chunks(K).zip(bits.chunks(K)) {
+        for j in 0..aa.len() {
+            acc[j].multiply_accumulate(&ctx.field(aa[j]), &bb[j]);
+        }
+    }
+    acc.into_iter().fold(Linear::zero(), |a, b| a + b)
+}
+fn extra(samples: usize, rng: &mut Rng) {
+    for (bits, q) in MODULI {
+        let cfg = config(q);
+        let ctx = Ctx::new(&cfg);
+        let red = Reducer::new(&cfg).unwrap();
+        let reference = Reference::new(&cfg).unwrap();
+        for n in [1, 3, 7, 16, 17, 1024, 65536, 1048576] {
+            let size = format!("q{bits}_n{n}");
+            if ![
+                "prime_add",
+                "prime_sub",
+                "prime_chain",
+                "prime_bits",
+                "prime_fold",
+            ]
+            .iter()
+            .any(|f| case_requested(f, &size))
+            {
+                continue;
+            }
+            let a: Vec<_> = (0..2 * n).map(|_| random(rng) % q).collect();
+            let b: Vec<_> = (0..n).map(|_| random(rng) % q).collect();
+            for family in ["prime_add", "prime_sub"] {
+                if !case_requested(family, &size) {
+                    continue;
+                }
+                let mut out = vec![0; n];
+                let mut configured_out = vec![ctx.field(0); n];
+                let fa: Vec<_> = a[..n].iter().map(|&a| ctx.field(a)).collect();
+                let fb: Vec<_> = b.iter().map(|&a| ctx.field(a)).collect();
+                for ((&a, &b), o) in a.iter().zip(&b).zip(&mut out) {
+                    *o = if family == "prime_add" {
+                        ctx.add(a, b)
+                    } else {
+                        ctx.sub(a, b)
+                    };
+                    let aa = BigUint::from(a);
+                    let bb = BigUint::from(b);
+                    let qq = BigUint::from(q);
+                    let want = if family == "prime_add" {
+                        (aa + bb) % &qq
+                    } else {
+                        (aa + &qq - bb) % &qq
+                    };
+                    assert_eq!(*o, want.to_u128().unwrap());
+                }
+                for ((a, b), o) in fa.iter().zip(&fb).zip(&mut configured_out) {
+                    *o = if family == "prime_add" { a + b } else { a - b };
+                }
+                assert!(
+                    configured_out
+                        .iter()
+                        .zip(&out)
+                        .all(|(a, &b)| ctx.raw(a) == b)
+                );
+                let mut cases = vec![
+                    Case::new("raw_ctx", n * 48, || {
+                        if family == "prime_add" {
+                            binary(&a[..n], &b, &mut out, |&a, &b| ctx.add(a, b));
+                        } else {
+                            binary(&a[..n], &b, &mut out, |&a, &b| ctx.sub(a, b));
+                        }
+                        black_box(&out);
+                    }),
+                    Case::new(
+                        "configured_field",
+                        n * std::mem::size_of::<MontyField<2>>() * 3,
+                        || {
+                            if family == "prime_add" {
+                                binary(&fa, &fb, &mut configured_out, |a, b| a + b);
+                            } else {
+                                binary(&fa, &fb, &mut configured_out, |a, b| a - b);
+                            }
+                            black_box(&configured_out);
+                        },
+                    ),
+                ];
+                measure(family, &size, &mut cases, samples, rng);
+            }
+            if case_requested("prime_chain", &size) {
+                let fa: Vec<_> = a[..n].iter().map(|&a| ctx.field(a)).collect();
+                let raw = || {
+                    black_box(&a[..n])
+                        .iter()
+                        .fold(ctx.one(), |s, &a| ctx.mul(s, a))
+                };
+                let configured = || {
+                    black_box(&fa)
+                        .iter()
+                        .fold(ctx.field(ctx.one()), |s, a| s * a)
+                };
+                assert_eq!(raw(), ctx.raw(&configured()));
+                let mut cases = vec![
+                    Case::new("raw_ctx", n * 16, || {
+                        black_box(raw());
+                    }),
+                    Case::new(
+                        "configured_field",
+                        n * std::mem::size_of::<MontyField<2>>(),
+                        || {
+                            black_box(configured());
+                        },
+                    ),
+                ];
+                measure("prime_chain", &size, &mut cases, samples, rng);
+            }
+            if case_requested("prime_bits", &size) {
+                let b: Vec<_> = (0..n).map(|_| rng.next() & 1 != 0).collect();
+                let expected = (a
+                    .iter()
+                    .zip(&b)
+                    .filter(|(_, b)| **b)
+                    .fold(BigUint::zero(), |s, (&a, _)| s + BigUint::from(a))
+                    % BigUint::from(q))
+                .to_u128()
+                .unwrap();
+                let mut cases = Vec::new();
+                macro_rules! v {
+                    ($name:literal,$k:literal) => {{
+                        assert_eq!(bit_sum::<$k>(&ctx, &a[..n], &b).reduce_raw(&red), expected);
+                        cases.push(Case::new($name, n * 17, || {
+                            black_box(
+                                bit_sum::<$k>(black_box(&ctx), black_box(&a[..n]), black_box(&b))
+                                    .reduce_raw(black_box(&red)),
+                            );
+                        }));
+                    }};
+                }
+                v!("existing_bits", 1);
+                v!("acc2", 2);
+                v!("acc4", 4);
+                v!("acc8", 8);
+                measure("prime_bits", &size, &mut cases, samples, rng);
+            }
+            if case_requested("prime_fold", &size) {
+                let rho = b[0];
+                let mut cases = Vec::new();
+                let mut expected = Vec::new();
+                for name in ["raw_ctx", "unroll4"] {
+                    let mut out = vec![0; n];
+                    let a = &a;
+                    let ctx = &ctx;
+                    let apply = move |out: &mut [u128]| {
+                        let u = if name == "raw_ctx" { 1 } else { 4 };
+                        for (aa, oo) in black_box(a).chunks(2 * u).zip(out.chunks_mut(u)) {
+                            for i in 0..oo.len() {
+                                oo[i] = ctx.interpolate(aa[2 * i], aa[2 * i + 1], black_box(rho));
+                            }
+                        }
+                    };
+                    apply(&mut out);
+                    if name == "raw_ctx" {
+                        expected = out.clone();
+                    } else {
+                        assert_eq!(out, expected);
+                    }
+                    cases.push(Case::new(name, n * 48, move || {
+                        apply(black_box(&mut out));
+                        black_box(&out);
+                    }));
+                }
+                measure("prime_fold", &size, &mut cases, samples, rng);
+            }
+        }
+        for terms in [1, 1024, 1048576] {
+            for pattern in ["uniform", "carry"] {
+                let size = format!("q{bits}_{pattern}_n{terms}");
+                if !["prime_reduce_product_inputs", "prime_reduce_linear_inputs"]
+                    .iter()
+                    .any(|f| case_requested(f, &size))
+                {
+                    continue;
+                }
+                let mut product = Product::zero();
+                let mut linear = Linear::zero();
+                let mut ps = BigUint::zero();
+                let mut ls = BigUint::zero();
+                for _ in 0..terms {
+                    let a = if pattern == "carry" {
+                        q - 1
+                    } else {
+                        random(rng) % q
+                    };
+                    let b = if pattern == "carry" {
+                        q - 1
+                    } else {
+                        random(rng) % q
+                    };
+                    let c = if pattern == "carry" {
+                        u64::MAX
+                    } else {
+                        rng.next()
+                    };
+                    product.multiply_accumulate_raw(a, b);
+                    linear.multiply_accumulate_raw(a, c);
+                    ps += BigUint::from(a) * BigUint::from(b);
+                    ls += BigUint::from(a) * BigUint::from(c);
+                }
+                let pr: MontyField<2> = product.reduce(&reference).unwrap();
+                let lr: MontyField<2> = linear.reduce(&reference).unwrap();
+                assert_eq!(product.reduce_raw(&red), ctx.raw(&pr));
+                assert_eq!(linear.reduce_raw(&red), ctx.raw(&lr));
+                assert_eq!(
+                    linear.reduce_raw(&red),
+                    (ls % BigUint::from(q)).to_u128().unwrap()
+                );
+                // Multiplying the output by R recovers the unreduced product sum mod q.
+                assert_eq!(
+                    (BigUint::from(product.reduce_raw(&red)) * (BigUint::from(1u8) << 128usize))
+                        % BigUint::from(q),
+                    ps % BigUint::from(q)
+                );
+                let mut pc = vec![
+                    Case::new("existing_optimized", 40, || {
+                        black_box(black_box(product).reduce_raw(black_box(&red)));
+                    }),
+                    Case::new("crypto_bigint", 40, || {
+                        let x: MontyField<2> =
+                            black_box(product).reduce(black_box(&reference)).unwrap();
+                        black_box(ctx.raw(&x));
+                    }),
+                ];
+                measure("prime_reduce_product_inputs", &size, &mut pc, samples, rng);
+                let mut lc = vec![
+                    Case::new("existing_optimized", 40, || {
+                        black_box(black_box(linear).reduce_raw(black_box(&red)));
+                    }),
+                    Case::new("crypto_bigint", 40, || {
+                        let x: MontyField<2> =
+                            black_box(linear).reduce(black_box(&reference)).unwrap();
+                        black_box(ctx.raw(&x));
+                    }),
+                ];
+                measure("prime_reduce_linear_inputs", &size, &mut lc, samples, rng);
+            }
+        }
+    }
+}
+
+#[inline(never)]
+fn binary<T>(a: &[T], b: &[T], out: &mut [T], op: impl Fn(&T, &T) -> T) {
+    for ((a, b), o) in black_box(a).iter().zip(black_box(b)).zip(black_box(out)) {
+        *o = op(a, b);
     }
 }

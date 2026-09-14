@@ -1,0 +1,6 @@
+{
+  "archive": "frozen-runs.tar.xz",
+  "bytes": 100325020,
+  "sha256": "ea83c62e9616ecd1a447326cc3e1f3d2d0729ef084ce65b8cacd7592ceb6c909",
+  "contents": "Exact confirmation/refinement binaries and sources, frozen manifests, raw measurements, and development evidence."
+}

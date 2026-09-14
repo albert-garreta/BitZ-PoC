@@ -1,0 +1,1329 @@
+[
+  {
+    "family": "gf_round_single",
+    "size": "1",
+    "selected": "barrett",
+    "challenger": "binius",
+    "implementation_aliases": {
+      "native": "barrett"
+    },
+    "ranking": [
+      {
+        "variant": "barrett",
+        "ns_per_term": 15.588999999999999,
+        "median_ns": 15.588999999999999,
+        "production_ratio": 0.8297838355872644
+      },
+      {
+        "variant": "binius",
+        "ns_per_term": 15.737,
+        "median_ns": 15.737,
+        "production_ratio": 0.8380691634991095
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 18.796,
+        "median_ns": 18.796,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.9909168863340426,
+      "p95_ratio": 0.9912269874576304,
+      "median_ci_low": 0.9894551108980736,
+      "median_ci_high": 0.9920213864396514,
+      "p95_ci_low": 0.9721098225814901,
+      "p95_ci_high": 0.9944965541753911,
+      "per_run_medians": [
+        0.990371126131871,
+        0.9920117119124153,
+        0.9890528319847692,
+        0.991436455326842,
+        0.9909168863340426
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "1023",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 2.186439882697947,
+        "median_ns": 2236.728,
+        "production_ratio": 0.2931371330934683
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 7.462519550342131,
+        "median_ns": 7634.1575,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.2931371330934683,
+      "p95_ratio": 0.2927917373532726,
+      "median_ci_low": 0.2925465728191616,
+      "median_ci_high": 0.29328618456848243,
+      "p95_ci_low": 0.2900306517195649,
+      "p95_ci_high": 0.29411088453382644,
+      "per_run_medians": [
+        0.29247340810771344,
+        0.2932022543971477,
+        0.2931371330934683,
+        0.29326642846795126,
+        0.2926609198132136
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "1024",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 2.1718837890625,
+        "median_ns": 2224.009,
+        "production_ratio": 0.2908619218796913
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 7.46319482421875,
+        "median_ns": 7642.3115,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.2908619218796913,
+      "p95_ratio": 0.29021935036050706,
+      "median_ci_low": 0.2905883240315851,
+      "median_ci_high": 0.29120582702327413,
+      "p95_ci_low": 0.28899488424471437,
+      "p95_ci_high": 0.291427788961505,
+      "per_run_medians": [
+        0.29059548836202415,
+        0.2911071835130916,
+        0.2908619218796913,
+        0.2908280064999929,
+        0.29120987862711206
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "1025",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 2.177181463414634,
+        "median_ns": 2231.611,
+        "production_ratio": 0.29166824569982447
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 7.465372682926829,
+        "median_ns": 7652.007,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.29166824569982447,
+      "p95_ratio": 0.2914198300682586,
+      "median_ci_low": 0.2910561946085272,
+      "median_ci_high": 0.2919821025280491,
+      "p95_ci_low": 0.2902554559920506,
+      "p95_ci_high": 0.29222419632654445,
+      "per_run_medians": [
+        0.29197880857669434,
+        0.29166824569982447,
+        0.2909843782482182,
+        0.2919529851734289,
+        0.2912606230267881
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "15",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 3.9072666666666667,
+        "median_ns": 58.609,
+        "production_ratio": 0.47581891882022126
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 8.216566666666667,
+        "median_ns": 123.2485,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.47581891882022126,
+      "p95_ratio": 0.4796426975254579,
+      "median_ci_low": 0.47515443474227165,
+      "median_ci_high": 0.4762059873054417,
+      "p95_ci_low": 0.4728984795572281,
+      "p95_ci_high": 0.4839322506615804,
+      "per_run_medians": [
+        0.4751052731834044,
+        0.47624650564574045,
+        0.4754345937431492,
+        0.4760755244527891,
+        0.47581891882022126
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "16",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 2.84575,
+        "median_ns": 45.532,
+        "production_ratio": 0.3516317209801522
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 8.094593750000001,
+        "median_ns": 129.51350000000002,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.3516317209801522,
+      "p95_ratio": 0.3512229794803028,
+      "median_ci_low": 0.35118549780562597,
+      "median_ci_high": 0.3518664974950475,
+      "p95_ci_low": 0.34996589391406907,
+      "p95_ci_high": 0.3557405969291353,
+      "per_run_medians": [
+        0.35122024636473087,
+        0.3518173219835158,
+        0.3517432867219404,
+        0.3516317209801522,
+        0.3513033952307847
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "17",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 3.1294117647058823,
+        "median_ns": 53.2,
+        "production_ratio": 0.3855526102990503
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 8.118029411764708,
+        "median_ns": 138.00650000000002,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.3855526102990503,
+      "p95_ratio": 0.38513814480468317,
+      "median_ci_low": 0.38489196373313844,
+      "median_ci_high": 0.3859066634206253,
+      "p95_ci_low": 0.3828787207243753,
+      "p95_ci_high": 0.3895336544375291,
+      "per_run_medians": [
+        0.3848108954311931,
+        0.385393347967515,
+        0.3858259430744445,
+        0.3855526102990503,
+        0.38591967154846624
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "3",
+    "selected": "binius",
+    "challenger": "barrett",
+    "implementation_aliases": {
+      "native": "barrett"
+    },
+    "ranking": [
+      {
+        "variant": "binius",
+        "ns_per_term": 10.8775,
+        "median_ns": 32.6325,
+        "production_ratio": 0.9582372383400662
+      },
+      {
+        "variant": "barrett",
+        "ns_per_term": 11.153333333333334,
+        "median_ns": 33.46,
+        "production_ratio": 0.9829159015791409
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 11.35,
+        "median_ns": 34.05,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.9749394419689583,
+      "p95_ratio": 0.9739730582506334,
+      "median_ci_low": 0.9744643745600368,
+      "median_ci_high": 0.975662258541606,
+      "p95_ci_low": 0.9671580702953725,
+      "p95_ci_high": 0.9879075429033448,
+      "per_run_medians": [
+        0.9749394419689583,
+        0.9754084906364245,
+        0.9748233149551006,
+        0.9753816736876698,
+        0.9748923959827832
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "4",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 5.835875,
+        "median_ns": 23.3435,
+        "production_ratio": 0.5784717229068008
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 10.076125000000001,
+        "median_ns": 40.304500000000004,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.5784717229068008,
+      "p95_ratio": 0.5775134122435103,
+      "median_ci_low": 0.5750526043905647,
+      "median_ci_high": 0.598919793835532,
+      "p95_ci_low": 0.573603937238086,
+      "p95_ci_high": 0.6020163724657194,
+      "per_run_medians": [
+        0.5862912944625973,
+        0.5746852713178295,
+        0.5778478420079194,
+        0.599139640979867,
+        0.5784717229068008
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "5",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 5.7358,
+        "median_ns": 28.679000000000002,
+        "production_ratio": 0.5877983976035864
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 9.7651,
+        "median_ns": 48.825500000000005,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.5877983976035864,
+      "p95_ratio": 0.5876991817288862,
+      "median_ci_low": 0.5857765947130689,
+      "median_ci_high": 0.6157587767463569,
+      "p95_ci_low": 0.5850947077473376,
+      "p95_ci_high": 0.6160606205922685,
+      "per_run_medians": [
+        0.6158971529012611,
+        0.5856696222643637,
+        0.5877983976035864,
+        0.5883545859579046,
+        0.5875567768196778
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "65536",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 2.1832656860351562,
+        "median_ns": 143082.5,
+        "production_ratio": 0.29085645455159576
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 7.495563980102539,
+        "median_ns": 491229.281,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.29085645455159576,
+      "p95_ratio": 0.2900860236608727,
+      "median_ci_low": 0.2906290657577986,
+      "median_ci_high": 0.2926507906319606,
+      "p95_ci_low": 0.2891538805197357,
+      "p95_ci_high": 0.2927156372059485,
+      "per_run_medians": [
+        0.29303711255329123,
+        0.2915708364238361,
+        0.29066861965593477,
+        0.29085645455159576,
+        0.2906365496213846
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "7",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 6.0445714285714285,
+        "median_ns": 42.312,
+        "production_ratio": 0.664893491635695
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 9.094214285714285,
+        "median_ns": 63.6595,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.664893491635695,
+      "p95_ratio": 0.6637186346261927,
+      "median_ci_low": 0.6618215796389519,
+      "median_ci_high": 0.6664680470728438,
+      "p95_ci_low": 0.6552523280162363,
+      "p95_ci_high": 0.6661424460429719,
+      "per_run_medians": [
+        0.664893491635695,
+        0.6652870819033557,
+        0.6669778461152253,
+        0.6617697864321608,
+        0.6621207116228588
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "8",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 3.5613124999999997,
+        "median_ns": 28.490499999999997,
+        "production_ratio": 0.4071197364754303
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 8.745125,
+        "median_ns": 69.961,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.4071197364754303,
+      "p95_ratio": 0.4071064476746839,
+      "median_ci_low": 0.4066622289980173,
+      "median_ci_high": 0.4084507671053106,
+      "p95_ci_low": 0.40445339793965474,
+      "p95_ci_high": 0.4128352558280565,
+      "per_run_medians": [
+        0.4085948548002343,
+        0.40659867597065663,
+        0.40710228287663897,
+        0.4071197364754303,
+        0.4072703588657152
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_single",
+    "size": "9",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 4.023611111111112,
+        "median_ns": 36.212500000000006,
+        "production_ratio": 0.4606064846025669
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 8.727833333333333,
+        "median_ns": 78.5505,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.4606064846025669,
+      "p95_ratio": 0.461142841264749,
+      "median_ci_low": 0.4590698018175764,
+      "median_ci_high": 0.4613451664341478,
+      "p95_ci_low": 0.4589481887428039,
+      "p95_ci_high": 0.462168425463192,
+      "per_run_medians": [
+        0.4606064846025669,
+        0.46106363984185694,
+        0.46131272558293485,
+        0.4591399768043537,
+        0.4589274360572353
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "1",
+    "selected": "production",
+    "challenger": "barrett",
+    "implementation_aliases": {
+      "native": "production"
+    },
+    "ranking": [
+      {
+        "variant": "production",
+        "ns_per_term": 25.442,
+        "median_ns": 25.442,
+        "production_ratio": 1.0
+      },
+      {
+        "variant": "barrett",
+        "ns_per_term": 31.887999999999998,
+        "median_ns": 31.887999999999998,
+        "production_ratio": 1.2533425088478176
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.797866499333281,
+      "p95_ratio": 0.7987523372216795,
+      "median_ci_low": 0.7956710439004342,
+      "median_ci_high": 0.8056645241923431,
+      "p95_ci_low": 0.7943761175633889,
+      "p95_ci_high": 0.8083569710075733,
+      "per_run_medians": [
+        0.7977097445363954,
+        0.7955525585334107,
+        0.7980619728927488,
+        0.8059701492537313,
+        0.797866499333281
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "1023",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 4.3482135874877805,
+        "median_ns": 4448.2225,
+        "production_ratio": 0.3057579488486189
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 14.224366568914956,
+        "median_ns": 14551.527,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.3057579488486189,
+      "p95_ratio": 0.3015087924896281,
+      "median_ci_low": 0.3055063802963252,
+      "median_ci_high": 0.30596117409535134,
+      "p95_ci_low": 0.29795863539366596,
+      "p95_ci_high": 0.3056908418625489,
+      "per_run_medians": [
+        0.305620424055601,
+        0.3058549591693845,
+        0.3058825526679502,
+        0.30551518256579674,
+        0.3057579488486189
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "1024",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 4.319564453125,
+        "median_ns": 4423.234,
+        "production_ratio": 0.3035166823266171
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 14.23328076171875,
+        "median_ns": 14574.8795,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.3035166823266171,
+      "p95_ratio": 0.303026071962284,
+      "median_ci_low": 0.3033174308775404,
+      "median_ci_high": 0.30373850587129436,
+      "p95_ci_low": 0.3023197919588311,
+      "p95_ci_high": 0.30399011793035047,
+      "per_run_medians": [
+        0.3035166823266171,
+        0.3033642390150234,
+        0.30333285363734624,
+        0.3036797322614689,
+        0.30358076729639916
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "1025",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 4.327795609756097,
+        "median_ns": 4435.9905,
+        "production_ratio": 0.30430191591805933
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 14.22032487804878,
+        "median_ns": 14575.832999999999,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.30430191591805933,
+      "p95_ratio": 0.3038491501385255,
+      "median_ci_low": 0.3041423962296638,
+      "median_ci_high": 0.3044617330531587,
+      "p95_ci_low": 0.3022505241342645,
+      "p95_ci_high": 0.3047794454005195,
+      "per_run_medians": [
+        0.30430191591805933,
+        0.30439129007150895,
+        0.3041950043477452,
+        0.3043274831232186,
+        0.30425647498489644
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "15",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 7.124066666666667,
+        "median_ns": 106.861,
+        "production_ratio": 0.4747973626569119
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 15.013566666666666,
+        "median_ns": 225.2035,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.4747973626569119,
+      "p95_ratio": 0.4738369968932589,
+      "median_ci_low": 0.47095937484368383,
+      "median_ci_high": 0.4753067741858333,
+      "p95_ci_low": 0.4691150620041089,
+      "p95_ci_high": 0.47523333167162407,
+      "per_run_medians": [
+        0.47386812114762095,
+        0.47548646785420423,
+        0.4698650364985959,
+        0.4747973626569119,
+        0.4749120990003067
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "16",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 5.06859375,
+        "median_ns": 81.0975,
+        "production_ratio": 0.33925522800446606
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 14.941875,
+        "median_ns": 239.07,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.33925522800446606,
+      "p95_ratio": 0.33798427522515967,
+      "median_ci_low": 0.3350122255958299,
+      "median_ci_high": 0.33950790976753925,
+      "p95_ci_low": 0.33427126293358395,
+      "p95_ci_high": 0.33914796139935627,
+      "per_run_medians": [
+        0.33940433364009037,
+        0.33975460663405666,
+        0.33925522800446606,
+        0.33491334066170214,
+        0.3379072265443098
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "17",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 5.666323529411764,
+        "median_ns": 96.3275,
+        "production_ratio": 0.3788139725079425
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 15.034941176470587,
+        "median_ns": 255.594,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.3788139725079425,
+      "p95_ratio": 0.37511169881701906,
+      "median_ci_low": 0.37464790361278943,
+      "median_ci_high": 0.3798357901710717,
+      "p95_ci_low": 0.37419753705604125,
+      "p95_ci_high": 0.37852666084420555,
+      "per_run_medians": [
+        0.3788139725079425,
+        0.3763063427066255,
+        0.3789996177234446,
+        0.3741606403704545,
+        0.37979207020595324
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "3",
+    "selected": "production",
+    "challenger": "binius",
+    "implementation_aliases": {
+      "native": "production"
+    },
+    "ranking": [
+      {
+        "variant": "production",
+        "ns_per_term": 18.098,
+        "median_ns": 54.294,
+        "production_ratio": 1.0
+      },
+      {
+        "variant": "binius",
+        "ns_per_term": 22.257166666666667,
+        "median_ns": 66.7715,
+        "production_ratio": 1.2300254171731684
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.812991330128925,
+      "p95_ratio": 0.8104742798552365,
+      "median_ci_low": 0.8126809670058809,
+      "median_ci_high": 0.8143617050973045,
+      "p95_ci_low": 0.8031386797683674,
+      "p95_ci_high": 0.8178899202120729,
+      "per_run_medians": [
+        0.8144589699165222,
+        0.8131141642868385,
+        0.8128133371245567,
+        0.812991330128925,
+        0.8128531126293655
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "4",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 7.415375,
+        "median_ns": 29.6615,
+        "production_ratio": 0.43129879089357687
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 17.1735,
+        "median_ns": 68.694,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.43129879089357687,
+      "p95_ratio": 0.4282796933900277,
+      "median_ci_low": 0.43072633459135967,
+      "median_ci_high": 0.4325386304916663,
+      "p95_ci_low": 0.42551245359601836,
+      "p95_ci_high": 0.4327187754406482,
+      "per_run_medians": [
+        0.430911161066184,
+        0.43264439596997173,
+        0.43200436919716007,
+        0.43086303259054953,
+        0.43129879089357687
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "5",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 8.902199999999999,
+        "median_ns": 44.510999999999996,
+        "production_ratio": 0.536439794990394
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 16.6027,
+        "median_ns": 83.0135,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.536439794990394,
+      "p95_ratio": 0.5366112094097938,
+      "median_ci_low": 0.5334060840202842,
+      "median_ci_high": 0.5371564252081759,
+      "p95_ci_low": 0.53122559985842,
+      "p95_ci_high": 0.5387844385411452,
+      "per_run_medians": [
+        0.5334754899325652,
+        0.5373223644045769,
+        0.536439794990394,
+        0.5342623946686235,
+        0.5368491612014928
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "65536",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 4.378871444702149,
+        "median_ns": 286973.71900000004,
+        "production_ratio": 0.30563121523180464
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 14.30694580078125,
+        "median_ns": 937620.0,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.30563121523180464,
+      "p95_ratio": 0.3059066680963276,
+      "median_ci_low": 0.3049976624733978,
+      "median_ci_high": 0.3064599108177456,
+      "p95_ci_low": 0.30344866515014635,
+      "p95_ci_high": 0.30695189908323156,
+      "per_run_medians": [
+        0.3066384878935162,
+        0.30563121523180464,
+        0.3047816663012027,
+        0.30617458477390147,
+        0.30516465565987094
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "7",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 10.343857142857145,
+        "median_ns": 72.40700000000001,
+        "production_ratio": 0.6510286916447805
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 15.885285714285715,
+        "median_ns": 111.197,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.6510286916447805,
+      "p95_ratio": 0.6506207609171801,
+      "median_ci_low": 0.6502900790085008,
+      "median_ci_high": 0.6549369303559166,
+      "p95_ci_low": 0.6460426622531881,
+      "p95_ci_high": 0.6605900526746815,
+      "per_run_medians": [
+        0.6517581226300094,
+        0.6510286916447805,
+        0.6502200862378728,
+        0.6550383240801096,
+        0.6509529037018374
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "8",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 5.8494375000000005,
+        "median_ns": 46.795500000000004,
+        "production_ratio": 0.37290637258412307
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 15.693312500000001,
+        "median_ns": 125.54650000000001,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.37290637258412307,
+      "p95_ratio": 0.3719643254291334,
+      "median_ci_low": 0.37247031154628196,
+      "median_ci_high": 0.37319223001782226,
+      "p95_ci_low": 0.3705028189884525,
+      "p95_ci_high": 0.3763123593711244,
+      "per_run_medians": [
+        0.37319731415250357,
+        0.3730538706959546,
+        0.37266751864193554,
+        0.3725137280043324,
+        0.37290637258412307
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "gf_round_two",
+    "size": "9",
+    "selected": "native",
+    "challenger": "production",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "native",
+        "ns_per_term": 6.863555555555555,
+        "median_ns": 61.772,
+        "production_ratio": 0.44268449067606586
+      },
+      {
+        "variant": "production",
+        "ns_per_term": 15.509944444444443,
+        "median_ns": 139.5895,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.44268449067606586,
+      "p95_ratio": 0.44309632663022813,
+      "median_ci_low": 0.4410059482446705,
+      "median_ci_high": 0.44473266646361354,
+      "p95_ci_low": 0.43872680266326675,
+      "p95_ci_high": 0.44681858408949393,
+      "per_run_medians": [
+        0.44475372661128254,
+        0.44268449067606586,
+        0.44310226098932626,
+        0.440892339618591,
+        0.44210413157989026
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log12_lanes8",
+    "selected": "flock",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 64916.4885,
+        "median_ns": 64916.4885,
+        "production_ratio": 0.9908669829308681
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 65414.6475,
+        "median_ns": 65414.6475,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 1.009217197894835,
+      "p95_ratio": 0.9958009648961105,
+      "median_ci_low": 1.0016481279420997,
+      "median_ci_high": 1.0154444053782092,
+      "p95_ci_low": 0.9793728227254498,
+      "p95_ci_high": 1.008120842648167,
+      "per_run_medians": [
+        1.009217197894835,
+        1.0156301051709724,
+        1.0114237530733108,
+        1.0015819046725527,
+        1.0022237376046355
+      ],
+      "decision": "unresolved"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "selected": "flock",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 1075188.2345,
+        "median_ns": 1075188.2345,
+        "production_ratio": 0.9995762487982597
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 1075692.625,
+        "median_ns": 1075692.625,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 1.0004239308429443,
+      "p95_ratio": 1.005451687886388,
+      "median_ci_low": 0.9872424443496891,
+      "median_ci_high": 1.0119211647450617,
+      "p95_ci_low": 0.9821473651438224,
+      "p95_ci_high": 1.026531997540198,
+      "per_run_medians": [
+        1.0004239308429443,
+        1.008958193895442,
+        0.9939910620806439,
+        1.0083240230869805,
+        0.9894034565362254
+      ],
+      "decision": "unresolved"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log16_lanes32",
+    "selected": "flock",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "flock",
+        "ns_per_term": 2793577.6875,
+        "median_ns": 2793577.6875,
+        "production_ratio": 1.0
+      },
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 2799737.5,
+        "median_ns": 2799737.5,
+        "production_ratio": 1.0018220986936517
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.9981812153115531,
+      "p95_ratio": 0.9906143070688044,
+      "median_ci_low": 0.9685002231822912,
+      "median_ci_high": 1.0207226690912994,
+      "p95_ci_low": 0.9592857251409642,
+      "p95_ci_high": 1.0256158694414275,
+      "per_run_medians": [
+        1.0230934773922735,
+        0.9655750907685197,
+        0.9964430992769782,
+        0.9981812153115531,
+        1.0149802723290862
+      ],
+      "decision": "unresolved"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log17_lanes32",
+    "selected": "flock",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 7222147.5,
+        "median_ns": 7222147.5,
+        "production_ratio": 0.9951374701708945
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 7287431.0,
+        "median_ns": 7287431.0,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 1.004886289557834,
+      "p95_ratio": 0.9999505805799116,
+      "median_ci_low": 0.9929280655805031,
+      "median_ci_high": 1.0178639378793934,
+      "p95_ci_low": 0.991699978327513,
+      "p95_ci_high": 1.0229094848084095,
+      "per_run_medians": [
+        1.0084455915807466,
+        1.001139731278265,
+        0.998249557123029,
+        1.004886289557834,
+        1.0187878938334227
+      ],
+      "decision": "unresolved"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log18_lanes32",
+    "selected": "flock",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 15586786.5,
+        "median_ns": 15586786.5,
+        "production_ratio": 0.978001081720595
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 15988073.25,
+        "median_ns": 15988073.25,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 1.0224937565924799,
+      "p95_ratio": 1.0133029260126762,
+      "median_ci_low": 1.0078021514370836,
+      "median_ci_high": 1.0428621031433467,
+      "p95_ci_low": 1.0046295388769475,
+      "p95_ci_high": 1.0282448339156811,
+      "per_run_medians": [
+        1.0337065476753917,
+        1.0156209704483283,
+        1.0224937565924799,
+        1.0214533209640664,
+        1.044155463956668
+      ],
+      "decision": "unresolved"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes1",
+    "selected": "tiled_half",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "tiled_half",
+        "ns_per_term": 2286.748,
+        "median_ns": 2286.748,
+        "production_ratio": 0.7546058625947348
+      },
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 2886.993,
+        "median_ns": 2886.993,
+        "production_ratio": 0.9541327068181952
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 3027.2855,
+        "median_ns": 3027.2855,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.7918154976334836,
+      "p95_ratio": 0.7952537890959175,
+      "median_ci_low": 0.7891920723001616,
+      "median_ci_high": 0.7950283930568993,
+      "p95_ci_low": 0.7911335899542372,
+      "p95_ci_high": 0.8139990339893979,
+      "per_run_medians": [
+        0.7913328627870378,
+        0.7928627096622578,
+        0.795489269859412,
+        0.7891855812123371,
+        0.7918154976334836
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log8_lanes32",
+    "selected": "tiled_half",
+    "challenger": "preserved_schedule",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "tiled_half",
+        "ns_per_term": 37152.4375,
+        "median_ns": 37152.4375,
+        "production_ratio": 0.5097238674243344
+      },
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 67346.8185,
+        "median_ns": 67346.8185,
+        "production_ratio": 0.9239477660665496
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 72894.492,
+        "median_ns": 72894.492,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.5513260455851057,
+      "p95_ratio": 0.5517257128292871,
+      "median_ci_low": 0.5509266867514174,
+      "median_ci_high": 0.5521684441505327,
+      "p95_ci_low": 0.5494172544751954,
+      "p95_ci_high": 0.5545700748625317,
+      "per_run_medians": [
+        0.5509357775428971,
+        0.5513260455851057,
+        0.5511506542645589,
+        0.5521599088505155,
+        0.5519406257283291
+      ],
+      "decision": "faster"
+    }
+  }
+]

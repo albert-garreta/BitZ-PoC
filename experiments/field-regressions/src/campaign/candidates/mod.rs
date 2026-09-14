@@ -7,6 +7,8 @@ mod integer;
 mod prime;
 mod words;
 
+pub(crate) use composite::tiled_ntt;
+
 /// An owned output per variant, checked before timing and observed after each pass.
 fn pass<'a, I: ?Sized, O: Clone + Default + Debug + PartialEq + 'a>(
     name: &'static str,

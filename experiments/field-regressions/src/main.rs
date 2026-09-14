@@ -27,13 +27,21 @@ mod production_batch {
     include!(concat!(env!("OUT_DIR"), "/batch_inverse.rs"));
 }
 #[cfg(feature = "arithmetic-campaign")]
-mod production_fixed { include!(concat!(env!("OUT_DIR"), "/fixed_gf.rs")); }
+mod production_fixed {
+    include!(concat!(env!("OUT_DIR"), "/fixed_gf.rs"));
+}
 #[cfg(feature = "arithmetic-campaign")]
-mod production_ood { include!(concat!(env!("OUT_DIR"), "/ood.rs")); }
+mod production_ood {
+    include!(concat!(env!("OUT_DIR"), "/ood.rs"));
+}
 #[cfg(feature = "arithmetic-campaign")]
-mod production_packing { include!(concat!(env!("OUT_DIR"), "/packing.rs")); }
+mod production_packing {
+    include!(concat!(env!("OUT_DIR"), "/packing.rs"));
+}
 #[cfg(feature = "arithmetic-campaign")]
-mod utils { pub use f2z::utils::*; }
+mod utils {
+    pub use f2z::utils::*;
+}
 use flock_core::{field::F128, ntt::AdditiveNttF128};
 use num_traits::Inv;
 use std::{hint::black_box, time::Instant};
@@ -43,6 +51,13 @@ mod extra_cases;
 #[cfg(feature = "legacy-matrix")]
 mod matrix;
 mod scalar_kernel;
+#[cfg(all(
+    feature = "arithmetic-campaign",
+    target_arch = "x86_64",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1"
+))]
+mod x86;
 use arithmetic::*;
 
 pub struct Rng(pub u64);
@@ -82,6 +97,18 @@ pub fn measure(family: &str, size: &str, cases: &mut [Case<'_>], samples: usize,
     if !case_requested(family, size) {
         return;
     }
+    // A separate counting build is never admitted as performance evidence.
+    #[cfg(field_regression_probe)]
+    {
+        return;
+    }
+    // Borrow the enabled cases so both array and Vec callers retain the same
+    // interface. Filtering and this allocation happen outside every audit/timer.
+    let mut cases: Vec<_> = cases
+        .iter_mut()
+        .filter(|case| variant_requested(family, size, case.name))
+        .collect();
+    assert!(!cases.is_empty(), "no enabled variants for {family}/{size}");
     if let Ok(spec) = std::env::var("FIELD_REGRESSION_BASELINES") {
         let names: std::collections::HashMap<String, String> =
             serde_json::from_str(&spec).expect("invalid baseline map");
@@ -94,13 +121,22 @@ pub fn measure(family: &str, size: &str, cases: &mut [Case<'_>], samples: usize,
         }
     }
     // Calibrate against the baseline; use identical iterations for every candidate.
+    let calibration_ms: f64 = std::env::var("FIELD_REGRESSION_CALIBRATION_MS")
+        .map(|v| v.parse().expect("invalid calibration window"))
+        .unwrap_or(3.0);
+    assert!(calibration_ms.is_finite() && calibration_ms > 0.0);
+    for case in cases.iter_mut() {
+        for _ in 0..3 {
+            (case.run)();
+        }
+    }
     let mut iterations = 1usize;
     loop {
         let start = Instant::now();
         for _ in 0..iterations {
             (cases[0].run)();
         }
-        if start.elapsed().as_secs_f64() >= 0.003 || iterations >= 1 << 20 {
+        if start.elapsed().as_secs_f64() >= calibration_ms / 1000.0 || iterations >= 1 << 24 {
             break;
         }
         iterations *= 2;
@@ -135,6 +171,22 @@ pub fn measure(family: &str, size: &str, cases: &mut [Case<'_>], samples: usize,
         "completed {family}/{size}: {} variants, {samples} paired samples",
         cases.len()
     );
+}
+
+pub fn variant_requested(family: &str, size: &str, variant: &str) -> bool {
+    static VARIANTS: std::sync::OnceLock<Option<std::collections::HashMap<String, Vec<String>>>> =
+        std::sync::OnceLock::new();
+    VARIANTS
+        .get_or_init(|| {
+            std::env::var("FIELD_REGRESSION_VARIANTS")
+                .ok()
+                .map(|v| serde_json::from_str(&v).expect("invalid variant manifest"))
+        })
+        .as_ref()
+        .is_none_or(|m| {
+            m.get(&format!("{family}/{size}"))
+                .is_some_and(|names| names.iter().any(|name| name == variant))
+        })
 }
 
 pub fn case_requested(family: &str, size: &str) -> bool {
@@ -361,6 +413,15 @@ fn ntt_benches(samples: usize, rng: &mut Rng) {
             .collect();
         let mut cases = Vec::new();
         for variant in 0..4 {
+            let name = [
+                "flock",
+                "shared_generic",
+                "shared_twiddle",
+                "prepared_twiddle",
+            ][variant];
+            if !variant_requested("ntt", &size, name) {
+                continue;
+            }
             let (ntt, input) = (&ntt, &input);
             let mut output = input.clone();
             transform(ntt, &mut output, lanes, variant);
@@ -382,9 +443,22 @@ fn ntt_benches(samples: usize, rng: &mut Rng) {
             }));
         }
         #[cfg(feature = "ntt-candidate")]
-        {
+        if variant_requested("ntt", &size, "preserved_schedule") {
             let mut output = candidate_input.clone();
+            #[cfg(field_regression_probe)]
+            let calls_before =
+                flock_candidate::EXPERIMENT_SCALAR_CALLS.load(std::sync::atomic::Ordering::Relaxed);
             candidate_ntt.forward_transform_interleaved(&mut output, lanes);
+            #[cfg(field_regression_probe)]
+            {
+                let calls = flock_candidate::EXPERIMENT_SCALAR_CALLS
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    - calls_before;
+                eprintln!(
+                    "ACTIVATION {}",
+                    serde_json::json!({"family":"ntt","size":size,"scalar_calls":calls,"scalar_substitution_exercised":calls>0,"specialized_kernels":"unchanged production"})
+                );
+            }
             assert!(
                 output
                     .iter()
@@ -402,6 +476,18 @@ fn ntt_benches(samples: usize, rng: &mut Rng) {
                     black_box(&output);
                 },
             ));
+        }
+        #[cfg(feature = "arithmetic-campaign")]
+        if variant_requested("ntt", &size, "tiled_half") {
+            let mut output = input.clone();
+            campaign::tiled_ntt(&ntt, &mut output, lanes);
+            assert_eq!(output, reference, "tiled NTT log={log} lanes={lanes}");
+            let (ntt, input) = (&ntt, &input);
+            cases.push(Case::new("tiled_half", input.len() * 32, move || {
+                output.copy_from_slice(black_box(input));
+                campaign::tiled_ntt(black_box(ntt), black_box(&mut output), lanes);
+                black_box(&output);
+            }));
         }
         let mut copy = input.clone();
         let input_ref = &input;
@@ -443,8 +529,10 @@ fn main() {
     let candidate_pool = flock_candidate::all_core_pool().current_num_threads();
     #[cfg(not(feature = "ntt-candidate"))]
     let candidate_pool = 0usize;
-    let runtime = serde_json::json!({"arch":std::env::consts::ARCH,"shared_kernel":field::gf128::KERNEL,"flock_kernel":if cfg!(target_arch="aarch64") { "arm-pmull" } else { "x86-pclmul-or-portable" },"candidate_mul_kernel":if cfg!(all(target_arch="aarch64",target_feature="aes")) { "arm-pmull-scalar-lanes" } else { field::gf128::KERNEL }, "arithmetic_campaign":cfg!(feature="arithmetic-campaign"),
+    let runtime = serde_json::json!({"arch":std::env::consts::ARCH,"shared_kernel":field::gf128::KERNEL,"flock_kernel":if cfg!(target_arch="aarch64") { "arm-pmull" } else { if cfg!(all(target_feature="pclmulqdq",target_feature="sse4.1")) { "x86-karatsuba-barrett" } else { "portable" } },"candidate_mul_kernel":if cfg!(all(target_arch="aarch64",target_feature="aes")) { "arm-pmull-scalar-lanes" } else if cfg!(all(target_arch="x86_64",target_feature="pclmulqdq")) { "x86-karatsuba-barrett" } else { field::gf128::KERNEL }, "arithmetic_campaign":cfg!(feature="arithmetic-campaign"),
         "aes":cfg!(target_feature="aes"),"sha3":cfg!(target_feature="sha3"),"pclmulqdq":cfg!(target_feature="pclmulqdq"),
+        "sse4.1":cfg!(target_feature="sse4.1"),"avx2":cfg!(target_feature="avx2"),"bmi2":cfg!(target_feature="bmi2"),"adx":cfg!(target_feature="adx"),
+        "affinity":std::fs::read_to_string("/proc/self/status").ok().and_then(|s| s.lines().find(|l| l.starts_with("Cpus_allowed_list:")).map(|l| l.split_whitespace().nth(1).unwrap().to_owned())),
         "avx512f":cfg!(target_feature="avx512f"),"vpclmulqdq":cfg!(target_feature="vpclmulqdq"),
         "caller_threads":rayon::current_num_threads(),"baseline_all_core_threads":baseline_pool,"candidate_all_core_threads":candidate_pool,
         "candidate_snapshot":cfg!(feature="ntt-candidate"),"seed":seed});
@@ -455,6 +543,18 @@ fn main() {
     if mode == "all" || mode == "gf" {
         arithmetic_benches(samples, &mut rng);
         extra_cases::run(samples, &mut rng);
+        ntt_benches(samples, &mut rng);
+    }
+    #[cfg(all(
+        feature = "arithmetic-campaign",
+        target_arch = "x86_64",
+        target_feature = "pclmulqdq",
+        target_feature = "sse4.1"
+    ))]
+    if mode == "x86" {
+        x86::run(samples, &mut rng);
+        campaign::run_numeric(samples, &mut rng);
+        campaign::integer_focus(samples, &mut rng);
         ntt_benches(samples, &mut rng);
     }
     #[cfg(feature = "arithmetic-campaign")]

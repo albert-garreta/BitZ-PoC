@@ -29,6 +29,7 @@ fn function(source: &str, name: &str) -> String {
     panic!("function end changed");
 }
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(field_regression_probe)");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_ARITHMETIC_CAMPAIGN");
     if env::var_os("CARGO_FEATURE_ARITHMETIC_CAMPAIGN").is_none() {
         return;

@@ -1,0 +1,125 @@
+[
+  {
+    "family": "integer_full_mac",
+    "size": "carry_l2_n33",
+    "selected": "fused4",
+    "challenger": "fused1",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "fused4",
+        "ns_per_term": 0.592121212121212,
+        "median_ns": 19.54,
+        "production_ratio": 0.9089704241071429
+      },
+      {
+        "variant": "fused1",
+        "ns_per_term": 0.6104696969696969,
+        "median_ns": 20.1455,
+        "production_ratio": 0.9370458924301865
+      },
+      {
+        "variant": "circuit_z",
+        "ns_per_term": 0.6513030303030303,
+        "median_ns": 21.493,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.9690245718540581,
+      "p95_ratio": 0.9737241244064034,
+      "median_ci_low": 0.923430599182825,
+      "median_ci_high": 0.9726128190703446,
+      "p95_ci_low": 0.9237304494392603,
+      "p95_ci_high": 0.9754542871613691,
+      "per_run_medians": [
+        0.9730705993722287,
+        0.9703351899741397,
+        0.9232022670917465,
+        0.9690245718540581,
+        0.9685634305249337
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "integer_full_mac",
+    "size": "full_l2_n33",
+    "selected": "fused4",
+    "challenger": "fused1",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "fused4",
+        "ns_per_term": 0.592121212121212,
+        "median_ns": 19.54,
+        "production_ratio": 0.9088311145187149
+      },
+      {
+        "variant": "fused1",
+        "ns_per_term": 0.6109848484848486,
+        "median_ns": 20.1625,
+        "production_ratio": 0.9371080867666867
+      },
+      {
+        "variant": "circuit_z",
+        "ns_per_term": 0.6517878787878788,
+        "median_ns": 21.509,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.9704438383337468,
+      "p95_ratio": 0.9730402312458072,
+      "median_ci_low": 0.9314495231172918,
+      "median_ci_high": 0.9722818875816166,
+      "p95_ci_low": 0.938831162268721,
+      "p95_ci_high": 0.9817067141303274,
+      "per_run_medians": [
+        0.9720438137913865,
+        0.9305419542838035,
+        0.9704438383337468,
+        0.9695415117719951,
+        0.9718026433469145
+      ],
+      "decision": "faster"
+    }
+  },
+  {
+    "family": "ntt",
+    "size": "log15_lanes32",
+    "selected": "preserved_schedule",
+    "challenger": "flock",
+    "implementation_aliases": {},
+    "ranking": [
+      {
+        "variant": "preserved_schedule",
+        "ns_per_term": 5226062.5,
+        "median_ns": 5226062.5,
+        "production_ratio": 0.985594629155709
+      },
+      {
+        "variant": "flock",
+        "ns_per_term": 5299234.625,
+        "median_ns": 5299234.625,
+        "production_ratio": 1.0
+      }
+    ],
+    "head_to_head": {
+      "median_ratio": 0.985594629155709,
+      "p95_ratio": 0.9855045150567979,
+      "median_ci_low": 0.9843045580960217,
+      "median_ci_high": 0.9881243220360727,
+      "p95_ci_low": 0.983077415585143,
+      "p95_ci_high": 0.9896852830970104,
+      "per_run_medians": [
+        0.9864628268352728,
+        0.9850488827629499,
+        0.9848677412516983,
+        0.985594629155709,
+        0.9883929715286748
+      ],
+      "decision": "faster"
+    }
+  }
+]
