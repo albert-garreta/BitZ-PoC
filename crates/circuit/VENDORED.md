@@ -25,3 +25,10 @@ Local addition (2026-09-14, not upstream): `WengertTape::prepare` reduces its
 coefficients by a word-Horner kernel (`horner_reduce_2`: one Montgomery product by
 `2^64·R mod q` per word) for moduli above `2^64`; `RuntimeModulus::reduce` (bit-serial
 below `2^127`) stays as the test oracle.
+
+Local addition (2026-09-14, not upstream): the forward program of the tape
+(`forward_offsets`/`forward_terms`, the edges grouped by sum node) and
+`PreparedWengertEvaluator::apply_forward_weighted` (`ForwardColumns`): the scalar
+`Σ_row (w_A·A_row + w_B·B_row + w_C·C_row)·x` by a forward pass, without the column
+vector; the reverse output buffer is allocated by the first reverse pass. Used by the
+F2Z SHA-256 + ECDSA verifier.

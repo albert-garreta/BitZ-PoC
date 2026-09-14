@@ -20,7 +20,10 @@ use crate::{
     },
     poly::mle::{CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension},
 };
-use circuit::{matrix_products::RuntimeModulus, matrix_wengert::PreparedWengertEvaluator};
+use circuit::{
+    matrix_products::RuntimeModulus,
+    matrix_wengert::{ForwardColumns, PreparedWengertEvaluator},
+};
 use crypto_primitives::FromWithConfig;
 use num_bigint::BigUint;
 
@@ -176,13 +179,9 @@ impl<'a> ModQCoefficients<'a> {
     /// the reverse-mode tape. Both sides use crypto-bigint's two-limb Montgomery
     /// form with `R = 2^128`, so the words convert to [`Raw`] without arithmetic.
     fn tape_tail(&mut self, relation: &PreparedSha256Ecdsa, matrix_rows: &[Raw]) -> Result<Vec<Raw>> {
-        let triples: Vec<[[u64; 2]; 3]> = matrix_rows
-            .chunks_exact(3)
-            .map(|slots| [raw_words(slots[0]), raw_words(slots[1]), raw_words(slots[2])])
-            .collect();
         let output = self
             .tape
-            .apply_weighted(&triples)
+            .apply_weighted(&row_triples(matrix_rows))
             .map_err(|e| error(format!("P-256 tape: {e}")))?;
         if output.len() != relation.local.tail.columns() {
             return Err(error("P-256 tape column count mismatch"));
@@ -274,8 +273,14 @@ impl<'a> ModQCoefficients<'a> {
         })
     }
 
-    /// Evaluate the public matrix MLE at a point: the P-256 tail comes from the
-    /// tape (one pass over the circuit's DAG), then one weighted sum over it.
+    /// Evaluate the public matrix MLE at a point: the SHA part by its factored
+    /// form, the P-256 tail by a FORWARD pass of the tape — the batched rows
+    /// `Σ_m weight[3·row + m] · M_m[row]` evaluated at the tail cells' equality
+    /// weights and closed with the row weights — and the public bits on top.
+    /// The tail term is the bilinear form `⟨w, M·eq⟩ = ⟨Mᵀw, eq⟩` that the
+    /// reverse pass ([`Self::evaluate_batched_matrix_mle_reverse`], the test
+    /// oracle) computes as the tape's column vector dotted with the equality
+    /// weights; the forward pass never materializes that vector.
     pub(super) fn evaluate_batched_matrix_mle(
         &mut self,
         relation: &PreparedSha256Ecdsa,
@@ -284,6 +289,38 @@ impl<'a> ModQCoefficients<'a> {
         cfg: &Config,
     ) -> Result<F> {
         let _scope = crate::utils::prof::scope("ecdsa:coefficient_evaluate");
+        check_assignment_point(
+            relation.h_layout.row_vars + relation.h_layout.col_vars,
+            assignment_point,
+        )?;
+        let weights = self.build_row_weights(relation, claim, cfg)?;
+        let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
+        let equality = equality_weights(assignment_point, cfg)?;
+        let mut value = evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?;
+        value += &(weights.constant * &equality.at(0));
+        let columns = TailEqualityColumns::new(self.ctx, relation.map.h_offset, &equality);
+        let tail = self
+            .tape
+            .apply_forward_weighted(&row_triples(&weights.matrix_rows), &columns)
+            .map_err(|e| error(format!("P-256 tape: {e}")))?;
+        value += &self.ctx.field(words_raw(tail));
+        for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
+            value += &(self.ctx.field(weight) * &equality.at(relation.map.h_offset + cell));
+        }
+        Ok(value)
+    }
+
+    /// The reverse-mode evaluation the forward pass replaced: the tape's
+    /// column vector (one reverse pass over the DAG), then the run-structured
+    /// weighted sum over it. Kept as the test oracle.
+    #[cfg(test)]
+    pub(super) fn evaluate_batched_matrix_mle_reverse(
+        &mut self,
+        relation: &PreparedSha256Ecdsa,
+        claim: &InnerSumcheckClaim,
+        assignment_point: &[F],
+        cfg: &Config,
+    ) -> Result<F> {
         check_assignment_point(
             relation.h_layout.row_vars + relation.h_layout.col_vars,
             assignment_point,
@@ -463,6 +500,91 @@ const TAIL_BLOCK: usize = 1 << 12;
 /// Little-endian words of a raw Montgomery residue, the tape's element form.
 const fn raw_words(value: Raw) -> [u64; 2] {
     [value as u64, (value >> 64) as u64]
+}
+
+/// The per-row `[A, B, C]` weight triples of the tape, from the slot layout
+/// `3 · row + matrix` of [`RowWeights::matrix_rows`].
+fn row_triples(matrix_rows: &[Raw]) -> Vec<[[u64; 2]; 3]> {
+    matrix_rows
+        .chunks_exact(3)
+        .map(|slots| [raw_words(slots[0]), raw_words(slots[1]), raw_words(slots[2])])
+        .collect()
+}
+
+/// The tail cells' equality weights as forward-pass column values. A scalar
+/// column `j` is `eq(offset + j) = low[(offset + j) mod L] · high[(offset + j) / L]`;
+/// a power group's `Σ_{k<len} 2^k · eq(offset + first + k)` uses the backward
+/// recurrence of [`evaluate_tail_by_runs`] (`Q[t] = Σ_{i ≥ t} 2^(i − t) · low[i]`,
+/// no inverses): the group's intersection with one high block `[lo, hi)`
+/// contributes `high[b] · (Q[lo] − 2^(hi − lo) · Q[hi])` times the running
+/// power of two, so a group costs a few multiplications per block it spans.
+struct TailEqualityColumns {
+    ctx: RawMontyCtx,
+    offset: usize,
+    low: Vec<Raw>,
+    high: Vec<Raw>,
+    /// `Q[t] = low[t] + 2 · Q[t + 1]`, `Q[L] = 0`.
+    suffix: Vec<Raw>,
+    /// `2^k` in Montgomery form for `k ≤ L`.
+    pow2: Vec<Raw>,
+    shift: u32,
+    mask: usize,
+}
+
+impl TailEqualityColumns {
+    fn new(ctx: RawMontyCtx, offset: usize, equality: &EqualityWeights<F>) -> Self {
+        let (low, high) = (ctx.raw_vec(equality.low()), ctx.raw_vec(equality.high()));
+        let block = low.len();
+        let mut suffix = vec![0 as Raw; block + 1];
+        for t in (0..block).rev() {
+            let doubled = ctx.add(suffix[t + 1], suffix[t + 1]);
+            suffix[t] = ctx.add(low[t], doubled);
+        }
+        let mut pow2 = Vec::with_capacity(block + 1);
+        pow2.push(ctx.native_residue(1));
+        for k in 0..block {
+            pow2.push(ctx.add(pow2[k], pow2[k]));
+        }
+        Self {
+            ctx,
+            offset,
+            low,
+            high,
+            suffix,
+            pow2,
+            shift: block.ilog2(),
+            mask: block - 1,
+        }
+    }
+}
+
+impl ForwardColumns for TailEqualityColumns {
+    fn scalar(&self, column: usize) -> [u64; 2] {
+        let index = self.offset + column;
+        raw_words(
+            self.ctx
+                .mul(self.low[index & self.mask], self.high[index >> self.shift]),
+        )
+    }
+
+    fn power_sum(&self, first: usize, len: usize) -> [u64; 2] {
+        let ctx = self.ctx;
+        let block = self.low.len();
+        let mut sum = 0 as Raw;
+        let mut base = self.pow2[0];
+        let mut index = self.offset + first;
+        let end = index + len;
+        while index < end {
+            let b = index >> self.shift;
+            let lo = index & self.mask;
+            let hi = (lo + (end - index)).min(block);
+            let part = ctx.sub(self.suffix[lo], ctx.mul(self.pow2[hi - lo], self.suffix[hi]));
+            sum = ctx.add(sum, ctx.mul(ctx.mul(base, part), self.high[b]));
+            base = ctx.mul(base, self.pow2[hi - lo]);
+            index += hi - lo;
+        }
+        raw_words(sum)
+    }
 }
 
 /// The raw Montgomery residue of the tape's little-endian words.
@@ -718,9 +840,68 @@ mod tests {
         }
     }
 
+    /// The forward-pass evaluation is the reverse-pass evaluation (the
+    /// tape's column vector dotted with the equality weights), for both outer
+    /// modes, at random claims and points, at a sampled 113-bit prime and at
+    /// `2^127 − 1`.
+    #[test]
+    fn forward_matrix_evaluation_matches_reverse() {
+        let (statement, _) = fixture();
+        for modulus in [sampled_prime(), (1u128 << 127) - 1] {
+            let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let mut state = 0x5DEE_CE66_D1B4_E8A3_u64 ^ modulus as u64;
+            let mut random = move || {
+                state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = state;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^ (z >> 31)
+            };
+            let mut element = || {
+                let value = (u128::from(random()) << 64) | u128::from(random());
+                F::from_with_cfg(value % modulus, &cfg)
+            };
+            for mode in [OuterMode::Split, OuterMode::AllRows] {
+                let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+                for trial in 0..3 {
+                    let outer = OuterSumcheckProof {
+                        sumcheck: SumcheckProof {
+                            round_polynomials: Vec::new(),
+                        },
+                        az_mle_claim: element(),
+                        bz_mle_claim: element(),
+                        cz_mle_claim: element(),
+                    };
+                    let claim = InnerSumcheckClaim::from_outer_claims(
+                        &relation,
+                        &statement,
+                        &outer,
+                        (0..relation.outer_sumcheck_num_vars()).map(|_| element()).collect(),
+                        element(),
+                        (0..relation.linear_vars()).map(|_| element()).collect(),
+                        element(),
+                        &cfg,
+                    )
+                    .unwrap();
+                    let vars = relation.h_layout.row_vars + relation.h_layout.col_vars;
+                    let point: Vec<F> = (0..vars).map(|_| element()).collect();
+                    let mut coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
+                    let forward = coefficients
+                        .evaluate_batched_matrix_mle(&relation, &claim, &point, &cfg)
+                        .unwrap();
+                    let reverse = coefficients
+                        .evaluate_batched_matrix_mle_reverse(&relation, &claim, &point, &cfg)
+                        .unwrap();
+                    assert_eq!(forward, reverse, "{mode:?} modulus {modulus} trial {trial}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn streamed_matrix_evaluation_matches_prepared_mle() {
-        let modulus = 97u128;
+        // The verifier's modulus class (the native word kernels need q > 2^64).
+        let modulus = sampled_prime();
         let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
         let f = |n| F::from_with_cfg(n, &cfg);
         let (statement, _) = fixture();
