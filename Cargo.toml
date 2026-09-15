@@ -258,8 +258,20 @@ name = "binius_probe"
 required-features = ["hybrid"]
 
 [[example]]
+name = "grind_probe"
+required-features = ["parallel"]
+
+[[example]]
 name = "hybrid_probe"
 required-features = ["hybrid"]
+
+[[example]]
+name = "sha_probe"
+required-features = ["parallel"]
+
+[[example]]
+name = "spartan_probe"
+required-features = ["parallel"]
 
 [features]
 default = ["parallel"]
