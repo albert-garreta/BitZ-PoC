@@ -303,12 +303,20 @@ impl<'a> Forest<'a> {
                     *q = (p << low_bits) | (bit << y_bits) | y;
                 }
                 // Buckets keyed by (E pattern, O pattern) for the four
-                // (lo/hi, lo/hi) combinations.
+                // (lo/hi, lo/hi) combinations. Narrow patterns first bucket
+                // by the whole (E_lo, E_hi, O_lo, O_hi) tuple — one addition
+                // per term — and marginalise afterwards; width 1 does so
+                // bit-sliced, straight off the four words.
                 let mut b_ll = vec![zero; pairs];
                 let mut b_lh = vec![zero; pairs];
                 let mut b_hl = vec![zero; pairs];
                 let mut b_hh = vec![zero; pairs];
+                let tuple_entries = if nb <= 2 { 1usize << (4 * nb) } else { 0 };
+                let mut tuples = vec![zero; tuple_entries];
                 for g in 0..groups {
+                    let base_c = g << 6;
+                    let width = 64.min(cols - base_c);
+                    let valid: u64 = if width == 64 { !0 } else { (1u64 << width) - 1 };
                     for corner in 0..4 {
                         let p = corner >> 1;
                         let bit = corner & 1;
@@ -322,17 +330,60 @@ impl<'a> Forest<'a> {
                                 words[corner][(v << ell) | u] = self.packed_cols[g][row];
                             }
                         }
-                        patterns(&words[corner][..nb], &mut pats[corner]);
                     }
-                    let base_c = g << 6;
-                    for j0 in 0..64.min(cols - base_c) {
-                        let (pe_lo, pe_hi) = (pats[0][j0] as usize, pats[1][j0] as usize);
-                        let (po_lo, po_hi) = (pats[2][j0] as usize, pats[3][j0] as usize);
-                        let ec = eq_c[base_c + j0];
-                        b_ll[pe_lo * entries + po_lo] += ec;
-                        b_lh[pe_lo * entries + po_hi] += ec;
-                        b_hl[pe_hi * entries + po_lo] += ec;
-                        b_hh[pe_hi * entries + po_hi] += ec;
+                    let eq_g = &eq_c[base_c..base_c + width];
+                    if nb == 1 {
+                        // Sixteen masks, one per tuple; each column lands in
+                        // exactly one, so the set bits are walked once.
+                        let w = [words[0][0], words[1][0], words[2][0], words[3][0]];
+                        for tuple in 0..16usize {
+                            let mut m = valid;
+                            for (i, &wi) in w.iter().enumerate() {
+                                m &= if (tuple >> i) & 1 == 1 { wi } else { !wi };
+                            }
+                            let mut acc = zero;
+                            while m != 0 {
+                                acc += eq_g[m.trailing_zeros() as usize];
+                                m &= m - 1;
+                            }
+                            tuples[tuple] += acc;
+                        }
+                    } else {
+                        for corner in 0..4 {
+                            patterns(&words[corner][..nb], &mut pats[corner]);
+                        }
+                        if nb == 2 {
+                            for (j0, &ec) in eq_g.iter().enumerate() {
+                                let tuple = pats[0][j0] as usize
+                                    | (pats[1][j0] as usize) << 2
+                                    | (pats[2][j0] as usize) << 4
+                                    | (pats[3][j0] as usize) << 6;
+                                tuples[tuple] += ec;
+                            }
+                        } else {
+                            for (j0, &ec) in eq_g.iter().enumerate() {
+                                let (pe_lo, pe_hi) = (pats[0][j0] as usize, pats[1][j0] as usize);
+                                let (po_lo, po_hi) = (pats[2][j0] as usize, pats[3][j0] as usize);
+                                b_ll[pe_lo * entries + po_lo] += ec;
+                                b_lh[pe_lo * entries + po_hi] += ec;
+                                b_hl[pe_hi * entries + po_lo] += ec;
+                                b_hh[pe_hi * entries + po_hi] += ec;
+                            }
+                        }
+                    }
+                }
+                if nb <= 2 {
+                    // Marginalise the tuple buckets into the four pair buckets.
+                    let mask = entries - 1;
+                    for (tuple, &value) in tuples.iter().enumerate() {
+                        let pe_lo = tuple & mask;
+                        let pe_hi = (tuple >> nb) & mask;
+                        let po_lo = (tuple >> (2 * nb)) & mask;
+                        let po_hi = (tuple >> (3 * nb)) & mask;
+                        b_ll[pe_lo * entries + po_lo] += value;
+                        b_lh[pe_lo * entries + po_hi] += value;
+                        b_hl[pe_hi * entries + po_lo] += value;
+                        b_hh[pe_hi * entries + po_hi] += value;
                     }
                 }
                 let (t_e_lo, t_e_hi) = (&tables[qs[0]], &tables[qs[1]]);
