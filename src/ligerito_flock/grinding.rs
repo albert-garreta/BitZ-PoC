@@ -1,11 +1,12 @@
-//! Atomic challenge guards for the pinned Flock schedule (Johnson+OOD or UDR).
+//! Grinding guards for challenge blocks in the pinned Flock schedule (Johnson+OOD or UDR).
 //!
 //! A native PoW starts a block. Otherwise the first draw after an observation
 //! starts one. Consecutive draws (including query retries and alpha) share it.
 use super::*;
 
+/// Consecutive challenge draws covered by one grinding requirement.
 #[derive(Clone, Debug)]
-pub(crate) struct AtomicBlock {
+pub(crate) struct ChallengeBlock {
     pub label: String,
     pub native_bits: Option<u32>,
     pub raw_error: f64,
@@ -13,15 +14,15 @@ pub(crate) struct AtomicBlock {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct AtomicPlan {
-    pub blocks: Vec<AtomicBlock>,
+pub(crate) struct GrindingPlan {
+    pub blocks: Vec<ChallengeBlock>,
     final_verifier_draws: usize,
 }
 
-impl AtomicPlan {
+impl GrindingPlan {
     pub fn resolve(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
         config.validate()?;
-        let mut blocks: Vec<AtomicBlock> = Vec::new();
+        let mut blocks: Vec<ChallengeBlock> = Vec::new();
         let gf_error = 2f64.powi(-128);
         for (level, params) in config.levels.iter().enumerate() {
             let (pg, query) = params.paper_predicted_bits();
@@ -40,7 +41,7 @@ impl AtomicPlan {
                     last.raw_error += error;
                     last.label.push_str("+fold0");
                 } else {
-                    blocks.push(AtomicBlock {
+                    blocks.push(ChallengeBlock {
                         label: format!("fold/{level}/{round}"),
                         native_bits: (native > 0).then_some(native),
                         raw_error: error,
@@ -59,7 +60,7 @@ impl AtomicPlan {
                     let collision = 2f64.powf(-single.paper_predicted_ood_bits().ok_or("OOD without a Johnson bound")?);
                     for sample in 0..next.ood_samples {
                         if sample == 0 {
-                            blocks.push(AtomicBlock {
+                            blocks.push(ChallengeBlock {
                                 label: format!("ood/{}/{sample}", level + 1),
                                 native_bits: None,
                                 raw_error: collision,
@@ -70,7 +71,7 @@ impl AtomicPlan {
                             block.raw_error += collision;
                             block.label.push_str(&format!("+ood/{}/{sample}", level + 1));
                         }
-                        blocks.push(AtomicBlock {
+                        blocks.push(ChallengeBlock {
                             label: format!("ood-beta/{}/{sample}", level + 1),
                             native_bits: None,
                             raw_error: gf_error,
@@ -80,7 +81,7 @@ impl AtomicPlan {
                 }
             }
             let alpha_vars = params.queries.next_power_of_two().ilog2();
-            blocks.push(AtomicBlock {
+            blocks.push(ChallengeBlock {
                 label: format!("queries/{level}"),
                 native_bits: Some(params.grinding_bits as u32),
                 // Count alpha even at the final level where the prover omits
@@ -96,7 +97,7 @@ impl AtomicPlan {
                 bits: 0,
             });
             if level + 1 < config.levels.len() {
-                blocks.push(AtomicBlock {
+                blocks.push(ChallengeBlock {
                     label: format!("introduce/{level}"),
                     native_bits: None,
                     raw_error: gf_error,
@@ -126,26 +127,26 @@ impl AtomicPlan {
     }
 }
 
-pub(crate) enum AtomicNonces<'a> {
+pub(crate) enum GrindingNonces<'a> {
     Prove(&'a mut Vec<u64>),
     Verify { values: &'a [u64], cursor: usize },
 }
 
-pub(crate) struct AtomicSecurity<'a> {
-    pub plan: &'a AtomicPlan,
-    pub nonces: AtomicNonces<'a>,
+pub(crate) struct GrindingContext<'a> {
+    pub plan: &'a GrindingPlan,
+    pub nonces: GrindingNonces<'a>,
 }
 
-pub(crate) struct AtomicChallenger<'a, 'b, T: Transcript + Send> {
+pub(crate) struct GrindingChallenger<'a, 'b, T: Transcript + Send> {
     inner: ZincChallenger<'a, T>,
-    security: &'a mut AtomicSecurity<'b>,
+    security: &'a mut GrindingContext<'b>,
     next: usize,
     active: bool,
     valid: bool,
 }
 
-impl<'a, 'b, T: Transcript + Send> AtomicChallenger<'a, 'b, T> {
-    pub fn new(transcript: &'a mut T, security: &'a mut AtomicSecurity<'b>) -> Self {
+impl<'a, 'b, T: Transcript + Send> GrindingChallenger<'a, 'b, T> {
+    pub fn new(transcript: &'a mut T, security: &'a mut GrindingContext<'b>) -> Self {
         Self {
             inner: ZincChallenger(transcript),
             security,
@@ -160,6 +161,7 @@ impl<'a, 'b, T: Transcript + Send> AtomicChallenger<'a, 'b, T> {
             return 0;
         };
         self.valid &= block.native_bits == native;
+        // This protocol domain separator stays fixed across Rust type renames.
         self.inner.observe_label(b"f2z/flock/atomic/v1");
         self.inner.observe_bytes(&(self.next as u64).to_le_bytes());
         self.inner.observe_label(block.label.as_bytes());
@@ -172,7 +174,7 @@ impl<'a, 'b, T: Transcript + Send> AtomicChallenger<'a, 'b, T> {
     pub fn finish(mut self) -> bool {
         // The pinned prover omits alpha and beta for the final verifier-only check.
         // Consume that suffix so callers can safely continue the transcript.
-        if matches!(self.security.nonces, AtomicNonces::Prove(_)) {
+        if matches!(self.security.nonces, GrindingNonces::Prove(_)) {
             for _ in 0..self.security.plan.final_verifier_draws {
                 self.inner.sample_f128();
             }
@@ -180,13 +182,13 @@ impl<'a, 'b, T: Transcript + Send> AtomicChallenger<'a, 'b, T> {
         self.valid
             && self.next == self.security.plan.blocks.len()
             && match &self.security.nonces {
-                AtomicNonces::Prove(_) => true,
-                AtomicNonces::Verify { values, cursor } => values.len() == *cursor,
+                GrindingNonces::Prove(_) => true,
+                GrindingNonces::Verify { values, cursor } => values.len() == *cursor,
             }
     }
 }
 
-impl<T: Transcript + Send> Challenger for AtomicChallenger<'_, '_, T> {
+impl<T: Transcript + Send> Challenger for GrindingChallenger<'_, '_, T> {
     fn observe_label(&mut self, label: &[u8]) {
         self.active = false;
         self.inner.observe_label(label);
@@ -208,8 +210,8 @@ impl<T: Transcript + Send> Challenger for AtomicChallenger<'_, '_, T> {
             let bits = self.begin(None);
             if bits > 0 {
                 match &mut self.security.nonces {
-                    AtomicNonces::Prove(nonces) => nonces.push(self.inner.grind_pow(bits)),
-                    AtomicNonces::Verify { values, cursor } => {
+                    GrindingNonces::Prove(nonces) => nonces.push(self.inner.grind_pow(bits)),
+                    GrindingNonces::Verify { values, cursor } => {
                         let nonce = values.get(*cursor).copied().unwrap_or(0);
                         self.valid &= *cursor < values.len() && self.inner.verify_pow(nonce, bits);
                         *cursor += 1;
@@ -237,16 +239,16 @@ mod tests {
     use crate::transcript::Blake3Transcript;
 
     #[test]
-    fn vectors_and_native_pow_are_atomic_and_replay_exactly() {
-        let plan = AtomicPlan {
+    fn vectors_and_native_pow_share_blocks_and_replay_exactly() {
+        let plan = GrindingPlan {
             blocks: vec![
-                AtomicBlock {
+                ChallengeBlock {
                     label: "host".into(),
                     native_bits: None,
                     raw_error: 0.01,
                     bits: 3,
                 },
-                AtomicBlock {
+                ChallengeBlock {
                     label: "queries".into(),
                     native_bits: Some(4),
                     raw_error: 0.01,
@@ -258,11 +260,11 @@ mod tests {
         let mut pt = Blake3Transcript::new();
         let mut vt = Blake3Transcript::new();
         let mut nonces = Vec::new();
-        let mut security = AtomicSecurity {
+        let mut security = GrindingContext {
             plan: &plan,
-            nonces: AtomicNonces::Prove(&mut nonces),
+            nonces: GrindingNonces::Prove(&mut nonces),
         };
-        let mut p = AtomicChallenger::new(&mut pt, &mut security);
+        let mut p = GrindingChallenger::new(&mut pt, &mut security);
         let host: Vec<_> = (0..7).map(|_| p.sample_f128()).collect();
         // No observation between the host vector and native grind. The native
         // grind still starts a new block, upgrading its existing nonce to 6 bits.
@@ -270,14 +272,14 @@ mod tests {
         let queries: Vec<_> = (0..40).map(|_| p.sample_f128()).collect();
         assert!(p.finish());
         assert_eq!(nonces.len(), 1, "no per-coordinate or per-query host nonce");
-        let mut security = AtomicSecurity {
+        let mut security = GrindingContext {
             plan: &plan,
-            nonces: AtomicNonces::Verify {
+            nonces: GrindingNonces::Verify {
                 values: &nonces,
                 cursor: 0,
             },
         };
-        let mut v = AtomicChallenger::new(&mut vt, &mut security);
+        let mut v = GrindingChallenger::new(&mut vt, &mut security);
         for x in host {
             assert_eq!(v.sample_f128(), x);
         }

@@ -333,11 +333,31 @@ pub struct WengertTape {
     coefficients: Box<[StoredInteger]>,
 }
 
-/// A modulus-prepared evaluator with reusable reverse-pass storage.
+/// Evaluates the transpose of the tape's linear map modulo a fixed prime `q`.
+/// Let `A, B, C ∈ Z^(m×n)` denote the implicit coefficient maps encoded by the
+/// graph. For row weights `w_A, w_B, w_C ∈ F_q^m`, [`Self::apply_weighted`]
+/// computes `v ∈ F_q^n`:
 ///
-/// Construct this after the random prime is known with [`WengertTape::prepare`].
-/// Repeated calls reuse all large allocations and the modulus-dependent
-/// coefficient conversion.
+/// ```text
+/// v = Aᵀ w_A + Bᵀ w_B + Cᵀ w_C,
+/// v_j = Σ_i (w_A[i] A[i,j] + w_B[i] B[i,j] + w_C[i] C[i,j]) mod q.
+/// ```
+///
+/// Equivalently, for a symbolic assignment `h`, the reverse pass computes
+///
+/// ```text
+/// Φ(h) = ⟨w_A, Ah⟩ + ⟨w_B, Bh⟩ + ⟨w_C, Ch⟩,
+/// v = ∇_h Φ(h).
+/// ```
+///
+/// Since `Φ` is linear, its gradient is independent of `h`; no witness values
+/// are needed. [`Self::apply`] specializes to `(w_A, w_B, w_C) = (r, x r, x² r)`,
+/// giving `v = (A + x B + x² C)ᵀ r` through the same graph.
+///
+/// [`WengertTape::prepare`] caches each distinct graph coefficient as
+/// `c̄ = c R mod q`, where `R = 2^128`. Inputs and outputs likewise use
+/// Montgomery form: `w̄ = R w mod q` and `v̄ = R v mod q`.
+/// Repeated calls reuse the coefficient conversion and reverse-pass storage.
 #[derive(Debug)]
 pub struct PreparedWengertEvaluator<'a> {
     tape: &'a WengertTape,

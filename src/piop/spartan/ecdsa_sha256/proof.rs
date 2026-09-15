@@ -17,8 +17,8 @@ use crate::{
     ligerito::packed_vars,
     ligerito_flock::{
         FlockCommitHint, IntEvalRsLigVirtProof,
-        atomic::{AtomicNonces, AtomicSecurity},
         commit_rs_ligerito_rows,
+        grinding::{GrindingContext, GrindingNonces},
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
         validate_ligerito_commitment,
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
@@ -293,9 +293,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let mut flock_nonces = Vec::new();
     let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
         .map_err(|_| error("invalid row weights"))?;
-    let mut atomic = AtomicSecurity {
+    let mut grinding = GrindingContext {
         plan: &security.flock,
-        nonces: AtomicNonces::Prove(&mut flock_nonces),
+        nonces: GrindingNonces::Prove(&mut flock_nonces),
     };
     let opening = {
         let _scope = crate::utils::prof::scope("ecdsa:f2z_prove");
@@ -313,7 +313,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             security.forest,
             ood,
             &pc,
-            Some(&mut atomic),
+            Some(&mut grinding),
         )
     };
     Ok(Sha256EcdsaProof {
@@ -419,9 +419,9 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     // chunks[0][b] = rows[b].
     let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
         .map_err(|_| error("invalid row weights"))?;
-    let mut atomic = AtomicSecurity {
+    let mut grinding = GrindingContext {
         plan: &security.flock,
-        nonces: AtomicNonces::Verify {
+        nonces: GrindingNonces::Verify {
             values: &proof.flock_nonces,
             cursor: 0,
         },
@@ -453,7 +453,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
             });
             sum == inner_final_claim.canonical_u128()
         },
-        Some(&mut atomic),
+        Some(&mut grinding),
     )
     .map_err(|e| error(format!("{e:?}")))
 }

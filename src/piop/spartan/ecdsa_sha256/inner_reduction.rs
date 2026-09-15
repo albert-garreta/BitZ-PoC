@@ -212,6 +212,20 @@ impl<'a> ModQCoefficients<'a> {
         out
     }
 
+    /// Builds the multilinear coefficient polynomial over `F_q`:
+    ///
+    /// ```text
+    /// V(y) = A_o(r, y) + ρ B_o(r, y) + ρ² C_o(r, y) + γ L(s, y).
+    /// ```
+    ///
+    /// Here `r = outer_row_point`, `s = linear_row_point`,
+    /// `ρ = matrix_batch_challenge`, and `γ = linear_batch_weight`.
+    /// `A_o`, `B_o`, and `C_o` are the multilinear extensions of the coefficient
+    /// maps for rows selected by the outer mode. `L` is the corresponding
+    /// extension for the left-hand sides of the remaining linear equations,
+    /// `h[0] = 1`, and the public-bit equations, using the protocol's row
+    /// ordering and zero padding. With `h` the assignment MLE in `n` variables,
+    /// the inner sumcheck checks `Σ_{y ∈ {0,1}^n} V(y) h(y) = claimed_sum`.
     pub(super) fn build_batched_matrix_mle(
         &mut self,
         relation: &PreparedSha256Ecdsa,
@@ -280,6 +294,21 @@ impl<'a> ModQCoefficients<'a> {
         Ok(value)
     }
 
+    /// Computes the P-256 row and public-equation weights over `F_q`.
+    /// Let `e_o(i) = eq(outer_row_point, i)`, `e_l(i) = eq(linear_row_point, i)`,
+    /// `ρ = matrix_batch_challenge`, `γ = linear_batch_weight`, and
+    /// `S = 256 · compressions()`, with integer indices interpreted as Boolean
+    /// vectors. For `w(i) = (w_A(i), w_B(i), w_C(i))`, the matrix weights are:
+    ///
+    /// ```text
+    /// Split:   w(nonlinear[k]) = e_o(k) · (1, ρ, ρ²)
+    ///          w(linear[k])    = (0, 0, γ e_l(S + k))
+    /// AllRows: w(i)            = e_o(S + i) · (1, ρ, ρ²).
+    /// ```
+    ///
+    /// With `P = S + |linear|`, the remaining weights are
+    /// `constant = γ e_l(P)` and `public_bits[b] = γ e_l(P + 1 + b)`
+    /// for `0 ≤ b < 1024`.
     fn build_row_weights(
         &self,
         relation: &PreparedSha256Ecdsa,
