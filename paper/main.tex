@@ -5,8 +5,8 @@
 %% See lncs-switch.tex.  main-lncs.tex builds the LNCS version without touching this
 %% line (it predefines \LNCS).
 \newif\iflncs
-\lncsfalse
-\ifdefined\LNCS\lncstrue\fi
+\lncstrue
+\ifdefined\LNCS\lncstrue\fi \ifdefined\FULLVERSION\lncsfalse\fi % main-lncs.tex / main-full.tex force one or the other
 \iflncs
   \documentclass[runningheads]{llncs}
   \let\proof\relax\let\endproof\relax % llncs' proof environment is replaced by amsthm's
@@ -117,7 +117,16 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 \begin{document}
 \maketitle
 
+
 \begin{abstract}
+We introduce \ftwoz\, a Polynomial Commitment Scheme for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Moreover, given any ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$. 
+
+\ftwoz \ can thus be used as a PCS in essentially any proof system. We do so to build a  SNARK for proving integer polynomial constraints, using the fingerprinting technique of \cite{zaratan} that commits over $\ZZ$ and proves the constraints over a random prime field $\FF$, so \ftwoz\ is deployed with $S=\ZZ$, $R=\FF$, and $\psi$ is reduction modulo $|R|$. \ftwoz\ can similarly be used as PCS in other ring-based proof systems, or even field-based ones.
+
+Our approach decomposes the witness into a string of bits and commits to it over a binary field $\comfield$, in packed form. Then, if necessary, transforms the evaluation claim over $R$ into an evaluation claim over $\ZZ$ via a randomized process. Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  evaluation claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit the fact that the factors across all the grand products have low entropy (i.e.\ take a ``small'' amount of different values).   
+
+We implement \ftwoz-SNARK and use it to prove a variety of computations of practical interest, namely SHA hashing followed by ECDSA signing; RSA modular exponentiation and Poseidon hashing; and integer multiplication, and we obtain better performance than prior approaches.  For example, we prove a SHA-256 hash of a $2$ KB message followed by an ECDSA signature verification with $67$ms and $38$ms prover and verifier time, respectively, and with a proof  of $76$ KB, on a single-threaded MacBook Air M5. 
+
 \end{abstract}
 
 \setcounter{tocdepth}{2}
@@ -238,7 +247,7 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
 
      \end{enumerate}  
 
-     \begin{remark}Proving constraints ``in the exponent''  is a well-known idea that goes back at least to \cite{binius64,lev}. One of our main contributions is 1) in what context this technique is used, namely inside the PCS to prove MLE evaluation claims (or inner product claims) of the witness, as opposed to proving the initial arithmetized computation, see \cref{r:comparison_grand_product_binius_lev} for more details;  2) the optimizations we design for such a specific ``proof in the exponent'' setting, see \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}; and 3) extending it so it can be used to prove constraints over arbitrary rings, and not just, say, integers or \emph{prime} fields with small  values (to avoid overflowing the multiplicative order of $g$).\end{remark}
+     \begin{remark} \lncsnote{To appendix if we emphasize the witness x public better.} Proving constraints ``in the exponent''  is a well-known idea that goes back at least to \cite{binius64,lev}. One of our main contributions is 1) in what context this technique is used, namely inside the PCS to prove MLE evaluation claims (or inner product claims) of the witness, as opposed to proving the initial arithmetized computation, see \cref{r:comparison_grand_product_binius_lev} for more details;  2) the optimizations we design for such a specific ``proof in the exponent'' setting, see \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}; and 3) extending it so it can be used to prove constraints over arbitrary rings, and not just, say, integers or \emph{prime} fields with small  values (to avoid overflowing the multiplicative order of $g$).\end{remark}
      
 \noindent There are several issues with the attempt above:
 \medskip
@@ -346,18 +355,10 @@ In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \alber
 
 
 \subsection{Related work}\label{s:related_work}
+\lncsnote{Can be shortened}
 
-\paragraph{Proof systems over integers and other rings.} In \cite{zaratan}, Campanelli and Hall-Andersen propose proving polynomial constraints over integers, by projecting them onto a random prime field (sampled by the verifier), a technique which the authors call \emph{fingerprinting}. Subsequent works have adopted this idea \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}. The PCS is not implemented and so we do not compare against it.
-
-The Zinc \cite{zinc} work adopts \emph{fingerprinting} and designs a hash-based PCS over the rationals $\QQ$, suitable for the fingerprinting approach, providing the first relatively practical proof system over the integers. \cite{zinc} addresses subtle technical issues that arise when aiming to commit to \emph{integer} vectors with error correcting codes (namely, malicious provers can potentially use rational numbers that are very close to being integers of the target magnitude).
-
-The Zinc+ \cite{zincplus} work extends \cite{zinc} in two directions: 1) It proposes a constraint system that includes polynomial constraints simultaneously over many types of rings\footnote{In the terminology of \cite{zincplus}, the constraints are over \emph{polynomial rings with ideal membership constraints}, for certain types of ideals (generated by a monic and non-constant polynomial, or zero). However this is equivalent to saying the constraints are over different types of rings (within a certain class)} and fields, and provides a method for constructing PIOP's for those. This method extends the fingerprinting approach by not only projecting $\ZZ$ onto a random prime field, but projecting all sorts of rings and fields onto a random prime field. 2) It improves the soundness analysis of the PCS in \cite{zinc}, plus it proposes a new linear code over $\ZZ$ or $\QQ$, called Integer Pseudo Reed-Solomon (IPRS) code, obtained by ``lifting'' (in a suitable way) an FFT encoding algorithm over a small finite field, to the integers. \albert{compare \ftwoz \  to Zinc+?}
-
-
-
-In \cite{qaren} the authors propose $\QQ$aren, a compiler that takes any PCS over a finite field of sufficiently large characteristic and creates a PCS for integer polynomials (or, more precisely, rational polynomials close to the target integer polynomials, see the overview of \cite{zinc} above). The authors instantiate their compiler to obtain the first transparent and fully succinct PCS over integers/rationals. The prior work \cite{zinc,zincplus} is not succinct on the bit-size of the integers being committed. No implementation or performance reports are provided in \cite{qaren}.
-
-The concurrent work Limber \cite{limber} proposes a new compiler that transforms any PCS over fields of sufficiently large characteristic $q$ (in this case, $q$ is $\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size, while in \cite{qaren} it is $\Omega(2^\lambda)$) into a PCS for integer polynomials. Additionally Limber compiles into strictly integer PCS, and does not present the issue that a malicious prover could use rationals that are ``almost integers''. Limber is instantiated in practice with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
+% [AI-edited (Claude Fable 5.1), 2026-09-15: the five paragraphs below were compressed into one at the author's request (\lncsnote ``Can be shortened''); all citations and claims kept]
+\paragraph{Proof systems over integers and other rings.} Campanelli and Hall-Andersen \cite{zaratan} propose proving polynomial constraints over the integers by projecting them onto a random prime field sampled by the verifier, a technique they call \emph{fingerprinting}, which subsequent works have adopted \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}; it is not implemented, so we do not compare against it. Zinc \cite{zinc} combines fingerprinting with a hash-based PCS over the rationals $\QQ$, providing the first relatively practical proof system over the integers, and addresses the subtle issues that arise when committing to \emph{integer} vectors with error correcting codes (malicious provers can potentially use rational numbers that are very close to being integers of the target magnitude). Zinc+ \cite{zincplus} extends \cite{zinc} in two directions: it proposes a constraint system with polynomial constraints simultaneously over many types of rings\footnote{In the terminology of \cite{zincplus}, the constraints are over \emph{polynomial rings with ideal membership constraints}, for certain types of ideals (generated by a monic and non-constant polynomial, or zero). However this is equivalent to saying the constraints are over different types of rings (within a certain class)} and fields, together with a method for constructing PIOPs for it that projects not only $\ZZ$ but all such rings and fields onto a random prime field; and it improves the soundness analysis of the PCS of \cite{zinc} and proposes the Integer Pseudo Reed-Solomon (IPRS) codes over $\ZZ$ or $\QQ$, obtained by ``lifting'' an FFT encoding algorithm over a small finite field to the integers. \albert{compare \ftwoz \  to Zinc+?} $\QQ$aren \cite{qaren} is a compiler that turns any PCS over a finite field of sufficiently large characteristic into a PCS for integer polynomials (more precisely, for rational polynomials close to the target integer polynomials, as above), yielding the first transparent and fully succinct PCS over integers/rationals, whereas \cite{zinc,zincplus} are not succinct in the bit-size of the committed integers; no implementation or performance reports are provided in \cite{qaren}. The concurrent work Limber \cite{limber} is a compiler of the same kind which only requires characteristic $q=\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size (versus $\Omega(2^\lambda)$ in \cite{qaren}), compiles into strictly integer PCS (so that the ``almost integers'' issue does not arise), and is instantiated with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
 
 \paragraph{Proof systems over binary fields.} \albertimportant{Review. This is Ulrich} Hash-based SNARKs over binary fields were pioneered by the line of work of Ben-Sasson et al.~\cite{fri,stark,linearSizedIOPs,cryptoeprint:2022/1542}, but did not see widespread adoption until the introduction of \textit{packed} polynomial commitment schemes by Diamond and Posen~\cite{binius,binius2}; see also \cite{binius64}. Such schemes allow one to commit to a bit-valued witness over an extension field without incurring embedding overhead, while still providing evaluation proofs for its original ``uncompressed'' representation. The \emph{ring-switching} technique of Diamond and Posen~\cite{binius2} is generic, enabling the use of codes over larger alphabets without introducing representational redundancy.\footnotemark 
 A particularly attractive choice is Reed--Solomon codes over $GF(2^k)$ \cite{binius64,hashcaster:repo}, which offer an excellent trade-off between distance and encoding cost, although several works~\cite{Blaze,tensorswitch,Bolt} explore this design space using more efficient codes.
@@ -414,7 +415,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 \noindent \emph{Implementation:} We crucially used AI in our implementation and experiments, in the way explained in \cref{s:experiments}.
 
-\begin{lncsmove}{TechnicalSections}
+\begin{lncsmove}{PrimeField}
 \iflncs\else\section{Technical overview}\label{s:tech_overview}\fi % LNCS: no overview section; its subsections become sections
 
    
@@ -449,7 +450,7 @@ Additionally, the present setting is required when using the fingerprinting PIOP
 We next present a protocol (a simple instantiation of \ftwoz) for proving \eqref{e:new_to_0}. We assume $\vv$ admits a tensor decomposition
 %
 $$
-\vv= \vv^{(1)} \otimes \vv^{(2)},
+\vv= \vv^{(1)} \otimes \vv^{(2)} \in \FF_q^{\codedim_1 \times \codedim_2},
 $$
 where we assume there is freedom to choose the lengths of $\vv^{(1)},\vv^{(2)}$ (whose product is $\codedim_0$).  This is typically the case since $\vv$ is usually an ``eq'' vector, i.e.\ $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $\rr\in \FF_q^{\log\codedim_0}$. Tensor decompositions play a crucial role in the efficiency of \ftwoz, as we discuss in \cref{s:why_the_tensor_split}.
 
@@ -562,10 +563,13 @@ $
     \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without Step 3. This difference becomes important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield$, and not paying too much on grinding, cf.\ \cref{s:instantiation}.  \albert{Could be more detailed}
 \end{itemize}
 
-In \cref{t:core_iop_complexity} we record the concrete costs of this protocol (in a more general form).
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: sentence explaining $D$ and $N_R$, at the author's request; please review]
+\Cref{t:core_iop_complexity} records the concrete costs of this protocol, stated for the general setting of \cref{s:to_general_rings} with $R$ of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ (\cref{c:core_iop} gives the formal description). There, $D$ denotes the maximum total degree, and $N_R$ the maximum absolute value of a coefficient, of the integer polynomials $\picanon^{-1}(\uu^{(1)}_i)$ and $\picanon^{-1}(\uu^{(2)}_j)$ lifting the entries of $\uu^{(1)}$ and $\uu^{(2)}$ (cf.\ \eqref{e:ring_theta_params}); in the prime field case of this section, $D=0$ and $N_R<q$. \lncsnote{Strange sentence} \lncsnote{Explain what $D$ and $N_R$ for us} 
 \lncsplace{TabCoreIopCosts}
 
 
+\end{lncsmove}
+\begin{lncsmove}{Rings}
 \subsection{Generalization to pairs of arbitrary finitely generated rings}\label{s:to_general_rings}
 
 
@@ -695,6 +699,8 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \end{align*}
 
 
+\end{lncsmove}
+\begin{lncsmove}{GKR}
 \subsection{GKR for low-entropy batched grand products}\label{s:to_low_entropy_gkr}
   In Step 5 of \ftwoz \ (\cref{s:to_simple_bitz}) the prover must prove that
                     \begin{equation}\label{e:intro_eq_4_repeated}g^{\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} = \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu^{(1)}_i)} -1\right)\cdot \bitstext(\bff)_{ij}  +1\right) =g^{\mu_j} \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2].
@@ -738,7 +744,11 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
       This allows the  prover to compute small lookup tables that are kept on cache and reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables used at different stages of the GKR protocol.  For example, we use 4 lookup tables in the first round of the last sumcheck of GKR (the most expensive sumcheck, being on $r_1+r_2$ variables). These tables are used to compute the first prover message of such sumcheck. We then construct 5 more tables to compute the second prover message, and finally we use one last table to compute the third prover message (see \cref{tab:gkr_tables}). Similarly, we build lookup tables for the first rounds of the second and third last sumchecks of the GKR protocol.
       
 
-
+\lncsnote{Intro text for tables}
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only lead-in for the two tables placed below, at the author's request; please review]
+\Cref{t:gkr_grand_product_complexity} summarizes the rounds, proof size and verifier work of this GKR protocol (\cref{c:gkr_grand_product}) as used within \ftwoz; these are the standard costs of a GKR grand product argument. \Cref{t:gkr_step1_costs} compares the prover cost of the first round of its most expensive sumcheck (the last one, on $r_1+r_2$ variables) using our lookup tables with that of a standard implementation; \cref{s:gkr_low_entropy} derives these costs and treats the remaining rounds.
+\fi
 
 
 \lncsplace{TabGkrCosts}
@@ -772,6 +782,8 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 
 \subsubsection{Efficiency and comparison to other ``prove-in-the-exponent'' usages}\label{r:comparison_grand_product_binius_lev}
 
+\lncsnote{Can go to the appendix if we have made the point of witness x public versus witness x witness clear in the intro}
+
 We next discuss other existing approaches to proving foreign field statements in the exponent of a generator of $\comfield^*$ (the multiplicative subgroup of a binary field), in the context of hash-based SNARKs. Notice that elliptic curve-based PCS's usually perform commitments and opening proofs in the exponent of a generator of a large elliptic curve subgroup.  
 
    
@@ -804,6 +816,8 @@ We next discuss other existing approaches to proving foreign field statements in
 
         %\albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
         
+\end{lncsmove}
+\begin{lncsmove}{Virtual}
 \subsection{Virtual $\FF_2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}\label{s:to_f2_virtual}
 
 
@@ -909,7 +923,7 @@ One can verify this last equivalence for example  by directly inspecting that it
 
 \subsubsection{\ftwoz \ for fully hybrid constraints over $\ZZ$ and $\comfield$.}\label{s:hybrid_snark}
 
-
+\lncsnote{Can go to appendix}
 
 Say the computation involves both  $\FF_2$ operations and other more integer-like operations, like integer multiplication or multiplication mod $2^{32}$. This is the case, for example, with Virtual Machines running RISC-V instructions. To prove these computations we use an arithmetization with constraints both in $\ZZ$ and in $\FF_2$. We build a SNARK for such constraints as follows. Consider a witness $(\bff_\ZZ, \bff_{\FF_2})$ split into an integer vector $\bff_\ZZ\in \ZZ^{\codedim_\ZZ}$ used in the integer constraints, and an $\FF_2$ vector $\bff_{\FF_2}\in \FF_2^{\codedim_{\FF_2}}$ used in the $\FF_2$ constraints. We can also assume that the $\FF_2$ constraints  use some entries from $\bff_{\ZZ}$ which are integer bits (looking at those integer bits as elements from $\FF_2$), otherwise we would have two unrelated constraints. Accordingly we have $\bff_\ZZ=(\bff_{\ZZ}^{(1)}, \bff_{\ZZ}^{(2)})$, where $\bff_{\ZZ}^{(1)}$ is a vector of arbitrary integers, and $\bff_{\ZZ}^{(2)}$ is a vector of bits.
 
@@ -929,10 +943,14 @@ We want to prove that $(\inp_\ZZ, \bff_\ZZ)\in \Relation_\ZZ$ and $(\inp_{\FF_2}
 
 
 
-\subsection{Round-by-round knowledge soundness}\label{s:to_soundness}
-\albertimportant{Review} We provide an overview of why the constructions from \cref{s:to_simple_bitz,s:to_general_rings} are round-by-round knowledge sound. 
+\end{lncsmove}
+\iflncs\else\subsection{Round-by-round knowledge soundness}\label{s:to_soundness}\fi % LNCS: the two overviews below are placed in Sections 3 and 4
+\iflncs\else \albertimportant{Review} We provide an overview of why the constructions from \cref{s:to_simple_bitz,s:to_general_rings} are round-by-round knowledge sound.  \fi
 
-\subsubsection{Soundness of \cref{s:to_simple_bitz}}\label{s:to_soundness_prime}
+
+\begin{lncsmove}{SoundnessPrime}
+\lncsnote{The soundness theorems and proofs should be  in Sections 3 and 4 respectively }
+\subsubsection{\iflncs Round-by-round knowledge soundness\else Soundness of \cref{s:to_simple_bitz}\fi}\label{s:to_soundness_prime}\iflncs\label{s:to_soundness}\fi
 
 
 
@@ -992,7 +1010,9 @@ Overall,  $\Pi$ has errors $\kappa_0$ followed by those of the GKR protocol and 
 
 
 
-\subsubsection{Soundness of \cref{s:to_general_rings}}\label{s:to_soundness_rings}
+\end{lncsmove}
+\begin{lncsmove}{SoundnessRings}
+\subsubsection{\iflncs Round-by-round knowledge soundness\else Soundness of \cref{s:to_general_rings}\fi}\label{s:to_soundness_rings}
 
 The full soundness statement of \cref{s:to_general_rings} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}. We provide an overview of it next.
 
@@ -1150,9 +1170,7 @@ $\Pr_{\rr\getsr S^\mu}[f(\rr)=0] \le \mu/|S|$.
 
 \paragraph{Linear codes}
 
-Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$. For $h\geq 1$, the \emph{$h$-interleaving} of $\cC$ is the code $\cC^{\equiv h} \subseteq \left(\FF^{h}\right)^{\codelength}$ of dimension $\codedim\cdot h$ and blocklength $\codelength\cdot h$, whose codewords have the form $$\left((c_{i1},\ldots, c_{ih})\right)_{i\in [\codelength]} \qquad \text{for } (c_{1j},\ldots, c_{\codelength j})\in \cC \qquad \text{for all } j\in [h].$$
-
-Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ (the fraction of positions in which they differ) is denoted 
+Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$.  Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ (the fraction of positions in which they differ) is denoted 
 %
 $$\hamming(w_1,w_2).$$
 The \emph{relative minimum distance} of $\cC$, denoted $\hamming(\cC)$, is the minimum of $\hamming(c_1,c_2)$ over distinct codewords $c_1,c_2\in \cC$. Given $\delta\in (0,1)$ and an integer $L\geq 1$, we say $\cC$ is \emph{$(\delta, L)$-list-decodable} if for every word $w\in \FF^{\codelength}$ there are at most $L$ codewords $c\in \cC$ with $\hamming(w,c)<\delta$. Every code is $(\delta,1)$-list-decodable for $\delta\leq \hamming(\cC)/2$.  The value $\hamming(\cC)/2$ is called the \emph{unique decoding radius} of $\cC$.
@@ -1208,6 +1226,8 @@ $$
 
 
 \subsection{Interactive Oracle Reductions (IOR) of proximity}\label{s:IORs}
+
+\lncsnote{Can go to appendix}
 
 A public-coin \emph{Interactive Oracle Reduction (IOR) of proximity} $\Pi=(\prover,\verifier)$ from a relation $\Relation$ to a relation $\Relation'$ is specified as follows. The prover $\prover$ receives $(\inp, \oracle,\wit)\in \Relation$. The verifier $\verifier$ receives $\inp$ and query access to $\oracle$. They interact for $k$ rounds. In round $j\in[k]$, the prover sends an oracle $\provermsg_j$ and the verifier sends a uniformly random message $\verifiermsg_j\in\{0,1\}^{r_j}$. After the $k$ rounds, the verifier makes  queries to $\oracle$ and to $\provermsg_1,\ldots,\provermsg_k$. Then:
 \begin{itemize}[nosep]
@@ -1289,7 +1309,12 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
   \end{tabular}
 \end{table}
 \end{lncsappendix}
-\lncsplace[\let\subsubsection\subsection\let\subsection\section]{TechnicalSections}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{PrimeField}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{SoundnessPrime}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{Rings}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{SoundnessRings}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{GKR}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{Virtual}
 \iflncs
 \section{Experiments}\label{s:experiments}
 \lncsplace[\lncsfittables]{TabRawPerformance}
