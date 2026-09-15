@@ -1,6 +1,8 @@
 use std::array;
 
-use field::F128;
+use field::ModRingCtx;
+
+use field::Gf128;
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{One, Signed, Zero};
 
@@ -9,7 +11,7 @@ use crate::ecdsa_sha256::{
     VERIFY_2KB_INPUT_BITS, VERIFY_2KB_INTEGER_WITNESS_BITS, VERIFY_2KB_WITNESS_BITS,
     verify_2kb_message_circuit,
 };
-use crate::matrix_products::{IntegerProducts, MatrixProducts, RuntimeModulus, StoredInteger};
+use crate::matrix_products::{IntegerProducts, MatrixProducts};
 use crate::matrix_transpose::MTransposeGenerator;
 use crate::p256::{
     VERIFY_DIGEST_INPUT_BITS, VERIFY_DIGEST_INTEGER_WITNESS_BITS, VERIFY_DIGEST_WITNESS_BITS,
@@ -102,9 +104,8 @@ fn dummy_inputs<const N: usize>() -> Box<[Dummy; N]> {
         .unwrap_or_else(|_| unreachable!("dummy input length is fixed"))
 }
 
-fn stored_bigint(value: &StoredInteger) -> BigInt {
+fn stored_bigint(value: &[u64]) -> BigInt {
     let bytes = value
-        .words()
         .iter()
         .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<_>>();
@@ -140,7 +141,10 @@ struct DirectAbcProjector<'a> {
 impl<'a> DirectAbcProjector<'a> {
     fn new(label: &'a str, witgen: &'a ProductWitgen) -> Self {
         let modulus = (BigUint::one() << 128_usize) - BigUint::from(159_u64);
-        let runtime_modulus = RuntimeModulus::<2>::new(modulus.clone()).unwrap();
+        let runtime_modulus = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(&(modulus.clone())),
+        ))
+        .unwrap();
         Self {
             label,
             next_integer_witness: 0,
@@ -255,10 +259,10 @@ impl Circuit for DirectAbcProjector<'_> {
     }
 }
 
-fn projection_challenges(rows: usize) -> Vec<F128> {
+fn projection_challenges(rows: usize) -> Vec<Gf128> {
     (0..rows)
         .map(|index| {
-            F128::new(
+            Gf128::new(
                 (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
                 (index as u64).wrapping_mul(0xd1b5_4a32_d192_ed03),
             )
@@ -269,20 +273,20 @@ fn projection_challenges(rows: usize) -> Vec<F128> {
 /// Independent row-oriented multiplication by `M`, using the reference
 /// `BTreeSet` Boolean expressions rather than the fast transposed arena.
 struct DirectMProjector<'a> {
-    challenges: &'a [F128],
+    challenges: &'a [Gf128],
     next_boolean_witness: usize,
     next_row: usize,
-    output: Vec<F128>,
+    output: Vec<Gf128>,
     inputs: Box<[BoolLinearCombination]>,
 }
 
 impl<'a> DirectMProjector<'a> {
-    fn new(input_count: usize, challenges: &'a [F128]) -> Self {
+    fn new(input_count: usize, challenges: &'a [Gf128]) -> Self {
         assert!(!challenges.is_empty());
         let inputs = (0..input_count)
             .map(BoolLinearCombination::witness)
             .collect();
-        let mut output = vec![F128::new(0, 0); input_count + 1];
+        let mut output = vec![Gf128::new(0, 0); input_count + 1];
         output[0] = challenges[0];
         Self {
             challenges,
@@ -311,7 +315,7 @@ impl<'a> DirectMProjector<'a> {
         }
     }
 
-    fn finish(self) -> Vec<F128> {
+    fn finish(self) -> Vec<Gf128> {
         assert_eq!(self.next_row, self.challenges.len());
         assert_eq!(self.output.len(), self.next_boolean_witness + 1);
         self.output
@@ -351,7 +355,7 @@ impl Circuit for DirectMProjector<'_> {
         let first = self.next_boolean_witness;
         self.next_boolean_witness += N;
         self.output
-            .resize(self.next_boolean_witness + 1, F128::new(0, 0));
+            .resize(self.next_boolean_witness + 1, Gf128::new(0, 0));
         ScalarBits(array::from_fn(|index| {
             BoolLinearCombination::witness(first + index)
         }))

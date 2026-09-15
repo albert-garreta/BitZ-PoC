@@ -25,20 +25,20 @@ use f2z::piop::spartan::multiswap::{
 };
 use f2z::piop::spartan::{
     BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, PreparedBabyBearMulRelation,
-    Sha128ReferenceSchedule, Sha256CompressionStatement, SpartanReductionStrategy,
-    commit_baby_bear_mul_paper_witness, commit_sha256_chain_witness,
-    commit_sha256_compression_witness, generate_sha256_chain_witnesses,
-    generate_sha256_compression_witnesses, prepare_sha256_chain_batch_with_profile,
+    Sha128ReferenceSchedule, Sha256CompressionStatement, commit_baby_bear_mul_paper_witness,
+    commit_sha256_chain_witness, commit_sha256_compression_witness,
+    generate_sha256_chain_witnesses, generate_sha256_compression_witnesses,
+    prepare_sha256_chain_batch_with_profile,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-    prepare_sha256_compression_batch_with_profile, prove_baby_bear_mul_paper,
-    prove_sha256_chain, prove_sha256_compressions, verify_baby_bear_mul_paper,
-    verify_sha256_chain, verify_sha256_compressions,
+    prepare_sha256_compression_batch_with_profile, prove_baby_bear_mul_paper, prove_sha256_chain,
+    prove_sha256_compressions, verify_baby_bear_mul_paper, verify_sha256_chain,
+    verify_sha256_compressions,
 };
 use f2z::piop::spartan::{
     PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation, U32MulF2zWidth,
-    U32MulWitness, U64MulWitness, U128MulWitness, commit_u32_mul_witness,
-    commit_u64_mul_witness, commit_u128_mul_witness, prove_u32_mul, prove_u64_mul,
-    prove_u128_mul, verify_u32_mul, verify_u64_mul, verify_u128_mul,
+    U32MulWitness, U64MulWitness, U128MulWitness, commit_u32_mul_witness, commit_u64_mul_witness,
+    commit_u128_mul_witness, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
+    verify_u64_mul, verify_u128_mul,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -47,30 +47,140 @@ use f2z::transcript::Blake3Transcript;
 /// and verifier end in different transcript states after the last level, so
 /// both are pinned.
 const PINS: &[(&str, &str, &str, &str)] = &[
-    // Recorded with `F2Z_RECORD_PINS=1` on the pre-unification code
-    // (master 5d2aea9, 2026-09-11).
-    ("baby_bear/2p15/lambda100", "36d6d70ee81300f7633094854c2ffe044113f9be4124b6b8de770ea84b4286a8", "18456aa354b4436c8caf5487c0c6e4cf2d588d7b7c76c37a7e97465f2e171922", "2fa5d981945754a943ceca1a6101cfa0fa63e8abdd5ac5a42ac14c4c2260dad4"),
-    ("baby_bear/2p15/lambda128", "e18baca3215fa14537c68ecb601417d56d7d68d4b115a6956bad06023010b64a", "320aa9f05f904a1f2e9108390ce3aa7ec1d7916d2b276e651b2fe736f1a03303", "73f3cae0b33eeba6f6c2a2a8975421e55776a6f4dbb5aebf85732fe39068798e"),
-    ("cm_and/2p15/lambda100", "c68268896faafdfb4b3c01e57079b6b8e282ca65f3b752844ccf316d32f2229b", "f7ff79f5e132b966361ffb40e5aedd620a12a90a72b7b5f05cbf1941ed87c767", "1dd03b16040f867ce46fc421be1a6830b9dac69f7f192a49b963f238d9cff713"),
-    ("multiswap/mini/limber114", "4ab1ecce1d1acb01ac6105c56162a2c2167e206fa6f5332028456ea61513f020", "4fd000bc191c713d9cc6c1f26b702b9fba61ba02536fb1c41fbd165117119b6d", "dbc1b5d42f41f6e5d424c93fb384056676267a2926b5e2b32cdf9604c04a0087"),
-    ("sha256_chain/2p7/lambda100", "54cd62218b845ed0509b8adb6a01adb7f16d3941ee84a5b983b79acf004f954a", "3d4f162f7e7f6df10b79118ecd528c94808a42ceddb3d0403a56845c5eaa2af5", "a100728ea0813ab858a2e47e7b0a0f711dc0f12ded97534be6b4627e64cab719"),
-    ("sha256_chain/2p7/lambda128", "3e0f1762b0776e062217a99efca2f1c83145e91dcd65b0cc18958958cfbd069e", "d584bafd0596b14fda0b2babc9cc3578c54466be46466739c815b65e7d707c40", "bc24af2bd1fbc68762494fdb1db23f162b11a82ec0f2abc7f78bee5b5c70fdc2"),
-    ("sha256/2p7/lambda100", "8dd21f4c2421721fe023feeb6a631f5be54e6b68e22b2747ea7dde55e481d1b9", "f931788ec55d652e7e54cffb3d6dbae4fa1a2fa778000ff5a0543fe24f4ec926", "c6a47f7f6a62cd10d85423f7f35a935c28eae1905f607fd629b04b3d3444f23c"),
-    ("sha256/2p7/lambda128", "9174fde9a1036f1cf97bdaf36cf95f5a70e7fe30c7f5c5b98bb3f7176b7a109d", "7b90b079d4f2d5e404bcdadb45a1633662381d59cd4589125515f26f6bd352c9", "eb5a85229710b9c56fdf699dae215e06be815aa99faa53139a07909c08d8227b"),
-    ("sha256/2p7/reference", "6de14a6c3ba9bb05504dc4868d45a0ae5cba14bd0ba259df0420149cf72d0066", "14190b95b59ad69e2184e95e37d05a066e6c2690170fc9466de00b88ce0c6d1f", "c907854108bfa75f047a8aec694e47d46ea0d04806942f7dba5fd47213a2c905"),
-    ("sha256/legacy-rows21/lambda100", "4bac2e7de6d659003f382dbb6f58b73d57f629fd141d6c70daf4c01fa895b124", "0a8e16f81cd521f9d882107a27925874fb1afb62ba79e3b18f5cf8862ee3476a", "057a98a5df8a586a4b19f76ccbc30401bd7a865744d2b4fce68ca0836126cffa"),
-    ("u128_mul/2p15/lambda100", "f0a9af270144dadd95f5acd5e49fb28a22fc6960beef6fe23cdfb84bad4f4858", "a0041e202960567ea9fea90ddced5f66c2428e2a6a7c34cae80f8f18fb3016c3", "b3b3e27140e3132e8616402dd3051eada21a56d3b036f2f36599ed7ac8d00cf7"),
-    ("u32_mul/2p15/w1/lambda100", "3713fa94ff52d93283e951098919aa88c97acfd3b37181ff68c165b430600fc8", "17a12aa10604f74018b0d8978283849a62a349166fae7895d1f5ed58888aef03", "4bc343a54ad6ec4df4c915ef80df11d6120d046098b8485b1aa03f8c0d9b385a"),
-    ("u32_mul/2p15/w1/lambda128", "4d8b55ce0ceb2b60d0004706d30f567c75f1c155f8d2cc8fc761adc98004d1ac", "83b6a754c046b1223a397f2d0549e3ed76ac348c15e3c2be8d7c71f2e5140458", "e10149b81e36328c089cabeeb67c5a69c246367a220d88c8aaf36ee75cebbb2f"),
-    ("u32_mul/2p15/w8/lambda100", "0dba1e7de9a45e3e340e0fdb2eb3155aa7a57dc6971044d6eb186fa27356a1dd", "ba663d87a56d06b8a97c7cdb721f94a765d80e24cce392359e813cc3dcf8d902", "9de3f2a1a955c612170b13cd66e31ed10d562a4f93a80479df9f324a6b334299"),
-    ("u64_mul/2p15/lambda100", "10524e78940e5f90f8275746197646780ea7e5dcf1ba3cb22bb4ac234c63fac9", "5843f4c036b615aeee94d9952b0253ded59ef0f0ebe9cffc464c27c8d60d76f7", "d06897db59f4d65e5feb4e5030479b8150e81ba956ec22555a2f2e5f33d6ee49"),
-    ("u64_mul/2p15/shift+1/lambda100", "ea2a0e03edb7ce5430479bdf4bb11d0f00fb19dbcdd07788233a8acf0c4b8630", "f23bb20b0c12c4cea5e53157166511adc5fd1a2830c90bd052675e29c369de6d", "5d6b769e91d478d30dbfa656ee18b1f8020cae6757c4276aa15c97f5e1757406"),
-    ("sha256_ecdsa/2p3/allrows/lambda100", "5aca8ae95c9228db846a44fddb1eeefce535a99ad9cf3e20073333e44dbe6e6b", "5aca8ae95c9228db846a44fddb1eeefce535a99ad9cf3e20073333e44dbe6e6b", "729bc1a0eccb80f5e42c3efe968e64600480d075b5adb0ad969726e5d41c1b72"),
-    ("sha256_ecdsa/2p3/allrows/lambda128", "f4e9e3919b5c0d5be7bc73ca602bed71226eae8b281d0f62d81a5740d5871817", "f4e9e3919b5c0d5be7bc73ca602bed71226eae8b281d0f62d81a5740d5871817", "5b56247305180b3e46cd5ac99e521941cc1d5cbc2129d39454426a75ab771639"),
-    ("sha256_ecdsa/2p3/split/lambda100", "5c08b4a910a906e9e495af348eaf253950b139724e66db5611084c5235092d3c", "5c08b4a910a906e9e495af348eaf253950b139724e66db5611084c5235092d3c", "98d86d6d85594691b2884ca40c64da36c21090281744a5194add27c4e8bcf30a"),
-    ("sha256_ecdsa/2p3/split/lambda128", "942bb995a8cbb6dee834c8c6c21922c2558c4838748faa0ab16c93562fb9516e", "942bb995a8cbb6dee834c8c6c21922c2558c4838748faa0ab16c93562fb9516e", "544140f516613b9a241ac556fbfe203c396d798a0329cdbe5e8513302e07450b"),
-    ("sha256/fixed98-t13/2p14", "1e003e6e7ad04324c87a52945954d31103c8555d030608a26924efba20e36900", "9aa0798d570c4ecc1cf6a60d91589f62314375a771db7359ae26adada656ad8c", "6b5fe05d55ae343c81e82ff10a7777b32abda6f72573c6885206c0d4de7ed12d"),
-    ("hybrid/2p13x16/johnson", "-", "-", "7435a68c2c98260f735183cade04afac4bf73dfec22fc7553067bbb571b5b8a9"),
+    // Recorded after the shared arithmetic, canonical codec, and bounded sampler migration.
+    // Spartan domains use v2; hybrid wire encoding uses version 6.
+    (
+        "baby_bear/2p15/lambda100",
+        "7dcc29ecdd971d5fd508553090088f9796642c3d8219de2e659b58523c2dbb57",
+        "fa9b98c61ef29a1275a5d3fa07861ea88a62724b72c7a3231b9610052dc579b1",
+        "bfbfe0ae2fd33ce8f45120301b26e6efb06be0532fda8791da01c713266724e8",
+    ),
+    (
+        "baby_bear/2p15/lambda128",
+        "b01e58ba4e0476d37cdef2c43093bfac2726563c898cf8ff773d190a2ab7dcfa",
+        "6c7e7911e9cf6b37abf39cbdbbc4485baad2dab790337e6c82e7ebf8349cea3d",
+        "221122c7e29925247a2194f1759027e6b5aac46c46f4c5447d855da722352e9a",
+    ),
+    (
+        "cm_and/2p15/lambda100",
+        "70230d48addc57f75eb0e0cf0a40b3b55c172a9ac942a916c24c18cf09967ca8",
+        "c7bdf028d7b44047ec8765debbc621f0c7e37f4c3a4ccbe0d1e1642961f37daf",
+        "540df1ab634298b7159b6c69dc4ac6d9bab6b67e37b743c35c65a8316eb5dd23",
+    ),
+    (
+        "multiswap/mini/limber114",
+        "29e12bacd9891f018b07469053ca38a721b56d42916b432fa06c3e0d0122c81e",
+        "3874d394dd46f2707aa77af9b12e3903a9b7da25dd25a9298525ffd231d8ae03",
+        "9024409aaaca03a190455031c1c9f61cc69edea922764b57e33b431387e4a1e1",
+    ),
+    (
+        "sha256_chain/2p7/lambda100",
+        "2d5960466545f252e59540b202d1fb2bc7b718c3b90b7b58a122152cc6517851",
+        "42f79939055dab67b8af40be7a5cfebb240479bad60e7a9ffdc13d897fca2313",
+        "32946a29159e48e6d06b46a0a2e87ef2ea7069c666a68c1f0a0e3bdf9e999d89",
+    ),
+    (
+        "sha256_chain/2p7/lambda128",
+        "c3d62622f33cf64d4ed0c32dccbb0cbce034f250e44435c63bd4caa8ecf1fbbe",
+        "26a2cdf26cbec07a09907fb765f76466973b2385e05eaae62d40cc5025485e15",
+        "06db3871dcc0ae8ea0faffee2d41904435e7c3e1eb58d3bfaed79acaddda1c69",
+    ),
+    (
+        "sha256/2p7/lambda100",
+        "bc133a7a71e451b5e3b44f9d24ea6130a6107e17b6d9e6367cbf122b945551b9",
+        "f6a4ab334f8e8404d9c622f9672586a99e5b069afc631b5df95e2193c8eef31d",
+        "a07bcdf763b7444919fb3c8fe9b6f74df83e918e2ee083c5b3d4e96a34e01331",
+    ),
+    (
+        "sha256/2p7/lambda128",
+        "383ffaede2375e8bc48b974fc1e6f6a85f0bf440edba8fd5d8214c655ae7dc32",
+        "c156b0bac460cd6ce6e81d8d235ddd163725047e443e205e046c5aeb3984a669",
+        "ffa8c6cd70c85c1fc65dbb78962563c19e26248d3b37524961285cd06b6700b4",
+    ),
+    (
+        "sha256/2p7/reference",
+        "b267464171b6951d47fd73e96ec70411cf92f38b515a1087af43b0db538e62da",
+        "81f017a3a18a53bf1932129cf7119e56e8b6848053a479c1ede9002b0681a4dc",
+        "82591cc3ddc9aea8f87f14359c21be567cb6b1adb78901e28a1f373b0b15112f",
+    ),
+    (
+        "sha256/legacy-rows21/lambda100",
+        "cd2b12dcfcb5d015bfd7f1855091704580de7f620c4c3a44943dab75157efb89",
+        "a055a1b87029f11b3f37f60c0d8674271f1e0c3c408af009db751e5fff91caf8",
+        "901b246d028567f075932f18c878504e66c162ea2c3b50301a850197dc5f4d3f",
+    ),
+    (
+        "u128_mul/2p15/lambda100",
+        "15674215cffad17c9c1e79cb764af67e5605d32629f4b6c9e1916ac8b03e8120",
+        "03df0bccd6ee1064fe40f9e37013c0c7ccf0df01b35914b707fa7c9bb4503ce6",
+        "12393a13d68dc76fbb2295c13e4ce418bed0209dbbccf9974f223db88d6b674b",
+    ),
+    (
+        "u32_mul/2p15/w1/lambda100",
+        "a68be59cf6729e370217e45aac593e60f6b2e120b7c549ae0cc16bfdac2c2ef5",
+        "cf491dcf6f4ac3303d63ffbbbf8211ec9dd00542d1f19733c5acf837795856ee",
+        "5c2298fc1c6eb6b7af3c353fa06ae8eb1b8e782b9a8692eb2ec8b04b61833d34",
+    ),
+    (
+        "u32_mul/2p15/w1/lambda128",
+        "6a7c742c3b1fca90eeb6f613e07e45c22bd5fed302ff5fcd32a980096cda42e3",
+        "77f785ad9654d26fcfb413c9767cc02485d0abf0219ab761eb31b5db745ac15e",
+        "70bec04089e8b910d25846237715e044d55ae5b05131fd8b129426e5edef4092",
+    ),
+    (
+        "u32_mul/2p15/w8/lambda100",
+        "5c190826c3eef116f4f36dcd90afccfa0781e07a0773d5580e89f2e820610e52",
+        "e1b087a6f881bcf92d1b70a5bca6282ad7bc500734f2bee9da7f3c87ef123096",
+        "7d0857db55fbe8cd3129f2f52a7397961021d4d5247470d09f0dbfba057fa9f0",
+    ),
+    (
+        "u64_mul/2p15/lambda100",
+        "ce8a805e4b14d83325c5b6290e5a28355d88f3dd84116a7d0418162f702b6b4c",
+        "f25509d5a5bbcd8c39a7662cb77489f21f485fc7c1cf8630b537ef944c250668",
+        "fc442a6f3d3a7c29a2e95dc0df53734bed1b7c3b653cc4b45c591946f5d78868",
+    ),
+    (
+        "u64_mul/2p15/shift+1/lambda100",
+        "d26ce602ce1380396bd0c209b6be724db6d2e8b1007dd29e4fc75b776820b927",
+        "234d33249ec54c319ec5c9d9d733789a4386b2fa5c806aa10a10dd4a0fb00261",
+        "c8f7d41793b75f66b01402695f48a96f899cc8cc7c38fe7cf17fd22e30ae7288",
+    ),
+    (
+        "sha256_ecdsa/2p3/allrows/lambda100",
+        "4c4a89583e32a04075604e49817e0c82aedf78a8d0e513cadebbfc12b3601b91",
+        "4c4a89583e32a04075604e49817e0c82aedf78a8d0e513cadebbfc12b3601b91",
+        "430efbd1d38b89ef85484b32ca9c6cb1d838b81e9d896fa24f36e877ed545cd4",
+    ),
+    (
+        "sha256_ecdsa/2p3/allrows/lambda128",
+        "9c2547f228073539819a9e5d6ecf212b7deff4e7ceca07be32dacca7bae48e3e",
+        "9c2547f228073539819a9e5d6ecf212b7deff4e7ceca07be32dacca7bae48e3e",
+        "d51ccef03a5aad47d41869b4e3822bb079ecdf70b1628e5a3e4c281f11560201",
+    ),
+    (
+        "sha256_ecdsa/2p3/split/lambda100",
+        "ea73d3ed986cfe35f8aeb70198ae86377848540b678db0b990be03bef243e52d",
+        "ea73d3ed986cfe35f8aeb70198ae86377848540b678db0b990be03bef243e52d",
+        "449330377276eb7af359ff2c8647aaf30713614b672b756def484b73dbc4aa1d",
+    ),
+    (
+        "sha256_ecdsa/2p3/split/lambda128",
+        "c8fe4979314e1d84d2ae7e6e9407827c79cda5b13f3df18f1d85131a2b1ef881",
+        "c8fe4979314e1d84d2ae7e6e9407827c79cda5b13f3df18f1d85131a2b1ef881",
+        "3b7dd202fea9dae77af0e46a69f3b53c384bcdfdbc081232138b248352214762",
+    ),
+    (
+        "sha256/fixed98-t13/2p14",
+        "3473046c1d2541e2e71f5282d2b2f935845b7e21b157734f49b56da50f96a40e",
+        "ed22514e7c8b9d3d4a8b1a5f8cb433664997b517fd897fd1ff2a187b84b823fa",
+        "b471fb5b483d4cc95fc529c6432d23285cae1f61973bd9132ffd681f5941b3e2",
+    ),
+    (
+        "hybrid/2p13x16/johnson",
+        "-",
+        "-",
+        "9665efe426da61bbcbf978c9e9a5600c1b717c88728b9a919262688802c0ab1b",
+    ),
 ];
 
 fn digest_hex(parts: &[&[u8]]) -> String {
@@ -83,7 +193,9 @@ fn digest_hex(parts: &[&[u8]]) -> String {
 }
 
 fn state_hex(transcript: &Blake3Transcript) -> String {
-    blake3::Hash::from(transcript.state_digest()).to_hex().to_string()
+    blake3::Hash::from(transcript.state_digest())
+        .to_hex()
+        .to_string()
 }
 
 fn check(name: &str, prover_state: &str, verifier_state: &str, bytes: &str) {
@@ -95,15 +207,26 @@ fn check(name: &str, prover_state: &str, verifier_state: &str, bytes: &str) {
         .iter()
         .find(|(pinned, _, _, _)| *pinned == name)
         .unwrap_or_else(|| panic!("{name}: no pin recorded (run with F2Z_RECORD_PINS=1)"));
-    assert_eq!(prover_state, expected.1, "{name}: prover transcript state moved");
-    assert_eq!(verifier_state, expected.2, "{name}: verifier transcript state moved");
+    assert_eq!(
+        prover_state, expected.1,
+        "{name}: prover transcript state moved"
+    );
+    assert_eq!(
+        verifier_state, expected.2,
+        "{name}: verifier transcript state moved"
+    );
     assert_eq!(bytes, expected.3, "{name}: serialized proof parts moved");
 }
 
 /// Checks (or records) one pin: the prover's and the verifier's final
 /// transcript states plus the serialized proof parts.
 fn pin(name: &str, prover: &Blake3Transcript, verifier: &Blake3Transcript, parts: &[&[u8]]) {
-    check(name, &state_hex(prover), &state_hex(verifier), &digest_hex(parts));
+    check(
+        name,
+        &state_hex(prover),
+        &state_hex(verifier),
+        &digest_hex(parts),
+    );
 }
 
 /// Pins a proof whose prover builds its own transcript (no state digest).
@@ -128,7 +251,8 @@ fn u32_witness(width: U32MulF2zWidth) -> U32MulWitness {
 
 fn u32_pin<P: IopSecurityProfile>(name: &str, width: U32MulF2zWidth) {
     let witness = u32_witness(width);
-    let prepared = PreparedU32MulRelation::new_with_profile::<P>(*witness.layout()).expect("prepare");
+    let prepared =
+        PreparedU32MulRelation::new_with_profile::<P>(*witness.layout()).expect("prepare");
     let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
     let proof = prove_u32_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
@@ -207,7 +331,12 @@ fn u128_mul_2p15_lambda100() {
     let mut vt = Blake3Transcript::new();
     verify_u128_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
-    pin("u128_mul/2p15/lambda100", &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    pin(
+        "u128_mul/2p15/lambda100",
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &f2z_bytes],
+    );
 }
 
 // ---------------------------------------------------------------- BabyBear
@@ -224,14 +353,7 @@ fn baby_bear_pin<P: IopSecurityProfile>(name: &str) {
     let hint =
         commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_baby_bear_mul_paper(
-        &mut pt,
-        &prepared,
-        &witness,
-        &hint,
-        SpartanReductionStrategy::DelayedBarrett,
-    )
-    .expect("prove");
+    let proof = prove_baby_bear_mul_paper(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
     verify_baby_bear_mul_paper(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
@@ -258,15 +380,16 @@ fn multiswap_mini_limber114() {
     let prepared = PreparedMultiswapRelation::new(&circuit).expect("prepare");
     let assignment = MultiswapAssignment::new(&circuit).expect("assignment");
     let (pc, vc) = multiswap_lig_configs(prepared.params()).expect("configs");
-    let hint =
-        commit_multiswap_witness(prepared.params(), assignment.f2z_bit_rows(), &pc).expect("commit");
+    let hint = commit_multiswap_witness(prepared.params(), assignment.f2z_bit_rows(), &pc)
+        .expect("commit");
     let mut pt = Blake3Transcript::new();
     let proof =
         prove_multiswap_mod_r1cs(&mut pt, &prepared, &assignment, &hint, &pc).expect("prove");
     let mut vt = Blake3Transcript::new();
     verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc).expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
-    let mu_prime = proof.mu_prime().expect("lift").to_bytes_le();
+    let mu_prime =
+        f2z::piop::spartan::multiswap::reduce::encode_integer_lift(proof.mu_prime().expect("lift"));
     let nonce = proof.reduction_nonce().expect("nonce").to_le_bytes();
     pin(
         "multiswap/mini/limber114",
@@ -290,10 +413,7 @@ fn sha256_inputs(instances: usize) -> Vec<([u32; 8], [u32; 16])> {
         .collect()
 }
 
-fn sha256_pin(
-    name: &str,
-    prepared: &f2z::piop::spartan::PreparedSha256CompressionBatch,
-) {
+fn sha256_pin(name: &str, prepared: &f2z::piop::spartan::PreparedSha256CompressionBatch) {
     let inputs = sha256_inputs(prepared.instances());
     let witness = generate_sha256_compression_witnesses(prepared, &inputs).expect("witness");
     let statements: Vec<_> = inputs
@@ -317,7 +437,12 @@ fn sha256_pin(
             .copied()
             .chain([proof.initial_nonce(), proof.terminal_nonce()]),
     );
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes, &nonces]);
+    pin(
+        name,
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &f2z_bytes, &nonces],
+    );
 }
 
 #[test]
@@ -328,8 +453,8 @@ fn sha256_2p7_lambda100() {
 
 #[test]
 fn sha256_2p7_reference_schedule() {
-    let prepared =
-        prepare_sha256_compression_batch_with_profile::<Sha128ReferenceSchedule>(7).expect("prepare");
+    let prepared = prepare_sha256_compression_batch_with_profile::<Sha128ReferenceSchedule>(7)
+        .expect("prepare");
     sha256_pin("sha256/2p7/reference", &prepared);
 }
 
@@ -368,13 +493,17 @@ fn sha256_chain_pin<P: IopSecurityProfile>(name: &str) {
     let statement = witness.statement();
     let hint = commit_sha256_chain_witness(&prepared, &witness).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof =
-        prove_sha256_chain(&mut pt, &prepared, &statement, &witness, &hint).expect("prove");
+    let proof = prove_sha256_chain(&mut pt, &prepared, &statement, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
     verify_sha256_chain(&mut vt, &prepared, &statement, &hint.commitment, &proof).expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
     let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes, &nonces]);
+    pin(
+        name,
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &f2z_bytes, &nonces],
+    );
 }
 
 #[test]
@@ -404,10 +533,13 @@ fn cm_and_2p15_lambda100() {
     })
     .expect("witness");
     let layout = *witness.layout();
-    let relation =
-        prepare_cm_and_relation(layout, &field_config).expect("relation");
-    let pc = relation.ligerito_configuration().expect("ligerito").prover();
-    let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), pc).expect("commit");
+    let relation = prepare_cm_and_relation(layout, &field_config).expect("relation");
+    let pc = relation
+        .ligerito_configuration()
+        .expect("ligerito")
+        .prover();
+    let hint =
+        commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), pc).expect("commit");
     let projected =
         project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).expect("project");
     let mut pt = Blake3Transcript::new();
@@ -415,7 +547,12 @@ fn cm_and_2p15_lambda100() {
     let mut vt = Blake3Transcript::new();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).expect("verify");
     let f2z_bytes = proof.f2z().to_bytes();
-    pin("cm_and/2p15/lambda100", &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    pin(
+        "cm_and/2p15/lambda100",
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &f2z_bytes],
+    );
 }
 
 // ---------------------------------------------------------------- SHA-256 + ECDSA
@@ -523,7 +660,9 @@ fn hybrid_2p13_muls_16_compressions_johnson() {
         .collect();
     let committed = prepared.commit(&muls, &blocks).expect("commit");
     let proof = prepared.prove(&committed).expect("prove");
-    prepared.verify(committed.statement(), &proof).expect("verify");
+    prepared
+        .verify(committed.statement(), &proof)
+        .expect("verify");
     let bytes = proof.to_bytes();
     let roots: Vec<u8> = committed
         .statement()

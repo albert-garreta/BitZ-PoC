@@ -33,19 +33,20 @@
 //! Leaf count must be a power of two; pad with the multiplicative identity
 //! `1` (a no-op factor) otherwise.
 
-use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
-use num_traits::Zero;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
+use crate::poly::coefficient::PolynomialField;
+
 use crate::poly::utils::eq_eval;
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcript};
 use crate::utils::{cfg_into_iter, cfg_iter_mut, inner_transparent_field::InnerTransparentField};
+use num_traits::Zero;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
 
 /// Proof that `∏ leaves = root` for a leaf vector of length `2^d`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProductTreeProof<F: PrimeField> {
+pub struct ProductTreeProof<F: PolynomialField> {
     /// The claimed product of all leaves.
     pub root: F,
     /// Per-layer proofs, one per GKR level `k = 0..d`.
@@ -56,7 +57,7 @@ pub struct ProductTreeProof<F: PrimeField> {
 /// layer's subclaim point, plus the sumcheck (`None` for layer 0, which has
 /// zero variables and is a direct product check).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProductLayerProof<F: PrimeField> {
+pub struct ProductLayerProof<F: PolynomialField> {
     /// Sumcheck proof for this layer (`None` for layer `k = 0`).
     pub sumcheck_proof: Option<SumcheckProof<F>>,
     /// Left-child MLE evaluation at the subclaim point.
@@ -121,7 +122,11 @@ where
     F: InnerTransparentField + Send + Sync,
 {
     let d = crate::utils::log2(leaves.len()) as usize;
-    debug_assert_eq!(leaves.len(), 1usize << d, "leaf count must be a power of two");
+    debug_assert_eq!(
+        leaves.len(),
+        1usize << d,
+        "leaf count must be a power of two"
+    );
     debug_assert!(d >= 1, "product trees have depth ≥ 1");
     let mut left = leaves;
     let right = left.split_off(1usize << (d - 1));
@@ -154,7 +159,11 @@ where
     let half1 = layer1.0.len() + layer1.1.len();
     let dm1 = crate::utils::log2(half1) as usize; // = d − 1
     debug_assert_eq!(half1, 1usize << dm1, "layer-1 size must be a power of two");
-    debug_assert_eq!(layer1.0.len(), layer1.1.len(), "layer 1 must come pre-split");
+    debug_assert_eq!(
+        layer1.0.len(),
+        layer1.1.len(),
+        "layer 1 must come pre-split"
+    );
     let mut layers: Vec<LayerHalves<F>> = Vec::with_capacity(dm1 + 2);
     layers.push((Vec::new(), Vec::new())); // slot 0: leaf placeholder, refilled lazily
     layers.push(layer1);
@@ -177,13 +186,14 @@ where
 #[allow(clippy::arithmetic_side_effects)] // index math over a freshly-sized buffer
 pub(crate) fn absorb_field_slice<F>(transcript: &mut impl Transcript, xs: &[F])
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: ConstTranscribable,
 {
     let nb = F::Inner::NUM_BYTES;
     let mut buf = vec![0u8; xs.len() * nb];
     for (i, x) in xs.iter().enumerate() {
-        x.inner().write_transcription_bytes_exact(&mut buf[i * nb..(i + 1) * nb]);
+        x.inner()
+            .write_transcription_bytes_exact(&mut buf[i * nb..(i + 1) * nb]);
     }
     transcript.absorb_inner(&[0x9]); // domain tag: batched field-element slice
     transcript.absorb_inner(&buf);
@@ -198,7 +208,7 @@ where
 /// single-tree forest is transcript-identical to the pre-forest
 /// [`prove_product_tree`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProductForestProof<F: PrimeField> {
+pub struct ProductForestProof<F: PolynomialField> {
     /// Per-tree claimed products, tree-major order.
     pub roots: Vec<F>,
     /// Per merged layer `k = 0..max_depth−1`.
@@ -209,7 +219,7 @@ pub struct ProductForestProof<F: PrimeField> {
 /// direct per-tree `root = l·r` check) and the per-ACTIVE-tree
 /// `(left, right)` child evaluations at the layer's shared subclaim point.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ForestLayerProof<F: PrimeField> {
+pub struct ForestLayerProof<F: PolynomialField> {
     pub sumcheck_proof: Option<SumcheckProof<F>>,
     pub evals: Vec<(F, F)>,
 }
@@ -226,7 +236,7 @@ pub fn prove_product_forest<F>(
     field_cfg: &F::Config,
 ) -> (ProductForestProof<F>, Vec<(Vec<F>, F)>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + crate::utils::wide_mul::WideMulAcc + Send + Sync,
+    F: InnerTransparentField + crate::utils::wide_mul::WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
@@ -234,7 +244,9 @@ where
     let trees: Vec<Vec<LayerHalves<F>>> = {
         let _g = tracing::info_span!("gkr:build").entered();
         // Trees are independent → parallel across trees (each built sequentially).
-        cfg_into_iter!(leaves_per_tree).map(build_product_tree).collect()
+        cfg_into_iter!(leaves_per_tree)
+            .map(build_product_tree)
+            .collect()
     };
     forest_rounds(transcript, trees, None, field_cfg)
 }
@@ -277,7 +289,7 @@ pub fn prove_product_forest_lazy<F, G1>(
     field_cfg: &F::Config,
 ) -> (ProductForestProof<F>, Vec<(Vec<F>, F)>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + crate::utils::wide_mul::WideMulAcc + Send + Sync,
+    F: InnerTransparentField + crate::utils::wide_mul::WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
@@ -326,19 +338,25 @@ fn forest_rounds<F>(
     field_cfg: &F::Config,
 ) -> (ProductForestProof<F>, Vec<(Vec<F>, F)>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + crate::utils::wide_mul::WideMulAcc + Send + Sync,
+    F: InnerTransparentField + crate::utils::wide_mul::WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
     let depths: Vec<usize> = trees.iter().map(|t| t.len() - 1).collect();
     debug_assert!(!depths.is_empty() && depths.iter().all(|&d| d >= 1));
-    debug_assert!(depths.windows(2).all(|w| w[0] >= w[1]), "non-increasing depths");
+    debug_assert!(
+        depths.windows(2).all(|w| w[0] >= w[1]),
+        "non-increasing depths"
+    );
     let max_d = depths[0];
     let num_trees = trees.len();
     let one = F::one_with_cfg(field_cfg);
 
-    let roots: Vec<F> = trees.iter().map(|t| t.last().expect("built").0[0].clone()).collect();
+    let roots: Vec<F> = trees
+        .iter()
+        .map(|t| t.last().expect("built").0[0].clone())
+        .collect();
     absorb_field_slice(transcript, &roots);
 
     // Per-tree state: the running claim v_t at the running point r_t.
@@ -359,22 +377,27 @@ where
                 debug_assert_eq!(v[t], l.clone() * &rgt, "root must equal left·right");
                 evals.push((l, rgt));
             }
-            let flat: Vec<F> = evals.iter().flat_map(|(l, rgt)| [l.clone(), rgt.clone()]).collect();
+            let flat: Vec<F> = evals
+                .iter()
+                .flat_map(|(l, rgt)| [l.clone(), rgt.clone()])
+                .collect();
             absorb_field_slice(transcript, &flat);
             let lambda: F = transcript.get_field_challenge(field_cfg);
             for (t, (l, rgt)) in evals.iter().enumerate() {
                 v[t] = (one.clone() - &lambda) * l + &(lambda.clone() * rgt);
                 r[t] = vec![lambda.clone()];
             }
-            layer_proofs.push(ForestLayerProof { sumcheck_proof: None, evals });
+            layer_proofs.push(ForestLayerProof {
+                sumcheck_proof: None,
+                evals,
+            });
         } else {
             let _g = tracing::info_span!("gkr:round").entered();
             // Fresh per-layer batching challenge (only when ≥ 2 trees are
             // active); group t enters the merged sumcheck with scale ρ^t,
             // so the claimed sum is Σ_t ρ^t·v_t and the final evaluation
             // pins each tree's contribution by Schwartz–Zippel.
-            let rho: Option<F> =
-                (active > 1).then(|| transcript.get_field_challenge(field_cfg));
+            let rho: Option<F> = (active > 1).then(|| transcript.get_field_challenge(field_cfg));
             let groups = {
                 let _g = tracing::info_span!("gkr:groups").entered();
                 // Prefix scales ρ^t (sequential prefix product — `active` muls),
@@ -436,8 +459,10 @@ where
             let evals = {
                 let _g = tracing::info_span!("gkr:absorb").entered();
                 let evals: Vec<(F, F)> = final_evals.iter().map(|fe| fe[0].clone()).collect();
-                let flat: Vec<F> =
-                    evals.iter().flat_map(|(l, r)| [l.clone(), r.clone()]).collect();
+                let flat: Vec<F> = evals
+                    .iter()
+                    .flat_map(|(l, r)| [l.clone(), r.clone()])
+                    .collect();
                 absorb_field_slice(transcript, &flat);
                 evals
             };
@@ -450,12 +475,21 @@ where
                     r[t].push(lambda.clone());
                 }
             }
-            layer_proofs.push(ForestLayerProof { sumcheck_proof: Some(sumcheck_proof), evals });
+            layer_proofs.push(ForestLayerProof {
+                sumcheck_proof: Some(sumcheck_proof),
+                evals,
+            });
         }
     }
 
     let claims: Vec<(Vec<F>, F)> = r.into_iter().zip(v).collect();
-    (ProductForestProof { roots, layers: layer_proofs }, claims)
+    (
+        ProductForestProof {
+            roots,
+            layers: layer_proofs,
+        },
+        claims,
+    )
 }
 
 /// GKR grand-product prover (single tree).
@@ -471,7 +505,7 @@ pub fn prove_product_tree<F>(
     field_cfg: &F::Config,
 ) -> (ProductTreeProof<F>, Vec<F>, F)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + crate::utils::wide_mul::WideMulAcc + Send + Sync,
+    F: InnerTransparentField + crate::utils::wide_mul::WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
@@ -480,7 +514,14 @@ where
         let root = leaves[0].clone();
         let mut buf = vec![0u8; F::Inner::NUM_BYTES];
         transcript.absorb_random_field(&root, &mut buf);
-        return (ProductTreeProof { root: root.clone(), layers: vec![] }, vec![], root);
+        return (
+            ProductTreeProof {
+                root: root.clone(),
+                layers: vec![],
+            },
+            vec![],
+            root,
+        );
     }
     let (forest, mut claims) = prove_product_forest(transcript, vec![leaves], field_cfg);
     let (point, eval) = claims.pop().expect("one tree");
@@ -489,11 +530,18 @@ where
         .into_iter()
         .map(|fl| {
             let (left, right) = fl.evals.into_iter().next().expect("one tree");
-            ProductLayerProof { sumcheck_proof: fl.sumcheck_proof, left, right }
+            ProductLayerProof {
+                sumcheck_proof: fl.sumcheck_proof,
+                left,
+                right,
+            }
         })
         .collect();
     (
-        ProductTreeProof { root: forest.roots.into_iter().next().expect("one tree"), layers },
+        ProductTreeProof {
+            root: forest.roots.into_iter().next().expect("one tree"),
+            layers,
+        },
         point,
         eval,
     )
@@ -511,7 +559,7 @@ pub fn verify_product_tree<F>(
     field_cfg: &F::Config,
 ) -> Result<(Vec<F>, F), ProductTreeError>
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + Send + Sync,
+    F: InnerTransparentField + Send + Sync,
     F::Inner: ConstTranscribable + Zero,
     F::Modulus: ConstTranscribable,
 {
@@ -547,7 +595,7 @@ pub fn verify_product_forest<F>(
     field_cfg: &F::Config,
 ) -> Result<Vec<(Vec<F>, F)>, ProductTreeError>
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + Send + Sync,
+    F: InnerTransparentField + Send + Sync,
     F::Inner: ConstTranscribable + Zero,
     F::Modulus: ConstTranscribable,
 {
@@ -578,8 +626,11 @@ where
         }
 
         if k == 0 {
-            let flat: Vec<F> =
-                lp.evals.iter().flat_map(|(l, rgt)| [l.clone(), rgt.clone()]).collect();
+            let flat: Vec<F> = lp
+                .evals
+                .iter()
+                .flat_map(|(l, rgt)| [l.clone(), rgt.clone()])
+                .collect();
             absorb_field_slice(transcript, &flat);
             for (t, (l, rgt)) in lp.evals.iter().enumerate() {
                 if v[t] != l.clone() * rgt {
@@ -592,12 +643,14 @@ where
                 r[t] = vec![lambda.clone()];
             }
         } else {
-            let sc = lp.sumcheck_proof.as_ref().ok_or(ProductTreeError::MissingSumcheck)?;
+            let sc = lp
+                .sumcheck_proof
+                .as_ref()
+                .ok_or(ProductTreeError::MissingSumcheck)?;
             // ρ batches the active trees' claims; the claimed sum must be
             // Σ_t ρ^t·v_t, and the final evaluation pins each tree's
             // eq_t(s)·l_t·r_t contribution under the same ρ-powers.
-            let rho: Option<F> =
-                (active > 1).then(|| transcript.get_field_challenge(field_cfg));
+            let rho: Option<F> = (active > 1).then(|| transcript.get_field_challenge(field_cfg));
             let mut claimed = F::zero_with_cfg(field_cfg);
             let mut scale = one.clone();
             for vt in v.iter().take(active) {
@@ -613,8 +666,11 @@ where
                 .map_err(|_| ProductTreeError::Sumcheck)?;
             let s = &subclaim.point;
 
-            let flat: Vec<F> =
-                lp.evals.iter().flat_map(|(l, rgt)| [l.clone(), rgt.clone()]).collect();
+            let flat: Vec<F> = lp
+                .evals
+                .iter()
+                .flat_map(|(l, rgt)| [l.clone(), rgt.clone()])
+                .collect();
             absorb_field_slice(transcript, &flat);
             let mut expected = F::zero_with_cfg(field_cfg);
             let mut scale = one.clone();

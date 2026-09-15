@@ -4,7 +4,7 @@
 
 mod support;
 
-use circuit::matrix_products::RuntimeModulus;
+use field::{ModRingCtx, Uint};
 use circuit::matrix_transpose::{MTransposeGenerator, MaterializedMTranspose};
 use circuit::matrix_wengert::{WengertGenerator, WengertTape};
 use circuit::p256::{
@@ -12,7 +12,7 @@ use circuit::p256::{
 };
 use circuit::witgen::ProductWitgen;
 use divan::{Bencher, black_box};
-use field::F128;
+use field::Gf128;
 use num_bigint::BigUint;
 use num_traits::One;
 use std::sync::Once;
@@ -120,7 +120,7 @@ fn p256_abc_mw(bencher: Bencher) {
         ProductWitgen::with_inputs_and_capacity(inputs.as_ref(), VERIFY_DIGEST_WITNESS_BITS);
     verify_digest_circuit(&mut witgen, &inputs);
     let (_, _, integer_products) = witgen.into_parts();
-    let modulus = RuntimeModulus::<2>::new(prime_128()).unwrap();
+    let modulus = ModRingCtx::<2>::new(Uint::from_words([u64::MAX - 158, u64::MAX])).unwrap();
     bencher.bench_local(|| {
         black_box(black_box(&integer_products).reduce_parallel(black_box(&modulus)))
     });
@@ -134,7 +134,7 @@ fn p256_rm(bencher: Bencher) {
     report_m_transpose(&transpose);
     let challenges: Vec<_> = (0..transpose.row_count())
         .map(|index| {
-            F128::new(
+            Gf128::new(
                 (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
                 (index as u64).wrapping_mul(0xd1b5_4a32_d192_ed03),
             )
@@ -159,7 +159,7 @@ fn p256_rabc(bencher: Bencher) {
         })
         .collect();
     let x = [0x243f_6a88_85a3_08d3, 0x1319_8a2e_0370_7344];
-    let modulus = RuntimeModulus::<2>::new(prime_128()).unwrap();
+    let modulus = ModRingCtx::<2>::new(Uint::from_words([u64::MAX - 158, u64::MAX])).unwrap();
     let encoder = tape.prepare(&modulus).unwrap();
     let challenges: Vec<_> = challenges
         .into_iter()

@@ -1,7 +1,11 @@
 //! Composition of Spartan's outer and inner sumchecks.
 
+use crate::piop::spartan::SpartanField as _;
+use crate::piop::spartan::raw_monty::RawFieldStorage;
 use blake3::Hasher;
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+#[cfg(test)]
+use field::Uint;
+use field::{Fp, RingOps};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use thiserror::Error;
@@ -15,31 +19,22 @@ use super::{
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
     raw_monty::{
-        NativeProducts, RawMontyCoefficient, RawMontyCtx, RawProducts, RawWitness, RowFunctional,
-        inner_sumcheck_raw, make_equality_factors_raw, prove_outer_field_raw,
+        NativeOuterInput, NativeProducts, RawMontyCoefficient, RawProducts, RawWitness,
+        RowFunctional, inner_sumcheck_raw, make_equality_factors_raw, prove_outer_field_raw,
         prove_outer_native_raw,
     },
     squeeze_field,
     sumcheck::{
-        CryptoBigintSumcheckReducer, ImmediateSumcheckReducer, InnerSumcheckOutput,
-        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckLinearReducer,
-        SumcheckProductReducer, SumcheckProof, prove_inner_sumcheck_u32_native_with_reducer,
-        prove_inner_sumcheck_with_reducer, prove_outer_sumcheck_u32_native_with_reducer,
-        prove_outer_sumcheck_with_reducer,
+        InnerSumcheckOutput, OuterSumcheckProof, R1csProductMles, SumcheckError,
+        SumcheckLinearReducer, SumcheckProductReducer, SumcheckProof,
+        prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
+        prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
     },
     univariate_skip::{
         PrefixUnivariateRowBinding, UnivariateSkipOuterSumcheckProof, UnivariateSkipProof,
         UnivariateSkipSpartanPiopProof, prove_univariate_skip_outer_sumcheck_with_reducer,
     },
     univariate_skip_native::{compute_u32_native_skip_message_raw, fold_u32_native_prefix_raw},
-};
-
-use crate::utils::delayed_reduction::OptimizedMonty128Reducer;
-
-#[cfg(any(test, feature = "bench-internals"))]
-use super::sumcheck::{
-    FieldCoefficientPolicy, NativeWitnessFoldPolicy, OptimizedSumcheckReducer,
-    prove_inner_sumcheck_u32_native_with_policy,
 };
 
 /// Domain separator for the native Spartan PIOP transcript.
@@ -67,49 +62,6 @@ const NONSUCCINCT_ASSIGNMENT_DIGEST_DOMAIN: &[u8] = b"f2z/spartan/full-assignmen
 pub struct SpartanPiopProof<F> {
     pub outer: OuterSumcheckProof<F>,
     pub inner: SumcheckProof<F, 3>,
-}
-
-/// Arithmetic policy selected once before entering the Spartan prover.
-///
-/// Each arm dispatches to a separately monomorphized sumcheck implementation;
-/// this enum is never inspected inside a product-accumulation loop.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SpartanReductionStrategy {
-    /// Original eager field multiplication and reduction.
-    Immediate,
-    /// Five-limb accumulation with fixed-schedule Barrett/Montgomery reduction.
-    DelayedBarrett,
-    /// Five-limb accumulation with a `crypto-bigint` reference remainder.
-    DelayedCryptoBigint,
-}
-
-/// Native-witness fold policy exposed only for controlled benchmarks.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SpartanInnerNativeFold {
-    Immediate,
-    Delayed,
-}
-
-/// Field coefficient-accumulation policy exposed only for controlled
-/// benchmarks.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SpartanInnerFieldAccumulation {
-    Immediate,
-    Delayed,
-    DelayedAtOrAbovePairs(usize),
-}
-
-/// The two independent policy choices varied by the inner-sumcheck sweep.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SpartanInnerPolicy {
-    pub native_witness_fold: SpartanInnerNativeFold,
-    pub field_coefficients: SpartanInnerFieldAccumulation,
 }
 
 /// Failures while composing or checking the Spartan PIOP.
@@ -172,7 +124,7 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let reducer = ImmediateSumcheckReducer::new(matrices.config());
+    let reducer = matrices.config().clone();
     prove_spartan_piop_with_reducer(
         transcript,
         matrices,
@@ -207,7 +159,7 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let reducer = ImmediateSumcheckReducer::new(matrices.config());
+    let reducer = matrices.config().clone();
     prove_spartan_piop_with_univariate_skip_and_reducer(
         transcript,
         matrices,
@@ -219,59 +171,27 @@ where
     )
 }
 
-/// Runs the two-limb runtime-field prover with an explicitly selected
-/// reduction strategy.
+/// Runs the two-limb runtime-field prover with delayed Barrett reduction.
 // The raw coefficient bound is crate-internal: every coefficient type this
 // crate proves with implements it, and the bound names no public API.
 #[allow(private_bounds)]
-pub fn prove_spartan_piop_with_strategy<C>(
+pub fn prove_spartan_piop_field<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: R1csProductMles<MontyField<2>>,
-    assignment: DenseMultilinearExtension<MontyField<2>>,
-    strategy: SpartanReductionStrategy,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+    products: R1csProductMles<Fp<2>>,
+    assignment: DenseMultilinearExtension<Fp<2>>,
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
-    match strategy {
-        SpartanReductionStrategy::Immediate => {
-            let reducer = ImmediateSumcheckReducer::new(matrices.config());
-            prove_spartan_piop_with_reducer(
-                transcript,
-                matrices,
-                assignment_oracle_binding,
-                products,
-                assignment,
-                &reducer,
-            )
-        }
-        SpartanReductionStrategy::DelayedBarrett => prove_spartan_piop_raw_field(
-            transcript,
-            matrices,
-            assignment_oracle_binding,
-            products,
-            assignment,
-        ),
-        SpartanReductionStrategy::DelayedCryptoBigint => {
-            let reducer = CryptoBigintSumcheckReducer::new(matrices.config())?;
-            prove_spartan_piop_with_reducer(
-                transcript,
-                matrices,
-                assignment_oracle_binding,
-                products,
-                assignment,
-                &reducer,
-            )
-        }
-    }
+    prove_spartan_piop_raw_field(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        assignment,
+    )
 }
 
 /// Runs the standard-outer baseline used by the controlled skip benchmark,
@@ -282,24 +202,17 @@ where
 /// immediate.
 pub fn prove_spartan_piop_u32_native(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, bool>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
-> {
-    prove_spartan_piop_native_u64_with_strategy(
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError> {
+    prove_spartan_piop_native_u64(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
         assignment,
-        SpartanReductionStrategy::DelayedBarrett,
     )
 }
 
@@ -313,15 +226,15 @@ pub fn prove_spartan_piop_u32_native(
 /// reused unchanged.
 pub fn prove_spartan_piop_u32_native_with_univariate_skip(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, bool>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
     skip_vars: usize,
 ) -> Result<
     (
-        UnivariateSkipSpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
+        UnivariateSkipSpartanPiopProof<Fp<2>>,
+        ScaledMleEvaluationClaim<Fp<2>>,
     ),
     SpartanError,
 > {
@@ -343,15 +256,15 @@ pub fn prove_spartan_piop_u32_native_with_univariate_skip(
 /// zero) are read in place, so no padded copy of the witness is made.
 pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, bool>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     assignment: &[u64],
     skip_vars: usize,
 ) -> Result<
     (
-        UnivariateSkipSpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
+        UnivariateSkipSpartanPiopProof<Fp<2>>,
+        ScaledMleEvaluationClaim<Fp<2>>,
     ),
     SpartanError,
 > {
@@ -375,20 +288,20 @@ pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
 /// borrowed native assignment under the known-zero univariate prefix skip.
 pub(crate) fn prove_spartan_piop_native_u64_with_univariate_skip_borrowed<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     assignment: &[u64],
     skip_vars: usize,
 ) -> Result<
     (
-        UnivariateSkipSpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
+        UnivariateSkipSpartanPiopProof<Fp<2>>,
+        ScaledMleEvaluationClaim<Fp<2>>,
     ),
     SpartanError,
 >
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     validate_native_u32_prover_slices(matrices, products, assignment)?;
     let domain = 1usize << matrices.num_column_vars();
@@ -404,19 +317,13 @@ where
 
 pub(crate) fn prove_spartan_piop_native_u64_borrowed<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     assignment: &[u64],
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     validate_native_u32_prover_slices(matrices, products, assignment)?;
     let domain = 1usize << matrices.num_column_vars();
@@ -434,23 +341,17 @@ where
 /// multiplication relation): the outer sumcheck runs on caller-converted raw
 /// product residues and the inner sumcheck on the borrowed native
 /// assignment, so no field-valued table is ever materialized. Statement,
-/// transcript, and proof are identical to [`prove_spartan_piop_with_strategy`]
-/// under [`SpartanReductionStrategy::DelayedBarrett`] on the projected tables.
-pub(crate) fn prove_spartan_piop_raw_products_native_assignment<C>(
+/// transcript, and proof are identical to [`prove_spartan_piop_field`]
+/// under delayed Barrett reduction on the projected tables.
+pub(crate) fn prove_spartan_piop_raw_products_native_assignment<C, P: NativeOuterInput>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: RawProducts,
+    products: P,
     assignment: &[u64],
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     let domain = 1usize << matrices.num_column_vars();
     let column_count = matrices.matrices().column_count();
@@ -478,23 +379,17 @@ where
 /// residues). The witness table must span the padded column domain; for
 /// raw residues the caller guarantees canonical entries and the constant
 /// one at index zero. Statement, transcript, and proof are identical to
-/// [`prove_spartan_piop_with_strategy`] under
-/// [`SpartanReductionStrategy::DelayedBarrett`] on the projected tables.
-pub(crate) fn prove_spartan_piop_raw_products_raw_witness<C>(
+/// [`prove_spartan_piop_field`] under
+/// delayed Barrett reduction on the projected tables.
+pub(crate) fn prove_spartan_piop_raw_products_raw_witness<C, P: NativeOuterInput>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: RawProducts,
+    products: P,
     witness: RawWitness<'_>,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     let rows = 1usize << matrices.num_row_vars();
     if products.len() != rows {
@@ -503,22 +398,22 @@ where
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
     let field_config = matrices.config();
-    let ctx = RawMontyCtx::new(field_config);
-    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
+    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<MontyField<2>>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let (eq_low, eq_high) = {
         let _g = tracing::info_span!("sp:eq").entered();
         make_equality_factors_raw(&ctx, &tau)
     };
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
-        prove_outer_field_raw(
+        prove_outer_native_raw(
             transcript,
             &ctx,
             &reducer,
-            MontyField::<2>::zero_with_cfg(field_config),
+            Fp::<2>::zero_with_cfg(field_config),
             &tau,
             eq_low,
             eq_high,
@@ -526,12 +421,13 @@ where
         )?
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
         &outer.proof.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
@@ -559,33 +455,6 @@ where
     Ok((proof, claim))
 }
 
-/// Runs the standard-outer u32 prover with an explicitly selected reduction
-/// strategy for internal regression tests.
-#[cfg(test)]
-pub(crate) fn prove_spartan_piop_u32_native_with_strategy(
-    transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
-    assignment_oracle_binding: &[u8; 32],
-    products: R1csProductMles<u64>,
-    assignment: DenseMultilinearExtension<u64>,
-    strategy: SpartanReductionStrategy,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
-> {
-    prove_spartan_piop_native_u64_with_strategy(
-        transcript,
-        matrices,
-        assignment_oracle_binding,
-        products,
-        assignment,
-        strategy,
-    )
-}
-
 /// Runs the native-u64 Spartan prover with sparse coefficients supplied by the
 /// relation. Multiplicands remain bounded to 32 bits so the existing native
 /// sumcheck accumulation bounds continue to apply.
@@ -595,132 +464,38 @@ pub(crate) fn prove_spartan_piop_u32_native_with_strategy(
 // The raw coefficient bound is crate-internal: every coefficient type this
 // crate proves with implements it, and the bound names no public API.
 #[allow(private_bounds)]
-pub(crate) fn prove_spartan_piop_native_u64_with_strategy<C>(
+pub(crate) fn prove_spartan_piop_native_u64<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
-    strategy: SpartanReductionStrategy,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
-
-    match strategy {
-        SpartanReductionStrategy::Immediate => {
-            let products = project_native_products(products, matrices.config());
-            let assignment = project_native_mle(assignment, matrices.config());
-            let reducer = ImmediateSumcheckReducer::new(matrices.config());
-            prove_spartan_piop_with_reducer(
-                transcript,
-                matrices,
-                assignment_oracle_binding,
-                products,
-                assignment,
-                &reducer,
-            )
-        }
-        SpartanReductionStrategy::DelayedBarrett => {
-            let domain = assignment.evaluations.len();
-            prove_spartan_piop_raw_native_u64_core(
-                transcript,
-                matrices,
-                assignment_oracle_binding,
-                NativeProducts::from_mles(&products),
-                RawWitness::native_borrowed(&assignment.evaluations, domain),
-            )
-        }
-        SpartanReductionStrategy::DelayedCryptoBigint => {
-            let reducer = CryptoBigintSumcheckReducer::new(matrices.config())?;
-            prove_spartan_piop_u32_native_with_reducer(
-                transcript,
-                matrices,
-                assignment_oracle_binding,
-                products,
-                assignment,
-                &reducer,
-            )
-        }
-    }
-}
-
-/// Runs the native-u64 Spartan prover with a fixed delayed-Barrett outer
-/// sumcheck and a benchmark-selected inner policy.
-///
-/// This entry point is intentionally benchmark-only: it holds the outer
-/// arithmetic and witness representation constant so inner policies can be
-/// compared without changing the statement or transcript.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn prove_spartan_piop_u32_native_barrett_with_inner_policy(
-    transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
-    assignment_oracle_binding: &[u8; 32],
-    products: R1csProductMles<u64>,
-    assignment: DenseMultilinearExtension<u64>,
-    policy: SpartanInnerPolicy,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
-> {
-    validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
-    let delayed = OptimizedSumcheckReducer::new(matrices.config())?;
-    let immediate = ImmediateSumcheckReducer::new(matrices.config());
-    let native_fold_policy = match policy.native_witness_fold {
-        SpartanInnerNativeFold::Immediate => NativeWitnessFoldPolicy::Immediate,
-        SpartanInnerNativeFold::Delayed => NativeWitnessFoldPolicy::Delayed,
-    };
-    let field_coefficient_policy = match policy.field_coefficients {
-        SpartanInnerFieldAccumulation::Immediate => FieldCoefficientPolicy::Immediate,
-        SpartanInnerFieldAccumulation::Delayed => FieldCoefficientPolicy::Delayed,
-        SpartanInnerFieldAccumulation::DelayedAtOrAbovePairs(minimum_pairs) => {
-            FieldCoefficientPolicy::DelayedAtOrAbovePairs(minimum_pairs)
-        }
-    };
-
-    prove_spartan_piop_u32_native_with_inner_policy(
+    let domain = assignment.evaluations.len();
+    prove_spartan_piop_raw_native_u64_core(
         transcript,
         matrices,
         assignment_oracle_binding,
-        products,
-        assignment,
-        &delayed,
-        &delayed,
-        &delayed,
-        &immediate,
-        native_fold_policy,
-        field_coefficient_policy,
+        NativeProducts::from_mles(&products),
+        RawWitness::native_borrowed(&assignment.evaluations, domain),
     )
 }
 
 fn prove_spartan_piop_u32_native_with_reducer<C, R>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
     reducer: &R,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>>,
-    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+    C: SpartanMatrixCoefficient<Fp<2>>,
+    R: SumcheckProductReducer<Fp<2>> + SumcheckLinearReducer,
 {
     prove_spartan_piop_u32_native_with_inner(
         transcript,
@@ -742,97 +517,39 @@ where
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-#[cfg(any(test, feature = "bench-internals"))]
-fn prove_spartan_piop_u32_native_with_inner_policy<C, OR, NR, DR, IR>(
-    transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
-    assignment_oracle_binding: &[u8; 32],
-    products: R1csProductMles<u64>,
-    assignment: DenseMultilinearExtension<u64>,
-    outer_reducer: &OR,
-    native_inner_reducer: &NR,
-    delayed_inner_reducer: &DR,
-    immediate_inner_reducer: &IR,
-    native_fold_policy: NativeWitnessFoldPolicy,
-    field_coefficient_policy: FieldCoefficientPolicy,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
-where
-    C: SpartanMatrixCoefficient<MontyField<2>>,
-    OR: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
-    NR: SumcheckLinearReducer,
-    DR: SumcheckProductReducer<MontyField<2>>,
-    IR: SumcheckProductReducer<MontyField<2>>,
-{
-    prove_spartan_piop_u32_native_with_inner(
-        transcript,
-        matrices,
-        assignment_oracle_binding,
-        products,
-        assignment,
-        outer_reducer,
-        |transcript, initial_claim, batched_matrix, assignment, field_config| {
-            prove_inner_sumcheck_u32_native_with_policy(
-                transcript,
-                initial_claim,
-                batched_matrix,
-                assignment,
-                field_config,
-                native_inner_reducer,
-                delayed_inner_reducer,
-                immediate_inner_reducer,
-                native_fold_policy,
-                field_coefficient_policy,
-            )
-        },
-    )
-}
-
 fn prove_spartan_piop_u32_native_with_inner<T, C, OR, P>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<u64>,
     assignment: DenseMultilinearExtension<u64>,
     outer_reducer: &OR,
     prove_inner: P,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
     T: Transcript,
-    C: SpartanMatrixCoefficient<MontyField<2>>,
-    OR: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+    C: SpartanMatrixCoefficient<Fp<2>>,
+    OR: SumcheckProductReducer<Fp<2>> + SumcheckLinearReducer,
     P: FnOnce(
         &mut T,
-        MontyField<2>,
-        DenseMultilinearExtension<MontyField<2>>,
+        Fp<2>,
+        DenseMultilinearExtension<Fp<2>>,
         DenseMultilinearExtension<u64>,
-        &crypto_bigint::modular::FixedMontyParams<2>,
-    ) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>,
+        &field::FpCtx<2>,
+    ) -> Result<InnerSumcheckOutput<Fp<2>>, SumcheckError>,
 {
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<MontyField<2>>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let equality_factors = make_equality_factors(&tau, field_config)?;
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
         prove_outer_sumcheck_u32_native_with_reducer(
             transcript,
-            MontyField::<2>::zero_with_cfg(field_config),
+            Fp::<2>::zero_with_cfg(field_config),
             &tau,
             equality_factors,
             products,
@@ -841,12 +558,13 @@ where
         )?
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
         &outer.proof.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let batched_matrix = {
         let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
@@ -897,7 +615,7 @@ where
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<F>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let equality_factors = {
         let _g = tracing::info_span!("sp:eq").entered();
         make_equality_factors(&tau, field_config)?
@@ -916,12 +634,13 @@ where
     };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
         &outer.proof.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let batched_matrix = {
         let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
@@ -980,7 +699,7 @@ where
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<F>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let equality_factors = make_equality_factors(&tau_tail, field_config)?;
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_univariate_skip").entered();
@@ -996,12 +715,13 @@ where
     };
 
     // The reused cubic tail absorbed [Az(r), Bz(r), Cz(r)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.proof.tail.az_mle_claim,
         &outer.proof.tail.bz_mle_claim,
         &outer.proof.tail.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let batched_matrix = {
         let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
@@ -1039,19 +759,13 @@ where
 /// with the delayed-Barrett reducer, on 16-byte residue tables.
 fn prove_spartan_piop_raw_field<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: R1csProductMles<MontyField<2>>,
-    assignment: DenseMultilinearExtension<MontyField<2>>,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+    products: R1csProductMles<Fp<2>>,
+    assignment: DenseMultilinearExtension<Fp<2>>,
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     {
         let _g = tracing::info_span!("sp:validate").entered();
@@ -1060,11 +774,11 @@ where
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
     let field_config = matrices.config();
-    let ctx = RawMontyCtx::new(field_config);
-    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
+    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<MontyField<2>>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let (eq_low, eq_high) = {
         let _g = tracing::info_span!("sp:eq").entered();
         make_equality_factors_raw(&ctx, &tau)
@@ -1077,7 +791,7 @@ where
             transcript,
             &ctx,
             &reducer,
-            MontyField::<2>::zero_with_cfg(field_config),
+            Fp::<2>::zero_with_cfg(field_config),
             &tau,
             eq_low,
             eq_high,
@@ -1086,12 +800,13 @@ where
     };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
         &outer.proof.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let inner = {
         let witness = RawWitness::Field(ctx.raw_vec(&assignment.evaluations));
@@ -1126,28 +841,22 @@ where
 /// [`validate_native_u32_prover_slices`].
 fn prove_spartan_piop_raw_native_u64_core<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     witness: RawWitness<'_>,
-) -> Result<
-    (
-        SpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
-    ),
-    SpartanError,
->
+) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     absorb_statement(transcript, matrices, assignment_oracle_binding);
 
     let field_config = matrices.config();
-    let ctx = RawMontyCtx::new(field_config);
-    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
+    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<MontyField<2>>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
@@ -1155,7 +864,7 @@ where
             transcript,
             &ctx,
             &reducer,
-            MontyField::<2>::zero_with_cfg(field_config),
+            Fp::<2>::zero_with_cfg(field_config),
             &tau,
             eq_low,
             eq_high,
@@ -1163,12 +872,13 @@ where
         )?
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
         &outer.proof.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let inner = inner_sumcheck_raw(
         transcript,
@@ -1200,31 +910,31 @@ where
 /// [`validate_native_u32_prover_slices`].
 fn prove_spartan_piop_raw_native_u64_with_skip_core<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     witness: RawWitness<'_>,
     skip_vars: usize,
 ) -> Result<
     (
-        UnivariateSkipSpartanPiopProof<MontyField<2>>,
-        ScaledMleEvaluationClaim<MontyField<2>>,
+        UnivariateSkipSpartanPiopProof<Fp<2>>,
+        ScaledMleEvaluationClaim<Fp<2>>,
     ),
     SpartanError,
 >
 where
-    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
 {
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
     absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
 
     let field_config = matrices.config();
-    let ctx = RawMontyCtx::new(field_config);
-    let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
+    let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
+    let reducer = &ctx;
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<MontyField<2>>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau_tail);
 
     let (outer_proof, row_binding) = {
@@ -1232,6 +942,7 @@ where
         let message = {
             let _scope = tracing::info_span!("spartan:univariate_skip_message").entered();
             compute_u32_native_skip_message_raw(
+                field_config,
                 usize::from(skip_vars),
                 &eq_low,
                 &eq_high,
@@ -1273,12 +984,13 @@ where
         )
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer_proof.tail.az_mle_claim,
         &outer_proof.tail.bz_mle_claim,
         &outer_proof.tail.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let inner = {
         let row_factors = row_binding.row_factors(matrices.num_row_vars(), field_config)?;
@@ -1324,7 +1036,7 @@ where
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<F>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let outer = proof.outer.verify(
         transcript,
         F::zero_with_cfg(field_config),
@@ -1333,12 +1045,13 @@ where
     )?;
 
     // The outer verifier absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.az_mle_claim,
         &outer.bz_mle_claim,
         &outer.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let (column_point, final_claim) = proof.inner.verify(
         transcript,
@@ -1379,17 +1092,18 @@ where
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
         .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Vec<F>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let outer = proof
         .outer
         .verify(transcript, &tau_tail, matrices.num_row_vars(), field_config)?;
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = squeeze_field(transcript, field_config)?;
     let inner_initial_claim = batched_product_claim(
         &outer.az_mle_claim,
         &outer.bz_mle_claim,
         &outer.cz_mle_claim,
         &rho,
+        &field_config,
     );
     let (column_point, final_claim) = proof.inner.verify(
         transcript,
@@ -1435,7 +1149,8 @@ where
     C: SpartanMatrixCoefficient<F>,
 {
     validate_prover_inputs(matrices, &products, &assignment)?;
-    let assignment_binding = nonsuccinct_assignment_digest(matrices, &assignment)?;
+    let assignment_binding =
+        nonsuccinct_assignment_digest(matrices, &assignment, matrices.config())?;
     prove_spartan_piop(
         transcript,
         matrices,
@@ -1462,7 +1177,8 @@ where
     C: SpartanMatrixCoefficient<F>,
 {
     validate_assignment(matrices, assignment)?;
-    let assignment_binding = nonsuccinct_assignment_digest(matrices, assignment)?;
+    let assignment_binding =
+        nonsuccinct_assignment_digest(matrices, assignment, matrices.config())?;
     let expected_claim = verify_spartan_proof(transcript, matrices, &assignment_binding, proof)?;
     if mle_claim != &expected_claim {
         return Err(SpartanError::InvalidMleClaim);
@@ -1558,12 +1274,12 @@ where
 }
 
 fn validate_native_u32_prover_inputs<C>(
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     products: &R1csProductMles<u64>,
     assignment: &DenseMultilinearExtension<u64>,
 ) -> Result<(), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>>,
+    C: SpartanMatrixCoefficient<Fp<2>>,
 {
     let row_vars = matrices.num_row_vars();
     if products.az.num_vars != row_vars
@@ -1606,12 +1322,12 @@ where
 /// is either the complete padded column table or exactly the logical
 /// columns (its padding then being implicitly zero).
 fn validate_native_u32_prover_slices<C>(
-    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     products: NativeProducts<'_>,
     assignment: &[u64],
 ) -> Result<(), SpartanError>
 where
-    C: SpartanMatrixCoefficient<MontyField<2>>,
+    C: SpartanMatrixCoefficient<Fp<2>>,
 {
     let rows = 1usize << matrices.num_row_vars();
     if products.az.len() != rows || products.bz.len() != rows || products.cz.len() != rows {
@@ -1643,13 +1359,13 @@ where
 
 fn project_native_mle(
     mle: DenseMultilinearExtension<u64>,
-    field_config: &crypto_bigint::modular::FixedMontyParams<2>,
-) -> DenseMultilinearExtension<MontyField<2>> {
+    field_config: &field::FpCtx<2>,
+) -> DenseMultilinearExtension<Fp<2>> {
     DenseMultilinearExtension {
         evaluations: mle
             .evaluations
             .into_iter()
-            .map(|value| MontyField::<2>::from_with_cfg(value, field_config))
+            .map(|value| Fp::<2>::from_with_cfg(value, field_config))
             .collect(),
         num_vars: mle.num_vars,
     }
@@ -1657,8 +1373,8 @@ fn project_native_mle(
 
 fn project_native_products(
     products: R1csProductMles<u64>,
-    field_config: &crypto_bigint::modular::FixedMontyParams<2>,
-) -> R1csProductMles<MontyField<2>> {
+    field_config: &field::FpCtx<2>,
+) -> R1csProductMles<Fp<2>> {
     R1csProductMles {
         az: project_native_mle(products.az, field_config),
         bz: project_native_mle(products.bz, field_config),
@@ -1703,6 +1419,7 @@ where
 fn nonsuccinct_assignment_digest<F, C>(
     matrices: &PreparedConstraintMatrices<F, C>,
     assignment: &DenseMultilinearExtension<F>,
+    field_config: &F::Config,
 ) -> Result<[u8; 32], SpartanError>
 where
     F: SpartanField,
@@ -1719,7 +1436,7 @@ where
     hash_binding_usize(&mut hasher, assignment.num_vars)?;
     hash_binding_usize(&mut hasher, assignment.evaluations.len())?;
     for value in &assignment.evaluations {
-        hash_binding_bytes(&mut hasher, &value.canonical_element_encoding())?;
+        hash_binding_bytes(&mut hasher, &value.canonical_element_encoding(field_config))?;
     }
     Ok(*hasher.finalize().as_bytes())
 }
@@ -1853,27 +1570,12 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    // Elements built under one configuration share the SAME `Config`
-    // reference, so encode-and-compare only when the pointer changes:
-    // the sweep stays one canonicity check per element instead of one
-    // modulus-encoding allocation each. The accepted set is unchanged
-    // (pointer-equal configs have equal encodings; a new pointer takes
-    // the full comparison).
     let sweep = |values: &[F]| -> bool {
-        let mut verified_cfg: Option<*const F::Config> = None;
-        for value in values {
-            let cfg_ptr: *const F::Config = value.cfg();
-            if verified_cfg != Some(cfg_ptr) {
-                if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
-                    return false;
-                }
-                verified_cfg = Some(cfg_ptr);
-            }
-            if value.validate_element().is_err() {
-                return false;
-            }
-        }
-        true
+        values.iter().all(|value| {
+            value
+                .validate_element(matrices.field_modulus_encoding())
+                .is_ok()
+        })
     };
     #[cfg(feature = "parallel")]
     let all_valid = if values.len() >= (1 << 14) && rayon::current_num_threads() > 1 {
@@ -1886,34 +1588,28 @@ where
     if !all_valid {
         // Sequential re-scan for the canonical first error.
         for value in values {
-            if F::canonical_modulus_encoding(value.cfg()) != matrices.field_modulus_encoding() {
-                return Err(SpartanError::FieldConfigurationMismatch);
-            }
-            value.validate_element().map_err(SpartanMatrixError::from)?;
+            value
+                .validate_element(matrices.field_modulus_encoding())
+                .map_err(SpartanMatrixError::from)?;
         }
         unreachable!("parallel validation rejected but the canonical scan found no error");
     }
     Ok(())
 }
 
-fn batched_product_claim<F>(az: &F, bz: &F, cz: &F, rho: &F) -> F
+fn batched_product_claim<F>(az: &F, bz: &F, cz: &F, rho: &F, field_config: &F::Config) -> F
 where
     F: SpartanField,
 {
-    let rho_squared = rho.clone() * rho;
+    let rho_squared = field_config.mul(&(rho.clone()), &(rho));
     let mut claim = az.clone();
-    claim += &(rho.clone() * bz);
-    claim += &(rho_squared * cz);
+    claim = field_config.add(&(claim), &(&(field_config.mul(&(rho.clone()), &(bz)))));
+    claim = field_config.add(&(claim), &(&(field_config.mul(&(rho_squared), &(cz)))));
     claim
 }
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        FromWithConfig, PrimeField,
-        crypto_bigint_monty::{F128, F192},
-        crypto_bigint_uint::Uint,
-    };
 
     use crate::transcript::{Blake3Transcript, traits::Transcript};
 
@@ -1929,35 +1625,38 @@ mod tests {
     const ROWS: usize = 5;
     const COLUMNS: usize = 7;
 
-    fn config(modulus: u128) -> <F128 as PrimeField>::Config {
-        F128::make_cfg(&Uint::from(modulus)).expect("odd prime test modulus")
+    fn config(modulus: u128) -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
+        Fp::<2>::make_cfg(&Uint::from(modulus)).expect("odd prime test modulus")
     }
 
-    fn field(value: u128, config: &<F128 as PrimeField>::Config) -> F128 {
-        F128::from_with_cfg(value, config)
+    fn field(value: u128, config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config) -> Fp<2> {
+        Fp::<2>::from_with_cfg(value, config)
     }
 
     fn multiply(
-        matrix: &SparseMatrix<F128>,
-        assignment: &[F128],
-        config: &<F128 as PrimeField>::Config,
-    ) -> Vec<F128> {
+        matrix: &SparseMatrix<Fp<2>>,
+        assignment: &[Fp<2>],
+        config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> Vec<Fp<2>> {
         assert_eq!(assignment.len(), matrix.column_count());
-        let mut products = vec![F128::zero_with_cfg(config); matrix.row_count()];
+        let mut products = vec![Fp::<2>::zero_with_cfg(config); matrix.row_count()];
         for (column, entries) in matrix.columns().enumerate() {
             for (row, coefficient) in entries {
-                products[row] += &(coefficient.clone() * &assignment[column]);
+                products[row] = config.add(
+                    &(products[row]),
+                    &(&(config.mul(&(coefficient.clone()), &(&assignment[column])))),
+                );
             }
         }
         products
     }
 
     fn fixture(
-        config: &<F128 as PrimeField>::Config,
+        config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
     ) -> (
-        PreparedConstraintMatrices<F128>,
-        R1csProductMles<F128>,
-        DenseMultilinearExtension<F128>,
+        PreparedConstraintMatrices<Fp<2>>,
+        R1csProductMles<Fp<2>>,
+        DenseMultilinearExtension<Fp<2>>,
     ) {
         let assignment_values: Vec<_> = (0..COLUMNS)
             .map(|column| field(if column == 0 { 1 } else { (column + 1) as u128 }, config))
@@ -1992,7 +1691,7 @@ mod tests {
             COLUMNS,
             az.iter()
                 .zip(&bz)
-                .map(|(az, bz)| vec![(0, az.clone() * bz)])
+                .map(|(az, bz)| vec![(0, config.mul(&(az.clone()), &(bz)))])
                 .collect(),
         )
         .unwrap();
@@ -2001,7 +1700,7 @@ mod tests {
             az.iter()
                 .zip(&bz)
                 .zip(&cz)
-                .all(|((az, bz), cz)| az.clone() * bz == *cz)
+                .all(|((az, bz), cz)| config.mul(&(az.clone()), &(bz)) == *cz)
         );
 
         let prepared =
@@ -2015,7 +1714,8 @@ mod tests {
     fn round_trip(modulus: u128) {
         let config = config(modulus);
         let (matrices, products, assignment) = fixture(&config);
-        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+        let assignment_binding =
+            nonsuccinct_assignment_digest(&matrices, &assignment, &config).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
         let (proof, claim) = prove_spartan_nonsuccinct(
@@ -2056,26 +1756,32 @@ mod tests {
         .unwrap();
     }
 
-    fn reduction_strategies_match(modulus: u128) {
+    fn delayed_reduction_matches_reference(modulus: u128) {
         let config = config(modulus);
         let (matrices, products, assignment) = fixture(&config);
-        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+        let assignment_binding =
+            nonsuccinct_assignment_digest(&matrices, &assignment, &config).unwrap();
         let mut reference = None;
 
-        for strategy in [
-            SpartanReductionStrategy::Immediate,
-            SpartanReductionStrategy::DelayedBarrett,
-            SpartanReductionStrategy::DelayedCryptoBigint,
-        ] {
+        for delayed in [false, true] {
             let mut transcript = Blake3Transcript::new();
-            let (proof, claim) = prove_spartan_piop_with_strategy(
-                &mut transcript,
-                &matrices,
-                &assignment_binding,
-                products.clone(),
-                assignment.clone(),
-                strategy,
-            )
+            let (proof, claim) = if delayed {
+                prove_spartan_piop_field(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    products.clone(),
+                    assignment.clone(),
+                )
+            } else {
+                prove_spartan_piop(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    products.clone(),
+                    assignment.clone(),
+                )
+            }
             .unwrap();
             let continuation: u128 = transcript.get_challenge();
 
@@ -2099,7 +1805,7 @@ mod tests {
         }
     }
 
-    fn native_u32_reduction_strategies_match(modulus: u128) {
+    fn native_u32_delayed_reduction_matches_reference(modulus: u128) {
         let config = config(modulus);
         let inputs = [
             (0, u32::MAX),
@@ -2115,20 +1821,25 @@ mod tests {
         let assignment_binding = [0xA5; 32];
         let mut reference = None;
 
-        for strategy in [
-            SpartanReductionStrategy::Immediate,
-            SpartanReductionStrategy::DelayedBarrett,
-            SpartanReductionStrategy::DelayedCryptoBigint,
-        ] {
+        for delayed in [false, true] {
             let mut transcript = Blake3Transcript::new();
-            let (proof, claim) = prove_spartan_piop_u32_native_with_strategy(
-                &mut transcript,
-                &matrices,
-                &assignment_binding,
-                products.clone(),
-                assignment.clone(),
-                strategy,
-            )
+            let (proof, claim) = if delayed {
+                prove_spartan_piop_u32_native(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    products.clone(),
+                    assignment.clone(),
+                )
+            } else {
+                prove_spartan_piop(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    project_native_products(products.clone(), &config),
+                    project_native_mle(assignment.clone(), &config),
+                )
+            }
             .unwrap();
             let continuation: u128 = transcript.get_challenge();
 
@@ -2152,98 +1863,11 @@ mod tests {
         }
     }
 
-    fn native_u32_inner_policies_match(modulus: u128) {
-        let config = config(modulus);
-        let inputs = [
-            (0, u32::MAX),
-            (1, 1),
-            (u32::MAX, u32::MAX),
-            (0x8000_0000, 2),
-            (17, 19),
-        ];
-        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
-        let matrices = prepare_u32_mul_relation(*witness.layout(), &config).unwrap();
-        let (assignment, products) = project_u32_mul_native_witness(&witness).into_parts();
-        let assignment_binding = [0x6D; 32];
-        let delayed = OptimizedSumcheckReducer::new(&config).unwrap();
-        let immediate = ImmediateSumcheckReducer::new(&config);
-        let native_policies = [
-            NativeWitnessFoldPolicy::Immediate,
-            NativeWitnessFoldPolicy::Delayed,
-        ];
-        let field_policies = [
-            FieldCoefficientPolicy::Immediate,
-            FieldCoefficientPolicy::Delayed,
-            FieldCoefficientPolicy::DelayedAtOrAbovePairs(0),
-            FieldCoefficientPolicy::DelayedAtOrAbovePairs(4_096),
-            FieldCoefficientPolicy::DelayedAtOrAbovePairs(usize::MAX),
-        ];
-        let mut production_transcript = Blake3Transcript::new();
-        let (production_proof, production_claim) = prove_spartan_piop_u32_native(
-            &mut production_transcript,
-            &matrices,
-            &assignment_binding,
-            products.clone(),
-            assignment.clone(),
-        )
-        .unwrap();
-        let production_continuation: u128 = production_transcript.get_challenge();
-        let reference = (
-            production_proof.clone(),
-            production_claim.clone(),
-            production_continuation,
-        );
-
-        let mut verifier_transcript = Blake3Transcript::new();
-        let verified = verify_spartan_proof(
-            &mut verifier_transcript,
-            &matrices,
-            &assignment_binding,
-            &production_proof,
-        )
-        .unwrap();
-        assert_eq!(production_claim, verified);
-
-        for native_policy in native_policies {
-            for field_policy in field_policies {
-                let mut transcript = Blake3Transcript::new();
-                let (proof, claim) = prove_spartan_piop_u32_native_with_inner_policy(
-                    &mut transcript,
-                    &matrices,
-                    &assignment_binding,
-                    products.clone(),
-                    assignment.clone(),
-                    &delayed,
-                    &delayed,
-                    &delayed,
-                    &immediate,
-                    native_policy,
-                    field_policy,
-                )
-                .unwrap();
-                let continuation: u128 = transcript.get_challenge();
-
-                assert_eq!(proof, reference.0);
-                assert_eq!(claim, reference.1);
-                assert_eq!(continuation, reference.2);
-
-                let mut verifier_transcript = Blake3Transcript::new();
-                let verified = verify_spartan_proof(
-                    &mut verifier_transcript,
-                    &matrices,
-                    &assignment_binding,
-                    &proof,
-                )
-                .unwrap();
-                assert_eq!(claim, verified);
-            }
-        }
-    }
-
     fn univariate_skip_round_trip(modulus: u128) {
         let field_config = config(modulus);
         let (matrices, products, assignment) = fixture(&field_config);
-        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+        let assignment_binding =
+            nonsuccinct_assignment_digest(&matrices, &assignment, &field_config).unwrap();
 
         for skip_vars in 1..=matrices.num_row_vars() {
             let mut prover_transcript = Blake3Transcript::new();
@@ -2364,20 +1988,14 @@ mod tests {
 
     #[test]
     fn delayed_reduction_is_proof_and_transcript_exact() {
-        reduction_strategies_match(Q100);
-        reduction_strategies_match((1_u128 << 127) - 1);
+        delayed_reduction_matches_reference(Q100);
+        delayed_reduction_matches_reference((1_u128 << 127) - 1);
     }
 
     #[test]
     fn native_u32_first_round_is_proof_and_transcript_exact_at_boundaries() {
-        native_u32_reduction_strategies_match(Q100);
-        native_u32_reduction_strategies_match((1_u128 << 127) - 1);
-    }
-
-    #[test]
-    fn native_u32_inner_policies_are_proof_and_transcript_exact() {
-        native_u32_inner_policies_match(Q100);
-        native_u32_inner_policies_match((1_u128 << 127) - 1);
+        native_u32_delayed_reduction_matches_reference(Q100);
+        native_u32_delayed_reduction_matches_reference((1_u128 << 127) - 1);
     }
 
     #[test]
@@ -2396,7 +2014,8 @@ mod tests {
     fn univariate_skip_rejects_malformed_and_tampered_proofs() {
         let field_config = config(Q100);
         let (matrices, products, assignment) = fixture(&field_config);
-        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+        let assignment_binding =
+            nonsuccinct_assignment_digest(&matrices, &assignment, &field_config).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let (proof, _) = prove_spartan_piop_with_univariate_skip(
             &mut prover_transcript,
@@ -2411,7 +2030,10 @@ mod tests {
 
         for coordinate in 0..proof.outer.skip.finite_q_evaluations.len() {
             let mut tampered = proof.clone();
-            tampered.outer.skip.finite_q_evaluations[coordinate] += &one;
+            tampered.outer.skip.finite_q_evaluations[coordinate] = field_config.add(
+                &(tampered.outer.skip.finite_q_evaluations[coordinate]),
+                &(&one),
+            );
             assert!(
                 verify_spartan_univariate_skip_proof(
                     &mut Blake3Transcript::new(),
@@ -2425,7 +2047,8 @@ mod tests {
         }
 
         let mut tampered_infinity = proof.clone();
-        tampered_infinity.outer.skip.q_at_infinity += &one;
+        tampered_infinity.outer.skip.q_at_infinity =
+            field_config.add(&(tampered_infinity.outer.skip.q_at_infinity), &(&one));
         assert!(
             verify_spartan_univariate_skip_proof(
                 &mut Blake3Transcript::new(),
@@ -2437,7 +2060,10 @@ mod tests {
         );
 
         let mut tampered_tail = proof.clone();
-        tampered_tail.outer.tail.sumcheck.round_polynomials[0][0] += &one;
+        tampered_tail.outer.tail.sumcheck.round_polynomials[0][0] = field_config.add(
+            &(tampered_tail.outer.tail.sumcheck.round_polynomials[0][0]),
+            &(&one),
+        );
         assert!(
             verify_spartan_univariate_skip_proof(
                 &mut Blake3Transcript::new(),
@@ -2451,9 +2077,18 @@ mod tests {
         for terminal in 0..3 {
             let mut tampered_terminal = proof.clone();
             match terminal {
-                0 => tampered_terminal.outer.tail.az_mle_claim += &one,
-                1 => tampered_terminal.outer.tail.bz_mle_claim += &one,
-                2 => tampered_terminal.outer.tail.cz_mle_claim += &one,
+                0 => {
+                    tampered_terminal.outer.tail.az_mle_claim =
+                        field_config.add(&(tampered_terminal.outer.tail.az_mle_claim), &(&one))
+                }
+                1 => {
+                    tampered_terminal.outer.tail.bz_mle_claim =
+                        field_config.add(&(tampered_terminal.outer.tail.bz_mle_claim), &(&one))
+                }
+                2 => {
+                    tampered_terminal.outer.tail.cz_mle_claim =
+                        field_config.add(&(tampered_terminal.outer.tail.cz_mle_claim), &(&one))
+                }
                 _ => unreachable!(),
             }
             assert!(
@@ -2579,7 +2214,8 @@ mod tests {
 
         let other_config = config((1_u128 << 127) - 1);
         let mut foreign_field = proof.clone();
-        foreign_field.outer.skip.finite_q_evaluations[0] = field(1, &other_config);
+        foreign_field.outer.skip.finite_q_evaluations[0] =
+            crate::piop::spartan::noncanonical_test_value(&matrices.config());
         let mut malformed_transcript = Blake3Transcript::new();
         let mut untouched_transcript = malformed_transcript.clone();
         assert_eq!(
@@ -2589,7 +2225,11 @@ mod tests {
                 &assignment_binding,
                 &foreign_field,
             ),
-            Err(SpartanError::FieldConfigurationMismatch)
+            Err(SpartanError::Matrix(
+                SpartanMatrixError::InvalidFieldConfiguration(
+                    crate::piop::spartan::SpartanFieldError::NonCanonicalElement
+                )
+            ))
         );
         assert_eq!(
             malformed_transcript.get_challenge::<u128>(),
@@ -2625,15 +2265,15 @@ mod tests {
 
         let mut standard = Blake3Transcript::new();
         absorb_statement(&mut standard, &matrices, &assignment_binding);
-        let standard_challenge = squeeze_field::<F128, _>(&mut standard, &field_config);
+        let standard_challenge = squeeze_field::<Fp<2>, _>(&mut standard, &field_config).unwrap();
 
         let mut skip_k2 = Blake3Transcript::new();
         absorb_univariate_skip_statement(&mut skip_k2, &matrices, &assignment_binding, 2);
-        let skip_k2_challenge = squeeze_field::<F128, _>(&mut skip_k2, &field_config);
+        let skip_k2_challenge = squeeze_field::<Fp<2>, _>(&mut skip_k2, &field_config).unwrap();
 
         let mut skip_k3 = Blake3Transcript::new();
         absorb_univariate_skip_statement(&mut skip_k3, &matrices, &assignment_binding, 3);
-        let skip_k3_challenge = squeeze_field::<F128, _>(&mut skip_k3, &field_config);
+        let skip_k3_challenge = squeeze_field::<Fp<2>, _>(&mut skip_k3, &field_config).unwrap();
 
         assert_ne!(standard_challenge, skip_k2_challenge);
         assert_ne!(skip_k2_challenge, skip_k3_challenge);
@@ -2648,20 +2288,25 @@ mod tests {
         let assignment_binding = [0x3C; 32];
         let mut reference = None;
 
-        for strategy in [
-            SpartanReductionStrategy::Immediate,
-            SpartanReductionStrategy::DelayedBarrett,
-            SpartanReductionStrategy::DelayedCryptoBigint,
-        ] {
+        for delayed in [false, true] {
             let mut transcript = Blake3Transcript::new();
-            let (proof, claim) = prove_spartan_piop_u32_native_with_strategy(
-                &mut transcript,
-                &matrices,
-                &assignment_binding,
-                products.clone(),
-                assignment.clone(),
-                strategy,
-            )
+            let (proof, claim) = if delayed {
+                prove_spartan_piop_u32_native(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    products.clone(),
+                    assignment.clone(),
+                )
+            } else {
+                prove_spartan_piop(
+                    &mut transcript,
+                    &matrices,
+                    &assignment_binding,
+                    project_native_products(products.clone(), &config),
+                    project_native_mle(assignment.clone(), &config),
+                )
+            }
             .unwrap();
             assert!(proof.outer.sumcheck.round_polynomials.is_empty());
             let continuation = transcript.get_challenge::<u128>();
@@ -2697,13 +2342,12 @@ mod tests {
         let mut rejected_transcript = Blake3Transcript::new();
 
         assert_eq!(
-            prove_spartan_piop_u32_native_with_strategy(
+            prove_spartan_piop_u32_native(
                 &mut rejected_transcript,
                 &matrices,
                 &[0x5A; 32],
                 products,
                 assignment,
-                SpartanReductionStrategy::DelayedBarrett,
             ),
             Err(SpartanError::Sumcheck(
                 SumcheckError::NativeMultiplicandOutOfRange
@@ -2719,9 +2363,9 @@ mod tests {
 
     #[test]
     fn piop_is_generic_across_montgomery_limb_widths_and_zero_variable_domains() {
-        let modulus = <F192 as crypto_primitives::Field>::Modulus::from(Q100);
-        let config = F192::make_cfg(&modulus).unwrap();
-        let one = F192::one_with_cfg(&config);
+        let modulus = Uint::<2>::from(Q100).zero_extend::<3>();
+        let config = Fp::<3>::make_cfg(&modulus).unwrap();
+        let one = Fp::<3>::one_with_cfg(&config);
         let a = SparseMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
         let b = a.clone();
         let c = a.clone();
@@ -2765,8 +2409,8 @@ mod tests {
     fn parallel_field_validation_preserves_first_error_and_pre_absorption() {
         let config = config(Q100);
         let foreign_config = self::config((1_u128 << 127) - 1);
-        let one = F128::one_with_cfg(&config);
-        let zero = F128::zero_with_cfg(&config);
+        let one = Fp::<2>::one_with_cfg(&config);
+        let zero = Fp::<2>::zero_with_cfg(&config);
         let logical_rows = (1 << 13) + 1;
         let matrix = || {
             SparseMatrix::try_from_rows(
@@ -2798,8 +2442,9 @@ mod tests {
             .num_threads(4)
             .build()
             .unwrap();
-        let foreign = field(1, &foreign_config);
-        let malformed = F128::new_unchecked(Uint::from(u128::MAX), &config);
+        let foreign = crate::piop::spartan::noncanonical_test_value(&matrices.config());
+        let malformed = field::FpCtx::from_prime_u128(u128::MAX - 158)
+            .from_montgomery_integer(*config.modulus());
 
         let mut foreign_first = vec![zero.clone(); 1 << 14];
         foreign_first[17] = foreign.clone();
@@ -2810,7 +2455,12 @@ mod tests {
         let parallel_error = parallel_pool
             .install(|| validate_elements_field(&foreign_first, &matrices))
             .unwrap_err();
-        assert_eq!(sequential_error, SpartanError::FieldConfigurationMismatch);
+        assert_eq!(
+            sequential_error,
+            SpartanError::Matrix(SpartanMatrixError::InvalidFieldConfiguration(
+                crate::piop::spartan::SpartanFieldError::NonCanonicalElement
+            ))
+        );
         assert_eq!(parallel_error, sequential_error);
 
         let mut malformed_first = vec![zero.clone(); 1 << 14];
@@ -2858,7 +2508,14 @@ mod tests {
                 assignment,
             )
         });
-        assert_eq!(result, Err(SpartanError::FieldConfigurationMismatch));
+        assert_eq!(
+            result,
+            Err(SpartanError::Matrix(
+                SpartanMatrixError::InvalidFieldConfiguration(
+                    crate::piop::spartan::SpartanFieldError::NonCanonicalElement
+                )
+            ))
+        );
 
         let mut fresh_transcript = Blake3Transcript::new();
         assert_eq!(
@@ -2876,7 +2533,7 @@ mod tests {
         .unwrap();
         assert_eq!(wide_matrices.num_column_vars(), 16);
         let mut padded_assignment = DenseMultilinearExtension {
-            evaluations: vec![F128::zero_with_cfg(&config); 1 << 16],
+            evaluations: vec![Fp::<2>::zero_with_cfg(&config); 1 << 16],
             num_vars: 16,
         };
         padded_assignment.evaluations[0] = one.clone();
@@ -2922,7 +2579,8 @@ mod tests {
     fn tampered_round_and_assignment_are_rejected() {
         let config = config(Q100);
         let (matrices, products, assignment) = fixture(&config);
-        let assignment_binding = nonsuccinct_assignment_digest(&matrices, &assignment).unwrap();
+        let assignment_binding =
+            nonsuccinct_assignment_digest(&matrices, &assignment, &config).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let (proof, claim) = prove_spartan_nonsuccinct(
             &mut prover_transcript,
@@ -2933,7 +2591,10 @@ mod tests {
         .unwrap();
 
         let mut tampered_proof = proof.clone();
-        tampered_proof.outer.sumcheck.round_polynomials[0][0] += &F128::one_with_cfg(&config);
+        tampered_proof.outer.sumcheck.round_polynomials[0][0] = config.add(
+            &(tampered_proof.outer.sumcheck.round_polynomials[0][0]),
+            &(&Fp::<2>::one_with_cfg(&config)),
+        );
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
             verify_spartan_proof(
@@ -2946,7 +2607,10 @@ mod tests {
         );
 
         let mut tampered_terminal = proof.clone();
-        tampered_terminal.outer.az_mle_claim += &F128::one_with_cfg(&config);
+        tampered_terminal.outer.az_mle_claim = config.add(
+            &(tampered_terminal.outer.az_mle_claim),
+            &(&Fp::<2>::one_with_cfg(&config)),
+        );
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
             verify_spartan_proof(
@@ -2960,7 +2624,8 @@ mod tests {
 
         let foreign_config = self::config((1_u128 << 127) - 1);
         let mut foreign_proof = proof.clone();
-        foreign_proof.outer.sumcheck.round_polynomials[0][0] = field(1, &foreign_config);
+        foreign_proof.outer.sumcheck.round_polynomials[0][0] =
+            crate::piop::spartan::noncanonical_test_value(&matrices.config());
         let mut rejected_transcript = Blake3Transcript::new();
         assert_eq!(
             verify_spartan_proof(
@@ -2969,7 +2634,11 @@ mod tests {
                 &assignment_binding,
                 &foreign_proof,
             ),
-            Err(SpartanError::FieldConfigurationMismatch)
+            Err(SpartanError::Matrix(
+                SpartanMatrixError::InvalidFieldConfiguration(
+                    crate::piop::spartan::SpartanFieldError::NonCanonicalElement
+                )
+            ))
         );
         let mut untouched_transcript = Blake3Transcript::new();
         assert_eq!(
@@ -2979,7 +2648,10 @@ mod tests {
         );
 
         let mut tampered_assignment = assignment;
-        tampered_assignment.evaluations[1] += &F128::one_with_cfg(&config);
+        tampered_assignment.evaluations[1] = config.add(
+            &(tampered_assignment.evaluations[1]),
+            &(&Fp::<2>::one_with_cfg(&config)),
+        );
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
             verify_spartan_with_mle_claim(
@@ -2996,8 +2668,8 @@ mod tests {
     #[test]
     fn nonsuccinct_verifier_rejects_the_zero_assignment_forgery() {
         let config = config(Q100);
-        let one = F128::one_with_cfg(&config);
-        let zero = F128::zero_with_cfg(&config);
+        let one = Fp::<2>::one_with_cfg(&config);
+        let zero = Fp::<2>::zero_with_cfg(&config);
         let a = SparseMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
         let b = a.clone();
         let c = SparseMatrix::try_from_rows(1, vec![Vec::new()]).unwrap();

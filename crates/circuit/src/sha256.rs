@@ -547,7 +547,6 @@ mod tests {
     use std::iter::Sum;
     use std::ops::{Add, AddAssign};
 
-    use num_bigint::BigInt;
     use num_traits::Zero;
 
     use super::*;
@@ -686,7 +685,7 @@ mod tests {
         for (row, value) in from_m.iter().enumerate() {
             assert_eq!(
                 value,
-                &BigInt::from(recorded.bit(row)),
+                &recorded.bit(row),
                 "integer witness differs at M row {row}"
             );
         }

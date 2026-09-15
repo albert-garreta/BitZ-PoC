@@ -1,7 +1,7 @@
-use crate::field::F128;
+use crate::field::Gf128;
 
 #[inline]
-pub(super) fn butterfly_row_pair(top: &mut [F128], bot: &mut [F128], twiddle: F128) {
+pub(super) fn butterfly_row_pair(top: &mut [Gf128], bot: &mut [Gf128], twiddle: Gf128) {
     for lane in 0..top.len() {
         let v = bot[lane];
         let new_u = top[lane] + v * twiddle;
@@ -13,13 +13,13 @@ pub(super) fn butterfly_row_pair(top: &mut [F128], bot: &mut [F128], twiddle: F1
 #[allow(clippy::too_many_arguments)]
 #[inline]
 pub(super) fn butterfly_fused_2layer(
-    a: &mut [F128],
-    b: &mut [F128],
-    c: &mut [F128],
-    d: &mut [F128],
-    t_outer: F128,
-    t_inner_a: F128,
-    t_inner_b: F128,
+    a: &mut [Gf128],
+    b: &mut [Gf128],
+    c: &mut [Gf128],
+    d: &mut [Gf128],
+    t_outer: Gf128,
+    t_inner_a: Gf128,
+    t_inner_b: Gf128,
 ) {
     for lane in 0..a.len() {
         let mut xa = a[lane];
@@ -46,9 +46,9 @@ pub(super) fn butterfly_fused_2layer(
 }
 
 #[inline]
-pub(super) fn butterfly_fused_4layer(values: &mut [F128; 16], twiddles: &[F128; 15]) {
+pub(super) fn butterfly_fused_4layer(values: &mut [Gf128; 16], twiddles: &[Gf128; 15]) {
     #[inline(always)]
-    fn butterfly(values: &mut [F128; 16], u: usize, v: usize, twiddle: F128) {
+    fn butterfly(values: &mut [Gf128; 16], u: usize, v: usize, twiddle: Gf128) {
         let new_u = values[u] + values[v] * twiddle;
         values[v] += new_u;
         values[u] = new_u;
@@ -78,19 +78,22 @@ pub(super) fn butterfly_fused_4layer(values: &mut [F128; 16], twiddles: &[F128; 
 #[cfg(not(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 )))]
 pub(super) unsafe fn butterfly_fused_4layer_row(
-    ptr: *mut F128,
+    ptr: *mut Gf128,
     sixteenth: usize,
     num_ntts: usize,
     r: usize,
-    twiddles: &[F128; 15],
+    twiddles: &[Gf128; 15],
 ) {
     // SAFETY: caller supplies the pointer geometry and disjointness contract.
     unsafe {
         for lane in 0..num_ntts {
-            let mut values = [F128::ZERO; 16];
+            let mut values = [Gf128::ZERO; 16];
             for (i, value) in values.iter_mut().enumerate() {
                 *value = *ptr.add((i * sixteenth + r) * num_ntts + lane);
             }

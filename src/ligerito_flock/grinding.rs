@@ -193,11 +193,11 @@ impl<T: Transcript + Send> Challenger for GrindingChallenger<'_, '_, T> {
         self.active = false;
         self.inner.observe_label(label);
     }
-    fn observe_f128(&mut self, value: F128) {
+    fn observe_f128(&mut self, value: Gf128) {
         self.active = false;
         self.inner.observe_f128(value);
     }
-    fn observe_f128_slice(&mut self, values: &[F128]) {
+    fn observe_f128_slice(&mut self, values: &[Gf128]) {
         self.active = false;
         self.inner.observe_f128_slice(values);
     }
@@ -205,7 +205,7 @@ impl<T: Transcript + Send> Challenger for GrindingChallenger<'_, '_, T> {
         self.active = false;
         self.inner.observe_bytes(bytes);
     }
-    fn sample_f128(&mut self) -> F128 {
+    fn sample_f128(&mut self) -> Gf128 {
         if !self.active {
             let bits = self.begin(None);
             if bits > 0 {

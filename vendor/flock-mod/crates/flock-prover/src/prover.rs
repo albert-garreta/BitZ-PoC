@@ -26,7 +26,7 @@
 //! ```
 
 use flock_core::challenger::Challenger;
-use flock_core::field::F128;
+use flock_core::field::Gf128;
 use flock_core::lincheck::SkipPoint;
 use flock_core::lincheck::{self, QuirkyPoint, pack_z_lincheck_from_packed};
 use flock_core::pcs::{self, Commitment, PcsParams};
@@ -40,7 +40,7 @@ use flock_core::zerocheck;
 /// QuirkyPoint: concatenate `x_inner_rest` and `x_outer`. This is the format
 /// the PCS expects (k_skip = 6 absorbed via `z_skip`; everything else is
 /// multilinear).
-pub(crate) fn quirky_x_outer_full(point: &QuirkyPoint) -> Vec<F128> {
+pub(crate) fn quirky_x_outer_full(point: &QuirkyPoint) -> Vec<Gf128> {
     let mut v = Vec::with_capacity(point.x_inner_rest.len() + point.x_outer.len());
     v.extend_from_slice(&point.x_inner_rest);
     v.extend_from_slice(&point.x_outer);
@@ -59,20 +59,20 @@ pub(crate) fn quirky_x_outer_full(point: &QuirkyPoint) -> Vec<F128> {
 /// Must be called at the same transcript position as the verifier's
 /// [`flock_core::verifier::verify_claims_ligerito`].
 pub(crate) fn open_claims_with_precomputed_ligerito<Ch: Challenger>(
-    z_packed: Vec<F128>,
+    z_packed: Vec<Gf128>,
     prover_data: &pcs::ProverData,
     commitment: &Commitment,
     claims: &[ZClaim],
-    precomputed_s_hat_v: &[Option<&[F128]>],
+    precomputed_s_hat_v: &[Option<&[Gf128]>],
     padding: &zerocheck::PaddingSpec,
     lig_config: &pcs::ligerito::ProverConfig,
     challenger: &mut Ch,
 ) -> pcs::BatchOpeningProofLigerito {
-    let x_fulls: Vec<Vec<F128>> = claims
+    let x_fulls: Vec<Vec<Gf128>> = claims
         .iter()
         .map(|c| quirky_x_outer_full(&c.point))
         .collect();
-    let x_refs: Vec<&[F128]> = x_fulls.iter().map(|v| v.as_slice()).collect();
+    let x_refs: Vec<&[Gf128]> = x_fulls.iter().map(|v| v.as_slice()).collect();
     pcs::open_batch_mixed_ligerito_with_precomputed_s_hat_v(
         z_packed,
         prover_data,
@@ -97,7 +97,7 @@ pub(crate) fn open_claims_with_precomputed_ligerito<Ch: Challenger>(
 /// the verifier needs to know to check the openings).
 pub fn prove_ligerito<Ch: Challenger>(
     r1cs: &BlockR1cs,
-    z_packed: Vec<F128>,
+    z_packed: Vec<Gf128>,
     pcs_params: &PcsParams,
     challenger: &mut Ch,
 ) -> (R1csProofLigerito, Commitment, R1csClaim) {
@@ -121,12 +121,12 @@ pub fn prove_ligerito<Ch: Challenger>(
     // a = A·z, b = B·z; for the C = I convention c aliases z.
     let a_packed_f128 = r1cs.apply_a_packed(&z_packed);
     let b_packed_f128 = r1cs.apply_b_packed(&z_packed);
-    let c_packed_f128: Vec<F128> = if r1cs.c0_is_identity() {
+    let c_packed_f128: Vec<Gf128> = if r1cs.c0_is_identity() {
         Vec::new()
     } else {
         r1cs.apply_c_packed(&z_packed)
     };
-    let cast = |v: &[F128]| -> &[u8] {
+    let cast = |v: &[Gf128]| -> &[u8] {
         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, std::mem::size_of_val(v)) }
     };
     let a_packed: &[u8] = cast(&a_packed_f128);
@@ -175,8 +175,8 @@ pub fn prove_ligerito<Ch: Challenger>(
     } else {
         None
     };
-    let pre_ab: Option<&[F128]> = s_hat_v_ab.as_deref();
-    let pre_c: Option<&[F128]> = Some(s_hat_v_c.as_slice());
+    let pre_ab: Option<&[Gf128]> = s_hat_v_ab.as_deref();
+    let pre_c: Option<&[Gf128]> = Some(s_hat_v_c.as_slice());
     let pcs_open = open_claims_with_precomputed_ligerito(
         z_packed,
         &prover_data,
@@ -205,12 +205,12 @@ pub fn prove_ligerito<Ch: Challenger>(
 pub fn prove_fast_ligerito_from_witness<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
-    z_packed: Vec<F128>,
-    a_packed_f128: Vec<F128>,
-    b_packed_f128: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
     z_packed_lincheck: Vec<u8>,
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
-    prefaulted_codeword: Option<Vec<F128>>,
+    prefaulted_codeword: Option<Vec<Gf128>>,
     challenger: &mut Ch,
 ) -> (R1csProofLigerito, Commitment, R1csClaim) {
     let lig_config = pcs_params
@@ -240,8 +240,8 @@ pub fn prove_fast_ligerito_from_witness<Ch: Challenger>(
     );
 
     let padding = r1cs.padding_spec();
-    let pre_ab: Option<&[F128]> = s_hat_v_ab.as_deref();
-    let pre_c: Option<&[F128]> = Some(s_hat_v_c.as_slice());
+    let pre_ab: Option<&[Gf128]> = s_hat_v_ab.as_deref();
+    let pre_c: Option<&[Gf128]> = Some(s_hat_v_c.as_slice());
     let pcs_open = open_claims_with_precomputed_ligerito(
         z_packed,
         &prover_data,
@@ -271,7 +271,7 @@ pub fn prove_fast_ligerito_from_witness<Ch: Challenger>(
 #[cfg(target_arch = "aarch64")]
 pub fn prove_ligerito_ag<Ch: Challenger>(
     r1cs: &BlockR1cs,
-    z_packed: Vec<F128>,
+    z_packed: Vec<Gf128>,
     pcs_params: &PcsParams,
     challenger: &mut Ch,
 ) -> (R1csProofLigeritoAg, Commitment, R1csClaim) {
@@ -322,12 +322,12 @@ pub fn prove_ligerito_ag<Ch: Challenger>(
 pub fn prove_fast_ligerito_ag_from_witness<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
-    z_packed: Vec<F128>,
-    a_packed_f128: Vec<F128>,
-    b_packed_f128: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
     z_packed_lincheck: Vec<u8>,
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
-    prefaulted_codeword: Option<Vec<F128>>,
+    prefaulted_codeword: Option<Vec<Gf128>>,
     challenger: &mut Ch,
 ) -> (R1csProofLigeritoAg, Commitment, R1csClaim) {
     assert_eq!(
@@ -348,7 +348,7 @@ pub fn prove_fast_ligerito_ag_from_witness<Ch: Challenger>(
     // ---- AG-skip zerocheck (round 1 = genus-95 AG code; tail = shared MLV).
     // Capture s_hat_v_c so the open skips fold_1b_rows for the c-claim.
     let (ag_proof, ag_claim, s_hat_v_c) = {
-        let cast = |v: &[F128]| -> &[u8] {
+        let cast = |v: &[Gf128]| -> &[u8] {
             unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, std::mem::size_of_val(v)) }
         };
         zerocheck::ag_skip::prove_capture_s_hat_v_c(
@@ -403,8 +403,8 @@ pub fn prove_fast_ligerito_ag_from_witness<Ch: Challenger>(
     };
 
     let padding = r1cs.padding_spec();
-    let pre_ab: Option<&[F128]> = s_hat_v_ab.as_deref();
-    let pre_c: Option<&[F128]> = Some(s_hat_v_c.as_slice());
+    let pre_ab: Option<&[Gf128]> = s_hat_v_ab.as_deref();
+    let pre_c: Option<&[Gf128]> = Some(s_hat_v_c.as_slice());
     let pcs_open = open_claims_with_precomputed_ligerito(
         z_packed,
         &prover_data,
@@ -434,12 +434,12 @@ pub fn prove_fast_ligerito_ag_from_witness<Ch: Challenger>(
 pub fn prove_fast_ligerito_ag_timed<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
-    z_packed: Vec<F128>,
-    a_packed_f128: Vec<F128>,
-    b_packed_f128: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
     z_packed_lincheck: Vec<u8>,
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
-    prefaulted_codeword: Option<Vec<F128>>,
+    prefaulted_codeword: Option<Vec<Gf128>>,
     challenger: &mut Ch,
 ) -> (
     R1csProofLigeritoAg,
@@ -474,19 +474,19 @@ pub fn prove_fast_ligerito_ag_timed<Ch: Challenger>(
         let a_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 a_packed_f128.as_ptr() as *const u8,
-                a_packed_f128.len() * core::mem::size_of::<F128>(),
+                a_packed_f128.len() * core::mem::size_of::<Gf128>(),
             )
         };
         let b_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 b_packed_f128.as_ptr() as *const u8,
-                b_packed_f128.len() * core::mem::size_of::<F128>(),
+                b_packed_f128.len() * core::mem::size_of::<Gf128>(),
             )
         };
         let c_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 z_packed.as_ptr() as *const u8,
-                z_packed.len() * core::mem::size_of::<F128>(),
+                z_packed.len() * core::mem::size_of::<Gf128>(),
             )
         };
         zerocheck::ag_skip::prove_capture_s_hat_v_c(
@@ -531,8 +531,8 @@ pub fn prove_fast_ligerito_ag_timed<Ch: Challenger>(
     t.lincheck_s = t0.elapsed().as_secs_f64();
 
     // --- Ligerito recursive PCS open ---
-    let pre_ab: Option<&[F128]> = s_hat_v_ab.as_deref();
-    let pre_c: Option<&[F128]> = Some(s_hat_v_c.as_slice());
+    let pre_ab: Option<&[Gf128]> = s_hat_v_ab.as_deref();
+    let pre_c: Option<&[Gf128]> = Some(s_hat_v_c.as_slice());
     let padding = r1cs.padding_spec();
     let t0 = Instant::now();
     let pcs_open = open_claims_with_precomputed_ligerito(
@@ -570,7 +570,7 @@ pub struct ProveCore {
     pub c: ZClaim,
     pub commitment: Commitment,
     pub prover_data: pcs::ProverData,
-    pub z_packed: Vec<F128>,
+    pub z_packed: Vec<Gf128>,
     /// Precomputed `s_hat_v` for the AB claim — derived from lincheck's
     /// pre-sumcheck `z_vec` via [`pcs::ring_switch::s_hat_v_from_z_vec`].
     /// Skips `fold_1b_rows` for the AB claim at PCS-open time.
@@ -579,12 +579,12 @@ pub struct ProveCore {
     /// 2^LOG_PACKING * 2^tail.len()`, which requires `k_log >= LOG_PACKING`).
     /// Real R1CS instances have `k_log >= 16` so this branch only fires in
     /// tiny test setups.
-    pub s_hat_v_ab: Option<Vec<F128>>,
+    pub s_hat_v_ab: Option<Vec<Gf128>>,
     /// Precomputed `s_hat_v` for the C claim — produced by zerocheck round 1's
     /// two-bank fusion kernel (one extra `vld1q+veorq` per chunk-lane-b_med
     /// vs the original single-bank C-side). Skips `fold_1b_rows` for the C
     /// claim at PCS-open time.
-    pub s_hat_v_c: Vec<F128>,
+    pub s_hat_v_c: Vec<Gf128>,
 }
 
 /// Run commit → bind → zerocheck → lincheck and build the base claims, stopping
@@ -592,9 +592,9 @@ pub struct ProveCore {
 pub fn prove_fast_core<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
-    z_packed: Vec<F128>,
-    a_packed_f128: Vec<F128>,
-    b_packed_f128: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
     z_packed_lincheck: Vec<u8>,
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
     challenger: &mut Ch,
@@ -621,12 +621,12 @@ pub fn prove_fast_core<Ch: Challenger>(
 pub fn prove_fast_core_with_codeword<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
-    z_packed: Vec<F128>,
-    a_packed_f128: Vec<F128>,
-    b_packed_f128: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
     z_packed_lincheck: Vec<u8>,
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
-    prefaulted_codeword: Option<Vec<F128>>,
+    prefaulted_codeword: Option<Vec<Gf128>>,
     challenger: &mut Ch,
 ) -> ProveCore {
     let (commitment, prover_data) = match prefaulted_codeword {
@@ -637,23 +637,23 @@ pub fn prove_fast_core_with_codeword<Ch: Challenger>(
 
     let padding = r1cs.padding_spec();
     let (zc_proof, zc_claim, s_hat_v_c) = {
-        // Zero-cost &[u8] views of the F128 buffers; c aliases z (C = I).
+        // Zero-cost &[u8] views of the Gf128 buffers; c aliases z (C = I).
         let a_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 a_packed_f128.as_ptr() as *const u8,
-                a_packed_f128.len() * core::mem::size_of::<F128>(),
+                a_packed_f128.len() * core::mem::size_of::<Gf128>(),
             )
         };
         let b_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 b_packed_f128.as_ptr() as *const u8,
-                b_packed_f128.len() * core::mem::size_of::<F128>(),
+                b_packed_f128.len() * core::mem::size_of::<Gf128>(),
             )
         };
         let c_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 z_packed.as_ptr() as *const u8,
-                z_packed.len() * core::mem::size_of::<F128>(),
+                z_packed.len() * core::mem::size_of::<Gf128>(),
             )
         };
         zerocheck::prove_packed_padded_capture_s_hat_v_c(
@@ -744,12 +744,12 @@ pub struct ProvePhaseTimings {
 pub fn prove_fast_ligerito_timed<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
-    z_packed: Vec<F128>,
-    a_packed_f128: Vec<F128>,
-    b_packed_f128: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
     z_packed_lincheck: Vec<u8>,
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
-    prefaulted_codeword: Option<Vec<F128>>,
+    prefaulted_codeword: Option<Vec<Gf128>>,
     challenger: &mut Ch,
 ) -> (R1csProofLigerito, Commitment, R1csClaim, ProvePhaseTimings) {
     use std::time::Instant;
@@ -776,19 +776,19 @@ pub fn prove_fast_ligerito_timed<Ch: Challenger>(
         let a_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 a_packed_f128.as_ptr() as *const u8,
-                a_packed_f128.len() * core::mem::size_of::<F128>(),
+                a_packed_f128.len() * core::mem::size_of::<Gf128>(),
             )
         };
         let b_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 b_packed_f128.as_ptr() as *const u8,
-                b_packed_f128.len() * core::mem::size_of::<F128>(),
+                b_packed_f128.len() * core::mem::size_of::<Gf128>(),
             )
         };
         let c_packed: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 z_packed.as_ptr() as *const u8,
-                z_packed.len() * core::mem::size_of::<F128>(),
+                z_packed.len() * core::mem::size_of::<Gf128>(),
             )
         };
         zerocheck::prove_packed_padded_capture_s_hat_v_c(
@@ -833,8 +833,8 @@ pub fn prove_fast_ligerito_timed<Ch: Challenger>(
     t.lincheck_s = t0.elapsed().as_secs_f64();
 
     // --- Ligerito recursive PCS open ---
-    let pre_ab: Option<&[F128]> = s_hat_v_ab.as_deref();
-    let pre_c: Option<&[F128]> = Some(s_hat_v_c.as_slice());
+    let pre_ab: Option<&[Gf128]> = s_hat_v_ab.as_deref();
+    let pre_c: Option<&[Gf128]> = Some(s_hat_v_c.as_slice());
     let t0 = Instant::now();
     let pcs_open = open_claims_with_precomputed_ligerito(
         z_packed,

@@ -5,10 +5,11 @@
 //! and the block selector is two coordinates. The commitment stores the
 //! 512 bits of one multiplication per gate (`x`, `y`, then `z`). This
 //! module describes that relation to the shared protocol of
-//! [`super::protocol`]: the Spartan PIOP runs on residues built straight
-//! from the witness limbs (both the products and the assignment, since
-//! 128- and 256-bit values have no native `u64` first round).
+//! [`super::protocol`]: the Spartan PIOP borrows the native x/y/z segments.
+//! Mixed arithmetic consumes the 128- and 256-bit values directly in the
+//! first rounds and fuses projection into the required folded output.
 
+use field::RingOps;
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
 
 use crate::{
@@ -16,19 +17,16 @@ use crate::{
     ligerito_flock::{FlockCommitHint, ModQOpeningKind},
     pcs::IntegerMatrixLayout,
     transcript::traits::Transcript,
-    utils::{cfg_iter, cfg_iter_mut},
 };
-
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
-        self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation, Proof,
-        ProtocolError, ProveOptions, RelationSpec, SlotRange, MatrixSource, FieldConfig, checked_pow2, packed_variables,
+        self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+        PreparedRelation, Proof, ProtocolError, RelationSpec, SlotRange, checked_pow2,
+        packed_variables,
     },
-    raw_monty::{RawMontyCtx, RawProducts, RawWitness},
+    raw_monty::{NativeU128Witness, NativeWideProducts, RawWitness},
     u128_mul::{
         U128_MUL_ASSIGNMENT_BLOCKS, U128_MUL_BIT_SLOTS, U128_MUL_OPERAND_BITS,
         U128_MUL_PRODUCT_BITS, U128_MUL_SLOT_VARS, U128_MUL_X_SLOT_START, U128_MUL_Y_SLOT_START,
@@ -122,30 +120,6 @@ fn validate_layout_geometry(layout: &U128MulLayout) -> Result<(), ProtocolError>
         return Err(ProtocolError::InvalidF2zParameters);
     }
     Ok(())
-}
-
-/// Raw residues of the whole assignment `[e0 | x | y | z]` over the padded
-/// column domain, built in parallel straight from the witness limbs.
-fn raw_assignment(ctx: &RawMontyCtx, witness: &U128MulWitness) -> Vec<u128> {
-    const MIN_LEN: usize = 4096;
-    let layout = witness.layout();
-    let capacity = layout.capacity();
-    let live = layout.multiplications();
-    let two_pow_128 = ctx.two_pow_128_residue();
-    let mut table = vec![0_u128; layout.assignment_len()];
-    table[0] = ctx.native_residue(1);
-    for (block, values) in [(1, witness.x_values()), (2, witness.y_values())] {
-        let target = &mut table[block * capacity..block * capacity + live];
-        cfg_iter_mut!(target, MIN_LEN)
-            .zip(cfg_iter!(values[..live], MIN_LEN))
-            .for_each(|(slot, &value)| *slot = ctx.native_residue_u128(value));
-    }
-    let target = &mut table[3 * capacity..3 * capacity + live];
-    cfg_iter_mut!(target, MIN_LEN)
-        .zip(cfg_iter!(witness.z_lo_values()[..live], MIN_LEN))
-        .zip(cfg_iter!(witness.z_hi_values()[..live], MIN_LEN))
-        .for_each(|((slot, &lo), &hi)| *slot = ctx.native_residue_u256(lo, hi, two_pow_128));
-    table
 }
 
 impl RelationSpec for U128MulLayout {
@@ -278,31 +252,30 @@ impl RelationSpec for U128MulLayout {
         Ok(())
     }
 
-    /// Both the products and the assignment are raw residues built from the
-    /// witness limbs.
+    /// Borrow native operand/product segments for the mixed first rounds.
     fn piop_witness<'w>(
         &self,
         witness: &'w U128MulWitness,
-        config: &FieldConfig,
-        _options: ProveOptions,
+        _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        let ctx = &RawMontyCtx::new(config);
         let live = self.multiplications();
-        let products = RawProducts::from_native_u128_halves(
-            ctx,
+        let products = NativeWideProducts::new(
             &witness.x_values()[..live],
             &witness.y_values()[..live],
             &witness.z_lo_values()[..live],
             &witness.z_hi_values()[..live],
             live.next_power_of_two(),
         );
-        let assignment = raw_assignment(ctx, witness);
-        if assignment.len() != self.assignment_len() {
-            return Err(ProtocolError::InvalidF2zParameters);
-        }
-        Ok(PiopWitness::RawProductsRaw {
+        let assignment = NativeU128Witness::new(
+            self.capacity(),
+            &witness.x_values()[..live],
+            &witness.y_values()[..live],
+            &witness.z_lo_values()[..live],
+            &witness.z_hi_values()[..live],
+        );
+        Ok(PiopWitness::NativeU128 {
             products,
-            witness: RawWitness::Field(assignment),
+            witness: RawWitness::Wide(assignment),
         })
     }
 }
@@ -385,7 +358,13 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u128_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u128_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof).unwrap();
+        verify_u128_mul(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
         assert!(proof.size_bytes(prepared.security()) > 0);
 
         let mut second_transcript = Blake3Transcript::new();
@@ -416,8 +395,13 @@ mod tests {
         if let Ok(proof) = outcome {
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(
-                verify_u128_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-                    .is_err()
+                verify_u128_mul(
+                    &mut verifier_transcript,
+                    &prepared,
+                    &hint.commitment,
+                    &proof
+                )
+                .is_err()
             );
         }
     }

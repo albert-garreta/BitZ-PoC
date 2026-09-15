@@ -6,6 +6,9 @@ publish = false
 
 [workspace]
 
+[patch."https://github.com/albert-garreta/flock-mod.git"]
+flock-core = { path = "../../vendor/flock-mod/crates/flock-core" }
+
 [dependencies]
 csv = "1.4"
 binius-circuits = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }

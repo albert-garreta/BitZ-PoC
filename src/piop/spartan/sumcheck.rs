@@ -5,20 +5,22 @@
 //! The prover omits the linear coefficient while accumulating a round and
 //! reconstructs it from `g(0) + g(1) = current_claim` before absorption.
 
+use crate::piop::spartan::SpartanField as _;
+use crate::utils::delayed_reduction::EncodedMac;
+#[cfg(test)]
+use field::Uint;
+use field::{Fp, RingOps};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use thiserror::Error;
 
+#[cfg(test)]
+use crate::utils::delayed_reduction::reference::{Accumulatable, Reduce as ReferenceReduce};
 use crate::{
-    poly::mle::DenseMultilinearExtension,
-    transcript::traits::Transcript,
-    utils::delayed_reduction::{
-        Accumulatable, CryptoBigintMonty128Reducer, DelayedReductionError,
-        MontyLinearAccumulator128, MontyProductAccumulator128, OptimizedMonty128Reducer, Reduce,
-    },
+    poly::mle::DenseMultilinearExtension, transcript::traits::Transcript,
+    utils::delayed_reduction::DelayedReductionError,
 };
-use crypto_bigint::{Choice, CtSelect};
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+use field::{CtMask, CtSelect};
 use num_traits::Zero;
 
 use super::{
@@ -30,26 +32,23 @@ use super::{
     squeeze_field,
 };
 
-/// Product accumulation policy used by the sumcheck prover.
-///
-/// The immediate implementation stores a reduced field element. Delayed
-/// implementations use a wide integer and reduce only after all worker-local
-/// accumulators have been merged. Keeping the policy monomorphized avoids a
-/// strategy branch in the product loops.
-pub(crate) trait SumcheckProductReducer<F>: Sync
+/// Protocol accumulation hook for shared delayed products and the independent
+/// test oracle. Workers merge exact products before the shared context reduces.
+#[doc(hidden)]
+pub trait SumcheckProductReducer<F>: Sync
 where
     F: SpartanField,
 {
     type Accumulator: Send;
 
-    /// Whether this monomorphized reducer should factor split equality
-    /// weights into two delayed-accumulation levels.
-    const USE_TWO_LEVEL_EQUALITY_ACCUMULATION: bool;
-
     fn accumulator_zero(&self) -> Self::Accumulator;
     fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F);
     fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<F, SumcheckError>;
+    fn reduce(
+        &self,
+        accumulator: Self::Accumulator,
+        config: &F::Config,
+    ) -> Result<F, SumcheckError>;
 }
 
 /// Native-linear accumulation policy used only at the u32 prover's first
@@ -62,429 +61,145 @@ pub(crate) trait SumcheckLinearReducer: Sync {
     type Accumulator: Send;
 
     fn accumulator_zero(&self) -> Self::Accumulator;
-    fn multiply_accumulate(
-        &self,
-        accumulator: &mut Self::Accumulator,
-        lhs: &MontyField<2>,
-        rhs: &u64,
-    );
+    fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &Fp<2>, rhs: &u64);
     #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
     fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError>;
+    fn reduce(
+        &self,
+        accumulator: Self::Accumulator,
+        config: &field::FpCtx<2>,
+    ) -> Result<Fp<2>, SumcheckError>;
 }
 
-/// How the native `u64` witness is folded into the field after round zero.
-/// Selection happens once per table, before the pair loop.
-#[cfg(any(test, feature = "bench-internals"))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum NativeWitnessFoldPolicy {
-    Immediate,
-    Delayed,
-}
-
-/// How field-valued inner-round coefficient sums are accumulated.
-///
-/// The threshold form permits a delayed large-table prefix followed by an
-/// immediate tail. The decision is made once per round, outside every MAC
-/// loop.
-#[cfg(any(test, feature = "bench-internals"))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum FieldCoefficientPolicy {
-    Immediate,
-    Delayed,
-    DelayedAtOrAbovePairs(usize),
-}
-
-#[cfg(any(test, feature = "bench-internals"))]
-impl FieldCoefficientPolicy {
+impl<const L: usize> SumcheckProductReducer<Fp<L>> for field::FpCtx<L> {
+    type Accumulator = field::FpProductAcc<L>;
     #[inline]
-    const fn use_delayed(self, pair_count: usize) -> bool {
-        match self {
-            Self::Immediate => false,
-            Self::Delayed => true,
-            Self::DelayedAtOrAbovePairs(minimum_pairs) => pair_count >= minimum_pairs,
-        }
+    fn accumulator_zero(&self) -> Self::Accumulator {
+        Self::Accumulator::default()
+    }
+    #[inline]
+    fn multiply_accumulate(&self, acc: &mut Self::Accumulator, lhs: &Fp<L>, rhs: &Fp<L>) {
+        acc.accumulate(lhs, rhs);
+    }
+    #[inline]
+    fn merge(&self, acc: &mut Self::Accumulator, other: Self::Accumulator) {
+        *acc += other;
+    }
+    #[inline]
+    fn reduce(&self, acc: Self::Accumulator, _field: &Self) -> Result<Fp<L>, SumcheckError> {
+        Ok(field::Reduce::reduce(self, acc))
     }
 }
 
-trait U32InnerArithmeticPolicy: Sync {
-    fn native_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[u64],
-        zero: &MontyField<2>,
-    ) -> Result<[MontyField<2>; 2], SumcheckError>;
-
-    fn fold_native_witness(
-        &self,
-        input: &[u64],
-        output: &mut [MontyField<2>],
-        challenge: &MontyField<2>,
-        zero: &MontyField<2>,
-        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    ) -> Result<(), SumcheckError>;
-
-    fn field_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[MontyField<2>],
-    ) -> Result<[MontyField<2>; 2], SumcheckError>;
-
-    fn fold_and_compute_field_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[MontyField<2>],
-        batched_matrix_output: &mut [MontyField<2>],
-        witness_output: &mut [MontyField<2>],
-        challenge: &MontyField<2>,
-    ) -> Result<[MontyField<2>; 2], SumcheckError>;
-}
-
-struct DelayedU32InnerArithmetic<'a, R> {
-    reducer: &'a R,
-}
-
-impl<R> U32InnerArithmeticPolicy for DelayedU32InnerArithmetic<'_, R>
-where
-    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
-{
-    #[inline]
-    fn native_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[u64],
-        zero: &MontyField<2>,
-    ) -> Result<[MontyField<2>; 2], SumcheckError> {
-        sum_u32_native_inner_coefficients_without_linear(
-            batched_matrix,
-            witness,
-            zero,
-            self.reducer,
-        )
-    }
-
-    #[inline]
-    fn fold_native_witness(
-        &self,
-        input: &[u64],
-        output: &mut [MontyField<2>],
-        challenge: &MontyField<2>,
-        zero: &MontyField<2>,
-        _field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    ) -> Result<(), SumcheckError> {
-        fold_u64_table_to_field(input, output, challenge, zero, self.reducer)
-    }
-
-    #[inline]
-    fn field_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[MontyField<2>],
-    ) -> Result<[MontyField<2>; 2], SumcheckError> {
-        sum_inner_round_coefficients_without_linear(batched_matrix, witness, self.reducer)
-    }
-
-    #[inline]
-    fn fold_and_compute_field_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[MontyField<2>],
-        batched_matrix_output: &mut [MontyField<2>],
-        witness_output: &mut [MontyField<2>],
-        challenge: &MontyField<2>,
-    ) -> Result<[MontyField<2>; 2], SumcheckError> {
-        fold_and_compute_next_inner_round_coefficients_without_linear(
-            batched_matrix,
-            witness,
-            batched_matrix_output,
-            witness_output,
-            challenge,
-            self.reducer,
-        )
-    }
-}
-
-#[cfg(any(test, feature = "bench-internals"))]
-struct SelectedU32InnerArithmetic<'a, NR, DR, IR> {
-    native_reducer: &'a NR,
-    delayed_field_reducer: &'a DR,
-    immediate_field_reducer: &'a IR,
-    native_fold_policy: NativeWitnessFoldPolicy,
-    field_coefficient_policy: FieldCoefficientPolicy,
-}
-
-#[cfg(any(test, feature = "bench-internals"))]
-impl<NR, DR, IR> U32InnerArithmeticPolicy for SelectedU32InnerArithmetic<'_, NR, DR, IR>
-where
-    NR: SumcheckLinearReducer,
-    DR: SumcheckProductReducer<MontyField<2>>,
-    IR: SumcheckProductReducer<MontyField<2>>,
-{
-    #[inline]
-    fn native_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[u64],
-        zero: &MontyField<2>,
-    ) -> Result<[MontyField<2>; 2], SumcheckError> {
-        sum_u32_native_inner_coefficients_without_linear(
-            batched_matrix,
-            witness,
-            zero,
-            self.native_reducer,
-        )
-    }
-
-    #[inline]
-    fn fold_native_witness(
-        &self,
-        input: &[u64],
-        output: &mut [MontyField<2>],
-        challenge: &MontyField<2>,
-        zero: &MontyField<2>,
-        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    ) -> Result<(), SumcheckError> {
-        match self.native_fold_policy {
-            NativeWitnessFoldPolicy::Immediate => {
-                fold_u64_table_to_field_immediate(input, output, challenge, field_cfg);
-                Ok(())
-            }
-            NativeWitnessFoldPolicy::Delayed => {
-                fold_u64_table_to_field(input, output, challenge, zero, self.native_reducer)
-            }
-        }
-    }
-
-    #[inline]
-    fn field_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[MontyField<2>],
-    ) -> Result<[MontyField<2>; 2], SumcheckError> {
-        sum_inner_round_coefficients_selected(
-            batched_matrix,
-            witness,
-            self.delayed_field_reducer,
-            self.immediate_field_reducer,
-            self.field_coefficient_policy,
-        )
-    }
-
-    #[inline]
-    fn fold_and_compute_field_coefficients(
-        &self,
-        batched_matrix: &[MontyField<2>],
-        witness: &[MontyField<2>],
-        batched_matrix_output: &mut [MontyField<2>],
-        witness_output: &mut [MontyField<2>],
-        challenge: &MontyField<2>,
-    ) -> Result<[MontyField<2>; 2], SumcheckError> {
-        fold_and_compute_next_inner_round_selected(
-            batched_matrix,
-            witness,
-            batched_matrix_output,
-            witness_output,
-            challenge,
-            self.delayed_field_reducer,
-            self.immediate_field_reducer,
-            self.field_coefficient_policy,
-        )
-    }
-}
-
-/// Compatibility policy matching the original eagerly reduced prover.
-pub(crate) struct ImmediateSumcheckReducer<F> {
-    zero: F,
-}
-
-impl<F> ImmediateSumcheckReducer<F>
-where
-    F: SpartanField,
-{
-    pub(crate) fn new(field_cfg: &F::Config) -> Self {
-        Self {
-            zero: F::zero_with_cfg(field_cfg),
-        }
-    }
-}
-
-impl<F> SumcheckProductReducer<F> for ImmediateSumcheckReducer<F>
-where
-    F: SpartanField + Sync,
-{
-    type Accumulator = F;
-    const USE_TWO_LEVEL_EQUALITY_ACCUMULATION: bool = false;
+impl SumcheckLinearReducer for field::FpCtx<2> {
+    type Accumulator = field::FpLinearAcc<2, 1>;
 
     #[inline]
     fn accumulator_zero(&self) -> Self::Accumulator {
-        self.zero.clone()
+        field::FpLinearAcc::<2, 1>::default()
     }
 
     #[inline]
-    fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F) {
-        *accumulator += &mul(lhs, rhs);
+    fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &Fp<2>, rhs: &u64) {
+        accumulator.accumulate(lhs, &field::Uint::from_words([*rhs]));
     }
 
     #[inline]
     fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
-        *accumulator += &other;
+        *accumulator += other;
     }
 
     #[inline]
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<F, SumcheckError> {
-        Ok(accumulator)
+    fn reduce(
+        &self,
+        accumulator: Self::Accumulator,
+        config: &field::FpCtx<2>,
+    ) -> Result<Fp<2>, SumcheckError> {
+        Ok(field::Reduce::reduce(self, accumulator))
     }
 }
 
-pub(crate) struct OptimizedSumcheckReducer {
-    reducer: OptimizedMonty128Reducer,
+/// Independent unbounded integer oracle, used only by differential tests.
+#[cfg(test)]
+pub(crate) struct BigUintSumcheckOracle {
+    modulus: num_bigint::BigUint,
+    linear_correction: num_bigint::BigUint,
+    product_correction: num_bigint::BigUint,
 }
-
-impl OptimizedSumcheckReducer {
-    pub(crate) fn new(
-        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    ) -> Result<Self, SumcheckError> {
+#[cfg(test)]
+impl BigUintSumcheckOracle {
+    pub(crate) fn new(field: &field::FpCtx<2>) -> Result<Self, SumcheckError> {
+        use num_bigint::BigUint;
+        let modulus = BigUint::from(field.modulus_u128());
+        let r = BigUint::from(1u8) << 128usize;
+        let linear_correction = r.modpow(&(&modulus - BigUint::from(2u8)), &modulus);
+        let product_correction = (&linear_correction * &linear_correction) % &modulus;
         Ok(Self {
-            reducer: OptimizedMonty128Reducer::new(field_cfg)?,
+            modulus,
+            linear_correction,
+            product_correction,
         })
     }
-}
-
-impl SumcheckProductReducer<MontyField<2>> for OptimizedSumcheckReducer {
-    type Accumulator = MontyProductAccumulator128;
-    const USE_TWO_LEVEL_EQUALITY_ACCUMULATION: bool = true;
-
-    #[inline]
-    fn accumulator_zero(&self) -> Self::Accumulator {
-        MontyProductAccumulator128::zero()
-    }
-
-    #[inline]
-    fn multiply_accumulate(
+    fn finish(
         &self,
-        accumulator: &mut Self::Accumulator,
-        lhs: &MontyField<2>,
-        rhs: &MontyField<2>,
-    ) {
-        accumulator.multiply_accumulate(lhs, rhs);
-    }
-
-    #[inline]
-    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
-        *accumulator += other;
-    }
-
-    #[inline]
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
-        Ok(accumulator.reduce(&self.reducer)?)
+        value: num_bigint::BigUint,
+        correction: &num_bigint::BigUint,
+        field: &field::FpCtx<2>,
+    ) -> Fp<2> {
+        let digits = (value * correction % &self.modulus).to_u64_digits();
+        let canonical = field::Uint::from_words(std::array::from_fn::<_, 2, _>(|i| {
+            digits.get(i).copied().unwrap_or(0)
+        }));
+        field::IntegerEmbedding::from_integer(field, &canonical)
     }
 }
-
-impl SumcheckLinearReducer for OptimizedSumcheckReducer {
-    type Accumulator = MontyLinearAccumulator128;
-
-    #[inline]
+#[cfg(test)]
+impl SumcheckProductReducer<Fp<2>> for BigUintSumcheckOracle {
+    type Accumulator = num_bigint::BigUint;
     fn accumulator_zero(&self) -> Self::Accumulator {
-        MontyLinearAccumulator128::zero()
+        num_bigint::BigUint::from(0u8)
     }
-
-    #[inline]
-    fn multiply_accumulate(
+    fn multiply_accumulate(&self, acc: &mut Self::Accumulator, lhs: &Fp<2>, rhs: &Fp<2>) {
+        *acc += num_bigint::BigUint::from(u128::from(*lhs.as_montgomery_integer()))
+            * num_bigint::BigUint::from(u128::from(*rhs.as_montgomery_integer()));
+    }
+    fn merge(&self, acc: &mut Self::Accumulator, other: Self::Accumulator) {
+        *acc += other;
+    }
+    fn reduce(
         &self,
-        accumulator: &mut Self::Accumulator,
-        lhs: &MontyField<2>,
-        rhs: &u64,
-    ) {
-        accumulator.multiply_accumulate(lhs, rhs);
-    }
-
-    #[inline]
-    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
-        *accumulator += other;
-    }
-
-    #[inline]
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
-        Ok(accumulator.reduce(&self.reducer)?)
+        acc: Self::Accumulator,
+        field: &field::FpCtx<2>,
+    ) -> Result<Fp<2>, SumcheckError> {
+        Ok(self.finish(acc, &self.product_correction, field))
     }
 }
-
-pub(crate) struct CryptoBigintSumcheckReducer {
-    reducer: CryptoBigintMonty128Reducer,
-}
-
-impl CryptoBigintSumcheckReducer {
-    pub(crate) fn new(
-        field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    ) -> Result<Self, SumcheckError> {
-        Ok(Self {
-            reducer: CryptoBigintMonty128Reducer::new(field_cfg)?,
-        })
-    }
-}
-
-impl SumcheckProductReducer<MontyField<2>> for CryptoBigintSumcheckReducer {
-    type Accumulator = MontyProductAccumulator128;
-    const USE_TWO_LEVEL_EQUALITY_ACCUMULATION: bool = true;
-
-    #[inline]
+#[cfg(test)]
+impl SumcheckLinearReducer for BigUintSumcheckOracle {
+    type Accumulator = num_bigint::BigUint;
     fn accumulator_zero(&self) -> Self::Accumulator {
-        MontyProductAccumulator128::zero()
+        num_bigint::BigUint::from(0u8)
     }
-
-    #[inline]
-    fn multiply_accumulate(
+    fn multiply_accumulate(&self, acc: &mut Self::Accumulator, lhs: &Fp<2>, rhs: &u64) {
+        *acc += num_bigint::BigUint::from(u128::from(*lhs.as_montgomery_integer())) * rhs;
+    }
+    fn merge(&self, acc: &mut Self::Accumulator, other: Self::Accumulator) {
+        *acc += other;
+    }
+    fn reduce(
         &self,
-        accumulator: &mut Self::Accumulator,
-        lhs: &MontyField<2>,
-        rhs: &MontyField<2>,
-    ) {
-        accumulator.multiply_accumulate(lhs, rhs);
-    }
-
-    #[inline]
-    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
-        *accumulator += other;
-    }
-
-    #[inline]
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
-        Ok(accumulator.reduce(&self.reducer)?)
-    }
-}
-
-impl SumcheckLinearReducer for CryptoBigintSumcheckReducer {
-    type Accumulator = MontyLinearAccumulator128;
-
-    #[inline]
-    fn accumulator_zero(&self) -> Self::Accumulator {
-        MontyLinearAccumulator128::zero()
-    }
-
-    #[inline]
-    fn multiply_accumulate(
-        &self,
-        accumulator: &mut Self::Accumulator,
-        lhs: &MontyField<2>,
-        rhs: &u64,
-    ) {
-        accumulator.multiply_accumulate(lhs, rhs);
-    }
-
-    #[inline]
-    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator) {
-        *accumulator += other;
-    }
-
-    #[inline]
-    fn reduce(&self, accumulator: Self::Accumulator) -> Result<MontyField<2>, SumcheckError> {
-        Ok(accumulator.reduce(&self.reducer)?)
+        acc: Self::Accumulator,
+        field: &field::FpCtx<2>,
+    ) -> Result<Fp<2>, SumcheckError> {
+        Ok(self.finish(acc, &self.linear_correction, field))
     }
 }
 
 /// Failures produced while reducing or checking a sumcheck claim.
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 pub enum SumcheckError {
+    #[error("field challenge sampling exhausted its rejection budget")]
+    SamplingExhausted,
     #[error("a sumcheck round polynomial must contain at least one coefficient")]
     EmptyRoundPolynomial,
     #[error("sumcheck proof has {actual} rounds, expected {expected}")]
@@ -753,23 +468,23 @@ where
         let mut eval_points = Vec::with_capacity(expected_rounds);
 
         for (round, coefficients) in self.round_polynomials.iter().enumerate() {
-            absorb_field_elements(transcript, coefficients);
+            absorb_field_elements(transcript, coefficients, &field_cfg);
 
             let at_zero = coefficients[0].clone();
             let at_one = coefficients
                 .iter()
                 .fold(zero.clone(), |mut sum, coefficient| {
-                    sum += coefficient;
+                    sum = field_cfg.add(&(sum), &(coefficient));
                     sum
                 });
 
-            if add(&at_zero, &at_one) != current_claim {
+            if (field_cfg).add(&at_zero, &at_one) != current_claim {
                 return Err(SumcheckError::InvalidRoundClaim { round });
             }
 
             round_boundary.after_round(transcript, round)?;
-            let challenge = squeeze_field(transcript, field_cfg);
-            current_claim = evaluate_polynomial(coefficients, &challenge, &zero);
+            let challenge = squeeze_field(transcript, field_cfg)?;
+            current_claim = evaluate_polynomial(coefficients, &challenge, &zero, &field_cfg);
             eval_points.push(challenge);
         }
 
@@ -785,7 +500,7 @@ pub(crate) struct SumcheckProverOutput<F, const COEFFS: usize> {
     pub final_claim: F,
 }
 
-/// Dense Boolean-row MLEs for `Az`, `Bz`, and `Cz`.
+/// Dense Bit-row MLEs for `Az`, `Bz`, and `Cz`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct R1csProductMles<F> {
     pub az: DenseMultilinearExtension<F>,
@@ -909,14 +624,14 @@ where
             round_boundary,
         )?;
 
-        absorb_field_elements(transcript, &terminal_evaluations);
+        absorb_field_elements(transcript, &terminal_evaluations, &field_cfg);
 
         let eq = eq_eval(tau, &eval_points, field_cfg)?;
-        let residual = sub(
-            &mul(&self.az_mle_claim, &self.bz_mle_claim),
+        let residual = (field_cfg).sub(
+            &(field_cfg).mul(&self.az_mle_claim, &self.bz_mle_claim),
             &self.cz_mle_claim,
         );
-        let expected_claim = mul(&eq, &residual);
+        let expected_claim = (field_cfg).mul(&eq, &residual);
         if final_claim != expected_claim {
             return Err(SumcheckError::InvalidTerminalClaim);
         }
@@ -948,7 +663,7 @@ pub(crate) fn prove_outer_sumcheck<F>(
 where
     F: SpartanField,
 {
-    let reducer = ImmediateSumcheckReducer::new(field_cfg);
+    let reducer = field_cfg.clone();
     prove_outer_sumcheck_with_reducer(
         transcript,
         initial_claim,
@@ -1091,10 +806,10 @@ where
         std::array::from_fn(|_| zero.clone())
     } else {
         let equality_weights = if eq_low.len() > 1 {
-            strip_equality_coordinate(&eq_low, &mut eq_low_scratch);
+            strip_equality_coordinate(&eq_low, &mut eq_low_scratch, &field_cfg);
             StrippedEqualityWeights::low(&eq_low_scratch, &eq_high)
         } else {
-            strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+            strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
             StrippedEqualityWeights::high(&eq_high_scratch)
         };
         compute_eq_factored_coefficients_without_linear(
@@ -1106,6 +821,7 @@ where
             &bound_equality,
             &one,
             reducer,
+            &field_cfg,
         )?
     };
 
@@ -1125,19 +841,23 @@ where
 
         let next_product_len = products.len() / 2;
         product_scratch.truncate(next_product_len);
-        let bound_factor =
-            equality_coordinate_evaluation(&tau[eval_points.len() - 1], &challenge, &one);
-        bound_equality = mul(&bound_equality, &bound_factor);
+        let bound_factor = equality_coordinate_evaluation(
+            &tau[eval_points.len() - 1],
+            &challenge,
+            &one,
+            &field_cfg,
+        );
+        bound_equality = (field_cfg).mul(&bound_equality, &bound_factor);
         std::mem::swap(&mut eq_low, &mut eq_low_scratch);
 
         if next_product_len > 1 {
             let equality_weights = if eq_low.len() > 1 {
                 eq_low_scratch.truncate(eq_low.len() / 2);
-                strip_equality_coordinate(&eq_low, &mut eq_low_scratch);
+                strip_equality_coordinate(&eq_low, &mut eq_low_scratch, &field_cfg);
                 StrippedEqualityWeights::low(&eq_low_scratch, &eq_high)
             } else {
                 eq_high_scratch.truncate(eq_high.len() / 2);
-                strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+                strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
                 StrippedEqualityWeights::high(&eq_high_scratch)
             };
             coefficients_without_linear = fold_products_and_compute_next(
@@ -1151,10 +871,11 @@ where
                 &bound_equality,
                 &one,
                 reducer,
+                &field_cfg,
             )?;
         } else {
             debug_assert_eq!(next_product_len, 1);
-            fold_product_tables(&products, &mut product_scratch, &challenge);
+            fold_product_tables(&products, &mut product_scratch, &challenge, &field_cfg);
         }
 
         products.swap(&mut product_scratch);
@@ -1178,16 +899,20 @@ where
         let next_eq_high_len = eq_high.len() / 2;
         debug_assert_eq!(products.len() / 2, next_eq_high_len);
         product_scratch.truncate(next_eq_high_len);
-        let bound_factor =
-            equality_coordinate_evaluation(&tau[eval_points.len() - 1], &challenge, &one);
-        bound_equality = mul(&bound_equality, &bound_factor);
+        let bound_factor = equality_coordinate_evaluation(
+            &tau[eval_points.len() - 1],
+            &challenge,
+            &one,
+            &field_cfg,
+        );
+        bound_equality = (field_cfg).mul(&bound_equality, &bound_factor);
         std::mem::swap(&mut eq_high, &mut eq_high_scratch);
 
         if next_eq_high_len == 1 {
-            fold_product_tables(&products, &mut product_scratch, &challenge);
+            fold_product_tables(&products, &mut product_scratch, &challenge, &field_cfg);
         } else {
             eq_high_scratch.truncate(eq_high.len() / 2);
-            strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+            strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
             coefficients_without_linear = fold_products_and_compute_next(
                 &products,
                 &mut product_scratch,
@@ -1199,6 +924,7 @@ where
                 &bound_equality,
                 &one,
                 reducer,
+                &field_cfg,
             )?;
         }
 
@@ -1210,9 +936,12 @@ where
     let cz_mle_claim = products.cz[0].clone();
     debug_assert_eq!(eq_low[0], one);
     debug_assert_eq!(eq_high[0], one);
-    let expected_terminal_claim = mul(
+    let expected_terminal_claim = (field_cfg).mul(
         &bound_equality,
-        &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
+        &(field_cfg).sub(
+            &(field_cfg).mul(&az_mle_claim, &bz_mle_claim),
+            &cz_mle_claim,
+        ),
     );
     if current_claim != expected_terminal_claim {
         return Err(SumcheckError::InvalidTerminalClaim);
@@ -1223,7 +952,7 @@ where
         bz_mle_claim.clone(),
         cz_mle_claim.clone(),
     ];
-    absorb_field_elements(transcript, &terminal_evaluations);
+    absorb_field_elements(transcript, &terminal_evaluations, &field_cfg);
 
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -1266,8 +995,8 @@ where
 
     let zero = F::zero_with_cfg(field_cfg);
     let one = F::one_with_cfg(field_cfg);
-    let two = add(&one, &one);
-    let three = add(&two, &one);
+    let two = (field_cfg).add(&one, &one);
+    let three = (field_cfg).add(&two, &one);
     let interpolation = CubicInterpolation::new(field_cfg);
     let mut equality = super::matrix::eq_table(tau, field_cfg)
         .expect("test reference receives valid equality coordinates");
@@ -1287,16 +1016,38 @@ where
                     .iter_mut()
                     .zip([zero.clone(), two.clone(), three.clone()])
             {
-                let equality_at = interpolate_pair(&equality[index], &equality[index + 1], &point);
-                let az_at = interpolate_pair(&products.az[index], &products.az[index + 1], &point);
-                let bz_at = interpolate_pair(&products.bz[index], &products.bz[index + 1], &point);
-                let cz_at = interpolate_pair(&products.cz[index], &products.cz[index + 1], &point);
-                *evaluation += &mul(&equality_at, &sub(&mul(&az_at, &bz_at), &cz_at));
+                let equality_at =
+                    interpolate_pair(&equality[index], &equality[index + 1], &point, &field_cfg);
+                let az_at = interpolate_pair(
+                    &products.az[index],
+                    &products.az[index + 1],
+                    &point,
+                    &field_cfg,
+                );
+                let bz_at = interpolate_pair(
+                    &products.bz[index],
+                    &products.bz[index + 1],
+                    &point,
+                    &field_cfg,
+                );
+                let cz_at = interpolate_pair(
+                    &products.cz[index],
+                    &products.cz[index + 1],
+                    &point,
+                    &field_cfg,
+                );
+                *evaluation = field_cfg.add(
+                    &(*evaluation),
+                    &(&(field_cfg).mul(
+                        &equality_at,
+                        &(field_cfg).sub(&(field_cfg).mul(&az_at, &bz_at), &cz_at),
+                    )),
+                );
             }
         }
 
         let coefficients_without_linear =
-            interpolation.coefficients_without_linear(&current_claim, evaluations);
+            interpolation.coefficients_without_linear(&current_claim, evaluations, &field_cfg);
         let challenge = recover_full_round_polynomial_and_sample_next_challenge(
             transcript,
             &mut current_claim,
@@ -1305,13 +1056,13 @@ where
             &mut eval_points,
             &zero,
             field_cfg,
-        );
+        )?;
 
         let next_len = products.len() / 2;
         product_scratch.truncate(next_len);
         equality_scratch.truncate(next_len);
-        fold_product_tables(&products, &mut product_scratch, &challenge);
-        fold_table(&equality, &mut equality_scratch, &challenge);
+        fold_product_tables(&products, &mut product_scratch, &challenge, &field_cfg);
+        fold_table(&equality, &mut equality_scratch, &challenge, &field_cfg);
         products.swap(&mut product_scratch);
         std::mem::swap(&mut equality, &mut equality_scratch);
     }
@@ -1326,6 +1077,7 @@ where
             bz_mle_claim.clone(),
             cz_mle_claim.clone(),
         ],
+        &field_cfg,
     );
 
     Ok(OuterSumcheckOutput {
@@ -1348,18 +1100,18 @@ where
 /// multiplication.
 pub(crate) fn prove_outer_sumcheck_u32_native_with_reducer<R>(
     transcript: &mut impl Transcript,
-    initial_claim: MontyField<2>,
-    tau: &[MontyField<2>],
+    initial_claim: Fp<2>,
+    tau: &[Fp<2>],
     (eq_low, eq_high): (
-        DenseMultilinearExtension<MontyField<2>>,
-        DenseMultilinearExtension<MontyField<2>>,
+        DenseMultilinearExtension<Fp<2>>,
+        DenseMultilinearExtension<Fp<2>>,
     ),
     products: R1csProductMles<u64>,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
+    field_cfg: &field::FpCtx<2>,
     reducer: &R,
-) -> Result<OuterSumcheckOutput<MontyField<2>>, SumcheckError>
+) -> Result<OuterSumcheckOutput<Fp<2>>, SumcheckError>
 where
-    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
+    R: SumcheckProductReducer<Fp<2>> + SumcheckLinearReducer,
 {
     let num_vars = products.az.num_vars;
     if !has_dense_shape(&products.az)
@@ -1392,8 +1144,8 @@ where
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
 
-    let zero = MontyField::<2>::zero_with_cfg(field_cfg);
-    let one = MontyField::<2>::one_with_cfg(field_cfg);
+    let zero = Fp::<2>::zero_with_cfg(field_cfg);
+    let one = Fp::<2>::one_with_cfg(field_cfg);
     let tau_inverses = batch_invert_nonzero(tau, field_cfg);
     let mut eq_low = eq_low.evaluations;
     let mut eq_high = eq_high.evaluations;
@@ -1409,9 +1161,12 @@ where
         let cz_mle_claim = native_to_field(native_products.cz[0], field_cfg);
         debug_assert_eq!(
             current_claim,
-            mul(
+            (field_cfg).mul(
                 &bound_equality,
-                &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
+                &(field_cfg).sub(
+                    &(field_cfg).mul(&az_mle_claim, &bz_mle_claim),
+                    &cz_mle_claim
+                ),
             )
         );
         absorb_field_elements(
@@ -1421,6 +1176,7 @@ where
                 bz_mle_claim.clone(),
                 cz_mle_claim.clone(),
             ],
+            &field_cfg,
         );
         return Ok(OuterSumcheckOutput {
             proof: OuterSumcheckProof {
@@ -1437,10 +1193,10 @@ where
     let mut eq_low_scratch = vec![zero.clone(); eq_low.len() / 2];
     let mut eq_high_scratch = vec![zero.clone(); eq_high.len() / 2];
     let equality_weights = if eq_low.len() > 1 {
-        strip_equality_coordinate(&eq_low, &mut eq_low_scratch);
+        strip_equality_coordinate(&eq_low, &mut eq_low_scratch, &field_cfg);
         StrippedEqualityWeights::low(&eq_low_scratch, &eq_high)
     } else {
-        strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+        strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
         StrippedEqualityWeights::high(&eq_high_scratch)
     };
     let coefficients_without_linear = compute_u32_native_eq_factored_coefficients_without_linear(
@@ -1453,6 +1209,7 @@ where
         &one,
         &zero,
         reducer,
+        &field_cfg,
     )?;
     let challenge = recover_full_round_polynomial_and_sample_next_challenge(
         transcript,
@@ -1462,10 +1219,10 @@ where
         &mut eval_points,
         &zero,
         field_cfg,
-    );
+    )?;
 
-    let bound_factor = equality_coordinate_evaluation(&tau[0], &challenge, &one);
-    bound_equality = mul(&bound_equality, &bound_factor);
+    let bound_factor = equality_coordinate_evaluation(&tau[0], &challenge, &one, &field_cfg);
+    bound_equality = (field_cfg).mul(&bound_equality, &bound_factor);
 
     let mut products =
         fold_u64_product_tables_to_field(&native_products, &challenge, &zero, field_cfg, reducer)?;
@@ -1478,11 +1235,11 @@ where
     let mut coefficients_without_linear = if products.len() > 1 {
         let equality_weights = if eq_low.len() > 1 {
             eq_low_scratch.truncate(eq_low.len() / 2);
-            strip_equality_coordinate(&eq_low, &mut eq_low_scratch);
+            strip_equality_coordinate(&eq_low, &mut eq_low_scratch, &field_cfg);
             StrippedEqualityWeights::low(&eq_low_scratch, &eq_high)
         } else {
             eq_high_scratch.truncate(eq_high.len() / 2);
-            strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+            strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
             StrippedEqualityWeights::high(&eq_high_scratch)
         };
         compute_eq_factored_coefficients_without_linear(
@@ -1494,6 +1251,7 @@ where
             &bound_equality,
             &one,
             reducer,
+            &field_cfg,
         )?
     } else {
         std::array::from_fn(|_| zero.clone())
@@ -1512,23 +1270,27 @@ where
             &mut eval_points,
             &zero,
             field_cfg,
-        );
+        )?;
 
         let next_product_len = products.len() / 2;
         product_scratch.truncate(next_product_len);
-        let bound_factor =
-            equality_coordinate_evaluation(&tau[eval_points.len() - 1], &challenge, &one);
-        bound_equality = mul(&bound_equality, &bound_factor);
+        let bound_factor = equality_coordinate_evaluation(
+            &tau[eval_points.len() - 1],
+            &challenge,
+            &one,
+            &field_cfg,
+        );
+        bound_equality = (field_cfg).mul(&bound_equality, &bound_factor);
         std::mem::swap(&mut eq_low, &mut eq_low_scratch);
 
         if next_product_len > 1 {
             let equality_weights = if eq_low.len() > 1 {
                 eq_low_scratch.truncate(eq_low.len() / 2);
-                strip_equality_coordinate(&eq_low, &mut eq_low_scratch);
+                strip_equality_coordinate(&eq_low, &mut eq_low_scratch, &field_cfg);
                 StrippedEqualityWeights::low(&eq_low_scratch, &eq_high)
             } else {
                 eq_high_scratch.truncate(eq_high.len() / 2);
-                strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+                strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
                 StrippedEqualityWeights::high(&eq_high_scratch)
             };
             coefficients_without_linear = fold_products_and_compute_next(
@@ -1542,10 +1304,11 @@ where
                 &bound_equality,
                 &one,
                 reducer,
+                &field_cfg,
             )?;
         } else {
             debug_assert_eq!(next_product_len, 1);
-            fold_product_tables(&products, &mut product_scratch, &challenge);
+            fold_product_tables(&products, &mut product_scratch, &challenge, &field_cfg);
         }
 
         products.swap(&mut product_scratch);
@@ -1563,20 +1326,24 @@ where
             &mut eval_points,
             &zero,
             field_cfg,
-        );
+        )?;
 
         let next_eq_high_len = eq_high.len() / 2;
         product_scratch.truncate(next_eq_high_len);
-        let bound_factor =
-            equality_coordinate_evaluation(&tau[eval_points.len() - 1], &challenge, &one);
-        bound_equality = mul(&bound_equality, &bound_factor);
+        let bound_factor = equality_coordinate_evaluation(
+            &tau[eval_points.len() - 1],
+            &challenge,
+            &one,
+            &field_cfg,
+        );
+        bound_equality = (field_cfg).mul(&bound_equality, &bound_factor);
         std::mem::swap(&mut eq_high, &mut eq_high_scratch);
 
         if next_eq_high_len == 1 {
-            fold_product_tables(&products, &mut product_scratch, &challenge);
+            fold_product_tables(&products, &mut product_scratch, &challenge, &field_cfg);
         } else {
             eq_high_scratch.truncate(eq_high.len() / 2);
-            strip_equality_coordinate(&eq_high, &mut eq_high_scratch);
+            strip_equality_coordinate(&eq_high, &mut eq_high_scratch, &field_cfg);
             coefficients_without_linear = fold_products_and_compute_next(
                 &products,
                 &mut product_scratch,
@@ -1588,6 +1355,7 @@ where
                 &bound_equality,
                 &one,
                 reducer,
+                &field_cfg,
             )?;
         }
 
@@ -1601,9 +1369,12 @@ where
     debug_assert_eq!(eq_high[0], one);
     debug_assert_eq!(
         current_claim,
-        mul(
+        (field_cfg).mul(
             &bound_equality,
-            &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
+            &(field_cfg).sub(
+                &(field_cfg).mul(&az_mle_claim, &bz_mle_claim),
+                &cz_mle_claim
+            ),
         )
     );
 
@@ -1614,6 +1385,7 @@ where
             bz_mle_claim.clone(),
             cz_mle_claim.clone(),
         ],
+        &field_cfg,
     );
 
     Ok(OuterSumcheckOutput {
@@ -1688,7 +1460,7 @@ pub(crate) fn prove_inner_sumcheck<F>(
 where
     F: SpartanField,
 {
-    let reducer = ImmediateSumcheckReducer::new(field_cfg);
+    let reducer = field_cfg.clone();
     prove_inner_sumcheck_with_reducer(
         transcript,
         initial_claim,
@@ -1790,8 +1562,12 @@ where
     if num_vars > 0 {
         let mut batched_matrix_scratch = vec![zero.clone(); batched_matrix.len() / 2];
         let mut witness_scratch = vec![zero.clone(); witness.len() / 2];
-        let mut coefficients_without_linear =
-            sum_inner_round_coefficients_without_linear(&batched_matrix, &witness, reducer)?;
+        let mut coefficients_without_linear = sum_inner_round_coefficients_without_linear(
+            &batched_matrix,
+            &witness,
+            reducer,
+            &field_cfg,
+        )?;
 
         for _round in 0..num_vars {
             let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
@@ -1813,9 +1589,14 @@ where
             witness_scratch.truncate(next_len);
 
             if next_len == 1 {
-                batched_matrix_scratch[0] =
-                    interpolate_pair(&batched_matrix[0], &batched_matrix[1], &challenge);
-                witness_scratch[0] = interpolate_pair(&witness[0], &witness[1], &challenge);
+                batched_matrix_scratch[0] = interpolate_pair(
+                    &batched_matrix[0],
+                    &batched_matrix[1],
+                    &challenge,
+                    &field_cfg,
+                );
+                witness_scratch[0] =
+                    interpolate_pair(&witness[0], &witness[1], &challenge, &field_cfg);
             } else {
                 coefficients_without_linear =
                     fold_and_compute_next_inner_round_coefficients_without_linear(
@@ -1825,6 +1606,7 @@ where
                         &mut witness_scratch,
                         &challenge,
                         reducer,
+                        &field_cfg,
                     )?;
             }
 
@@ -1837,7 +1619,7 @@ where
     let witness_evaluation = witness[0].clone();
     debug_assert_eq!(
         current_claim,
-        mul(&batched_matrix_evaluation, &witness_evaluation)
+        (field_cfg).mul(&batched_matrix_evaluation, &witness_evaluation)
     );
 
     Ok(InnerSumcheckOutput {
@@ -1856,74 +1638,14 @@ where
 /// production policy: delayed coefficients and delayed native folding.
 pub(crate) fn prove_inner_sumcheck_u32_native_with_reducer<R>(
     transcript: &mut impl Transcript,
-    initial_claim: MontyField<2>,
-    batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
+    initial_claim: Fp<2>,
+    batched_matrix_mle: DenseMultilinearExtension<Fp<2>>,
     witness_mle: DenseMultilinearExtension<u64>,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
+    field_cfg: &field::FpCtx<2>,
     reducer: &R,
-) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
+) -> Result<InnerSumcheckOutput<Fp<2>>, SumcheckError>
 where
-    R: SumcheckProductReducer<MontyField<2>> + SumcheckLinearReducer,
-{
-    let policy = DelayedU32InnerArithmetic { reducer };
-    prove_inner_sumcheck_u32_native(
-        transcript,
-        initial_claim,
-        batched_matrix_mle,
-        witness_mle,
-        field_cfg,
-        &policy,
-    )
-}
-
-/// Benchmark-only inner arithmetic selection used by the controlled policy
-/// sweep. Production callers use [`prove_inner_sumcheck_u32_native_with_reducer`].
-#[cfg(any(test, feature = "bench-internals"))]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_inner_sumcheck_u32_native_with_policy<NR, DR, IR>(
-    transcript: &mut impl Transcript,
-    initial_claim: MontyField<2>,
-    batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
-    witness_mle: DenseMultilinearExtension<u64>,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    native_reducer: &NR,
-    delayed_field_reducer: &DR,
-    immediate_field_reducer: &IR,
-    native_fold_policy: NativeWitnessFoldPolicy,
-    field_coefficient_policy: FieldCoefficientPolicy,
-) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
-where
-    NR: SumcheckLinearReducer,
-    DR: SumcheckProductReducer<MontyField<2>>,
-    IR: SumcheckProductReducer<MontyField<2>>,
-{
-    let policy = SelectedU32InnerArithmetic {
-        native_reducer,
-        delayed_field_reducer,
-        immediate_field_reducer,
-        native_fold_policy,
-        field_coefficient_policy,
-    };
-    prove_inner_sumcheck_u32_native(
-        transcript,
-        initial_claim,
-        batched_matrix_mle,
-        witness_mle,
-        field_cfg,
-        &policy,
-    )
-}
-
-fn prove_inner_sumcheck_u32_native<P>(
-    transcript: &mut impl Transcript,
-    initial_claim: MontyField<2>,
-    batched_matrix_mle: DenseMultilinearExtension<MontyField<2>>,
-    witness_mle: DenseMultilinearExtension<u64>,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-    policy: &P,
-) -> Result<InnerSumcheckOutput<MontyField<2>>, SumcheckError>
-where
-    P: U32InnerArithmeticPolicy,
+    R: SumcheckProductReducer<Fp<2>> + SumcheckLinearReducer,
 {
     let num_vars = batched_matrix_mle.num_vars;
     if !has_dense_shape(&batched_matrix_mle)
@@ -1933,7 +1655,7 @@ where
         return Err(SumcheckError::InvalidProductDimensions);
     }
 
-    let zero = MontyField::<2>::zero_with_cfg(field_cfg);
+    let zero = Fp::<2>::zero_with_cfg(field_cfg);
     let mut batched_matrix = batched_matrix_mle.evaluations;
     let native_witness = witness_mle.evaluations;
     let mut current_claim = initial_claim;
@@ -1945,7 +1667,7 @@ where
         let witness_evaluation = native_to_field(native_witness[0], field_cfg);
         debug_assert_eq!(
             current_claim,
-            mul(&batched_matrix_evaluation, &witness_evaluation)
+            (field_cfg).mul(&batched_matrix_evaluation, &witness_evaluation)
         );
         return Ok(InnerSumcheckOutput {
             sumcheck: SumcheckProverOutput {
@@ -1960,7 +1682,13 @@ where
 
     let coefficients_without_linear = {
         let _scope = tracing::info_span!("spartan:inner_native_coefficients").entered();
-        policy.native_coefficients(&batched_matrix, &native_witness, &zero)?
+        sum_u32_native_inner_coefficients_without_linear(
+            &batched_matrix,
+            &native_witness,
+            &zero,
+            reducer,
+            field_cfg,
+        )?
     };
     let challenge = recover_full_round_polynomial_and_sample_next_challenge(
         transcript,
@@ -1970,22 +1698,34 @@ where
         &mut eval_points,
         &zero,
         field_cfg,
-    );
+    )?;
 
     let next_len = batched_matrix.len() / 2;
     let mut folded_matrix = vec![zero.clone(); next_len];
-    fold_table(&batched_matrix, &mut folded_matrix, &challenge);
+    fold_table(&batched_matrix, &mut folded_matrix, &challenge, &field_cfg);
     let mut witness = vec![zero.clone(); next_len];
     {
         let _scope = tracing::info_span!("spartan:inner_native_witness_fold").entered();
-        policy.fold_native_witness(&native_witness, &mut witness, &challenge, &zero, field_cfg)?;
+        fold_u64_table_to_field(
+            &native_witness,
+            &mut witness,
+            &challenge,
+            &zero,
+            reducer,
+            field_cfg,
+        )?;
     }
     batched_matrix = folded_matrix;
 
     {
         let _scope = tracing::info_span!("spartan:inner_field_rounds").entered();
         let mut coefficients_without_linear = if next_len > 1 {
-            policy.field_coefficients(&batched_matrix, &witness)?
+            sum_inner_round_coefficients_without_linear(
+                &batched_matrix,
+                &witness,
+                reducer,
+                field_cfg,
+            )?
         } else {
             std::array::from_fn(|_| zero.clone())
         };
@@ -2001,24 +1741,32 @@ where
                 &mut eval_points,
                 &zero,
                 field_cfg,
-            );
+            )?;
 
             let next_len = batched_matrix.len() / 2;
             batched_matrix_scratch.truncate(next_len);
             witness_scratch.truncate(next_len);
 
             if next_len == 1 {
-                batched_matrix_scratch[0] =
-                    interpolate_pair(&batched_matrix[0], &batched_matrix[1], &challenge);
-                witness_scratch[0] = interpolate_pair(&witness[0], &witness[1], &challenge);
-            } else {
-                coefficients_without_linear = policy.fold_and_compute_field_coefficients(
-                    &batched_matrix,
-                    &witness,
-                    &mut batched_matrix_scratch,
-                    &mut witness_scratch,
+                batched_matrix_scratch[0] = interpolate_pair(
+                    &batched_matrix[0],
+                    &batched_matrix[1],
                     &challenge,
-                )?;
+                    &field_cfg,
+                );
+                witness_scratch[0] =
+                    interpolate_pair(&witness[0], &witness[1], &challenge, &field_cfg);
+            } else {
+                coefficients_without_linear =
+                    fold_and_compute_next_inner_round_coefficients_without_linear(
+                        &batched_matrix,
+                        &witness,
+                        &mut batched_matrix_scratch,
+                        &mut witness_scratch,
+                        &challenge,
+                        reducer,
+                        field_cfg,
+                    )?;
             }
 
             std::mem::swap(&mut batched_matrix, &mut batched_matrix_scratch);
@@ -2030,7 +1778,7 @@ where
     let witness_evaluation = witness[0].clone();
     debug_assert_eq!(
         current_claim,
-        mul(&batched_matrix_evaluation, &witness_evaluation)
+        (field_cfg).mul(&batched_matrix_evaluation, &witness_evaluation)
     );
 
     Ok(InnerSumcheckOutput {
@@ -2052,6 +1800,7 @@ fn accumulate_inner_pair_coefficients_without_linear<F, R>(
     witness_zero: &F,
     witness_one: &F,
     reducer: &R,
+    field_config: &F::Config,
 ) where
     F: SpartanField,
     R: SumcheckProductReducer<F>,
@@ -2059,8 +1808,8 @@ fn accumulate_inner_pair_coefficients_without_linear<F, R>(
     reducer.multiply_accumulate(&mut accumulators[0], matrix_zero, witness_zero);
     reducer.multiply_accumulate(
         &mut accumulators[1],
-        &sub(matrix_one, matrix_zero),
-        &sub(witness_one, witness_zero),
+        &(field_config).sub(matrix_one, matrix_zero),
+        &(field_config).sub(witness_one, witness_zero),
     );
 }
 
@@ -2068,6 +1817,7 @@ fn sum_inner_round_coefficients_without_linear<F, R>(
     batched_matrix: &[F],
     witness: &[F],
     reducer: &R,
+    field_config: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
@@ -2091,6 +1841,7 @@ where
                         &witness[0],
                         &witness[1],
                         reducer,
+                        &field_config,
                     );
                     accumulators
                 },
@@ -2099,7 +1850,7 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| merge_accumulators(left, right, reducer),
             );
-        return reduce_two_accumulators(accumulators, reducer);
+        return reduce_two_accumulators(accumulators, reducer, &field_config);
     }
 
     let accumulators = batched_matrix
@@ -2115,31 +1866,12 @@ where
                     &witness[0],
                     &witness[1],
                     reducer,
+                    &field_config,
                 );
                 accumulators
             },
         );
-    reduce_two_accumulators(accumulators, reducer)
-}
-
-#[cfg(any(test, feature = "bench-internals"))]
-fn sum_inner_round_coefficients_selected<DR, IR>(
-    batched_matrix: &[MontyField<2>],
-    witness: &[MontyField<2>],
-    delayed_reducer: &DR,
-    immediate_reducer: &IR,
-    policy: FieldCoefficientPolicy,
-) -> Result<[MontyField<2>; 2], SumcheckError>
-where
-    DR: SumcheckProductReducer<MontyField<2>>,
-    IR: SumcheckProductReducer<MontyField<2>>,
-{
-    let pair_count = batched_matrix.len() / 2;
-    if policy.use_delayed(pair_count) {
-        sum_inner_round_coefficients_without_linear(batched_matrix, witness, delayed_reducer)
-    } else {
-        sum_inner_round_coefficients_without_linear(batched_matrix, witness, immediate_reducer)
-    }
+    reduce_two_accumulators(accumulators, reducer, &field_config)
 }
 
 #[inline]
@@ -2150,6 +1882,7 @@ fn fold_inner_chunk<F, R>(
     witness_output: &mut [F],
     challenge: &F,
     reducer: &R,
+    field_config: &F::Config,
 ) -> [R::Accumulator; 2]
 where
     F: SpartanField,
@@ -2161,12 +1894,22 @@ where
     debug_assert_eq!(witness_output.len(), 2);
 
     let folded_matrix = [
-        interpolate_pair(&batched_matrix[0], &batched_matrix[1], challenge),
-        interpolate_pair(&batched_matrix[2], &batched_matrix[3], challenge),
+        interpolate_pair(
+            &batched_matrix[0],
+            &batched_matrix[1],
+            challenge,
+            &field_config,
+        ),
+        interpolate_pair(
+            &batched_matrix[2],
+            &batched_matrix[3],
+            challenge,
+            &field_config,
+        ),
     ];
     let folded_witness = [
-        interpolate_pair(&witness[0], &witness[1], challenge),
-        interpolate_pair(&witness[2], &witness[3], challenge),
+        interpolate_pair(&witness[0], &witness[1], challenge, &field_config),
+        interpolate_pair(&witness[2], &witness[3], challenge, &field_config),
     ];
 
     batched_matrix_output.clone_from_slice(&folded_matrix);
@@ -2179,6 +1922,7 @@ where
         &folded_witness[0],
         &folded_witness[1],
         reducer,
+        &field_config,
     );
     accumulators
 }
@@ -2191,6 +1935,7 @@ fn fold_and_compute_next_inner_round_coefficients_without_linear<F, R>(
     witness_output: &mut [F],
     challenge: &F,
     reducer: &R,
+    field_config: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
@@ -2218,6 +1963,7 @@ where
                         witness_output,
                         challenge,
                         reducer,
+                        &field_config,
                     );
                     merge_accumulators(accumulators, contribution, reducer)
                 },
@@ -2226,7 +1972,7 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| merge_accumulators(left, right, reducer),
             );
-        return reduce_two_accumulators(accumulators, reducer);
+        return reduce_two_accumulators(accumulators, reducer, &field_config);
     }
 
     let accumulators = batched_matrix
@@ -2244,49 +1990,12 @@ where
                     witness_output,
                     challenge,
                     reducer,
+                    &field_config,
                 );
                 merge_accumulators(accumulators, contribution, reducer)
             },
         );
-    reduce_two_accumulators(accumulators, reducer)
-}
-
-#[allow(clippy::too_many_arguments)]
-#[cfg(any(test, feature = "bench-internals"))]
-fn fold_and_compute_next_inner_round_selected<DR, IR>(
-    batched_matrix: &[MontyField<2>],
-    witness: &[MontyField<2>],
-    batched_matrix_output: &mut [MontyField<2>],
-    witness_output: &mut [MontyField<2>],
-    challenge: &MontyField<2>,
-    delayed_reducer: &DR,
-    immediate_reducer: &IR,
-    policy: FieldCoefficientPolicy,
-) -> Result<[MontyField<2>; 2], SumcheckError>
-where
-    DR: SumcheckProductReducer<MontyField<2>>,
-    IR: SumcheckProductReducer<MontyField<2>>,
-{
-    let next_round_pair_count = batched_matrix_output.len() / 2;
-    if policy.use_delayed(next_round_pair_count) {
-        fold_and_compute_next_inner_round_coefficients_without_linear(
-            batched_matrix,
-            witness,
-            batched_matrix_output,
-            witness_output,
-            challenge,
-            delayed_reducer,
-        )
-    } else {
-        fold_and_compute_next_inner_round_coefficients_without_linear(
-            batched_matrix,
-            witness,
-            batched_matrix_output,
-            witness_output,
-            challenge,
-            immediate_reducer,
-        )
-    }
+    reduce_two_accumulators(accumulators, reducer, &field_config)
 }
 
 #[inline]
@@ -2309,13 +2018,14 @@ where
 fn reduce_two_accumulators<F, R>(
     accumulators: [R::Accumulator; 2],
     reducer: &R,
+    config: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
     R: SumcheckProductReducer<F>,
 {
     let [c0, c2] = accumulators;
-    Ok([reducer.reduce(c0)?, reducer.reduce(c2)?])
+    Ok([reducer.reduce(c0, config)?, reducer.reduce(c2, config)?])
 }
 
 fn sum_product_accumulators<F, R, const COEFFS: usize>(
@@ -2354,11 +2064,8 @@ where
 }
 
 #[inline]
-fn native_to_field(
-    value: u64,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-) -> MontyField<2> {
-    MontyField::<2>::from_with_cfg(value, field_cfg)
+fn native_to_field(value: u64, field_cfg: &field::FpCtx<2>) -> Fp<2> {
+    Fp::<2>::from_with_cfg(value, field_cfg)
 }
 
 #[inline]
@@ -2412,22 +2119,23 @@ where
 fn reduce_two_linear_accumulators<R>(
     accumulators: [<R as SumcheckLinearReducer>::Accumulator; 2],
     reducer: &R,
-) -> Result<[MontyField<2>; 2], SumcheckError>
+    config: &field::FpCtx<2>,
+) -> Result<[Fp<2>; 2], SumcheckError>
 where
     R: SumcheckLinearReducer,
 {
     let [endpoint, infinity] = accumulators;
     Ok([
-        <R as SumcheckLinearReducer>::reduce(reducer, endpoint)?,
-        <R as SumcheckLinearReducer>::reduce(reducer, infinity)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, endpoint, config)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, infinity, config)?,
     ])
 }
 
 #[inline]
 fn multiply_accumulate_signed_linear<R>(
     accumulator: &mut <R as SumcheckLinearReducer>::Accumulator,
-    weight: &MontyField<2>,
-    negative_weight: &MontyField<2>,
+    weight: &Fp<2>,
+    negative_weight: &Fp<2>,
     value: i128,
     reducer: &R,
 ) where
@@ -2437,15 +2145,8 @@ fn multiply_accumulate_signed_linear<R>(
     // below to have magnitude at most `u64::MAX`.
     let sign_mask = (value >> 127) as u128;
     let magnitude = ((value as u128) ^ sign_mask).wrapping_sub(sign_mask) as u64;
-    let is_negative = Choice::from((sign_mask & 1) as u8);
-    let selected_weight = MontyField::from_montgomery(
-        CtSelect::ct_select(
-            weight.as_montgomery(),
-            negative_weight.as_montgomery(),
-            is_negative,
-        ),
-        weight.cfg(),
-    );
+    let is_negative = CtMask::from_lsb(sign_mask as u64);
+    let selected_weight = CtSelect::ct_select(weight, negative_weight, is_negative);
     <R as SumcheckLinearReducer>::multiply_accumulate(
         reducer,
         accumulator,
@@ -2459,8 +2160,8 @@ fn accumulate_u32_native_outer_pair<R>(
     accumulators: &mut [<R as SumcheckLinearReducer>::Accumulator; 2],
     products: &R1csProductTableBuffers<u64>,
     index: usize,
-    weight: &MontyField<2>,
-    negative_weight: &MontyField<2>,
+    weight: &Fp<2>,
+    negative_weight: &Fp<2>,
     endpoint: FactoredEndpoint,
     reducer: &R,
 ) where
@@ -2504,17 +2205,18 @@ fn accumulate_u32_native_outer_pair<R>(
 #[allow(clippy::too_many_arguments)]
 fn compute_u32_native_eq_factored_coefficients_without_linear<R>(
     products: &R1csProductTableBuffers<u64>,
-    equality_weights: StrippedEqualityWeights<'_, MontyField<2>>,
-    current_claim: &MontyField<2>,
-    tau: &MontyField<2>,
-    tau_inverse_or_zero: &MontyField<2>,
-    bound_equality: &MontyField<2>,
-    one: &MontyField<2>,
-    zero: &MontyField<2>,
+    equality_weights: StrippedEqualityWeights<'_, Fp<2>>,
+    current_claim: &Fp<2>,
+    tau: &Fp<2>,
+    tau_inverse_or_zero: &Fp<2>,
+    bound_equality: &Fp<2>,
+    one: &Fp<2>,
+    zero: &Fp<2>,
     reducer: &R,
-) -> Result<[MontyField<2>; 3], SumcheckError>
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
+) -> Result<[Fp<2>; 3], SumcheckError>
 where
-    R: SumcheckLinearReducer + SumcheckProductReducer<MontyField<2>>,
+    R: SumcheckLinearReducer + SumcheckProductReducer<Fp<2>>,
 {
     let pair_count = products.len() / 2;
     let endpoint = FactoredEndpoint::for_tau(tau);
@@ -2522,20 +2224,19 @@ where
     // The first round uses the same eq_out * (sum eq_in * residual)
     // decomposition, with exact native u32 products feeding field×u64 inner
     // accumulators and field×field outer accumulators.
-    if R::USE_TWO_LEVEL_EQUALITY_ACCUMULATION
-        && equality_weights
-            .low_weights()
-            .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
+    if equality_weights
+        .low_weights()
+        .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
     {
         let low_weights = equality_weights
             .low_weights()
             .expect("two-level branch requires stripped low weights");
         let negative_low_weights = low_weights
             .iter()
-            .map(|weight| sub(zero, weight))
+            .map(|weight| (field_config).sub(zero, weight))
             .collect::<Vec<_>>();
         let low_pair_count = low_weights.len();
-        let accumulate_high_bucket = |mut outer: [<R as SumcheckProductReducer<MontyField<2>>>::Accumulator;
+        let accumulate_high_bucket = |mut outer: [<R as SumcheckProductReducer<Fp<2>>>::Accumulator;
                                           2],
                                       high_index: usize|
          -> Result<_, SumcheckError> {
@@ -2557,10 +2258,10 @@ where
                 );
             }
 
-            let inner = reduce_two_linear_accumulators(inner, reducer)?;
+            let inner = reduce_two_linear_accumulators(inner, reducer, &field_config)?;
             let high_weight = &equality_weights.high[high_index];
             for (outer, inner) in outer.iter_mut().zip(&inner) {
-                <R as SumcheckProductReducer<MontyField<2>>>::multiply_accumulate(
+                <R as SumcheckProductReducer<Fp<2>>>::multiply_accumulate(
                     reducer,
                     outer,
                     high_weight,
@@ -2577,7 +2278,7 @@ where
                 .try_fold(
                     || {
                         std::array::from_fn(|_| {
-                            <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+                            <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
                         })
                     },
                     accumulate_high_bucket,
@@ -2585,14 +2286,14 @@ where
                 .try_reduce(
                     || {
                         std::array::from_fn(|_| {
-                            <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+                            <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
                         })
                     },
                     |left, right| Ok(merge_accumulators(left, right, reducer)),
                 )?
         } else {
             let mut accumulators = std::array::from_fn(|_| {
-                <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+                <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
             });
             for high_index in 0..equality_weights.high.len() {
                 accumulators = accumulate_high_bucket(accumulators, high_index)?;
@@ -2603,7 +2304,7 @@ where
         #[cfg(not(feature = "parallel"))]
         let accumulators = {
             let mut accumulators = std::array::from_fn(|_| {
-                <R as SumcheckProductReducer<MontyField<2>>>::accumulator_zero(reducer)
+                <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
             });
             for high_index in 0..equality_weights.high.len() {
                 accumulators = accumulate_high_bucket(accumulators, high_index)?;
@@ -2611,7 +2312,7 @@ where
             accumulators
         };
 
-        let evaluations = reduce_two_accumulators(accumulators, reducer)?;
+        let evaluations = reduce_two_accumulators(accumulators, reducer, &field_config)?;
         return Ok(reconstruct_eq_factored_cubic_without_linear(
             current_claim,
             tau,
@@ -2620,6 +2321,7 @@ where
             evaluations,
             bound_equality,
             one,
+            &field_config,
         ));
     }
 
@@ -2627,8 +2329,8 @@ where
         pair_count,
         |accumulators, pair| {
             let index = 2 * pair;
-            let weight = equality_weights.pair_weight(pair);
-            let negative_weight = sub(zero, &weight);
+            let weight = equality_weights.pair_weight(pair, &field_config);
+            let negative_weight = (field_config).sub(zero, &weight);
             accumulate_u32_native_outer_pair(
                 accumulators,
                 products,
@@ -2641,7 +2343,7 @@ where
         },
         reducer,
     );
-    let evaluations = reduce_two_linear_accumulators(accumulators, reducer)?;
+    let evaluations = reduce_two_linear_accumulators(accumulators, reducer, &field_config)?;
     Ok(reconstruct_eq_factored_cubic_without_linear(
         current_claim,
         tau,
@@ -2650,15 +2352,17 @@ where
         evaluations,
         bound_equality,
         one,
+        &field_config,
     ))
 }
 
 fn sum_u32_native_inner_coefficients_without_linear<R>(
-    batched_matrix: &[MontyField<2>],
+    batched_matrix: &[Fp<2>],
     witness: &[u64],
-    zero: &MontyField<2>,
+    zero: &Fp<2>,
     reducer: &R,
-) -> Result<[MontyField<2>; 2], SumcheckError>
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
+) -> Result<[Fp<2>; 2], SumcheckError>
 where
     R: SumcheckLinearReducer,
 {
@@ -2670,8 +2374,9 @@ where
         pair_count,
         |accumulators, pair| {
             let index = 2 * pair;
-            let matrix_delta = sub(&batched_matrix[index + 1], &batched_matrix[index]);
-            let neg_matrix_delta = sub(zero, &matrix_delta);
+            let matrix_delta =
+                (field_config).sub(&batched_matrix[index + 1], &batched_matrix[index]);
+            let neg_matrix_delta = (field_config).sub(zero, &matrix_delta);
 
             <R as SumcheckLinearReducer>::multiply_accumulate(
                 reducer,
@@ -2698,26 +2403,27 @@ where
 
     let [c0, c2] = accumulators;
     Ok([
-        <R as SumcheckLinearReducer>::reduce(reducer, c0)?,
-        <R as SumcheckLinearReducer>::reduce(reducer, c2)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c0, &field_config)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, c2, &field_config)?,
     ])
 }
 
 fn fold_u64_table_to_field<R>(
     input: &[u64],
-    output: &mut [MontyField<2>],
-    challenge: &MontyField<2>,
-    zero: &MontyField<2>,
+    output: &mut [Fp<2>],
+    challenge: &Fp<2>,
+    zero: &Fp<2>,
     reducer: &R,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) -> Result<(), SumcheckError>
 where
     R: SumcheckLinearReducer,
 {
     debug_assert_eq!(input.len(), 2 * output.len());
-    let one = MontyField::<2>::one_with_cfg(challenge.cfg());
-    let one_minus_challenge = sub(&one, challenge);
+    let one = Fp::<2>::one_with_cfg(&field_config);
+    let one_minus_challenge = (field_config).sub(&one, challenge);
 
-    let fold_pair = |pair: &[u64], value: &mut MontyField<2>| -> Result<(), SumcheckError> {
+    let fold_pair = |pair: &[u64], value: &mut Fp<2>| -> Result<(), SumcheckError> {
         let mut accumulator = <R as SumcheckLinearReducer>::accumulator_zero(reducer);
         <R as SumcheckLinearReducer>::multiply_accumulate(
             reducer,
@@ -2731,7 +2437,7 @@ where
             challenge,
             &pair[1],
         );
-        *value = <R as SumcheckLinearReducer>::reduce(reducer, accumulator)?;
+        *value = <R as SumcheckLinearReducer>::reduce(reducer, accumulator, &field_config)?;
         Ok(())
     };
 
@@ -2746,54 +2452,45 @@ where
     for (pair, value) in input.chunks_exact(2).zip(output) {
         fold_pair(pair, value)?;
     }
-    debug_assert!(zero.cfg() == challenge.cfg());
+
     Ok(())
-}
-
-#[cfg(any(test, feature = "bench-internals"))]
-fn fold_u64_table_to_field_immediate(
-    input: &[u64],
-    output: &mut [MontyField<2>],
-    challenge: &MontyField<2>,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
-) {
-    debug_assert_eq!(input.len(), 2 * output.len());
-
-    let fold_pair = |pair: &[u64], value: &mut MontyField<2>| {
-        let low = native_to_field(pair[0], field_cfg);
-        let high = native_to_field(pair[1], field_cfg);
-        *value = interpolate_pair(&low, &high, challenge);
-    };
-
-    #[cfg(feature = "parallel")]
-    if should_parallelize(output.len()) {
-        input
-            .par_chunks_exact(2)
-            .zip(output.par_iter_mut())
-            .for_each(|(pair, value)| fold_pair(pair, value));
-        return;
-    }
-
-    for (pair, value) in input.chunks_exact(2).zip(output) {
-        fold_pair(pair, value);
-    }
 }
 
 fn fold_u64_product_tables_to_field<R>(
     input: &R1csProductTableBuffers<u64>,
-    challenge: &MontyField<2>,
-    zero: &MontyField<2>,
-    field_cfg: &crypto_bigint::modular::FixedMontyParams<2>,
+    challenge: &Fp<2>,
+    zero: &Fp<2>,
+    field_cfg: &field::FpCtx<2>,
     reducer: &R,
-) -> Result<R1csProductTableBuffers<MontyField<2>>, SumcheckError>
+) -> Result<R1csProductTableBuffers<Fp<2>>, SumcheckError>
 where
     R: SumcheckLinearReducer,
 {
-    debug_assert_eq!(challenge.cfg(), field_cfg);
     let mut output = R1csProductTableBuffers::filled(input.len() / 2, zero);
-    fold_u64_table_to_field(&input.az, &mut output.az, challenge, zero, reducer)?;
-    fold_u64_table_to_field(&input.bz, &mut output.bz, challenge, zero, reducer)?;
-    fold_u64_table_to_field(&input.cz, &mut output.cz, challenge, zero, reducer)?;
+    fold_u64_table_to_field(
+        &input.az,
+        &mut output.az,
+        challenge,
+        zero,
+        reducer,
+        &field_cfg,
+    )?;
+    fold_u64_table_to_field(
+        &input.bz,
+        &mut output.bz,
+        challenge,
+        zero,
+        reducer,
+        &field_cfg,
+    )?;
+    fold_u64_table_to_field(
+        &input.cz,
+        &mut output.cz,
+        challenge,
+        zero,
+        reducer,
+        &field_cfg,
+    )?;
     Ok(output)
 }
 
@@ -2832,43 +2529,22 @@ pub(super) fn batch_invert_nonzero<F>(values: &[F], field_cfg: &F::Config) -> Ve
 where
     F: SpartanField,
 {
-    let zero = F::zero_with_cfg(field_cfg);
-    let one = F::one_with_cfg(field_cfg);
-    let mut prefixes = Vec::with_capacity(values.len());
-    let mut product = one.clone();
-    let mut has_nonzero = false;
-
-    for value in values {
-        prefixes.push(product.clone());
-        if !F::is_zero(value) {
-            product = mul(&product, value);
-            has_nonzero = true;
-        }
-    }
-
-    if !has_nonzero {
-        return vec![zero; values.len()];
-    }
-
-    let mut product_inverse = one / &product;
-    let mut inverses = vec![zero; values.len()];
-    for index in (0..values.len()).rev() {
-        if !F::is_zero(&values[index]) {
-            inverses[index] = mul(&product_inverse, &prefixes[index]);
-            product_inverse = mul(&product_inverse, &values[index]);
-        }
-    }
-    inverses
+    field::BatchFieldOps::batch_invert_or_zero_ct(field_cfg, values)
 }
 
 #[inline]
-pub(super) fn equality_coordinate_evaluation<F>(tau: &F, point: &F, one: &F) -> F
+pub(super) fn equality_coordinate_evaluation<F>(
+    tau: &F,
+    point: &F,
+    one: &F,
+    field_config: &F::Config,
+) -> F
 where
     F: SpartanField,
 {
-    let at_zero = sub(one, tau);
-    let slope = sub(tau, &at_zero);
-    add(&at_zero, &mul(point, &slope))
+    let at_zero = (field_config).sub(one, tau);
+    let slope = (field_config).sub(tau, &at_zero);
+    (field_config).add(&at_zero, &(field_config).mul(point, &slope))
 }
 
 /// Converts one endpoint and the leading coefficient of the quadratic
@@ -2883,29 +2559,39 @@ pub(super) fn reconstruct_eq_factored_cubic_without_linear<F>(
     endpoint_and_infinity: [F; 2],
     bound_equality: &F,
     one: &F,
+    field_config: &F::Config,
 ) -> [F; 3]
 where
     F: SpartanField,
 {
     let [endpoint_evaluation, infinity] = endpoint_and_infinity;
-    let endpoint_evaluation = mul(bound_equality, &endpoint_evaluation);
-    let infinity = mul(bound_equality, &infinity);
-    let at_zero = sub(one, tau);
-    let slope = sub(tau, &at_zero);
+    let endpoint_evaluation = (field_config).mul(bound_equality, &endpoint_evaluation);
+    let infinity = (field_config).mul(bound_equality, &infinity);
+    let at_zero = (field_config).sub(one, tau);
+    let slope = (field_config).sub(tau, &at_zero);
 
     let (cofactor_zero, cofactor_one) = match endpoint {
         FactoredEndpoint::Zero => {
-            let weighted_zero = mul(&at_zero, &endpoint_evaluation);
-            let cofactor_one = mul(&sub(current_claim, &weighted_zero), tau_inverse_or_zero);
+            let weighted_zero = (field_config).mul(&at_zero, &endpoint_evaluation);
+            let cofactor_one = (field_config).mul(
+                &(field_config).sub(current_claim, &weighted_zero),
+                tau_inverse_or_zero,
+            );
             (endpoint_evaluation, cofactor_one)
         }
         FactoredEndpoint::One => (current_claim.clone(), endpoint_evaluation),
     };
 
-    let linear = sub(&sub(&cofactor_one, &cofactor_zero), &infinity);
-    let c0 = mul(&at_zero, &cofactor_zero);
-    let c2 = add(&mul(&at_zero, &infinity), &mul(&slope, &linear));
-    let c3 = mul(&slope, &infinity);
+    let linear = (field_config).sub(
+        &(field_config).sub(&cofactor_one, &cofactor_zero),
+        &infinity,
+    );
+    let c0 = (field_config).mul(&at_zero, &cofactor_zero);
+    let c2 = (field_config).add(
+        &(field_config).mul(&at_zero, &infinity),
+        &(field_config).mul(&slope, &linear),
+    );
+    let c3 = (field_config).mul(&slope, &infinity);
     [c0, c2, c3]
 }
 
@@ -2922,19 +2608,22 @@ fn accumulate_eq_factored_cofactor_evaluations<F, R>(
     cz_zero: &F,
     cz_one: &F,
     reducer: &R,
+    field_config: &F::Config,
 ) where
     F: SpartanField,
     R: SumcheckProductReducer<F>,
 {
     let endpoint_residual = match endpoint {
-        FactoredEndpoint::Zero => sub(&mul(az_zero, bz_zero), cz_zero),
-        FactoredEndpoint::One => sub(&mul(az_one, bz_one), cz_one),
+        FactoredEndpoint::Zero => {
+            (field_config).sub(&(field_config).mul(az_zero, bz_zero), cz_zero)
+        }
+        FactoredEndpoint::One => (field_config).sub(&(field_config).mul(az_one, bz_one), cz_one),
     };
     reducer.multiply_accumulate(&mut accumulators[0], weight, &endpoint_residual);
 
-    let az_delta = sub(az_one, az_zero);
-    let bz_delta = sub(bz_one, bz_zero);
-    let infinity = mul(&az_delta, &bz_delta);
+    let az_delta = (field_config).sub(az_one, az_zero);
+    let bz_delta = (field_config).sub(bz_one, bz_zero);
+    let infinity = (field_config).mul(&az_delta, &bz_delta);
     reducer.multiply_accumulate(&mut accumulators[1], weight, &infinity);
 }
 
@@ -2954,31 +2643,42 @@ where
 {
     fn new(field_cfg: &F::Config) -> Self {
         let one = F::one_with_cfg(field_cfg);
-        let two = add(&one, &one);
-        let three = add(&two, &one);
-        let six = add(&three, &three);
+        let two = (field_cfg).add(&one, &one);
+        let three = (field_cfg).add(&two, &one);
+        let six = (field_cfg).add(&three, &three);
         Self {
-            half: one.clone() / &two,
-            sixth: one / &six,
+            half: *field::FieldOps::inverse_ct(&field_cfg, &two).value(),
+            sixth: *field::FieldOps::inverse_ct(field_cfg, &six).value(),
         }
     }
 
     /// Converts `[g(0), g(2), g(3)]` to `[c0, c2, c3]`, deriving
     /// `g(1) = current_claim - g(0)` from the sumcheck relation.
-    fn coefficients_without_linear(&self, current_claim: &F, evaluations: [F; 3]) -> [F; 3] {
+    fn coefficients_without_linear(
+        &self,
+        current_claim: &F,
+        evaluations: [F; 3],
+        field_config: &F::Config,
+    ) -> [F; 3] {
         let [at_zero, at_two, at_three] = evaluations;
-        let at_one = sub(current_claim, &at_zero);
-        let three_at_one = add(&add(&at_one, &at_one), &at_one);
-        let three_at_two = add(&add(&at_two, &at_two), &at_two);
-        let third_difference = sub(
-            &add(&sub(&at_three, &three_at_two), &three_at_one),
+        let at_one = (field_config).sub(current_claim, &at_zero);
+        let three_at_one = (field_config).add(&(field_config).add(&at_one, &at_one), &at_one);
+        let three_at_two = (field_config).add(&(field_config).add(&at_two, &at_two), &at_two);
+        let third_difference = (field_config).sub(
+            &(field_config).add(&(field_config).sub(&at_three, &three_at_two), &three_at_one),
             &at_zero,
         );
-        let c3 = mul(&third_difference, &self.sixth);
+        let c3 = (field_config).mul(&third_difference, &self.sixth);
 
-        let second_difference = add(&sub(&at_two, &add(&at_one, &at_one)), &at_zero);
-        let three_c3 = add(&add(&c3, &c3), &c3);
-        let c2 = sub(&mul(&second_difference, &self.half), &three_c3);
+        let second_difference = (field_config).add(
+            &(field_config).sub(&at_two, &(field_config).add(&at_one, &at_one)),
+            &at_zero,
+        );
+        let three_c3 = (field_config).add(&(field_config).add(&c3, &c3), &c3);
+        let c2 = (field_config).sub(
+            &(field_config).mul(&second_difference, &self.half),
+            &three_c3,
+        );
         [at_zero, c2, c3]
     }
 }
@@ -2989,6 +2689,7 @@ fn reconstruct_round_coefficients<F, const INPUT_COEFFS: usize, const COEFFS: us
     current_claim: &F,
     coefficients_without_linear: &[F; INPUT_COEFFS],
     zero: &F,
+    field_config: &F::Config,
 ) -> [F; COEFFS]
 where
     F: SpartanField,
@@ -3003,15 +2704,23 @@ where
     let at_one_without_c1 = coefficients
         .iter()
         .fold(zero.clone(), |mut sum, coefficient| {
-            sum += coefficient;
+            sum = field_config.add(&(sum), &(coefficient));
             sum
         });
-    coefficients[1] = sub(&sub(current_claim, &coefficients[0]), &at_one_without_c1);
+    coefficients[1] = (field_config).sub(
+        &(field_config).sub(current_claim, &coefficients[0]),
+        &at_one_without_c1,
+    );
     coefficients
 }
 
 #[inline]
-fn evaluate_polynomial<F, const COEFFS: usize>(coefficients: &[F; COEFFS], point: &F, zero: &F) -> F
+fn evaluate_polynomial<F, const COEFFS: usize>(
+    coefficients: &[F; COEFFS],
+    point: &F,
+    zero: &F,
+    field_config: &F::Config,
+) -> F
 where
     F: SpartanField,
 {
@@ -3019,7 +2728,7 @@ where
         .iter()
         .rev()
         .fold(zero.clone(), |value, coefficient| {
-            add(&mul(&value, point), coefficient)
+            (field_config).add(&(field_config).mul(&value, point), coefficient)
         })
 }
 
@@ -3036,7 +2745,7 @@ pub(super) fn recover_full_round_polynomial_and_sample_next_challenge<
     eval_points: &mut Vec<F>,
     zero: &F,
     field_cfg: &F::Config,
-) -> F
+) -> Result<F, SumcheckError>
 where
     F: SpartanField,
 {
@@ -3051,7 +2760,6 @@ where
         field_cfg,
         &mut round_boundary,
     )
-    .expect("the ungrinded round boundary is infallible")
 }
 
 /// Completes and records one round under an explicit message/challenge
@@ -3076,20 +2784,24 @@ where
     F: SpartanField,
     P: RoundBoundaryPolicy,
 {
-    let coefficients =
-        reconstruct_round_coefficients(current_claim, coefficients_without_linear, zero);
+    let coefficients = reconstruct_round_coefficients(
+        current_claim,
+        coefficients_without_linear,
+        zero,
+        &field_cfg,
+    );
     let at_one = coefficients
         .iter()
         .fold(zero.clone(), |mut sum, coefficient| {
-            sum += coefficient;
+            sum = field_cfg.add(&(sum), &(coefficient));
             sum
         });
-    debug_assert_eq!(*current_claim, add(&coefficients[0], &at_one));
+    debug_assert_eq!(*current_claim, (field_cfg).add(&coefficients[0], &at_one));
 
-    absorb_field_elements(transcript, &coefficients);
+    absorb_field_elements(transcript, &coefficients, &field_cfg);
     round_boundary.after_round(transcript, round_polynomials.len())?;
-    let challenge = squeeze_field(transcript, field_cfg);
-    *current_claim = evaluate_polynomial(&coefficients, &challenge, zero);
+    let challenge = squeeze_field(transcript, field_cfg)?;
+    *current_claim = evaluate_polynomial(&coefficients, &challenge, zero, &field_cfg);
     round_polynomials.push(coefficients);
     eval_points.push(challenge.clone());
     Ok(challenge)
@@ -3125,9 +2837,9 @@ where
     /// Returns the suffix equality weight after stripping the active
     /// coordinate. Bound-coordinate equality factors are tracked separately.
     #[inline]
-    fn pair_weight(&self, pair: usize) -> F {
+    fn pair_weight(&self, pair: usize, field_config: &F::Config) -> F {
         if let Some(low) = self.low {
-            return mul(&low[pair % low.len()], &self.high[pair / low.len()]);
+            return (field_config).mul(&low[pair % low.len()], &self.high[pair / low.len()]);
         }
 
         self.high[pair].clone()
@@ -3162,6 +2874,7 @@ fn compute_two_level_cofactor_evaluations<F, R>(
     equality_weights: &StrippedEqualityWeights<'_, F>,
     endpoint: FactoredEndpoint,
     reducer: &R,
+    field_config: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
@@ -3194,10 +2907,11 @@ where
                     &products.cz[product_index],
                     &products.cz[product_index + 1],
                     reducer,
+                    &field_config,
                 );
             }
 
-            let inner = reduce_two_accumulators(inner, reducer)?;
+            let inner = reduce_two_accumulators(inner, reducer, &field_config)?;
             let high_weight = &equality_weights.high[high_index];
             for (outer, inner) in outer.iter_mut().zip(&inner) {
                 reducer.multiply_accumulate(outer, high_weight, inner);
@@ -3217,14 +2931,14 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| Ok(merge_accumulators(left, right, reducer)),
             )?;
-        return reduce_two_accumulators(accumulators, reducer);
+        return reduce_two_accumulators(accumulators, reducer, &field_config);
     }
 
     let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
     for high_index in 0..equality_weights.high.len() {
         accumulators = accumulate_high_bucket(accumulators, high_index)?;
     }
-    reduce_two_accumulators(accumulators, reducer)
+    reduce_two_accumulators(accumulators, reducer, &field_config)
 }
 
 /// Computes `[c0, c2, c3]` from one endpoint and the leading coefficient of
@@ -3239,6 +2953,7 @@ fn compute_eq_factored_coefficients_without_linear<F, R>(
     bound_equality: &F,
     one: &F,
     reducer: &R,
+    field_config: &F::Config,
 ) -> Result<[F; 3], SumcheckError>
 where
     F: SpartanField,
@@ -3246,18 +2961,23 @@ where
 {
     let pair_count = products.len() / 2;
     let endpoint = FactoredEndpoint::for_tau(tau);
-    let evaluations = if R::USE_TWO_LEVEL_EQUALITY_ACCUMULATION
-        && equality_weights
-            .low_weights()
-            .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
+    let evaluations = if equality_weights
+        .low_weights()
+        .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
     {
-        compute_two_level_cofactor_evaluations(products, &equality_weights, endpoint, reducer)?
+        compute_two_level_cofactor_evaluations(
+            products,
+            &equality_weights,
+            endpoint,
+            reducer,
+            &field_config,
+        )?
     } else {
         let accumulators = sum_product_accumulators(
             pair_count,
             |accumulators, pair| {
                 let index = 2 * pair;
-                let weight = equality_weights.pair_weight(pair);
+                let weight = equality_weights.pair_weight(pair, &field_config);
                 accumulate_eq_factored_cofactor_evaluations(
                     accumulators,
                     &weight,
@@ -3269,11 +2989,12 @@ where
                     &products.cz[index],
                     &products.cz[index + 1],
                     reducer,
+                    &field_config,
                 );
             },
             reducer,
         );
-        reduce_two_accumulators(accumulators, reducer)?
+        reduce_two_accumulators(accumulators, reducer, &field_config)?
     };
     Ok(reconstruct_eq_factored_cubic_without_linear(
         current_claim,
@@ -3283,26 +3004,30 @@ where
         evaluations,
         bound_equality,
         one,
+        &field_config,
     ))
 }
 
 #[inline]
-fn interpolate_pair<F>(zero: &F, one: &F, challenge: &F) -> F
+fn interpolate_pair<F>(zero: &F, one: &F, challenge: &F, field_config: &F::Config) -> F
 where
     F: SpartanField,
 {
-    add(zero, &mul(challenge, &sub(one, zero)))
+    (field_config).add(
+        zero,
+        &(field_config).mul(challenge, &(field_config).sub(one, zero)),
+    )
 }
 
 #[inline]
-fn fold_two_pairs<F>(values: &[F], challenge: &F) -> [F; 2]
+fn fold_two_pairs<F>(values: &[F], challenge: &F, field_config: &F::Config) -> [F; 2]
 where
     F: SpartanField,
 {
     debug_assert_eq!(values.len(), 4);
     [
-        interpolate_pair(&values[0], &values[1], challenge),
-        interpolate_pair(&values[2], &values[3], challenge),
+        interpolate_pair(&values[0], &values[1], challenge, &field_config),
+        interpolate_pair(&values[2], &values[3], challenge, &field_config),
     ]
 }
 
@@ -3316,6 +3041,7 @@ fn fold_product_chunk<F>(
     bz_output: &mut [F],
     cz_output: &mut [F],
     challenge: &F,
+    field_config: &F::Config,
 ) -> [[F; 2]; 3]
 where
     F: SpartanField,
@@ -3325,9 +3051,9 @@ where
     debug_assert_eq!(cz_output.len(), 2);
 
     let folded = [
-        fold_two_pairs(az, challenge),
-        fold_two_pairs(bz, challenge),
-        fold_two_pairs(cz, challenge),
+        fold_two_pairs(az, challenge, &field_config),
+        fold_two_pairs(bz, challenge, &field_config),
+        fold_two_pairs(cz, challenge, &field_config),
     ];
     az_output.clone_from_slice(&folded[0]);
     bz_output.clone_from_slice(&folded[1]);
@@ -3336,7 +3062,7 @@ where
 }
 
 /// Folds one evaluation table into preallocated storage.
-fn fold_table<F>(input: &[F], output: &mut [F], challenge: &F)
+fn fold_table<F>(input: &[F], output: &mut [F], challenge: &F, field_config: &F::Config)
 where
     F: SpartanField,
 {
@@ -3348,7 +3074,7 @@ where
             .par_chunks_exact(2)
             .zip(output.par_iter_mut())
             .for_each(|(pair, value)| {
-                *value = interpolate_pair(&pair[0], &pair[1], challenge);
+                *value = interpolate_pair(&pair[0], &pair[1], challenge, &field_config);
             });
         return;
     }
@@ -3357,13 +3083,13 @@ where
         .chunks_exact(2)
         .zip(output.iter_mut())
         .for_each(|(pair, value)| {
-            *value = interpolate_pair(&pair[0], &pair[1], challenge);
+            *value = interpolate_pair(&pair[0], &pair[1], challenge, &field_config);
         });
 }
 
 /// Removes the active equality coordinate while leaving all sampled-coordinate
 /// factors in the prover's single `bound_equality` scalar.
-fn strip_equality_coordinate<F>(input: &[F], output: &mut [F])
+fn strip_equality_coordinate<F>(input: &[F], output: &mut [F], field_config: &F::Config)
 where
     F: SpartanField,
 {
@@ -3375,7 +3101,7 @@ where
             .par_chunks_exact(2)
             .zip(output.par_iter_mut())
             .for_each(|(pair, value)| {
-                *value = add(&pair[0], &pair[1]);
+                *value = (field_config).add(&pair[0], &pair[1]);
             });
         return;
     }
@@ -3384,7 +3110,7 @@ where
         .chunks_exact(2)
         .zip(output.iter_mut())
         .for_each(|(pair, value)| {
-            *value = add(&pair[0], &pair[1]);
+            *value = (field_config).add(&pair[0], &pair[1]);
         });
 }
 
@@ -3392,13 +3118,14 @@ fn fold_product_tables<F>(
     input: &R1csProductTableBuffers<F>,
     output: &mut R1csProductTableBuffers<F>,
     challenge: &F,
+    field_config: &F::Config,
 ) where
     F: SpartanField,
 {
     debug_assert_eq!(input.len(), 2 * output.len());
-    fold_table(&input.az, &mut output.az, challenge);
-    fold_table(&input.bz, &mut output.bz, challenge);
-    fold_table(&input.cz, &mut output.cz, challenge);
+    fold_table(&input.az, &mut output.az, challenge, &field_config);
+    fold_table(&input.bz, &mut output.bz, challenge, &field_config);
+    fold_table(&input.cz, &mut output.cz, challenge, &field_config);
 }
 
 /// Fused product-table fold and two-level equality accumulation for an active
@@ -3411,6 +3138,7 @@ fn fold_products_and_compute_next_two_level<F, R>(
     equality_weights: &StrippedEqualityWeights<'_, F>,
     endpoint: FactoredEndpoint,
     reducer: &R,
+    field_config: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
@@ -3448,14 +3176,24 @@ where
                 &mut bz_output[output_start..output_start + 2],
                 &mut cz_output[output_start..output_start + 2],
                 challenge,
+                &field_config,
             );
             accumulate_eq_factored_cofactor_evaluations(
-                &mut inner, weight, endpoint, &az[0], &az[1], &bz[0], &bz[1], &cz[0], &cz[1],
+                &mut inner,
+                weight,
+                endpoint,
+                &az[0],
+                &az[1],
+                &bz[0],
+                &bz[1],
+                &cz[0],
+                &cz[1],
                 reducer,
+                &field_config,
             );
         }
 
-        let inner = reduce_two_accumulators(inner, reducer)?;
+        let inner = reduce_two_accumulators(inner, reducer, &field_config)?;
         let high_weight = &equality_weights.high[high_index];
         for (outer, inner) in outer.iter_mut().zip(&inner) {
             reducer.multiply_accumulate(outer, high_weight, inner);
@@ -3487,7 +3225,7 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| Ok(merge_accumulators(left, right, reducer)),
             )?;
-        return reduce_two_accumulators(accumulators, reducer);
+        return reduce_two_accumulators(accumulators, reducer, &field_config);
     }
 
     let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
@@ -3505,7 +3243,7 @@ where
             &mut output.cz[output_start..output_start + output_values_per_high],
         )?;
     }
-    reduce_two_accumulators(accumulators, reducer)
+    reduce_two_accumulators(accumulators, reducer, &field_config)
 }
 
 /// Folds all product tables and accumulates the next round polynomial.
@@ -3521,6 +3259,7 @@ fn fold_products_and_compute_next<F, R>(
     bound_equality: &F,
     one: &F,
     reducer: &R,
+    field_config: &F::Config,
 ) -> Result<[F; 3], SumcheckError>
 where
     F: SpartanField,
@@ -3529,10 +3268,9 @@ where
     debug_assert_eq!(input.len(), 2 * output.len());
     let endpoint = FactoredEndpoint::for_tau(tau);
 
-    if R::USE_TWO_LEVEL_EQUALITY_ACCUMULATION
-        && equality_weights
-            .low_weights()
-            .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
+    if equality_weights
+        .low_weights()
+        .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
     {
         let evaluations = fold_products_and_compute_next_two_level(
             input,
@@ -3541,6 +3279,7 @@ where
             &equality_weights,
             endpoint,
             reducer,
+            &field_config,
         )?;
         return Ok(reconstruct_eq_factored_cubic_without_linear(
             current_claim,
@@ -3550,6 +3289,7 @@ where
             evaluations,
             bound_equality,
             one,
+            &field_config,
         ));
     }
 
@@ -3561,9 +3301,17 @@ where
                       az_output: &mut [F],
                       bz_output: &mut [F],
                       cz_output: &mut [F]| {
-        let [az, bz, cz] =
-            fold_product_chunk(az, bz, cz, az_output, bz_output, cz_output, challenge);
-        let weight = equality_weights.pair_weight(chunk);
+        let [az, bz, cz] = fold_product_chunk(
+            az,
+            bz,
+            cz,
+            az_output,
+            bz_output,
+            cz_output,
+            challenge,
+            &field_config,
+        );
+        let weight = equality_weights.pair_weight(chunk, &field_config);
         accumulate_eq_factored_cofactor_evaluations(
             &mut accumulators,
             &weight,
@@ -3575,6 +3323,7 @@ where
             &cz[0],
             &cz[1],
             reducer,
+            &field_config,
         );
         accumulators
     };
@@ -3612,7 +3361,7 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| merge_accumulators(left, right, reducer),
             );
-        let evaluations = reduce_two_accumulators(accumulators, reducer)?;
+        let evaluations = reduce_two_accumulators(accumulators, reducer, &field_config)?;
         return Ok(reconstruct_eq_factored_cubic_without_linear(
             current_claim,
             tau,
@@ -3621,6 +3370,7 @@ where
             evaluations,
             bound_equality,
             one,
+            &field_config,
         ));
     }
 
@@ -3639,7 +3389,7 @@ where
             &mut output.cz[output_start..output_start + 2],
         );
     }
-    let evaluations = reduce_two_accumulators(accumulators, reducer)?;
+    let evaluations = reduce_two_accumulators(accumulators, reducer, &field_config)?;
     Ok(reconstruct_eq_factored_cubic_without_linear(
         current_claim,
         tau,
@@ -3648,6 +3398,7 @@ where
         evaluations,
         bound_equality,
         one,
+        &field_config,
     ))
 }
 
@@ -3664,9 +3415,12 @@ where
     for (left_i, right_i) in left.iter().zip(right) {
         // (1 - x) + y * (2x - 1), equivalent to
         // x*y + (1-x)*(1-y), including in characteristic two.
-        let two_x_minus_one = sub(&add(left_i, left_i), &one);
-        let factor = add(&sub(&one, left_i), &mul(right_i, &two_x_minus_one));
-        result *= &factor;
+        let two_x_minus_one = (field_cfg).sub(&(field_cfg).add(left_i, left_i), &one);
+        let factor = (field_cfg).add(
+            &(field_cfg).sub(&one, left_i),
+            &(field_cfg).mul(right_i, &two_x_minus_one),
+        );
+        result = field_cfg.mul(&(result), &(&factor));
     }
     Ok(result)
 }
@@ -3681,36 +3435,15 @@ where
 {
     let expected_modulus = F::canonical_modulus_encoding(field_cfg);
     for value in values {
-        if F::canonical_modulus_encoding(value.cfg()) != expected_modulus {
-            return Err(SumcheckError::FieldConfigurationMismatch);
-        }
         value
-            .validate_element()
+            .validate_element(&expected_modulus)
             .map_err(|_| SumcheckError::NonCanonicalFieldElement)?;
     }
     Ok(())
 }
 
-#[inline]
-fn add<F: SpartanField>(left: &F, right: &F) -> F {
-    left.clone() + right
-}
-
-#[inline]
-fn sub<F: SpartanField>(left: &F, right: &F) -> F {
-    left.clone() - right
-}
-
-#[inline]
-fn mul<F: SpartanField>(left: &F, right: &F) -> F {
-    left.clone() * right
-}
-
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
-    };
 
     use crate::{
         piop::spartan::{
@@ -3724,12 +3457,15 @@ mod tests {
 
     const TEST_MODULUS: u128 = (1_u128 << 100) - 15;
 
-    fn config() -> <F128 as PrimeField>::Config {
-        F128::make_cfg(&Uint::from(TEST_MODULUS)).expect("prime test modulus")
+    fn config() -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
+        Fp::<2>::make_cfg(&Uint::from(TEST_MODULUS)).expect("prime test modulus")
     }
 
-    fn field(value: u64, field_cfg: &<F128 as PrimeField>::Config) -> F128 {
-        F128::from_with_cfg(value, field_cfg)
+    fn field(
+        value: u64,
+        field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> Fp<2> {
+        Fp::<2>::from_with_cfg(value, field_cfg)
     }
 
     enum TestOuterGrinding {}
@@ -3739,20 +3475,20 @@ mod tests {
     }
 
     type OuterTestInstance = (
-        F128,
-        Vec<F128>,
+        Fp<2>,
+        Vec<Fp<2>>,
         (
-            DenseMultilinearExtension<F128>,
-            DenseMultilinearExtension<F128>,
+            DenseMultilinearExtension<Fp<2>>,
+            DenseMultilinearExtension<Fp<2>>,
         ),
-        R1csProductMles<F128>,
+        R1csProductMles<Fp<2>>,
     );
 
     fn outer_test_instance(
         num_vars: usize,
-        field_cfg: &<F128 as PrimeField>::Config,
+        field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
     ) -> OuterTestInstance {
-        let zero = F128::zero_with_cfg(field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(field_cfg);
         let table_len = 1_usize << num_vars;
         let products = R1csProductMles {
             az: DenseMultilinearExtension::from_evaluations_vec(
@@ -3781,16 +3517,17 @@ mod tests {
             .map(|index| field(2 * index as u64 + 2, field_cfg))
             .collect::<Vec<_>>();
         let full_equality = eq_table(&tau, field_cfg).unwrap();
-        let mut initial_claim = F128::zero_with_cfg(field_cfg);
+        let mut initial_claim = Fp::<2>::zero_with_cfg(field_cfg);
         for (index, equality) in full_equality.iter().enumerate() {
-            let residual = sub(
-                &mul(
+            let residual = (field_cfg).sub(
+                &(field_cfg).mul(
                     &products.az.evaluations[index],
                     &products.bz.evaluations[index],
                 ),
                 &products.cz.evaluations[index],
             );
-            initial_claim += &mul(equality, &residual);
+            initial_claim =
+                field_cfg.add(&(initial_claim), &(&(field_cfg).mul(equality, &residual)));
         }
 
         let split = num_vars / 2;
@@ -3811,7 +3548,7 @@ mod tests {
     #[test]
     fn one_variable_inner_sumcheck_has_the_expected_quadratic_and_replays() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
         let batched_matrix = DenseMultilinearExtension::from_evaluations_vec(
             1,
             vec![field(2, &field_cfg), field(5, &field_cfg)],
@@ -3853,7 +3590,7 @@ mod tests {
         assert_eq!(final_claim, output.sumcheck.final_claim);
         assert_eq!(
             final_claim,
-            mul(
+            (field_cfg).mul(
                 &output.batched_matrix_evaluation,
                 &output.witness_evaluation,
             )
@@ -3895,10 +3632,11 @@ mod tests {
         assert!(point.is_empty());
         assert_eq!(final_claim, initial_claim);
 
-        let prover_next = squeeze_field::<F128, _>(&mut prover_transcript, &field_cfg);
-        let verifier_next = squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg);
+        let prover_next = squeeze_field::<Fp<2>, _>(&mut prover_transcript, &field_cfg).unwrap();
+        let verifier_next =
+            squeeze_field::<Fp<2>, _>(&mut verifier_transcript, &field_cfg).unwrap();
         let mut fresh_transcript = Blake3Transcript::new();
-        let fresh_next = squeeze_field::<F128, _>(&mut fresh_transcript, &field_cfg);
+        let fresh_next = squeeze_field::<Fp<2>, _>(&mut fresh_transcript, &field_cfg).unwrap();
         assert_eq!(prover_next, fresh_next);
         assert_eq!(verifier_next, fresh_next);
     }
@@ -3906,8 +3644,8 @@ mod tests {
     #[test]
     fn zero_variable_outer_sumcheck_proves_and_verifies() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
-        let one = F128::one_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
+        let one = Fp::<2>::one_with_cfg(&field_cfg);
         let products = R1csProductMles {
             az: DenseMultilinearExtension::zero_vars(field(2, &field_cfg)),
             bz: DenseMultilinearExtension::zero_vars(field(3, &field_cfg)),
@@ -3941,7 +3679,7 @@ mod tests {
             .proof
             .verify(
                 &mut verifier_transcript,
-                F128::zero_with_cfg(&field_cfg),
+                Fp::<2>::zero_with_cfg(&field_cfg),
                 &[],
                 &field_cfg,
             )
@@ -3952,8 +3690,8 @@ mod tests {
         assert_eq!(verified.cz_mle_claim, field(6, &field_cfg));
 
         assert_eq!(
-            squeeze_field::<F128, _>(&mut prover_transcript, &field_cfg),
-            squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg)
+            squeeze_field::<Fp<2>, _>(&mut prover_transcript, &field_cfg).unwrap(),
+            squeeze_field::<Fp<2>, _>(&mut verifier_transcript, &field_cfg).unwrap()
         );
     }
 
@@ -3965,7 +3703,7 @@ mod tests {
         let field_cfg = config();
         let (initial_claim, tau, equality_factors, products) =
             outer_test_instance(NUM_VARS, &field_cfg);
-        let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+        let reducer = field_cfg.clone();
         let mut prover_transcript = Blake3Transcript::new();
         let (output, nonces) =
             prove_outer_sumcheck_with_reducer_grinded::<TestOuterGrinding, _, _>(
@@ -4001,8 +3739,8 @@ mod tests {
         assert_eq!(verified.bz_mle_claim, output.proof.bz_mle_claim);
         assert_eq!(verified.cz_mle_claim, output.proof.cz_mle_claim);
         assert_eq!(
-            squeeze_field::<F128, _>(&mut prover_transcript, &field_cfg),
-            squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg),
+            squeeze_field::<Fp<2>, _>(&mut prover_transcript, &field_cfg).unwrap(),
+            squeeze_field::<Fp<2>, _>(&mut verifier_transcript, &field_cfg).unwrap(),
         );
     }
 
@@ -4011,7 +3749,7 @@ mod tests {
         const NUM_VARS: usize = 2;
 
         let field_cfg = config();
-        let other_cfg = F128::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+        let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
         let (initial_claim, tau, equality_factors, products) =
             outer_test_instance(NUM_VARS, &field_cfg);
         let output = prove_outer_sumcheck(
@@ -4025,20 +3763,22 @@ mod tests {
         .unwrap();
 
         let mut foreign_round = output.proof.clone();
-        foreign_round.sumcheck.round_polynomials[0][0] = field(1, &other_cfg);
+        foreign_round.sumcheck.round_polynomials[0][0] =
+            crate::piop::spartan::noncanonical_test_value(&field_cfg);
         let mut actual = Blake3Transcript::new();
         let mut untouched = actual.clone();
         assert_eq!(
             foreign_round.verify(&mut actual, initial_claim.clone(), &tau, &field_cfg),
-            Err(SumcheckError::FieldConfigurationMismatch)
+            Err(SumcheckError::NonCanonicalFieldElement)
         );
         assert_eq!(
-            squeeze_field::<F128, _>(&mut actual, &field_cfg),
-            squeeze_field::<F128, _>(&mut untouched, &field_cfg)
+            squeeze_field::<Fp<2>, _>(&mut actual, &field_cfg).unwrap(),
+            squeeze_field::<Fp<2>, _>(&mut untouched, &field_cfg).unwrap()
         );
 
         let mut malformed_terminal = output.proof;
-        malformed_terminal.az_mle_claim = F128::new_unchecked(Uint::from(u128::MAX), &field_cfg);
+        malformed_terminal.az_mle_claim = field::FpCtx::from_prime_u128(u128::MAX - 158)
+            .from_montgomery_integer(*field_cfg.modulus());
         let mut actual = Blake3Transcript::new();
         let mut untouched = actual.clone();
         assert_eq!(
@@ -4046,8 +3786,8 @@ mod tests {
             Err(SumcheckError::NonCanonicalFieldElement)
         );
         assert_eq!(
-            squeeze_field::<F128, _>(&mut actual, &field_cfg),
-            squeeze_field::<F128, _>(&mut untouched, &field_cfg)
+            squeeze_field::<Fp<2>, _>(&mut actual, &field_cfg).unwrap(),
+            squeeze_field::<Fp<2>, _>(&mut untouched, &field_cfg).unwrap()
         );
     }
 
@@ -4059,7 +3799,7 @@ mod tests {
         let field_cfg = config();
         let (initial_claim, tau, equality_factors, products) =
             outer_test_instance(NUM_VARS, &field_cfg);
-        let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+        let reducer = field_cfg.clone();
         let mut prover_transcript = Blake3Transcript::new();
         let (output, nonces) =
             prove_outer_sumcheck_with_reducer_grinded::<TestOuterGrinding, _, _>(
@@ -4091,8 +3831,8 @@ mod tests {
             })
         );
         assert_eq!(
-            squeeze_field::<F128, _>(&mut short_transcript, &field_cfg),
-            squeeze_field::<F128, _>(&mut untouched_transcript, &field_cfg),
+            squeeze_field::<Fp<2>, _>(&mut short_transcript, &field_cfg).unwrap(),
+            squeeze_field::<Fp<2>, _>(&mut untouched_transcript, &field_cfg).unwrap(),
         );
 
         // Reconstruct the first boundary seed and choose a nonce that is
@@ -4101,6 +3841,7 @@ mod tests {
         absorb_field_elements(
             &mut seed_transcript,
             &output.proof.sumcheck.round_polynomials[0],
+            &field_cfg,
         );
         let seed = derive_grinding_seed::<TestOuterGrinding, _>(
             &mut seed_transcript,
@@ -4136,7 +3877,7 @@ mod tests {
     #[test]
     fn sumcheck_rejects_a_tampered_linear_coefficient() {
         let field_cfg = config();
-        let proof = SumcheckProof::<F128, 4> {
+        let proof = SumcheckProof::<Fp<2>, 4> {
             round_polynomials: vec![
                 [
                     field(10, &field_cfg),
@@ -4176,7 +3917,7 @@ mod tests {
         assert_eq!(
             proof.verify(
                 &mut transcript,
-                F128::zero_with_cfg(&field_cfg),
+                Fp::<2>::zero_with_cfg(&field_cfg),
                 &[],
                 &field_cfg,
             ),
@@ -4187,7 +3928,7 @@ mod tests {
     #[test]
     fn outer_sumcheck_supports_every_equality_factor_split() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
         let num_vars = 5;
         let table_len = 1 << num_vars;
         let products = R1csProductMles {
@@ -4220,14 +3961,15 @@ mod tests {
         let full_equality = eq_table(&tau, &field_cfg).unwrap();
         let mut initial_claim = zero.clone();
         for (index, equality) in full_equality.iter().enumerate() {
-            let residual = sub(
-                &mul(
+            let residual = (field_cfg).sub(
+                &(field_cfg).mul(
                     &products.az.evaluations[index],
                     &products.bz.evaluations[index],
                 ),
                 &products.cz.evaluations[index],
             );
-            initial_claim += &mul(equality, &residual);
+            initial_claim =
+                field_cfg.add(&(initial_claim), &(&(field_cfg).mul(equality, &residual)));
         }
 
         let mut reference_proof = None;
@@ -4276,8 +4018,8 @@ mod tests {
             assert_eq!(verified.bz_mle_claim, output.proof.bz_mle_claim);
             assert_eq!(verified.cz_mle_claim, output.proof.cz_mle_claim);
             assert_eq!(
-                squeeze_field::<F128, _>(&mut prover_transcript, &field_cfg),
-                squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg),
+                squeeze_field::<Fp<2>, _>(&mut prover_transcript, &field_cfg).unwrap(),
+                squeeze_field::<Fp<2>, _>(&mut verifier_transcript, &field_cfg).unwrap(),
             );
         }
     }
@@ -4285,18 +4027,18 @@ mod tests {
     #[test]
     fn factorized_outer_kernels_match_immediate_proof() {
         fn prove_with_reducer<R>(
-            initial_claim: &F128,
-            tau: &[F128],
+            initial_claim: &Fp<2>,
+            tau: &[Fp<2>],
             equality_factors: &(
-                DenseMultilinearExtension<F128>,
-                DenseMultilinearExtension<F128>,
+                DenseMultilinearExtension<Fp<2>>,
+                DenseMultilinearExtension<Fp<2>>,
             ),
-            products: &R1csProductMles<F128>,
-            field_cfg: &<F128 as PrimeField>::Config,
+            products: &R1csProductMles<Fp<2>>,
+            field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
             reducer: &R,
-        ) -> (OuterSumcheckOutput<F128>, F128)
+        ) -> (OuterSumcheckOutput<Fp<2>>, Fp<2>)
         where
-            R: SumcheckProductReducer<F128>,
+            R: SumcheckProductReducer<Fp<2>>,
         {
             let mut transcript = Blake3Transcript::new();
             let output = prove_outer_sumcheck_with_reducer(
@@ -4309,12 +4051,12 @@ mod tests {
                 reducer,
             )
             .unwrap();
-            let continuation = squeeze_field(&mut transcript, field_cfg);
+            let continuation = squeeze_field(&mut transcript, field_cfg).unwrap();
             (output, continuation)
         }
 
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
         let num_vars = 10;
         let table_len = 1 << num_vars;
         let products = R1csProductMles {
@@ -4358,19 +4100,20 @@ mod tests {
         let full_equality = eq_table(&tau, &field_cfg).unwrap();
         let mut initial_claim = zero;
         for (index, equality) in full_equality.iter().enumerate() {
-            let residual = sub(
-                &mul(
+            let residual = (field_cfg).sub(
+                &(field_cfg).mul(
                     &products.az.evaluations[index],
                     &products.bz.evaluations[index],
                 ),
                 &products.cz.evaluations[index],
             );
-            initial_claim += &mul(equality, &residual);
+            initial_claim =
+                field_cfg.add(&(initial_claim), &(&(field_cfg).mul(equality, &residual)));
         }
 
-        let immediate = ImmediateSumcheckReducer::new(&field_cfg);
-        let optimized = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
-        let reference = CryptoBigintSumcheckReducer::new(&field_cfg).unwrap();
+        let immediate = field_cfg.clone();
+        let optimized = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+        let reference = BigUintSumcheckOracle::new(&field_cfg).unwrap();
         let mut direct_transcript = Blake3Transcript::new();
         let direct_output = prove_outer_sumcheck_direct_reference(
             &mut direct_transcript,
@@ -4380,7 +4123,7 @@ mod tests {
             &field_cfg,
         )
         .unwrap();
-        let direct_continuation = squeeze_field(&mut direct_transcript, &field_cfg);
+        let direct_continuation = squeeze_field(&mut direct_transcript, &field_cfg).unwrap();
         let (immediate_output, immediate_continuation) = prove_with_reducer(
             &initial_claim,
             &tau,
@@ -4426,7 +4169,7 @@ mod tests {
             .unwrap();
         assert_eq!(verified.eval_points, immediate_output.eval_points);
         assert_eq!(
-            squeeze_field::<F128, _>(&mut verifier_transcript, &field_cfg),
+            squeeze_field::<Fp<2>, _>(&mut verifier_transcript, &field_cfg).unwrap(),
             immediate_continuation
         );
     }
@@ -4434,10 +4177,10 @@ mod tests {
     #[test]
     fn eq_factored_outer_is_direct_cubic_exact_at_tau_edges() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
-        let one = F128::one_with_cfg(&field_cfg);
-        let two = add(&one, &one);
-        let half = one.clone() / &two;
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
+        let one = Fp::<2>::one_with_cfg(&field_cfg);
+        let two = (field_cfg).add(&one, &one);
+        let half = *field::FieldOps::inverse_ct(&field_cfg, &two).value();
         let num_vars = 3;
         let table_len = 1 << num_vars;
         let products = R1csProductMles {
@@ -4482,15 +4225,18 @@ mod tests {
                     .iter()
                     .enumerate()
                     .fold(zero.clone(), |mut claim, (index, weight)| {
-                        claim += &mul(
-                            weight,
-                            &sub(
-                                &mul(
-                                    &products.az.evaluations[index],
-                                    &products.bz.evaluations[index],
+                        claim = field_cfg.add(
+                            &(claim),
+                            &(&(field_cfg).mul(
+                                weight,
+                                &(field_cfg).sub(
+                                    &(field_cfg).mul(
+                                        &products.az.evaluations[index],
+                                        &products.bz.evaluations[index],
+                                    ),
+                                    &products.cz.evaluations[index],
                                 ),
-                                &products.cz.evaluations[index],
-                            ),
+                            )),
                         );
                         claim
                     });
@@ -4504,7 +4250,8 @@ mod tests {
                 &field_cfg,
             )
             .unwrap();
-            let direct_continuation = squeeze_field::<F128, _>(&mut direct_transcript, &field_cfg);
+            let direct_continuation =
+                squeeze_field::<Fp<2>, _>(&mut direct_transcript, &field_cfg).unwrap();
 
             for split in 0..=num_vars {
                 let (low_tau, high_tau) = tau.split_at(split);
@@ -4528,7 +4275,7 @@ mod tests {
                     &field_cfg,
                 )
                 .unwrap();
-                let continuation = squeeze_field::<F128, _>(&mut transcript, &field_cfg);
+                let continuation = squeeze_field::<Fp<2>, _>(&mut transcript, &field_cfg).unwrap();
 
                 assert_eq!(output.proof, direct.proof);
                 assert_eq!(output.eval_points, direct.eval_points);
@@ -4541,18 +4288,18 @@ mod tests {
     #[test]
     fn native_u32_eq_factoring_matches_direct_cubic_at_signed_extremes() {
         fn prove_with_native_reducer<R>(
-            initial_claim: &F128,
-            tau: &[F128],
+            initial_claim: &Fp<2>,
+            tau: &[Fp<2>],
             equality_factors: &(
-                DenseMultilinearExtension<F128>,
-                DenseMultilinearExtension<F128>,
+                DenseMultilinearExtension<Fp<2>>,
+                DenseMultilinearExtension<Fp<2>>,
             ),
             products: &R1csProductMles<u64>,
-            field_cfg: &<F128 as PrimeField>::Config,
+            field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
             reducer: &R,
-        ) -> (OuterSumcheckOutput<F128>, F128)
+        ) -> (OuterSumcheckOutput<Fp<2>>, Fp<2>)
         where
-            R: SumcheckProductReducer<F128> + SumcheckLinearReducer,
+            R: SumcheckProductReducer<Fp<2>> + SumcheckLinearReducer,
         {
             let mut transcript = Blake3Transcript::new();
             let output = prove_outer_sumcheck_u32_native_with_reducer(
@@ -4565,13 +4312,13 @@ mod tests {
                 reducer,
             )
             .unwrap();
-            let continuation = squeeze_field::<F128, _>(&mut transcript, field_cfg);
+            let continuation = squeeze_field::<Fp<2>, _>(&mut transcript, field_cfg).unwrap();
             (output, continuation)
         }
 
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
-        let one = F128::one_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
+        let one = Fp::<2>::one_with_cfg(&field_cfg);
         let num_vars = 2;
         let max_u32 = u64::from(u32::MAX);
         let native_products = R1csProductMles {
@@ -4628,8 +4375,8 @@ mod tests {
             vec![one.clone(), zero.clone()],
             vec![field(7, &field_cfg), field(11, &field_cfg)],
         ];
-        let optimized = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
-        let crypto_bigint = CryptoBigintSumcheckReducer::new(&field_cfg).unwrap();
+        let optimized = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+        let crypto_bigint = BigUintSumcheckOracle::new(&field_cfg).unwrap();
 
         for tau in tau_cases {
             let equality = eq_table(&tau, &field_cfg).unwrap();
@@ -4638,15 +4385,18 @@ mod tests {
                     .iter()
                     .enumerate()
                     .fold(zero.clone(), |mut claim, (index, weight)| {
-                        claim += &mul(
-                            weight,
-                            &sub(
-                                &mul(
-                                    &field_products.az.evaluations[index],
-                                    &field_products.bz.evaluations[index],
+                        claim = field_cfg.add(
+                            &(claim),
+                            &(&(field_cfg).mul(
+                                weight,
+                                &(field_cfg).sub(
+                                    &(field_cfg).mul(
+                                        &field_products.az.evaluations[index],
+                                        &field_products.bz.evaluations[index],
+                                    ),
+                                    &field_products.cz.evaluations[index],
                                 ),
-                                &field_products.cz.evaluations[index],
-                            ),
+                            )),
                         );
                         claim
                     });
@@ -4659,7 +4409,8 @@ mod tests {
                 &field_cfg,
             )
             .unwrap();
-            let direct_continuation = squeeze_field::<F128, _>(&mut direct_transcript, &field_cfg);
+            let direct_continuation =
+                squeeze_field::<Fp<2>, _>(&mut direct_transcript, &field_cfg).unwrap();
 
             for split in 0..=num_vars {
                 let (low_tau, high_tau) = tau.split_at(split);
@@ -4703,7 +4454,7 @@ mod tests {
     #[test]
     fn inner_sumcheck_folds_the_lowest_coordinate_first() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
         let matrix = DenseMultilinearExtension::from_evaluations_vec(
             2,
             [2, 5, 11, 17]
@@ -4744,7 +4495,7 @@ mod tests {
     #[test]
     fn inner_sumcheck_rejects_mismatched_dimensions_before_absorption() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
         let matrix = DenseMultilinearExtension::from_evaluations_vec(
             1,
             vec![field(1, &field_cfg), field(2, &field_cfg)],
@@ -4767,17 +4518,17 @@ mod tests {
             Err(SumcheckError::InvalidProductDimensions)
         );
 
-        let rejected_next = squeeze_field::<F128, _>(&mut transcript, &field_cfg);
+        let rejected_next = squeeze_field::<Fp<2>, _>(&mut transcript, &field_cfg).unwrap();
         let mut fresh_transcript = Blake3Transcript::new();
-        let fresh_next = squeeze_field::<F128, _>(&mut fresh_transcript, &field_cfg);
+        let fresh_next = squeeze_field::<Fp<2>, _>(&mut fresh_transcript, &field_cfg).unwrap();
         assert_eq!(rejected_next, fresh_next);
     }
 
     #[test]
     fn outer_sumcheck_rejects_malformed_dimensions_before_absorption() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
-        let one = F128::one_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
+        let one = Fp::<2>::one_with_cfg(&field_cfg);
         let products = R1csProductMles {
             az: DenseMultilinearExtension::zero_vars(field(1, &field_cfg)),
             bz: DenseMultilinearExtension::from_evaluations_vec(
@@ -4805,17 +4556,17 @@ mod tests {
             Err(SumcheckError::InvalidProductDimensions)
         );
 
-        let rejected_next = squeeze_field::<F128, _>(&mut transcript, &field_cfg);
+        let rejected_next = squeeze_field::<Fp<2>, _>(&mut transcript, &field_cfg).unwrap();
         let mut fresh_transcript = Blake3Transcript::new();
-        let fresh_next = squeeze_field::<F128, _>(&mut fresh_transcript, &field_cfg);
+        let fresh_next = squeeze_field::<Fp<2>, _>(&mut fresh_transcript, &field_cfg).unwrap();
         assert_eq!(rejected_next, fresh_next);
     }
 
     #[test]
     fn outer_sumcheck_rejects_tau_length_before_absorption() {
         let field_cfg = config();
-        let zero = F128::zero_with_cfg(&field_cfg);
-        let one = F128::one_with_cfg(&field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(&field_cfg);
+        let one = Fp::<2>::one_with_cfg(&field_cfg);
         let products = R1csProductMles {
             az: DenseMultilinearExtension::from_evaluations_vec(
                 1,
@@ -4854,9 +4605,9 @@ mod tests {
             Err(SumcheckError::InvalidEqualityDimensions)
         );
 
-        let rejected_next = squeeze_field::<F128, _>(&mut transcript, &field_cfg);
+        let rejected_next = squeeze_field::<Fp<2>, _>(&mut transcript, &field_cfg).unwrap();
         let mut fresh_transcript = Blake3Transcript::new();
-        let fresh_next = squeeze_field::<F128, _>(&mut fresh_transcript, &field_cfg);
+        let fresh_next = squeeze_field::<Fp<2>, _>(&mut fresh_transcript, &field_cfg).unwrap();
         assert_eq!(rejected_next, fresh_next);
     }
 }

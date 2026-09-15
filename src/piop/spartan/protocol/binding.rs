@@ -10,8 +10,6 @@ use flock_core::{
     },
 };
 
-use crate::transcript::traits::GenTranscribable;
-
 use super::{ProtocolError, SpartanF2zField};
 
 /// Stable one-byte code of a flock Ligerito profile.
@@ -97,10 +95,8 @@ impl BindingHasher {
     }
 
     /// A canonical 16-byte field element.
-    pub fn element(&mut self, value: &SpartanF2zField) -> &mut Self {
-        let canonical = value.retrieve();
-        let mut encoding = [0_u8; 16];
-        canonical.write_transcription_bytes_exact(&mut encoding);
+    pub fn element(&mut self, value: &SpartanF2zField, field: &super::FieldConfig) -> &mut Self {
+        let encoding = u128::from(field.to_integer(value)).to_le_bytes();
         self.hasher.update(&encoding);
         self
     }
@@ -123,7 +119,10 @@ impl BindingHasher {
     }
 
     /// The complete Ligerito prover configuration.
-    pub fn ligerito_config(&mut self, config: &LigProverConfig) -> Result<&mut Self, ProtocolError> {
+    pub fn ligerito_config(
+        &mut self,
+        config: &LigProverConfig,
+    ) -> Result<&mut Self, ProtocolError> {
         for value in [
             config.recursive_steps,
             config.initial_log_msg_cols,

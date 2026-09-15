@@ -1255,9 +1255,8 @@ fn completeness_random_audit() {
 /// sampler steers around).
 #[test]
 fn domain_boundary_probes() {
-    assert!(crypto_primes::is_prime(
-        crypto_primes::Flavor::Any,
-        &crypto_bigint::U128::from(PRIMES[9].0),
+    assert!(field::prime::is_probable_prime_public(
+        &field::Uint::<2>::from(PRIMES[9].0),
     ));
     let p = IntegerMatrixLayout { row_vars: 7, col_vars: 8, word_bits: 1 };
     let weights = vec![1u128; p.rows()];

@@ -4,8 +4,8 @@
 //!
 //! Witness gen (`blake3::generate_witness_with_ab_packed_and_lincheck`, the S4
 //! GPU target) takes `n_blocks` BLAKE3 `Compression` inputs and produces:
-//!   - `z`, `a`, `b` : F128-packed witness + (a = A·z, b = B·z) products,
-//!     each `n_total · 128` F128 where `n_total = 2^n_blocks_log` (padding
+//!   - `z`, `a`, `b` : Gf128-packed witness + (a = A·z, b = B·z) products,
+//!     each `n_total · 128` Gf128 where `n_total = 2^n_blocks_log` (padding
 //!     blocks are honest zeros),
 //!   - `z_lincheck`  : the stripe-packed witness for lincheck,
 //!     `(n_total / 8) · K` bytes (K = 2^14).
@@ -32,7 +32,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::r1cs_hashes::blake3::{
     Compression, K_LOG, generate_witness_with_ab_packed_and_lincheck, min_n_blocks_log,
 };
@@ -55,7 +55,7 @@ impl Rng {
     }
 }
 
-fn write_f128(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn write_f128(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }

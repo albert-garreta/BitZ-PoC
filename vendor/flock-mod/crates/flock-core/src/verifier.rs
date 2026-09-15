@@ -4,7 +4,7 @@
 //! witness commitment.
 
 use crate::challenger::Challenger;
-use crate::field::F128;
+use crate::field::Gf128;
 use crate::lincheck;
 use crate::lincheck::SkipPoint;
 use crate::pcs::{self, Commitment};
@@ -206,13 +206,13 @@ fn verify_claims_ligerito_inner<Ch: Challenger>(
     pcs_params: &crate::pcs::PcsParams,
     challenger: &mut Ch,
 ) -> Result<(), pcs::VerifyError> {
-    let skip_weight_vecs: Vec<Vec<F128>> = claims
+    let skip_weight_vecs: Vec<Vec<Gf128>> = claims
         .iter()
         .map(|c| c.point.z_skip.weights(pcs::LOG_PACKING - 1))
         .collect();
-    let skip_weights: Vec<&[F128]> = skip_weight_vecs.iter().map(|v| v.as_slice()).collect();
-    let values: Vec<F128> = claims.iter().map(|c| c.value).collect();
-    let x_fulls: Vec<Vec<F128>> = claims
+    let skip_weights: Vec<&[Gf128]> = skip_weight_vecs.iter().map(|v| v.as_slice()).collect();
+    let values: Vec<Gf128> = claims.iter().map(|c| c.value).collect();
+    let x_fulls: Vec<Vec<Gf128>> = claims
         .iter()
         .map(|c| {
             let mut v = c.point.x_inner_rest.clone();
@@ -220,7 +220,7 @@ fn verify_claims_ligerito_inner<Ch: Challenger>(
             v
         })
         .collect();
-    let x_refs: Vec<&[F128]> = x_fulls.iter().map(|v| v.as_slice()).collect();
+    let x_refs: Vec<&[Gf128]> = x_fulls.iter().map(|v| v.as_slice()).collect();
     let lig_v_config = pcs_params
         .ligerito_verifier_config()
         .expect("Ligerito default verifier config");

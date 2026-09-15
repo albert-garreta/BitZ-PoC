@@ -28,7 +28,7 @@
 //! 192 (positions on Λ₄ = V₈ \ S) are the fresh extension that the zerocheck
 //! round-1 message uses.
 
-use crate::field::F8;
+use crate::field::Gf8;
 use crate::ntt::AdditiveNttGf8;
 
 /// `M = fwd_NTT_V₈ ∘ inv_NTT_S` collapsed into a single 256×256-byte table.
@@ -49,7 +49,7 @@ pub struct InvNttTableSToV8Gf8 {
     pub n_chunks: usize,
     /// `data[w * ell_out .. (w+1) * ell_out]` = T_0[w], the XOR-sum of the
     /// columns of `M` indexed by the set bits of `w` (taken from cols[0..8]).
-    data: Vec<F8>,
+    data: Vec<Gf8>,
 }
 
 impl InvNttTableSToV8Gf8 {
@@ -71,7 +71,7 @@ impl InvNttTableSToV8Gf8 {
             "n_chunks must fit the i'/chunk XOR encoding"
         );
 
-        let mut data = vec![F8::ZERO; 256 * ell_out];
+        let mut data = vec![Gf8::ZERO; 256 * ell_out];
 
         // Compute 8 unit-column images cols[t] = fwd_NTT_V₈ ∘ inv_NTT_S (e_t)
         // for t ∈ 0..8. Each col has length ell_out.
@@ -81,15 +81,15 @@ impl InvNttTableSToV8Gf8 {
         //   - Zero-pad to length ell_out (extend coefficients to the k_out
         //     novel basis, which extends the k_in basis as a prefix).
         //   - fwd_NTT_V₈ → ell_out evaluations on V₈.
-        let mut tmp_in = vec![F8::ZERO; ell_in];
-        let mut tmp_out = vec![F8::ZERO; ell_out];
-        let mut cols: Vec<Vec<F8>> = Vec::with_capacity(8);
+        let mut tmp_in = vec![Gf8::ZERO; ell_in];
+        let mut tmp_out = vec![Gf8::ZERO; ell_out];
+        let mut cols: Vec<Vec<Gf8>> = Vec::with_capacity(8);
         for t in 0..8 {
-            tmp_in.iter_mut().for_each(|x| *x = F8::ZERO);
-            tmp_in[t] = F8::ONE;
+            tmp_in.iter_mut().for_each(|x| *x = Gf8::ZERO);
+            tmp_in[t] = Gf8::ONE;
             ntt_s.inverse(&mut tmp_in);
             // Pad to ell_out by copying coefficients to a longer buffer (rest 0).
-            tmp_out.iter_mut().for_each(|x| *x = F8::ZERO);
+            tmp_out.iter_mut().for_each(|x| *x = Gf8::ZERO);
             tmp_out[..ell_in].copy_from_slice(&tmp_in);
             ntt_v8.forward(&mut tmp_out);
             cols.push(tmp_out.clone());
@@ -144,10 +144,10 @@ impl InvNttTableSToV8Gf8 {
     /// The §2.1 collapse: for chunk index b ∈ 0..n_chunks, contribution is
     /// `T_0[bytes[b]]` permuted by the XOR-shift `i' → i' ⊕ 8b`.
     #[inline]
-    pub fn apply_scalar(&self, bytes: &[u8], out: &mut [F8]) {
+    pub fn apply_scalar(&self, bytes: &[u8], out: &mut [Gf8]) {
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell_out);
-        out.iter_mut().for_each(|x| *x = F8::ZERO);
+        out.iter_mut().for_each(|x| *x = Gf8::ZERO);
         for (b, &byte_b) in bytes.iter().enumerate() {
             let row_off = byte_b as usize * self.ell_out;
             let row = &self.data[row_off..row_off + self.ell_out];
@@ -160,7 +160,7 @@ impl InvNttTableSToV8Gf8 {
 
     /// Dispatch helper — uses NEON when available, scalar otherwise.
     #[inline]
-    pub fn apply(&self, bytes: &[u8], out: &mut [F8]) {
+    pub fn apply(&self, bytes: &[u8], out: &mut [Gf8]) {
         #[cfg(target_arch = "aarch64")]
         if self.ell_out >= 16 {
             // SAFETY: aarch64 statically guarantees NEON; the method validates lengths.
@@ -178,7 +178,7 @@ impl InvNttTableSToV8Gf8 {
     /// Uses `core::arch::aarch64` NEON intrinsics; only call on `aarch64`.
     /// `bytes.len()` and `out.len()` must match the table shape (asserted).
     #[cfg(target_arch = "aarch64")]
-    pub unsafe fn apply_neon_unchecked(&self, bytes: &[u8], out: &mut [F8]) {
+    pub unsafe fn apply_neon_unchecked(&self, bytes: &[u8], out: &mut [Gf8]) {
         use core::arch::aarch64::*;
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell_out);
@@ -239,13 +239,13 @@ mod tests {
 
     /// Direct NTT path: same math as the table but without the table.
     /// inv_NTT_S on length-64, zero-pad to 256, fwd_NTT_V₈ on length-256.
-    fn naive_extend(bytes: &[u8], ntt_s: &AdditiveNttGf8, ntt_v8: &AdditiveNttGf8) -> Vec<F8> {
+    fn naive_extend(bytes: &[u8], ntt_s: &AdditiveNttGf8, ntt_v8: &AdditiveNttGf8) -> Vec<Gf8> {
         let ell_in = 1usize << ntt_s.k();
         let ell_out = 1usize << ntt_v8.k();
-        let mut buf = vec![F8::ZERO; ell_out];
+        let mut buf = vec![Gf8::ZERO; ell_out];
         for s in 0..ell_in {
             let bit = (bytes[s / 8] >> (s % 8)) & 1;
-            buf[s] = F8(bit);
+            buf[s] = Gf8(bit);
         }
         ntt_s.inverse(&mut buf[..ell_in]);
         // Coefficients at positions ell_in..ell_out are already zero (W_64..W_255).
@@ -256,8 +256,8 @@ mod tests {
     /// Table.apply equals the direct NTT extension on random inputs.
     #[test]
     fn apply_matches_naive_random() {
-        let ntt_s = AdditiveNttGf8::new(6, F8::ZERO);
-        let ntt_v8 = AdditiveNttGf8::new(8, F8::ZERO);
+        let ntt_s = AdditiveNttGf8::new(6, Gf8::ZERO);
+        let ntt_v8 = AdditiveNttGf8::new(8, Gf8::ZERO);
         let table = InvNttTableSToV8Gf8::new(&ntt_s, &ntt_v8);
 
         let mut rng = Rng::new(0xC0FFEE);
@@ -273,7 +273,7 @@ mod tests {
                 rng.next_u64() as u8,
             ];
             let naive = naive_extend(&bytes, &ntt_s, &ntt_v8);
-            let mut got = vec![F8::ZERO; 256];
+            let mut got = vec![Gf8::ZERO; 256];
             table.apply(&bytes, &mut got);
             assert_eq!(got, naive, "table.apply ≠ direct NTT on bytes {bytes:?}");
         }
@@ -283,8 +283,8 @@ mod tests {
     /// scalar reference).
     #[test]
     fn apply_matches_apply_scalar() {
-        let ntt_s = AdditiveNttGf8::new(6, F8::ZERO);
-        let ntt_v8 = AdditiveNttGf8::new(8, F8::ZERO);
+        let ntt_s = AdditiveNttGf8::new(6, Gf8::ZERO);
+        let ntt_v8 = AdditiveNttGf8::new(8, Gf8::ZERO);
         let table = InvNttTableSToV8Gf8::new(&ntt_s, &ntt_v8);
 
         let mut rng = Rng::new(0xBADCAFE);
@@ -299,8 +299,8 @@ mod tests {
                 rng.next_u64() as u8,
                 rng.next_u64() as u8,
             ];
-            let mut got_scalar = vec![F8::ZERO; 256];
-            let mut got_dispatch = vec![F8::ZERO; 256];
+            let mut got_scalar = vec![Gf8::ZERO; 256];
+            let mut got_dispatch = vec![Gf8::ZERO; 256];
             table.apply_scalar(&bytes, &mut got_scalar);
             table.apply(&bytes, &mut got_dispatch);
             assert_eq!(
@@ -313,8 +313,8 @@ mod tests {
     /// First 64 lanes of the output reproduce the input bits exactly.
     #[test]
     fn first_64_lanes_match_input_bits() {
-        let ntt_s = AdditiveNttGf8::new(6, F8::ZERO);
-        let ntt_v8 = AdditiveNttGf8::new(8, F8::ZERO);
+        let ntt_s = AdditiveNttGf8::new(6, Gf8::ZERO);
+        let ntt_v8 = AdditiveNttGf8::new(8, Gf8::ZERO);
         let table = InvNttTableSToV8Gf8::new(&ntt_s, &ntt_v8);
 
         let mut rng = Rng::new(0xA17);
@@ -329,11 +329,11 @@ mod tests {
                 rng.next_u64() as u8,
                 rng.next_u64() as u8,
             ];
-            let mut got = vec![F8::ZERO; 256];
+            let mut got = vec![Gf8::ZERO; 256];
             table.apply(&bytes, &mut got);
             for s in 0..64 {
                 let expected_bit = (bytes[s / 8] >> (s % 8)) & 1;
-                assert_eq!(got[s], F8(expected_bit), "input bit mismatch at s={s}");
+                assert_eq!(got[s], Gf8(expected_bit), "input bit mismatch at s={s}");
             }
         }
     }

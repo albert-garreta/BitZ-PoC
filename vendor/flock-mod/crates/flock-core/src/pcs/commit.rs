@@ -14,7 +14,7 @@
 //! The codeword is a flat sequence of `2^k_code` F_{2^128} elements. Each
 //! Merkle leaf is **one** F_{2^128} element = 16 bytes.
 
-use crate::field::F128;
+use crate::field::Gf128;
 use crate::merkle::{self, Hash, HashKind};
 use crate::ntt::AdditiveNttF128;
 use crate::pcs::pack::LOG_PACKING;
@@ -150,7 +150,7 @@ pub struct Commitment {
 /// avoids ~4 GB of duplication at large `m`, dropping peak commit memory by
 /// a factor of ~1.5 (e.g. at m=35: 13 GB → 9 GB).
 pub struct ProverData {
-    pub codeword: Vec<F128>,
+    pub codeword: Vec<Gf128>,
     pub merkle_tree: Vec<Hash>,
 }
 
@@ -177,7 +177,7 @@ impl Drop for ProverData {
 /// NTT/Merkle phase at large `m`.
 ///
 /// `z_packed.len()` must equal `2^(m - LOG_PACKING) = 2^(m - 7)`.
-pub fn commit(z_packed: &[F128], params: &PcsParams) -> (Commitment, ProverData) {
+pub fn commit(z_packed: &[Gf128], params: &PcsParams) -> (Commitment, ProverData) {
     params.validate();
     assert_eq!(z_packed.len(), 1usize << params.log_msg_len());
 
@@ -189,7 +189,7 @@ pub fn commit(z_packed: &[F128], params: &PcsParams) -> (Commitment, ProverData)
     // Copy first 2^log_msg_len positions from packed witness; zero-pad the rest.
     //
     // At large m the codeword buffer is huge (128 MB at m=29, 512 MB at m=31).
-    // `vec![F128::ZERO; n]` would eagerly zero all 128 MB upfront, then
+    // `vec![Gf128::ZERO; n]` would eagerly zero all 128 MB upfront, then
     // immediately overwrite the lower half with `z_packed` — half the zero-fill
     // is wasted. Instead allocate uninit, write each half exactly once: copy
     // `z_packed` into the lower half, and zero-fill JUST the upper half (the
@@ -207,9 +207,9 @@ pub fn commit(z_packed: &[F128], params: &PcsParams) -> (Commitment, ProverData)
 /// parallel. Buffers from [`prefault_codeword_during`] or the scratch pool
 /// are already resident, so no write faults.
 pub fn commit_into(
-    z_packed: &[F128],
+    z_packed: &[Gf128],
     params: &PcsParams,
-    mut codeword: Vec<F128>,
+    mut codeword: Vec<Gf128>,
 ) -> (Commitment, ProverData) {
     params.validate();
     assert_eq!(z_packed.len(), 1usize << params.log_msg_len());
@@ -236,7 +236,7 @@ pub fn commit_into(
 /// the zero-padded coefficient vector `[msg, 0, …, 0]`. Pair with
 /// `forward_transform_interleaved_from_layer(…, r)`. Every slot of `codeword`
 /// is written (input contents may be stale/uninit).
-pub(crate) fn replicate_message_fill(codeword: &mut [F128], msg: &[F128]) {
+pub(crate) fn replicate_message_fill(codeword: &mut [Gf128], msg: &[Gf128]) {
     use rayon::prelude::*;
     let msg_len = msg.len();
     debug_assert!(codeword.len().is_multiple_of(msg_len));
@@ -259,7 +259,7 @@ pub(crate) fn replicate_message_fill(codeword: &mut [F128], msg: &[F128]) {
 
 /// Shared tail of [`commit`] / [`commit_into`]: interleaved forward additive
 /// NTT (RS-encode every lane) then the initial Merkle tree over codeword rows.
-fn finalize_commit(mut codeword: Vec<F128>, params: &PcsParams) -> (Commitment, ProverData) {
+fn finalize_commit(mut codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment, ProverData) {
     let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
     let t_ntt = std::time::Instant::now();
     // ---- Interleaved forward additive NTT: 2^log_batch_size independent
@@ -280,14 +280,14 @@ fn finalize_commit(mut codeword: Vec<F128>, params: &PcsParams) -> (Commitment, 
     }
     let t_merkle = std::time::Instant::now();
 
-    // ---- Merkle commitment: one leaf per codeword position = num_ntts F128.
-    // Zero-copy: cast the codeword Vec<F128> directly to &[u8]. F128 is
+    // ---- Merkle commitment: one leaf per codeword position = num_ntts Gf128.
+    // Zero-copy: cast the codeword Vec<Gf128> directly to &[u8]. Gf128 is
     // repr(C, align(16)) with two u64s laid out little-endian — same bytes
     // as the explicit lo.to_le_bytes() + hi.to_le_bytes() serialization.
     let codeword_bytes: &[u8] = unsafe {
         core::slice::from_raw_parts(
             codeword.as_ptr() as *const u8,
-            codeword.len() * core::mem::size_of::<F128>(),
+            codeword.len() * core::mem::size_of::<Gf128>(),
         )
     };
     // Initial tree: one leaf per codeword position, each containing the
@@ -346,7 +346,7 @@ fn set_background_qos() {}
 pub fn prefault_codeword_during<R>(
     params: &PcsParams,
     generate: impl FnOnce() -> R,
-) -> (Option<Vec<F128>>, R) {
+) -> (Option<Vec<Gf128>>, R) {
     if rayon::current_num_threads() <= 1 || std::env::var_os("FLOCK_NO_PREFAULT").is_some() {
         // Truly single-threaded (or explicitly disabled): no extra OS thread;
         // commit allocates inline. FLOCK_NO_PREFAULT lets benchmarks A/B the
@@ -365,7 +365,7 @@ pub fn prefault_codeword_during<R>(
     std::thread::scope(|s| {
         let h = s.spawn(move || {
             set_background_qos();
-            let mut buf: Vec<F128> = crate::alloc_uninit_f128_vec(codeword_len);
+            let mut buf: Vec<Gf128> = crate::alloc_uninit_f128_vec(codeword_len);
             unsafe {
                 std::ptr::write_bytes(buf.as_mut_ptr(), 0u8, codeword_len);
             }
@@ -458,7 +458,7 @@ mod tests {
             let (commitment, pd) = commit(&z_packed, &params);
 
             // Oracle: explicit [z, 0, …, 0] coefficients, full NTT from layer 0.
-            let mut oracle = vec![F128::ZERO; params.codeword_len_f128()];
+            let mut oracle = vec![Gf128::ZERO; params.codeword_len_f128()];
             oracle[..z_packed.len()].copy_from_slice(&z_packed);
             let ntt = AdditiveNttF128::standard(params.k_code());
             ntt.forward_transform_interleaved(&mut oracle, params.num_ntts());

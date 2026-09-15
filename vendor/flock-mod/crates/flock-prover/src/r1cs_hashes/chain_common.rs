@@ -18,7 +18,7 @@
 //! so the chain claim's selector is a single bit-flip in the multilinear cube.
 
 use flock_core::challenger::Challenger;
-use flock_core::field::F128;
+use flock_core::field::Gf128;
 use flock_core::lincheck::build_eq_table;
 use flock_core::pcs::{
     Commitment, DirectEqInd, LOG_PACKING, PackedDirectClaim, PackedDirectClaimRef, PcsParams,
@@ -47,7 +47,7 @@ pub struct ChainLayout {
 
 impl ChainLayout {
     /// Length of the packed-position fold coord `τ_pos` = `region_log − LOG_PACKING`.
-    /// One `F128` per packed position within a region's 2^region_log-bit slot.
+    /// One `Gf128` per packed position within a region's 2^region_log-bit slot.
     #[inline]
     pub fn tau_pos_len(&self) -> usize {
         self.region_log - LOG_PACKING
@@ -64,15 +64,15 @@ impl ChainLayout {
 
 /// Packed-level fold parameters: `τ_pos` binds the packed-position dimension of
 /// each region. The verifier samples `τ_pos`, then the prover folds each
-/// instance's input/output region down to one `F128` via
+/// instance's input/output region down to one `Gf128` via
 /// `Σ_{pos} eq(τ_pos, pos) · ẑ_packed[(inst, slot, pos)]`.
 #[derive(Clone, Debug)]
 pub struct ChainFold {
-    pub tau_pos: Vec<F128>,
+    pub tau_pos: Vec<Gf128>,
 }
 
 impl ChainFold {
-    pub fn new(layout: &ChainLayout, tau_pos: Vec<F128>) -> Self {
+    pub fn new(layout: &ChainLayout, tau_pos: Vec<Gf128>) -> Self {
         assert_eq!(
             tau_pos.len(),
             layout.tau_pos_len(),
@@ -82,14 +82,14 @@ impl ChainFold {
     }
 
     /// Fold a public endpoint (given as `region_bits` bools in physical
-    /// within-slot order) to a single `F128` — the τ_pos-MLE of the endpoint
+    /// within-slot order) to a single `Gf128` — the τ_pos-MLE of the endpoint
     /// over the region's packed positions. Mirrors what the prover computes
     /// against the committed witness.
     ///
-    /// Algorithm: pack the bits into `2^τ_pos_len` `F128` elements (padding the
+    /// Algorithm: pack the bits into `2^τ_pos_len` `Gf128` elements (padding the
     /// region's `region_bits..slot_bits` tail with zeros to match the witness
     /// layout), then take the inner product with `eq(τ_pos, ·)`.
-    pub fn fold_public_phys(&self, phys_bits: &[bool]) -> F128 {
+    pub fn fold_public_phys(&self, phys_bits: &[bool]) -> Gf128 {
         let bits_per_packed = 1usize << LOG_PACKING; // 128
         let n_packed = 1usize << self.tau_pos.len();
         let slot_bits = n_packed * bits_per_packed;
@@ -101,9 +101,9 @@ impl ChainFold {
         );
 
         let eq_tau = build_eq_table(&self.tau_pos);
-        let mut acc = F128::ZERO;
+        let mut acc = Gf128::ZERO;
         for pos in 0..n_packed {
-            let mut packed = F128::ZERO;
+            let mut packed = Gf128::ZERO;
             for b in 0..bits_per_packed {
                 let bit_idx = pos * bits_per_packed + b;
                 if bit_idx < phys_bits.len() && phys_bits[bit_idx] {
@@ -126,14 +126,14 @@ impl ChainFold {
 /// instances.
 ///
 /// Replaces the prior bit-level byte-table fold over `region_bits` per
-/// instance; here the per-instance work is just `2^τ_pos_len` F128
+/// instance; here the per-instance work is just `2^τ_pos_len` Gf128
 /// mul-adds (16 for keccak, 2 for blake3/sha2).
 pub fn fold_in_out(
     layout: &ChainLayout,
     wl: flock_core::r1cs::WitnessLayout,
-    packed: &[F128],
+    packed: &[Gf128],
     fold: &ChainFold,
-) -> (Vec<F128>, Vec<F128>) {
+) -> (Vec<Gf128>, Vec<Gf128>) {
     use rayon::prelude::*;
 
     let bits_per_packed = 1usize << LOG_PACKING; // 128
@@ -161,19 +161,19 @@ pub fn fold_in_out(
         }
     };
 
-    let fold_one = |i: usize, base: usize| -> F128 {
-        let mut acc = F128::ZERO;
+    let fold_one = |i: usize, base: usize| -> Gf128 {
+        let mut acc = Gf128::ZERO;
         for pos in 0..n_packed_per_region {
             acc += eq_tau[pos] * packed[word_addr(i, base + pos)];
         }
         acc
     };
 
-    let in_vals: Vec<F128> = (0..n_inst)
+    let in_vals: Vec<Gf128> = (0..n_inst)
         .into_par_iter()
         .map(|i| fold_one(i, in_pos_base))
         .collect();
-    let out_vals: Vec<F128> = (0..n_inst)
+    let out_vals: Vec<Gf128> = (0..n_inst)
         .into_par_iter()
         .map(|i| fold_one(i, out_pos_base))
         .collect();
@@ -222,7 +222,7 @@ fn build_chain_claim_point(
     wl: flock_core::r1cs::WitnessLayout,
     fold: &ChainFold,
     claims: &crate::chain::ChainClaims,
-) -> Vec<F128> {
+) -> Vec<Gf128> {
     let high = layout.high_zeros();
     let point_len = fold.tau_pos.len() + 1 + high + claims.instance_point.len();
     let mut point = Vec::with_capacity(point_len);
@@ -231,7 +231,7 @@ fn build_chain_claim_point(
     }
     point.extend_from_slice(&fold.tau_pos);
     point.push(claims.sel0);
-    point.extend(std::iter::repeat_n(F128::ZERO, high));
+    point.extend(std::iter::repeat_n(Gf128::ZERO, high));
     if wl == flock_core::r1cs::WitnessLayout::RowMajor {
         point.extend_from_slice(&claims.instance_point);
     }
@@ -272,9 +272,9 @@ pub fn prove_chain_ligerito_generic<Ch: Challenger>(
     r1cs: &BlockR1cs,
     pcs_params: &PcsParams,
     layout: &ChainLayout,
-    z_packed: Vec<F128>,
-    a_packed: Vec<F128>,
-    b_packed: Vec<F128>,
+    z_packed: Vec<Gf128>,
+    a_packed: Vec<Gf128>,
+    b_packed: Vec<Gf128>,
     z_lincheck: Vec<u8>,
     lincheck_circuit: &dyn flock_core::lincheck::LincheckCircuit,
     challenger: &mut Ch,
@@ -316,8 +316,8 @@ pub fn prove_chain_ligerito_generic<Ch: Challenger>(
         s_hat_v_c,
         ..
     } = core;
-    let pre_ab: Option<&[F128]> = s_hat_v_ab.as_deref();
-    let pre_c: Option<&[F128]> = Some(s_hat_v_c.as_slice());
+    let pre_ab: Option<&[Gf128]> = s_hat_v_ab.as_deref();
+    let pre_c: Option<&[Gf128]> = Some(s_hat_v_c.as_slice());
     let pcs_open = flock_core::pcs::open_batch_mixed_ligerito_with_precomputed_s_hat_v(
         z_packed,
         &prover_data,

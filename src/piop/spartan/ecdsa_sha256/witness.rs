@@ -1,26 +1,27 @@
+#[cfg(test)]
+use crate::piop::spartan::SpartanField as _;
+#[cfg(test)]
+use crate::piop::spartan::protocol::{FieldConfig as Config, SpartanF2zField as F};
 use circuit::{
-    matrix_products::{IntegerProducts, StoredInteger},
+    integer_storage::IntegerTable,
+    matrix_products::IntegerProducts,
     p256, sha256,
     witgen::{PackedWitness, ProductWitgen, Witgen},
 };
-use num_bigint::{BigInt, BigUint};
-use num_traits::{One, Zero};
+#[cfg(test)]
+use num_bigint::BigInt;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::array;
 
 use super::{
-    Config, Result, error,
+    Result, error,
     relation::{OuterMode, P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
 };
 use crate::{
     pcs::IntegerMatrixLayout,
-    piop::spartan::{
-        f2z::SpartanF2zField as F,
-        raw_monty::{Raw, RawMontyCtx, RawProducts},
-    },
+    piop::spartan::raw_monty::{Raw, RawProducts},
 };
-use crypto_primitives::PrimeField;
 
 /// Packed source and virtual assignment, with exact P-256 row operands.
 pub struct Sha256EcdsaWitness {
@@ -39,7 +40,7 @@ impl Sha256EcdsaWitness {
     pub(super) fn build_outer_raw_products(
         &self,
         prepared: &PreparedSha256Ecdsa,
-        ctx: &RawMontyCtx,
+        ctx: &field::FpCtx<2>,
     ) -> RawProducts {
         let len = 1usize << prepared.outer_sumcheck_num_vars();
         let products = [
@@ -47,13 +48,13 @@ impl Sha256EcdsaWitness {
             &self.products.b_mw,
             &self.products.c_mw,
         ];
-        let two_pow_64 = ctx.two_pow_64_residue();
         let max_words = products
             .iter()
-            .flat_map(|values| values.iter().map(|value| value.words().len()))
+            .map(|values| values.max_limbs())
             .max()
             .unwrap_or(0);
-        let powers = ctx.two_pow_64_plain_powers(two_pow_64, max_words);
+        let field = field::create_prime_field(field::Uint::from_words(*ctx.modulus().as_words()));
+        let projection = field::PreparedSignedProjection::new(field, max_words);
         // Split mode packs the nonlinear rows at the front; all-row mode
         // places every local row after the (identically zero) SHA rows.
         let (offset, rows): (usize, Option<&[usize]>) = match prepared.mode {
@@ -61,10 +62,15 @@ impl Sha256EcdsaWitness {
             OuterMode::AllRows => (256 * prepared.compressions(), None),
         };
         let count = rows.map_or(prepared.local.rows(), <[usize]>::len);
-        let convert = |values: &[StoredInteger]| -> Vec<Raw> {
+        let convert = |values: &IntegerTable| -> Vec<Raw> {
+            let values = values.view();
             let residue = |i: usize| {
                 let source = rows.map_or(i, |rows| rows[i]);
-                ctx.signed_words_residue(values[source].words(), two_pow_64, &powers)
+                {
+                    let value = projection.project(&values[source]);
+                    let words = value.as_montgomery_integer().as_words();
+                    Raw::from(words[0]) | (Raw::from(words[1]) << 64)
+                }
             };
             let mut table = vec![0 as Raw; len];
             #[cfg(feature = "parallel")]
@@ -103,11 +109,7 @@ impl Sha256EcdsaWitness {
         ];
         for (table, products) in tables.iter_mut().zip(products) {
             let mut set = |dst: usize, src: usize| {
-                let bytes: Vec<_> = products[src]
-                    .words()
-                    .iter()
-                    .flat_map(|w| w.to_le_bytes())
-                    .collect();
+                let bytes: Vec<_> = products[src].iter().flat_map(|w| w.to_le_bytes()).collect();
                 table[dst] =
                     super::reduce_integer_mod_q(&BigInt::from_signed_bytes_le(&bytes), q, cfg);
             };
@@ -152,31 +154,19 @@ impl Sha256EcdsaWitness {
 }
 
 pub(crate) fn inverse(value: &[u8; 32]) -> Result<[u8; 32]> {
-    let modulus = BigUint::parse_bytes(
-        b"ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
-        16,
-    )
-    .unwrap();
-    let n = BigUint::from_bytes_be(value);
-    if n.is_zero() || n >= modulus {
+    use field::{CanonicalCodec, IntegerOps, Uint};
+    let mut bytes = *value;
+    bytes.reverse();
+    let scalar: Uint<4> = IntegerOps
+        .decode_public(&bytes)
+        .expect("fixed-width scalar encoding");
+    let inverse = p256::scalar_inverse_ct(&scalar);
+    if !inverse.validity().declassify() {
         return Err(error("signature scalar is not in 1..n"));
     }
-    let modulus = BigInt::from(modulus);
-    let (mut r, mut next_r) = (modulus.clone(), BigInt::from(n));
-    let (mut t, mut next_t) = (BigInt::zero(), BigInt::one());
-    while !next_r.is_zero() {
-        let q = &r / &next_r;
-        (r, next_r) = (next_r.clone(), r - &q * next_r);
-        (t, next_t) = (next_t.clone(), t - q * next_t);
-    }
-    if r != BigInt::one() {
-        return Err(error("noninvertible signature scalar"));
-    }
-    let t = ((t % &modulus) + &modulus) % modulus;
-    let bytes = t.to_biguint().unwrap().to_bytes_be();
-    let mut out = [0; 32];
-    out[32 - bytes.len()..].copy_from_slice(&bytes);
-    Ok(out)
+    IntegerOps.encode_into(inverse.value(), &mut bytes);
+    bytes.reverse();
+    Ok(bytes)
 }
 
 fn pack_bits(
@@ -191,8 +181,8 @@ fn pack_bits(
                 for b in 0..64 {
                     let row = word * 64 + b;
                     let index = (c << p.row_vars) + row;
-                    if row < p.rows() && index < live && bit(index) {
-                        value |= 1 << b;
+                    if row < p.rows() && index < live {
+                        value |= u64::from(bit(index)) << b;
                     }
                 }
                 value
@@ -216,7 +206,11 @@ fn copy_bits(dst: &mut [u64], dst_off: usize, src: &[u64], src_off: usize, len: 
     while done < len {
         let (s, d) = (src_off + done, dst_off + done);
         let take = (64 - s % 64).min(64 - d % 64).min(len - done);
-        let mask = if take == 64 { u64::MAX } else { (1u64 << take) - 1 };
+        let mask = if take == 64 {
+            u64::MAX
+        } else {
+            (1u64 << take) - 1
+        };
         dst[d / 64] |= ((src[s / 64] >> (s % 64)) & mask) << (d % 64);
         done += take;
     }
@@ -243,7 +237,11 @@ fn transpose64(a: &mut [u64; 64]) {
 fn masked_word(witness: &PackedWitness, index: usize) -> u64 {
     let word = witness.words()[index];
     let valid = witness.bit_len() - 64 * index;
-    if valid >= 64 { word } else { word & ((1u64 << valid) - 1) }
+    if valid >= 64 {
+        word
+    } else {
+        word & ((1u64 << valid) - 1)
+    }
 }
 
 /// Splits the flat packed cells `(c << t) + row` into the per-column rows.
@@ -324,9 +322,13 @@ fn pack_assignment(
         }
     };
     #[cfg(feature = "parallel")]
-    sha.par_chunks_mut(64 * instance_blocks).enumerate().for_each(fill);
+    sha.par_chunks_mut(64 * instance_blocks)
+        .enumerate()
+        .for_each(fill);
     #[cfg(not(feature = "parallel"))]
-    sha.chunks_mut(64 * instance_blocks).enumerate().for_each(fill);
+    sha.chunks_mut(64 * instance_blocks)
+        .enumerate()
+        .for_each(fill);
     for (index, word) in tail.iter_mut().enumerate().take(p_h.words().len()) {
         *word = masked_word(p_h, index);
     }

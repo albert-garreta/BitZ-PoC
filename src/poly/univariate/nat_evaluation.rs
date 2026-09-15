@@ -1,4 +1,4 @@
-use crypto_primitives::FromPrimitiveWithConfig;
+use crate::poly::coefficient::PolynomialField;
 
 use crate::poly::{EvaluatablePolynomial, EvaluationError, Polynomial};
 
@@ -40,7 +40,7 @@ impl<F: Clone> Polynomial<F> for NatEvaluatedPoly<F> {
     const DEGREE_BOUND: usize = usize::MAX;
 }
 
-impl<F: FromPrimitiveWithConfig> EvaluatablePolynomial<F, F> for NatEvaluatedPoly<F> {
+impl<F: PolynomialField> EvaluatablePolynomial<F, F> for NatEvaluatedPoly<F> {
     type EvaluationPoint = F;
 
     /// Interpolate the *unique* univariate polynomial of degree at most
@@ -91,7 +91,7 @@ impl<F: FromPrimitiveWithConfig> EvaluatablePolynomial<F, F> for NatEvaluatedPol
     }
 }
 
-impl<F: FromPrimitiveWithConfig> NatEvaluatedPoly<F> {
+impl<F: PolynomialField> NatEvaluatedPoly<F> {
     /// Precompute the Lagrange-aux ([`EvalAux`]) for evaluating any
     /// polynomial of length `len` at any point in field `F`.
     ///
@@ -116,7 +116,7 @@ impl<F: FromPrimitiveWithConfig> NatEvaluatedPoly<F> {
     pub fn prepare_eval_aux(len: usize, config: &F::Config) -> EvalAux<F> {
         let one = F::one_with_cfg(config);
         let boundary: Vec<F> = (0..len)
-            .map(|k| F::from_with_cfg(k as u64, config))
+            .map(|k| F::interpolation_node(k as u64, config))
             .collect();
         // dens[i] = Π_{j ≠ i} (boundary[i] − boundary[j]).
         // For len ≤ 1, the empty product is `1` (already correct).
@@ -197,7 +197,7 @@ impl<F: FromPrimitiveWithConfig> NatEvaluatedPoly<F> {
 /// Lagrange denominators above this is guaranteed by distinct boundary
 /// points). The result satisfies `out[i] * values[i] = 1` for all `i`.
 #[allow(clippy::arithmetic_side_effects)]
-fn batch_invert<F: FromPrimitiveWithConfig>(values: Vec<F>, config: &F::Config) -> Vec<F> {
+fn batch_invert<F: PolynomialField>(values: Vec<F>, config: &F::Config) -> Vec<F> {
     let n = values.len();
     if n == 0 {
         return values;

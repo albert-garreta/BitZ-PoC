@@ -29,8 +29,8 @@ pub use circuit::{
     modulus_n, modulus_p_hash,
 };
 pub use prime::{
-    MultiswapFingerprintContext, MultiswapPrimeError, MultiswapPrimeProfile,
-    sample_multiswap_fingerprint_context, sample_multiswap_reduction_prime,
+    MultiswapPrimeError, MultiswapPrimeProfile, sample_multiswap_fingerprint_context,
+    sample_multiswap_reduction_prime,
 };
 pub use proof::{
     MultiswapError, MultiswapProof, MultiswapSpec, PreparedMultiswapRelation,

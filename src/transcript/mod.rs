@@ -1,8 +1,8 @@
 pub mod traits;
 
+use crate::poly::coefficient::PolynomialField;
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcript};
-use crypto_primitives::{ConstIntSemiring, PrimeField};
-use crate::utils::primality::PrimalityTest;
+
 use crate::utils::add;
 
 /// A cryptographic transcript implementation using the BLAKE3 hash
@@ -45,39 +45,30 @@ impl Blake3Transcript {
     fn fill_with_random_bytes(&mut self, buf: &mut [u8]) {
         self.hasher.finalize_xof().fill(buf);
     }
-
-    fn gen_random<R: ConstTranscribable>(&mut self, buf: &mut [u8]) -> R {
-        self.fill_with_random_bytes(buf);
-        self.absorb_inner(buf);
-        R::read_transcription_bytes_exact(buf)
-    }
 }
 
 impl Transcript for Blake3Transcript {
+    fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+        self.fill_with_random_bytes(output);
+        self.hasher.update(b"f2z/sampling-read/v1");
+        self.hasher.update(&(output.len() as u64).to_le_bytes());
+        self.hasher.update(output);
+    }
+
     fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
         let mut buf = vec![0u8; T::NUM_BYTES];
         self.fill_with_random_bytes(&mut buf);
         self.hasher.update(&[0x12]);
         self.hasher.update(&buf);
         self.hasher.update(&[0x34]);
-        T::read_transcription_bytes_exact(&buf)
-    }
-
-    #[allow(clippy::arithmetic_side_effects)]
-    fn get_prime<R: ConstIntSemiring + ConstTranscribable, T: PrimalityTest<R>>(&mut self) -> R {
-        let buf = &mut vec![0u8; R::NUM_BYTES];
-        loop {
-            let mut prime_candidate: R = self.gen_random(buf);
-            if prime_candidate.is_zero() {
-                continue;
-            }
-            if prime_candidate.is_even() {
-                prime_candidate -= R::ONE;
-            }
-            if T::is_probably_prime(&prime_candidate) {
-                return prime_candidate;
-            }
+        // Canonical codecs reject high padding bits. Sampling those bits away
+        // is unbiased for fixed-width binary/integer challenges.
+        assert!(T::NUM_BITS <= T::NUM_BYTES * 8);
+        for (i, byte) in buf.iter_mut().enumerate() {
+            let remaining = T::NUM_BITS.saturating_sub(i * 8).min(8);
+            *byte &= ((1u16 << remaining) - 1) as u8;
         }
+        T::read_transcription_bytes_exact(&buf)
     }
 
     fn absorb_inner(&mut self, v: &[u8]) {
@@ -100,17 +91,17 @@ impl Transcript for Blake3Transcript {
 
 pub fn read_field_cfg<F>(bytes: &[u8]) -> F::Config
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Modulus: ConstTranscribable,
 {
     let mod_size = F::Modulus::NUM_BYTES;
     let modulus = F::Modulus::read_transcription_bytes_exact(&bytes[..mod_size]);
-    F::make_cfg(&modulus).expect("valid field modulus in proof transcription")
+    F::config_from_modulus(&modulus).expect("valid field modulus in proof transcription")
 }
 
 pub fn read_field_vec_with_cfg<F>(bytes: &[u8], field_cfg: &F::Config) -> Vec<F>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: ConstTranscribable,
 {
     let inner_size = F::Inner::NUM_BYTES;
@@ -123,7 +114,7 @@ where
 
 pub fn append_field_cfg<'a, F>(buf: &'a mut [u8], modulus: &F::Modulus) -> &'a mut [u8]
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Modulus: ConstTranscribable,
 {
     let mod_size = F::Modulus::NUM_BYTES;
@@ -134,7 +125,7 @@ where
 
 pub fn append_field_vec_inner<'a, F>(buf: &'a mut [u8], slice: &[F]) -> &'a mut [u8]
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: ConstTranscribable,
 {
     let inner_size = F::Inner::NUM_BYTES;
@@ -151,3 +142,42 @@ where
 // `#[macro_export]` macros land at the crate root; re-export them here so
 // vendored `zinc_transcript::`-style paths keep working after the rename.
 pub use crate::{delegate_const_transcribable, delegate_transcribable};
+
+#[cfg(test)]
+mod framing_tests {
+    use super::*;
+    #[test]
+    fn bit_sampling_masks_padding_but_canonical_decoding_rejects_it() {
+        use crate::transcript::traits::GenTranscribable;
+        use field::Bit;
+        let mut transcript = Blake3Transcript::new();
+        let mut replay = Blake3Transcript::new();
+        let bits: Vec<_> = (0..256)
+            .map(|_| transcript.get_challenge::<Bit>())
+            .collect();
+        let expected: Vec<_> = (0..256).map(|_| replay.get_challenge::<Bit>()).collect();
+        assert_eq!(bits, expected);
+        assert!(bits.contains(&Bit::ZERO) && bits.contains(&Bit::ONE));
+        assert!(std::panic::catch_unwind(|| Bit::read_transcription_bytes_exact(&[2])).is_err());
+        for _ in 0..256 {
+            let value: field::B127 = transcript.get_challenge();
+            assert_eq!(value.as_words()[1] >> 63, 0);
+        }
+    }
+    #[test]
+    fn absorption_is_length_framed_and_sampling_advances() {
+        let mut a = Blake3Transcript::new();
+        let mut b = Blake3Transcript::new();
+        a.absorb_slice(&[1, 7, 6, 2]);
+        b.absorb_slice(&[1]);
+        b.absorb_slice(&[2]);
+        let mut first = [0; 16];
+        let mut second = [0; 16];
+        let mut other = [0; 16];
+        a.fill_sampling_bytes(&mut first);
+        a.fill_sampling_bytes(&mut second);
+        b.fill_sampling_bytes(&mut other);
+        assert_ne!(first, second);
+        assert_ne!(first, other);
+    }
+}

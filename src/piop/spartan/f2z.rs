@@ -9,31 +9,31 @@
 //! over a transcript-selected prime. The commitment contains only the compact
 //! `32 + 32 + 64` little-endian bits for each multiplication. This module
 //! describes that relation to the shared protocol of [`super::protocol`]:
-//! its committed tensor, its Boolean selector matrices, the block-to-slot
+//! its committed tensor, its Bit selector matrices, the block-to-slot
 //! map whose adjoint bitifies Spartan's terminal claim, its statement
 //! binding and its transcript domains. The outer Spartan reduction uses a
 //! fixed known-zero univariate-prefix skip.
 
+use crate::piop::spartan::SpartanField as _;
+use field::{RingOps, Uint};
 use std::borrow::Cow;
 
-use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
 
+#[cfg(test)]
+use crate::pcs::Q100Element;
 use crate::{
     ligerito::LOG_PACKING,
     ligerito_flock::{FlockCommitHint, IntEvalRsLigModQProof, ModQOpeningKind},
     pcs::{FQ_MOD, IntegerMatrixLayout},
     transcript::traits::Transcript,
 };
-#[cfg(test)]
-use crate::pcs::Fq;
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
-        self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation,
-        PreparedRelationPrefix, Proof, ProtocolError, ProveOptions, RelationSpec, SlotRange,
-        MatrixSource, FieldConfig,
+        self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+        PreparedRelation, PreparedRelationPrefix, Proof, ProtocolError, RelationSpec, SlotRange,
     },
     u32_mul::{
         U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
@@ -61,7 +61,8 @@ impl From<U32MulError> for ProtocolError {
 pub use crate::ligerito_flock::LigeritoSelection as U32MulLigerito;
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
-pub fn spartan_f2z_field_config() -> <SpartanF2zField as PrimeField>::Config {
+pub fn spartan_f2z_field_config() -> <SpartanF2zField as crate::piop::spartan::SpartanField>::Config
+{
     SpartanF2zField::make_cfg(&Uint::from(FQ_MOD)).expect("FQ_MOD is a valid odd prime modulus")
 }
 
@@ -309,7 +310,6 @@ impl RelationSpec for U32MulLayout {
         &self,
         witness: &'w U32MulWitness,
         _config: &FieldConfig,
-        _options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
         let product_len = self.multiplications().next_power_of_two();
         Ok(PiopWitness::Native {
@@ -430,11 +430,9 @@ pub fn u32_terminal_claim_f2z_proof_bytes(proof: &IntEvalRsLigModQProof) -> Vec<
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::FromWithConfig;
 
     use super::*;
     use crate::{
-        ext_proj::ProjArith,
         pcs::{FQ_BITS, ModQWeightChunks, eq_le_table_fq, fq_sub},
         piop::spartan::{
             matrix::ScaledMleEvaluationClaim,
@@ -445,11 +443,18 @@ mod tests {
         transcript::Blake3Transcript,
     };
 
-    fn skip_proof(proof: &U32MulProof) -> &super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
-        proof.spartan().univariate_skip().expect("the u32 kernel is the univariate skip")
+    fn skip_proof(
+        proof: &U32MulProof,
+    ) -> &super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
+        proof
+            .spartan()
+            .univariate_skip()
+            .expect("the u32 kernel is the univariate skip")
     }
 
-    fn skip_proof_mut(proof: &mut U32MulProof) -> &mut super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
+    fn skip_proof_mut(
+        proof: &mut U32MulProof,
+    ) -> &mut super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
         match &mut proof.prefix_mut().spartan {
             SpartanProof::UnivariateSkip(spartan) => spartan,
             SpartanProof::Plain(_) => panic!("the u32 kernel is the univariate skip"),
@@ -478,36 +483,54 @@ mod tests {
         let layout = *witness.layout();
         assert_eq!(layout.capacity(), 1 << 16);
         let prepared = PreparedU32MulRelation::new(layout).unwrap();
-        assert_eq!(prepared.skeleton().unwrap().matrices().row_count(), multiplications);
+        assert_eq!(
+            prepared.skeleton().unwrap().matrices().row_count(),
+            multiplications
+        );
 
         let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(
-            skip_proof(&proof).outer.tail.sumcheck.round_polynomials.len(),
+            skip_proof(&proof)
+                .outer
+                .tail
+                .sumcheck
+                .round_polynomials
+                .len(),
             16 - U32_MUL_UNIVARIATE_SKIP_VARS
         );
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof).unwrap();
+        verify_u32_mul(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
 
         // A wrong terminal matrix evaluation is caught downstream: perturb
         // the inner sumcheck's last round (which moves the final claim the
         // verifier's own matrix evaluation must scale into the opening).
-        let one = SpartanF2zField::from_with_cfg(
-            1u64,
-            skip_proof(&proof).inner.round_polynomials[0][0].cfg(),
-        );
+        let one = SpartanF2zField::from_with_cfg(1u64, &spartan_f2z_field_config());
         let mut tampered = proof.clone();
         {
             let spartan = skip_proof_mut(&mut tampered);
             let last = spartan.inner.round_polynomials.len() - 1;
-            spartan.inner.round_polynomials[last][1] += &one;
-            spartan.inner.round_polynomials[last][2] -= &one;
+            spartan.inner.round_polynomials[last][1] = spartan_f2z_field_config()
+                .add(&(spartan.inner.round_polynomials[last][1]), &(&one));
+            spartan.inner.round_polynomials[last][2] = spartan_f2z_field_config()
+                .sub(&(spartan.inner.round_polynomials[last][2]), &(&one));
         }
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
-            verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &tampered)
-                .is_err()
+            verify_u32_mul(
+                &mut verifier_transcript,
+                &prepared,
+                &hint.commitment,
+                &tampered
+            )
+            .is_err()
         );
     }
 
@@ -531,10 +554,10 @@ mod tests {
             check(&proof).unwrap();
             let mut bad = proof.clone();
             if let Some(round) = bad.f2z_mut().ood.as_mut() {
-                round.y = round.y + crate::poly::univariate::binary_gf128::BinaryFieldGF128::one();
+                round.y = round.y + crate::poly::univariate::binary_gf128::Gf128::one();
             } else {
                 bad.f2z_mut().ood = Some(crate::ligerito_flock::OodRound {
-                    y: crate::poly::univariate::binary_gf128::BinaryFieldGF128::zero(),
+                    y: crate::poly::univariate::binary_gf128::Gf128::zero(),
                     nonce: None,
                 });
             }
@@ -561,8 +584,13 @@ mod tests {
             )
             .unwrap();
             assert!(
-                verify_u32_mul(&mut Blake3Transcript::new(), &foreign, &hint.commitment, &proof)
-                    .is_err()
+                verify_u32_mul(
+                    &mut Blake3Transcript::new(),
+                    &foreign,
+                    &hint.commitment,
+                    &proof
+                )
+                .is_err()
             );
         }
     }
@@ -613,11 +641,25 @@ mod tests {
             U32_MUL_UNIVARIATE_SKIP_VARS as u8
         );
         assert_eq!(skip_proof(&proof).outer.skip.finite_q_evaluations.len(), 6);
-        assert_eq!(skip_proof(&proof).outer.tail.sumcheck.round_polynomials.len(), 12);
+        assert_eq!(
+            skip_proof(&proof)
+                .outer
+                .tail
+                .sumcheck
+                .round_polynomials
+                .len(),
+            12
+        );
         assert_eq!(skip_proof(&proof).inner.round_polynomials.len(), 17);
         assert_eq!(proof.spartan_payload_elements(), 109);
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof).unwrap();
+        verify_u32_mul(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
 
         // Determinism: a second prove is byte-identical.
         let mut second_transcript = Blake3Transcript::new();
@@ -626,20 +668,37 @@ mod tests {
         assert_eq!(second.spartan(), proof.spartan());
 
         // Tampering with the Spartan claim is rejected.
-        let one = SpartanF2zField::from_with_cfg(1u64, skip_proof(&proof).outer.tail.az_mle_claim.cfg());
+        let one = SpartanF2zField::from_with_cfg(1u64, &spartan_f2z_field_config());
         let reject = |mutate: &dyn Fn(&mut U32MulProof)| {
             let mut tampered = proof.clone();
             mutate(&mut tampered);
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(
-                verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &tampered)
-                    .is_err()
+                verify_u32_mul(
+                    &mut verifier_transcript,
+                    &prepared,
+                    &hint.commitment,
+                    &tampered
+                )
+                .is_err()
             );
         };
-        reject(&|proof| skip_proof_mut(proof).outer.tail.az_mle_claim += &one);
-        reject(&|proof| skip_proof_mut(proof).outer.skip.finite_q_evaluations[0] += &one);
-        reject(&|proof| skip_proof_mut(proof).outer.skip.q_at_infinity += &one);
-        reject(&|proof| skip_proof_mut(proof).outer.tail.sumcheck.round_polynomials[0][0] += &one);
+        reject(&|proof| {
+            let value = &mut skip_proof_mut(proof).outer.tail.az_mle_claim;
+            *value = spartan_f2z_field_config().add(value, &one);
+        });
+        reject(&|proof| {
+            let value = &mut skip_proof_mut(proof).outer.skip.finite_q_evaluations[0];
+            *value = spartan_f2z_field_config().add(value, &one);
+        });
+        reject(&|proof| {
+            let value = &mut skip_proof_mut(proof).outer.skip.q_at_infinity;
+            *value = spartan_f2z_field_config().add(value, &one);
+        });
+        reject(&|proof| {
+            let value = &mut skip_proof_mut(proof).outer.tail.sumcheck.round_polynomials[0][0];
+            *value = spartan_f2z_field_config().add(value, &one);
+        });
 
         // The verifier must not accept a proof-selected skip width under the
         // fixed K=3 security profile, even though the generic PIOP supports
@@ -666,7 +725,9 @@ mod tests {
         assert!(matches!(
             PreparedU32MulRelation::new_with_profile::<Limber114>(layout),
             Err(SpartanF2zError::UnsupportedProfile)
-                | Err(SpartanF2zError::Profile(ProfileError::GrindingTooExpensive { .. }))
+                | Err(SpartanF2zError::Profile(
+                    ProfileError::GrindingTooExpensive { .. }
+                ))
         ));
 
         // λ = 128 is genuine on this path too: the initial boundary, every
@@ -680,11 +741,17 @@ mod tests {
         assert_ne!(
             (
                 &prepared.ligerito_configuration().prover().queries,
-                &prepared.ligerito_configuration().prover().fold_grinding_bits,
+                &prepared
+                    .ligerito_configuration()
+                    .prover()
+                    .fold_grinding_bits,
             ),
             (
                 &prepared128.ligerito_configuration().prover().queries,
-                &prepared128.ligerito_configuration().prover().fold_grinding_bits,
+                &prepared128
+                    .ligerito_configuration()
+                    .prover()
+                    .fold_grinding_bits,
             ),
             "the Ligerito configuration must follow the profile target"
         );
@@ -696,33 +763,47 @@ mod tests {
         assert_eq!(proof128.piop_nonces().len(), 43);
         assert!(!proof128.f2z().grinding_nonces.is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(&mut verifier_transcript, &prepared128, &hint128.commitment, &proof128)
-            .unwrap();
+        verify_u32_mul(
+            &mut verifier_transcript,
+            &prepared128,
+            &hint128.commitment,
+            &proof128,
+        )
+        .unwrap();
         let mut tampered = proof128.clone();
         tampered.prefix_mut().piop_nonces[3] ^= 1;
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
-            verify_u32_mul(&mut verifier_transcript, &prepared128, &hint128.commitment, &tampered)
-                .is_err()
+            verify_u32_mul(
+                &mut verifier_transcript,
+                &prepared128,
+                &hint128.commitment,
+                &tampered
+            )
+            .is_err()
         );
     }
 
-    fn terminal_claim(point: &[Fq], scale: Fq, value: Fq) -> ScaledMleEvaluationClaim<SpartanF2zField> {
+    fn terminal_claim(
+        point: &[Q100Element],
+        scale: Q100Element,
+        value: Q100Element,
+    ) -> ScaledMleEvaluationClaim<SpartanF2zField> {
         let config = spartan_f2z_field_config();
         let point = point
             .iter()
-            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate.0, &config))
+            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate.canonical_u128(), &config))
             .collect::<Vec<_>>();
         ScaledMleEvaluationClaim::new(
             point.into_boxed_slice(),
-            SpartanF2zField::from_with_cfg(scale.0, &config),
-            SpartanF2zField::from_with_cfg(value.0, &config),
+            SpartanF2zField::from_with_cfg(scale.canonical_u128(), &config),
+            SpartanF2zField::from_with_cfg(value.canonical_u128(), &config),
         )
     }
 
     struct PreparedClaim {
         chunks: ModQWeightChunks,
-        col_weights: Vec<Fq>,
+        col_weights: Vec<Q100Element>,
     }
 
     fn prepared_row_weight(prepared: &PreparedClaim, row: usize) -> u128 {
@@ -745,7 +826,7 @@ mod tests {
             layout.gate_vars(),
             &layout.block_table(),
             protocol::ScaleSide::Rows,
-            &ProjArith::new(FQ_MOD),
+            &field::FpCtx::from_prime_u128(FQ_MOD),
         )
     }
 
@@ -753,19 +834,34 @@ mod tests {
         opening: &bitify::BitifiedClaim,
         layout: &U32MulLayout,
     ) -> Result<PreparedClaim, SpartanF2zError> {
-        let arith = ProjArith::new(FQ_MOD);
+        let arith = field::FpCtx::from_prime_u128(FQ_MOD);
         Ok(PreparedClaim {
             chunks: bitify::prepare_chunks(opening, &layout.block_table(), FQ_BITS, &arith)?,
-            col_weights: bitify::column_weights(opening, &arith)?,
+            col_weights: bitify::column_weights(opening, &arith)?
+                .into_iter()
+                .map(Q100Element::from)
+                .collect(),
         })
     }
 
     #[test]
     fn fast_bitify_field_helpers_match_reference_arithmetic() {
-        let point = [Fq(0), Fq(1), Fq(FQ_MOD - 1), Fq(123_456_789)];
+        let point = [
+            Q100Element::from_u128(0),
+            Q100Element::from_u128(1),
+            Q100Element::from_u128(FQ_MOD - 1),
+            Q100Element::from_u128(123_456_789),
+        ];
         assert_eq!(
-            bitify::eq_le_table_fq_fast_with(&point, &ProjArith::new(FQ_MOD)).unwrap(),
+            bitify::eq_le_table_fq_fast_with(
+                &point.map(|x| x.canonical_u128()),
+                &field::FpCtx::from_prime_u128(FQ_MOD)
+            )
+            .unwrap(),
             eq_le_table_fq(&point)
+                .into_iter()
+                .map(|x| x.canonical_u128())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -780,18 +876,20 @@ mod tests {
             let layout = witness.layout();
             let p = layout.f2z_params();
 
-            // Non-Boolean selector coordinates exercise all four assignment
+            // Non-Bit selector coordinates exercise all four assignment
             // blocks, rather than reducing this to a single block lookup.
             let gate_point = (0..layout.gate_vars())
-                .map(|coordinate| Fq((coordinate + 2) as u128))
+                .map(|coordinate| Q100Element::from_u128((coordinate + 2) as u128))
                 .collect::<Vec<_>>();
             assert_eq!(gate_point.len(), layout.gate_vars());
-            let block_low = Fq(7);
-            let block_high = Fq(11);
-            let scale = Fq(13);
-            let one = Fq(1);
-            let one_minus_low = Fq(fq_sub(one.0, block_low.0));
-            let one_minus_high = Fq(fq_sub(one.0, block_high.0));
+            let block_low = Q100Element::from_u128(7);
+            let block_high = Q100Element::from_u128(11);
+            let scale = Q100Element::from_u128(13);
+            let one = Q100Element::from_u128(1);
+            let one_minus_low =
+                Q100Element::from_u128(fq_sub(one.canonical_u128(), block_low.canonical_u128()));
+            let one_minus_high =
+                Q100Element::from_u128(fq_sub(one.canonical_u128(), block_high.canonical_u128()));
             let factors = [
                 one_minus_low * one_minus_high,
                 block_low * one_minus_high,
@@ -801,13 +899,15 @@ mod tests {
             let eq_gate = eq_le_table_fq(&gate_point);
 
             let assignment = witness.assignment();
-            let mut assignment_evaluation = Fq(0);
+            let mut assignment_evaluation = Q100Element::from_u128(0);
             for block in 0..4 {
                 for gate in 0..layout.capacity() {
                     assignment_evaluation = assignment_evaluation
                         + factors[block]
                             * eq_gate[gate]
-                            * Fq::from(u128::from(assignment[block * layout.capacity() + gate]));
+                            * Q100Element::from(u128::from(
+                                assignment[block * layout.capacity() + gate],
+                            ));
                 }
             }
             let value = scale * assignment_evaluation;
@@ -819,7 +919,7 @@ mod tests {
             let prepared = prepare_test_claim(&opening, layout).unwrap();
 
             let rows = witness.f2z_bit_rows();
-            let mut read_off = Fq(0);
+            let mut read_off = Q100Element::from_u128(0);
             for b in 0..p.rows() {
                 for c in 0..p.cols() {
                     let mut cell = 0_u128;
@@ -831,12 +931,12 @@ mod tests {
                         cell |= u128::from(bit) << j;
                     }
                     read_off = read_off
-                        + Fq::from(cell)
-                            * Fq(prepared_row_weight(&prepared, b))
+                        + Q100Element::from(cell)
+                            * Q100Element::from_u128(prepared_row_weight(&prepared, b))
                             * prepared.col_weights[c];
                 }
             }
-            assert_eq!(read_off, opening.claimed);
+            assert_eq!(read_off.canonical_u128(), opening.claimed);
         }
     }
 
@@ -844,27 +944,36 @@ mod tests {
     fn zero_scale_keeps_a_nonzero_row_functional() {
         let layout = U32MulLayout::new(3).unwrap();
         let mut point = (0..layout.gate_vars())
-            .map(|coordinate| Fq((coordinate + 2) as u128))
+            .map(|coordinate| Q100Element::from_u128((coordinate + 2) as u128))
             .collect::<Vec<_>>();
-        point.extend([Fq(7), Fq(11)]);
-        let opening = bitify_test_claim(&terminal_claim(&point, Fq(0), Fq(0)), &layout).unwrap();
+        point.extend([Q100Element::from_u128(7), Q100Element::from_u128(11)]);
+        let opening = bitify_test_claim(
+            &terminal_claim(&point, Q100Element::from_u128(0), Q100Element::from_u128(0)),
+            &layout,
+        )
+        .unwrap();
         let prepared = prepare_test_claim(&opening, &layout).unwrap();
 
         assert!((0..opening.params.rows()).any(|row| prepared_row_weight(&prepared, row) != 0));
-        assert!(prepared.col_weights.iter().all(|&weight| weight == Fq(0)));
-        assert_eq!(opening.claimed, Fq(0));
+        assert!(
+            prepared
+                .col_weights
+                .iter()
+                .all(|&weight| weight == Q100Element::from_u128(0))
+        );
+        assert_eq!(opening.claimed, 0);
     }
 
     #[test]
     fn constant_only_claim_uses_the_deterministic_dummy_functional() {
         let layout = U32MulLayout::new(3).unwrap();
         let gate_point = (0..layout.gate_vars())
-            .map(|coordinate| Fq((coordinate + 2) as u128))
+            .map(|coordinate| Q100Element::from_u128((coordinate + 2) as u128))
             .collect::<Vec<_>>();
-        let scale = Fq(13);
+        let scale = Q100Element::from_u128(13);
         let constant_evaluation = eq_le_table_fq(&gate_point)[0];
         let mut point = gate_point.to_vec();
-        point.extend([Fq(0), Fq(0)]);
+        point.extend([Q100Element::from_u128(0), Q100Element::from_u128(0)]);
 
         let opening = bitify_test_claim(
             &terminal_claim(&point, scale, scale * constant_evaluation),
@@ -874,15 +983,21 @@ mod tests {
         let prepared = prepare_test_claim(&opening, &layout).unwrap();
         assert_eq!(prepared_row_weight(&prepared, 0), 1);
         assert!((1..opening.params.rows()).all(|row| prepared_row_weight(&prepared, row) == 0));
-        assert!(prepared.col_weights.iter().all(|&weight| weight == Fq(0)));
-        assert_eq!(opening.claimed, Fq(0));
+        assert!(
+            prepared
+                .col_weights
+                .iter()
+                .all(|&weight| weight == Q100Element::from_u128(0))
+        );
+        assert_eq!(opening.claimed, 0);
     }
 
     #[test]
     fn malformed_claim_residue_is_rejected_before_canonical_projection() {
         let layout = U32MulLayout::new(3).unwrap();
         let config = spartan_f2z_field_config();
-        let malformed = SpartanF2zField::new_unchecked(Uint::from(u128::MAX), &config);
+        let malformed = field::FpCtx::from_prime_u128(u128::MAX - 158)
+            .from_montgomery_integer(*config.modulus());
         let zero = SpartanF2zField::from_with_cfg(0_u128, &config);
         let mut point = vec![zero.clone(); layout.gate_vars() + 2];
         point[0] = malformed;
@@ -944,7 +1059,13 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof).unwrap();
+        verify_u32_mul(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
     }
 }
 

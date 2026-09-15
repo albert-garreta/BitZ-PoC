@@ -18,9 +18,10 @@
 //! comparison with `p`. The proof relation itself binds 31-bit integers and
 //! the exact quotient identity.
 
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
 use std::borrow::Cow;
 
-use crypto_primitives::{FromWithConfig, PrimeField};
 use thiserror::Error;
 
 use crate::{
@@ -122,7 +123,7 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
 
     fn canonical_field_encoding<'a>(
         &'a self,
-        _field_config: &<SpartanF2zField as PrimeField>::Config,
+        _field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
         field_one_encoding: &'a [u8],
     ) -> Cow<'a, [u8]> {
         match self {
@@ -134,14 +135,14 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
     fn scale(
         &self,
         value: &SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
+        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
     ) -> SpartanF2zField {
         match self {
             Self::One => value.clone(),
             Self::Modulus => {
                 let coefficient = SpartanF2zField::from_with_cfg(BABY_BEAR_MODULUS, field_config);
                 let mut scaled = value.clone();
-                scaled *= &coefficient;
+                scaled = field_config.mul(&(scaled), &(&coefficient));
                 scaled
             }
         }
@@ -151,7 +152,7 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
         column: SparseColumn<'_, Self>,
         row_weights: &[SpartanF2zField],
         zero: &SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
+        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
     ) -> SpartanF2zField {
         if let Some((row, coefficient)) = column.single() {
             return coefficient.scale(&row_weights[row], field_config);
@@ -159,14 +160,17 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
 
         let mut evaluation = zero.clone();
         for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[row], field_config);
+            evaluation = field_config.add(
+                &(evaluation),
+                &(&coefficient.scale(&row_weights[row], field_config)),
+            );
         }
         evaluation
     }
 }
 
 /// Both public coefficients encode to modulus-independent bytes: `One` to
-/// the field's canonical one (exactly like a Boolean `true`) and `Modulus`
+/// the field's canonical one (exactly like a Bit `true`) and `Modulus`
 /// to the embedded BabyBear prime, which is canonical and never the unit in
 /// any accepted (at least 100-bit) Spartan field.
 impl ModulusIndependentCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
@@ -696,7 +700,7 @@ fn output_matrix(
 /// field.
 pub fn prepare_baby_bear_mul_relation(
     layout: BabyBearMulLayout,
-    field_config: &<SpartanF2zField as PrimeField>::Config,
+    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>, BabyBearMulError> {
     let matrices = baby_bear_mul_constraint_matrices(&layout)?;
     Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
@@ -757,7 +761,7 @@ pub fn project_baby_bear_mul_witness<F>(
     field_config: &F::Config,
 ) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), BabyBearMulError>
 where
-    F: SpartanField + FromWithConfig<u64>,
+    F: SpartanField,
 {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
 
@@ -794,12 +798,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{FromWithConfig, PrimeField};
 
     use super::*;
     use crate::piop::spartan::spartan_f2z_field_config;
 
-    fn field(value: u64, config: &<SpartanF2zField as PrimeField>::Config) -> SpartanF2zField {
+    fn field(
+        value: u64,
+        config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+    ) -> SpartanF2zField {
         SpartanF2zField::from_with_cfg(value, config)
     }
 
@@ -1263,9 +1269,9 @@ mod tests {
     #[test]
     fn compact_coefficients_borrow_fixed_canonical_encodings() {
         let config = spartan_f2z_field_config();
-        let field_one_encoding = field(1, &config).canonical_element_encoding();
+        let field_one_encoding = field(1, &config).canonical_element_encoding(&config);
         let expected_modulus_encoding =
-            field(BABY_BEAR_MODULUS, &config).canonical_element_encoding();
+            field(BABY_BEAR_MODULUS, &config).canonical_element_encoding(&config);
         let one_encoding =
             BabyBearMulCoefficient::One.canonical_field_encoding(&config, &field_one_encoding);
         let modulus_encoding =
@@ -1371,7 +1377,7 @@ mod tests {
         );
         for row in 0..inputs.len() {
             let mut product = products.az.evaluations[row].clone();
-            product *= &products.bz.evaluations[row];
+            product = config.mul(&(product), &(&products.bz.evaluations[row]));
             assert_eq!(product, products.cz.evaluations[row]);
 
             let native_cw = witness.c_values()[row] + BABY_BEAR_MODULUS * witness.k_values()[row];

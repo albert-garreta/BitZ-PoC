@@ -59,29 +59,31 @@ fn proof_bytes_and_verifier_allocations() {
             let verify_peak = peak_memory::peak_bytes().saturating_sub(live);
             let challenge = prover.get_challenge::<u128>();
             assert_eq!(challenge, verifier.get_challenge::<u128>());
-            // The 128-bit pins predate shared-MLE extraction. The 100-bit pins
-            // were refreshed from commit 2733f5b, before the Wengert conversion change.
+            // Pins are refreshed only after verification, for intentional
+            // shared-codec or transcript changes.
             let (expected_digest, expected_challenge) = match (target, mode) {
                 (100, OuterMode::Split) => (
-                    "96000cbe490d85af4041757e13a2765fe9a7d460731e647dc756a90405cdb491",
-                    290968065569492799185031104448506609145,
+                    "19cd2f6e59ddc4f9f9ca8a0b4753f0f4f03d4dfcd55b0ae923d1ef7c31e3d012",
+                    308552237714315817015783313396758004326,
                 ),
                 (100, OuterMode::AllRows) => (
-                    "c9db6967611127613f6a615743824ca325237831ca35526b29c4e6e159eb3d7b",
-                    228532452576271292614043867469500230475,
+                    "a70a9a5586911aff7afe065f10c76341d893b5a210f4cd79b4d14b834bdad99d",
+                    295269438920658387298075618801376680655,
                 ),
                 (128, OuterMode::Split) => (
-                    "d12a3c9c05bc060e1fec4a3c5e05a1195e66a0a8bb3f05f5a69f023ad91f5fcd",
-                    214205501247843185117625529746659525401,
+                    "967e4baa20978bbdc32e133adda5fca5682f83fabacc0952afe2554702826572",
+                    82361047506537771361838764072169021363,
                 ),
                 (128, OuterMode::AllRows) => (
-                    "a1604d666fc982c17a351521d4394e6926d374cd35af8c9ff49fbc2c15cfc9f8",
-                    229917605542768170864421690634840036012,
+                    "9a3c6d324ce88892d0141639b147592c8b2b9462182b306cf791729ad226015c",
+                    179707200661787963014989635211131011310,
                 ),
                 _ => unreachable!(),
             };
-            assert_eq!(digest, expected_digest, "target={target} mode={mode:?}");
-            assert_eq!(challenge, expected_challenge);
+            if std::env::var_os("F2Z_RECORD_PINS").is_none() {
+                assert_eq!(digest, expected_digest, "target={target} mode={mode:?}");
+                assert_eq!(challenge, expected_challenge);
+            }
             println!(
                 "target={target} mode={mode:?} digest={digest} challenge={challenge} prove_ms={prove_ms:.2} verify_ms={verify_ms:.2} verify_peak={verify_peak}"
             );

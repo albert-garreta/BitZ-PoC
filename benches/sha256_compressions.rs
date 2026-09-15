@@ -865,8 +865,11 @@ impl Env {
         };
         env.root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
         env.selected = common::security_profile(PrimePolicy::SingleDerived);
-        let compressions = common::shape_values(Some("F2Z_SHA_LOG2S"), clap::builder::RangedU64ValueParser::<usize>::new()
-            .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64));
+        let compressions = common::shape_values(
+            Some("F2Z_SHA_LOG2S"),
+            clap::builder::RangedU64ValueParser::<usize>::new()
+                .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64),
+        );
         env.shapes = match (&env.product_ts, &env.assignment_rows) {
             #[cfg(feature = "bench-internals")]
             (Some(values), None) => {
@@ -1005,17 +1008,15 @@ fn run_once(
     let commit_ms = common::span_ms(&intervals, "sha256-trace:commit");
     let prove_ms = common::span_ms(&intervals, "sha256-trace:end_to_end_prove");
     let verify_ms = common::span_ms(&intervals, "sha256-trace:verification");
-    let prove_phases = f2z::observability::phase_totals(&intervals, "sha256-trace:end_to_end_prove").unwrap();
-    let verify_phases = f2z::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
+    let prove_phases =
+        f2z::observability::phase_totals(&intervals, "sha256-trace:end_to_end_prove").unwrap();
+    let verify_phases =
+        f2z::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
     black_box(&proof);
 
     let f2z_bytes = proof.f2z().to_bytes().len();
     let spartan_elements = 3 * proof.inner().round_polynomials.len();
-    let field_bytes = proof
-        .inner()
-        .round_polynomials
-        .first()
-        .map_or(0, |round| round[0].canonical_element_encoding().len());
+    let field_bytes = <field::Fp<2> as SpartanField>::canonical_encoding_width();
     let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.inner_nonces().len() + 2);
 
     let timing = RepTiming {
@@ -1053,7 +1054,8 @@ fn bench_shape<P: IopSecurityProfile>(
             BenchShape::ProductLayout(_) => 0x7072_6f64_7563_745f,
         };
 
-    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_compressions:setup_started").entered();
     let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
@@ -1503,15 +1505,15 @@ mod cli_preset_tests {
             json!((7..=16).map(|n| ("compressions", n)).collect::<Vec<_>>())
         );
         assert_eq!(
-            config("ordinary", &[("F2Z_SHA_LOG2S", "4 16")])["shapes"],
-            json!([["compressions", 4], ["compressions", 16]])
+            config("ordinary", &[("F2Z_SHA_LOG2S", "7 16")])["shapes"],
+            json!([["compressions", 7], ["compressions", 16]])
         );
         assert_eq!(
             config("ordinary", &[("F2Z_SHA_MNUMROWS_LOG2S", "18 30")])["shapes"],
             json!([["mnumrows", 18], ["mnumrows", 30]])
         );
         for (mode, settings) in [
-            ("ordinary", vec![("F2Z_BENCH_SHAPES", "3")]),
+            ("ordinary", vec![("F2Z_BENCH_SHAPES", "6")]),
             ("ordinary", vec![("F2Z_SHA_MNUMROWS_LOG2S", "17")]),
             ("ordinary", vec![("F2Z_SHA_MNUMROWS_LOG2S", "31")]),
             ("product", vec![("F2Z_SHA_PRODUCT_TS", "6")]),

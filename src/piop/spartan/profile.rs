@@ -54,6 +54,7 @@
 //! `Lambda128` build reports **achieved ≈ 126.4, binding: the GF(2^128)
 //! floor** rather than silently claiming 128.
 
+use field::RingOps;
 use thiserror::Error;
 
 use crate::ligerito_flock::OodRoundParams;
@@ -201,7 +202,9 @@ impl IopSecurityParams {
     /// to the target is derived under the usual economic cap and the term
     /// `step0:ood-draw` joins the accounting.
     pub fn adopt_ood_round(&mut self, ood_bits: Option<f64>) -> Result<(), ProfileError> {
-        self.accounting.terms.retain(|term| term.name != "step0:ood-draw");
+        self.accounting
+            .terms
+            .retain(|term| term.name != "step0:ood-draw");
         let Some(bits) = ood_bits else {
             self.ood = None;
             return Ok(());

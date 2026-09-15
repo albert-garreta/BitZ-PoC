@@ -13,12 +13,11 @@ use std::error::Error;
 
 use f2z::binary_pcs::{BinaryPcs, LOG_INV_RATE, MIN_PACKED_LOG, write_round0};
 use f2z::ligerito::LOG_PACKING;
-use f2z::ligerito_flock::f128_to_gf;
-use f2z::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use f2z::poly::univariate::binary_gf128::Gf128 as Gf;
 use f2z::proof_codec::Writer;
 use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
-use flock_core::field::F128;
+use flock_core::field::Gf128;
 
 /// The whole-opener gate.
 pub const SECURITY_BITS: usize = 100;
@@ -149,7 +148,7 @@ impl LigeritoBackend {
                 .into());
             }
             rows.into_iter()
-                .map(|row| F128 {
+                .map(|row| Gf128 {
                     lo: row as u64,
                     hi: (row >> 64) as u64,
                 })
@@ -249,7 +248,7 @@ fn sample_point(t: &mut Blake3Transcript, log_rows: usize) -> Vec<Gf> {
 
 fn absorb_claim(t: &mut Blake3Transcript, value: Gf) {
     t.absorb_slice(CLAIM_TAG);
-    let words = value.words();
+    let words = value.as_words();
     t.absorb_slice(&words[0].to_le_bytes());
     t.absorb_slice(&words[1].to_le_bytes());
 }
@@ -272,14 +271,14 @@ fn eq_table(point: &[Gf]) -> Vec<Gf> {
 /// The seven bit coordinates are folded through a byte lookup table (sixteen
 /// lookups per row instead of 128 multiplications), the row coordinates
 /// through an `eq` table.
-pub fn evaluate_bit_mle(packed: &[F128], point: &[Gf]) -> Gf {
+pub fn evaluate_bit_mle(packed: &[Gf128], point: &[Gf]) -> Gf {
     let low = eq_table(&point[..LOG_PACKING]);
     let high = eq_table(&point[LOG_PACKING..]);
     let mut table = vec![Gf::zero(); 16 * 256];
     for byte in 0..16 {
         for val in 1usize..256 {
-            table[byte * 256 + val] =
-                table[byte * 256 + (val & (val - 1))] + low[byte * 8 + val.trailing_zeros() as usize];
+            table[byte * 256 + val] = table[byte * 256 + (val & (val - 1))]
+                + low[byte * 8 + val.trailing_zeros() as usize];
         }
     }
     let mut acc = Gf::zero();
@@ -295,7 +294,7 @@ pub fn evaluate_bit_mle(packed: &[F128], point: &[Gf]) -> Gf {
 }
 
 /// Same claim, evaluated the slow way; the fast path must agree.
-pub fn evaluate_bit_mle_reference(packed: &[F128], point: &[Gf]) -> Gf {
+pub fn evaluate_bit_mle_reference(packed: &[Gf128], point: &[Gf]) -> Gf {
     let low = eq_table(&point[..LOG_PACKING]);
     let high = eq_table(&point[LOG_PACKING..]);
     let mut acc = Gf::zero();
@@ -313,5 +312,5 @@ pub fn evaluate_bit_mle_reference(packed: &[F128], point: &[Gf]) -> Gf {
 pub fn commitment_root_gf(root: &[u8; 32]) -> Gf {
     let lo = u64::from_le_bytes(root[..8].try_into().expect("8 bytes"));
     let hi = u64::from_le_bytes(root[8..16].try_into().expect("8 bytes"));
-    f128_to_gf(F128 { lo, hi })
+    (Gf128 { lo, hi })
 }

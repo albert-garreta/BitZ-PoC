@@ -27,18 +27,15 @@
 //! This module holds the pieces that are *new* relative to the prime-field
 //! path: the transcript prime/point sampling (deterministic and identical on
 //! both sides), fast mod-`q'` scalar arithmetic for a runtime modulus
-//! (Montgomery via `crypto-bigint`'s [`FixedMontyForm`]), and the weight
+//! (Montgomery arithmetic from `field`), and the weight
 //! projection `γ`. The opening itself reuses the existing mod-`q` pipeline
 //! verbatim (see `ligerito_flock::prove_mle_eval_ext_ligerito`).
 
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcript;
 use crate::utils::cfg_into_iter;
 
-use crypto_bigint::modular::{FixedMontyForm, FixedMontyParams};
-use crypto_bigint::{Odd, U128};
-use crypto_primes::hazmat::MillerRabin;
-use crypto_primes::{is_prime, Flavor};
+use field::{FpCtx, PrimeSearchPolicy, PublicRandomSource, Uint};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -70,8 +67,8 @@ impl Default for ExtProjParams {
 
 impl ExtProjParams {
     /// Panic on parameter combinations the arithmetic below does not
-    /// support. `prime_bits ≤ 120` keeps every modular value strictly below
-    /// `2^126` (peasant doubling headroom and chunk-shift bounds);
+    /// support. `prime_bits ≤ 120` keeps the existing projection
+    /// protocol interval and chunk-shift bounds;
     /// `≥ 32` keeps the candidate range clear of the tiny primes and the
     /// Miller–Rabin base range `[2, q'−2]` nonempty.
     pub fn validate(&self) {
@@ -93,29 +90,8 @@ impl ExtProjParams {
 /// [`crate::pcs::fq_challenge`] uses).
 fn transcript_u128(transcript: &mut impl Transcript) -> u128 {
     let g: Gf = transcript.get_field_challenge(&());
-    let w = g.words();
+    let w = g.as_words();
     u128::from(w[0]) | (u128::from(w[1]) << 64)
-}
-
-/// `(a · b) mod m` for an **arbitrary** modulus `m < 2^127` by
-/// Russian-peasant doubling — the cold-path fallback used where `m` may be
-/// even (Miller–Rabin base-range reduction). Hot paths use [`ProjArith`].
-#[allow(clippy::arithmetic_side_effects)] // all values kept < 2^127 by the reductions
-fn mulmod_generic(a: u128, b: u128, m: u128) -> u128 {
-    debug_assert!(m != 0 && m < (1u128 << 127));
-    let mut a = a % m;
-    let mut b = b % m;
-    let mut r = 0u128;
-    while b != 0 {
-        if b & 1 == 1 {
-            let s = r + a; // r, a < m < 2^127: no overflow
-            r = if s >= m { s - m } else { s };
-        }
-        let d = a + a;
-        a = if d >= m { d - m } else { d };
-        b >>= 1;
-    }
-    r
 }
 
 /// A 256-bit transcript draw reduced modulo `m` (statistical distance
@@ -127,39 +103,18 @@ fn transcript_uniform_mod(transcript: &mut impl Transcript, m: u128) -> u128 {
     debug_assert!(m > 1 && m < (1u128 << 127));
     let lo = transcript_u128(transcript);
     let hi = transcript_u128(transcript);
-    // hi·2^128 + lo ≡ hi·r128 + lo (mod m), r128 = 2^128 mod m.
-    let r128 = ((u128::MAX % m) + 1) % m;
-    let hi_part = mulmod_generic(hi, r128, m);
-    let s = hi_part + (lo % m);
-    if s >= m {
-        s - m
-    } else {
-        s
-    }
+    use field::{IntegerEmbedding, ModRingCtx};
+    let ring = ModRingCtx::new(Uint::from(m)).expect("public sampling modulus exceeds one");
+    let draw = Uint::from_words([lo as u64, (lo >> 64) as u64, hi as u64, (hi >> 64) as u64]);
+    u128::from(ring.to_integer(&ring.from_integer(&draw)))
 }
-
-/// The odd primes below 256, for the trial-division prefilter of
-/// [`sample_proj_prime`]: ~76 % of odd candidates carry one of these
-/// factors and are rejected by 53 `u128` remainders instead of a
-/// Montgomery setup + modexp. (Candidates are `≥ 2^31`, so divisibility
-/// by a table prime always means compositeness.)
-const SMALL_PRIMES: [u128; 53] = [
-    3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
-    101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
-    197, 199, 211, 223, 227, 229, 233, 239, 241, 251,
-];
-
-/// Number of transcript-derived Miller--Rabin bases used by
-/// [`sample_prime_in_interval`]. Exact-uniform base sampling makes the usual
-/// strong-liar bound apply without a modulo-bias correction. Seventy-two
-/// rounds give `2^-144` per tested composite; even after a union bound over
-/// the sampler's fewer than `2^13` attempts at supported widths, the complete
-/// invocation's false-prime probability remains below `2^-131`.
-pub const TRANSCRIPT_PRIME_MR_ROUNDS: usize = 72;
 
 /// Errors returned by the bounded transcript prime sampler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PrimeSamplingError {
+    #[error(transparent)]
+    Shared(#[from] field::PrimeSearchError),
+
     #[error("prime interval is empty: min {min} exceeds max {max}")]
     InvalidInterval { min: u128, max: u128 },
     #[error("prime interval maximum must be below 2^126; got {max}")]
@@ -176,310 +131,95 @@ pub enum PrimeSamplingError {
     },
 }
 
-/// Sample uniformly from `[0, upper_bound)` using full-width rejection
-/// sampling. `2^128 mod upper_bound` is the size of the low prefix that must
-/// be discarded; the remaining number of `u128` strings is an exact multiple
-/// of `upper_bound`.
-fn transcript_uniform_below_exact(
-    transcript: &mut impl Transcript,
-    upper_bound: u128,
-) -> Result<u128, PrimeSamplingError> {
-    debug_assert!(upper_bound != 0);
-    // `wrapping_neg()` computes `2^128 - upper_bound`, so this remainder is
-    // exactly `2^128 mod upper_bound` without representing `2^128`.
-    let rejection_threshold = upper_bound.wrapping_neg() % upper_bound;
-    // For callers in this module upper_bound < 2^126, hence every draw is
-    // accepted with probability > 3/4. This cap is unreachable for an honest
-    // random-oracle transcript but keeps the API total for adversarial test
-    // transcript implementations.
-    for _ in 0..256 {
-        let draw = transcript_u128(transcript);
-        if draw >= rejection_threshold {
-            return Ok(draw % upper_bound);
-        }
+pub(crate) struct TranscriptRandom<'a, T: Transcript + ?Sized>(pub &'a mut T);
+impl<T: Transcript + ?Sized> PublicRandomSource for TranscriptRandom<'_, T> {
+    fn fill_bytes(&mut self, output: &mut [u8]) {
+        self.0.fill_sampling_bytes(output);
     }
-    Err(PrimeSamplingError::UniformSamplingExhausted { upper_bound })
 }
 
-/// Run the deterministic prefilters and the soundness-carrying randomized
-/// primality checks for one odd candidate.
-fn transcript_candidate_is_prime(
+/// Shared bounded search, including full-width 128-bit intervals. The
+/// interval and whole-search policy are bound before internal sampling reads.
+/// The caller owns any protocol grinding boundary around this search.
+pub fn sample_prime_context(
     transcript: &mut impl Transcript,
-    candidate: u128,
-) -> Result<bool, PrimeSamplingError> {
-    // Do not reject a table prime when a caller intentionally supplies a
-    // small interval; only a proper multiple is known composite.
-    if SMALL_PRIMES
-        .iter()
-        .any(|&small_prime| candidate != small_prime && candidate.is_multiple_of(small_prime))
-    {
-        return Ok(false);
+    min: u128,
+    max: u128,
+    security_bits: u32,
+) -> Result<FpCtx<2>, PrimeSamplingError> {
+    if min > max {
+        return Err(PrimeSamplingError::InvalidInterval { min, max });
     }
-
-    let candidate_uint = U128::from_u128(candidate);
-    // The preset is the improved BPSW check: Miller--Rabin base 2 followed by
-    // the BPSW'21 Lucas test. The randomized rounds below provide the explicit
-    // 128-bit composite-acceptance bound rather than relying on the BPSW
-    // conjecture alone.
-    if !is_prime(Flavor::Any, &candidate_uint) {
-        return Ok(false);
+    let first = min.max(3) | 1;
+    if first > max {
+        return Err(PrimeSamplingError::NoOddCandidate { min, max });
     }
-
-    // Random bases only make sense above 3. The BPSW check above handles 3
-    // exactly, so the special case does not weaken the sampler.
-    if candidate == 3 {
-        return Ok(true);
-    }
-    let Some(odd_candidate) = Odd::new(candidate_uint).into_option() else {
-        return Ok(false);
-    };
-    let mr = MillerRabin::new(odd_candidate);
-    let base_count = candidate - 3; // bases [2, candidate - 2]
-    for _ in 0..TRANSCRIPT_PRIME_MR_ROUNDS {
-        let base = 2 + transcript_uniform_below_exact(transcript, base_count)?;
-        if !mr.test(&U128::from_u128(base)).is_probably_prime() {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-/// Sample a prime uniformly from the odd primes in the inclusive interval
-/// `[min_inclusive, max_inclusive]`.
-///
-/// Each odd candidate is drawn with exact-uniform rejection sampling (never a
-/// `% interval_width` mapping), then filtered by small-prime division, the
-/// improved base-2/BPSW test, and 72 exact-uniform transcript-derived
-/// Miller--Rabin bases. Because every prime has the same acceptance
-/// probability, conditioning on success leaves the output uniform over the
-/// primes in the interval.
-///
-/// The upper bound is restricted to `< 2^126`, matching [`ProjArith`] and
-/// leaving headroom for the generic modular arithmetic used by the checks.
-/// The function is intentionally bounded and returns an error when the input
-/// interval is invalid, contains no odd values, or yields no accepted prime.
-#[allow(clippy::arithmetic_side_effects)] // validated interval keeps candidate arithmetic < 2^126
-pub fn sample_prime_in_interval(
-    transcript: &mut impl Transcript,
-    min_inclusive: u128,
-    max_inclusive: u128,
-) -> Result<u128, PrimeSamplingError> {
-    let _g = tracing::info_span!("ext:sample_interval_prime").entered();
-    if min_inclusive > max_inclusive {
-        return Err(PrimeSamplingError::InvalidInterval {
-            min: min_inclusive,
-            max: max_inclusive,
-        });
-    }
-    if max_inclusive >= (1u128 << 126) {
-        return Err(PrimeSamplingError::MaximumTooLarge { max: max_inclusive });
-    }
-
-    let first_odd = if min_inclusive & 1 == 1 {
-        min_inclusive
-    } else {
-        min_inclusive + 1
-    };
-    let Some(last_odd) = (if max_inclusive & 1 == 1 {
-        Some(max_inclusive)
-    } else {
-        max_inclusive.checked_sub(1)
-    }) else {
-        return Err(PrimeSamplingError::NoOddCandidate {
-            min: min_inclusive,
-            max: max_inclusive,
-        });
-    };
-    if first_odd > last_odd {
-        return Err(PrimeSamplingError::NoOddCandidate {
-            min: min_inclusive,
-            max: max_inclusive,
-        });
-    }
-
-    let odd_candidate_count = ((last_odd - first_odd) >> 1) + 1;
-    let candidate_bits = ((128 - max_inclusive.leading_zeros()) as usize).max(1);
-    // A broad b-bit interval contains a prime after about b*ln(2)/2 odd
-    // draws in expectation. 64*b retains the legacy sampler's conservative
-    // cap while returning a typed error instead of reaching `unreachable!`.
-    let max_attempts = if odd_candidate_count == 1 {
+    let attempts = if first == (max - u128::from(max & 1 == 0)) {
         1
     } else {
-        64 * candidate_bits
+        64 * (128 - max.leading_zeros()) as usize
     };
-    for _ in 0..max_attempts {
-        let candidate_index = transcript_uniform_below_exact(transcript, odd_candidate_count)?;
-        let candidate = first_odd + 2 * candidate_index;
-        if transcript_candidate_is_prime(transcript, candidate)? {
-            return Ok(candidate);
+    let mut policy = PrimeSearchPolicy {
+        target_security_bits: security_bits,
+        max_candidates: attempts as u64,
+        max_rejection_draws: 0,
+    };
+    policy.max_rejection_draws = policy.minimum_rejection_draws()?;
+    transcript.absorb_slice(b"f2z/shared-prime-sampling/v1");
+    transcript.absorb_slice(&min.to_le_bytes());
+    transcript.absorb_slice(&max.to_le_bytes());
+    transcript.absorb_slice(&policy.target_security_bits.to_le_bytes());
+    transcript.absorb_slice(&policy.max_candidates.to_le_bytes());
+    transcript.absorb_slice(&(policy.max_rejection_draws as u64).to_le_bytes());
+    FpCtx::sample_prime_public(
+        &mut TranscriptRandom(transcript),
+        Uint::from(min)..=Uint::from(max),
+        &policy,
+    )
+    .map_err(|error| match error {
+        field::PrimeSearchError::Exhausted => {
+            PrimeSamplingError::PrimeSearchExhausted { min, max, attempts }
         }
-    }
-
-    Err(PrimeSamplingError::PrimeSearchExhausted {
-        min: min_inclusive,
-        max: max_inclusive,
-        attempts: max_attempts,
+        error => error.into(),
     })
 }
 
-/// Sample the Step-3 projection prime `q'` from the transcript: rejection-
-/// sample candidates with the top bit and the low bit forced (so
-/// `q' ∈ [2^{bits−1}, 2^{bits})`, odd), keep the first one that passes
-/// trial division by [`SMALL_PRIMES`], Miller–Rabin with base 2, and
-/// `mr_rounds` transcript-derived bases in `[2, q'−2]`. Deterministic in
-/// the transcript state, so prover and verifier derive the same prime by
-/// running the same code. (Trial division only removes composites, so the
-/// sampled set is still exactly the primes of the range, uniformly.)
-///
-/// A composite acceptance needs every transcript base to be a Miller–Rabin
-/// liar. Bases are single 128-bit draws reduced into the range — each
-/// residue's probability exceeds uniform by a factor `≤ 1 + 2^{bits−128}`,
-/// so acceptance is `≤ ((1 + 2^{bits−128})/4)^{mr_rounds} ≈ 4^{-mr_rounds}`
-/// per candidate (`≈ 2^{-128}` at the defaults), and an adversary grinding
-/// the Fiat–Shamir transcript gains only `queries · 4^{-mr_rounds}`.
-#[allow(clippy::arithmetic_side_effects)] // candidate/base arithmetic bounded by 2^prime_bits < 2^121
-pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams) -> u128 {
+/// Bounded projection-prime search over the existing supported interval.
+/// Candidate and base rejection are handled by the shared sampler; bounded
+/// probable-prime search is not described as exactly uniform over primes.
+pub fn sample_prime_in_interval(
+    transcript: &mut impl Transcript,
+    min: u128,
+    max: u128,
+) -> Result<u128, PrimeSamplingError> {
+    let _g = tracing::info_span!("ext:sample_interval_prime").entered();
+    if min > max {
+        return Err(PrimeSamplingError::InvalidInterval { min, max });
+    }
+    if max >= (1u128 << 126) {
+        return Err(PrimeSamplingError::MaximumTooLarge { max });
+    }
+    sample_prime_context(transcript, min, max, 128).map(|field| u128::from(*field.modulus()))
+}
+
+/// Sample the projection prime with an error on bounded-search exhaustion.
+/// The configured per-candidate rounds set the minimum security target;
+/// the shared policy additionally accounts for the complete search.
+pub fn sample_proj_prime(
+    transcript: &mut impl Transcript,
+    proj: &ExtProjParams,
+) -> Result<u128, PrimeSamplingError> {
     let _g = tracing::info_span!("ext:sample_prime").entered();
     proj.validate();
-    let bits = proj.prime_bits;
-    let top = 1u128 << (bits - 1);
-    let mask = top | (top - 1);
-    // Expected ~bits·ln2/2 ≈ 35 candidates at 100 bits; the hard cap is
-    // astronomically unreachable (P ≈ e^{-2000}) and only bounds the loop.
-    for _ in 0..64 * bits {
-        let cand = (transcript_u128(transcript) & mask) | top | 1;
-        if SMALL_PRIMES.iter().any(|&sp| cand.is_multiple_of(sp)) {
-            continue;
-        }
-        let odd = Odd::new(U128::from_u128(cand)).expect("candidate is odd");
-        let mr = MillerRabin::new(odd);
-        if !mr.test_base_two().is_probably_prime() {
-            continue;
-        }
-        // Base range [2, q'−2]: one draw reduced into [0, q'−4] (the
-        // multiplicative-bias bound above), base = 2 + r.
-        let range = cand - 3;
-        let mut composite = false;
-        for _ in 0..proj.mr_rounds {
-            let base = 2 + transcript_u128(transcript) % range;
-            if !mr.test(&U128::from_u128(base)).is_probably_prime() {
-                composite = true;
-                break;
-            }
-        }
-        if !composite {
-            return cand;
-        }
-    }
-    unreachable!("no {bits}-bit prime in 64·{bits} transcript candidates");
+    let top = 1u128 << (proj.prime_bits - 1);
+    sample_prime_context(transcript, top, top | (top - 1), 2 * proj.mr_rounds as u32)
+        .map(|field| u128::from(*field.modulus()))
 }
 
 /// Sample the Step-3 evaluation point `α' ∈ F_{q'}` from the transcript
 /// (256-bit reduction — see [`transcript_uniform_mod`]).
 pub fn sample_proj_point(transcript: &mut impl Transcript, q_proj: u128) -> u128 {
     transcript_uniform_mod(transcript, q_proj)
-}
-
-/// The low 128 bits of a `U128` as a `u128`.
-fn u128_from_uint(x: &U128) -> u128 {
-    let w = x.to_words();
-    u128::from(w[0]) | (u128::from(w[1]) << 64)
-}
-
-/// Scalar arithmetic modulo the sampled (odd) prime `q'`, Montgomery-backed
-/// for the hot loops (the `O(2^t)` weight projection and the `O(2^s)`
-/// per-column congruence checks). Values enter and leave in canonical
-/// `[0, q')` form (inputs are reduced on entry).
-pub struct ProjArith {
-    params: FixedMontyParams<{ U128::LIMBS }>,
-    q: u128,
-}
-
-impl ProjArith {
-    /// Context for an odd modulus `2 < q' < 2^126`.
-    pub fn new(q_proj: u128) -> Self {
-        assert!(
-            q_proj > 2 && q_proj & 1 == 1,
-            "projection modulus must be odd and > 2"
-        );
-        assert!(
-            q_proj < (1u128 << 126),
-            "projection modulus must be < 2^126"
-        );
-        let odd = Odd::new(U128::from_u128(q_proj)).expect("modulus is odd");
-        Self {
-            params: FixedMontyParams::new_vartime(odd),
-            q: q_proj,
-        }
-    }
-
-    /// The modulus `q'`.
-    pub fn q(&self) -> u128 {
-        self.q
-    }
-
-    /// `x mod q'`. Already-canonical values (the hot-loop common case:
-    /// Montgomery outputs, 64-bit coordinates under a 100-bit modulus)
-    /// skip the u128 division entirely.
-    pub fn reduce(&self, x: u128) -> u128 {
-        if x < self.q {
-            x
-        } else {
-            x % self.q
-        }
-    }
-
-    fn to_monty(&self, x: u128) -> FixedMontyForm<{ U128::LIMBS }> {
-        FixedMontyForm::new(&U128::from_u128(self.reduce(x)), &self.params)
-    }
-
-    fn from_monty(m: &FixedMontyForm<{ U128::LIMBS }>) -> u128 {
-        let w = m.retrieve().to_words();
-        u128::from(w[0]) | (u128::from(w[1]) << 64)
-    }
-
-    /// A canonical value converted ONCE into Montgomery form, for use as the
-    /// fixed factor of many [`Self::mul_plain_by`] calls (power tables).
-    pub fn monty_factor(&self, x: u128) -> FixedMontyForm<{ U128::LIMBS }> {
-        self.to_monty(x)
-    }
-
-    /// `(a · x) mod q'` for plain `a < 2^127` against a prepared
-    /// [`Self::monty_factor`] — **one** Montgomery multiplication, no
-    /// domain conversions: interpreting plain `a` as a Montgomery residue
-    /// makes the reduction built into the multiply land the product back
-    /// in plain form (`mont_mul(a, x·R) = a·x·R·R⁻¹ = a·x mod q'`).
-    pub fn mul_plain_by(&self, a: u128, x_monty: &FixedMontyForm<{ U128::LIMBS }>) -> u128 {
-        let a_form = FixedMontyForm::from_montgomery(U128::from_u128(self.reduce(a)), &self.params);
-        u128_from_uint(&(a_form * x_monty).to_montgomery())
-    }
-
-    /// `(a · b) mod q'` (inputs reduced on entry).
-    pub fn mul(&self, a: u128, b: u128) -> u128 {
-        Self::from_monty(&(self.to_monty(a) * self.to_monty(b)))
-    }
-
-    /// `(a + b) mod q'` (inputs reduced on entry; sums stay < 2^127).
-    #[allow(clippy::arithmetic_side_effects)] // both summands < q' < 2^126
-    pub fn add(&self, a: u128, b: u128) -> u128 {
-        let s = self.reduce(a) + self.reduce(b);
-        if s >= self.q {
-            s - self.q
-        } else {
-            s
-        }
-    }
-
-    /// The canonical power ladder `[1, x, x², …, x^{n−1}] mod q'`.
-    pub fn powers(&self, x: u128, n: usize) -> Vec<u128> {
-        let mut out = Vec::with_capacity(n);
-        let mut cur = self.reduce(1);
-        for _ in 0..n {
-            out.push(cur);
-            cur = self.mul(cur, x);
-        }
-        out
-    }
 }
 
 /// The projected row weights of Step 3:
@@ -496,21 +236,24 @@ pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u12
     for c in coords {
         assert_eq!(c.len(), rows, "coordinate vectors must share the row count");
     }
-    let zq = ProjArith::new(q_proj);
+    let zq = field::FpCtx::from_prime_u128(q_proj);
     // α'^d as prepared Montgomery factors (d ≥ 1; the d = 0 term is the
     // plain coordinate itself) — each row term is then ONE Montgomery
     // multiplication via the plain×monty trick, no domain conversions.
-    let pow_monty: Vec<FixedMontyForm<{ U128::LIMBS }>> = zq
-        .powers(alpha_proj, ext_deg)
+    let pow_monty: Vec<field::Fp<2>> = zq
+        .powers_u128(alpha_proj, ext_deg)
         .into_iter()
         .skip(1)
-        .map(|p| zq.monty_factor(p))
+        .map(|p| zq.prepare_multiplier_u128(p))
         .collect();
     cfg_into_iter!(0..rows)
         .map(|b| {
-            let mut acc = zq.reduce(coords[0][b]);
+            let mut acc = zq.reduce_u128(coords[0][b]);
             for (d, pw) in pow_monty.iter().enumerate() {
-                acc = zq.add(acc, zq.mul_plain_by(coords[d.wrapping_add(1)][b], pw));
+                acc = zq.add_canonical_u128(
+                    acc,
+                    zq.mul_prepared_u128(coords[d.wrapping_add(1)][b], pw),
+                );
             }
             acc
         })
@@ -521,6 +264,15 @@ pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u12
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
+
+    // Independent test oracle for the 256-bit projection reduction.
+    fn mulmod_generic(a: u128, b: u128, m: u128) -> u128 {
+        use num_traits::ToPrimitive;
+        ((num_bigint::BigUint::from(a) * num_bigint::BigUint::from(b))
+            % num_bigint::BigUint::from(m))
+        .to_u128()
+        .unwrap()
+    }
     use crate::transcript::Blake3Transcript;
 
     /// Reference naive primality by trial division (test-only, small inputs).
@@ -541,12 +293,12 @@ mod tests {
     #[test]
     fn proj_arith_matches_naive() {
         let q = (1u128 << 100) - 15; // prime
-        let zq = ProjArith::new(q);
+        let zq = field::FpCtx::from_prime_u128(q);
         let a = 0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABCu128;
         let b = 0x0123_4567_89AB_CDEF_0011_2233_4455u128;
-        assert_eq!(zq.mul(a, b), mulmod_generic(a, b, q));
-        assert_eq!(zq.add(a, b), (a % q + b % q) % q);
-        let pows = zq.powers(a, 4);
+        assert_eq!(zq.mul_u128(a, b), mulmod_generic(a, b, q));
+        assert_eq!(zq.add_u128(a, b), (a % q + b % q) % q);
+        let pows = zq.powers_u128(a, 4);
         assert_eq!(pows[0], 1);
         assert_eq!(pows[1], a % q);
         assert_eq!(pows[2], mulmod_generic(a, a, q));
@@ -563,10 +315,10 @@ mod tests {
         };
         let mut t1 = Blake3Transcript::new();
         t1.absorb_slice(b"ext-proj-test");
-        let q1 = sample_proj_prime(&mut t1, &proj);
+        let q1 = sample_proj_prime(&mut t1, &proj).unwrap();
         let mut t2 = Blake3Transcript::new();
         t2.absorb_slice(b"ext-proj-test");
-        let q2 = sample_proj_prime(&mut t2, &proj);
+        let q2 = sample_proj_prime(&mut t2, &proj).unwrap();
         assert_eq!(q1, q2, "sampling must be deterministic in the transcript");
         assert!(q1 >= (1u128 << 39) && q1 < (1u128 << 40), "prime in range");
         assert!(is_prime_naive(q1), "sampled candidate must be prime");
@@ -610,15 +362,8 @@ mod tests {
     #[test]
     fn interval_sampler_rejects_composites() {
         // A strong base-2 pseudoprime whose factors are larger than the small
-        // sieve table exercises the BPSW rejection rather than trial division.
+        // sieve table exercises the shared randomized rounds.
         let pseudoprime = 341_550_071_728_321u128;
-        let mut filter_transcript = Blake3Transcript::new();
-        filter_transcript.absorb_slice(b"bpsw-composite");
-        assert_eq!(
-            transcript_candidate_is_prime(&mut filter_transcript, pseudoprime),
-            Ok(false)
-        );
-
         let mut sample_transcript = Blake3Transcript::new();
         sample_transcript.absorb_slice(b"singleton-composite");
         assert_eq!(

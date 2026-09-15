@@ -14,11 +14,6 @@
 //! Prime fields take the trivial instance (`Wide = Self`, reduced ops), so
 //! the driver stays field-generic with zero overhead there.
 
-use crypto_bigint::modular::ConstMontyParams;
-use crypto_primitives::{
-    crypto_bigint_const_monty::ConstMontyField, crypto_bigint_monty::MontyField,
-};
-
 /// Multiply-accumulate with an opaque (possibly unreduced) accumulator.
 ///
 /// Laws (all exact, no approximation):
@@ -151,90 +146,5 @@ pub trait WideMulAcc: Sized {
         _quads: usize,
     ) -> Option<[Self; 9]> {
         None
-    }
-}
-
-/// Compile-time-modulus prime fields: reduced representation IS the
-/// accumulator.
-impl<Mod: ConstMontyParams<LIMBS>, const LIMBS: usize> WideMulAcc for ConstMontyField<Mod, LIMBS> {
-    type Wide = Self;
-
-    #[inline(always)]
-    fn wide_zero(zero: &Self) -> Self::Wide {
-        zero.clone()
-    }
-
-    #[inline(always)]
-    fn wide_of(x: &Self) -> Self::Wide {
-        x.clone()
-    }
-
-    #[inline(always)]
-    fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
-        a.clone() * b
-    }
-
-    #[inline(always)]
-    fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc += x;
-    }
-
-    #[inline(always)]
-    fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc -= x;
-    }
-
-    #[inline(always)]
-    fn from_wide(w: Self::Wide) -> Self {
-        w
-    }
-
-    #[inline(always)]
-    fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
-        if mask {
-            *acc += x;
-        }
-    }
-}
-
-/// Prime fields: the reduced representation IS the accumulator.
-impl<const LIMBS: usize> WideMulAcc for MontyField<LIMBS> {
-    type Wide = Self;
-
-    #[inline(always)]
-    fn wide_zero(zero: &Self) -> Self::Wide {
-        zero.clone()
-    }
-
-    #[inline(always)]
-    fn wide_of(x: &Self) -> Self::Wide {
-        x.clone()
-    }
-
-    #[inline(always)]
-    fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
-        a.clone() * b
-    }
-
-    #[inline(always)]
-    fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc += x;
-    }
-
-    #[inline(always)]
-    fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc -= x;
-    }
-
-    #[inline(always)]
-    fn from_wide(w: Self::Wide) -> Self {
-        w
-    }
-
-    #[inline(always)]
-    fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
-        if mask {
-            *acc += x;
-        }
     }
 }

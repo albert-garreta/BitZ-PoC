@@ -3,7 +3,7 @@
 //! Each live row proves `x · y = z` over the integers for `x, y < 2^128` and
 //! `z < 2^256`. Unlike the u64 relation, the assignment entries are the
 //! integers themselves — `[e0 | x | y | z]`, four blocks, so the assignment
-//! MLE needs no padding block — and the three matrices are plain Boolean
+//! MLE needs no padding block — and the three matrices are plain Bit
 //! selectors: the Step-2 projection reduces `x`, `y`, `z` modulo the sampled
 //! prime and the bitification carries the weights `2^0 … 2^255` of the
 //! committed bits (512 per gate: `x` in slots `0..128`, `y` in `128..256`,
@@ -13,7 +13,8 @@
 //! The witness stores every value as `u64` limbs (`x`, `y` as two limbs,
 //! `z` as four) purely as host representation; the relation is over `ℤ`.
 
-use crypto_primitives::FromWithConfig;
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
 use thiserror::Error;
 
 use crate::{
@@ -56,7 +57,7 @@ const MIN_CAPACITY: usize = 1 << 8;
 
 /// Integer relation backend used by the u128 multiplication prover.
 ///
-/// The matrices are Boolean selectors; the assignment holds 128- and
+/// The matrices are Bit selectors; the assignment holds 128- and
 /// 256-bit integers, so neither the witness nor the products have a native
 /// `u64` first round — the prover works on residues built from the limbs.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -340,7 +341,7 @@ impl U128MulWitness {
     }
 }
 
-/// Builds the three Boolean selector matrices for this relation.
+/// Builds the three Bit selector matrices for this relation.
 ///
 /// Each live row has one nonzero in each matrix:
 ///
@@ -355,7 +356,10 @@ pub fn u128_mul_constraint_matrices(
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn selector_matrix(layout: &U128MulLayout, block: usize) -> Result<SparseMatrix<bool>, SpartanMatrixError> {
+fn selector_matrix(
+    layout: &U128MulLayout,
+    block: usize,
+) -> Result<SparseMatrix<bool>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let offset = block * layout.capacity;
@@ -379,7 +383,7 @@ fn selector_matrix(layout: &U128MulLayout, block: usize) -> Result<SparseMatrix<
     )?)
 }
 
-/// Generates and prepares the Boolean selector matrices over a Spartan field.
+/// Generates and prepares the Bit selector matrices over a Spartan field.
 pub fn prepare_u128_mul_relation<F>(
     layout: U128MulLayout,
     field_config: &F::Config,
@@ -401,7 +405,7 @@ pub fn project_u128_mul_witness<F>(
     field_config: &F::Config,
 ) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), U128MulError>
 where
-    F: SpartanField + FromWithConfig<u64> + FromWithConfig<u128> + Send + Sync,
+    F: SpartanField + Send + Sync,
     F::Config: Sync,
 {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
@@ -415,13 +419,13 @@ where
     let two_pow_128 = {
         let mut value = F::from_with_cfg(1_u128 << 127, field_config);
         let two = F::from_with_cfg(2_u64, field_config);
-        value *= &two;
+        value = field_config.mul(&(value), &(&two));
         value
     };
     let reduce_z = |lo: u128, hi: u128| -> F {
         let mut value = F::from_with_cfg(hi, field_config);
-        value *= &two_pow_128;
-        value += &F::from_with_cfg(lo, field_config);
+        value = field_config.mul(&(value), &(&two_pow_128));
+        value = field_config.add(&(value), &(&F::from_with_cfg(lo, field_config)));
         value
     };
 
@@ -541,7 +545,10 @@ mod tests {
                 assert_eq!(bit(U128_MUL_X_SLOT_START + j, gate), ((x >> j) & 1) as u64);
                 assert_eq!(bit(U128_MUL_Y_SLOT_START + j, gate), ((y >> j) & 1) as u64);
                 assert_eq!(bit(U128_MUL_Z_SLOT_START + j, gate), ((lo >> j) & 1) as u64);
-                assert_eq!(bit(U128_MUL_Z_SLOT_START + 128 + j, gate), ((hi >> j) & 1) as u64);
+                assert_eq!(
+                    bit(U128_MUL_Z_SLOT_START + 128 + j, gate),
+                    ((hi >> j) & 1) as u64
+                );
             }
         }
         assert_eq!(bit(U128_MUL_X_SLOT_START, 3500), 0);
@@ -577,15 +584,22 @@ mod tests {
         let config = spartan_f2z_field_config();
         let (assignment, products) =
             project_u128_mul_witness::<SpartanF2zField>(&witness, &config).unwrap();
-        assert_eq!(assignment.evaluations.len(), witness.layout().assignment_len());
+        assert_eq!(
+            assignment.evaluations.len(),
+            witness.layout().assignment_len()
+        );
         let capacity = witness.layout().capacity();
         for index in 0..300 {
             let mut lhs = products.az.evaluations[index].clone();
-            lhs *= &products.bz.evaluations[index];
+            lhs = config.mul(&(lhs), &(&products.bz.evaluations[index]));
             assert_eq!(lhs, products.cz.evaluations[index]);
-            assert_eq!(assignment.evaluations[3 * capacity + index], products.cz.evaluations[index]);
+            assert_eq!(
+                assignment.evaluations[3 * capacity + index],
+                products.cz.evaluations[index]
+            );
         }
-        let prepared = prepare_u128_mul_relation::<SpartanF2zField>(*witness.layout(), &config).unwrap();
+        let prepared =
+            prepare_u128_mul_relation::<SpartanF2zField>(*witness.layout(), &config).unwrap();
         assert_eq!(prepared.matrices().row_count(), 300);
     }
 }

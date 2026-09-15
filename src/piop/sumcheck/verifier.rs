@@ -1,6 +1,7 @@
 //! Verifier
 
-use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
+use crate::poly::coefficient::PolynomialField;
+
 use crate::poly::univariate::nat_evaluation::NatEvaluatedPoly;
 use crate::transcript::traits::{ConstTranscribable, Transcript};
 use crate::utils::add;
@@ -12,7 +13,7 @@ use super::SumCheckError;
 pub const SQUEEZE_NATIVE_ELEMENTS_NUM: usize = 1;
 
 /// Sumcheck Verifier State.
-pub struct VerifierState<F: PrimeField> {
+pub struct VerifierState<F: PolynomialField> {
     /// The current round number.
     pub round: usize,
     /// The number of variables the sumcheck polynomial
@@ -33,7 +34,7 @@ pub struct VerifierState<F: PrimeField> {
     pub config: F::Config,
 }
 
-impl<F: PrimeField> VerifierState<F> {
+impl<F: PolynomialField> VerifierState<F> {
     /// Initialize the verifier state.
     pub fn new(nvars: usize, degree: usize, config: &F::Config) -> Self {
         Self {
@@ -58,7 +59,7 @@ pub struct Subclaim<F> {
     pub expected_evaluation: F,
 }
 
-impl<F: FromPrimitiveWithConfig> VerifierState<F> {
+impl<F: PolynomialField> VerifierState<F> {
     /// Run verifier at current round, given prover message.
     ///
     /// Samples a Fiat-Shamir challenge from the transcript and delegates to

@@ -2,28 +2,28 @@
 //!
 //! Mirrors [`super::parallel_f32`] / [`super::parallel_f64`]: position-major
 //! SoA layout, SIMD across NTT instances via [`ghash_mul_vec2_neon`], shared
-//! twiddle table for all parallel NTTs. SIMD width is 2 (one F128 pair per
+//! twiddle table for all parallel NTTs. SIMD width is 2 (one Gf128 pair per
 //! `ghash_mul_vec2_neon`), so `num_ntts` must be a multiple of 2.
 
-use crate::field::F128;
+use crate::field::Gf128;
 
 #[inline]
-fn next_s(s: F128, s_at_root: F128) -> F128 {
+fn next_s(s: Gf128, s_at_root: Gf128) -> Gf128 {
     s * s + s_at_root * s
 }
 
-pub fn compute_twiddles(k: usize, beta: F128) -> Vec<F128> {
+pub fn compute_twiddles(k: usize, beta: Gf128) -> Vec<Gf128> {
     if k == 0 {
         return Vec::new();
     }
     let n = 1usize << k;
-    let mut twiddles = vec![F128::ZERO; n - 1];
+    let mut twiddles = vec![Gf128::ZERO; n - 1];
 
     let mut len = 1usize << (k - 1);
-    let mut layer: Vec<F128> = (0..len)
-        .map(|i| beta + F128::new((2 * i) as u64, 0))
+    let mut layer: Vec<Gf128> = (0..len)
+        .map(|i| beta + Gf128::new((2 * i) as u64, 0))
         .collect();
-    let mut s_at_root = F128::ONE;
+    let mut s_at_root = Gf128::ONE;
 
     let mut write_at = len;
     for i in 0..len {
@@ -40,7 +40,7 @@ pub fn compute_twiddles(k: usize, beta: F128) -> Vec<F128> {
         len = new_len;
         s_at_root = next_s_root;
 
-        let s_inv = s_at_root.inv();
+        let s_inv = s_at_root.inverse_or_zero();
         for j in 0..len {
             twiddles[write_at - 1 + j] = s_inv * layer[j];
         }
@@ -51,7 +51,7 @@ pub fn compute_twiddles(k: usize, beta: F128) -> Vec<F128> {
 
 #[inline]
 #[allow(dead_code)] // active in tests and non-aarch64 builds
-fn butterfly_scalar(data: &mut [F128], lambda: F128, num_ntts: usize) {
+fn butterfly_scalar(data: &mut [Gf128], lambda: Gf128, num_ntts: usize) {
     let rows = data.len() / num_ntts;
     let half = rows >> 1;
     let half_offset = half * num_ntts;
@@ -68,8 +68,8 @@ fn butterfly_scalar(data: &mut [F128], lambda: F128, num_ntts: usize) {
 
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
 #[inline]
-fn butterfly_row_pair_neon(top_row: &mut [F128], bot_row: &mut [F128], lambda: F128) {
-    use crate::field::gf2_128::aarch64::ghash_mul_vec2_neon;
+fn butterfly_row_pair_neon(top_row: &mut [Gf128], bot_row: &mut [Gf128], lambda: Gf128) {
+    use crate::field::gf128_kernels::aarch64::ghash_mul_vec2_neon;
 
     debug_assert_eq!(top_row.len(), bot_row.len());
     let num_ntts = top_row.len();
@@ -84,19 +84,19 @@ fn butterfly_row_pair_neon(top_row: &mut [F128], bot_row: &mut [F128], lambda: F
 
             let prod = ghash_mul_vec2_neon([lambda, lambda], [b0, b1]);
 
-            let new_t0 = F128 {
+            let new_t0 = Gf128 {
                 lo: t0.lo ^ prod[0].lo,
                 hi: t0.hi ^ prod[0].hi,
             };
-            let new_t1 = F128 {
+            let new_t1 = Gf128 {
                 lo: t1.lo ^ prod[1].lo,
                 hi: t1.hi ^ prod[1].hi,
             };
-            let new_b0 = F128 {
+            let new_b0 = Gf128 {
                 lo: b0.lo ^ new_t0.lo,
                 hi: b0.hi ^ new_t0.hi,
             };
-            let new_b1 = F128 {
+            let new_b1 = Gf128 {
                 lo: b1.lo ^ new_t1.lo,
                 hi: b1.hi ^ new_t1.hi,
             };
@@ -113,7 +113,7 @@ fn butterfly_row_pair_neon(top_row: &mut [F128], bot_row: &mut [F128], lambda: F
 
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
 #[inline]
-fn butterfly_neon(data: &mut [F128], lambda: F128, num_ntts: usize) {
+fn butterfly_neon(data: &mut [Gf128], lambda: Gf128, num_ntts: usize) {
     let rows = data.len() / num_ntts;
     let half = rows >> 1;
     let half_offset = half * num_ntts;
@@ -127,7 +127,7 @@ fn butterfly_neon(data: &mut [F128], lambda: F128, num_ntts: usize) {
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-fn butterfly_par(data: &mut [F128], lambda: F128, num_ntts: usize) {
+fn butterfly_par(data: &mut [Gf128], lambda: Gf128, num_ntts: usize) {
     use rayon::prelude::*;
     let half_offset = ((data.len() / num_ntts) >> 1) * num_ntts;
     let (top, bot) = data.split_at_mut(half_offset);
@@ -137,7 +137,7 @@ fn butterfly_par(data: &mut [F128], lambda: F128, num_ntts: usize) {
 }
 
 #[inline]
-fn butterfly(data: &mut [F128], lambda: F128, num_ntts: usize) {
+fn butterfly(data: &mut [Gf128], lambda: Gf128, num_ntts: usize) {
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
     {
         butterfly_neon(data, lambda, num_ntts);
@@ -148,7 +148,7 @@ fn butterfly(data: &mut [F128], lambda: F128, num_ntts: usize) {
     }
 }
 
-fn fft_rec(data: &mut [F128], tw: &[F128], idx: usize, num_ntts: usize) {
+fn fft_rec(data: &mut [Gf128], tw: &[Gf128], idx: usize, num_ntts: usize) {
     let rows = data.len() / num_ntts;
     if rows == 1 {
         return;
@@ -164,7 +164,7 @@ fn fft_rec(data: &mut [F128], tw: &[F128], idx: usize, num_ntts: usize) {
 const PARALLEL_ROW_THRESHOLD: usize = 1024;
 
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-fn fft_rec_par(data: &mut [F128], tw: &[F128], idx: usize, num_ntts: usize) {
+fn fft_rec_par(data: &mut [Gf128], tw: &[Gf128], idx: usize, num_ntts: usize) {
     let rows = data.len() / num_ntts;
     if rows == 1 {
         return;
@@ -191,11 +191,11 @@ fn fft_rec_par(data: &mut [F128], tw: &[F128], idx: usize, num_ntts: usize) {
 pub struct ParallelNttF128 {
     k: usize,
     num_ntts: usize,
-    twiddles: Vec<F128>,
+    twiddles: Vec<Gf128>,
 }
 
 impl ParallelNttF128 {
-    pub fn new(k: usize, beta: F128, num_ntts: usize) -> Self {
+    pub fn new(k: usize, beta: Gf128, num_ntts: usize) -> Self {
         assert!(
             num_ntts.is_multiple_of(2) && num_ntts > 0,
             "num_ntts must be a positive multiple of 2 for SIMD lanes",
@@ -217,11 +217,11 @@ impl ParallelNttF128 {
     pub fn domain_size(&self) -> usize {
         1usize << self.k
     }
-    pub fn twiddles(&self) -> &[F128] {
+    pub fn twiddles(&self) -> &[Gf128] {
         &self.twiddles
     }
 
-    pub fn forward(&self, data: &mut [F128]) {
+    pub fn forward(&self, data: &mut [Gf128]) {
         assert_eq!(
             data.len(),
             self.domain_size() * self.num_ntts,
@@ -234,7 +234,7 @@ impl ParallelNttF128 {
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-    pub fn forward_parallel(&self, data: &mut [F128]) {
+    pub fn forward_parallel(&self, data: &mut [Gf128]) {
         assert_eq!(
             data.len(),
             self.domain_size() * self.num_ntts,
@@ -263,15 +263,15 @@ mod tests {
             z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
             z ^ (z >> 31)
         }
-        fn next_f128(&mut self) -> F128 {
-            F128 {
+        fn next_f128(&mut self) -> Gf128 {
+            Gf128 {
                 lo: self.next_u64(),
                 hi: self.next_u64(),
             }
         }
     }
 
-    fn rand_data(rng: &mut Rng, n: usize) -> Vec<F128> {
+    fn rand_data(rng: &mut Rng, n: usize) -> Vec<Gf128> {
         (0..n).map(|_| rng.next_f128()).collect()
     }
 
@@ -287,7 +287,7 @@ mod tests {
 
                 ntt.forward(&mut v_neon);
                 {
-                    fn scalar_rec(d: &mut [F128], tw: &[F128], idx: usize, n: usize) {
+                    fn scalar_rec(d: &mut [Gf128], tw: &[Gf128], idx: usize, n: usize) {
                         let rows = d.len() / n;
                         if rows == 1 {
                             return;
@@ -316,7 +316,7 @@ mod tests {
 
             let a = rand_data(&mut rng, n);
             let b = rand_data(&mut rng, n);
-            let ab: Vec<F128> = a.iter().zip(&b).map(|(x, y)| *x + *y).collect();
+            let ab: Vec<Gf128> = a.iter().zip(&b).map(|(x, y)| *x + *y).collect();
 
             let mut fa = a.clone();
             ntt.forward(&mut fa);
@@ -351,15 +351,15 @@ mod tests {
 
     #[test]
     fn ntt_of_zero_is_zero() {
-        let beta = F128 {
+        let beta = Gf128 {
             lo: 0xCAFE_BABE_DEAD_BEEF,
             hi: 0x0123_4567_89AB_CDEF,
         };
         for k in 1..=5 {
             let ntt = ParallelNttF128::new(k, beta, 2);
-            let mut v = vec![F128::ZERO; (1 << k) * 2];
+            let mut v = vec![Gf128::ZERO; (1 << k) * 2];
             ntt.forward(&mut v);
-            assert!(v.iter().all(|&x| x == F128::ZERO));
+            assert!(v.iter().all(|&x| x == Gf128::ZERO));
         }
     }
 }

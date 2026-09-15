@@ -26,7 +26,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::pcs::ligerito::{eval_sk_at_vks, induce_sumcheck_poly};
 
 struct Rng(u64);
@@ -41,15 +41,15 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn next_f128(&mut self) -> F128 {
-        F128 {
+    fn next_f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
     }
 }
 
-fn write_f128(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn write_f128(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -71,8 +71,8 @@ fn main() -> std::io::Result<()> {
     let n = 1usize << log_msg_cols;
 
     let mut rng = Rng::new(0xC0FFEE);
-    let v_challenges: Vec<F128> = (0..v_len).map(|_| rng.next_f128()).collect();
-    let alpha: Vec<F128> = (0..alpha_len).map(|_| rng.next_f128()).collect();
+    let v_challenges: Vec<Gf128> = (0..v_len).map(|_| rng.next_f128()).collect();
+    let alpha: Vec<Gf128> = (0..alpha_len).map(|_| rng.next_f128()).collect();
     // sks_vks from the REAL helper (length log_n + 1).
     let sks_vks = eval_sk_at_vks(log_msg_cols);
 
@@ -87,7 +87,7 @@ fn main() -> std::io::Result<()> {
             }
         }
     }
-    let opened_rows: Vec<Vec<F128>> = (0..n_queries)
+    let opened_rows: Vec<Vec<Gf128>> = (0..n_queries)
         .map(|_| (0..num_interleaved).map(|_| rng.next_f128()).collect())
         .collect();
 

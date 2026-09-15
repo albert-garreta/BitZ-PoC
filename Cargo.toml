@@ -6,17 +6,13 @@ description = "F2Z: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^
 repository = "https://github.com/NethermindEth/f2z"
 
 [dependencies]
+field = { path = "vendor/field" }
 clap = { version = "4", features = ["derive", "env", "string"], optional = true }
 anyhow = "1"
-crypto-primitives = { path = "vendor/crypto-primitives", features = ["std", "crypto_bigint", "rand"] }
-crypto-bigint = "=0.7.5"
-crypto-primes = "=0.7.2"
 derive_more = { version = "2.1.1", features = ["full"] }
 blake3 = { version = "1.8", features = ["rayon"] }
 itertools = "0.14"
 num-traits = "0.2"
-num-bigint = "0.4"
-num-integer = "0.1"
 thiserror = "2.0"
 rayon = { version = "1.10", optional = true }
 rand = "0.10"
@@ -92,6 +88,9 @@ csv = { version = "1.4", optional = true }
 libc = "0.2" # getrusage: peak resident set of CLI sweep children
 
 [dev-dependencies]
+# Independent correctness oracles and excluded benchmark adapters only.
+num-bigint = "0.4"
+num-integer = "0.1"
 clap = { version = "4", features = ["derive", "env", "string"] }
 csv = "1.4"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
@@ -164,13 +163,6 @@ required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "b
 name = "u32_pcs_compare"
 harness = false
 required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
-
-[[bench]]
-name = "u32_mul_inner_policy"
-harness = false
-required-features = ["span-metrics", "bench-internals"]
-# Controlled PIOP-only sweep with a fixed delayed-Barrett outer sumcheck.
-# It varies native witness folding and field coefficient accumulation only.
 
 [[bench]]
 name = "eq_tables"

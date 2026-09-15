@@ -4,13 +4,13 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use circuit::integer_storage::IntegerTable;
 use circuit::{
     constraints::ConstraintGenerator,
     matrix_wengert::{WengertGenerator, WengertTape},
     p256, sha256,
 };
-use num_bigint::{BigInt, BigUint};
-use num_traits::Zero;
+use field::{CtOrd, IntegerOps, Uint, WideMul, ZRef};
 
 use super::{Result, error};
 use crate::{
@@ -92,21 +92,26 @@ impl CompactRows {
 /// Interns matrix coefficients into the shared table, first seen first.
 #[derive(Default)]
 struct Interner {
-    table: Vec<BigInt>,
-    index: HashMap<BigInt, u32>,
+    table: IntegerTable,
+    index: HashMap<Vec<u64>, u32>,
 }
 
 impl Interner {
-    fn intern(&mut self, value: &BigInt) -> u32 {
-        if let Some(&k) = self.index.get(value) {
+    fn intern(
+        &mut self,
+        matrix: &circuit::constraints::SparseIntegerMatrix,
+        coefficient: circuit::constraints::CoefficientIndex,
+    ) -> u32 {
+        let words = matrix.coefficient_words(coefficient);
+        if let Some(&k) = self.index.get(words) {
             return k;
         }
         let k = u32::try_from(self.table.len()).expect("coefficient table fits u32");
-        self.table.push(value.clone());
-        self.index.insert(value.clone(), k);
+        matrix.copy_coefficient_to(coefficient, &mut self.table);
+        self.index.insert(words.to_vec(), k);
         k
     }
-    fn rows(&mut self, matrix: &circuit::constraints::SparseMatrix<BigInt>) -> CompactRows {
+    fn rows(&mut self, matrix: &circuit::constraints::SparseIntegerMatrix) -> CompactRows {
         let mut out = CompactRows {
             row_ptr: Vec::with_capacity(matrix.row_count() + 1),
             cols: Vec::new(),
@@ -117,7 +122,7 @@ impl Interner {
             for (column, coefficient) in row.entries() {
                 out.cols
                     .push(u32::try_from(*column).expect("matrix column fits u32"));
-                out.coefs.push(self.intern(coefficient));
+                out.coefs.push(self.intern(matrix, *coefficient));
             }
             out.row_ptr
                 .push(u32::try_from(out.cols.len()).expect("matrix entries fit u32"));
@@ -193,7 +198,7 @@ pub(crate) struct LocalRelation {
     pub b: CompactRows,
     pub c: CompactRows,
     /// The distinct integer coefficients of `sha_c`, `a`, `b` and `c`.
-    pub coefficients: Vec<BigInt>,
+    pub coefficients: IntegerTable,
     /// `a`, `b`, `c` column by column over the P-256 assignment tail.
     pub tail: TailColumns,
     /// The P-256 circuit's Z-side linear arithmetic as a reverse-mode tape:
@@ -300,28 +305,64 @@ fn build_local() -> Result<LocalRelation> {
     p256::verify_digest_circuit(&mut tape_generator, &tape_inputs);
     let tape = tape_generator.finish();
     if tape.row_count() != a.rows() || tape.column_count() != tail.columns() {
-        return Err(error("P-256 tape shape disagrees with the constraint matrices"));
+        return Err(error(
+            "P-256 tape shape disagrees with the constraint matrices",
+        ));
     }
     let coefficients = interner.table;
     let (linear, nonlinear): (Vec<_>, Vec<_>) =
         (0..a.rows()).partition(|&i| a.is_empty_row(i) || b.is_empty_row(i));
-    let magnitudes: Vec<BigUint> = coefficients.iter().map(|c| c.magnitude().clone()).collect();
-    let norm = |rows: &CompactRows, r: usize| -> BigUint {
+    // P-256 declares at most nine signed limbs. One extra limb covers a
+    // row with fewer than 2^64 terms; the product of two row norms plus C
+    // fits 21 limbs. These public bounds never depend on witness magnitudes.
+    if coefficients.max_limbs() > 9 {
+        return Err(error("P-256 coefficient declaration exceeds nine limbs"));
+    }
+    let magnitudes: Vec<Uint<10>> = coefficients
+        .iter()
+        .map(|words| {
+            ZRef::from_twos_complement_words(words)
+                .checked_resize_ct::<9>()
+                .value()
+                .unsigned_abs()
+                .zero_extend()
+        })
+        .collect();
+    let norm = |rows: &CompactRows, r: usize| -> Uint<10> {
         rows.row(r)
-            .fold(BigUint::zero(), |sum, (_, k)| sum + &magnitudes[k])
+            .fold(Uint::ZERO, |sum, (_, k)| sum.wrapping_add(&magnitudes[k]))
     };
-    let mut bound = BigUint::from(1u8);
+    let mut bound = Uint::<21>::ONE;
     for r in 0..sha_c.rows() {
-        bound = bound.max(norm(&sha_c, r));
+        let candidate = norm(&sha_c, r).zero_extend::<21>();
+        if bound.ct_lt(&candidate).declassify() {
+            bound = candidate;
+        }
     }
     for i in 0..a.rows() {
-        bound = bound.max(norm(&a, i) * norm(&b, i) + norm(&c, i));
+        let product = IntegerOps.mul_wide(&norm(&a, i), &norm(&b, i));
+        let candidate = product
+            .checked_resize_ct::<21>()
+            .value()
+            .wrapping_add(&norm(&c, i).zero_extend());
+        if bound.ct_lt(&candidate).declassify() {
+            bound = candidate;
+        }
     }
-    let defect_bits = u32::try_from(bound.bits()).map_err(error)?;
-    // The digest streams the same bytes as the original entry-wise encoding.
-    let signed_bytes: Vec<Vec<u8>> = coefficients.iter().map(BigInt::to_signed_bytes_le).collect();
+    let defect_bits = bound
+        .as_words()
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, word)| **word != 0)
+        .map_or(0, |(i, word)| (64 * i) as u32 + 64 - word.leading_zeros());
+    // The digest binds each declared signed width and every encoded limb.
+    let signed_bytes: Vec<Vec<u8>> = coefficients
+        .iter()
+        .map(|words| words.iter().flat_map(|word| word.to_le_bytes()).collect())
+        .collect();
     let mut hash = blake3::Hasher::new();
-    hash.update(b"f2z/sha256-ecdsa/local-relation/v1");
+    hash.update(b"f2z/sha256-ecdsa/local-relation/v2");
     for map in [&sha_local, &sha_prev, &sha_first, &p_map] {
         hash.update(&map.digest());
     }
@@ -493,7 +534,9 @@ pub struct PreparedSha256Ecdsa {
 }
 
 impl PreparedSha256Ecdsa {
-    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito { &self.ligerito }
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        &self.ligerito
+    }
 
     pub fn with_ligerito(
         mut self,
@@ -676,6 +719,7 @@ pub fn prepare_sha256_ecdsa(
         h_layout,
         f_layout,
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
-            .resolve(f_bits - 7, lambda as usize).map_err(error)?,
+            .resolve(f_bits - 7, lambda as usize)
+            .map_err(error)?,
     })
 }

@@ -13,6 +13,8 @@
 //! shared protocol of [`super::protocol`] and keeps the PCS-only
 //! terminal-opening benchmark path.
 
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
 use std::borrow::Cow;
 
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
@@ -25,18 +27,17 @@ use crate::{
 };
 
 use super::{
-    piop::SpartanReductionStrategy,
-    profile::{IopInstanceFacts, IopSecurityParams},
-    protocol::{
-        self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation, Proof,
-        ProtocolError, ProveOptions, RelationSpec, SlotRange, MatrixSource, FieldConfig, checked_pow2, packed_variables,
-    },
     baby_bear_mul::{
         BABY_BEAR_MODULUS, BABY_BEAR_MUL_A_SLOT_START, BABY_BEAR_MUL_B_SLOT_START,
         BABY_BEAR_MUL_BIT_SLOTS, BABY_BEAR_MUL_C_SLOT_START, BABY_BEAR_MUL_K_SLOT_START,
         BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS, BABY_BEAR_MUL_VALUE_BITS, BabyBearMulCoefficient,
         BabyBearMulError, BabyBearMulLayout, BabyBearMulWitness, baby_bear_mul_constraint_matrices,
-        project_baby_bear_mul_native_witness,
+    },
+    profile::{IopInstanceFacts, IopSecurityParams},
+    protocol::{
+        self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+        PreparedRelation, Proof, ProtocolError, RelationSpec, SlotRange, checked_pow2,
+        packed_variables,
     },
 };
 
@@ -308,47 +309,32 @@ impl RelationSpec for BabyBearMulLayout {
         Ok(())
     }
 
-    /// Under delayed Barrett the witness's operand blocks and logical
-    /// assignment are lent as they are and only the exact `c + p·k` products
-    /// are materialized; the other strategies take owned native tables.
+    /// Borrows the operand blocks and logical assignment; only the exact
+    /// `c + p·k` products are materialized.
     fn piop_witness<'w>(
         &self,
         witness: &'w BabyBearMulWitness,
         _config: &FieldConfig,
-        options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        match options.strategy {
-            SpartanReductionStrategy::DelayedBarrett => {
-                let capacity = self.capacity();
-                let multiplications = self.multiplications();
-                let product_len = multiplications.next_power_of_two();
-                let assignment = witness.w();
-                let cz: Vec<u64> = (0..product_len)
-                    .map(|index| {
-                        if index < multiplications {
-                            witness.c_values()[index] + BABY_BEAR_MODULUS * witness.k_values()[index]
-                        } else {
-                            0
-                        }
-                    })
-                    .collect();
-                Ok(PiopWitness::Native {
-                    az: Cow::Borrowed(&assignment[capacity..capacity + product_len]),
-                    bz: Cow::Borrowed(&assignment[2 * capacity..2 * capacity + product_len]),
-                    cz: Cow::Owned(cz),
-                    assignment,
-                })
-            }
-            strategy => {
-                let (assignment, products) =
-                    project_baby_bear_mul_native_witness(witness).into_parts();
-                Ok(PiopWitness::NativeOwned {
-                    products,
-                    assignment,
-                    strategy,
-                })
-            }
-        }
+        let capacity = self.capacity();
+        let multiplications = self.multiplications();
+        let product_len = multiplications.next_power_of_two();
+        let assignment = witness.w();
+        let cz: Vec<u64> = (0..product_len)
+            .map(|index| {
+                if index < multiplications {
+                    witness.c_values()[index] + BABY_BEAR_MODULUS * witness.k_values()[index]
+                } else {
+                    0
+                }
+            })
+            .collect();
+        Ok(PiopWitness::Native {
+            az: Cow::Borrowed(&assignment[capacity..capacity + product_len]),
+            bz: Cow::Borrowed(&assignment[2 * capacity..2 * capacity + product_len]),
+            cz: Cow::Owned(cz),
+            assignment,
+        })
     }
 }
 
@@ -368,15 +354,14 @@ pub fn commit_baby_bear_mul_paper_witness(
 }
 
 /// Proves the BabyBear batch under the prepared relation's security
-/// profile. The reduction strategy is transcript-neutral.
+/// profile using delayed Barrett reduction.
 pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedBabyBearMulRelation,
     witness: &BabyBearMulWitness,
     hint: &FlockCommitHint,
-    strategy: SpartanReductionStrategy,
 ) -> Result<BabyBearMulPaperProof, BabyBearSpartanF2zError> {
-    protocol::prove_with_options(transcript, prepared, witness, hint, ProveOptions { strategy })
+    protocol::prove(transcript, prepared, witness, hint)
 }
 
 /// Verifies a BabyBear multiplication proof, re-deriving the prime from the
@@ -405,10 +390,9 @@ pub fn commit_baby_bear_mul_witness_with_ligerito(
     rows: Vec<Vec<u64>>,
     selection: LigeritoSelection,
 ) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
-    let prepared =
-        PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<super::profile::Lambda100>(
-            *layout, selection,
-        )?;
+    let prepared = PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<
+        super::profile::Lambda100,
+    >(*layout, selection)?;
     protocol::commit(&prepared, rows)
 }
 
@@ -458,10 +442,9 @@ pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
     {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
-    let prepared =
-        PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<super::profile::Lambda100>(
-            *layout, selection,
-        )?;
+    let prepared = PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<
+        super::profile::Lambda100,
+    >(*layout, selection)?;
     protocol::terminal::prepare(
         &prepared,
         commitment,
@@ -521,12 +504,10 @@ pub fn baby_bear_terminal_claim_f2z_proof_bytes(
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::FromWithConfig;
 
     use super::*;
     use crate::{
-        ext_proj::ProjArith,
-        pcs::{FQ_BITS, Fq, ModQWeightChunks, eq_le_table_fq, fq_sub},
+        pcs::{FQ_BITS, ModQWeightChunks, Q100Element, eq_le_table_fq, fq_sub},
         piop::spartan::{
             baby_bear_mul::sample_baby_bear_operand_with,
             f2z::{SpartanF2zField, spartan_f2z_field_config},
@@ -569,79 +550,83 @@ mod tests {
         assert_eq!(prepared.security().ligerito_target_bits, 100);
         assert_eq!(prepared.security().initial_grinding_bits, 0);
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_baby_bear_mul_paper(
-            &mut prover_transcript,
-            &prepared,
-            &witness,
-            &hint,
-            SpartanReductionStrategy::DelayedBarrett,
-        )
-        .unwrap();
+        let proof =
+            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert!(proof.piop_nonces().is_empty());
         assert!(proof.f2z().grinding_nonces.is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_baby_bear_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-            .unwrap();
+        verify_baby_bear_mul_paper(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
 
-        // Determinism, and every reduction strategy is byte-identical.
-        for strategy in [
-            SpartanReductionStrategy::DelayedBarrett,
-            SpartanReductionStrategy::Immediate,
-            SpartanReductionStrategy::DelayedCryptoBigint,
-        ] {
+        // Replaying the same statement is deterministic.
+        {
             let mut second_transcript = Blake3Transcript::new();
-            let second = prove_baby_bear_mul_paper(
-                &mut second_transcript,
-                &prepared,
-                &witness,
-                &hint,
-                strategy,
-            )
-            .unwrap();
+            let second =
+                prove_baby_bear_mul_paper(&mut second_transcript, &prepared, &witness, &hint)
+                    .unwrap();
             assert_eq!(second.f2z().to_bytes(), proof.f2z().to_bytes());
             assert_eq!(second.spartan(), proof.spartan());
-            assert_eq!(second_transcript.state_digest(), prover_transcript.state_digest());
+            assert_eq!(
+                second_transcript.state_digest(),
+                prover_transcript.state_digest()
+            );
         }
 
         // λ = 128: initial + per-draw PIOP + forest boundaries all armed.
-        let prepared128 = PreparedBabyBearMulRelation::new_with_profile::<Lambda128>(layout).unwrap();
+        let prepared128 =
+            PreparedBabyBearMulRelation::new_with_profile::<Lambda128>(layout).unwrap();
         assert!(prepared128.security().initial_grinding_bits > 0);
         assert!(prepared128.security().piop_round_grinding_bits > 0);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
-        let hint128 = commit_baby_bear_mul_paper_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
+        let hint128 =
+            commit_baby_bear_mul_paper_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
-        let proof128 = prove_baby_bear_mul_paper(
-            &mut prover_transcript,
-            &prepared128,
-            &witness,
-            &hint128,
-            SpartanReductionStrategy::DelayedBarrett,
-        )
-        .unwrap();
+        let proof128 =
+            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared128, &witness, &hint128)
+                .unwrap();
         assert_eq!(proof128.piop_nonces().len(), 2 * 15 + 1 + 15 + 3);
         assert!(!proof128.f2z().grinding_nonces.is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_baby_bear_mul_paper(&mut verifier_transcript, &prepared128, &hint128.commitment, &proof128)
-            .unwrap();
+        verify_baby_bear_mul_paper(
+            &mut verifier_transcript,
+            &prepared128,
+            &hint128.commitment,
+            &proof128,
+        )
+        .unwrap();
         let mut tampered = proof128.clone();
         tampered.prefix_mut().piop_nonces[3] ^= 1;
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
-            verify_baby_bear_mul_paper(&mut verifier_transcript, &prepared128, &hint128.commitment, &tampered)
-                .is_err()
+            verify_baby_bear_mul_paper(
+                &mut verifier_transcript,
+                &prepared128,
+                &hint128.commitment,
+                &tampered
+            )
+            .is_err()
         );
     }
 
-    fn terminal_claim(point: &[Fq], scale: Fq, value: Fq) -> ScaledMleEvaluationClaim<SpartanF2zField> {
+    fn terminal_claim(
+        point: &[Q100Element],
+        scale: Q100Element,
+        value: Q100Element,
+    ) -> ScaledMleEvaluationClaim<SpartanF2zField> {
         let config = spartan_f2z_field_config();
         let point = point
             .iter()
-            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate.0, &config))
+            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate.canonical_u128(), &config))
             .collect::<Vec<_>>();
         ScaledMleEvaluationClaim::new(
             point.into_boxed_slice(),
-            SpartanF2zField::from_with_cfg(scale.0, &config),
-            SpartanF2zField::from_with_cfg(value.0, &config),
+            SpartanF2zField::from_with_cfg(scale.canonical_u128(), &config),
+            SpartanF2zField::from_with_cfg(value.canonical_u128(), &config),
         )
     }
 
@@ -657,36 +642,49 @@ mod tests {
 
     #[test]
     fn bitification_is_the_adjoint_of_five_block_integer_reconstruction() {
-        let witness =
-            BabyBearMulWitness::from_inputs(&[(0, 2_013_265_920), (1, 7), (2_013_265_920, 2_013_265_920)])
-                .unwrap();
+        let witness = BabyBearMulWitness::from_inputs(&[
+            (0, 2_013_265_920),
+            (1, 7),
+            (2_013_265_920, 2_013_265_920),
+        ])
+        .unwrap();
         let layout = witness.layout();
         let p = layout.f2z_params();
-        let arith = ProjArith::new(FQ_MOD);
+        let arith = field::FpCtx::from_prime_u128(FQ_MOD);
 
-        // Non-Boolean selector coordinates exercise all eight assignment
+        // Non-Bit selector coordinates exercise all eight assignment
         // blocks (the padding blocks are identically zero).
         let gate_point = (0..layout.gate_vars())
-            .map(|coordinate| Fq((coordinate + 2) as u128))
+            .map(|coordinate| Q100Element::from_u128((coordinate + 2) as u128))
             .collect::<Vec<_>>();
-        let selector = [Fq(7), Fq(11), Fq(5)];
-        let scale = Fq(13);
-        let one = Fq(1);
+        let selector = [
+            Q100Element::from_u128(7),
+            Q100Element::from_u128(11),
+            Q100Element::from_u128(5),
+        ];
+        let scale = Q100Element::from_u128(13);
+        let one = Q100Element::from_u128(1);
         let factor = |code: usize| {
             selector.iter().enumerate().fold(one, |acc, (bit, &s)| {
-                acc * if (code >> bit) & 1 == 1 { s } else { Fq(fq_sub(one.0, s.0)) }
+                acc * if (code >> bit) & 1 == 1 {
+                    s
+                } else {
+                    Q100Element::from_u128(fq_sub(one.canonical_u128(), s.canonical_u128()))
+                }
             })
         };
         let eq_gate = eq_le_table_fq(&gate_point);
 
         let assignment = witness.w();
-        let mut assignment_evaluation = Fq(0);
+        let mut assignment_evaluation = Q100Element::from_u128(0);
         for block in 0..5 {
             for gate in 0..layout.capacity() {
                 assignment_evaluation = assignment_evaluation
                     + factor(block)
                         * eq_gate[gate]
-                        * Fq::from(u128::from(assignment[block * layout.capacity() + gate]));
+                        * Q100Element::from(u128::from(
+                            assignment[block * layout.capacity() + gate],
+                        ));
             }
         }
         let value = scale * assignment_evaluation;
@@ -695,23 +693,40 @@ mod tests {
         point.extend(selector);
         let terminal = terminal_claim(&point, scale, value);
         let table = layout.block_table();
-        let opening = bitify::bitify(&terminal, p, layout.gate_vars(), &table, protocol::ScaleSide::Rows, &arith).unwrap();
+        let opening = bitify::bitify(
+            &terminal,
+            p,
+            layout.gate_vars(),
+            &table,
+            protocol::ScaleSide::Rows,
+            &arith,
+        )
+        .unwrap();
         let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &arith).unwrap();
         let col_weights = bitify::column_weights(&opening, &arith).unwrap();
 
         let rows = witness.f2z_bit_rows();
-        let mut read_off = Fq(0);
+        let mut read_off = Q100Element::from_u128(0);
         for b in 0..p.rows() {
             for c in 0..p.cols() {
                 let bit = (rows[c][b / u64::BITS as usize] >> (b % u64::BITS as usize)) & 1;
-                read_off = read_off + Fq::from(u128::from(bit)) * Fq(row_weight(&chunks, b)) * col_weights[c];
+                read_off = read_off
+                    + Q100Element::from(u128::from(bit))
+                        * Q100Element::from_u128(row_weight(&chunks, b))
+                        * Q100Element::from_u128(col_weights[c]);
             }
         }
-        assert_eq!(read_off, opening.claimed);
+        assert_eq!(read_off.canonical_u128(), opening.claimed);
         // The four unused slots carry zero weight.
         for slot in BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS..BABY_BEAR_MUL_BIT_SLOTS {
             for gate_high in 0..(p.rows() / BABY_BEAR_MUL_BIT_SLOTS) {
-                assert_eq!(row_weight(&chunks, slot * (p.rows() / BABY_BEAR_MUL_BIT_SLOTS) + gate_high), 0);
+                assert_eq!(
+                    row_weight(
+                        &chunks,
+                        slot * (p.rows() / BABY_BEAR_MUL_BIT_SLOTS) + gate_high
+                    ),
+                    0
+                );
             }
         }
     }

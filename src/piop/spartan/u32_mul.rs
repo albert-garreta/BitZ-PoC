@@ -7,6 +7,10 @@
 //! modular relation `x * y = z + 2^32 * w`, with all four limbs range constrained
 //! by the committed bit representation.
 
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
+#[cfg(test)]
+use field::{Fp, Uint};
 use thiserror::Error;
 
 use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
@@ -98,7 +102,7 @@ impl U32MulF2zWidth {
 
 /// Integer relation backend used by the u32 multiplication Spartan prover.
 ///
-/// Boolean selector matrices act on an exact u64 assignment and produce exact
+/// Bit selector matrices act on an exact u64 assignment and produce exact
 /// u64 matrix products. Field conversion is deferred to the first sumcheck
 /// fold boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -230,7 +234,7 @@ impl U32MulLayout {
     ///
     /// `b` is the folded-row index, `c` is the clear-column index, and `j` is
     /// the little-endian bit within the `W`-bit logical cell. Gate coordinates
-    /// use little-endian Boolean-index order on both axes.
+    /// use little-endian Bit-index order on both axes.
     pub const fn f2z_bit_position(
         &self,
         bit_slot: usize,
@@ -285,7 +289,7 @@ pub struct U32MulWitness {
 ///
 /// The assignment and the three row products preserve the exact integer
 /// values of the u32 multiplication relation. They are padded to the same
-/// Boolean domains as their field-valued counterparts, but no modular
+/// Bit domains as their field-valued counterparts, but no modular
 /// projection has occurred yet.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct U32MulNativeMles {
@@ -692,14 +696,13 @@ pub fn project_u32_mul_native_witness(witness: &U32MulWitness) -> U32MulNativeMl
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 
     use super::*;
 
     const TEST_MODULUS: u128 = (1_u128 << 100) - 15;
 
-    fn config() -> <F128 as PrimeField>::Config {
-        F128::make_cfg(&Uint::from(TEST_MODULUS)).expect("odd test modulus")
+    fn config() -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
+        Fp::<2>::make_cfg(&Uint::from(TEST_MODULUS)).expect("odd test modulus")
     }
 
     #[test]
@@ -1011,7 +1014,7 @@ mod tests {
     fn prepared_u32_relation_uses_boolean_selectors() {
         let config = config();
         let layout = U32MulLayout::new(3).unwrap();
-        let relation = prepare_u32_mul_relation::<F128>(layout, &config).unwrap();
+        let relation = prepare_u32_mul_relation::<Fp<2>>(layout, &config).unwrap();
         let capacity = layout.capacity();
 
         for (column, row) in [

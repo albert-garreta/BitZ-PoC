@@ -2,7 +2,7 @@
 //! `zerocheck::prove_packed`) so the CUDA port (`cuda-ghash/test_zerocheck_tail.cu`)
 //! can be checked bit-for-bit.
 //!
-//! The tail operates on `a_mlv`, `b_mlv` (F128, length 2^L). Each round, over the
+//! The tail operates on `a_mlv`, `b_mlv` (Gf128, length 2^L). Each round, over the
 //! current arrays with ADJACENT pairing (a[2x], a[2x+1]):
 //!   eq      = build_eq(r[1..])                       (length = half)
 //!   g_one   = Σ_x eq[x]·a[2x+1]·b[2x+1]
@@ -25,7 +25,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::zerocheck::multilinear::{fold_in_place_pair, round_pair_naive};
 
 struct Rng(u64);
@@ -40,15 +40,15 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn f128(&mut self) -> F128 {
-        F128 {
+    fn f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
     }
 }
 
-fn wf(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn wf(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -64,8 +64,8 @@ fn main() -> std::io::Result<()> {
     let n = 1usize << l;
 
     let mut rng = Rng::new(0x2C7A11 ^ (l as u64));
-    let mut a: Vec<F128> = (0..n).map(|_| rng.f128()).collect();
-    let mut b: Vec<F128> = (0..n).map(|_| rng.f128()).collect();
+    let mut a: Vec<Gf128> = (0..n).map(|_| rng.f128()).collect();
+    let mut b: Vec<Gf128> = (0..n).map(|_| rng.f128()).collect();
 
     let mut w = BufWriter::new(File::create(&path)?);
     w.write_all(&0x5A54_414Cu32.to_le_bytes())?;
@@ -80,7 +80,7 @@ fn main() -> std::io::Result<()> {
     for _round in 0..l {
         let log_cur = a.len().trailing_zeros() as usize;
         // r-vector: r[0] = ONE (zerocheck Convention A), r[1..] random.
-        let mut r = vec![F128::ONE; log_cur];
+        let mut r = vec![Gf128::ONE; log_cur];
         for v in r.iter_mut().skip(1) {
             *v = rng.f128();
         }

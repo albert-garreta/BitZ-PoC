@@ -1,4 +1,4 @@
-use super::field::{F128, F128Ext};
+use super::field::{Gf128, F128Ext};
 
 #[derive(Clone)]
 pub(crate) struct ArtinSchreierSolver {
@@ -14,7 +14,7 @@ impl ArtinSchreierSolver {
     pub(crate) fn new() -> Self {
         let mut rows = [0u128; 128];
         for column in 0..128 {
-            let basis = F128::from_bits(1u128 << column);
+            let basis = Gf128::from_bits(1u128 << column);
             let image = (basis.square() + basis).to_bits();
             for (row, row_mask) in rows.iter_mut().enumerate() {
                 if ((image >> row) & 1) != 0 {
@@ -70,7 +70,7 @@ impl ArtinSchreierSolver {
         }
     }
 
-    pub(crate) fn solve(&self, rhs: F128) -> Option<F128> {
+    pub(crate) fn solve(&self, rhs: Gf128) -> Option<Gf128> {
         let rhs_bits = rhs.to_bits();
         if parity_u128(rhs_bits & self.trace_mask) {
             return None;
@@ -81,7 +81,7 @@ impl ArtinSchreierSolver {
             let byte = ((rhs_bits >> (8 * byte_index)) & 0xff) as usize;
             out ^= self.solution_tables[byte_index][byte];
         }
-        Some(F128::from_bits(out))
+        Some(Gf128::from_bits(out))
     }
 }
 

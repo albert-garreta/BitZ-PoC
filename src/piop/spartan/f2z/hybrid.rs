@@ -8,25 +8,27 @@
 //! the bitified claim — the integer folds bound in the clear plus the GKR
 //! forest — is the hybrid's own, since its opener runs at the composition's
 //! geometry.
-use super::*;
 use super::super::{
     absorb_spartan_message,
     protocol::{
-        Modular, SpartanPrefixProof, SpartanProof, bitify, check_boundary, f2z_generator,
-        prove_piop, sample_mod_q, validate_bit_rows, verify_piop,
+        SpartanPrefixProof, SpartanProof, bitify, check_boundary, f2z_generator, prove_piop,
+        sample_mod_q, validate_bit_rows, verify_piop,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
+use super::*;
 use crate::hybrid::{BinaryClaim, Error};
 use crate::ligerito::{fold_values_bits, pack_columns_from_rows, row_bit_vars};
-use crate::ligerito_flock::gf_to_f128;
 use crate::merged_forest::{MergedForestProof, prove_merged_forest_lazy, verify_merged_forest};
-use crate::pcs::{FixedBasePow, chunk_pow2_table, row_bit_weights};
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::pcs::{chunk_pow2_table, row_bit_weights};
+use crate::piop::spartan::SpartanField as _;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::Blake3Transcript;
+use field::{Fp, RingOps, Uint, Uint as FieldUint};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PrefixProof {
+    pub field: field::FpCtx<2>,
     pub initial_nonce: u64,
     pub terminal_nonce: u64,
     pub piop_nonces: Vec<u64>,
@@ -51,7 +53,13 @@ pub(crate) fn decoding_config(
     prepared: &U32MulPrefixRelation,
     statement: &[u8; 32],
     nonce: u64,
-) -> Result<(u128, <SpartanF2zField as PrimeField>::Config), Error> {
+) -> Result<
+    (
+        u128,
+        <SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+    ),
+    Error,
+> {
     let domains = prepared.layout().domains();
     absorb_spartan_message(transcript, domains.statement_tag, statement);
     check_boundary(
@@ -66,7 +74,7 @@ pub(crate) fn decoding_config(
         prepared.security().projection_min,
         prepared.security().projection_max,
     )?;
-    Ok((prime.q, prime.config))
+    Ok((prime.modulus_u128(), prime))
 }
 
 fn bind_sums(t: &mut Blake3Transcript, digest: &[u8; 32], sums: &[u128]) {
@@ -82,10 +90,9 @@ fn endpoint(p: &crate::pcs::IntegerMatrixLayout, weights: &[u128], z: &[Gf], e: 
     BinaryClaim {
         low: row_bit_weights(p, weights, f2z_generator(), &z[..tw])
             .into_iter()
-            .map(gf_to_f128)
             .collect(),
-        high_point: z[tw..].iter().copied().map(gf_to_f128).collect(),
-        value: gf_to_f128(e + Gf::one()),
+        high_point: z[tw..].iter().copied().collect(),
+        value: (e + Gf::one()),
     }
 }
 
@@ -104,12 +111,17 @@ pub(crate) fn prove(
     let p = layout.f2z_params();
     validate_bit_rows(&p, rows)?;
     absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
-    let proved = prove_piop(transcript, prepared, witness, statement, ProveOptions::default())?;
+    let proved = prove_piop(transcript, prepared, witness, statement)?;
     drop(piop_scope);
 
     let _opening_scope = tracing::info_span!("hybrid:mul_opening").entered();
-    let arith = &proved.prime.arith;
-    let chunks = bitify::prepare_chunks(&proved.opening, &proved.table, proved.prime.q_bits, arith)?;
+    let arith = &proved.prime;
+    let chunks = bitify::prepare_chunks(
+        &proved.opening,
+        &proved.table,
+        proved.prime.modulus_bits(),
+        arith,
+    )?;
     let weights = chunks.chunks();
     if weights.len() != 1 {
         return Err(Error::Invalid("multiple F2Z chunks"));
@@ -142,6 +154,7 @@ pub(crate) fn prove(
     };
     Ok((
         PrefixProof {
+            field: proved.prime,
             initial_nonce,
             terminal_nonce,
             piop_nonces,
@@ -173,9 +186,17 @@ pub(crate) fn verify(
 
     absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
     let verified = verify_piop(transcript, prepared, statement, &proof.messages())?;
-    let arith = &verified.prime.arith;
+    if proof.field.modulus() != verified.prime.modulus() {
+        return Err(Error::Invalid("multiplication field"));
+    }
+    let arith = &verified.prime;
 
-    let chunks = bitify::prepare_chunks(&verified.opening, &verified.table, verified.prime.q_bits, arith)?;
+    let chunks = bitify::prepare_chunks(
+        &verified.opening,
+        &verified.table,
+        verified.prime.modulus_bits(),
+        arith,
+    )?;
     let col_weights = bitify::column_weights(&verified.opening, arith)?;
     let weights = chunks.chunks();
     if weights.len() != 1 || proof.sums.len() != p.cols() {
@@ -191,17 +212,19 @@ pub(crate) fn verify(
     if bound == u128::MAX || proof.sums.iter().any(|&s| s > bound) {
         return Err(Error::Invalid("integer fold magnitude"));
     }
-    let read_off = proof
-        .sums
-        .iter()
-        .zip(&col_weights)
-        .fold(0, |a, (&s, w)| arith.add(a, arith.mul(arith.reduce(s), w.0)));
-    if read_off != verified.opening.claimed.0 {
+    let read_off = proof.sums.iter().zip(&col_weights).fold(0, |a, (&s, w)| {
+        arith.add_u128(a, arith.mul_u128(arith.reduce_u128(s), *w))
+    });
+    if read_off != verified.opening.claimed {
         return Err(Error::Invalid("integer read-off"));
     }
     bind_sums(transcript, &verified.bridge_digest, &proof.sums);
-    let comb = FixedBasePow::new(f2z_generator(), 128, 8);
-    let roots: Vec<_> = proof.sums.iter().map(|&s| comb.pow(s)).collect();
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, f2z_generator().into(), 8);
+    let roots: Vec<_> = proof
+        .sums
+        .iter()
+        .map(|&s| Gf::from(comb.pow_public(&field::Uint::from_words([s as u64, (s >> 64) as u64]))))
+        .collect();
     let (z, e) = verify_merged_forest(
         transcript,
         &roots,

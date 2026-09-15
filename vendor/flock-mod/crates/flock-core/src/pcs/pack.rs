@@ -20,7 +20,7 @@
 //!
 //! [DP24]: https://eprint.iacr.org/2024/504
 
-use crate::field::F128;
+use crate::field::Gf128;
 
 /// `log_2` of the packing width. F_{2^128} holds 128 bits = 2^7.
 pub const LOG_PACKING: usize = 7;
@@ -37,7 +37,7 @@ pub const PACKING_WIDTH: usize = 1 << LOG_PACKING;
 ///
 /// - if `z.len() != 1 << m`
 /// - if `m < LOG_PACKING`
-pub fn pack_witness(z: &[bool], m: usize) -> Vec<F128> {
+pub fn pack_witness(z: &[bool], m: usize) -> Vec<Gf128> {
     use rayon::prelude::*;
     assert_eq!(z.len(), 1usize << m, "z length must be 2^m");
     assert!(
@@ -63,7 +63,7 @@ pub fn pack_witness(z: &[bool], m: usize) -> Vec<F128> {
     }
     let one = |i_rest: usize| {
         let base = i_rest << LOG_PACKING;
-        F128 {
+        Gf128 {
             lo: pack64(&bytes[base..base + 64]),
             hi: pack64(&bytes[base + 64..base + 128]),
         }
@@ -81,7 +81,7 @@ pub fn pack_witness(z: &[bool], m: usize) -> Vec<F128> {
 /// witness of length `2^m`.
 ///
 /// Round-trips with [`pack_witness`] by construction.
-pub fn unpack_witness(packed: &[F128], m: usize) -> Vec<bool> {
+pub fn unpack_witness(packed: &[Gf128], m: usize) -> Vec<bool> {
     let n_packed = 1usize << (m - LOG_PACKING);
     assert_eq!(
         packed.len(),
@@ -145,7 +145,7 @@ mod tests {
         }
         let packed = pack_witness(&z, LOG_PACKING);
         assert_eq!(packed.len(), 1);
-        let expected = F128 {
+        let expected = Gf128 {
             lo: (1u64 << 0) | (1u64 << 1) | (1u64 << 5) | (1u64 << 63),
             hi: (1u64 << 0) | (1u64 << 63),
         };
@@ -161,14 +161,14 @@ mod tests {
         assert_eq!(packed.len(), 2);
         assert_eq!(
             packed[0],
-            F128 {
+            Gf128 {
                 lo: u64::MAX,
                 hi: u64::MAX
             }
         );
         assert_eq!(
             packed[1],
-            F128 {
+            Gf128 {
                 lo: u64::MAX,
                 hi: u64::MAX
             }

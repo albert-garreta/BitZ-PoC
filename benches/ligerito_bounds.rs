@@ -6,13 +6,13 @@ macro_rules! bail {
         return Err($message.into())
     };
 }
+use ::f2z::observability::{self, Recording};
 use ::f2z::{
     ligerito_flock::{LigeritoSelection, ResolvedLigerito},
     piop::spartan::*,
     transcript::Blake3Transcript,
 };
 use serde_json::json;
-use ::f2z::observability::{self, Recording};
 const SEED: u64 = 0x5533_3250_4353_0064;
 type SetupCapture = (Recording<Vec<u8>>, tracing::span::EnteredSpan);
 
@@ -35,14 +35,16 @@ impl Experiment {
         size: impl Fn(&H, &P) -> Result<ProofSize>,
     ) -> Result<()> {
         drop(setup.1);
-        let setup_ms = observability::duration(&setup.0.intervals()?, "bounds:setup")?.as_secs_f64() * 1000.;
+        let setup_ms =
+            observability::duration(&setup.0.intervals()?, "bounds:setup")?.as_secs_f64() * 1000.;
         let mut config = common::ligerito_report(resolved, ood);
         config["requested_profile"] = json!(self.selection.name());
         let corpus_digest = blake3::hash(corpus).to_hex().to_string();
         let trials = if self.memory { 1 } else { 6 };
         for trial in 0..trials {
             let recording = Recording::start(Vec::new())?;
-            let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0).entered();
+            let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0)
+                .entered();
             let w = tracing::info_span!("bounds:witness").in_scope(&witness)?;
             let online = tracing::info_span!("bounds:online").entered();
             let h = tracing::info_span!("bounds:commit").in_scope(|| commit(&w))?;
@@ -53,7 +55,8 @@ impl Experiment {
             let proof_size = size(&h, &p)?;
             tracing::info_span!("bounds:verification").in_scope(|| verify(&w, &h, &p))?;
             let intervals = recording.intervals()?;
-            let millis = |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
+            let millis =
+                |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
             let witness_ms = millis("bounds:witness")?;
             let commit_ms = millis("bounds:commit")?;
             let online_prover_ms = millis("bounds:online")?;
@@ -123,7 +126,14 @@ struct Args {
 fn main() -> Result<()> {
     let args = <Args as clap::Parser>::parse();
     let e = Experiment {
-        selection: LigeritoSelection::parse(&args.profile, if args.case.starts_with("hybrid") { 106 } else { 100 })?,
+        selection: LigeritoSelection::parse(
+            &args.profile,
+            if args.case.starts_with("hybrid") {
+                106
+            } else {
+                100
+            },
+        )?,
         case: args.case,
         memory: args.memory,
     };
@@ -132,19 +142,47 @@ fn main() -> Result<()> {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
     let input = inputs();
-    let setup = (Recording::start(Vec::new())?, tracing::info_span!("bounds:setup").entered());
+    let setup = (
+        Recording::start(Vec::new())?,
+        tracing::info_span!("bounds:setup").entered(),
+    );
     macro_rules! multiplication {
-        ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr $(,$strategy:expr)?) => {{
+        ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr) => {{
             let data = $data;
-            let p = $rel::new_with_profile_and_ligerito::<Lambda100>($layout::new(data.len())?,e.selection)?;
-            e.run(setup,p.ligerito_configuration(),p.security().ood,&bincode::serialize(&data)?,
-                || Ok($wit::from_inputs(&data)?), |w| Ok($commit(&p,w.f2z_bit_rows())?),
-                |w,h| Ok($prove(&mut Blake3Transcript::new(),&p,w,h $(,$strategy)?)?),
-                |_,h,proof| Ok($verify(&mut Blake3Transcript::new(),&p,&h.commitment,proof)?),
-                |h,proof| { let b=proof.f2z().to_bytes();
-                    let decoded=::f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?; assert_eq!(decoded.to_bytes(),b);
-                    Ok(bytes(h.commitment.root.len(),&b,proof.spartan_payload_elements()*16+
-                        (proof.grinding_nonce_count(p.security())-proof.f2z().grinding_nonces.len())*8)) })
+            let p = $rel::new_with_profile_and_ligerito::<Lambda100>(
+                $layout::new(data.len())?,
+                e.selection,
+            )?;
+            e.run(
+                setup,
+                p.ligerito_configuration(),
+                p.security().ood,
+                &bincode::serialize(&data)?,
+                || Ok($wit::from_inputs(&data)?),
+                |w| Ok($commit(&p, w.f2z_bit_rows())?),
+                |w, h| Ok($prove(&mut Blake3Transcript::new(), &p, w, h)?),
+                |_, h, proof| {
+                    Ok($verify(
+                        &mut Blake3Transcript::new(),
+                        &p,
+                        &h.commitment,
+                        proof,
+                    )?)
+                },
+                |h, proof| {
+                    let b = proof.f2z().to_bytes();
+                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?;
+                    assert_eq!(decoded.to_bytes(), b);
+                    Ok(bytes(
+                        h.commitment.root.len(),
+                        &b,
+                        proof.spartan_payload_elements() * 16
+                            + (proof.grinding_nonce_count(p.security())
+                                - proof.f2z().grinding_nonces.len())
+                                * 8,
+                    ))
+                },
+            )
         }};
     }
     match e.case.as_str() {
@@ -191,8 +229,7 @@ fn main() -> Result<()> {
             input
                 .iter()
                 .map(|&(x, y)| ((x % 2013265921) as u32, (y % 2013265921) as u32))
-                .collect::<Vec<_>>(),
-            SpartanReductionStrategy::DelayedBarrett
+                .collect::<Vec<_>>()
         ),
         "sha-compression" => {
             let p = sha256::prepare_sha256_compression_batch(7)?.with_ligerito(e.selection)?;
@@ -397,15 +434,17 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
                 prime_bits: q_bits,
                 ..Default::default()
             },
-        );
-        let a = ProjArith::new(q);
+        )
+        .expect("bounded benchmark prime search");
+        let a = field::FpCtx::from_prime_u128(q);
         let eq = |r: Vec<u128>| {
             let mut table = vec![1];
             for x in r {
+                let factor = a.prepare_multiplier_u128(x);
                 let mut next = Vec::with_capacity(table.len() * 2);
                 for v in table {
-                    let v1 = a.mul(v, x);
-                    next.push(if v >= v1 { v - v1 } else { v + q - v1 });
+                    let v1 = a.mul_canonical_u128(v, &factor);
+                    next.push(a.sub_canonical_u128(v, v1));
                     next.push(v1);
                 }
                 table = next;
@@ -453,7 +492,7 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
             resolved.bind(&mut t);
             let bound = bind_prover_ood(&mut t, h, ood);
             let (q, rows, cols) = sample(&mut t);
-            let a = ProjArith::new(q);
+            let a = field::FpCtx::from_prime_u128(q);
             let mut y = 0;
             for (c, w) in h.rows().iter().enumerate() {
                 let mut acc = 0;
@@ -462,10 +501,10 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
                     while bits != 0 {
                         let bit = bits.trailing_zeros() as usize;
                         bits &= bits - 1;
-                        acc = a.add(acc, rows[wi * 64 + bit]);
+                        acc = a.add_u128(acc, rows[wi * 64 + bit]);
                     }
                 }
-                y = a.add(y, a.mul(cols[c], acc));
+                y = a.add_u128(y, a.mul_u128(cols[c], acc));
             }
             absorb_standalone_mod_q_claim(&mut t, q, y);
             Ok((
@@ -543,7 +582,6 @@ mod reporting_tests {
     }
 }
 
-
 #[cfg(test)]
 mod cli_tests {
     use super::Args;
@@ -552,18 +590,36 @@ mod cli_tests {
     #[test]
     fn positional_cases_memory_and_cargo_flag() {
         Args::command().debug_assert();
-        let latency = Args::try_parse_from(["bounds", "u32-mod32", "custom:1:4", "--bench"]).unwrap();
-        assert_eq!((latency.case.as_str(), latency.profile.as_str(), latency.memory),
-            ("u32-mod32", "custom:1:4", false));
-        let memory = Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();
-        assert_eq!((memory.case.as_str(), memory.profile.as_str(), memory.memory),
-            ("hybrid-15-7", "udrg:1:4", true));
+        let latency =
+            Args::try_parse_from(["bounds", "u32-mod32", "custom:1:4", "--bench"]).unwrap();
+        assert_eq!(
+            (
+                latency.case.as_str(),
+                latency.profile.as_str(),
+                latency.memory
+            ),
+            ("u32-mod32", "custom:1:4", false)
+        );
+        let memory =
+            Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();
+        assert_eq!(
+            (memory.case.as_str(), memory.profile.as_str(), memory.memory),
+            ("hybrid-15-7", "udrg:1:4", true)
+        );
         for argv in [
-            &["bounds"][..], &["bounds", "u64"], &["bounds", "unknown", "custom:1:4"],
+            &["bounds"][..],
+            &["bounds", "u64"],
+            &["bounds", "unknown", "custom:1:4"],
             &["bounds", "u64", "custom:1:4", "--unknown"],
         ] {
             assert!(Args::try_parse_from(argv).is_err(), "accepted {argv:?}");
         }
-        assert_eq!(Args::try_parse_from(["bounds", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
+        assert_eq!(
+            Args::try_parse_from(["bounds", "--help"])
+                .err()
+                .unwrap()
+                .kind(),
+            ErrorKind::DisplayHelp
+        );
     }
 }

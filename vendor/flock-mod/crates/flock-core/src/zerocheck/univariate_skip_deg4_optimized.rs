@@ -29,7 +29,7 @@
 //!   in λ is < 4·64−3 = 253, requiring ≥ 253 evaluation points; next power
 //!   of 2 is 256 = |V₈|, with |Λ₄| = 256−64 = 192 fresh evals.
 //! - **Four NTT-extends per row** (a, b, c, d) instead of two (a, b). Each
-//!   extends from S (64 bits) to V₈ (256 F8 values).
+//!   extends from S (64 bits) to V₈ (256 Gf8 values).
 //! - **F_8 product is 3 chained F_8 mults** per lane (a·b·c·d) instead of 1
 //!   (a·b).
 //!
@@ -48,8 +48,8 @@
 
 use std::sync::OnceLock;
 
-use crate::field::gf2_8::gf8_reduce;
-use crate::field::{F8, F128, mul_by_x, phi8};
+use crate::field::gf8_kernels::gf8_reduce;
+use crate::field::{Gf8, Gf128, mul_by_x, embed_gf8};
 use crate::ntt::{AdditiveNttGf8, InvNttTableSToV8Gf8};
 
 use super::univariate_skip::build_eq;
@@ -68,20 +68,20 @@ const N_MEDIUM: usize = 4;
 const N_CHUNKS: usize = S_SIZE / 8; // 8
 
 /// Re-export the small challenges for callers building `r` for cross-check.
-pub fn small_challenges_deg4() -> [F128; 3] {
+pub fn small_challenges_deg4() -> [Gf128; 3] {
     small_challenges_ghash()
 }
 /// Re-export the medium challenges for callers building `r` for cross-check.
-pub fn medium_challenges_deg4() -> [F128; 4] {
+pub fn medium_challenges_deg4() -> [Gf128; 4] {
     medium_challenges_ghash()
 }
 
 /// D⁻¹ for the geometric medium-eq factorization. Same value as deg-2; we
 /// just reuse the cached one via the public accessor pattern.
-fn d_inv() -> F128 {
+fn d_inv() -> Gf128 {
     // Inline of degree-2's d_inv since that's pub(crate)-scoped. The value
     // is purely a function of the medium challenge structure — protocol-fixed.
-    use crate::field::F128 as F;
+    use crate::field::Gf128 as F;
     let g1 = F {
         lo: 1u64 << 1,
         hi: 0,
@@ -98,30 +98,30 @@ fn d_inv() -> F128 {
         lo: 1u64 << 8,
         hi: 0,
     };
-    ((F::ONE + g1) * (F::ONE + g2) * (F::ONE + g4) * (F::ONE + g8)).inv()
+    ((F::ONE + g1) * (F::ONE + g2) * (F::ONE + g4) * (F::ONE + g8)).inverse_or_zero()
 }
 
 /// Convert table γ^b · φ_8(v) for b ∈ [0, 16), v ∈ [0, 256). Same as the
 /// degree-2 path — protocol-fixed once. Cached after the first call.
-fn build_convert_table() -> Vec<F128> {
-    use crate::field::PHI_8_TABLE;
-    let mut gamma_pow = [F128::ZERO; 16];
-    gamma_pow[0] = F128::ONE;
+fn build_convert_table() -> Vec<Gf128> {
+    use crate::field::AES_EMBEDDING_TABLE;
+    let mut gamma_pow = [Gf128::ZERO; 16];
+    gamma_pow[0] = Gf128::ONE;
     for b in 1..16 {
         gamma_pow[b] = mul_by_x(gamma_pow[b - 1]);
     }
-    let mut table = vec![F128::ZERO; 16 * 256];
+    let mut table = vec![Gf128::ZERO; 16 * 256];
     for b in 0..16 {
         let g_b = gamma_pow[b];
         for v in 0..256 {
-            table[b * 256 + v] = g_b * PHI_8_TABLE[v];
+            table[b * 256 + v] = g_b * AES_EMBEDDING_TABLE[v];
         }
     }
     table
 }
 
-static CONVERT_TABLE_CACHE: OnceLock<Vec<F128>> = OnceLock::new();
-fn convert_table() -> &'static [F128] {
+static CONVERT_TABLE_CACHE: OnceLock<Vec<Gf128>> = OnceLock::new();
+fn convert_table() -> &'static [Gf128] {
     CONVERT_TABLE_CACHE.get_or_init(build_convert_table)
 }
 
@@ -130,7 +130,7 @@ fn convert_table() -> &'static [F128] {
 //
 // Mirrors what `InvNttTableByteSingleGf8::apply` does for the deg-2 case but
 // implemented directly via two NTT instances (no lookup table yet). Output is
-// 256 F8 bytes — the first 64 reproduce the input bits on S, the next 192 are
+// 256 Gf8 bytes — the first 64 reproduce the input bits on S, the next 192 are
 // fresh on Λ₄.
 // ---------------------------------------------------------------------------
 
@@ -150,27 +150,27 @@ impl Default for NttPairDeg4 {
 impl NttPairDeg4 {
     pub fn new() -> Self {
         Self {
-            ntt_s: AdditiveNttGf8::new(K_SKIP, F8::ZERO),
-            ntt_v8: AdditiveNttGf8::new(K_V8, F8::ZERO),
+            ntt_s: AdditiveNttGf8::new(K_SKIP, Gf8::ZERO),
+            ntt_v8: AdditiveNttGf8::new(K_V8, Gf8::ZERO),
         }
     }
 
     /// Extend 64 input bits (one byte per b_chunk position, LSB packed) to 256
-    /// F8 evaluations on V₈ = F_8. Output[0..64] reproduces the input bits on
+    /// Gf8 evaluations on V₈ = F_8. Output[0..64] reproduces the input bits on
     /// S; output[64..256] is the fresh extension on Λ₄.
     ///
     /// `bits` — 8 bytes, bit `8*b + t` = the input at S-coord `8*b + t`.
-    /// `out`  — 256 F8 slot, written entirely.
-    pub fn extend_row(&self, bits: &[u8], out: &mut [F8]) {
+    /// `out`  — 256 Gf8 slot, written entirely.
+    pub fn extend_row(&self, bits: &[u8], out: &mut [Gf8]) {
         debug_assert_eq!(bits.len(), N_CHUNKS);
         debug_assert_eq!(out.len(), V8_SIZE);
-        // 1. Unpack 64 bits → 64 F8 in positions 0..64; zero-pad 64..256.
+        // 1. Unpack 64 bits → 64 Gf8 in positions 0..64; zero-pad 64..256.
         for s in 0..S_SIZE {
             let bit = (bits[s / 8] >> (s % 8)) & 1;
-            out[s] = F8(bit);
+            out[s] = Gf8(bit);
         }
         for s in S_SIZE..V8_SIZE {
-            out[s] = F8::ZERO;
+            out[s] = Gf8::ZERO;
         }
         // 2. inv on the first 64 → coefficients in 6-dim novel basis.
         self.ntt_s.inverse(&mut out[..S_SIZE]);
@@ -195,38 +195,38 @@ impl NttPairDeg4 {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// F128-valued NTT extension from S (64 lanes) to Λ₄ (192 lanes).
+// Gf128-valued NTT extension from S (64 lanes) to Λ₄ (192 lanes).
 //
 // Mirrors `crate::zerocheck::univariate_skip::ntt_extend_f128_vec_ghash` but
-// uses the deg-4 lookup table (InvNttTableSToV8Gf8) which produces 256 F8
+// uses the deg-4 lookup table (InvNttTableSToV8Gf8) which produces 256 Gf8
 // outputs per input row. Discards the first 64 (S) lanes; keeps the last 192
 // (Λ₄ lanes).
 //
-// Per bit-plane (128 total, one per F128 bit):
+// Per bit-plane (128 total, one per Gf128 bit):
 //   1. Pack bit b of each in_s[z] into 8 LSB-first bytes.
-//   2. `table.apply` → 256 F8 outputs on V₈ (NEON-fused).
+//   2. `table.apply` → 256 Gf8 outputs on V₈ (NEON-fused).
 //   3. Lift via φ_8, scale by γ^b, accumulate into out[Λ₄ lane].
 //
-// Per call: 128 table-applies + 128 × 192 (φ_8 + F128 mul + F128 xor) ≈ ~25k
-// F128 ops, NEON-accelerated by the table apply and the F128 mul intrinsics.
+// Per call: 128 table-applies + 128 × 192 (φ_8 + Gf128 mul + Gf128 xor) ≈ ~25k
+// Gf128 ops, NEON-accelerated by the table apply and the Gf128 mul intrinsics.
 // ---------------------------------------------------------------------------
 
-pub fn ntt_extend_f128_vec_ghash_deg4(in_s: &[F128], table: &InvNttTableSToV8Gf8) -> Vec<F128> {
+pub fn ntt_extend_f128_vec_ghash_deg4(in_s: &[Gf128], table: &InvNttTableSToV8Gf8) -> Vec<Gf128> {
     assert_eq!(in_s.len(), S_SIZE);
     assert_eq!(table.k_in, K_SKIP);
     assert_eq!(table.k_out, K_V8);
 
-    let mut out = vec![F128::ZERO; LAMBDA4_SIZE];
+    let mut out = vec![Gf128::ZERO; LAMBDA4_SIZE];
 
     // γ^b for b ∈ [0, 128).
-    let mut gamma_pow = [F128::ZERO; 128];
-    gamma_pow[0] = F128::ONE;
+    let mut gamma_pow = [Gf128::ZERO; 128];
+    gamma_pow[0] = Gf128::ONE;
     for b in 1..128 {
         gamma_pow[b] = mul_by_x(gamma_pow[b - 1]);
     }
 
     let mut input_bits = vec![0u8; N_CHUNKS]; // 8 bytes = 64 input bits
-    let mut out_bytes = vec![F8::ZERO; V8_SIZE]; // 256 F8 outputs
+    let mut out_bytes = vec![Gf8::ZERO; V8_SIZE]; // 256 Gf8 outputs
 
     for b in 0..128 {
         // Pack bit b of each in_s[z] into LSB-first byte form.
@@ -248,7 +248,7 @@ pub fn ntt_extend_f128_vec_ghash_deg4(in_s: &[F128], table: &InvNttTableSToV8Gf8
         // Lift the Λ₄ lanes via φ_8, scale by γ^b, accumulate.
         let g_b = gamma_pow[b];
         for i in 0..LAMBDA4_SIZE {
-            out[i] += g_b * phi8(out_bytes[S_SIZE + i]);
+            out[i] += g_b * embed_gf8(out_bytes[S_SIZE + i]);
         }
     }
 
@@ -405,7 +405,7 @@ unsafe fn process_tile_deg4<const TILE_BASE: usize>(
     byte_base_b: usize,
     out_tile: *mut u8,
 ) {
-    use crate::field::gf2_8::neon::{gf8_mul_vec16, gf8_reduce_vec16};
+    use crate::field::gf8_kernels::neon::{gf8_mul_vec16, gf8_reduce_vec16};
     use core::arch::aarch64::*;
     unsafe {
         let mut acc0_lo = vdupq_n_u16(0);
@@ -531,10 +531,10 @@ fn shift_reduce_inner_abcd(
     chunk_byte_base: usize,
     b_med: usize,
     out: &mut [u8; LAMBDA4_SIZE],
-    a_col: &mut [F8; V8_SIZE],
-    b_col: &mut [F8; V8_SIZE],
-    c_col: &mut [F8; V8_SIZE],
-    d_col: &mut [F8; V8_SIZE],
+    a_col: &mut [Gf8; V8_SIZE],
+    b_col: &mut [Gf8; V8_SIZE],
+    c_col: &mut [Gf8; V8_SIZE],
+    d_col: &mut [Gf8; V8_SIZE],
 ) {
     #[cfg(target_arch = "aarch64")]
     {
@@ -579,10 +579,10 @@ fn shift_reduce_inner_abcd_scalar(
     chunk_byte_base: usize,
     b_med: usize,
     out: &mut [u8; LAMBDA4_SIZE],
-    a_col: &mut [F8; V8_SIZE],
-    b_col: &mut [F8; V8_SIZE],
-    c_col: &mut [F8; V8_SIZE],
-    d_col: &mut [F8; V8_SIZE],
+    a_col: &mut [Gf8; V8_SIZE],
+    b_col: &mut [Gf8; V8_SIZE],
+    c_col: &mut [Gf8; V8_SIZE],
+    d_col: &mut [Gf8; V8_SIZE],
 ) {
     let mut acc = [0u16; LAMBDA4_SIZE];
     let byte_base_b = chunk_byte_base + b_med * N_CHUNKS * 8;
@@ -621,7 +621,7 @@ fn shift_reduce_inner_abcd_scalar(
 // For deg-4 z, the same 64-byte transpose works at the S level — z is degree-1
 // in z (linear), so its polynomial in λ has degree < 64, fully captured by the
 // S evaluations. The transpose then becomes the input to the V₈ NTT extension
-// (which lifts to 256 F8 values).
+// (which lifts to 256 Gf8 values).
 //
 // Reuses the deg-2 `bit_transpose_64bytes` directly (just an algorithmic helper).
 // ---------------------------------------------------------------------------
@@ -655,10 +655,10 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
     d_packed: &[u8],
     z_packed: &[u8],
     m: usize,
-    r: &[F128],
+    r: &[Gf128],
     ntts: &NttPairDeg4,
     table: &InvNttTableSToV8Gf8,
-) -> (Vec<F128>, Vec<F128>) {
+) -> (Vec<Gf128>, Vec<Gf128>) {
     assert!(m >= K_SKIP + N_INNER, "m must be ≥ K_SKIP + N_INNER (=13)");
     let total_bytes = (1usize << m) / 8;
     assert_eq!(a_packed.len(), total_bytes);
@@ -675,22 +675,22 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
     // r[K_SKIP+7..] = the outer dims; eq table built from those, scaled by D⁻¹.
     let n_outer = m - K_SKIP - N_INNER;
     let eq_outer = build_eq(&r[K_SKIP + N_INNER..]);
-    let eq_outer_scaled: Vec<F128> = eq_outer.iter().map(|v| *v * d_inv_val).collect();
+    let eq_outer_scaled: Vec<Gf128> = eq_outer.iter().map(|v| *v * d_inv_val).collect();
     let big_outer_size = 1usize << n_outer;
 
-    let mut res_abcd = [F128::ZERO; LAMBDA4_SIZE];
+    let mut res_abcd = [Gf128::ZERO; LAMBDA4_SIZE];
     // z is **linear**: accumulate on S (64 lanes), extend once at end-of-call.
-    let mut res_z_on_s = [F128::ZERO; S_SIZE];
+    let mut res_z_on_s = [Gf128::ZERO; S_SIZE];
 
     // **16-chunk buffers** for the lane-outer convert+accumulate. abcd: 16×192 = 3 KB;
     // z (on S): 16×64 = 1 KB. Both L1-resident. Restored from the streaming
     // pattern to enable the NEON lane-outer / b_med-inner XOR-fan-in.
     let mut chunk_abcd_bytes: Vec<[u8; LAMBDA4_SIZE]> = vec![[0u8; LAMBDA4_SIZE]; 1 << N_MEDIUM];
     let mut chunk_z_bytes: Vec<[u8; S_SIZE]> = vec![[0u8; S_SIZE]; 1 << N_MEDIUM];
-    let mut a_col = [F8::ZERO; V8_SIZE];
-    let mut b_col = [F8::ZERO; V8_SIZE];
-    let mut c_col = [F8::ZERO; V8_SIZE];
-    let mut d_col = [F8::ZERO; V8_SIZE];
+    let mut a_col = [Gf8::ZERO; V8_SIZE];
+    let mut b_col = [Gf8::ZERO; V8_SIZE];
+    let mut c_col = [Gf8::ZERO; V8_SIZE];
+    let mut d_col = [Gf8::ZERO; V8_SIZE];
     let _ = ntts;
 
     for x_outer in 0..big_outer_size {
@@ -721,8 +721,8 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
         }
 
         // ----- Convert + accumulate: lane-outer, b_med-inner XOR-fan-in -----
-        // Each lane XOR-fans 16 b_med F128 values (raw byte XOR via NEON),
-        // then one F128 mul by eq_outer_val. Replaces 16 scalar F128 muls.
+        // Each lane XOR-fans 16 b_med Gf128 values (raw byte XOR via NEON),
+        // then one Gf128 mul by eq_outer_val. Replaces 16 scalar Gf128 muls.
         #[cfg(target_arch = "aarch64")]
         unsafe {
             use core::arch::aarch64::*;
@@ -735,7 +735,7 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
                     cf = veorq_u8(cf, vld1q_u8(convert_ptr.add((b_med * 256 + v) * 16)));
                 }
                 let cf_u64 = vreinterpretq_u64_u8(cf);
-                let cf_f = F128 {
+                let cf_f = Gf128 {
                     lo: vgetq_lane_u64::<0>(cf_u64),
                     hi: vgetq_lane_u64::<1>(cf_u64),
                 };
@@ -749,7 +749,7 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
                     cf = veorq_u8(cf, vld1q_u8(convert_ptr.add((b_med * 256 + v) * 16)));
                 }
                 let cf_u64 = vreinterpretq_u64_u8(cf);
-                let cf_f = F128 {
+                let cf_f = Gf128 {
                     lo: vgetq_lane_u64::<0>(cf_u64),
                     hi: vgetq_lane_u64::<1>(cf_u64),
                 };
@@ -759,7 +759,7 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
         #[cfg(not(target_arch = "aarch64"))]
         {
             for lane in 0..LAMBDA4_SIZE {
-                let mut cf = F128::ZERO;
+                let mut cf = Gf128::ZERO;
                 for b_med in 0..(1usize << N_MEDIUM) {
                     let v = chunk_abcd_bytes[b_med][lane] as usize;
                     cf += convert[b_med * 256 + v];
@@ -767,7 +767,7 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
                 res_abcd[lane] += cf * eq_outer_val;
             }
             for lane in 0..S_SIZE {
-                let mut cf = F128::ZERO;
+                let mut cf = Gf128::ZERO;
                 for b_med in 0..(1usize << N_MEDIUM) {
                     let v = chunk_z_bytes[b_med][lane] as usize;
                     cf += convert[b_med * 256 + v];
@@ -777,7 +777,7 @@ pub fn round1_shift_reduce_extract_z_packed_deg4(
         }
     }
 
-    // ----- End-of-call: extend res_z_on_s from S to Λ₄ via F128 NTT -----
+    // ----- End-of-call: extend res_z_on_s from S to Λ₄ via Gf128 NTT -----
     let res_z_lifted = ntt_extend_f128_vec_ghash_deg4(&res_z_on_s, table);
     (res_abcd.to_vec(), res_z_lifted)
 }
@@ -808,8 +808,8 @@ mod tests {
         fn bits(&mut self, n: usize) -> Vec<bool> {
             (0..n).map(|_| self.next_u64() & 1 == 1).collect()
         }
-        fn f128(&mut self) -> F128 {
-            F128 {
+        fn f128(&mut self) -> Gf128 {
+            Gf128 {
                 lo: self.next_u64(),
                 hi: self.next_u64(),
             }
@@ -817,8 +817,8 @@ mod tests {
     }
 
     /// Build the protocol r: fix the small + medium dims, randomize the outer.
-    fn build_r(m: usize, rng: &mut Rng) -> Vec<F128> {
-        let mut r = vec![F128::ZERO; m];
+    fn build_r(m: usize, rng: &mut Rng) -> Vec<Gf128> {
+        let mut r = vec![Gf128::ZERO; m];
         // First K_SKIP slots are unused (consumed by univariate skip). Set to
         // arbitrary values for completeness.
         for i in 0..K_SKIP {
@@ -842,13 +842,13 @@ mod tests {
         let ntts = NttPairDeg4::new();
         let mut rng = Rng::new(0xA17);
         let input_bytes: Vec<u8> = (0..N_CHUNKS).map(|_| rng.next_u64() as u8).collect();
-        let mut out = vec![F8::ZERO; V8_SIZE];
+        let mut out = vec![Gf8::ZERO; V8_SIZE];
         ntts.extend_row(&input_bytes, &mut out);
         for s in 0..S_SIZE {
             let expected_bit = (input_bytes[s / 8] >> (s % 8)) & 1;
             assert_eq!(
                 out[s],
-                F8(expected_bit),
+                Gf8(expected_bit),
                 "extend_row mismatch at s={s} (expected bit {expected_bit}, got {:?})",
                 out[s]
             );

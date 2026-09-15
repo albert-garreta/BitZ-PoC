@@ -2,25 +2,28 @@
 //! `claimed_sum = Σ_i batched_matrix[i] · witness[i]` over the sampled field.
 //! The prover prepares the matrix MLE; the verifier evaluates it directly.
 
+use crate::piop::spartan::SpartanField as _;
+use crate::piop::spartan::raw_monty::RawFieldStorage;
+use field::RingOps;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use super::{
-    Config, Result, error, reduce_integer_mod_q,
+    Config, Result, error,
     relation::{OuterMode, PreparedSha256Ecdsa, SHA_H, Sha256EcdsaStatement},
 };
 use crate::{
     piop::spartan::{
         f2z::SpartanF2zField as F,
         matrix::{eq_table, make_equality_factors},
-        raw_monty::{Raw, RawMontyCtx},
+        raw_monty::Raw,
         sumcheck::OuterSumcheckProof,
     },
     poly::mle::{CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension},
 };
-use circuit::{matrix_products::RuntimeModulus, matrix_wengert::PreparedWengertEvaluator};
-use crypto_primitives::FromWithConfig;
-use num_bigint::BigUint;
+use circuit::matrix_wengert::PreparedWengertEvaluator;
+
+use field::{ModRingCtx, Uint};
 
 /// Compact description of the equation checked by the inner sumcheck.
 pub(super) struct InnerSumcheckClaim {
@@ -40,22 +43,22 @@ pub(super) struct InnerSumcheckClaim {
 /// the P-256 circuit's reverse-mode tape prepared for that prime.
 pub(super) struct ModQCoefficients<'a> {
     /// Arithmetic modulo the transcript-sampled prime.
-    ctx: RawMontyCtx,
+    ctx: field::FpCtx<2>,
     /// One Montgomery residue per distinct `LocalRelation::coefficients` entry.
     residues: Vec<Raw>,
     /// `r · (A + xB + x²C)` over the P-256 tail through the circuit's DAG. Its
-    /// Montgomery form is the same two-limb crypto-bigint form as [`Raw`].
+    /// Montgomery form is the same shared two-limb representation as [`Raw`].
     tape: PreparedWengertEvaluator<'a>,
 }
 
 /// Owned public matrix MLE and its Montgomery evaluation cache.
-/// For `N` SHA instances and `H` local wires, its Boolean table is
+/// For `N` SHA instances and `H` local wires, its Bit table is
 /// `[sha_local_evaluations ⊗ instance_weights, p256_evaluations]`:
 /// entry `i + N*j` is `instance_weights[i] * sha_local_evaluations[j]`,
 /// with `constant_weight` added at index zero and implicit zero padding.
 pub(super) struct BatchedMatrixMle {
     /// Arithmetic for the cached P-256 evaluations.
-    ctx: RawMontyCtx,
+    ctx: field::FpCtx<2>,
     /// Assignment domain size is `2^num_vars`, including zero padding.
     num_vars: usize,
     /// `N = 2^log_compressions` instance weights.
@@ -93,16 +96,34 @@ impl InnerSumcheckClaim {
         {
             return Err(error("inner batching point dimension mismatch"));
         }
-        let squared_challenge = matrix_batch_challenge.clone() * &matrix_batch_challenge;
+        let squared_challenge = cfg.mul(
+            &(matrix_batch_challenge.clone()),
+            &(&matrix_batch_challenge),
+        );
         let mut claimed_sum = outer.az_mle_claim.clone();
-        claimed_sum += &(outer.bz_mle_claim.clone() * &matrix_batch_challenge);
-        claimed_sum += &(outer.cz_mle_claim.clone() * &squared_challenge);
+        claimed_sum = cfg.add(
+            &(claimed_sum),
+            &(&(cfg.mul(&(outer.bz_mle_claim.clone()), &(&matrix_batch_challenge)))),
+        );
+        claimed_sum = cfg.add(
+            &(claimed_sum),
+            &(&(cfg.mul(&(outer.cz_mle_claim.clone()), &(&squared_challenge)))),
+        );
         let linear_weights = equality_weights(&linear_row_point, cfg)?;
         let public_start = public_row_start(relation);
-        claimed_sum += &(linear_weights.at(public_start) * &linear_batch_weight);
+        claimed_sum = cfg.add(
+            &(claimed_sum),
+            &(&(cfg.mul(&(linear_weights.at(public_start)), &(&linear_batch_weight)))),
+        );
         for bit in 0..1024 {
             if statement.bit(bit) {
-                claimed_sum += &(linear_weights.at(public_start + 1 + bit) * &linear_batch_weight);
+                claimed_sum = cfg.add(
+                    &(claimed_sum),
+                    &(&(cfg.mul(
+                        &(linear_weights.at(public_start + 1 + bit)),
+                        &(&linear_batch_weight),
+                    ))),
+                );
             }
         }
         Ok(Self {
@@ -126,16 +147,24 @@ impl<'a> ModQCoefficients<'a> {
         cfg: &Config,
     ) -> Self {
         let _scope = tracing::info_span!("ecdsa:matrix_projection").entered();
-        let ctx = RawMontyCtx::new(cfg);
+        let ctx = crate::piop::spartan::raw_monty::field_context(cfg);
+        let projection = field::PreparedSignedProjection::new(
+            ctx.clone(),
+            relation.local.coefficients.max_limbs(),
+        );
         let residues = relation
             .local
             .coefficients
             .iter()
-            .map(|coefficient| ctx.raw(&reduce_integer_mod_q(coefficient, modulus, cfg)))
+            .map(|coefficient| {
+                let value = projection.project(coefficient);
+                u128::from(*value.as_montgomery_integer())
+            })
             .collect();
         // The sampled prime is odd and below 2^113, so both constructions succeed.
-        let runtime_modulus = RuntimeModulus::<2>::new(BigUint::from(modulus))
-            .expect("the sampled prime fits two limbs");
+        let runtime_modulus =
+            ModRingCtx::<2>::new(Uint::from_words([modulus as u64, (modulus >> 64) as u64]))
+                .expect("the sampled prime fits two limbs");
         let tape = relation
             .local
             .tape
@@ -149,12 +178,22 @@ impl<'a> ModQCoefficients<'a> {
     }
 
     /// `Σ_row Σ_m weight[3·row + m] · M_m[row]` over every P-256 tail column, by
-    /// the reverse-mode tape. Both sides use crypto-bigint's two-limb Montgomery
+    /// the reverse-mode tape. Both sides use the shared two-limb Montgomery
     /// form with `R = 2^128`, so the words convert to [`Raw`] without arithmetic.
-    fn tape_tail(&mut self, relation: &PreparedSha256Ecdsa, matrix_rows: &[Raw]) -> Result<Vec<Raw>> {
+    fn tape_tail(
+        &mut self,
+        relation: &PreparedSha256Ecdsa,
+        matrix_rows: &[Raw],
+    ) -> Result<Vec<Raw>> {
         let triples: Vec<[[u64; 2]; 3]> = matrix_rows
             .chunks_exact(3)
-            .map(|slots| [raw_words(slots[0]), raw_words(slots[1]), raw_words(slots[2])])
+            .map(|slots| {
+                [
+                    raw_words(slots[0]),
+                    raw_words(slots[1]),
+                    raw_words(slots[2]),
+                ]
+            })
             .collect();
         let output = self
             .tape
@@ -175,7 +214,7 @@ impl<'a> ModQCoefficients<'a> {
         cfg: &Config,
         split_public: bool,
     ) -> Vec<(usize, usize, F)> {
-        let ctx = self.ctx;
+        let ctx = &self.ctx;
         let two = F::from_with_cfg(2u64, cfg);
         let mut exceptions: Vec<usize> = if split_public {
             relation.local.public_h.to_vec()
@@ -187,7 +226,8 @@ impl<'a> ModQCoefficients<'a> {
         for run in self.tape.power_runs() {
             let mut start = run.first_column;
             let end = run.first_column + run.len;
-            let mut base_at_start = ctx.field(words_raw(run.base));
+            let mut base_at_start =
+                crate::utils::delayed_reduction::element(&cfg, words_raw(run.base));
             let first = exceptions.partition_point(|&c| c < start);
             for &cell in &exceptions[first..] {
                 if cell >= end {
@@ -200,7 +240,7 @@ impl<'a> ModQCoefficients<'a> {
                 // its base advanced by 2^(cell + 1 - start).
                 let mut advanced = base_at_start.clone();
                 for _ in start..=cell {
-                    advanced = advanced * &two;
+                    advanced = cfg.mul(&(advanced), &(&two));
                 }
                 base_at_start = advanced;
                 start = cell + 1;
@@ -239,20 +279,23 @@ impl<'a> ModQCoefficients<'a> {
         // below, so every run is split around them (the cells become unstructured).
         let tail_runs = self.tail_runs(relation, cfg, true);
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
-            tail[cell] = self.ctx.add(tail[cell], weight);
+            tail[cell] = self.ctx.add_raw(tail[cell], weight);
         }
         #[cfg(feature = "parallel")]
         let p256_evaluations = tail
             .par_iter()
             .with_min_len(TAIL_BLOCK)
-            .map(|&value| self.ctx.field(value))
+            .map(|&value| crate::utils::delayed_reduction::element(&cfg, value))
             .collect();
         #[cfg(not(feature = "parallel"))]
-        let p256_evaluations = tail.iter().map(|&value| self.ctx.field(value)).collect();
+        let p256_evaluations = tail
+            .iter()
+            .map(|&value| crate::utils::delayed_reduction::element(&cfg, value))
+            .collect();
         let (instance_weights, sha_local_evaluations) =
             self.build_sha_factors(relation, claim, cfg)?;
         Ok(BatchedMatrixMle {
-            ctx: self.ctx,
+            ctx: self.ctx.clone(),
             num_vars: relation.h_layout.row_vars + relation.h_layout.col_vars,
             instance_weights,
             sha_local_evaluations,
@@ -286,10 +329,29 @@ impl<'a> ModQCoefficients<'a> {
         let (instances, sha) = self.build_sha_factors(relation, claim, cfg)?;
         let equality = equality_weights(assignment_point, cfg)?;
         let mut value = evaluate_sha_factors(&instances, &sha, assignment_point, cfg)?;
-        value += &(weights.constant * &equality.at(0));
-        value += &evaluate_tail_by_runs(self.ctx, relation.map.h_offset, &tail, &runs, &equality);
+        value = cfg.add(
+            &(value),
+            &(&(cfg.mul(&(weights.constant), &(&equality.at(0))))),
+        );
+        value = cfg.add(
+            &(value),
+            &(&evaluate_tail_by_runs(
+                cfg,
+                &self.ctx,
+                relation.map.h_offset,
+                &tail,
+                &runs,
+                &equality,
+            )),
+        );
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
-            value += &(self.ctx.field(weight) * &equality.at(relation.map.h_offset + cell));
+            value = cfg.add(
+                &(value),
+                &(&(cfg.mul(
+                    &(crate::utils::delayed_reduction::element(&cfg, weight)),
+                    &(&equality.at(relation.map.h_offset + cell)),
+                ))),
+            );
         }
         Ok(value)
     }
@@ -297,7 +359,7 @@ impl<'a> ModQCoefficients<'a> {
     /// Computes the P-256 row and public-equation weights over `F_q`.
     /// Let `e_o(i) = eq(outer_row_point, i)`, `e_l(i) = eq(linear_row_point, i)`,
     /// `ρ = matrix_batch_challenge`, `γ = linear_batch_weight`, and
-    /// `S = 256 · compressions()`, with integer indices interpreted as Boolean
+    /// `S = 256 · compressions()`, with integer indices interpreted as Bit
     /// vectors. For `w(i) = (w_A(i), w_B(i), w_C(i))`, the matrix weights are:
     ///
     /// ```text
@@ -315,16 +377,16 @@ impl<'a> ModQCoefficients<'a> {
         claim: &InnerSumcheckClaim,
         cfg: &Config,
     ) -> Result<RowWeights> {
-        let ctx = self.ctx;
+        let ctx = &self.ctx;
         let linear = equality_weights(&claim.linear_row_point, cfg)?;
         let outer = equality_weights(&claim.outer_row_point, cfg)?;
         let batch = ctx.raw(&claim.matrix_batch_challenge);
-        let batch_squared = ctx.mul(batch, batch);
+        let batch_squared = ctx.mul_raw(batch, batch);
         let mut matrix_rows = vec![0 as Raw; 3 * relation.local.rows()];
         let matrix_weights = |slots: &mut [Raw], weight| {
             slots[0] = weight;
-            slots[1] = ctx.mul(weight, batch);
-            slots[2] = ctx.mul(weight, batch_squared);
+            slots[1] = ctx.mul_raw(weight, batch);
+            slots[2] = ctx.mul_raw(weight, batch_squared);
         };
         match relation.mode {
             OuterMode::Split => {
@@ -335,8 +397,10 @@ impl<'a> ModQCoefficients<'a> {
                     );
                 }
                 for (index, &row) in relation.local.linear.iter().enumerate() {
-                    let weight = linear.at(256 * relation.compressions() + index)
-                        * &claim.linear_batch_weight;
+                    let weight = cfg.mul(
+                        &(linear.at(256 * relation.compressions() + index)),
+                        &(&claim.linear_batch_weight),
+                    );
                     matrix_rows[3 * row + 2] = ctx.raw(&weight);
                 }
             }
@@ -348,9 +412,16 @@ impl<'a> ModQCoefficients<'a> {
             }
         }
         let public_start = public_row_start(relation);
-        let constant = linear.at(public_start) * &claim.linear_batch_weight;
+        let constant = cfg.mul(&(linear.at(public_start)), &(&claim.linear_batch_weight));
         let public_bits = (0..1024)
-            .map(|bit| ctx.raw(&(linear.at(public_start + 1 + bit) * &claim.linear_batch_weight)))
+            .map(|bit| {
+                ctx.raw(
+                    &(cfg.mul(
+                        &(linear.at(public_start + 1 + bit)),
+                        &(&claim.linear_batch_weight),
+                    )),
+                )
+            })
             .collect();
         Ok(RowWeights {
             matrix_rows,
@@ -372,9 +443,10 @@ impl<'a> ModQCoefficients<'a> {
             .tail
             .column(column)
             .fold(0 as Raw, |sum, (slot, coefficient)| {
-                self.ctx.add(
+                self.ctx.add_raw(
                     sum,
-                    self.ctx.mul(row_weights[slot], self.residues[coefficient]),
+                    self.ctx
+                        .mul_raw(row_weights[slot], self.residues[coefficient]),
                 )
             })
     }
@@ -385,8 +457,10 @@ impl<'a> ModQCoefficients<'a> {
         claim: &InnerSumcheckClaim,
         cfg: &Config,
     ) -> Result<(Vec<F>, Vec<F>)> {
-        let squared_challenge =
-            claim.matrix_batch_challenge.clone() * &claim.matrix_batch_challenge;
+        let squared_challenge = cfg.mul(
+            &(claim.matrix_batch_challenge.clone()),
+            &(&claim.matrix_batch_challenge),
+        );
         let (point, multiplier) = match relation.mode {
             OuterMode::Split => (&claim.linear_row_point, &claim.linear_batch_weight),
             OuterMode::AllRows => (&claim.outer_row_point, &squared_challenge),
@@ -398,17 +472,19 @@ impl<'a> ModQCoefficients<'a> {
         for row in 0..relation.local.sha_c.rows() {
             let weight = self
                 .ctx
-                .mul(self.ctx.raw(&local_weights.at(row)), multiplier);
+                .mul_raw(self.ctx.raw(&local_weights.at(row)), multiplier);
             for (column, coefficient) in relation.local.sha_c.row(row) {
-                sha[column] = self.ctx.add(
+                sha[column] = self.ctx.add_raw(
                     sha[column],
-                    self.ctx.mul(weight, self.residues[coefficient]),
+                    self.ctx.mul_raw(weight, self.residues[coefficient]),
                 );
             }
         }
         Ok((
             instances,
-            sha.into_iter().map(|value| self.ctx.field(value)).collect(),
+            sha.into_iter()
+                .map(|value| crate::utils::delayed_reduction::element(&cfg, value))
+                .collect(),
         ))
     }
 }
@@ -437,13 +513,20 @@ impl BatchedMatrixMle {
             assignment_point,
             cfg,
         )?;
-        value += &(self.constant_weight.clone() * &equality.at(0));
-        value += &evaluate_tail_by_runs(
-            self.ctx,
-            self.p256_assignment_offset,
-            &self.p256_montgomery_evaluations,
-            &self.tail_runs,
-            &equality,
+        value = cfg.add(
+            &(value),
+            &(&(cfg.mul(&(self.constant_weight.clone()), &(&equality.at(0))))),
+        );
+        value = cfg.add(
+            &(value),
+            &(&evaluate_tail_by_runs(
+                cfg,
+                &self.ctx,
+                self.p256_assignment_offset,
+                &self.p256_montgomery_evaluations,
+                &self.tail_runs,
+                &equality,
+            )),
         );
         Ok(value)
     }
@@ -474,6 +557,7 @@ fn equality_weights(point: &[F], cfg: &Config) -> Result<EqualityWeights<F>> {
     Ok(EqualityWeights::from_tables(
         low.evaluations,
         high.evaluations,
+        cfg,
     ))
 }
 
@@ -503,7 +587,8 @@ fn evaluate_sha_factors(instances: &[F], sha: &[F], point: &[F], cfg: &Config) -
 /// so the runs cost a few multiplications each; columns outside every run pay
 /// two multiplications.
 fn evaluate_tail_by_runs(
-    ctx: RawMontyCtx,
+    cfg: &Config,
+    ctx: &field::FpCtx<2>,
     offset: usize,
     tail: &[Raw],
     runs: &[(usize, usize, F)],
@@ -516,22 +601,22 @@ fn evaluate_tail_by_runs(
     // Q[t] = low[t] + 2 · Q[t + 1], Q[block] = 0.
     let mut suffix = vec![0 as Raw; block + 1];
     for t in (0..block).rev() {
-        let doubled = ctx.add(suffix[t + 1], suffix[t + 1]);
-        suffix[t] = ctx.add(low[t], doubled);
+        let doubled = ctx.add_raw(suffix[t + 1], suffix[t + 1]);
+        suffix[t] = ctx.add_raw(low[t], doubled);
     }
     // 2^k in Montgomery form for k ≤ block.
     let mut pow2 = Vec::with_capacity(block + 1);
     pow2.push(ctx.native_residue(1));
     for k in 0..block {
-        pow2.push(ctx.add(pow2[k], pow2[k]));
+        pow2.push(ctx.add_raw(pow2[k], pow2[k]));
     }
     let mut sum = 0 as Raw;
     let mut cursor = 0usize;
     let scalar = |sum: &mut Raw, from: usize, to: usize| {
         for column in from..to {
             let index = offset + column;
-            let weight = ctx.mul(low[index & mask], high[index >> shift]);
-            *sum = ctx.add(*sum, ctx.mul(weight, tail[column]));
+            let weight = ctx.mul_raw(low[index & mask], high[index >> shift]);
+            *sum = ctx.add_raw(*sum, ctx.mul_raw(weight, tail[column]));
         }
     };
     for &(start, len, ref base) in runs {
@@ -543,15 +628,15 @@ fn evaluate_tail_by_runs(
             let b = index >> shift;
             let lo = index & mask;
             let hi = (lo + (end - index)).min(block);
-            let part = ctx.sub(suffix[lo], ctx.mul(pow2[hi - lo], suffix[hi]));
-            sum = ctx.add(sum, ctx.mul(ctx.mul(base_t, part), high[b]));
-            base_t = ctx.mul(base_t, pow2[hi - lo]);
+            let part = ctx.sub_raw(suffix[lo], ctx.mul_raw(pow2[hi - lo], suffix[hi]));
+            sum = ctx.add_raw(sum, ctx.mul_raw(ctx.mul_raw(base_t, part), high[b]));
+            base_t = ctx.mul_raw(base_t, pow2[hi - lo]);
             index += hi - lo;
         }
         cursor = start + len;
     }
     scalar(&mut sum, cursor, tail.len());
-    ctx.field(sum)
+    crate::utils::delayed_reduction::element(&cfg, sum)
 }
 
 #[cfg(test)]
@@ -561,7 +646,6 @@ mod tests {
         ecdsa_sha256::{prepare_sha256_ecdsa, tests::fixture},
         sumcheck::SumcheckProof,
     };
-    use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_uint::Uint};
 
     /// The tape's tail must equal the expanded-entry gather element by element,
     /// for both outer modes (Split weights only the linear rows' `C` slot).
@@ -597,11 +681,17 @@ mod tests {
             )
             .unwrap();
             let mut coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
-            let weights = coefficients.build_row_weights(&relation, &claim, &cfg).unwrap();
-            let tape = coefficients.tape_tail(&relation, &weights.matrix_rows).unwrap();
+            let weights = coefficients
+                .build_row_weights(&relation, &claim, &cfg)
+                .unwrap();
+            let tape = coefficients
+                .tape_tail(&relation, &weights.matrix_rows)
+                .unwrap();
             assert_eq!(tape.len(), relation.local.tail.columns());
             let gather: Vec<Raw> = (0..relation.local.tail.columns())
-                .map(|column| coefficients.p256_column_weight(&relation, &weights.matrix_rows, column))
+                .map(|column| {
+                    coefficients.p256_column_weight(&relation, &weights.matrix_rows, column)
+                })
                 .collect();
             let first_mismatch = tape.iter().zip(&gather).position(|(a, b)| a != b);
             assert_eq!(first_mismatch, None, "{mode:?}");
@@ -649,7 +739,10 @@ mod tests {
             let mut covered = 0usize;
             let mut end = 0usize;
             for &(start, len, ref base) in &prepared.tail_runs {
-                assert!(start >= end && len > 0, "{mode:?}: runs overlap or are empty");
+                assert!(
+                    start >= end && len > 0,
+                    "{mode:?}: runs overlap or are empty"
+                );
                 end = start + len;
                 let mut value = base.clone();
                 for k in 0..len {
@@ -658,13 +751,17 @@ mod tests {
                         value,
                         "{mode:?}: run at {start} disagrees at offset {k}"
                     );
-                    value = value * &two;
+                    value = cfg.mul(&(value), &(&two));
                 }
                 covered += len;
             }
             assert!(end <= prepared.p256_evaluations.len());
             // The lifts cover most of the P-256 witness; the rest are scalar columns.
-            assert!(covered * 10 > prepared.p256_evaluations.len() * 8, "{mode:?}: only {covered} of {} covered", prepared.p256_evaluations.len());
+            assert!(
+                covered * 10 > prepared.p256_evaluations.len() * 8,
+                "{mode:?}: only {covered} of {} covered",
+                prepared.p256_evaluations.len()
+            );
         }
     }
 

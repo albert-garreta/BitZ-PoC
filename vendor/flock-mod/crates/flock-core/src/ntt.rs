@@ -8,7 +8,7 @@
 //! that batch a/b/c with shared twiddles can be added later if the round-1 URM
 //! hot path needs them.
 
-use crate::field::F8;
+use crate::field::Gf8;
 
 pub mod additive_ntt_f128;
 pub mod inv_table;
@@ -22,7 +22,7 @@ pub use parallel_f128::ParallelNttF128;
 /// Twiddle recurrence used to build the next subspace layer's evaluation points:
 /// `next_s(s, root) = s² + root · s = s · (s + root)`.
 #[inline]
-fn next_s(s: F8, s_at_root: F8) -> F8 {
+fn next_s(s: Gf8, s_at_root: Gf8) -> Gf8 {
     s * s + s_at_root * s
 }
 
@@ -30,17 +30,17 @@ fn next_s(s: F8, s_at_root: F8) -> F8 {
 ///
 /// Layout: level-L twiddles live at offset (2^L − 1).
 /// Level 0 has 2^{k-1} twiddles, level 1 has 2^{k-2}, …, level k−1 has 1.
-pub fn compute_twiddles(k: usize, beta: F8) -> Vec<F8> {
+pub fn compute_twiddles(k: usize, beta: Gf8) -> Vec<Gf8> {
     if k == 0 {
         return Vec::new();
     }
     let n = 1usize << k;
-    let mut twiddles = vec![F8::ZERO; n - 1];
+    let mut twiddles = vec![Gf8::ZERO; n - 1];
 
     // Layer 0: 2^{k-1} points beta + {0, 2, 4, ..., 2(len-1)}.
     let mut len = 1usize << (k - 1);
-    let mut layer: Vec<F8> = (0..len).map(|i| beta + F8((2 * i) as u8)).collect();
-    let mut s_at_root = F8::ONE;
+    let mut layer: Vec<Gf8> = (0..len).map(|i| beta + Gf8((2 * i) as u8)).collect();
+    let mut s_at_root = Gf8::ONE;
 
     // Write layer 0 directly (s_at_root = 1 ⇒ no scaling needed).
     let mut write_at = len;
@@ -59,7 +59,7 @@ pub fn compute_twiddles(k: usize, beta: F8) -> Vec<F8> {
         len = new_len;
         s_at_root = next_s_root;
 
-        let s_inv = s_at_root.inv();
+        let s_inv = s_at_root.inverse_or_zero();
         for j in 0..len {
             twiddles[write_at - 1 + j] = s_inv * layer[j];
         }
@@ -69,7 +69,7 @@ pub fn compute_twiddles(k: usize, beta: F8) -> Vec<F8> {
 }
 
 #[inline]
-fn fft_butterfly(v: &mut [F8], lambda: F8) {
+fn fft_butterfly(v: &mut [Gf8], lambda: Gf8) {
     let n = v.len();
     let half = n >> 1;
     for i in 0..half {
@@ -79,7 +79,7 @@ fn fft_butterfly(v: &mut [F8], lambda: F8) {
     }
 }
 
-fn fft_rec(v: &mut [F8], tw: &[F8], idx: usize) {
+fn fft_rec(v: &mut [Gf8], tw: &[Gf8], idx: usize) {
     let n = v.len();
     if n == 1 {
         return;
@@ -92,7 +92,7 @@ fn fft_rec(v: &mut [F8], tw: &[F8], idx: usize) {
 }
 
 #[inline]
-fn ifft_butterfly(v: &mut [F8], lambda: F8) {
+fn ifft_butterfly(v: &mut [Gf8], lambda: Gf8) {
     let n = v.len();
     let half = n >> 1;
     for i in 0..half {
@@ -101,7 +101,7 @@ fn ifft_butterfly(v: &mut [F8], lambda: F8) {
     }
 }
 
-fn ifft_rec(v: &mut [F8], tw: &[F8], idx: usize) {
+fn ifft_rec(v: &mut [Gf8], tw: &[Gf8], idx: usize) {
     let n = v.len();
     if n == 1 {
         return;
@@ -121,12 +121,12 @@ fn ifft_rec(v: &mut [F8], tw: &[F8], idx: usize) {
 #[derive(Clone, Debug)]
 pub struct AdditiveNttGf8 {
     k: usize,
-    twiddles: Vec<F8>,
+    twiddles: Vec<Gf8>,
 }
 
 impl AdditiveNttGf8 {
     /// Build an NTT for a 2^k-point domain with offset β.
-    pub fn new(k: usize, beta: F8) -> Self {
+    pub fn new(k: usize, beta: Gf8) -> Self {
         Self {
             k,
             twiddles: compute_twiddles(k, beta),
@@ -139,11 +139,11 @@ impl AdditiveNttGf8 {
     pub fn domain_size(&self) -> usize {
         1usize << self.k
     }
-    pub fn twiddles(&self) -> &[F8] {
+    pub fn twiddles(&self) -> &[Gf8] {
         &self.twiddles
     }
 
-    pub fn forward(&self, v: &mut [F8]) {
+    pub fn forward(&self, v: &mut [Gf8]) {
         assert_eq!(
             v.len(),
             self.domain_size(),
@@ -155,7 +155,7 @@ impl AdditiveNttGf8 {
         fft_rec(v, &self.twiddles, 1);
     }
 
-    pub fn inverse(&self, v: &mut [F8]) {
+    pub fn inverse(&self, v: &mut [Gf8]) {
         assert_eq!(
             v.len(),
             self.domain_size(),
@@ -186,14 +186,14 @@ mod tests {
         }
     }
 
-    fn rand_vec(rng: &mut Rng, n: usize) -> Vec<F8> {
-        (0..n).map(|_| F8((rng.next_u64() & 0xff) as u8)).collect()
+    fn rand_vec(rng: &mut Rng, n: usize) -> Vec<Gf8> {
+        (0..n).map(|_| Gf8((rng.next_u64() & 0xff) as u8)).collect()
     }
 
     #[test]
     fn twiddles_size() {
         for k in 1..=7 {
-            let ntt = AdditiveNttGf8::new(k, F8::ZERO);
+            let ntt = AdditiveNttGf8::new(k, Gf8::ZERO);
             assert_eq!(ntt.twiddles().len(), (1usize << k) - 1);
         }
     }
@@ -202,7 +202,7 @@ mod tests {
     fn forward_inverse_roundtrip() {
         let mut rng = Rng::new(42);
         for k in 1..=7 {
-            let ntt = AdditiveNttGf8::new(k, F8::ZERO);
+            let ntt = AdditiveNttGf8::new(k, Gf8::ZERO);
             for _ in 0..8 {
                 let original = rand_vec(&mut rng, 1 << k);
                 let mut v = original.clone();
@@ -217,7 +217,7 @@ mod tests {
     fn inverse_forward_roundtrip() {
         let mut rng = Rng::new(43);
         for k in 1..=7 {
-            let ntt = AdditiveNttGf8::new(k, F8::ZERO);
+            let ntt = AdditiveNttGf8::new(k, Gf8::ZERO);
             for _ in 0..8 {
                 let original = rand_vec(&mut rng, 1 << k);
                 let mut v = original.clone();
@@ -232,11 +232,11 @@ mod tests {
     fn forward_is_linear() {
         let mut rng = Rng::new(44);
         for k in 1..=6 {
-            let ntt = AdditiveNttGf8::new(k, F8::ZERO);
+            let ntt = AdditiveNttGf8::new(k, Gf8::ZERO);
             let n = 1usize << k;
             let a = rand_vec(&mut rng, n);
             let b = rand_vec(&mut rng, n);
-            let ab: Vec<F8> = a.iter().zip(&b).map(|(x, y)| *x + *y).collect();
+            let ab: Vec<Gf8> = a.iter().zip(&b).map(|(x, y)| *x + *y).collect();
 
             let mut fa = a.clone();
             ntt.forward(&mut fa);
@@ -255,7 +255,7 @@ mod tests {
     fn nonzero_beta_roundtrip() {
         let mut rng = Rng::new(45);
         for beta_v in [0x01u8, 0x42, 0xCA, 0xFF] {
-            let beta = F8(beta_v);
+            let beta = Gf8(beta_v);
             for k in 1..=6 {
                 let ntt = AdditiveNttGf8::new(k, beta);
                 let original = rand_vec(&mut rng, 1 << k);

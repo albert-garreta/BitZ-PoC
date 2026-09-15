@@ -40,7 +40,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             ))
         })
         .collect();
-    assert_eq!(executables.len(), 23);
+    assert_eq!(executables.len(), 22);
     let directory = tempfile::tempdir().unwrap();
     for (name, executable) in &executables {
         let args = match name.as_str() {
@@ -109,7 +109,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("cm_and", "F2Z_BENCH_REPS"),
         ("u32_mul", "F2Z_BENCH_REPS"),
         ("baby_bear_mul", "F2Z_BENCH_REPS"),
-        ("u32_mul_inner_policy", "F2Z_BENCH_REPS"),
         ("u32_mul_outer_skip", "F2Z_BENCH_REPS"),
         ("multiswap", "F2Z_BENCH_REPS"),
         ("lambda_sweep", "F2Z_BENCH_REPS"),
@@ -150,7 +149,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("u32_mul", "F2Z_MUL_WORD_BITS", "2"),
         ("u32_mul", "F2Z_BENCH_SHAPES", "14"),
         ("u32_mul_outer_skip", "F2Z_BENCH_SHAPES", "26"),
-        ("u32_mul_inner_policy", "F2Z_BENCH_SHAPES", "24"),
         ("baby_bear_mul", "F2Z_BABY_BEAR_MUL_EXPONENTS", "14"),
         ("cm_and", "F2Z_CM_EXPONENTS", "14"),
         ("sha256_chain", "F2Z_BENCH_SHAPES", "6"),
@@ -170,14 +168,28 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("mul_e2e_compare", "F2Z_BENCH_SHAPES", "14"),
         ("mul_witness_compare", "F2Z_BENCH_SHAPES", "3"),
     ] {
-        let out = run(&executables[name], directory.path(), &["--bench"], &[
-            (variable, value), ("PERFETTO_TRACE_PROCESSOR", "/missing"),
-        ]);
+        let out = run(
+            &executables[name],
+            directory.path(),
+            &["--bench"],
+            &[(variable, value), ("PERFETTO_TRACE_PROCESSOR", "/missing")],
+        );
         let error = String::from_utf8_lossy(&out.stderr);
-        assert_eq!(out.status.code(), Some(2), "{name} {variable}={value}: {error}");
-        assert!(error.contains("F2Z_BENCH_SHAPES") || error.contains(variable), "{name}: {error}");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{name} {variable}={value}: {error}"
+        );
+        assert!(
+            error.contains("F2Z_BENCH_SHAPES") || error.contains(variable),
+            "{name}: {error}"
+        );
         assert!(!error.contains("panicked"), "{name}: {error}");
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0, "{name}");
+        assert_eq!(
+            std::fs::read_dir(directory.path()).unwrap().count(),
+            0,
+            "{name}"
+        );
     }
     for name in ["hybrid_u32_sha256", "hybrid-u32-sha256"] {
         for mode in ["hybrid", "separate", "all-binius", "binius-ligerito", "all"] {
@@ -235,7 +247,10 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
     );
     for (name, args) in [
         ("sha256_ecdsa", vec!["3", "split", "100", "0"]),
-        ("sha256_ecdsa_compare", vec!["--method", "f2z-split", "--r", "1", "--c", "1"]),
+        (
+            "sha256_ecdsa_compare",
+            vec!["--method", "f2z-split", "--r", "1", "--c", "1"],
+        ),
         ("ligerito_bounds", vec!["unknown", "custom:1:4"]),
     ] {
         assert!(

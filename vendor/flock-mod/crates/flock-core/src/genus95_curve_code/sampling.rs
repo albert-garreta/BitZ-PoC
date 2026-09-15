@@ -1,7 +1,7 @@
 use super::artin_schreier::ArtinSchreierSolver;
 use super::constants::{BASE_Y_DEGREE, SAMPLE_X_POWER_COUNT};
 use super::evaluator::{EvaluationPoint, eval_poly_mask, x_powers, y_powers};
-use super::field::{F128, F128Ext};
+use super::field::{Gf128, F128Ext};
 #[cfg(test)]
 use super::tables::RationalMask;
 use super::tables::TABLES;
@@ -66,7 +66,7 @@ pub fn try_evaluation_point(rng: &mut impl RngCore) -> Option<EvaluationPoint> {
     let tables = &*TABLES;
     let mut roots = RootList::empty();
 
-    let x = F128::random(rng);
+    let x = Gf128::random(rng);
     base_y_roots_for_x_factored(&tables.as_solver, x, &mut roots);
     if roots.is_empty() {
         return None;
@@ -96,7 +96,7 @@ pub fn try_evaluation_point(rng: &mut impl RngCore) -> Option<EvaluationPoint> {
     let z_choice_bits = rng.next_u64();
 
     let mut inverse_cache = SampleInverseCache::empty();
-    let mut rhs_coeff_cache = [[F128::ZERO; BASE_Y_DEGREE]; 3];
+    let mut rhs_coeff_cache = [[Gf128::ZERO; BASE_Y_DEGREE]; 3];
     let mut rhs_coeff_cached = [false; 3];
 
     // The z-fiber over (x, y) is all-or-nothing (8 points or 0): the three
@@ -105,7 +105,7 @@ pub fn try_evaluation_point(rng: &mut impl RngCore) -> Option<EvaluationPoint> {
     // rather than trying another root, so the chosen slot — and hence every
     // cover point — stays equally likely. The three branch bits already
     // sample the 8 lifts uniformly.
-    let mut z = [F128::ZERO; 3];
+    let mut z = [Gf128::ZERO; 3];
     for i in 0..3 {
         let rhs_coeffs = sample_artin_schreier_rhs_coeffs_cached(
             i,
@@ -117,7 +117,7 @@ pub fn try_evaluation_point(rng: &mut impl RngCore) -> Option<EvaluationPoint> {
         let rhs = eval_base_coefficients(rhs_coeffs, &y_powers);
         let mut root = tables.as_solver.solve(rhs)?;
         if ((z_choice_bits >> i) & 1) != 0 {
-            root += F128::ONE;
+            root += Gf128::ONE;
         }
         z[i] = root;
     }
@@ -135,9 +135,9 @@ pub fn try_evaluation_point(rng: &mut impl RngCore) -> Option<EvaluationPoint> {
 /// product evaluator's common denominator, using a specialized squaring chain.
 /// Used only to reject `x` at poles of the denominator before lifting a point.
 #[inline(always)]
-fn sample_x_powers_and_product_denominator(x: F128) -> ([F128; SAMPLE_X_POWER_COUNT], F128) {
-    let mut powers = [F128::ZERO; SAMPLE_X_POWER_COUNT];
-    powers[0] = F128::ONE;
+fn sample_x_powers_and_product_denominator(x: Gf128) -> ([Gf128; SAMPLE_X_POWER_COUNT], Gf128) {
+    let mut powers = [Gf128::ZERO; SAMPLE_X_POWER_COUNT];
+    powers[0] = Gf128::ONE;
     powers[1] = x;
     powers[2] = x.square();
     powers[3] = powers[2] * x;
@@ -169,10 +169,10 @@ fn sample_x_powers_and_product_denominator(x: F128) -> ([F128; SAMPLE_X_POWER_CO
 #[cfg(test)]
 pub(crate) fn eval_base_rational_function<const N: usize>(
     coeffs: &[RationalMask; BASE_Y_DEGREE],
-    x_powers: &[F128; N],
-    y_powers: &[F128; BASE_Y_DEGREE],
-) -> Option<F128> {
-    let mut out = F128::ZERO;
+    x_powers: &[Gf128; N],
+    y_powers: &[Gf128; BASE_Y_DEGREE],
+) -> Option<Gf128> {
+    let mut out = Gf128::ZERO;
     for i in 0..BASE_Y_DEGREE {
         let coeff = coeffs[i].eval(x_powers)?;
         out += coeff * y_powers[i];
@@ -182,11 +182,11 @@ pub(crate) fn eval_base_rational_function<const N: usize>(
 
 fn sample_artin_schreier_rhs_coeffs_cached<'a>(
     rhs_index: usize,
-    x_powers: &[F128; SAMPLE_X_POWER_COUNT],
+    x_powers: &[Gf128; SAMPLE_X_POWER_COUNT],
     inverse_cache: &mut SampleInverseCache,
-    rhs_coeff_cache: &'a mut [[F128; BASE_Y_DEGREE]; 3],
+    rhs_coeff_cache: &'a mut [[Gf128; BASE_Y_DEGREE]; 3],
     rhs_coeff_cached: &mut [bool; 3],
-) -> Option<&'a [F128; BASE_Y_DEGREE]> {
+) -> Option<&'a [Gf128; BASE_Y_DEGREE]> {
     if !rhs_coeff_cached[rhs_index] {
         let d0 = inverse_cache.d0(x_powers)?;
         let coeffs = &mut rhs_coeff_cache[rhs_index];
@@ -200,9 +200,9 @@ fn sample_artin_schreier_rhs_coeffs_cached<'a>(
                     + x_powers[2])
                     * d0;
                 coeffs[1] =
-                    (x_powers[5] + x_powers[4] + x_powers[3] + x_powers[2] + F128::ONE) * d0;
+                    (x_powers[5] + x_powers[4] + x_powers[3] + x_powers[2] + Gf128::ONE) * d0;
                 coeffs[2] = (x_powers[4] + x_powers[3] + x_powers[2]) * d0;
-                coeffs[3] = (x_powers[3] + F128::ONE) * d0;
+                coeffs[3] = (x_powers[3] + Gf128::ONE) * d0;
             }
             1 => {
                 let d1 = inverse_cache.d1(x_powers)?;
@@ -219,8 +219,8 @@ fn sample_artin_schreier_rhs_coeffs_cached<'a>(
             }
             2 => {
                 coeffs[0] = (x_powers[6] + x_powers[4] + x_powers[3] + x_powers[2]) * d0;
-                coeffs[1] = (x_powers[5] + F128::ONE) * d0;
-                coeffs[2] = (x_powers[3] + x_powers[2] + x_powers[1] + F128::ONE) * d0;
+                coeffs[1] = (x_powers[5] + Gf128::ONE) * d0;
+                coeffs[2] = (x_powers[3] + x_powers[2] + x_powers[1] + Gf128::ONE) * d0;
                 coeffs[3] = (x_powers[3] + x_powers[2]) * d0;
             }
             _ => unreachable!(),
@@ -231,10 +231,10 @@ fn sample_artin_schreier_rhs_coeffs_cached<'a>(
 }
 
 fn eval_base_coefficients(
-    coeffs: &[F128; BASE_Y_DEGREE],
-    y_powers: &[F128; BASE_Y_DEGREE],
-) -> F128 {
-    let mut out = F128::ZERO;
+    coeffs: &[Gf128; BASE_Y_DEGREE],
+    y_powers: &[Gf128; BASE_Y_DEGREE],
+) -> Gf128 {
+    let mut out = Gf128::ZERO;
     for i in 0..BASE_Y_DEGREE {
         out += coeffs[i] * y_powers[i];
     }
@@ -243,8 +243,8 @@ fn eval_base_coefficients(
 
 #[derive(Clone, Copy)]
 struct SampleInverseCache {
-    d0: Option<Option<F128>>,
-    d1: Option<Option<F128>>,
+    d0: Option<Option<Gf128>>,
+    d1: Option<Option<Gf128>>,
 }
 
 impl SampleInverseCache {
@@ -252,22 +252,22 @@ impl SampleInverseCache {
         Self { d0: None, d1: None }
     }
 
-    fn d0(&mut self, x_powers: &[F128; SAMPLE_X_POWER_COUNT]) -> Option<F128> {
+    fn d0(&mut self, x_powers: &[Gf128; SAMPLE_X_POWER_COUNT]) -> Option<Gf128> {
         if let Some(inverse) = self.d0 {
             return inverse;
         }
-        let denominator = x_powers[10] + x_powers[4] + F128::ONE;
+        let denominator = x_powers[10] + x_powers[4] + Gf128::ONE;
         let inverse = denominator.inverse();
         self.d0 = Some(inverse);
         inverse
     }
 
-    fn d1(&mut self, x_powers: &[F128; SAMPLE_X_POWER_COUNT]) -> Option<F128> {
+    fn d1(&mut self, x_powers: &[Gf128; SAMPLE_X_POWER_COUNT]) -> Option<Gf128> {
         if let Some(inverse) = self.d1 {
             return inverse;
         }
         let denominator =
-            x_powers[11] + x_powers[10] + x_powers[5] + x_powers[4] + x_powers[1] + F128::ONE;
+            x_powers[11] + x_powers[10] + x_powers[5] + x_powers[4] + x_powers[1] + Gf128::ONE;
         let inverse = denominator.inverse();
         self.d1 = Some(inverse);
         inverse
@@ -276,14 +276,14 @@ impl SampleInverseCache {
 
 #[derive(Clone, Copy)]
 struct RootList {
-    values: [F128; 7],
+    values: [Gf128; 7],
     len: usize,
 }
 
 impl RootList {
     fn empty() -> Self {
         Self {
-            values: [F128::ZERO; 7],
+            values: [Gf128::ZERO; 7],
             len: 0,
         }
     }
@@ -292,13 +292,13 @@ impl RootList {
         self.len == 0
     }
 
-    fn push(&mut self, value: F128) {
+    fn push(&mut self, value: Gf128) {
         debug_assert!(self.len < self.values.len());
         self.values[self.len] = value;
         self.len += 1;
     }
 
-    fn push_unique(&mut self, value: F128) {
+    fn push_unique(&mut self, value: Gf128) {
         if self.values[..self.len].contains(&value) {
             return;
         }
@@ -306,10 +306,10 @@ impl RootList {
     }
 }
 
-fn base_y_roots_for_x_factored(as_solver: &ArtinSchreierSolver, x: F128, roots: &mut RootList) {
-    let u = x + F128::ONE;
+fn base_y_roots_for_x_factored(as_solver: &ArtinSchreierSolver, x: Gf128, roots: &mut RootList) {
+    let u = x + Gf128::ONE;
     if u.is_zero() {
-        roots.push(F128::ZERO);
+        roots.push(Gf128::ZERO);
         return;
     }
 
@@ -322,7 +322,7 @@ fn base_y_roots_for_x_factored(as_solver: &ArtinSchreierSolver, x: F128, roots: 
     };
     let x_over_u = x * inv_u;
 
-    for t in [t0, t0 + F128::ONE] {
+    for t in [t0, t0 + Gf128::ONE] {
         let Some(s0) = as_solver.solve(x_over_u * t) else {
             continue;
         };

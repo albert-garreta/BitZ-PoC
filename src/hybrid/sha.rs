@@ -13,7 +13,7 @@ use binius_frontend::{Circuit, CircuitBuilder, Wire};
 use binius_iop::channel::OracleSpec;
 use binius_prover::{IOPProver, protocols::shift::KeyCollection};
 use binius_verifier::{IOPVerifier, config::B128};
-use flock_core::field::F128;
+use flock_core::field::Gf128;
 
 pub const SHA256_IV: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -116,10 +116,10 @@ impl ShaRelation {
         Ok(filler.into_value_vec())
     }
 
-    pub fn pack(&self, witness: &ValueVec) -> Vec<F128> {
-        let mut packed = vec![F128::ZERO; 1 << self.verifier.log_witness_elems()];
+    pub fn pack(&self, witness: &ValueVec) -> Vec<Gf128> {
+        let mut packed = vec![Gf128::ZERO; 1 << self.verifier.log_witness_elems()];
         for (dst, words) in packed.iter_mut().zip(witness.non_public().chunks(2)) {
-            *dst = F128 {
+            *dst = Gf128 {
                 lo: words[0].0,
                 hi: words.get(1).map_or(0, |w| w.0),
             };
@@ -175,7 +175,7 @@ impl ShaRelation {
 }
 
 fn evaluation_claim(point: &[B128], value: B128) -> BinaryClaim {
-    let convert = |x: B128| F128 {
+    let convert = |x: B128| Gf128 {
         lo: u128::from(x) as u64,
         hi: (u128::from(x) >> 64) as u64,
     };
@@ -220,9 +220,9 @@ mod tests {
                 .pack(&witness)
                 .iter()
                 .zip(high)
-                .fold(F128::ZERO, |sum, (word, weight)| {
+                .fold(Gf128::ZERO, |sum, (word, weight)| {
                     let mut bits = u128::from(word.lo) | (u128::from(word.hi) << 64);
-                    let mut low = F128::ZERO;
+                    let mut low = Gf128::ZERO;
                     while bits != 0 {
                         low += claim.low[bits.trailing_zeros() as usize];
                         bits &= bits - 1;

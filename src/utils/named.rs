@@ -1,4 +1,4 @@
-use crypto_primitives::{boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use field::{Bit, Uint, Z};
 
 pub trait Named {
     /// Returns the name of the type as a string, used in benchmarks for nicer
@@ -25,9 +25,9 @@ macro_rules! impl_named_for_primitives {
 impl_named_for_primitives!(i8, i16, i32, i64, i128);
 impl_named_for_primitives!(u8, u16, u32, u64, u128);
 
-impl<const LIMBS: usize> Named for Int<LIMBS> {
+impl<const LIMBS: usize> Named for Z<LIMBS> {
     fn type_name() -> String {
-        format!("Int<{}>", LIMBS)
+        format!("Z<{}>", LIMBS)
     }
 }
 
@@ -37,7 +37,7 @@ impl<const LIMBS: usize> Named for Uint<LIMBS> {
     }
 }
 
-impl Named for Boolean {
+impl Named for Bit {
     fn type_name() -> String {
         "b".to_owned()
     }

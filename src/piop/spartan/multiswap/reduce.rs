@@ -31,47 +31,47 @@
 //! an integer defect below `2 * d * Q^2 <= 2^282`, which has at most two
 //! prime divisors in the `[2^112, 2^113)` reduction interval.
 
-use num_bigint::BigUint;
-use num_traits::Zero;
+use field::RingOps;
+use field::{CanonicalCodec, CtMask, CtOrd, CtSelect, IntegerOps, PreparedDivisor, Uint, WideMul};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-/// Exact integer evaluation `mu' = sum_{b,c} rw[b] * cw[c] * bit(b,c)`.
-///
-/// `rows[c]` packs the `2^t` folded-row bits of clear column `c`
-/// little-endian into `u64` words, the commitment's own layout.  Row
-/// weights are canonical residues below the fingerprint prime, so each
-/// column sum fits `2^{128+t}` and is accumulated as a 192-bit integer
-/// before one `BigUint` multiply per column.
+/// Exact lift storage: 256 product bits plus 64 bits of public cell-count
+/// headroom. A shape with fewer than 2^64 cells cannot overflow this type.
 pub fn step50_integer_lift(
     rows: &[Vec<u64>],
     row_weights: &[u128],
     col_weights: &[u128],
-) -> BigUint {
+) -> Uint<5> {
     assert_eq!(rows.len(), col_weights.len(), "one bit column per weight");
+    row_weights
+        .len()
+        .checked_mul(col_weights.len())
+        .expect("lift cell count exceeds usize");
+    assert!(
+        rows.iter()
+            .all(|words| words.len() == row_weights.len().div_ceil(64)),
+        "packed column has the wrong public length"
+    );
 
-    let column_term = |(column, words): (usize, &Vec<u64>)| -> BigUint {
-        let weight = col_weights[column];
-        if weight == 0 {
-            return BigUint::zero();
-        }
+    let column_term = |(column, words): (usize, &Vec<u64>)| -> Uint<5> {
+        // The loop and its addresses depend only on the public shape. In
+        // particular, zero words and zero weights execute the same work.
         let mut low = 0u128;
         let mut high = 0u64;
-        for (word_index, &word) in words.iter().enumerate() {
-            let mut remaining = word;
-            while remaining != 0 {
-                let bit = remaining.trailing_zeros() as usize;
-                let row = word_index * u64::BITS as usize + bit;
-                let (sum, carry) = low.overflowing_add(row_weights[row]);
-                low = sum;
-                high += u64::from(carry);
-                remaining &= remaining - 1;
-            }
+        for (row, &weight) in row_weights.iter().enumerate() {
+            let bit = CtMask::from_lsb(words[row / 64] >> (row % 64));
+            let selected = u64::ct_select(&0, &(weight as u64), bit) as u128
+                | ((u64::ct_select(&0, &((weight >> 64) as u64), bit) as u128) << 64);
+            let (sum, carry) = low.overflowing_add(selected);
+            low = sum;
+            high += u64::from(carry);
         }
-        let mut column_sum = BigUint::from(high) << 128;
-        column_sum += low;
-        column_sum * weight
+        let sum = Uint::from_words([low as u64, (low >> 64) as u64, high]);
+        let product = IntegerOps.mul_wide(&sum, &Uint::<2>::from(col_weights[column]));
+        // An exact 3-by-2-limb product occupies exactly five limbs.
+        *product.checked_resize_ct::<5>().value()
     };
 
     #[cfg(feature = "parallel")]
@@ -79,58 +79,84 @@ pub fn step50_integer_lift(
         rows.par_iter()
             .enumerate()
             .map(column_term)
-            .reduce(BigUint::zero, |left, right| left + right)
+            .reduce(|| Uint::ZERO, |left, right| left.wrapping_add(&right))
     }
     #[cfg(not(feature = "parallel"))]
     {
         rows.iter()
             .enumerate()
             .map(column_term)
-            .fold(BigUint::zero(), |left, right| left + right)
+            .fold(Uint::ZERO, |left, right| left.wrapping_add(&right))
     }
 }
 
-/// Exclusive magnitude bound `d * Q^2` on an admissible `mu'`.
-pub fn step50_mu_prime_bound(cells: usize, q: u128) -> BigUint {
-    let q = BigUint::from(q);
-    BigUint::from(cells) * &q * &q
+/// Exclusive magnitude bound `cells * q^2`, with the same five-limb bound.
+pub fn step50_mu_prime_bound(cells: usize, q: u128) -> Uint<5> {
+    let square = IntegerOps.mul_wide(&Uint::<2>::from(q), &Uint::<2>::from(q));
+    let square = *square.checked_resize_ct::<4>().value();
+    *IntegerOps
+        .mul_wide(&square, &Uint::<1>::from(cells as u64))
+        .checked_resize_ct::<5>()
+        .value()
 }
 
-/// Whether `mu'` is consistent with the mod-`Q` claim: `mu' = mu (mod Q)`
-/// and `mu' < d * Q^2`.
-pub fn step50_accepts_lift(mu_prime: &BigUint, mu: u128, q: u128, cells: usize) -> bool {
-    if mu_prime >= &step50_mu_prime_bound(cells, q) {
-        return false;
-    }
-    mu_prime % BigUint::from(q) == BigUint::from(mu)
+/// Validate the now-public proof message against its magnitude and mod-Q claim.
+pub fn step50_accepts_lift(mu_prime: &Uint<5>, mu: u128, q: u128, cells: usize) -> bool {
+    mu_prime
+        .ct_lt(&step50_mu_prime_bound(cells, q))
+        .declassify()
+        && lift_mod_u128(mu_prime, q) == mu
 }
 
-/// Reduces the tensor factors and the lifted claim modulo `q'`.
 pub fn step50_reduce(
     row_weights: &[u128],
     col_weights: &[u128],
-    mu_prime: &BigUint,
+    mu_prime: &Uint<5>,
     q_prime: u128,
 ) -> (Vec<u128>, Vec<u128>, u128) {
-    let reduce = |weights: &[u128]| weights.iter().map(|&w| w % q_prime).collect::<Vec<_>>();
-    let claimed = biguint_mod_u128(mu_prime, q_prime);
-    (reduce(row_weights), reduce(col_weights), claimed)
+    let divisor = PreparedDivisor::new(Uint::<2>::from(q_prime)).expect("nonzero public modulus");
+    let reduce = |weights: &[u128]| {
+        weights
+            .iter()
+            .map(|&w| {
+                let (_, r) = divisor.div_rem_ct(&Uint::<2>::from(w));
+                u128::from(r)
+            })
+            .collect()
+    };
+    let (_, claimed) = divisor.div_rem_ct(mu_prime);
+    (
+        reduce(row_weights),
+        reduce(col_weights),
+        u128::from(claimed),
+    )
 }
 
-fn biguint_mod_u128(value: &BigUint, modulus: u128) -> u128 {
-    let residue = value % BigUint::from(modulus);
-    let digits = residue.iter_u64_digits().collect::<Vec<_>>();
-    match digits.len() {
-        0 => 0,
-        1 => u128::from(digits[0]),
-        2 => u128::from(digits[0]) | (u128::from(digits[1]) << 64),
-        _ => unreachable!("a residue modulo a u128 modulus has at most two u64 digits"),
-    }
+pub fn encode_integer_lift(value: &Uint<5>) -> [u8; 40] {
+    let mut bytes = [0; 40];
+    IntegerOps.encode_into(value, &mut bytes);
+    bytes
+}
+
+fn lift_mod_u128(value: &Uint<5>, modulus: u128) -> u128 {
+    let divisor = PreparedDivisor::new(Uint::<2>::from(modulus)).expect("nonzero public modulus");
+    u128::from(divisor.div_rem_ct(value).1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_bigint::BigUint;
+    use num_traits::Zero;
+
+    fn oracle(value: &Uint<5>) -> BigUint {
+        BigUint::from_bytes_le(&encode_integer_lift(value))
+    }
+    fn biguint_mod_u128(value: &BigUint, modulus: u128) -> u128 {
+        let digits = (value % BigUint::from(modulus)).to_u64_digits();
+        digits.first().copied().unwrap_or(0) as u128
+            | ((digits.get(1).copied().unwrap_or(0) as u128) << 64)
+    }
 
     fn dense_lift(bits: &[Vec<u64>], rw: &[u128], cw: &[u128]) -> BigUint {
         let mut total = BigUint::zero();
@@ -156,9 +182,9 @@ mod tests {
             .collect();
 
         let lifted = step50_integer_lift(&rows, &rw, &cw);
-        assert_eq!(lifted, dense_lift(&rows, &rw, &cw));
+        assert_eq!(oracle(&lifted), dense_lift(&rows, &rw, &cw));
 
-        let mu = biguint_mod_u128(&lifted, q);
+        let mu = lift_mod_u128(&lifted, q);
         assert!(step50_accepts_lift(&lifted, mu, q, rw.len() * cw.len()));
         assert!(!step50_accepts_lift(
             &lifted,
@@ -167,7 +193,7 @@ mod tests {
             rw.len() * cw.len()
         ));
         assert!(!step50_accepts_lift(
-            &(&lifted + step50_mu_prime_bound(rw.len() * cw.len(), q)),
+            &lifted.wrapping_add(&step50_mu_prime_bound(rw.len() * cw.len(), q)),
             mu,
             q,
             rw.len() * cw.len(),

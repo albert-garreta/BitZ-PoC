@@ -8,7 +8,7 @@
 //! pinned encoder). Scalars are little-endian; the zinc sumcheck proofs reuse
 //! the crate's [`Transcribable`] length-prefixed encoding.
 
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcribable;
 
 /// A decode failure of the F2Z proof stream.
@@ -63,7 +63,7 @@ impl Writer {
 
     /// A `GF(2^128)` element as its two little-endian 64-bit words (16 bytes).
     pub fn gf(&mut self, g: &Gf) {
-        let w = g.words();
+        let w = g.as_words();
         self.0.extend_from_slice(&w[0].to_le_bytes());
         self.0.extend_from_slice(&w[1].to_le_bytes());
     }
@@ -121,7 +121,7 @@ impl<'a> Reader<'a> {
         let b = self.take_raw(16)?;
         let lo = u64::from_le_bytes(b[0..8].try_into().expect("8 bytes"));
         let hi = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes"));
-        Ok(Gf::from_words([lo, hi]))
+        Ok(Gf::from_polynomial_words([lo, hi]))
     }
 
     /// Read a [`Transcribable`] value written by [`Writer::transcribable`].
@@ -136,7 +136,9 @@ impl<'a> Reader<'a> {
         }
         let rem = &self.buf[self.cur..];
         let num_bytes = T::read_num_bytes(&rem[..T::LENGTH_NUM_BYTES]);
-        let need = T::LENGTH_NUM_BYTES.checked_add(num_bytes).ok_or(CodecError::Truncated)?;
+        let need = T::LENGTH_NUM_BYTES
+            .checked_add(num_bytes)
+            .ok_or(CodecError::Truncated)?;
         if need > rem.len() {
             return Err(CodecError::Truncated);
         }

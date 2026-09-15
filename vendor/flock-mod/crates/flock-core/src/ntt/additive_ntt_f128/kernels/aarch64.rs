@@ -1,12 +1,12 @@
-use crate::field::F128;
+use crate::field::Gf128;
 
 /// Process two butterflies at a time within a block sharing one twiddle.
 ///
 /// # Safety
 /// Requires the `aes` target feature.
 #[target_feature(enable = "aes")]
-pub(super) unsafe fn butterfly_block(chunk: &mut [F128], twiddle: F128, half: usize) {
-    use crate::field::gf2_128::aarch64::ghash_mul_vec2_neon;
+pub(super) unsafe fn butterfly_block(chunk: &mut [Gf128], twiddle: Gf128, half: usize) {
+    use crate::field::gf128_kernels::aarch64::ghash_mul_vec2_neon;
 
     debug_assert!(half >= 2);
     debug_assert_eq!(chunk.len(), 2 * half);
@@ -20,19 +20,19 @@ pub(super) unsafe fn butterfly_block(chunk: &mut [F128], twiddle: F128, half: us
 
         // SAFETY: caller guarantees the aes target feature.
         let product = unsafe { ghash_mul_vec2_neon([twiddle, twiddle], [v_a, v_b]) };
-        let new_u_a = F128 {
+        let new_u_a = Gf128 {
             lo: u_a.lo ^ product[0].lo,
             hi: u_a.hi ^ product[0].hi,
         };
-        let new_u_b = F128 {
+        let new_u_b = Gf128 {
             lo: u_b.lo ^ product[1].lo,
             hi: u_b.hi ^ product[1].hi,
         };
-        let new_v_a = F128 {
+        let new_v_a = Gf128 {
             lo: v_a.lo ^ new_u_a.lo,
             hi: v_a.hi ^ new_u_a.hi,
         };
-        let new_v_b = F128 {
+        let new_v_b = Gf128 {
             lo: v_b.lo ^ new_u_b.lo,
             hi: v_b.hi ^ new_u_b.hi,
         };
@@ -51,8 +51,8 @@ pub(super) unsafe fn butterfly_block(chunk: &mut [F128], twiddle: F128, half: us
 /// # Safety
 /// Requires the `aes` target feature.
 #[target_feature(enable = "aes")]
-pub(super) unsafe fn butterfly_block_pair(chunk: &mut [F128], t_a: F128, t_b: F128) {
-    use crate::field::gf2_128::aarch64::ghash_mul_vec2_neon;
+pub(super) unsafe fn butterfly_block_pair(chunk: &mut [Gf128], t_a: Gf128, t_b: Gf128) {
+    use crate::field::gf128_kernels::aarch64::ghash_mul_vec2_neon;
 
     debug_assert_eq!(chunk.len(), 4);
     let u_a = chunk[0];
@@ -62,19 +62,19 @@ pub(super) unsafe fn butterfly_block_pair(chunk: &mut [F128], t_a: F128, t_b: F1
 
     // SAFETY: caller guarantees the aes target feature.
     let product = unsafe { ghash_mul_vec2_neon([t_a, t_b], [v_a, v_b]) };
-    let new_u_a = F128 {
+    let new_u_a = Gf128 {
         lo: u_a.lo ^ product[0].lo,
         hi: u_a.hi ^ product[0].hi,
     };
-    let new_u_b = F128 {
+    let new_u_b = Gf128 {
         lo: u_b.lo ^ product[1].lo,
         hi: u_b.hi ^ product[1].hi,
     };
-    let new_v_a = F128 {
+    let new_v_a = Gf128 {
         lo: v_a.lo ^ new_u_a.lo,
         hi: v_a.hi ^ new_u_a.hi,
     };
-    let new_v_b = F128 {
+    let new_v_b = Gf128 {
         lo: v_b.lo ^ new_u_b.lo,
         hi: v_b.hi ^ new_u_b.hi,
     };

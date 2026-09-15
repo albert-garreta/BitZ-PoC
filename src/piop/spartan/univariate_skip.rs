@@ -7,7 +7,11 @@
 //! point.  The remaining row variables are then handled by the existing cubic
 //! outer sumcheck without changing its proof or transcript format.
 
+use crate::piop::spartan::SpartanField as _;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
+use field::RingOps;
+#[cfg(test)]
+use field::{Fp, Uint};
 
 use super::{
     SpartanField, absorb_field_elements,
@@ -110,7 +114,9 @@ where
         num_row_vars: usize,
         field_cfg: &F::Config,
     ) -> Result<Vec<F>, SumcheckError> {
-        Ok(self.row_factors(num_row_vars, field_cfg)?.materialize())
+        Ok(self
+            .row_factors(num_row_vars, field_cfg)?
+            .materialize(&field_cfg))
     }
 }
 
@@ -277,7 +283,7 @@ where
         for block in evaluations.chunks_exact(block_len) {
             let mut value = zero.clone();
             for (weight, evaluation) in weights.iter().zip(block) {
-                value += &mul(weight, evaluation);
+                value = field_cfg.add(&(value), &(&(field_cfg).mul(weight, evaluation)));
             }
             folded.push(value);
         }
@@ -408,8 +414,8 @@ where
         let mut message = Vec::with_capacity(self.finite_q_evaluations.len() + 1);
         message.extend_from_slice(&self.finite_q_evaluations);
         message.push(self.q_at_infinity.clone());
-        absorb_field_elements(transcript, &message);
-        let z = squeeze_field(transcript, field_cfg);
+        absorb_field_elements(transcript, &message, &field_cfg);
+        let z = squeeze_field(transcript, field_cfg)?;
         let q_at_z = {
             let _scope = tracing::info_span!("spartan:univariate_skip_reconstruct").entered();
             self.reconstruct_at(&z, field_cfg)?
@@ -551,13 +557,13 @@ where
 
     let mut factorial = one.clone();
     for factor in 2..BLOCK_LEN {
-        factorial *= &field_from_usize(factor, field_cfg);
+        factorial = field_cfg.mul(&(factorial), &(&field_from_usize(factor, field_cfg)));
     }
-    let inverse_factorial = one / &factorial;
+    let inverse_factorial = *field::FieldOps::inverse_ct(field_cfg, &factorial).value();
     let leading_weights = top_difference
         .iter()
         .map(|coefficient| {
-            mul(
+            (field_cfg).mul(
                 &field_from_signed(*coefficient, field_cfg),
                 &inverse_factorial,
             )
@@ -567,24 +573,25 @@ where
     let suffix_count = products.az.evaluations.len() / BLOCK_LEN;
     let mut message = vec![zero.clone(); FINITE_COUNT + 1];
     for suffix in 0..suffix_count {
-        let equality = equality_weight(equality_factors, suffix);
+        let equality = equality_weight(equality_factors, suffix, &field_cfg);
         let start = suffix * BLOCK_LEN;
         let az = &products.az.evaluations[start..start + BLOCK_LEN];
         let bz = &products.bz.evaluations[start..start + BLOCK_LEN];
         let cz = &products.cz.evaluations[start..start + BLOCK_LEN];
 
         for (lane, weights) in finite_weights.iter().enumerate() {
-            let a_at = inner_product(weights, az, &zero);
-            let b_at = inner_product(weights, bz, &zero);
-            let c_at = inner_product(weights, cz, &zero);
-            let residual = sub(&mul(&a_at, &b_at), &c_at);
-            message[lane] += &mul(&equality, &residual);
+            let a_at = inner_product(weights, az, &zero, &field_cfg);
+            let b_at = inner_product(weights, bz, &zero, &field_cfg);
+            let c_at = inner_product(weights, cz, &zero, &field_cfg);
+            let residual = (field_cfg).sub(&(field_cfg).mul(&a_at, &b_at), &c_at);
+            message[lane] =
+                field_cfg.add(&(message[lane]), &(&(field_cfg).mul(&equality, &residual)));
         }
 
-        let a_leading = inner_product(&leading_weights, az, &zero);
-        let b_leading = inner_product(&leading_weights, bz, &zero);
-        let infinity = mul(&equality, &mul(&a_leading, &b_leading));
-        message[FINITE_COUNT] += &infinity;
+        let a_leading = inner_product(&leading_weights, az, &zero, &field_cfg);
+        let b_leading = inner_product(&leading_weights, bz, &zero, &field_cfg);
+        let infinity = (field_cfg).mul(&equality, &(field_cfg).mul(&a_leading, &b_leading));
+        message[FINITE_COUNT] = field_cfg.add(&(message[FINITE_COUNT]), &(&infinity));
     }
     Ok(message)
 }
@@ -608,19 +615,20 @@ where
     let one = F::one_with_cfg(field_cfg);
     let exterior_differences = exterior_nodes
         .iter()
-        .map(|node| sub(z, &field_from_signed(i128::from(*node), field_cfg)))
+        .map(|node| (field_cfg).sub(z, &field_from_signed(i128::from(*node), field_cfg)))
         .collect::<Vec<_>>();
     let mut prefix_products = Vec::with_capacity(FINITE_COUNT + 1);
     prefix_products.push(one.clone());
     for difference in &exterior_differences {
-        prefix_products.push(mul(
+        prefix_products.push((field_cfg).mul(
             prefix_products.last().expect("prefix starts with one"),
             difference,
         ));
     }
     let mut suffix_products = vec![one.clone(); FINITE_COUNT + 1];
     for index in (0..FINITE_COUNT).rev() {
-        suffix_products[index] = mul(&exterior_differences[index], &suffix_products[index + 1]);
+        suffix_products[index] =
+            (field_cfg).mul(&exterior_differences[index], &suffix_products[index + 1]);
     }
 
     // H has degree FINITE_COUNT.  Its leading coefficient is Q(infinity),
@@ -630,7 +638,7 @@ where
         .iter()
         .zip(interpolation_denominators)
         .map(|(vanishing, interpolation)| {
-            mul(
+            (field_cfg).mul(
                 &field_from_signed(*vanishing, field_cfg),
                 &field_from_signed(*interpolation, field_cfg),
             )
@@ -639,21 +647,24 @@ where
     let inverse_denominators = batch_invert(&fixed_denominators, field_cfg);
 
     let exterior_product = &prefix_products[FINITE_COUNT];
-    let mut h_at_z = mul(q_at_infinity, exterior_product);
+    let mut h_at_z = (field_cfg).mul(q_at_infinity, exterior_product);
     for index in 0..FINITE_COUNT {
-        let numerator = mul(&prefix_products[index], &suffix_products[index + 1]);
-        let contribution = mul(
-            &mul(&finite_q_evaluations[index], &inverse_denominators[index]),
+        let numerator = (field_cfg).mul(&prefix_products[index], &suffix_products[index + 1]);
+        let contribution = (field_cfg).mul(
+            &(field_cfg).mul(&finite_q_evaluations[index], &inverse_denominators[index]),
             &numerator,
         );
-        h_at_z += &contribution;
+        h_at_z = field_cfg.add(&(h_at_z), &(&contribution));
     }
 
     let mut base_vanishing = one;
     for base_node in 0..BLOCK_LEN {
-        base_vanishing *= &sub(z, &field_from_usize(base_node, field_cfg));
+        base_vanishing = field_cfg.mul(
+            &(base_vanishing),
+            &(&(field_cfg).sub(z, &field_from_usize(base_node, field_cfg))),
+        );
     }
-    Ok(mul(&base_vanishing, &h_at_z))
+    Ok((field_cfg).mul(&base_vanishing, &h_at_z))
 }
 
 fn validate_products_for_skip<F>(
@@ -703,11 +714,8 @@ where
 {
     let expected_modulus = F::canonical_modulus_encoding(field_cfg);
     for value in values {
-        if F::canonical_modulus_encoding(value.cfg()) != expected_modulus {
-            return Err(SumcheckError::FieldConfigurationMismatch);
-        }
         value
-            .validate_element()
+            .validate_element(&expected_modulus)
             .map_err(|_| SumcheckError::NonCanonicalFieldElement)?;
     }
     Ok(())
@@ -726,6 +734,7 @@ fn skip_message_len(skip_vars: usize) -> Option<usize> {
 fn equality_weight<F>(
     equality_factors: (&DenseMultilinearExtension<F>, &DenseMultilinearExtension<F>),
     suffix: usize,
+    field_config: &F::Config,
 ) -> F
 where
     F: SpartanField,
@@ -733,7 +742,7 @@ where
     let low_len = equality_factors.0.evaluations.len();
     let low_index = suffix & (low_len - 1);
     let high_index = suffix >> equality_factors.0.num_vars;
-    mul(
+    (field_config).mul(
         &equality_factors.0.evaluations[low_index],
         &equality_factors.1.evaluations[high_index],
     )
@@ -745,30 +754,27 @@ where
 {
     let one = F::one_with_cfg(field_cfg);
     let differences = (0..block_len)
-        .map(|node| sub(point, &field_from_usize(node, field_cfg)))
+        .map(|node| (field_cfg).sub(point, &field_from_usize(node, field_cfg)))
         .collect::<Vec<_>>();
     let mut prefix = Vec::with_capacity(block_len + 1);
     prefix.push(one.clone());
     for difference in &differences {
-        prefix.push(mul(
-            prefix.last().expect("prefix starts with one"),
-            difference,
-        ));
+        prefix.push((field_cfg).mul(prefix.last().expect("prefix starts with one"), difference));
     }
     let mut suffix = vec![one.clone(); block_len + 1];
     for index in (0..block_len).rev() {
-        suffix[index] = mul(&differences[index], &suffix[index + 1]);
+        suffix[index] = (field_cfg).mul(&differences[index], &suffix[index + 1]);
     }
 
     let degree = block_len - 1;
     let mut factorial = one.clone();
     for factor in 2..=degree {
-        factorial *= &field_from_usize(factor, field_cfg);
+        factorial = field_cfg.mul(&(factorial), &(&field_from_usize(factor, field_cfg)));
     }
     let mut inverse_factorials = vec![one.clone(); block_len];
-    inverse_factorials[degree] = one / &factorial;
+    inverse_factorials[degree] = *field::FieldOps::inverse_ct(field_cfg, &factorial).value();
     for index in (1..=degree).rev() {
-        inverse_factorials[index - 1] = mul(
+        inverse_factorials[index - 1] = (field_cfg).mul(
             &inverse_factorials[index],
             &field_from_usize(index, field_cfg),
         );
@@ -776,22 +782,22 @@ where
 
     (0..block_len)
         .map(|index| {
-            let numerator = mul(&prefix[index], &suffix[index + 1]);
-            let denominator_inverse = mul(
+            let numerator = (field_cfg).mul(&prefix[index], &suffix[index + 1]);
+            let denominator_inverse = (field_cfg).mul(
                 &inverse_factorials[index],
                 &inverse_factorials[degree - index],
             );
-            let weight = mul(&numerator, &denominator_inverse);
+            let weight = (field_cfg).mul(&numerator, &denominator_inverse);
             if (degree - index) % 2 == 0 {
                 weight
             } else {
-                sub(&F::zero_with_cfg(field_cfg), &weight)
+                (field_cfg).sub(&F::zero_with_cfg(field_cfg), &weight)
             }
         })
         .collect()
 }
 
-fn inner_product<F>(weights: &[F], values: &[F], zero: &F) -> F
+fn inner_product<F>(weights: &[F], values: &[F], zero: &F, field_config: &F::Config) -> F
 where
     F: SpartanField,
 {
@@ -799,7 +805,7 @@ where
         .iter()
         .zip(values)
         .fold(zero.clone(), |mut result, (weight, value)| {
-            result += &mul(weight, value);
+            result = field_config.add(&(result), &(&(field_config).mul(weight, value)));
             result
         })
 }
@@ -808,25 +814,7 @@ fn batch_invert<F>(values: &[F], field_cfg: &F::Config) -> Vec<F>
 where
     F: SpartanField,
 {
-    if values.is_empty() {
-        return Vec::new();
-    }
-    let one = F::one_with_cfg(field_cfg);
-    let mut prefixes = Vec::with_capacity(values.len());
-    let mut product = one.clone();
-    for value in values {
-        debug_assert!(!F::is_zero(value));
-        prefixes.push(product.clone());
-        product *= value;
-    }
-
-    let mut inverse = one / &product;
-    let mut inverses = vec![F::zero_with_cfg(field_cfg); values.len()];
-    for index in (0..values.len()).rev() {
-        inverses[index] = mul(&inverse, &prefixes[index]);
-        inverse *= &values[index];
-    }
-    inverses
+    field::BatchFieldOps::batch_invert_or_zero_ct(field_cfg, values)
 }
 
 fn field_from_usize<F>(value: usize, field_cfg: &F::Config) -> F
@@ -842,7 +830,7 @@ where
 {
     let magnitude = field_from_unsigned(value.unsigned_abs(), field_cfg);
     if value.is_negative() {
-        sub(&F::zero_with_cfg(field_cfg), &magnitude)
+        (field_cfg).sub(&F::zero_with_cfg(field_cfg), &magnitude)
     } else {
         magnitude
     }
@@ -856,29 +844,14 @@ where
     let mut power = F::one_with_cfg(field_cfg);
     while value != 0 {
         if value & 1 == 1 {
-            result += &power;
+            result = field_cfg.add(&(result), &(&power));
         }
         value >>= 1;
         if value != 0 {
-            power = add(&power, &power);
+            power = (field_cfg).add(&power, &power);
         }
     }
     result
-}
-
-#[inline]
-fn add<F: SpartanField>(left: &F, right: &F) -> F {
-    left.clone() + right
-}
-
-#[inline]
-fn sub<F: SpartanField>(left: &F, right: &F) -> F {
-    left.clone() - right
-}
-
-#[inline]
-fn mul<F: SpartanField>(left: &F, right: &F) -> F {
-    left.clone() * right
 }
 
 const fn exterior_lagrange_coefficients<const BLOCK_LEN: usize, const FINITE_COUNT: usize>(
@@ -966,28 +939,28 @@ const fn interpolation_denominators<const FINITE_COUNT: usize>(
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
-    };
 
     use crate::{piop::spartan::matrix::make_equality_factors, transcript::Blake3Transcript};
 
-    use super::{super::sumcheck::ImmediateSumcheckReducer, *};
+    use super::*;
 
     const TEST_MODULUS: u128 = (1_u128 << 100) - 15;
 
-    fn config() -> <F128 as PrimeField>::Config {
-        F128::make_cfg(&Uint::from(TEST_MODULUS)).expect("prime test modulus")
+    fn config() -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
+        Fp::<2>::make_cfg(&Uint::from(TEST_MODULUS)).expect("prime test modulus")
     }
 
-    fn field(value: u64, field_cfg: &<F128 as PrimeField>::Config) -> F128 {
-        F128::from_with_cfg(value, field_cfg)
+    fn field(
+        value: u64,
+        field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> Fp<2> {
+        Fp::<2>::from_with_cfg(value, field_cfg)
     }
 
     fn valid_products(
         num_vars: usize,
-        field_cfg: &<F128 as PrimeField>::Config,
-    ) -> R1csProductMles<F128> {
+        field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> R1csProductMles<Fp<2>> {
         let len = 1usize << num_vars;
         let az = (0..len)
             .map(|index| field((7 * index as u64 + 3) % 101, field_cfg))
@@ -998,7 +971,7 @@ mod tests {
         let cz = az
             .iter()
             .zip(&bz)
-            .map(|(a, b)| mul(a, b))
+            .map(|(a, b)| (field_cfg).mul(a, b))
             .collect::<Vec<_>>();
         let dense = |evaluations| DenseMultilinearExtension {
             evaluations,
@@ -1012,18 +985,18 @@ mod tests {
     }
 
     fn direct_q_at(
-        products: &R1csProductMles<F128>,
+        products: &R1csProductMles<Fp<2>>,
         equality_factors: (
-            &DenseMultilinearExtension<F128>,
-            &DenseMultilinearExtension<F128>,
+            &DenseMultilinearExtension<Fp<2>>,
+            &DenseMultilinearExtension<Fp<2>>,
         ),
         skip_vars: usize,
-        point: &F128,
-        field_cfg: &<F128 as PrimeField>::Config,
-    ) -> F128 {
+        point: &Fp<2>,
+        field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> Fp<2> {
         let block_len = 1usize << skip_vars;
         let weights = lagrange_weights_at(point, block_len, field_cfg);
-        let zero = F128::zero_with_cfg(field_cfg);
+        let zero = Fp::<2>::zero_with_cfg(field_cfg);
         let mut result = zero.clone();
         for suffix in 0..products.az.evaluations.len() / block_len {
             let start = suffix * block_len;
@@ -1031,20 +1004,26 @@ mod tests {
                 &weights,
                 &products.az.evaluations[start..start + block_len],
                 &zero,
+                &field_cfg,
             );
             let b = inner_product(
                 &weights,
                 &products.bz.evaluations[start..start + block_len],
                 &zero,
+                &field_cfg,
             );
             let c = inner_product(
                 &weights,
                 &products.cz.evaluations[start..start + block_len],
                 &zero,
+                &field_cfg,
             );
-            result += &mul(
-                &equality_weight(equality_factors, suffix),
-                &sub(&mul(&a, &b), &c),
+            result = field_cfg.add(
+                &(result),
+                &(&(field_cfg).mul(
+                    &equality_weight(equality_factors, suffix, &field_cfg),
+                    &(field_cfg).sub(&(field_cfg).mul(&a, &b), &c),
+                )),
             );
         }
         result
@@ -1084,7 +1063,7 @@ mod tests {
             points.extend(
                 exterior_nodes(skip_vars)
                     .iter()
-                    .map(|point| field_from_signed(i128::from(*point), &field_cfg)),
+                    .map(|point| field_from_signed::<Fp<2>>(i128::from(*point), &field_cfg)),
             );
             points.push(field(37, &field_cfg));
 
@@ -1121,7 +1100,7 @@ mod tests {
 
             let mut changed_c = products.clone();
             for (index, value) in changed_c.cz.evaluations.iter_mut().enumerate() {
-                *value += &field((index as u64 + 1) * 19, &field_cfg);
+                *value = field_cfg.add(&(*value), &(&field((index as u64 + 1) * 19, &field_cfg)));
             }
             let changed_message = compute_field_skip_message(
                 skip_vars,
@@ -1142,7 +1121,7 @@ mod tests {
             let products = valid_products(num_vars, &field_cfg);
             let tau_tail = [field(23, &field_cfg)];
             let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-            let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+            let reducer = field_cfg.clone();
             let mut prover_transcript = Blake3Transcript::new();
             let mut verifier_transcript = prover_transcript.clone();
             let mut direct_tail_transcript = prover_transcript.clone();
@@ -1215,8 +1194,8 @@ mod tests {
         let field_cfg = config();
         let skip_vars = 3;
         let products = valid_products(skip_vars, &field_cfg);
-        let equality_factors = make_equality_factors::<F128>(&[], &field_cfg).unwrap();
-        let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+        let equality_factors = make_equality_factors::<Fp<2>>(&[], &field_cfg).unwrap();
+        let reducer = field_cfg.clone();
         let mut prover_transcript = Blake3Transcript::new();
         let mut verifier_transcript = prover_transcript.clone();
 
@@ -1240,13 +1219,13 @@ mod tests {
     #[test]
     fn outer_verifier_rejects_foreign_fields_before_transcript_mutation() {
         let field_cfg = config();
-        let other_cfg = F128::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+        let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
         let skip_vars = 2;
         let num_vars = 3;
         let products = valid_products(num_vars, &field_cfg);
         let tau_tail = [field(23, &field_cfg)];
         let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-        let reducer = ImmediateSumcheckReducer::new(&field_cfg);
+        let reducer = field_cfg.clone();
         let output = prove_univariate_skip_outer_sumcheck_with_reducer(
             &mut Blake3Transcript::new(),
             skip_vars,
@@ -1259,12 +1238,12 @@ mod tests {
         .unwrap();
 
         let mut malformed = output.proof;
-        malformed.skip.q_at_infinity = field(1, &other_cfg);
+        malformed.skip.q_at_infinity = crate::piop::spartan::noncanonical_test_value(&field_cfg);
         let mut actual = Blake3Transcript::new();
         let mut untouched = actual.clone();
         assert_eq!(
             malformed.verify(&mut actual, &tau_tail, num_vars, &field_cfg),
-            Err(SumcheckError::FieldConfigurationMismatch)
+            Err(SumcheckError::NonCanonicalFieldElement)
         );
         assert_eq!(
             actual.get_challenge::<u128>(),

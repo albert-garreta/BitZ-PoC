@@ -43,7 +43,7 @@
 //! deferred reductions, shift-reduce, SIMD) parallel `univariate_skip_optimized.rs`
 //! and would land later; this file is the algorithmic skeleton.
 
-use crate::field::{F8, F128, phi8};
+use crate::field::{Gf8, Gf128, embed_gf8};
 use crate::ntt::AdditiveNttGf8;
 
 use super::univariate_skip::build_eq;
@@ -71,7 +71,7 @@ pub const LAMBDA4_SIZE: usize = V8_SIZE - S_SIZE;
 /// Compute the round-1 prover message for the degree-4 zerocheck constraint
 /// `a·b·c·d ⊕ z = 0`.
 ///
-/// Returns `(p_abcd, p_z)`, each a length-`LAMBDA4_SIZE = 192` F128 vector of
+/// Returns `(p_abcd, p_z)`, each a length-`LAMBDA4_SIZE = 192` Gf128 vector of
 /// evaluations on Λ₄. Both messages are evaluations on the same domain.
 ///
 /// Preconditions:
@@ -89,8 +89,8 @@ pub fn round1_deg4_naive(
     d: &[bool],
     z: &[bool],
     m: usize,
-    r: &[F128],
-) -> (Vec<F128>, Vec<F128>) {
+    r: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>) {
     assert!(K_SKIP <= m, "K_SKIP must be ≤ m");
     let n = 1usize << m;
     assert_eq!(a.len(), n);
@@ -104,40 +104,40 @@ pub fn round1_deg4_naive(
 
     // NTT pair: inv on S (size 64) then fwd on V₈ (size 256).
     // Shared offset = 0 so the 6-dim basis is the prefix of the 8-dim basis.
-    let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-    let ntt_v8 = AdditiveNttGf8::new(K_V8, F8::ZERO);
+    let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+    let ntt_v8 = AdditiveNttGf8::new(K_V8, Gf8::ZERO);
 
     // eq table over the rest-of-r challenges.
     let eq_full = build_eq(&r[K_SKIP..]);
     debug_assert_eq!(eq_full.len(), n_chunks_x);
 
-    let mut p_abcd = vec![F128::ZERO; LAMBDA4_SIZE];
-    let mut p_z = vec![F128::ZERO; LAMBDA4_SIZE];
+    let mut p_abcd = vec![Gf128::ZERO; LAMBDA4_SIZE];
+    let mut p_z = vec![Gf128::ZERO; LAMBDA4_SIZE];
 
     // Scratch buffers — one V₈-sized buffer per factor.
-    let mut a_col = vec![F8::ZERO; V8_SIZE];
-    let mut b_col = vec![F8::ZERO; V8_SIZE];
-    let mut c_col = vec![F8::ZERO; V8_SIZE];
-    let mut d_col = vec![F8::ZERO; V8_SIZE];
-    let mut z_col = vec![F8::ZERO; V8_SIZE];
+    let mut a_col = vec![Gf8::ZERO; V8_SIZE];
+    let mut b_col = vec![Gf8::ZERO; V8_SIZE];
+    let mut c_col = vec![Gf8::ZERO; V8_SIZE];
+    let mut d_col = vec![Gf8::ZERO; V8_SIZE];
+    let mut z_col = vec![Gf8::ZERO; V8_SIZE];
 
     for x_rest in 0..n_chunks_x {
         let base = x_rest * S_SIZE;
 
         // 1. Load 64 bits of each factor into positions 0..64; clear 64..256.
         for s in 0..S_SIZE {
-            a_col[s] = F8(a[base + s] as u8);
-            b_col[s] = F8(b[base + s] as u8);
-            c_col[s] = F8(c[base + s] as u8);
-            d_col[s] = F8(d[base + s] as u8);
-            z_col[s] = F8(z[base + s] as u8);
+            a_col[s] = Gf8(a[base + s] as u8);
+            b_col[s] = Gf8(b[base + s] as u8);
+            c_col[s] = Gf8(c[base + s] as u8);
+            d_col[s] = Gf8(d[base + s] as u8);
+            z_col[s] = Gf8(z[base + s] as u8);
         }
         for s in S_SIZE..V8_SIZE {
-            a_col[s] = F8::ZERO;
-            b_col[s] = F8::ZERO;
-            c_col[s] = F8::ZERO;
-            d_col[s] = F8::ZERO;
-            z_col[s] = F8::ZERO;
+            a_col[s] = Gf8::ZERO;
+            b_col[s] = Gf8::ZERO;
+            c_col[s] = Gf8::ZERO;
+            d_col[s] = Gf8::ZERO;
+            z_col[s] = Gf8::ZERO;
         }
 
         // 2. Extend each factor from S to V₈:
@@ -159,8 +159,8 @@ pub fn round1_deg4_naive(
         for i in 0..LAMBDA4_SIZE {
             let lam = S_SIZE + i;
             let abcd = a_col[lam] * b_col[lam] * c_col[lam] * d_col[lam];
-            p_abcd[i] += eq_x * phi8(abcd);
-            p_z[i] += eq_x * phi8(z_col[lam]);
+            p_abcd[i] += eq_x * embed_gf8(abcd);
+            p_z[i] += eq_x * embed_gf8(z_col[lam]);
         }
     }
 
@@ -190,25 +190,25 @@ mod tests {
         fn bits(&mut self, n: usize) -> Vec<bool> {
             (0..n).map(|_| self.next_u64() & 1 == 1).collect()
         }
-        fn f128(&mut self) -> F128 {
-            F128 {
+        fn f128(&mut self) -> Gf128 {
+            Gf128 {
                 lo: self.next_u64(),
                 hi: self.next_u64(),
             }
         }
     }
 
-    /// Sanity: NTT-extend a length-64 F8 vector via the "inv on S, fwd on V₈"
+    /// Sanity: NTT-extend a length-64 Gf8 vector via the "inv on S, fwd on V₈"
     /// trick. The first 64 outputs should match the original input.
     #[test]
     fn ntt_extend_roundtrips_on_s() {
-        let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-        let ntt_v8 = AdditiveNttGf8::new(K_V8, F8::ZERO);
+        let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+        let ntt_v8 = AdditiveNttGf8::new(K_V8, Gf8::ZERO);
 
         let mut rng = Rng::new(0xA17);
-        let original_bits: Vec<F8> = (0..S_SIZE).map(|_| F8(rng.next_u64() as u8 & 1)).collect();
+        let original_bits: Vec<Gf8> = (0..S_SIZE).map(|_| Gf8(rng.next_u64() as u8 & 1)).collect();
 
-        let mut buf = vec![F8::ZERO; V8_SIZE];
+        let mut buf = vec![Gf8::ZERO; V8_SIZE];
         buf[..S_SIZE].copy_from_slice(&original_bits);
         ntt_s.inverse(&mut buf[..S_SIZE]);
         // tail is already zero (zero-padded coefficients on W_64..W_255).
@@ -232,7 +232,7 @@ mod tests {
         let c = rng.bits(1 << m);
         let d = rng.bits(1 << m);
         let z = rng.bits(1 << m);
-        let r: Vec<F128> = (0..m).map(|_| rng.f128()).collect();
+        let r: Vec<Gf128> = (0..m).map(|_| rng.f128()).collect();
         let (p_abcd, p_z) = round1_deg4_naive(&a, &b, &c, &d, &z, m, &r);
         assert_eq!(p_abcd.len(), LAMBDA4_SIZE);
         assert_eq!(p_z.len(), LAMBDA4_SIZE);
@@ -255,30 +255,30 @@ mod tests {
         let c = vec![true; 1 << m];
         let d = vec![true; 1 << m];
         let z = vec![false; 1 << m]; // zero linear term — focus on a·b·c·d
-        let r: Vec<F128> = (0..m).map(|_| rng.f128()).collect();
+        let r: Vec<Gf128> = (0..m).map(|_| rng.f128()).collect();
 
         // degree-4 message.
         let (p_abcd, _p_z) = round1_deg4_naive(&a, &b, &c, &d, &z, m, &r);
 
         // degree-2 oracle: directly evaluate a·b on the SAME domain points
         // (λ ∈ V₈ \ S = positions 64..255) by the same NTT-extend trick.
-        let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-        let ntt_v8 = AdditiveNttGf8::new(K_V8, F8::ZERO);
+        let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+        let ntt_v8 = AdditiveNttGf8::new(K_V8, Gf8::ZERO);
         let n_chunks_x = 1usize << (m - K_SKIP);
         let eq_full = build_eq(&r[K_SKIP..]);
-        let mut p_ab_ref = vec![F128::ZERO; LAMBDA4_SIZE];
-        let mut a_col = vec![F8::ZERO; V8_SIZE];
-        let mut b_col = vec![F8::ZERO; V8_SIZE];
+        let mut p_ab_ref = vec![Gf128::ZERO; LAMBDA4_SIZE];
+        let mut a_col = vec![Gf8::ZERO; V8_SIZE];
+        let mut b_col = vec![Gf8::ZERO; V8_SIZE];
         for x_rest in 0..n_chunks_x {
             let base = x_rest * S_SIZE;
             for col in [&mut a_col, &mut b_col] {
                 for v in col.iter_mut() {
-                    *v = F8::ZERO;
+                    *v = Gf8::ZERO;
                 }
             }
             for s in 0..S_SIZE {
-                a_col[s] = F8(a[base + s] as u8);
-                b_col[s] = F8(b[base + s] as u8);
+                a_col[s] = Gf8(a[base + s] as u8);
+                b_col[s] = Gf8(b[base + s] as u8);
             }
             for col in [&mut a_col, &mut b_col] {
                 ntt_s.inverse(&mut col[..S_SIZE]);
@@ -287,7 +287,7 @@ mod tests {
             let eq_x = eq_full[x_rest];
             for i in 0..LAMBDA4_SIZE {
                 let lam = S_SIZE + i;
-                p_ab_ref[i] += eq_x * phi8(a_col[lam] * b_col[lam]);
+                p_ab_ref[i] += eq_x * embed_gf8(a_col[lam] * b_col[lam]);
             }
         }
 
@@ -312,34 +312,34 @@ mod tests {
         let c = vec![false; 1 << m];
         let d = vec![false; 1 << m];
         let z = rng.bits(1 << m);
-        let r: Vec<F128> = (0..m).map(|_| rng.f128()).collect();
+        let r: Vec<Gf128> = (0..m).map(|_| rng.f128()).collect();
         let (p_abcd, p_z) = round1_deg4_naive(&a, &b, &c, &d, &z, m, &r);
 
         // p_abcd must be all zero.
         for v in &p_abcd {
-            assert_eq!(*v, F128::ZERO);
+            assert_eq!(*v, Gf128::ZERO);
         }
 
         // p_z reference: NTT-extend z on each x_rest row, lift via φ₈, weight by eq.
-        let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-        let ntt_v8 = AdditiveNttGf8::new(K_V8, F8::ZERO);
+        let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+        let ntt_v8 = AdditiveNttGf8::new(K_V8, Gf8::ZERO);
         let n_chunks_x = 1usize << (m - K_SKIP);
         let eq_full = build_eq(&r[K_SKIP..]);
-        let mut p_z_ref = vec![F128::ZERO; LAMBDA4_SIZE];
-        let mut z_col = vec![F8::ZERO; V8_SIZE];
+        let mut p_z_ref = vec![Gf128::ZERO; LAMBDA4_SIZE];
+        let mut z_col = vec![Gf8::ZERO; V8_SIZE];
         for x_rest in 0..n_chunks_x {
             let base = x_rest * S_SIZE;
             for v in z_col.iter_mut() {
-                *v = F8::ZERO;
+                *v = Gf8::ZERO;
             }
             for s in 0..S_SIZE {
-                z_col[s] = F8(z[base + s] as u8);
+                z_col[s] = Gf8(z[base + s] as u8);
             }
             ntt_s.inverse(&mut z_col[..S_SIZE]);
             ntt_v8.forward(&mut z_col);
             let eq_x = eq_full[x_rest];
             for i in 0..LAMBDA4_SIZE {
-                p_z_ref[i] += eq_x * phi8(z_col[S_SIZE + i]);
+                p_z_ref[i] += eq_x * embed_gf8(z_col[S_SIZE + i]);
             }
         }
         for i in 0..LAMBDA4_SIZE {

@@ -11,7 +11,7 @@
 
 use f2z::piop::spartan::{
     BabyBearMulWitness, PreparedBabyBearMulRelation, PreparedU32MulRelation,
-    SpartanReductionStrategy, U32MulWitness, commit_baby_bear_mul_paper_witness,
+    U32MulWitness, commit_baby_bear_mul_paper_witness,
     commit_u32_mul_witness, prove_baby_bear_mul_paper, prove_u32_mul,
     sample_baby_bear_operand_with, verify_baby_bear_mul_paper, verify_u32_mul,
 };
@@ -97,7 +97,6 @@ fn main() {
                     &prepared,
                     &witness,
                     &hint,
-                    SpartanReductionStrategy::DelayedBarrett,
                 )
                 .expect("prove"),
                 ).expect("measure completed operation");
