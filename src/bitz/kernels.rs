@@ -300,6 +300,18 @@ pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
     generic::scatter_add(bucket, idx, eq_t);
 }
 
+/// `Σ_k a[k] · b[k]`, accumulated unreduced and reduced once.
+pub(crate) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        neon::dot(a, b)
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    {
+        generic::dot(a, b)
+    }
+}
+
 /// `Σ_a t_e[a] · Σ_b t_o[b] · bucket[a·n + b]` over `n = t_e.len()`
 /// entries, the inner sums accumulated unreduced and reduced once each.
 pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
@@ -607,6 +619,15 @@ pub(crate) mod generic {
         for (&i, &e) in idx.iter().zip(eq_t) {
             bucket[i as usize] += e;
         }
+    }
+
+    pub(crate) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
+        assert_eq!(a.len(), b.len());
+        let mut acc = <Gf as WideMulAcc>::wide_zero(&Gf::zero());
+        for (x, y) in a.iter().zip(b) {
+            <Gf as WideMulAcc>::wide_add_assign(&mut acc, &<Gf as WideMulAcc>::mul_wide(x, y));
+        }
+        <Gf as WideMulAcc>::from_wide(acc)
     }
 
     pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
@@ -1164,6 +1185,27 @@ pub(crate) mod neon {
         }
     }
 
+    pub(crate) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
+        let n = a.len();
+        assert_eq!(b.len(), n);
+        // SAFETY: as `neon::pmull_lo`; indices below `n`.
+        unsafe {
+            let mut ia = acc_zero();
+            let mut ib = acc_zero();
+            let mut k = 0usize;
+            while k + 2 <= n {
+                acc_add(&mut ia, clmul_256(ld(a.get_unchecked(k)), ld(b.get_unchecked(k))));
+                acc_add(&mut ib, clmul_256(ld(a.get_unchecked(k + 1)), ld(b.get_unchecked(k + 1))));
+                k += 2;
+            }
+            if k < n {
+                acc_add(&mut ia, clmul_256(ld(a.get_unchecked(k)), ld(b.get_unchecked(k))));
+            }
+            acc_add(&mut ia, ib);
+            to_elt(ia)
+        }
+    }
+
     pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
         let n = t_e.len();
         assert_eq!(t_o.len(), n);
@@ -1301,6 +1343,13 @@ mod tests {
                 generic::contract(&t_e, &t_o, &bucket),
                 "contract {entries}"
             );
+        }
+        for n in [0usize, 1, 2, 15, 16, 33] {
+            let a = elements(n, 74);
+            let b = elements(n, 75);
+            assert_eq!(dot(&a, &b), generic::dot(&a, &b), "dot {n}");
+            let want = a.iter().zip(&b).fold(Gf::zero(), |acc, (&x, &y)| acc + x * y);
+            assert_eq!(dot(&a, &b), want, "dot vs field {n}");
         }
     }
 

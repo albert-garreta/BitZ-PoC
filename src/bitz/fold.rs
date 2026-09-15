@@ -62,11 +62,106 @@ pub fn fold_column(row: &[u64], exponents: &[u128]) -> u128 {
     total
 }
 
-/// Every column's fold, in column order — the crate's nibble-table fold
-/// ([`crate::ligerito::fold_values_bits`]), the same integers
-/// [`fold_column`] produces one bit at a time.
+/// Every column's fold, in column order — the same integers
+/// [`fold_column`] produces one bit at a time, through digit tables:
+/// `T[d][v] = Σ_{i ∈ bits(v)} w_{D·d + i}` for every `D`-bit digit
+/// position `d` of the rows, then one pass over the words, a block of
+/// columns at a time with every accumulator of the block live — for word
+/// `wi` the word's `64/D` tables are in L1 and each column adds one entry
+/// per digit, a fixed trip count. (The crate's
+/// [`crate::ligerito::fold_values_bits`] streams its whole table once per
+/// 32-column block and exits its digit loop on a data-dependent count; at
+/// `2^28` bits it measured 11 ms against 7.3 here.)
 pub fn fold_columns(shape: &Shape, rows: &[Vec<u64>], exponents: &[u128]) -> Vec<u128> {
-    crate::ligerito::fold_values_bits(&shape.layout(), rows, exponents)
+    let cols = shape.columns();
+    assert_eq!(rows.len(), cols);
+    let words = shape.rows() / 64;
+    assert!(rows.iter().all(|row| row.len() == words));
+    assert_eq!(exponents.len(), shape.rows());
+    fold_columns_digits::<FOLD_DIGIT_BITS>(rows, exponents, words, cols)
+}
+
+/// The digit width of [`fold_columns`]'s tables: nibbles, 16-entry tables,
+/// `rows/4` of them (8 MB at `2^17` rows). Byte tables (64 MB) measured
+/// the same speed at `2^28` bits and cost their first touch.
+const FOLD_DIGIT_BITS: usize = 4;
+
+/// Columns per block of [`fold_columns`]'s pass: a block's word lines and
+/// a task's tables stay in L1 (2048 columns at once measured 9.0 ms
+/// against 7.3 with 128 at `2^28` bits).
+const FOLD_COLUMN_BLOCK: usize = 128;
+
+fn fold_columns_digits<const D: usize>(
+    rows: &[Vec<u64>],
+    exponents: &[u128],
+    words: usize,
+    cols: usize,
+) -> Vec<u128> {
+    const { assert!(D == 4 || D == 8) };
+    let per_word = 64 / D;
+    let entries = 1usize << D;
+    let digits = words * per_word;
+    // The tables, digit-major: `tbl[(d ≪ D) | v]`.
+    let mut tbl: Vec<u128> = Vec::with_capacity(digits * entries);
+    let spare = &mut tbl.spare_capacity_mut()[..digits * entries];
+    crate::cfg_chunks_mut!(spare, entries).enumerate().for_each(|(d, table)| {
+        let base = d * D;
+        table[0].write(0);
+        for v in 1..entries {
+            // `T[v] = T[v without its lowest bit] + that bit's weight`.
+            let lower = unsafe { table[v & (v - 1)].assume_init() };
+            table[v].write(lower.wrapping_add(exponents[base + v.trailing_zeros() as usize]));
+        }
+    });
+    // SAFETY: every entry of every table was written above.
+    unsafe { tbl.set_len(digits * entries) };
+    let mask = (entries - 1) as u64;
+
+    // One accumulator per column, the words split across tasks (each
+    // task's sums merged at the end — exact integers either way).
+    let sum_words = |acc: &mut [u128], range: std::ops::Range<usize>| {
+        for c0 in (0..cols).step_by(FOLD_COLUMN_BLOCK) {
+            let c1 = (c0 + FOLD_COLUMN_BLOCK).min(cols);
+            for wi in range.clone() {
+                let tables = &tbl[wi * per_word * entries..(wi + 1) * per_word * entries];
+                for c in c0..c1 {
+                    let w = rows[c][wi];
+                    let mut sum = 0u128;
+                    for k in 0..per_word {
+                        let v = ((w >> (k * D)) & mask) as usize;
+                        sum = sum.wrapping_add(tables[(k << D) | v]);
+                    }
+                    acc[c] = acc[c].wrapping_add(sum);
+                }
+            }
+        }
+    };
+    #[cfg(feature = "parallel")]
+    {
+        let threads = rayon::current_num_threads().max(1);
+        let chunk = words.div_ceil(4 * threads).max(1);
+        let partials: Vec<Vec<u128>> = (0..words.div_ceil(chunk))
+            .into_par_iter()
+            .map(|i| {
+                let mut acc = vec![0u128; cols];
+                sum_words(&mut acc, i * chunk..((i + 1) * chunk).min(words));
+                acc
+            })
+            .collect();
+        let mut out = vec![0u128; cols];
+        for acc in partials {
+            for (o, a) in out.iter_mut().zip(acc) {
+                *o = o.wrapping_add(a);
+            }
+        }
+        out
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut out = vec![0u128; cols];
+        sum_words(&mut out, 0..words);
+        out
+    }
 }
 
 /// `g^{eta_j}`, one per column.
@@ -197,6 +292,35 @@ mod tests {
             value |= u128::from(*d) << (64 * i);
         }
         value
+    }
+
+    #[test]
+    fn digit_folds_match_the_bit_walk() {
+        use super::{Shape, fold_column, fold_columns, fold_columns_digits};
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        // Tiny geometries straight into the digit passes, then the
+        // protocol's smallest shapes through the entry point.
+        for (log_rows, log_cols) in [(6usize, 0usize), (6, 3), (7, 1), (9, 4), (10, 8), (14, 8), (15, 7)] {
+            let rows: Vec<Vec<u64>> = (0..1 << log_cols)
+                .map(|_| (0..(1usize << log_rows) / 64).map(|_| next()).collect())
+                .collect();
+            let exponents: Vec<u128> = (0..1 << log_rows)
+                .map(|_| (u128::from(next()) << 36) ^ u128::from(next()))
+                .collect();
+            let want: Vec<u128> = rows.iter().map(|row| fold_column(row, &exponents)).collect();
+            let words = (1usize << log_rows) / 64;
+            assert_eq!(fold_columns_digits::<4>(&rows, &exponents, words, 1 << log_cols), want, "t {log_rows} s {log_cols}");
+            assert_eq!(fold_columns_digits::<8>(&rows, &exponents, words, 1 << log_cols), want, "t {log_rows} s {log_cols}");
+            if let Ok(shape) = Shape::new(log_rows, log_cols) {
+                assert_eq!(fold_columns(&shape, &rows, &exponents), want, "t {log_rows} s {log_cols}");
+            }
+        }
     }
 
     #[test]

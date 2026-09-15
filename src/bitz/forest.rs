@@ -707,25 +707,103 @@ impl<'a> Forest<'a> {
         let eq_t = transposed_eq(&eq_table(&external[..s]));
         let eq_y = eq_table(&external[s..s + y_bits]);
         let rows = 1usize << y_bits;
-        let row = |y: usize, buckets: &mut Buckets| {
-            let (end, inf) = self.bit_row(&tables, ell, kk, nb, y, y_bits, &eq_t, send_one, buckets);
-            let w = eq_y[y];
-            (end * w, inf * w)
+        // Width 1: two rows share one byte index, so one scatter serves
+        // two terms ([`Forest::bit_row_pair`]).
+        let paired = nb == 1 && rows >= 2;
+        let tasks = if paired { rows / 2 } else { rows };
+        let task = |i: usize, buckets: &mut Buckets| {
+            if paired {
+                self.bit_row_pair(&tables, ell, kk, 2 * i, y_bits, &eq_t, &eq_y, send_one, buckets)
+            } else {
+                let (end, inf) = self.bit_row(&tables, ell, kk, nb, i, y_bits, &eq_t, send_one, buckets);
+                let w = eq_y[i];
+                (end * w, inf * w)
+            }
         };
         #[cfg(feature = "parallel")]
-        let partials: Vec<(Gf, Gf)> = (0..rows)
+        let partials: Vec<(Gf, Gf)> = (0..tasks)
             .into_par_iter()
             .with_min_len(1)
-            .map_init(Buckets::new, |buckets, y| row(y, buckets))
+            .map_init(Buckets::new, |buckets, i| task(i, buckets))
             .collect();
         #[cfg(not(feature = "parallel"))]
         let partials: Vec<(Gf, Gf)> = {
             let mut buckets = Buckets::new();
-            (0..rows).map(|y| row(y, &mut buckets)).collect()
+            (0..tasks).map(|i| task(i, &mut buckets)).collect()
         };
         partials
             .into_iter()
             .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+    }
+
+    /// Rows `y0` and `y0 + 1` of a width-1 [`Forest::bit_round`] together,
+    /// weighted: the two rows' 4-bit tuples `(E_lo, E_hi, O_lo, O_hi)` fill
+    /// one byte index out of one block transpose (row `y0` in the low
+    /// nibble), so a column's weight is scattered once for both rows; the
+    /// per-row coefficient of a tuple is `w·E_end·O_end` (`w·(E_hi + E_lo)
+    /// (O_hi + O_lo)` for the ∞ sum), and since the pair's coefficient is
+    /// the sum of the two rows' the contraction only needs the two 16-entry
+    /// marginals of the 256 buckets.
+    #[allow(clippy::too_many_arguments)]
+    fn bit_row_pair(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        kk: usize,
+        y0: usize,
+        y_bits: usize,
+        eq_t: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+        bk: &mut Buckets,
+    ) -> (Gf, Gf) {
+        debug_assert_eq!(ell + kk, 0);
+        let low_bits = y_bits + 1;
+        let cols = 1usize << self.s;
+        let groups = cols.div_ceil(64);
+        let zero = Gf::zero();
+        bk.tuples.fill(zero);
+        let corner_y = |y: usize, corner: usize| y | ((corner & 1) << y_bits);
+        let corner_p = |corner: usize| corner >> 1;
+        let mut tmp = [0u64; 8];
+        let mut words = [0u64; 8];
+        for g in 0..groups {
+            for i in 0..2 {
+                for corner in 0..4 {
+                    self.corner_words(ell, kk, corner_p(corner), corner_y(y0 + i, corner), g, &mut tmp);
+                    words[4 * i + corner] = tmp[0];
+                }
+            }
+            let idx = transposed_patterns(&mut words);
+            kernels::scatter_add(&mut bk.tuples, &idx, &eq_t[g << 6..(g + 1) << 6]);
+        }
+        // The marginals: row `y0`'s tuple is the low nibble.
+        let mut marginal = [[zero; 16]; 2];
+        for (k, &v) in bk.tuples.iter().enumerate() {
+            marginal[0][k & 15] += v;
+            marginal[1][k >> 4] += v;
+        }
+        let (mut end, mut inf) = (zero, zero);
+        for (i, m) in marginal.iter().enumerate() {
+            let y = y0 + i;
+            let q = |corner: usize| (corner_p(corner) << low_bits) | corner_y(y, corner);
+            let (t_e_lo, t_e_hi) = (tables.at(q(0)), tables.at(q(1)));
+            let (t_o_lo, t_o_hi) = (tables.at(q(2)), tables.at(q(3)));
+            let w = eq_y[y];
+            let (t_e_end, t_o_end) = if send_one { (t_e_hi, t_o_hi) } else { (t_e_lo, t_o_lo) };
+            let we: [Gf; 2] = [w * t_e_end[0], w * t_e_end[1]];
+            let mut c_end = [zero; 16];
+            let mut c_inf = [zero; 16];
+            for (t, (c_end_t, c_inf_t)) in c_end.iter_mut().zip(c_inf.iter_mut()).enumerate() {
+                let (e_lo, e_hi, o_lo, o_hi) = (t & 1, (t >> 1) & 1, (t >> 2) & 1, (t >> 3) & 1);
+                let (e_end, o_end) = if send_one { (e_hi, o_hi) } else { (e_lo, o_lo) };
+                *c_end_t = we[e_end] * t_o_end[o_end];
+                *c_inf_t = w * (t_e_hi[e_hi] + t_e_lo[e_lo]) * (t_o_hi[o_hi] + t_o_lo[o_lo]);
+            }
+            end = end + kernels::dot(&c_end, m);
+            inf = inf + kernels::dot(&c_inf, m);
+        }
+        (end, inf)
     }
 
     /// One row of [`Forest::bit_round`]: bucket the row's columns, then

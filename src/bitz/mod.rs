@@ -134,6 +134,7 @@ impl BitZProver {
         transcript.public_message(&self.params);
 
         // Steps 3 and 4: integer column folds, then GKR to a factored bit claim.
+        trace_start();
         let started = std::time::Instant::now();
         let fold = self
             .send_fold(claim, rows, transcript)
@@ -220,6 +221,14 @@ pub(crate) fn trace(label: &str, started: std::time::Instant) {
 }
 
 static LAST_FAULTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Resets the fault baseline so the first trace line of a run counts only
+/// its own faults.
+pub(crate) fn trace_start() {
+    if std::env::var_os("BITZ_TRACE").is_some() {
+        LAST_FAULTS.store(minor_faults(), std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 /// The process's minor page faults so far (16 KB pages on this platform).
 fn minor_faults() -> u64 {
