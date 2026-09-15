@@ -180,14 +180,20 @@ impl BitZVerifier {
         transcript.public_message(&com.0);
         transcript.public_message(&self.params);
 
+        let started = std::time::Instant::now();
         let fold = self
             .receive_fold(claim, &mut transcript)
             .map_err(VerifyError::Fold)?;
+        trace("v: fold", started);
+        let started = std::time::Instant::now();
         let query = reduce::gkr_reduce_verify(&mut transcript, &fold, self.params.shape())
             .map_err(VerifyError::Reduction)?;
+        trace("v: gkr", started);
 
+        let started = std::time::Instant::now();
         pcs.verify_lin(&com, &query, StatementBinding::Bind, &mut transcript)
             .map_err(VerifyError::Opening)?;
+        trace("v: opening", started);
 
         transcript
             .check_eof()

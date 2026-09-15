@@ -76,8 +76,7 @@ pub fn column_images(comb: &FixedBasePow, folds: &[u128]) -> Vec<Gf> {
 
 /// `y_i = g^{w_i}`, one per row.
 pub fn row_images(comb: &FixedBasePow, exponents: &[u128]) -> Vec<Gf> {
-    exponents
-        .iter()
+    cfg_into_iter!(exponents, 256)
         .map(|&exponent| comb.pow(exponent))
         .collect()
 }

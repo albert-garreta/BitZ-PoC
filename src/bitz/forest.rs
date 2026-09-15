@@ -86,16 +86,27 @@ impl<'a> Forest<'a> {
         let t = self.t;
         let started = std::time::Instant::now();
         let mut levels: Vec<Option<Vec<Gf>>> = (0..t).map(|_| None).collect();
+        // One arena, `2^{t−4+s}` entries: level 4 is built in it (as
+        // pairwise products of level 3's table values) and proved in
+        // place, then every table-driven level below writes its
+        // once-folded halves into it.
+        let mut arena: Vec<Gf> = Vec::new();
         let tables3 = if self.jit() {
-            Some(self.fold_table(MATERIALISED_LEVEL, 0, &[]))
+            let tables = self.fold_table(MATERIALISED_LEVEL, 0, &[]);
+            arena = Vec::with_capacity(1usize << (t - MATERIALISED_LEVEL - 1 + self.s));
+            self.product_level_into(&tables, &mut arena);
+            Some(tables)
         } else {
             None
         };
-        let bottom = match &tables3 {
-            // Level 4 straight from level 3's tables.
-            Some(tables) if MATERIALISED_LEVEL + 1 < t => Some((MATERIALISED_LEVEL + 1, self.product_level(tables))),
-            Some(_) => None,
-            None => Some((MATERIALISED_LEVEL, self.materialise_level(MATERIALISED_LEVEL))),
+        let bottom = if self.jit() {
+            if MATERIALISED_LEVEL + 2 < t {
+                Some((MATERIALISED_LEVEL + 2, level_up(&arena)))
+            } else {
+                None
+            }
+        } else {
+            Some((MATERIALISED_LEVEL, self.materialise_level(MATERIALISED_LEVEL)))
         };
         if let Some((first, mut current)) = bottom {
             for ell in first..t {
@@ -113,15 +124,6 @@ impl<'a> Forest<'a> {
         }
         super::trace("  levels ≥4", started);
 
-        // One arena for the once-folded halves of every table-driven
-        // level: `2 · 2^{t−4−1+s}` entries, first touched by the first
-        // level that fills it.
-        let mut arena: Vec<Gf> = Vec::with_capacity(if self.jit() {
-            1usize << (t - MATERIALISED_LEVEL - 1 + self.s)
-        } else {
-            0
-        });
-
         let mut point: Vec<Gf> = zeta.to_owned();
         point.reverse();
         let mut point: Point = VecDeque::from(point);
@@ -132,6 +134,11 @@ impl<'a> Forest<'a> {
                 Some(mut wnext) => {
                     let mid = wnext.len() / 2;
                     let (l, r) = wnext.split_at_mut(mid);
+                    prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+                }
+                None if self.jit() && ell == MATERIALISED_LEVEL + 1 => {
+                    let mid = arena.len() / 2;
+                    let (l, r) = arena.split_at_mut(mid);
                     prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
                 }
                 None if self.jit() => {
@@ -380,15 +387,16 @@ impl<'a> Forest<'a> {
     }
 
     /// Level [`MATERIALISED_LEVEL`]` + 1` as pairwise products of level 3's
-    /// table values: entry `(y, c)` is `T[(0, y)][pat] · T[(1, y)][pat]`.
-    fn product_level(&self, tables: &Tables) -> Vec<Gf> {
+    /// table values — entry `(y, c)` is `T[(0, y)][pat] · T[(1, y)][pat]` —
+    /// written into the (empty, pre-sized) `out`.
+    fn product_level_into(&self, tables: &Tables, out: &mut Vec<Gf>) {
         let t = self.t;
         let ell = MATERIALISED_LEVEL;
         let cols = 1usize << self.s;
         let groups = cols.div_ceil(64);
         let rows = 1usize << (t - ell - 1);
         let len = rows * cols;
-        let mut out: Vec<Gf> = Vec::with_capacity(len);
+        assert!(out.is_empty() && out.capacity() >= len);
         let spare = &mut out.spare_capacity_mut()[..len];
         cfg_chunks_mut!(spare, cols).enumerate().for_each(|(y, chunk)| {
             let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
@@ -406,7 +414,6 @@ impl<'a> Forest<'a> {
         });
         // SAFETY: every slot of every row chunk was written by the kernel.
         unsafe { out.set_len(len) };
-        out
     }
 
     /// Round `k + 1` of level `ell` through its `k`-fold tables: the sums
