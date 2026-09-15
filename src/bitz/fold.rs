@@ -1,0 +1,166 @@
+//! Their fold round (step 3): send the integer column folds, derive the
+//! images, take the batching point.
+
+use num_bigint::BigUint;
+
+use super::params::{LinearClaim, Shape};
+use super::transcript::{ProverState, VerifierState};
+use super::{BitZProver, BitZVerifier};
+use crate::ligerito::mle_eval;
+use crate::pcs::FixedBasePow;
+use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+
+/// A fold the prover cannot produce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendError {
+    ShapeMismatch,
+}
+
+/// A fold the verifier rejects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiveError {
+    /// A record is missing or does not decode.
+    MalformedProof,
+    /// A fold is above `k_1 (q - 1)`, where its image stops determining it.
+    FoldOutOfRange,
+    /// The folds do not reconstruct the claimed target.
+    TargetMismatch,
+}
+
+/// The state both sides hold once the fold round closes. Only `folds` is
+/// transmitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fold {
+    /// The column folds `eta_j`, as integers.
+    pub folds: Vec<u128>,
+    /// `g^{eta_j}` over `j`, derived on both sides.
+    pub images: Vec<Gf>,
+    /// `y_i = g^{w_i}`, one per row.
+    pub row_images: Vec<Gf>,
+    /// The challenge drawn after the folds are bound.
+    pub zeta: Vec<Gf>,
+    /// The batched output claim: the multilinear extension of the images at
+    /// `zeta`.
+    pub e0: Gf,
+}
+
+/// `eta_j = sum_i w_i f_ij` over the integers, from one column's bit row
+/// (64 bits per word, bit `i` of the column at word `i / 64`).
+pub fn fold_column(row: &[u64], exponents: &[u128]) -> u128 {
+    let mut total = 0u128;
+    for (word_index, &word) in row.iter().enumerate() {
+        let mut remaining = word;
+        while remaining != 0 {
+            total += exponents[word_index * 64 + remaining.trailing_zeros() as usize];
+            remaining &= remaining - 1;
+        }
+    }
+    total
+}
+
+/// Every column's fold, in column order.
+pub fn fold_columns(rows: &[Vec<u64>], exponents: &[u128]) -> Vec<u128> {
+    rows.iter().map(|row| fold_column(row, exponents)).collect()
+}
+
+/// `g^{eta_j}`, one per column.
+pub fn column_images(comb: &FixedBasePow, folds: &[u128]) -> Vec<Gf> {
+    folds.iter().map(|&fold| comb.pow(fold)).collect()
+}
+
+/// `y_i = g^{w_i}`, one per row.
+pub fn row_images(comb: &FixedBasePow, exponents: &[u128]) -> Vec<Gf> {
+    exponents
+        .iter()
+        .map(|&exponent| comb.pow(exponent))
+        .collect()
+}
+
+/// The reconstruction `sum_j v^(2)_j pi_q(eta_j)` in `F_q`.
+pub fn reconstruct(claim: &LinearClaim, folds: &[u128], q: u128) -> u128 {
+    let modulus = BigUint::from(q);
+    let mut acc = BigUint::from(0u8);
+    for (&weight, &fold) in claim.column_weights().iter().zip(folds) {
+        acc += (BigUint::from(weight) * BigUint::from(fold % q)) % &modulus;
+    }
+    let digits = (acc % &modulus).to_u64_digits();
+    let mut value = 0u128;
+    for (i, d) in digits.iter().enumerate().take(2) {
+        value |= u128::from(*d) << (64 * i);
+    }
+    value
+}
+
+fn finish(
+    shape: &Shape,
+    comb: &FixedBasePow,
+    claim: &LinearClaim,
+    folds: Vec<u128>,
+    zeta: Vec<Gf>,
+) -> Fold {
+    let images = column_images(comb, &folds);
+    let row_images = row_images(comb, claim.row_exponents());
+    assert_eq!(images.len(), shape.columns());
+    let e0 = mle_eval(&images, &zeta);
+    Fold {
+        folds,
+        images,
+        row_images,
+        zeta,
+        e0,
+    }
+}
+
+impl BitZProver {
+    /// Runs the fold round: each fold as one 16-byte record, then `s`
+    /// scalar squeezes.
+    pub(crate) fn send_fold(
+        &self,
+        claim: &LinearClaim,
+        rows: &[Vec<u64>],
+        transcript: &mut ProverState,
+    ) -> Result<Fold, SendError> {
+        let shape = self.params().shape();
+        if rows.len() != shape.columns() {
+            return Err(SendError::ShapeMismatch);
+        }
+        let folds = fold_columns(rows, claim.row_exponents());
+        for fold in &folds {
+            transcript.prover_message(&fold.to_le_bytes());
+        }
+        let zeta = (0..shape.log_columns())
+            .map(|_| transcript.verifier_message::<Gf>())
+            .collect();
+        Ok(finish(shape, self.comb(), claim, folds, zeta))
+    }
+}
+
+impl BitZVerifier {
+    /// Reads the fold round and checks it: range bound, reconstruction, then
+    /// the challenge.
+    pub(crate) fn receive_fold(
+        &self,
+        claim: &LinearClaim,
+        transcript: &mut VerifierState<'_>,
+    ) -> Result<Fold, ReceiveError> {
+        let shape = self.params().shape();
+        let folds = (0..shape.columns())
+            .map(|_| {
+                transcript
+                    .prover_message::<[u8; 16]>()
+                    .map(u128::from_le_bytes)
+                    .map_err(|_| ReceiveError::MalformedProof)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if folds.iter().any(|&fold| fold > self.params().fold_bound()) {
+            return Err(ReceiveError::FoldOutOfRange);
+        }
+        if reconstruct(claim, &folds, self.params().q()) != claim.target() {
+            return Err(ReceiveError::TargetMismatch);
+        }
+        let zeta = (0..shape.log_columns())
+            .map(|_| transcript.verifier_message::<Gf>())
+            .collect();
+        Ok(finish(shape, self.comb(), claim, folds, zeta))
+    }
+}

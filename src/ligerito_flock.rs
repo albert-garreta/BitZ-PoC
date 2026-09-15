@@ -240,6 +240,16 @@ impl FlockCommitHint {
     pub fn rows(&self) -> &[Vec<u64>] {
         &self.rows
     }
+
+    /// The flock prover data (codeword + Merkle tree) behind the commitment.
+    pub fn flock_prover_data(&self) -> &ProverData {
+        &self.prover_data
+    }
+
+    /// The packed message in flock representation, `2^{m_p}` elements.
+    pub fn packed_message(&self) -> &[F128] {
+        &self.p_msg
+    }
 }
 
 impl core::fmt::Debug for FlockCommitHint {

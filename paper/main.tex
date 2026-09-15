@@ -227,6 +227,10 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
      
      For example, a proof system using a PCS that is not plausibly post-quantum secure, could replace its PCS with \ftwoz \ (which is plausibly post-quantum secure), regardless of the proof system's underlying field. As mentioned above, the underlying rings barely affect \ftwoz's performance. %\albertimportant{Remove?} %Further, a proof system over a large  field  can lift its constraints to $\ZZ$ (or to $\ZZ[X]$) and project them onto a random prime field of $\approx\lambda$ bits before running its PIOP, so that the PIOP runs over a small field and the \ftwoz\ opening pays only for the bit-size of the lifted witness entries, which can be much smaller than $\log|R|$ (\cref{r:to_reducing_ring}). % [AI-drafted sentence (Claude Opus 5), 2026-09-11] \albertimportant{would be nice to give example numbers of doing this}
      \item \textbf{``Free'' range checks.} \ftwoz\ provides range checks ``for free''. For example, when  committing  to integer witnesses, \ftwoz\ exposes a bit-size parameter $B$. Then, \ftwoz\ can be used to commit to integers of that bit-size, and it automatically guarantees that a malicious prover cannot commit to larger integers. This allows to omit many range checks that a standard proof system would need to enforce.
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only contribution item replacing the remark of the nutshell section (hidden in LNCS), at the author's request; please review]
+     \item \lncsnote{Review} \textbf{Proofs in the exponent, revisited.} Proving constraints in the exponent of a generator of $\comfield^*$ is a known idea \cite{binius64,lev}. We use it differently: not on the arithmetized computation itself, but inside the PCS, to prove inner product claims about the witness whose public coefficients admit a tensor decomposition. This is what makes the resulting grand products \emph{low entropy} and enables the prover optimizations of \cref{s:to_low_entropy_gkr}, and it is what lets the technique reach arbitrary rings rather than integers or small prime fields (\cref{s:to_general_rings}); see \cref{r:comparison_grand_product_binius_lev} for a comparison with \cite{binius64,lev}.
+\fi
 \end{enumerate}
 
 
@@ -249,7 +253,9 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
 
      \end{enumerate}  
 
-     \begin{remark} \lncsnote{To appendix if we emphasize the witness x public better.} Proving constraints ``in the exponent''  is a well-known idea that goes back at least to \cite{binius64,lev}. One of our main contributions is 1) in what context this technique is used, namely inside the PCS to prove MLE evaluation claims (or inner product claims) of the witness, as opposed to proving the initial arithmetized computation, see \cref{r:comparison_grand_product_binius_lev} for more details;  2) the optimizations we design for such a specific ``proof in the exponent'' setting, see \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}; and 3) extending it so it can be used to prove constraints over arbitrary rings, and not just, say, integers or \emph{prime} fields with small  values (to avoid overflowing the multiplicative order of $g$).\end{remark}
+\iflncs\else % LNCS: folded into the contributions list
+     \begin{remark} Proving constraints ``in the exponent''  is a well-known idea that goes back at least to \cite{binius64,lev}. One of our main contributions is 1) in what context this technique is used, namely inside the PCS to prove MLE evaluation claims (or inner product claims) of the witness, as opposed to proving the initial arithmetized computation, see \cref{r:comparison_grand_product_binius_lev} for more details;  2) the optimizations we design for such a specific ``proof in the exponent'' setting, see \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}; and 3) extending it so it can be used to prove constraints over arbitrary rings, and not just, say, integers or \emph{prime} fields with small  values (to avoid overflowing the multiplicative order of $g$).\end{remark}
+\fi
      
 \noindent There are several issues with the attempt above:
 \medskip
@@ -372,10 +378,12 @@ In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \alber
 
 
 \subsection{Related work}\label{s:related_work}
-\lncsnote{Can be shortened}
 
-% [AI-edited (Claude Fable 5.1), 2026-09-15: the five paragraphs below were compressed into one at the author's request (\lncsnote ``Can be shortened''); all citations and claims kept]
 
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only compression of the five paragraphs below (kept unchanged in the full version), at the author's request; please review]
+\paragraph{Proof systems over integers and other rings.} Campanelli and Hall-Andersen \cite{zaratan} propose proving polynomial constraints over the integers by projecting them onto a random prime field sampled by the verifier, a technique they call \emph{fingerprinting}. Subsequent works have adopted the same technique \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}. Zinc \cite{zinc} combines fingerprinting with a hash-based PCS over the rationals $\QQ$, providing the first relatively practical proof system over the integers, and addresses the subtle issues that arise when committing to \emph{integer} vectors with error correcting codes over rationals. Zinc+ \cite{zincplus} extends \cite{zinc} in two directions: it proposes a constraint system with polynomial constraints simultaneously over many types of rings\footnote{In the terminology of \cite{zincplus}, the constraints are over \emph{polynomial rings with ideal membership constraints}, for certain types of ideals (generated by a monic and non-constant polynomial, or zero). However this is equivalent to saying the constraints are over different types of rings (within a certain class)} and fields, together with a method for constructing PIOPs for it that projects  all such rings and fields onto a random prime field. Zinc+ further improves the soundness analysis of the PCS of \cite{zinc}, and proposes the Integer Pseudo Reed-Solomon (IPRS) codes over $\ZZ$ or $\QQ$, obtained by ``lifting'' an FFT encoding algorithm over a small finite field to the integers. $\QQ$aren \cite{qaren} is a compiler that turns any PCS over a finite field of sufficiently large characteristic into a PCS for integer polynomials (more precisely, for rational polynomials close to the target integer polynomials, as in Zinc and Zinc+), yielding the first transparent and fully succinct PCS over integers/rationals. No implementation or performance reports are provided in \cite{qaren}. The concurrent work Limber \cite{limber} is a compiler of the same kind which only requires characteristic $q=\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size (versus $\Omega(2^\lambda)$ in \cite{qaren}), compiles into strictly integer PCS (so that the ``almost integers'' issue does not arise), and is instantiated with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
+\else
 \paragraph{Proof systems over integers and other rings.} In \cite{zaratan}, Campanelli and Hall-Andersen propose proving polynomial constraints over integers, by projecting them onto a random prime field (sampled by the verifier), a technique which the authors call \emph{fingerprinting}. Subsequent works have adopted this idea \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}. The PCS is not implemented and so we do not compare against it.
 
 The Zinc \cite{zinc} work adopts \emph{fingerprinting} and designs a hash-based PCS over the rationals $\QQ$, suitable for the fingerprinting approach, providing the first relatively practical proof system over the integers. \cite{zinc} addresses subtle technical issues that arise when aiming to commit to \emph{integer} vectors with error correcting codes (namely, malicious provers can potentially use rational numbers that are very close to being integers of the target magnitude).
@@ -387,6 +395,7 @@ The Zinc+ \cite{zincplus} work extends \cite{zinc} in two directions: 1) It prop
 In \cite{qaren} the authors propose $\QQ$aren, a compiler that takes any PCS over a finite field of sufficiently large characteristic and creates a PCS for integer polynomials (or, more precisely, rational polynomials close to the target integer polynomials, see the overview of \cite{zinc} above). The authors instantiate their compiler to obtain the first transparent and fully succinct PCS over integers/rationals. The prior work \cite{zinc,zincplus} is not succinct on the bit-size of the integers being committed. No implementation or performance reports are provided in \cite{qaren}.
 
 The concurrent work Limber \cite{limber} proposes a new compiler that transforms any PCS over fields of sufficiently large characteristic $q$ (in this case, $q$ is $\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size, while in \cite{qaren} it is $\Omega(2^\lambda)$) into a PCS for integer polynomials. Additionally Limber compiles into strictly integer PCS, and does not present the issue that a malicious prover could use rationals that are ``almost integers''. Limber is instantiated in practice with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
+\fi
 
 \paragraph{Proof systems over binary fields.} \albertimportant{Review. This is Ulrich} Hash-based SNARKs over binary fields were pioneered by the line of work of Ben-Sasson et al.~\cite{fri,stark,linearSizedIOPs,cryptoeprint:2022/1542}, but did not see widespread adoption until the introduction of \textit{packed} polynomial commitment schemes by Diamond and Posen~\cite{binius,binius2}; see also \cite{binius64}. Such schemes allow one to commit to a bit-valued witness over an extension field without incurring embedding overhead, while still providing evaluation proofs for its original ``uncompressed'' representation. The \emph{ring-switching} technique of Diamond and Posen~\cite{binius2} is generic, enabling the use of codes over larger alphabets without introducing representational redundancy.\footnotemark 
 A particularly attractive choice is Reed--Solomon codes over $GF(2^k)$ \cite{binius64,hashcaster:repo}, which offer an excellent trade-off between distance and encoding cost, although several works~\cite{Blaze,tensorswitch,Bolt} explore this design space using more efficient codes.
@@ -659,9 +668,11 @@ We remark that this is not the only way one can transform $\bff$ into a vector o
 \begin{remark}[Integrated range checks]\label{r:integrated_range_checks}
     Note that $\LinModFieldBin(S, R, \psi) $ includes, in its definition, a restriction of $\bff$ into a finite subset of $S$, namely $S_{\leq B}^{<D}$. This means that a proof for $\LinModFieldBin(S, R, \psi)$ ensures that $\bff$ belongs to such a subset. Thus the \ftwoz\ scheme described below also proves such membership constraint. When $S$ is, say, a finite field or the integers, membership to $S_{\leq B}^{<D}$ is simply a range check (the $<D$ is vacuous in this case). 
 
+\iflncs\else % LNCS: the intro's ``free range checks'' item covers this
     Moreover, it is possible to add other heterogeneous subset membership checks by using a non-standard bitification matrix, see \cref{r: non_uniform_bit_decomposition}. One, however, needs to make sure that $L$ admits sufficient tensor structure, for efficiency purposes.
 
     The cost of these membership checks comes for free once one is willing to commit separately to the bits comprising the witness. See \cref{s:to_soundness_rings} for an explanation of how the extractor outputs witnesses satisfying the membership check.
+\fi
 \end{remark}
 
 \paragraph{Step 2: Bitification of the linear claim.} Similarly as in Step 2 of \cref{s:to_simple_bitz}, the claim \eqref{e:new_to_0_rings} is replaced by a claim of knowledge of a bit vector  $\bitstext(\bff)$ such that \begin{equation}\label{e:intro_eq_2_rings}\langle \uu, \psi(\bitstext(\bff))\rangle =\mu \ \text{in  } R, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
@@ -1007,6 +1018,8 @@ In this section and in \cref{s:to_soundness_rings} we use the notions of  Intera
 \end{remark}
 
 
+\end{lncsmove}
+\begin{lncsmove}{SoundnessPrimeSteps} % not placed anywhere: dropped in the LNCS build
 \bigskip
 
 \noindent \emph{\underline{Round-by-round knowledge soundness of $\Pi_1$}}. The (possibly malicious) prover and verifier start with the public input $(\vv,\mu)$ and the oracle $f$.  Assume first that Step 3 does not trigger, so that $|\FF_q|<(|\comfield|-1)/\codedim_1$. Later we will discuss the case where this is otherwise. 
@@ -1038,9 +1051,16 @@ Hence \eqref{e:to_soundness_1} holds for the same  witness $\bfg$.
 
 Hence, if Step 3 does not trigger, then $\Pi_1$ is a one-round IOR with  round-by-round knowledge soundness error $0$ (the verifier sends no message during this round, hence the round can be glued together with the next one in \cref{s:soundness_core_iop}).
 
+\end{lncsmove}
+\begin{lncsmove}{SoundnessPrimeStep3}
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only bridge replacing the dropped Steps 2, 4 and 5 of this overview, at the author's request; please review]
+\lncsnote{Review paragraph} Steps 2 and 4 and the first half of Step 5 lose no knowledge: a witness for the claim output by each of them is also a witness for its input claim (for Step 5 because $(q-1)\cdot\codedim_1<|\comfield|-1$ rules out wrap-around modulo the order of $g$), so if Step 3 does not trigger, $\Pi_1$ has round-by-round knowledge soundness error $0$; \cref{s:soundness_core_iop} gives the details. The only step with a nonzero error is Step 3.
+\fi
+
 \emph{Step 3.} Assume Step 3 triggers (\cref{r:large_prime_field_in_BitZ_PCS}). Then the protocol has one extra round with a nonzero round-by-round knowledge soundness error. The prover sends $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$ with $\pi_q(\mu')=\mu$, the verifier samples a random prime $q'\in\cP$.
 
-In this case, at the end of Step 3, the claim \eqref{e:to_soundness_1} is replaced by a similar claim over a randomly sampled prime field $\FF_{q'}$, namely the prover claims knowledge of $\bfg\in \bits^{\codedim} \subseteq \ZZ^\codedim$  such that $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$, and such that $f = \Enc_\cC \circ \pack \circ\pi_2(\bfg)$. Let $\cE$ be the event that this   holds for some $\bfg$  but \eqref{e:to_soundness_1} does not. Because of \cref{r:oracle_udr} and because the oracle $f$ is the same in the claims \eqref{e:to_soundness_1} and \eqref{e:to_projected_claim}, $\bfg$ is fixed before $q'$ is sampled.  Then the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu' \in \ZZ$ satisfies $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$. Hence $h\neq 0$. Moreover, we have $|h|\leq 2\cdot \codedim\cdot (q-1)^2$, because $\bfg$ has bit entries and $\mu'$ passed the verifier's range check. Additionally,  $\pi_{q'}(h)=0$, and so $q'$ divides $h$. Such a nonzero and bounded integer $h$ has at most $\log(2\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in a set of primes $\cP$, where $q_{\min}$ is the smallest prime in $\cP$. Hence the probability of $\cE$ is at most 
+In this case, at the end of Step 3, the claim \iflncs\eqref{e:intro_eq_2}\else\eqref{e:to_soundness_1}\fi{} is replaced by a similar claim over a randomly sampled prime field $\FF_{q'}$, namely the prover claims knowledge of $\bfg\in \bits^{\codedim} \subseteq \ZZ^\codedim$  such that $\langle \pi_{q'}\circ\pi_q^{-1}(\uu^{(1)})\otimes \pi_{q'}\circ\pi_q^{-1}(\uu^{(2)}), \pi_{q'}(\bfg)\rangle=\pi_{q'}(\mu')$ in $\FF_{q'}$, and such that $f = \Enc_\cC \circ \pack \circ\pi_2(\bfg)$. Let $\cE$ be the event that this   holds for some $\bfg$  but \iflncs\eqref{e:intro_eq_2}\else\eqref{e:to_soundness_1}\fi{} does not. Because of \cref{r:oracle_udr} and because the oracle $f$ is the same in the claims \iflncs\eqref{e:intro_eq_2}\else\eqref{e:to_soundness_1}\fi{} and \eqref{e:to_projected_claim}, $\bfg$ is fixed before $q'$ is sampled.  Then the integer $h\defeq \langle \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bfg\rangle - \mu' \in \ZZ$ satisfies $\pi_q(h)=\langle \uu, \pi_q(\bfg)\rangle-\mu\neq 0$. Hence $h\neq 0$. Moreover, we have $|h|\leq 2\cdot \codedim\cdot (q-1)^2$, because $\bfg$ has bit entries and $\mu'$ passed the verifier's range check. Additionally,  $\pi_{q'}(h)=0$, and so $q'$ divides $h$. Such a nonzero and bounded integer $h$ has at most $\log(2\codedim(q-1)^2)/\lfloor\log q_{\min}\rfloor$ prime divisors in a set of primes $\cP$, where $q_{\min}$ is the smallest prime in $\cP$. Hence the probability of $\cE$ is at most 
 % 
 \begin{equation}\label{e:to_kappa_0}
 \kappa_0 \defeq \frac{\log\left(2\cdot \codedim\cdot (q-1)^2\right)}{\lfloor\log q_{\min}\rfloor\cdot |\cP|}
@@ -1375,6 +1395,7 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 \end{lncsappendix}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{PrimeField}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{SoundnessPrime}
+\lncsplace{SoundnessPrimeStep3}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{Rings}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{SoundnessRings}
 \lncsplace{SoundnessRingsThm}
