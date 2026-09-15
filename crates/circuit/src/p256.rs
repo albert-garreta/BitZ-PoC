@@ -489,8 +489,9 @@ fn lazy_divide<CS: Circuit>(
         let inverse = modular_inverse_u256(denominator, modulus)
             .ok_or_else(|| HintError::new("zero or noninvertible division denominator"))?;
         let (_, numerator) = divisor.div_rem_ct(&b);
-        let inverse_product = multiply_wide(inverse.zero_extend(), numerator.zero_extend());
-        let (_, value) = divisor.div_rem_ct(&inverse_product);
+        // Both residues are below the public 256-bit modulus.
+        let inverse_product = IntegerOps.mul_wide(&inverse, &numerator);
+        let (_, value) = divisor.div_rem_product_ct(&inverse_product);
         let shifted = shifted_dividend(multiply_wide(value.zero_extend(), a), hint_bias, b)?;
         let (quotient, remainder) = divisor.div_rem_ct(&shifted);
         debug_assert!(remainder.ct_is_zero().declassify());
@@ -613,15 +614,16 @@ fn relaxed_mul<CS: Circuit>(
     let y_eval = y.value.value.capture();
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 514, 9, _>(move |context| {
-        let a = evaluated_uint::<HINT_LIMBS>(
+        let a = evaluated_uint::<WORD_LIMBS>(
             x_eval.evaluate_words(context),
             "relaxed multiplication factor",
         )?;
-        let b = evaluated_uint::<HINT_LIMBS>(
+        let b = evaluated_uint::<WORD_LIMBS>(
             y_eval.evaluate_words(context),
             "relaxed multiplication factor",
         )?;
-        let value = multiply_wide(a, b);
+        // Elem stores a UInt256 even when its representative is not canonical.
+        let value = *IntegerOps.mul_wide(&a, &b).checked_resize_ct::<8>().value();
         let (quotient, remainder) = divisor.div_rem_ct(&value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
@@ -824,9 +826,11 @@ fn lazy_zero_test<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -
     let x_eval = x.value.capture();
     let divisor = modulus.divisor();
     let q_bits = circuit.hint::<P256_Z_LIMBS, 9, 1, _>(move |context| {
-        let z = evaluated_uint::<HINT_LIMBS>(z_eval.evaluate_words(context), "zero-test flag")?;
+        let z = evaluated_uint::<1>(z_eval.evaluate_words(context), "zero-test flag")?;
         let x = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "zero-test quotient operand")?;
-        let product = multiply_wide(z, x);
+        // z comes from the one-bit slice above. Its product with x keeps x's
+        // public representative width, including when the private flag is zero.
+        let product = Uint::ct_select(&Uint::ZERO, &x, z.bit(0).mask());
         let (quotient, remainder) = divisor.div_rem_ct(&product);
         debug_assert!(remainder.ct_is_zero().declassify());
         Ok(packed_wide(quotient))
