@@ -11436,6 +11436,7 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
     };
     let prepared = prepare_sha256_ecdsa(7, 100, OuterMode::Split).unwrap();
     let map = prepared.map();
+    assert!(map.chained_packed_source_tail().unwrap().map.is_identity());
     let points: Vec<Vec<_>> = [17, 41]
         .into_iter()
         .map(|offset| {
@@ -11757,6 +11758,9 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                     let matrix = tail.map.matrix();
                     assert!(tail.aliases.len() <= matrix.columns().len());
                     let column_weight = |column| {
+                        if tail.map.is_identity() {
+                            return coeffs.coeff(tail.row_offset + column);
+                        }
                         matrix.column(column).map_or(Gf::zero(), |col| {
                             col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
                                 sum + coeffs.coeff(tail.row_offset + r)
