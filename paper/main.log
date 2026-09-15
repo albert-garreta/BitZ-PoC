@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.18)  9 SEP 2026 08:54
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.4.18)  15 SEP 2026 08:00
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1093,35 +1093,137 @@ Library (tcolorbox): 'tcbposter.code.tex' version '6.9.0'
 ))
 \symmathx=\mathgroup10
 )
-Package translations Info: No language package found. I am going to use `english' as default language. on input line 97.
+Package translations Info: No language package found. I am going to use `english' as default language. on input line 96.
  (./main.aux
+
+./main.aux:558: LaTeX Error: Missing \begin{document}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.558 <
+       <<<<<< HEAD
+You're in trouble here.  Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: Label `r:factored_tables' multiply defined.
+
+
+LaTeX Warning: Label `r:factored_tables@cref' multiply defined.
+
+
+LaTeX Warning: Label `s:experiments' multiply defined.
+
+
+LaTeX Warning: Label `s:experiments@cref' multiply defined.
+
+
+LaTeX Warning: Label `tab:f2z-raw-performance' multiply defined.
+
+
+LaTeX Warning: Label `tab:f2z-raw-performance@cref' multiply defined.
+
 
 LaTeX Warning: Label `t:multiswap' multiply defined.
 
 
 LaTeX Warning: Label `t:multiswap@cref' multiply defined.
 
+
+LaTeX Warning: Label `tab:f2z-u32-mul' multiply defined.
+
+
+LaTeX Warning: Label `tab:f2z-u32-mul@cref' multiply defined.
+
+
+LaTeX Warning: Label `tab:native-mul-u64' multiply defined.
+
+
+LaTeX Warning: Label `tab:native-mul-u64@cref' multiply defined.
+
+
+LaTeX Warning: Label `tab:native-mul-u128' multiply defined.
+
+
+LaTeX Warning: Label `tab:native-mul-u128@cref' multiply defined.
+
+
+LaTeX Warning: Label `stir' multiply defined.
+
+
+LaTeX Warning: Label `whir' multiply defined.
+
+
+LaTeX Warning: Label `t:multiswap' multiply defined.
+
+
+LaTeX Warning: Label `t:multiswap@cref' multiply defined.
+
+
+LaTeX Warning: Label `tab:sha_arithmetization' multiply defined.
+
+
+LaTeX Warning: Label `tab:sha_arithmetization@cref' multiply defined.
+
+
+LaTeX Warning: Label `s:experiments_sha_modmul' multiply defined.
+
+
+LaTeX Warning: Label `s:experiments_sha_modmul@cref' multiply defined.
+
+
+LaTeX Warning: Label `a:LinModFieldBin' multiply defined.
+
+
+LaTeX Warning: Label `a:LinModFieldBin@cref' multiply defined.
+
+
+LaTeX Warning: Label `e:appendix_bitify' multiply defined.
+
+
+LaTeX Warning: Label `e:appendix_bitify@cref' multiply defined.
+
+
+LaTeX Warning: Label `a:OOD' multiply defined.
+
+
+LaTeX Warning: Label `a:OOD@cref' multiply defined.
+
+
+LaTeX Warning: Label `t:thm_core_IOPP_OOD' multiply defined.
+
+
+LaTeX Warning: Label `t:thm_core_IOPP_OOD@cref' multiply defined.
+
+
+LaTeX Warning: Label `l:ood_collision' multiply defined.
+
+
+LaTeX Warning: Label `l:ood_collision@cref' multiply defined.
+
 )
 \openout1 = `main.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for U/mathx/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 97.
-LaTeX Font Info:    ... okay on input line 97.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for U/mathx/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 96.
+LaTeX Font Info:    ... okay on input line 96.
  (/usr/local/texlive/2026/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
 \scratchcounter=\count447
@@ -1143,14 +1245,14 @@ File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 )) (/usr/local/texlive/2026/texmf-dist/tex/latex/translations/translations-basic-dictionary-english.trsl
 File: translations-basic-dictionary-english.trsl (english translation file `translations-basic-dictionary')
 )
-Package translations Info: loading dictionary `translations-basic-dictionary' for `english'. on input line 97.
+Package translations Info: loading dictionary `translations-basic-dictionary' for `english'. on input line 96.
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: float package is loaded.
 Package caption Info: hyperref package is loaded.
 Package caption Info: listings package is loaded.
 Package caption Info: wrapfig package is loaded.
 Package caption Info: End \AtBeginDocument code.
-Package hyperref Info: Link coloring ON on input line 97.
+Package hyperref Info: Link coloring ON on input line 96.
  (./main.out) (./main.out)
 \@outlinefile=\write5
 \openout5 = `main.out'.
@@ -1160,430 +1262,385 @@ Package hyperref Info: Link coloring ON on input line 97.
 Package: inputenc 2024/02/08 v1.3d Input encoding file
 \inpenc@prehook=\toks65
 \inpenc@posthook=\toks66
-)
-LaTeX Font Info:    Trying to load font information for U+msa on input line 99.
+) [1
+
+{/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc}]
+LaTeX Font Info:    Trying to load font information for U+msa on input line 98.
  (/usr/local/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 99.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 98.
  (/usr/local/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-LaTeX Font Info:    Trying to load font information for U+stmry on input line 99.
- (/usr/local/texlive/2026/texmf-dist/tex/latex/stmaryrd/Ustmry.fd) (./main.toc [1
-
-{/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc}])
+LaTeX Font Info:    Trying to load font information for U+stmry on input line 98.
+ (/usr/local/texlive/2026/texmf-dist/tex/latex/stmaryrd/Ustmry.fd) (./main.toc [2] [3])
 \tf@toc=\write6
 \openout6 = `main.toc'.
 
-
-
-LaTeX Warning: Reference `zincplus' on page 1 undefined on input line 130.
-
-[2]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 130.
-
-LaTeX Font Info:    Trying to load font information for U+bbm on input line 132.
-(/usr/local/texlive/2026/texmf-dist/tex/latex/bbm-macros/ubbm.fd
+LaTeX Font Info:    Trying to load font information for U+bbm on input line 125.
+ (/usr/local/texlive/2026/texmf-dist/tex/latex/bbm-macros/ubbm.fd
 File: ubbm.fd 1999/03/15 V 1.2 Font definition for bbm font - TH
 )
-Overfull \hbox (3.45827pt too wide) in paragraph at lines 132--133
-[]\T1/cmr/m/n/10.95 A Suc-cinct Non-interactive Ar-gu-ment of Knowl-edge (SNARK) for a re-la-tion $\OMS/cmsy/m/n/10.95 R$ \T1/cmr/m/n/10.95 is a non-interactive
- []
 
+LaTeX Warning: Citation `??' on page 4 undefined on input line 131.
 
-LaTeX Warning: Citation `??' on page 3 undefined on input line 138.
 
+LaTeX Warning: Citation `??' on page 4 undefined on input line 131.
 
-LaTeX Warning: Citation `??' on page 3 undefined on input line 138.
+[4]
 
+LaTeX Warning: Citation `risc0:whitepaper' on page 5 undefined on input line 137.
 
-LaTeX Warning: Citation `cryptoeprint:2023/824' on page 3 undefined on input line 141.
 
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:144: LaTeX Error: Something's wrong--perhaps a missing \item.
 
-LaTeX Warning: Citation `risc0:whitepaper' on page 3 undefined on input line 141.
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.144     \item D
+                 esigning proof systems for relations expressed over  the ri...
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
 
-LaTeX Warning: Citation `plonky2:repo' on page 3 undefined on input line 141.
+LaTeX Warning: Citation `more' on page 5 undefined on input line 146.
 
 
-LaTeX Warning: Citation `more' on page 3 undefined on input line 146.
+LaTeX Warning: Reference `r:non_prime_characteristics' on page 1 undefined on input line 146.
 
+[5{/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc}]
 
-LaTeX Warning: Citation `cryptoeprint:2022/1542' on page 3 undefined on input line 147.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 173.
 
+Runaway argument?
+{ \albertimportant {Todo} Performance of \ftwoz \ on different comput\ETC.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \caption@prepareanchor was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply this
+control sequence to too much text. How can we recover?
+My plan is to forget the whole thing and hope for the best.
 
-LaTeX Warning: Citation `hashcaster:repo' on page 3 undefined on input line 147.
 
+LaTeX Warning: Citation `?' on page 6 undefined on input line 1440.
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 147.
 
-[3{/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc}]
+LaTeX Warning: Citation `?' on page 6 undefined on input line 1440.
 
-LaTeX Warning: Citation `?' on page 4 undefined on input line 170.
 
-
-LaTeX Warning: Reference `t:intro_table_experiments' on page 1 undefined on input line 170.
-
-
-LaTeX Warning: Citation `?' on page 4 undefined on input line 170.
-
-
-LaTeX Warning: Reference `r:?' on page 1 undefined on input line 172.
-
-
-LaTeX Warning: Citation `??' on page 4 undefined on input line 186.
-
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 186.
-
-
-Overfull \hbox (56.16566pt too wide) in paragraph at lines 176--198
- [][] 
- []
-
-[4] [5]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 260.
-
-[6]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 275.
-
-
-LaTeX Warning: Citation `zinc+' on page 7 undefined on input line 283.
-
-
-LaTeX Warning: Citation `?' on page 7 undefined on input line 289.
-
-[7]
-
-LaTeX Warning: Citation `linearSizedIOPs' on page 8 undefined on input line 291.
-
-
-LaTeX Warning: Citation `cryptoeprint:2022/1542' on page 8 undefined on input line 291.
-
-
-LaTeX Warning: Citation `hashcaster:repo' on page 8 undefined on input line 292.
-
-
-LaTeX Warning: Citation `tensorswitch' on page 8 undefined on input line 292.
-
-
-LaTeX Warning: Citation `Bolt' on page 8 undefined on input line 292.
-
-
-LaTeX Warning: Citation `lev:hashcaster' on page 8 undefined on input line 297.
-
-
-LaTeX Warning: Citation `FRIBinius:Galois' on page 8 undefined on input line 297.
-
-
-LaTeX Warning: Citation `linearSizedIOPs' on page 8 undefined on input line 299.
-
-
-LaTeX Warning: Citation `binaryspartan' on page 8 undefined on input line 299.
-
-[8]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 345.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 345.
-
-[9] [10]
-
-LaTeX Warning: Command \textasciicircum invalid in math mode on input line 419.
-
-[11]
-
-LaTeX Warning: Reference `a:ring_switch_remco' on page 1 undefined on input line 436.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 466.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 466.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 466.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 466.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 466.
-
-[12]
-Overfull \hbox (14.40872pt too wide) detected at line 513
-[]
- []
-
-
-LaTeX Warning: Reference `s:sha256-f2-arithmetization' on page 1 undefined on input line 530.
-
-[13]
-
-LaTeX Warning: Citation `thaler?' on page 14 undefined on input line 573.
-
-[14]
-
-LaTeX Warning: Citation `logupstar' on page 15 undefined on input line 652.
-
-
-LaTeX Warning: Reference `binius64' on page 1 undefined on input line 655.
-
-
-LaTeX Warning: Reference `s:exp_binius64_ip' on page 1 undefined on input line 657.
-
-
-LaTeX Warning: Citation `logupstar' on page 15 undefined on input line 660.
-
-[15]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 671.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 671.
-
-
-Overfull \hbox (8.56169pt too wide) detected at line 695
-\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 R[]\OT1/cmr/m/n/10.95 [\OML/cmm/m/it/10.95 X\OT1/cmr/m/n/10.95 ]\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 p\OML/cmm/m/it/10.95 ; \OML/cmm/b/it/10.95 R\OT1/cmr/m/n/10.95 ) = []
- []
-
-[16]
-
-LaTeX Warning: Reference `r:pimsat_vs_ucs' on page 1 undefined on input line 703.
-
-
-LaTeX Warning: Reference `s:iop_upesat' on page 1 undefined on input line 743.
-
-
-LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 743.
-
-[17]
-
-LaTeX Warning: Reference `r:otheSodule_morphisms' on page 1 undefined on input line 764.
-
-
-LaTeX Warning: Reference `c:iop_pimsat' on page 1 undefined on input line 788.
-
-[18] [19] [20] [21]
-
-LaTeX Warning: Citation `?' on page 22 undefined on input line 1015.
-
-[22]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1041.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1041.
-
-[23] [24]
-Overfull \hbox (8.74507pt too wide) in paragraph at lines 1219--1223
-[]\T1/cmr/m/n/10.95 We as-sume prover and ver-i-fier have ac-cess to an IOR $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 that re-duces $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; Q[]; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; [][]\OT1/cmr/m/n/10.95 )$
- []
-
-[25]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1251.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1251.
-
-[26]
-Overfull \hbox (35.17911pt too wide) in paragraph at lines 1353--1355
-[]\T1/cmr/bx/n/10.95 Construction 5.4 \T1/cmr/m/n/10.95 (IOP for the core $\OMS/cmsy/m/n/10.95 R[]$ \T1/cmr/m/n/10.95 re-la-tion)\T1/cmr/bx/n/10.95 . []Pa-ram-e-ters. $\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 `; `[]; `[]; \OT1/cmr/m/n/10.95 ^^E[]\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 ^^E[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 P\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 M[]\OT1/cmr/m/n/10.95 )[])$
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 1353--1355
-
- []
-
-[27] [28]
-Overfull \hbox (5.96121pt too wide) detected at line 1459
-[][][][][] \OMS/cmsy/m/n/10.95 2 R[]\OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; [][]\OT1/cmr/m/n/10.95 ) = []
- []
-
-[29] [30] [31]
-Overfull \hbox (32.81326pt too wide) in paragraph at lines 1608--1609
-[]\T1/cmr/m/n/10.95 Below we show that $\OT1/cmr/m/n/10.95 ^^E[]$ \T1/cmr/m/n/10.95 has round-by-round knowl-edge sound-ness with re-lax-ation $\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 R[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 ,
- []
-
-[32] [33] [34]
-Overfull \hbox (1.21529pt too wide) in paragraph at lines 1689--1691
-\T1/cmr/m/n/10.95 Since the ver-i-fier ac-cepts, its check [] in Round 2 passes, i.e. $[][] \OML/cmm/m/it/10.95 ^^Y[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 ^^V[]\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 ^^A [][] \OT1/cmr/m/n/10.95 =
- []
-
-[35] [36]
-Overfull \hbox (3.97737pt too wide) in paragraph at lines 1784--1785
-[]\T1/cmr/m/n/10.95 When there is no risk of con-fu-sion, we de-note $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10.95 ;  ; R; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; L\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 sim-ply by $\OMS/cmsy/m/n/10.95 R[]$\T1/cmr/m/n/10.95 .
+Underfull \hbox (badness 10000) in paragraph at lines 1440--1440
+|[]$\U/msb/m/n/12 B[]Z$ \T1/cmr/bx/n/12 in a nut-shell|
  []
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1797.
+(hyperref)                removing `math shift' on input line 1440.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1797.
+(hyperref)                removing `math shift' on input line 1440.
 
-[37]
-Underfull \hbox (badness 10000) in paragraph at lines 1846--1847
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Missing $ inserted.
+<inserted text> 
+                $
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
 
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Missing } inserted.
+<inserted text> 
+                }
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Display math should end with $$.
+<to be read again> 
+                   \tex_par:D 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+The `$' that I just saw supposedly matches a previous `$$'.
+So I shall assume that you typed `$$' both times.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Extra }, or forgotten \endgroup.
+\par ...m \@noitemerr {\@@par }\fi \else {\@@par }
+                                                  \fi 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Overfull \hbox (72.12247pt too wide) detected at line 1440
+[][][][]\OML/cmm/m/it/10 g[] \OT1/cmr/m/n/10 = [] [] = \OML/cmm/m/it/10 g[]; >>>>>>> \OT1/cmr/m/n/10 1392\OML/cmm/m/it/10 f\OT1/cmr/m/n/10 85837278858\OML/cmm/m/it/10 edd\OT1/cmr/m/n/10 1\OML/cmm/m/it/10 f\OT1/cmr/m/n/10 3382\OML/cmm/m/it/10 d\OT1/cmr/m/n/10 230\OML/cmm/m/it/10 aabf\OT1/cmr/m/n/10 87783\OML/cmm/m/it/10 c\OT1/cmr/m/n/10 7
  []
 
-[38] [39]
-Overfull \hbox (32.77737pt too wide) in paragraph at lines 1909--1909
-[][]$\T1/cmr/m/it/10.95 , [][]Con-struc-tion 5.14[][] is a per-fectly com-plete $\OT1/cmr/m/n/10.95 (1 + \OML/cmm/m/it/10.95 t[] \OT1/cmr/m/n/10.95 + \OML/cmm/m/it/10.95 t[]\OT1/cmr/m/n/10.95 )$\T1/cmr/m/it/10.95 -round IOP for $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10.95 ;  ; R; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; L\OT1/cmr/m/n/10.95 )$
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: LaTeX Error: \begin{equation} on input line 1440 ended by \end{enumerate}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
+
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: LaTeX Error: Something's wrong--perhaps a missing \item.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+Runaway argument?
+ \paragraph {Issues 1 and 2: lift to $\ZZ [X_1, \ldots , X_k]$ and pr\ETC.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \verbatim@ was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply this
+control sequence to too much text. How can we recover?
+My plan is to forget the whole thing and hope for the best.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `??' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `zincplus' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Citation `FRIBinius:Galois' on page 6 undefined on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+Runaway argument?
+ \begin {remark}[Other usages of the ``prove-in-the-exponent'' approa\ETC.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \verbatim@ was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply this
+control sequence to too much text. How can we recover?
+My plan is to forget the whole thing and hope for the best.
+
+Runaway argument?
+ 
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \verbatim@ was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply this
+control sequence to too much text. How can we recover?
+My plan is to forget the whole thing and hope for the best.
+
+
+LaTeX Warning: Reference `binius64' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `lev' on page 1 undefined on input line 1440.
+
+
+LaTeX Warning: Citation `?' on page 6 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `e:to_binius_product' on page 6 undefined on input line 1440.
+
+
+LaTeX Warning: Citation `?' on page 6 undefined on input line 1440.
+
+
+LaTeX Warning: Reference `e:to_binius_product' on page 6 undefined on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `subscript' on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+Runaway argument?
+ \albertimportant {Not used?} Given a ring $R$, $n$ variables $X_1, \ldots \ETC.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \verbatim@ was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply this
+control sequence to too much text. How can we recover?
+My plan is to forget the whole thing and hope for the best.
+
+
+LaTeX Warning: Citation `bishnoi2018schwartz' on page 6 undefined on input line 1440.
+
+Runaway argument?
+{\ignorespaces  \albertimportant {Todo} Performance of \ftwoz \ on di\ETC.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \caption@@@addcontentsline was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply this
+control sequence to too much text. How can we recover?
+My plan is to forget the whole thing and hope for the best.
+
+
+LaTeX Warning: Citation `?' on page 6 undefined on input line 1440.
+
+
+LaTeX Warning: Citation `?' on page 6 undefined on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Missing $ inserted.
+<inserted text> 
+                $
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Missing } inserted.
+<inserted text> 
+                }
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Display math should end with $$.
+<to be read again> 
+                   \tex_par:D 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+The `$' that I just saw supposedly matches a previous `$$'.
+So I shall assume that you typed `$$' both times.
+
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Extra }, or forgotten \endgroup.
+\par ...m \@noitemerr {\@@par }\fi \else {\@@par }
+                                                  \fi 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 1440.
+
+
+Overfull \hbox (93.98236pt too wide) detected at line 1440
+[][][][]\OML/cmm/m/it/10 g[] \OT1/cmr/m/n/10 = [] [] = \OML/cmm/m/it/10 g[]; >>>>>>> \OT1/cmr/m/n/10 1392\OML/cmm/m/it/10 f\OT1/cmr/m/n/10 85837278858\OML/cmm/m/it/10 edd\OT1/cmr/m/n/10 1\OML/cmm/m/it/10 f\OT1/cmr/m/n/10 3382\OML/cmm/m/it/10 d\OT1/cmr/m/n/10 230\OML/cmm/m/it/10 aabf\OT1/cmr/m/n/10 87783\OML/cmm/m/it/10 c\OT1/cmr/m/n/10 7
  []
 
 
-Overfull \hbox (6.58217pt too wide) in paragraph at lines 1916--1917
-\T1/cmr/m/n/10.95 lishes an equiv-a-lence be-tween triples for $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10.95 ;  ; R; \OMS/cmsy/m/n/10.95 C\OML/cmm/m/it/10.95 ; L\OT1/cmr/m/n/10.95 )$ \T1/cmr/m/n/10.95 and $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g\OML/cmm/m/it/10.95 ; ^^Y; R; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$\T1/cmr/m/n/10.95 .
- []
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: LaTeX Error: \begin{equation} on input line 1440 ended by \end{enumerate}.
 
-[40] [41]
-
-LaTeX Warning: Citation `stir-repo' on page 42 undefined on input line 1997.
-
-
-LaTeX Warning: Citation `whir-repo' on page 42 undefined on input line 1997.
-
-[42] [43] [44]
-
-LaTeX Warning: Citation `?' on page 45 undefined on input line 2154.
-
-[45] [46] [47]
-Overfull \hbox (14.8313pt too wide) in paragraph at lines 2279--2294
- [][] 
- []
-
-[48]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2348.
-
-[49]
-Overfull \hbox (40.46162pt too wide) detected at line 2373
-[]
- []
-
-[50] [51] [52]
-Overfull \hbox (65.72557pt too wide) detected at line 2492
-\OML/cmm/m/it/10.95 T[][]T[] \OMS/cmsy/m/n/10.95 2 \OT1/cmr/m/n/10.95 (\U/msb/m/n/10.95 K[]\OT1/cmr/m/n/10.95 )[] []\OML/cmm/m/it/10.95 T[]\OT1/cmr/m/n/10.95 [\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 ] = (\OT1/cmr/bx/n/10.95 y[]\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 y[]\OT1/cmr/m/n/10.95 )[]\OML/cmm/m/it/10.95 L[]\OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 c\OT1/cmr/m/n/10.95 ) = \OML/cmm/m/it/10.95 T[]\OT1/cmr/m/n/10.95 [\OT1/cmr/bx/n/10.95 b\OT1/cmr/m/n/10.95 ][\OT1/cmr/bx/n/10.95 f[]\OT1/cmr/m/n/10.95 ]\OML/cmm/m/it/10.95 ;  \OT1/cmr/m/n/10.95 (\OT1/cmr/bx/n/10.95 b\OML/cmm/m/it/10.95 ; \OT1/cmr/bx/n/10.95 c\OT1/cmr/m/n/10.95 ) \OMS/cmsy/m/n/10.95 2 f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g[] ^^B f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g[]\OML/cmm/m/it/10.95 ;
- []
-
-[53] [54]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2671.
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
 
 
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2671.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
 
 
-LaTeX Warning: Reference `flock' on page 1 undefined on input line 2673.
+LaTeX Warning: Reference `?' on page 1 undefined on input line 1440.
 
 
-LaTeX Warning: Reference `zkgolf' on page 1 undefined on input line 2673.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: LaTeX Error: Something's wrong--perhaps a missing \item.
 
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2678.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2678.
-
-
-Overfull \hbox (82.4951pt too wide) in paragraph at lines 2680--2681
-\T1/cmr/m/n/10.95 We mea-sure the per-for-mance of [][]Con-struc-tion 5.4[][] for prov-ing the Core Lin-Bit-sRing re-la-tion $\OMS/cmsy/m/n/10.95 R[]\OT1/cmr/m/n/10.95 (\OMS/cmsy/m/n/10.95 f\OT1/cmr/m/n/10.95 0\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 1\OMS/cmsy/m/n/10.95 g\OML/cmm/m/it/10.95 ; ^^Y; \U/msb/m/n/10.95 F[]\OML/cmm/m/it/10.95 ; \OMS/cmsy/m/n/10.95 C\OT1/cmr/m/n/10.95 )$
- []
-
-[55] (./raw-performance-table.tex)
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2700.
-
-(./u32-mul-table.tex [56]) [57] [58]
-
-LaTeX Warning: Reference `s:related_work' on page 1 undefined on input line 2853.
-
-[59]
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2891.
-
-[60]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2934.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `superscript' on input line 2934.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 2934.
-
-
-LaTeX Warning: Reference `?' on page 1 undefined on input line 2938.
-
-(./main.bbl [61] [62])
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\new@ifnextchar' on input line 3003.
-
-[63]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\new@ifnextchar' on input line 3034.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 3034.
-
-[64] [65] [66] [67] (./main.aux)
- ***********
-LaTeX2e <2025-11-01>
-L3 programming layer <2026-01-19>
- ***********
-
-
-LaTeX Warning: There were undefined references.
-
-
-LaTeX Warning: There were multiply-defined labels.
-
-Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: E30621D6D72A73C06EB49E890F2DD52D;8407.
- ) 
-Here is how much of TeX's memory you used:
- 43362 strings out of 467525
- 892799 string characters out of 5418982
- 1415939 words of memory out of 5000000
- 71202 multiletter control sequences out of 15000+600000
- 677434 words of font info for 184 fonts, out of 8000000 for 9000
- 1141 hyphenation exceptions out of 8191
- 99i,18n,117p,2449b,1424s stack positions out of 10000i,1000n,20000p,200000b,200000s
- </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk> </Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmib10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmmib6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmmib8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmss9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1440.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0600.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1728.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti0900.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb></usr/local/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt0900.pfb>
-Output written on main.pdf (67 pages, 1084153 bytes).
-PDF statistics:
- 1704 PDF objects out of 1728 (max. 8388607)
- 1464 compressed objects within 15 object streams
- 323 named destinations out of 1000 (max. 500000)
- 453 words of extra memory for PDF output out of 10000 (max. 10000000)
-
+Runaway argument?
+ \paragraph {Issues 1 and 2: lift to $\ZZ [X_1, \ldots , X_k]$ and pr\ETC.
+/Users/albertgarretafontelles/f2z-pcs/paper/main.tex:1440: Paragraph ended before \verbatim@ was complete.
+<to be read again> 
+                   \par 
+l.1440 ...sg}$. \albert{As implemented in Flock?}}
+                                                  
+I suspect you've forgotten a `}', causing me to apply 

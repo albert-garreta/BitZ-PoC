@@ -264,6 +264,22 @@ def case_config_token(case):
     return ""
 
 
+def address_space_limit(memory_gib):
+    """Cap worker address space, where the platform enforces it.
+
+    macOS rejects every finite RLIMIT_AS (and RLIMIT_DATA/RLIMIT_RSS), so a
+    preexec_fn that sets one aborts the spawn. Return None there and record
+    the unenforced cap in the manifest.
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+
+    def limit():
+        size = memory_gib * 1024**3
+        resource.setrlimit(resource.RLIMIT_AS, (size, size))
+    return limit
+
+
 def run_case(binary, case, args, directory):
     shape = f"r{case['r']}-c{case['c']}" if case["r"] is not None else "total"
     name = (f"{case['method']}-i{case['log_compressions']}-{shape}-s{case['security_target']}"
@@ -294,10 +310,6 @@ def run_case(binary, case, args, directory):
     elif sys.platform == "darwin":
         command = ["/usr/bin/time", "-l", *command]
 
-    def memory_limit():
-        limit = args.memory_gib * 1024**3
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-
     started = time.monotonic()
     status, returncode = "failed", None
     with (directory / f"{name}.stdout").open("w") as stdout, (directory / f"{name}.stderr").open("w") as stderr:
@@ -311,7 +323,7 @@ def run_case(binary, case, args, directory):
         try:
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr, cwd=ROOT,
                                        start_new_session=True,
-                                       preexec_fn=memory_limit if sys.platform.startswith("linux") else None,
+                                       preexec_fn=address_space_limit(args.memory_gib),
                                        env=env)
         except (OSError, subprocess.SubprocessError) as exc:
             stderr.write(str(exc) + "\n")
@@ -474,7 +486,8 @@ def main():
         manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
                                 f2z_profiles=args.f2z_profiles, binius_rates=args.binius_rates,
-                                seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib)
+                                seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib,
+                                memory_cap_enforced=address_space_limit(args.memory_gib) is not None)
     manifest_path = directory / "manifest.json"
     if manifest_path.exists():
         previous = json.loads(manifest_path.read_text())

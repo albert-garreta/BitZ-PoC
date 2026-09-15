@@ -10,6 +10,17 @@ from test_ligerito_results import report as ligerito_report
 
 
 class CampaignTests(unittest.TestCase):
+    def test_address_space_limit_only_applies_on_linux(self):
+        for platform in ["darwin", "win32"]:
+            with patch.object(campaign.sys, "platform", platform):
+                self.assertIsNone(campaign.address_space_limit(4))
+        with patch.object(campaign.sys, "platform", "linux"):
+            limit = campaign.address_space_limit(4)
+            with patch.object(campaign.resource, "setrlimit") as setrlimit:
+                limit()
+            size = 4 * 1024**3
+            setrlimit.assert_called_once_with(campaign.resource.RLIMIT_AS, (size, size))
+
     def test_peak_memory_units_on_linux_and_macos(self):
         with tempfile.TemporaryDirectory() as path:
             linux = Path(path) / "rss-kib"

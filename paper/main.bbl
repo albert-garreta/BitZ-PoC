@@ -25,6 +25,13 @@ Alexander Abdugafarov, Albert Garreta, Amit Kumar, Michał Osadnik, Psi Vesely,
 \newblock Zinc+: {SNARKs} for polynomial rings.
 \newblock Cryptology {ePrint} Archive, Paper 2026/855, 2026.
 
+\bibitem[BBMHS22]{baum2022moz}
+Carsten Baum, Lennart Braun, Alexander Munch-Hansen, and Peter Scholl.
+\newblock Moz z 2 k arella: efficient vector-ole and zero-knowledge proofs over
+  z 2 k.
+\newblock In {\em Annual International Cryptology Conference}, pages 329--358.
+  Springer, 2022.
+
 \bibitem[BCF{\etalchar{+}}24]{Blaze}
 Martijn Brehm, Binyi Chen, Ben Fisch, Nicolas Resch, Ron~D. Rothblum, and Hadas
   Zeilberger.
@@ -42,11 +49,23 @@ Suyash Bagad, Quang Dao, Yuval Domb, and Justin Thaler.
 \newblock Speeding up sum-check proving.
 \newblock Cryptology {ePrint} Archive, Paper 2025/1117, 2025.
 
+\bibitem[BFRW25]{tensorswitch}
+Benedikt B{\"u}nz, Giacomo Fenzi, Ron~D. Rothblum, and William Wang.
+\newblock {TensorSwitch}: Nearly optimal polynomial commitments from tensor
+  codes.
+\newblock Cryptology {ePrint} Archive, Paper 2025/2065, 2025.
+\newblock CRYPTO 2026.
+
 \bibitem[BFS19]{DARK}
 Benedikt B{\"u}nz, Ben Fisch, and Alan Szepieniec.
 \newblock Transparent {SNARKs} from {DARK} compilers.
 \newblock Cryptology {ePrint} Archive, Paper 2019/1229, 2019.
 \newblock EUROCRYPT 2020.
+
+\bibitem[BG23]{risczero}
+Jeremy Bruestle and Paul Gafni.
+\newblock Risc zero zkvm: scalable, transparent arguments of risc-v integrity.
+\newblock {\em Draft. July}, 29, 2023.
 
 \bibitem[BHR{\etalchar{+}}21]{BlockDARK}
 Alexander~R. Block, Justin Holmgren, Alon Rosen, Ron~D. Rothblum, and Pratik
@@ -65,7 +84,7 @@ Benedikt Bünz, Ron Rothblum, and William Wang.
 \newblock Flock: Fast proving for batch boolean computations.
 \newblock Cryptology {ePrint} Archive, Paper 2026/1329, 2026.
 
-\bibitem[BSBHR18a]{FRI}
+\bibitem[BSBHR18a]{fri}
 Eli Ben-Sasson, Iddo Bentov, Yinon Horesh, and Michael Riabzev.
 \newblock {Fast Reed-Solomon Interactive Oracle Proofs of Proximity}.
 \newblock In Ioannis Chatzigiannakis, Christos Kaklamanis, D\'{a}niel Marx, and
@@ -81,6 +100,19 @@ Eli Ben-Sasson, Iddo Bentov, Yinon Horesh, and Michael Riabzev.
   integrity.
 \newblock Cryptology {ePrint} Archive, Paper 2018/046, 2018.
 
+\bibitem[BSCG{\etalchar{+}}19]{linearSizedIOPs}
+Eli Ben-Sasson, Alessandro Chiesa, Lior Goldberg, Tom Gur, Michael Riabzev, and
+  Nicholas Spooner.
+\newblock Linear-size constant-query {IOPs} for delegating computation.
+\newblock Cryptology {ePrint} Archive, Paper 2019/1230, 2019.
+\newblock TCC 2019.
+
+\bibitem[BSCKL22]{cryptoeprint:2022/1542}
+Eli Ben-Sasson, Dan Carmon, Swastik Kopparty, and David Levit.
+\newblock Scalable and transparent proofs over all large fields, via elliptic
+  curves ({ECFFT} part {II}).
+\newblock Cryptology {ePrint} Archive, Paper 2022/1542, 2022.
+
 \bibitem[CFW26]{zook}
 Alessandro Chiesa, Giacomo Fenzi, and Guy Weissenberg.
 \newblock Zero-knowledge {IOPPs} for constrained interleaved codes.
@@ -95,6 +127,12 @@ Matteo Campanelli and Mathias Hall-Andersen.
 Jessica Chen, Lucas Xia, Wilson Nguyen, and Benedikt Bünz.
 \newblock Limber: Low overhead {SNARKs} for integers from any {PCS}.
 \newblock Cryptology {ePrint} Archive, Paper 2026/1635, 2026.
+
+\bibitem[DHA26]{zkgolf}
+Giorgio Dell'Immagine and Mathias Hall-Andersen.
+\newblock zk.golf: Fearless and collaborative optimization of circuits.
+\newblock {ZK/SEC} Quarterly (zkSecurity blog), 2026.
+\newblock \url{https://zk.golf}.
 
 \bibitem[DP23]{binius}
 Benjamin~E. Diamond and Jim Posen.
@@ -112,6 +150,32 @@ Quang Dao and Justin Thaler.
 \newblock More optimizations to sum-check proving.
 \newblock Cryptology {ePrint} Archive, Paper 2024/1210, 2024.
 
+\bibitem[Fas24]{longfellow}
+Matteo Frigo and abhi shelat.
+\newblock Anonymous credentials from {ECDSA}.
+\newblock Cryptology {ePrint} Archive, Paper 2024/2010, 2024.
+
+\bibitem[Fen24a]{stir-repo}
+Giacomo Fenzi.
+\newblock {STIR}: Rust implementation.
+\newblock GitHub repository, 2024.
+
+\bibitem[Fen24b]{whir-repo}
+Giacomo Fenzi.
+\newblock {WHIR}: Rust implementation.
+\newblock GitHub repository, 2024.
+
+\bibitem[GNR26]{Bolt}
+Kobi Gurkan, Andrija Novakovic, and Ron~D. Rothblum.
+\newblock Bolt: Faster {SNARKs} from sketched codes.
+\newblock Cryptology {ePrint} Archive, Paper 2026/310, 2026.
+\newblock CRYPTO 2026.
+
+\bibitem[GNSV23]{rinnochio}
+Chaya Ganesh, Anca Nitulescu, and Eduardo Soria-Vazquez.
+\newblock Rinocchio: Snarks for ring arithmetic.
+\newblock {\em Journal of Cryptology}, 36(4):41, 2023.
+
 \bibitem[Gru24]{gruen}
 Angus Gruen.
 \newblock Some improvements for the {PIOP} for {ZeroCheck}.
@@ -127,12 +191,27 @@ Albert Garreta, Hendrik Waldner, Ilia Vlasov, Katerina Hristova, Luca
   2025, Proceedings, Part VII}, pages 259--291, Berlin, Heidelberg, 2025.
   Springer-Verlag.
 
+\bibitem[HLN23]{cryptoeprint:2023/824}
+Ulrich Hab{\"o}ck, Daniel Lubarov, and Jacqueline Nabaglo.
+\newblock {Reed-Solomon} codes over the circle group.
+\newblock Cryptology {ePrint} Archive, Paper 2023/824, 2023.
+
 \bibitem[HLP24]{CircleSTARKs}
 Ulrich Hab{\"o}ck, David Levit, and Shahar Papini.
 \newblock Circle {STARKs}.
 \newblock Cryptology {ePrint} Archive, Paper 2024/278, 2024.
 
-\bibitem[NA25]{ligerito}
+\bibitem[HMZ25]{new_rings_work_one}
+Mi-Ying~Miryam Huang, Xinyu Mao, and Jiapeng Zhang.
+\newblock Sublinear proofs over polynomial rings.
+\newblock Cryptology {ePrint} Archive, Paper 2025/199, 2025.
+
+\bibitem[KS25]{vega}
+Darya Kaviani and Srinath Setty.
+\newblock Vega: Low-latency zero-knowledge proofs over existing credentials.
+\newblock Cryptology {ePrint} Archive, Paper 2025/2094, 2025.
+
+\bibitem[NA25]{Ligerito}
 Andrija Novakovic and Guillermo Angeris.
 \newblock Ligerito: A small and concretely fast polynomial commitment scheme.
 \newblock Cryptology {ePrint} Archive, Paper 2025/1187, 2025.
@@ -143,9 +222,26 @@ Alex Ozdemir, Riad~S. Wahby, Barry Whitehat, and Dan Boneh.
 \newblock In {\em 29th {USENIX} Security Symposium ({USENIX} Security 20)},
   pages 2075--2092, 2020.
 
-\bibitem[Plo]{plonky}
-Plonky3.
-\newblock Plonky3.
+\bibitem[{Pol}22]{plonky2:repo}
+{Polygon Zero}.
+\newblock Plonky2: Fast recursive arguments with {PLONK} and {FRI}.
+\newblock GitHub repository, 2022.
+
+\bibitem[Set26]{binaryspartan}
+Srinath Setty.
+\newblock {BinarySpartan}: Spartan over binary fields.
+\newblock Cryptology {ePrint} Archive, Paper 2026/1656, 2026.
+
+\bibitem[Sou24]{hashcaster:repo}
+Lev Soukhanov.
+\newblock Hashcaster: batched small-field sumcheck using {Frobenius} twists.
+\newblock GitHub repository, 2024.
+
+\bibitem[Sou25]{logupstar}
+Lev Soukhanov.
+\newblock {Logup*}: faster, cheaper logup argument for small-table indexed
+  lookups.
+\newblock Cryptology {ePrint} Archive, Paper 2025/946, 2025.
 
 \bibitem[Sou26]{lev}
 Lev Soukhanov.
@@ -159,10 +255,35 @@ Alireza Shirzad, Sriram Sridhar, Dimitrios Papadopoulos, and Charalampos
   {SNARKs} for integers.
 \newblock Cryptology {ePrint} Archive, Paper 2026/347, 2026.
 
+\bibitem[Sta21]{ethstark}
+StarkWare.
+\newblock {ethSTARK} documentation.
+\newblock Online, 2021.
+\newblock Version 1.2.
+
+\bibitem[SV22]{soria2022doubly}
+Eduardo Soria-Vazquez.
+\newblock Doubly efficient interactive proofs over infinite and non-commutative
+  rings.
+\newblock In {\em Theory of Cryptography Conference}, pages 497--525. Springer,
+  2022.
+
+\bibitem[Tha13]{thaler13}
+Justin Thaler.
+\newblock Time-optimal interactive proofs for circuit evaluation.
+\newblock In {\em Advances in Cryptology -- {CRYPTO} 2013, Part {II}}, volume
+  8043 of {\em Lecture Notes in Computer Science}, pages 71--89. Springer,
+  2013.
+
 \bibitem[Tha22]{thalerbook}
 Justin Thaler.
 \newblock {\em Proofs, Arguments, and Zero-Knowledge}.
 \newblock 01 2022.
+
+\bibitem[WZD25]{new_rings_work_two}
+Yuanju Wei, Xinxuan Zhang, and Yi~Deng.
+\newblock Transparent {SNARKs} over galois rings.
+\newblock Cryptology {ePrint} Archive, Paper 2025/263, 2025.
 
 \bibitem[ZCF23]{basefold}
 Hadas Zeilberger, Binyi Chen, and Ben Fisch.
