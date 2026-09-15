@@ -106,6 +106,27 @@ fn map_matches_witness(exponent: u8) {
 }
 
 #[test]
+fn outer_raw_products_match_field_products() {
+    use crate::piop::spartan::{f2z::SpartanF2zField as F, raw_monty::RawMontyCtx};
+    use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
+    // Any prime above 2^64 exercises the native reduction; the sampled
+    // 113-bit primes are covered by the pinned transcript.
+    let modulus: u128 = (1u128 << 127) - 1;
+    let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+    let ctx = RawMontyCtx::new(&cfg);
+    let (statement, message) = fixture();
+    for mode in [OuterMode::Split, OuterMode::AllRows] {
+        let prepared = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+        let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+        let field = witness.build_outer_product_mles(&prepared, modulus, &cfg);
+        let raw = witness.build_outer_raw_products(&prepared, &ctx);
+        assert_eq!(raw.az, ctx.raw_vec(&field.az.evaluations), "{mode:?} A");
+        assert_eq!(raw.bz, ctx.raw_vec(&field.bz.evaluations), "{mode:?} B");
+        assert_eq!(raw.cz, ctx.raw_vec(&field.cz.evaluations), "{mode:?} C");
+    }
+}
+
+#[test]
 fn transposed_assignment_rows_prove_and_verify() {
     use crate::transcript::Blake3Transcript;
     let prepared = prepare_sha256_ecdsa(6, 100, OuterMode::Split).unwrap();

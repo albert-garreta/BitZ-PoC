@@ -22,8 +22,8 @@ impl IopSecurityProfile for CompositionProfile {
     const RING_SWITCH_GRINDING_BITS: u32 = 0;
 }
 
-/// Round-by-round target of the SHARED opener: the Johnson-regime
-/// Ligerito configuration of the virtual geometry at rate 1/2 (see
+/// Round-by-round target of the SHARED opener at the default rate 1/2: the
+/// Johnson-regime Ligerito configuration of the virtual geometry (see
 /// [`Geometry::security`]; the proximity-gap figures quoted below were
 /// derived at the earlier rate 1/8 — at rate 1/2 the same solver re-derives
 /// the ladder at this target). It is deliberately below the 108-bit
@@ -36,7 +36,16 @@ impl IopSecurityProfile for CompositionProfile {
 /// shapes clear the 100-bit composition gate with margin: the opener's
 /// terms sum to about 22·2^-target at five levels, so 104 fails the gate
 /// and 105 leaves it less than half a bit.
+///
+/// This constant governs the RATE-1/2 opener only (keeping its transcripts
+/// byte-identical). A rate-1/8 selection solves the smallest component
+/// target in 100..=112 whose whole-protocol union bound clears the 100-bit
+/// gate instead (`PreparedHybrid::new_with_ligerito`), the same
+/// smallest-clearing rule `src/binius_ligerito` applies.
 pub const LIGERITO_COMPONENT_BITS: usize = 106;
+
+/// The whole-protocol union-bound gate every prepared composition must clear.
+pub(super) const GATE_BITS: f64 = 100.0;
 
 #[derive(Clone, Debug)]
 pub struct SecurityTerm {
@@ -65,6 +74,21 @@ impl SecurityReport {
 }
 
 pub(super) fn account(
+    mul: &U32MulPrefixRelation,
+    sha: &binius_verifier::IOPVerifier,
+    geometry: &Geometry,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+) -> Result<SecurityReport, Error> {
+    let report = account_terms(mul, sha, geometry, resolved)?;
+    if report.algebraic_bits < GATE_BITS {
+        return Err(Error::Invalid("composition does not reach 100 bits"));
+    }
+    Ok(report)
+}
+
+/// The union-bound accounting WITHOUT the 100-bit gate, so a caller solving
+/// the smallest clearing component target can probe candidates.
+pub(super) fn account_terms(
     mul: &U32MulPrefixRelation,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
@@ -153,9 +177,6 @@ pub(super) fn account(
         .map(|term| term.error_bound)
         .sum::<f64>()
         .log2();
-    if algebraic_bits < 100.0 {
-        return Err(Error::Invalid("composition does not reach 100 bits"));
-    }
     Ok(SecurityReport {
         target_bits: 100,
         algebraic_bits,

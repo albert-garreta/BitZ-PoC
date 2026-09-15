@@ -1,0 +1,9 @@
+{
+  "all_recorded_cases_complete": true,
+  "matched_fixtures": true,
+  "mismatched_exponent_seed_pairs": [],
+  "security_note": "F2Z economic targets, Spartan group security, and Binius FRI query targets use different accounting; see each row.",
+  "proof_size_note": "proof_material_bytes includes commitments and auxiliary inputs; statement bytes are separate.",
+  "timing_note": "Per sample: IOP/PCS = opening_ms; PIOP/preparation = protocol_ms - opening_ms. e2e_prover_ms is independently measured from witness generation through proof completion, excluding reusable setup and codec. Historical unavailable measurements remain null.",
+  "memory_note": "peak_rss_bytes is the whole worker maximum, including setup and all trials; repeated in samples.csv, not measured per proof."
+}

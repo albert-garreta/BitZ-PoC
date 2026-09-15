@@ -1,7 +1,10 @@
 # SHA-256 / P-256 ECDSA comparison
 
-The comparison benchmark calls **F2Z Split**, **F2Z AllRows**, **Spartan MC**,
-and optional **Binius64** on the same signed-message relation. All modes are non-ZK. F2Z's existing
+The comparison benchmark calls **F2Z Split** (at Ligerito rates 1/2 and 1/8),
+**Binius64** (BaseFold at rates 1/2 and 1/8), and **Binius64 with the F2Z
+opener** (`binius64-ligerito`, rates 1/2 and 1/8, round-by-round 100-bit gate)
+on the same signed-message relation; **F2Z AllRows** and **Spartan MC** remain
+selectable. All modes are non-ZK. F2Z's existing
 composed prover is reused. The Spartan dependency is pinned to the implementation
 on the fork's `f2z-benching` branch; `Cargo.lock` records the exact revision.
 
@@ -58,19 +61,39 @@ once per total size, method, security target, thread count, and seed.
 `--exponents 3 5 7` sweeps every Spartan `r+c=i` decomposition at those total
 sizes. It is mutually exclusive with `--spartan-splits`. Supported total exponents are 3..16;
 large cases can exceed the selected memory or time limit and remain recorded
-as failures. Defaults are exponents 3,5,7; both F2Z targets; one thread and all
-logical CPUs; seed 0; one warmup and three measured repetitions. Use
-`--methods f2z-split f2z-all` for the F2Z-only comparison, or `spartan-mc` for
-Spartan alone. `--seeds 0 1 2` changes fixtures without changing the workload.
+as failures. Defaults are exponents 3,5,7; target 100 (`--targets 100 128` for
+both); threads 1 and 10; seed 0; one warmup and three measured repetitions;
+methods `f2z-split binius64 binius64-ligerito` — the 2026-09-13 suite. Each F2Z
+case pins its Ligerito profile (`--f2z-profiles custom:1:4 custom:3:4`, rate 1/2
+and 1/8; the runner sets `F2Z_LIG_PROFILE` per case and rejects an ambient
+value), and each Binius-family case its commitment rate (`--binius-rates 1 3`).
+`binius64-ligerito` runs only at target 100: its whole-protocol gate is fixed.
+Use `--methods f2z-split f2z-all` for the F2Z-only comparison, or `spartan-mc`
+for Spartan alone. `--seeds 0 1 2` changes fixtures without changing the workload.
 
 An already-built worker can be supplied with `--binary`. Its direct interface is:
 
 ```text
-sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64
+sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64|binius64-ligerito
                     --r R --c C
-                    [--target 100|128] [--threads N] [--reps N] [--seed N]
+                    [--target 100|128] [--log-inv-rate 1|3] [--threads N] [--reps N] [--seed N]
                     [--fixture FILE] [--binius64-worker PATH]
 ```
+
+`--log-inv-rate` selects the Binius-family commitment rate (1 = rate 1/2,
+3 = rate 1/8) and is forwarded to the worker; F2Z rows select their rate with
+`F2Z_LIG_PROFILE=custom:1:4|custom:3:4` instead. `binius64-ligerito` proves the
+identical circuit and witness through `f2z::binius_ligerito::Prepared` (every
+oracle committed and opened by the F2Z opener, `Accounting::RoundByRound`,
+100-bit gate) inside the same isolated worker binary.
+
+The standard P-256 gadget's select gates lower to BMUL constraints (fork
+`frontend/src/gates/select.rs`; 45,159 of them at exponent 3), so these rows
+exercise the adapter's full IntMul + BinMul + AND reduction mix; the security
+report carries a dedicated "Binius64 BinMul reduction" term (emitted per row
+under `security.terms`), and BMUL commits no extra oracle. The worker test
+`f2z_opener_round_trips_and_binds_the_statement` round-trips the exponent-3
+circuit through the opener and checks that term is present.
 
 It also accepts Cargo's automatic `--bench` flag:
 
@@ -126,7 +149,8 @@ is unrelated to the Spartan chunk exponent.
 | F2Z Split | Boolean source map plus integer rows; 6,807 nonlinear P-256 rows enter the outer sumcheck; linear SHA/P-256 rows join the common inner sumcheck | One source commitment and one virtual F2Z opening |
 | F2Z AllRows | Same F2Z arithmetization; all original SHA/P-256 rows enter the outer sumcheck, followed by the common inner sumcheck | Same commitment architecture and opening |
 | Spartan MC, non-ZK | Bellpepper SHA chunks and native P-256 R1CS; NeutronNova batch folding, paired outer and inner sumchecks | K SHA commitments and one core commitment, batched into one direct Hyrax opening |
-| Binius64, non-ZK | Current fixed SHA-256 circuit and standard P-256 gadget using complete arithmetic and four-bit joint scalar multiplication | Witness oracle commitment and BaseFold opening |
+| Binius64, non-ZK | Current fixed SHA-256 circuit and standard P-256 gadget using complete arithmetic and four-bit joint scalar multiplication | Witness oracle commitment and BaseFold opening at the selected rate |
+| Binius64 + F2Z opener, non-ZK | The identical circuit and Binius64 PIOP up to the witness evaluation claim | Every oracle (witness + the IntMul reduction's logup* pushforward) committed and opened by the F2Z opener; round-by-round 100-bit gate |
 
 `AllRows` isolates the benefit of excluding linear rows from F2Z's outer
 sumcheck. It remains F2Z's arithmetization and is not Bellpepper's SHA circuit.
@@ -295,10 +319,36 @@ and the remaining reductions. Stage durations are disjoint wall-clock spans.
 The verifier reconstructs expected public words from `(i,Qx,Qy,r,s)` and consumes
 all proof bytes; it does not read the private witness.
 
-The worker uses SHA-256 Merkle hashing, BaseFold at rate 1/2, and explicit 100/128
-FRI query targets. It records the actual query count and identifies these as
+The f2z path dependency pulls flock-core, whose `asm` feature switches
+**sha2 0.10** to its assembly backend — but in this workspace sha2 0.10 backs
+only host-side p256 digests (fixture validation inside `verify_ms`, one
+8 KB hash, microseconds). Binius64's BaseFold Merkle hashing lives in
+`binius-hash` on **sha2 0.11**, a separate crate version whose features the
+dependency cannot unify with, so the Binius64 rows' Merkle backend is
+unchanged from the pre-suite worker. `build.py` records the resolved
+`sha2_features` per version in the `.build.json` provenance so this stays
+checkable per campaign.
+
+The worker uses SHA-256 Merkle hashing, BaseFold at default rate 1/2, and explicit 100/128
+FRI query targets. The runner's `--binius-log-inv-rate 1|2|3` selects rates
+1/2, 1/4, or 1/8; the standalone worker accepts `--log-inv-rate`.
+The chosen rate is recorded and must match when resuming a campaign.
+It records the actual query count and identifies these as
 query targets, not a claim about aggregate protocol security. The mathematical
 statement is shared; the security models remain separately identified.
+
+In `--method binius64-ligerito` the same worker proves the identical circuit
+and witness through the F2Z opener (BLAKE3 Merkle hashing and transcript,
+Johnson regime, Round-0 OOD, fold and query grinding; the whole protocol gated
+at 100 bits round-by-round). Its `witness_ms` is the wire assignment alone —
+witness packing happens inside the prover — so compare witgen+prover totals
+across the two Binius rows, not witgen columns. Its security block records
+`accounting`, `union_bound_bits`, `round_by_round_bits`, `component_bits` and
+the binding term. The worker's release profile matches the parent crate (fat
+LTO, one codegen unit) so the opener's field kernels are not handicapped;
+`--build-info` additionally records `f2z_revision`/`f2z_dirty` for the path
+dependency, and the campaign manifest records the parent repository's tracked
+diff.
 
 Peak memory is the whole worker high-water mark, including setup and verification.
 The runner obtains it with GNU time on Linux or BSD time on macOS; unavailable

@@ -1,0 +1,87 @@
+warning: method `write` is never used
+   --> src/../../../benches/support/sha256_ecdsa_fixture.rs:114:12
+    |
+ 29 | impl SignedFixture {
+    | ------------------ method in this implementation
+...
+114 |     pub fn write(&self, path: &Path) -> Result<()> {
+    |            ^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `finish` is never used
+  --> src/../../../src/observability.rs:68:12
+   |
+55 | impl<W: Write + Send + 'static> Recording<W> {
+   | -------------------------------------------- method in this implementation
+...
+68 |     pub fn finish(self) -> io::Result<()> {
+   |            ^^^^^^
+
+warning: field `depth` is never read
+   --> src/../../../src/observability.rs:122:9
+    |
+118 | pub struct Interval {
+    |            -------- field in this struct
+...
+122 |     pub depth: usize,
+    |         ^^^^^
+    |
+    = note: `Interval` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: function `phase_totals` is never used
+   --> src/../../../src/observability.rs:163:8
+    |
+163 | pub fn phase_totals(intervals: &[Interval], phase: &str) -> io::Result<Vec<(String, f64)>> {
+    |        ^^^^^^^^^^^^
+
+warning: function `measure` is never used
+   --> src/../../../src/observability.rs:173:8
+    |
+173 | pub fn measure<T>(span: tracing::Span, operation: impl FnOnce() -> T) -> io::Result<(T, Duration)> {
+    |        ^^^^^^^
+
+warning: function `write_profile` is never used
+   --> src/../../../src/observability.rs:228:8
+    |
+228 | pub fn write_profile(
+    |        ^^^^^^^^^^^^^
+
+warning: struct `PeakGrowth` is never constructed
+  --> src/../../../src/observability/memory.rs:16:12
+   |
+16 | pub struct PeakGrowth {
+   |            ^^^^^^^^^^
+
+warning: struct `MemoryLayer` is never constructed
+  --> src/../../../src/observability/memory.rs:22:12
+   |
+22 | pub struct MemoryLayer {
+   |            ^^^^^^^^^^^
+
+warning: associated items `new` and `take` are never used
+  --> src/../../../src/observability/memory.rs:30:12
+   |
+27 | impl MemoryLayer {
+   | ---------------- associated items in this implementation
+...
+30 |     pub fn new(probe: fn() -> u64) -> Self {
+   |            ^^^
+...
+37 |     pub fn take(&self) -> BTreeMap<String, PeakGrowth> {
+   |            ^^^^
+
+warning: struct `Entries` is never constructed
+  --> src/../../../src/observability/memory.rs:42:8
+   |
+42 | struct Entries {
+   |        ^^^^^^^
+
+warning: struct `Component` is never constructed
+  --> src/../../../src/observability/memory.rs:47:8
+   |
+47 | struct Component(Option<String>);
+   |        ^^^^^^^^^
+
+warning: `binius64-sha256-ecdsa` (bin "binius64-sha256-ecdsa") generated 11 warnings
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.07s

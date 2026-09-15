@@ -190,6 +190,7 @@ fn hs_mut(
     }
 }
 
+// Proof and transcript pins were refreshed from pre-change commit 2733f5b.
 fn assert_proof_pin(
     label: &str,
     bytes: &[u8],
@@ -562,11 +563,11 @@ fn virtual_open_roundtrips_one_chunk_w1() {
         },
         0x5EED_0001,
         (
-            "27eba0e8a1afd5ac1d5f70e372390b6ac3554c99d1f871c2670649b59c5fe408",
+            "fe7ee1bdd13bde75ab2f9f968b940c90f76a1836a5ffa6e0c7ce59e6474a2f6e",
             204_570_546_892_575_606_146_720_026_402_923_708_369,
         ),
         (
-            "054d319657ddac76616868bf1385b60f6bf86f45cd3d7b8f0b5be1803769741c",
+            "5eb7f77af208641b6bb0ee40e95c72ced4943cc0218ace39adf22347addaf459",
             309_955_990_109_051_369_771_710_748_047_216_439_850,
         ),
     );
@@ -583,11 +584,11 @@ fn virtual_open_roundtrips_two_chunks_w32() {
         },
         0x5EED_0002,
         (
-            "e5baca86cb36bbbaf4899144fc05f9a649ec4e2eefeb9d9be785368835c3b310",
+            "5c138c346455634825a0e0e4d6f05dcad3bd163c71122d3f6997e4dbafdea799",
             319_005_638_020_492_504_682_831_733_900_486_516_633,
         ),
         (
-            "07e3309cb9f9bb3cf9219e94d596297f384608e5fcda78c786b2d026c6367de8",
+            "c14da7b200b19170910d4f687e749b69102314eab8ac2193bf686b25a547df24",
             139_231_682_465_937_171_433_285_275_040_497_622_785,
         ),
     );
@@ -731,7 +732,7 @@ fn virtual_open_identity_fast_path() {
         "virtual identity Eq",
         &proof.to_bytes(),
         &mut pt,
-        "8bc30a0648c29ff26b5f41d4ff652c40d6d8954b10bb14e45bf9d535a572512c",
+        "730be73a4dcf40c40cb45cf6e180e326d6779b4d60487f5b7956b9176457d58c",
         218_938_428_708_468_322_662_924_008_685_302_992_257,
     );
     assert!(
@@ -919,7 +920,7 @@ fn virtual_open_identity_fast_path() {
         "virtual identity AdjointBatch",
         &general.to_bytes(),
         &mut pt,
-        "a84ea6b01e8355f767be29a327719b2eedbaa5ca79c0aa45efbf420708679386",
+        "657d18cf6dd2683e6a8d20427d0b10e9f201f340337d20e6e34ce31e335a3473",
         265_177_699_075_422_809_345_164_704_473_886_491_828,
     );
     unsafe { std::env::remove_var("F2Z_VIRT_ID_FAST") };

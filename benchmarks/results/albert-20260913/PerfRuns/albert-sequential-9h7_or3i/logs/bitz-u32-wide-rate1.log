@@ -1,0 +1,1198 @@
+warning: unused import: `IntEvalRsLigModQProof`
+  --> src/piop/spartan/f2z.rs:24:39
+   |
+24 |     ligerito_flock::{FlockCommitHint, IntEvalRsLigModQProof, ModQOpeningKind},
+   |                                       ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `composite::prove_composite_inner_sumcheck`
+   --> src/piop/spartan/sha256/inner_sumcheck.rs:219:16
+    |
+219 | pub(crate) use composite::prove_composite_inner_sumcheck;
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `EqualityWeights`
+ --> src/poly/mle.rs:5:36
+  |
+5 |     CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
+  |                                    ^^^^^^^^^^^^^^^
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u32_u16` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:119:9
+    |
+119 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:118:5
+    |
+118 |     unsafe fn rotr16(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: `#[warn(unsafe_op_in_unsafe_fn)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning[E0133]: call to function `std::arch::aarch64::vrev32q_u16` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:119:31
+    |
+119 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u16_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:119:43
+    |
+119 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vsriq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:123:9
+    |
+123 |         vsriq_n_u32::<12>(vshlq_n_u32::<20>(x), x)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:122:5
+    |
+122 |     unsafe fn rotr12(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vshlq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:123:27
+    |
+123 |         vsriq_n_u32::<12>(vshlq_n_u32::<20>(x), x)
+    |                           ^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u32_u8` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:127:9
+    |
+127 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:126:5
+    |
+126 |     unsafe fn rotr8(x: uint32x4_t, idx: uint8x16_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vqtbl1q_u8` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:127:30
+    |
+127 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u8_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:127:41
+    |
+127 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vsriq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:131:9
+    |
+131 |         vsriq_n_u32::<7>(vshlq_n_u32::<25>(x), x)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:130:5
+    |
+130 |     unsafe fn rotr7(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vshlq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:131:26
+    |
+131 |         vsriq_n_u32::<7>(vshlq_n_u32::<25>(x), x)
+    |                          ^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:152:20
+    |
+152 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), x);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:141:5
+    |
+141 | /     unsafe fn g(
+142 | |         v: &mut [[uint32x4_t; 16]; GROUPS],
+143 | |         a: usize,
+144 | |         b: usize,
+...   |
+149 | |         idx: uint8x16_t,
+150 | |     ) {
+    | |_____^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:152:30
+    |
+152 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), x);
+    |                              ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr16` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:153:20
+    |
+153 |             v[d] = rotr16(veorq_u32(v[d], v[a]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:153:27
+    |
+153 |             v[d] = rotr16(veorq_u32(v[d], v[a]));
+    |                           ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:154:20
+    |
+154 |             v[c] = vaddq_u32(v[c], v[d]);
+    |                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr12` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:155:20
+    |
+155 |             v[b] = rotr12(veorq_u32(v[b], v[c]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:155:27
+    |
+155 |             v[b] = rotr12(veorq_u32(v[b], v[c]));
+    |                           ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:156:20
+    |
+156 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), y);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:156:30
+    |
+156 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), y);
+    |                              ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr8` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:157:20
+    |
+157 |             v[d] = rotr8(veorq_u32(v[d], v[a]), idx);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:157:26
+    |
+157 |             v[d] = rotr8(veorq_u32(v[d], v[a]), idx);
+    |                          ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:158:20
+    |
+158 |             v[c] = vaddq_u32(v[c], v[d]);
+    |                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr7` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:159:20
+    |
+159 |             v[b] = rotr7(veorq_u32(v[b], v[c]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:159:26
+    |
+159 |             v[b] = rotr7(veorq_u32(v[b], v[c]));
+    |                          ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:172:9
+    |
+172 |         g(v, 0, 4, 8, 12, w(0), w(1), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:164:5
+    |
+164 | /     unsafe fn round(
+165 | |         v: &mut [[uint32x4_t; 16]; GROUPS],
+166 | |         m: &[[uint32x4_t; 16]; GROUPS],
+167 | |         r: usize,
+168 | |         idx: uint8x16_t,
+169 | |     ) {
+    | |_____^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:173:9
+    |
+173 |         g(v, 1, 5, 9, 13, w(2), w(3), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:174:9
+    |
+174 |         g(v, 2, 6, 10, 14, w(4), w(5), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:175:9
+    |
+175 |         g(v, 3, 7, 11, 15, w(6), w(7), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:176:9
+    |
+176 |         g(v, 0, 5, 10, 15, w(8), w(9), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:177:9
+    |
+177 |         g(v, 1, 6, 11, 12, w(10), w(11), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:178:9
+    |
+178 |         g(v, 2, 7, 8, 13, w(12), w(13), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:179:9
+    |
+179 |         g(v, 3, 4, 9, 14, w(14), w(15), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u8` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:188:19
+    |
+188 |         let idx = vld1q_u8(ROTR8_BYTES.as_ptr());
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:187:5
+    |
+187 |     unsafe fn first_words(prefix: &[u32], base: u64) -> [u32; NONCES_PER_CALL as usize] {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:189:20
+    |
+189 |         let zero = vdupq_n_u32(0);
+    |                    ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:200:25
+    |
+200 |                 *slot = vdupq_n_u32(w);
+    |                         ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:202:24
+    |
+202 |             m[words] = vld1q_u32(lo.as_ptr());
+    |                        ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:203:28
+    |
+203 |             m[words + 1] = vld1q_u32(hi.as_ptr());
+    |                            ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:205:25
+    |
+205 |                 *slot = vdupq_n_u32(w);
+    |                         ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:207:21
+    |
+207 |             v[14] = vdupq_n_u32(block_len);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:208:21
+    |
+208 |             v[15] = vdupq_n_u32(FLAGS);
+    |                     ^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::round` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:211:13
+    |
+211 |             round(&mut v, &m, r, idx);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vst1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:215:13
+    |
+215 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::ptr::mut_ptr::<impl *mut T>::add` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:215:23
+    |
+215 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:215:52
+    |
+215 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::first_words` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:233:22
+    |
+233 |             let w0 = first_words(&words, base);
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:220:5
+    |
+220 | /     pub(super) unsafe fn first_pow_nonce(
+221 | |         prefix: &[u8],
+222 | |         start: u64,
+223 | |         end: u64,
+224 | |         bits: u32,
+225 | |     ) -> Option<u64> {
+    | |____________________^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove`
+   --> src/ligerito.rs:548:1
+    |
+548 | / pub fn ring_switch_prove<T: PackedBits>(
+549 | |     transcript: &mut impl Transcript,
+550 | |     p_msg: &[T],
+551 | |     r_hi: &[Gf],
+552 | | ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    | |___________________________________^ function `ring_switch_prove` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:380:1
+    |
+380 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove_with`
+   --> src/ligerito.rs:560:1
+    |
+560 | / pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+561 | |     transcript: &mut impl Transcript,
+562 | |     p_msg: &[T],
+563 | |     r_hi: &[Gf],
+564 | |     convert: impl Fn(Gf) -> O + Sync + Send,
+565 | | ) -> (RingSwitchProof, Vec<O>, Gf) {
+    | |__________________________________^ function `ring_switch_prove_with` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:380:1
+    |
+380 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `verify_mle_eval_mod_q_ligerito_with_weight_chunks` is never used
+    --> src/ligerito_flock.rs:3770:15
+     |
+3770 | pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks<R>(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `raw_error` is never read
+  --> src/ligerito_flock/atomic.rs:11:9
+   |
+ 8 | pub(crate) struct AtomicBlock {
+   |                   ----------- field in this struct
+...
+11 |     pub raw_error: f64,
+   |         ^^^^^^^^^
+   |
+   = note: `AtomicBlock` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `resolve` is never used
+  --> src/ligerito_flock/atomic.rs:22:12
+   |
+21 | impl AtomicPlan {
+   | --------------- associated function in this implementation
+22 |     pub fn resolve(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
+   |            ^^^^^^^
+
+warning: variants `Prove` and `Verify` are never constructed
+   --> src/ligerito_flock/atomic.rs:130:5
+    |
+129 | pub(crate) enum AtomicNonces<'a> {
+    |                 ------------ variants in this enum
+130 |     Prove(&'a mut Vec<u64>),
+    |     ^^^^^
+131 |     Verify { values: &'a [u64], cursor: usize },
+    |     ^^^^^^
+
+warning: constant `ASSIGNMENT_BINDING_DOMAIN` is never used
+  --> src/piop/spartan/baby_bear_f2z.rs:55:7
+   |
+55 | const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-f2z/assignment/v1";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `fixed_q_assignment_binding` is never used
+   --> src/piop/spartan/baby_bear_f2z.rs:136:4
+    |
+136 | fn fixed_q_assignment_binding(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `prove_spartan_piop_u32_native_with_univariate_skip_borrowed` is never used
+   --> src/piop/spartan/piop.rs:344:15
+    |
+344 | pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `prove_composite_inner_sumcheck` is never used
+   --> src/piop/spartan/sha256/inner_sumcheck/composite.rs:158:15
+    |
+158 | pub(crate) fn prove_composite_inner_sumcheck<T: Transcript, H: Sha256InnerBitSource + ?Sized>(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `initial_grinding_bits`, `inner_round_grinding_bits`, and `terminal_grinding_bits` are never used
+   --> src/piop/spartan/sha256/prime.rs:140:18
+    |
+ 82 | impl Sha256PrimeProfile {
+    | ----------------------- methods in this implementation
+...
+140 |     pub const fn initial_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+145 |     pub const fn inner_round_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+150 |     pub const fn terminal_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `q_bits` is never used
+   --> src/piop/spartan/sha256/prime.rs:282:18
+    |
+253 | impl Sha256ModQContext {
+    | ---------------------- method in this implementation
+...
+282 |     pub const fn q_bits(&self) -> usize {
+    |                  ^^^^^^
+
+warning: struct `CompositeMultilinearExtension` is never constructed
+  --> src/poly/mle/structured.rs:26:19
+   |
+26 | pub(crate) struct CompositeMultilinearExtension<'a, F> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_factors` and `evaluate` are never used
+  --> src/poly/mle/structured.rs:38:19
+   |
+37 | impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
+   | ----------------------------------------------------------- associated items in this implementation
+38 |     pub(crate) fn from_factors(
+   |                   ^^^^^^^^^^^^
+...
+97 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+   |                   ^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/poly/mle/structured.rs:149:19
+    |
+148 | impl<'a, F: PrimeField> CompositeMultilinearExtension<'a, F> {
+    | ------------------------------------------------------------ associated items in this implementation
+149 |     pub(crate) fn from_parts(
+    |                   ^^^^^^^^^^
+...
+176 |     pub(crate) fn num_vars(&self) -> usize {
+    |                   ^^^^^^^^
+...
+179 |     pub(crate) fn live_len(&self) -> usize {
+    |                   ^^^^^^^^
+...
+182 |     pub(crate) fn repeated(&self) -> &FactoredMultilinearExtension<'a, F> {
+    |                   ^^^^^^^^
+...
+185 |     pub(crate) fn tail_evaluations(&self) -> &[F] {
+    |                   ^^^^^^^^^^^^^^^^
+...
+188 |     pub(crate) fn origin_adjustment(&self) -> &F {
+    |                   ^^^^^^^^^^^^^^^^^
+...
+192 |     pub(crate) fn evaluation_at(&self, index: usize) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^^^^^^
+...
+209 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: function `check_point` is never used
+   --> src/poly/mle/structured.rs:225:4
+    |
+225 | fn check_point<F>(num_vars: usize, point: &[F]) -> Result<(), EvaluationError> {
+    |    ^^^^^^^^^^^
+
+warning: struct `EqualityWeights` is never constructed
+   --> src/poly/mle/structured.rs:236:19
+    |
+236 | pub(crate) struct EqualityWeights<F> {
+    |                   ^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `from_tables`, `low`, `high`, and `at` are never used
+   --> src/poly/mle/structured.rs:242:8
+    |
+241 | impl<F: PrimeField> EqualityWeights<F> {
+    | -------------------------------------- associated items in this implementation
+242 |     fn new(point: &[F], cfg: &F::Config) -> Self {
+    |        ^^^
+...
+249 |     pub(crate) fn from_tables(low: Vec<F>, high: Vec<F>) -> Self {
+    |                   ^^^^^^^^^^^
+...
+253 |     pub(crate) fn low(&self) -> &[F] {
+    |                   ^^^
+...
+256 |     pub(crate) fn high(&self) -> &[F] {
+    |                   ^^^^
+...
+259 |     pub(crate) fn at(&self, index: usize) -> F {
+    |                   ^^
+
+warning: function `equality_table` is never used
+   --> src/poly/mle/structured.rs:264:4
+    |
+264 | fn equality_table<F: PrimeField>(point: &[F], cfg: &F::Config) -> Vec<F> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `dot_with_equality` is never used
+   --> src/poly/mle/structured.rs:272:4
+    |
+272 | fn dot_with_equality<F: PrimeField>(values: &[F], point: &[F], cfg: &F::Config) -> F {
+    |    ^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0133`.
+warning: `f2z` (lib) generated 68 warnings (run `cargo fix --lib -p f2z` to apply 11 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.42s
+     Running `target/release/f2z --mul-sweep 15-22 --threads 8 --reps 5 --lambda 100 --word-bits 1 --profile 'custom:1:4' --cooldown 20 --latex /Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-sequential-9h7_or3i/all-provers/bitz-u32-wide-rate1.tex`
+f2z mul-sweep: e ∈ {15,16,17,18,19,20,21,22} (2^e u32×u32→u64 multiplications) | reps=5 | λ=100 | threads=8 | W=1 | one fresh process per e | table → /Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-sequential-9h7_or3i/all-provers/bitz-u32-wide-rate1.tex
+
+=== e = 15 ===
+[285.713]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[285.714]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[285.775]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[285.775]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[285.823]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[285.823]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[285.870]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[285.871]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[285.917]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[285.917]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[285.965]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[285.977]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^15 = 32768 u32×u32→u64 multiplications | F2Z n=22 (t=15, s=7, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^110, 2^111) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 0.05 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 12.1 ms
+[286.098]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[286.126]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[286.175]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[286.204]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[286.254]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[286.286]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[286.335]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[286.366]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[286.414]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[286.443]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:       1.23 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:       24.36 ms   peak    29.43 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.25 ms    1.0%
+    Spartan PIOP (step3:piop_prove)                      2.44 ms   10.0%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                      20.60 ms   84.6%
+      · grand products                                  15.18 ms   62.3%
+      · ring switch (incl. sumcheck)                     2.96 ms   12.1%
+      · Ligerito open (mq:lig)                           2.16 ms    8.8%
+    (unattributed)                                       0.11 ms    0.5%
+    paper buckets: commit 1.23 | PIOP incl. projection 2.68 | bitify 0.01 | grand products 15.18 | ring switch (incl. sumcheck) 2.96 | Ligerito 2.16 | residual -0.16 ms
+verify:       3.92 ms
+    prime projection (step2:project_verify)             0.237 ms    6.1%
+    Spartan PIOP (step3:piop_verify)                    0.082 ms    2.1%
+    bitification (step4:bitify_verify)                  0.008 ms    0.2%
+    F2Z opening (step5:open_verify)                     3.581 ms   91.4%
+      · claim → row/col weights (f2z_prepare_verifier)      0.147 ms    3.7%
+      · fold range + read-off (mv:readoff)              0.013 ms    0.3%
+      · roots α^u_c (mv:roots)                          0.048 ms    1.2%
+      · forest layer checks (mv:forest)                 0.171 ms    4.4%
+      · pre-sumcheck verify (mv:presum)                 0.017 ms    0.4%
+      · R-hat(r*) weight fold (mv:rhat)                 1.271 ms   32.4%
+      · ring-switch + target (mv:rswitch)               0.312 ms    8.0%
+      · Ligerito verify (mv:lig)                        1.453 ms   37.1%
+    (unattributed)                                      0.011 ms    0.3%
+proof:       119.3 KB  = piop 1.7 + open 117.5 (non-Ligerito 16.8 | Ligerito 100.7)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^110, 2^111) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a357d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e39343932353332313436313637362c2265787065637465645f6570735f70675f62697473223a39312e30333736393331343935303435382c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a392c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31312c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131342e32353238353630303138313332362c2265787065637465645f6570735f70675f62697473223a39342e38313035313731353537323532322c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a362c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a382c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e37313232383736323034353035352c2265787065637465645f6570735f70675f62697473223a39372e38343533303339393930333334332c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a332c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a352c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a31352c226d223a32322c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2263386165316165373665386231623931373663313566613639663138386338643266363564383466666431393830326633623138326561623230353164653631222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a302c226f757465725f6f6f645f7261775f62697473223a3130332e37353337323534323232323931342c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=15 multiplications=32768 n=22 t=15 s=7 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=110 q_bits=111 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=0.046 setup_ms=12.084 commit_ms=1.229 prove_ms=24.357 s2_project_ms=0.248 s3_piop_ms=2.435 s4_bitify_ms=0.010 s5_open_ms=20.596 s5_gp_ms=15.184 s5_rs_ms=2.956 s5_lig_ms=2.155 prove_residual_ms=-0.161 prove_peak_mb=29.43 verify_ms=3.917 proof_bytes=119280 proof_piop_bytes=1744 proof_open_bytes=117536 proof_open_nonlig_bytes=16792 proof_open_lig_bytes=100744
+
+(cooldown 20 s)
+
+=== e = 16 ===
+[306.511]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.513]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[306.577]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.578]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[306.625]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.626]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[306.672]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.672]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[306.720]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.720]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[306.768]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.791]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^16 = 65536 u32×u32→u64 multiplications | F2Z n=23 (t=15, s=8, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^110, 2^111) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 0.08 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 22.8 ms
+[306.929]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.972]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[307.021]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.065]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[307.115]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.155]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[307.204]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.247]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[307.296]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.338]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:       1.84 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:       37.84 ms   peak    55.23 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.19 ms    0.5%
+    Spartan PIOP (step3:piop_prove)                      3.49 ms    9.2%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                      32.28 ms   85.3%
+      · grand products                                  24.16 ms   63.9%
+      · ring switch (incl. sumcheck)                     4.05 ms   10.7%
+      · Ligerito open (mq:lig)                           3.40 ms    9.0%
+    (unattributed)                                       0.12 ms    0.3%
+    paper buckets: commit 1.84 | PIOP incl. projection 3.67 | bitify 0.01 | grand products 24.16 | ring switch (incl. sumcheck) 4.05 | Ligerito 3.40 | residual 0.04 ms
+verify:       3.67 ms
+    prime projection (step2:project_verify)             0.200 ms    5.5%
+    Spartan PIOP (step3:piop_verify)                    0.087 ms    2.4%
+    bitification (step4:bitify_verify)                  0.008 ms    0.2%
+    F2Z opening (step5:open_verify)                     3.315 ms   90.4%
+      · claim → row/col weights (f2z_prepare_verifier)      0.156 ms    4.3%
+      · fold range + read-off (mv:readoff)              0.026 ms    0.7%
+      · roots α^u_c (mv:roots)                          0.052 ms    1.4%
+      · forest layer checks (mv:forest)                 0.190 ms    5.2%
+      · pre-sumcheck verify (mv:presum)                 0.019 ms    0.5%
+      · R-hat(r*) weight fold (mv:rhat)                 1.432 ms   39.1%
+      · ring-switch + target (mv:rswitch)               0.291 ms    7.9%
+      · Ligerito verify (mv:lig)                        1.016 ms   27.7%
+    (unattributed)                                      0.013 ms    0.4%
+proof:       138.9 KB  = piop 1.9 + open 137.1 (non-Ligerito 19.8 | Ligerito 117.3)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^110, 2^111) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a337d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e38353631343338313032323532382c2265787065637465645f6570735f70675f62697473223a39302e30333736393331353036333231382c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31302c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31322c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131342e31323733323531313937323933392c2265787065637465645f6570735f70675f62697473223a39332e38313035313731363336373833362c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a372c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a392c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e35343233363236313930303832342c2265787065637465645f6570735f70675f62697473223a39362e38343533303430363338393736342c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a342c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a362c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e31323733323531313937323933392c2265787065637465645f6570735f70675f62697473223a39392e303530343737393834313036372c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a312c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a332c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a31362c226d223a32332c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2235633765333964643639336335633462373530626632313239663033346439636262353665303666633461363234386463366432316261623163313565336264222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a302c226f757465725f6f6f645f7261775f62697473223a3130322e37353337303334303739343539362c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=16 multiplications=65536 n=23 t=15 s=8 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=110 q_bits=111 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=0.084 setup_ms=22.832 commit_ms=1.838 prove_ms=37.839 s2_project_ms=0.189 s3_piop_ms=3.486 s4_bitify_ms=0.010 s5_open_ms=32.276 s5_gp_ms=24.165 s5_rs_ms=4.054 s5_lig_ms=3.399 prove_residual_ms=0.040 prove_peak_mb=55.23 verify_ms=3.667 proof_bytes=138932 proof_piop_bytes=1856 proof_open_bytes=137076 proof_open_nonlig_bytes=19756 proof_open_lig_bytes=117320
+
+(cooldown 20 s)
+
+=== e = 17 ===
+[327.402]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.403]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[327.466]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.467]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[327.513]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.513]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[327.561]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.561]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[327.608]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.609]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[327.656]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.702]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^17 = 131072 u32×u32→u64 multiplications | F2Z n=24 (t=16, s=8, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^109, 2^110) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 0.16 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 45.5 ms
+[327.907]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.970]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[328.019]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[328.093]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[328.143]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[328.222]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[328.271]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[328.330]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[328.381]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[328.449]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:       2.64 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:       62.20 ms   peak   110.00 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.22 ms    0.4%
+    Spartan PIOP (step3:piop_prove)                      4.98 ms    8.0%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                      52.44 ms   84.3%
+      · grand products                                  41.65 ms   67.0%
+      · ring switch (incl. sumcheck)                     6.20 ms   10.0%
+      · Ligerito open (mq:lig)                           3.79 ms    6.1%
+    (unattributed)                                       0.12 ms    0.2%
+    paper buckets: commit 2.64 | PIOP incl. projection 5.20 | bitify 0.01 | grand products 41.65 | ring switch (incl. sumcheck) 6.20 | Ligerito 3.79 | residual 1.91 ms
+verify:       4.60 ms
+    prime projection (step2:project_verify)             0.214 ms    4.6%
+    Spartan PIOP (step3:piop_verify)                    0.091 ms    2.0%
+    bitification (step4:bitify_verify)                  0.008 ms    0.2%
+    F2Z opening (step5:open_verify)                     4.276 ms   93.0%
+      · claim → row/col weights (f2z_prepare_verifier)      0.247 ms    5.4%
+      · fold range + read-off (mv:readoff)              0.025 ms    0.5%
+      · roots α^u_c (mv:roots)                          0.053 ms    1.2%
+      · forest layer checks (mv:forest)                 0.209 ms    4.6%
+      · pre-sumcheck verify (mv:presum)                 0.017 ms    0.4%
+      · R-hat(r*) weight fold (mv:rhat)                 2.014 ms   43.8%
+      · ring-switch + target (mv:rswitch)               0.395 ms    8.6%
+      · Ligerito verify (mv:lig)                        1.263 ms   27.5%
+    (unattributed)                                      0.013 ms    0.3%
+proof:       151.9 KB  = piop 2.0 + open 149.9 (non-Ligerito 20.7 | Ligerito 129.2)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^109, 2^110) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a347d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e37363836383039363839373439332c2265787065637465645f6570735f70675f62697473223a38392e30333736393331353131393539382c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31312c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31332c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131342e30313138343739303233303934362c2265787065637465645f6570735f70675f62697473223a39322e38313035313731363736353439322c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a382c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a31302c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e33393033353935323535363331382c2265787065637465645f6570735f70675f62697473223a39352e38343533303430393633323937362c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a352c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a372c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e39303439333236393833393239352c2265787065637465645f6570735f70675f62697473223a39382e30353034373831353130383136362c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a322c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a342c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a31372c226d223a32342c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2230666134323663363662653062303164616466336636643835663966643366656663646437363462666235333764613061343834383562666236633636393761222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a302c226f757465725f6f6f645f7261775f62697473223a3130312e37353336393234303039333033352c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=17 multiplications=131072 n=24 t=16 s=8 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=109 q_bits=110 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=0.157 setup_ms=45.505 commit_ms=2.643 prove_ms=62.202 s2_project_ms=0.218 s3_piop_ms=4.977 s4_bitify_ms=0.013 s5_open_ms=52.437 s5_gp_ms=41.653 s5_rs_ms=6.204 s5_lig_ms=3.795 prove_residual_ms=1.913 prove_peak_mb=110.00 verify_ms=4.596 proof_bytes=151872 proof_piop_bytes=1968 proof_open_bytes=149904 proof_open_nonlig_bytes=20736 proof_open_lig_bytes=129168
+
+(cooldown 20 s)
+
+=== e = 18 ===
+[348.524]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[348.526]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[348.587]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[348.588]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[348.637]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[348.638]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[348.686]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[348.687]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[348.732]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[348.732]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[348.778]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[348.869]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^18 = 262144 u32×u32→u64 multiplications | F2Z n=25 (t=16, s=9, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^109, 2^110) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 0.30 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 90.6 ms
+[349.154]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[349.254]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[349.303]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[349.412]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[349.462]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[349.561]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[349.612]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[349.719]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[349.770]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[349.870]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:       5.67 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:       93.80 ms   peak   212.82 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.20 ms    0.2%
+    Spartan PIOP (step3:piop_prove)                      9.03 ms    9.6%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                      80.09 ms   85.4%
+      · grand products                                  66.06 ms   70.4%
+      · ring switch (incl. sumcheck)                     7.73 ms    8.2%
+      · Ligerito open (mq:lig)                           5.06 ms    5.4%
+    (unattributed)                                       0.18 ms    0.2%
+    paper buckets: commit 5.67 | PIOP incl. projection 9.23 | bitify 0.01 | grand products 66.06 | ring switch (incl. sumcheck) 7.73 | Ligerito 5.06 | residual -1.20 ms
+verify:       5.33 ms
+    prime projection (step2:project_verify)             0.183 ms    3.4%
+    Spartan PIOP (step3:piop_verify)                    0.093 ms    1.8%
+    bitification (step4:bitify_verify)                  0.008 ms    0.2%
+    F2Z opening (step5:open_verify)                     5.026 ms   94.3%
+      · claim → row/col weights (f2z_prepare_verifier)      0.247 ms    4.6%
+      · fold range + read-off (mv:readoff)              0.050 ms    0.9%
+      · roots α^u_c (mv:roots)                          0.063 ms    1.2%
+      · forest layer checks (mv:forest)                 0.235 ms    4.4%
+      · pre-sumcheck verify (mv:presum)                 0.018 ms    0.3%
+      · R-hat(r*) weight fold (mv:rhat)                 2.095 ms   39.3%
+      · ring-switch + target (mv:rswitch)               0.297 ms    5.6%
+      · Ligerito verify (mv:lig)                        1.732 ms   32.5%
+    (unattributed)                                      0.013 ms    0.3%
+proof:       169.0 KB  = piop 2.1 + open 166.9 (non-Ligerito 25.4 | Ligerito 141.5)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^109, 2^110) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a357d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e36383632313838303837383239372c2265787065637465645f6570735f70675f62697473223a38382e303337363933313531343737392c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31322c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31342c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e39303439333236393833393239352c2265787065637465645f6570735f70675f62697473223a39312e38313035313731363936343332322c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a392c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a31312c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e32353238353630303138313332362c2265787065637465645f6570735f70675f62697473223a39342e383435333034313132353435382c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a362c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a382c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e37313232383736323034353035352c2265787065637465645f6570735f70675f62697473223a39372e30353034373832333435363931342c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a332c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a352c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a31382c226d223a32352c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2233623663613034623565356338316435346466323364616438656131346134306638313735306433333133653733353037333331333937626533663636313335222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a302c226f757465725f6f6f645f7261775f62697473223a3130302e37353336383638393734353430332c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=18 multiplications=262144 n=25 t=16 s=9 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=109 q_bits=110 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=0.301 setup_ms=90.630 commit_ms=5.668 prove_ms=93.801 s2_project_ms=0.201 s3_piop_ms=9.032 s4_bitify_ms=0.013 s5_open_ms=80.089 s5_gp_ms=66.057 s5_rs_ms=7.727 s5_lig_ms=5.063 prove_residual_ms=-1.202 prove_peak_mb=212.82 verify_ms=5.330 proof_bytes=169016 proof_piop_bytes=2080 proof_open_bytes=166936 proof_open_nonlig_bytes=25408 proof_open_lig_bytes=141528
+
+(cooldown 20 s)
+
+=== e = 19 ===
+[369.948]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[369.951]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[370.012]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[370.014]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[370.061]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[370.062]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[370.110]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[370.111]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[370.159]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[370.160]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[370.208]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[370.389]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^19 = 524288 u32×u32→u64 multiplications | F2Z n=26 (t=17, s=9, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^108, 2^109) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 0.60 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 180.9 ms
+[370.870]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[371.042]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[371.092]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[371.266]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[371.316]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[371.479]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[371.529]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[371.692]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[371.741]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[371.902]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:       8.77 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:      158.00 ms   peak   424.75 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.20 ms    0.1%
+    Spartan PIOP (step3:piop_prove)                     13.48 ms    8.5%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                     134.12 ms   84.9%
+      · grand products                                 113.91 ms   72.1%
+      · ring switch (incl. sumcheck)                    11.77 ms    7.5%
+      · Ligerito open (mq:lig)                           7.51 ms    4.8%
+    (unattributed)                                       0.26 ms    0.2%
+    paper buckets: commit 8.77 | PIOP incl. projection 13.68 | bitify 0.01 | grand products 113.91 | ring switch (incl. sumcheck) 11.77 | Ligerito 7.51 | residual 1.41 ms
+verify:       5.19 ms
+    prime projection (step2:project_verify)             0.183 ms    3.5%
+    Spartan PIOP (step3:piop_verify)                    0.101 ms    1.9%
+    bitification (step4:bitify_verify)                  0.008 ms    0.2%
+    F2Z opening (step5:open_verify)                     4.897 ms   94.3%
+      · claim → row/col weights (f2z_prepare_verifier)      0.358 ms    6.9%
+      · fold range + read-off (mv:readoff)              0.048 ms    0.9%
+      · roots α^u_c (mv:roots)                          0.061 ms    1.2%
+      · forest layer checks (mv:forest)                 0.256 ms    4.9%
+      · pre-sumcheck verify (mv:presum)                 0.019 ms    0.4%
+      · R-hat(r*) weight fold (mv:rhat)                 2.458 ms   47.3%
+      · ring-switch + target (mv:rswitch)               0.283 ms    5.4%
+      · Ligerito verify (mv:lig)                        1.184 ms   22.8%
+    (unattributed)                                      0.014 ms    0.3%
+proof:       187.8 KB  = piop 2.2 + open 185.7 (non-Ligerito 26.8 | Ligerito 158.9)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^108, 2^109) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a337d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e36303832313632393637383136392c2265787065637465645f6570735f70675f62697473223a38372e30333736393331353136313838342c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31332c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31352c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e38303533393730323438343230342c2265787065637465645f6570735f70675f62697473223a39302e38313035313731373036333733352c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a31302c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a31322c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e31323733323531313937323933392c2265787065637465645f6570735f70675f62697473223a39332e38343533303431323036353338322c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a372c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a392c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e35343233363236313930303832342c2265787065637465645f6570735f70675f62697473223a39362e30353034373832373633313238392c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a342c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a362c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e31323733323531313937323933392c2265787065637465645f6570735f70675f62697473223a39382e37383737343437353930363131372c2265787065637465645f6570735f71756572795f62697473223a38342e34333332373431323437363835342c22666f6c645f6772696e64696e675f62697473223a322c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a352c226c6f675f6d73675f636f6c73223a332c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a33362c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a31392c226d223a32362c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2230396665383537613639353639313538663131653864306139626531633962643637323035366230636264306336376530656231356261356330646438646266222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a312c226f757465725f6f6f645f7261775f62697473223a39392e37353336383431343537323337342c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=19 multiplications=524288 n=26 t=17 s=9 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=108 q_bits=109 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=0.602 setup_ms=180.859 commit_ms=8.773 prove_ms=157.996 s2_project_ms=0.195 s3_piop_ms=13.481 s4_bitify_ms=0.013 s5_open_ms=134.120 s5_gp_ms=113.912 s5_rs_ms=11.773 s5_lig_ms=7.511 prove_residual_ms=1.414 prove_peak_mb=424.75 verify_ms=5.193 proof_bytes=187844 proof_piop_bytes=2192 proof_open_bytes=185652 proof_open_nonlig_bytes=26772 proof_open_lig_bytes=158880
+
+(cooldown 20 s)
+
+=== e = 20 ===
+[391.986]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[391.989]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[392.047]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[392.051]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[392.098]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[392.100]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[392.147]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[392.149]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[392.197]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[392.198]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[392.246]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[392.609]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^20 = 1048576 u32×u32→u64 multiplications | F2Z n=27 (t=17, s=10, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^108, 2^109) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 1.02 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 362.8 ms
+[393.341]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[393.640]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[393.691]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[393.992]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[394.042]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[394.361]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[394.410]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[394.714]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[394.763]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[395.089]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:      17.40 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:      297.11 ms   peak   835.19 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.20 ms    0.1%
+    Spartan PIOP (step3:piop_prove)                     22.03 ms    7.4%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                     258.43 ms   87.0%
+      · grand products                                 227.26 ms   76.5%
+      · ring switch (incl. sumcheck)                    18.84 ms    6.3%
+      · Ligerito open (mq:lig)                          10.90 ms    3.7%
+    (unattributed)                                       0.30 ms    0.1%
+    paper buckets: commit 17.40 | PIOP incl. projection 22.24 | bitify 0.01 | grand products 227.26 | ring switch (incl. sumcheck) 18.84 | Ligerito 10.90 | residual -0.97 ms
+verify:       5.99 ms
+    prime projection (step2:project_verify)             0.207 ms    3.5%
+    Spartan PIOP (step3:piop_verify)                    0.105 ms    1.7%
+    bitification (step4:bitify_verify)                  0.009 ms    0.1%
+    F2Z opening (step5:open_verify)                     5.626 ms   94.0%
+      · claim → row/col weights (f2z_prepare_verifier)      0.472 ms    7.9%
+      · fold range + read-off (mv:readoff)              0.094 ms    1.6%
+      · roots α^u_c (mv:roots)                          0.084 ms    1.4%
+      · forest layer checks (mv:forest)                 0.260 ms    4.3%
+      · pre-sumcheck verify (mv:presum)                 0.017 ms    0.3%
+      · R-hat(r*) weight fold (mv:rhat)                 2.580 ms   43.1%
+      · ring-switch + target (mv:rswitch)               0.369 ms    6.2%
+      · Ligerito verify (mv:lig)                        1.502 ms   25.1%
+    (unattributed)                                      0.015 ms    0.2%
+proof:       209.6 KB  = piop 2.3 + open 207.3 (non-Ligerito 35.6 | Ligerito 171.8)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^108, 2^109) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a347d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e35333432313537313533333739312c2265787065637465645f6570735f70675f62697473223a38362e30333736393331353136383933312c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31342c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31362c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e37313232383736323034353035352c2265787065637465645f6570735f70675f62697473223a38392e38313035313731373131333434322c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a31312c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a31332c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e30313138343739303233303934362c2265787065637465645f6570735f70675f62697473223a39322e38343533303431323437303738342c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a382c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a31302c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e33393033353935323535363331382c2265787065637465645f6570735f70675f62697473223a39352e30353034373832393731383437352c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a352c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a372c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131312e39303439333236393833393239352c2265787065637465645f6570735f70675f62697473223a39372e37383737343439303333393739392c2265787065637465645f6570735f71756572795f62697473223a38342e34333332373431323437363835342c22666f6c645f6772696e64696e675f62697473223a332c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a352c226c6f675f6d73675f636f6c73223a342c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a33362c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a32302c226d223a32372c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2235363932653234343738373130643331656639653239356335666538336637643663353362326134333132353163663331373263313832616434373532346330222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a322c226f757465725f6f6f645f7261775f62697473223a39382e37353336383237363938363035372c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=20 multiplications=1048576 n=27 t=17 s=10 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=108 q_bits=109 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=1.017 setup_ms=362.765 commit_ms=17.398 prove_ms=297.111 s2_project_ms=0.205 s3_piop_ms=22.034 s4_bitify_ms=0.013 s5_open_ms=258.427 s5_gp_ms=227.264 s5_rs_ms=18.839 s5_lig_ms=10.898 prove_residual_ms=-0.966 prove_peak_mb=835.19 verify_ms=5.987 proof_bytes=209632 proof_piop_bytes=2304 proof_open_bytes=207328 proof_open_nonlig_bytes=35576 proof_open_lig_bytes=171752
+
+(cooldown 20 s)
+
+=== e = 21 ===
+[415.192]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[415.196]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[415.299]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[415.304]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[415.351]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[415.353]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[415.401]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[415.404]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[415.450]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[415.452]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[415.498]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[416.219]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^21 = 2097152 u32×u32→u64 multiplications | F2Z n=28 (t=18, s=10, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^107, 2^108) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 2.21 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 720.7 ms
+[418.139]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[418.768]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[418.821]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[419.881]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[419.933]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[420.759]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[420.809]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[421.424]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[421.474]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[422.092]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:      33.94 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:      618.93 ms   peak  1668.79 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.20 ms    0.0%
+    Spartan PIOP (step3:piop_prove)                     48.12 ms    7.8%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                     536.31 ms   86.7%
+      · grand products                                 477.76 ms   77.2%
+      · ring switch (incl. sumcheck)                    40.40 ms    6.5%
+      · Ligerito open (mq:lig)                          16.74 ms    2.7%
+    (unattributed)                                       0.53 ms    0.1%
+    paper buckets: commit 33.94 | PIOP incl. projection 48.32 | bitify 0.01 | grand products 477.76 | ring switch (incl. sumcheck) 40.40 | Ligerito 16.74 | residual 0.34 ms
+verify:       8.69 ms
+    prime projection (step2:project_verify)             0.193 ms    2.2%
+    Spartan PIOP (step3:piop_verify)                    0.107 ms    1.2%
+    bitification (step4:bitify_verify)                  0.008 ms    0.1%
+    F2Z opening (step5:open_verify)                     8.369 ms   96.3%
+      · claim → row/col weights (f2z_prepare_verifier)      0.763 ms    8.8%
+      · fold range + read-off (mv:readoff)              0.096 ms    1.1%
+      · roots α^u_c (mv:roots)                          0.084 ms    1.0%
+      · forest layer checks (mv:forest)                 0.284 ms    3.3%
+      · pre-sumcheck verify (mv:presum)                 0.020 ms    0.2%
+      · R-hat(r*) weight fold (mv:rhat)                 4.211 ms   48.5%
+      · ring-switch + target (mv:rswitch)               0.295 ms    3.4%
+      · Ligerito verify (mv:lig)                        2.079 ms   23.9%
+    (unattributed)                                      0.015 ms    0.2%
+proof:       226.7 KB  = piop 2.4 + open 224.3 (non-Ligerito 36.7 | Ligerito 187.6)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^107, 2^108) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a357d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e34363338323633383734343635322c2265787065637465645f6570735f70675f62697473223a38352e30333736393331353137323435352c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31352c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31372c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e36323438323437373932303032312c2265787065637465645f6570735f70675f62697473223a38382e38313035313731373133383239372c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a31322c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a31342c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e39303439333236393833393239352c2265787065637465645f6570735f70675f62697473223a39312e38343533303431323637333438352c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a392c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a31312c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e32353238353630303138313332362c2265787065637465645f6570735f70675f62697473223a39342e303530343738333037363230372c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a362c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a382c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131312e37313232383736323034353035352c2265787065637465645f6570735f70675f62697473223a39362e37383737343439373535363634332c2265787065637465645f6570735f71756572795f62697473223a38342e34333332373431323437363835342c22666f6c645f6772696e64696e675f62697473223a342c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a352c226c6f675f6d73675f636f6c73223a352c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a33362c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a32312c226d223a32382c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2230313030653966313163613564666333353161333861396638313263396265393430333466363639373063333032363732663265356237303333343237386332222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a332c226f757465725f6f6f645f7261775f62697473223a39372e37353336383230383139323934372c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=21 multiplications=2097152 n=28 t=18 s=10 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=107 q_bits=108 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=2.214 setup_ms=720.720 commit_ms=33.943 prove_ms=618.932 s2_project_ms=0.204 s3_piop_ms=48.121 s4_bitify_ms=0.014 s5_open_ms=536.307 s5_gp_ms=477.762 s5_rs_ms=40.399 s5_lig_ms=16.741 prove_residual_ms=0.343 prove_peak_mb=1668.79 verify_ms=8.691 proof_bytes=226676 proof_piop_bytes=2416 proof_open_bytes=224260 proof_open_nonlig_bytes=36700 proof_open_lig_bytes=187560
+
+(cooldown 20 s)
+
+=== e = 22 ===
+[442.240]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[442.246]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[442.295]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[442.306]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[442.352]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[442.357]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[442.403]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[442.407]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[442.454]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[442.459]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[442.506]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[443.983]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+f2z --mul: 2^22 = 4194304 u32×u32→u64 multiplications | F2Z n=29 (t=18, s=11, W=1, chunks=1) | profile=lambda100 λ=100 | lig=custom:1:4 | q ∈ [2^107, 2^108) sampled after the commit | threads=8 | int guards: unchecked
+excluded from prove: witness generation 4.38 ms (median of 5; products + Spartan assignment from the operand pairs) | one-time setup 1476.0 ms
+[446.730]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[447.917]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+[447.967]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[449.232]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+[449.282]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[450.501]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[450.554]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[451.742]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[451.793]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[453.069]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+commit:      90.95 ms   (median of 5; bit-pack + F2Z commit, inside prove)
+prove:     1208.75 ms   peak  3309.27 MB   (median of 5, end-to-end incl. commit, verified)
+    prime projection (step2:project_prove)               0.26 ms    0.0%
+    Spartan PIOP (step3:piop_prove)                    102.52 ms    8.5%
+    bitification (step4:bitify_prove)                    0.01 ms    0.0%
+    F2Z opening (step5:open_prove)                    1038.61 ms   85.9%
+      · grand products                                 943.93 ms   78.1%
+      · ring switch (incl. sumcheck)                    70.12 ms    5.8%
+      · Ligerito open (mq:lig)                          28.52 ms    2.4%
+    (unattributed)                                       0.88 ms    0.1%
+    paper buckets: commit 90.95 | PIOP incl. projection 102.78 | bitify 0.01 | grand products 943.93 | ring switch (incl. sumcheck) 70.12 | Ligerito 28.52 | residual -23.61 ms
+verify:       9.07 ms
+    prime projection (step2:project_verify)             0.242 ms    2.7%
+    Spartan PIOP (step3:piop_verify)                    0.116 ms    1.3%
+    bitification (step4:bitify_verify)                  0.008 ms    0.1%
+    F2Z opening (step5:open_verify)                     8.678 ms   95.7%
+      · claim → row/col weights (f2z_prepare_verifier)      0.782 ms    8.6%
+      · fold range + read-off (mv:readoff)              0.192 ms    2.1%
+      · roots α^u_c (mv:roots)                          0.135 ms    1.5%
+      · forest layer checks (mv:forest)                 0.333 ms    3.7%
+      · pre-sumcheck verify (mv:presum)                 0.020 ms    0.2%
+      · R-hat(r*) weight fold (mv:rhat)                 4.735 ms   52.2%
+      · ring-switch + target (mv:rswitch)               0.380 ms    4.2%
+      · Ligerito verify (mv:lig)                        1.526 ms   16.8%
+    (unattributed)                                      0.015 ms    0.2%
+proof:       262.3 KB  = piop 2.5 + open 259.8 (non-Ligerito 54.0 | Ligerito 205.8)
+security: profile lambda100 target λ=100 b, achieved 100.0 b (binding term: step5_3:ligerito-tracked) | ligerito round-by-round target 100 b (johnson regime, rate 1/2, initial k=4, blake3 Merkle) | q ∈ [2^107, 2^108) transcript-sampled after the commitment
+RESULT schema=f2z-cli-mul/2 ligerito_hex=7b22636f6e66696775726174696f6e223a7b22616e616c797369735f76657273696f6e223a226a6f686e736f6e5f6f6f645f726f775f756e696f6e5f6f7665725f6263686b7332355f74686d5f345f36222c226669656c64223a2266313238222c2266696e616c5f626c6f636b223a7b2279725f6c6f675f6e223a337d2c226772696e64696e675f73746570223a22706f73745f636f6d6d69745f7072655f71756572696573222c2268617368223a22626c616b6533222c22696e697469616c5f6b223a342c226c6576656c73223a5b7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131382e33393637313231393135383739382c2265787065637465645f6570735f70675f62697473223a38342e30333736393331353137343231362c2265787065637465645f6570735f71756572795f62697473223a38342e31333632333435323339383138372c22666f6c645f6772696e64696e675f62697473223a31362c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a342c226c6f675f696e765f72617465223a312c226c6f675f6d73675f636f6c73223a31382c226c6f675f6e756d5f696e7465726c6561766564223a342c226f6f645f73616d706c6573223a302c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a3138332c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131332e35343233363236313930303832342c2265787065637465645f6570735f70675f62697473223a38372e38313035313731373135303732332c2265787065637465645f6570735f71756572795f62697473223a38342e39303734383234343730323639322c22666f6c645f6772696e64696e675f62697473223a31332c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a322c226c6f675f6d73675f636f6c73223a31352c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a39302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e38303533393730323438343230342c2265787065637465645f6570735f70675f62697473223a39302e38343533303431323737343833352c2265787065637465645f6570735f71756572795f62697473223a38352e32333638313832383637373432342c22666f6c645f6772696e64696e675f62697473223a31302c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a332c226c6f675f6d73675f636f6c73223a31322c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a36302c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131322e31323733323531313937323933392c2265787065637465645f6570735f70675f62697473223a39332e30353034373833313238333836362c2265787065637465645f6570735f71756572795f62697473223a38352e30303335393039343235303635322c22666f6c645f6772696e64696e675f62697473223a372c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a342c226c6f675f6d73675f636f6c73223a392c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a34352c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131312e35343233363236313930303832342c2265787065637465645f6570735f70675f62697473223a39352e37383737343530313136353036332c2265787065637465645f6570735f71756572795f62697473223a38342e34333332373431323437363835342c22666f6c645f6772696e64696e675f62697473223a352c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a352c226c6f675f6d73675f636f6c73223a362c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a33362c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d2c7b22657461223a302e30322c2265787065637465645f6570735f6f6f645f62697473223a3131312e31323733323531313937323933392c2265787065637465645f6570735f70675f62697473223a39372e37333532363638333231313537312c2265787065637465645f6570735f71756572795f62697473223a38362e33363231333130333430363137332c22666f6c645f6772696e64696e675f62697473223a332c226772696e64696e675f62697473223a31362c226b5f726563757273697665223a332c226c6f675f696e765f72617465223a362c226c6f675f6d73675f636f6c73223a332c226c6f675f6e756d5f696e7465726c6561766564223a332c226f6f645f73616d706c6573223a312c2270726f78696d6974795f6c6f7373223a6e756c6c2c2271756572696573223a33312c22726567696d65223a226a6f686e736f6e5f6f6f64222c227461726765745f73656375726974795f62697473223a3130307d5d2c226c6f675f6e223a32322c226d223a32392c227461726765745f73656375726974795f62697473223a3130307d2c22636f6e66696775726174696f6e5f66696e6765727072696e74223a2261346466336366376664663963623661386635346238376663353963653037646534396463323834363164333164323838303864306334643131353663353933222c226f757465725f6f6f64223a747275652c226f757465725f6f6f645f6772696e64696e675f62697473223a342c226f757465725f6f6f645f7261775f62697473223a39362e37353336383137333739363430342c2270726f746f636f6c5f76657273696f6e223a2266327a2f6c6967657269746f2d706f6c6963792f6561726c792d6f6f642f7631222c227265637572736976655f6f6f64223a5b302c312c312c312c312c315d2c22726567696d65223a226a6f686e736f6e222c227265717565737465645f70726f66696c65223a22637573746f6d3a313a34222c227265736f6c7665645f70726f66696c65223a22637573746f6d3a313a34222c227461726765745f62697473223a3130307d e=22 multiplications=4194304 n=29 t=18 s=11 W=1 chunks=1 profile=lambda100 lambda=100 lambda_achieved=100.00 lambda_bind=step5_3:ligerito-tracked lig_target_bits=100 q_lo_log2=107 q_bits=108 lig_log_inv_rate=1 lig_initial_k=4 lig_regime=johnson lig_hash=blake3 threads=8 reps=5 witness_ms=4.377 setup_ms=1476.027 commit_ms=90.951 prove_ms=1208.747 s2_project_ms=0.263 s3_piop_ms=102.519 s4_bitify_ms=0.015 s5_open_ms=1038.605 s5_gp_ms=943.932 s5_rs_ms=70.123 s5_lig_ms=28.520 prove_residual_ms=-23.606 prove_peak_mb=3309.27 verify_ms=9.068 proof_bytes=262308 proof_piop_bytes=2528 proof_open_bytes=259780 proof_open_nonlig_bytes=53996 proof_open_lig_bytes=205784
+
+mul-sweep summary (medians; ms unless noted; proof KB = 1000 B; prove = end to end incl. commit, excl. witness generation):
+    e  witness   commit     piop   bitify  grand-pr  ring-sw ligerito     prove   verify  proofKB   piopKB   nonlig      lig    peakMB   λ-ach
+   15     0.05     1.23     2.68     0.01     15.18     2.96     2.15     24.36     3.92    119.3      1.7     16.8    100.7      29.4   100.0
+   16     0.08     1.84     3.68     0.01     24.16     4.05     3.40     37.84     3.67    138.9      1.9     19.8    117.3      55.2   100.0
+   17     0.16     2.64     5.20     0.01     41.65     6.20     3.79     62.20     4.60    151.9      2.0     20.7    129.2     110.0   100.0
+   18     0.30     5.67     9.23     0.01     66.06     7.73     5.06     93.80     5.33    169.0      2.1     25.4    141.5     212.8   100.0
+   19     0.60     8.77    13.68     0.01    113.91    11.77     7.51    158.00     5.19    187.8      2.2     26.8    158.9     424.8   100.0
+   20     1.02    17.40    22.24     0.01    227.26    18.84    10.90    297.11     5.99    209.6      2.3     35.6    171.8     835.2   100.0
+   21     2.21    33.94    48.33     0.01    477.76    40.40    16.74    618.93     8.69    226.7      2.4     36.7    187.6    1668.8   100.0
+   22     4.38    90.95   102.78     0.01    943.93    70.12    28.52   1208.75     9.07    262.3      2.5     54.0    205.8    3309.3   100.0
+wrote LaTeX table: /Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-sequential-9h7_or3i/all-provers/bitz-u32-wide-rate1.tex
+      168.50 real       113.57 user         8.36 sys
+          5151244288  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              939995  page reclaims
+                4111  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 784  voluntary context switches
+              772401  involuntary context switches
+          1605765628  instructions retired
+           707042585  cycles elapsed
+             2474296  peak memory footprint

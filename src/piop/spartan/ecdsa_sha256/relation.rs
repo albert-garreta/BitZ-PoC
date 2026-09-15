@@ -4,7 +4,11 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use circuit::{constraints::ConstraintGenerator, p256, sha256};
+use circuit::{
+    constraints::ConstraintGenerator,
+    matrix_wengert::{WengertGenerator, WengertTape},
+    p256, sha256,
+};
 use num_bigint::{BigInt, BigUint};
 use num_traits::Zero;
 
@@ -192,6 +196,10 @@ pub(crate) struct LocalRelation {
     pub coefficients: Vec<BigInt>,
     /// `a`, `b`, `c` column by column over the P-256 assignment tail.
     pub tail: TailColumns,
+    /// The P-256 circuit's Z-side linear arithmetic as a reverse-mode tape:
+    /// `r · (A + xB + x²C)` over every tail column by one pass over the
+    /// circuit's DAG (97,986 edges) instead of the 4.2M expanded entries.
+    pub tape: WengertTape,
     pub nonlinear: Vec<usize>,
     pub linear: Vec<usize>,
     pub public_h: [usize; 1024],
@@ -287,6 +295,13 @@ fn build_local() -> Result<LocalRelation> {
     let c = interner.rows(&p.c);
     let tail = TailColumns::new(p.m.row_count(), [&a, &b, &c])?;
     drop(p);
+    let mut tape_generator = WengertGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
+    let tape_inputs = tape_generator.take_boxed_inputs::<{ p256::VERIFY_DIGEST_INPUT_BITS }>();
+    p256::verify_digest_circuit(&mut tape_generator, &tape_inputs);
+    let tape = tape_generator.finish();
+    if tape.row_count() != a.rows() || tape.column_count() != tail.columns() {
+        return Err(error("P-256 tape shape disagrees with the constraint matrices"));
+    }
     let coefficients = interner.table;
     let (linear, nonlinear): (Vec<_>, Vec<_>) =
         (0..a.rows()).partition(|&i| a.is_empty_row(i) || b.is_empty_row(i));
@@ -338,6 +353,7 @@ fn build_local() -> Result<LocalRelation> {
         c,
         coefficients,
         tail,
+        tape,
         nonlinear,
         linear,
         public_h,

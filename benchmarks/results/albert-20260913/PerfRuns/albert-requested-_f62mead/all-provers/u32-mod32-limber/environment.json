@@ -1,0 +1,16 @@
+{
+  "arch": "aarch64",
+  "available_parallelism": 10,
+  "cargo_encoded_rustflags": null,
+  "cargo_lock_blake3": "d7f2773fa4c11f2f7d0639a0b80197a424af3042149fb26a3bb62e5350753ec6",
+  "cpu": "Apple M1 Max",
+  "git_revision": "1392f85837278858edd1f3382d230aabf87783c7",
+  "git_status": "M Cargo.toml\n M benches/mul_e2e_compare/binius_ligerito.rs\n M benches/mul_e2e_compare/plonky3.rs\n M benches/sha256_ecdsa_compare.rs\n M benchmarks/binius64/src/main.rs\n M scripts/run_sha256_ecdsa_compare.py\n M scripts/test_sha256_ecdsa_compare.py\n M src/binary_pcs.rs\n M src/binius_ligerito/mod.rs\n M tests/sha256_ecdsa_comparison.rs",
+  "os": "macos",
+  "os_version": "25.5.0",
+  "ram_bytes": 68719476736,
+  "requested_threads": "8",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "rustflags": "-C target-cpu=native",
+  "threads": 8
+}

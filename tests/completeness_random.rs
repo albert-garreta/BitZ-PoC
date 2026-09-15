@@ -1,4 +1,5 @@
-//! Randomized COMPLETENESS audit of the F2Z mod-q PCS pipeline
+//! Algebra-only randomized COMPLETENESS audit using historical configurations
+//! (including small unaudited shapes) of the F2Z mod-q PCS pipeline
 //! (`commit_rs_ligerito_rows` -> `prove_mle_eval_mod_q_ligerito` ->
 //! `verify_mle_eval_mod_q_ligerito`).
 //!
@@ -27,7 +28,7 @@ use std::time::Instant;
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
     IntEvalRsLigModQProof, commit_rs_flock_with, commit_rs_ligerito_rows,
-    prove_mle_eval_mod_q_ligerito, sha_lig_configs, verify_mle_eval_mod_q_ligerito,
+    prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::transcript::Blake3Transcript;
@@ -93,10 +94,9 @@ impl<const Q: u128> core::ops::Mul for Fq<Q> {
     }
 }
 
-/// The audited primes, spanning the practical q range (2 .. 127 bits).
-/// q < 2^127 keeps the local double-and-add modmul overflow-free; the crate
-/// itself has NO assert on q — q enters only through `q_bits` (chunk count)
-/// and the caller-supplied ring R / u128 row-weight reps.
+/// The audited primes, spanning the supported q range (2 .. 126 bits).
+/// The PCS accepts q_bits in 1..=126; this also keeps the independent
+/// double-and-add modular arithmetic below the u128 overflow boundary.
 const PRIMES: [(u128, &str); 10] = [
     (3, "3"),
     (5, "5"),
@@ -107,7 +107,7 @@ const PRIMES: [(u128, &str); 10] = [
     ((1u128 << 61) - 1, "2^61-1"),
     ((1u128 << 80) - 65, "2^80-65"),
     ((1u128 << 100) - 15, "2^100-15"),
-    ((1u128 << 127) - 1, "2^127-1"),
+    ((1u128 << 126) - 137, "2^126-137"),
 ];
 
 // ---------------------------------------------------------------------
@@ -493,10 +493,10 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
     let c_w = mod_q_chunk_width(&p);
     *rep.l_seen.entry(lch).or_insert(0) += 1;
 
-    let (pc, vc) = match sha_lig_configs(m_p) {
+    let (pc, vc) = match historical_sha_lig_configs(m_p) {
         Ok(x) => x,
         Err(e) => {
-            rep.fail(cfg, &format!("sha_lig_configs(m_p={m_p}) errored on a legal shape: {e}"));
+            rep.fail(cfg, &format!("historical_sha_lig_configs(m_p={m_p}) errored on a legal shape: {e}"));
             return;
         }
     };
@@ -951,7 +951,7 @@ fn replica_of_in_crate_instance_validates_harness() {
 
     // Packed-rows commit == u128-tensor commit (same root) on this instance.
     let p = IntegerMatrixLayout { row_vars: 10, col_vars: 5, word_bits: 1 };
-    let (pc, _vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
+    let (pc, _vc) = historical_sha_lig_configs(packed_vars(&p)).expect("cfg");
     let dgen = DataGen {
         class: DataClass::Uniform,
         seed: 0,
@@ -993,7 +993,7 @@ fn completeness_random_audit() {
 
     // Handcrafted edge shapes (domain corners + multi-chunk L coverage).
     let edges: [(usize, usize, usize, usize); 10] = [
-        (12, 3, 64, 9), // c_w=51, q=2^127-1 -> L=3
+        (12, 3, 64, 9), // c_w=51, q=2^126-137 -> L=3
         (10, 5, 32, 8), // c_w=85, q=2^100-15 -> L=2
         (14, 1, 1, 9),  // s=1 edge; c_w=112, L=2
         (7, 8, 1, 0),   // min t at W=1, q=3
@@ -1255,17 +1255,35 @@ fn completeness_random_audit() {
 /// sampler steers around).
 #[test]
 fn domain_boundary_probes() {
+    assert!(crypto_primes::is_prime(
+        crypto_primes::Flavor::Any,
+        &crypto_bigint::U128::from(PRIMES[9].0),
+    ));
+    let p = IntegerMatrixLayout { row_vars: 7, col_vars: 8, word_bits: 1 };
+    let weights = vec![1u128; p.rows()];
+    let (pc, _) = historical_sha_lig_configs(packed_vars(&p)).expect("boundary configuration");
+    let hint = commit_rs_ligerito_rows(&p, vec![vec![0; p.rows() / 64]; p.cols()], &pc);
+    for q_bits in [126, 127] {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            prove_mle_eval_mod_q_ligerito(
+                &mut Blake3Transcript::new(), &hint, &p, &weights, q_bits,
+                smallest_generator(), &pc,
+            )
+        }));
+        assert_eq!(result.is_ok(), q_bits == 126, "q_bits boundary: {q_bits}");
+    }
+
     // (1) flock ad-hoc config floor: m_p >= 8 (L0 block 2^(m_p-2+2) at rate
     //     1/4 must cover the 148 UDR queries).
-    assert!(sha_lig_configs(7).is_err(), "m_p=7 should be rejected by the ad-hoc config");
-    assert!(sha_lig_configs(8).is_ok(), "m_p=8 should be accepted");
-    println!("probe: sha_lig_configs floor at m_p=8 confirmed (m = t+log2W+s >= 15)");
+    assert!(historical_sha_lig_configs(7).is_err(), "m_p=7 should be rejected by the ad-hoc config");
+    assert!(historical_sha_lig_configs(8).is_ok(), "m_p=8 should be accepted");
+    println!("probe: historical_sha_lig_configs floor at m_p=8 confirmed (m = t+log2W+s >= 15)");
 
     // (2) t + log2 W < 7 must panic at the packing assert
     //     (ligerito_flock.rs:284 'packing needs t + log2(W) >= 7').
     let r = catch_unwind(|| {
         let p = IntegerMatrixLayout { row_vars: 6, col_vars: 9, word_bits: 1 };
-        let (pc, _vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
+        let (pc, _vc) = historical_sha_lig_configs(packed_vars(&p)).expect("cfg");
         let dgen = DataGen {
             class: DataClass::AllZero,
             seed: 0,
@@ -1399,7 +1417,7 @@ fn diagnose_byte_flip_findings() {
     };
     let q_bits = bits_of(Q);
     let p = IntegerMatrixLayout { row_vars: cfg.t, col_vars: cfg.s, word_bits: cfg.w };
-    let (pc, vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
+    let (pc, vc) = historical_sha_lig_configs(packed_vars(&p)).expect("cfg");
     let inst = build_instance::<Q>(&cfg);
     let rows = build_rows(cfg.t, cfg.s, cfg.w, &inst.dgen);
     let hint = commit_rs_ligerito_rows(&p, rows, &pc);
@@ -1700,16 +1718,16 @@ unsafe extern "C" {
 /// the cause to the point structure.
 ///
 /// Minimal deterministic instance: t=7, s=8, W=1 (t+log2W = 7 = packing floor,
-/// m_p = 8 = config floor), q = 2^127-1 (so c_w = 127-7-1 = 119, q_bits = 127
+/// m_p = 8 = config floor), q = 2^126-137 (so c_w = 127-7-1 = 119, q_bits = 126
 /// > 119 => L = 2), with an all-boolean r1.
 #[test]
 fn rhatzero_boolean_point_completeness_gap() {
-    const Q: u128 = (1u128 << 127) - 1;
+    const Q: u128 = (1u128 << 126) - 137;
     let (t, s, w) = (7usize, 8usize, 1usize);
     let q_bits = bits_of(Q);
     let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: w };
     assert_eq!(mod_q_num_chunks(&p, q_bits), 2, "shape must be multi-chunk (L=2)");
-    let (pc, vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
+    let (pc, vc) = historical_sha_lig_configs(packed_vars(&p)).expect("cfg");
     let alpha = smallest_generator();
 
     let dgen = DataGen {

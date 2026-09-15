@@ -2,9 +2,9 @@
 
 A comparison scheme that answers "what if Binius64 used F2Z's binary-field
 PCS?": Binius64's own circuits and PIOP, unchanged, with every oracle
-committed and opened by the opener F2Z itself uses — rate 1/2, the Johnson
+committed and opened by the opener F2Z itself uses — default rate 1/2, the Johnson
 (list-decoding) proximity regime, fold and query grinding, and Round 0 (the
-out-of-domain sample). It sits in every benchmark that measures Binius64.
+out-of-domain sample). It is available in the supported benchmarks listed below. The composed SHA+P-256 ECDSA circuit is currently unsupported because it contains BMUL constraints.
 
 | bench | scheme id | what it measures |
 | --- | --- | --- |
@@ -23,13 +23,15 @@ Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
    words.
 2. **PIOP prefix.** `IOPProver::prove_to_evaluation` — the fork's exposure of
    Binius64's prover up to the witness evaluation claim its ring switch would
-   consume: the IntMul, BinMul (rejected here), BitAnd, zero and shift
-   reductions, exactly as upstream, on a BLAKE3 transcript
-   (`src/binius_ligerito/channel.rs`).
+   consume: the IntMul, BinMul (the GHASH-field multiplication zerocheck,
+   which commits no extra oracle), BitAnd, zero and shift reductions, exactly
+   as upstream, on a BLAKE3 transcript (`src/binius_ligerito/channel.rs`).
 3. **Oracles.** Every `send_oracle` the PIOP makes — the packed witness, and
    the IntMul reduction's logup* pushforward (2^16 words) when the circuit
    multiplies — is committed by `BinaryPcs`: an interleaved Reed–Solomon
-   codeword at rate 1/2, 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
+   codeword at rate 1/2 by default (`Prepared::with_rate` / the bench's
+   `F2Z_BINIUS_LOG_INV_RATE` select another; the rate is part of the
+   statement digest), 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
    root is bound into the transcript and **Round 0 is taken immediately**:
    the prover grinds, the verifier draws `ζ`, the prover sends
    `y = MLE[oracle](ζ, ζ², ζ⁴, …)`. This pins the committed word to one
@@ -69,14 +71,20 @@ non-canonical or trailing bytes).
 
 ## Security accounting
 
-`Prepared::security()` is a whole-protocol union bound, gated at 100 bits, in
-the style of `hybrid::security::account`:
+`Prepared::security()` reports both a whole-protocol union bound and the
+round-by-round minimum. `Prepared::with_options` selects which accounting
+model gates the proof at 100 bits; the default uses the union bound, in the
+style of `hybrid::security::account`:
 
 - Binius64 PIOP: the AND/zero/shift overcount `4096 · (log witness words +
-  log AND + log zero + 64) / 2^128`, and, when the circuit multiplies, an
+  log AND + log zero + 64) / 2^128`; when the circuit multiplies integers, an
   IntMul overcount `4096 · (log IMUL + 64 + 16 + 8) / 2^128` over the 64-layer
   GKR step, the Frobenius/product sumchecks, the limb product check and the
-  logup* lookup over the 2^16-row generator table;
+  logup* lookup over the 2^16-row generator table; and when it multiplies in
+  the GHASH field (the P-256 gadget's select lowering, for example), a BinMul
+  overcount `4096 · (log BMUL + 64 + 8) / 2^128` over the degree-2 zerocheck
+  rounds, the word-domain collapse into the shift claim and the batching
+  draws (BinMul commits no extra oracle);
 - per oracle: Round 0 (`C(L_δ,2)·(2^{m_p}−1)/|K|` at level 0's Johnson
   parameters, topped up to 108 bits by proof of work), every Ligerito level's
   proximity folds (with fold grinding), queries (with query grinding) and the
@@ -84,12 +92,23 @@ the style of `hybrid::security::account`:
 - the ring switch (128/|K|).
 
 The opener's round-by-round target is the **smallest** in 100..=112 whose
-union clears 100 bits (the hybrid hard-codes 106; here 104 at 2^10 SHA
-compressions, for example), and the achieved bits are reported. This is the
-yardstick of the `f2z` rows; Binius64's own "100 bits" is its FRI query-phase
+selected accounting clears 100 bits (the hybrid at rate 1/2 uses 106; here
+the union bound uses 104 at 2^10 SHA
+compressions, for example), and the achieved bits are reported. This modeled
+composition bound includes grinding. BitZ rows separately report economic
+per-challenge bounds and a statistical bound without grinding. Binius64's own
+"100 bits" is its FRI query-phase
 target only (`calculate_n_test_queries`), which counts neither its folding
-phase nor its PIOP. The rate is fixed at 1/2 for this scheme (`binary_pcs::LOG_INV_RATE`, the rate F2Z itself commits at); the Binius64
-rate knobs do not apply.
+phase nor its PIOP. The opener's rate follows the campaign's Binius rate
+(`F2Z_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2; 3 = rate 1/8, through
+`Prepared::with_rate`). The 2026-09-13 suite runs the opener rows at both
+rates under the round-by-round accounting
+(`F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr`) — the model the paper's tables
+render; the union bound stays available and is recorded alongside.
+
+`BinaryPcs::with_log_inv_rate` and `Prepared::with_log_inv_rate` also accept
+rates 1/2, 1/4, and 1/8. Native multiplication rows can override the campaign
+rate with `F2Z_BINIUS_LIGERITO_LOG_INV_RATE=1|2|3`.
 
 As everywhere in this repository the bound is algebraic/IOP-level under
 BLAKE3 Fiat–Shamir and 256-bit Merkle hashing; it is not an unconditional
@@ -98,7 +117,9 @@ Fiat–Shamir theorem.
 ## Running
 
 ```sh
-# Native multiplication tables (adds the binius64-ligerito rows; rate 1/2 fixed).
+# Native multiplication tables (adds the binius64-ligerito rows at the campaign's
+# Binius rate, F2Z_BINIUS_LOG_INV_RATE=1 (default, rate 1/2) or 3 (rate 1/8), gated
+# under F2Z_BINIUS_LIGERITO_ACCOUNTING=union (default) or rbr (round-by-round)).
 F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 F2Z_MUL_COMPARE_WORKLOADS="u32" \
 F2Z_MUL_COMPARE_BACKENDS="f2z binius64 binius64-ligerito" \
 RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
@@ -108,8 +129,10 @@ python3 scripts/native_mul_table.py PerfRuns/<run> --workload u32
 F2Z_SHA_COMPARE_BACKENDS=binius64,binius64-ligerito F2Z_SHA_COMPARE_LOG_INV_RATE=3 \
   bash scripts/run_native_sha256_compare.sh
 
-# Hybrid table: the all-Binius circuit with the F2Z opener.
-RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
+# Hybrid table: the all-Binius circuit with the F2Z opener, at the campaign's
+# rate and accounting (the same knobs as the native-mul rows).
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=10 \
+F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr \
   cargo bench --bench hybrid_u32_sha256 --features hybrid -- \
   --sweep --mode binius-ligerito --iterations 11
 
@@ -122,10 +145,123 @@ Unit tests: `cargo test --release --lib --features binius64-bench -- binary_pcs 
 (a multiplication circuit with the two-oracle path, an AND-only circuit, the
 opener's bit-MLE and arbitrary-basis openings, tamper rejection).
 
+## The allocator: use Binius64's pool, not the global allocator (2026-09-12)
+
+`Prepared` holds a `binius_compute::BufferPool` and passes `&self.pool` to
+`prove_to_evaluation`, which is what Binius64's own `Prover` does
+(`prove.rs`: `let alloc = &self.pool`, a pool kept for the prover's lifetime
+and recycled across proofs). The adapter previously passed `GlobalAllocator`.
+
+That one line was worth **14 % of the whole prover** at u64 2^20, and it sat
+entirely inside the *shared* PIOP, so it was measured as if it were a cost of
+the F2Z opener:
+
+| phase (u64 2^20, ms) | Binius64 own | opener, GlobalAllocator | opener, BufferPool |
+| --- | ---: | ---: | ---: |
+| commit | 29.3 | 35.1 | 35.0 |
+| PIOP | 483 | 552 | 490 / 482 (two runs) |
+| opening | 21.3 | 37.7 | 38.1 |
+| total | 535 | 626 | 564 / 556 |
+
+The PIOP phase lands on Binius64's own 483 ms, leaving a 4-5 % gap that is
+genuinely the PCS: the rate-1/2 codeword and 32-lane BLAKE3 Merkle tree in
+`commit`, and Round 0's two out-of-domain evaluations plus two Johnson
+openings with grinding in `opening`, against one BaseFold opening. Proof bytes
+are byte-identical (342472 / 389360 / 417976 at 2^15 / 2^18 / 2^20).
+
+Two things to keep in mind:
+
+- **It is size-dependent.** At 2^15 and 2^18 the pool changes nothing (PIOP
+  27.9 vs 27.9, 131.8 vs 133.5): only 2^20-scale buffers are large enough for
+  malloc/mmap churn and page faults to show up.
+- **It costs retained memory, and that reaches the verifier.** Peak RSS at
+  u64 2^20 goes 6.05 -> 6.58 GB, and verification goes 10.4 -> 15.4 ms
+  (reproducible), because the pool keeps its blocks and the verifier running
+  next in the same process allocates cold pages. Binius64's own rows have
+  always paid exactly this (`src/hybrid/sha.rs` documents the same effect), so
+  pooling both sides is what makes the verifier column comparable too - before
+  this change our verifier numbers were flattered.
+
+- **When the working set already exceeds RAM, the pool is a large LOSS.** At
+  u128 2^20 (which pages in every scheme) the retained blocks deepen the swap
+  footprint - peak swap 7.2 -> 10.7-12.6 GB - and the prover goes 7.6 -> 17.7 s
+  with verification 154 -> 1201 ms. That is not a regression to fix: Binius64's
+  own row has always paid it (18.3 s / 1218 ms at the same shape), and the
+  pre-pool opener looked 2.4x faster there purely because it was not holding
+  pooled memory. Pooling both sides is what makes that row honest.
+
+With both sides pooled the opener's prover now tracks Binius64's own within a
+few percent at every u128 size - 2^17 310 vs 294 ms, 2^18 597 vs 577, 2^19
+1231 vs 1233 (parity), 2^20 17.7 vs 18.3 s - where the GlobalAllocator rows
+read +17 %, +18 %, +14 % and then a spurious -58 %. The verifier columns
+converge the same way (2^19: 39.0 vs 39.1 ms, was 31.8).
+
+The same fix was applied to `benches/integer_pcs_compare/binius.rs`, where
+`GlobalAllocator` was handicapping **Binius64's own** BaseFold rows; any
+PCS-compare numbers recorded before 2026-09-12 predate it. `src/hybrid/sha.rs`
+was already pooled. F2Z's own prover does not allocate through Binius's
+`Allocator` at all, and the analogous idea for it - a retained scratch arena -
+was **measured dead** (`docs/fields-witch-compare.md`: page reclaims at n = 27
+are 63.7k for one proof and 68.6k for three, i.e. ~2-3 ms per proof after
+warm-up, because macOS libmalloc already retains the large chunks).
+
+## Four configurations for the paper tables (2026-09-12, Apple M5 24 GB, 8 threads)
+
+The `binius64-ligerito` rows of `paper/native-mul{,-u64,-u128}-table.tex` are
+measured in four configurations, 2^15..2^20, one backend per campaign process,
+5 samples after one warm-up, the top size re-measured alone (the peak-RSS
+squeeze), `PerfRuns/rerun-{u32,u64,u128}-lig4-{r2,r8}-{union,rbr}*`:
+
+| table family | rate | 100-bit gate | per-round target | L0 queries | L0 fold grind (2^15→2^20) | achieved | same terms under the other model |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `binius64-ligerito@1` | 1/2 | union bound over every term | 105 | 194 | 16→21 | 100.2–100.4 | round-by-round 105.0 |
+| `binius64-ligerito@3` | 1/8 | union bound | 105 | 63 | 17→22 | 100.3–100.6 | round-by-round 105.0 |
+| `binius64-ligerito-rbr@1` | 1/2 | round-by-round minimum | 100 | 183 | 11→16 | 100.0 | union 95.2–95.4 |
+| `binius64-ligerito-rbr@3` | 1/8 | round-by-round minimum | 100 | 60 | 12→17 | 100.0–100.1 | union 95.3–95.7 |
+
+The round-by-round model is the one F2Z's own rows report (`SoundnessAccounting::
+achieved_bits`, the minimum over terms; the opener's level-0 geometry is then
+identical to F2Z's `custom:1:4` / `custom:3:4` at 32 lanes). The union bound over
+the ~30 terms of a two-opening proof costs about 5 bits, hence the 105-bit
+per-round target, 6 more fold-grinding bits and 11 / 3 more level-0 queries.
+The opener's fold terms are counted one per fold round (each is exactly
+`2^-(eps_pg + fold_grinding_bits)`; the level's union is `k_recursive` of them).
+
+Prover ms / verifier ms / proof KB, pooled allocator throughout (peak GB in
+the generated tables). Binius64's own BaseFold rows for reference:
+
+| workload, N | Binius64 r1/2 | Binius64 r1/8 | opener r1/2 union | opener r1/2 rbr | opener r1/8 union | opener r1/8 rbr |
+| --- | --- | --- | --- | --- | --- | --- |
+| u32 2^15 | 31 / 1.6 / 324 | 36 / 1.5 / 243 | 35 / 3.0 / 362 | 34 / 3.0 / 346 | 47 / 2.5 / 187 | 38 / 2.4 / 180 |
+| u32 2^18 | 146 / 3.8 / 432 | 180 / 3.8 / 306 | 159 / 5.3 / 408 | 153 / 5.2 / 392 | 188 / 4.8 / 215 | 176 / 4.7 / 207 |
+| u32 2^20 | 536 / 16.6 / 519 | 680 / 17.5 / 355 | 570 / 18.3 / 437 | 556 / 18.1 / 419 | 715 / 17.3 / 230 | 645 / 17.2 / 222 |
+| u64 2^15 | 31 / 1.3 / 324 | 34 / 1.1 / 242 | 37 / 2.6 / 362 | 35 / 2.6 / 342 | 40 / 2.1 / 187 | 39 / 2.1 / 179 |
+| u64 2^18 | 147 / 2.9 / 431 | 168 / 2.7 / 305 | 157 / 4.4 / 407 | 154 / 4.3 / 389 | 179 / 3.8 / 215 | 177 / 3.8 / 206 |
+| u64 2^20 | 535 / 13.6 / 518 | 632 / 13.1 / 355 | 568 / 15.4 / 438 | 559 / 15.4 / 418 | 675 / 14.7 / 229 | 653 / 14.7 / 223 |
+| u128 2^15 | 86 / 3.7 / 388 | 97 / 3.5 / 283 | 94 / 5.5 / 387 | 92 / 5.5 / 370 | 111 / 4.8 / 200 | 103 / 4.8 / 194 |
+| u128 2^18 | 577 / 21.4 / 519 | 668 / 21.0 / 356 | 622 / 23.1 / 441 | 597 / 22.9 / 418 | 716 / 22.6 / 231 | 693 / 22.4 / 223 |
+| u128 2^19 | 1233 / 39.1 / 559 | 1879 / 168 / 383 | 1261 / 39.2 / 463 | 1231 / 39.0 / 440 | 1421 / 38.6 / 248 | 1384 / 38.4 / 238 |
+| u128 2^20 (all page) | 18255 / 1218 / 607 | 23574 / 2001 / 408 | 18864 / 1457 / 479 | 17709 / 1201 / 458 | 23772 / 1569 / 256 | 24719 / 862 / 246 |
+
+Reading: the accounting model moves proof size by 4-5 % (round-by-round is
+smaller: fewer queries, less grinding) and prover time by 1-9 %; the rate moves
+proof size by ~1.9x (rate 1/8 wins) and prover time by 10-20 % (rate 1/2 wins).
+With the pooled allocator the opener's prover sits 3-6 % above Binius64's own
+at rate 1/2 (u64 2^20: 559 vs 535 ms; u128 2^19: 1231 vs 1233, i.e. parity),
+and that residual is the PCS: the rate-1/2 codeword and 32-lane BLAKE3 Merkle
+tree in commit, plus Round 0 and two Johnson openings with grinding against one
+BaseFold opening. At rate 1/2 the opener's proof is larger than Binius64's own
+up to 2^17 and 15-20 % smaller at 2^20; at rate 1/8 it is 22-37 % smaller than
+Binius64's own rate-1/8 proof at every size. Peak memory is Binius64's PIOP
+either way. u128 2^20 pages in every configuration (10-13 GB of swap with the
+pool, Binius64's own rows likewise), so that size group is reported but not
+comparable with the rest. The 2^19 u128 cases need ~14 GB resident and were run
+only with >=14 GB unused.
+
 ## First measurements (2026-09-10, Apple M5 24 GB, 8 threads, smoke runs)
 
 **Historical: every number in this section was taken with the opener at rate
-1/8 (before `LOG_INV_RATE` moved to 1 on 2026-09-10); the rate-1/2 rows are
+1/8 (before `LOG_INV_RATE` moved to 1 on 2026-09-11); the rate-1/2 rows are
 the ones in the regenerated paper tables.**
 
 Single-sample smoke runs to validate the wiring — not the 11/21-sample

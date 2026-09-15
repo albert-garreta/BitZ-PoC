@@ -1,0 +1,1362 @@
+warning: unused import: `composite::prove_composite_inner_sumcheck`
+   --> src/piop/spartan/sha256/inner_sumcheck.rs:219:16
+    |
+219 | pub(crate) use composite::prove_composite_inner_sumcheck;
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `EqualityWeights`
+ --> src/poly/mle.rs:5:36
+  |
+5 |     CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
+  |                                    ^^^^^^^^^^^^^^^
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u32_u16` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:119:9
+    |
+119 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:118:5
+    |
+118 |     unsafe fn rotr16(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: `#[warn(unsafe_op_in_unsafe_fn)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning[E0133]: call to function `std::arch::aarch64::vrev32q_u16` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:119:31
+    |
+119 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u16_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:119:43
+    |
+119 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vsriq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:123:9
+    |
+123 |         vsriq_n_u32::<12>(vshlq_n_u32::<20>(x), x)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:122:5
+    |
+122 |     unsafe fn rotr12(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vshlq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:123:27
+    |
+123 |         vsriq_n_u32::<12>(vshlq_n_u32::<20>(x), x)
+    |                           ^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u32_u8` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:127:9
+    |
+127 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:126:5
+    |
+126 |     unsafe fn rotr8(x: uint32x4_t, idx: uint8x16_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vqtbl1q_u8` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:127:30
+    |
+127 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u8_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:127:41
+    |
+127 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vsriq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:131:9
+    |
+131 |         vsriq_n_u32::<7>(vshlq_n_u32::<25>(x), x)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:130:5
+    |
+130 |     unsafe fn rotr7(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vshlq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:131:26
+    |
+131 |         vsriq_n_u32::<7>(vshlq_n_u32::<25>(x), x)
+    |                          ^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:152:20
+    |
+152 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), x);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:141:5
+    |
+141 | /     unsafe fn g(
+142 | |         v: &mut [[uint32x4_t; 16]; GROUPS],
+143 | |         a: usize,
+144 | |         b: usize,
+...   |
+149 | |         idx: uint8x16_t,
+150 | |     ) {
+    | |_____^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:152:30
+    |
+152 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), x);
+    |                              ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr16` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:153:20
+    |
+153 |             v[d] = rotr16(veorq_u32(v[d], v[a]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:153:27
+    |
+153 |             v[d] = rotr16(veorq_u32(v[d], v[a]));
+    |                           ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:154:20
+    |
+154 |             v[c] = vaddq_u32(v[c], v[d]);
+    |                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr12` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:155:20
+    |
+155 |             v[b] = rotr12(veorq_u32(v[b], v[c]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:155:27
+    |
+155 |             v[b] = rotr12(veorq_u32(v[b], v[c]));
+    |                           ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:156:20
+    |
+156 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), y);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:156:30
+    |
+156 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), y);
+    |                              ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr8` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:157:20
+    |
+157 |             v[d] = rotr8(veorq_u32(v[d], v[a]), idx);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:157:26
+    |
+157 |             v[d] = rotr8(veorq_u32(v[d], v[a]), idx);
+    |                          ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:158:20
+    |
+158 |             v[c] = vaddq_u32(v[c], v[d]);
+    |                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr7` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:159:20
+    |
+159 |             v[b] = rotr7(veorq_u32(v[b], v[c]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:159:26
+    |
+159 |             v[b] = rotr7(veorq_u32(v[b], v[c]));
+    |                          ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:172:9
+    |
+172 |         g(v, 0, 4, 8, 12, w(0), w(1), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:164:5
+    |
+164 | /     unsafe fn round(
+165 | |         v: &mut [[uint32x4_t; 16]; GROUPS],
+166 | |         m: &[[uint32x4_t; 16]; GROUPS],
+167 | |         r: usize,
+168 | |         idx: uint8x16_t,
+169 | |     ) {
+    | |_____^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:173:9
+    |
+173 |         g(v, 1, 5, 9, 13, w(2), w(3), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:174:9
+    |
+174 |         g(v, 2, 6, 10, 14, w(4), w(5), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:175:9
+    |
+175 |         g(v, 3, 7, 11, 15, w(6), w(7), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:176:9
+    |
+176 |         g(v, 0, 5, 10, 15, w(8), w(9), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:177:9
+    |
+177 |         g(v, 1, 6, 11, 12, w(10), w(11), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:178:9
+    |
+178 |         g(v, 2, 7, 8, 13, w(12), w(13), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:179:9
+    |
+179 |         g(v, 3, 4, 9, 14, w(14), w(15), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u8` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:188:19
+    |
+188 |         let idx = vld1q_u8(ROTR8_BYTES.as_ptr());
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:187:5
+    |
+187 |     unsafe fn first_words(prefix: &[u32], base: u64) -> [u32; NONCES_PER_CALL as usize] {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:189:20
+    |
+189 |         let zero = vdupq_n_u32(0);
+    |                    ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:200:25
+    |
+200 |                 *slot = vdupq_n_u32(w);
+    |                         ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:202:24
+    |
+202 |             m[words] = vld1q_u32(lo.as_ptr());
+    |                        ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:203:28
+    |
+203 |             m[words + 1] = vld1q_u32(hi.as_ptr());
+    |                            ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:205:25
+    |
+205 |                 *slot = vdupq_n_u32(w);
+    |                         ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:207:21
+    |
+207 |             v[14] = vdupq_n_u32(block_len);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:208:21
+    |
+208 |             v[15] = vdupq_n_u32(FLAGS);
+    |                     ^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::round` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:211:13
+    |
+211 |             round(&mut v, &m, r, idx);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vst1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:215:13
+    |
+215 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::ptr::mut_ptr::<impl *mut T>::add` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:215:23
+    |
+215 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:215:52
+    |
+215 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::first_words` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:233:22
+    |
+233 |             let w0 = first_words(&words, base);
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:220:5
+    |
+220 | /     pub(super) unsafe fn first_pow_nonce(
+221 | |         prefix: &[u8],
+222 | |         start: u64,
+223 | |         end: u64,
+224 | |         bits: u32,
+225 | |     ) -> Option<u64> {
+    | |____________________^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove`
+   --> src/ligerito.rs:548:1
+    |
+548 | / pub fn ring_switch_prove<T: PackedBits>(
+549 | |     transcript: &mut impl Transcript,
+550 | |     p_msg: &[T],
+551 | |     r_hi: &[Gf],
+552 | | ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    | |___________________________________^ function `ring_switch_prove` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:380:1
+    |
+380 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove_with`
+   --> src/ligerito.rs:560:1
+    |
+560 | / pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+561 | |     transcript: &mut impl Transcript,
+562 | |     p_msg: &[T],
+563 | |     r_hi: &[Gf],
+564 | |     convert: impl Fn(Gf) -> O + Sync + Send,
+565 | | ) -> (RingSwitchProof, Vec<O>, Gf) {
+    | |__________________________________^ function `ring_switch_prove_with` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:380:1
+    |
+380 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `raw_error` is never read
+  --> src/ligerito_flock/atomic.rs:11:9
+   |
+ 8 | pub(crate) struct AtomicBlock {
+   |                   ----------- field in this struct
+...
+11 |     pub raw_error: f64,
+   |         ^^^^^^^^^
+   |
+   = note: `AtomicBlock` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `resolve` is never used
+  --> src/ligerito_flock/atomic.rs:22:12
+   |
+21 | impl AtomicPlan {
+   | --------------- associated function in this implementation
+22 |     pub fn resolve(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
+   |            ^^^^^^^
+
+warning: variants `Prove` and `Verify` are never constructed
+   --> src/ligerito_flock/atomic.rs:130:5
+    |
+129 | pub(crate) enum AtomicNonces<'a> {
+    |                 ------------ variants in this enum
+130 |     Prove(&'a mut Vec<u64>),
+    |     ^^^^^
+131 |     Verify { values: &'a [u64], cursor: usize },
+    |     ^^^^^^
+
+warning: function `prove_spartan_piop_u32_native_with_univariate_skip_borrowed` is never used
+   --> src/piop/spartan/piop.rs:344:15
+    |
+344 | pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `prove_composite_inner_sumcheck` is never used
+   --> src/piop/spartan/sha256/inner_sumcheck/composite.rs:158:15
+    |
+158 | pub(crate) fn prove_composite_inner_sumcheck<T: Transcript, H: Sha256InnerBitSource + ?Sized>(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `initial_grinding_bits`, `inner_round_grinding_bits`, and `terminal_grinding_bits` are never used
+   --> src/piop/spartan/sha256/prime.rs:140:18
+    |
+ 82 | impl Sha256PrimeProfile {
+    | ----------------------- methods in this implementation
+...
+140 |     pub const fn initial_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+145 |     pub const fn inner_round_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+150 |     pub const fn terminal_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `q_bits` is never used
+   --> src/piop/spartan/sha256/prime.rs:282:18
+    |
+253 | impl Sha256ModQContext {
+    | ---------------------- method in this implementation
+...
+282 |     pub const fn q_bits(&self) -> usize {
+    |                  ^^^^^^
+
+warning: struct `CompositeMultilinearExtension` is never constructed
+  --> src/poly/mle/structured.rs:26:19
+   |
+26 | pub(crate) struct CompositeMultilinearExtension<'a, F> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_factors` and `evaluate` are never used
+  --> src/poly/mle/structured.rs:38:19
+   |
+37 | impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
+   | ----------------------------------------------------------- associated items in this implementation
+38 |     pub(crate) fn from_factors(
+   |                   ^^^^^^^^^^^^
+...
+97 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+   |                   ^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/poly/mle/structured.rs:149:19
+    |
+148 | impl<'a, F: PrimeField> CompositeMultilinearExtension<'a, F> {
+    | ------------------------------------------------------------ associated items in this implementation
+149 |     pub(crate) fn from_parts(
+    |                   ^^^^^^^^^^
+...
+176 |     pub(crate) fn num_vars(&self) -> usize {
+    |                   ^^^^^^^^
+...
+179 |     pub(crate) fn live_len(&self) -> usize {
+    |                   ^^^^^^^^
+...
+182 |     pub(crate) fn repeated(&self) -> &FactoredMultilinearExtension<'a, F> {
+    |                   ^^^^^^^^
+...
+185 |     pub(crate) fn tail_evaluations(&self) -> &[F] {
+    |                   ^^^^^^^^^^^^^^^^
+...
+188 |     pub(crate) fn origin_adjustment(&self) -> &F {
+    |                   ^^^^^^^^^^^^^^^^^
+...
+192 |     pub(crate) fn evaluation_at(&self, index: usize) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^^^^^^
+...
+209 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: function `check_point` is never used
+   --> src/poly/mle/structured.rs:225:4
+    |
+225 | fn check_point<F>(num_vars: usize, point: &[F]) -> Result<(), EvaluationError> {
+    |    ^^^^^^^^^^^
+
+warning: struct `EqualityWeights` is never constructed
+   --> src/poly/mle/structured.rs:236:19
+    |
+236 | pub(crate) struct EqualityWeights<F> {
+    |                   ^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `from_tables`, `low`, `high`, and `at` are never used
+   --> src/poly/mle/structured.rs:242:8
+    |
+241 | impl<F: PrimeField> EqualityWeights<F> {
+    | -------------------------------------- associated items in this implementation
+242 |     fn new(point: &[F], cfg: &F::Config) -> Self {
+    |        ^^^
+...
+249 |     pub(crate) fn from_tables(low: Vec<F>, high: Vec<F>) -> Self {
+    |                   ^^^^^^^^^^^
+...
+253 |     pub(crate) fn low(&self) -> &[F] {
+    |                   ^^^
+...
+256 |     pub(crate) fn high(&self) -> &[F] {
+    |                   ^^^^
+...
+259 |     pub(crate) fn at(&self, index: usize) -> F {
+    |                   ^^
+
+warning: function `equality_table` is never used
+   --> src/poly/mle/structured.rs:264:4
+    |
+264 | fn equality_table<F: PrimeField>(point: &[F], cfg: &F::Config) -> Vec<F> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `dot_with_equality` is never used
+   --> src/poly/mle/structured.rs:272:4
+    |
+272 | fn dot_with_equality<F: PrimeField>(values: &[F], point: &[F], cfg: &F::Config) -> F {
+    |    ^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0133`.
+warning: `f2z` (lib) generated 64 warnings (run `cargo fix --lib -p f2z` to apply 10 suggestions)
+warning: unused import: `super::*`
+  --> benches/common/pcs_cli.rs:94:9
+   |
+94 |     use super::*;
+   |         ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `clap::CommandFactory`
+  --> benches/common/pcs_cli.rs:95:9
+   |
+95 |     use clap::CommandFactory;
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `f2z::observability::*`
+ --> benches/common/perfetto.rs:2:9
+  |
+2 | pub use f2z::observability::*;
+  |         ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> benches/common/whir_tuning.rs:629:9
+    |
+629 |     use super::*;
+    |         ^^^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/common/whir_tuning.rs:628:1
+    |
+628 | mod reporting_tests {
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `f2z::U32MulLigerito`
+ --> benches/mul_e2e_compare/f2z.rs:7:9
+  |
+7 |         f2z::U32MulLigerito, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
+  |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> benches/mul_e2e_compare/memory.rs:181:9
+    |
+181 |     use super::*;
+    |         ^^^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/mul_e2e_compare/memory.rs:180:1
+    |
+180 | mod cli_tests {
+    | ^^^^^^^^^^^^^
+
+warning: unused imports: `CommandFactory` and `Parser`
+   --> benches/mul_e2e_compare/memory.rs:182:16
+    |
+182 |     use clap::{CommandFactory, Parser};
+    |                ^^^^^^^^^^^^^^  ^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/mul_e2e_compare/memory.rs:180:1
+    |
+180 | mod cli_tests {
+    | ^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> benches/mul_e2e_compare/memory.rs:203:9
+    |
+203 |     use super::*;
+    |         ^^^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/mul_e2e_compare/memory.rs:202:1
+    |
+202 | mod cli_transport_tests {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `clap::Parser`
+   --> benches/mul_e2e_compare/memory.rs:204:9
+    |
+204 |     use clap::Parser;
+    |         ^^^^^^^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/mul_e2e_compare/memory.rs:202:1
+    |
+202 | mod cli_transport_tests {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> benches/mul_e2e_compare/report.rs:213:9
+    |
+213 |     use super::*;
+    |         ^^^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/mul_e2e_compare/report.rs:212:1
+    |
+212 | mod reporting_tests {
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `serde_json::json`
+   --> benches/mul_e2e_compare/report.rs:248:9
+    |
+248 |     use serde_json::json;
+    |         ^^^^^^^^^^^^^^^^
+    |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+   --> benches/mul_e2e_compare/report.rs:212:1
+    |
+212 | mod reporting_tests {
+    | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+  --> benches/mul_e2e_compare/mod32.rs:48:9
+   |
+48 |     use super::*;
+   |         ^^^^^^^^
+
+warning: unused imports: `VALUE_COLUMNS` and `set_value`
+ --> benches/mul_e2e_compare/plonky3.rs:3:35
+  |
+3 | use super::mod32_air::{LIMB_BASE, VALUE_COLUMNS, set_value};
+  |                                   ^^^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `PrimeCharacteristicRing` and `PrimeField64`
+  --> benches/mul_e2e_compare/plonky3.rs:14:16
+   |
+14 | use p3_field::{PrimeCharacteristicRing, PrimeField64};
+   |                ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+    --> benches/mul_e2e_compare.rs:1196:9
+     |
+1196 |     use super::*;
+     |         ^^^^^^^^
+     |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+    --> benches/mul_e2e_compare.rs:1195:1
+     |
+1195 | mod ligerito_isolation_tests {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+    --> benches/mul_e2e_compare.rs:1261:9
+     |
+1261 |     use super::*;
+     |         ^^^^^^^^
+     |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+    --> benches/mul_e2e_compare.rs:1260:1
+     |
+1260 | mod cli_tests {
+     | ^^^^^^^^^^^^^
+
+warning: unused imports: `CommandFactory` and `Parser`
+    --> benches/mul_e2e_compare.rs:1262:16
+     |
+1262 |     use clap::{CommandFactory, Parser};
+     |                ^^^^^^^^^^^^^^  ^^^^^^
+     |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+    --> benches/mul_e2e_compare.rs:1260:1
+     |
+1260 | mod cli_tests {
+     | ^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> benches/mul_e2e_compare.rs:260:8
+    |
+221 | impl Timing {
+    | ----------- associated function in this implementation
+...
+260 |     fn new(
+    |        ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `boundary_corpus` is never used
+   --> benches/mul_e2e_compare/plonky3.rs:206:8
+    |
+206 |     fn boundary_corpus() -> Corpus {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `assert_invalid` is never used
+   --> benches/mul_e2e_compare/plonky3.rs:215:8
+    |
+215 |     fn assert_invalid(trace: RowMajorMatrix<Val>) {
+    |        ^^^^^^^^^^^^^^
+
+warning: method `rejection_self_test` is never used
+   --> benches/mul_e2e_compare/plonky3_whir.rs:261:8
+    |
+259 | impl Context {
+    | ------------ method in this implementation
+260 |     #[cfg(test)]
+261 |     fn rejection_self_test(&self) {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: method `rejection_self_test` is never used
+   --> benches/mul_e2e_compare/plonky3_whir.rs:101:31
+    |
+ 72 |             impl Context {
+    |             ------------ method in this implementation
+...
+101 |                 pub(super) fn rejection_self_test(&self) {
+    |                               ^^^^^^^^^^^^^^^^^^^
+...
+252 | backend!(goldilocks2, goldilocks, 2);
+    | ------------------------------------ in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: method `rejection_self_test` is never used
+   --> benches/mul_e2e_compare/plonky3_whir.rs:101:31
+    |
+ 72 |             impl Context {
+    |             ------------ method in this implementation
+...
+101 |                 pub(super) fn rejection_self_test(&self) {
+    |                               ^^^^^^^^^^^^^^^^^^^
+...
+253 | backend!(goldilocks5, goldilocks, 5);
+    | ------------------------------------ in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function `fixture` is never used
+   --> benches/common/trace_capture.rs:116:8
+    |
+116 |     fn fixture() -> Vec<CapturedSpan> {
+    |        ^^^^^^^
+
+warning: function `trial_fixture` is never used
+   --> benches/common/trace_capture.rs:141:19
+    |
+141 |     pub(crate) fn trial_fixture() -> Vec<CapturedSpan> {
+    |                   ^^^^^^^^^^^^^
+
+warning: function `child` is never used
+    --> benches/mul_e2e_compare.rs:1292:8
+     |
+1292 |     fn child(mode: &str, settings: &[(&str, &str)]) -> std::process::Output {
+     |        ^^^^^
+
+warning: function `config` is never used
+    --> benches/mul_e2e_compare.rs:1300:8
+     |
+1300 |     fn config(mode: &str, settings: &[(&str, &str)]) -> Value {
+     |        ^^^^^^
+
+warning: `f2z` (bench "mul_e2e_compare") generated 27 warnings (run `cargo fix --bench "mul_e2e_compare" -p f2z` to apply 17 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.62s
+     Running benches/mul_e2e_compare.rs (target/release/deps/mul_e2e_compare-303963c67127149f)
+u32-mod32 binius64 2^15: isolated peak-memory pass
+u32-mod32 binius64 2^15: peak RSS 297.23 MiB
+u32-mod32 binius64 2^15: setup
+[293.867]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[293.869]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[293.918]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[293.994]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[294.041]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.108]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+u32-mod32 binius64 2^15 warmup: witness 0.936 ms, commit 3.776 ms, PIOP 51.824 ms, PCS 10.582 ms, witness→proof 63.384 ms, proof 253008 B
+[294.160]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.215]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+u32-mod32 binius64 2^15 sample 1/5: witness 0.913 ms, commit 2.867 ms, PIOP 42.761 ms, PCS 8.317 ms, witness→proof 52.012 ms, proof 253008 B
+[294.267]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.319]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+u32-mod32 binius64 2^15 sample 2/5: witness 0.912 ms, commit 2.769 ms, PIOP 40.784 ms, PCS 7.434 ms, witness→proof 49.148 ms, proof 253008 B
+[294.370]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.424]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+u32-mod32 binius64 2^15 sample 3/5: witness 0.881 ms, commit 2.428 ms, PIOP 42.028 ms, PCS 7.256 ms, witness→proof 50.184 ms, proof 253008 B
+[294.475]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.530]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+u32-mod32 binius64 2^15 sample 4/5: witness 0.883 ms, commit 2.534 ms, PIOP 43.360 ms, PCS 7.974 ms, witness→proof 52.236 ms, proof 253008 B
+[294.581]    perfetto_c.cc:266631 Configured tracing session 8, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.633]    perfetto_c.cc:268393 Tracing session 8 ended, total sessions:0
+u32-mod32 binius64 2^15 sample 5/5: witness 0.879 ms, commit 2.931 ms, PIOP 40.290 ms, PCS 7.423 ms, witness→proof 48.612 ms, proof 253008 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=15 samples=5 witness_ms=0.883375 online_prover_ms=49.359291 verify_ms=2.213292 proof_bytes=253008.0 peak_rss_bytes=311672832
+u32-mod32 binius64-ligerito 2^15: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^15: peak RSS 275.41 MiB
+u32-mod32 binius64-ligerito 2^15: setup
+[294.925]    perfetto_c.cc:266631 Configured tracing session 9, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[294.926]    perfetto_c.cc:268393 Tracing session 9 ended, total sessions:0
+[294.975]    perfetto_c.cc:266631 Configured tracing session 10, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.050]    perfetto_c.cc:268393 Tracing session 10 ended, total sessions:0
+[295.095]    perfetto_c.cc:266631 Configured tracing session 11, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.160]    perfetto_c.cc:268393 Tracing session 11 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^15 warmup: witness 0.834 ms, commit 3.211 ms, PIOP 47.655 ms, PCS 12.886 ms, witness→proof 61.450 ms, proof 232816 B
+[295.206]    perfetto_c.cc:266631 Configured tracing session 12, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.266]    perfetto_c.cc:268393 Tracing session 12 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^15 sample 1/5: witness 0.844 ms, commit 2.582 ms, PIOP 41.621 ms, PCS 12.379 ms, witness→proof 54.937 ms, proof 232816 B
+[295.311]    perfetto_c.cc:266631 Configured tracing session 13, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.371]    perfetto_c.cc:268393 Tracing session 13 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^15 sample 2/5: witness 0.840 ms, commit 3.124 ms, PIOP 41.578 ms, PCS 12.651 ms, witness→proof 55.165 ms, proof 232816 B
+[295.415]    perfetto_c.cc:266631 Configured tracing session 14, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.474]    perfetto_c.cc:268393 Tracing session 14 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^15 sample 3/5: witness 0.836 ms, commit 2.639 ms, PIOP 40.431 ms, PCS 12.505 ms, witness→proof 53.862 ms, proof 232816 B
+[295.519]    perfetto_c.cc:266631 Configured tracing session 15, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.579]    perfetto_c.cc:268393 Tracing session 15 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^15 sample 4/5: witness 0.869 ms, commit 2.774 ms, PIOP 42.164 ms, PCS 12.819 ms, witness→proof 55.926 ms, proof 232816 B
+[295.625]    perfetto_c.cc:266631 Configured tracing session 16, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[295.685]    perfetto_c.cc:268393 Tracing session 16 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^15 sample 5/5: witness 0.861 ms, commit 2.753 ms, PIOP 42.111 ms, PCS 12.405 ms, witness→proof 55.451 ms, proof 232816 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=15 samples=5 witness_ms=0.8435 online_prover_ms=54.322334 verify_ms=3.787208 proof_bytes=232816.0 peak_rss_bytes=288784384
+u32-mod32 binius64 2^16: isolated peak-memory pass
+u32-mod32 binius64 2^16: peak RSS 550.95 MiB
+u32-mod32 binius64 2^16: setup
+[296.173]    perfetto_c.cc:266631 Configured tracing session 17, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[296.175]    perfetto_c.cc:268393 Tracing session 17 ended, total sessions:0
+[296.230]    perfetto_c.cc:266631 Configured tracing session 18, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[296.394]    perfetto_c.cc:268393 Tracing session 18 ended, total sessions:0
+[296.438]    perfetto_c.cc:266631 Configured tracing session 19, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[296.526]    perfetto_c.cc:268393 Tracing session 19 ended, total sessions:0
+u32-mod32 binius64 2^16 warmup: witness 2.030 ms, commit 6.364 ms, PIOP 69.595 ms, PCS 12.164 ms, witness→proof 83.818 ms, proof 272416 B
+[296.577]    perfetto_c.cc:266631 Configured tracing session 20, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[296.650]    perfetto_c.cc:268393 Tracing session 20 ended, total sessions:0
+u32-mod32 binius64 2^16 sample 1/5: witness 1.804 ms, commit 3.751 ms, PIOP 58.904 ms, PCS 9.343 ms, witness→proof 70.079 ms, proof 272416 B
+[296.701]    perfetto_c.cc:266631 Configured tracing session 21, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[296.773]    perfetto_c.cc:268393 Tracing session 21 ended, total sessions:0
+u32-mod32 binius64 2^16 sample 2/5: witness 1.782 ms, commit 3.709 ms, PIOP 58.495 ms, PCS 9.135 ms, witness→proof 69.436 ms, proof 272416 B
+[296.824]    perfetto_c.cc:266631 Configured tracing session 22, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[296.898]    perfetto_c.cc:268393 Tracing session 22 ended, total sessions:0
+u32-mod32 binius64 2^16 sample 3/5: witness 1.789 ms, commit 3.500 ms, PIOP 59.168 ms, PCS 9.194 ms, witness→proof 70.175 ms, proof 272416 B
+[296.951]    perfetto_c.cc:266631 Configured tracing session 23, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[297.030]    perfetto_c.cc:268393 Tracing session 23 ended, total sessions:0
+u32-mod32 binius64 2^16 sample 4/5: witness 1.853 ms, commit 3.729 ms, PIOP 63.052 ms, PCS 9.660 ms, witness→proof 74.603 ms, proof 272416 B
+[297.084]    perfetto_c.cc:266631 Configured tracing session 24, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[297.163]    perfetto_c.cc:268393 Tracing session 24 ended, total sessions:0
+u32-mod32 binius64 2^16 sample 5/5: witness 1.843 ms, commit 4.775 ms, PIOP 63.214 ms, PCS 10.628 ms, witness→proof 75.713 ms, proof 272416 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=16 samples=5 witness_ms=1.803625 online_prover_ms=68.520375 verify_ms=2.533959 proof_bytes=272416.0 peak_rss_bytes=577716224
+u32-mod32 binius64-ligerito 2^16: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^16: peak RSS 530.62 MiB
+u32-mod32 binius64-ligerito 2^16: setup
+[297.693]    perfetto_c.cc:266631 Configured tracing session 25, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[297.695]    perfetto_c.cc:268393 Tracing session 25 ended, total sessions:0
+[297.748]    perfetto_c.cc:266631 Configured tracing session 26, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[297.910]    perfetto_c.cc:268393 Tracing session 26 ended, total sessions:0
+[297.955]    perfetto_c.cc:266631 Configured tracing session 27, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[298.050]    perfetto_c.cc:268393 Tracing session 27 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^16 warmup: witness 1.928 ms, commit 5.291 ms, PIOP 68.125 ms, PCS 19.734 ms, witness→proof 89.875 ms, proof 241072 B
+[298.097]    perfetto_c.cc:266631 Configured tracing session 28, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[298.184]    perfetto_c.cc:268393 Tracing session 28 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^16 sample 1/5: witness 1.713 ms, commit 4.779 ms, PIOP 60.430 ms, PCS 20.099 ms, witness→proof 82.331 ms, proof 241072 B
+[298.231]    perfetto_c.cc:266631 Configured tracing session 29, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[298.316]    perfetto_c.cc:268393 Tracing session 29 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^16 sample 2/5: witness 1.680 ms, commit 4.863 ms, PIOP 59.559 ms, PCS 18.971 ms, witness→proof 80.295 ms, proof 241072 B
+[298.363]    perfetto_c.cc:266631 Configured tracing session 30, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[298.449]    perfetto_c.cc:268393 Tracing session 30 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^16 sample 3/5: witness 1.696 ms, commit 5.545 ms, PIOP 59.903 ms, PCS 19.946 ms, witness→proof 81.629 ms, proof 241072 B
+[298.495]    perfetto_c.cc:266631 Configured tracing session 31, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[298.580]    perfetto_c.cc:268393 Tracing session 31 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^16 sample 4/5: witness 1.656 ms, commit 4.747 ms, PIOP 59.261 ms, PCS 19.377 ms, witness→proof 80.365 ms, proof 241072 B
+[298.625]    perfetto_c.cc:266631 Configured tracing session 32, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[298.711]    perfetto_c.cc:268393 Tracing session 32 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^16 sample 5/5: witness 1.665 ms, commit 4.431 ms, PIOP 60.327 ms, PCS 19.147 ms, witness→proof 81.214 ms, proof 241072 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=16 samples=5 witness_ms=1.68025 online_prover_ms=79.546209 verify_ms=4.185459 proof_bytes=241072.0 peak_rss_bytes=556400640
+u32-mod32 binius64 2^17: isolated peak-memory pass
+u32-mod32 binius64 2^17: peak RSS 960.80 MiB
+u32-mod32 binius64 2^17: setup
+[299.634]    perfetto_c.cc:266631 Configured tracing session 33, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[299.639]    perfetto_c.cc:268393 Tracing session 33 ended, total sessions:0
+[299.701]    perfetto_c.cc:266631 Configured tracing session 34, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[300.044]    perfetto_c.cc:268393 Tracing session 34 ended, total sessions:0
+[300.090]    perfetto_c.cc:266631 Configured tracing session 35, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[300.235]    perfetto_c.cc:268393 Tracing session 35 ended, total sessions:0
+u32-mod32 binius64 2^17 warmup: witness 4.453 ms, commit 10.279 ms, PIOP 116.879 ms, PCS 18.411 ms, witness→proof 139.774 ms, proof 297264 B
+[300.287]    perfetto_c.cc:266631 Configured tracing session 36, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[300.410]    perfetto_c.cc:268393 Tracing session 36 ended, total sessions:0
+u32-mod32 binius64 2^17 sample 1/5: witness 3.625 ms, commit 7.104 ms, PIOP 100.314 ms, PCS 14.990 ms, witness→proof 118.956 ms, proof 297264 B
+[300.461]    perfetto_c.cc:266631 Configured tracing session 37, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[300.585]    perfetto_c.cc:268393 Tracing session 37 ended, total sessions:0
+u32-mod32 binius64 2^17 sample 2/5: witness 3.602 ms, commit 8.031 ms, PIOP 100.312 ms, PCS 15.927 ms, witness→proof 119.875 ms, proof 297264 B
+[300.636]    perfetto_c.cc:266631 Configured tracing session 38, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[300.759]    perfetto_c.cc:268393 Tracing session 38 ended, total sessions:0
+u32-mod32 binius64 2^17 sample 3/5: witness 3.579 ms, commit 7.365 ms, PIOP 99.478 ms, PCS 15.221 ms, witness→proof 118.309 ms, proof 297264 B
+[300.810]    perfetto_c.cc:266631 Configured tracing session 39, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[300.929]    perfetto_c.cc:268393 Tracing session 39 ended, total sessions:0
+u32-mod32 binius64 2^17 sample 4/5: witness 3.607 ms, commit 7.070 ms, PIOP 96.890 ms, PCS 14.762 ms, witness→proof 115.288 ms, proof 297264 B
+[300.981]    perfetto_c.cc:266631 Configured tracing session 40, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[301.107]    perfetto_c.cc:268393 Tracing session 40 ended, total sessions:0
+u32-mod32 binius64 2^17 sample 5/5: witness 3.746 ms, commit 8.670 ms, PIOP 101.587 ms, PCS 16.594 ms, witness→proof 121.958 ms, proof 297264 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=17 samples=5 witness_ms=3.6065 online_prover_ms=115.623584 verify_ms=2.955917 proof_bytes=297264.0 peak_rss_bytes=1007468544
+u32-mod32 binius64-ligerito 2^17: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^17: peak RSS 937.16 MiB
+u32-mod32 binius64-ligerito 2^17: setup
+[302.070]    perfetto_c.cc:266631 Configured tracing session 41, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[302.074]    perfetto_c.cc:268393 Tracing session 41 ended, total sessions:0
+[302.136]    perfetto_c.cc:266631 Configured tracing session 42, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[302.476]    perfetto_c.cc:268393 Tracing session 42 ended, total sessions:0
+[302.520]    perfetto_c.cc:266631 Configured tracing session 43, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[302.676]    perfetto_c.cc:268393 Tracing session 43 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^17 warmup: witness 3.884 ms, commit 10.793 ms, PIOP 118.448 ms, PCS 27.722 ms, witness→proof 150.145 ms, proof 250192 B
+[302.722]    perfetto_c.cc:266631 Configured tracing session 44, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[302.857]    perfetto_c.cc:268393 Tracing session 44 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^17 sample 1/5: witness 3.385 ms, commit 9.113 ms, PIOP 99.629 ms, PCS 25.995 ms, witness→proof 129.104 ms, proof 250192 B
+[302.902]    perfetto_c.cc:266631 Configured tracing session 45, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[303.040]    perfetto_c.cc:268393 Tracing session 45 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^17 sample 2/5: witness 3.357 ms, commit 9.268 ms, PIOP 102.569 ms, PCS 26.089 ms, witness→proof 132.094 ms, proof 250192 B
+[303.088]    perfetto_c.cc:266631 Configured tracing session 46, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[303.220]    perfetto_c.cc:268393 Tracing session 46 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^17 sample 3/5: witness 3.395 ms, commit 8.837 ms, PIOP 97.571 ms, PCS 25.576 ms, witness→proof 126.630 ms, proof 250192 B
+[303.266]    perfetto_c.cc:266631 Configured tracing session 47, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[303.397]    perfetto_c.cc:268393 Tracing session 47 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^17 sample 4/5: witness 3.324 ms, commit 8.377 ms, PIOP 96.727 ms, PCS 25.033 ms, witness→proof 125.172 ms, proof 250192 B
+[303.441]    perfetto_c.cc:266631 Configured tracing session 48, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[303.573]    perfetto_c.cc:268393 Tracing session 48 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^17 sample 5/5: witness 3.321 ms, commit 8.355 ms, PIOP 97.666 ms, PCS 25.132 ms, witness→proof 126.219 ms, proof 250192 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=17 samples=5 witness_ms=3.357167 online_prover_ms=123.233666 verify_ms=5.125208 proof_bytes=250192.0 peak_rss_bytes=982679552
+u32-mod32 binius64 2^18: isolated peak-memory pass
+u32-mod32 binius64 2^18: peak RSS 1895.20 MiB
+u32-mod32 binius64 2^18: setup
+[305.379]    perfetto_c.cc:266631 Configured tracing session 49, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[305.387]    perfetto_c.cc:268393 Tracing session 49 ended, total sessions:0
+[305.467]    perfetto_c.cc:266631 Configured tracing session 50, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.167]    perfetto_c.cc:268393 Tracing session 50 ended, total sessions:0
+[306.212]    perfetto_c.cc:266631 Configured tracing session 51, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.456]    perfetto_c.cc:268393 Tracing session 51 ended, total sessions:0
+u32-mod32 binius64 2^18 warmup: witness 8.913 ms, commit 20.018 ms, PIOP 196.591 ms, PCS 31.029 ms, witness→proof 236.569 ms, proof 329248 B
+[306.508]    perfetto_c.cc:266631 Configured tracing session 52, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.712]    perfetto_c.cc:268393 Tracing session 52 ended, total sessions:0
+u32-mod32 binius64 2^18 sample 1/5: witness 7.047 ms, commit 13.478 ms, PIOP 167.539 ms, PCS 24.316 ms, witness→proof 198.937 ms, proof 329248 B
+[306.764]    perfetto_c.cc:266631 Configured tracing session 53, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[306.974]    perfetto_c.cc:268393 Tracing session 53 ended, total sessions:0
+u32-mod32 binius64 2^18 sample 2/5: witness 7.189 ms, commit 13.531 ms, PIOP 173.007 ms, PCS 24.648 ms, witness→proof 204.881 ms, proof 329248 B
+[307.025]    perfetto_c.cc:266631 Configured tracing session 54, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.228]    perfetto_c.cc:268393 Tracing session 54 ended, total sessions:0
+u32-mod32 binius64 2^18 sample 3/5: witness 7.109 ms, commit 13.632 ms, PIOP 166.298 ms, PCS 24.522 ms, witness→proof 197.966 ms, proof 329248 B
+[307.280]    perfetto_c.cc:266631 Configured tracing session 55, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.491]    perfetto_c.cc:268393 Tracing session 55 ended, total sessions:0
+u32-mod32 binius64 2^18 sample 4/5: witness 7.236 ms, commit 17.355 ms, PIOP 169.525 ms, PCS 28.243 ms, witness→proof 205.040 ms, proof 329248 B
+[307.543]    perfetto_c.cc:266631 Configured tracing session 56, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[307.746]    perfetto_c.cc:268393 Tracing session 56 ended, total sessions:0
+u32-mod32 binius64 2^18 sample 5/5: witness 7.273 ms, commit 13.537 ms, PIOP 166.436 ms, PCS 24.291 ms, witness→proof 198.036 ms, proof 329248 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=18 samples=5 witness_ms=7.189417 online_prover_ms=192.306334 verify_ms=4.359083 proof_bytes=329248.0 peak_rss_bytes=1987264512
+u32-mod32 binius64-ligerito 2^18: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^18: peak RSS 1849.67 MiB
+u32-mod32 binius64-ligerito 2^18: setup
+[309.606]    perfetto_c.cc:266631 Configured tracing session 57, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[309.614]    perfetto_c.cc:268393 Tracing session 57 ended, total sessions:0
+[309.694]    perfetto_c.cc:266631 Configured tracing session 58, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[310.418]    perfetto_c.cc:268393 Tracing session 58 ended, total sessions:0
+[310.463]    perfetto_c.cc:266631 Configured tracing session 59, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[310.723]    perfetto_c.cc:268393 Tracing session 59 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^18 warmup: witness 7.318 ms, commit 22.099 ms, PIOP 196.750 ms, PCS 49.198 ms, witness→proof 253.377 ms, proof 266288 B
+[310.769]    perfetto_c.cc:266631 Configured tracing session 60, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[310.997]    perfetto_c.cc:268393 Tracing session 60 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^18 sample 1/5: witness 6.724 ms, commit 18.060 ms, PIOP 169.350 ms, PCS 45.163 ms, witness→proof 221.319 ms, proof 266288 B
+[311.043]    perfetto_c.cc:266631 Configured tracing session 61, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[311.296]    perfetto_c.cc:268393 Tracing session 61 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^18 sample 2/5: witness 6.624 ms, commit 18.653 ms, PIOP 186.797 ms, PCS 53.370 ms, witness→proof 246.887 ms, proof 266288 B
+[311.342]    perfetto_c.cc:266631 Configured tracing session 62, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[311.570]    perfetto_c.cc:268393 Tracing session 62 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^18 sample 3/5: witness 6.630 ms, commit 18.273 ms, PIOP 168.911 ms, PCS 44.911 ms, witness→proof 220.550 ms, proof 266288 B
+[311.615]    perfetto_c.cc:266631 Configured tracing session 63, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[311.844]    perfetto_c.cc:268393 Tracing session 63 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^18 sample 4/5: witness 6.651 ms, commit 17.038 ms, PIOP 171.353 ms, PCS 44.317 ms, witness→proof 222.422 ms, proof 266288 B
+[311.889]    perfetto_c.cc:266631 Configured tracing session 64, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[312.113]    perfetto_c.cc:268393 Tracing session 64 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^18 sample 5/5: witness 6.644 ms, commit 17.123 ms, PIOP 167.562 ms, PCS 42.982 ms, witness→proof 217.292 ms, proof 266288 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=18 samples=5 witness_ms=6.643958 online_prover_ms=214.5925 verify_ms=6.105833 proof_bytes=266288.0 peak_rss_bytes=1939521536
+u32-mod32 binius64 2^19: isolated peak-memory pass
+u32-mod32 binius64 2^19: peak RSS 3834.48 MiB
+u32-mod32 binius64 2^19: setup
+[315.690]    perfetto_c.cc:266631 Configured tracing session 65, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[315.706]    perfetto_c.cc:268393 Tracing session 65 ended, total sessions:0
+[315.823]    perfetto_c.cc:266631 Configured tracing session 66, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[317.245]    perfetto_c.cc:268393 Tracing session 66 ended, total sessions:0
+[317.290]    perfetto_c.cc:266631 Configured tracing session 67, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[317.749]    perfetto_c.cc:268393 Tracing session 67 ended, total sessions:0
+u32-mod32 binius64 2^19 warmup: witness 18.100 ms, commit 46.367 ms, PIOP 365.455 ms, PCS 64.122 ms, witness→proof 447.718 ms, proof 354192 B
+[317.802]    perfetto_c.cc:266631 Configured tracing session 68, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[318.177]    perfetto_c.cc:268393 Tracing session 68 ended, total sessions:0
+u32-mod32 binius64 2^19 sample 1/5: witness 14.082 ms, commit 28.308 ms, PIOP 303.299 ms, PCS 46.535 ms, witness→proof 363.955 ms, proof 354192 B
+[318.230]    perfetto_c.cc:266631 Configured tracing session 69, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[318.601]    perfetto_c.cc:268393 Tracing session 69 ended, total sessions:0
+u32-mod32 binius64 2^19 sample 2/5: witness 13.932 ms, commit 26.926 ms, PIOP 301.896 ms, PCS 44.272 ms, witness→proof 360.136 ms, proof 354192 B
+[318.654]    perfetto_c.cc:266631 Configured tracing session 70, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[319.021]    perfetto_c.cc:268393 Tracing session 70 ended, total sessions:0
+u32-mod32 binius64 2^19 sample 3/5: witness 14.117 ms, commit 25.710 ms, PIOP 297.138 ms, PCS 43.232 ms, witness→proof 354.525 ms, proof 354192 B
+[319.073]    perfetto_c.cc:266631 Configured tracing session 71, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[319.447]    perfetto_c.cc:268393 Tracing session 71 ended, total sessions:0
+u32-mod32 binius64 2^19 sample 4/5: witness 13.918 ms, commit 28.330 ms, PIOP 301.375 ms, PCS 45.835 ms, witness→proof 361.163 ms, proof 354192 B
+[319.499]    perfetto_c.cc:266631 Configured tracing session 72, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[319.885]    perfetto_c.cc:268393 Tracing session 72 ended, total sessions:0
+u32-mod32 binius64 2^19 sample 5/5: witness 14.047 ms, commit 31.061 ms, PIOP 311.615 ms, PCS 48.360 ms, witness→proof 374.059 ms, proof 354192 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=19 samples=5 witness_ms=14.047207 online_prover_ms=347.966208 verify_ms=10.475708 proof_bytes=354192.0 peak_rss_bytes=4020748288
+u32-mod32 binius64-ligerito 2^19: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^19: peak RSS 3493.77 MiB
+u32-mod32 binius64-ligerito 2^19: setup
+[323.503]    perfetto_c.cc:266631 Configured tracing session 73, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[323.523]    perfetto_c.cc:268393 Tracing session 73 ended, total sessions:0
+[323.637]    perfetto_c.cc:266631 Configured tracing session 74, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[325.079]    perfetto_c.cc:268393 Tracing session 74 ended, total sessions:0
+[325.124]    perfetto_c.cc:266631 Configured tracing session 75, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[325.590]    perfetto_c.cc:268393 Tracing session 75 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^19 warmup: witness 14.896 ms, commit 40.961 ms, PIOP 360.249 ms, PCS 81.715 ms, witness→proof 457.272 ms, proof 277456 B
+[325.635]    perfetto_c.cc:266631 Configured tracing session 76, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[326.082]    perfetto_c.cc:268393 Tracing session 76 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^19 sample 1/5: witness 13.255 ms, commit 33.065 ms, PIOP 349.962 ms, PCS 75.031 ms, witness→proof 438.565 ms, proof 277456 B
+[326.128]    perfetto_c.cc:266631 Configured tracing session 77, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[326.587]    perfetto_c.cc:268393 Tracing session 77 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^19 sample 2/5: witness 13.144 ms, commit 32.067 ms, PIOP 365.242 ms, PCS 70.761 ms, witness→proof 449.479 ms, proof 277456 B
+[326.632]    perfetto_c.cc:266631 Configured tracing session 78, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.075]    perfetto_c.cc:268393 Tracing session 78 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^19 sample 3/5: witness 13.193 ms, commit 33.784 ms, PIOP 347.356 ms, PCS 72.897 ms, witness→proof 433.757 ms, proof 277456 B
+[327.120]    perfetto_c.cc:266631 Configured tracing session 79, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[327.579]    perfetto_c.cc:268393 Tracing session 79 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^19 sample 4/5: witness 13.322 ms, commit 30.905 ms, PIOP 368.994 ms, PCS 67.656 ms, witness→proof 450.310 ms, proof 277456 B
+[327.625]    perfetto_c.cc:266631 Configured tracing session 80, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[328.073]    perfetto_c.cc:268393 Tracing session 80 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^19 sample 5/5: witness 13.422 ms, commit 33.977 ms, PIOP 351.572 ms, PCS 73.028 ms, witness→proof 438.366 ms, proof 277456 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=19 samples=5 witness_ms=13.254542 online_prover_ms=425.307667 verify_ms=8.65275 proof_bytes=277456.0 peak_rss_bytes=3663478784
+u32-mod32 binius64 2^20: isolated peak-memory pass
+u32-mod32 binius64 2^20: peak RSS 7691.66 MiB
+u32-mod32 binius64 2^20: setup
+[335.369]    perfetto_c.cc:266631 Configured tracing session 81, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[335.400]    perfetto_c.cc:268393 Tracing session 81 ended, total sessions:0
+[335.585]    perfetto_c.cc:266631 Configured tracing session 82, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[338.670]    perfetto_c.cc:268393 Tracing session 82 ended, total sessions:0
+[338.719]    perfetto_c.cc:266631 Configured tracing session 83, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[339.687]    perfetto_c.cc:268393 Tracing session 83 ended, total sessions:0
+u32-mod32 binius64 2^20 warmup: witness 35.895 ms, commit 86.881 ms, PIOP 794.652 ms, PCS 116.805 ms, witness→proof 947.396 ms, proof 382592 B
+[339.742]    perfetto_c.cc:266631 Configured tracing session 84, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[340.573]    perfetto_c.cc:268393 Tracing session 84 ended, total sessions:0
+u32-mod32 binius64 2^20 sample 1/5: witness 28.275 ms, commit 56.738 ms, PIOP 695.184 ms, PCS 85.787 ms, witness→proof 809.291 ms, proof 382592 B
+[340.627]    perfetto_c.cc:266631 Configured tracing session 85, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[341.453]    perfetto_c.cc:268393 Tracing session 85 ended, total sessions:0
+u32-mod32 binius64 2^20 sample 2/5: witness 28.437 ms, commit 58.453 ms, PIOP 688.780 ms, PCS 88.203 ms, witness→proof 805.465 ms, proof 382592 B
+[341.506]    perfetto_c.cc:266631 Configured tracing session 86, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[342.321]    perfetto_c.cc:268393 Tracing session 86 ended, total sessions:0
+u32-mod32 binius64 2^20 sample 3/5: witness 27.796 ms, commit 54.807 ms, PIOP 680.422 ms, PCS 85.514 ms, witness→proof 793.772 ms, proof 382592 B
+[342.374]    perfetto_c.cc:266631 Configured tracing session 87, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[343.190]    perfetto_c.cc:268393 Tracing session 87 ended, total sessions:0
+u32-mod32 binius64 2^20 sample 4/5: witness 27.900 ms, commit 55.481 ms, PIOP 682.164 ms, PCS 84.822 ms, witness→proof 794.924 ms, proof 382592 B
+[343.245]    perfetto_c.cc:266631 Configured tracing session 88, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[344.064]    perfetto_c.cc:268393 Tracing session 88 ended, total sessions:0
+u32-mod32 binius64 2^20 sample 5/5: witness 28.100 ms, commit 54.903 ms, PIOP 682.945 ms, PCS 85.796 ms, witness→proof 796.882 ms, proof 382592 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=20 samples=5 witness_ms=28.099833 online_prover_ms=770.071542 verify_ms=20.181959 proof_bytes=382592.0 peak_rss_bytes=8065286144
+u32-mod32 binius64-ligerito 2^20: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^20: peak RSS 6982.62 MiB
+u32-mod32 binius64-ligerito 2^20: setup
+[351.652]    perfetto_c.cc:266631 Configured tracing session 89, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[351.691]    perfetto_c.cc:268393 Tracing session 89 ended, total sessions:0
+[351.882]    perfetto_c.cc:266631 Configured tracing session 90, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[354.896]    perfetto_c.cc:268393 Tracing session 90 ended, total sessions:0
+[354.942]    perfetto_c.cc:266631 Configured tracing session 91, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[355.951]    perfetto_c.cc:268393 Tracing session 91 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^20 warmup: witness 30.545 ms, commit 102.803 ms, PIOP 791.913 ms, PCS 172.245 ms, witness→proof 995.321 ms, proof 287312 B
+[355.998]    perfetto_c.cc:266631 Configured tracing session 92, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[356.927]    perfetto_c.cc:268393 Tracing session 92 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^20 sample 1/5: witness 26.686 ms, commit 69.895 ms, PIOP 748.760 ms, PCS 136.952 ms, witness→proof 912.900 ms, proof 287312 B
+[356.975]    perfetto_c.cc:266631 Configured tracing session 93, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[357.903]    perfetto_c.cc:268393 Tracing session 93 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^20 sample 2/5: witness 27.475 ms, commit 76.969 ms, PIOP 744.217 ms, PCS 141.251 ms, witness→proof 913.470 ms, proof 287312 B
+[357.949]    perfetto_c.cc:266631 Configured tracing session 94, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[358.955]    perfetto_c.cc:268393 Tracing session 94 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^20 sample 3/5: witness 27.231 ms, commit 76.514 ms, PIOP 803.604 ms, PCS 150.937 ms, witness→proof 982.291 ms, proof 287312 B
+[359.001]    perfetto_c.cc:266631 Configured tracing session 95, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[359.959]    perfetto_c.cc:268393 Tracing session 95 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^20 sample 4/5: witness 27.090 ms, commit 88.027 ms, PIOP 762.030 ms, PCS 153.272 ms, witness→proof 942.886 ms, proof 287312 B
+[360.004]    perfetto_c.cc:266631 Configured tracing session 96, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[360.947]    perfetto_c.cc:268393 Tracing session 96 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^20 sample 5/5: witness 26.497 ms, commit 70.312 ms, PIOP 765.511 ms, PCS 136.920 ms, witness→proof 929.420 ms, proof 287312 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=20 samples=5 witness_ms=27.09 online_prover_ms=902.921375 verify_ms=13.888666 proof_bytes=287312.0 peak_rss_bytes=7321812992
+u32-mod32 binius64 2^21: isolated peak-memory pass
+u32-mod32 binius64 2^21: peak RSS 15256.64 MiB
+u32-mod32 binius64 2^21: setup
+[376.072]    perfetto_c.cc:266631 Configured tracing session 97, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[376.147]    perfetto_c.cc:268393 Tracing session 97 ended, total sessions:0
+[376.478]    perfetto_c.cc:266631 Configured tracing session 98, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[382.645]    perfetto_c.cc:268393 Tracing session 98 ended, total sessions:0
+[382.691]    perfetto_c.cc:266631 Configured tracing session 99, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[384.563]    perfetto_c.cc:268393 Tracing session 99 ended, total sessions:0
+u32-mod32 binius64 2^21 warmup: witness 63.864 ms, commit 156.061 ms, PIOP 1568.476 ms, PCS 208.222 ms, witness→proof 1840.611 ms, proof 412304 B
+[384.618]    perfetto_c.cc:266631 Configured tracing session 100, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[386.220]    perfetto_c.cc:268393 Tracing session 100 ended, total sessions:0
+u32-mod32 binius64 2^21 sample 1/5: witness 56.416 ms, commit 111.035 ms, PIOP 1339.224 ms, PCS 166.686 ms, witness→proof 1562.374 ms, proof 412304 B
+[386.277]    perfetto_c.cc:266631 Configured tracing session 101, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[387.862]    perfetto_c.cc:268393 Tracing session 101 ended, total sessions:0
+u32-mod32 binius64 2^21 sample 2/5: witness 57.990 ms, commit 115.423 ms, PIOP 1324.518 ms, PCS 167.890 ms, witness→proof 1550.450 ms, proof 412304 B
+[387.917]    perfetto_c.cc:266631 Configured tracing session 102, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[389.471]    perfetto_c.cc:268393 Tracing session 102 ended, total sessions:0
+u32-mod32 binius64 2^21 sample 3/5: witness 56.526 ms, commit 117.214 ms, PIOP 1295.867 ms, PCS 168.551 ms, witness→proof 1520.988 ms, proof 412304 B
+[389.526]    perfetto_c.cc:266631 Configured tracing session 103, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[391.097]    perfetto_c.cc:268393 Tracing session 103 ended, total sessions:0
+u32-mod32 binius64 2^21 sample 4/5: witness 56.503 ms, commit 115.837 ms, PIOP 1314.689 ms, PCS 166.597 ms, witness→proof 1537.827 ms, proof 412304 B
+[391.151]    perfetto_c.cc:266631 Configured tracing session 104, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[392.726]    perfetto_c.cc:268393 Tracing session 104 ended, total sessions:0
+u32-mod32 binius64 2^21 sample 5/5: witness 56.234 ms, commit 115.682 ms, PIOP 1314.823 ms, PCS 166.753 ms, witness→proof 1537.859 ms, proof 412304 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=21 samples=5 witness_ms=56.50275 online_prover_ms=1483.845625 verify_ms=31.797917 proof_bytes=412304.0 peak_rss_bytes=15997747200
+u32-mod32 binius64-ligerito 2^21: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^21: peak RSS 13926.14 MiB
+u32-mod32 binius64-ligerito 2^21: setup
+[408.371]    perfetto_c.cc:266631 Configured tracing session 105, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[408.438]    perfetto_c.cc:268393 Tracing session 105 ended, total sessions:0
+[408.768]    perfetto_c.cc:266631 Configured tracing session 106, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[414.890]    perfetto_c.cc:268393 Tracing session 106 ended, total sessions:0
+[414.935]    perfetto_c.cc:266631 Configured tracing session 107, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[417.005]    perfetto_c.cc:268393 Tracing session 107 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^21 warmup: witness 59.914 ms, commit 178.634 ms, PIOP 1619.135 ms, PCS 362.407 ms, witness→proof 2043.339 ms, proof 304336 B
+[417.054]    perfetto_c.cc:266631 Configured tracing session 108, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[419.010]    perfetto_c.cc:268393 Tracing session 108 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^21 sample 1/5: witness 55.292 ms, commit 152.632 ms, PIOP 1535.714 ms, PCS 339.034 ms, witness→proof 1931.813 ms, proof 304336 B
+[419.058]    perfetto_c.cc:266631 Configured tracing session 109, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[420.992]    perfetto_c.cc:268393 Tracing session 109 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^21 sample 2/5: witness 55.007 ms, commit 141.628 ms, PIOP 1535.902 ms, PCS 318.292 ms, witness→proof 1910.786 ms, proof 304336 B
+[421.038]    perfetto_c.cc:266631 Configured tracing session 110, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[422.980]    perfetto_c.cc:268393 Tracing session 110 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^21 sample 3/5: witness 53.193 ms, commit 136.264 ms, PIOP 1543.953 ms, PCS 317.542 ms, witness→proof 1916.482 ms, proof 304336 B
+[423.027]    perfetto_c.cc:266631 Configured tracing session 111, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[424.982]    perfetto_c.cc:268393 Tracing session 111 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^21 sample 4/5: witness 54.688 ms, commit 139.563 ms, PIOP 1555.522 ms, PCS 320.123 ms, witness→proof 1932.074 ms, proof 304336 B
+[425.030]    perfetto_c.cc:266631 Configured tracing session 112, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[426.974]    perfetto_c.cc:268393 Tracing session 112 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^21 sample 5/5: witness 54.867 ms, commit 141.190 ms, PIOP 1542.597 ms, PCS 320.169 ms, witness→proof 1919.403 ms, proof 304336 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=21 samples=5 witness_ms=54.866834 online_prover_ms=1864.534333 verify_ms=23.330083 proof_bytes=304336.0 peak_rss_bytes=14602616832
+u32-mod32 binius64 2^22: isolated peak-memory pass
+u32-mod32 binius64 2^22: peak RSS 21545.20 MiB
+u32-mod32 binius64 2^22: setup
+[466.464]    perfetto_c.cc:266631 Configured tracing session 113, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[466.633]    perfetto_c.cc:268393 Tracing session 113 ended, total sessions:0
+[467.298]    perfetto_c.cc:266631 Configured tracing session 114, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[480.724]    perfetto_c.cc:268393 Tracing session 114 ended, total sessions:0
+[480.772]    perfetto_c.cc:266631 Configured tracing session 115, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[486.598]    perfetto_c.cc:268393 Tracing session 115 ended, total sessions:0
+u32-mod32 binius64 2^22 warmup: witness 126.612 ms, commit 294.138 ms, PIOP 4822.418 ms, PCS 490.315 ms, witness→proof 5439.453 ms, proof 446784 B
+[486.670]    perfetto_c.cc:266631 Configured tracing session 116, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[491.970]    perfetto_c.cc:268393 Tracing session 116 ended, total sessions:0
+u32-mod32 binius64 2^22 sample 1/5: witness 263.733 ms, commit 298.680 ms, PIOP 4183.845 ms, PCS 422.510 ms, witness→proof 4870.152 ms, proof 446784 B
+[492.025]    perfetto_c.cc:266631 Configured tracing session 117, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[495.956]    perfetto_c.cc:268393 Tracing session 117 ended, total sessions:0
+u32-mod32 binius64 2^22 sample 2/5: witness 159.470 ms, commit 259.463 ms, PIOP 3026.370 ms, PCS 359.119 ms, witness→proof 3545.023 ms, proof 446784 B
+[496.014]    perfetto_c.cc:266631 Configured tracing session 118, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[500.089]    perfetto_c.cc:268393 Tracing session 118 ended, total sessions:0
+u32-mod32 binius64 2^22 sample 3/5: witness 169.371 ms, commit 232.526 ms, PIOP 3053.652 ms, PCS 351.515 ms, witness→proof 3574.588 ms, proof 446784 B
+[500.145]    perfetto_c.cc:266631 Configured tracing session 119, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[503.675]    perfetto_c.cc:268393 Tracing session 119 ended, total sessions:0
+u32-mod32 binius64 2^22 sample 4/5: witness 159.087 ms, commit 231.517 ms, PIOP 2764.037 ms, PCS 331.957 ms, witness→proof 3255.151 ms, proof 446784 B
+[503.743]    perfetto_c.cc:266631 Configured tracing session 120, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[508.558]    perfetto_c.cc:268393 Tracing session 120 ended, total sessions:0
+u32-mod32 binius64 2^22 sample 5/5: witness 201.097 ms, commit 305.049 ms, PIOP 3517.851 ms, PCS 426.749 ms, witness→proof 4145.761 ms, proof 446784 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64 log_multiplications=22 samples=5 witness_ms=169.371208 online_prover_ms=3409.606458 verify_ms=427.673 proof_bytes=446784.0 peak_rss_bytes=22591782912
+u32-mod32 binius64-ligerito 2^22: isolated peak-memory pass
+u32-mod32 binius64-ligerito 2^22: peak RSS 24137.38 MiB
+u32-mod32 binius64-ligerito 2^22: setup
+[544.340]    perfetto_c.cc:266631 Configured tracing session 121, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[544.493]    perfetto_c.cc:268393 Tracing session 121 ended, total sessions:0
+[545.150]    perfetto_c.cc:266631 Configured tracing session 122, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[558.258]    perfetto_c.cc:268393 Tracing session 122 ended, total sessions:0
+[558.305]    perfetto_c.cc:266631 Configured tracing session 123, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[564.719]    perfetto_c.cc:268393 Tracing session 123 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^22 warmup: witness 121.830 ms, commit 327.198 ms, PIOP 5579.902 ms, PCS 599.733 ms, witness→proof 6304.347 ms, proof 316016 B
+[564.769]    perfetto_c.cc:266631 Configured tracing session 124, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[568.850]    perfetto_c.cc:268393 Tracing session 124 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^22 sample 1/5: witness 214.922 ms, commit 357.779 ms, PIOP 3148.342 ms, PCS 642.331 ms, witness→proof 4008.907 ms, proof 316016 B
+[568.896]    perfetto_c.cc:266631 Configured tracing session 125, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[572.785]    perfetto_c.cc:268393 Tracing session 125 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^22 sample 2/5: witness 107.066 ms, commit 283.947 ms, PIOP 3182.671 ms, PCS 536.359 ms, witness→proof 3829.871 ms, proof 316016 B
+[572.835]    perfetto_c.cc:266631 Configured tracing session 126, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[576.694]    perfetto_c.cc:268393 Tracing session 126 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^22 sample 3/5: witness 107.580 ms, commit 289.891 ms, PIOP 3156.768 ms, PCS 532.042 ms, witness→proof 3799.187 ms, proof 316016 B
+[576.739]    perfetto_c.cc:266631 Configured tracing session 127, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[580.654]    perfetto_c.cc:268393 Tracing session 127 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^22 sample 4/5: witness 106.342 ms, commit 294.892 ms, PIOP 3211.363 ms, PCS 544.660 ms, witness→proof 3865.907 ms, proof 316016 B
+[580.703]    perfetto_c.cc:266631 Configured tracing session 128, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[584.921]    perfetto_c.cc:268393 Tracing session 128 ended, total sessions:0
+u32-mod32 binius64-ligerito 2^22 sample 5/5: witness 107.407 ms, commit 290.132 ms, PIOP 3528.981 ms, PCS 528.386 ms, witness→proof 4167.508 ms, proof 316016 B
+RESULT schema=native-mul/2 workload=u32-mod32 backend=binius64-ligerito log_multiplications=22 samples=5 witness_ms=107.406666 online_prover_ms=3759.56275 verify_ms=57.556208 proof_bytes=316016.0 peak_rss_bytes=25309872128
+Native multiplication results: /Users/johnwu/code/zk/f2z-pcs/PerfRuns/albert-requested-_f62mead/binius-pcs/rate2

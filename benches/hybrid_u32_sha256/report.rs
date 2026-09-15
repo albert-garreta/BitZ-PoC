@@ -9,6 +9,10 @@ pub(super) struct BiniusLigeritoIdentity {
     schema: String,
     target_bits: u32,
     component_bits: usize,
+    log_inv_rate: usize,
+    accounting: String,
+    union_bound_bits: f64,
+    round_by_round_bits: f64,
     oracles: Vec<BinaryOpenerIdentity>,
 }
 
@@ -38,6 +42,10 @@ impl BiniusLigeritoIdentity {
             schema: Self::SCHEMA.into(),
             target_bits: prepared.security().target_bits,
             component_bits: prepared.component_bits(),
+            log_inv_rate: prepared.log_inv_rate(),
+            accounting: prepared.accounting().name().into(),
+            union_bound_bits: prepared.security().union_bound_bits,
+            round_by_round_bits: prepared.security().round_by_round_bits,
             oracles: (0..prepared.oracle_specs().len())
                 .map(|i| BinaryOpenerIdentity::new(prepared.opener(i)))
                 .collect::<Result<_, _>>()?,
@@ -49,14 +57,25 @@ impl BiniusLigeritoIdentity {
         if self.schema != Self::SCHEMA
             || self.target_bits != TARGET_BITS
             || !(MIN_COMPONENT_BITS..=MAX_COMPONENT_BITS).contains(&self.component_bits)
+            || !(1..=3).contains(&self.log_inv_rate)
+            || !self.union_bound_bits.is_finite()
+            || !self.round_by_round_bits.is_finite()
             || self.oracles.is_empty()
         {
             return Err("invalid Binius-Ligerito identity or security budget".into());
         }
+        let gated_bits = match self.accounting.as_str() {
+            "union-bound" => self.union_bound_bits,
+            "round-by-round" => self.round_by_round_bits,
+            _ => return Err("invalid Binius-Ligerito accounting model".into()),
+        };
+        if gated_bits < f64::from(TARGET_BITS) {
+            return Err("Binius-Ligerito security gate not met".into());
+        }
         // Re-derive every ladder and Round-0 setting instead of accepting a
         // regime label or treating the whole-protocol target as an opener target.
         for oracle in &self.oracles {
-            let opener = f2z::binary_pcs::BinaryPcs::new(oracle.packed_log, self.component_bits)?;
+            let opener = f2z::binary_pcs::BinaryPcs::with_log_inv_rate(oracle.packed_log, self.component_bits, self.log_inv_rate)?;
             if *oracle != BinaryOpenerIdentity::new(&opener)? {
                 return Err("inconsistent Binius-Ligerito oracle configuration".into());
             }

@@ -167,10 +167,42 @@ impl PreparedHybrid {
             sha.verifier.log_witness_elems(),
         ])?;
         let ligerito = selection.resolve(geometry.packed_log(), security::LIGERITO_COMPONENT_BITS).map_err(Error::Config)?;
-        if ligerito.prover().initial_k != 4 || ligerito.prover().log_inv_rates[0] != opening::LOG_INV_RATE {
-            return Err(Error::Invalid("hybrid requires Ligerito rate 1/2 and initial_k=4"));
+        let log_inv_rate = ligerito.prover().log_inv_rates[0];
+        if ligerito.prover().initial_k != 4 || ![1, 3].contains(&log_inv_rate) {
+            return Err(Error::Invalid("hybrid requires Ligerito rate 1/2 or 1/8 and initial_k=4"));
         }
-        let security = security::account(&multiplication, &sha.verifier, &geometry, &ligerito)?;
+        // Rate 1/2 keeps the documented 106-bit component target and its
+        // byte-identical transcripts. Any other rate solves the smallest
+        // component target in 100..=112 whose whole-protocol union bound
+        // clears the 100-bit gate — the same smallest-clearing rule
+        // `src/binius_ligerito` applies — instead of a second constant.
+        let (ligerito, security) = if log_inv_rate == opening::LOG_INV_RATE {
+            let security = security::account(&multiplication, &sha.verifier, &geometry, &ligerito)?;
+            (ligerito, security)
+        } else {
+            let mut solved = None;
+            let mut last_error = None;
+            for target in 100..=112 {
+                let resolved = match selection.resolve(geometry.packed_log(), target) {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        last_error = Some(Error::Config(error));
+                        continue;
+                    }
+                };
+                let report =
+                    security::account_terms(&multiplication, &sha.verifier, &geometry, &resolved)?;
+                if report.algebraic_bits >= security::GATE_BITS {
+                    solved = Some((resolved, report));
+                    break;
+                }
+            }
+            solved.ok_or_else(|| {
+                last_error.unwrap_or(Error::Invalid(
+                    "no component target in 100..=112 clears the 100-bit composition gate",
+                ))
+            })?
+        };
         let ood = opening::ood_parameters(&ligerito)?.map(|(_, params)| params);
         Ok(Self {
             parameters,
@@ -200,6 +232,11 @@ impl PreparedHybrid {
 
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito { &self.ligerito }
     pub fn physical_packed_witness_logs(&self) -> [usize; 2] { self.geometry.physical_logs }
+    /// The shared opener's level-0 inverse-rate exponent, which is also the
+    /// rate both witnesses are committed at (1 = rate 1/2, 3 = rate 1/8).
+    pub fn log_inv_rate(&self) -> usize {
+        self.ligerito.prover().log_inv_rates[0]
+    }
 
     /// Generate z = x*y mod 2^32 and w = floor(x*y / 2^32), then commit
     /// the four 32-bit limbs and the chained SHA witness.
@@ -256,10 +293,10 @@ impl PreparedHybrid {
         packed_sha.resize(1 << self.geometry.physical_logs[1], F128::ZERO);
         drop(sha_pack_scope);
         let commit_mul_scope = tracing::info_span!("hc:commit_mul").entered();
-        let (c_mul, d_mul) = commit(&packed_mul, &self.geometry.params(0));
+        let (c_mul, d_mul) = commit(&packed_mul, &self.geometry.params(0, self.log_inv_rate()));
         drop(commit_mul_scope);
         let commit_sha_scope = tracing::info_span!("hc:commit_sha").entered();
-        let (c_sha, d_sha) = commit(&packed_sha, &self.geometry.params(1));
+        let (c_sha, d_sha) = commit(&packed_sha, &self.geometry.params(1, self.log_inv_rate()));
         drop(commit_sha_scope);
         let statement = Statement {
             parameters: self.parameters,
@@ -406,7 +443,10 @@ mod tests {
             let branch = (0..2).find(|&b| prepared.geometry.physical_logs[b] > prepared.geometry.logs[b]).expect("padded source");
             let padding_index = 1 << prepared.geometry.logs[branch];
             committed.packed[branch][padding_index] = F128::ONE;
-            let (commitment, data) = commit(&committed.packed[branch], &prepared.geometry.params(branch));
+            let (commitment, data) = commit(
+                &committed.packed[branch],
+                &prepared.geometry.params(branch, prepared.log_inv_rate()),
+            );
             committed.data[branch] = data;
             committed.statement.roots[branch] = commitment.root;
             // Both the RS codeword and Merkle root now authenticate the bad
@@ -426,14 +466,20 @@ mod tests {
         for logs in shapes {
             let g = opening::Geometry::new(logs).unwrap();
             assert_eq!(g.virtual_lane_log, 4);
-            assert_eq!(g.params(0).n_positions(), g.params(1).n_positions());
-            for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
+            for selection in [
+                crate::ligerito_flock::LigeritoSelection::JOHNSON,
+                crate::ligerito_flock::LigeritoSelection::MATCHED_UDR,
+                // The rate-1/8 Johnson opener (`custom:3:4`).
+                crate::ligerito_flock::LigeritoSelection::CustomJohnson { log_inv_rate: 3, initial_k: 4 },
+            ] {
                 let resolved = selection.resolve(g.packed_log(), security::LIGERITO_COMPONENT_BITS).unwrap();
                 let security = resolved.security();
                 assert!(security.validate().is_ok());
                 // The commit rate must equal the opener's level-0 rate.
-                assert_eq!(g.params(0).log_inv_rate, security.levels[0].log_inv_rate);
-                assert_eq!(g.params(1).log_inv_rate, security.levels[0].log_inv_rate);
+                let rate = resolved.prover().log_inv_rates[0];
+                assert_eq!(g.params(0, rate).n_positions(), g.params(1, rate).n_positions());
+                assert_eq!(g.params(0, rate).log_inv_rate, security.levels[0].log_inv_rate);
+                assert_eq!(g.params(1, rate).log_inv_rate, security.levels[0].log_inv_rate);
                 assert!(opening::ood_parameters(&resolved).is_ok());
             }
         }
@@ -560,6 +606,72 @@ mod tests {
                 assert!(prepared.verify(invalid.statement(), &forged).is_err());
             }
         }
+    }
+
+    /// Rate 1/8 (`custom:3:4`): the whole path — solved component target,
+    /// matching commit rate, Round 0, prove, verify, codec roundtrip and a
+    /// tamper rejection.
+    #[test]
+    fn rate_one_eighth_roundtrip_solves_component_target() {
+        let parameters = Parameters { multiplications: 1 << 15, sha_compressions: 4 };
+        let selection = crate::ligerito_flock::LigeritoSelection::CustomJohnson {
+            log_inv_rate: 3,
+            initial_k: 4,
+        };
+        let prepared = PreparedHybrid::new_with_ligerito(parameters, selection).unwrap();
+        assert_eq!(prepared.log_inv_rate(), 3);
+        let target = prepared.ligerito_configuration().security().target_security_bits;
+        assert!((100..=112).contains(&target), "solved component target {target}");
+        assert!(prepared.security().algebraic_bits >= 100.0);
+        // Johnson regime: Round 0 must be present.
+        assert!(prepared.ood_round().is_some());
+        let inputs: Vec<_> = (0..1u32 << 15)
+            .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
+            .collect();
+        let blocks = [[0xabcdef01; 16], [0x12345678; 16], [0xdeadbeef; 16], [0x76543210; 16]];
+        let committed = prepared.commit(&inputs, &blocks).unwrap();
+        let proof = prepared.prove(&committed).unwrap();
+        prepared.verify(committed.statement(), &proof).unwrap();
+        let bytes = proof.to_bytes();
+        let decoded = prepared.proof_from_bytes(committed.statement(), &bytes).unwrap();
+        prepared.verify(committed.statement(), &decoded).unwrap();
+        let mut changed = proof.clone();
+        changed.joint.value += F128::ONE;
+        assert!(prepared.verify(committed.statement(), &changed).is_err());
+        // The rate-1/2 preparation of the same shape commits differently.
+        let half = PreparedHybrid::new(parameters).unwrap();
+        let committed_half = half.commit(&inputs, &blocks).unwrap();
+        assert_ne!(committed_half.statement().roots, committed.statement().roots);
+        eprintln!(
+            "HYBRID_RATE18 component_target={target} algebraic_bits={:.3} proof_bytes={} (rate-1/2 proof_bytes={})",
+            prepared.security().algebraic_bits,
+            bytes.len(),
+            half.prove(&committed_half).map(|p| p.to_bytes().len()).unwrap_or(0),
+        );
+    }
+
+    /// Manual byte-identity pin (`protocol_digest` style): proves one fixed
+    /// deterministic small instance and prints the proof digest. Run before
+    /// and after a change that claims to preserve the rate-1/2 transcript;
+    /// matching HYBRID_DIGEST lines mean byte-identical proofs.
+    #[test]
+    fn hybrid_proof_digest_smoke() {
+        let parameters = Parameters { multiplications: 1 << 9, sha_compressions: 1 << 9 };
+        let inputs: Vec<_> = (0..1u32 << 9).map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i)).collect();
+        let blocks: Vec<[u32; 16]> = (0..1u32 << 9)
+            .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
+            .collect();
+        let prepared = PreparedHybrid::new(parameters).unwrap();
+        let committed = prepared.commit(&inputs, &blocks).unwrap();
+        let proof = prepared.prove(&committed).unwrap();
+        prepared.verify(committed.statement(), &proof).unwrap();
+        let bytes = proof.to_bytes();
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&bytes);
+        for root in &committed.statement().roots {
+            hasher.update(root);
+        }
+        eprintln!("HYBRID_DIGEST rate=1/2 bytes={} {}", bytes.len(), hasher.finalize().to_hex());
     }
 
     #[test]

@@ -71,6 +71,10 @@ impl Context {
             "security_scope":"fri-query-phase", "soundness_regime":"unique-decoding",
             "log_inv_rate":self.verifier.fri_params().rs_code().log_inv_rate(),
             "fri_queries":self.verifier.fri_params().n_test_queries(),
+            "fri_fold_arities":self.verifier.fri_params().fold_arities(),
+            "fri_log_message_len":self.verifier.fri_params().log_msg_len(),
+            "fri_final_challenges":self.verifier.fri_params().n_final_challenges(),
+            "hash":"SHA-256", "transcript":"StdChallenger", "fri_grinding_bits":0,
             "word_constraints":{"and":cs.n_and_constraints(),"imul":cs.n_imul_constraints(),
                 "zero":cs.n_zero_constraints(),"bmul":cs.n_bmul_constraints()}})
     }
@@ -224,8 +228,9 @@ mod tests {
 /// `log2` of the inverse Reed–Solomon rate of the BaseFold commitment:
 /// `F2Z_BINIUS_LOG_INV_RATE` (default 1 = rate 1/2, the Binius64 default).
 /// A lower rate needs fewer test queries (smaller proof) at the cost of a
-/// larger encoding.
-fn log_inv_rate() -> usize {
+/// larger encoding. The `binius64-ligerito` backend reads the same knob for
+/// its F2Z opener, so one campaign value sets the rate of both Binius rows.
+pub(super) fn log_inv_rate() -> usize {
     std::env::var("F2Z_BINIUS_LOG_INV_RATE")
         .map(|value| value.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be a usize"))
         .unwrap_or(1)

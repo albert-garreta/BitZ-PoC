@@ -23,6 +23,7 @@ fn main() {
         "src/main.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
         "../../benches/common/output.rs",
+        "../../benches/common/trace_capture.rs",
         "../../src/observability.rs",
         "../../src/observability/memory.rs",
     ] {
@@ -34,6 +35,30 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-env-changed=CARGO_ENCODED_RUSTFLAGS");
+    // The F2Z opener path dependency: record the parent repository's revision
+    // and whether its tracked tree is dirty. Cargo rebuilds the path dep on
+    // source change by itself; the parent campaign manifest records the exact
+    // tracked diff, and the .build.json sidecar pins the binary hash.
+    let f2z_root = root.join("../..");
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .arg("-C")
+            .arg(&f2z_root)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+    };
+    let f2z_revision = git(&["rev-parse", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let f2z_dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+        .map(|s| if s.trim().is_empty() { "clean" } else { "dirty" })
+        .unwrap_or("unknown");
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rustc-env=F2Z_REVISION={f2z_revision}");
+    println!("cargo:rustc-env=F2Z_DIRTY={f2z_dirty}");
     let rustc = Command::new(env::var_os("RUSTC").unwrap())
         .arg("-Vv")
         .output()

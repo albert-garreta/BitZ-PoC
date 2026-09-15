@@ -14,3 +14,9 @@ files were generated for reproducible standalone tests and benchmark builds.
 
 The upstream project declares these crates under `MIT OR Apache-2.0` and
 ships an MIT license with the repository.
+
+Local addition (2026-09-13, not upstream): `matrix_wengert::PreparedWengertEvaluator::
+apply_weighted`, the reverse pass driven by one Montgomery weight triple per row
+instead of one challenge and `x`, so a row can be weighted on `C` alone. Used by
+`f2z::piop::spartan::ecdsa_sha256` for both the prover's batched matrix MLE and
+the verifier's evaluation of it.

@@ -146,6 +146,9 @@ an alias and the canonical name to different values is an error):
 | `F2Z_BENCH_PASS` | — | `latency|memory|both` |
 | `F2Z_BENCH_LAMBDA` | — | security profile: `100` / `128` / `114` or a profile name (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`); unset = the bench's own default; a profile the bench's prime strategy cannot instantiate aborts with the admissible list (`pcs` has no IOP profile and only warns) |
 | `F2Z_BENCH_QUIET` | — | `1` mutes the harness's advisory `warning:` lines (deprecated aliases, the `pcs` `F2Z_BENCH_LAMBDA` notice, build-configuration hints); aborting errors are never muted |
+| `F2Z_BINIUS_LOG_INV_RATE` | — | Native BaseFold initial inverse-rate exponent; `1`, `2`, `3` select rates 1/2, 1/4, 1/8 |
+| `F2Z_BINIUS_LIGERITO_LOG_INV_RATE` | — | Native multiplication Binius–Ligerito initial inverse-rate exponent, `1..=3`; default `1` |
+| `F2Z_PLONKY3_LOG_INV_RATE` | — | Native multiplication Plonky3-FRI inverse-rate exponent, `1..=3`; default `3`. At least 100 queries, increased if needed for the native security target |
 
 **Unknown `F2Z_*` variables abort the bench** with the full known-knob list,
 so a typo'd knob can never silently do nothing. The registry lives in
@@ -185,7 +188,9 @@ if their measurement configurations were identical.
   lig_achieved_bits lig_l0_bits q_lo_log2 q_bits ood_bits threads reps
   commit_ms commit_peak_mb prove_ms prove_gp_ms
   prove_rs_ms prove_lig_ms prove_residual_ms prove_peak_mb verify_ms
-  proof_bytes proof_nonlig_bytes proof_lig_bytes`. Schema 2 (2026-09-08):
+  proof_bytes proof_nonlig_bytes proof_lig_bytes peak_rss_bytes`
+  (`peak_rss_bytes`, added 2026-09-13: the child's high-water resident set in
+  bytes; absent in older lines). Schema 2 (2026-09-08):
   the evaluation prime is transcript-sampled after the commitment,
   uniformly among the primes of `[2^q_lo_log2, 2^q_bits)` with
   `q_bits = min(113, 127 − t − W)`, the point follows, and both derivations

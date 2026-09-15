@@ -1,0 +1,50 @@
+% PROPOSED table with the tape + structured-tail-kernel build for the F2Z rows (bench_results/sha256-ecdsa-kernel-20260913-i4-10); Binius rows unchanged.
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}rlrrrrrrr@{}}
+    \toprule
+    \makecell{Msg.\\(KB)} & Scheme & \makecell{Witgen\\(ms)} & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & \makecell{Proof\\(KB)} & \makecell{Peak mem.\\(GB)} \\
+    \cmidrule(lr){4-5}\cmidrule(lr){6-7}
+     &  &  & 1 thr & 10 thr & 1 thr & 10 thr &  &  \\
+    \midrule
+    0.96 & \ftwoz-SNARK, rate $1/2$ & \textbf{3.02} & 93.4 & 50.9 & 19.5 & 11.3 & 117 & 1.33 \\
+     & \ftwoz-SNARK, rate $1/8$ & 3.03 & \textbf{92.7} & \textbf{50.6} & 19.2 & 11.2 & \textbf{75} & 1.33 \\
+     & Binius (UDR), rate $1/2$ & 9.58 & 148 & 57.3 & 11.3 & 5.69 & 362 & \textbf{0.85} \\
+     & Binius (UDR), rate $1/8$ & 9.46 & 179 & 62.1 & \textbf{11.2} & \textbf{5.58} & 266 & 0.89 \\
+     & Binius (Johnson), rate $1/2$ & 9.48 & 167 & 63.1 & 12.5 & 7.25 & 363 & 0.89 \\
+     & Binius (Johnson), rate $1/8$ & 9.49 & 189 & 68.4 & 11.9 & 6.68 & 192 & 0.92 \\
+    \addlinespace
+    1.98 & \ftwoz-SNARK, rate $1/2$ & 3.38 & \textbf{103} & \textbf{52.7} & 20.0 & 11.4 & 119 & 1.34 \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{3.35} & 106 & 53.0 & 20.0 & 11.3 & \textbf{76} & 1.34 \\
+     & Binius (UDR), rate $1/2$ & 9.67 & 148 & 57.6 & \textbf{11.4} & 5.81 & 362 & \textbf{0.89} \\
+     & Binius (UDR), rate $1/8$ & 9.79 & 177 & 63.3 & 11.5 & \textbf{5.66} & 266 & 0.93 \\
+     & Binius (Johnson), rate $1/2$ & 9.59 & 161 & 63.8 & 12.5 & 7.35 & 364 & 0.93 \\
+     & Binius (Johnson), rate $1/8$ & 9.52 & 196 & 69.8 & 12.1 & 6.97 & 193 & 0.96 \\
+    \addlinespace
+    4.03 & \ftwoz-SNARK, rate $1/2$ & 2.37 & \textbf{116} & \textbf{55.7} & 21.2 & 11.9 & 125 & 1.33 \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.28} & 120 & 57.2 & 21.2 & 11.5 & \textbf{82} & 1.34 \\
+     & Binius (UDR), rate $1/2$ & 9.64 & 150 & 57.2 & \textbf{11.7} & 5.89 & 362 & \textbf{0.89} \\
+     & Binius (UDR), rate $1/8$ & 9.78 & 177 & 63.3 & 11.8 & \textbf{5.79} & 266 & 0.93 \\
+     & Binius (Johnson), rate $1/2$ & 9.60 & 161 & 63.4 & 12.9 & 7.42 & 364 & 0.93 \\
+     & Binius (Johnson), rate $1/8$ & 12.2 & 190 & 69.9 & 12.5 & 6.96 & 193 & 0.96 \\
+    \addlinespace
+    8.13 & \ftwoz-SNARK, rate $1/2$ & 2.36 & 153 & 63.6 & 23.3 & 12.1 & 135 & 1.33 \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.34} & \textbf{151} & 63.3 & 23.3 & 11.8 & \textbf{92} & 1.35 \\
+     & Binius (UDR), rate $1/2$ & 10.3 & 167 & \textbf{60.3} & 12.8 & 6.18 & 394 & \textbf{0.95} \\
+     & Binius (UDR), rate $1/8$ & 10.3 & 216 & 70.3 & \textbf{12.7} & \textbf{6.13} & 289 & 1.03 \\
+     & Binius (Johnson), rate $1/2$ & 11.1 & 174 & 67.0 & 14.2 & 8.12 & 376 & 1.03 \\
+     & Binius (Johnson), rate $1/8$ & 11.0 & 227 & 76.1 & 13.6 & 7.38 & 199 & 1.08 \\
+    \addlinespace
+    65.47 & \ftwoz-SNARK, rate $1/2$ & 4.64 & 637 & 165 & 55.7 & 19.2 & 179 & 1.55 \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{4.23} & 635 & 164 & 55.7 & 19.4 & \textbf{125} & \textbf{1.54} \\
+     & Binius (UDR), rate $1/2$ & 12.3 & \textbf{218} & \textbf{73.1} & 22.4 & 8.39 & 394 & 1.67 \\
+     & Binius (UDR), rate $1/8$ & 12.8 & 269 & 84.3 & \textbf{22.3} & \textbf{7.93} & 289 & 1.77 \\
+     & Binius (Johnson), rate $1/2$ & 12.0 & 237 & 80.7 & 23.8 & 9.76 & 375 & 1.76 \\
+     & Binius (Johnson), rate $1/8$ & 12.0 & 280 & 91.0 & 23.1 & 9.58 & 199 & 1.82 \\
+    \bottomrule
+  \end{tabular}
+  \caption{One SHA-256 hash of a message of $64(N-1)$ bytes ($N = 2^4, \ldots, 2^7, 2^{10}$ compressions, padding block included) followed by one P-256 ECDSA verification of the digest, non-ZK, $\lambda = 100$. \ftwoz-SNARK: integer R1CS with $\FF_2$-virtualization (\emph{Split} mode), round-by-round economic accounting, Johnson-regime Ligerito opener with Round 0 at the stated rate. Binius (UDR): the native SHA-256 circuit and complete-arithmetic P-256 gadget, ring switching and BaseFold at the stated rate, $100$-bit FRI query target (not a whole-protocol bound). Binius (Johnson): the identical circuit and PIOP with every oracle committed and opened by the \ftwoz\ opener, gated at $100$ bits round-by-round. \emph{Witgen} is the native witness generation; \emph{prover} the complete prover after witness generation, commitment included; \emph{verifier} the complete verification of the decoded proof; \emph{proof} the complete proof material ($1$\,KB $= 1000$ bytes); \emph{peak mem.} the high-water resident set of the whole worker process, relation construction included ($1$\,GB $= 2^{30}$ bytes). Witgen and peak memory are from the $10$-thread runs; proof sizes are identical across thread counts. Bold marks the best displayed value in each column and size. Apple M5, 24\,GB; every scheme built with fat LTO, one codegen unit and \texttt{-C target-cpu=native}; medians of $3$ runs after one warm-up.}
+  \label{tab:sha256-ecdsa}
+\end{table}

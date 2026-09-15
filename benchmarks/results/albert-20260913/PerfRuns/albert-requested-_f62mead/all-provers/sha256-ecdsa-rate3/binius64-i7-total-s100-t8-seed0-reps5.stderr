@@ -1,0 +1,32 @@
+[791.373]    perfetto_c.cc:266631 Configured tracing session 1, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[792.046]    perfetto_c.cc:268393 Tracing session 1 ended, total sessions:0
+[792.092]    perfetto_c.cc:266631 Configured tracing session 2, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[793.040]    perfetto_c.cc:268393 Tracing session 2 ended, total sessions:0
+[793.091]    perfetto_c.cc:266631 Configured tracing session 3, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[793.878]    perfetto_c.cc:268393 Tracing session 3 ended, total sessions:0
+[793.932]    perfetto_c.cc:266631 Configured tracing session 4, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[794.716]    perfetto_c.cc:268393 Tracing session 4 ended, total sessions:0
+[794.768]    perfetto_c.cc:266631 Configured tracing session 5, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[795.578]    perfetto_c.cc:268393 Tracing session 5 ended, total sessions:0
+[795.635]    perfetto_c.cc:266631 Configured tracing session 6, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[796.438]    perfetto_c.cc:268393 Tracing session 6 ended, total sessions:0
+[796.495]    perfetto_c.cc:266631 Configured tracing session 7, #sources:1, duration:0 ms, #buffers:1, total buffer size:65536 KB, total sessions:1, uid:0 session name: ""
+[797.328]    perfetto_c.cc:268393 Tracing session 7 ended, total sessions:0
+        6.09 real        22.60 user         0.97 sys
+          1111359488  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              114347  page reclaims
+                 245  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  83  voluntary context switches
+               92059  involuntary context switches
+        115748777837  instructions retired
+         68332605370  cycles elapsed
+          1082672472  peak memory footprint

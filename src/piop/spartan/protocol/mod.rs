@@ -1216,7 +1216,7 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     let scopes = &domains.scopes;
 
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_prefix(transcript, prefix, witness, &binding, options)?;
+    let proved = prove_piop(transcript, prefix, witness, &binding, options)?;
     let prime = &proved.prime;
 
     // Steps 5.1–5.3: the runtime-q F2Z opening (one chunk by construction).
@@ -1284,7 +1284,7 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
 
     let (binding, ood) =
         bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
-    let verified = verify_prefix(transcript, prefix, &binding, &proof.prefix)?;
+    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
@@ -1366,7 +1366,7 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
 
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_prefix(transcript, prefix, witness, &binding, options)?;
+    let proved = prove_piop(transcript, prefix, witness, &binding, options)?;
     let prime = &proved.prime;
 
     let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime.arith)?;
@@ -1449,7 +1449,7 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
 
     let (binding, ood) =
         bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
-    let verified = verify_prefix(transcript, prefix, &binding, &proof.prefix)?;
+    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
 
     let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime.arith)?;
@@ -1520,7 +1520,7 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
 
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_prefix(transcript, prefix, witness, &binding, options)?;
+    let proved = prove_piop(transcript, prefix, witness, &binding, options)?;
     let prime = &proved.prime;
     let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime.arith)?;
     let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime.arith)?
@@ -1612,7 +1612,7 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
 
     let (binding, ood) =
         bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
-    let verified = verify_prefix(transcript, prefix, &binding, &proof.prefix)?;
+    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
     let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime.arith)?;
     let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
@@ -1699,7 +1699,7 @@ pub struct VerifiedPrefix {
 /// grinding boundary, the Step-2 prime draw and relation projection, the
 /// Spartan PIOP under per-draw grinding, bitification and the terminal
 /// boundary.
-pub fn prove_prefix<T: Transcript, S: RelationSpec>(
+pub fn prove_piop<T: Transcript, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     witness: &S::Witness,
@@ -1779,8 +1779,8 @@ pub fn prove_prefix<T: Transcript, S: RelationSpec>(
     })
 }
 
-/// Verifier twin of [`prove_prefix`].
-pub fn verify_prefix<T: Transcript, S: RelationSpec>(
+/// Verifier twin of [`prove_piop`].
+pub fn verify_piop<T: Transcript, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     binding: &[u8; 32],

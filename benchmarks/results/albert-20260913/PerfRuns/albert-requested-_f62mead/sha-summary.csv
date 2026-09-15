@@ -1,0 +1,7 @@
+method,rate,samples,setup_ms,witness_ms,commit_ms,prove_ms,witness_to_proof_ms,verify_ms,proof_material_bytes,peak_rss_bytes,source
+binius64,1/2,5,671.237375,21.006999999999998,30.881375,548.5281249999999,574.5085829999999,114.803,393776,1025736704,all-provers/sha256-ecdsa-rate1/binius64-i7-total-s100-t8-seed0-reps5.result.json
+f2z-split,1/2,5,1619.7871670000002,3.838334,0.702083,157.90154099999998,162.836625,23.920625,135337,1301987328,all-provers/sha256-ecdsa-rate1/f2z-split-i7-total-s100-t8-seed0-reps5.result.json
+binius64,1/4,5,642.208917,19.352375,60.602583,532.8460419999999,553.4643749999999,120.439875,303152,1046036480,all-provers/sha256-ecdsa-rate2/binius64-i7-total-s100-t8-seed0-reps5.result.json
+f2z-split,1/4,5,1707.75875,3.808417,0.789417,86.738,90.441042,22.700542000000002,102937,1306624000,all-provers/sha256-ecdsa-rate2/f2z-split-i7-total-s100-t8-seed0-reps5.result.json
+binius64,1/8,5,671.900834,21.128458,122.38024999999999,662.502083,683.63925,119.60383300000001,289200,1111359488,all-provers/sha256-ecdsa-rate3/binius64-i7-total-s100-t8-seed0-reps5.result.json
+f2z-split,1/8,5,1611.071083,4.3495,1.254708,107.9245,112.274,19.872500000000002,92433,1304330240,all-provers/sha256-ecdsa-rate3/f2z-split-i7-total-s100-t8-seed0-reps5.result.json

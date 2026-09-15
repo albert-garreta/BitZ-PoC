@@ -59,15 +59,16 @@ fn proof_bytes_and_verifier_allocations() {
             let verify_peak = peak_memory::peak_bytes().saturating_sub(live);
             let challenge = prover.get_challenge::<u128>();
             assert_eq!(challenge, verifier.get_challenge::<u128>());
-            // Captured before extracting the shared MLEs and streaming verifier evaluation.
+            // The 128-bit pins predate shared-MLE extraction. The 100-bit pins
+            // were refreshed from commit 2733f5b, before the Wengert conversion change.
             let (expected_digest, expected_challenge) = match (target, mode) {
                 (100, OuterMode::Split) => (
-                    "b3cf1eb6301418b3bf5e918c96bc4bb7a62972f4e1021b0468fd905e225ca553",
-                    116463732241909113811698086375930678246,
+                    "96000cbe490d85af4041757e13a2765fe9a7d460731e647dc756a90405cdb491",
+                    290968065569492799185031104448506609145,
                 ),
                 (100, OuterMode::AllRows) => (
-                    "f44051c3481459d232af49cac0e6a751b6fb1ec30c23bbc95a19f3b836312fc4",
-                    286519411177143145883703494463079886416,
+                    "c9db6967611127613f6a615743824ca325237831ca35526b29c4e6e159eb3d7b",
+                    228532452576271292614043867469500230475,
                 ),
                 (128, OuterMode::Split) => (
                     "d12a3c9c05bc060e1fec4a3c5e05a1195e66a0a8bb3f05f5a69f023ad91f5fcd",

@@ -1,0 +1,1048 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index bbc9147..d6361fe 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -283,6 +283,10 @@ required-features = ["span-metrics", "bench-internals"]
+ name = "binius_probe"
+ required-features = ["span-metrics", "hybrid"]
+ 
++[[example]]
++name = "binius_config_audit"
++required-features = ["binius64-bench"]
++
+ [[example]]
+ name = "hybrid_probe"
+ required-features = ["span-metrics", "hybrid"]
+diff --git a/benches/common/mod.rs b/benches/common/mod.rs
+index 2ce9051..b69278b 100644
+--- a/benches/common/mod.rs
++++ b/benches/common/mod.rs
+@@ -179,6 +179,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
+     "F2Z_PAR_CHUNK",
+     // Controlled BabyBear terminal-claim PCS comparison trace.
+     "F2Z_BINIUS_LOG_INV_RATE",
++    "F2Z_BINIUS_LIGERITO_LOG_INV_RATE",
++    "F2Z_PLONKY3_LOG_INV_RATE",
+     // u64 native-mul comparison: lower the F2Z row side by k (see
+     // benches/mul_e2e_compare/f2z.rs::u64_split_shift).
+     "F2Z_U64_SPLIT_SHIFT",
+diff --git a/benches/mul_e2e_compare/binius.rs b/benches/mul_e2e_compare/binius.rs
+index b4f47c6..c582c32 100644
+--- a/benches/mul_e2e_compare/binius.rs
++++ b/benches/mul_e2e_compare/binius.rs
+@@ -71,6 +71,10 @@ impl Context {
+             "security_scope":"fri-query-phase", "soundness_regime":"unique-decoding",
+             "log_inv_rate":self.verifier.fri_params().rs_code().log_inv_rate(),
+             "fri_queries":self.verifier.fri_params().n_test_queries(),
++            "fri_fold_arities":self.verifier.fri_params().fold_arities(),
++            "fri_log_message_len":self.verifier.fri_params().log_msg_len(),
++            "fri_final_challenges":self.verifier.fri_params().n_final_challenges(),
++            "hash":"SHA-256", "transcript":"StdChallenger", "fri_grinding_bits":0,
+             "word_constraints":{"and":cs.n_and_constraints(),"imul":cs.n_imul_constraints(),
+                 "zero":cs.n_zero_constraints(),"bmul":cs.n_bmul_constraints()}})
+     }
+diff --git a/benches/mul_e2e_compare/binius_ligerito.rs b/benches/mul_e2e_compare/binius_ligerito.rs
+index 7efe79c..99bad33 100644
+--- a/benches/mul_e2e_compare/binius_ligerito.rs
++++ b/benches/mul_e2e_compare/binius_ligerito.rs
+@@ -1,6 +1,6 @@
+ //! `binius64-ligerito`: Binius64's native multiplication circuit and PIOP
+ //! (the same wires as the `binius64` backend), with every oracle committed
+-//! and opened by the F2Z opener — rate 1/8, Johnson-regime Ligerito with fold
++//! and opened by the F2Z opener — selectable rate, Johnson-regime Ligerito with fold
+ //! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
+ //! a union bound, the yardstick of the `f2z` rows.
+ use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
+@@ -21,7 +21,14 @@ pub(super) struct Context {
+ impl Context {
+     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
+         let (circuit, wires) = binius::compile(&corpus);
+-        let prepared = Prepared::new(circuit.constraint_system()).expect("binius64-ligerito setup");
++        let rate = std::env::var("F2Z_BINIUS_LIGERITO_LOG_INV_RATE")
++            .map(|s| {
++                s.parse()
++                    .expect("F2Z_BINIUS_LIGERITO_LOG_INV_RATE must be 1, 2, or 3")
++            })
++            .unwrap_or(f2z::binary_pcs::LOG_INV_RATE);
++        let prepared = Prepared::with_log_inv_rate(circuit.constraint_system(), rate)
++            .expect("binius64-ligerito setup");
+         Self {
+             corpus,
+             circuit,
+@@ -46,10 +53,14 @@ impl Context {
+         json!({
+             "piop": piop,
+             "pcs": "F2Z opener: ring switching + Johnson-regime Ligerito with fold/query grinding and Round 0",
+-            "log_inv_rate": f2z::binary_pcs::LOG_INV_RATE,
++            "log_inv_rate": witness.params().log_inv_rate,
+             "regime": "johnson-ood",
+             "target_bits": security.target_bits,
+             "whole_protocol_bits": security.algebraic_bits,
++            "hash": "BLAKE3", "transcript": "BLAKE3",
++            "security_terms": security.terms.iter().map(|term|
++                json!({"name":term.name, "error_bound":term.error_bound})
++            ).collect::<Vec<_>>(),
+             "binding_term": security.binding_term().map(|t| format!("{}:{:.2}", t.name, -t.error_bound.log2())),
+             "ligerito_component_bits": self.prepared.component_bits(),
+             "level0_queries": witness.level0_queries(),
+@@ -57,6 +68,10 @@ impl Context {
+             "level0_fold_grinding_bits": witness.level0_fold_grinding_bits(),
+             "ood_grinding_bits": witness.ood_grinding_bits(),
+             "oracle_logs": self.prepared.oracle_specs().iter().map(|s| s.log_msg_len).collect::<Vec<_>>(),
++            "oracles": (0..self.prepared.oracle_specs().len()).map(|i| {
++                let pcs = self.prepared.opener(i);
++                json!({"configuration":pcs.config(), "ood_grinding_bits":pcs.ood_grinding_bits()})
++            }).collect::<Vec<_>>(),
+             "word_constraints": {"and": cs.n_and_constraints(), "imul": cs.n_imul_constraints(),
+                 "zero": cs.n_zero_constraints(), "bmul": cs.n_bmul_constraints()},
+         })
+diff --git a/benches/mul_e2e_compare/plonky3.rs b/benches/mul_e2e_compare/plonky3.rs
+index b5f14dc..9a10d87 100644
+--- a/benches/mul_e2e_compare/plonky3.rs
++++ b/benches/mul_e2e_compare/plonky3.rs
+@@ -43,11 +43,25 @@ type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, ValMmcs, ChallengeMmcs>;
+ type Config = StarkConfig<Pcs, Challenge, Challenger>;
+ 
+ fn configuration(trace_len: usize) -> (Config, StarkSecurityParams) {
++    let rate = std::env::var("F2Z_PLONKY3_LOG_INV_RATE")
++        .map(|s| {
++            s.parse()
++                .expect("F2Z_PLONKY3_LOG_INV_RATE must be 1, 2, or 3")
++        })
++        .unwrap_or(LOG_BLOWUP);
++    configuration_at_rate(trace_len, rate)
++}
++
++fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkSecurityParams) {
++    assert!(
++        (1..=3).contains(&log_blowup),
++        "log inverse rate must be 1, 2, or 3"
++    );
+     assert!(trace_len.is_power_of_two());
+     let perm = default_goldilocks_poseidon2_8();
+     let mmcs = ValMmcs::new(Hash::new(perm.clone()), Compress::new(perm.clone()), 0);
+-    let fri = FriParameters {
+-        log_blowup: LOG_BLOWUP,
++    let mut fri = FriParameters {
++        log_blowup,
+         log_final_poly_len: 0,
+         max_log_arity: 1,
+         num_queries: NUM_QUERIES,
+@@ -68,6 +82,16 @@ fn configuration(trace_len: usize) -> (Config, StarkSecurityParams) {
+     );
+     let quotient_chunks = 1 << get_log_num_quotient_chunks::<Val, _>(&MulAir, layout, trace_len, 0);
+     security.num_batched_functions = TRACE_WIDTH + EXTENSION_DEGREE * quotient_chunks;
++    // Preserve the existing 100-query baseline. Denser codes may require
++    // more queries to meet the same native AIR/FRI security target.
++    while ProvenSecurity::compute(&security, trace_len).security_bits() < TARGET_BITS {
++        assert!(
++            fri.num_queries < 1024,
++            "no eligible Plonky3-FRI query count"
++        );
++        fri.num_queries += 1;
++        security.fri_num_queries = fri.num_queries;
++    }
+     require_security(ProvenSecurity::compute(&security, trace_len));
+     let pcs = Pcs::new(Radix2DitParallel::default(), mmcs, fri);
+     (Config::new(pcs, Challenger::new(perm)), security)
+@@ -106,7 +130,7 @@ impl Context {
+             "target_bits":TARGET_BITS, "security_scope":"proven round-by-round",
+             "proven_bits":security.security_bits(), "unique_decoding_bits":security.unique_decoding_bits,
+             "list_decoding_bits":security.list_decoding_bits, "hash":"Poseidon2Goldilocks-width8",
+-            "log_inv_rate":LOG_BLOWUP, "num_queries":NUM_QUERIES, "max_log_arity":1,
++            "log_inv_rate":self.security.fri_log_blowup, "num_queries":self.security.fri_num_queries, "max_log_arity":1,
+             "log_final_poly_len":0, "commit_pow_bits":0, "query_pow_bits":0,
+             "trace_width":TRACE_WIDTH, "num_constraints":self.security.num_constraints,
+             "max_constraint_degree":self.security.air_max_constraint_degree,
+@@ -226,27 +250,31 @@ mod tests {
+     }
+     #[test]
+     fn actual_air_and_every_supported_shape_reach_security_target() {
+-        for exponent in 4..=29 {
+-            let (_, params) = configuration(1 << exponent);
+-            assert_eq!(params.num_constraints, 139);
+-            assert_eq!(params.air_max_constraint_degree, 2);
+-            assert_eq!(params.max_combo, 1);
+-            assert_eq!(params.num_batched_functions, 142);
+-            require_security(ProvenSecurity::compute(&params, 1 << exponent));
++        for rate in 1..=3 {
++            for exponent in 4..=29 {
++                let (_, params) = configuration_at_rate(1 << exponent, rate);
++                assert_eq!(params.num_constraints, 139);
++                assert_eq!(params.air_max_constraint_degree, 2);
++                assert_eq!(params.max_combo, 1);
++                assert_eq!(params.num_batched_functions, 142);
++                require_security(ProvenSecurity::compute(&params, 1 << exponent));
++            }
+         }
+     }
+     #[test]
+     fn fri_proof_roundtrip_and_opening_tamper_rejection() {
+-        let corpus = boundary_corpus();
+-        let (config, security) = configuration(corpus.len());
+-        let mut proof = prove(&config, &MulAir, generate(&corpus), &[]);
+-        verify(&config, &MulAir, &proof, &[]).unwrap();
+-        require_security(proof.proven_security(&security));
+-        let bytes = postcard::to_allocvec(&proof).unwrap();
+-        assert!(!bytes.is_empty());
+-        let decoded: Proof<Config> = postcard::from_bytes(&bytes).unwrap();
+-        verify(&config, &MulAir, &decoded, &[]).unwrap();
+-        proof.opened_values.trace_local[4] += Challenge::ONE;
+-        assert!(verify(&config, &MulAir, &proof, &[]).is_err());
++        for rate in 1..=3 {
++            let corpus = boundary_corpus();
++            let (config, security) = configuration_at_rate(corpus.len(), rate);
++            let mut proof = prove(&config, &MulAir, generate(&corpus), &[]);
++            verify(&config, &MulAir, &proof, &[]).unwrap();
++            require_security(proof.proven_security(&security));
++            let bytes = postcard::to_allocvec(&proof).unwrap();
++            assert!(!bytes.is_empty());
++            let decoded: Proof<Config> = postcard::from_bytes(&bytes).unwrap();
++            verify(&config, &MulAir, &decoded, &[]).unwrap();
++            proof.opened_values.trace_local[4] += Challenge::ONE;
++            assert!(verify(&config, &MulAir, &proof, &[]).is_err());
++        }
+     }
+ }
+diff --git a/benches/sha256_ecdsa_compare.rs b/benches/sha256_ecdsa_compare.rs
+index a634cc0..380795e 100644
+--- a/benches/sha256_ecdsa_compare.rs
++++ b/benches/sha256_ecdsa_compare.rs
+@@ -37,6 +37,8 @@ struct Args {
+     export_fixture: Option<std::path::PathBuf>,
+     #[arg(long)]
+     binius64_worker: Option<std::path::PathBuf>,
++    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
++    binius_log_inv_rate: u8,
+ }
+ 
+ impl Args {
+@@ -77,6 +79,8 @@ fn dispatch_binius(args: &Args) -> Result<()> {
+     command.args([
+         "--method",
+         "binius64",
++        "--log-inv-rate",
++        &args.binius_log_inv_rate.to_string(),
+         "--r",
+         &args.r.to_string(),
+         "--c",
+@@ -512,6 +516,7 @@ mod reporting_tests {
+             fixture: None,
+             export_fixture: None,
+             binius64_worker: None,
++            binius_log_inv_rate: 1,
+         };
+         let fixture = Fixture::generate(3, 0).unwrap();
+         let row = || Measurements {
+@@ -556,7 +561,6 @@ mod reporting_tests {
+     }
+ }
+ 
+-
+ #[cfg(test)]
+ mod cli_tests {
+     use super::Args;
+diff --git a/benchmarks/binius64/README.md b/benchmarks/binius64/README.md
+index 03eb507..216dd73 100644
+--- a/benchmarks/binius64/README.md
++++ b/benchmarks/binius64/README.md
+@@ -49,7 +49,7 @@ Both valid s forms are accepted. Supported exponents are 3 through 16.
+ 
+ Proofs are explicitly non-ZK. The public-input/witness distinction specifies the
+ relation; it does not promise witness privacy. The worker uses SHA-256 Merkle
+-hashing and BaseFold at rate 1/2, with an explicit 100/128 FRI query target.
++hashing and BaseFold at a selectable initial rate, defaulting to 1/2, with an explicit 100/128 FRI query target. Use `--binius-log-inv-rate 1|2|3` on the Python runner (or `--log-inv-rate` on the isolated worker) for rates 1/2, 1/4, and 1/8. The runner records this choice and rejects resuming a directory with a different rate.
+ Rows record the actual query count and security model separately.
+ 
+ Setup is reusable across messages, keys and signatures. Fixtures/signing are
+diff --git a/benchmarks/binius64/src/main.rs b/benchmarks/binius64/src/main.rs
+index cb42050..7aca4d7 100644
+--- a/benchmarks/binius64/src/main.rs
++++ b/benchmarks/binius64/src/main.rs
+@@ -50,6 +50,7 @@ struct Args {
+     exponent: u8,
+     threads: usize,
+     target: usize,
++    log_inv_rate: usize,
+     reps: usize,
+     seed: u64,
+     fixture: Option<PathBuf>,
+@@ -64,6 +65,7 @@ impl Args {
+             exponent: 0,
+             threads: 1,
+             target: 100,
++            log_inv_rate: 1,
+             reps: 3,
+             seed: 0,
+             fixture: None,
+@@ -82,6 +84,7 @@ impl Args {
+                 "--r" => r = Some(value.parse()?),
+                 "--c" => c = Some(value.parse()?),
+                 "--target" => out.target = value.parse()?,
++                "--log-inv-rate" => out.log_inv_rate = value.parse()?,
+                 "--threads" => out.threads = value.parse()?,
+                 "--reps" => out.reps = value.parse()?,
+                 "--seed" => out.seed = value.parse()?,
+@@ -97,6 +100,9 @@ impl Args {
+         if ![100, 128].contains(&out.target) || out.threads == 0 || out.reps == 0 {
+             return Err("require target 100/128 and positive threads/reps".into());
+         }
++        if !(1..=3).contains(&out.log_inv_rate) {
++            return Err("--log-inv-rate must be 1, 2, or 3".into());
++        }
+         Ok(out)
+     }
+ }
+@@ -129,7 +135,7 @@ fn verify(
+ fn main() -> Result<()> {
+     if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
+         println!(
+-            "binius64-sha256-ecdsa --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N] [--fixture PATH] [--self-test]\n\
++            "binius64-sha256-ecdsa --r R --c C [--target 100|128] [--log-inv-rate 1|2|3] [--threads N] [--reps N] [--seed N] [--fixture PATH] [--self-test]\n\
+             Standard P-256, non-ZK; 3 <= R+C <= 16. --build-info prints pinned source/build metadata."
+         );
+         return Ok(());
+@@ -157,7 +163,7 @@ fn main() -> Result<()> {
+     let circuit = builder.build();
+     let verifier = Verifier::<Sha256HashSuite>::setup_with_security_bits(
+         circuit.constraint_system().clone(),
+-        1,
++        args.log_inv_rate,
+         args.target,
+     )?;
+     let prover = Prover::<OptimalPackedB128, Sha256HashSuite>::setup(verifier.clone())?;
+@@ -265,7 +271,7 @@ fn main() -> Result<()> {
+                 "outer_ms":null, "inner_ms":null, "folding_ms":null,
+                 "proof_object_bytes":proof_bytes, "proof_material_bytes":proof_bytes, "phases_ms":phases,
+                 "security":{"model":"Binius IOP and BaseFold FRI; query target only", "pcs":"BaseFold", "fri_query_target_bits":args.target,
+-                "fri_queries":verifier.fri_params().n_test_queries(), "log_inv_rate":1, "merkle_hash":"SHA-256", "transcript":"StdChallenger",
++                "fri_queries":verifier.fri_params().n_test_queries(), "log_inv_rate":verifier.fri_params().rs_code().log_inv_rate(), "merkle_hash":"SHA-256", "transcript":"StdChallenger",
+                 "fri_fold_arities":verifier.fri_params().fold_arities(), "fri_log_message_len":verifier.fri_params().log_msg_len(),
+                 "fri_final_challenges":verifier.fri_params().n_final_challenges(), "extension_field_bits":128,
+                     "statistical_bits_lower_bound":null},
+@@ -350,14 +356,16 @@ mod tests {
+                     .is_err()
+             );
+         }
+-        for target in [100, 128] {
+-            let verifier =
+-                Verifier::<Sha256HashSuite>::setup_with_security_bits(cs.clone(), 1, target)
+-                    .unwrap();
+-            assert_eq!(
+-                verifier.fri_params().n_test_queries(),
+-                binius_verifier::fri::calculate_n_test_queries(target, 1)
+-            );
++        for rate in 1..=3 {
++            for target in [100, 128] {
++                let verifier =
++                    Verifier::<Sha256HashSuite>::setup_with_security_bits(cs.clone(), rate, target)
++                        .unwrap();
++                assert_eq!(
++                    verifier.fri_params().n_test_queries(),
++                    binius_verifier::fri::calculate_n_test_queries(target, rate)
++                );
++            }
+         }
+         let default = Verifier::<Sha256HashSuite>::setup(cs, 1).unwrap();
+         assert_eq!(
+@@ -366,6 +374,61 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn changed_message_and_signature_fail_the_composed_circuit() {
++        let fixture = SignedFixture::generate(3, 0).unwrap();
++        let builder = CircuitBuilder::new();
++        let relation = Sha256Ecdsa::new(&builder, 3).unwrap();
++        let circuit = builder.build();
++        for field in ["message", "r", "s"] {
++            let mut changed = fixture.clone();
++            match field {
++                "message" => changed.message[0] ^= 1,
++                "r" => changed.r[31] ^= 1,
++                "s" => changed.s[31] ^= 1,
++                _ => unreachable!(),
++            }
++            let mut filler = circuit.new_witness_filler();
++            // Do not run fixture validation: the circuit must reject the
++            // changed instance even when all arithmetic hints are recomputed.
++            relation
++                .populate(
++                    &mut filler,
++                    &changed.message,
++                    &changed.qx,
++                    &changed.qy,
++                    &changed.r,
++                    &changed.s,
++                )
++                .unwrap();
++            if circuit.populate_wire_witness(&mut filler).is_ok() {
++                assert!(
++                    circuit
++                        .constraint_system()
++                        .verify(&filler.into_value_vec())
++                        .is_err(),
++                    "accepted changed {field}"
++                );
++            }
++        }
++        assert_eq!(binius_circuits::sha256_ecdsa::message_len(6).unwrap(), 4032);
++        let builder = CircuitBuilder::new();
++        let relation = Sha256Ecdsa::new(&builder, 6).unwrap();
++        let circuit = builder.build();
++        assert!(
++            relation
++                .populate(
++                    &mut circuit.new_witness_filler(),
++                    &vec![0; 4096],
++                    &fixture.qx,
++                    &fixture.qy,
++                    &fixture.r,
++                    &fixture.s,
++                )
++                .is_err()
++        );
++    }
++
+     #[test]
+     fn shared_standard_and_exceptional_fixtures_prove_and_bind_public_inputs() {
+         let builder = CircuitBuilder::new();
+@@ -398,6 +461,25 @@ mod tests {
+             let bytes = transcript.finalize();
+             drop(witness);
+             verify(&verifier, &fixture, bytes.clone()).unwrap();
++            // Bypass fixture validation to exercise the native verifier's
++            // binding of every public word, including the exponent and key.
++            let expected = public_words(
++                fixture.log_compressions,
++                &fixture.qx,
++                &fixture.qy,
++                &fixture.r,
++                &fixture.s,
++            );
++            for index in 0..expected.len() {
++                let mut changed = expected.clone();
++                changed[index].0 ^= 1;
++                let mut transcript =
++                    VerifierTranscript::new(StdChallenger::default(), bytes.clone());
++                assert!(
++                    verifier.verify(&changed, &mut transcript).is_err(),
++                    "accepted changed public word {index}"
++                );
++            }
+             let mut other = fixture.clone();
+             other.s = (-p256::ecdsa::Signature::from_scalars(other.r, other.s)
+                 .unwrap()
+diff --git a/docs/bench-schema.md b/docs/bench-schema.md
+index f628f7b..b94af77 100644
+--- a/docs/bench-schema.md
++++ b/docs/bench-schema.md
+@@ -146,6 +146,9 @@ an alias and the canonical name to different values is an error):
+ | `F2Z_BENCH_PASS` | — | `latency|memory|both` |
+ | `F2Z_BENCH_LAMBDA` | — | security profile: `100` / `128` / `114` or a profile name (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`); unset = the bench's own default; a profile the bench's prime strategy cannot instantiate aborts with the admissible list (`pcs` has no IOP profile and only warns) |
+ | `F2Z_BENCH_QUIET` | — | `1` mutes the harness's advisory `warning:` lines (deprecated aliases, the `pcs` `F2Z_BENCH_LAMBDA` notice, build-configuration hints); aborting errors are never muted |
++| `F2Z_BINIUS_LOG_INV_RATE` | — | Native BaseFold initial inverse-rate exponent; `1`, `2`, `3` select rates 1/2, 1/4, 1/8 |
++| `F2Z_BINIUS_LIGERITO_LOG_INV_RATE` | — | Native multiplication Binius–Ligerito initial inverse-rate exponent, `1..=3`; default `1` |
++| `F2Z_PLONKY3_LOG_INV_RATE` | — | Native multiplication Plonky3-FRI inverse-rate exponent, `1..=3`; default `3`. At least 100 queries, increased if needed for the native security target |
+ 
+ **Unknown `F2Z_*` variables abort the bench** with the full known-knob list,
+ so a typo'd knob can never silently do nothing. The registry lives in
+diff --git a/docs/binius64-ligerito.md b/docs/binius64-ligerito.md
+index 622b2c7..f5ef84f 100644
+--- a/docs/binius64-ligerito.md
++++ b/docs/binius64-ligerito.md
+@@ -2,9 +2,9 @@
+ 
+ A comparison scheme that answers "what if Binius64 used F2Z's binary-field
+ PCS?": Binius64's own circuits and PIOP, unchanged, with every oracle
+-committed and opened by the opener F2Z itself uses — rate 1/2, the Johnson
++committed and opened by the opener F2Z itself uses — default rate 1/2, the Johnson
+ (list-decoding) proximity regime, fold and query grinding, and Round 0 (the
+-out-of-domain sample). It sits in every benchmark that measures Binius64.
++out-of-domain sample). It is available in the supported benchmarks listed below. The composed SHA+P-256 ECDSA circuit is currently unsupported because it contains BMUL constraints.
+ 
+ | bench | scheme id | what it measures |
+ | --- | --- | --- |
+@@ -29,7 +29,7 @@ Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
+ 3. **Oracles.** Every `send_oracle` the PIOP makes — the packed witness, and
+    the IntMul reduction's logup* pushforward (2^16 words) when the circuit
+    multiplies — is committed by `BinaryPcs`: an interleaved Reed–Solomon
+-   codeword at rate 1/2, 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
++   codeword at the selected initial rate (default 1/2), 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
+    root is bound into the transcript and **Round 0 is taken immediately**:
+    the prover grinds, the verifier draws `ζ`, the prover sends
+    `y = MLE[oracle](ζ, ζ², ζ⁴, …)`. This pins the committed word to one
+@@ -85,11 +85,12 @@ the style of `hybrid::security::account`:
+ 
+ The opener's round-by-round target is the **smallest** in 100..=112 whose
+ union clears 100 bits (the hybrid hard-codes 106; here 104 at 2^10 SHA
+-compressions, for example), and the achieved bits are reported. This is the
+-yardstick of the `f2z` rows; Binius64's own "100 bits" is its FRI query-phase
++compressions, for example), and the achieved bits are reported. This modeled
++composition bound includes grinding. BitZ rows separately report economic
++per-challenge bounds and a statistical bound without grinding. Binius64's own
++"100 bits" is its FRI query-phase
+ target only (`calculate_n_test_queries`), which counts neither its folding
+-phase nor its PIOP. The rate is fixed at 1/2 for this scheme (`binary_pcs::LOG_INV_RATE`, the rate F2Z itself commits at); the Binius64
+-rate knobs do not apply.
++phase nor its PIOP. The default rate is 1/2 (`binary_pcs::LOG_INV_RATE`). `BinaryPcs::with_log_inv_rate` and `Prepared::with_log_inv_rate` support initial rates 1/2, 1/4, and 1/8. The native multiplication adapter selects them using `F2Z_BINIUS_LIGERITO_LOG_INV_RATE=1|2|3`; the separate `F2Z_BINIUS_LOG_INV_RATE` knob applies only to BaseFold. The complete selected opener configurations are bound into the statement transcript.
+ 
+ As everywhere in this repository the bound is algebraic/IOP-level under
+ BLAKE3 Fiat–Shamir and 256-bit Merkle hashing; it is not an unconditional
+@@ -98,7 +99,7 @@ Fiat–Shamir theorem.
+ ## Running
+ 
+ ```sh
+-# Native multiplication tables (adds the binius64-ligerito rows; rate 1/2 fixed).
++# Native multiplication tables (default Ligerito rate 1/2).
+ F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 F2Z_MUL_COMPARE_WORKLOADS="u32" \
+ F2Z_MUL_COMPARE_BACKENDS="f2z binius64 binius64-ligerito" \
+ RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
+@@ -125,7 +126,7 @@ opener's bit-MLE and arbitrary-basis openings, tamper rejection).
+ ## First measurements (2026-09-10, Apple M5 24 GB, 8 threads, smoke runs)
+ 
+ **Historical: every number in this section was taken with the opener at rate
+-1/8 (before `LOG_INV_RATE` moved to 1 on 2026-09-10); the rate-1/2 rows are
++1/8 (before `LOG_INV_RATE` moved to 1 on 2026-09-11); the rate-1/2 rows are
+ the ones in the regenerated paper tables.**
+ 
+ Single-sample smoke runs to validate the wiring — not the 11/21-sample
+diff --git a/docs/sha256-ecdsa-comparison.md b/docs/sha256-ecdsa-comparison.md
+index 7332466..0cebec9 100644
+--- a/docs/sha256-ecdsa-comparison.md
++++ b/docs/sha256-ecdsa-comparison.md
+@@ -295,8 +295,11 @@ and the remaining reductions. Stage durations are disjoint wall-clock spans.
+ The verifier reconstructs expected public words from `(i,Qx,Qy,r,s)` and consumes
+ all proof bytes; it does not read the private witness.
+ 
+-The worker uses SHA-256 Merkle hashing, BaseFold at rate 1/2, and explicit 100/128
+-FRI query targets. It records the actual query count and identifies these as
++The worker uses SHA-256 Merkle hashing, BaseFold at default rate 1/2, and explicit 100/128
++FRI query targets. The runner's `--binius-log-inv-rate 1|2|3` selects rates
++1/2, 1/4, or 1/8; the standalone worker accepts `--log-inv-rate`.
++The chosen rate is recorded and must match when resuming a campaign.
++It records the actual query count and identifies these as
+ query targets, not a claim about aggregate protocol security. The mathematical
+ statement is shared; the security models remain separately identified.
+ 
+diff --git a/scripts/run_sha256_ecdsa_compare.py b/scripts/run_sha256_ecdsa_compare.py
+index 652d8e3..b5b0860 100644
+--- a/scripts/run_sha256_ecdsa_compare.py
++++ b/scripts/run_sha256_ecdsa_compare.py
+@@ -56,7 +56,7 @@ def cases(spartan_splits, methods, targets, threads, seeds):
+                            security_target=target, threads=workers, seed=seed)
+ 
+ 
+-def validate_rows(rows, case, reps):
++def validate_rows(rows, case, reps, binius_log_inv_rate=1):
+     """Reject incomplete, mislabelled, unverified or fixture-changing workers."""
+     if len(rows) != reps + 1:
+         return False
+@@ -93,6 +93,7 @@ def validate_rows(rows, case, reps):
+         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
+             return False
+         if binius and (row["security"].get("fri_query_target_bits") != case["security_target"]
++                       or row["security"].get("log_inv_rate") != binius_log_inv_rate
+                        or row["security"].get("pcs") != "BaseFold"
+                        or row.get("circuit_profile") != "sha256-chain-p256/standard/v1"):
+             return False
+@@ -227,6 +228,8 @@ def run_case(binary, case, args, directory):
+                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
+     if case["security_target"] is not None:
+         command.extend(["--target", str(case["security_target"])])
++    if case["method"] == "binius64":
++        command.extend(["--log-inv-rate", str(args.binius_log_inv_rate)])
+     fixture = directory / "fixtures" / f"i{case['log_compressions']}-seed{case['seed']}.json"
+     expected_fixture = json.loads(fixture.read_text())["id"]
+     command.extend(["--fixture", str(fixture)])
+@@ -267,7 +270,7 @@ def run_case(binary, case, args, directory):
+             continue
+         if isinstance(row, dict) and row.get("schema") == SCHEMA:
+             rows.append(row)
+-    if (returncode == 0 and validate_rows(rows, case, args.reps)
++    if (returncode == 0 and validate_rows(rows, case, args.reps, args.binius_log_inv_rate)
+             and all(row["fixture_id"] == expected_fixture for row in rows)
+             and (case["method"] != "binius64" or all(row["binius_revision"] == args.binius64_info["binius_revision"] for row in rows))):
+         status = "complete"
+@@ -344,7 +347,7 @@ def prepare_binius(args, directory):
+ 
+ def compatible_manifest(previous, current):
+     return all(previous.get(key) == current.get(key) for key in
+-               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile"])
++               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile", "binius_log_inv_rate"])
+ 
+ 
+ def main():
+@@ -352,6 +355,8 @@ def main():
+     parser.add_argument("--binary", type=Path)
+     parser.add_argument("--output", type=Path, required=True)
+     parser.add_argument("--binius64-binary", type=Path, help="Prebuilt worker with its .build.json sidecar")
++    parser.add_argument("--binius-log-inv-rate", type=int, choices=[1, 2, 3], default=1,
++                        help="Binius64 initial code rate: 1=1/2, 2=1/4, 3=1/8")
+     shapes = parser.add_mutually_exclusive_group()
+     shapes.add_argument("--spartan-splits", nargs="+",
+                         help="Spartan r:c pairs: 2^r compressions per instance, 2^c instances; F2Z uses only i=r+c")
+@@ -395,6 +400,7 @@ def main():
+     manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
+     if args.with_binius64:
+         manifest["binius64"] = prepare_binius(args, directory)
++        manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
+     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
+                                 seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib)
+     manifest_path = directory / "manifest.json"
+diff --git a/scripts/test_sha256_ecdsa_compare.py b/scripts/test_sha256_ecdsa_compare.py
+index 7dbb291..00852f9 100644
+--- a/scripts/test_sha256_ecdsa_compare.py
++++ b/scripts/test_sha256_ecdsa_compare.py
+@@ -70,8 +70,15 @@ class CampaignTests(unittest.TestCase):
+         for row in rows:
+             row.update(case, binius_revision="c"*40, spartan_revision=None,
+                        circuit_profile="sha256-chain-p256/standard/v1",
+-                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100})
++                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100, "log_inv_rate":1})
+         self.assertTrue(campaign.validate_rows(rows, case, 1))
++        self.assertFalse(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=2))
++        for rate in (1, 2, 3):
++            for row in rows:
++                row["security"]["log_inv_rate"] = rate
++            self.assertTrue(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=rate))
++        for row in rows:
++            row["security"]["log_inv_rate"] = 1
+         for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "secp256k1"),
+                            ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96})]:
+             bad = copy.deepcopy(rows)
+@@ -82,6 +89,8 @@ class CampaignTests(unittest.TestCase):
+         old = dict(binary_sha256="native", runner_sha256="runner", fixtures={"profile":campaign.FIXTURE_SCHEMA, "files":{"fixture":"hash"}},
+                    binius64={"binary_sha256":"binius", "binius_revision":"c"*40})
+         self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
++        self.assertFalse(campaign.compatible_manifest(dict(old, binius_log_inv_rate=1),
++                                                      dict(old, binius_log_inv_rate=2)))
+         for key, value in [("binary_sha256", "changed"), ("runner_sha256", "changed"), ("fixtures", {}), ("binius64", None)]:
+             self.assertFalse(campaign.compatible_manifest(old, dict(old, **{key:value})))
+ 
+diff --git a/src/binary_pcs.rs b/src/binary_pcs.rs
+index bf1632c..4ab9ba2 100644
+--- a/src/binary_pcs.rs
++++ b/src/binary_pcs.rs
+@@ -132,6 +132,18 @@ impl BinaryPcs {
+     /// Solve and validate the opener for `2^packed_log` packed words at the
+     /// round-by-round target `component_bits`.
+     pub fn new(packed_log: usize, component_bits: usize) -> Result<Self, Error> {
++        Self::with_log_inv_rate(packed_log, component_bits, LOG_INV_RATE)
++    }
++
++    /// Solve the same Johnson opener at an explicit initial commitment rate.
++    pub fn with_log_inv_rate(
++        packed_log: usize,
++        component_bits: usize,
++        log_inv_rate: usize,
++    ) -> Result<Self, Error> {
++        if !(1..=3).contains(&log_inv_rate) {
++            return Err(Error::Config("log inverse rate must be 1, 2, or 3".into()));
++        }
+         if !(MIN_PACKED_LOG..=MAX_PACKED_LOG).contains(&packed_log) {
+             return Err(Error::Config(format!(
+                 "packed log {packed_log} outside {MIN_PACKED_LOG}..={MAX_PACKED_LOG}"
+@@ -139,19 +151,23 @@ impl BinaryPcs {
+         }
+         let m = packed_log + LOG_PACKING;
+         let mut config =
+-            custom_johnson_config_bits(m, LOG_INV_RATE, LOG_BATCH_SIZE, Some(component_bits));
++            custom_johnson_config_bits(m, log_inv_rate, LOG_BATCH_SIZE, Some(component_bits));
+         config.hash = "blake3".into();
+         config.validate().map_err(Error::Config)?;
+-        if config.levels.first().map(|level| level.log_inv_rate) != Some(LOG_INV_RATE) {
+-            return Err(Error::Config("level-0 rate must equal the commit rate".into()));
++        if config.levels.first().map(|level| level.log_inv_rate) != Some(log_inv_rate) {
++            return Err(Error::Config(
++                "level-0 rate must equal the commit rate".into(),
++            ));
+         }
+         let (pc, vc) = config.to_prover_verifier_configs().map_err(Error::Config)?;
+-        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != LOG_INV_RATE {
+-            return Err(Error::Config("opener level 0 does not match the commitment".into()));
++        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != log_inv_rate {
++            return Err(Error::Config(
++                "opener level 0 does not match the commitment".into(),
++            ));
+         }
+         let params = PcsParams {
+             m,
+-            log_inv_rate: LOG_INV_RATE,
++            log_inv_rate,
+             log_batch_size: pc.initial_k,
+             profile: LigeritoProfile::Secure,
+             merkle_hash: merkle::HashKind::Blake3,
+@@ -309,7 +325,11 @@ impl BinaryPcs {
+         mut basis: Vec<F128>,
+         target: Gf,
+     ) -> LigeritoProof {
+-        assert_eq!(basis.len(), packed.len(), "basis must cover the packed witness");
++        assert_eq!(
++            basis.len(),
++            packed.len(),
++            "basis must cover the packed witness"
++        );
+         let eta: Gf = t.get_field_challenge(&());
+         add_ood_basis(&mut basis, packed, &round0.0.point, eta, None);
+         let target = target + eta * round0.0.y;
+@@ -376,7 +396,11 @@ impl BinaryPcs {
+         round0: &Round0Prover,
+         point: &[Gf],
+     ) -> BitMleOpening {
+-        assert_eq!(point.len(), self.packed_log + LOG_PACKING, "bit-MLE point length");
++        assert_eq!(
++            point.len(),
++            self.packed_log + LOG_PACKING,
++            "bit-MLE point length"
++        );
+         // The ring switch reads the packed words in place (no `Gf` copy).
+         let (ring, basis, target) = ring_switch_prove(t, packed, &point[LOG_PACKING..]);
+         let basis: Vec<F128> = basis.into_iter().map(gf_to_f128).collect();
+@@ -460,7 +484,11 @@ pub fn read_round0(r: &mut Reader<'_>) -> Result<OodRound, CodecError> {
+ }
+ 
+ pub fn write_ring_switch(w: &mut Writer, ring: &RingSwitchProof) {
+-    assert_eq!(ring.s_v.len(), 128, "ring switch sends 128 partial evaluations");
++    assert_eq!(
++        ring.s_v.len(),
++        128,
++        "ring switch sends 128 partial evaluations"
++    );
+     for g in &ring.s_v {
+         w.gf(g);
+     }
+@@ -627,10 +655,9 @@ mod tests {
+         let mut t = Blake3Transcript::new();
+         t.absorb_slice(&c.root);
+         let r0 = pcs.prove_round0(&mut t, &packed);
+-        let target = packed
+-            .iter()
+-            .zip(&basis)
+-            .fold(Gf::zero(), |acc, (&f, &b)| acc + f128_to_gf(f) * f128_to_gf(b));
++        let target = packed.iter().zip(&basis).fold(Gf::zero(), |acc, (&f, &b)| {
++            acc + f128_to_gf(f) * f128_to_gf(b)
++        });
+         crate::ligerito::absorb_ood_value(&mut t, target);
+         let proof = pcs.open_basis(&mut t, &packed, &data, &r0, basis.clone(), target);
+ 
+@@ -644,7 +671,11 @@ mod tests {
+                 .map(|y| {
+                     let mut point = prefix.to_vec();
+                     for j in 0..log_y {
+-                        point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
++                        point.push(if y >> j & 1 == 1 {
++                            Gf::one()
++                        } else {
++                            Gf::zero()
++                        });
+                     }
+                     basis_gf
+                         .iter()
+@@ -690,7 +721,11 @@ mod tests {
+                 .map(|y| {
+                     let mut point = prefix.to_vec();
+                     for j in 0..log_y {
+-                        point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
++                        point.push(if y >> j & 1 == 1 {
++                            Gf::one()
++                        } else {
++                            Gf::zero()
++                        });
+                     }
+                     point
+                         .iter()
+diff --git a/src/binius_ligerito/mod.rs b/src/binius_ligerito/mod.rs
+index f245ea2..e255ba4 100644
+--- a/src/binius_ligerito/mod.rs
++++ b/src/binius_ligerito/mod.rs
+@@ -17,8 +17,10 @@
+ pub(crate) mod channel;
+ 
+ use crate::{
+-    binary_pcs::{self, BinaryPcs, BitMleOpening, SecurityTerm, read_ligerito, read_round0,
+-        write_ligerito, write_round0},
++    binary_pcs::{
++        self, BinaryPcs, BitMleOpening, SecurityTerm, read_ligerito, read_round0, write_ligerito,
++        write_round0,
++    },
+     ligerito_flock::{OodRound, f128_to_gf, gf_to_f128},
+     poly::univariate::binary_gf128::BinaryFieldGF128 as Gf,
+     proof_codec::{CodecError, Reader, Writer},
+@@ -133,6 +135,15 @@ pub struct Prepared {
+ 
+ impl Prepared {
+     pub fn new(cs: &ConstraintSystem) -> Result<Self, Error> {
++        Self::with_log_inv_rate(cs, crate::binary_pcs::LOG_INV_RATE)
++    }
++
++    /// Prepare all oracles at the requested initial rate. Each complete
++    /// opener configuration, including its rate, is bound into the transcript.
++    pub fn with_log_inv_rate(cs: &ConstraintSystem, log_inv_rate: usize) -> Result<Self, Error> {
++        if !(1..=3).contains(&log_inv_rate) {
++            return Err(Error::Config("log inverse rate must be 1, 2, or 3".into()));
++        }
+         cs.validate().map_err(|e| Error::Binius(e.to_string()))?;
+         if !cs.bmul_constraints.is_empty() {
+             return Err(Error::Invalid("BMUL constraints are not supported"));
+@@ -173,7 +184,7 @@ impl Prepared {
+         for target in MIN_COMPONENT_BITS..=MAX_COMPONENT_BITS {
+             let pcs: Result<Vec<BinaryPcs>, _> = specs
+                 .iter()
+-                .map(|spec| BinaryPcs::new(spec.log_msg_len, target))
++                .map(|spec| BinaryPcs::with_log_inv_rate(spec.log_msg_len, target, log_inv_rate))
+                 .collect();
+             let pcs = match pcs {
+                 Ok(pcs) => pcs,
+@@ -367,7 +378,12 @@ impl Prepared {
+         // Bind every relation group's claims (and draw their batching
+         // weights) before any opening; then each opening runs on its own fork.
+         let groups: Vec<(Oracle, Vec<&ProverRelation>)> = (0..oracles.len())
+-            .map(|index| (index, relations.iter().filter(|r| r.oracle == index).collect()))
++            .map(|index| {
++                (
++                    index,
++                    relations.iter().filter(|r| r.oracle == index).collect(),
++                )
++            })
+             .filter(|(_, group): &(Oracle, Vec<&ProverRelation>)| !group.is_empty())
+             .collect();
+         let group_weights: Vec<Vec<Gf>> = groups
+@@ -455,10 +471,13 @@ impl Prepared {
+ 
+         Self::absorb_evaluation(&mut t, value);
+         let groups: Vec<(Oracle, Vec<&VerifierRelation>)> = (0..oracles.len())
+-            .map(|index| (index, relations.iter().filter(|r| r.oracle == index).collect()))
+-            .filter(|(_, group): &(Oracle, Vec<&VerifierRelation>)| {
+-                !group.is_empty()
++            .map(|index| {
++                (
++                    index,
++                    relations.iter().filter(|r| r.oracle == index).collect(),
++                )
+             })
++            .filter(|(_, group): &(Oracle, Vec<&VerifierRelation>)| !group.is_empty())
+             .collect();
+         let group_weights: Vec<Vec<Gf>> = groups
+             .iter()
+@@ -494,14 +513,15 @@ impl Prepared {
+                     .map(|y| {
+                         let mut pt: Vec<B128> = prefix.iter().map(|&g| gf_to_b128(g)).collect();
+                         for j in 0..log_y {
+-                            pt.push(if y >> j & 1 == 1 { B128::ONE } else { B128::ZERO });
++                            pt.push(if y >> j & 1 == 1 {
++                                B128::ONE
++                            } else {
++                                B128::ZERO
++                            });
+                         }
+-                        group
+-                            .iter()
+-                            .zip(weights)
+-                            .fold(Gf::zero(), |acc, (r, &w)| {
+-                                acc + w * b128_to_gf((r.transparent)(&pt))
+-                            })
++                        group.iter().zip(weights).fold(Gf::zero(), |acc, (r, &w)| {
++                            acc + w * b128_to_gf((r.transparent)(&pt))
++                        })
+                     })
+                     .collect()
+             };
+@@ -633,11 +653,46 @@ mod tests {
+         Some(filler.into_value_vec())
+     }
+ 
++    #[test]
++    fn selectable_rates_bind_both_oracles_and_reject_cross_rate_proofs() {
++        let (circuit, wires) = mul_circuit(11);
++        let witness = mul_witness(&circuit, &wires, false).unwrap();
++        let prepared: Vec<_> = (1..=3)
++            .map(|rate| Prepared::with_log_inv_rate(circuit.constraint_system(), rate).unwrap())
++            .collect();
++        for (i, relation) in prepared.iter().enumerate() {
++            assert!(relation.security().algebraic_bits >= 100.0);
++            for pcs in &relation.pcs {
++                assert_eq!(pcs.params().log_inv_rate, i + 1);
++                assert_eq!(pcs.config().levels[0].log_inv_rate, i + 1);
++            }
++            let proof = relation.prove(&witness).unwrap();
++            let bytes = proof.to_bytes();
++            relation
++                .verify(witness.inout(), &relation.proof_from_bytes(&bytes).unwrap())
++                .unwrap();
++            for (j, other) in prepared.iter().enumerate() {
++                if i != j {
++                    assert!(other.verify(witness.inout(), &proof).is_err());
++                }
++            }
++        }
++        for invalid_rate in [0, 4] {
++            assert!(
++                Prepared::with_log_inv_rate(circuit.constraint_system(), invalid_rate).is_err()
++            );
++        }
++    }
++
+     #[test]
+     fn multiplication_circuit_round_trips_through_the_f2z_opener() {
+         let (circuit, wires) = mul_circuit(11);
+         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
+-        assert_eq!(prepared.oracle_specs().len(), 2, "witness + logup* pushforward");
++        assert_eq!(
++            prepared.oracle_specs().len(),
++            2,
++            "witness + logup* pushforward"
++        );
+         assert!(prepared.security().algebraic_bits >= 100.0);
+         assert!(mul_witness(&circuit, &wires, true).is_none());
+         let witness = mul_witness(&circuit, &wires, false).unwrap();
+@@ -730,8 +785,14 @@ mod tests {
+                 .basis
+                 .iter()
+                 .zip(pushforward)
+-                .fold(Gf::zero(), |acc, (&b, &f)| acc + f128_to_gf(b) * f128_to_gf(f));
+-            assert_eq!(inner, b128_to_gf(relation.claim), "prover-side relation {which}");
++                .fold(Gf::zero(), |acc, (&b, &f)| {
++                    acc + f128_to_gf(b) * f128_to_gf(f)
++                });
++            assert_eq!(
++                inner,
++                b128_to_gf(relation.claim),
++                "prover-side relation {which}"
++            );
+         }
+         let claims: Vec<B128> = relations.iter().map(|r| r.claim).collect();
+ 
+@@ -759,8 +820,7 @@ mod tests {
+         let pt: Vec<Gf> = (0..16).map(|_| scratch.get_field_challenge(&())).collect();
+         let pt_b128: Vec<B128> = pt.iter().map(|&g| gf_to_b128(g)).collect();
+         let reversed: Vec<B128> = pt_b128.iter().rev().copied().collect();
+-        for (which, (relation, vrelation)) in
+-            relations.iter().zip(&vchannel.relations).enumerate()
++        for (which, (relation, vrelation)) in relations.iter().zip(&vchannel.relations).enumerate()
+         {
+             assert_eq!(vrelation.oracle, 1);
+             assert_eq!(vrelation.claim, relation.claim);
+@@ -875,7 +935,10 @@ mod tests {
+                 &voracles[1].root,
+                 &mut crate::ligerito_flock::ZincChallenger(&mut tv),
+             );
+-            assert!(dense_ok, "flock's dense basis verifier rejects the pushforward opening");
++            assert!(
++                dense_ok,
++                "flock's dense basis verifier rejects the pushforward opening"
++            );
+         }
+         let (tv, voracles, vrelations) = replay();
+         let mut tv = Prepared::fork(&tv, 2);
+@@ -884,7 +947,11 @@ mod tests {
+                 .map(|y| {
+                     let mut pt: Vec<B128> = prefix.iter().map(|&g| gf_to_b128(g)).collect();
+                     for j in 0..log_y {
+-                        pt.push(if y >> j & 1 == 1 { B128::ONE } else { B128::ZERO });
++                        pt.push(if y >> j & 1 == 1 {
++                            B128::ONE
++                        } else {
++                            B128::ZERO
++                        });
+                     }
+                     vrelations
+                         .iter()
+@@ -902,7 +969,11 @@ mod tests {
+         for (y, &value) in via_closure.iter().enumerate() {
+             let mut point = prefix.clone();
+             for j in 0..5 {
+-                point.push(if y >> j & 1 == 1 { Gf::one() } else { Gf::zero() });
++                point.push(if y >> j & 1 == 1 {
++                    Gf::one()
++                } else {
++                    Gf::zero()
++                });
+             }
+             let dense = combined
+                 .iter()
+diff --git a/tests/sha256_ecdsa_comparison.rs b/tests/sha256_ecdsa_comparison.rs
+index a212478..d28591c 100644
+--- a/tests/sha256_ecdsa_comparison.rs
++++ b/tests/sha256_ecdsa_comparison.rs
+@@ -87,6 +87,28 @@ fn both_s_forms_and_exceptional_nonce_verify_in_all_native_methods() {
+                 &proof,
+             )
+             .unwrap();
++            for field in ["exponent", "qx", "qy", "r", "s"] {
++                let mut changed = statement.clone();
++                match field {
++                    "exponent" => changed.log_compressions += 1,
++                    "qx" => changed.qx[31] ^= 1,
++                    "qy" => changed.qy[31] ^= 1,
++                    "r" => changed.r[31] ^= 1,
++                    "s" => changed.s[31] ^= 1,
++                    _ => unreachable!(),
++                }
++                assert!(
++                    verify_sha256_ecdsa(
++                        &mut Blake3Transcript::new(),
++                        &prepared,
++                        &changed,
++                        &hint.commitment,
++                        &proof,
++                    )
++                    .is_err(),
++                    "accepted changed {field} in {mode:?}"
++                );
++            }
+         }
+     }
+     for (r, c) in [(3, 0), (1, 2)] {
+@@ -107,9 +129,50 @@ fn both_s_forms_and_exceptional_nonce_verify_in_all_native_methods() {
+     }
+ }
+ 
++#[test]
++fn changed_private_message_cannot_prove_the_original_signature() {
++    let fixture = fixture::SignedFixture::generate(3, 0).unwrap();
++    let statement = Sha256EcdsaStatement {
++        log_compressions: 3,
++        qx: fixture.qx,
++        qy: fixture.qy,
++        r: fixture.r,
++        s: fixture.s,
++    };
++    let mut changed = fixture.message;
++    changed[0] ^= 1;
++    for mode in [OuterMode::Split, OuterMode::AllRows] {
++        let prepared = prepare_sha256_ecdsa(3, 100, mode).unwrap();
++        // Regenerate all hints for the changed message without validating the
++        // fixture: rejection must come from the composed proof relation.
++        let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &changed).unwrap();
++        let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
++        if let Ok(proof) = prove_sha256_ecdsa(
++            &mut Blake3Transcript::new(),
++            &prepared,
++            &statement,
++            &witness,
++            &hint,
++            4,
++        ) {
++            assert!(
++                verify_sha256_ecdsa(
++                    &mut Blake3Transcript::new(),
++                    &prepared,
++                    &statement,
++                    &hint.commitment,
++                    &proof,
++                )
++                .is_err(),
++                "accepted changed message in {mode:?}"
++            );
++        }
++    }
++}
++
+ #[test]
+ fn fixtures_roundtrip_and_support_full_length_range() {
+-    for exponent in [11, 16] {
++    for exponent in [6, 11, 16] {
+         let f = fixture::SignedFixture::generate(exponent, 1).unwrap();
+         assert_eq!(f.message.len(), 64 * ((1usize << exponent) - 1));
+         let path = std::env::temp_dir().join(format!(

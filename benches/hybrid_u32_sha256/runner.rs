@@ -8,10 +8,8 @@ use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
 use f2z::{
-    binius_ligerito::Prepared as BiniusLigerito,
-    hybrid::{
-        CompositionProfile, LIGERITO_COMPONENT_BITS, Parameters, PreparedHybrid, chaining_value,
-    },
+    binius_ligerito::{Accounting, Prepared as BiniusLigerito},
+    hybrid::{CompositionProfile, Parameters, PreparedHybrid, chaining_value},
     piop::spartan::{
         f2z::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
         u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
@@ -49,8 +47,9 @@ fn select_ligerito(
 
 /// How the native Binius64 circuit is proved: Binius64's own ring switch +
 /// BaseFold/FRI, or its PIOP prefix with every oracle committed and opened by
-/// the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; whole-protocol
-/// union bound gated at 100 bits).
+/// the F2Z opener (Johnson regime, grinding, Round 0; rate and accounting
+/// from `F2Z_BINIUS_LOG_INV_RATE` / `F2Z_BINIUS_LIGERITO_ACCOUNTING`, gated
+/// at 100 bits).
 enum NativeBackend {
     Binius {
         prover: Prover<OptimalPackedB128, Blake3HashSuite>,
@@ -92,7 +91,11 @@ impl Native {
         }
         let circuit = builder.build();
         let backend = if ligerito {
-            NativeBackend::Ligerito(BiniusLigerito::new(circuit.constraint_system())?)
+            NativeBackend::Ligerito(BiniusLigerito::with_options(
+                circuit.constraint_system(),
+                binius_ligerito_log_inv_rate(),
+                binius_ligerito_accounting(),
+            )?)
         } else {
             // 112 bits for the FRI component leaves slack for the binary PIOPs
             // and the second proof in the separate mode. No default 96-bit preset.
@@ -196,13 +199,16 @@ impl Native {
                     })
                     .collect();
                 format!(
-                    "ligerito_component_bits={} algebraic_security_bits={:.3} level0_queries={} level0_fold_grinding_bits={} ood_grinding_bits={} log_inv_rate={} oracle_logs={:?} binding_term={} ladders={}",
+                    "ligerito_component_bits={} accounting={} algebraic_security_bits={:.3} union_bound_bits={:.3} round_by_round_bits={:.3} level0_queries={} level0_fold_grinding_bits={} ood_grinding_bits={} log_inv_rate={} oracle_logs={:?} binding_term={} ladders={}",
                     prepared.component_bits(),
+                    security.accounting.name(),
                     security.algebraic_bits,
+                    security.union_bound_bits,
+                    security.round_by_round_bits,
                     witness.level0_queries(),
                     witness.level0_fold_grinding_bits(),
                     witness.ood_grinding_bits(),
-                    f2z::binary_pcs::LOG_INV_RATE,
+                    prepared.log_inv_rate(),
                     prepared
                         .oracle_specs()
                         .iter()
@@ -271,6 +277,25 @@ struct BiniusConfig {
     log_inv_rate: usize,
     #[arg(long, env = "F2Z_HYBRID_BINIUS_SECURITY_BITS", default_value = "112")]
     security_bits: usize,
+}
+
+/// F2Z-opener rate for `binius-ligerito` mode: `F2Z_BINIUS_LOG_INV_RATE`
+/// (1 = rate 1/2, 3 = rate 1/8), the same knob the mul benches read.
+fn binius_ligerito_log_inv_rate() -> usize {
+    std::env::var("F2Z_BINIUS_LOG_INV_RATE")
+        .ok()
+        .map(|v| v.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be an integer"))
+        .unwrap_or(f2z::binary_pcs::LOG_INV_RATE)
+}
+
+/// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`, exactly as
+/// `benches/mul_e2e_compare` reads it.
+fn binius_ligerito_accounting() -> Accounting {
+    match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
+        Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,
+        Ok("rbr") | Ok("round-by-round") => Accounting::RoundByRound,
+        Ok(other) => panic!("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
+    }
 }
 
 pub fn run() -> Result<(), AnyError> {
@@ -370,9 +395,11 @@ pub fn run() -> Result<(), AnyError> {
             .map(|term| format!("{}:{:.2}", term.name, -term.error_bound.log2()))
             .unwrap_or_default();
         eprintln!(
-            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3} ligerito_component_bits={LIGERITO_COMPONENT_BITS} ood_grinding_bits={} binding_term={binding}",
+            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3} ligerito_component_bits={} log_inv_rate={} ood_grinding_bits={} binding_term={binding}",
             prepared.packed_witness_logs(),
             prepared.security().algebraic_bits,
+            prepared.ligerito_configuration().security().target_security_bits,
+            prepared.log_inv_rate(),
             prepared.ood_round().map_or(0, |p| p.grinding_bits)
         );
         let mut csv = output::csv_writer(std::io::stdout().lock());

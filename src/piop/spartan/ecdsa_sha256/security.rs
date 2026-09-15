@@ -1,6 +1,6 @@
 use super::{PreparedSha256Ecdsa, Result, error};
 use crate::{
-    ligerito_flock::{OodRoundParams, atomic::AtomicPlan},
+    ligerito_flock::{OodRoundParams, grinding::GrindingPlan},
     piop::spartan::profile::log2_prime_count_lower_bound,
 };
 
@@ -54,7 +54,7 @@ pub struct Sha256EcdsaSecurity {
     pub(crate) forest: u32,
     /// Per-block grinding settings for Ligerito's folding, introduction, and query
     /// challenges. Their security entries appear in `blocks` with a `flock/` prefix.
-    pub(crate) flock: AtomicPlan,
+    pub(crate) flock: GrindingPlan,
     /// Grinding settings for the initial out-of-domain evaluation in Johnson mode.
     /// Its claim is bound just after the commitment and checked at the final opening.
     /// `None` in unique-decoding mode; corresponds to `step0:ood-draw` in `blocks`.
@@ -156,7 +156,7 @@ impl Sha256EcdsaSecurity {
             })
             .transpose()?;
         let flock =
-            AtomicPlan::resolve(prepared.ligerito.security(), prepared.lambda).map_err(error)?;
+            GrindingPlan::resolve(prepared.ligerito.security(), prepared.lambda).map_err(error)?;
         for b in &flock.blocks {
             blocks.push(ChallengeSecurity {
                 label: format!("flock/{}", b.label),

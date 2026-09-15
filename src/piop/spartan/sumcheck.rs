@@ -515,7 +515,7 @@ pub enum SumcheckError {
 
 /// Controls the transcript boundary between an absorbed round polynomial and
 /// the verifier challenge that follows it.
-trait RoundBoundaryPolicy {
+pub(super) trait RoundBoundaryPolicy {
     /// Validates policy-level proof shape before the transcript is mutated.
     fn validate(&self, _expected_rounds: usize) -> Result<(), SumcheckError> {
         Ok(())
@@ -531,7 +531,7 @@ trait RoundBoundaryPolicy {
 
 /// Existing sumcheck transcript behavior: no bytes between message and
 /// challenge.
-struct UngrindedRoundBoundary;
+pub(super) struct UngrindedRoundBoundary;
 
 impl RoundBoundaryPolicy for UngrindedRoundBoundary {
     fn after_round<T: Transcript>(
@@ -544,7 +544,7 @@ impl RoundBoundaryPolicy for UngrindedRoundBoundary {
 }
 
 #[allow(dead_code)]
-struct ProverGrindingRoundBoundary<D> {
+pub(super) struct ProverGrindingRoundBoundary<D> {
     bits: u32,
     round_offset: usize,
     nonces: Vec<u64>,
@@ -553,13 +553,19 @@ struct ProverGrindingRoundBoundary<D> {
 
 impl<D> ProverGrindingRoundBoundary<D> {
     #[allow(dead_code)]
-    fn with_round_offset(bits: u32, round_offset: usize) -> Self {
+    pub(super) fn with_round_offset(bits: u32, round_offset: usize) -> Self {
         Self {
             bits,
             round_offset,
             nonces: Vec::new(),
             _domain: core::marker::PhantomData,
         }
+    }
+
+    /// The nonces found so far, in round order (empty at difficulty 0).
+    #[allow(dead_code)]
+    pub(super) fn into_nonces(self) -> Vec<u64> {
+        self.nonces
     }
 }
 
@@ -3051,7 +3057,7 @@ where
 /// Completes and records one round under an explicit message/challenge
 /// boundary policy.
 #[allow(clippy::too_many_arguments)]
-fn recover_full_round_polynomial_and_sample_next_challenge_with_boundary<
+pub(super) fn recover_full_round_polynomial_and_sample_next_challenge_with_boundary<
     F,
     P,
     const INPUT_COEFFS: usize,
