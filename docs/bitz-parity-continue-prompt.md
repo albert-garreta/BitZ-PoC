@@ -24,7 +24,8 @@ the same instance. Their code is the oracle; ours must never change a byte.
   proved inside the arena + parallel row images + verifier traces,
   `406925b` verifier reconstruction through a wide u128 remainder,
   `f1d753e` opening-sumcheck row fold through the eq tensor split, `93738cd` the
-  bucketed first table round. Files:
+  bucketed first table round, `a75a51e` the harness's sweep and repeat modes.
+  Files:
   `src/bitz/{mod,transcript,codec,params,fold,gkr,forest,kernels,reduce,sumcheck,pcs}.rs`,
   `examples/bitz_parity.rs` (the harness), `examples/bitz_root_probe.rs`,
   `docs/bitz-parity-continue-prompt.md` (this file). The crate's own protocol
@@ -62,7 +63,22 @@ $B/verify_bitz 28 41 $SCRATCH/dump_n28_seed41/ours.narg.bin $SCRATCH/dump_n28_se
 # unit tests: NEON kernels vs their generic references, the block transpose,
 # the reconstruction vs BigUint (8 tests)
 RUSTFLAGS="-C target-cpu=native" cargo test --release --features bitz-parity,parallel --lib bitz
+# the sweep: every n in the list x fresh random seeds (a count draws them
+# from a printed base; BITZ_SWEEP_BASE=<base> reproduces; --keep keeps the
+# dumps) — their dump_bitz, our in-process check, their verify_bitz, one
+# line per case, exit 1 on any failure. ~2.5 min for 22..28 x 3.
+$CARGO_TARGET_DIR/release/examples/bitz_parity --sweep $B $SCRATCH/sweep 22,23,24,25,26,27,28 3
+# timing: k proves, min/median, every repeat must give the same bytes
+BITZ_REPEAT=20 $CARGO_TARGET_DIR/release/examples/bitz_parity $SCRATCH/dump_n28_seed41
 ```
+
+Parity so far: n = 22 and 28 with the fixed seeds 40/41 after every change,
+and on 2026-09-15 the sweep n = 22..28 × 3 random seeds (base
+1789509039433666000; seeds 2729483888, 2756583287, 1774055962): 21 cases,
+seven different (t, s) splits, all narg/hints IDENTICAL, all accepted by
+both verifiers. Their `Shape::for_log_bits` gives `s ≥ 8` for every m in
+the embedded-config range 22..35, so a partial 64-column group (`s < 6`)
+is only reachable through the unit tests / a hand-made shape.
 
 Notes: `CARGO_TARGET_DIR` is set globally in this environment to
 `~/zinc-plus/target` (that is where `bitz_parity` lands). The dump
@@ -75,9 +91,10 @@ accepts ours, the unit tests pass.
 
 ## Where the time goes (cool box, 2026-09-15, n = 28 at (17, 11))
 
-Ours ≈ 0.30 s (301, 304, 304 ms over three runs), peak RSS 0.97 GB; the
-session started at 459–471 ms and 1.48 GB (the 0.52–0.54 s quoted before
-was a warmer box). Their prover: 6.7 s native. `BITZ_TRACE=1` breakdown:
+Ours ≈ 0.30 s (BITZ_REPEAT=60: min 277.6 ms, median 296.8 ms; single runs
+301–304 ms), peak RSS 0.97 GB; the session started at 459–471 ms and
+1.48 GB (the 0.52–0.54 s quoted before was a warmer box). Their prover:
+6.1–6.7 s native. `BITZ_TRACE=1` breakdown:
 fold + images 12 (column folds 11.2 = `ligerito::fold_values_bits`, the
 u128 nibble-table integer fold; images 0.6);
 GKR 236 = levels ≥ 4 build 32 (level 4 from level 3's tables into the
@@ -144,6 +161,23 @@ Verifier: ours 5.1 ms on their n = 28 proof (fold 0.75, GKR 1.1, opening
 - `pcs.rs`: their statement frames, ring switch, Ligerito via a flock
   `Challenger` framed their way, proof as a bincode-fixint hint.
 
+## Scaling and floors (measured 2026-09-15, n = 28)
+
+`RAYON_NUM_THREADS` 1 / 4 / 6 / 10: prove 889 / 377 / 310 / 280 ms, GKR
+728 / 299 / 246 / 215, opening 105 / 59 / 56 / 54 (the box is 4 P + 6 E
+cores). Per phase, 1 → 10 threads: bit rounds 58 → 9.7, 38 → 7.2, 38 → 8.4
+(5–6×, compute-bound scatters); table rounds 27 → 7.8 and 38 → 10.2
+(3.5×, µop-bound: lookups, loads, stores, ≈ 40 PMULL per pair index);
+dense tails 24 → 9.2 (2.6×: three quarter-sweeps ≈ 0.77 GB per level, ≈ 84
+GB/s — the memory wall); opening 2× (flock's Ligerito, partly serial).
+Single-thread work: level 0 = 229 ms of which the three bit rounds are 134,
+the two table rounds 65, the tail 24; the bit rounds are ~34 % of all
+single-thread GKR work and ~21 % at 10 threads. A `sample` profile agrees
+(top frames: the bit-round closure, `jit_fold_into`, `fused_fold_round`,
+`jit_round_sums`, then `fold_values_bits`, the level builds). First-touch
+page faults are NOT a cost when the fill is parallel (512 MB: 5.5 ms at 10
+threads vs 5.9 ms to refill), so the levels ≥ 4 build is real work.
+
 ## What was measured NOT to help (do not redo)
 
 - The table rounds and the dense tails are µop-bound (lookups, loads,
@@ -157,28 +191,34 @@ Verifier: ours 5.1 ms on their n = 28 proof (fold 0.75, GKR 1.1, opening
   compute-bound passes; only wins when memory-bound.
 - Pair buckets of 65536 entries for width 8 (the table rounds): the
   contraction outgrows the 2048 columns.
+- Considered and costed, not applied (each ≤ 2 %): the width-1 bit round
+  as weighted popcounts (`W(row)` for all rows = `xi_combined_rows_packed`,
+  4.3 ms, plus four pair-AND popcounts per (row, group): ≈ 6 ms vs 9.7);
+  12-bit buckets `(a_lo, b_lo, b_hi)` for the width-4 rounds (two scatters
+  per column instead of four, but 128 KB of bucket clearing and
+  marginalising per row — a wash below 2048 columns); preprocessed eq
+  weights in the Gruen slot (−2 of ~40 PMULL); a third table-driven round
+  (arity-4 folds from 16 lookups per pair index, saves one quarter-sweep);
+  two rounds per pass (same traffic as the fused scheme, more multiplies).
 
-## Next steps (ideas, by expected gain)
+## Next steps (ideas, by expected gain — all small now)
 
-1. Levels ≥ 4 build (32 ms): ≈ 25 ms is the first touch of 512 MB (levels
-   5..16 + the arena). Options: prove level 4 straight from level 3's tables
-   (two lookups + a product per value, no materialised level 4, another
-   −256 MB) and build level 5 from the tables; or keep the buffers across
-   proves when a harness proves repeatedly.
-2. Integer column fold (11.2 ms): `fold_values_bits` streams an 8 MB nibble
+1. Levels ≥ 4 build (32 ms = level-3 tables ≈ 5 + level 4 from them ≈ 10
+   + `level_up` chain ≈ 10 + writes): build level 5 in the same pass as
+   level 4 (a task owning rows `y5` and `y5 + 2^{t−5}` of level 4 emits
+   level 5's row too — saves the 256 MB re-read), and vectorise the
+   `level_up` multiply (it goes through the field's `*` per element).
+2. Bit rounds (≈ 45 ms at 10 threads, the largest compute block): the
+   ideas above are each ≤ 2 %; a real step needs fewer scatters per term
+   (e.g. NEON 8-word transposes, or sharing the width-4 index bytes
+   between the E_lo/E_hi corners across two rows).
+3. Integer column fold (11.2 ms): `fold_values_bits` streams an 8 MB nibble
    table per 32-column block; integer weights have no tensor structure, so
    only wider blocks / prefetching / smaller tables remain.
-3. Width-1 bit round at level 0 (10.9 ms): 16 buckets → store-forwarding
-   conflicts. Try the subset-AND weighted-popcount route (per-row `W(E)`,
-   `W(O)` precomputed once like `xi_combined_rows_packed`, then four pair-AND
-   popcounts per (row, group) through per-group byte tables) or four
-   interleaved bucket sets.
-4. Preprocessed (fixed-scalar) eq weights for the Gruen slot: −2 of ~40
-   PMULLs per pair index across the table fold, dense tails, levels 4..16
-   (≈ 2 %).
-5. Ligerito (38 ms) is flock's engine; the ring switch (6.6 ms) already uses
-   flock's method-of-four-Russians `fold_1b_rows_naive`.
-6. Measure properly: interleave runs, report two or three, watch the box's
+4. Ligerito (38 ms) is flock's engine and scales only 2×; the ring switch
+   (6.6 ms) already uses flock's method-of-four-Russians
+   `fold_1b_rows_naive`. Changes there are outside `src/bitz`.
+5. Measure properly: `BITZ_REPEAT`, `RAYON_NUM_THREADS`, watch the box's
    thermal state (timings swung ±50 % when it was warm).
 
 ## Traps
