@@ -29,6 +29,53 @@ pub(crate) struct MleClaim {
     pub(crate) target: Gf,
 }
 
+/// `Σ_b eq(b, point)·bit(c, b)` for every column `c`: the witness after its
+/// row coordinates are bound to `point` (low-bit-first). The eq weight
+/// factors over the coordinates, `eq(b, point) = eq(b mod 64, point[..6]) ·
+/// eq(b div 64, point[6..])`, so a column's sum is `Σ_w eq_hi[w] · Σ_{j set
+/// in word w} eq_lo[j]`: the inner sums come out of one 32 KB byte table
+/// over `eq_lo` (eight lookups per word), the outer one is a multiply per
+/// word. Exact: the same field products regrouped.
+fn fold_rows_point(rows: &[Vec<u64>], point: &[Gf]) -> Vec<Gf> {
+    const LOW: usize = 6;
+    if point.len() < LOW {
+        let eq = if point.is_empty() {
+            vec![Gf::one()]
+        } else {
+            build_eq_x_r_vec(point, &()).expect("non-empty row point")
+        };
+        return fold_rows_eq(rows, &eq);
+    }
+    let eq_lo = build_eq_x_r_vec(&point[..LOW], &()).expect("six coordinates");
+    let eq_hi = if point.len() == LOW {
+        vec![Gf::one()]
+    } else {
+        build_eq_x_r_vec(&point[LOW..], &()).expect("high coordinates")
+    };
+    // table[pos][byte] = Σ_{bits b of byte} eq_lo[8·pos + b].
+    let mut table = vec![[Gf::zero(); 256]; 8];
+    for (pos, tb) in table.iter_mut().enumerate() {
+        for byte in 1..256usize {
+            tb[byte] = tb[byte & (byte - 1)] + eq_lo[(pos << 3) | byte.trailing_zeros() as usize];
+        }
+    }
+    cfg_into_iter!(rows, 16)
+        .map(|row| {
+            debug_assert_eq!(row.len(), eq_hi.len());
+            let zero = Gf::zero();
+            let mut acc = <Gf as WideMulAcc>::wide_zero(&zero);
+            for (word, &weight) in row.iter().zip(&eq_hi) {
+                let mut inner = zero;
+                for (pos, tb) in table.iter().enumerate() {
+                    inner += tb[((word >> (8 * pos)) & 0xFF) as usize];
+                }
+                <Gf as WideMulAcc>::wide_add_assign(&mut acc, &<Gf as WideMulAcc>::mul_wide(&weight, &inner));
+            }
+            <Gf as WideMulAcc>::from_wide(acc)
+        })
+        .collect()
+}
+
 /// One `Gf` per committed bit, bit `column * rows + row`, from the
 /// per-column rows (64 bits per word, low bit first).
 /// `Σ_b eq[b]·bit(c, b)` for every column `c`: the witness after its row
@@ -115,11 +162,14 @@ pub(crate) fn prove(
     let mut point = Vec::with_capacity(layout.row_vars + layout.col_vars);
 
     // Rows: the column-combined table against the row weights.
+    let started = std::time::Instant::now();
     let mut combined = if hint.packed_cols().is_empty() {
         xi_combined_rows(&layout, rows_bits, w2)
     } else {
         xi_combined_rows_packed(&layout, hint.packed_cols(), w2)
     };
+    super::trace("    sc combine cols", started);
+    let started = std::time::Instant::now();
     let mut rows = w1.to_vec();
     while combined.len() > 1 {
         let coefficients = round_polynomial(&combined, &rows);
@@ -135,13 +185,12 @@ pub(crate) fn prove(
         fold(&mut rows, challenge);
     }
 
+    super::trace("    sc row rounds", started);
+
     // Columns: the row-folded table against `w1(r_b)·column_weights`.
-    let eq_rows = if point.is_empty() {
-        vec![Gf::one()]
-    } else {
-        build_eq_x_r_vec(&point, &()).expect("non-empty row point")
-    };
-    let mut folded = fold_rows_eq(rows_bits, &eq_rows);
+    let started = std::time::Instant::now();
+    let mut folded = fold_rows_point(rows_bits, &point);
+    super::trace("    sc fold rows", started);
     let row_scalar = rows[0];
     let mut columns: Vec<Gf> = w2.iter().map(|&w| row_scalar * w).collect();
     while folded.len() > 1 {

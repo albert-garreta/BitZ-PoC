@@ -133,14 +133,19 @@ impl BitZProver {
         if rows.len() != shape.columns() {
             return Err(SendError::ShapeMismatch);
         }
+        let started = std::time::Instant::now();
         let folds = fold_columns(shape, rows, claim.row_exponents());
+        super::trace("  column folds", started);
         for fold in &folds {
             transcript.prover_message(&fold.to_le_bytes());
         }
         let zeta = (0..shape.log_columns())
             .map(|_| transcript.verifier_message::<Gf>())
             .collect();
-        Ok(finish(shape, self.comb(), claim, folds, zeta))
+        let started = std::time::Instant::now();
+        let fold = finish(shape, self.comb(), claim, folds, zeta);
+        super::trace("  images", started);
+        Ok(fold)
     }
 }
 
