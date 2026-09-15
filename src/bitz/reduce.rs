@@ -8,6 +8,10 @@ use super::gkr::{GrandProductCircuit, gpgkr_prove, gpgkr_verify};
 use super::params::{ClaimError, LinearClaimGf, Shape};
 use super::pcs::OpeningQuery;
 use super::transcript::{ProverState, VerifierState};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+use crate::cfg_chunks_mut;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 
@@ -61,16 +65,18 @@ pub(crate) fn gkr_reduce_prove(
     rows: &[Vec<u64>],
 ) -> Result<OpeningQuery, ClaimError> {
     let columns = shape.columns();
-    let mut leafs = vec![Gf::zero(); columns * shape.rows()];
-    for b in 0..shape.rows() {
-        for c in 0..columns {
-            leafs[b * columns + c] = if bit(rows, c, b) {
-                fold.row_images[b]
-            } else {
-                Gf::one()
-            };
-        }
-    }
+    // One chunk per row `b`: leaf `(b, c)` at `b * columns + c`.
+    let mut leafs = vec![Gf::one(); columns * shape.rows()];
+    cfg_chunks_mut!(leafs, columns)
+        .enumerate()
+        .for_each(|(b, chunk)| {
+            let image = fold.row_images[b];
+            for (c, leaf) in chunk.iter_mut().enumerate() {
+                if bit(rows, c, b) {
+                    *leaf = image;
+                }
+            }
+        });
     let circuit = GrandProductCircuit::new(leafs);
     let (_roots, witnesses) = circuit.batched_eval(columns);
     let (point, claim) = gpgkr_prove(transcript, &fold.zeta, witnesses);

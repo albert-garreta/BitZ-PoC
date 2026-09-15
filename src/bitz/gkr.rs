@@ -10,9 +10,19 @@
 
 use std::collections::VecDeque;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 use super::eq_factor;
 use super::transcript::{ProverState, VerifierState};
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::utils::build_eq_x_r_vec;
+use crate::utils::wide_mul::WideMulAcc;
+use crate::{cfg_chunks, cfg_chunks_mut, cfg_into_iter};
+
+/// Work-splitting granularity for the per-round passes (their
+/// `PARALLEL_MIN_LANES`).
+const PARALLEL_MIN_LANES: usize = 1 << 12;
 
 type Point = VecDeque<Gf>;
 
@@ -42,7 +52,9 @@ impl GrandProductCircuit {
         while prev_eval.len() > groups {
             let mid = prev_eval.len() / 2;
             let (l, r) = prev_eval.split_at(mid);
-            let eval: Vec<Gf> = l.iter().zip(r).map(|(&a, &b)| a * b).collect();
+            let eval: Vec<Gf> = cfg_into_iter!(0..mid, PARALLEL_MIN_LANES)
+                .map(|i| l[i] * r[i])
+                .collect();
             witnesses.push(prev_eval);
             prev_eval = eval;
         }
@@ -72,14 +84,18 @@ pub fn gpgkr_prove(
 }
 
 fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point, Gf) {
-    let mut suffix_table = SuffixTable::new(&point);
+    // The eq table a round needs is the one over the coordinates not yet
+    // bound, in little-endian (external) order: the external prefix.
+    let external: Vec<Gf> = point.iter().rev().copied().collect();
     let mut factor = Gf::one();
     let mid = wnext.len() / 2;
     let (mut mle_l, mut mle_r) = wnext.split_at_mut(mid);
     let mut next_point = VecDeque::with_capacity(point.len() + 1);
+    let total = point.len();
 
-    for z in point {
-        let eq = suffix_table.pop().expect("one table per coordinate");
+    for (round, z) in point.into_iter().enumerate() {
+        let remaining = total - 1 - round;
+        let eq = eq_table(&external[..remaining]);
         let h = mle_l.len() / 2;
         debug_assert_eq!(eq.len(), h);
         let (lo_l, hi_l) = mle_l.split_at_mut(h);
@@ -88,28 +104,13 @@ fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point
         // At z = 0 the incoming claim determines the value at zero, so send
         // the value at one. Otherwise send the value at zero as usual.
         let send_one = z == Gf::zero();
-        let mut sum_endpoint = Gf::zero();
-        let mut sum_inf = Gf::zero();
-        for i in 0..h {
-            let (d_l, d_r) = (hi_l[i] - lo_l[i], hi_r[i] - lo_r[i]);
-            let (l_endpoint, r_endpoint) = if send_one {
-                (hi_l[i], hi_r[i])
-            } else {
-                (lo_l[i], lo_r[i])
-            };
-            sum_endpoint += eq[i] * l_endpoint * r_endpoint;
-            sum_inf += eq[i] * d_l * d_r;
-        }
+        let (sum_endpoint, sum_inf) = round_sums(lo_l, lo_r, hi_l, hi_r, &eq, send_one);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
 
         let r: Gf = ps.verifier_message();
         next_point.push_back(r);
 
-        for i in 0..h {
-            let (d_l, d_r) = (hi_l[i] - lo_l[i], hi_r[i] - lo_r[i]);
-            lo_l[i] += r * d_l;
-            lo_r[i] += r * d_r;
-        }
+        fold_halves(lo_l, lo_r, hi_l, hi_r, r);
         mle_l = &mut mle_l[..h];
         mle_r = &mut mle_r[..h];
         factor = factor * eq_factor(r, z);
@@ -122,34 +123,77 @@ fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point
     (next_point, claim)
 }
 
-/// The eq tables over every suffix of the point past the selector, largest
-/// last so `pop` yields the one the next round needs.
-struct SuffixTable(Vec<Vec<Gf>>);
+/// `eq(·, point)` over the hypercube, index bit `j` ↔ `point[j]`; `[1]`
+/// for the empty point.
+fn eq_table(point: &[Gf]) -> Vec<Gf> {
+    if point.is_empty() {
+        return vec![Gf::one()];
+    }
+    build_eq_x_r_vec(point, &()).expect("non-empty point")
+}
 
-impl SuffixTable {
-    fn new(point: &Point) -> Self {
-        let mut table = Vec::with_capacity(point.len());
-        let mut prev = vec![Gf::one()];
-        let c = point.range(point.len().min(1)..);
-        for &z in c.rev() {
-            let size = prev.len() << 1;
-            let mut entry = vec![Gf::zero(); size];
-            let (low, hi) = entry.split_at_mut(size >> 1);
-            for (i, &e) in prev.iter().enumerate() {
-                let tmp = z * e;
-                low[i] = e - tmp;
-                hi[i] = tmp;
+/// `Σ eq·l_end·r_end` and `Σ eq·(l_hi − l_lo)(r_hi − r_lo)` over the
+/// pairs, chunked in parallel with delayed reduction: the products are
+/// accumulated unreduced and reduced once per chunk — exact, so the
+/// values are the ones a reduced-per-term sum gives.
+fn round_sums(
+    lo_l: &[Gf],
+    lo_r: &[Gf],
+    hi_l: &[Gf],
+    hi_r: &[Gf],
+    eq: &[Gf],
+    send_one: bool,
+) -> (Gf, Gf) {
+    let h = lo_l.len();
+    let chunks = h.div_ceil(PARALLEL_MIN_LANES).max(1);
+    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..chunks)
+        .map(|chunk| {
+            let start = chunk * PARALLEL_MIN_LANES;
+            let end = (start + PARALLEL_MIN_LANES).min(h);
+            let zero = Gf::zero();
+            let mut acc_end = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut acc_inf = <Gf as WideMulAcc>::wide_zero(&zero);
+            for i in start..end {
+                let (d_l, d_r) = (hi_l[i] - lo_l[i], hi_r[i] - lo_r[i]);
+                let (l_end, r_end) = if send_one {
+                    (hi_l[i], hi_r[i])
+                } else {
+                    (lo_l[i], lo_r[i])
+                };
+                let e_l = eq[i] * l_end;
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc_end,
+                    &<Gf as WideMulAcc>::mul_wide(&e_l, &r_end),
+                );
+                let e_d = eq[i] * d_l;
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc_inf,
+                    &<Gf as WideMulAcc>::mul_wide(&e_d, &d_r),
+                );
             }
-            table.push(prev);
-            prev = entry;
-        }
-        table.push(prev);
-        Self(table)
-    }
+            (
+                <Gf as WideMulAcc>::from_wide(acc_end),
+                <Gf as WideMulAcc>::from_wide(acc_inf),
+            )
+        })
+        .collect();
+    partials
+        .into_iter()
+        .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+}
 
-    fn pop(&mut self) -> Option<Vec<Gf>> {
-        self.0.pop()
-    }
+/// `lo += r · (hi − lo)` on both halves, chunked in parallel.
+fn fold_halves(lo_l: &mut [Gf], lo_r: &mut [Gf], hi_l: &[Gf], hi_r: &[Gf], r: Gf) {
+    cfg_chunks_mut!(lo_l, PARALLEL_MIN_LANES)
+        .zip(cfg_chunks_mut!(lo_r, PARALLEL_MIN_LANES))
+        .zip(cfg_chunks!(hi_l, PARALLEL_MIN_LANES))
+        .zip(cfg_chunks!(hi_r, PARALLEL_MIN_LANES))
+        .for_each(|(((ll, lr), hl), hr)| {
+            for i in 0..ll.len() {
+                ll[i] += r * (hl[i] - ll[i]);
+                lr[i] += r * (hr[i] - lr[i]);
+            }
+        });
 }
 
 /// Replays `rounds` layers from `claim` at `point`; `None` on any failed

@@ -250,6 +250,12 @@ impl FlockCommitHint {
     pub fn packed_message(&self) -> &[F128] {
         &self.p_msg
     }
+
+    /// The 64-column-lane packing of the same bits (`packed_cols[g][b]` =
+    /// bit `b` of columns `64g..64g+63`), built once at commit.
+    pub fn packed_cols(&self) -> &[Vec<u64>] {
+        &self.packed_cols
+    }
 }
 
 impl core::fmt::Debug for FlockCommitHint {

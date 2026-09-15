@@ -2,6 +2,10 @@
 //! images, take the batching point.
 
 use num_bigint::BigUint;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+use crate::cfg_into_iter;
 
 use super::params::{LinearClaim, Shape};
 use super::transcript::{ProverState, VerifierState};
@@ -58,14 +62,16 @@ pub fn fold_column(row: &[u64], exponents: &[u128]) -> u128 {
     total
 }
 
-/// Every column's fold, in column order.
-pub fn fold_columns(rows: &[Vec<u64>], exponents: &[u128]) -> Vec<u128> {
-    rows.iter().map(|row| fold_column(row, exponents)).collect()
+/// Every column's fold, in column order — the crate's nibble-table fold
+/// ([`crate::ligerito::fold_values_bits`]), the same integers
+/// [`fold_column`] produces one bit at a time.
+pub fn fold_columns(shape: &Shape, rows: &[Vec<u64>], exponents: &[u128]) -> Vec<u128> {
+    crate::ligerito::fold_values_bits(&shape.layout(), rows, exponents)
 }
 
 /// `g^{eta_j}`, one per column.
 pub fn column_images(comb: &FixedBasePow, folds: &[u128]) -> Vec<Gf> {
-    folds.iter().map(|&fold| comb.pow(fold)).collect()
+    cfg_into_iter!(folds, 64).map(|&fold| comb.pow(fold)).collect()
 }
 
 /// `y_i = g^{w_i}`, one per row.
@@ -124,7 +130,7 @@ impl BitZProver {
         if rows.len() != shape.columns() {
             return Err(SendError::ShapeMismatch);
         }
-        let folds = fold_columns(rows, claim.row_exponents());
+        let folds = fold_columns(shape, rows, claim.row_exponents());
         for fold in &folds {
             transcript.prover_message(&fold.to_le_bytes());
         }

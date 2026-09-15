@@ -205,7 +205,7 @@ impl Pcs {
                     bind_inner_product_statement(self, &root, claim, transcript);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
-                let reduced = sumcheck::prove(claim, hint.rows(), transcript)?;
+                let reduced = sumcheck::prove(claim, hint, transcript)?;
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
                 self.prove_mle(hint, &ring_switch, reduced.target, transcript)
