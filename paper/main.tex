@@ -120,7 +120,7 @@ In the vast majority of scenarios, $\Relation$ is defined over one (or more) alg
 \begin{enumerate}[leftmargin=*]
 \item
 \label{i:arithmetization}
-\textbf{(Non-)Nativity of the computation.} Usually the computations one wants to prove are not native to $R$, so one has to perform a more or less complex emulation of the computation into polynomial equations over $R$. This can affect the size of the input-witness pair $\inp,\wit$ significantly \cite{??}. Additionally, the emulation step can be  technically involved and prone to  security errors \cite{??}.  
+\textbf{(Non-)Nativity of the computation.} Usually the computations one wants to prove are not native to $R$, so one has to perform a more or less complex emulation of the computation into polynomial equations over $R$. This can affect the size of the input-witness pair $\inp,\wit$ significantly \cite{xJsnark}. Additionally, the emulation step can be  technically involved and prone to  security errors \cite{snark-vuln-sok,zk-circuit-bugs}.  
 \item
 \label{i:field:performance}
 \textbf{Proof system efficiency.} The efficiency and design of the prover and verifier algorithms are affected by the choice of $R$: for example, modern CPUs are more performant for operations in certain small fields (e.g.\ M31 \cite{cryptoeprint:2023/824,CircleSTARKs}, Babybear \cite{risczero}, Goldilocks \cite{plonky2:repo}) than in arbitrary fields, especially if these are larger. Importantly, another class of fields where CPUs operate exceptionally fast are \emph{binary fields}, i.e.\ fields of order a power of two.
@@ -2141,7 +2141,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 
 
 \subsection{Instantiation}\label{s:instantiation}
-We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form (cf.\ \cref{s:gkr_low_entropy}). The IOP $\Pi_\iopp$ is taken to be WHIR/Ligerito \cite{whir,Ligerito} with the ring switching step from \cite{binius}. Our implementation of WHIR  is taken from Flock's \cite{flock} implementation. The inner product claims when $\Pi_\iopp$ is called are not MLE evaluation claims. Since  the ring-switch implementation in \cite{flock} does not support arbitrary inner product claims,   we run a sumcheck to reduce to those to MLE evaluation claims. Alternatively, one could avoid the sumcheck and use the approach from \cref{a:ring_switch_1}. We instantiate them solely with the following parameters:
+We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form (cf.\ \cref{s:gkr_low_entropy}). The IOP $\Pi_\iopp$ is taken to be WHIR/Ligerito \cite{whir,Ligerito} with the ring switching step from \cite{binius}. Our implementation of WHIR  is taken from Flock's \cite{flock} implementation. The inner product claims when $\Pi_\iopp$ is called are not MLE evaluation claims. Since  the ring-switch implementation in \cite{flock} does not support arbitrary inner product claims,   we run a sumcheck to reduce to those to MLE evaluation claims.  We instantiate them solely with the following parameters:
 \begin{table}[H]
     \centering
     \begin{tabular}{c|c}
@@ -2172,7 +2172,7 @@ We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an 
     \label{tab:instantiation_params}
 \end{table}
 
-We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of \albertimportant{say rbr knowledge soundness} security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{s:experiments} we provide experimental results for $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
+We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of round-by-round (rbr) knowledge soundness, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{s:experiments} we provide experimental results for $100$ bits of rbr knowledge soundness.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it: several of the considerations made below can be used for $\lambda=100$, which much less constrainting parameters. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
 
 The contents of this section should be taken as examples of how to instantiate \cref{c:core_iop,c:LinModFieldBin}, not as strict rules. Other configurations may be perfectly plausible and practical. 
 
@@ -2908,6 +2908,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 
 \section{Experiments} \label{s:experiments}
+\albertimportant{Binius UDR and Binius Johnson is confusing because they use different PCS}
 
 
 \begin{comment}
@@ -3068,7 +3069,6 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \subsection{SHA-256 hashing followed by ECDSA signature verification}
 
-\albertimportant{Verifier can likely be optimized in the ringswitch step}
 
 We experiment with proving the SHA-256 hash of a message of a few KB message followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). For the latter we compose two circuits in the Binius64 repo, one for SHA-256 and one for ECDSA signature verification.
 
