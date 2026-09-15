@@ -5,7 +5,7 @@
 %% See lncs-switch.tex.  main-lncs.tex builds the LNCS version without touching this
 %% line (it predefines \LNCS).
 \newif\iflncs
-\lncsfalse
+\lncstrue
 \ifdefined\LNCS\lncstrue\fi \ifdefined\FULLVERSION\lncsfalse\fi % main-lncs.tex / main-full.tex force one or the other
 \iflncs
   \documentclass[runningheads]{llncs}
@@ -337,6 +337,7 @@ In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \alber
 
 
 
+\begin{lncstable}{TabShaArith}
 \begin{table}[H]
     \centering
     \begin{tabular}{l|c}
@@ -349,9 +350,10 @@ In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \alber
         \hline
         R1CS over $\comfield$, AI optimized &  $25470$ bits
     \end{tabular}
-    \caption{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf{CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf{CM}$ relation (see \eqref{e:CM_rel}) using the methods from \cref{e:CM_rel,r:CM_is_NP_complete}, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean} \albertimportant{Change this to avoid deanonymization in the EC submission}. The second row displays the witness bit-size in the  arithmetization from Binius64 \cite{binius64}, which is an R1CS constraint over a binary field. Flock's \cite{flock} arithmetization has 31400 bits per compression. The AI row refers to an optimized arithmetization found by an AI working against a Lean specification in the zkGolf competition \url{https://zk.golf/}.  }
+    \caption{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf{CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf{CM}$ relation (see \eqref{e:CM_rel}) using the methods from \cref{e:CM_rel,r:CM_is_NP_complete}, \iflncs \else see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}\fi{} \albertimportant{Change this to avoid deanonymization in the EC submission}. The second row displays the witness bit-size in the  arithmetization from Binius64 \cite{binius64}, which is an R1CS constraint over a binary field. Flock's \cite{flock} arithmetization has 31400 bits per compression. The AI row refers to an optimized arithmetization found by an AI working against a Lean specification in the zkGolf competition \url{https://zk.golf/}.  }
     \label{tab:sha_arithmetization}
 \end{table}
+\end{lncstable}
 
 
 
@@ -422,7 +424,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 %The idea of exploiting their low entropy through lookup tables was arrived at during an interactive conversation with an AI. 
 \bigskip
 
-\noindent \emph{Document preparation:} This document was  written with little assistance of AI. It was only used to create the benchmark tables in \cref{s:experiments}; identify typos and incoherences; make refactorings and stylistic improvements; and for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}.  The only ``non-trivial'' use of AI was during the soundness proof overview  in the technical overview  \cref{s:to_soundness}: this   was initially drafted with AI and was ellaborated upon by us subsequently. \albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness}
+\noindent \emph{Document preparation:} This document was  written with little assistance of AI. It was only used to create the benchmark tables in \cref{s:experiments}; identify typos and incoherences; make refactorings and stylistic improvements; and for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}.  The only ``non-trivial'' use of AI was during the soundness proof overview  in the technical overview  \cref{s:to_soundness}: this   was initially drafted with AI and was ellaborated upon by us subsequently. \albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness} 
 
 \bigskip
 
@@ -462,9 +464,9 @@ Additionally, the present setting is required when using the fingerprinting PIOP
 
 We next present a protocol (a simple instantiation of \ftwoz) for proving \eqref{e:new_to_0}. We assume $\vv$ admits a tensor decomposition
 %
-$$
+\lncsmath{
 \vv= \vv^{(1)} \otimes \vv^{(2)} \in \FF_q^{\codedim_1 \times \codedim_2},
-$$
+}
 where we assume there is freedom to choose the lengths of $\vv^{(1)},\vv^{(2)}$ (whose product is $\codedim_0$).  This is typically the case since $\vv$ is usually an ``eq'' vector, i.e.\ $\vv=(\eq(\bb,\rr))_{\bb\in \bits^{\log \codedim_0}}$ for some $\rr\in \FF_q^{\log\codedim_0}$. Tensor decompositions play a crucial role in the efficiency of \ftwoz, as we discuss in \cref{s:why_the_tensor_split}.
 
  \paragraph{Step 1: Commitment in $\comfield$.} Let $B\defeq \lceil \log q\rceil$ and let $\codedim\defeq B\cdot \codedim_0$. The prover creates a vector $\bitstext(\bff) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, obtained by bit-decomposing each entry of $\bff$ (a field element) into a vector of $B$ bits, and concatenating all such $B$-length vectors. 
@@ -563,7 +565,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 
 
 \begin{remark}[Succinctness of the verifier and the proof size]
-Throughout the above construction, the verifier handles only vectors of size $\codedim_1$ and $\codedim_2$, hence, by setting $\codedim_1$ and $\codedim_2$ approximately of size $\sqrt{\codedim}$, we manage to keep the verifier and proof size succinct. We leave as open problem (\cref{s:open_problems}) making these asymptotically polylogarithmic, instead of square root sized. 
+Throughout the above construction, the verifier handles only vectors of size $\codedim_1$ and $\codedim_2$, hence, by setting $\codedim_1$ and $\codedim_2$ approximately of size $\sqrt{\codedim}$, we manage to keep the verifier and proof size succinct. We leave as open problem\iflncs\else\ (\cref{s:open_problems})\fi\ making these asymptotically polylogarithmic, instead of square root sized. 
 \end{remark}
 %\paragraph{Costs.} Concrete costs are provided in \cref{?}. In short, the prover operations are comprised of: encoding  the vector $\pack\circ \pi_2(\bitstext(\bff))\in \comfield^{\codedim/\comfieldexp}$, and computing a Merkle tree for the resulting word (Step 1); the operations required in the GKR grand product protocol and its subsequent possible batching steps (which we optimize in \cref{s:gkr_low_entropy}) (half Step 5); the operations used by the ring-switch \cite{binius2} and the PCS, WHIR or Ligerito in our instantiation (Step 6); and the operations from Steps 2 to half of Step 5. The latter involve a linear amount of operations over $\ZZ$ and over $\comfield$.
 
@@ -593,7 +595,7 @@ Let $S$ be a finitely generated ring. For example, $S$ could be a finite field e
 
 That $S$ is finitely generated means that  there exist elements $1, \eta_1, \ldots, \eta_k\in S$ such that every element $s\in S$ can be written as a polynomial expression $s =  \sum_{\aa} s_\aa \cdot \eta_1^{a_1}\cdots \eta_k^{a_k}$ in $\eta_1,\ldots,\eta_k$, for some elements $s_\aa \in \range{0}{\Char(S)-1}_S$ (for some integers $s_\aa$ if $\Char(S)=0$), where $\Char(S)$ is the characteristic of $S$\footnote{The characteristic of a ring with multiplicative unity $1$  is the minimum $n$ such that $1$ added together $n$ times equals $0$; or $\Char(S)=0$ if such $n$ does not exist.}.   For example, if $S$ is a field extension of size $q^e$ with $e> 1$, then $k_S=1$ and $\eta_1 = X$ (where we look at elements from the extension field as polynomials). If $S$ is a prime field or the integers $\ZZ$, then $k_S=0$ and the only generator is $1$. 
 
-Let $R$ be another finitely generated ring, and let $$\psi: S\to R$$ be a ring homomorphism. For example, we could simply have $S=R$ be a finite field, and $\psi$ be the identity (this is the setting in the previous \cref{s:to_simple_bitz}).  Or, in the fingerprinting approach to proving integer constraints, one would take $S=\ZZ$, $R$ a prime field, and $\psi$ reduction modulo $q$. In \cite{zincplus}, $S$ is a polynomial ring, $R$ is a prime field, and $\psi$ is a certain projection. 
+Let $R$ be another finitely generated ring, and let \lncsmath{\psi: S\to R} be a ring homomorphism. For example, we could simply have $S=R$ be a finite field, and $\psi$ be the identity (this is the setting in the previous \cref{s:to_simple_bitz}).  Or, in the fingerprinting approach to proving integer constraints, one would take $S=\ZZ$, $R$ a prime field, and $\psi$ reduction modulo $q$. In \cite{zincplus}, $S$ is a polynomial ring, $R$ is a prime field, and $\psi$ is a certain projection. 
 
 Assume now that the prover claims knowledge of a vector $\bff\in S^{\codedim_0}$ such that
  \begin{equation}\label{e:new_to_0_rings}\langle \vv, \psi(\bff)\rangle =\mu \qquad \text{in  } R,
@@ -604,20 +606,21 @@ where $\vv\in R^{\codedim_0}, \mu\in R$ are public.
 
 \paragraph{Size bounds.} For soundness reasons\footnote{There are also formalization difficulties when allowing arbitrary witness elements in an infinite ring. For example, no polynomial time extractor can output an exponentially sized witness.}, when $S$ is infinite, we cannot allow a prover to use arbitrarily large witnesses, and we  restrict the set of allowable witnesses to a publicly specified subset of $S$ (this is standard practice, see e.g.\ \cite{zaratan,zinc,qaren,limber,zincplus}).  
 
-Let $B,D>0$ be public size parameters.  Intuitively, we want the prover to prove knowledge of a witness that can be written as polynomial expressions on $\eta_1, \ldots, \eta_{k_S}$ of total degree less than $D$, with coefficients in $\range{0}{2^B-1}_S$, where $\range{0}{2^B-1}_S$ is the set of elements from $S$ that can be obtained by adding $1$ together less than $2^B$ times (and zero). We denote the set of such elements by $S_{\leq B}^{<D}$. Formally,
+Let $B,D>0$ be public size parameters.  Intuitively, we want the prover to prove knowledge of a witness that can be written as polynomial expressions on $\eta_1, \ldots, \eta_{k_S}$ of total degree less than $D$, with coefficients in $\range{0}{2^B-1}_S$, where $\range{0}{2^B-1}_S$ is the set of elements from $S$ that can be obtained by adding $1$ together less than $2^B$ times (and zero). We denote the set of such elements by $S_{\leq B}^{<D}$. \iflncs(this is the set $R_{\leq B}^{<D}$ of \cref{s:prelims_algebra}, for $R=S$).\else Formally,
  %
  $$
 S_{\leq B}^{<D}\defeq \left\{\left.\sum_{\substack{\aa\in \ZZ_{\geq 0}^k,\\  a_1+\ldots+a_k<D} } s_{\aa}\cdot \eta_1^{a_1}\cdots\eta_k^{a_k} \ \right| \ s_{\aa}\in \range{0}{2^B-1}_S\right\}
  $$
  % 
+\fi
   If $S$ is finite to begin with, we can simply take $B,D$ so that $S_{\leq B}^{<D}=S$, or we may prefer to  restrict witnesses to a subset of $S$ anyway.
 
 
  \paragraph{Step 1: Commitment in $\comfield$.}  As before, the prover creates a vector $\bitstext(\bff) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, for some $\codedim$, with $\bitstext(\bff)$ being linearly related to $\bff$ in a manner we explain next. Given $s\in S_{\leq B}^{<D}$ with $s = \sum_{\aa} s_\aa \cdot \eta_1^{a_1}\cdots \eta_{k}^{a_k}$, where the sum runs over the set $I$ of tuples $\aa\in \ZZ_{\geq 0}^k$ with $a_1+\ldots+a_k<D$, write
 %
-$$
+\lncsmath{
 s= \sum_{\aa\in I} \sum_{i\in [B]} s_{\aa,i}\cdot 2^{i-1}\cdot  \eta_1^{a_1}\cdots \eta_{k}^{a_k}, \qquad \text{for } s_{\aa,i}\in \{0,1\}.
-$$
+}
 %
 Then define $\bitstext(s)=(s_{\aa,i})_{i \in [B], \aa\in I}$, where, abusing the notation, we look at $0$ and $1$ indistinctly as integers. Then $\bitstext(\bff)$ consists in applying $\bitstext$ entry-wise to $\bff$.  Note that 
 %
@@ -905,6 +908,7 @@ In a sense, the CM relation places only linear constraints over its witness (wit
 
 
 Indeed, \textbf{we arithmetize SHA-256 as a CM instance}. Our arithmetization leads to witnesses of $7144$ bits per compression, $4.4\times$ smaller than those of Binius64 \cite{binius64} and Flock \cite{flock} (see \cref{tab:sha_arithmetization}).
+\lncsplace{TabShaArith}
 
 \begin{remark}[The $\RELCM$ relation is NP-complete]\label{r:CM_is_NP_complete}
 Any Boolean circuit can be arithmetized as an instance of $\RELCM$. Indeed, since any boolean circuit can be written as a system of equations using the operations XOR and AND, it suffices to prove that, given $x,y,z\in \bits$, we can express both of the following constraints as an instance of $\RELCM$:
@@ -914,9 +918,9 @@ $$    x \xor y = z,\qquad \qquad
 $$
 Indeed, $x \xor y = z$ if and only if $\pi_2^{-1}(\pi_2(x) + \pi_2(y))=z$, where here $+$ means addition modulo $2$. Further, $x \band y = z$  if and only if  
 %
-$$
+\lncsmath{
 2\cdot z =  x+y - \pi_2^{-1}(\pi_2(x) + \pi_2(y)).
-$$    
+}    
 One can verify this last equivalence for example  by directly inspecting that it holds for the four possible combinations of $x,y\in \bits$.
 \end{remark}
 
@@ -1061,9 +1065,9 @@ By definition, $\uu=L^{\mathsf{T}}\cdot \vv$. We argue that for any $\bfg$ satis
 
 \noindent\emph{\underline{Step 3}.}  Let $\cE$ be the event that the projected claim \eqref{e:new_to_projected_lifted_polring_claim} holds over $\FF_q$ for some $\bfg\in \bits^\codedim$ with $f= \Enc_\cC \circ \pack\circ \pi_2(\bfg)$, but \eqref{e:to_soundness_1_rings} does not hold. As in \cref{s:to_soundness_prime}, $\bfg$ is fixed by $f$ before $q,\pirand$ are sampled, see \cref{r:oracle_udr}. Consider the polynomial
 %
-$$
+\lncsmath{
 h\defeq \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle-\mu' \ \in \ \ZZ[X_1,\ldots, X_{k'}].
-$$
+}
 %
 Since $\picanon$ is a ring homomorphism with $\picanon\circ\picanon^{-1}=\mathsf{id}$ and $\picanon(\mu')=\mu$, we have $\picanon(h)=\langle \uu, \psi(\bfg)\rangle-\mu\neq 0$, and so $h\neq 0$. Since $\picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)})$ is public and $\bfg$ has bit entries, the total degree and the coefficient magnitudes of the polynomial $\langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bfg \rangle$ are bounded by quantities that the verifier can compute. We let $D_\ZZ$ and $2^{B_\ZZ}$ be these quantities, respectively (concrete expressions are given in Round 1 of \cref{c:core_iop}, cf.\ \eqref{e:ring_theta_params}). These are the bounds used by the verifier in Step 3 of \cref{s:to_general_rings}, which checks that $\mu'$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ}$. Hence $h$ has total degree at most $D_\ZZ$ and coefficients of absolute value at most $2^{B_\ZZ+1}$. 
 
@@ -1115,7 +1119,7 @@ We look at vectors both as row vectors and column vectors. When performing matri
 where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ denotes inner product.
 
 \subsection{Algebra}\label{s:prelims_algebra}
-\paragraph{Concrete fields and rings} We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let $$\pi_n :\ZZ\to \ZZ_n$$ denote reduction modulo $n$. For $n\geq 1$, we fix the inverse $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ mapping each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
+\paragraph{Concrete fields and rings} We write $\FF_q$ for the finite field with $q$ elements (where $q$ is a prime or a prime power), $\QQ$ for the field of rational numbers, and $\ZZ$ for the ring of integers. For an integer $n\geq 1$, $\ZZ_n$ denotes the ring of integers modulo $n$, with the convention $\ZZ_0\defeq \ZZ$. When $n$ is prime, $\ZZ_n=\FF_n$. We let \lncsmath{\pi_n :\ZZ\to \ZZ_n} denote reduction modulo $n$. For $n\geq 1$, we fix the inverse $\pi_n^{-1} : \ZZ_n \to \range{0}{n-1}\subseteq \ZZ$ mapping each element $a$ in $\ZZ_n$ to the integer in the range  $\range{0}{n-1}$ representing $a$. 
 
 
 
@@ -1124,9 +1128,9 @@ where $M^{\mathsf{T}}$ denotes transposition and $\langle \cdot, \cdot \rangle$ 
  The \emph{characteristic} of a ring $\ring$, denoted $\Char(R)$, is the smallest $c\geq 1$, if it exists, such that $1 + \overset{c}{\ldots} + 1 = 0$ in $\ring$. Otherwise, if $1 + \overset{c}{\ldots} + 1 \neq 0$ for all $c$, the characteristic is zero.
  By $\range{0}{n}_\ring$ we denote all elements in $\ring$ of the form $1 + \overset{i}{\ldots} + 1$ for $i=0,\ldots, n$. For every ring $R$ we have a canonical embedding 
  %
- $$
+ \lncsmath{
     \ZZ_{\Char(R)} \subseteq R
- $$
+ }
 of the ring of integers modulo $\Char(R)$ into $R$. Namely, the set $\{n \cdot 1 \mid n\in \ZZ\} \subseteq R$ for $1$ the identity element of $R$, forms the ring  $\ZZ_{\Char(R)}$. Further, $\pi_{\Char(R)}$ induces a natural homomorphism (not necessarily surjective)
 %
 \begin{equation}\label{e:Z_to_ring}
@@ -1136,7 +1140,7 @@ sending $n\in \ZZ$ to $n\cdot 1$ for $1$ the identity of $R$.
 
 Given a set or vector of integers $\ww\in \ZZ^m$, we define \begin{equation}\label{e:integers_subscript_proj}\ww_R= \pi_{\Char(R)}(\ww).\end{equation}
  
- \paragraph{Finitely generated rings} Further, all rings in this work are \emph{finitely generated} as rings. Equivalently, every ring $R$ in this work is isomorphic to a quotient $$R=\ZZ[X_1,\ldots, X_k]/I$$ of a polynomial ring over $\ZZ$ by an ideal $I$. This condition is satisfied by, for example:
+ \paragraph{Finitely generated rings} Further, all rings in this work are \emph{finitely generated} as rings. Equivalently, every ring $R$ in this work is isomorphic to a quotient \lncsmath{R=\ZZ[X_1,\ldots, X_k]/I} of a polynomial ring over $\ZZ$ by an ideal $I$. This condition is satisfied by, for example:
 \begin{enumerate}[leftmargin=*,nosep]
 \item All finite fields and the rings $\ZZ_n$; 
 \item $\ZZ$, and the polynomial rings $\ZZ[X]$ and $\FF_q[X]$
@@ -1160,9 +1164,9 @@ Given a finitely generated ring $R$ with fixed generators $1,\eta_1,\ldots,\eta_
 \begin{comment}
 \albertimportant{Not used?} Given a  ring $R$, $n$ variables $X_1, \ldots, X_n$, and a bit-size bound $B\geq 1$, we define 
 %
-$$
+\lncsmath{
 R_{\leq B}[X_1, \ldots, X_n]
-$$
+}
 %
 as the subset of $R[X_1, \ldots, X_n]$ formed by polynomials all whose coefficients are in the set $\range{0}{2^B-1}_R$.  
 
@@ -1180,7 +1184,7 @@ as the subset of $R[X_1, \ldots, X_n]$ formed by polynomials all whose coefficie
 
 
 
-%\albertimportant{Let's remove this. The notation above should be enough} Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let $$\pi_{\FF}: \ZZ[X] \to \FF$$ be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
+%\albertimportant{Let's remove this. The notation above should be enough} Given a  finite field $\FF$ of characteristic $q$, let $a(X)\in \ZZ[X]$ be an irreducible polynomial over $\FF_q$ so that $\FF = \ZZ[X]/(q,a(X))$ \albert{consider isomorphism, or assume all finite fields are represented like this}. We let \lncsmath{\pi_{\FF}: \ZZ[X] \to \FF} be the  canonical homomorphism from $\ZZ[X]$ to $\FF$ obtained by reducing modulo the ideal $(q,a(X))$, i.e.\ by reducing coefficients modulo $q$ and then reducing the resulting polynomial modulo $a(X)$.
 
 \albertimportant{Needed?} A subset $S\subseteq R$ of a  ring $R$ is called \emph{exceptional} if for all two distinct $a,b\in R$, the element $a-b$ has a multiplicative inverse in $R$.
 \begin{lemma}[Generalized Alon--F{\"u}redi Theorem~\cite{bishnoi2018schwartz}]
@@ -1197,7 +1201,7 @@ $\Pr_{\rr\getsr S^\mu}[f(\rr)=0] \le \mu/|S|$.
 
 Let $\cC \subseteq \FF^{\codelength}$ be a linear code over $\FF$ of dimension $\codedim$ and blocklength $\codelength$.  Given two words $w_1, w_2$ of length $n$, the relative Hamming distance between $w_1$ and $w_2$ (the fraction of positions in which they differ) is denoted 
 %
-$$\hamming(w_1,w_2).$$
+\lncsmath{\hamming(w_1,w_2).}
 The \emph{relative minimum distance} of $\cC$, denoted $\hamming(\cC)$, is the minimum of $\hamming(c_1,c_2)$ over distinct codewords $c_1,c_2\in \cC$. Given $\delta\in (0,1)$ and an integer $L\geq 1$, we say $\cC$ is \emph{$(\delta, L)$-list-decodable} if for every word $w\in \FF^{\codelength}$ there are at most $L$ codewords $c\in \cC$ with $\hamming(w,c)<\delta$. Every code is $(\delta,1)$-list-decodable for $\delta\leq \hamming(\cC)/2$.  The value $\hamming(\cC)/2$ is called the \emph{unique decoding radius} of $\cC$.
 
 \paragraph{Relations}
@@ -1232,19 +1236,19 @@ $$
 \PESAT(\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \FF^\inplen, \\&\oracle = f \in \FF^{\codelength}, \\ &\wit= \bff\in W\end{aligned}\right) \;\middle|\;  \begin{aligned}
 &\Enc_{\cC}(T(\bff)) = f\\ \wedge \  &\pp_i(\xx, \bff) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
 $$
-We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (so that $\inplen=\codedim+1$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{whir}.  We denote it $$\LIN(\FF,\cC,T).$$
+We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (so that $\inplen=\codedim+1$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{whir}.  We denote it \lncsmath{\LIN(\FF,\cC,T).}
 %
 \begin{definition}[Relaxation of $\PESAT$ and $\LIN$]Given $\delta \in (0,1)$, the \emph{relaxation} of $\PESAT$ and $\LIN$, denoted
 %
-$$
+\lncsmath{
 \PESAT^\delta, \qquad \qquad \LIN^{\delta}
-$$
+}
 %
 are the relations defined exactly as $\PESAT$ and $\LIN$, respectively, except that the constraint $\Enc_{\cC}(T(\bff))=f$ is replaced by
 %
-$$
+\lncsmath{
 \hamming(\Enc_{\cC}(T(\bff)), f) < \delta.
-$$
+}
 \end{definition}
 
 \paragraph{Multilinear extensions.} Given a field $\FF$ and $\uu\in \FF^{2^r}$ indexed by $\bits^r$, we denote by $\mle{\uu}\in \FF[X_1,\ldots,X_r]$  the unique multilinear polynomial with $\mle{\uu}(\bb)=\uu_\bb$ for all $\bb\in\bits^r$. For $\bm\alpha,\bm\beta\in\FF^r$ we let $\eq(\bm\alpha;\bm\beta)\defeq \prod_{i\in[r]}\bigl(\alpha_i\cdot \beta_i+(1-\alpha_i)\cdot (1-\beta_i)\bigr)$, so that $\mle{\uu}(\bm\alpha)=\sum_{\bb\in\bits^r}\uu_\bb\cdot \eq(\bb;\bm\alpha)$. We write $\eq(\bb,\cc;\bm\alpha)$ for $\eq((\bb,\cc);\bm\alpha)$.
@@ -1342,11 +1346,11 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{Virtual}
 \iflncs
 \section{Experiments}\label{s:experiments}
-\lncsplace[\lncsfittables]{TabRawPerformance}
-\lncsplace{TabMultiSwap}
-\lncsplace[\lncsfittables]{TabShaEcdsa}
+\lncsplace{ExpSetup}
+\lncsplace[\lncsfittables\lncsfloattables]{TabRawPerformance}
+\lncsplace[\lncsfloattables]{TabMultiSwap}
+\lncsplace[\lncsfittables\lncsfloattables]{TabShaEcdsa}
 \fi
-\lncsplace[\let\subsubsection\subsection\let\subsection\section]{FurtherWork}
  
 
 \begin{lncsappendix}{iop}
@@ -3071,6 +3075,7 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other wo
 
 \albertimportant{Reproduction with BENCH\_INSTRUCTIONS.ms}
 
+\begin{lncsmove}{ExpSetup}
 We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end proof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}. 
 
 
@@ -3079,7 +3084,9 @@ Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of r
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius.
 
+\iflncs\else % the repository identifies the authors
 Our repository can be found in \url{https://github.com/albert-garreta/BitZ-pcs}. \albertimportant{Include human one? Make it owned by World?} \albertimportant{Remove in submission to avoid deanonymization.}
+\fi
 %\albertimportant{remove?} When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}.
 
 
@@ -3097,6 +3104,7 @@ We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the
  We are currently developing a parallel implementation  using conventional methods.  \albertimportant{Revisit depending on where this ends by submission}
 
 Additionally, AI was used to prepare the benchmarks in other repositories, and underwent revision by us. It was also used to run the benchmarks and organize the results into the  tables in this section.
+\end{lncsmove}
 
 
 
@@ -3611,6 +3619,7 @@ We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the p
 
 \end{lncsappendix}
 %\printbibliography[heading=bibintoc,title={References}]{paper/references}
+\iflncs\FloatBarrier\fi % LNCS: place the body's floating tables before the references
 \addcontentsline{toc}{section}{References}
 \bibliography{paper/references}
 
