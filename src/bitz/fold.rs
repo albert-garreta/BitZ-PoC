@@ -1,7 +1,7 @@
 //! Their fold round (step 3): send the integer column folds, derive the
 //! images, take the batching point.
 
-use num_bigint::BigUint;
+use crypto_bigint::{NonZero, U128};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -83,17 +83,21 @@ pub fn row_images(comb: &FixedBasePow, exponents: &[u128]) -> Vec<Gf> {
 
 /// The reconstruction `sum_j v^(2)_j pi_q(eta_j)` in `F_q`.
 pub fn reconstruct(claim: &LinearClaim, folds: &[u128], q: u128) -> u128 {
-    let modulus = BigUint::from(q);
-    let mut acc = BigUint::from(0u8);
-    for (&weight, &fold) in claim.column_weights().iter().zip(folds) {
-        acc += (BigUint::from(weight) * BigUint::from(fold % q)) % &modulus;
+    weighted_sum_mod(claim.column_weights(), folds, q)
+}
+
+/// `Σ_j weights[j] · (folds[j] mod q) mod q` over `u128` words: each
+/// product as a 256-bit `(lo, hi)` pair reduced by one wide remainder,
+/// the sum kept reduced.
+fn weighted_sum_mod(weights: &[u128], folds: &[u128], q: u128) -> u128 {
+    let modulus = NonZero::<U128>::new_unwrap(U128::from_u128(q));
+    let mut acc = U128::ZERO;
+    for (&weight, &fold) in weights.iter().zip(folds) {
+        let product = U128::from_u128(weight).widening_mul(&U128::from_u128(fold % q));
+        let term = U128::rem_wide_vartime(product, &modulus);
+        acc = acc.add_mod(&term, &modulus);
     }
-    let digits = (acc % &modulus).to_u64_digits();
-    let mut value = 0u128;
-    for (i, d) in digits.iter().enumerate().take(2) {
-        value |= u128::from(*d) << (64 * i);
-    }
-    value
+    u128::from(acc)
 }
 
 fn finish(
@@ -167,5 +171,48 @@ impl BitZVerifier {
             .map(|_| transcript.verifier_message::<Gf>())
             .collect();
         Ok(finish(shape, self.comb(), claim, folds, zeta))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use num_bigint::BigUint;
+
+    use super::weighted_sum_mod;
+
+    fn reference(weights: &[u128], folds: &[u128], q: u128) -> u128 {
+        let modulus = BigUint::from(q);
+        let mut acc = BigUint::from(0u8);
+        for (&weight, &fold) in weights.iter().zip(folds) {
+            acc += (BigUint::from(weight) * BigUint::from(fold % q)) % &modulus;
+        }
+        let digits = (acc % &modulus).to_u64_digits();
+        let mut value = 0u128;
+        for (i, d) in digits.iter().enumerate().take(2) {
+            value |= u128::from(*d) << (64 * i);
+        }
+        value
+    }
+
+    #[test]
+    fn wide_reconstruction_matches_the_bigint_reference() {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut wide = || (u128::from(next()) << 64) | u128::from(next());
+        for q in [(1u128 << 100) - 15, (1u128 << 114) - 11, u128::MAX - 158, 3, 1u128 << 127] {
+            for len in [0usize, 1, 2, 17, 256] {
+                let weights: Vec<u128> = (0..len).map(|_| wide() % q).collect();
+                let folds: Vec<u128> = (0..len).map(|_| wide()).collect();
+                assert_eq!(weighted_sum_mod(&weights, &folds, q), reference(&weights, &folds, q), "q {q} len {len}");
+                // Unreduced weights too: the product still fits 256 bits.
+                let raw: Vec<u128> = (0..len).map(|_| wide()).collect();
+                assert_eq!(weighted_sum_mod(&raw, &folds, q), reference(&raw, &folds, q), "raw q {q} len {len}");
+            }
+        }
     }
 }
