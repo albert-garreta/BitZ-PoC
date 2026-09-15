@@ -214,6 +214,29 @@ pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut 
     generic::jit_product_group(tab, pat, out);
 }
 
+/// `bucket[idx[c]] += eq[c]` over the columns — the bit rounds' one
+/// addition per term. `bucket` must hold 256 entries so every byte index
+/// is in bounds.
+pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8], eq: &[Gf]) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::scatter_add(bucket, idx, eq);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::scatter_add(bucket, idx, eq);
+}
+
+/// `Σ_a t_e[a] · Σ_b t_o[b] · bucket[a·n + b]` over `n = t_e.len()`
+/// entries, the inner sums accumulated unreduced and reduced once each.
+pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        neon::contract(t_e, t_o, bucket)
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    {
+        generic::contract(t_e, t_o, bucket)
+    }
+}
+
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 fn round_sums_task(
     lo_l: &[Gf],
@@ -418,6 +441,33 @@ pub(crate) mod generic {
             o.write(tab[0][pat[0][c] as usize] * tab[1][pat[1][c] as usize]);
         }
     }
+
+    pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8], eq: &[Gf]) {
+        assert!(bucket.len() >= 256);
+        for (&i, &e) in idx.iter().zip(eq) {
+            bucket[i as usize] += e;
+        }
+    }
+
+    pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
+        let n = t_e.len();
+        assert_eq!(t_o.len(), n);
+        assert!(bucket.len() >= n * n);
+        let zero = Gf::zero();
+        let mut acc = <Gf as WideMulAcc>::wide_zero(&zero);
+        for a in 0..n {
+            let mut inner = <Gf as WideMulAcc>::wide_zero(&zero);
+            for b in 0..n {
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut inner,
+                    &<Gf as WideMulAcc>::mul_wide(&t_o[b], &bucket[a * n + b]),
+                );
+            }
+            let inner = <Gf as WideMulAcc>::from_wide(inner);
+            <Gf as WideMulAcc>::wide_add_assign(&mut acc, &<Gf as WideMulAcc>::mul_wide(&t_e[a], &inner));
+        }
+        <Gf as WideMulAcc>::from_wide(acc)
+    }
 }
 
 /// The aarch64 kernels. Every loop keeps its accumulators in vector
@@ -426,7 +476,7 @@ pub(crate) mod generic {
 /// independent accumulator sets so the PMULL pipes stay fed.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub(crate) mod neon {
-    use core::arch::aarch64::{uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vst1q_u64};
+    use core::arch::aarch64::{uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vst1q_u64};
     use std::mem::MaybeUninit;
 
     use super::Gf;
@@ -816,6 +866,67 @@ pub(crate) mod neon {
             }
         }
     }
+
+    pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8], eq: &[Gf]) {
+        let n = idx.len();
+        assert!(eq.len() >= n);
+        assert!(bucket.len() >= 256);
+        // SAFETY: `Gf` is `repr(transparent)` over two `u64` limbs, so the
+        // bucket is a valid `2·256`-word array; every byte index lands
+        // inside it, and column indices are below `n ≤ eq.len()`.
+        unsafe {
+            let base = bucket.as_mut_ptr().cast::<u64>();
+            let mut c = 0usize;
+            while c + 2 <= n {
+                let i0 = *idx.get_unchecked(c) as usize;
+                let i1 = *idx.get_unchecked(c + 1) as usize;
+                let p0 = base.add(2 * i0);
+                let e0 = ld(eq.get_unchecked(c));
+                vst1q_u64(p0, veorq_u64(vld1q_u64(p0), e0));
+                let p1 = base.add(2 * i1);
+                let e1 = ld(eq.get_unchecked(c + 1));
+                vst1q_u64(p1, veorq_u64(vld1q_u64(p1), e1));
+                c += 2;
+            }
+            if c < n {
+                let i0 = *idx.get_unchecked(c) as usize;
+                let p0 = base.add(2 * i0);
+                let e0 = ld(eq.get_unchecked(c));
+                vst1q_u64(p0, veorq_u64(vld1q_u64(p0), e0));
+            }
+        }
+    }
+
+    pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
+        let n = t_e.len();
+        assert_eq!(t_o.len(), n);
+        assert!(bucket.len() >= n * n);
+        // SAFETY: as `neon::pmull_lo`; indices bounded by the assertions.
+        unsafe {
+            let mut acc = acc_zero();
+            for a in 0..n {
+                let row = bucket.get_unchecked(a * n..(a + 1) * n);
+                let mut ia = acc_zero();
+                let mut ib = acc_zero();
+                let mut b = 0usize;
+                while b + 2 <= n {
+                    acc_add(&mut ia, clmul_256(ld(t_o.get_unchecked(b)), ld(row.get_unchecked(b))));
+                    acc_add(
+                        &mut ib,
+                        clmul_256(ld(t_o.get_unchecked(b + 1)), ld(row.get_unchecked(b + 1))),
+                    );
+                    b += 2;
+                }
+                if b < n {
+                    acc_add(&mut ia, clmul_256(ld(t_o.get_unchecked(b)), ld(row.get_unchecked(b))));
+                }
+                acc_add(&mut ia, ib);
+                let inner = reduce_256(ia.0, ia.1);
+                acc_add(&mut acc, clmul_256(ld(t_e.get_unchecked(a)), inner));
+            }
+            to_elt(acc)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -890,6 +1001,36 @@ mod tests {
                 assert_eq!(q_l, want_l);
                 assert_eq!(q_r, want_r);
             }
+        }
+    }
+
+    #[test]
+    fn scatter_and_contract_match_the_reference() {
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for n in [1usize, 2, 5, 63, 64] {
+            let idx: Vec<u8> = (0..n).map(|_| (next() >> 20) as u8).collect();
+            let eq = elements(n, 70);
+            let mut got = vec![Gf::zero(); 256];
+            let mut want = got.clone();
+            scatter_add(&mut got, &idx, &eq);
+            generic::scatter_add(&mut want, &idx, &eq);
+            assert_eq!(got, want, "scatter n {n}");
+        }
+        for entries in [2usize, 4, 16] {
+            let t_e = elements(entries, 71);
+            let t_o = elements(entries, 72);
+            let bucket = elements(entries * entries, 73);
+            assert_eq!(
+                contract(&t_e, &t_o, &bucket),
+                generic::contract(&t_e, &t_o, &bucket),
+                "contract {entries}"
+            );
         }
     }
 

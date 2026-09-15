@@ -28,7 +28,6 @@ use super::gkr::{Point, eq_table, prove_dense_rounds, prove_layer_tensor};
 use super::kernels;
 use super::transcript::ProverState;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
-use crate::utils::wide_mul::WideMulAcc;
 use crate::{cfg_chunks_mut, cfg_into_iter};
 
 /// Levels below this run `MATERIALISED_LEVEL − ℓ` rounds off the bits;
@@ -571,9 +570,12 @@ impl<'a> Forest<'a> {
     /// Within a row `y` each of `E_lo, E_hi, O_lo, O_hi` is a function of the
     /// column's `nb`-bit pattern, so a row's sum is `Σ_{a,b} T_E[a]·T_O[b]·
     /// Σ_{c: pat_E(c)=a, pat_O(c)=b} eq_c[c]`: the terms only bucket `eq_c`
-    /// by their `(E, O)` pattern pair — four 16-byte additions per term, no
-    /// multiplication — and the `2^{2nb} + 2^{nb}` products of the contraction
-    /// are paid once per row (`nb ≤ 4` for every level this runs on).
+    /// by their `(E, O)` pattern pair — one 16-byte addition per term for
+    /// widths 1 and 2 (the whole `(E_lo, E_hi, O_lo, O_hi)` tuple, one byte
+    /// straight out of the bit-block transpose, marginalised afterwards),
+    /// four for width 4 (the pair bytes come out of two transposes, the
+    /// cross pairs by swapping nibbles) — and the `2^{2nb} + 2^{nb}`
+    /// products of the contraction are paid once per row.
     fn bit_round(
         &self,
         ell: usize,
@@ -588,138 +590,155 @@ impl<'a> Forest<'a> {
         let tables = self.fold_table(ell, kk, challenges);
         let nb = 1usize << (ell + kk);
         debug_assert!(nb <= 4, "the pair buckets need nb ≤ 4");
-        let entries = 1usize << nb;
-        let pairs = entries * entries;
         let y_bits = t - ell - 1 - j;
-        let low_bits = y_bits + 1;
         let eq_c = eq_table(&external[..s]);
         let eq_y = eq_table(&external[s..s + y_bits]);
-        let cols = 1usize << s;
-        let groups = cols.div_ceil(64);
-        let zero = Gf::zero();
-
-        // Σ_a tE[a] · Σ_b tO[b] · bucket[a·entries + b], unreduced inner sums.
-        let contract = |t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]| -> Gf {
-            let mut acc = <Gf as WideMulAcc>::wide_zero(&zero);
-            for a in 0..entries {
-                let mut inner = <Gf as WideMulAcc>::wide_zero(&zero);
-                for b in 0..entries {
-                    <Gf as WideMulAcc>::wide_add_assign(
-                        &mut inner,
-                        &<Gf as WideMulAcc>::mul_wide(&t_o[b], &bucket[a * entries + b]),
-                    );
-                }
-                let inner = <Gf as WideMulAcc>::from_wide(inner);
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut acc,
-                    &<Gf as WideMulAcc>::mul_wide(&t_e[a], &inner),
-                );
-            }
-            <Gf as WideMulAcc>::from_wide(acc)
+        let rows = 1usize << y_bits;
+        let row = |y: usize, buckets: &mut Buckets| {
+            let (end, inf) = self.bit_row(&tables, ell, kk, nb, y, y_bits, &eq_c, send_one, buckets);
+            let w = eq_y[y];
+            (end * w, inf * w)
         };
-
-        let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..(1usize << y_bits), 1)
-            .map(|y| {
-                // The four (p, bit) corners: table positions and their rows.
-                let mut words = [[0u64; 8]; 4];
-                let mut pats = [[0u8; 64]; 4];
-                let mut qs = [0usize; 4];
-                for (corner, q) in qs.iter_mut().enumerate() {
-                    let p = corner >> 1;
-                    let bit = corner & 1;
-                    *q = (p << low_bits) | (bit << y_bits) | y;
-                }
-                // Buckets keyed by (E pattern, O pattern) for the four
-                // (lo/hi, lo/hi) combinations. Narrow patterns first bucket
-                // by the whole (E_lo, E_hi, O_lo, O_hi) tuple — one addition
-                // per term — and marginalise afterwards; width 1 does so
-                // bit-sliced, straight off the four words.
-                let mut b_ll = vec![zero; pairs];
-                let mut b_lh = vec![zero; pairs];
-                let mut b_hl = vec![zero; pairs];
-                let mut b_hh = vec![zero; pairs];
-                let tuple_entries = if nb <= 2 { 1usize << (4 * nb) } else { 0 };
-                let mut tuples = vec![zero; tuple_entries];
-                for g in 0..groups {
-                    let base_c = g << 6;
-                    let width = 64.min(cols - base_c);
-                    let valid: u64 = if width == 64 { !0 } else { (1u64 << width) - 1 };
-                    for corner in 0..4 {
-                        let p = corner >> 1;
-                        let bit = corner & 1;
-                        let y_prev = y | (bit << y_bits);
-                        self.corner_words(ell, kk, p, y_prev, g, &mut words[corner]);
-                    }
-                    let eq_g = &eq_c[base_c..base_c + width];
-                    if nb == 1 {
-                        // Sixteen masks, one per tuple; each column lands in
-                        // exactly one, so the set bits are walked once.
-                        let w = [words[0][0], words[1][0], words[2][0], words[3][0]];
-                        for tuple in 0..16usize {
-                            let mut m = valid;
-                            for (i, &wi) in w.iter().enumerate() {
-                                m &= if (tuple >> i) & 1 == 1 { wi } else { !wi };
-                            }
-                            let mut acc = zero;
-                            while m != 0 {
-                                acc += eq_g[m.trailing_zeros() as usize];
-                                m &= m - 1;
-                            }
-                            tuples[tuple] += acc;
-                        }
-                    } else {
-                        for corner in 0..4 {
-                            patterns(&words[corner][..nb], &mut pats[corner]);
-                        }
-                        if nb == 2 {
-                            for (j0, &ec) in eq_g.iter().enumerate() {
-                                let tuple = pats[0][j0] as usize
-                                    | (pats[1][j0] as usize) << 2
-                                    | (pats[2][j0] as usize) << 4
-                                    | (pats[3][j0] as usize) << 6;
-                                tuples[tuple] += ec;
-                            }
-                        } else {
-                            for (j0, &ec) in eq_g.iter().enumerate() {
-                                let (pe_lo, pe_hi) = (pats[0][j0] as usize, pats[1][j0] as usize);
-                                let (po_lo, po_hi) = (pats[2][j0] as usize, pats[3][j0] as usize);
-                                b_ll[pe_lo * entries + po_lo] += ec;
-                                b_lh[pe_lo * entries + po_hi] += ec;
-                                b_hl[pe_hi * entries + po_lo] += ec;
-                                b_hh[pe_hi * entries + po_hi] += ec;
-                            }
-                        }
-                    }
-                }
-                if nb <= 2 {
-                    // Marginalise the tuple buckets into the four pair buckets.
-                    let mask = entries - 1;
-                    for (tuple, &value) in tuples.iter().enumerate() {
-                        let pe_lo = tuple & mask;
-                        let pe_hi = (tuple >> nb) & mask;
-                        let po_lo = (tuple >> (2 * nb)) & mask;
-                        let po_hi = (tuple >> (3 * nb)) & mask;
-                        b_ll[pe_lo * entries + po_lo] += value;
-                        b_lh[pe_lo * entries + po_hi] += value;
-                        b_hl[pe_hi * entries + po_lo] += value;
-                        b_hh[pe_hi * entries + po_hi] += value;
-                    }
-                }
-                let (t_e_lo, t_e_hi) = (tables.at(qs[0]), tables.at(qs[1]));
-                let (t_o_lo, t_o_hi) = (tables.at(qs[2]), tables.at(qs[3]));
-                let ll = contract(t_e_lo, t_o_lo, &b_ll);
-                let hh = contract(t_e_hi, t_o_hi, &b_hh);
-                let end = if send_one { hh } else { ll };
-                // (E_hi − E_lo)(O_hi − O_lo) expands to the four combinations;
-                // characteristic two makes every sign a plus.
-                let inf = hh + contract(t_e_hi, t_o_lo, &b_hl) + contract(t_e_lo, t_o_hi, &b_lh) + ll;
-                let w = eq_y[y];
-                (end * w, inf * w)
-            })
+        #[cfg(feature = "parallel")]
+        let partials: Vec<(Gf, Gf)> = (0..rows)
+            .into_par_iter()
+            .with_min_len(1)
+            .map_init(Buckets::new, |buckets, y| row(y, buckets))
             .collect();
+        #[cfg(not(feature = "parallel"))]
+        let partials: Vec<(Gf, Gf)> = {
+            let mut buckets = Buckets::new();
+            (0..rows).map(|y| row(y, &mut buckets)).collect()
+        };
         partials
             .into_iter()
             .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+    }
+
+    /// One row of [`Forest::bit_round`]: bucket the row's columns, then
+    /// contract with the four corner tables.
+    #[allow(clippy::too_many_arguments)]
+    fn bit_row(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        kk: usize,
+        nb: usize,
+        y: usize,
+        y_bits: usize,
+        eq_c: &[Gf],
+        send_one: bool,
+        bk: &mut Buckets,
+    ) -> (Gf, Gf) {
+        let low_bits = y_bits + 1;
+        let entries = 1usize << nb;
+        let pairs = entries * entries;
+        let cols = 1usize << self.s;
+        let groups = cols.div_ceil(64);
+        bk.reset(nb);
+        // The four (p, bit) corners: E_lo, E_hi, O_lo, O_hi.
+        let corner_y = |corner: usize| y | ((corner & 1) << y_bits);
+        let corner_p = |corner: usize| corner >> 1;
+        let mut tmp = [0u64; 8];
+        let mut words = [0u64; 8];
+        let mut idx = [0u8; 64];
+        let mut idx2 = [0u8; 64];
+        let mut lh = [0u8; 64];
+        let mut hl = [0u8; 64];
+        for g in 0..groups {
+            let base_c = g << 6;
+            let width = 64.min(cols - base_c);
+            let eq_g = &eq_c[base_c..base_c + width];
+            if nb <= 2 {
+                // Tuple byte: corner `i`'s pattern at bits `i·nb..`.
+                for corner in 0..4 {
+                    self.corner_words(ell, kk, corner_p(corner), corner_y(corner), g, &mut tmp);
+                    words[corner * nb..(corner + 1) * nb].copy_from_slice(&tmp[..nb]);
+                }
+                patterns(&words[..4 * nb], &mut idx);
+                kernels::scatter_add(&mut bk.tuples, &idx[..width], eq_g);
+            } else {
+                // Pair bytes `pat_E·16 + pat_O`: the O words in the low
+                // nibble, the E words in the high one.
+                for (out, e_corner, o_corner) in [(&mut idx, 0usize, 2usize), (&mut idx2, 1, 3)] {
+                    self.corner_words(ell, kk, corner_p(o_corner), corner_y(o_corner), g, &mut tmp);
+                    words[..4].copy_from_slice(&tmp[..4]);
+                    self.corner_words(ell, kk, corner_p(e_corner), corner_y(e_corner), g, &mut tmp);
+                    words[4..8].copy_from_slice(&tmp[..4]);
+                    patterns(&words, out);
+                }
+                for c in 0..width {
+                    lh[c] = (idx[c] & 0xF0) | (idx2[c] & 0x0F);
+                    hl[c] = (idx2[c] & 0xF0) | (idx[c] & 0x0F);
+                }
+                kernels::scatter_add(&mut bk.ll, &idx[..width], eq_g);
+                kernels::scatter_add(&mut bk.hh, &idx2[..width], eq_g);
+                kernels::scatter_add(&mut bk.lh, &lh[..width], eq_g);
+                kernels::scatter_add(&mut bk.hl, &hl[..width], eq_g);
+            }
+        }
+        if nb <= 2 {
+            // Marginalise the tuple buckets into the four pair buckets.
+            let mask = entries - 1;
+            for (tuple, &value) in bk.tuples[..1 << (4 * nb)].iter().enumerate() {
+                let pe_lo = tuple & mask;
+                let pe_hi = (tuple >> nb) & mask;
+                let po_lo = (tuple >> (2 * nb)) & mask;
+                let po_hi = (tuple >> (3 * nb)) & mask;
+                bk.ll[pe_lo * entries + po_lo] += value;
+                bk.lh[pe_lo * entries + po_hi] += value;
+                bk.hl[pe_hi * entries + po_lo] += value;
+                bk.hh[pe_hi * entries + po_hi] += value;
+            }
+        }
+        let q = |corner: usize| (corner_p(corner) << low_bits) | corner_y(corner);
+        let (t_e_lo, t_e_hi) = (tables.at(q(0)), tables.at(q(1)));
+        let (t_o_lo, t_o_hi) = (tables.at(q(2)), tables.at(q(3)));
+        let ll = kernels::contract(t_e_lo, t_o_lo, &bk.ll[..pairs]);
+        let hh = kernels::contract(t_e_hi, t_o_hi, &bk.hh[..pairs]);
+        let end = if send_one { hh } else { ll };
+        // (E_hi − E_lo)(O_hi − O_lo) expands to the four combinations;
+        // characteristic two makes every sign a plus.
+        let inf = hh
+            + kernels::contract(t_e_hi, t_o_lo, &bk.hl[..pairs])
+            + kernels::contract(t_e_lo, t_o_hi, &bk.lh[..pairs])
+            + ll;
+        (end, inf)
+    }
+}
+
+/// The per-task bucket store of the bit rounds: 256 entries each so every
+/// byte index is in bounds; only the used prefixes are cleared per row.
+struct Buckets {
+    tuples: Vec<Gf>,
+    ll: Vec<Gf>,
+    lh: Vec<Gf>,
+    hl: Vec<Gf>,
+    hh: Vec<Gf>,
+}
+
+impl Buckets {
+    fn new() -> Self {
+        let fresh = || vec![Gf::zero(); 256];
+        Self {
+            tuples: fresh(),
+            ll: fresh(),
+            lh: fresh(),
+            hl: fresh(),
+            hh: fresh(),
+        }
+    }
+
+    fn reset(&mut self, nb: usize) {
+        let pairs = 1usize << (2 * nb);
+        let zero = Gf::zero();
+        if nb <= 2 {
+            self.tuples[..1 << (4 * nb)].fill(zero);
+        }
+        self.ll[..pairs].fill(zero);
+        self.lh[..pairs].fill(zero);
+        self.hl[..pairs].fill(zero);
+        self.hh[..pairs].fill(zero);
     }
 }
 
