@@ -1,0 +1,9 @@
+%% main-lncs.tex -- builds the LNCS (Eurocrypt) version of the paper from
+%% main.tex without editing it: \LNCS is read by the build switch at the top
+%% of main.tex.  Output: main-lncs.pdf.  (Alternatively set \lncstrue in
+%% main.tex and build main.tex itself.)
+%%
+%%   cd paper && BIBINPUTS=..: latexmk -pdf -bibtex main-lncs.tex
+\def\LNCS{1}
+\def\lncssourcefile{main.tex}
+\input{main}

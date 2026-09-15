@@ -1,10 +1,24 @@
- \documentclass[11pt,letterpaper,usenames,dvipsnames]{article}           
+%% ---- Build switch: full version (article) vs LNCS/Eurocrypt version ----------------
+%% \lncsfalse = the paper as usual.  \lncstrue = LNCS layout: the blocks marked
+%% \begin{lncsappendix}...\end{lncsappendix} move to the supplementary material and
+%% the theorems/tables marked lncsstatement/lncstable are typeset at \lncsplace{...}.
+%% See lncs-switch.tex.  main-lncs.tex builds the LNCS version without touching this
+%% line (it predefines \LNCS).
+\newif\iflncs
+\lncsfalse
+\ifdefined\LNCS\lncstrue\fi
+\iflncs
+  \documentclass[runningheads]{llncs}
+  \let\proof\relax\let\endproof\relax % llncs' proof environment is replaced by amsthm's
+\else
+  \documentclass[11pt,letterpaper,usenames,dvipsnames]{article}
+\fi
 %   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % PACKAGES
 \usepackage{amsmath,amssymb,amsthm}
 \allowdisplaybreaks
 \usepackage{aliascnt}
-\usepackage{fullpage}
+\iflncs\else\usepackage{fullpage}\fi
 \usepackage{multirow}
 \usepackage{bbm,soul}
 \usepackage[usenames,dvipsnames]{xcolor}
@@ -31,7 +45,7 @@
 \renewcommand{\algorithmiccomment}[1]{// #1}
 \renewcommand{\algorithmicrequire}{\textbf{Input:}}
 \renewcommand{\algorithmicensure}{\textbf{Output:}}
-\usepackage{authblk}
+\iflncs\else\usepackage{authblk}\fi
 
 \usepackage{framed}
 \usepackage{comment}
@@ -41,7 +55,7 @@
 \usepackage{graphicx}
 \graphicspath{ {./figures/} }
 \usepackage[T1]{fontenc}
-\usepackage{titlesec}
+\iflncs\else\usepackage{titlesec}\fi
 \usepackage{stmaryrd}
 \usepackage{makecell}
 
@@ -75,7 +89,13 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 \DeclareMathOperator{\im}{im}
 
+\input{lncs-switch}
 \input{macros}
+\iflncs % anonymous LNCS submission
+\title{\plaintitle}
+\author{}
+\institute{}
+\else
 \title{\makebox[\textwidth][c]{\plaintitle}}
 
 \author[1]{Remco Bloemen}
@@ -90,6 +110,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 \affil[4]{Ivy Research}
 
 \date{\today}
+\fi
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -101,7 +122,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 \setcounter{tocdepth}{2}
 
-\tableofcontents
+\iflncs\else\tableofcontents\fi
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -364,6 +385,7 @@ At the time of writing, two further works push the performance envelope of binar
 \albert{more? Swirl, Frepack?}
 
 
+\iflncs\else % the acknowledgements identify the authors; hidden in the anonymous LNCS build
 \subsection{Acknowledgements}
 
 
@@ -376,6 +398,7 @@ This work was supported by the World Foundation.
 
 We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful and helpful discussions.  
 
+\fi
 \paragraph{Usage and non-usage of AI.} 
 
 \bigskip
@@ -537,6 +560,7 @@ $
 \end{itemize}
 
 In \cref{t:core_iop_complexity} we record the concrete costs of this protocol (in a more general form).
+\lncsplace{TabCoreIopCosts}
 
 
 \subsection{Generalization to pairs of arbitrary finitely generated rings}\label{s:to_general_rings}
@@ -714,6 +738,8 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 
 
 
+\lncsplace{TabGkrCosts}
+\lncsplace{TabGkrStep1Costs}
 \begin{comment}
 
 
@@ -959,6 +985,7 @@ over the choice of $q'$.
 After Step 3, we are exactly in the same scenario as at the beginning of Step 4 in the case that Step 3 did not trigger. Hence $\Pi_1$ is round-by-round knowledge sound with errors $(\kappa_0, 0)$ (or with error $0$ if Step 3 is skipped). 
 
 Overall,  $\Pi$ has errors $\kappa_0$ followed by those of the GKR protocol and of the binary-field PCS (with prior possible batching sumcheck, followed by  ring switch).
+\lncsplace{ThmCoreIOPP}
 
 
 
@@ -1001,6 +1028,7 @@ Now,  since $\pirand$ is a ring homomorphism,  the projected claim \eqref{e:new_
 cf.\ \eqref{e:to_kappa_0} for the case $k'=0$, and \cref{l:examples_morphisms} for the concrete bounds $D_\ZZ, B_\ZZ$ of \cref{c:core_iop}.
 
 We conclude that $\Pi_1$ is  round-by-round knowledge sound with errors $\kappa_0$. The errors of the whole protocol construction from \cref{s:to_general_rings} are $\kappa_0$ followed by those of $\Pi_2$ and $\Pi_3$.
+\lncsplace[\renewcommand{\moduleonebound}{{S_{\leq B}^{<D_S}}}\renewcommand{\modulemorphism}{\psi}\renewcommand{\moduletwo}{R}]{ThmLinModFieldBits}
 
 
 
@@ -1228,6 +1256,7 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 \end{lemma}
 
 
+\begin{lncsappendix}[Additional preliminaries]{prelims-grinding}
 \paragraph{Grinding}\albert{Review}
  Grinding \cite{ethstark} is a technique where, given an IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [k]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which it sends alongside its message, and rejects unless all bits are $0$. 
 
@@ -1253,8 +1282,10 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
     \bottomrule
   \end{tabular}
 \end{table}
+\end{lncsappendix}
  
 
+\begin{lncsappendix}{iop}
 \section{\ftwoz \ IOP for LinBitsRings}
 
 In this section we describe the \ftwoz\ IOP and the main relations it proves.  We begin with a summary of the notation we use throughout the paper. Most of the notation will be introduced subsequently, but nevertheless we record it here for convenience of the reader. 
@@ -1694,6 +1725,7 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
 
 
 
+\begin{lncstable}{TabCoreIopCosts}
 \begin{table}[H]
   \centering
   \begin{tabular}{l|l|l}
@@ -1726,6 +1758,7 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
   \caption{Costs of \cref{c:core_iop} when $k\leq 1$, in addition to those of $\Pi_\red$ and $\Pi_\iopp$. By $N\cdot \comfield$, $N\cdot \FF_q$, $N\cdot R$ we indicate $N$ operations in the respective ring. Rounds 0 and 1 are optional.}
   \label{t:core_iop_complexity}
 \end{table}
+\end{lncstable}
 
 \albert{Was AI generated and reviewed and edited by me after} We justify   the costs listed in Round 1 of \cref{t:core_iop_complexity}, which are arguably the most involved to derive. The first three prover costs in Round 1 come from the computation of  $\mu'$. The prover can compute $\mu'$ by first building, for each $j\in [\codedim_2]$, the polynomial $h_j\defeq \sum_{i\in [\codedim_1]} \bff_{ij}\cdot \picanon^{-1}(\vv^{(1)}_i)$, which requires no multiplications since $\bff$ has bit entries. The coefficients of these polynomials are bounded by $\codedim_1\cdot N_R$. Hence the $h_j$ can be computed with $O(\codedim\cdot (D+1))$ additions of $\log(\codedim_1\cdot N_R)$-bit integers. Now, to obtain $\mu'$ the prover computes    $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$. Each product in this sums costs at most $(D+1)^{2}$ multiplications of $\log(\codedim_1\cdot N_R)$-bit integers, and there are $\codedim_2$ of them, this yields the third cost in the prover's Round 1. The second cost correspond to adding together each of the terms in  $\sum_{j\in [\codedim_2]}\picanon^{-1}(\vv^{(2)}_j)\cdot h_j$.
 
@@ -1765,6 +1798,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 
 
 
+\begin{lncsstatement}{ThmCoreIOPP}
 \begin{theorem}[Completeness and round-by-round knowledge soundness of \cref{c:core_iop}]\label{t:thm_core_IOPP} 
    Let $\delta \in (0,1)$ be a proximity parameter within the unique decoding radius of $\cC$ (cf.\ \cref{s:prelims_codes}), and assume that Round 0 of \cref{c:core_iop} is skipped. We treat the general case in \cref{a:OOD}. Assume 
    %
@@ -1788,6 +1822,7 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 %
     %If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
+\end{lncsstatement}
 
 
 
@@ -2127,6 +2162,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
   \label{t:LinModFieldBin_complexity}
 \end{table}
 
+\begin{lncsstatement}{ThmLinModFieldBits}
 \begin{theorem}\label{t:thm_LinModFieldBits}
     Under the same hypotheses and notation as in \cref{t:thm_core_IOPP} for the parameters $(\codedim,\codedim_1,\codedim_2, \Pi_\iopp,\Pi_\red, \cP, (\cM_q)_{q\in \cP})$, the  ring $R$, the code $\cC$, and the binary field $\comfield$ with packing map $\pack$, \cref{c:LinModFieldBin} is a perfectly complete $(1+t_\red + t_\iopp)$-round IOP for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC,L)$ with round-by-round knowledge soundness with relaxation $(\LinModFieldBin^{\delta},\bot)$ and errors $$\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where $
     \kappa_0 = \theta(\cP,\cM,\codedim). %\frac{\degevalfield}{q_{\min}} + \frac{\log(\codedim_1 +1) + \log(q-1)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor}.
@@ -2135,6 +2171,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
     The error term $\kappa_0$ and its round are absent if Round 1 of \cref{c:core_iop} is not executed. If Round 0 of \cref{c:core_iop} is executed, the same holds under the hypotheses of \cref{t:thm_core_IOPP_OOD}, with the additional round and the additional error term $\kappa_{\mathsf{OOD}}$ of that theorem.
     %If $\degevalfield=0$, i.e.\ $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $\kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
+\end{lncsstatement}
 \begin{proof} Deferred to \cref{a:LinModFieldBin}. In short, the result is a consequence of \cref{l:bitify}, which establishes an equivalence between  triples for $\LinModFieldBin(\moduleonebound,\modulemorphism, \moduletwo, \cC,L)$ and $\LinBitsDual(\bits,\pi, \moduletwo,\cC)$. \cref{l:bitify} further provides a method for efficiently computing one triple from the other. This allows us to build a round-by-round knowledge soundness state and an extractor for \cref{c:LinModFieldBin} from those of \cref{c:core_iop}.
 \end{proof}
 
@@ -2355,6 +2392,8 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     Using a similar analysis as in Strategy 2 above, where we let $\cP'$ be the set of primes between the interval $[2^{112}, 2^{113}]$,  we obtain that, as long as $\log(N)< 1.4\cdot 2^{6}\approx 90$ we have $   \eps_{\mathsf{PIOP-proj}}< 2^{-106}$. In that case we could attain $128$ bits of security during this projection step by performing $22$ bits of grinding ($12$ms in a MacBook Air M5).
 \end{remark}
 
+\end{lncsappendix}
+\begin{lncsappendix}{snark}
 \section{An end-to-end \ftwoz-based SNARK over  any finitely generated ring}\label{s:to_snark}
 
 \albertimportant{Make it a subsection of the technical overview?}
@@ -2428,6 +2467,8 @@ We briefly outline how to handle the case when $S$ is an arbitrary finitely gene
 
 
 
+\end{lncsappendix}
+\begin{lncsappendix}{gkr}
 \section{A GKR protocol for low entropy batched grand products }\label{s:gkr_low_entropy}
 
 
@@ -2567,6 +2608,7 @@ If $\gkrpol(\yy_\bb, \bff_{\bb,\cc}) = (\yy_\bb-1)\cdot \bff_{\bb,\cc} +1$ as in
 
 \paragraph{Costs.} In \cref{t:gkr_grand_product_complexity} we summarize the number of rounds, the proof size and the verifier work of \cref{c:gkr_grand_product} when used within \ftwoz \ as described above.  These are standard costs corresponding to a standard GKR construction. We discuss an optimized prover, and its costs, in the next subsection. Recall that in our instantiations $\codedim_1\approx \sqrt{\codedim}$ and $\codedim_2\approx\sqrt{\codedim}$, hence the verifier is succinct.
 
+\begin{lncstable}{TabGkrCosts}
 \begin{table}[H]
   \centering
   \small
@@ -2588,6 +2630,7 @@ If $\gkrpol(\yy_\bb, \bff_{\bb,\cc}) = (\yy_\bb-1)\cdot \bff_{\bb,\cc} +1$ as in
   \caption{ Rounds, proof size and verifier work of \cref{c:gkr_grand_product} for the polynomial $\gkrpol(Y,X)=(Y-1)\cdot X +1$ in our deployment of \ftwoz.  By $N\cdot \comfield$ we indicate $N$ operations in $\comfield$. The proof size counts $3$ elements per sumcheck round. Using  \cite{gruen} we send two $2$ elements per sumcheck round in our implementation.}
   \label{t:gkr_grand_product_complexity}
 \end{table}
+\end{lncstable}
 
 The next lemma records the soundness errors of \cref{c:gkr_grand_product}. We omit its proof since \cref{c:gkr_grand_product} is a well-known variation of the GKR protocol, see \cite{thalerbook}.
 
@@ -2751,6 +2794,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
   %We remark that the same multiplication count for $h_1(X)$ can be obtained by grouping the summands according to the pattern of witness bits they depend on and accumulating the $\eq$ weights of each group before multiplying, which is the transpose of our tables. We present the table form because it is the one that extends to the later rounds and to the higher levels of the tree, as we show next: the tables absorb the verifier's challenges, and the bottom levels of the tree never have to be written down.
 
 
+\begin{lncstable}{TabGkrStep1Costs}
 \begin{table}[H]
     \centering
     \begin{tabular}{c|c|c}
@@ -2766,6 +2810,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
     }
 \label{t:gkr_step1_costs}
 \end{table}
+\end{lncstable}
 
 
 
@@ -2905,8 +2950,10 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
+\end{lncsappendix}
 
 
+\begin{lncsappendix}{experiments}
 \section{Experiments} \label{s:experiments}
 \albertimportant{Binius UDR and Binius Johnson is confusing because they use different PCS}
 
@@ -3492,11 +3539,17 @@ We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the p
 
 
 
+\end{lncsappendix}
 %\printbibliography[heading=bibintoc,title={References}]{paper/references}
 \addcontentsline{toc}{section}{References}
 \bibliography{paper/references}
 
 \appendix
+\iflncs
+\clearpage
+\begin{center}\Large\bfseries Supplementary Material\end{center}
+\fi
+\lncsappendixspine
 
 \section{Deferred proofs}
 
