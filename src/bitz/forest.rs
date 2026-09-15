@@ -107,19 +107,26 @@ impl<'a> Forest<'a> {
         let mut next_point = VecDeque::with_capacity(point.len() + 1);
         let mut challenges: Vec<Gf> = Vec::with_capacity(k);
         for j in 1..=k {
+            let started = std::time::Instant::now();
             let z = point[j - 1];
             let send_one = z == Gf::zero();
             let (sum_endpoint, sum_inf) = self.bit_round(ell, j, &challenges, &external, send_one);
+            super::trace(&format!("    L{ell} bit round {j}"), started);
             ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
             let r: Gf = ps.verifier_message();
             next_point.push_back(r);
             challenges.push(r);
             factor = factor * eq_factor(r, z);
         }
+        let started = std::time::Instant::now();
         let mut folded = self.materialise_folded(ell, k, &challenges);
+        super::trace(&format!("    L{ell} materialise"), started);
         let half = folded.len() / 2;
         let (l, r) = folded.split_at_mut(half);
-        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s)
+        let started = std::time::Instant::now();
+        let out = prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s);
+        super::trace(&format!("    L{ell} dense tail"), started);
+        out
     }
 
     /// The per-position value tables of level `ell` after `kk` folds with
@@ -233,6 +240,13 @@ impl<'a> Forest<'a> {
     /// Round `j` (1-based, `j ≤ k`) of level `ell`'s sumcheck off the bits:
     /// `Σ eq·E_end·O_end` and `Σ eq·(E_hi − E_lo)(O_hi − O_lo)` over the
     /// `(y_j, c)` terms, with `E_·`, `O_·` read from the `(j−1)`-fold tables.
+    ///
+    /// Within a row `y` each of `E_lo, E_hi, O_lo, O_hi` is a function of the
+    /// column's `nb`-bit pattern, so a row's sum is `Σ_{a,b} T_E[a]·T_O[b]·
+    /// Σ_{c: pat_E(c)=a, pat_O(c)=b} eq_c[c]`: the terms only bucket `eq_c`
+    /// by their `(E, O)` pattern pair — four 16-byte additions per term, no
+    /// multiplication — and the `2^{2nb} + 2^{nb}` products of the contraction
+    /// are paid once per row (`nb ≤ 4` for every level this runs on).
     fn bit_round(
         &self,
         ell: usize,
@@ -246,6 +260,9 @@ impl<'a> Forest<'a> {
         let kk = j - 1;
         let tables = self.fold_table(ell, kk, challenges);
         let nb = 1usize << (ell + kk);
+        debug_assert!(nb <= 4, "the pair buckets need nb ≤ 4");
+        let entries = 1usize << nb;
+        let pairs = entries * entries;
         let y_bits = t - ell - 1 - j;
         let low_bits = y_bits + 1;
         let eq_c = eq_table(&external[..s]);
@@ -254,10 +271,28 @@ impl<'a> Forest<'a> {
         let groups = cols.div_ceil(64);
         let zero = Gf::zero();
 
+        // Σ_a tE[a] · Σ_b tO[b] · bucket[a·entries + b], unreduced inner sums.
+        let contract = |t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]| -> Gf {
+            let mut acc = <Gf as WideMulAcc>::wide_zero(&zero);
+            for a in 0..entries {
+                let mut inner = <Gf as WideMulAcc>::wide_zero(&zero);
+                for b in 0..entries {
+                    <Gf as WideMulAcc>::wide_add_assign(
+                        &mut inner,
+                        &<Gf as WideMulAcc>::mul_wide(&t_o[b], &bucket[a * entries + b]),
+                    );
+                }
+                let inner = <Gf as WideMulAcc>::from_wide(inner);
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc,
+                    &<Gf as WideMulAcc>::mul_wide(&t_e[a], &inner),
+                );
+            }
+            <Gf as WideMulAcc>::from_wide(acc)
+        };
+
         let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..(1usize << y_bits), 1)
             .map(|y| {
-                let mut acc_end = <Gf as WideMulAcc>::wide_zero(&zero);
-                let mut acc_inf = <Gf as WideMulAcc>::wide_zero(&zero);
                 // The four (p, bit) corners: table positions and their rows.
                 let mut words = [[0u64; 8]; 4];
                 let mut pats = [[0u8; 64]; 4];
@@ -267,6 +302,12 @@ impl<'a> Forest<'a> {
                     let bit = corner & 1;
                     *q = (p << low_bits) | (bit << y_bits) | y;
                 }
+                // Buckets keyed by (E pattern, O pattern) for the four
+                // (lo/hi, lo/hi) combinations.
+                let mut b_ll = vec![zero; pairs];
+                let mut b_lh = vec![zero; pairs];
+                let mut b_hl = vec![zero; pairs];
+                let mut b_hh = vec![zero; pairs];
                 for g in 0..groups {
                     for corner in 0..4 {
                         let p = corner >> 1;
@@ -285,29 +326,25 @@ impl<'a> Forest<'a> {
                     }
                     let base_c = g << 6;
                     for j0 in 0..64.min(cols - base_c) {
-                        let e_lo = tables[qs[0]][pats[0][j0] as usize];
-                        let e_hi = tables[qs[1]][pats[1][j0] as usize];
-                        let o_lo = tables[qs[2]][pats[2][j0] as usize];
-                        let o_hi = tables[qs[3]][pats[3][j0] as usize];
-                        let (e_end, o_end) = if send_one { (e_hi, o_hi) } else { (e_lo, o_lo) };
+                        let (pe_lo, pe_hi) = (pats[0][j0] as usize, pats[1][j0] as usize);
+                        let (po_lo, po_hi) = (pats[2][j0] as usize, pats[3][j0] as usize);
                         let ec = eq_c[base_c + j0];
-                        let ee = ec * e_end;
-                        <Gf as WideMulAcc>::wide_add_assign(
-                            &mut acc_end,
-                            &<Gf as WideMulAcc>::mul_wide(&ee, &o_end),
-                        );
-                        let ed = ec * (e_hi - e_lo);
-                        <Gf as WideMulAcc>::wide_add_assign(
-                            &mut acc_inf,
-                            &<Gf as WideMulAcc>::mul_wide(&ed, &(o_hi - o_lo)),
-                        );
+                        b_ll[pe_lo * entries + po_lo] += ec;
+                        b_lh[pe_lo * entries + po_hi] += ec;
+                        b_hl[pe_hi * entries + po_lo] += ec;
+                        b_hh[pe_hi * entries + po_hi] += ec;
                     }
                 }
+                let (t_e_lo, t_e_hi) = (&tables[qs[0]], &tables[qs[1]]);
+                let (t_o_lo, t_o_hi) = (&tables[qs[2]], &tables[qs[3]]);
+                let ll = contract(t_e_lo, t_o_lo, &b_ll);
+                let hh = contract(t_e_hi, t_o_hi, &b_hh);
+                let end = if send_one { hh } else { ll };
+                // (E_hi − E_lo)(O_hi − O_lo) expands to the four combinations;
+                // characteristic two makes every sign a plus.
+                let inf = hh + contract(t_e_hi, t_o_lo, &b_hl) + contract(t_e_lo, t_o_hi, &b_lh) + ll;
                 let w = eq_y[y];
-                (
-                    <Gf as WideMulAcc>::from_wide(acc_end) * w,
-                    <Gf as WideMulAcc>::from_wide(acc_inf) * w,
-                )
+                (end * w, inf * w)
             })
             .collect();
         partials
