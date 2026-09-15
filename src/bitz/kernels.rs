@@ -23,6 +23,15 @@ use crate::utils::wide_mul::WideMulAcc;
 /// flat rounds and the `s = 0` layers).
 const MAX_TASK: usize = 1 << 12;
 
+/// Pattern blocks come transposed ([`super::forest::transpose_blocks`]):
+/// position `m` of a 64-byte block holds column `((m & 7) << 3) | (m >> 3)`
+/// of its group. Weights are handed over in the same order (`eq_t`), zero
+/// past the group's last column, so only stores need the column back.
+#[inline(always)]
+pub(crate) fn col_of(m: usize) -> usize {
+    ((m & 7) << 3) | (m >> 3)
+}
+
 /// The weight of a dense round: `eq_y[y] · eq_c[c]` over rows `y` of
 /// `eq_c.len()` entries (`eq_y = [1]` for a single row).
 #[derive(Clone, Copy)]
@@ -168,45 +177,47 @@ impl Sums {
 }
 
 /// One group of the first just-in-time dense round: `tab[i]` and `pat[i]`
-/// give the values of corner `i ∈ (E_lo, E_hi, O_lo, O_hi)` at each column
-/// (`tab[i][pat[i][c]]`); accumulates the Gruen sums over the `w.len()`
-/// columns.
+/// (transposed) give the values of corner `i ∈ (E_lo, E_hi, O_lo, O_hi)`
+/// at each position (`tab[i][pat[i][m]]`); accumulates the Gruen sums with
+/// the transposed weights `eq_t` (64 entries).
 pub(crate) fn jit_sums_group(
     tab: [&[Gf]; 4],
     pat: &[[u8; 64]; 4],
-    w: &[Gf],
+    eq_t: &[Gf],
     send_one: bool,
     sums: &mut Sums,
 ) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_sums_group(tab, pat, w, send_one, &mut sums.0);
+    neon::jit_sums_group(tab, pat, eq_t, send_one, &mut sums.0);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_sums_group(tab, pat, w, send_one, &mut sums.0);
+    generic::jit_sums_group(tab, pat, eq_t, send_one, &mut sums.0);
 }
 
 /// One group of the second just-in-time dense round: corner
 /// `i = p·4 + b1·2 + b2` (`p` the half, `b1` the bit folded with `rho`,
 /// `b2` this round's bit); writes the folded values
 /// `E'(b2) = E(b1=0, b2) + rho·(E(1, b2) − E(0, b2))` to `out_l[b2]` (and
-/// `O'` to `out_r`) and accumulates the round sums over the folded pairs.
+/// `O'` to `out_r`, both `out_l[b].len()` columns wide) and accumulates
+/// the round sums over the folded pairs.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn jit_fold_group(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],
     rho: &Gf,
-    w: &[Gf],
+    eq_t: &[Gf],
     send_one: bool,
     out_l: [&mut [MaybeUninit<Gf>]; 2],
     out_r: [&mut [MaybeUninit<Gf>]; 2],
     sums: &mut Sums,
 ) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_fold_group(tab, pat, rho, w, send_one, out_l, out_r, &mut sums.0);
+    neon::jit_fold_group(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_fold_group(tab, pat, rho, w, send_one, out_l, out_r, &mut sums.0);
+    generic::jit_fold_group(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
 }
 
-/// One group of a product level: `out[c] = tab[0][pat[0][c]] · tab[1][pat[1][c]]`.
+/// One group of a product level: `out[c] = tab[0][pat[0][m]] · tab[1][pat[1][m]]`
+/// over the `out.len()` columns.
 pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     neon::jit_product_group(tab, pat, out);
@@ -214,14 +225,14 @@ pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut 
     generic::jit_product_group(tab, pat, out);
 }
 
-/// `bucket[idx[c]] += eq[c]` over the columns — the bit rounds' one
-/// addition per term. `bucket` must hold 256 entries so every byte index
-/// is in bounds.
-pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8], eq: &[Gf]) {
+/// `bucket[idx[m]] += eq_t[m]` over a transposed block — the bit rounds'
+/// one addition per term. `bucket` must hold 256 entries so every byte
+/// index is in bounds; `eq_t` has 64 entries.
+pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::scatter_add(bucket, idx, eq);
+    neon::scatter_add(bucket, idx, eq_t);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::scatter_add(bucket, idx, eq);
+    generic::scatter_add(bucket, idx, eq_t);
 }
 
 /// `Σ_a t_e[a] · Σ_b t_o[b] · bucket[a·n + b]` over `n = t_e.len()`
@@ -396,16 +407,17 @@ pub(crate) mod generic {
     pub(crate) fn jit_sums_group(
         tab: [&[Gf]; 4],
         pat: &[[u8; 64]; 4],
-        w: &[Gf],
+        eq_t: &[Gf],
         send_one: bool,
         sums: &mut Sums,
     ) {
-        for (c, &wc) in w.iter().enumerate() {
-            let l0 = tab[0][pat[0][c] as usize];
-            let l1 = tab[1][pat[1][c] as usize];
-            let r0 = tab[2][pat[2][c] as usize];
-            let r1 = tab[3][pat[3][c] as usize];
-            sums.slot(wc, l0, l1, r0, r1, send_one);
+        assert_eq!(eq_t.len(), 64);
+        for m in 0..64 {
+            let l0 = tab[0][pat[0][m] as usize];
+            let l1 = tab[1][pat[1][m] as usize];
+            let r0 = tab[2][pat[2][m] as usize];
+            let r1 = tab[3][pat[3][m] as usize];
+            sums.slot(eq_t[m], l0, l1, r0, r1, send_one);
         }
     }
 
@@ -414,16 +426,22 @@ pub(crate) mod generic {
         tab: [&[Gf]; 8],
         pat: &[[u8; 64]; 8],
         rho: &Gf,
-        w: &[Gf],
+        eq_t: &[Gf],
         send_one: bool,
         out_l: [&mut [MaybeUninit<Gf>]; 2],
         out_r: [&mut [MaybeUninit<Gf>]; 2],
         sums: &mut Sums,
     ) {
+        assert_eq!(eq_t.len(), 64);
         let [out_l0, out_l1] = out_l;
         let [out_r0, out_r1] = out_r;
-        for (c, &wc) in w.iter().enumerate() {
-            let v = |i: usize| tab[i][pat[i][c] as usize];
+        let width = out_l0.len();
+        for m in 0..64 {
+            let c = super::col_of(m);
+            if c >= width {
+                continue;
+            }
+            let v = |i: usize| tab[i][pat[i][m] as usize];
             let fl0 = fold(*rho, v(0b000), v(0b010));
             let fl1 = fold(*rho, v(0b001), v(0b011));
             let fr0 = fold(*rho, v(0b100), v(0b110));
@@ -432,19 +450,24 @@ pub(crate) mod generic {
             out_l1[c].write(fl1);
             out_r0[c].write(fr0);
             out_r1[c].write(fr1);
-            sums.slot(wc, fl0, fl1, fr0, fr1, send_one);
+            sums.slot(eq_t[m], fl0, fl1, fr0, fr1, send_one);
         }
     }
 
     pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
-        for (c, o) in out.iter_mut().enumerate() {
-            o.write(tab[0][pat[0][c] as usize] * tab[1][pat[1][c] as usize]);
+        let width = out.len();
+        for m in 0..64 {
+            let c = super::col_of(m);
+            if c < width {
+                out[c].write(tab[0][pat[0][m] as usize] * tab[1][pat[1][m] as usize]);
+            }
         }
     }
 
-    pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8], eq: &[Gf]) {
+    pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
         assert!(bucket.len() >= 256);
-        for (&i, &e) in idx.iter().zip(eq) {
+        assert_eq!(eq_t.len(), 64);
+        for (&i, &e) in idx.iter().zip(eq_t) {
             bucket[i as usize] += e;
         }
     }
@@ -762,37 +785,33 @@ pub(crate) mod neon {
     pub(crate) fn jit_sums_group(
         tab: [&[Gf]; 4],
         pat: &[[u8; 64]; 4],
-        w: &[Gf],
+        eq_t: &[Gf],
         send_one: bool,
         sums: &mut Sums,
     ) {
-        let n = w.len();
-        assert!(n <= 64);
+        assert_eq!(eq_t.len(), 64);
         assert!(tab.iter().all(|t| t.len() >= 256));
-        // SAFETY: as `neon::pmull_lo`; column indices are below `n ≤ 64`
-        // and the pattern bytes index tables of at least 256 entries.
+        // SAFETY: as `neon::pmull_lo`; positions are below 64 and the
+        // pattern bytes index tables of at least 256 entries.
         unsafe {
             let g = vdupq_n_u64(0x87);
             let z = vdupq_n_u64(0);
             let (mut eb, mut ib) = (acc_zero(), acc_zero());
             macro_rules! column {
-                ($c:expr, $end:expr, $inf:expr) => {{
-                    let c = $c;
-                    let l0 = ld(tab[0].get_unchecked(pat[0][c] as usize));
-                    let l1 = ld(tab[1].get_unchecked(pat[1][c] as usize));
-                    let r0 = ld(tab[2].get_unchecked(pat[2][c] as usize));
-                    let r1 = ld(tab[3].get_unchecked(pat[3][c] as usize));
-                    slot(ld(w.get_unchecked(c)), l0, l1, r0, r1, send_one, g, z, $end, $inf);
+                ($m:expr, $end:expr, $inf:expr) => {{
+                    let m = $m;
+                    let l0 = ld(tab[0].get_unchecked(pat[0][m] as usize));
+                    let l1 = ld(tab[1].get_unchecked(pat[1][m] as usize));
+                    let r0 = ld(tab[2].get_unchecked(pat[2][m] as usize));
+                    let r1 = ld(tab[3].get_unchecked(pat[3][m] as usize));
+                    slot(ld(eq_t.get_unchecked(m)), l0, l1, r0, r1, send_one, g, z, $end, $inf);
                 }};
             }
-            let mut c = 0usize;
-            while c + 2 <= n {
-                column!(c, &mut sums.end, &mut sums.inf);
-                column!(c + 1, &mut eb, &mut ib);
-                c += 2;
-            }
-            if c < n {
-                column!(c, &mut sums.end, &mut sums.inf);
+            let mut m = 0usize;
+            while m < 64 {
+                column!(m, &mut sums.end, &mut sums.inf);
+                column!(m + 1, &mut eb, &mut ib);
+                m += 2;
             }
             acc_add(&mut sums.end, eb);
             acc_add(&mut sums.inf, ib);
@@ -804,47 +823,48 @@ pub(crate) mod neon {
         tab: [&[Gf]; 8],
         pat: &[[u8; 64]; 8],
         rho: &Gf,
-        w: &[Gf],
+        eq_t: &[Gf],
         send_one: bool,
         out_l: [&mut [MaybeUninit<Gf>]; 2],
         out_r: [&mut [MaybeUninit<Gf>]; 2],
         sums: &mut Sums,
     ) {
-        let n = w.len();
-        assert!(n <= 64);
+        assert_eq!(eq_t.len(), 64);
         assert!(tab.iter().all(|t| t.len() >= 256));
         let [out_l0, out_l1] = out_l;
         let [out_r0, out_r1] = out_r;
-        assert!(out_l0.len() >= n && out_l1.len() >= n && out_r0.len() >= n && out_r1.len() >= n);
-        // SAFETY: as `jit_sums_group`; the output indices are below `n`.
+        let width = out_l0.len();
+        assert!(width <= 64 && out_l1.len() == width && out_r0.len() == width && out_r1.len() == width);
+        // SAFETY: as `jit_sums_group`; a store's column is checked
+        // against `width` (never taken for a full group).
         unsafe {
             let (rl, rh) = prep_fixed(rho);
             let g = vdupq_n_u64(0x87);
             let z = vdupq_n_u64(0);
             let (mut eb, mut ib) = (acc_zero(), acc_zero());
             macro_rules! column {
-                ($c:expr, $end:expr, $inf:expr) => {{
-                    let c = $c;
-                    let v = |i: usize| ld(tab[i].get_unchecked(pat[i][c] as usize));
-                    let fl0 = fold1(rl, rh, g, z, v(0b000), v(0b010));
-                    let fl1 = fold1(rl, rh, g, z, v(0b001), v(0b011));
-                    let fr0 = fold1(rl, rh, g, z, v(0b100), v(0b110));
-                    let fr1 = fold1(rl, rh, g, z, v(0b101), v(0b111));
-                    st_uninit(out_l0.get_unchecked_mut(c), fl0);
-                    st_uninit(out_l1.get_unchecked_mut(c), fl1);
-                    st_uninit(out_r0.get_unchecked_mut(c), fr0);
-                    st_uninit(out_r1.get_unchecked_mut(c), fr1);
-                    slot(ld(w.get_unchecked(c)), fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                ($m:expr, $end:expr, $inf:expr) => {{
+                    let m = $m;
+                    let c = super::col_of(m);
+                    if c < width {
+                        let v = |i: usize| ld(tab[i].get_unchecked(pat[i][m] as usize));
+                        let fl0 = fold1(rl, rh, g, z, v(0b000), v(0b010));
+                        let fl1 = fold1(rl, rh, g, z, v(0b001), v(0b011));
+                        let fr0 = fold1(rl, rh, g, z, v(0b100), v(0b110));
+                        let fr1 = fold1(rl, rh, g, z, v(0b101), v(0b111));
+                        st_uninit(out_l0.get_unchecked_mut(c), fl0);
+                        st_uninit(out_l1.get_unchecked_mut(c), fl1);
+                        st_uninit(out_r0.get_unchecked_mut(c), fr0);
+                        st_uninit(out_r1.get_unchecked_mut(c), fr1);
+                        slot(ld(eq_t.get_unchecked(m)), fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                    }
                 }};
             }
-            let mut c = 0usize;
-            while c + 2 <= n {
-                column!(c, &mut sums.end, &mut sums.inf);
-                column!(c + 1, &mut eb, &mut ib);
-                c += 2;
-            }
-            if c < n {
-                column!(c, &mut sums.end, &mut sums.inf);
+            let mut m = 0usize;
+            while m < 64 {
+                column!(m, &mut sums.end, &mut sums.inf);
+                column!(m + 1, &mut eb, &mut ib);
+                m += 2;
             }
             acc_add(&mut sums.end, eb);
             acc_add(&mut sums.inf, ib);
@@ -852,47 +872,43 @@ pub(crate) mod neon {
     }
 
     pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
-        let n = out.len();
-        assert!(n <= 64);
+        let width = out.len();
+        assert!(width <= 64);
         assert!(tab[0].len() >= 256 && tab[1].len() >= 256);
-        // SAFETY: as `jit_sums_group`.
+        // SAFETY: as `jit_sums_group`; stores are checked against `width`.
         unsafe {
             let g = vdupq_n_u64(0x87);
             let z = vdupq_n_u64(0);
-            for c in 0..n {
-                let a = ld(tab[0].get_unchecked(pat[0][c] as usize));
-                let b = ld(tab[1].get_unchecked(pat[1][c] as usize));
-                st_uninit(out.get_unchecked_mut(c), mul_red(a, b, g, z));
+            for m in 0..64 {
+                let c = super::col_of(m);
+                if c < width {
+                    let a = ld(tab[0].get_unchecked(pat[0][m] as usize));
+                    let b = ld(tab[1].get_unchecked(pat[1][m] as usize));
+                    st_uninit(out.get_unchecked_mut(c), mul_red(a, b, g, z));
+                }
             }
         }
     }
 
-    pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8], eq: &[Gf]) {
-        let n = idx.len();
-        assert!(eq.len() >= n);
+    pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
+        assert_eq!(eq_t.len(), 64);
         assert!(bucket.len() >= 256);
         // SAFETY: `Gf` is `repr(transparent)` over two `u64` limbs, so the
         // bucket is a valid `2·256`-word array; every byte index lands
-        // inside it, and column indices are below `n ≤ eq.len()`.
+        // inside it, and positions are below 64.
         unsafe {
             let base = bucket.as_mut_ptr().cast::<u64>();
-            let mut c = 0usize;
-            while c + 2 <= n {
-                let i0 = *idx.get_unchecked(c) as usize;
-                let i1 = *idx.get_unchecked(c + 1) as usize;
+            let mut m = 0usize;
+            while m < 64 {
+                let i0 = *idx.get_unchecked(m) as usize;
+                let i1 = *idx.get_unchecked(m + 1) as usize;
                 let p0 = base.add(2 * i0);
-                let e0 = ld(eq.get_unchecked(c));
+                let e0 = ld(eq_t.get_unchecked(m));
                 vst1q_u64(p0, veorq_u64(vld1q_u64(p0), e0));
                 let p1 = base.add(2 * i1);
-                let e1 = ld(eq.get_unchecked(c + 1));
+                let e1 = ld(eq_t.get_unchecked(m + 1));
                 vst1q_u64(p1, veorq_u64(vld1q_u64(p1), e1));
-                c += 2;
-            }
-            if c < n {
-                let i0 = *idx.get_unchecked(c) as usize;
-                let p0 = base.add(2 * i0);
-                let e0 = ld(eq.get_unchecked(c));
-                vst1q_u64(p0, veorq_u64(vld1q_u64(p0), e0));
+                m += 2;
             }
         }
     }
@@ -1013,14 +1029,17 @@ mod tests {
             state ^= state << 17;
             state
         };
-        for n in [1usize, 2, 5, 63, 64] {
-            let idx: Vec<u8> = (0..n).map(|_| (next() >> 20) as u8).collect();
-            let eq = elements(n, 70);
+        for seed in [70u64, 71, 72] {
+            let mut idx = [0u8; 64];
+            for e in idx.iter_mut() {
+                *e = (next() >> 20) as u8;
+            }
+            let eq = elements(64, seed);
             let mut got = vec![Gf::zero(); 256];
             let mut want = got.clone();
             scatter_add(&mut got, &idx, &eq);
             generic::scatter_add(&mut want, &idx, &eq);
-            assert_eq!(got, want, "scatter n {n}");
+            assert_eq!(got, want, "scatter seed {seed}");
         }
         for entries in [2usize, 4, 16] {
             let t_e = elements(entries, 71);
@@ -1049,7 +1068,7 @@ mod tests {
         }
         let rho = elements(1, 60)[0];
         for n in [1usize, 2, 5, 63, 64] {
-            let w = elements(n, 61);
+            let w = elements(64, 61);
             for send_one in [false, true] {
                 let tab4 = [&tabs[0][..], &tabs[1][..], &tabs[2][..], &tabs[3][..]];
                 let pat4 = [pats[0], pats[1], pats[2], pats[3]];

@@ -392,12 +392,12 @@ impl<'a> Forest<'a> {
         let spare = &mut out.spare_capacity_mut()[..len];
         cfg_chunks_mut!(spare, cols).enumerate().for_each(|(y, chunk)| {
             let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-            let mut words = [[0u64; 8]; 2];
+            let mut words = [0u64; 8];
             let mut pats = [[0u8; 64]; 2];
             for g in 0..groups {
                 for b in 0..2 {
-                    self.corner_words(ell, 0, b, y, g, &mut words[b]);
-                    patterns(&words[b], &mut pats[b]);
+                    self.corner_words(ell, 0, b, y, g, &mut words);
+                    pats[b] = transposed_patterns(&mut words);
                 }
                 let base_c = g << 6;
                 let width = 64.min(cols - base_c);
@@ -426,10 +426,11 @@ impl<'a> Forest<'a> {
         let groups = cols.div_ceil(64);
         let rows = 1usize << (low_bits - 1);
         debug_assert_eq!(eq_y.len(), rows);
+        let eq_t = transposed_eq(eq_c);
         let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..rows, 1)
             .map(|y1| {
                 let mut sums = kernels::Sums::zero();
-                let mut words = [[0u64; 8]; 4];
+                let mut words = [0u64; 8];
                 let mut pats = [[0u8; 64]; 4];
                 let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
                     let (p, b1) = (corner >> 1, corner & 1);
@@ -439,12 +440,10 @@ impl<'a> Forest<'a> {
                     for corner in 0..4 {
                         let (p, b1) = (corner >> 1, corner & 1);
                         let y = y1 | (b1 << (low_bits - 1));
-                        self.corner_words(ell, k, p, y, g, &mut words[corner]);
-                        patterns(&words[corner], &mut pats[corner]);
+                        self.corner_words(ell, k, p, y, g, &mut words);
+                        pats[corner] = transposed_patterns(&mut words);
                     }
-                    let base_c = g << 6;
-                    let width = 64.min(cols - base_c);
-                    kernels::jit_sums_group(tab, &pats, &eq_c[base_c..base_c + width], send_one, &mut sums);
+                    kernels::jit_sums_group(tab, &pats, &eq_t[g << 6..(g + 1) << 6], send_one, &mut sums);
                 }
                 let (end, inf) = sums.finish();
                 let w = eq_y[y1];
@@ -518,6 +517,7 @@ impl<'a> Forest<'a> {
         let (e_half, o_half) = out.split_at_mut(half);
         let (e_lo, e_hi) = e_half.split_at_mut(half / 2);
         let (o_lo, o_hi) = o_half.split_at_mut(half / 2);
+        let eq_t = transposed_eq(eq_c);
         let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(e_lo, cols)
             .zip(cfg_chunks_mut!(e_hi, cols))
             .zip(cfg_chunks_mut!(o_lo, cols))
@@ -526,7 +526,7 @@ impl<'a> Forest<'a> {
             .map(|(y2, (((el, eh), ol), oh))| {
                 debug_assert!(y2 < rows);
                 let mut sums = kernels::Sums::zero();
-                let mut words = [[0u64; 8]; 8];
+                let mut words = [0u64; 8];
                 let mut pats = [[0u8; 64]; 8];
                 let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
                     let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
@@ -536,8 +536,8 @@ impl<'a> Forest<'a> {
                     for corner in 0..8 {
                         let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
                         let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
-                        self.corner_words(ell, k, p, y, g, &mut words[corner]);
-                        patterns(&words[corner], &mut pats[corner]);
+                        self.corner_words(ell, k, p, y, g, &mut words);
+                        pats[corner] = transposed_patterns(&mut words);
                     }
                     let base_c = g << 6;
                     let width = 64.min(cols - base_c);
@@ -546,7 +546,7 @@ impl<'a> Forest<'a> {
                         tab,
                         &pats,
                         &rho,
-                        &eq_c[range.clone()],
+                        &eq_t[g << 6..(g + 1) << 6],
                         send_one,
                         [&mut el[range.clone()], &mut eh[range.clone()]],
                         [&mut ol[range.clone()], &mut oh[range]],
@@ -591,11 +591,11 @@ impl<'a> Forest<'a> {
         let nb = 1usize << (ell + kk);
         debug_assert!(nb <= 4, "the pair buckets need nb ≤ 4");
         let y_bits = t - ell - 1 - j;
-        let eq_c = eq_table(&external[..s]);
+        let eq_t = transposed_eq(&eq_table(&external[..s]));
         let eq_y = eq_table(&external[s..s + y_bits]);
         let rows = 1usize << y_bits;
         let row = |y: usize, buckets: &mut Buckets| {
-            let (end, inf) = self.bit_row(&tables, ell, kk, nb, y, y_bits, &eq_c, send_one, buckets);
+            let (end, inf) = self.bit_row(&tables, ell, kk, nb, y, y_bits, &eq_t, send_one, buckets);
             let w = eq_y[y];
             (end * w, inf * w)
         };
@@ -626,7 +626,7 @@ impl<'a> Forest<'a> {
         nb: usize,
         y: usize,
         y_bits: usize,
-        eq_c: &[Gf],
+        eq_t: &[Gf],
         send_one: bool,
         bk: &mut Buckets,
     ) -> (Gf, Gf) {
@@ -641,40 +641,38 @@ impl<'a> Forest<'a> {
         let corner_p = |corner: usize| corner >> 1;
         let mut tmp = [0u64; 8];
         let mut words = [0u64; 8];
-        let mut idx = [0u8; 64];
-        let mut idx2 = [0u8; 64];
         let mut lh = [0u8; 64];
         let mut hl = [0u8; 64];
         for g in 0..groups {
-            let base_c = g << 6;
-            let width = 64.min(cols - base_c);
-            let eq_g = &eq_c[base_c..base_c + width];
+            let eq_g = &eq_t[g << 6..(g + 1) << 6];
             if nb <= 2 {
                 // Tuple byte: corner `i`'s pattern at bits `i·nb..`.
+                words = [0u64; 8];
                 for corner in 0..4 {
                     self.corner_words(ell, kk, corner_p(corner), corner_y(corner), g, &mut tmp);
                     words[corner * nb..(corner + 1) * nb].copy_from_slice(&tmp[..nb]);
                 }
-                patterns(&words[..4 * nb], &mut idx);
-                kernels::scatter_add(&mut bk.tuples, &idx[..width], eq_g);
+                let idx = transposed_patterns(&mut words);
+                kernels::scatter_add(&mut bk.tuples, &idx, eq_g);
             } else {
                 // Pair bytes `pat_E·16 + pat_O`: the O words in the low
                 // nibble, the E words in the high one.
-                for (out, e_corner, o_corner) in [(&mut idx, 0usize, 2usize), (&mut idx2, 1, 3)] {
+                let mut idx = [[0u8; 64]; 2];
+                for (out, e_corner, o_corner) in [(0usize, 0usize, 2usize), (1, 1, 3)] {
                     self.corner_words(ell, kk, corner_p(o_corner), corner_y(o_corner), g, &mut tmp);
                     words[..4].copy_from_slice(&tmp[..4]);
                     self.corner_words(ell, kk, corner_p(e_corner), corner_y(e_corner), g, &mut tmp);
                     words[4..8].copy_from_slice(&tmp[..4]);
-                    patterns(&words, out);
+                    idx[out] = transposed_patterns(&mut words);
                 }
-                for c in 0..width {
-                    lh[c] = (idx[c] & 0xF0) | (idx2[c] & 0x0F);
-                    hl[c] = (idx2[c] & 0xF0) | (idx[c] & 0x0F);
+                for m in 0..64 {
+                    lh[m] = (idx[0][m] & 0xF0) | (idx[1][m] & 0x0F);
+                    hl[m] = (idx[1][m] & 0xF0) | (idx[0][m] & 0x0F);
                 }
-                kernels::scatter_add(&mut bk.ll, &idx[..width], eq_g);
-                kernels::scatter_add(&mut bk.hh, &idx2[..width], eq_g);
-                kernels::scatter_add(&mut bk.lh, &lh[..width], eq_g);
-                kernels::scatter_add(&mut bk.hl, &hl[..width], eq_g);
+                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
+                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
+                kernels::scatter_add(&mut bk.lh, &lh, eq_g);
+                kernels::scatter_add(&mut bk.hl, &hl, eq_g);
             }
         }
         if nb <= 2 {
@@ -751,6 +749,58 @@ fn level_up(lower: &[Gf]) -> Vec<Gf> {
         .collect()
 }
 
+/// Transposes the eight 8×8 bit blocks of `w` in place, one per byte lane:
+/// afterwards bit `i` of byte `k` of `w[j]` is bit `8k + j` of the original
+/// `w[i]`, so byte `k` of `w[j]` is the pattern of column `8k + j`. Twelve
+/// delta swaps (4-, 2-, then 1-bit sub-blocks).
+#[inline]
+pub(crate) fn transpose_blocks(w: &mut [u64; 8]) {
+    for i in 0..4 {
+        let t = ((w[i] >> 4) ^ w[i + 4]) & 0x0F0F_0F0F_0F0F_0F0F;
+        w[i + 4] ^= t;
+        w[i] ^= t << 4;
+    }
+    for i in [0, 1, 4, 5] {
+        let t = ((w[i] >> 2) ^ w[i + 2]) & 0x3333_3333_3333_3333;
+        w[i + 2] ^= t;
+        w[i] ^= t << 2;
+    }
+    for i in [0, 2, 4, 6] {
+        let t = ((w[i] >> 1) ^ w[i + 1]) & 0x5555_5555_5555_5555;
+        w[i + 1] ^= t;
+        w[i] ^= t << 1;
+    }
+}
+
+/// The patterns of a group's 64 columns in transposed order: position
+/// `8j + k` holds column `8k + j` ([`kernels::col_of`]). Consumes `words`.
+#[inline]
+fn transposed_patterns(words: &mut [u64; 8]) -> [u8; 64] {
+    transpose_blocks(words);
+    let mut out = [0u8; 64];
+    for (j, w) in words.iter().enumerate() {
+        out[8 * j..8 * j + 8].copy_from_slice(&w.to_le_bytes());
+    }
+    out
+}
+
+/// The column weights regrouped the way the transposed pattern blocks
+/// visit them: entry `64g + m` is `eq_c[64g + col_of(m)]`, zero past the
+/// last column.
+fn transposed_eq(eq_c: &[Gf]) -> Vec<Gf> {
+    let groups = eq_c.len().div_ceil(64);
+    let mut out = vec![Gf::zero(); groups << 6];
+    for g in 0..groups {
+        for m in 0..64 {
+            let c = (g << 6) | kernels::col_of(m);
+            if c < eq_c.len() {
+                out[(g << 6) | m] = eq_c[c];
+            }
+        }
+    }
+    out
+}
+
 /// Bit-slices `words` (one 64-column word per pattern bit, at most 8) into
 /// one pattern per column: `out[c]` bit `i` = bit `c` of `words[i]`. Eight
 /// 8×8 bit-block transposes (delta swaps), one per byte lane.
@@ -812,6 +862,25 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn block_transpose_matches_the_bit_loop() {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        for _ in 0..64 {
+            let mut words = [0u64; 8];
+            for w in words.iter_mut() {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                *w = state;
+            }
+            let want = naive_patterns(&words);
+            let got = transposed_patterns(&mut words.clone());
+            for m in 0..64 {
+                assert_eq!(got[m], want[kernels::col_of(m)], "position {m}");
+            }
+        }
     }
 
     #[test]
