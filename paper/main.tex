@@ -1055,8 +1055,10 @@ Overall,  $\Pi$ has errors $\kappa_0$ followed by those of the GKR protocol and 
 \begin{lncsmove}{SoundnessRings}
 \subsubsection{\iflncs Round-by-round knowledge soundness\else Soundness of \cref{s:to_general_rings}\fi}\label{s:to_soundness_rings}
 
-\iflncs The full soundness statement of this section is \cref{t:thm_LinModFieldBits} below, proved in \cref{a:LinModFieldBin}\else The full soundness statement of \cref{s:to_general_rings} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}\fi. We provide an overview of it next.
+\iflncs The full soundness statement of this section is \cref{t:thm_LinModFieldBits} below, proved in \cref{a:LinModFieldBin}\else The full soundness statement of \cref{s:to_general_rings} can be found in \cref{t:thm_LinModFieldBits}, and is proved in \cref{a:LinModFieldBin}\fi. \iflncs\else We provide an overview of it next.\fi
 
+\end{lncsmove}
+\begin{lncsmove}{SoundnessRingsOverview} % not placed anywhere: dropped in the LNCS build
 As in \cref{s:to_soundness_prime}, we view the protocol as a composition of three IORs $\Pi_1, \Pi_2, \Pi_3$, with $\Pi_2$ and $\Pi_3$ being exactly the same as in \cref{s:to_soundness_prime}, i.e.\ $\Pi_2$ is the grand product GKR from Step 5, and $\Pi_3$ is the ring switch followed by a PCS  such as WHIR or Ligerito.  The IOR $\Pi_1$ consists of Steps 2 and 3 of \cref{s:to_general_rings} followed by Step 4 and the first half of Step 5 of \cref{s:to_simple_bitz}. 
 
 After Step 3, the prover and verifier are exactly in the same setting as in Step 4 of \cref{s:to_simple_bitz}. Hence the analysis of the construction after Step 3 is exactly the same as in \cref{s:to_soundness_prime}.  Because of this, below we only discuss Steps 1, 2 and 3. 
@@ -1092,11 +1094,19 @@ Now,  since $\pirand$ is a ring homomorphism,  the projected claim \eqref{e:new_
 cf.\ \eqref{e:to_kappa_0} for the case $k'=0$, and \cref{l:examples_morphisms} for the concrete bounds $D_\ZZ, B_\ZZ$ of \cref{c:core_iop}.
 
 We conclude that $\Pi_1$ is  round-by-round knowledge sound with errors $\kappa_0$. The errors of the whole protocol construction from \cref{s:to_general_rings} are $\kappa_0$ followed by those of $\Pi_2$ and $\Pi_3$.
+\end{lncsmove}
+\begin{lncsmove}{SoundnessRingsThm}
 \iflncs
 % [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only text, at the author's request; please review]
 \Cref{t:thm_LinModFieldBits} below refers to \cref{c:LinModFieldBin}, the formal version of the protocol of this section, in which the bitification matrix $L$ of Step 1 and the tensor decomposition $\uu=\uu^{(1)}\otimes\uu^{(2)}$ of Step 2 (\cref{r:tensor_dec_u}) are parameters, and it uses the notation introduced before \cref{t:thm_core_IOPP}.
 \fi
 \lncsplace[\renewcommand{\moduleonebound}{{S_{\leq B}^{<D_S}}}\renewcommand{\modulemorphism}{\psi}\renewcommand{\moduletwo}{R}]{ThmLinModFieldBits}
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only proof sketch replacing the dropped overview, at the author's request; please review]
+\begin{proof}
+    We defer the formal proof to \cref{a:LinModFieldBin}. At a high level, the theorem follows from the fact that  $(\inp,\oracle,\bff) \in \LinModFieldBin(S_{\leq B}^{<D_S}, \psi, R, \cC,L)$ if and only if  $(\inp,\oracle,\bitstext(bff)) \in \LinModFieldBin(\{0,1\}, \pi, R, \cC,L)$, where $\pi$ is reduction modulo the characteristic of $S$, and that $\bff$ can be constructed in polynomial time from $\bitstext(\bff)$.
+\end{proof}
+\fi
 
 
 
@@ -1358,14 +1368,17 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{SoundnessPrime}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{Rings}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{SoundnessRings}
+\lncsplace{SoundnessRingsThm}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{GKR}
 \lncsplace[\let\subsubsection\subsection\let\subsection\section]{Virtual}
 \iflncs
 \section{Experiments}\label{s:experiments}
 \lncsplace{ExpSetup}
-\lncsplace[\lncsfittables\lncsfloattables]{TabRawPerformance}
-\lncsplace[\lncsfloattables]{TabMultiSwap}
-\lncsplace[\lncsfittables\lncsfloattables]{TabShaEcdsa}
+\lncsplace[\lncsfittables\lncsfloattables\let\subsection\paragraph]{ExpRaw}
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only pointer to the end-to-end results (Table 1) and to the appendix experiments, at the author's request; please review]
+\paragraph{End-to-end experiments.} \Cref{tab:intro_table} in the introduction summarizes the performance of \ftwoz-SNARK on RSA accumulation with Poseidon hashing (MultiSwap), SHA-256 hashing followed by ECDSA verification, hybrid SHA-256 and $2^{32}$ modular multiplication, and integer multiplication. In \Cref{s:further_experiments} we provide extended benchmarks at different parameters and confugurations. We also discuss how the benchmarks were built and run. We also provide a comparison with Fields-witch \cite{??}.
+\lncsplace{ExpFlock}
+\lncsplace{ExpAI}
 \fi
  
 
@@ -3037,7 +3050,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \end{lncsappendix}
 
 
-\begin{lncsappendix}[Additional experiments and experimental details]{experiments}
+\begin{lncsappendix}[Further experiments\label{s:further_experiments}]{experiments}
 \iflncs\else\section{Experiments} \label{s:experiments}\fi
 \albertimportant{Binius UDR and Binius Johnson is confusing because they use different PCS}
 
@@ -3111,6 +3124,8 @@ Our repository can be found in \url{https://github.com/albert-garreta/BitZ-pcs}.
 Moreover, as we mentioned, we run \ftwoz\ with proximity paramter up to the Johnson bound, using the underlying binary-field PCS being the Ligerito implementation from \cite{flock}. Because of this, we also experiment with Binius64 with the same underlyinig PCS and proximity paramter. We call the resulting scheme  Binius (Johnson).
 
 
+\end{lncsmove}
+\begin{lncsmove}{ExpFlock}
 \paragraph{Non-comparison with Flock \cite{flock}} The recent paper Flock \cite{flock} builds upon the Binius64 scheme, and manages  to prove over 300k SHA-256 compressions (and other hashes) per second on ten cores of an Apple M4 Max. Several of the innovations and optimizations of Flock have already been incorporated in the Binius64 repository. Flock was built with the purpose of proving many hash compressions in mind, while Binius64 is  designed to prove much wider classes of computations. Because of this, we do not include comparisons with Flock, i.e.\ because Flock does not immediately support proving the computations we test \ftwoz\ on. 
 
 We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the purpose of proving a large amount of hashes (besides offering a simpler arithmetization via the $\mathsf{CM}$ relation from \cref{e:CM_rel}). Indeed if seeking raw performance, Flock or Binius64 is, as of now, better suited for that task.
@@ -3124,6 +3139,7 @@ Additionally, AI was used to prepare the benchmarks in other repositories, and u
 
 
 
+\begin{lncsmove}{ExpRaw}
 \subsection{Raw performance of the \ftwoz \ PCS for the core LinBitsRings relation}
 
 We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$ following the instantiation in \cref{s:instantiation}. Namely, we prove that $\langle \vv, \bff \rangle=\mu$ over $\FF_q$ for a vector of $\codedim$ bits $\bff$, and $\vv\in \FF_q^{\codedim}, \mu\in \FF_q$.  We set $\comfield=\FF_{2^{128}}$ and $\cC$ is a Reed-Solomon code. We choose $|\FF_q|  < (2^{128}-1)/\codedim_1$ and we use the unique decoding radius as proximity parameter, so that Round 0 (OOD sampling) and Round 1 of \cref{c:core_iop} do not trigger.  Our goal for now is to measure the performance of the grand product and the WHIR/Ligerito commit and opening. In later experiments, Round 0 and Round 1 do trigger. 
@@ -3134,7 +3150,6 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
 %\albert{remove?} Recall (\cref{s:prelims_algebra})  that   $\bff_{\FF_{q^d}}$ denotes the vector obtained from $\bff$ by looking at $0,1$ as the zero and one elements from $\FF_{q^d}$. 
 
 
-\begin{lncstable}{TabRawPerformance}
 \begin{table}[H]
   \centering
   \footnotesize
@@ -3161,11 +3176,11 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
   \caption{ Cost of \ftwoz\ (\cref{c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots, 30$, and proving one claim $\langle \vv, \bff\rangle = \mu$ over $\FF_q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph{grand product} column comprises Phase 3 of \cref{c:core_iop}. The \emph{ring switch} and \emph{ligerito} columns comprise Phase 4. The \emph{Non-Ligerito} proof sie is comprised of the $\mu_j$ values in Round 2 of \cref{c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims. ``Mem.'' stands for peak memory.  Measured on a MacBook Air M5, 24\,GB.}
   \label{tab:f2z-raw-performance}
 \end{table}
-\end{lncstable}
 
 
  
  %\albertimportant{1 threaded one?}
+\end{lncsmove}
 
 
 
@@ -3176,7 +3191,6 @@ We compare Limber \cite{limber} (commit \texttt{853c6c4}), Zinc+\cite{zincplus} 
 
 We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken.} For the \ftwoz\ opening we use Ligerito in the unique-decoding regime (as opposed to the other benchmarks where we use the Johnson bound) at rate $1/8$ with fold arity $4$, with grinding to achieve $114$ bits of security.
 
-\begin{lncstable}{TabMultiSwap}
 \begin{table}[H]
   \centering
   \begin{tabular}{@{}llrrrrr@{}}
@@ -3202,7 +3216,6 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
   }
   \label{t:multiswap}
 \end{table}
-\end{lncstable}
 
 
 
@@ -3221,7 +3234,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
 
 
 
-\begin{lncstable}{TabShaEcdsa}
 \begin{table}[H]
   \centering
   \small
@@ -3264,7 +3276,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
    \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-f2z-opt}
 \end{table}
-\end{lncstable}
 
 
 
