@@ -34,13 +34,22 @@ class CampaignTests(unittest.TestCase):
 
     def test_f2z_is_not_duplicated_per_chunking(self):
         cases = list(campaign.cases([(0, 3), (1, 2), (3, 0)], campaign.METHODS, [100, 128], [1], [0]))
-        self.assertEqual(len(cases), 9)
+        # f2z-split/f2z-all: 2 targets x 2 profiles each; spartan: 3 splits;
+        # binius64: 2 targets x 2 rates; binius64-ligerito: fixed 100-bit gate x 2 rates.
+        self.assertEqual(len(cases), 4 + 4 + 3 + 4 + 2)
         self.assertEqual(sum(c["method"] == "spartan-mc" for c in cases), 3)
         binius = [c for c in cases if c["method"] == "binius64"]
-        self.assertEqual(len(binius), 2)
+        self.assertEqual(len(binius), 4)
         self.assertEqual({c["security_target"] for c in binius}, {100, 128})
+        self.assertEqual({c["log_inv_rate"] for c in binius}, {1, 3})
+        opener = [c for c in cases if c["method"] == "binius64-ligerito"]
+        self.assertEqual({c["security_target"] for c in opener}, {100})
+        self.assertEqual({c["log_inv_rate"] for c in opener}, {1, 3})
+        f2z = [c for c in cases if c["method"] == "f2z-split"]
+        self.assertEqual({c["ligerito_profile"] for c in f2z}, {"custom:1:4", "custom:3:4"})
         self.assertNotIn("zkpassport-honk", campaign.METHODS)
         self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
+        self.assertEqual(campaign.DEFAULT_METHODS, ["f2z-split", "binius64", "binius64-ligerito"])
 
     def test_validation_requires_complete_verified_matched_samples(self):
         self.assertTrue(campaign.validate_rows(self.rows, self.case, 1))
@@ -64,26 +73,72 @@ class CampaignTests(unittest.TestCase):
         self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
         self.assertFalse(campaign.compatible_manifest(old, dict(old, ligerito_profile="udrg:3:4")))
 
-    def test_binius_requires_matching_security_and_its_own_revision(self):
-        case = dict(self.case, method="binius64")
+    def test_binius_requires_matching_security_rate_and_its_own_revision(self):
+        case = dict(self.case, method="binius64", log_inv_rate=3)
         rows = copy.deepcopy(self.rows)
         for row in rows:
             row.update(case, binius_revision="c"*40, spartan_revision=None,
                        circuit_profile="sha256-chain-p256/standard/v1",
-                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100, "log_inv_rate":1})
+                       security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
+                                 "log_inv_rate":3})
         self.assertTrue(campaign.validate_rows(rows, case, 1))
         self.assertFalse(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=2))
         for rate in (1, 2, 3):
-            for row in rows:
+            rated_case = dict(case, log_inv_rate=rate)
+            rated_rows = copy.deepcopy(rows)
+            for row in rated_rows:
+                row["log_inv_rate"] = rate
                 row["security"]["log_inv_rate"] = rate
-            self.assertTrue(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=rate))
-        for row in rows:
-            row["security"]["log_inv_rate"] = 1
+            self.assertTrue(campaign.validate_rows(rated_rows, rated_case, 1))
+            self.assertTrue(campaign.validate_rows(rated_rows, rated_case, 1, binius_log_inv_rate=rate))
         for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "secp256k1"),
-                           ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96})]:
+                           ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96, "log_inv_rate":3}),
+                           ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100, "log_inv_rate":1}),
+                           ("log_inv_rate", 1)]:
             bad = copy.deepcopy(rows)
             bad[1][key] = value
             self.assertFalse(campaign.validate_rows(bad, case, 1), key)
+
+    def test_opener_rows_require_the_round_by_round_gate(self):
+        case = dict(self.case, method="binius64-ligerito", log_inv_rate=1)
+        rows = copy.deepcopy(self.rows)
+        good = {"model":"Binius64 PIOP with the F2Z opener", "pcs":"F2Z-Ligerito",
+                "accounting":"round-by-round", "target_bits":100, "round_by_round_bits":100.4,
+                "union_bound_bits":97.2, "log_inv_rate":1}
+        for row in rows:
+            row.update(case, binius_revision="c"*40, spartan_revision=None,
+                       circuit_profile="sha256-chain-p256/standard/v1", security=dict(good))
+        self.assertTrue(campaign.validate_rows(rows, case, 1))
+        for override in [dict(accounting="union-bound"), dict(round_by_round_bits=99.9),
+                         dict(pcs="BaseFold"), dict(target_bits=96), dict(log_inv_rate=3)]:
+            bad = copy.deepcopy(rows)
+            bad[1]["security"] = dict(good, **override)
+            self.assertFalse(campaign.validate_rows(bad, case, 1), str(override))
+        wrong_target = copy.deepcopy(rows)
+        case_128 = dict(case, security_target=128)
+        for row in wrong_target:
+            row["security_target"] = 128
+        self.assertFalse(campaign.validate_rows(wrong_target, case_128, 1))
+
+    def test_f2z_cases_pin_profile_and_level_rate(self):
+        case = dict(self.case, ligerito_profile="custom:3:4")
+        rows = copy.deepcopy(self.rows)
+        for row in rows:
+            row["ligerito_profile"] = "custom:3:4"
+            row["security"]["ligerito"]["configuration"]["levels"][0]["log_inv_rate"] = 3
+        self.assertTrue(campaign.validate_rows(rows, case, 1))
+        wrong_request = copy.deepcopy(rows)
+        for row in wrong_request:
+            row["security"]["ligerito"]["requested_profile"] = "custom:1:4"
+            row["security"]["ligerito"]["resolved_profile"] = "custom:1:4"
+        self.assertFalse(campaign.validate_rows(wrong_request, case, 1))
+        wrong_rate = copy.deepcopy(rows)
+        for row in wrong_rate:
+            row["security"]["ligerito"]["configuration"]["levels"][0]["log_inv_rate"] = 1
+        self.assertFalse(campaign.validate_rows(wrong_rate, case, 1))
+        unlabeled = copy.deepcopy(rows)
+        del unlabeled[1]["ligerito_profile"]
+        self.assertFalse(campaign.validate_rows(unlabeled, case, 1))
 
     def test_resume_rejects_changed_binaries_fixtures_and_fork_revision(self):
         old = dict(binary_sha256="native", runner_sha256="runner", fixtures={"profile":campaign.FIXTURE_SCHEMA, "files":{"fixture":"hash"}},

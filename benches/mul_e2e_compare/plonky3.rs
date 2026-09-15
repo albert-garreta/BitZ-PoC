@@ -27,8 +27,10 @@ use std::sync::Arc;
 
 const EXTENSION_DEGREE: usize = 5;
 const TARGET_BITS: usize = 100;
-const LOG_BLOWUP: usize = 3;
-const NUM_QUERIES: usize = 100;
+/// Rate 1/2, the campaign's uniform comparison rate (2026-09-13 suite).
+const LOG_BLOWUP: usize = 1;
+/// Ceiling for the query solve; rate 1/2 needs a few hundred proven queries.
+const MAX_QUERIES: usize = 1024;
 
 type Val = Goldilocks;
 type Challenge = BinomialExtensionField<Val, EXTENSION_DEGREE>;
@@ -42,7 +44,7 @@ type Challenger = DuplexChallenger<Val, Perm, 8, 4>;
 type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, ValMmcs, ChallengeMmcs>;
 type Config = StarkConfig<Pcs, Challenge, Challenger>;
 
-fn configuration(trace_len: usize) -> (Config, StarkSecurityParams) {
+fn configuration(trace_len: usize) -> (Config, StarkSecurityParams, usize) {
     let rate = std::env::var("F2Z_PLONKY3_LOG_INV_RATE")
         .map(|s| {
             s.parse()
@@ -52,7 +54,7 @@ fn configuration(trace_len: usize) -> (Config, StarkSecurityParams) {
     configuration_at_rate(trace_len, rate)
 }
 
-fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkSecurityParams) {
+fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkSecurityParams, usize) {
     assert!(
         (1..=3).contains(&log_blowup),
         "log inverse rate must be 1, 2, or 3"
@@ -60,41 +62,51 @@ fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkS
     assert!(trace_len.is_power_of_two());
     let perm = default_goldilocks_poseidon2_8();
     let mmcs = ValMmcs::new(Hash::new(perm.clone()), Compress::new(perm.clone()), 0);
-    let mut fri = FriParameters {
-        log_blowup,
-        log_final_poly_len: 0,
-        max_log_arity: 1,
-        num_queries: NUM_QUERIES,
-        commit_proof_of_work_bits: 0,
-        query_proof_of_work_bits: 0,
-        mmcs: ChallengeMmcs::new(mmcs.clone()),
-    };
     let layout = AirLayout::from_air::<Val>(&MulAir);
-    // Floor log2(p^5) and half of log2(p^4) conservatively. The report
-    // includes AIR composition, DEEP-ALI, FRI and batched-opening terms.
-    let mut security = StarkSecurityParams::from_air::<Val, Challenge, _>(
-        fri.security_regime(),
-        &MulAir,
-        layout,
-        319,
-        127,
-        1,
-    );
     let quotient_chunks = 1 << get_log_num_quotient_chunks::<Val, _>(&MulAir, layout, trace_len, 0);
-    security.num_batched_functions = TRACE_WIDTH + EXTENSION_DEGREE * quotient_chunks;
-    // Preserve the existing 100-query baseline. Denser codes may require
-    // more queries to meet the same native AIR/FRI security target.
-    while ProvenSecurity::compute(&security, trace_len).security_bits() < TARGET_BITS {
-        assert!(
-            fri.num_queries < 1024,
-            "no eligible Plonky3-FRI query count"
+    let assemble = |num_queries: usize| {
+        let fri = FriParameters {
+            log_blowup,
+            log_final_poly_len: 0,
+            max_log_arity: 1,
+            num_queries,
+            commit_proof_of_work_bits: 0,
+            query_proof_of_work_bits: 0,
+            mmcs: ChallengeMmcs::new(mmcs.clone()),
+        };
+        // Floor log2(p^5) and half of log2(p^4) conservatively. The report
+        // includes AIR composition, DEEP-ALI, FRI and batched-opening terms.
+        let mut security = StarkSecurityParams::from_air::<Val, Challenge, _>(
+            fri.security_regime(),
+            &MulAir,
+            layout,
+            319,
+            127,
+            1,
         );
-        fri.num_queries += 1;
-        security.fri_num_queries = fri.num_queries;
+        security.num_batched_functions = TRACE_WIDTH + EXTENSION_DEGREE * quotient_chunks;
+        (fri, security)
+    };
+    // Smallest query count whose proven round-by-round report clears the
+    // target at this trace length — the same smallest-clearing rule the F2Z
+    // opener applies to its per-round targets. Monotone in the query count.
+    let clears = |num_queries: usize| {
+        ProvenSecurity::compute(&assemble(num_queries).1, trace_len).security_bits() >= TARGET_BITS
+    };
+    assert!(
+        clears(MAX_QUERIES),
+        "Plonky3-FRI cannot reach {TARGET_BITS} bits at rate 1/2^{log_blowup} within {MAX_QUERIES} queries"
+    );
+    let (mut lo, mut hi) = (1usize, MAX_QUERIES);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if clears(mid) { hi = mid } else { lo = mid + 1 }
     }
+    let num_queries = lo;
+    let (fri, security) = assemble(num_queries);
     require_security(ProvenSecurity::compute(&security, trace_len));
     let pcs = Pcs::new(Radix2DitParallel::default(), mmcs, fri);
-    (Config::new(pcs, Challenger::new(perm)), security)
+    (Config::new(pcs, Challenger::new(perm)), security, num_queries)
 }
 fn require_security(security: ProvenSecurity) {
     assert!(
@@ -107,6 +119,7 @@ pub(super) struct Context {
     corpus: Arc<Corpus>,
     config: Config,
     security: StarkSecurityParams,
+    num_queries: usize,
 }
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
@@ -115,11 +128,12 @@ impl Context {
             Workload::U32,
             "Plonky3-FRI supports u32 only"
         );
-        let (config, security) = configuration(corpus.len());
+        let (config, security, num_queries) = configuration(corpus.len());
         Self {
             corpus,
             config,
             security,
+            num_queries,
         }
     }
     pub(super) fn config(&self) -> Value {
@@ -252,11 +266,12 @@ mod tests {
     fn actual_air_and_every_supported_shape_reach_security_target() {
         for rate in 1..=3 {
             for exponent in 4..=29 {
-                let (_, params) = configuration_at_rate(1 << exponent, rate);
+                let (_, params, num_queries) = configuration_at_rate(1 << exponent, rate);
                 assert_eq!(params.num_constraints, 139);
                 assert_eq!(params.air_max_constraint_degree, 2);
                 assert_eq!(params.max_combo, 1);
                 assert_eq!(params.num_batched_functions, 142);
+                assert!((1..=MAX_QUERIES).contains(&num_queries));
                 require_security(ProvenSecurity::compute(&params, 1 << exponent));
             }
         }
@@ -265,7 +280,7 @@ mod tests {
     fn fri_proof_roundtrip_and_opening_tamper_rejection() {
         for rate in 1..=3 {
             let corpus = boundary_corpus();
-            let (config, security) = configuration_at_rate(corpus.len(), rate);
+            let (config, security, _) = configuration_at_rate(corpus.len(), rate);
             let mut proof = prove(&config, &MulAir, generate(&corpus), &[]);
             verify(&config, &MulAir, &proof, &[]).unwrap();
             require_security(proof.proven_security(&security));

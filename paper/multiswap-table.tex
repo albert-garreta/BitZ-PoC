@@ -7,6 +7,9 @@
 % feature `parallel`).  Prover time includes the
 % commitment and excludes witness generation (< 0.1 s in every row).
 % Reproduction commands and commit hashes: README.md, section "MultiSwap".
+% TODO (suite 2026-09-13): re-measure the multi-thread column at 10 rayon
+% threads (run_matched_multiswap_campaign.py --all-threads 10) and update the
+% "8 thr" headers, numbers and caption to 10 threads.
 %   BitZ    f2z-pcs      (this checkout)  F2Z_BENCH_LAMBDA=114, opener udrg:3:4:114 (114.0 bits achieved)
 %   Zinc+   zinc-plus    878fbd8  main-beta, LIMB16=1 NVARS=13, feature sec-114
 %   Limber  limber-impl  b003684  MSCFG=paper (the 6209-row Table-1 circuit)
@@ -18,10 +21,10 @@
     Scheme & Commitment & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
      &  & 1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
     \midrule
-    \ftwoz \ (this work)             & binary field, hash  & \textbf{243}  & \textbf{97} & \textbf{9.0} & \textbf{11.7} & 269 \\
-    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 1973          & 569          & 18.2         & 12.5 & 1272 \\
-    Limber \cite{limber} (Brakedown) & hash                & 1063          & 542          & 39.6         & 40.0 & 5769 \\
-    Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1116          & 368          & 34.1         & 20.3 & \textbf{175} \\
+    \ftwoz-SNARK                     & binary field, hash  & \textbf{243}  & \textbf{97} & \textbf{9.0} & \textbf{11.7} & 269 \\
+    Zinc+$^{\ast}$                   & integer code, hash  & 1973          & 569          & 18.2         & 12.5 & 1272 \\
+    Limber (Brakedown)               & hash                & 1063          & 542          & 39.6         & 40.0 & 5769 \\
+    Limber (Hyrax)                   & Tom-256, DL         & 1116          & 368          & 34.1         & 20.3 & \textbf{175} \\
     \midrule
     Arkworks/Garuda$^{\dagger}$      & BLS12-381, pairing  & 231000        & --           & 25           & --   & 7.2 \\
     MultiSwap-xJsnark$^{\dagger}$    & BLS12-381, pairing  & 88500         & --           & 2            & --   & 0.2 \\

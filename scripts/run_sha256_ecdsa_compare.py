@@ -18,8 +18,14 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "f2z/sha256-ecdsa-compare/v1"
-DEFAULT_METHODS = ["f2z-split", "f2z-all", "spartan-mc"]
-METHODS = [*DEFAULT_METHODS, "binius64"]
+# The 2026-09-13 suite: F2Z at rates 1/2 and 1/8 (Ligerito profiles), Binius64
+# and Binius64-with-F2Z-opener each at rates 1/2 and 1/8 (round-by-round gate).
+DEFAULT_METHODS = ["f2z-split", "binius64", "binius64-ligerito"]
+METHODS = ["f2z-split", "f2z-all", "spartan-mc", "binius64", "binius64-ligerito"]
+# Ligerito profile per F2Z case: custom:1:4 = Johnson rate 1/2, custom:3:4 = rate 1/8.
+DEFAULT_F2Z_PROFILES = ["custom:1:4", "custom:3:4"]
+PROFILE_RATES = {"custom:1:4": 1, "custom:3:4": 3}
+DEFAULT_BINIUS_RATES = [1, 3]
 FIXTURE_SCHEMA = "f2z/sha256-ecdsa-fixture/standard-p256/v1"
 METRICS = ["setup_ms", "witness_ms", "commit_ms", "protocol_ms", "prove_ms",
            "witness_to_proof_ms", "e2e_prover_ms", "verify_ms", "codec_ms", "outer_ms", "inner_ms",
@@ -42,22 +48,38 @@ def sample_metrics(row):
     return row
 
 
-def cases(spartan_splits, methods, targets, threads, seeds):
-    """F2Z depends only on total work; emit it once for each exponent/target."""
+def cases(spartan_splits, methods, targets, threads, seeds,
+          f2z_profiles=DEFAULT_F2Z_PROFILES, binius_rates=DEFAULT_BINIUS_RATES):
+    """F2Z depends only on total work; emit it once for each exponent/target.
+
+    Every case carries its scheme configuration: F2Z methods a `ligerito_profile`
+    (the per-case `F2Z_LIG_PROFILE`), Binius-family methods a `log_inv_rate`.
+    The opener (`binius64-ligerito`) exists only at its fixed 100-bit gate.
+    """
     work = sorted({r + c for r, c in spartan_splits})
     for method, workers, seed in itertools.product(methods, threads, seeds):
         if method == "spartan-mc":
             for r, c in sorted(set(spartan_splits)):
                 yield dict(method=method, log_compressions=r+c, r=r, c=c,
                            security_target=None, threads=workers, seed=seed)
-        else:
-            for exponent, target in itertools.product(work, targets):
+        elif method.startswith("f2z"):
+            for exponent, target, profile in itertools.product(work, targets, f2z_profiles):
                 yield dict(method=method, log_compressions=exponent, r=None, c=None,
-                           security_target=target, threads=workers, seed=seed)
+                           security_target=target, threads=workers, seed=seed,
+                           ligerito_profile=profile)
+        else:
+            method_targets = [100] if method == "binius64-ligerito" else targets
+            for exponent, target, rate in itertools.product(work, method_targets, binius_rates):
+                yield dict(method=method, log_compressions=exponent, r=None, c=None,
+                           security_target=target, threads=workers, seed=seed,
+                           log_inv_rate=rate)
 
 
-def validate_rows(rows, case, reps, binius_log_inv_rate=1):
+def validate_rows(rows, case, reps, binius_log_inv_rate=None):
     """Reject incomplete, mislabelled, unverified or fixture-changing workers."""
+    expected_rate = case.get("log_inv_rate", binius_log_inv_rate if binius_log_inv_rate is not None else 1)
+    if binius_log_inv_rate is not None and "log_inv_rate" in case and expected_rate != binius_log_inv_rate:
+        return False
     if len(rows) != reps + 1:
         return False
     for sample, row in enumerate(rows):
@@ -88,15 +110,33 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=1):
                     return False
             except ValueError:
                 return False
-        binius = case["method"] == "binius64"
+            if "ligerito_profile" in case:
+                # The case pins the opener profile; the recorded request and
+                # its resolved level-0 rate must both agree.
+                if row["security"]["ligerito"].get("requested_profile") != case["ligerito_profile"]:
+                    return False
+                expected_rate = PROFILE_RATES.get(case["ligerito_profile"])
+                config = row["security"]["ligerito"].get("configuration", {})
+                levels = config.get("levels") or [{}]
+                if expected_rate is not None and levels[0].get("log_inv_rate", 1) != expected_rate:
+                    return False
+        binius = case["method"].startswith("binius64")
         revision = row.get("binius_revision" if binius else "spartan_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
             return False
-        if binius and (row["security"].get("fri_query_target_bits") != case["security_target"]
-                       or row["security"].get("log_inv_rate") != binius_log_inv_rate
-                       or row["security"].get("pcs") != "BaseFold"
+        if binius and (row["security"].get("log_inv_rate") != expected_rate
                        or row.get("circuit_profile") != "sha256-chain-p256/standard/v1"):
             return False
+        if case["method"] == "binius64" and (row["security"].get("fri_query_target_bits") != case["security_target"]
+                                             or row["security"].get("pcs") != "BaseFold"):
+            return False
+        if case["method"] == "binius64-ligerito":
+            s = row["security"]
+            if (s.get("pcs") != "F2Z-Ligerito" or s.get("accounting") != "round-by-round"
+                    or s.get("target_bits") != 100 or case["security_target"] != 100
+                    or type(s.get("round_by_round_bits")) not in (int, float)
+                    or s["round_by_round_bits"] < 100):
+                return False
         for key in METRICS:
             value = row.get(key)
             optional = ["folding_ms", "outer_ms", "inner_ms", "opening_ms"]
@@ -116,11 +156,12 @@ def summarize(directory):
     results = [json.loads(p.read_text()) for p in paths]
     fields = ["method", "log_compressions", "r", "c", "security_target", "threads", "seed",
               "status", "samples", "peak_rss_bytes", "fixture_id", "security_model",
-              "economic_bits", "statistical_bits_lower_bound", *METRICS]
+              "economic_bits", "statistical_bits_lower_bound", *METRICS,
+              "log_inv_rate", "ligerito_profile"]
     fixture_ids = {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
                      "fixture_id", "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", "security_model", "economic_bits",
-                     "statistical_bits_lower_bound", *METRICS]
+                     "statistical_bits_lower_bound", *METRICS, "log_inv_rate", "ligerito_profile"]
     with (directory / "summary.csv").open("w", newline="") as stream, \
             (directory / "samples.csv").open("w", newline="") as sample_stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -129,12 +170,15 @@ def summarize(directory):
         sample_writer.writeheader()
         for path, result in zip(paths, results):
             row = {k: result["case"][k] for k in fields[:7]}
-            row.update(status=result["status"], peak_rss_bytes=result["peak_rss_bytes"])
+            row.update(status=result["status"], peak_rss_bytes=result["peak_rss_bytes"],
+                       log_inv_rate=result["case"].get("log_inv_rate"),
+                       ligerito_profile=result["case"].get("ligerito_profile"))
             normalized = [sample_metrics(s) for s in result["rows"]]
             for sample in normalized:
                 record = dict(row, source_file=path.name)
                 record.update({k: sample.get(k) for k in ["trial", "sample", "verified", "fixture_id",
-                                                         "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", *METRICS]})
+                                                         "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", *METRICS,
+                                                         "log_inv_rate", "ligerito_profile"]})
                 security = sample.get("security")
                 if isinstance(security, dict):
                     record.update(security_model=security.get("model"), economic_bits=security.get("economic_bits"),
@@ -211,10 +255,19 @@ def metadata(binary):
                              k in ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "RAYON_NUM_THREADS", "CARGO_TARGET_DIR"]})
 
 
+def case_config_token(case):
+    """Filesystem token for the case's scheme configuration, '' if none."""
+    if "ligerito_profile" in case:
+        return "-lig" + case["ligerito_profile"].replace(":", "_")
+    if "log_inv_rate" in case:
+        return f"-rate{case['log_inv_rate']}"
+    return ""
+
+
 def run_case(binary, case, args, directory):
     shape = f"r{case['r']}-c{case['c']}" if case["r"] is not None else "total"
     name = (f"{case['method']}-i{case['log_compressions']}-{shape}-s{case['security_target']}"
-            f"-t{case['threads']}-seed{case['seed']}-reps{args.reps}")
+            f"{case_config_token(case)}-t{case['threads']}-seed{case['seed']}-reps{args.reps}")
     path = directory / f"{name}.result.json"
     if path.exists():
         existing = json.loads(path.read_text())
@@ -223,13 +276,14 @@ def run_case(binary, case, args, directory):
             return existing["status"] == "complete"
     r = case["r"] if case["r"] is not None else case["log_compressions"]
     c = case["c"] if case["c"] is not None else 0
-    worker = args.binius64_worker if case["method"] == "binius64" else binary
+    binius = case["method"].startswith("binius64")
+    worker = args.binius64_worker if binius else binary
     command = [str(worker), "--method", case["method"], "--r", str(r), "--c", str(c),
                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
     if case["security_target"] is not None:
         command.extend(["--target", str(case["security_target"])])
-    if case["method"] == "binius64":
-        command.extend(["--log-inv-rate", str(args.binius_log_inv_rate)])
+    if "log_inv_rate" in case:
+        command.extend(["--log-inv-rate", str(case["log_inv_rate"])])
     fixture = directory / "fixtures" / f"i{case['log_compressions']}-seed{case['seed']}.json"
     expected_fixture = json.loads(fixture.read_text())["id"]
     command.extend(["--fixture", str(fixture)])
@@ -247,12 +301,18 @@ def run_case(binary, case, args, directory):
     started = time.monotonic()
     status, returncode = "failed", None
     with (directory / f"{name}.stdout").open("w") as stdout, (directory / f"{name}.stderr").open("w") as stderr:
+        env = dict(os.environ, RAYON_NUM_THREADS=str(case["threads"]),
+                   HARDWARE_CONCURRENCY=str(case["threads"]))
+        # F2Z cases pin their Ligerito profile per case; other methods must
+        # never see an ambient profile.
+        env.pop("F2Z_LIG_PROFILE", None)
+        if "ligerito_profile" in case:
+            env["F2Z_LIG_PROFILE"] = case["ligerito_profile"]
         try:
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr, cwd=ROOT,
                                        start_new_session=True,
                                        preexec_fn=memory_limit if sys.platform.startswith("linux") else None,
-                                       env=dict(os.environ, RAYON_NUM_THREADS=str(case["threads"]),
-                                                HARDWARE_CONCURRENCY=str(case["threads"])))
+                                       env=env)
         except (OSError, subprocess.SubprocessError) as exc:
             stderr.write(str(exc) + "\n")
         else:
@@ -272,7 +332,8 @@ def run_case(binary, case, args, directory):
             rows.append(row)
     if (returncode == 0 and validate_rows(rows, case, args.reps, args.binius_log_inv_rate)
             and all(row["fixture_id"] == expected_fixture for row in rows)
-            and (case["method"] != "binius64" or all(row["binius_revision"] == args.binius64_info["binius_revision"] for row in rows))):
+            and (not case["method"].startswith("binius64")
+                 or all(row["binius_revision"] == args.binius64_info["binius_revision"] for row in rows))):
         status = "complete"
     rss = peak_rss_bytes(rss_path, directory / f"{name}.stderr")
     result = dict(case=case, status=status, returncode=returncode, rows=rows,
@@ -355,7 +416,7 @@ def main():
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--binius64-binary", type=Path, help="Prebuilt worker with its .build.json sidecar")
-    parser.add_argument("--binius-log-inv-rate", type=int, choices=[1, 2, 3], default=1,
+    parser.add_argument("--binius-log-inv-rate", type=int, choices=[1, 2, 3], default=None,
                         help="Binius64 initial code rate: 1=1/2, 2=1/4, 3=1/8")
     shapes = parser.add_mutually_exclusive_group()
     shapes.add_argument("--spartan-splits", nargs="+",
@@ -363,8 +424,13 @@ def main():
     shapes.add_argument("--exponents", nargs="+", type=int,
                         help="Total compression exponents i; sweep every Spartan r+c=i split, F2Z once per i; default 3 5 7")
     parser.add_argument("--methods", nargs="+", choices=METHODS, default=DEFAULT_METHODS)
-    parser.add_argument("--targets", nargs="+", type=int, choices=[100, 128], default=[100, 128])
-    parser.add_argument("--threads", nargs="+", type=int, default=None)
+    parser.add_argument("--targets", nargs="+", type=int, choices=[100, 128], default=[100],
+                        help="security targets; the binius64-ligerito gate is fixed at 100, so its cases exist only there")
+    parser.add_argument("--f2z-profiles", nargs="+", choices=sorted(PROFILE_RATES), default=DEFAULT_F2Z_PROFILES,
+                        help="Ligerito profile per F2Z case: custom:1:4 = rate 1/2, custom:3:4 = rate 1/8")
+    parser.add_argument("--binius-rates", nargs="+", type=int, choices=[1, 2, 3], default=None,
+                        help="log inverse rate per Binius-family case: 1 = rate 1/2, 3 = rate 1/8")
+    parser.add_argument("--threads", nargs="+", type=int, default=[1, 10])
     parser.add_argument("--seeds", nargs="+", type=int, default=[0])
     parser.add_argument("--reps", type=int, default=3)
     parser.add_argument("--memory-gib", type=int, default=48)
@@ -373,9 +439,12 @@ def main():
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()
-    args.with_binius64 = "binius64" in args.methods
-    if args.threads is None:
-        args.threads = sorted({1, os.cpu_count() or 1})
+    if args.binius_log_inv_rate is not None and args.binius_rates is not None:
+        parser.error("select either --binius-log-inv-rate or --binius-rates")
+    args.binius_rates = args.binius_rates or ([args.binius_log_inv_rate] if args.binius_log_inv_rate is not None else DEFAULT_BINIUS_RATES)
+    args.with_binius64 = any(method.startswith("binius64") for method in args.methods)
+    if os.environ.get("F2Z_LIG_PROFILE"):
+        parser.error("unset F2Z_LIG_PROFILE: the runner selects it per case (--f2z-profiles)")
     if args.summarize_only:
         if not args.output.is_dir() or not any(args.output.glob("*.result.json")):
             parser.error("--summarize-only requires an output directory with recorded cases")
@@ -396,12 +465,15 @@ def main():
     directory = args.output.resolve()
     binary = args.binary.resolve(strict=True) if args.binary else build(args, directory)
     manifest = metadata(binary)
-    manifest["ligerito_profile"] = os.environ.get("F2Z_LIG_PROFILE", "default-by-target")
+    # Profiles are pinned per case (recorded in each case and row); the
+    # manifest-level value only guards resumption against runner-policy drift.
+    manifest["ligerito_profile"] = "per-case:" + ",".join(args.f2z_profiles)
     manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
     if args.with_binius64:
         manifest["binius64"] = prepare_binius(args, directory)
         manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
+                                f2z_profiles=args.f2z_profiles, binius_rates=args.binius_rates,
                                 seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib)
     manifest_path = directory / "manifest.json"
     if manifest_path.exists():
@@ -422,7 +494,8 @@ def main():
             target = directory / "source" / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((ROOT / relative).read_bytes())
-    jobs = list(cases(spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds))))
+    jobs = list(cases(spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
+                      f2z_profiles=args.f2z_profiles, binius_rates=sorted(set(args.binius_rates))))
     (directory / "requested_cases.json").write_text(json.dumps(jobs, indent=2)+"\n")
     complete = True
     for case in jobs:

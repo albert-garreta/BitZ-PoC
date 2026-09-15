@@ -17,7 +17,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(long, value_parser = ["f2z-split", "f2z-all", "spartan-mc", "binius64"])]
+    #[arg(long, value_parser = ["f2z-split", "f2z-all", "spartan-mc", "binius64", "binius64-ligerito"])]
     method: String,
     #[arg(long)]
     r: usize,
@@ -37,8 +37,8 @@ struct Args {
     export_fixture: Option<std::path::PathBuf>,
     #[arg(long)]
     binius64_worker: Option<std::path::PathBuf>,
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
-    binius_log_inv_rate: u8,
+    #[arg(long = "log-inv-rate", alias = "binius-log-inv-rate", default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
+    log_inv_rate: u8,
 }
 
 impl Args {
@@ -78,15 +78,15 @@ fn dispatch_binius(args: &Args) -> Result<()> {
     let mut command = std::process::Command::new(worker);
     command.args([
         "--method",
-        "binius64",
-        "--log-inv-rate",
-        &args.binius_log_inv_rate.to_string(),
+        &args.method,
         "--r",
         &args.r.to_string(),
         "--c",
         &args.c.to_string(),
         "--target",
         &args.target.to_string(),
+        "--log-inv-rate",
+        &args.log_inv_rate.to_string(),
         "--threads",
         &args.threads.to_string(),
         "--reps",
@@ -154,6 +154,7 @@ struct Measurements<D> {
 
 #[derive(Serialize)]
 struct F2zDetails {
+    ligerito_profile: String,
     phases_seconds: Vec<(String, f64)>,
     verify_phases_seconds: Vec<(String, f64)>,
     security: Value,
@@ -267,6 +268,10 @@ fn emit<D: Serialize>(args: &Args, fixture: &Fixture, trial: usize, row: Measure
 }
 fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let statement = statement(fixture);
+    // The campaign runner selects the opener rate per case through
+    // `F2Z_LIG_PROFILE`; record the request verbatim on every row.
+    let ligerito_profile =
+        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
     let (prepared, setup_ms) = setup(|| {
         prepare_sha256_ecdsa(args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
@@ -351,6 +356,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 opening_ms: phase("ecdsa:f2z_prove"),
                 folding_ms: None,
                 details: F2zDetails {
+                    ligerito_profile: ligerito_profile.clone(),
                     phases_seconds: phases,
                     verify_phases_seconds: verify_phases,
                     security: json!({"model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(),
@@ -445,12 +451,15 @@ fn main() -> Result<()> {
     if !(3..=16).contains(&exponent) {
         return Err("require 3 <= r+c <= 16 and target 100/128".into());
     }
+    if args.method == "binius64-ligerito" && args.target != 100 {
+        return Err("the F2Z opener gate is fixed at 100 bits".into());
+    }
     f2z::observability::install().expect("install Perfetto subscriber");
     if let Some(path) = &args.export_fixture {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
             .write(path);
     }
-    if args.method == "binius64" {
+    if args.method.starts_with("binius64") {
         return dispatch_binius(&args);
     }
     rayon::ThreadPoolBuilder::new()
@@ -516,7 +525,7 @@ mod reporting_tests {
             fixture: None,
             export_fixture: None,
             binius64_worker: None,
-            binius_log_inv_rate: 1,
+            log_inv_rate: 1,
         };
         let fixture = Fixture::generate(3, 0).unwrap();
         let row = || Measurements {
@@ -534,6 +543,7 @@ mod reporting_tests {
             opening_ms: None,
             folding_ms: None,
             details: F2zDetails {
+                ligerito_profile: "custom:1:4".into(),
                 phases_seconds: vec![("commit".into(), 0.003)],
                 verify_phases_seconds: vec![],
                 security: json!({"bits":100}),

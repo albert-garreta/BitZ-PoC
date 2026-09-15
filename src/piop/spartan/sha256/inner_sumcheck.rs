@@ -40,8 +40,34 @@ type RawMontgomery = [u64; 2];
 pub(crate) trait Sha256InnerBitSource: Sync {
     fn bit_at(&self, index: usize) -> Result<u64, SumcheckError>;
 
+    /// The `count <= 64` bits at `index .. index + count`, bit `i` of the result
+    /// being the bit at `index + i`. Callers read aligned prefix blocks, so a
+    /// packed source serves this from one or two words; the default reads bit
+    /// by bit.
+    fn bits_at(&self, index: usize, count: usize) -> Result<u64, SumcheckError> {
+        debug_assert!(count <= u64::BITS as usize);
+        let mut word = 0u64;
+        for i in 0..count {
+            let bit = self.bit_at(index + i)?;
+            if bit > 1 {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            word |= bit << i;
+        }
+        Ok(word)
+    }
+
     fn validate_shape(&self, _live_len: usize, _table_len: usize) -> Result<(), SumcheckError> {
         Ok(())
+    }
+}
+
+#[inline]
+fn low_bits_mask(count: usize) -> u64 {
+    if count >= u64::BITS as usize {
+        u64::MAX
+    } else {
+        (1u64 << count) - 1
     }
 }
 
@@ -49,6 +75,17 @@ impl Sha256InnerBitSource for [u64] {
     #[inline]
     fn bit_at(&self, index: usize) -> Result<u64, SumcheckError> {
         Ok((self[index / u64::BITS as usize] >> (index % u64::BITS as usize)) & 1)
+    }
+
+    #[inline]
+    fn bits_at(&self, index: usize, count: usize) -> Result<u64, SumcheckError> {
+        let word = index / u64::BITS as usize;
+        let shift = index % u64::BITS as usize;
+        let mut value = self[word] >> shift;
+        if shift + count > u64::BITS as usize && word + 1 < self.len() {
+            value |= self[word + 1] << (u64::BITS as usize - shift);
+        }
+        Ok(value & low_bits_mask(count))
     }
 
     fn validate_shape(&self, live_len: usize, table_len: usize) -> Result<(), SumcheckError> {
@@ -73,6 +110,11 @@ impl Sha256InnerBitSource for Vec<u64> {
         self.as_slice().bit_at(index)
     }
 
+    #[inline]
+    fn bits_at(&self, index: usize, count: usize) -> Result<u64, SumcheckError> {
+        self.as_slice().bits_at(index, count)
+    }
+
     fn validate_shape(&self, live_len: usize, table_len: usize) -> Result<(), SumcheckError> {
         self.as_slice().validate_shape(live_len, table_len)
     }
@@ -85,6 +127,38 @@ where
     #[inline]
     fn bit_at(&self, index: usize) -> Result<u64, SumcheckError> {
         self(index)
+    }
+}
+
+/// A flat bit table stored column-major in packed words: index
+/// `column · 2^row_vars + row` is bit `row % 64` of `columns[column][row / 64]`
+/// (the ECDSA assignment layout). Every column holds a power of two rows, at
+/// least 64, so an aligned block of at most 64 bits never crosses a word.
+pub(crate) struct ColumnMajorPackedBits<'a> {
+    columns: &'a [Vec<u64>],
+    row_vars: usize,
+}
+
+impl<'a> ColumnMajorPackedBits<'a> {
+    pub(crate) fn new(columns: &'a [Vec<u64>], row_vars: usize) -> Self {
+        debug_assert!(row_vars >= 6);
+        Self { columns, row_vars }
+    }
+}
+
+impl Sha256InnerBitSource for ColumnMajorPackedBits<'_> {
+    #[inline]
+    fn bit_at(&self, index: usize) -> Result<u64, SumcheckError> {
+        let row = index & ((1usize << self.row_vars) - 1);
+        Ok((self.columns[index >> self.row_vars][row / 64] >> (row % 64)) & 1)
+    }
+
+    #[inline]
+    fn bits_at(&self, index: usize, count: usize) -> Result<u64, SumcheckError> {
+        let row = index & ((1usize << self.row_vars) - 1);
+        let shift = row % 64;
+        debug_assert!(shift + count <= 64, "unaligned packed read");
+        Ok((self.columns[index >> self.row_vars][row / 64] >> shift) & low_bits_mask(count))
     }
 }
 
@@ -836,8 +910,9 @@ where
         let base = suffix << K;
         let local_base = base - block_start;
         state.h_values.resize(prefix_size, 0);
+        let word = h_source.bits_at(base, prefix_size)?;
         for prefix in 0..prefix_size {
-            state.h_values[prefix] = source_bit(h_source, base + prefix)? as i64;
+            state.h_values[prefix] = ((word >> prefix) & 1) as i64;
         }
         extend_lsb::<i64, K, _>(
             &mut state.h_values,
@@ -1139,6 +1214,7 @@ where
     state.v_values.fill(zero.clone());
     state.h_values.fill(0);
     let active_prefixes = prefix_size.min(live_len - base);
+    let word = h_source.bits_at(base, active_prefixes)?;
     for prefix in 0..active_prefixes {
         let index = base | prefix;
         let value = coefficients.evaluation_at(index)?;
@@ -1146,7 +1222,7 @@ where
             validate_field_value(&value, field_cfg)?;
         }
         state.v_values[prefix] = value;
-        state.h_values[prefix] = source_bit(h_source, index)? as i64;
+        state.h_values[prefix] = ((word >> prefix) & 1) as i64;
     }
 
     extend_lsb::<Field, K, _>(
@@ -1693,17 +1769,16 @@ fn folded_packed_h<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     }
 
     let active_prefixes = (1usize << K).min(live_len - base);
+    let word = h_source.bits_at(base, active_prefixes)?;
     let mut accumulator = linear_accumulator_zero(reducer);
+    // Branch-free: the bits are random, so multiplying by 0/1 beats skipping.
     for (prefix, weight) in prefix_weights.iter().take(active_prefixes).enumerate() {
-        linear_multiply_accumulate(
-            reducer,
-            &mut accumulator,
-            weight,
-            &source_bit(h_source, base | prefix)?,
-        );
+        linear_multiply_accumulate(reducer, &mut accumulator, weight, &((word >> prefix) & 1));
     }
+    // The reduced value is canonical by construction; comparing its
+    // configuration here cost a full parameter comparison per suffix.
     let value = linear_reduce(reducer, accumulator)?;
-    validate_field_value(&value, field_cfg)?;
+    debug_assert!(value.cfg() == field_cfg);
     Ok(value)
 }
 

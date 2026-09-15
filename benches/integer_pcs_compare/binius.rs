@@ -9,7 +9,6 @@
 
 use std::error::Error;
 
-use binius_compute::GlobalAllocator;
 use binius_field::{Ghash128b, arch::OptimalPackedB128};
 use binius_hash::StdHashSuite;
 use binius_iop::{
@@ -61,6 +60,12 @@ pub const BASEFOLD_VERIFY_SCOPE: &str = "binius:verify_basefold";
 pub struct BiniusBackend {
     verifier: BaseFoldVerifierCompiler<B128>,
     prover: BaseFoldProverCompiler<P, Ntt>,
+    /// Working buffers come from a pool held for the backend's lifetime, as
+    /// Binius64's own `Prover` does (`prove.rs`: `let alloc = &self.pool`).
+    /// Measuring it against `GlobalAllocator` elsewhere in this repo showed
+    /// the malloc path costs the Binius prover ~14 % at 2^20-scale buffers,
+    /// so using the pool keeps this comparison fair to Binius64.
+    pool: binius_compute::BufferPool,
     log_rows: usize,
     log_inv_rate: usize,
     n_test_queries: usize,
@@ -105,6 +110,7 @@ impl BiniusBackend {
         Self {
             verifier,
             prover,
+            pool: binius_compute::BufferPool::new(),
             log_rows,
             log_inv_rate,
             n_test_queries,
@@ -152,7 +158,9 @@ impl BiniusBackend {
                 .copied()
                 .map(B128::new)
                 .collect::<Vec<_>>();
-            FieldBuffer::<P>::from_values(&scalars)
+            // Drawn from the same pool the channel allocates from, so the
+            // oracle buffer is recyclable and type-matches `finalize_oracle`.
+            FieldBuffer::from_values_in(&&self.pool, &scalars)
         };
 
         let mut prover_transcript = ProverTranscript::new(StdChallenger::default());
@@ -165,8 +173,8 @@ impl BiniusBackend {
                     StdHashSuite,
                     StdChallenger,
                     _,
-                    GlobalAllocator,
-                >(&mut prover_transcript, GlobalAllocator);
+                    &binius_compute::BufferPool,
+                >(&mut prover_transcript, &self.pool);
             let oracle = {
                 let _procedure = tracing::info_span!(COMMIT_ORACLE_SCOPE).entered();
                 channel.send_oracle(witness.as_view())
@@ -195,7 +203,7 @@ impl BiniusBackend {
             } = {
                 let _procedure = tracing::info_span!(RING_SWITCH_SCOPE).entered();
                 ring_switch::prove(
-                    &GlobalAllocator,
+                    &&self.pool,
                     witness.as_view(),
                     &point,
                     &mut prover_channel,
@@ -296,7 +304,10 @@ fn observe_verifier_statement(transcript: &mut VerifierTranscript<StdChallenger>
     observer.write(&seed);
 }
 
-fn evaluate_bit_mle(witness: &FieldBuffer<P>, point: &[B128]) -> B128 {
+fn evaluate_bit_mle<Data>(witness: &FieldBuffer<P, Data>, point: &[B128]) -> B128
+where
+    Data: std::ops::Deref<Target = [P]>,
+{
     let (bit_point, row_point) = point.split_at(7);
     let split = row_point.len().min(ring_switch::LOG_SPLIT_BLOCK);
     let (row_lo, row_hi) = row_point.split_at(split);

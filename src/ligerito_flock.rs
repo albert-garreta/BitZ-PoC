@@ -34,7 +34,7 @@ use anyhow::Context;
 use crypto_bigint::U128;
 use crypto_primes::{Flavor, is_prime};
 use flock_core::challenger::Challenger;
-pub(crate) mod atomic;
+pub(crate) mod grinding;
 #[cfg(test)]
 mod coverage;
 mod configuration;
@@ -2880,11 +2880,11 @@ fn prove_prepared_mod_q_ligerito_with_security(
     basis: Vec<F128>,
     target: Gf,
     precomputed_round0: Option<(Gf, Gf)>,
-    security: Option<&mut atomic::AtomicSecurity<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> LigeritoProof {
     let _g_l = tracing::info_span!("mq:lig").entered();
     if let Some(security) = security {
-        let mut challenger = atomic::AtomicChallenger::new(transcript, security);
+        let mut challenger = grinding::GrindingChallenger::new(transcript, security);
         let proof = match precomputed_round0 {
             Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
                 pc,
@@ -2909,7 +2909,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
         };
         assert!(
             challenger.finish(),
-            "Flock prover diverged from the atomic challenge plan"
+            "Flock prover diverged from the grinding plan"
         );
         return proof;
     }
@@ -2987,7 +2987,7 @@ fn prove_mod_q_lig_core_with_security<S, R>(
     forest_grinding_bits: u32,
     ood: impl Into<ProverOod>,
     reduction: R,
-    security: Option<&mut atomic::AtomicSecurity<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> ModQLigCoreProof<R::Proof>
 where
     S: ModQWeightSource + ?Sized,
@@ -3485,7 +3485,7 @@ fn verify_prepared_mod_q_ligerito_with_security(
     proof: &LigeritoProof,
     vc: &LigVerifierConfig,
     prepared: PreparedLigeritoClaim,
-    security: Option<&mut atomic::AtomicSecurity<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), FlockRsError> {
     let eval_b = |ris: &[F128], remaining_vars: usize| {
         let mut out = prepared.basis.evaluate(ris, remaining_vars);
@@ -3498,7 +3498,7 @@ fn verify_prepared_mod_q_ligerito_with_security(
         out
     };
     if let Some(security) = security {
-        let mut challenger = atomic::AtomicChallenger::new(transcript, security);
+        let mut challenger = grinding::GrindingChallenger::new(transcript, security);
         let ok = ligerito::recursive_verifier_with_basis_succinct(
             vc,
             proof,
@@ -3888,7 +3888,7 @@ fn verify_mod_q_lig_core_with_security<S, R, C>(
     ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
-    security: Option<&mut atomic::AtomicSecurity<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<PaddedChunkFolds, FlockRsError>
 where
     S: ModQWeightSource + ?Sized,
@@ -11669,13 +11669,15 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 let mut corrections = Vec::new();
                 if let Some(tail) = map.chained_packed_source_tail() {
                     let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
-                    let weights: Vec<Gf> = tail
-                        .map
-                        .matrix()
-                        .columns()
-                        .map(|col| {
-                            col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
-                                sum + coeffs.coeff(tail.row_offset + r)
+                    // One weight per tail column (1.2M for P-256); the columns
+                    // are independent, so they are folded in parallel.
+                    let matrix = tail.map.matrix();
+                    let weights: Vec<Gf> = cfg_into_iter!(0..matrix.columns().len(), 1 << 12)
+                        .map(|column| {
+                            matrix.column(column).map_or(Gf::zero(), |col| {
+                                col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
+                                    sum + coeffs.coeff(tail.row_offset + r)
+                                })
                             })
                         })
                         .collect();
@@ -12663,7 +12665,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modul
     forest_grinding_bits: u32,
     ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
-    security: Option<&mut atomic::AtomicSecurity<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> IntEvalRsLigVirtProof
 where
     M: crate::f2map::VirtualMap,
@@ -13065,7 +13067,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read
     vc: &LigVerifierConfig,
     col_weight_count: usize,
     read_off_accepts: C,
-    security: Option<&mut atomic::AtomicSecurity<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), FlockRsError>
 where
     M: crate::f2map::VirtualMap,

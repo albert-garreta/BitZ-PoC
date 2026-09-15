@@ -15,9 +15,12 @@
 //! `T256DynPrimeBdEngine` as "the comparison instantiation against
 //! code-commitment systems (fast prover, large proofs)", and it shares the
 //! scalar field and prime sampling with the Hyrax engine, so only the
-//! commitment scheme differs. Its layout knobs (`BDLAMBDA`, `BDSPEC`,
-//! `BDROWLEN`, `BDDIRECT`, `BDSPLIT`) are cleared by the campaign runner, so
-//! the defaults recorded in [`Context::config`] are what actually ran.
+//! commitment scheme differs. Of its layout knobs (`BDLAMBDA`, `BDSPEC`,
+//! `BDROWLEN`, `BDDIRECT`, `BDSPLIT`), the campaign runner clears all but
+//! `BDLAMBDA`, which it pins to the suite's 100-bit Brakedown column-open
+//! target; the values recorded in [`Context::config`] are what actually ran.
+//! Limber's IntEval (128) and challenge (117) targets and its 2^-114
+//! fingerprint term are crate constants and stay above 100.
 use super::trace_capture::TrialScopes;
 use super::{Corpus, Timing, Workload, captured};
 use f2z::observability::Recording;
@@ -41,9 +44,26 @@ type E = T256DynPrimeBdEngine;
 const K: usize = 9;
 /// Brakedown layout defaults of the pinned Limber revision, reported so a
 /// campaign records the configuration that produced its numbers. The runner
-/// clears every override, so these are the effective values.
-const BD_TARGET_BITS: usize = 114;
+/// clears every override except `BDLAMBDA`, which it pins to the suite's
+/// 100-bit column-open target, so these plus [`bd_target_bits`] are the
+/// effective values.
+const BD_LAMBDA_DEFAULT: usize = 114;
 const BD_SPEC: usize = 4;
+
+/// The Brakedown column-open security target the crate actually derives its
+/// layout from: its `BDLAMBDA` env override, else its native 114-bit default
+/// (`commit_backend::bd_lambda()` of the pinned revision). A present but
+/// unparsable value aborts here instead of silently measuring the default
+/// while the campaign records the override.
+fn bd_target_bits() -> usize {
+    match std::env::var("BDLAMBDA") {
+        Ok(value) => value
+            .parse()
+            .unwrap_or_else(|_| panic!("BDLAMBDA must be a usize, got {value:?}")),
+        Err(std::env::VarError::NotPresent) => BD_LAMBDA_DEFAULT,
+        Err(error) => panic!("invalid BDLAMBDA: {error}"),
+    }
+}
 const BD_ROW_LEN_CAP: usize = 1 << 15;
 const BD_DIRECT_OPEN_MAX: usize = 1 << 16;
 /// Bit size of the T256 scalar field the Mod-PCS commits over.
@@ -237,13 +257,13 @@ impl Context {
                "operand_bits":w.bits,"modulus":w.modulus().to_string(),
                "constraints":w.gates,"padded_constraints":w.num_cons,
                "variables":3*w.gates,"padded_variables":w.num_vars,"quotients":w.num_cons,
-               "target_bits":BD_TARGET_BITS,"log_q":T256_SCALAR_BITS,
+               "target_bits":bd_target_bits(),"log_q":T256_SCALAR_BITS,
                "challenge_target_bits":LAMBDA_BOUND2,"inteval_target_bits":LAMBDA,
-               "brakedown":{"target_bits":BD_TARGET_BITS,"spec":BD_SPEC,
+               "brakedown":{"target_bits":bd_target_bits(),"spec":BD_SPEC,
                             "row_len_cap":BD_ROW_LEN_CAP,"direct_open_max":BD_DIRECT_OPEN_MAX,
                             "split":false},
                "piop_payload_bytes":piop_bytes(w.num_cons, w.num_vars, self.scalar_bytes),
-               "security_policy":"native Limber parameters; not asserted equal to F2Z or Binius64"})
+               "security_policy":"BDLAMBDA-pinned Brakedown column-open target; native IntEval 128, challenge 117 and ~114-bit fingerprint floors"})
     }
     pub(super) fn run(&self) -> Timing {
         let recording = Recording::start(Vec::new()).expect("start Perfetto trial");

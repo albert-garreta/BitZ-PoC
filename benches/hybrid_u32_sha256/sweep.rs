@@ -39,8 +39,18 @@ fn child_identity(log: &str, mode: &str) -> Result<Option<serde_json::Value>, An
         }
         "hybrid" | "separate" => {
             f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
-            let expected = if mode == "hybrid" { 106 } else { 112 };
-            if report["target_bits"] != expected {
+            let rate = report["configuration"]["levels"][0]["log_inv_rate"].as_u64();
+            let target = report["target_bits"].as_u64().unwrap_or(0);
+            let valid = if mode == "separate" {
+                target == 112
+            } else {
+                match rate {
+                    Some(1) => target == 106,
+                    Some(3) => (100..=112).contains(&target),
+                    _ => false,
+                }
+            };
+            if !valid {
                 return Err("incorrect Ligerito component budget".into());
             }
         }
@@ -210,13 +220,22 @@ pub fn run(
             )
         })?;
     let results_dir = results_dir.canonicalize()?;
+    let binius = super::cli::environment::<super::BiniusConfig>();
     let output = BenchmarkOutput::new(&results_dir);
     output.write_text(
         "run.txt",
         &format!(
-            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\n",
+            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\nprofile={}\nF2Z_HYBRID_BINIUS_LOG_INV_RATE={}\nF2Z_HYBRID_BINIUS_SECURITY_BITS={}\nF2Z_BINIUS_LOG_INV_RATE={}\nF2Z_BINIUS_LIGERITO_ACCOUNTING={}\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
+            profile
+                .map(str::to_owned)
+                .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
+                .unwrap_or_else(|| "custom:1:4".into()),
+            binius.log_inv_rate,
+            binius.security_bits,
+            super::binius_ligerito_log_inv_rate(),
+            super::binius_ligerito_accounting().name(),
         ), FileMode::Replace,
     )?;
     let mut summary = output.csv("summary.csv", FileMode::Replace)?;
@@ -353,6 +372,26 @@ mod reporting_tests {
             let mut bad = value.clone();
             *bad.pointer_mut(pointer).unwrap() = serde_json::json!(999);
             assert!(child_identity(&format!("LIGERITO_CONFIG {bad}"), "binius-ligerito").is_err());
+        }
+    }
+
+    #[test]
+    fn binius_identity_accepts_selected_rates_and_accounting() {
+        use f2z::binius_ligerito::{Accounting, Prepared};
+        let native = super::super::Native::new(4096, 2, true, None).unwrap();
+        for rate in 1..=3 {
+            for accounting in [Accounting::UnionBound, Accounting::RoundByRound] {
+                let prepared = Prepared::with_options(native.circuit.constraint_system(), rate, accounting).unwrap();
+                let identity = super::super::report::BiniusLigeritoIdentity::new(&prepared).unwrap();
+                let value = serde_json::to_value(identity).unwrap();
+                let log = format!("LIGERITO_CONFIG {value}");
+                assert_eq!(child_identity(&log, "binius-ligerito").unwrap(), Some(value.clone()));
+                assert_eq!(value["log_inv_rate"], rate);
+                assert_eq!(value["accounting"], accounting.name());
+                let mut bad = value.clone();
+                bad["log_inv_rate"] = serde_json::json!(if rate == 1 { 3 } else { 1 });
+                assert!(child_identity(&format!("LIGERITO_CONFIG {bad}"), "binius-ligerito").is_err());
+            }
         }
     }
 

@@ -96,6 +96,35 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4
 ```
 
+### Comparison with fields-witch (Soukhanov's characteristic-2 field switch)
+
+[fields-witch](https://github.com/morgana-proofs/fields-witch) is Lev
+Soukhanov's implementation of his "Char 2 fieldswitch" note: it commits
+`2^k` entries of `F_{2^127}` (integers below `2^127`) densely over
+`F_{2^128}` and proves their multilinear evaluation over `F_p`,
+`p = 2^127 - 1`. The comparison is bit-matched: `2^k` entries of 127 bits
+are the same 16 bytes per entry as F2Z at `n = k + 7` with `W = 1`.
+`scripts/run_fields_witch_compare.py` derives fields-witch's per-round limb
+schedules from its README rule (it reproduces the README's `2^20` schedule
+exactly), runs every (scheme, size, threads) cell in a fresh process under
+`/usr/bin/time -l` on a quiet box (CPU-idle gate), and writes
+`PerfRuns/<stamp>-fields-witch-compare/{results.jsonl,summary.md,fields-witch-table.tex}`;
+see `docs/fields-witch-compare.md` for the measured comparison.
+
+```sh
+git clone https://github.com/morgana-proofs/fields-witch "$HOME/fields-witch"   # measured at 30cca8c
+(cd "$HOME/fields-witch" && CARGO_TARGET_DIR="$HOME/fields-witch/target" \
+    RUSTFLAGS="-C target-cpu=native" cargo build --release --examples)
+RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked --bin f2z
+python3 scripts/run_fields_witch_compare.py --sizes 14,16,18,20,22 --threads 1,8 --reps 5 \
+    --word-rows 20:32,20:64 --latex paper/fields-witch-table.tex
+```
+
+`--fw-bin` / `--f2z-bin` override the binaries (the F2Z default follows
+`CARGO_TARGET_DIR`); `--f2z-profile udr:1:4` measures F2Z in fields-witch's
+unique-decoding regime; `--render-latex <results.jsonl> --latex <path>`
+regenerates the paper table from a finished run.
+
 ### Integer multiplication
 
 *BitZ performance step-by-step*

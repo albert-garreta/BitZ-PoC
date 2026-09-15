@@ -32,6 +32,11 @@ pub(crate) struct CompositeMultilinearExtension<'a, F> {
     origin_adjustment: F,
     /// `repeated.live_len() + tail_evaluations.len()`.
     live_len: usize,
+    /// Optional prover-side structure of the tail: sorted, disjoint runs
+    /// `(start, len, base)` over tail indices with `tail[start + k] = base · 2^k`;
+    /// tail entries outside every run are unstructured. Never read by
+    /// [`Self::evaluation_at`], so it cannot change what is proved.
+    tail_runs: Option<&'a [(usize, usize, F)]>,
 }
 
 impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
@@ -170,7 +175,32 @@ impl<'a, F: PrimeField> CompositeMultilinearExtension<'a, F> {
             tail_evaluations: tail,
             origin_adjustment,
             live_len,
+            tail_runs: None,
         })
+    }
+
+    /// Attaches the tail's geometric runs (prover-side acceleration only). The
+    /// runs must be sorted by start, disjoint, and lie inside the tail.
+    pub(crate) fn with_tail_runs(
+        mut self,
+        runs: &'a [(usize, usize, F)],
+    ) -> Result<Self, EvaluationError> {
+        let mut end = 0usize;
+        for &(start, len, _) in runs {
+            if start < end || len == 0 {
+                return Err(EvaluationError::InvalidShape);
+            }
+            end = start.checked_add(len).ok_or(EvaluationError::Overflow)?;
+        }
+        if end > self.tail_evaluations.len() {
+            return Err(EvaluationError::InvalidShape);
+        }
+        self.tail_runs = Some(runs);
+        Ok(self)
+    }
+
+    pub(crate) fn tail_runs(&self) -> Option<&'a [(usize, usize, F)]> {
+        self.tail_runs
     }
 
     pub(crate) fn num_vars(&self) -> usize {

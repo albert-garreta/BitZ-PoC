@@ -17,8 +17,8 @@ use crate::{
     ligerito::packed_vars,
     ligerito_flock::{
         FlockCommitHint, IntEvalRsLigVirtProof,
-        atomic::{AtomicNonces, AtomicSecurity},
         commit_rs_ligerito_rows,
+        grinding::{GrindingContext, GrindingNonces},
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
         validate_ligerito_commitment,
         verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
@@ -28,16 +28,18 @@ use crate::{
         SpartanField, absorb_spartan_message,
         f2z::SpartanF2zField as F,
         grinding::GrindingDomain,
-        matrix::{eq_table, make_equality_factors},
+        matrix::eq_table,
+        raw_monty::{RawMontyCtx, make_equality_factors_raw, prove_outer_field_raw_with_boundary},
         protocol::{check_boundary, f2z_generator, grind_boundary},
-        sha256::inner_sumcheck::{prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck},
+        sha256::inner_sumcheck::{ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck},
         squeeze_field,
         sumcheck::{
-            OptimizedSumcheckReducer, OuterSumcheckProof, SumcheckProof,
-            prove_outer_sumcheck_with_reducer_grinded,
+            OptimizedSumcheckReducer, OuterSumcheckProof, ProverGrindingRoundBoundary,
+            SumcheckProof,
         },
     },
     transcript::traits::Transcript,
+    utils::delayed_reduction::OptimizedMonty128Reducer,
 };
 
 enum OuterGrinding {}
@@ -205,21 +207,37 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         grinding_nonce: initial_nonce,
     } = derive_initial_challenges(t, prepared, &security, None)?;
     let reducer = OptimizedSumcheckReducer::new(&cfg).map_err(error)?;
-    let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
+        // The raw-residue outer prover of the integer-multiplication relations;
+        // its grinding boundary keeps the transcript of the generic grinded
+        // prover (no bytes at difficulty 0).
         let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
-        let products = witness.build_outer_product_mles(prepared, modulus, &cfg);
-        prove_outer_sumcheck_with_reducer_grinded::<OuterGrinding, _, _>(
+        let ctx = RawMontyCtx::new(&cfg);
+        let raw_reducer = OptimizedMonty128Reducer::new(&cfg).map_err(error)?;
+        let products = {
+            let _scope = tracing::info_span!("ecdsa:outer_products").entered();
+            witness.build_outer_raw_products(prepared, &ctx)
+        };
+        let (eq_low, eq_high) = {
+            let _scope = tracing::info_span!("ecdsa:outer_eq").entered();
+            make_equality_factors_raw(&ctx, &outer_eq_challenges)
+        };
+        let mut round_boundary =
+            ProverGrindingRoundBoundary::<OuterGrinding>::with_round_offset(security.outer, 0);
+        let outer = prove_outer_field_raw_with_boundary(
             t,
+            &ctx,
+            &raw_reducer,
             F::zero_with_cfg(&cfg),
             &outer_eq_challenges,
-            make_equality_factors(&outer_eq_challenges, &cfg).map_err(error)?,
+            eq_low,
+            eq_high,
             products,
-            &cfg,
-            &reducer,
-            security.outer,
+            &mut round_boundary,
         )
-        .map_err(error)?
+        .map_err(error)?;
+        (outer, round_boundary.into_nonces())
     };
     let batch_nonce = boundary(t, BATCH_GRINDING_DOMAIN, security.batch, None)?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
@@ -243,7 +261,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             inner_claim.claimed_sum().clone(),
             prepared.h_layout.row_vars + prepared.h_layout.col_vars,
             &batched_matrix_mle.as_mle(&cfg)?,
-            &|i| Ok(witness.h_bit(i, &prepared.h_layout)),
+            &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
             prefix_vars,
             &cfg,
             &reducer,
@@ -274,9 +292,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let mut flock_nonces = Vec::new();
     let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
         .map_err(|_| error("invalid row weights"))?;
-    let mut atomic = AtomicSecurity {
+    let mut grinding = GrindingContext {
         plan: &security.flock,
-        nonces: AtomicNonces::Prove(&mut flock_nonces),
+        nonces: GrindingNonces::Prove(&mut flock_nonces),
     };
     let opening = {
         let _scope = tracing::info_span!("ecdsa:f2z_prove").entered();
@@ -294,7 +312,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             security.forest,
             ood,
             &pc,
-            Some(&mut atomic),
+            Some(&mut grinding),
         )
     };
     Ok(Sha256EcdsaProof {
@@ -348,7 +366,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     boundary(transcript, BATCH_GRINDING_DOMAIN, security.batch, Some(proof.batch_nonce))?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
         sample_inner_batch_challenges(transcript, prepared, &cfg);
-    let mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
         prepared,
         statement,
@@ -400,9 +418,9 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     // chunks[0][b] = rows[b].
     let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
         .map_err(|_| error("invalid row weights"))?;
-    let mut atomic = AtomicSecurity {
+    let mut grinding = GrindingContext {
         plan: &security.flock,
-        nonces: AtomicNonces::Verify {
+        nonces: GrindingNonces::Verify {
             values: &proof.flock_nonces,
             cursor: 0,
         },
@@ -434,7 +452,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
             });
             sum == inner_final_claim.canonical_u128()
         },
-        Some(&mut atomic),
+        Some(&mut grinding),
     )
     .map_err(|e| error(format!("{e:?}")))
 }

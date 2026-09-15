@@ -498,6 +498,14 @@ pub fn prepare_sha256_compression_batch_with_profile_and_layout<P: IopSecurityPr
     log_compressions: usize,
     layout: Sha256OpeningLayout,
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
+    // Gate the profile's opener target before any construction: the Ligerito
+    // solver itself errors on out-of-range targets since the rate-1/2 default
+    // work, which would otherwise mask this dedicated error.
+    if !(64..=128).contains(&P::LIGERITO_TARGET_BITS) {
+        return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits {
+            actual: P::LIGERITO_TARGET_BITS,
+        });
+    }
     let instances = validate_batch_exponent(log_compressions)?;
     validate_instance_capacity(instances)?;
     let layout = if layout == Sha256OpeningLayout::Default && log_compressions < LOG_PACKING {

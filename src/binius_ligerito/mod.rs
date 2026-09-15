@@ -2,18 +2,21 @@
 //! scheme of the comparison benchmarks.
 //!
 //! Binius64 proves its constraint system exactly as upstream does — the
-//! IntMul, BitAnd, zero and shift reductions on a BLAKE3 Fiat–Shamir
-//! transcript — up to the witness evaluation claim its own ring switch would
-//! consume (`IOPProver::prove_to_evaluation`, exposed by the vendored fork).
+//! IntMul, BinMul (GHASH-field multiplication), BitAnd, zero and shift
+//! reductions on a BLAKE3 Fiat–Shamir transcript — up to the witness
+//! evaluation claim its own ring switch would consume
+//! (`IOPProver::prove_to_evaluation`, exposed by the vendored fork).
 //! Everything below that line is F2Z's: every oracle the PIOP commits is an
-//! interleaved Reed–Solomon codeword at rate 1/2 under BLAKE3, pinned by Round
-//! 0 right after its root is bound; the witness evaluation claim is discharged
+//! interleaved Reed–Solomon codeword under BLAKE3 (rate 1/2 by default,
+//! [`Prepared::with_rate`] takes another), pinned by Round 0 right after its
+//! root is bound; the witness evaluation claim is discharged
 //! by F2Z's ring switch and a Johnson-regime Ligerito opening with fold and
 //! query grinding; every other oracle relation the PIOP queued (the IntMul
 //! reduction's logup* pushforward, when the circuit multiplies) is discharged
-//! by its own Ligerito opening. The whole protocol is gated at 100 bits by a
-//! union bound over every term — the yardstick of F2Z's own rows — rather
-//! than by Binius64's query-phase target.
+//! by its own Ligerito opening. The whole protocol is gated at 100 bits under
+//! one of two [`Accounting`] models — a union bound over every error term, or
+//! the round-by-round minimum (every term on its own, the figure F2Z's own
+//! rows report) — rather than by Binius64's query-phase target.
 pub(crate) mod channel;
 
 use crate::{
@@ -90,6 +93,33 @@ pub enum Error {
     Codec(#[from] CodecError),
 }
 
+/// How the whole-protocol figure is formed from the error terms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Accounting {
+    /// `-log2` of the SUM of every term: a union bound, which needs every
+    /// term about `log2(#terms)` bits above the gate.
+    UnionBound,
+    /// `-log2` of the LARGEST term: the round-by-round minimum, the figure
+    /// F2Z's own rows report (`SoundnessAccounting::achieved_bits`); every
+    /// term must clear the gate on its own.
+    RoundByRound,
+}
+
+impl Accounting {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::UnionBound => "union-bound",
+            Self::RoundByRound => "round-by-round",
+        }
+    }
+    fn tag(self) -> usize {
+        match self {
+            Self::UnionBound => 0,
+            Self::RoundByRound => 1,
+        }
+    }
+}
+
 /// Algebraic/IOP error accounting of the complete composition, using the
 /// pinned implementations' soundness analyses and grinding model. BLAKE3
 /// Fiat–Shamir and 256-bit Merkle hashing remain cryptographic assumptions;
@@ -97,7 +127,14 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct SecurityReport {
     pub target_bits: u32,
+    /// The model the gate was applied under.
+    pub accounting: Accounting,
+    /// The gated figure under `accounting`.
     pub algebraic_bits: f64,
+    /// `-log2 Σ terms`.
+    pub union_bound_bits: f64,
+    /// `-log2 max term`.
+    pub round_by_round_bits: f64,
     pub terms: Vec<SecurityTerm>,
 }
 
@@ -128,26 +165,50 @@ pub struct Prepared {
     prover: IOPProver,
     specs: Vec<OracleSpec>,
     pcs: Vec<BinaryPcs>,
+    log_inv_rate: usize,
+    accounting: Accounting,
     component_bits: usize,
+    /// Working buffers for the PIOP prefix come from a pool this `Prepared`
+    /// keeps for its lifetime, recycling blocks across proofs — exactly what
+    /// Binius64's own `Prover` does (`prove.rs`: `let alloc = &self.pool`).
+    /// With `GlobalAllocator` instead, the shared PIOP measured ~14 % slower
+    /// at 2^20 (u64: 552 vs 483 ms) purely from malloc/mmap churn on the
+    /// large per-round buffers, which biased the comparison against this
+    /// scheme. Proofs are unaffected; the pool costs retained memory.
+    pool: binius_compute::BufferPool,
     security: SecurityReport,
     statement_digest: [u8; 32],
 }
 
 impl Prepared {
+    /// Prepare at the opener's default rate ([`binary_pcs::LOG_INV_RATE`]).
     pub fn new(cs: &ConstraintSystem) -> Result<Self, Error> {
-        Self::with_log_inv_rate(cs, crate::binary_pcs::LOG_INV_RATE)
+        Self::with_rate(cs, binary_pcs::LOG_INV_RATE)
     }
 
-    /// Prepare all oracles at the requested initial rate. Each complete
-    /// opener configuration, including its rate, is bound into the transcript.
+    /// Prepare at an explicit rate using union-bound accounting.
     pub fn with_log_inv_rate(cs: &ConstraintSystem, log_inv_rate: usize) -> Result<Self, Error> {
+        Self::with_rate(cs, log_inv_rate)
+    }
+
+    /// Prepare with every oracle committed and opened at the level-0 inverse
+    /// rate exponent `log_inv_rate` (1 = rate 1/2, 3 = rate 1/8), gated by
+    /// the union bound.
+    pub fn with_rate(cs: &ConstraintSystem, log_inv_rate: usize) -> Result<Self, Error> {
+        Self::with_options(cs, log_inv_rate, Accounting::UnionBound)
+    }
+
+    /// Prepare at `log_inv_rate` with the 100-bit gate applied under
+    /// `accounting`; both are part of the statement digest.
+    pub fn with_options(
+        cs: &ConstraintSystem,
+        log_inv_rate: usize,
+        accounting: Accounting,
+    ) -> Result<Self, Error> {
         if !(1..=3).contains(&log_inv_rate) {
             return Err(Error::Config("log inverse rate must be 1, 2, or 3".into()));
         }
         cs.validate().map_err(|e| Error::Binius(e.to_string()))?;
-        if !cs.bmul_constraints.is_empty() {
-            return Err(Error::Invalid("BMUL constraints are not supported"));
-        }
         let verifier = IOPVerifier::new(cs.clone(), cs.log_public_words(InoutSegment::Public));
         let specs = verifier.oracle_specs(false);
         if specs.is_empty() || specs.iter().any(|spec| spec.is_zk) {
@@ -179,6 +240,18 @@ impl Prepared {
                 error_bound: (4096 * (log_imul + 64 + 16 + 8)) as f64 * k_inv,
             });
         }
+        if let Some(log_bmul) = cs.log_bmul_constraints() {
+            // The BinMul reduction: a degree-2 GHASH-field zerocheck/MLE-check
+            // over the row dimension (the zerocheck draw and one round per
+            // row variable), the 64-bit word-domain collapse of the six
+            // per-bit evaluation vectors into the shift claim, and the
+            // batching draws. It commits no extra oracle. 4096 per coordinate
+            // overcounts every round and draw, as above.
+            piop_terms.push(SecurityTerm {
+                name: "Binius64 BinMul reduction",
+                error_bound: (4096 * (log_bmul + 64 + 8)) as f64 * k_inv,
+            });
+        }
         let mut chosen = None;
         let mut last_error = None;
         for target in MIN_COMPONENT_BITS..=MAX_COMPONENT_BITS {
@@ -199,14 +272,23 @@ impl Prepared {
                 terms.extend(opener.security_terms());
             }
             let total: f64 = terms.iter().map(|t| t.error_bound).sum();
-            let algebraic_bits = -total.log2();
+            let union_bound_bits = -total.log2();
+            let worst = terms.iter().map(|t| t.error_bound).fold(0.0, f64::max);
+            let round_by_round_bits = -worst.log2();
+            let algebraic_bits = match accounting {
+                Accounting::UnionBound => union_bound_bits,
+                Accounting::RoundByRound => round_by_round_bits,
+            };
             if algebraic_bits >= f64::from(TARGET_BITS) {
                 chosen = Some((
                     target,
                     pcs,
                     SecurityReport {
                         target_bits: TARGET_BITS,
+                        accounting,
                         algebraic_bits,
+                        union_bound_bits,
+                        round_by_round_bits,
                         terms,
                     },
                 ));
@@ -231,6 +313,9 @@ impl Prepared {
             cs.n_and_constraints(),
             cs.n_zero_constraints(),
             cs.n_imul_constraints(),
+            cs.n_bmul_constraints(),
+            log_inv_rate,
+            accounting.tag(),
             component_bits,
             u32::try_from(TARGET_BITS).map_or(0, |b| b as usize),
         ] {
@@ -254,7 +339,10 @@ impl Prepared {
             prover,
             specs,
             pcs,
+            log_inv_rate,
+            accounting,
             component_bits,
+            pool: binius_compute::BufferPool::new(),
             security,
             statement_digest: *h.finalize().as_bytes(),
         })
@@ -265,6 +353,14 @@ impl Prepared {
     }
     pub fn component_bits(&self) -> usize {
         self.component_bits
+    }
+    /// Level-0 (= commitment) inverse-rate exponent of every opener.
+    pub fn log_inv_rate(&self) -> usize {
+        self.log_inv_rate
+    }
+    /// The model the 100-bit gate was applied under.
+    pub fn accounting(&self) -> Accounting {
+        self.accounting
     }
     pub fn oracle_specs(&self) -> &[OracleSpec] {
         &self.specs
@@ -343,7 +439,7 @@ impl Prepared {
             oracles: Vec::new(),
             relations: Vec::new(),
         };
-        let alloc = binius_compute::GlobalAllocator;
+        let alloc = &self.pool;
         let (oracle, _packed, point, value) = tracing::info_span!(
             "PIOP prefix",
             component = "binius-ligerito.piop",
@@ -653,6 +749,74 @@ mod tests {
         Some(filler.into_value_vec())
     }
 
+    /// One BMUL gate per row, product bound to committed witness words.
+    fn bmul_circuit(log: usize) -> (Circuit, Vec<[Wire; 6]>) {
+        let builder = CircuitBuilder::new();
+        let wires = (0..1usize << log)
+            .map(|_| {
+                let [a_lo, a_hi, b_lo, b_hi, c_lo, c_hi]: [Wire; 6] =
+                    std::array::from_fn(|_| builder.add_witness());
+                let (lo, hi) = builder.bmul(a_lo, a_hi, b_lo, b_hi);
+                builder.assert_eq("ghash product low", lo, c_lo);
+                builder.assert_eq("ghash product high", hi, c_hi);
+                [a_lo, a_hi, b_lo, b_hi, c_lo, c_hi]
+            })
+            .collect();
+        (builder.build(), wires)
+    }
+
+    /// Expected products computed with F2Z's own GF(2^128) — the same GHASH
+    /// field and the same `(lo, hi)` coefficient words as the BMUL gate.
+    fn bmul_witness(circuit: &Circuit, wires: &[[Wire; 6]], corrupt: bool) -> Option<ValueVec> {
+        let mut filler = circuit.new_witness_filler();
+        for (i, [a_lo, a_hi, b_lo, b_hi, c_lo, c_hi]) in wires.iter().enumerate() {
+            let a = Gf::from_words([(i as u64).wrapping_mul(0x9e37_79b9), !(i as u64)]);
+            let b = Gf::from_words([0x0123_4567_89ab_cdef ^ i as u64, ((i as u64) << 32) | 1]);
+            let c = a * b;
+            filler[*a_lo] = Word(a.words()[0]);
+            filler[*a_hi] = Word(a.words()[1]);
+            filler[*b_lo] = Word(b.words()[0]);
+            filler[*b_hi] = Word(b.words()[1]);
+            filler[*c_lo] = Word(c.words()[0] ^ u64::from(corrupt && i == 0));
+            filler[*c_hi] = Word(c.words()[1]);
+        }
+        circuit.populate_wire_witness(&mut filler).ok()?;
+        Some(filler.into_value_vec())
+    }
+
+    #[test]
+    fn bmul_circuit_round_trips_through_the_f2z_opener() {
+        let (circuit, wires) = bmul_circuit(11);
+        let prepared = Prepared::new(circuit.constraint_system()).unwrap();
+        // BinMul commits no extra oracle: the witness is the only one.
+        assert_eq!(prepared.oracle_specs().len(), 1);
+        assert!(
+            prepared
+                .security()
+                .terms
+                .iter()
+                .any(|t| t.name == "Binius64 BinMul reduction")
+        );
+        assert!(prepared.security().algebraic_bits >= 100.0);
+        assert!(bmul_witness(&circuit, &wires, true).is_none());
+        let witness = bmul_witness(&circuit, &wires, false).unwrap();
+        let proof = prepared.prove(&witness).unwrap();
+        let bytes = proof.to_bytes();
+        prepared
+            .verify(witness.inout(), &prepared.proof_from_bytes(&bytes).unwrap())
+            .unwrap();
+        // Tampering in the PIOP prefix, mid-proof and in the opening rejects.
+        for at in [8 + 16 * 3, bytes.len() / 2, bytes.len() - 40] {
+            let mut tampered = bytes.clone();
+            tampered[at] ^= 1;
+            let rejected = match prepared.proof_from_bytes(&tampered) {
+                Ok(decoded) => prepared.verify(witness.inout(), &decoded).is_err(),
+                Err(_) => true,
+            };
+            assert!(rejected, "byte {at}");
+        }
+    }
+
     #[test]
     fn selectable_rates_bind_both_oracles_and_reject_cross_rate_proofs() {
         let (circuit, wires) = mul_circuit(11);
@@ -718,6 +882,60 @@ mod tests {
             };
             assert!(rejected, "byte {at}");
         }
+    }
+
+    #[test]
+    fn multiplication_circuit_round_trips_at_rate_one_eighth() {
+        let (circuit, wires) = mul_circuit(11);
+        let half = Prepared::new(circuit.constraint_system()).unwrap();
+        let eighth = Prepared::with_rate(circuit.constraint_system(), 3).unwrap();
+        assert_eq!(eighth.log_inv_rate(), 3);
+        assert!(eighth.security().algebraic_bits >= 100.0);
+        assert!(
+            eighth.opener(0).level0_queries() < half.opener(0).level0_queries(),
+            "a lower rate needs fewer level-0 queries"
+        );
+        let witness = mul_witness(&circuit, &wires, false).unwrap();
+        let proof = eighth.prove(&witness).unwrap();
+        let bytes = proof.to_bytes();
+        eighth
+            .verify(witness.inout(), &eighth.proof_from_bytes(&bytes).unwrap())
+            .unwrap();
+        // A verifier prepared at the other rate rejects it (the rate is in
+        // the statement digest and the opener geometry).
+        let rejected = match half.proof_from_bytes(&bytes) {
+            Ok(decoded) => half.verify(witness.inout(), &decoded).is_err(),
+            Err(_) => true,
+        };
+        assert!(rejected);
+    }
+
+    #[test]
+    fn round_by_round_accounting_gates_every_term_at_100() {
+        let (circuit, wires) = mul_circuit(11);
+        let union = Prepared::new(circuit.constraint_system()).unwrap();
+        let rbr =
+            Prepared::with_options(circuit.constraint_system(), 1, Accounting::RoundByRound)
+                .unwrap();
+        assert_eq!(rbr.accounting(), Accounting::RoundByRound);
+        // Every term on its own clears 100 at the smallest component target,
+        // while their sum does not — that is the union bound's extra margin.
+        assert_eq!(rbr.component_bits(), 100);
+        assert!(rbr.security().round_by_round_bits >= 100.0);
+        assert!(rbr.security().union_bound_bits < 100.0);
+        assert!(union.component_bits() > rbr.component_bits());
+        assert!(union.security().union_bound_bits >= 100.0);
+        assert!(rbr.opener(0).level0_queries() < union.opener(0).level0_queries());
+        let witness = mul_witness(&circuit, &wires, false).unwrap();
+        let proof = rbr.prove(&witness).unwrap();
+        let bytes = proof.to_bytes();
+        rbr.verify(witness.inout(), &rbr.proof_from_bytes(&bytes).unwrap())
+            .unwrap();
+        let rejected = match union.proof_from_bytes(&bytes) {
+            Ok(decoded) => union.verify(witness.inout(), &decoded).is_err(),
+            Err(_) => true,
+        };
+        assert!(rejected, "the accounting model is part of the statement");
     }
 
     fn eq_table(point: &[Gf]) -> Vec<Gf> {

@@ -53,10 +53,11 @@ use super::{
     },
     sumcheck::{
         FactoredEndpoint, InnerSumcheckOutput, OuterSumcheckOutput, OuterSumcheckProof,
-        R1csProductMles, SumcheckError, SumcheckProof, SumcheckProverOutput,
-        TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS, batch_invert_nonzero, equality_coordinate_evaluation,
-        reconstruct_eq_factored_cubic_without_linear,
+        R1csProductMles, RoundBoundaryPolicy, SumcheckError, SumcheckProof, SumcheckProverOutput,
+        TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS, UngrindedRoundBoundary, batch_invert_nonzero,
+        equality_coordinate_evaluation, reconstruct_eq_factored_cubic_without_linear,
         recover_full_round_polynomial_and_sample_next_challenge,
+        recover_full_round_polynomial_and_sample_next_challenge_with_boundary,
     },
 };
 
@@ -229,6 +230,48 @@ impl RawMontyCtx {
     #[inline(always)]
     pub(crate) fn plain_to_raw(&self, plain: Raw) -> Raw {
         self.mul(plain, self.r2)
+    }
+
+    /// The residue of `2^64`: the Horner base of [`Self::signed_words_residue`].
+    pub(crate) fn two_pow_64_residue(&self) -> Raw {
+        let half = self.native_residue(1_u64 << 63);
+        self.add(half, half)
+    }
+
+    /// `2^{64·k} mod q` as plain canonical values for `k = 0..=max_words`:
+    /// the two's-complement corrections of [`Self::signed_words_residue`].
+    pub(crate) fn two_pow_64_plain_powers(&self, two_pow_64: Raw, max_words: usize) -> Vec<Raw> {
+        let mut powers = Vec::with_capacity(max_words + 1);
+        powers.push(1);
+        for k in 0..max_words {
+            powers.push(self.mul(powers[k], two_pow_64));
+        }
+        powers
+    }
+
+    /// The residue of a signed two's-complement integer given as normalized
+    /// little-endian words (zero is the empty slice; the sign is the top bit
+    /// of the last word), for a modulus above `2^64`. Horner in the plain
+    /// domain: each step is one Montgomery product by the residue of `2^64`
+    /// (a plain result) plus one word, canonical below `2q`; a negative
+    /// value is corrected by `2^{64·len} mod q` (`two_pow_64_powers[len]`,
+    /// from [`Self::two_pow_64_plain_powers`]); one conversion into
+    /// Montgomery form closes.
+    pub(crate) fn signed_words_residue(
+        &self,
+        words: &[u64],
+        two_pow_64: Raw,
+        two_pow_64_powers: &[Raw],
+    ) -> Raw {
+        debug_assert!(self.modulus > Raw::from(u64::MAX));
+        let mut plain: Raw = 0;
+        for &word in words.iter().rev() {
+            plain = self.add(self.mul(plain, two_pow_64), Raw::from(word));
+        }
+        if words.last().is_some_and(|word| word >> 63 == 1) {
+            plain = self.sub(plain, two_pow_64_powers[words.len()]);
+        }
+        self.plain_to_raw(plain)
     }
 
     /// The plain residue of an `R`-scaled linear accumulator whose exact sum
@@ -1257,8 +1300,10 @@ fn weights_of<'a>(eq_low: &'a [Raw], eq_high: &'a [Raw]) -> RawEqWeights<'a> {
 /// Runs the remaining field-valued outer rounds from a prepared state: the
 /// equality factors already stripped of the current coordinate (they are the
 /// current round's weights) and the current round's coefficients computed.
+/// `round_boundary` acts between each absorbed round polynomial and its
+/// challenge ([`UngrindedRoundBoundary`] adds no transcript bytes).
 #[allow(clippy::too_many_arguments)]
-fn outer_rounds_raw<T: Transcript>(
+fn outer_rounds_raw<T: Transcript, P: RoundBoundaryPolicy>(
     transcript: &mut T,
     scalars: &OuterScalars<'_>,
     mut current_claim: Field,
@@ -1269,12 +1314,13 @@ fn outer_rounds_raw<T: Transcript>(
     mut coefficients_without_linear: [Field; 3],
     round_polynomials: &mut Vec<[Field; 4]>,
     eval_points: &mut Vec<Field>,
-) -> (Field, Field, RawProducts) {
+    round_boundary: &mut P,
+) -> Result<(Field, Field, RawProducts), SumcheckError> {
     let ctx = scalars.ctx;
     let mut scratch = RawProducts::zeros(products.len() / 2);
     while products.len() > 1 {
         let round = eval_points.len();
-        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
             transcript,
             &mut current_claim,
             &coefficients_without_linear,
@@ -1282,7 +1328,8 @@ fn outer_rounds_raw<T: Transcript>(
             eval_points,
             &scalars.zero,
             ctx.config(),
-        );
+            round_boundary,
+        )?;
         let bound_factor =
             equality_coordinate_evaluation(&scalars.tau[round], &challenge, &scalars.one);
         bound_equality *= &bound_factor;
@@ -1317,7 +1364,7 @@ fn outer_rounds_raw<T: Transcript>(
         );
         products.swap(&mut scratch);
     }
-    (current_claim, bound_equality, products)
+    Ok((current_claim, bound_equality, products))
 }
 
 /// Absorbs the terminal evaluations and assembles the outer output. The
@@ -1392,14 +1439,44 @@ pub(crate) fn prove_outer_field_raw<T: Transcript>(
     reducer: &OptimizedMonty128Reducer,
     initial_claim: Field,
     tau: &[Field],
+    eq_low: Vec<Raw>,
+    eq_high: Vec<Raw>,
+    products: RawProducts,
+) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
+    prove_outer_field_raw_with_boundary(
+        transcript,
+        ctx,
+        reducer,
+        initial_claim,
+        tau,
+        eq_low,
+        eq_high,
+        products,
+        &mut UngrindedRoundBoundary,
+    )
+}
+
+/// [`prove_outer_field_raw`] under an explicit message/challenge round
+/// boundary policy: the raw twin of
+/// `prove_outer_sumcheck_with_reducer_grinded`, transcript-identical to it
+/// under the same policy.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn prove_outer_field_raw_with_boundary<T: Transcript, P: RoundBoundaryPolicy>(
+    transcript: &mut T,
+    ctx: &RawMontyCtx,
+    reducer: &OptimizedMonty128Reducer,
+    initial_claim: Field,
+    tau: &[Field],
     mut eq_low: Vec<Raw>,
     mut eq_high: Vec<Raw>,
     products: RawProducts,
+    round_boundary: &mut P,
 ) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
     let num_vars = tau.len();
     if products.len() != 1usize << num_vars || eq_low.len() * eq_high.len() != products.len() {
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
+    round_boundary.validate(num_vars)?;
     let scalars = outer_scalars(ctx, reducer, tau);
     let bound_equality = scalars.one.clone();
     let mut round_polynomials = Vec::with_capacity(num_vars);
@@ -1443,7 +1520,8 @@ pub(crate) fn prove_outer_field_raw<T: Transcript>(
         coefficients,
         &mut round_polynomials,
         &mut eval_points,
-    );
+        round_boundary,
+    )?;
     finish_outer(
         transcript,
         ctx,
@@ -1578,7 +1656,8 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
         coefficients,
         &mut round_polynomials,
         &mut eval_points,
-    );
+        &mut UngrindedRoundBoundary,
+    )?;
     finish_outer(
         transcript,
         ctx,
@@ -3111,6 +3190,45 @@ mod tests {
 
     fn next_challenge(transcript: &mut Blake3Transcript, cfg: &FieldConfig) -> Field {
         squeeze_field::<Field, _>(transcript, cfg)
+    }
+
+    /// `signed_words_residue` against a BigInt reference: two's-complement
+    /// words of every width up to nine (the P-256 row products), random and
+    /// extreme values of both signs, zero, over every test modulus (all
+    /// above `2^64`).
+    #[test]
+    fn signed_words_residue_matches_bigint() {
+        use num_bigint::BigInt;
+        use num_traits::ToPrimitive;
+        let mut rng = StdRng::seed_from_u64(11);
+        for modulus in MODULI {
+            let cfg = config(modulus);
+            let ctx = RawMontyCtx::new(&cfg);
+            let two_pow_64 = ctx.two_pow_64_residue();
+            let powers = ctx.two_pow_64_plain_powers(two_pow_64, 9);
+            let q = BigInt::from(modulus);
+            for len in 0..=9usize {
+                let mut cases: Vec<Vec<u64>> =
+                    (0..16).map(|_| (0..len).map(|_| rng.random::<u64>()).collect()).collect();
+                cases.push(vec![u64::MAX; len]);
+                if len > 0 {
+                    let mut minimum = vec![0; len];
+                    minimum[len - 1] = 1 << 63;
+                    cases.push(minimum);
+                }
+                for words in cases {
+                    let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+                    let value = BigInt::from_signed_bytes_le(&bytes);
+                    let expected = ((value % &q) + &q) % &q;
+                    let expected = Field::from_with_cfg(expected.to_u128().unwrap(), &cfg);
+                    assert_eq!(
+                        ctx.field(ctx.signed_words_residue(&words, two_pow_64, &powers)),
+                        expected,
+                        "modulus {modulus} words {words:?}"
+                    );
+                }
+            }
+        }
     }
 
     /// Throughput microbenchmark of the raw kernels (run with `--ignored

@@ -78,12 +78,22 @@ struct RawRoot {
     term: RawTerm,
 }
 
+/// Builds the symbolic integer-arithmetic graph as the circuit is replayed.
+/// For example, `3*a + 2*b` records a sum pointing to `a` and `b` with weights
+/// 3 and 2. Each constraint records which expressions form its A/B/C sides.
+/// [`WengertGenerator::finish`] prunes unused nodes and arranges this graph into
+/// a [`WengertTape`] for propagating row weights backward to witness columns.
 #[derive(Debug)]
 struct Recorder {
+    /// Inputs and weighted sums in creation order; each node's ID is its index.
     nodes: Vec<RawNode>,
+    /// Maps each integer-witness column to its input node; column 0 is constant one.
     input_nodes: Vec<u32>,
+    /// Three roots per constraint: its A/B/C expressions, row index, and coefficients.
     roots: Vec<RawRoot>,
+    /// Bit-column ranges and their full/low packed sums, for later power-of-two expansion.
     power_groups: Vec<RawPowerGroup>,
+    /// Number of constraints recorded so far; also the next constraint's row index.
     constraints: usize,
 }
 
@@ -322,22 +332,51 @@ struct PowerGroup {
 /// A compact, modulus-independent reverse-mode program.
 #[derive(Debug)]
 pub struct WengertTape {
+    /// Number of constraint rows, hence the number of input row weights.
     constraints: usize,
+    /// Witness column -> node ID, including constant column 0; `NO_NODE` if pruned.
     input_nodes: Box<[u32]>,
+    /// Internal node ranges per reverse-pass level; nodes in a level can run in parallel.
     level_offsets: Box<[u32]>,
+    /// Node `n` reads `edges[edge_offsets[n]..edge_offsets[n + 1]]`.
     edge_offsets: Box<[u32]>,
+    /// Dependent nodes and coefficient indices for propagating weights backward.
     edges: Box<[Edge]>,
+    /// Node `n` reads `roots[root_offsets[n]..root_offsets[n + 1]]`.
     root_offsets: Box<[u32]>,
+    /// A/B/C row seeds and coefficient indices, grouped by receiving node.
     roots: Box<[Root]>,
+    /// Packed bit sums expanded into column weights using powers of two.
     power_groups: Box<[PowerGroup]>,
+    /// Shared integer coefficients, before reduction; entries 0 and 1 are +1 and -1.
     coefficients: Box<[StoredInteger]>,
 }
 
-/// A modulus-prepared evaluator with reusable reverse-pass storage.
+/// Evaluates the transpose of the tape's linear map modulo a fixed prime `q`.
+/// Let `A, B, C ∈ Z^(m×n)` denote the implicit coefficient maps encoded by the
+/// graph. For row weights `w_A, w_B, w_C ∈ F_q^m`, [`Self::apply_weighted`]
+/// computes `v ∈ F_q^n`:
 ///
-/// Construct this after the random prime is known with [`WengertTape::prepare`].
-/// Repeated calls reuse all large allocations and the modulus-dependent
-/// coefficient conversion.
+/// ```text
+/// v = Aᵀ w_A + Bᵀ w_B + Cᵀ w_C,
+/// v_j = Σ_i (w_A[i] A[i,j] + w_B[i] B[i,j] + w_C[i] C[i,j]) mod q.
+/// ```
+///
+/// Equivalently, for a symbolic assignment `h`, the reverse pass computes
+///
+/// ```text
+/// Φ(h) = ⟨w_A, Ah⟩ + ⟨w_B, Bh⟩ + ⟨w_C, Ch⟩,
+/// v = ∇_h Φ(h).
+/// ```
+///
+/// Since `Φ` is linear, its gradient is independent of `h`; no witness values
+/// are needed. [`Self::apply`] specializes to `(w_A, w_B, w_C) = (r, x r, x² r)`,
+/// giving `v = (A + x B + x² C)ᵀ r` through the same graph.
+///
+/// [`WengertTape::prepare`] caches each distinct graph coefficient as
+/// `c̄ = c R mod q`, where `R = 2^128`. Inputs and outputs likewise use
+/// Montgomery form: `w̄ = R w mod q` and `v̄ = R v mod q`.
+/// Repeated calls reuse the coefficient conversion and reverse-pass storage.
 #[derive(Debug)]
 pub struct PreparedWengertEvaluator<'a> {
     tape: &'a WengertTape,
@@ -714,31 +753,27 @@ impl WengertTape {
         output: &mut Vec<[u64; 2]>,
         force_parallel: Option<bool>,
     ) -> Result<(), WengertApplyError> {
+        // Prepare arithmetic modulo q = modulus: cache each tape coefficient c
+        // as c̄ = R c mod q, with R = 2^128, and allocate reverse-pass buffers.
         let mut evaluator = self.prepare_inner(modulus, force_parallel)?;
-        let montgomery_challenges = parallel_map(challenges, force_parallel, |challenge| {
-            evaluator.to_montgomery(*challenge)
+
+        // Keep the row weights r_i = challenges[i] mod q in canonical form.
+        // Multiplying by a cached coefficient c̄ = R c preserves this form:
+        //   MontMul(r_i, c̄) = r_i (R c) R⁻¹ mod q = r_i c mod q.
+        let reduced_challenges = parallel_map(challenges, force_parallel, |challenge| {
+            reduce_words(*challenge, evaluator.modulus_uint).to_words()
         });
-        let x = evaluator.to_montgomery(x);
-        evaluator.apply_inner(&montgomery_challenges, x, force_parallel)?;
-        output.resize(self.column_count(), [0; 2]);
-        let parallel = force_parallel.unwrap_or_else(|| {
-            rayon::current_num_threads() > 1 && output.len() >= PARALLEL_VECTOR_THRESHOLD
-        });
-        if parallel {
-            output
-                .par_iter_mut()
-                .zip(evaluator.output.par_iter())
-                .for_each(|(canonical, montgomery)| {
-                    *canonical = evaluator.from_montgomery(*montgomery)
-                });
-        } else {
-            output
-                .iter_mut()
-                .zip(evaluator.output.iter())
-                .for_each(|(canonical, montgomery)| {
-                    *canonical = evaluator.from_montgomery(*montgomery)
-                });
-        }
+        // Encode the matrix-batching challenge as x̄ = R x mod q.
+        let montgomery_x = evaluator.to_montgomery(x);
+
+        // Seed each row with canonical (r_i, r_i x, r_i x²) and propagate these
+        // weights backward through the linear tape. Its additions and scaling by
+        // Montgomery coefficients keep every intermediate and output canonical:
+        //   output[j] = Σ_i r_i (A[i,j] + x B[i,j] + x² C[i,j]) mod q.
+        evaluator.apply_inner(&reduced_challenges, montgomery_x, force_parallel)?;
+
+        // Copy the canonical results into the caller's reusable allocation.
+        output.clone_from(&evaluator.output);
         Ok(())
     }
 }
@@ -848,6 +883,11 @@ impl PreparedWengertEvaluator<'_> {
         Ok(&self.output)
     }
 
+    /// Row weights must be reduced modulo q; they may be canonical or Montgomery.
+    /// The output retains their representation. The batching challenge x always
+    /// uses Montgomery form, so MontMul(r_i, x̄) preserves the row weights' form.
+    /// Public `apply` supplies Montgomery weights; `WengertTape` supplies canonical
+    /// weights to its temporary evaluator and copies out the canonical results.
     fn apply_inner(
         &mut self,
         challenges: &[[u64; 2]],
@@ -898,6 +938,46 @@ impl PreparedWengertEvaluator<'_> {
                 .for_each(|(weighted, challenge)| *weighted = prepare_challenge(challenge));
         }
 
+        self.run_reverse(force_parallel);
+        Ok(())
+    }
+
+    /// Computes `Σ_row (w_A · A_row + w_B · B_row + w_C · C_row)` from one Montgomery
+    /// weight triple per row, in the Montgomery form of [`Self::apply`]. The triple
+    /// replaces the `r, r·x, r·x²` that [`Self::apply`] derives from one challenge,
+    /// so rows can be weighted per matrix (a linear row weighted on `C` alone, say).
+    /// Local F2Z addition; not part of upstream f2z-benchmark.
+    pub fn apply_weighted(
+        &mut self,
+        weights: &[[[u64; 2]; 3]],
+    ) -> Result<&[[u64; 2]], WengertApplyError> {
+        if weights.len() != self.tape.constraints {
+            return Err(WengertApplyError::ChallengeLength {
+                expected: self.tape.constraints,
+                actual: weights.len(),
+            });
+        }
+        self.weighted_challenges.copy_from_slice(weights);
+        self.run_reverse(None);
+        Ok(&self.output)
+    }
+
+    /// The reverse pass over the prepared `weighted_challenges`, into `output`.
+    /// Addition and multiplication by Montgomery coefficients preserve the
+    /// weights' representation, including through the power-of-two groups.
+    fn run_reverse(&mut self, force_parallel: Option<bool>) {
+        let Self {
+            tape,
+            modulus_uint: _,
+            modulus_words,
+            mod_neg_inv,
+            params: _,
+            coefficients,
+            weighted_challenges,
+            adjoints,
+            output,
+            powers_of_two,
+        } = self;
         let context = ReverseContext {
             tape,
             modulus_words: *modulus_words,
@@ -1012,7 +1092,6 @@ impl PreparedWengertEvaluator<'_> {
                 .enumerate()
                 .for_each(|(chunk, output)| evaluate_output_chunk(chunk, output));
         }
-        Ok(())
     }
 }
 
@@ -1140,6 +1219,67 @@ pub(crate) fn neg_mod_words(value: [u64; 2], modulus: [u64; 2]) -> [u64; 2] {
         .wrapping_sub(value[1])
         .wrapping_sub(u64::from(borrow));
     [low, high]
+}
+
+/// One geometric run of the last [`PreparedWengertEvaluator::apply`] /
+/// [`PreparedWengertEvaluator::apply_weighted`] output: columns
+/// `first_column .. first_column + len` hold `base · 2^k` for `k = 0 .. len`, in the
+/// evaluator's Montgomery form. Local F2Z addition; not part of upstream f2z-benchmark.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerRun {
+    pub first_column: usize,
+    pub len: usize,
+    pub base: [u64; 2],
+}
+
+impl PreparedWengertEvaluator<'_> {
+    /// The tape's power groups as geometric runs of the current output, in
+    /// column order: one run per `f2z_unsigned` lift, or two when the lift has a
+    /// low part (the low columns carry the full and low adjoints summed, the rest
+    /// continue the same power sequence from the full adjoint alone). Columns
+    /// outside every run are scalar outputs. Valid until the next apply.
+    pub fn power_runs(&self) -> Vec<PowerRun> {
+        let read = |node: u32| {
+            if node == NO_NODE {
+                [0; 2]
+            } else {
+                self.adjoints[node as usize]
+            }
+        };
+        let mut runs = Vec::with_capacity(2 * self.tape.power_groups.len());
+        for group in self.tape.power_groups.iter() {
+            let first_column = group.first_column as usize;
+            let len = group.len as usize;
+            let low_len = group.low_len as usize;
+            let full = read(group.full_node);
+            if low_len == 0 {
+                runs.push(PowerRun {
+                    first_column,
+                    len,
+                    base: full,
+                });
+            } else {
+                let low = add_mod_words(full, read(group.low_node), self.modulus_words);
+                runs.push(PowerRun {
+                    first_column,
+                    len: low_len,
+                    base: low,
+                });
+                let base = montgomery_mul_2(
+                    full,
+                    self.powers_of_two[low_len],
+                    self.modulus_words,
+                    self.mod_neg_inv,
+                );
+                runs.push(PowerRun {
+                    first_column: first_column + low_len,
+                    len: len - low_len,
+                    base,
+                });
+            }
+        }
+        runs
+    }
 }
 
 /// Failure to apply a Wengert tape with the supplied runtime data.
@@ -1455,6 +1595,66 @@ mod tests {
                 tape.apply(&challenges, x, &runtime).unwrap(),
                 direct_product(&matrices, &challenges, x, &modulus)
             );
+        }
+    }
+
+    #[test]
+    fn canonical_apply_handles_unreduced_inputs_and_reuses_output() {
+        let tape = build_tape();
+        let mut generator = ConstraintGenerator::new(3);
+        let inputs = generator.inputs();
+        example_circuit(&mut generator, &inputs);
+        let matrices = generator.into_matrices();
+        let words = |value: u128| [value as u64, (value >> 64) as u64];
+        let mut output = vec![[u64::MAX; 2]; tape.column_count() + 3];
+        let output_ptr = output.as_ptr();
+        let output_capacity = output.capacity();
+
+        for prime in [
+            3,
+            101,
+            (1_u128 << 64) - 59,
+            (1_u128 << 127) - 1,
+            u128::MAX - 158,
+        ] {
+            let modulus = BigUint::from(prime);
+            let runtime = RuntimeModulus::<2>::new(modulus.clone()).unwrap();
+            let mut prepared = tape.prepare(&runtime).unwrap();
+            let cases = [0, 1, prime - 1, prime, prime + 1, u128::MAX];
+            for (i, &r) in cases.iter().enumerate() {
+                let challenges = [words(r), words(cases[(i + 1) % cases.len()])];
+                let montgomery_challenges = challenges.map(|r| prepared.to_montgomery(r));
+                for &x in &cases {
+                    let x = words(x);
+                    let expected = direct_product(&matrices, &challenges, x, &modulus);
+                    for parallel in [false, true] {
+                        output.resize(tape.column_count() + 3, [u64::MAX; 2]);
+                        output.fill([u64::MAX; 2]);
+                        tape.apply_inner(&challenges, x, &runtime, &mut output, Some(parallel))
+                            .unwrap();
+                        assert_eq!(
+                            output, expected,
+                            "q={prime}, r={r}, x={x:?}, parallel={parallel}"
+                        );
+                        assert_eq!(output.as_ptr(), output_ptr);
+                        assert_eq!(output.capacity(), output_capacity);
+                    }
+
+                    let montgomery_x = prepared.to_montgomery(x);
+                    let expected_encoded: Vec<_> = expected
+                        .iter()
+                        .map(|value| {
+                            FixedMontyForm::new(&U128::from_words(*value), &prepared.params)
+                                .to_montgomery()
+                                .to_words()
+                        })
+                        .collect();
+                    let encoded = prepared
+                        .apply(&montgomery_challenges, montgomery_x)
+                        .unwrap();
+                    assert_eq!(encoded, expected_encoded);
+                }
+            }
         }
     }
 

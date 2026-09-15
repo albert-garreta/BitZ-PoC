@@ -188,7 +188,9 @@ if their measurement configurations were identical.
   lig_achieved_bits lig_l0_bits q_lo_log2 q_bits ood_bits threads reps
   commit_ms commit_peak_mb prove_ms prove_gp_ms
   prove_rs_ms prove_lig_ms prove_residual_ms prove_peak_mb verify_ms
-  proof_bytes proof_nonlig_bytes proof_lig_bytes`. Schema 2 (2026-09-08):
+  proof_bytes proof_nonlig_bytes proof_lig_bytes peak_rss_bytes`
+  (`peak_rss_bytes`, added 2026-09-13: the child's high-water resident set in
+  bytes; absent in older lines). Schema 2 (2026-09-08):
   the evaluation prime is transcript-sampled after the commitment,
   uniformly among the primes of `[2^q_lo_log2, 2^q_bits)` with
   `q_bits = min(113, 127 − t − W)`, the point follows, and both derivations

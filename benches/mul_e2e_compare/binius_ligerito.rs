@@ -1,12 +1,15 @@
 //! `binius64-ligerito`: Binius64's native multiplication circuit and PIOP
 //! (the same wires as the `binius64` backend), with every oracle committed
-//! and opened by the F2Z opener — selectable rate, Johnson-regime Ligerito with fold
-//! and query grinding, Round 0 — and the whole protocol gated at 100 bits by
-//! a union bound, the yardstick of the `f2z` rows.
+//! and opened by the F2Z opener — Johnson-regime Ligerito with fold and query
+//! grinding and Round 0, at the campaign's Binius rate
+//! (`F2Z_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2) — and the whole protocol
+//! gated at 100 bits under `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default;
+//! a union bound over every term) or `rbr` (the round-by-round minimum, the
+//! figure F2Z's own rows report).
 use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
 use super::{CapturedSpan, Corpus, Timing, Workload, binius};
 use binius_frontend::Circuit;
-use f2z::binius_ligerito::Prepared;
+use f2z::binius_ligerito::{Accounting, Prepared};
 use f2z::observability::Recording;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -26,8 +29,8 @@ impl Context {
                 s.parse()
                     .expect("F2Z_BINIUS_LIGERITO_LOG_INV_RATE must be 1, 2, or 3")
             })
-            .unwrap_or(f2z::binary_pcs::LOG_INV_RATE);
-        let prepared = Prepared::with_log_inv_rate(circuit.constraint_system(), rate)
+            .unwrap_or_else(|_| binius::log_inv_rate());
+        let prepared = Prepared::with_options(circuit.constraint_system(), rate, accounting())
             .expect("binius64-ligerito setup");
         Self {
             corpus,
@@ -53,14 +56,17 @@ impl Context {
         json!({
             "piop": piop,
             "pcs": "F2Z opener: ring switching + Johnson-regime Ligerito with fold/query grinding and Round 0",
-            "log_inv_rate": witness.params().log_inv_rate,
+            "log_inv_rate": self.prepared.log_inv_rate(),
             "regime": "johnson-ood",
+            "accounting": security.accounting.name(),
             "target_bits": security.target_bits,
             "whole_protocol_bits": security.algebraic_bits,
             "hash": "BLAKE3", "transcript": "BLAKE3",
             "security_terms": security.terms.iter().map(|term|
                 json!({"name":term.name, "error_bound":term.error_bound})
             ).collect::<Vec<_>>(),
+            "union_bound_bits": security.union_bound_bits,
+            "round_by_round_bits": security.round_by_round_bits,
             "binding_term": security.binding_term().map(|t| format!("{}:{:.2}", t.name, -t.error_bound.log2())),
             "ligerito_component_bits": self.prepared.component_bits(),
             "level0_queries": witness.level0_queries(),
@@ -238,5 +244,14 @@ mod tests {
                 }
             },
         );
+    }
+}
+
+/// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`.
+fn accounting() -> Accounting {
+    match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
+        Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,
+        Ok("rbr") | Ok("round-by-round") => Accounting::RoundByRound,
+        Ok(other) => panic!("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
     }
 }

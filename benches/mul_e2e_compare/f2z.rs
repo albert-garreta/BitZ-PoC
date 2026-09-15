@@ -370,6 +370,7 @@ mod tests {
         assert_eq!(identity["target_bits"], 100);
         assert_eq!(identity["configuration"]["target_security_bits"], 100);
         assert_eq!(identity["configuration"]["levels"][0]["regime"], "johnson_ood");
+        assert_eq!(identity["configuration"]["levels"][0]["log_inv_rate"], 1);
         assert!(!config["ood_grinding_bits"].is_null());
     }
     #[test]

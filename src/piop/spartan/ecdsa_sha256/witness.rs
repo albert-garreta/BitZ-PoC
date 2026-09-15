@@ -1,5 +1,5 @@
 use circuit::{
-    matrix_products::IntegerProducts,
+    matrix_products::{IntegerProducts, StoredInteger},
     p256, sha256,
     witgen::{PackedWitness, ProductWitgen, Witgen},
 };
@@ -10,13 +10,15 @@ use rayon::prelude::*;
 use std::array;
 
 use super::{
-    Config, Result, error, reduce_integer_mod_q,
+    Config, Result, error,
     relation::{OuterMode, P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
 };
 use crate::{
     pcs::IntegerMatrixLayout,
-    piop::spartan::{f2z::SpartanF2zField as F, sumcheck::R1csProductMles},
-    poly::mle::DenseMultilinearExtension,
+    piop::spartan::{
+        f2z::SpartanF2zField as F,
+        raw_monty::{Raw, RawMontyCtx, RawProducts},
+    },
 };
 use crypto_primitives::PrimeField;
 
@@ -29,13 +31,68 @@ pub struct Sha256EcdsaWitness {
 }
 
 impl Sha256EcdsaWitness {
-    /// MLE tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`.
+    /// Raw residue tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`
+    /// over the outer sumcheck's row space: the exact two's-complement row
+    /// products reduced natively (Horner over their words), rows in
+    /// parallel. Residue-for-residue the tables of
+    /// [`Self::build_outer_product_mles`].
+    pub(super) fn build_outer_raw_products(
+        &self,
+        prepared: &PreparedSha256Ecdsa,
+        ctx: &RawMontyCtx,
+    ) -> RawProducts {
+        let len = 1usize << prepared.outer_sumcheck_num_vars();
+        let products = [
+            &self.products.a_mw,
+            &self.products.b_mw,
+            &self.products.c_mw,
+        ];
+        let two_pow_64 = ctx.two_pow_64_residue();
+        let max_words = products
+            .iter()
+            .flat_map(|values| values.iter().map(|value| value.words().len()))
+            .max()
+            .unwrap_or(0);
+        let powers = ctx.two_pow_64_plain_powers(two_pow_64, max_words);
+        // Split mode packs the nonlinear rows at the front; all-row mode
+        // places every local row after the (identically zero) SHA rows.
+        let (offset, rows): (usize, Option<&[usize]>) = match prepared.mode {
+            OuterMode::Split => (0, Some(&prepared.local.nonlinear)),
+            OuterMode::AllRows => (256 * prepared.compressions(), None),
+        };
+        let count = rows.map_or(prepared.local.rows(), <[usize]>::len);
+        let convert = |values: &[StoredInteger]| -> Vec<Raw> {
+            let residue = |i: usize| {
+                let source = rows.map_or(i, |rows| rows[i]);
+                ctx.signed_words_residue(values[source].words(), two_pow_64, &powers)
+            };
+            let mut table = vec![0 as Raw; len];
+            #[cfg(feature = "parallel")]
+            table[offset..offset + count]
+                .par_iter_mut()
+                .with_min_len(256)
+                .enumerate()
+                .for_each(|(i, slot)| *slot = residue(i));
+            #[cfg(not(feature = "parallel"))]
+            for (i, slot) in table[offset..offset + count].iter_mut().enumerate() {
+                *slot = residue(i);
+            }
+            table
+        };
+        let [az, bz, cz] = products.map(|values| convert(values));
+        RawProducts { az, bz, cz }
+    }
+
+    /// MLE tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`: the
+    /// reference (BigInt) form of [`Self::build_outer_raw_products`].
+    #[cfg(test)]
     pub(super) fn build_outer_product_mles(
         &self,
         prepared: &PreparedSha256Ecdsa,
         q: u128,
         cfg: &Config,
-    ) -> R1csProductMles<F> {
+    ) -> crate::piop::spartan::sumcheck::R1csProductMles<F> {
+        use crate::poly::mle::DenseMultilinearExtension;
         let vars = prepared.outer_sumcheck_num_vars();
         let zero = F::zero_with_cfg(cfg);
         let mut tables = std::array::from_fn::<_, 3, _>(|_| vec![zero.clone(); 1 << vars]);
@@ -51,7 +108,8 @@ impl Sha256EcdsaWitness {
                     .iter()
                     .flat_map(|w| w.to_le_bytes())
                     .collect();
-                table[dst] = reduce_integer_mod_q(&BigInt::from_signed_bytes_le(&bytes), q, cfg);
+                table[dst] =
+                    super::reduce_integer_mod_q(&BigInt::from_signed_bytes_le(&bytes), q, cfg);
             };
             match prepared.mode {
                 OuterMode::Split => {
@@ -74,7 +132,7 @@ impl Sha256EcdsaWitness {
             evaluations,
             num_vars: vars,
         });
-        R1csProductMles {
+        crate::piop::spartan::sumcheck::R1csProductMles {
             az: a,
             bz: b,
             cz: c,
