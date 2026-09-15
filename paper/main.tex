@@ -414,7 +414,8 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 \noindent \emph{Implementation:} We crucially used AI in our implementation and experiments, in the way explained in \cref{s:experiments}.
 
-\section{Technical overview}\label{s:tech_overview}
+\begin{lncsmove}{TechnicalSections}
+\iflncs\else\section{Technical overview}\label{s:tech_overview}\fi % LNCS: no overview section; its subsections become sections
 
    
 
@@ -425,10 +426,12 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 
 
+\iflncs\else
 In this section we describe the \ftwoz \ PCS, step by step (\cref{s:to_simple_bitz,s:to_general_rings}), and argue its efficiency (\cref{s:to_low_entropy_gkr}) and soundness (\cref{s:to_soundness_prime,s:to_soundness_rings}) at an intuitive level. \Cref{s:to_f2_virtual} describes how to prove claims on virtual $\FF_2$-linear transforms of the committed vector. In \cref{s:to_snark} (in the appendix) we explain how to build a full SNARK for constraints over (multiple) rings using \ftwoz\ as a PCS.
+\fi
 
 
-\subsection{The prime field case}\label{s:to_simple_bitz}
+\subsection{The prime field case}\label{s:to_simple_bitz}\iflncs\label{s:tech_overview}\fi
 
 
 We start with a simple setting.  We let $\FF_q$ be a prime field with $q$ elements, and assume the prover claims it knows a vector $\bff\in \FF_q^{\codedim_0}$  such that
@@ -1036,6 +1039,8 @@ We conclude that $\Pi_1$ is  round-by-round knowledge sound with errors $\kappa_
 
 
 
+\end{lncsmove}
+\begin{lncsmove}{FurtherWork}
 \subsection{Further work and open problems}\label{s:open_problems}
 We list some ongoing work of ours and questions that we leave open:
 \begin{itemize}[leftmargin=*,nosep]
@@ -1045,6 +1050,7 @@ We list some ongoing work of ours and questions that we leave open:
 \end{itemize}
 
 
+\end{lncsmove}
 \section{Preliminaries}
 
 \paragraph{General notation} Given an integer $n\geq 1$, we write $[n]$ to denote the set $\{1,\ldots, n\}$. Given integers $m\leq n$, we let $\range{m}{n}$ denote the set of integers $\{m, m+1,. \ldots, n\}$.
@@ -1283,6 +1289,14 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
   \end{tabular}
 \end{table}
 \end{lncsappendix}
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{TechnicalSections}
+\iflncs
+\section{Experiments}\label{s:experiments}
+\lncsplace[\lncsfittables]{TabRawPerformance}
+\lncsplace{TabMultiSwap}
+\lncsplace[\lncsfittables]{TabShaEcdsa}
+\fi
+\lncsplace[\let\subsubsection\subsection\let\subsection\section]{FurtherWork}
  
 
 \begin{lncsappendix}{iop}
@@ -2953,8 +2967,8 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \end{lncsappendix}
 
 
-\begin{lncsappendix}{experiments}
-\section{Experiments} \label{s:experiments}
+\begin{lncsappendix}[Additional experiments and experimental details]{experiments}
+\iflncs\else\section{Experiments} \label{s:experiments}\fi
 \albertimportant{Binius UDR and Binius Johnson is confusing because they use different PCS}
 
 
@@ -3046,6 +3060,7 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
 %\albert{remove?} Recall (\cref{s:prelims_algebra})  that   $\bff_{\FF_{q^d}}$ denotes the vector obtained from $\bff$ by looking at $0,1$ as the zero and one elements from $\FF_{q^d}$. 
 
 
+\begin{lncstable}{TabRawPerformance}
 \begin{table}[H]
   \centering
   \footnotesize
@@ -3072,6 +3087,7 @@ We measure the performance of \cref{c:core_iop} for proving the Core LinBitsRing
   \caption{ Cost of \ftwoz\ (\cref{c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots, 30$, and proving one claim $\langle \vv, \bff\rangle = \mu$ over $\FF_q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph{grand product} column comprises Phase 3 of \cref{c:core_iop}. The \emph{ring switch} and \emph{ligerito} columns comprise Phase 4. The \emph{Non-Ligerito} proof sie is comprised of the $\mu_j$ values in Round 2 of \cref{c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims. ``Mem.'' stands for peak memory.  Measured on a MacBook Air M5, 24\,GB.}
   \label{tab:f2z-raw-performance}
 \end{table}
+\end{lncstable}
 
 
  
@@ -3086,6 +3102,7 @@ We compare Limber \cite{limber} (commit \texttt{853c6c4}), Zinc+\cite{zincplus} 
 
 We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken.} For the \ftwoz\ opening we use Ligerito in the unique-decoding regime (as opposed to the other benchmarks where we use the Johnson bound) at rate $1/8$ with fold arity $4$, with grinding to achieve $114$ bits of security.
 
+\begin{lncstable}{TabMultiSwap}
 \begin{table}[H]
   \centering
   \begin{tabular}{@{}llrrrrr@{}}
@@ -3111,6 +3128,7 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
   }
   \label{t:multiswap}
 \end{table}
+\end{lncstable}
 
 
 
@@ -3129,6 +3147,7 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
 
 
 
+\begin{lncstable}{TabShaEcdsa}
 \begin{table}[H]
   \centering
   \small
@@ -3139,38 +3158,39 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     Message & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    960\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.95} & 62.2 & 36.3 & 3.94 & 3.96 & 117 & 1.31 \\
-    $2^{4}$ compressions & \ftwoz-SNARK, rate $1/8$ & 2.96 & \textbf{60.6} & \textbf{36.0} & \textbf{3.80} & \textbf{3.89} & \textbf{75} & 1.31 \\
-     & Binius (UDR), rate $1/2$ & 9.61 & 146 & 56.0 & 11.0 & 5.78 & 362 & \textbf{0.845} \\
-     & Binius (UDR), rate $1/8$ & 9.63 & 174 & 61.9 & 10.9 & 5.57 & 266 & 0.887 \\
-     & Binius (Johnson), rate $1/2$ & 9.53 & 163 & 62.6 & 12.3 & 7.23 & 363 & 0.889 \\
-     & Binius (Johnson), rate $1/8$ & 9.49 & 188 & 67.6 & 11.8 & 6.77 & 192 & 0.918 \\
+    960\,B & \ftwoz-SNARK, rate $1/2$ & 3.03 & 65.0 & \textbf{40.5} & 15.5 & 8.75 & 117 & 1.33 \\
+    $2^{4}$ compressions & \ftwoz-SNARK, rate $1/8$ & \textbf{3.01} & \textbf{63.2} & 41.1 & 15.4 & 8.72 & \textbf{75} & 1.34 \\
+     & Binius (UDR), rate $1/2$ & 9.54 & 148 & 58.1 & 11.2 & 5.77 & 362 & \textbf{0.842} \\
+     & Binius (UDR), rate $1/8$ & 9.40 & 176 & 63.9 & \textbf{11.1} & \textbf{5.67} & 266 & 0.898 \\
+     & Binius (Johnson), rate $1/2$ & 9.20 & 163 & 63.1 & 12.2 & 7.32 & 363 & 0.884 \\
+     & Binius (Johnson), rate $1/8$ & 9.39 & 186 & 68.3 & 11.8 & 6.63 & 192 & 0.917 \\
     \addlinespace
-    1984\,B & \ftwoz-SNARK, rate $1/2$ & 3.30 & \textbf{66.5} & \textbf{36.4} & 3.88 & 3.96 & 119 & 1.31 \\
-    $2^{5}$ compressions & \ftwoz-SNARK, rate $1/8$ & \textbf{3.29} & 67.3 & 38.1 & \textbf{3.77} & \textbf{3.82} & \textbf{76} & 1.33 \\
-     & Binius (UDR), rate $1/2$ & 10.0 & 147 & 55.3 & 11.2 & 5.82 & 362 & \textbf{0.877} \\
-     & Binius (UDR), rate $1/8$ & 9.78 & 175 & 61.7 & 11.2 & 5.64 & 266 & 0.929 \\
-     & Binius (Johnson), rate $1/2$ & 9.73 & 159 & 62.4 & 12.3 & 7.27 & 364 & 0.927 \\
-     & Binius (Johnson), rate $1/8$ & 9.70 & 195 & 69.2 & 12.1 & 6.62 & 193 & 0.961 \\
+    1984\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{3.37} & \textbf{69.2} & \textbf{41.8} & 16.1 & 8.87 & 119 & 1.31 \\
+    $2^{5}$ compressions & \ftwoz-SNARK, rate $1/8$ & \textbf{3.37} & 69.9 & 41.9 & 15.7 & 8.63 & \textbf{76} & 1.32 \\
+     & Binius (UDR), rate $1/2$ & 9.65 & 149 & 58.1 & 11.2 & 5.85 & 362 & \textbf{0.888} \\
+     & Binius (UDR), rate $1/8$ & 9.52 & 176 & 63.4 & \textbf{11.1} & \textbf{5.66} & 266 & 0.927 \\
+     & Binius (Johnson), rate $1/2$ & 9.70 & 159 & 63.2 & 12.5 & 7.30 & 364 & 0.924 \\
+     & Binius (Johnson), rate $1/8$ & 9.26 & 195 & 68.5 & 11.9 & 6.80 & 193 & 0.961 \\
     \addlinespace
-    4032\,B & \ftwoz-SNARK, rate $1/2$ & 2.26 & \textbf{68.5} & \textbf{37.5} & 4.24 & 4.20 & 125 & 1.29 \\
-    $2^{6}$ compressions & \ftwoz-SNARK, rate $1/8$ & \textbf{2.21} & 72.1 & \textbf{37.5} & \textbf{4.04} & \textbf{4.06} & \textbf{82} & 1.33 \\
-     & Binius (UDR), rate $1/2$ & 9.64 & 148 & 55.6 & 11.6 & 5.99 & 362 & \textbf{0.882} \\
-     & Binius (UDR), rate $1/8$ & 10.2 & 178 & 61.8 & 11.5 & 5.69 & 266 & 0.929 \\
-     & Binius (Johnson), rate $1/2$ & 10.3 & 159 & 63.5 & 12.7 & 7.56 & 364 & 0.923 \\
-     & Binius (Johnson), rate $1/8$ & 9.65 & 188 & 67.6 & 12.2 & 6.88 & 193 & 0.963 \\
+    4032\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.26} & \textbf{72.1} & \textbf{42.8} & 17.2 & 9.52 & 125 & 1.33 \\
+    $2^{6}$ compressions & \ftwoz-SNARK, rate $1/8$ & 2.28 & 74.7 & 43.8 & 17.1 & 9.12 & \textbf{82} & 1.31 \\
+     & Binius (UDR), rate $1/2$ & 9.63 & 151 & 58.1 & 11.7 & 5.96 & 362 & \textbf{0.889} \\
+     & Binius (UDR), rate $1/8$ & 9.37 & 177 & 63.9 & \textbf{11.6} & \textbf{5.80} & 266 & 0.936 \\
+     & Binius (Johnson), rate $1/2$ & 9.33 & 159 & 62.4 & 12.8 & 7.37 & 364 & 0.932 \\
+     & Binius (Johnson), rate $1/8$ & 9.60 & 188 & 68.3 & 12.2 & 6.97 & 193 & 0.953 \\
     \addlinespace
-    8128\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.40} & 85.8 & \textbf{41.4} & 4.48 & \textbf{4.14} & 135 & 1.32 \\
-    $2^{7}$ compressions & \ftwoz-SNARK, rate $1/8$ & 2.43 & \textbf{83.5} & 46.3 & \textbf{4.36} & 4.21 & \textbf{92} & 1.31 \\
-     & Binius (UDR), rate $1/2$ & 10.5 & 168 & 61.1 & 12.7 & 6.27 & 394 & \textbf{0.939} \\
-     & Binius (UDR), rate $1/8$ & 10.1 & 218 & 70.8 & 12.7 & 6.19 & 289 & 1.02 \\
-     & Binius (Johnson), rate $1/2$ & 10.1 & 175 & 67.6 & 14.1 & 8.02 & 376 & 1.03 \\
-     & Binius (Johnson), rate $1/8$ & 9.99 & 228 & 76.7 & 13.7 & 7.46 & 199 & 1.08 \\
+    8128\,B & \ftwoz-SNARK, rate $1/2$ & 2.38 & 90.1 & \textbf{46.5} & 19.4 & 9.50 & 135 & 1.34 \\
+    $2^{7}$ compressions & \ftwoz-SNARK, rate $1/8$ & \textbf{2.37} & \textbf{86.5} & 47.1 & 19.3 & 9.72 & \textbf{92} & 1.35 \\
+     & Binius (UDR), rate $1/2$ & 10.2 & 169 & 63.4 & \textbf{12.8} & 6.36 & 394 & \textbf{0.951} \\
+     & Binius (UDR), rate $1/8$ & 10.1 & 220 & 72.9 & 13.1 & \textbf{6.27} & 289 & 1.02 \\
+     & Binius (Johnson), rate $1/2$ & 9.66 & 175 & 67.2 & 14.0 & 8.07 & 376 & 1.02 \\
+     & Binius (Johnson), rate $1/8$ & 9.90 & 229 & 78.4 & 13.6 & 7.56 & 199 & 1.08 \\
     \bottomrule
   \end{tabular}
    \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-f2z-opt}
 \end{table}
+\end{lncstable}
 
 
 

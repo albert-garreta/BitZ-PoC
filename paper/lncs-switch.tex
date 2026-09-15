@@ -25,14 +25,20 @@
 %%      place is inside an lncsappendix block.  Full version: typeset in place.
 %%
 %%   \begin{lncstable}{Name} ... \end{lncstable}
-%%      Same as lncsstatement for tables/figures/any block: LNCS moves it to
-%%      \lncsplace{Name} and leaves nothing behind.
+%%   \begin{lncsmove}{Name}  ... \end{lncsmove}     (same thing, for sections)
+%%      Same as lncsstatement for tables/figures/whole sections/any block: LNCS
+%%      moves the block to \lncsplace{Name} and leaves nothing behind.  A moved
+%%      block may contain \lncsplace lines and \iflncs conditionals, but no
+%%      other block markers (blocks do not nest).
 %%
 %%   \lncsplace[setup]{Name}   LNCS: typeset the block Name here (inside a
 %%                         group, after running the optional setup code, e.g.
 %%                         \renewcommand's the block relies on).  Full: nothing.
 %%   \lncsappendixspine    LNCS: emit all lncsappendix blocks (put it after
 %%                         \appendix).  Full: nothing.
+%%   \lncsfittables        setup code for \lncsplace: every tabular of the block
+%%                         is scaled down to the text width when it is wider
+%%                         (adjustbox), e.g. \lncsplace[\lncsfittables]{TabX}.
 %%   \iflncs ... \else ... \fi      for anything else (front matter etc.).
 %%
 %% How it works (LNCS build only): before \begin{document} the source file is
@@ -87,13 +93,16 @@
   \excludecomment{lncsappendix}
   \excludecomment{lncsstatement}
   \excludecomment{lncstable}
+  \excludecomment{lncsmove}
   \expandafter\let\expandafter\lncs@skip@appendix\csname lncsappendix\endcsname
   \expandafter\let\expandafter\lncs@skip@statement\csname lncsstatement\endcsname
   \expandafter\let\expandafter\lncs@skip@table\csname lncstable\endcsname
+  \expandafter\let\expandafter\lncs@skip@move\csname lncsmove\endcsname
   \expandafter\def\csname lncsappendix\endcsname{\@ifnextchar[{\lncs@skip@appendix@i}{\lncs@skip@appendix@i[]}}
   \def\lncs@skip@appendix@i[#1]#2{\lncs@skip@appendix}
   \expandafter\def\csname lncsstatement\endcsname#1{\lncs@skip@statement}
   \expandafter\def\csname lncstable\endcsname#1{\lncs@skip@table}
+  \expandafter\def\csname lncsmove\endcsname#1{\lncs@skip@move}
 
   %% 3b. Pre-scan of the source: copies the blocks to files (expl3).
   \ExplSyntaxOn
@@ -150,10 +159,10 @@
             { \__lncs_region_end: }
             {
               \regex_extract_once:nnNTF
-                { \A \\begin\{(lncsstatement|lncstable)\} \{ ([^\}]*) \} \s* \Z } {#1} \l__lncs_m_seq
+                { \A \\begin\{(lncsstatement|lncstable|lncsmove)\} \{ ([^\}]*) \} \s* \Z } {#1} \l__lncs_m_seq
                 { \__lncs_block_begin:xx { \seq_item:Nn \l__lncs_m_seq {2} } { \seq_item:Nn \l__lncs_m_seq {3} } }
                 {
-                  \regex_match:nnTF { \A \\end\{(lncsstatement|lncstable)\} \s* \Z } {#1}
+                  \regex_match:nnTF { \A \\end\{(lncsstatement|lncstable|lncsmove)\} \s* \Z } {#1}
                     { \__lncs_block_end: }
                     { \__lncs_content:n {#1} }
                 }
@@ -251,6 +260,11 @@
         { \exp_args:Nx \file_input:n { \c_sys_jobname_str -lncs-app- ##1 .tex } }
     }
   \NewDocumentCommand \lncsplace { O{} m } { \group_begin: #1 \lncs_place:n {#2} \group_end: }
+  \ExplSyntaxOff
+  \newcommand\lncsfittables{%
+    \let\lncs@tabular\tabular \let\lncs@endtabular\endtabular
+    \renewenvironment{tabular}{\begin{adjustbox}{max width=\textwidth}\lncs@tabular}{\lncs@endtabular\end{adjustbox}}}
+  \ExplSyntaxOn
   \NewDocumentCommand \lncsrestate { m } { \lncs_restate:n {#1} }
   \NewDocumentCommand \lncsappendixspine { } { \lncs_spine: }
 
@@ -300,7 +314,10 @@
   \def\endlncsstatement{\begingroup\def\@currenvir{lncsstatement}}
   \newcommand\lncstable[1]{\endgroup}
   \def\endlncstable{\begingroup\def\@currenvir{lncstable}}
+  \newcommand\lncsmove[1]{\endgroup}
+  \def\endlncsmove{\begingroup\def\@currenvir{lncsmove}}
   \newcommand\lncsplace[2][]{}
+  \newcommand\lncsfittables{}
   \newcommand\lncsrestate[1]{}
   \newcommand\lncsappendixspine{}
 \fi
