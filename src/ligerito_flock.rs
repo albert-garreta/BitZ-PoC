@@ -11436,13 +11436,24 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
     };
     let prepared = prepare_sha256_ecdsa(7, 100, OuterMode::Split).unwrap();
     let map = prepared.map();
-    let point: Vec<_> = (0..map.rows().ilog2())
-        .map(|i| Gf::from_polynomial_words([17 + u64::from(i), 29]))
+    let points: Vec<Vec<_>> = [17, 41]
+        .into_iter()
+        .map(|offset| {
+            (0..map.rows().ilog2())
+                .map(|i| Gf::from_polynomial_words([offset + u64::from(i), 29]))
+                .collect()
+        })
         .collect();
-    let points = [point];
-    let etas = [Gf::from_polynomial_words([73, 13])];
+    let etas = [
+        Gf::from_polynomial_words([73, 13]),
+        Gf::from_polynomial_words([89, 37]),
+    ];
     let weights =
         VirtColumnWeights::new(map, &points, &etas, prepared.assignment_params().row_vars);
+    assert!(matches!(
+        &weights,
+        VirtColumnWeights::PackedSourceRepeated { corrections, .. } if !corrections.is_empty()
+    ));
     let generic = VirtColumnWeights::Generic {
         map,
         coeffs: VirtRowCoeffs::new(&points, &etas, prepared.assignment_params().row_vars),
@@ -11743,21 +11754,19 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                 let mut corrections = Vec::new();
                 if let Some(tail) = map.chained_packed_source_tail() {
                     let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
-                    // One weight per tail column (1.2M for P-256); the columns
-                    // are independent, so they are folded in parallel.
                     let matrix = tail.map.matrix();
-                    let weights: Vec<Gf> = cfg_into_iter!(0..matrix.columns().len(), 1 << 12)
-                        .map(|column| {
-                            matrix.column(column).map_or(Gf::zero(), |col| {
-                                col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
-                                    sum + coeffs.coeff(tail.row_offset + r)
-                                })
+                    assert!(tail.aliases.len() <= matrix.columns().len());
+                    let column_weight = |column| {
+                        matrix.column(column).map_or(Gf::zero(), |col| {
+                            col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
+                                sum + coeffs.coeff(tail.row_offset + r)
                             })
                         })
-                        .collect();
+                    };
                     let mut aliases = std::collections::BTreeMap::<usize, Gf>::new();
-                    for (&column, &weight) in tail.aliases.iter().zip(&weights) {
-                        *aliases.entry(column).or_insert(Gf::zero()) += weight;
+                    for (tail_column, &source_column) in tail.aliases.iter().enumerate() {
+                        *aliases.entry(source_column).or_insert(Gf::zero()) +=
+                            column_weight(tail_column);
                     }
                     for (column, weight) in aliases {
                         if let Some(last) = corrections
@@ -11773,9 +11782,17 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
                             });
                         }
                     }
+                    // Collect the dense suffix directly into its final buffer.
+                    // P-256 has 1.2M tail columns; copying this table would add
+                    // a second large allocation and a serial memory pass.
                     corrections.push(DenseWeightCorrection {
                         start: tail.source_offset,
-                        weights: weights[tail.aliases.len()..].to_vec(),
+                        weights: cfg_into_iter!(
+                            tail.aliases.len()..matrix.columns().len(),
+                            1 << 12
+                        )
+                        .map(column_weight)
+                        .collect(),
                     });
                 }
                 return Self::PackedSourceRepeated {
