@@ -338,11 +338,11 @@ In \cite{qaren} the authors propose $\QQ$aren, a compiler that takes any PCS ove
 
 The concurrent work Limber \cite{limber} proposes a new compiler that transforms any PCS over fields of sufficiently large characteristic $q$ (in this case, $q$ is $\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size, while in \cite{qaren} it is $\Omega(2^\lambda)$) into a PCS for integer polynomials. Additionally Limber compiles into strictly integer PCS, and does not present the issue that a malicious prover could use rationals that are ``almost integers''. Limber is instantiated in practice with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
 
-\paragraph{Proof systems over binary fields.} Hash-based SNARKs over binary fields were pioneered by the line of work of Ben-Sasson et al.~\cite{fri,stark,linearSizedIOPs,cryptoeprint:2022/1542}, but did not see widespread adoption until the introduction of \textit{packed} polynomial commitment schemes by Diamond and Posen~\cite{binius,binius2}; see also \cite{binius64}. Such schemes allow one to commit to a bit-valued witness over an extension field without incurring embedding overhead, while still providing evaluation proofs for its original ``uncompressed'' representation. The \emph{ring-switching} technique of Diamond and Posen~\cite{binius2} is generic, enabling the use of codes over larger alphabets without introducing representational redundancy.\footnotemark 
+\paragraph{Proof systems over binary fields.} \albertimportant{Review. This is Ulrich} Hash-based SNARKs over binary fields were pioneered by the line of work of Ben-Sasson et al.~\cite{fri,stark,linearSizedIOPs,cryptoeprint:2022/1542}, but did not see widespread adoption until the introduction of \textit{packed} polynomial commitment schemes by Diamond and Posen~\cite{binius,binius2}; see also \cite{binius64}. Such schemes allow one to commit to a bit-valued witness over an extension field without incurring embedding overhead, while still providing evaluation proofs for its original ``uncompressed'' representation. The \emph{ring-switching} technique of Diamond and Posen~\cite{binius2} is generic, enabling the use of codes over larger alphabets without introducing representational redundancy.\footnotemark 
 A particularly attractive choice is Reed--Solomon codes over $GF(2^k)$ \cite{binius64,hashcaster:repo}, which offer an excellent trade-off between distance and encoding cost, although several works~\cite{Blaze,tensorswitch,Bolt} explore this design space using more efficient codes.
 %the binary and packed version of the Basefold PCS.   
 \footnotetext{%
-Alternative approaches based on Galois conjugates have been proposed thereafter~\cite{hashcaster:repo,FRIBinius:Galois}.
+%Alternative approaches based on Galois conjugates have been proposed thereafter~\cite{hashcaster:repo,FRIBinius:Galois}.
 Remarkably, the Galois approach is present in prior work \cite[Appendix F]{stark}, although not explicitly framed in full generality.
 }
 
@@ -579,7 +579,7 @@ Then define $\bitstext(s)=(s_{\aa,i})_{i \in [B], \aa\in I}$, where, abusing the
 \begin{equation}\label{e:new_to_linear_bits_to_f}
 \bff = L \cdot \bitstext(\bff)
 \end{equation}
-for certain matrix $L\in S^{\codedim_0 \times \codedim}$. Concretely, $L= \mathsf{Id}_{\codedim_0} \otimes (1, 2, \ldots, 2^{B-1}) \otimes (\eta_1^{a_1}\cdots \eta_k^{a_k})_{\aa\in I}$. Note that \albertimportant{review} \begin{equation}\label{e:closure_bitification}L\cdot \bfg \in S_{\leq B}^{<D} \qquad \text{for all } \bfg \in \bits^{\codedim_0}.\end{equation} This is required to guarantee that extractors output vectors with entries in  $S_{\leq B}^{<D}$.
+for certain matrix $L\in S^{\codedim_0 \times \codedim}$. Concretely, $L= \mathsf{Id}_{\codedim_0} \otimes (1, 2, \ldots, 2^{B-1}) \otimes (\eta_1^{a_1}\cdots \eta_k^{a_k})_{\aa\in I}$. Note that by definition of $S_{\leq B}^{<D}$ and $L$,  \begin{equation}\label{e:closure_bitification}L\cdot \bfg \in S_{\leq B}^{<D} \qquad \text{for all } \bfg \in \bits^{\codedim_0}.\end{equation} This is required to guarantee that extractors output vectors with entries in  $S_{\leq B}^{<D}$.
 
 We remark that this is not the only way one can transform $\bff$ into a vector of bits. Especially if $\bff$ contains elements with heterogeneous bit-sizes, a different bit-representation strategy is preferable, to avoid $\bitstext(\bff)$ being unnecessarily large, see \cref{r: non_uniform_bit_decomposition} for more comments on this bitification step. In any case, one always needs to make sure that a closure property such as \eqref{e:closure_bitification} is satisfied.
  
@@ -1155,7 +1155,7 @@ $$
 \PESAT(\FF, \pp, \cC, T) \defeq \left\{ \left(\begin{aligned} &\inp=\xx\in \FF^\inplen, \\&\oracle = f \in \FF^{\codelength}, \\ &\wit= \bff\in W\end{aligned}\right) \;\middle|\;  \begin{aligned}
 &\Enc_{\cC}(T(\bff)) = f\\ \wedge \  &\pp_i(\xx, \bff) = 0  \text{ for all } i\in [\numrows]\end{aligned}\right\}
 $$
-We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (so that $\inplen=\codedim+1$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{whir} \albert{WHIR?}.  We denote it $$\LIN(\FF,\cC,T).$$
+We will drop the reference to $T$ whenever it is understood from the context. When $\numrows=1$ and $\xx$ are such that $\xx=(\vv,\mu)\in \FF^{\codedim}\times \FF$; $\pp_1(\xx,\ff)= \langle \ff, \vv\rangle -\mu$ (so that $\inplen=\codedim+1$), the relation $\PESAT(\FF,\pp, \cC, T)$ is called a \emph{constrained code} \cite{whir}.  We denote it $$\LIN(\FF,\cC,T).$$
 %
 \begin{definition}[Relaxation of $\PESAT$ and $\LIN$]Given $\delta \in (0,1)$, the \emph{relaxation} of $\PESAT$ and $\LIN$, denoted
 %
@@ -1240,7 +1240,7 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
   \small
   \setlength{\tabcolsep}{5pt}
   \caption{Cost of finding a $64$-bit nonce such that $\text{BLAKE3}(\mathsf{msg}, \mathsf{nonce})$ has at least $\alpha$ leading zero
-    bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded ($10$ threads) \albertimportant{Or 8?} on a MacBook Air M5 24\,GB. \albert{As implemented in Flock?}}
+    bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded ($10$ threads)  on a MacBook Air M5 24\,GB. \albert{As implemented in Flock?}}
   \label{tab:grinding-cost}
       \begin{tabular}{@{}l rrrrrrrr@{}}
     \toprule
@@ -1516,7 +1516,7 @@ We assume without further comment that it is efficient to compute  values $\pica
 
 
 
-\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,Ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} \albertimportant{revisit} for more details.   
+\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,Ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of round-by-round knowledge soundness, and to the unique decoding radius for higher security regimes.   
 \item 
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define 
 \begin{equation}\label{e:ring_theta_params}
@@ -1682,7 +1682,7 @@ Let  $\bm{\mu}\defeq (\mu_1,\ldots, \mu_{\codedim_2})$, $g^{\bm{\gamma}}\defeq (
 In \cref{t:core_iop_complexity} we summarize the main costs of \cref{c:core_iop}.
 
 
-\paragraph{Costs ($k\leq 1$).}  In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. This is the setting used in our instantiation \cref{s:instantiation,s:experiments} \albertimportant{Do we do any Babybear extension? If not, we only use $k=0$}. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$ , depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\iopp,\Pi_\red$.
+\paragraph{Costs ($k\leq 1$).}  In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. In our instantiation \cref{s:instantiation}. In our experiments we only use $k=0$, but future work of ours on proving lattice computations requires $k=1$. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$ , depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\iopp,\Pi_\red$.
 
 Rounds 0, 1 and 2 send only non-oracle messages, so the oracles and queries of \cref{c:core_iop} are exclusively those of $\Pi_\red$ and $\Pi_\iopp$. If Round 1 is skipped, $q$ denotes $|R|$ when $R=\FF_q$, and $\max_i \vv^{(1)}_i+1$ when $R=\ZZ$ (cf.\ \cref{r:skip_round_1_integers}). The exponentiations of Phase 3, when computing $(g^{\bm{\gamma_i}})_{i\in [\codedim_1]}$ and $(g^{\mu_j})_{j\in [\codedim_2]}$, take $\lceil \log(q\cdot\codedim_1)/w\rceil \leq \comfieldexp/w$ multiplications each using a fixed-base table with $w$-bit windows ($w=8$ in our implementation).
 
