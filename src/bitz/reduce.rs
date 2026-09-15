@@ -4,14 +4,12 @@
 //! `Σ u1[row]·u2[column]·bit(column, row)`.
 
 use super::fold::Fold;
-use super::gkr::{GrandProductCircuit, gpgkr_prove, gpgkr_verify};
+use super::forest::Forest;
+use super::gkr::gpgkr_verify;
 use super::params::{ClaimError, LinearClaimGf, Shape};
 use super::pcs::OpeningQuery;
 use super::transcript::{ProverState, VerifierState};
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-
-use crate::cfg_chunks_mut;
+use crate::ligerito_flock::FlockCommitHint;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 
@@ -22,11 +20,6 @@ pub enum ReduceError {
     GKR,
     /// The derived weight counts do not match the table shape.
     Claim(ClaimError),
-}
-
-/// Bit `(column, row)` of the committed table, from its per-column rows.
-fn bit(rows: &[Vec<u64>], column: usize, row: usize) -> bool {
-    (rows[column][row / 64] >> (row % 64)) & 1 == 1
 }
 
 fn eq_table(point: &[Gf]) -> Vec<Gf> {
@@ -62,24 +55,15 @@ pub(crate) fn gkr_reduce_prove(
     transcript: &mut ProverState,
     fold: &Fold,
     shape: &Shape,
-    rows: &[Vec<u64>],
+    hint: &FlockCommitHint,
 ) -> Result<OpeningQuery, ClaimError> {
-    let columns = shape.columns();
-    // One chunk per row `b`: leaf `(b, c)` at `b * columns + c`.
-    let mut leafs = vec![Gf::one(); columns * shape.rows()];
-    cfg_chunks_mut!(leafs, columns)
-        .enumerate()
-        .for_each(|(b, chunk)| {
-            let image = fold.row_images[b];
-            for (c, leaf) in chunk.iter_mut().enumerate() {
-                if bit(rows, c, b) {
-                    *leaf = image;
-                }
-            }
-        });
-    let circuit = GrandProductCircuit::new(leafs);
-    let (_roots, witnesses) = circuit.batched_eval(columns);
-    let (point, claim) = gpgkr_prove(transcript, &fold.zeta, witnesses);
+    let forest = Forest::new(
+        shape.log_rows(),
+        shape.log_columns(),
+        hint.packed_cols(),
+        &fold.row_images,
+    );
+    let (point, claim) = forest.prove(transcript, &fold.zeta);
     query_from_terminal(fold, shape, point, claim)
 }
 

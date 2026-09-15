@@ -24,7 +24,7 @@ use crate::{cfg_chunks, cfg_chunks_mut, cfg_into_iter};
 /// `PARALLEL_MIN_LANES`).
 const PARALLEL_MIN_LANES: usize = 1 << 12;
 
-type Point = VecDeque<Gf>;
+pub(crate) type Point = VecDeque<Gf>;
 
 /// The batched product tree: leaves at the bottom, `groups` roots at the
 /// top, product pairs `(i, i + half)` on the top index bit.
@@ -84,16 +84,31 @@ pub fn gpgkr_prove(
 }
 
 fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point, Gf) {
+    let mid = wnext.len() / 2;
+    let (mle_l, mle_r) = wnext.split_at_mut(mid);
+    prove_layer_from(ps, point, mle_l, mle_r, 0, Gf::one(), VecDeque::new())
+}
+
+/// The dense rounds of one layer from round `skip` on: the first `skip`
+/// coordinates of `point` are already bound (their challenges in
+/// `next_point`, their eq factors in `factor`) and `mle_l`/`mle_r` are the
+/// two halves folded that far.
+pub(crate) fn prove_layer_from(
+    ps: &mut ProverState,
+    point: Point,
+    mut mle_l: &mut [Gf],
+    mut mle_r: &mut [Gf],
+    skip: usize,
+    mut factor: Gf,
+    mut next_point: VecDeque<Gf>,
+) -> (Point, Gf) {
     // The eq table a round needs is the one over the coordinates not yet
     // bound, in little-endian (external) order: the external prefix.
     let external: Vec<Gf> = point.iter().rev().copied().collect();
-    let mut factor = Gf::one();
-    let mid = wnext.len() / 2;
-    let (mut mle_l, mut mle_r) = wnext.split_at_mut(mid);
-    let mut next_point = VecDeque::with_capacity(point.len() + 1);
     let total = point.len();
+    debug_assert_eq!(mle_l.len(), 1usize << (total - skip));
 
-    for (round, z) in point.into_iter().enumerate() {
+    for (round, z) in point.into_iter().enumerate().skip(skip) {
         let remaining = total - 1 - round;
         let eq = eq_table(&external[..remaining]);
         let h = mle_l.len() / 2;
@@ -125,7 +140,7 @@ fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point
 
 /// `eq(·, point)` over the hypercube, index bit `j` ↔ `point[j]`; `[1]`
 /// for the empty point.
-fn eq_table(point: &[Gf]) -> Vec<Gf> {
+pub(crate) fn eq_table(point: &[Gf]) -> Vec<Gf> {
     if point.is_empty() {
         return vec![Gf::one()];
     }

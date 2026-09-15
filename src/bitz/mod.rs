@@ -32,6 +32,7 @@
 
 pub mod codec;
 pub mod fold;
+pub mod forest;
 pub mod gkr;
 pub mod params;
 pub mod pcs;
@@ -135,7 +136,7 @@ impl BitZProver {
         let fold = self
             .send_fold(claim, rows, transcript)
             .map_err(ProveError::Fold)?;
-        let query = reduce::gkr_reduce_prove(transcript, &fold, &shape, rows)
+        let query = reduce::gkr_reduce_prove(transcript, &fold, &shape, hint)
             .map_err(ProveError::Reduction)?;
 
         // Step 6: inner-product sumcheck, ring switching, and the opening.
