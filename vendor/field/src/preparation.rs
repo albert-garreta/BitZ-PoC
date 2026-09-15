@@ -38,6 +38,9 @@ impl<const D: usize> PreparedDivisor<D> {
 
 #[derive(Clone, Debug)]
 pub struct PreparedOddInverse<const L: usize> {
+    #[cfg(target_pointer_width = "64")]
+    modulus: crypto_bigint::Odd<crypto_bigint::Uint<L>>,
+    #[cfg(not(target_pointer_width = "64"))]
     ring: ModRingCtx<L>,
 }
 impl<const L: usize> PreparedOddInverse<L> {
@@ -45,10 +48,30 @@ impl<const L: usize> PreparedOddInverse<L> {
         if modulus.as_words()[0] & 1 == 0 {
             return Err(ContextError::EvenModulus);
         }
+        let ring = ModRingCtx::new(modulus)?;
         Ok(Self {
-            ring: ModRingCtx::new(modulus)?,
+            #[cfg(target_pointer_width = "64")]
+            modulus: crypto_bigint::Odd::new(crypto_bigint::Uint::from_words(
+                *ring.modulus().as_words(),
+            ))
+            .expect("prepared modulus is odd"),
+            #[cfg(not(target_pointer_width = "64"))]
+            ring,
         })
     }
+    /// Fixed-schedule inversion, with a zero output for nonunits. On 64-bit
+    /// targets the backend batches divsteps instead of updating every full-width
+    /// coefficient on each binary-GCD step. Both backends use the declared width.
+    #[cfg(target_pointer_width = "64")]
+    pub fn inverse_ct(&self, value: &Uint<L>) -> CtValue<Uint<L>> {
+        let inverse = crypto_bigint::Uint::from_words(*value.as_words())
+            .invert_odd_mod(&self.modulus);
+        let valid = CtMask::from_lsb(inverse.is_some().to_u8() as u64);
+        let value = inverse.unwrap_or(crypto_bigint::Uint::ZERO);
+        CtValue::new(Uint::from_words(value.to_words()), valid)
+    }
+
+    #[cfg(not(target_pointer_width = "64"))]
     pub fn inverse_ct(&self, value: &Uint<L>) -> CtValue<Uint<L>> {
         let modulus = self.ring.modulus();
         let (mut u, mut v) = (
@@ -87,6 +110,7 @@ impl<const L: usize> PreparedOddInverse<L> {
         CtValue::new(Uint::ct_select(&Uint::ZERO, &inverse, valid), valid)
     }
 
+    #[cfg(not(target_pointer_width = "64"))]
     fn halve_residue(&self, value: &Uint<L>) -> Uint<L> {
         let odd = value.bit(0).mask();
         let (sum, carry) = value.adc(self.ring.modulus());

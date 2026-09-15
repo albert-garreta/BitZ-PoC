@@ -131,3 +131,34 @@ fn prepared_odd_inverse_units_nonunits_and_padded_widths() {
         );
     }
 }
+
+#[test]
+fn prepared_odd_inverse_full_width_composite_and_unreduced_inputs() {
+    // A wide odd multiple of three, so this exercises nonunits as well as
+    // units. BigUint Euclid and multiplication are independent of the backend.
+    let words = [15, 0, 0, 3 << 60];
+    let modulus = Uint::from_words(words);
+    let prepared = PreparedOddInverse::new(modulus).unwrap();
+    let m = big(&words);
+    let zero = BigUint::from(0u64);
+    let one = BigUint::from(1u64);
+    let mut values = vec![Uint::ZERO, Uint::ONE, Uint::from_u64(3), modulus, Uint::MAX];
+    let mut seed = 0x6721239;
+    values.extend((0..128).map(|_| Uint::from_words(core::array::from_fn(|_| random(&mut seed)))));
+    for input in values {
+        let n = big(input.as_words());
+        let (mut a, mut b) = (m.clone(), n.clone());
+        while b != zero {
+            (a, b) = (b.clone(), a % b);
+        }
+        let result = prepared.inverse_ct(&input);
+        assert_eq!(result.validity().declassify(), a == one);
+        let inverse = big(result.value().as_words());
+        assert!(inverse < m);
+        if a == one {
+            assert_eq!((n * inverse) % &m, one);
+        } else {
+            assert_eq!(inverse, zero);
+        }
+    }
+}

@@ -1133,6 +1133,7 @@ dependencies = [
 name = "field"
 version = "0.1.0"
 dependencies = [
+ "crypto-bigint 0.7.5",
  "num-traits",
  "serde",
 ]
