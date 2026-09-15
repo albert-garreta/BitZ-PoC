@@ -124,6 +124,41 @@ impl Modulus {
         cache.get_or_init(|| PreparedDivisor::new(self.words()).expect("P-256 modulus is nonzero"))
     }
 
+    /// Divide any five-limb integer using the two public P-256 moduli.
+    /// With R = 2^256 and p = R - C, both moduli have 0 < C < 2^224.
+    /// Each fold replaces h*R + low by h*C + low and adds h to the quotient.
+    #[inline]
+    fn div_rem_representative(self, value: Uint<HINT_LIMBS>) -> (Uint<HINT_LIMBS>, Uint<4>) {
+        let modulus = self.words();
+        let complement = modulus.wrapping_neg();
+        let mut words = *value.as_words();
+        let mut quotient = 0u128;
+        // The successive bounds are R + 2^288, 2R, then R + C < 2p.
+        // Three folds and one masked subtraction therefore suffice, even for
+        // inputs wider than the representatives produced by this circuit.
+        for _ in 0..3 {
+            let high = words[4];
+            quotient += high as u128;
+            let mut carry = 0u128;
+            for (word, coefficient) in words[..4].iter_mut().zip(complement.as_words()) {
+                // A word product plus two word-sized addends fits in u128.
+                let sum = high as u128 * *coefficient as u128 + *word as u128 + carry;
+                *word = sum as u64;
+                carry = sum >> 64;
+            }
+            words[4] = carry as u64;
+        }
+        let folded = Uint::from_words(words);
+        let difference = folded.checked_sub_ct(&modulus.zero_extend());
+        let remainder = Uint::ct_select(&folded, difference.value(), difference.validity());
+        quotient += u64::ct_select(&0, &1, difference.validity()) as u128;
+        // The quotient is below 2^64 + 2^32 + 3; the remainder is below p.
+        (
+            Uint::from_words([quotient as u64, (quotient >> 64) as u64, 0, 0, 0]),
+            Uint::from_words(array::from_fn(|i| remainder.as_words()[i])),
+        )
+    }
+
     fn inverse(self) -> &'static PreparedOddInverse<4> {
         static BASE: OnceLock<PreparedOddInverse<4>> = OnceLock::new();
         static SCALAR: OnceLock<PreparedOddInverse<4>> = OnceLock::new();
@@ -485,10 +520,10 @@ fn lazy_divide<CS: Circuit>(
             "division denominator",
         )?;
         let b = evaluated_uint::<HINT_LIMBS>(numerator_eval.evaluate_words(context), "division numerator")?;
-        let (_, denominator) = divisor.div_rem_ct(&a);
+        let (_, denominator) = modulus.div_rem_representative(a);
         let inverse = modular_inverse_u256(denominator, modulus)
             .ok_or_else(|| HintError::new("zero or noninvertible division denominator"))?;
-        let (_, numerator) = divisor.div_rem_ct(&b);
+        let (_, numerator) = modulus.div_rem_representative(b);
         // Both residues are below the public 256-bit modulus.
         let inverse_product = IntegerOps.mul_wide(&inverse, &numerator);
         let (_, value) = divisor.div_rem_product_ct(&inverse_product);
@@ -512,10 +547,9 @@ fn lazy_divide<CS: Circuit>(
 
 fn lazy_reduce<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -> Elem<CS> {
     let x_eval = x.value.capture();
-    let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
         let value = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "lazy reduction operand")?;
-        let (quotient, remainder) = divisor.div_rem_ct(&value);
+        let (quotient, remainder) = modulus.div_rem_representative(value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
     let (r, q) = split_521(circuit, bits);
@@ -532,10 +566,9 @@ fn lazy_reduce_scalar<CS: Circuit>(
     x: Rep<CS>,
 ) -> ScalarElem<CS> {
     let x_eval = x.value.capture();
-    let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
         let value = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "lazy reduction operand")?;
-        let (quotient, remainder) = divisor.div_rem_ct(&value);
+        let (quotient, remainder) = modulus.div_rem_representative(value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
     let remainder = bits.slice::<256, 4>(0);
@@ -588,11 +621,10 @@ fn lazy_assert_mul_eq<CS: Circuit>(
 
 fn relaxed_reduce_small<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Lc<CS>) -> Elem<CS> {
     let x_eval = x.capture();
-    let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 258, 5, _>(move |context| {
         let value =
             evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "relaxed modular dividend")?;
-        let (quotient, remainder) = divisor.div_rem_ct(&value);
+        let (quotient, remainder) = modulus.div_rem_representative(value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
     let r_bits = bits.slice::<256, 4>(0);
@@ -799,10 +831,9 @@ fn and3_bit<CS: Circuit>(circuit: &mut CS, x: Lc<CS>, y: Lc<CS>, z: Lc<CS>) -> L
 
 fn lazy_zero_test<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -> Lc<CS> {
     let x_eval = x.value.capture();
-    let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 257, 5, _>(move |context| {
         let a = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "zero-test operand")?;
-        let (_, value) = divisor.div_rem_ct(&a);
+        let (_, value) = modulus.div_rem_representative(a);
         let is_zero = value.ct_is_zero().declassify();
         let inverse = *modulus.inverse().inverse_ct(&value).value();
         Ok(packed_flag_inverse_u256(is_zero, inverse))
@@ -824,14 +855,13 @@ fn lazy_zero_test<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -
 
     let z_eval = z.capture();
     let x_eval = x.value.capture();
-    let divisor = modulus.divisor();
     let q_bits = circuit.hint::<P256_Z_LIMBS, 9, 1, _>(move |context| {
         let z = evaluated_uint::<1>(z_eval.evaluate_words(context), "zero-test flag")?;
         let x = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "zero-test quotient operand")?;
         // z comes from the one-bit slice above. Its product with x keeps x's
         // public representative width, including when the private flag is zero.
         let product = Uint::ct_select(&Uint::ZERO, &x, z.bit(0).mask());
-        let (quotient, remainder) = divisor.div_rem_ct(&product);
+        let (quotient, remainder) = modulus.div_rem_representative(product);
         debug_assert!(remainder.ct_is_zero().declassify());
         Ok(packed_wide(quotient))
     });
@@ -1480,6 +1510,55 @@ mod tests {
                 let expected_remainder = value % uint256_biguint(modulus.words());
                 assert_eq!(words_biguint(quotient.as_words()), expected_quotient);
                 assert_eq!(uint256_biguint(remainder), expected_remainder);
+            }
+        }
+    }
+
+    #[test]
+    fn representative_division_matches_biguint_at_full_capacity() {
+        let capacity = BigUint::one() << 320usize;
+        let radix = BigUint::one() << 256usize;
+        let mut state = 0x7a9d_29a4_d375_198b_u64;
+        for modulus in [Modulus::Base, Modulus::Scalar] {
+            let p = uint256_biguint(modulus.words());
+            let complement = &radix - &p;
+            assert!(complement > BigUint::zero());
+            assert!(complement < (BigUint::one() << 224usize));
+            let mut values = vec![BigUint::zero(), &capacity - 1u32];
+            for bit in 0..320usize {
+                let power = BigUint::one() << bit;
+                values.extend([&power - 1u32, power.clone(), &power + 1u32]);
+            }
+            for multiplier in [0u128, 1, 2, 66, u64::MAX as u128, 1u128 << 64] {
+                let multiple = &p * BigUint::from(multiplier);
+                if multiple > BigUint::zero() {
+                    values.push(&multiple - 1u32);
+                }
+                values.extend([multiple.clone(), &multiple + 1u32, &multiple + &p - 1u32]);
+            }
+            // Exercise carry propagation from every possible high-word width,
+            // with both zero and maximum lower words.
+            for bit in 0..64 {
+                for high in [(1u64 << bit) - 1, 1u64 << bit, u64::MAX] {
+                    let high_part = BigUint::from(high) << 256usize;
+                    values.extend([high_part.clone(), &high_part + &radix - 1u32]);
+                }
+            }
+            for _ in 0..10_000 {
+                let words = array::from_fn::<_, 5, _>(|_| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    state
+                });
+                values.push(words_biguint(&words));
+            }
+            for value in values.into_iter().filter(|value| value < &capacity) {
+                let words = value.to_u64_digits();
+                let input = Uint::from_words(array::from_fn(|i| words.get(i).copied().unwrap_or(0)));
+                let (quotient, remainder) = modulus.div_rem_representative(input);
+                assert_eq!(words_biguint(quotient.as_words()), &value / &p, "quotient for {value:x}");
+                assert_eq!(uint256_biguint(remainder), &value % &p, "remainder for {value:x}");
             }
         }
     }
