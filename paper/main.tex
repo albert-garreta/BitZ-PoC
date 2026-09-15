@@ -281,11 +281,11 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
  \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps of \cref{s:to_simple_bitz}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ and vector $\bfg$ with entries in $\FF_2$. Then, we could instead of committing to $\bitstext(\bff)$ in Step 1 of \cref{s:to_simple_bitz}, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
  %
  $$
-\langle \bfg, M^{\mathsf{T}}\uu'\rangle = \eta \quad \text{ in } \comfield,
+\langle \bfg, M^{\mathsf{T}}\cdot \uu'\rangle = \eta \quad \text{ in } \comfield,
  $$
  where $\mathsf{T}$ denotes transposition. This is a linear claim on $\bfg$, the vector we committed to. We can prove this claim with a standard PCS over $\comfield$ such as \cite{whir}. 
  
- To keep the verifier succinct, we need to ensure that $M\cdot \uu'$ admits a succinct representation. In our applications, the vector $\uu'$ admits such \cref{??}, and so one needs to make sure $M$ carries some succinct structure, such as for example a tensor decomposition, so that $M\cdot \uu'$ does not become a dense vector \albert{review paragraph}.  
+ To keep the verifier succinct, we need to ensure that $M^{\mathsf{T}}\cdot \uu'$ admits a succinct representation. In our applications, the vector $\uu'$ admits such (see Step 2 in \cref{s:to_simple_bitz}), and so one needs to ensure $M$ carries some succinct structure, such as for example a tensor decomposition, so that $M^{\mathsf{T}}\cdot \uu'$ does not become a dense vector \albert{review paragraph}.  
 
  
  This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
