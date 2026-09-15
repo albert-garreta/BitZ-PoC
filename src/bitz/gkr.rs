@@ -96,30 +96,54 @@ fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point
 pub(crate) fn prove_layer_from(
     ps: &mut ProverState,
     point: Point,
+    mle_l: &mut [Gf],
+    mle_r: &mut [Gf],
+    skip: usize,
+    factor: Gf,
+    next_point: VecDeque<Gf>,
+) -> (Point, Gf) {
+    prove_layer_tensor(ps, point, mle_l, mle_r, skip, factor, next_point, 0)
+}
+
+/// [`prove_layer_from`] told that the low `s` index bits are column bits:
+/// while in-tree bits remain, the round's eq weight is `eq_y[y]·eq_c[c]`
+/// with `y` the row of `2^s` entries, so no `2^{remaining}` eq table is
+/// built; once only column bits remain the table is small and built as is.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_layer_tensor(
+    ps: &mut ProverState,
+    point: Point,
     mut mle_l: &mut [Gf],
     mut mle_r: &mut [Gf],
     skip: usize,
     mut factor: Gf,
     mut next_point: VecDeque<Gf>,
+    s: usize,
 ) -> (Point, Gf) {
     // The eq table a round needs is the one over the coordinates not yet
     // bound, in little-endian (external) order: the external prefix.
     let external: Vec<Gf> = point.iter().rev().copied().collect();
     let total = point.len();
     debug_assert_eq!(mle_l.len(), 1usize << (total - skip));
+    let eq_c = if s > 0 && total > s { eq_table(&external[..s]) } else { Vec::new() };
 
     for (round, z) in point.into_iter().enumerate().skip(skip) {
         let remaining = total - 1 - round;
-        let eq = eq_table(&external[..remaining]);
         let h = mle_l.len() / 2;
-        debug_assert_eq!(eq.len(), h);
         let (lo_l, hi_l) = mle_l.split_at_mut(h);
         let (lo_r, hi_r) = mle_r.split_at_mut(h);
 
         // At z = 0 the incoming claim determines the value at zero, so send
         // the value at one. Otherwise send the value at zero as usual.
         let send_one = z == Gf::zero();
-        let (sum_endpoint, sum_inf) = round_sums(lo_l, lo_r, hi_l, hi_r, &eq, send_one);
+        let (sum_endpoint, sum_inf) = if s > 0 && remaining >= s {
+            let eq_y = eq_table(&external[s..remaining]);
+            round_sums_tensor(lo_l, lo_r, hi_l, hi_r, &eq_c, &eq_y, send_one)
+        } else {
+            let eq = eq_table(&external[..remaining]);
+            debug_assert_eq!(eq.len(), h);
+            round_sums(lo_l, lo_r, hi_l, hi_r, &eq, send_one)
+        };
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
 
         let r: Gf = ps.verifier_message();
@@ -189,6 +213,57 @@ fn round_sums(
             (
                 <Gf as WideMulAcc>::from_wide(acc_end),
                 <Gf as WideMulAcc>::from_wide(acc_inf),
+            )
+        })
+        .collect();
+    partials
+        .into_iter()
+        .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+}
+
+/// [`round_sums`] with the weight `eq_y[y]·eq_c[c]` over rows of `eq_c.len()`
+/// entries: each row's sums are accumulated unreduced against `eq_c`, then
+/// reduced and scaled by `eq_y[y]` once.
+fn round_sums_tensor(
+    lo_l: &[Gf],
+    lo_r: &[Gf],
+    hi_l: &[Gf],
+    hi_r: &[Gf],
+    eq_c: &[Gf],
+    eq_y: &[Gf],
+    send_one: bool,
+) -> (Gf, Gf) {
+    let width = eq_c.len();
+    debug_assert_eq!(lo_l.len(), width * eq_y.len());
+    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..eq_y.len(), 1)
+        .map(|y| {
+            let base = y * width;
+            let zero = Gf::zero();
+            let mut acc_end = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut acc_inf = <Gf as WideMulAcc>::wide_zero(&zero);
+            for c in 0..width {
+                let i = base + c;
+                let (d_l, d_r) = (hi_l[i] - lo_l[i], hi_r[i] - lo_r[i]);
+                let (l_end, r_end) = if send_one {
+                    (hi_l[i], hi_r[i])
+                } else {
+                    (lo_l[i], lo_r[i])
+                };
+                let e_l = eq_c[c] * l_end;
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc_end,
+                    &<Gf as WideMulAcc>::mul_wide(&e_l, &r_end),
+                );
+                let e_d = eq_c[c] * d_l;
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc_inf,
+                    &<Gf as WideMulAcc>::mul_wide(&e_d, &d_r),
+                );
+            }
+            let w = eq_y[y];
+            (
+                <Gf as WideMulAcc>::from_wide(acc_end) * w,
+                <Gf as WideMulAcc>::from_wide(acc_inf) * w,
             )
         })
         .collect();

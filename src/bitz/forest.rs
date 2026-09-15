@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 use rayon::prelude::*;
 
 use super::eq_factor;
-use super::gkr::{Point, eq_table, prove_layer_from};
+use super::gkr::{Point, eq_table, prove_layer_tensor};
 use super::transcript::ProverState;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::utils::wide_mul::WideMulAcc;
@@ -58,6 +58,7 @@ impl<'a> Forest<'a> {
     /// roots down to the leaf point and the claimed leaf value.
     pub(crate) fn prove(&self, ps: &mut ProverState, zeta: &[Gf]) -> (Vec<Gf>, Gf) {
         // Materialise levels MATERIALISED_LEVEL..t−1, bottom-up.
+        let started = std::time::Instant::now();
         let mut levels: Vec<Option<Vec<Gf>>> = (0..self.t).map(|_| None).collect();
         if MATERIALISED_LEVEL < self.t {
             let mut current = self.materialise_level(MATERIALISED_LEVEL);
@@ -75,19 +76,22 @@ impl<'a> Forest<'a> {
             }
         }
 
+        super::trace("  levels ≥3", started);
         let mut point: Vec<Gf> = zeta.to_owned();
         point.reverse();
         let mut point: Point = VecDeque::from(point);
         let mut claim = Gf::zero();
         for ell in (0..self.t).rev() {
+            let started = std::time::Instant::now();
             (point, claim) = match levels[ell].take() {
                 Some(mut wnext) => {
                     let mid = wnext.len() / 2;
                     let (l, r) = wnext.split_at_mut(mid);
-                    prove_layer_from(ps, point, l, r, 0, Gf::one(), VecDeque::new())
+                    prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
                 }
                 None => self.prove_bit_level(ps, ell, point),
             };
+            super::trace(&format!("  level {ell}"), started);
         }
         let mut point = Vec::from(point);
         point.reverse();
@@ -115,7 +119,7 @@ impl<'a> Forest<'a> {
         let mut folded = self.materialise_folded(ell, k, &challenges);
         let half = folded.len() / 2;
         let (l, r) = folded.split_at_mut(half);
-        prove_layer_from(ps, point, l, r, k, factor, next_point)
+        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s)
     }
 
     /// The per-position value tables of level `ell` after `kk` folds with
@@ -321,16 +325,86 @@ fn level_up(lower: &[Gf]) -> Vec<Gf> {
         .collect()
 }
 
-/// Bit-slices `words` (one 64-column word per pattern bit) into one
-/// pattern per column: `out[c]` bit `i` = bit `c` of `words[i]`.
+/// Bit-slices `words` (one 64-column word per pattern bit, at most 8) into
+/// one pattern per column: `out[c]` bit `i` = bit `c` of `words[i]`. Eight
+/// 8×8 bit-block transposes (delta swaps), one per byte lane.
 fn patterns(words: &[u64], out: &mut [u8; 64]) {
-    *out = [0u8; 64];
-    for (i, &w) in words.iter().enumerate() {
-        let mut x = w;
-        while x != 0 {
-            let c = x.trailing_zeros() as usize;
-            out[c] |= 1 << i;
-            x &= x - 1;
+    debug_assert!(words.len() <= 8);
+    // One or two words: walking the set bits (~32 per word) beats eight
+    // block transposes; from four words on the transposes win.
+    if words.len() <= 2 {
+        *out = [0u8; 64];
+        for (i, &w) in words.iter().enumerate() {
+            let mut x = w;
+            while x != 0 {
+                let c = x.trailing_zeros() as usize;
+                out[c] |= 1 << i;
+                x &= x - 1;
+            }
+        }
+        return;
+    }
+    for k in 0..8 {
+        // Row i of the block = byte k of words[i] (rows past `words` are 0).
+        let mut block = 0u64;
+        for (i, &w) in words.iter().enumerate() {
+            block |= ((w >> (8 * k)) & 0xFF) << (8 * i);
+        }
+        let t = transpose8x8(block);
+        for j in 0..8 {
+            out[8 * k + j] = ((t >> (8 * j)) & 0xFF) as u8;
+        }
+    }
+}
+
+/// Transposes the 8×8 bit matrix whose row `i` is byte `i` of `x` (bit `j`
+/// of that byte = element `(i, j)`): the result's byte `j` holds column `j`,
+/// with element `(i, j)` at bit `i`.
+#[inline]
+fn transpose8x8(mut x: u64) -> u64 {
+    // Swap 1×1 elements across the diagonal within each 2×2 block, then
+    // 2×2 blocks within 4×4, then 4×4 within 8×8. Row-major bit (8i + j)
+    // and column-major bit (8j + i) differ by 7·(j − i) at each scale.
+    let mut t = (x ^ (x >> 7)) & 0x00AA_00AA_00AA_00AA;
+    x ^= t ^ (t << 7);
+    t = (x ^ (x >> 14)) & 0x0000_CCCC_0000_CCCC;
+    x ^= t ^ (t << 14);
+    t = (x ^ (x >> 28)) & 0x0000_0000_F0F0_F0F0;
+    x ^= t ^ (t << 28);
+    x
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn naive_patterns(words: &[u64]) -> [u8; 64] {
+        let mut out = [0u8; 64];
+        for (i, &w) in words.iter().enumerate() {
+            for c in 0..64 {
+                out[c] |= (((w >> c) & 1) as u8) << i;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn transposed_patterns_match_the_bit_loop() {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        for len in 1..=8 {
+            for _ in 0..64 {
+                let words: Vec<u64> = (0..len)
+                    .map(|_| {
+                        state ^= state << 13;
+                        state ^= state >> 7;
+                        state ^= state << 17;
+                        state
+                    })
+                    .collect();
+                let mut out = [0u8; 64];
+                patterns(&words, &mut out);
+                assert_eq!(out, naive_patterns(&words), "len {len}");
+            }
         }
     }
 }

@@ -133,15 +133,23 @@ impl BitZProver {
         transcript.public_message(&self.params);
 
         // Steps 3 and 4: integer column folds, then GKR to a factored bit claim.
+        let started = std::time::Instant::now();
         let fold = self
             .send_fold(claim, rows, transcript)
             .map_err(ProveError::Fold)?;
+        trace("fold+images", started);
+        let started = std::time::Instant::now();
         let query = reduce::gkr_reduce_prove(transcript, &fold, &shape, hint)
             .map_err(ProveError::Reduction)?;
+        trace("gkr", started);
 
         // Step 6: inner-product sumcheck, ring switching, and the opening.
-        pcs.prove_lin(hint, &query, StatementBinding::Bind, transcript)
-            .map_err(ProveError::Opening)
+        let started = std::time::Instant::now();
+        let result = pcs
+            .prove_lin(hint, &query, StatementBinding::Bind, transcript)
+            .map_err(ProveError::Opening);
+        trace("opening (all)", started);
+        result
     }
 }
 
@@ -184,6 +192,13 @@ impl BitZVerifier {
             .check_eof()
             .map_err(|_| VerifyError::TrailingData)?;
         Ok(())
+    }
+}
+
+/// Phase timing to stderr when `BITZ_TRACE` is set (diagnostic only).
+pub(crate) fn trace(label: &str, started: std::time::Instant) {
+    if std::env::var_os("BITZ_TRACE").is_some() {
+        eprintln!("bitz: {label:<18} {:>9.1?}", started.elapsed());
     }
 }
 

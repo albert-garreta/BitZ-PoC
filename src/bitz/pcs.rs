@@ -205,7 +205,9 @@ impl Pcs {
                     bind_inner_product_statement(self, &root, claim, transcript);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
+                let started = std::time::Instant::now();
                 let reduced = sumcheck::prove(claim, hint, transcript)?;
+                super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
                 self.prove_mle(hint, &ring_switch, reduced.target, transcript)
@@ -252,6 +254,7 @@ impl Pcs {
         target: Gf,
         transcript: &mut ProverState,
     ) -> Result<(), ProveError> {
+        let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
         let (prefix_tensor, suffix_tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
         if suffix_tensor.len() != packed.len() {
@@ -277,7 +280,10 @@ impl Pcs {
         let packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
         debug_assert_eq!(packed_basis.len(), suffix_tensor.len());
 
+        super::trace("  ring switch", started_rs);
+
         // ReducedProver::prove
+        let started_lig = std::time::Instant::now();
         let data = hint.flock_prover_data();
         let mut challenger = ProverChallenger::new_ligerito(transcript, packed_target);
         let ligerito = recursive_prover_with_basis(
@@ -292,6 +298,7 @@ impl Pcs {
         if challenger.failed() {
             return Err(ProveError::Internal);
         }
+        super::trace("  ligerito", started_lig);
         write_opening_proof(&ligerito, transcript)
     }
 
