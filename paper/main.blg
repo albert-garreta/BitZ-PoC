@@ -1,69 +1,52 @@
 This is BibTeX, Version 0.99e (TeX Live 2026)
 Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
-The top-level auxiliary file: paper/main.aux
+The top-level auxiliary file: main.aux
 The style file: alpha.bst
 Database file #1: paper/references.bib
-Warning--entry type for "plonky" isn't style-file defined
---line 885 of file paper/references.bib
 Warning--I didn't find a database entry for "??"
-Warning--I didn't find a database entry for "cryptoeprint:2023/824"
-Warning--I didn't find a database entry for "risc0:whitepaper"
-Warning--I didn't find a database entry for "plonky2:repo"
-Warning--I didn't find a database entry for "more"
-Warning--I didn't find a database entry for "cryptoeprint:2022/1542"
-Warning--I didn't find a database entry for "hashcaster:repo"
 Warning--I didn't find a database entry for "?"
-Warning--I didn't find a database entry for "zinc+"
-Warning--I didn't find a database entry for "linearSizedIOPs"
-Warning--I didn't find a database entry for "tensorswitch"
-Warning--I didn't find a database entry for "Bolt"
-Warning--I didn't find a database entry for "lev:hashcaster"
 Warning--I didn't find a database entry for "FRIBinius:Galois"
-Warning--I didn't find a database entry for "binaryspartan"
-Warning--I didn't find a database entry for "thaler?"
-Warning--I didn't find a database entry for "logupstar"
-Warning--I didn't find a database entry for "stir-repo"
-Warning--I didn't find a database entry for "whir-repo"
+Warning--I didn't find a database entry for "ccks"
 Warning--empty publisher in thalerbook
-You've used 28 entries,
+You've used 49 entries,
             2543 wiz_defined-function locations,
-            724 strings with 9801 characters,
-and the built_in function-call counts, 11742 in all, are:
-= -- 1126
-> -- 734
-< -- 13
-+ -- 264
-- -- 263
-* -- 787
-:= -- 1936
-add.period$ -- 90
-call.type$ -- 28
-change.case$ -- 202
-chr.to.int$ -- 27
-cite$ -- 29
-duplicate$ -- 384
-empty$ -- 811
-format.name$ -- 292
-if$ -- 2418
-int.to.chr$ -- 2
+            800 strings with 12593 characters,
+and the built_in function-call counts, 19410 in all, are:
+= -- 1892
+> -- 1132
+< -- 25
++ -- 401
+- -- 399
+* -- 1242
+:= -- 3187
+add.period$ -- 162
+call.type$ -- 49
+change.case$ -- 335
+chr.to.int$ -- 47
+cite$ -- 50
+duplicate$ -- 656
+empty$ -- 1386
+format.name$ -- 455
+if$ -- 4024
+int.to.chr$ -- 3
 int.to.str$ -- 0
-missing$ -- 8
-newline$ -- 146
-num.names$ -- 90
-pop$ -- 283
+missing$ -- 13
+newline$ -- 257
+num.names$ -- 153
+pop$ -- 467
 preamble$ -- 1
-purify$ -- 231
+purify$ -- 385
 quote$ -- 0
-skip$ -- 392
+skip$ -- 663
 stack$ -- 0
-substring$ -- 375
-swap$ -- 87
-text.length$ -- 13
-text.prefix$ -- 5
+substring$ -- 616
+swap$ -- 138
+text.length$ -- 25
+text.prefix$ -- 12
 top$ -- 0
-type$ -- 220
+type$ -- 388
 warning$ -- 1
-while$ -- 97
-width$ -- 32
-write$ -- 355
-(There were 21 warnings)
+while$ -- 162
+width$ -- 55
+write$ -- 629
+(There were 5 warnings)

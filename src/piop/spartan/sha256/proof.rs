@@ -2777,9 +2777,9 @@ mod tests {
 
     #[test]
     fn small_batches_roundtrip_and_bind_public_outputs() {
-        for exponent in 4..=6 {
+        let smallest = super::super::prime::SHA256_MIN_LOG_COMPRESSIONS;
+        for exponent in smallest..=smallest + 1 {
             let prepared = prepare_sha256_compression_batch(exponent).unwrap();
-            assert!(prepared.product_assignment_params().is_none());
             assert!(prepared.opening_params().t >= LOG_PACKING);
             assert!(prepared.security().accounting.achieved_bits() >= 100.0);
             let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();

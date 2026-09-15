@@ -35,8 +35,14 @@ pub const SHA256_FIXED_98_INITIAL_GRINDING_BITS: u32 = 8;
 #[cfg(any(feature = "bench-internals", test))]
 pub const SHA256_FIXED_98_TERMINAL_GRINDING_BITS: u32 = 4;
 
-/// Smallest supported batch: `2^4` independent compressions.
-pub const SHA256_MIN_LOG_COMPRESSIONS: usize = 4;
+/// Smallest supported batch: `2^7` independent compressions.
+///
+/// This is the first size whose F2 source commitment reaches the validated
+/// UDR Ligerito window `m >= 20` (see `validated_udr_lig_configs_for_target`):
+/// `m = ceil-log2(SHA256_F_INSTANCE_BITS * 2^k + 1)` is 17/18/19 at k = 4/5/6,
+/// so those batches have no validated configuration and are rejected here
+/// rather than failing later at config selection.
+pub const SHA256_MIN_LOG_COMPRESSIONS: usize = 7;
 /// Largest supported batch: `2^16` independent compressions.
 pub const SHA256_MAX_LOG_COMPRESSIONS: usize = 16;
 /// Width of the fixed commitment/exponent field.

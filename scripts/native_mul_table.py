@@ -20,11 +20,31 @@ import statistics
 import subprocess
 from pathlib import Path
 
-SCHEMES = [  # (backend slug, LaTeX label)
+# Table rows are (scheme key, LaTeX label). Binius64 appears once per BaseFold
+# rate it was run at: scheme key `binius64@<log_inv_rate>` (rate 1/2 is the
+# Binius64 default, rate 1/8 needs the fewest queries that still pay off).
+SCHEMES = [
     ("f2z", "\\ftwoz\\ (this work)"),
-    ("binius64", "Binius64~\\cite{binius64}"),
+    ("binius64@1", "Binius64~\\cite{binius64}, rate $1/2$"),
+    ("binius64@3", "Binius64~\\cite{binius64}, rate $1/8$"),
     ("plonky3-whir", "Plonky3~\\cite{plonky} (WHIR)"),
 ]
+BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
+
+
+def scheme_key(r: dict) -> str:
+    """Row key: the backend slug, with Binius64 split by its recorded rate."""
+    if r["backend"] == "binius64":
+        return f"binius64@{int(r['config'].get('log_inv_rate', 1))}"
+    return r["backend"]
+
+
+def scheme_name(key: str) -> str:
+    """Short scheme name for caption sentences."""
+    names = {"f2z": "\\ftwoz", "plonky3-whir": "Plonky3"}
+    if key in names:
+        return names[key]
+    return "Binius64 at rate $1/%d$" % (1 << int(key.split("@")[1]))
 PLACEHOLDER = "--"
 
 
@@ -37,15 +57,20 @@ def fmt_ms(v: float) -> str:
 
 
 def proof_sizes(run_dir: Path, workload: str) -> dict:
-    """Median `proof_bytes` per (backend, exponent) over the run's measured samples."""
+    """Median `proof_bytes` per (scheme key, exponent) over the run's measured samples."""
+    rates = {}
+    for r in json.loads((run_dir / "summary.json").read_text()):
+        if r["workload"] == workload:
+            rates[(r["backend"], r["log_multiplications"])] = scheme_key(r)
     by = {}
     for line in (run_dir / "samples.jsonl").read_text().splitlines():
         r = json.loads(line)
         if r["workload"] != workload or r["trial"]["kind"] != "sample":
             continue
         size = r["metrics"].get("proof_bytes")
-        if size is not None:
-            by.setdefault((r["backend"], r["log_multiplications"]), []).append(size)
+        key = rates.get((r["backend"], r["log_multiplications"]))
+        if size is not None and key is not None:
+            by.setdefault((key, r["log_multiplications"]), []).append(size)
     return {k: statistics.median(v) for k, v in by.items()}
 
 
@@ -64,10 +89,12 @@ def main() -> int:
     ap.add_argument("--workload", default="u32", choices=["u32", "babybear", "u64", "u128"])
     ap.add_argument("--memory-bound", default="", metavar="BACKEND:EXP[,...]",
                     help="rows measured while paging (prover exceeded the machine's memory): omitted from the table and noted in the caption")
+    ap.add_argument("--drop", default="", metavar="SCHEME:EXP[,...]",
+                    help="rows to leave out as if not run (e.g. a measurement taken on a memory-starved box, pending a re-run); scheme keys as in --memory-bound")
     ap.add_argument("--proof-sizes-from", default="", metavar="RUN_DIR[,...]",
                     help="run directories that only contribute proof_bytes (for rows whose own run predates proof-size recording); proof sizes are deterministic per scheme, workload, and size")
     args = ap.parse_args()
-    memory_bound = set()
+    memory_bound = set()  # (scheme key, exponent); a bare `binius64` applies to every rate
     for item in filter(None, args.memory_bound.split(",")):
         backend, exp = item.split(":")
         memory_bound.add((backend, int(exp)))
@@ -79,8 +106,15 @@ def main() -> int:
         for r in json.loads((run_dir / "summary.json").read_text()):
             if r["workload"] == args.workload:
                 r["run_dir"] = str(run_dir)
-                by[(r["backend"], r["log_multiplications"])] = r
-    paged = {k: by.pop(k) for k in list(by) if k in memory_bound}
+                by[(scheme_key(r), r["log_multiplications"])] = r
+    dropped = set()
+    for item in filter(None, args.drop.split(",")):
+        scheme, exp = item.split(":")
+        dropped.add((scheme, int(exp)))
+    for k in list(by):
+        if k in dropped or (k[0].split("@")[0], k[1]) in dropped:
+            by.pop(k)
+    paged = {k: by.pop(k) for k in list(by) if k in memory_bound or (k[0].split("@")[0], k[1]) in memory_bound}
     # Proof sizes: the row's own run first, then the proof-size-only runs.
     sizes = {}
     for run_dir in args.run_dirs:
@@ -116,7 +150,7 @@ def main() -> int:
         w(f"% Proof sizes for rows whose run predates proof-size recording come from {' '.join(map(str, size_dirs))}.")
     w("% Regenerate (from the repo root; this file is overwritten):")
     w(f"%   python3 scripts/native_mul_table.py {run_list} --workload {args.workload}" + (f" --exponents {args.exponents}" if args.exponents else "")
-      + (f" --memory-bound {args.memory_bound}" if args.memory_bound else "") + (f" --proof-sizes-from {args.proof_sizes_from}" if args.proof_sizes_from else ""))
+      + (f" --memory-bound {args.memory_bound}" if args.memory_bound else "") + (f" --drop {args.drop}" if args.drop else "") + (f" --proof-sizes-from {args.proof_sizes_from}" if args.proof_sizes_from else ""))
     w(f"% Machine: {cpu}, {mem_gb} GB; medians of {'/'.join(map(str, samples))} samples after one warm-up.")
     w("% Columns: witgen = witness_ms (native witness generation; Binius64 packs its witness inside its prover, so its witgen")
     w("%   overlaps the prover column); prover = online_prover_ms (the complete native prover call after witness generation,")
@@ -135,17 +169,29 @@ def main() -> int:
                   f"proof_bytes={'n/a' if size is None else int(size)} samples={r['samples']} run={Path(r['run_dir']).name}")
             else:
                 w(f"%   2^{e} {slug:13s} not run")
+    # Sizes above a scheme's memory wall are implied by the wall, not "not run".
+    wall = {}
+    for slug, e in paged:
+        wall[slug] = min(wall.get(slug, e), e)
     missing = {}
     for slug, label in SCHEMES:
-        gone = [e for e in exps if (slug, e) not in by and (slug, e) not in paged]
-        if gone and len(gone) < len(exps):
+        gone = [e for e in exps if (slug, e) not in by and (slug, e) not in paged and e < wall.get(slug, float("inf"))]
+        if gone and any((slug, e) in by for e in exps):
             missing[slug] = gone
     for (slug, e), r in sorted(paged.items()):
         m = r["medians"]
         w(f"%   2^{e} {slug:13s} OMITTED (paging): online_prover={m['online_prover_ms']:.3f} verify={m['verify_ms']:.3f} run={Path(r['run_dir']).name}")
-    paged_by_scheme = {}
-    for slug, e in sorted(paged):
-        paged_by_scheme.setdefault(slug, []).append(e)
+    # One paging sentence per wall exponent; the Binius64 rates share it when they agree.
+    walls = {}
+    for slug, e in sorted(wall.items()):
+        walls.setdefault(e, []).append(slug)
+    def wall_sentence(e: int, slugs: list) -> str:
+        families = {slug.split("@")[0] for slug in slugs}
+        if families == {"binius64"} and len(slugs) > 1:
+            who = "the Binius64 provers at both rates exceed"
+        else:
+            who = " and ".join(f"the {scheme_name(slug)} prover" for slug in slugs) + (" exceeds" if len(slugs) == 1 else " exceed")
+        return f"From $2^{{{e}}}$ {who} the machine's memory and page" + ("s" if len(slugs) == 1 else "") + "; those rows are omitted. "
     schemes = [(slug, label) for slug, label in SCHEMES if any((slug, e) in by for e in exps)]
     w("")
     w("\\begin{table}[H]")
@@ -188,24 +234,36 @@ def main() -> int:
         "babybear": "Native end-to-end proofs of $N$ multiplications $a \\cdot b = c$ in the BabyBear field: ",
         "u128": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): ",
     }[args.workload]
-    # Binius64's opener geometry as the run recorded it (rate override
-    # F2Z_BINIUS_LOG_INV_RATE; the query count follows from it).
-    binius_rows = [r for r in rows if r["backend"] == "binius64"]
-    binius_rate = 1 << int(binius_rows[0]["config"].get("log_inv_rate", 1)) if binius_rows else 2
-    binius_queries = int(binius_rows[0]["config"].get("fri_queries", 241)) if binius_rows else 241
+    # Binius64's opener geometry as the runs recorded it (rate override
+    # F2Z_BINIUS_LOG_INV_RATE; the query count follows from the rate).
+    binius_keys = [slug for slug, _ in schemes if slug.startswith("binius64@")]
+    binius_rate_text = ""
+    if binius_keys:
+        parts = []
+        for key in binius_keys:
+            log_rate = int(key.split("@")[1])
+            queries = next((int(r["config"].get("fri_queries", BINIUS_QUERIES.get(log_rate, 0))) for r in rows if scheme_key(r) == key), BINIUS_QUERIES.get(log_rate, 0))
+            parts.append(f"rate $1/{1 << log_rate}$ with ${queries}$ queries")
+        binius_rate_text = " and ".join(parts) + " for $100$ bits"
+    binius_note = "Binius64 (native multiplication" + (" and bit constraints" if args.workload not in ("u64", "u128") else "") + f", ring switching and BaseFold at {binius_rate_text})"
     scheme_notes = {
         "f2z": "\\ftwoz\\ (Spartan over a transcript-sampled prime with the \\ftwoz\\ opening, $\\lambda = 100$)",
-        "binius64": "Binius64 (native multiplication" + (" and bit constraints" if args.workload not in ("u64", "u128") else "") + f", ring switching and BaseFold at rate $1/{binius_rate}$ with ${binius_queries}$ queries for $100$ bits)",
+        "binius64": binius_note,
         "plonky3-whir": "Plonky3 (" + ("Goldilocks AIR with $32$-bit decompositions" if args.workload == "u32" else "BabyBear AIR") + ", WHIR over a degree-$5$ extension at rate $1/2$, $100$ bits)",
     }
-    present = [slug for slug, _ in schemes]
+    # One caption note per scheme family (both Binius64 rates share one).
+    present = []
+    for slug, _ in schemes:
+        family = slug.split("@")[0]
+        if family not in present:
+            present.append(family)
     joiner = ", and " if len(present) > 2 else (" and " if len(present) == 2 else "")
     scheme_text = ", ".join(scheme_notes[s] for s in present[:-1]) + joiner + scheme_notes[present[-1]] + ". "
     w("  \\caption{" + statement + scheme_text
       + "\\emph{Witgen} is the native witness generation; \\emph{prover} is the complete prover call after witness generation, "
       + "commitment included; \\emph{verifier} is the complete verification. "
-      + "".join(f"{dict(SCHEMES)[slug].split('~')[0].replace(chr(92) + 'ftwoz' + chr(92), chr(92) + 'ftwoz')} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
-      + "".join(f"At " + ", ".join(f"$2^{{{e}}}$" for e in gone) + f" the {dict(SCHEMES)[slug].split('~')[0]} prover exceeds the machine's memory and pages; that row is omitted. " for slug, gone in paged_by_scheme.items())
+      + "".join(f"{scheme_name(slug)} was not run at " + ", ".join(f"$2^{{{e}}}$" for e in gone) + ". " for slug, gone in missing.items())
+      + "".join(wall_sentence(e, slugs) for e, slugs in sorted(walls.items()))
       + f"{cpu}, {mem_gb}\\,GB, $8$ threads; medians of {samples[0]} runs after one warm-up.}}")
     w("  \\label{tab:native-mul" + ("" if args.workload == "u32" else "-" + args.workload) + "}")
     w("\\end{table}")

@@ -98,9 +98,24 @@ impl IOPProver {
     {
         let (oracle, packed, point, _) =
             self.prove_to_evaluation::<A, P, Channel>(witness, channel, alloc)?;
+        // [phase] Ring-Switching and queueing the resulting PCS relation, under
+        // the same span as the upstream prover so benchmark harnesses that
+        // attribute the opening phase keep finding it. The BaseFold opening
+        // runs when the channel is finished after this IOP phase returns.
+        let pcs_guard = tracing::info_span!(
+            "[phase] Ring switching",
+            phase = "ring_switching",
+            component = "ring_switching",
+            scope_kind = "phase",
+            perfetto_category = "phase",
+            tag_proving = true,
+            tag_opening_proof = true,
+        )
+        .entered();
         let ring_switch::RingSwitchOutput { rs_eq_ind, sumcheck_claim } =
             ring_switch::prove(alloc, packed.to_ref(), &point, channel);
         channel.prove_oracle_relations([(oracle, packed, rs_eq_ind, sumcheck_claim)]);
+        drop(pcs_guard);
         Ok(())
     }
 

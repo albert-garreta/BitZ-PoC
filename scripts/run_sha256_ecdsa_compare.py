@@ -203,6 +203,22 @@ def metadata(binary):
                              k in ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "RAYON_NUM_THREADS", "CARGO_TARGET_DIR"]})
 
 
+def address_space_limit(memory_gib):
+    """Cap worker address space, where the platform enforces it.
+
+    macOS rejects every finite RLIMIT_AS (and RLIMIT_DATA/RLIMIT_RSS), so a
+    preexec_fn that sets one aborts the spawn. Return None there and record
+    the unenforced cap in the manifest.
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+
+    def limit():
+        size = memory_gib * 1024**3
+        resource.setrlimit(resource.RLIMIT_AS, (size, size))
+    return limit
+
+
 def run_case(binary, case, args, directory):
     shape = f"r{case['r']}-c{case['c']}" if case["r"] is not None else "total"
     name = (f"{case['method']}-i{case['log_compressions']}-{shape}-s{case['security_target']}"
@@ -242,16 +258,13 @@ def run_case(binary, case, args, directory):
     if Path("/usr/bin/time").exists() and sys.platform.startswith("linux"):
         command = ["/usr/bin/time", "-f", "%M", "-o", str(rss_path), *command]
 
-    def memory_limit():
-        limit = args.memory_gib * 1024**3
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-
     started = time.monotonic()
     status, returncode = "failed", None
     with (directory / f"{name}.stdout").open("w") as stdout, (directory / f"{name}.stderr").open("w") as stderr:
         try:
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr, cwd=ROOT,
-                                       start_new_session=True, preexec_fn=memory_limit,
+                                       start_new_session=True,
+                                       preexec_fn=address_space_limit(args.memory_gib),
                                        env=dict(os.environ, RAYON_NUM_THREADS=str(case["threads"]),
                                                 HARDWARE_CONCURRENCY=str(case["threads"])))
         except OSError as exc:
@@ -309,12 +322,9 @@ def compile_noir(args, directory, exponent):
                "--nargo", str(args.nargo), "--exponents", str(exponent)]
     if args.offline:
         command.append("--offline")
-    def limit():
-        size = args.memory_gib * 1024**3
-        resource.setrlimit(resource.RLIMIT_AS, (size, size))
     with log.open("w") as output:
         process = subprocess.Popen(command, stdout=output, stderr=output, start_new_session=True,
-                                   preexec_fn=limit)
+                                   preexec_fn=address_space_limit(args.memory_gib))
         try:
             code = process.wait(timeout=args.timeout)
         except subprocess.TimeoutExpired:
@@ -467,7 +477,8 @@ def main():
     if args.with_zkpassport:
         manifest["zkpassport"] = prepare_zkpassport(args, directory, binary, spartan_splits)
     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
-                                seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib)
+                                seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib,
+                                memory_cap_enforced=address_space_limit(args.memory_gib) is not None)
     manifest_path = directory / "manifest.json"
     if manifest_path.exists():
         previous = json.loads(manifest_path.read_text())
