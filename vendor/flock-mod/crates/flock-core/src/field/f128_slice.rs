@@ -1,6 +1,6 @@
-//! Architecture-selected kernels over contiguous [`F128`] slices.
+//! Architecture-selected kernels over contiguous [`Gf128`] slices.
 
-use super::F128;
+use super::Gf128;
 
 #[cfg(any(
     test,
@@ -8,6 +8,9 @@ use super::F128;
         all(
             target_arch = "x86_64",
             target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
             target_feature = "vpclmulqdq"
         ),
         all(target_arch = "aarch64", target_feature = "aes")
@@ -21,6 +24,9 @@ mod aarch64;
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 ))]
 mod x86_64;
@@ -30,7 +36,7 @@ mod x86_64;
 /// Computes `dst[t] = src[2j] * (1 + r) + src[2j + 1] * r`, where
 /// `j = base + t`. Architecture selection is resolved at compile time.
 #[inline]
-pub(crate) fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: F128) {
+pub(crate) fn fold_pairs(src: &[Gf128], base: usize, dst: &mut [Gf128], r: Gf128) {
     assert!(
         base <= src.len() / 2 && dst.len() <= src.len() / 2 - base,
         "fold source must contain both elements for every destination pair"
@@ -39,6 +45,9 @@ pub(crate) fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: F128) {
     #[cfg(all(
         target_arch = "x86_64",
         target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
         target_feature = "vpclmulqdq"
     ))]
     // SAFETY: the cfg gate guarantees the required target features and the
@@ -58,6 +67,9 @@ pub(crate) fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: F128) {
         all(
             target_arch = "x86_64",
             target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
             target_feature = "vpclmulqdq"
         ),
         all(target_arch = "aarch64", target_feature = "aes")
@@ -78,18 +90,18 @@ mod tests {
             state ^= state << 17;
             state
         };
-        let src: Vec<F128> = (0..30)
-            .map(|_| F128 {
+        let src: Vec<Gf128> = (0..30)
+            .map(|_| Gf128 {
                 lo: next(),
                 hi: next(),
             })
             .collect();
-        let r = F128 {
+        let r = Gf128 {
             lo: next(),
             hi: next(),
         };
-        let mut expected = vec![F128::ZERO; 9];
-        let mut actual = vec![F128::ZERO; 9];
+        let mut expected = vec![Gf128::ZERO; 9];
+        let mut actual = vec![Gf128::ZERO; 9];
 
         portable::fold_pairs(&src, 3, &mut expected, r);
         fold_pairs(&src, 3, &mut actual, r);

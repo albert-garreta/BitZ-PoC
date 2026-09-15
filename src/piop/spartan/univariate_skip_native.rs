@@ -8,26 +8,27 @@
 //! delayed linear accumulator and are reduced only at equality-factor
 //! boundaries.
 
+use crate::piop::spartan::SpartanField as _;
+use crate::piop::spartan::raw_monty::RawFieldStorage;
+use crate::utils::delayed_reduction::EncodedMac;
+#[cfg(test)]
+use field::Uint;
+use field::{Fp, RingOps};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crypto_bigint::{Choice, CtSelect};
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyField};
+use field::{CtMask, CtSelect};
 
 use crate::poly::mle::DenseMultilinearExtension;
 
-use crate::utils::delayed_reduction::{
-    MontyLinearAccumulator128, MontyProductAccumulator128, OptimizedMonty128Reducer,
-};
-
 use super::{
-    raw_monty::{NativeProducts, Raw, RawMontyCtx, RawProducts},
+    raw_monty::{NativeProducts, Raw, RawProducts},
     sumcheck::{R1csProductMles, SumcheckError, SumcheckLinearReducer, SumcheckProductReducer},
     univariate_skip::{PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec},
 };
 
-type Field = MontyField<2>;
-type FieldConfig = crypto_bigint::modular::FixedMontyParams<2>;
+type Field = Fp<2>;
+type FieldConfig = field::FpCtx<2>;
 type LinearAccumulator<R> = <R as SumcheckLinearReducer>::Accumulator;
 type ProductAccumulator<R> = <R as SumcheckProductReducer<Field>>::Accumulator;
 
@@ -142,7 +143,7 @@ where
 
 /// Folds each contiguous native block `s + M * x` at the skip challenge.
 ///
-/// The returned tables have exactly the remaining `n - K` Boolean variables
+/// The returned tables have exactly the remaining `n - K` Bit variables
 /// and can be passed directly to the existing field-valued outer sumcheck.
 /// Product shape and native multiplicand width must already be validated; use
 /// [`fold_u32_native_prefix`] outside the complete PIOP path.
@@ -196,7 +197,7 @@ pub(crate) fn fold_u32_native_prefix_raw(
     skip_vars: usize,
     products: NativeProducts<'_>,
     challenge: &Field,
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
 ) -> Result<RawProducts, SumcheckError> {
     match skip_vars {
         1 => fold_u32_native_prefix_raw_for::<PrefixSkipK1, 2>(
@@ -230,7 +231,7 @@ pub(crate) fn fold_u32_native_prefix_raw(
 fn fold_u32_native_prefix_raw_for<S, const M: usize>(
     products: NativeProducts<'_>,
     challenge: &Field,
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     top_difference: &[i64; M],
 ) -> Result<RawProducts, SumcheckError>
 where
@@ -240,7 +241,7 @@ where
     debug_assert!(products.len().is_multiple_of(M));
     debug_assert_eq!(products.bz.len(), products.len());
     debug_assert_eq!(products.cz.len(), products.len());
-    let weights: Vec<Raw> = base_lagrange_weights(challenge, ctx.config(), top_difference)
+    let weights: Vec<Raw> = base_lagrange_weights(challenge, &ctx, top_difference)
         .iter()
         .map(|weight| ctx.raw(weight))
         .collect();
@@ -252,11 +253,11 @@ where
     // one Montgomery reduction plus a conversion multiply replaces the
     // Barrett remainder (same canonical residue).
     let fold_block = |az: &[u64], bz: &[u64], cz: &[u64]| -> [Raw; 3] {
-        let mut accumulators = [MontyLinearAccumulator128::default(); 3];
+        let mut accumulators = [field::FpLinearAcc::<2, 1>::default(); 3];
         for (((&weight, &az), &bz), &cz) in weights.iter().zip(az).zip(bz).zip(cz) {
-            accumulators[0].multiply_accumulate_raw(weight, az);
-            accumulators[1].multiply_accumulate_raw(weight, bz);
-            accumulators[2].multiply_accumulate_raw(weight, cz);
+            accumulators[0].accumulate_encoded(ctx, weight, az);
+            accumulators[1].accumulate_encoded(ctx, weight, bz);
+            accumulators[2].accumulate_encoded(ctx, weight, cz);
         }
         let [az, bz, cz] = accumulators;
         [
@@ -305,15 +306,17 @@ where
 /// accumulation on raw equality weights, in transcript order
 /// `Q(-1), Q(M), Q(-2), Q(M + 1), ..., Q(infinity)`.
 pub(crate) fn compute_u32_native_skip_message_raw(
+    cfg: &FieldConfig,
     skip_vars: usize,
     eq_low: &[Raw],
     eq_high: &[Raw],
     products: NativeProducts<'_>,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
 ) -> Result<Vec<Field>, SumcheckError> {
     match skip_vars {
         1 => skip_message_raw_for::<2, 1>(
+            cfg,
             eq_low,
             eq_high,
             products,
@@ -323,6 +326,7 @@ pub(crate) fn compute_u32_native_skip_message_raw(
             &TOP_DIFFERENCE_K1,
         ),
         2 => skip_message_raw_for::<4, 3>(
+            cfg,
             eq_low,
             eq_high,
             products,
@@ -332,6 +336,7 @@ pub(crate) fn compute_u32_native_skip_message_raw(
             &TOP_DIFFERENCE_K2,
         ),
         3 => skip_message_raw_for::<8, 7>(
+            cfg,
             eq_low,
             eq_high,
             products,
@@ -341,6 +346,7 @@ pub(crate) fn compute_u32_native_skip_message_raw(
             &TOP_DIFFERENCE_K3,
         ),
         4 => skip_message_raw_for::<16, 15>(
+            cfg,
             eq_low,
             eq_high,
             products,
@@ -358,7 +364,8 @@ pub(crate) fn compute_u32_native_skip_message_raw(
 /// [`accumulate_signed_i128`].
 #[inline(always)]
 fn accumulate_signed_i128_raw(
-    accumulators: &mut [MontyLinearAccumulator128; 2],
+    ctx: &field::FpCtx<2>,
+    accumulators: &mut [field::FpLinearAcc<2, 1>; 2],
     weight: Raw,
     negative_weight: Raw,
     value: i128,
@@ -366,17 +373,18 @@ fn accumulate_signed_i128_raw(
     let mask = (value >> 127) as u128;
     let magnitude = ((value as u128) ^ mask).wrapping_sub(mask);
     let selected = (weight & !mask) | (negative_weight & mask);
-    accumulators[0].multiply_accumulate_raw(selected, magnitude as u64);
-    accumulators[1].multiply_accumulate_raw(selected, (magnitude >> 64) as u64);
+    accumulators[0].accumulate_encoded(ctx, selected, magnitude as u64);
+    accumulators[1].accumulate_encoded(ctx, selected, (magnitude >> 64) as u64);
 }
 
 #[allow(clippy::too_many_arguments)]
 fn skip_message_raw_for<const M: usize, const LANES: usize>(
+    cfg: &FieldConfig,
     eq_low: &[Raw],
     eq_high: &[Raw],
     products: NativeProducts<'_>,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     finite_lagrange: &[[i64; M]],
     top_difference: &[i64; M],
 ) -> Result<Vec<Field>, SumcheckError> {
@@ -397,13 +405,13 @@ fn skip_message_raw_for<const M: usize, const LANES: usize>(
     {
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
-    let two_to_64 = ctx.raw(&Field::from_with_cfg(1_u128 << 64, ctx.config()));
-    let negative_low: Vec<Raw> = eq_low.iter().map(|&weight| ctx.neg(weight)).collect();
+    let two_to_64 = ctx.native_residue_u128(1_u128 << 64);
+    let negative_low: Vec<Raw> = eq_low.iter().map(|&weight| ctx.neg_raw(weight)).collect();
     let low_len = eq_low.len();
 
-    let bucket = |high_index: usize| -> [MontyProductAccumulator128; LANES] {
-        let mut inner: [[MontyLinearAccumulator128; 2]; LANES] =
-            std::array::from_fn(|_| [MontyLinearAccumulator128::default(); 2]);
+    let bucket = |high_index: usize| -> [field::FpProductAcc<2>; LANES] {
+        let mut inner: [[field::FpLinearAcc<2, 1>; 2]; LANES] =
+            std::array::from_fn(|_| [field::FpLinearAcc::<2, 1>::default(); 2]);
         let suffix_start = high_index * low_len;
         for (low_index, (&weight, &negative_weight)) in eq_low.iter().zip(&negative_low).enumerate()
         {
@@ -417,11 +425,18 @@ fn skip_message_raw_for<const M: usize, const LANES: usize>(
                 let bz_at = interpolate_u32(bz, coefficients);
                 let cz_at = interpolate_u64(cz, coefficients);
                 let residual = i128::from(az_at) * i128::from(bz_at) - cz_at;
-                accumulate_signed_i128_raw(&mut inner[lane], weight, negative_weight, residual);
+                accumulate_signed_i128_raw(
+                    ctx,
+                    &mut inner[lane],
+                    weight,
+                    negative_weight,
+                    residual,
+                );
             }
             let az_top = interpolate_u32(az, top_difference);
             let bz_top = interpolate_u32(bz, top_difference);
             accumulate_signed_i128_raw(
+                ctx,
                 &mut inner[LANES - 1],
                 weight,
                 negative_weight,
@@ -429,24 +444,24 @@ fn skip_message_raw_for<const M: usize, const LANES: usize>(
             );
         }
         let high_weight = eq_high[high_index];
-        let mut outer: [MontyProductAccumulator128; LANES] =
-            std::array::from_fn(|_| MontyProductAccumulator128::default());
+        let mut outer: [field::FpProductAcc<2>; LANES] =
+            std::array::from_fn(|_| field::FpProductAcc::<2>::default());
         for (outer, [low, high]) in outer.iter_mut().zip(inner) {
-            let low = low.reduce_raw(reducer);
-            let high = high.reduce_raw(reducer);
-            let value = ctx.add(low, ctx.mul(high, two_to_64));
-            outer.multiply_accumulate_raw(high_weight, value);
+            let low = low.reduce_encoded(reducer);
+            let high = high.reduce_encoded(reducer);
+            let value = ctx.add_raw(low, ctx.mul_raw(high, two_to_64));
+            outer.accumulate_encoded(ctx, high_weight, value);
         }
         outer
     };
-    let merge = |mut left: [MontyProductAccumulator128; LANES],
-                 right: [MontyProductAccumulator128; LANES]| {
+    let merge = |mut left: [field::FpProductAcc<2>; LANES],
+                 right: [field::FpProductAcc<2>; LANES]| {
         for (left, right) in left.iter_mut().zip(right) {
             *left += right;
         }
         left
     };
-    let zero = || std::array::from_fn(|_| MontyProductAccumulator128::default());
+    let zero = || std::array::from_fn(|_| field::FpProductAcc::<2>::default());
 
     #[cfg(feature = "parallel")]
     let outer = if should_parallelize(az.len() / M) {
@@ -462,16 +477,18 @@ fn skip_message_raw_for<const M: usize, const LANES: usize>(
 
     let mut message: Vec<Field> = outer
         .into_iter()
-        .map(|accumulator| ctx.field(accumulator.reduce_raw(reducer)))
+        .map(|accumulator| {
+            crate::utils::delayed_reduction::element(&cfg, accumulator.reduce_encoded(reducer))
+        })
         .collect();
     // Q(infinity) = (leading lane) / ((M - 1)!)², exactly as the generic kernel.
-    let factorial = Field::from_with_cfg(factorial(M - 1), ctx.config());
-    let inverse_factorial = Field::one_with_cfg(ctx.config()) / &factorial;
-    let infinity_scale = field_mul(&inverse_factorial, &inverse_factorial);
+    let factorial = Field::from_with_cfg(factorial(M - 1), cfg);
+    let inverse_factorial = *field::FieldOps::inverse_ct(cfg, &factorial).value();
+    let infinity_scale = (cfg).mul(&inverse_factorial, &inverse_factorial);
     let infinity = message
         .last_mut()
         .expect("every supported prefix skip has an infinity lane");
-    *infinity *= &infinity_scale;
+    *infinity = cfg.mul(&(*infinity), &(&infinity_scale));
     Ok(message)
 }
 
@@ -505,7 +522,7 @@ where
     let two_to_64 = Field::from_with_cfg(1_u128 << 64, field_cfg);
     let negative_low_weights = low_weights
         .iter()
-        .map(|weight| field_sub(&zero, weight))
+        .map(|weight| (field_cfg).sub(&zero, weight))
         .collect::<Vec<_>>();
 
     let accumulate_high = |outer: &mut [ProductAccumulator<R>; LANES], high_index: usize| {
@@ -520,6 +537,7 @@ where
             top_difference,
             &two_to_64,
             reducer,
+            &field_cfg,
         )
     };
 
@@ -560,19 +578,21 @@ where
 
     let mut message = outer
         .into_iter()
-        .map(|accumulator| <R as SumcheckProductReducer<Field>>::reduce(reducer, accumulator))
+        .map(|accumulator| {
+            <R as SumcheckProductReducer<Field>>::reduce(reducer, accumulator, field_cfg)
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     // The last lane accumulated Delta^(M-1) A * Delta^(M-1) B.  Dividing by
     // ((M - 1)!)^2 converts it to the coefficient of Y^(2M - 2), i.e.
     // Q(infinity).  The denominator is nonzero for every supported field.
     let factorial = Field::from_with_cfg(factorial(M - 1), field_cfg);
-    let inverse_factorial = Field::one_with_cfg(field_cfg) / &factorial;
-    let infinity_scale = field_mul(&inverse_factorial, &inverse_factorial);
+    let inverse_factorial = *field::FieldOps::inverse_ct(field_cfg, &factorial).value();
+    let infinity_scale = (field_cfg).mul(&inverse_factorial, &inverse_factorial);
     let infinity = message
         .last_mut()
         .expect("every supported prefix skip has an infinity lane");
-    *infinity *= &infinity_scale;
+    *infinity = field_cfg.mul(&(*infinity), &(&infinity_scale));
     Ok(message)
 }
 
@@ -588,6 +608,7 @@ fn accumulate_high_bucket<const M: usize, const LANES: usize, R>(
     top_difference: &[i64; M],
     two_to_64: &Field,
     reducer: &R,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) -> Result<(), SumcheckError>
 where
     R: SumcheckLinearReducer + SumcheckProductReducer<Field>,
@@ -630,9 +651,9 @@ where
     let high_weight = &high_weights[high_index];
     for (outer, limbs) in outer.iter_mut().zip(inner) {
         let [low, high] = limbs;
-        let low = <R as SumcheckLinearReducer>::reduce(reducer, low)?;
-        let high = <R as SumcheckLinearReducer>::reduce(reducer, high)?;
-        let value = field_add(&low, &field_mul(&high, two_to_64));
+        let low = <R as SumcheckLinearReducer>::reduce(reducer, low, &field_config)?;
+        let high = <R as SumcheckLinearReducer>::reduce(reducer, high, &field_config)?;
+        let value = (field_config).add(&low, &(field_config).mul(&high, two_to_64));
         <R as SumcheckProductReducer<Field>>::multiply_accumulate(
             reducer,
             outer,
@@ -680,7 +701,7 @@ where
             )
             .try_for_each(|(((az_output, bz_output), cz_output), ((az, bz), cz))| {
                 let [folded_az, folded_bz, folded_cz] =
-                    fold_native_block(az, bz, cz, &weights, reducer)?;
+                    fold_native_block(az, bz, cz, &weights, reducer, &field_cfg)?;
                 *az_output = folded_az;
                 *bz_output = folded_bz;
                 *cz_output = folded_cz;
@@ -694,7 +715,7 @@ where
             .zip(cz.evaluations.chunks_exact(M))
             .enumerate()
         {
-            let [az, bz, cz] = fold_native_block(az, bz, cz, &weights, reducer)?;
+            let [az, bz, cz] = fold_native_block(az, bz, cz, &weights, reducer, &field_cfg)?;
             folded_az[index] = az;
             folded_bz[index] = bz;
             folded_cz[index] = cz;
@@ -709,7 +730,7 @@ where
         .zip(cz.evaluations.chunks_exact(M))
         .enumerate()
     {
-        let [az, bz, cz] = fold_native_block(az, bz, cz, &weights, reducer)?;
+        let [az, bz, cz] = fold_native_block(az, bz, cz, &weights, reducer, &field_cfg)?;
         folded_az[index] = az;
         folded_bz[index] = bz;
         folded_cz[index] = cz;
@@ -737,6 +758,7 @@ fn fold_native_block<R>(
     cz: &[u64],
     weights: &[Field],
     reducer: &R,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) -> Result<[Field; 3], SumcheckError>
 where
     R: SumcheckLinearReducer,
@@ -770,9 +792,9 @@ where
 
     let [az, bz, cz] = accumulators;
     Ok([
-        <R as SumcheckLinearReducer>::reduce(reducer, az)?,
-        <R as SumcheckLinearReducer>::reduce(reducer, bz)?,
-        <R as SumcheckLinearReducer>::reduce(reducer, cz)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, az, &field_config)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, bz, &field_config)?,
+        <R as SumcheckLinearReducer>::reduce(reducer, cz, &field_config)?,
     ])
 }
 
@@ -785,8 +807,8 @@ fn base_lagrange_weights<const M: usize>(
     let mut prefix = Vec::with_capacity(M + 1);
     prefix.push(one.clone());
     for point in 0..M {
-        let factor = field_sub(challenge, &Field::from_with_cfg(point as u64, field_cfg));
-        prefix.push(field_mul(
+        let factor = (field_cfg).sub(challenge, &Field::from_with_cfg(point as u64, field_cfg));
+        prefix.push((field_cfg).mul(
             prefix.last().expect("prefix always starts with one"),
             &factor,
         ));
@@ -794,19 +816,22 @@ fn base_lagrange_weights<const M: usize>(
 
     let mut suffix = vec![one.clone(); M + 1];
     for point in (0..M).rev() {
-        let factor = field_sub(challenge, &Field::from_with_cfg(point as u64, field_cfg));
-        suffix[point] = field_mul(&factor, &suffix[point + 1]);
+        let factor = (field_cfg).sub(challenge, &Field::from_with_cfg(point as u64, field_cfg));
+        suffix[point] = (field_cfg).mul(&factor, &suffix[point + 1]);
     }
 
     let factorial = Field::from_with_cfg(factorial(M - 1), field_cfg);
-    let inverse_factorial = one / &factorial;
+    let inverse_factorial = *field::FieldOps::inverse_ct(field_cfg, &factorial).value();
     (0..M)
         .map(|point| {
             // 1 / prod_{t != point}(point - t)
             //   = (-1)^(M - 1 - point) binom(M - 1, point) / (M - 1)!.
             let coefficient = Field::from_with_cfg(top_difference[point], field_cfg);
-            let numerator = field_mul(&prefix[point], &suffix[point + 1]);
-            field_mul(&field_mul(&numerator, &coefficient), &inverse_factorial)
+            let numerator = (field_cfg).mul(&prefix[point], &suffix[point + 1]);
+            (field_cfg).mul(
+                &(field_cfg).mul(&numerator, &coefficient),
+                &inverse_factorial,
+            )
         })
         .collect()
 }
@@ -918,14 +943,8 @@ fn accumulate_signed_i128<R>(
     // endpoint without overflow.
     let sign_mask = (value >> 127) as u128;
     let magnitude = ((value as u128) ^ sign_mask).wrapping_sub(sign_mask);
-    let selected_weight = Field::from_montgomery(
-        CtSelect::ct_select(
-            weight.as_montgomery(),
-            negative_weight.as_montgomery(),
-            Choice::from((sign_mask & 1) as u8),
-        ),
-        weight.cfg(),
-    );
+    let selected_weight =
+        CtSelect::ct_select(weight, &negative_weight, CtMask::from_lsb(sign_mask as u64));
     let low = magnitude as u64;
     let high = (magnitude >> 64) as u64;
     <R as SumcheckLinearReducer>::multiply_accumulate(
@@ -988,27 +1007,6 @@ const fn factorial(value: usize) -> u64 {
         result *= factor as u64;
         factor += 1;
     }
-    result
-}
-
-#[inline]
-fn field_add(left: &Field, right: &Field) -> Field {
-    let mut result = left.clone();
-    result += right;
-    result
-}
-
-#[inline]
-fn field_sub(left: &Field, right: &Field) -> Field {
-    let mut result = left.clone();
-    result -= right;
-    result
-}
-
-#[inline]
-fn field_mul(left: &Field, right: &Field) -> Field {
-    let mut result = left.clone();
-    result *= right;
     result
 }
 
@@ -1093,14 +1091,11 @@ const TOP_DIFFERENCE_K4: [i64; 16] = [
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
-    };
 
     use super::*;
     use crate::piop::spartan::{
         make_equality_factors,
-        sumcheck::{CryptoBigintSumcheckReducer, OptimizedSumcheckReducer},
+        sumcheck::BigUintSumcheckOracle,
         univariate_skip::{compute_field_skip_message, fold_field_prefix},
     };
 
@@ -1155,14 +1150,14 @@ mod tests {
 
     #[test]
     fn checked_entry_points_reject_wide_native_multiplicands() {
-        let field_cfg = F128::make_cfg(&Uint::from(TEST_MODULUS)).unwrap();
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let field_cfg = Fp::<2>::make_cfg(&Uint::from(TEST_MODULUS)).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let tau_tail = [
-            F128::from_with_cfg(17_u64, &field_cfg),
-            F128::from_with_cfg(29_u64, &field_cfg),
+            Fp::<2>::from_with_cfg(17_u64, &field_cfg),
+            Fp::<2>::from_with_cfg(29_u64, &field_cfg),
         ];
         let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-        let challenge = F128::from_with_cfg(43_u64, &field_cfg);
+        let challenge = Fp::<2>::from_with_cfg(43_u64, &field_cfg);
         let mut products = patterned_native_products(3);
         products.az.evaluations[0] = u64::from(u32::MAX) + 1;
 
@@ -1177,15 +1172,15 @@ mod tests {
     }
 
     fn check_native_messages_and_folds(modulus: u128) {
-        let field_cfg = F128::make_cfg(&Uint::from(modulus)).unwrap();
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
-        let reference_reducer = CryptoBigintSumcheckReducer::new(&field_cfg).unwrap();
+        let field_cfg = Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+        let reference_reducer = BigUintSumcheckOracle::new(&field_cfg).unwrap();
         let tau_tail = [
-            F128::from_with_cfg(17_u64, &field_cfg),
-            F128::from_with_cfg(29_u64, &field_cfg),
+            Fp::<2>::from_with_cfg(17_u64, &field_cfg),
+            Fp::<2>::from_with_cfg(29_u64, &field_cfg),
         ];
         let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-        let challenge = F128::from_with_cfg(43_u64, &field_cfg);
+        let challenge = Fp::<2>::from_with_cfg(43_u64, &field_cfg);
 
         for skip_vars in 1..=4 {
             let native_products = patterned_native_products(skip_vars + tau_tail.len());

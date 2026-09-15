@@ -35,7 +35,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 
 /// SplitMix64 — same constants as the other `dump_*_vectors` bins.
 struct Rng(u64);
@@ -50,15 +50,15 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn next_f128(&mut self) -> F128 {
-        F128 {
+    fn next_f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
     }
 }
 
-fn write_f128(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn write_f128(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -74,8 +74,8 @@ fn main() -> std::io::Result<()> {
     let init_len = 1usize << log_len;
 
     let mut rng = Rng::new(0xC0FFEE);
-    let mut a: Vec<F128> = (0..init_len).map(|_| rng.next_f128()).collect();
-    let mut b: Vec<F128> = (0..init_len).map(|_| rng.next_f128()).collect();
+    let mut a: Vec<Gf128> = (0..init_len).map(|_| rng.next_f128()).collect();
+    let mut b: Vec<Gf128> = (0..init_len).map(|_| rng.next_f128()).collect();
 
     let mut w = BufWriter::new(File::create(&path)?);
     w.write_all(&0x534D_4331u32.to_le_bytes())?; // "SMC1"
@@ -91,8 +91,8 @@ fn main() -> std::io::Result<()> {
     // L rounds: message over current a,b (adjacent pairing), then fold by r.
     for _k in 0..log_len {
         let half = a.len() / 2;
-        let mut u_0 = F128::ZERO;
-        let mut u_2 = F128::ZERO;
+        let mut u_0 = Gf128::ZERO;
+        let mut u_2 = Gf128::ZERO;
         for j in 0..half {
             let a0 = a[2 * j];
             let a1 = a[2 * j + 1];

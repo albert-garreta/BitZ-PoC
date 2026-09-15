@@ -1,0 +1,10 @@
+{
+  "commit": "6271724d75570513aa1963381fbf5989933e5b42",
+  "purpose": "Frozen baseline for the independent one-inversion comparator; build.rs only specializes its field contract to the old concrete type.",
+  "files": {
+    "sumcheck.rs": {
+      "source": "src/piop/spartan/sumcheck.rs",
+      "sha256": "de076fb36519cf587b0784793a77485a9ecfd72502278bda0776e9b032505e89"
+    }
+  }
+}

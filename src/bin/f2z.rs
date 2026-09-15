@@ -144,27 +144,24 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use f2z::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
 use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
-    commit_rs_ligerito_rows,
-    mle_eval_mod_q_lig_size_breakdown,
-};
 use f2z::ligerito_flock::FlockCommitHint;
 use f2z::ligerito_flock::{
     OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
     ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
     verify_mle_eval_mod_q_ligerito_runtime,
 };
-use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
+use f2z::ligerito_flock::{commit_rs_ligerito_rows, mle_eval_mod_q_lig_size_breakdown};
 use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::piop::spartan::f2z::U32MulLigerito;
 use f2z::piop::spartan::{
-    IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulF2zWidth,
-    U32MulProof, U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
+    IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulF2zWidth, U32MulProof,
+    U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
+use flock_core::pcs::ligerito::LigeritoSecurityConfig;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-use flock_core::pcs::ligerito::{LigeritoSecurityConfig};
 
 // Peak-heap tracker (wraps System) — the live-heap high-water, the same
 // notion as `benches/pcs.rs` / flock's benches, so numbers compare.
@@ -237,7 +234,10 @@ fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
 /// Miller–Rabin rounds of the transcript prime sampler (the library
 /// default: a composite survives with probability `≈ 2^-128`).
 fn standalone_prime_sampler(q_bits: usize) -> ExtProjParams {
-    ExtProjParams { prime_bits: q_bits, ..ExtProjParams::default() }
+    ExtProjParams {
+        prime_bits: q_bits,
+        ..ExtProjParams::default()
+    }
 }
 
 /// The transcript-sampled instance of a standalone claim: the prime, the
@@ -257,8 +257,9 @@ fn sample_standalone_instance(
     q_bits: usize,
 ) -> StandaloneInstance {
     let _g = tracing::info_span!("mq:sample_instance").entered();
-    let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits));
-    let arith = ProjArith::new(q);
+    let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits))
+        .expect("bounded standalone prime search");
+    let arith = field::FpCtx::from_prime_u128(q);
     let r1: Vec<u128> = (0..p.row_vars)
         .map(|_| sample_proj_point(transcript, q))
         .collect();
@@ -273,13 +274,13 @@ fn sample_standalone_instance(
 }
 
 /// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
-fn eq_table_mod_q(arith: &ProjArith, r: &[u128]) -> Vec<u128> {
-    let q = arith.q();
+fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
+    let q = arith.modulus_u128();
     let mut table = vec![1u128 % q];
     for &coord in r {
         let mut next = Vec::with_capacity(table.len() * 2);
         for &v in &table {
-            let v1 = arith.mul(v, coord);
+            let v1 = arith.mul_u128(v, coord);
             let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
             next.push(v0);
             next.push(v1);
@@ -352,14 +353,24 @@ struct StepRow {
 }
 
 const fn step(name: &'static str, plus: &'static [&'static str]) -> StepRow {
-    StepRow { name, plus, minus: &[], sub: false }
+    StepRow {
+        name,
+        plus,
+        minus: &[],
+        sub: false,
+    }
 }
 const fn substep(
     name: &'static str,
     plus: &'static [&'static str],
     minus: &'static [&'static str],
 ) -> StepRow {
-    StepRow { name, plus, minus, sub: true }
+    StepRow {
+        name,
+        plus,
+        minus,
+        sub: true,
+    }
 }
 
 /// Prover steps of the single-claim mod-q opening, in execution order.
@@ -372,7 +383,11 @@ const PROVE_STEP_ROWS: &[StepRow] = &[
     substep("live-col scan (mc:live_cols)", &["mc:live_cols"], &[]),
     substep("level build (mf:build_levels)", &["mf:build_levels"], &[]),
     substep("leaf-layer gen (mf:bitgen)", &["mf:bitgen"], &[]),
-    substep("in-tree rounds (mf:phaseA - bitgen)", &["mf:phaseA"], &["mf:bitgen"]),
+    substep(
+        "in-tree rounds (mf:phaseA - bitgen)",
+        &["mf:phaseA"],
+        &["mf:bitgen"],
+    ),
     substep("tree-index rounds (mf:phaseB)", &["mf:phaseB"], &[]),
     substep(
         "(forest rest)",
@@ -439,10 +454,19 @@ fn print_steps(
         return;
     }
     let reps = rep_totals.len();
-    let pct = |ms: f64| if total_med > 0.0 { ms / total_med * 100.0 } else { 0.0 };
+    let pct = |ms: f64| {
+        if total_med > 0.0 {
+            ms / total_med * 100.0
+        } else {
+            0.0
+        }
+    };
     let line = |sub: bool, name: &str, ms: f64| {
         let (indent, width) = if sub { ("      · ", 42) } else { ("    ", 46) };
-        println!("{indent}{name:<width$} {ms:>10.decimals$} ms  {p:5.1}%", p = pct(ms));
+        println!(
+            "{indent}{name:<width$} {ms:>10.decimals$} ms  {p:5.1}%",
+            p = pct(ms)
+        );
     };
     for row in rows {
         if !steps.has(row.plus) {
@@ -567,19 +591,26 @@ fn parse_args() -> Opts {
             "--help" | "-h" => usage(),
             "--threads" | "-j" => {
                 o.threads = Some(
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                    args.next()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| usage()),
                 );
             }
             "--reps" => {
-                o.reps = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+                o.reps = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage());
             }
             "--profile" => {
                 profile_explicit = true;
                 o.profile = args.next().unwrap_or_else(|| usage());
             }
             "--word-bits" | "-w" => {
-                o.word_bits =
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+                o.word_bits = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage());
             }
             "--family" => {
                 o.family = Some(args.next().unwrap_or_else(|| usage()));
@@ -589,17 +620,23 @@ fn parse_args() -> Opts {
             }
             "--taps-delta" => {
                 o.taps_delta = Some(
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                    args.next()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| usage()),
                 );
             }
             "--taps-rounds" => {
                 o.taps_rounds = Some(
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                    args.next()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| usage()),
                 );
             }
             "--taps-grp" => {
                 o.taps_grp = Some(
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()),
+                    args.next()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| usage()),
                 );
             }
             "--sweep" => {
@@ -614,7 +651,11 @@ fn parse_args() -> Opts {
                 o.latex = Some(args.next().unwrap_or_else(|| usage()));
             }
             "--mul" => {
-                o.mul = Some(args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage()));
+                o.mul = Some(
+                    args.next()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| usage()),
+                );
             }
             "--mul-sweep" => {
                 let spec = args.next().unwrap_or_else(|| usage());
@@ -625,11 +666,16 @@ fn parse_args() -> Opts {
                 o.mul_sweep = Some((es, spec));
             }
             "--lambda" => {
-                o.lambda = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+                o.lambda = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage());
             }
             "--cooldown" => {
-                o.cooldown_s =
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+                o.cooldown_s = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage());
             }
             "--sweep-threads" => {
                 let spec = args.next().unwrap_or_else(|| usage());
@@ -647,8 +693,10 @@ fn parse_args() -> Opts {
                 }
             }
             "--rep-cooldown" => {
-                o.rep_cooldown_s =
-                    args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
+                o.rep_cooldown_s = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage());
             }
             other => match other.parse::<usize>() {
                 Ok(v) => pos.push(v),
@@ -671,7 +719,9 @@ fn parse_args() -> Opts {
     }
     if modes == 1 {
         if !pos.is_empty() {
-            eprintln!("--sweep/--mul/--mul-sweep take their shape from their own argument; drop the positionals");
+            eprintln!(
+                "--sweep/--mul/--mul-sweep take their shape from their own argument; drop the positionals"
+            );
             exit(2);
         }
     } else {
@@ -703,8 +753,14 @@ fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
     let mut out = Vec::new();
     for part in spec.split(',').map(str::trim).filter(|p| !p.is_empty()) {
         if let Some((a, b)) = part.split_once('-') {
-            let lo: usize = a.trim().parse().map_err(|_| format!("bad range start {a:?}"))?;
-            let hi: usize = b.trim().parse().map_err(|_| format!("bad range end {b:?}"))?;
+            let lo: usize = a
+                .trim()
+                .parse()
+                .map_err(|_| format!("bad range start {a:?}"))?;
+            let hi: usize = b
+                .trim()
+                .parse()
+                .map_err(|_| format!("bad range end {b:?}"))?;
             if lo > hi {
                 return Err(format!("empty range {part:?}"));
             }
@@ -787,7 +843,10 @@ impl LigSecurity {
             _ => "ligerito ad-hoc test config (UNAUDITED — no security claim)".to_string(),
         };
         let round0 = match self.ood {
-            Some(round) => format!("Round 0 (OOD) executed with {} grinding bits", round.grinding_bits),
+            Some(round) => format!(
+                "Round 0 (OOD) executed with {} grinding bits",
+                round.grinding_bits
+            ),
             None => "Round 0 (OOD) skipped (unique-decoding opener)".to_string(),
         };
         format!(
@@ -800,8 +859,14 @@ impl LigSecurity {
 /// Parse `<r0>:<k0>[:<bits>]` (the tail of `custom:`/`udr:`/`udrg:`).
 fn parse_rk_bits(rest: &str) -> (usize, usize, Option<usize>) {
     let mut it = rest.split(':');
-    let r0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
-    let k0: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or_else(|| usage());
+    let r0: usize = it
+        .next()
+        .and_then(|x| x.parse().ok())
+        .unwrap_or_else(|| usage());
+    let k0: usize = it
+        .next()
+        .and_then(|x| x.parse().ok())
+        .unwrap_or_else(|| usage());
     let bits: Option<usize> = it.next().map(|x| x.parse().ok().unwrap_or_else(|| usage()));
     (r0, k0, bits)
 }
@@ -824,14 +889,28 @@ fn resolve_configs(
     LigSecurity,
     f2z::ligerito_flock::ResolvedLigerito,
 ) {
-    let target = if profile == "secure" { 128 } else {
-        profile.split(':').nth(3).map(|n| n.parse::<usize>().unwrap_or_else(|_| usage())).unwrap_or(100)
+    let target = if profile == "secure" {
+        128
+    } else {
+        profile
+            .split(':')
+            .nth(3)
+            .map(|n| n.parse::<usize>().unwrap_or_else(|_| usage()))
+            .unwrap_or(100)
     };
     let resolved = f2z::ligerito_flock::LigeritoSelection::parse(profile, target)
-        .and_then(|selection| selection.resolve(m_p, target)).unwrap_or_else(|error| { eprintln!("{error}"); exit(2) });
+        .and_then(|selection| selection.resolve(m_p, target))
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            exit(2)
+        });
     let sec = lig_security(resolved.security());
-    ((resolved.prover().clone(), resolved.verifier().clone()), resolved.selection().name(), sec, resolved)
-
+    (
+        (resolved.prover().clone(), resolved.verifier().clone()),
+        resolved.selection().name(),
+        sec,
+        resolved,
+    )
 }
 
 fn main() {
@@ -891,7 +970,6 @@ fn main() {
     // The timed medians then carry the ~µs/prove scope overhead — orders
     // below the run-to-run band.
 
-
     let (t, s) = match (o.t, o.s) {
         (Some(t), Some(s)) => (t, s),
         _ => default_split(o.n, o.word_bits),
@@ -942,7 +1020,11 @@ fn main() {
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         hash_name(pc.merkle_hash),
-        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+        if f2z::utils::CHECKED {
+            "CHECKED (build with --features unchecked)"
+        } else {
+            "unchecked"
+        },
     );
     if lch > 1 {
         println!("note: {lch} mod-q chunks (t + W > 127 − q_bits) — prove scales ~×{lch}");
@@ -959,7 +1041,11 @@ fn main() {
 
     // Deterministic instance straight into per-column bit rows (the
     // memory-honest pattern — the u128 cell tensor never exists).
-    let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
+    let mask = if w >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << w) - 1
+    };
     let cell = |b: usize, c: usize| -> u128 {
         (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
     };
@@ -993,16 +1079,24 @@ fn main() {
     // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
     let instance = {
         let mut st = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        absorb_standalone_mod_q_statement(
+            &mut st,
+            &hint.commitment,
+            &p,
+            alpha_of(),
+            q_bits,
+            ood,
+            &vc,
+        );
         resolved.bind(&mut st);
         let _ = f2z::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
         sample_standalone_instance(&mut st, &p, q_bits)
     };
     let q = instance.q;
-    let arith = ProjArith::new(q);
+    let arith = field::FpCtx::from_prime_u128(q);
     let rw_q = instance.row_weights_q.clone();
     let cw_q = instance.col_weights_q.clone();
-    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce(1u128 << j)).collect();
+    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce_u128(1u128 << j)).collect();
     let mut y = 0u128;
     for (c, row) in rows.iter().enumerate() {
         let mut acc = 0u128;
@@ -1013,19 +1107,34 @@ fn main() {
                 bits &= bits - 1;
                 let i = (wi << 6) | bit;
                 let (b, j) = (i >> log_w, i & (w - 1));
-                let term = if j == 0 { rw_q[b] } else { arith.mul(rw_q[b], pow2_q[j]) };
-                acc = arith.add(acc, term);
+                let term = if j == 0 {
+                    rw_q[b]
+                } else {
+                    arith.mul_u128(rw_q[b], pow2_q[j])
+                };
+                acc = arith.add_u128(acc, term);
             }
         }
-        y = arith.add(y, arith.mul(cw_q[c], acc));
+        y = arith.add_u128(y, arith.mul_u128(cw_q[c], acc));
     }
     let prove_once = |hint: &FlockCommitHint| {
         let mut pt = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        absorb_standalone_mod_q_statement(
+            &mut pt,
+            &hint.commitment,
+            &p,
+            alpha_of(),
+            q_bits,
+            ood,
+            &vc,
+        );
         resolved.bind(&mut pt);
         let bound_ood = f2z::ligerito_flock::bind_prover_ood(&mut pt, &hint, ood);
         let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
-        assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
+        assert_eq!(
+            sampled.q, q,
+            "the transcript-sampled prime must be reproducible"
+        );
         absorb_standalone_mod_q_claim(&mut pt, q, y);
         prove_mle_eval_mod_q_ligerito_with_ood(
             &mut pt,
@@ -1040,9 +1149,19 @@ fn main() {
     };
     let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
         let mut vt = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        absorb_standalone_mod_q_statement(
+            &mut vt,
+            &hint.commitment,
+            &p,
+            alpha_of(),
+            q_bits,
+            ood,
+            &vc,
+        );
         resolved.bind(&mut vt);
-        let bound_ood = f2z::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref()).expect("Round 0");
+        let bound_ood =
+            f2z::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref())
+                .expect("Round 0");
         let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
         absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
         verify_mle_eval_mod_q_ligerito_runtime(
@@ -1063,17 +1182,24 @@ fn main() {
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {
-        let rows_i = if i + 1 == o.reps { std::mem::take(&mut rows) } else { rows.clone() };
-        let (h, t0) = f2z::observability::measure(
-            tracing::info_span!("f2z:h"),
-            || commit_rs_ligerito_rows(&p, rows_i, &pc),
-        ).expect("measure completed operation");
+        let rows_i = if i + 1 == o.reps {
+            std::mem::take(&mut rows)
+        } else {
+            rows.clone()
+        };
+        let (h, t0) = f2z::observability::measure(tracing::info_span!("f2z:h"), || {
+            commit_rs_ligerito_rows(&p, rows_i, &pc)
+        })
+        .expect("measure completed operation");
         commit_ms_v.push(t0.as_secs_f64() * 1e3);
         black_box(&h);
     }
     set_heap_tracking(true);
     let commit_ms = median(commit_ms_v);
-    println!("commit:  {commit_ms:9.2} ms   peak {commit_peak:8.2} MB   (median of {})", o.reps);
+    println!(
+        "commit:  {commit_ms:9.2} ms   peak {commit_peak:8.2} MB   (median of {})",
+        o.reps
+    );
 
     // Warm-up prove (excluded; tracked, so persistent scratch it allocates
     // is counted), the tracked peak probe (excluded), then the timed reps
@@ -1111,10 +1237,26 @@ fn main() {
         verify_once(&proof).expect("proof verifies");
         drop(verification);
         let intervals = recording.intervals().expect("query CLI trial");
-        prove_ms.push(f2z::observability::duration(&intervals, "cli:proving").unwrap().as_secs_f64() * 1e3);
-        verify_ms.push(f2z::observability::duration(&intervals, "cli:verification").unwrap().as_secs_f64() * 1e3);
-        prove_steps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:proving").unwrap());
-        verify_steps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:verification").unwrap());
+        prove_ms.push(
+            f2z::observability::duration(&intervals, "cli:proving")
+                .unwrap()
+                .as_secs_f64()
+                * 1e3,
+        );
+        verify_ms.push(
+            f2z::observability::duration(&intervals, "cli:verification")
+                .unwrap()
+                .as_secs_f64()
+                * 1e3,
+        );
+        prove_steps.absorb(
+            rep,
+            f2z::observability::phase_totals(&intervals, "cli:proving").unwrap(),
+        );
+        verify_steps.absorb(
+            rep,
+            f2z::observability::phase_totals(&intervals, "cli:verification").unwrap(),
+        );
         last_proof = Some(proof);
     }
 
@@ -1130,13 +1272,26 @@ fn main() {
         "prove:   {prove_med:9.2} ms   peak {prove_peak:8.2} MB   (median of {}, verified)",
         o.reps
     );
-    print_steps(&prove_steps, PROVE_STEP_ROWS, PROVE_TOP_LABELS, &prove_ms, prove_med, 2);
+    print_steps(
+        &prove_steps,
+        PROVE_STEP_ROWS,
+        PROVE_TOP_LABELS,
+        &prove_ms,
+        prove_med,
+        2,
+    );
     // The paper's prover buckets: per-rep bucket sums, then the median.
     let gp_ms = prove_steps.med(o.reps, PAPER_GP_LABELS, &[]);
     let rs_ms = prove_steps.med(o.reps, PAPER_RS_LABELS, &[]);
     let lig_ms = prove_steps.med(o.reps, PAPER_LIG_LABELS, &[]);
     let residual_ms = prove_med - (gp_ms + rs_ms + lig_ms);
-    let pct = |ms: f64| if prove_med > 0.0 { ms / prove_med * 100.0 } else { 0.0 };
+    let pct = |ms: f64| {
+        if prove_med > 0.0 {
+            ms / prove_med * 100.0
+        } else {
+            0.0
+        }
+    };
     println!(
         "    paper buckets: grand products {gp_ms:.2} ms ({:.1}%) | ring switch (incl. sumcheck) \
          {rs_ms:.2} ms ({:.1}%) | Ligerito open {lig_ms:.2} ms ({:.1}%) | residual {residual_ms:.2} ms",
@@ -1145,7 +1300,14 @@ fn main() {
         pct(lig_ms),
     );
     println!("verify:  {verify_med:9.2} ms");
-    print_steps(&verify_steps, VERIFY_STEP_ROWS, VERIFY_TOP_LABELS, &verify_ms, verify_med, 3);
+    print_steps(
+        &verify_steps,
+        VERIFY_STEP_ROWS,
+        VERIFY_TOP_LABELS,
+        &verify_ms,
+        verify_med,
+        3,
+    );
     println!(
         "proof:   {:9.1} KiB  (forest-side {:.1} | s_v {:.1} | ligerito {:.1})",
         bytes as f64 / 1024.0,
@@ -1199,15 +1361,27 @@ fn main() {
 /// pack (only on unpacked hints), the α-power leaf tables, the merged GKR
 /// forest, and the integer folds `u_c` — i.e. the paper's integer folds plus
 /// its batched grand-product IOR.
-const PAPER_GP_LABELS: &[&str] = &["mq:chunking", "mc:pack", "mc:pow2", "mc:forest", "mc:fold_v"];
+const PAPER_GP_LABELS: &[&str] = &[
+    "mq:chunking",
+    "mc:pack",
+    "mc:pow2",
+    "mc:forest",
+    "mc:fold_v",
+];
 /// Prover bucket "ring switch (incl. sumcheck)": the sumcheck that turns
 /// the forest's exit claim (an inner product with the weights) into an MLE
 /// evaluation claim, the ring-switch message `s_v`, and the φ-basis/target
 /// of the resulting Ligerito claim.
 /// Round 0 (the OOD evaluation `mc:ood` and its basis term `mq:ood_basis`)
 /// rides this bucket: it is opening-side glue of the same size class.
-const PAPER_RS_LABELS: &[&str] =
-    &["mc:presum_tbls", "mc:presum_run", "mq:rings", "mq:bcomb", "mc:ood", "mq:ood_basis"];
+const PAPER_RS_LABELS: &[&str] = &[
+    "mc:presum_tbls",
+    "mc:presum_run",
+    "mq:rings",
+    "mq:bcomb",
+    "mc:ood",
+    "mq:ood_basis",
+];
 /// Prover bucket "Ligerito open".
 const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
 
@@ -1301,7 +1475,8 @@ impl CliResult {
             self.proof_bytes,
             self.proof_nonlig_bytes,
             self.proof_lig_bytes,
-            self.peak_rss_bytes.map_or_else(|| "na".to_string(), |b| b.to_string()),
+            self.peak_rss_bytes
+                .map_or_else(|| "na".to_string(), |b| b.to_string()),
         )
     }
 
@@ -1323,13 +1498,22 @@ impl CliResult {
         };
         let opt_num = |k: &str| -> Result<Option<f64>, String> {
             let v = raw(k)?;
-            if v == "na" { Ok(None) } else { v.parse().map(Some).map_err(|e| format!("{k}: {e}")) }
+            if v == "na" {
+                Ok(None)
+            } else {
+                v.parse().map(Some).map_err(|e| format!("{k}: {e}"))
+            }
         };
         let opt_int = |k: &str| -> Result<Option<usize>, String> {
             let v = raw(k)?;
-            if v == "na" { Ok(None) } else { v.parse().map(Some).map_err(|e| format!("{k}: {e}")) }
+            if v == "na" {
+                Ok(None)
+            } else {
+                v.parse().map(Some).map_err(|e| format!("{k}: {e}"))
+            }
         };
-        let ligerito: serde_json::Value = f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
+        let ligerito: serde_json::Value =
+            f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
         f2z::ligerito_flock::ResolvedLigerito::validate_report(&ligerito)?;
         Ok(CliResult {
             ligerito,
@@ -1363,7 +1547,10 @@ impl CliResult {
             proof_lig_bytes: int("proof_lig_bytes")?,
             peak_rss_bytes: match kv.get("peak_rss_bytes") {
                 None | Some(&"na") => None,
-                Some(v) => Some(v.parse::<u64>().map_err(|e| format!("peak_rss_bytes: {e}"))?),
+                Some(v) => Some(
+                    v.parse::<u64>()
+                        .map_err(|e| format!("peak_rss_bytes: {e}"))?,
+                ),
             },
         })
     }
@@ -1478,19 +1665,26 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
         exit(2);
     }
     let exe = current_exe();
-    let latex_path: PathBuf = o
-        .latex
-        .clone()
-        .map_or_else(|| default_latex_path("raw-performance-table.tex"), PathBuf::from);
+    let latex_path: PathBuf = o.latex.clone().map_or_else(
+        || default_latex_path("raw-performance-table.tex"),
+        PathBuf::from,
+    );
     println!(
         "f2z sweep: n ∈ {{{}}} | reps={} | profile={} | threads={} | W={} | one fresh process per n | \
          table → {}",
-        ns.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
+        ns.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
         o.reps,
         o.profile,
         o.sweep_threads
             .as_ref()
-            .map(|ts| ts.iter().map(ToString::to_string).collect::<Vec<_>>().join(","))
+            .map(|ts| ts
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(","))
             .or_else(|| o.threads.map(|t| t.to_string()))
             .unwrap_or_else(|| "default".to_string()),
         o.word_bits,
@@ -1502,8 +1696,10 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
         Some(ts) => ts.iter().map(|&t| Some(t)).collect(),
         None => vec![o.threads],
     };
-    let cases: Vec<(usize, Option<usize>)> =
-        ns.iter().flat_map(|&n| thread_counts.iter().map(move |&t| (n, t))).collect();
+    let cases: Vec<(usize, Option<usize>)> = ns
+        .iter()
+        .flat_map(|&n| thread_counts.iter().map(move |&t| (n, t)))
+        .collect();
     let case_ids: Vec<usize> = (0..cases.len()).collect();
     let lines = run_children(&exe, &case_ids, "case", o.cooldown_s, |i| {
         let (n, threads) = cases[i];
@@ -1551,7 +1747,9 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
 /// Default table location: `paper/<name>` in the crate (`\input{<stem>}`
 /// from `paper/main.tex`).
 fn default_latex_path(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("paper").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("paper")
+        .join(name)
 }
 
 /// Machine/date/commit facts for a generated table's header (best effort).
@@ -1572,7 +1770,10 @@ fn probe_provenance() -> Provenance {
     let ecores = probe("sysctl", &["-n", "hw.perflevel1.physicalcpu"]);
     let mem_gb = probe("sysctl", &["-n", "hw.memsize"])
         .and_then(|m| m.parse::<f64>().ok())
-        .map_or_else(|| "?".to_string(), |b| format!("{:.0}", b / (1024.0 * 1024.0 * 1024.0)));
+        .map_or_else(
+            || "?".to_string(),
+            |b| format!("{:.0}", b / (1024.0 * 1024.0 * 1024.0)),
+        );
     let cores = match (pcores, ecores) {
         (Some(p), Some(e)) => format!("{ncpu} cores: {p} performance + {e} efficiency"),
         _ => format!("{ncpu} cores"),
@@ -1596,7 +1797,11 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
         "RUSTFLAGS=\"-C target-cpu=native\" cargo run --release --features unchecked -- \\\n%       {mode} {spec}"
     );
     if let (true, Some(ts)) = (mode == "--sweep", &o.sweep_threads) {
-        let list = ts.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
+        let list = ts
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let _ = write!(cmdline, " --sweep-threads {list}");
     } else if let Some(th) = o.threads {
         let _ = write!(cmdline, " --threads {th}");
@@ -1621,11 +1826,26 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
 }
 
 fn print_sweep_summary(rows: &[CliResult]) {
-    println!("\nsweep summary (medians; ms unless noted; proof KB = 1000 B; total = commit + prove):");
+    println!(
+        "\nsweep summary (medians; ms unless noted; proof KB = 1000 B; total = commit + prove):"
+    );
     println!(
         "  {:>3} {:>3} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7} {:>7}",
-        "n", "thr", "commit", "prove", "total", "grand-pr", "ring-sw", "ligerito", "verify", "proofKB",
-        "nonlig", "lig", "peakMB", "rssGB", "lig-b"
+        "n",
+        "thr",
+        "commit",
+        "prove",
+        "total",
+        "grand-pr",
+        "ring-sw",
+        "ligerito",
+        "verify",
+        "proofKB",
+        "nonlig",
+        "lig",
+        "peakMB",
+        "rssGB",
+        "lig-b"
     );
     for r in rows {
         println!(
@@ -1643,8 +1863,10 @@ fn print_sweep_summary(rows: &[CliResult]) {
             r.proof_nonlig_bytes as f64 / 1000.0,
             r.proof_lig_bytes as f64 / 1000.0,
             r.prove_peak_mb,
-            r.peak_rss_bytes
-                .map_or_else(|| "na".to_string(), |b| format!("{:.2}", b as f64 / (1u64 << 30) as f64)),
+            r.peak_rss_bytes.map_or_else(
+                || "na".to_string(),
+                |b| format!("{:.2}", b as f64 / (1u64 << 30) as f64)
+            ),
             na_f64(r.lig_achieved_bits),
         );
     }
@@ -1680,7 +1902,11 @@ fn fmt_ms(v: f64) -> String {
 /// Kilobytes (1000 B) for the table: 1 decimal below 100, none above.
 fn fmt_kb(bytes: usize) -> String {
     let kb = bytes as f64 / 1000.0;
-    if kb >= 100.0 { format!("{kb:.0}") } else { format!("{kb:.1}") }
+    if kb >= 100.0 {
+        format!("{kb:.0}")
+    } else {
+        format!("{kb:.1}")
+    }
 }
 /// Gigabytes (2^30 B) for the table: 1 decimal from 10, 2 from 1, else 3.
 fn fmt_gb_bytes(bytes: u64) -> String {
@@ -1697,17 +1923,19 @@ fn fmt_gb_bytes(bytes: u64) -> String {
 /// Write the paper's raw-performance table. The file is self-documenting:
 /// its header records the exact command, machine, date, commit, and every
 /// child's RESULT line.
-fn write_latex_table(
-    path: &Path,
-    rows: &[CliResult],
-    o: &Opts,
-    spec: &str,
-) -> std::io::Result<()> {
+fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> std::io::Result<()> {
     use std::fmt::Write as _;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let Provenance { cpu, cores, mem_gb, date, commit, rustc } = probe_provenance();
+    let Provenance {
+        cpu,
+        cores,
+        mem_gb,
+        date,
+        commit,
+        rustc,
+    } = probe_provenance();
     let thread_counts: Vec<usize> = {
         let mut v: Vec<usize> = rows.iter().map(|r| r.threads).collect();
         v.sort_unstable();
@@ -1715,13 +1943,20 @@ fn write_latex_table(
         v
     };
     let split = thread_counts.len() > 1;
-    let threads = thread_counts.iter().map(ToString::to_string).collect::<Vec<_>>().join(" and ");
+    let threads = thread_counts
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" and ");
     let hi = thread_counts.last().copied().unwrap_or(0);
     let split_note = if split {
         format!(
             " The per-step prover columns (\\emph{{commit}}, \\emph{{grand products}}, \\emph{{ring switch}}, \\emph{{Ligerito}}) are from the {hi}-thread runs; the prover \\emph{{total}} and the verifier time are given for {threads} threads; proof sizes do not depend on the thread count; \\emph{{peak mem.}} is the high-water resident set of the {hi}-thread child process, warm-up and peak probes included ($1$\\,GB $= 2^{{30}}$ bytes).{}",
             if o.rep_cooldown_s > 0 {
-                format!(" Timed repetitions are separated by ${}$\\,s of idle time to limit thermal throttling.", o.rep_cooldown_s)
+                format!(
+                    " Timed repetitions are separated by ${}$\\,s of idle time to limit thermal throttling.",
+                    o.rep_cooldown_s
+                )
             } else {
                 String::new()
             }
@@ -1756,17 +1991,28 @@ fn write_latex_table(
     let ood_bits_max = rows.iter().filter_map(|r| r.ood_bits).max();
     let ood_desc = match (ood_bits_min, ood_bits_max) {
         (Some(lo), Some(hi)) if lo == hi => format!("executed with {lo} grinding bits"),
-        (Some(lo), Some(hi)) => format!("executed with {lo}..{hi} grinding bits (per shape, ood_bits below)"),
+        (Some(lo), Some(hi)) => {
+            format!("executed with {lo}..{hi} grinding bits (per shape, ood_bits below)")
+        }
         _ => "skipped (unique-decoding opener)".to_string(),
     };
     let q_tex = if q_bits_min == q_bits_max {
-        format!("a prime $q$ sampled uniformly (after the commitment) from $[2^{{{}}}, 2^{{{q_bits_min}}})$", q_bits_min - 1)
+        format!(
+            "a prime $q$ sampled uniformly (after the commitment) from $[2^{{{}}}, 2^{{{q_bits_min}}})$",
+            q_bits_min - 1
+        )
     } else {
-        format!("a prime $q$ sampled uniformly (after the commitment) from $[2^{{b-1}}, 2^{{b}})$, $b = \\min(113, 127 - \\log \\codedim_1 - W)$ at cell width $W = 1$ ($b = {q_bits_min}, \\ldots, {q_bits_max}$)")
+        format!(
+            "a prime $q$ sampled uniformly (after the commitment) from $[2^{{b-1}}, 2^{{b}})$, $b = \\min(113, 127 - \\log \\codedim_1 - W)$ at cell width $W = 1$ ($b = {q_bits_min}, \\ldots, {q_bits_max}$)"
+        )
     };
     let round0_tex = match (ood_bits_min, ood_bits_max) {
-        (Some(lo), Some(hi)) if lo == hi => format!("Round 0 (the out-of-domain sample) is executed with ${lo}$ bits of grinding"),
-        (Some(lo), Some(hi)) => format!("Round 0 (the out-of-domain sample) is executed with $\\lceil \\log \\codedim - 23.7 \\rceil$ bits of grinding (${lo}$ to ${hi}$ over the table)"),
+        (Some(lo), Some(hi)) if lo == hi => {
+            format!("Round 0 (the out-of-domain sample) is executed with ${lo}$ bits of grinding")
+        }
+        (Some(lo), Some(hi)) => format!(
+            "Round 0 (the out-of-domain sample) is executed with $\\lceil \\log \\codedim - 23.7 \\rceil$ bits of grinding (${lo}$ to ${hi}$ over the table)"
+        ),
         _ => "Round 0 is skipped (unique-decoding opener)".to_string(),
     };
     // Ligerito geometry from the profile string when it is `custom:<r>:<k>`.
@@ -1789,26 +2035,92 @@ fn write_latex_table(
     };
 
     let mut out = String::new();
-    let _ = writeln!(out, "% Raw-performance table of F2Z (c:core_iop) — GENERATED FILE, do not edit by hand.");
-    let _ = writeln!(out, "% Generated by `f2z --sweep` (src/bin/f2z.rs) on {date} (UTC) at {commit}; {rustc}.");
-    let _ = writeln!(out, "% Regenerate (from the repo root; this file is overwritten):");
+    let _ = writeln!(
+        out,
+        "% Raw-performance table of F2Z (c:core_iop) — GENERATED FILE, do not edit by hand."
+    );
+    let _ = writeln!(
+        out,
+        "% Generated by `f2z --sweep` (src/bin/f2z.rs) on {date} (UTC) at {commit}; {rustc}."
+    );
+    let _ = writeln!(
+        out,
+        "% Regenerate (from the repo root; this file is overwritten):"
+    );
     let _ = writeln!(out, "%   {cmdline}");
-    let _ = writeln!(out, "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps");
-    let _ = writeln!(out, "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits; the table's prover");
-    let _ = writeln!(out, "%   Total = commit_ms + prove_ms (the Commit column sits inside the prover group).");
-    let _ = writeln!(out, "% Include with \\input{{raw-performance-table}} (relative to paper/).");
-    let _ = writeln!(out, "% Prover buckets (tracing span labels): grand products = {};", PAPER_GP_LABELS.join(" "));
-    let _ = writeln!(out, "%   ring switch incl. its sumcheck = {}; Ligerito = {}.", PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
-    let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual (transcript glue) is prove_residual_ms below.");
-    let _ = writeln!(out, "% Proof split: non-Ligerito = integer folds + GKR messages + sumcheck messages + ring-switch message (+ host-codec framing);");
-    let _ = writeln!(out, "%   Ligerito = the serialized Ligerito proof. KB = 1000 bytes.");
-    let _ = writeln!(out, "% Security: Ligerito ({lig_tag}, {lig_hash} Merkle trees) target {} bits round-by-round, achieved (min over rows/levels/terms) {}; per-row values in", na_usize(target), if achieved.is_finite() { format!("{achieved:.2}") } else { "na".into() });
-    let _ = writeln!(out, "%   lig_achieved_bits / lig_l0_bits (L0's implicit post-commit list binding). F2Z-side rounds: GKR 3/2^128, sumcheck 2/2^128,");
-    let _ = writeln!(out, "%   ring switch 7/2^128 (all ≥ 125 bits). The evaluation prime q is sampled from the transcript after the commitment,");
-    let _ = writeln!(out, "%   uniformly among the primes in [2^(b-1), 2^b), b = {q_desc} per shape (q_lo_log2/q_bits below; b = min(113, 127 - t - W), the");
-    let _ = writeln!(out, "%   one-chunk exponent-fold width), and the point (r1, r2) is sampled after q — the instance is derived inside the timers.");
-    let _ = writeln!(out, "%   Round 0 (out-of-domain sampling) of c:core_iop: {ood_desc}. Round 1 (random prime projection) is not needed: q is");
-    let _ = writeln!(out, "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood, mq:ood_basis).");
+    let _ = writeln!(
+        out,
+        "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps"
+    );
+    let _ = writeln!(
+        out,
+        "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits; the table's prover"
+    );
+    let _ = writeln!(
+        out,
+        "%   Total = commit_ms + prove_ms (the Commit column sits inside the prover group)."
+    );
+    let _ = writeln!(
+        out,
+        "% Include with \\input{{raw-performance-table}} (relative to paper/)."
+    );
+    let _ = writeln!(
+        out,
+        "% Prover buckets (tracing span labels): grand products = {};",
+        PAPER_GP_LABELS.join(" ")
+    );
+    let _ = writeln!(
+        out,
+        "%   ring switch incl. its sumcheck = {}; Ligerito = {}.",
+        PAPER_RS_LABELS.join(" "),
+        PAPER_LIG_LABELS.join(" ")
+    );
+    let _ = writeln!(
+        out,
+        "%   Bucket medians need not sum to the total median; the signed residual (transcript glue) is prove_residual_ms below."
+    );
+    let _ = writeln!(
+        out,
+        "% Proof split: non-Ligerito = integer folds + GKR messages + sumcheck messages + ring-switch message (+ host-codec framing);"
+    );
+    let _ = writeln!(
+        out,
+        "%   Ligerito = the serialized Ligerito proof. KB = 1000 bytes."
+    );
+    let _ = writeln!(
+        out,
+        "% Security: Ligerito ({lig_tag}, {lig_hash} Merkle trees) target {} bits round-by-round, achieved (min over rows/levels/terms) {}; per-row values in",
+        na_usize(target),
+        if achieved.is_finite() {
+            format!("{achieved:.2}")
+        } else {
+            "na".into()
+        }
+    );
+    let _ = writeln!(
+        out,
+        "%   lig_achieved_bits / lig_l0_bits (L0's implicit post-commit list binding). F2Z-side rounds: GKR 3/2^128, sumcheck 2/2^128,"
+    );
+    let _ = writeln!(
+        out,
+        "%   ring switch 7/2^128 (all ≥ 125 bits). The evaluation prime q is sampled from the transcript after the commitment,"
+    );
+    let _ = writeln!(
+        out,
+        "%   uniformly among the primes in [2^(b-1), 2^b), b = {q_desc} per shape (q_lo_log2/q_bits below; b = min(113, 127 - t - W), the"
+    );
+    let _ = writeln!(
+        out,
+        "%   one-chunk exponent-fold width), and the point (r1, r2) is sampled after q — the instance is derived inside the timers."
+    );
+    let _ = writeln!(
+        out,
+        "%   Round 0 (out-of-domain sampling) of c:core_iop: {ood_desc}. Round 1 (random prime projection) is not needed: q is"
+    );
+    let _ = writeln!(
+        out,
+        "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood, mq:ood_basis)."
+    );
     let _ = writeln!(out, "% RESULT lines (schema={RESULT_SCHEMA}):");
     for r in rows {
         let _ = writeln!(out, "% {}", r.to_line());
@@ -1821,13 +2133,22 @@ fn write_latex_table(
         let find = |n: usize, t: usize| rows.iter().find(|r| r.n == n && r.threads == t);
         let span = thread_counts.len();
         let bold = ">{\\bfseries}r";
-        let thr = thread_counts.iter().map(|t| format!("{t} thr")).collect::<Vec<_>>().join(" & ");
+        let thr = thread_counts
+            .iter()
+            .map(|t| format!("{t} thr"))
+            .collect::<Vec<_>>()
+            .join(" & ");
         let _ = writeln!(out, "\\begin{{table}}[H]");
         let _ = writeln!(out, "  \\centering");
         let _ = writeln!(out, "  \\footnotesize");
         let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{3pt}}");
         // Bold columns: prover totals, verifier times and the proof total.
-        let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrr{}{}rr>{{\\bfseries}}rr@{{}}}}", bold.repeat(span), bold.repeat(span));
+        let _ = writeln!(
+            out,
+            "  \\begin{{tabular}}{{@{{}}rrrrr{}{}rr>{{\\bfseries}}rr@{{}}}}",
+            bold.repeat(span),
+            bold.repeat(span)
+        );
         let _ = writeln!(out, "    \\toprule");
         let _ = writeln!(
             out,
@@ -1852,7 +2173,10 @@ fn write_latex_table(
             for &t in &thread_counts {
                 if let Some(r) = find(n, t) {
                     if r.proof_bytes != r_hi.proof_bytes {
-                        eprintln!("warning: n={n}: proof bytes differ between {t} and {hi} threads ({} vs {})", r.proof_bytes, r_hi.proof_bytes);
+                        eprintln!(
+                            "warning: n={n}: proof bytes differ between {t} and {hi} threads ({} vs {})",
+                            r.proof_bytes, r_hi.proof_bytes
+                        );
                     }
                 }
             }
@@ -1865,7 +2189,10 @@ fn write_latex_table(
             ];
             for &t in &thread_counts {
                 // Prover Total = the commitment plus the end-to-end prove (both medians).
-                cells.push(find(n, t).map_or_else(|| "--".to_string(), |r| fmt_ms(r.commit_ms + r.prove_ms)));
+                cells.push(
+                    find(n, t)
+                        .map_or_else(|| "--".to_string(), |r| fmt_ms(r.commit_ms + r.prove_ms)),
+                );
             }
             for &t in &thread_counts {
                 cells.push(find(n, t).map_or_else(|| "--".to_string(), |r| fmt_ms(r.verify_ms)));
@@ -1873,7 +2200,10 @@ fn write_latex_table(
             cells.push(fmt_kb(r_hi.proof_nonlig_bytes));
             cells.push(fmt_kb(r_hi.proof_lig_bytes));
             cells.push(fmt_kb(r_hi.proof_bytes));
-            cells.push(r_hi.peak_rss_bytes.map_or_else(|| "--".to_string(), fmt_gb_bytes));
+            cells.push(
+                r_hi.peak_rss_bytes
+                    .map_or_else(|| "--".to_string(), fmt_gb_bytes),
+            );
             let _ = writeln!(out, "    {} \\\\", cells.join(" & "));
         }
         let _ = writeln!(out, "    \\bottomrule");
@@ -1883,11 +2213,20 @@ fn write_latex_table(
         let _ = writeln!(out, "  \\small");
         let _ = writeln!(out, "  \\setlength{{\\tabcolsep}}{{4.5pt}}");
         // Bold columns: prover Total (6), Verifier (7), proof-size Total (10).
-        let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrr>{{\\bfseries}}r>{{\\bfseries}}rrr>{{\\bfseries}}r@{{}}}}");
+        let _ = writeln!(
+            out,
+            "  \\begin{{tabular}}{{@{{}}rrrrr>{{\\bfseries}}r>{{\\bfseries}}rrr>{{\\bfseries}}r@{{}}}}"
+        );
         let _ = writeln!(out, "    \\toprule");
-        let _ = writeln!(out, "    & \\multicolumn{{5}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\");
+        let _ = writeln!(
+            out,
+            "    & \\multicolumn{{5}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{3}}{{c}}{{Proof size (KB)}} \\\\"
+        );
         let _ = writeln!(out, "    \\cmidrule(lr){{2-6}} \\cmidrule(lr){{8-10}}");
-        let _ = writeln!(out, "    $\\log_2 \\codedim$ & Commit & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\");
+        let _ = writeln!(
+            out,
+            "    $\\log_2 \\codedim$ & Commit & Grand prod. & Ring switch & Ligerito & Total & (ms) & Non-Lig. & Ligerito & Total \\\\"
+        );
         let _ = writeln!(out, "    \\midrule");
         for r in rows {
             let _ = writeln!(
@@ -1954,7 +2293,7 @@ fn run_family(o: &Opts, fam: &str) {
         verify_mle_eval_mod_q_ligerito_rlc_family,
         verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
     };
-    use f2z::pcs::{FQ_MOD, Fq as PcsFq, extract_virtual_xor_rows, virtual_xor_params};
+    use f2z::pcs::{FQ_MOD, Q100Element as PcsFq, extract_virtual_xor_rows, virtual_xor_params};
 
     // `s`-suffixed presets are the SHARED-POINT maximal families (the full
     // XOR-closure of the j columns at ONE point, k = 2^j − 1).
@@ -1980,7 +2319,9 @@ fn run_family(o: &Opts, fam: &str) {
     let m_p = packed_vars(&p);
     let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
     if _lig_sec.ood.is_some() {
-        eprintln!("This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim.");
+        eprintln!(
+            "This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim."
+        );
         exit(2);
     }
     let family_cols: Vec<usize> = (0..j).collect();
@@ -2003,7 +2344,11 @@ fn run_family(o: &Opts, fam: &str) {
         p_x.col_vars,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
-        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+        if f2z::utils::CHECKED {
+            "CHECKED (build with --features unchecked)"
+        } else {
+            "unchecked"
+        },
     );
 
     // Deterministic committed bit rows (memory-honest packed-rows path).
@@ -2020,10 +2365,10 @@ fn run_family(o: &Opts, fam: &str) {
         })
         .collect();
     reset_peak();
-    let (hint, t0) = f2z::observability::measure(
-        tracing::info_span!("f2z:hint"),
-        || commit_rs_ligerito_rows(&p, rows, &pc),
-    ).expect("measure completed operation");
+    let (hint, t0) = f2z::observability::measure(tracing::info_span!("f2z:hint"), || {
+        commit_rs_ligerito_rows(&p, rows, &pc)
+    })
+    .expect("measure completed operation");
     let commit_ms = t0.as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
@@ -2050,8 +2395,10 @@ fn run_family(o: &Opts, fam: &str) {
         .enumerate()
         .map(|(i, &f)| {
             let rw = &rws[if shared { 0 } else { i }];
-            let cols: Vec<usize> =
-                (0..j).filter(|&fi| (f >> fi) & 1 == 1).map(|fi| family_cols[fi]).collect();
+            let cols: Vec<usize> = (0..j)
+                .filter(|&fi| (f >> fi) & 1 == 1)
+                .map(|fi| family_cols[fi])
+                .collect();
             let a_rows = extract_virtual_xor_rows(&layout, hint.rows(), &cols, 0, None);
             let mut y = PcsFq::from(0u128);
             for (c, row) in a_rows.iter().enumerate() {
@@ -2066,7 +2413,7 @@ fn run_family(o: &Opts, fam: &str) {
                 }
                 y = y + colw[c] * acc;
             }
-            y.0
+            y.canonical_u128()
         })
         .collect();
     let claims: Vec<RlcFamilyClaim<'_>> = (0..k)
@@ -2077,18 +2424,34 @@ fn run_family(o: &Opts, fam: &str) {
         })
         .collect();
     let sh_claims: Vec<RlcSharedClaim> = (0..k)
-        .map(|i| RlcSharedClaim { form: forms[i], claimed: cs[i] })
+        .map(|i| RlcSharedClaim {
+            form: forms[i],
+            claimed: cs[i],
+        })
         .collect();
 
     // Warm-up (excluded), then timed reps — every rep verified.
     let prove_once = |pt: &mut Blake3Transcript| {
         if shared {
             prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
-                pt, &hint, &layout, &family_cols, &rws[0], &sh_claims, alpha_of(), &pc,
+                pt,
+                &hint,
+                &layout,
+                &family_cols,
+                &rws[0],
+                &sh_claims,
+                alpha_of(),
+                &pc,
             )
         } else {
             prove_mle_eval_mod_q_ligerito_rlc_family(
-                pt, &hint, &layout, &family_cols, &claims, alpha_of(), &pc,
+                pt,
+                &hint,
+                &layout,
+                &family_cols,
+                &claims,
+                alpha_of(),
+                &pc,
             )
         }
     };
@@ -2102,28 +2465,56 @@ fn run_family(o: &Opts, fam: &str) {
     let mut last = None;
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
-        let (proof, t1) = f2z::observability::measure(
-            tracing::info_span!("f2z:proof"),
-            || prove_once(&mut pt),
-        ).expect("measure completed operation");
+        let (proof, t1) =
+            f2z::observability::measure(tracing::info_span!("f2z:proof"), || prove_once(&mut pt))
+                .expect("measure completed operation");
         prove_ms.push(t1.as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
-        let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t2_recording =
+            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t2 = tracing::info_span!("f2z:t2").entered();
         if shared {
             verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
-                &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rws[0], &sh_claims,
-                &colw, alpha_of(), &vc,
+                &mut vt,
+                &hint.commitment,
+                &proof,
+                &layout,
+                &family_cols,
+                &rws[0],
+                &sh_claims,
+                &colw,
+                alpha_of(),
+                &vc,
             )
             .expect("shared-point family proof verifies");
         } else {
             verify_mle_eval_mod_q_ligerito_rlc_family(
-                &mut vt, &hint.commitment, &proof, &layout, &family_cols, &claims, &colw,
-                alpha_of(), &vc,
+                &mut vt,
+                &hint.commitment,
+                &proof,
+                &layout,
+                &family_cols,
+                &claims,
+                &colw,
+                alpha_of(),
+                &vc,
             )
             .expect("family proof verifies");
         }
-        verify_ms.push({ drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "f2z:t2").expect("query completed operation") }.as_secs_f64() * 1e3);
+        verify_ms.push(
+            {
+                drop(t2);
+                f2z::observability::duration(
+                    &t2_recording
+                        .intervals()
+                        .expect("complete operation capture"),
+                    "f2z:t2",
+                )
+                .expect("query completed operation")
+            }
+            .as_secs_f64()
+                * 1e3,
+        );
         last = Some(proof);
     }
     reset_peak();
@@ -2185,19 +2576,26 @@ fn run_taps(o: &Opts, mode: &str) {
         verify_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_collapse,
         verify_mle_eval_mod_q_ligerito_tap_composed, verify_mle_eval_mod_q_ligerito_tap_family,
     };
-    use f2z::pcs::{FQ_BITS, FQ_MOD, Fq as PcsFq, virtual_xor_params};
+    use f2z::pcs::{FQ_BITS, FQ_MOD, Q100Element as PcsFq, virtual_xor_params};
     use f2z::taps::{TapOp, extract_virtual_tap_rows};
 
     // Word-group width: --taps-grp, else F2Z_TAPS_GRP, else 32-bit words.
     let grp: usize = o
         .taps_grp
-        .or_else(|| std::env::var("F2Z_TAPS_GRP").ok().and_then(|v| v.parse().ok()))
+        .or_else(|| {
+            std::env::var("F2Z_TAPS_GRP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
         .unwrap_or(5);
     if !(1..=8).contains(&grp) {
         eprintln!("--taps-grp must be in 1..=8");
         exit(2);
     }
-    if !matches!(mode, "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6" | "cols4") {
+    if !matches!(
+        mode,
+        "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6" | "cols4"
+    ) {
         eprintln!(
             "unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched|mix6|cols4)"
         );
@@ -2209,7 +2607,9 @@ fn run_taps(o: &Opts, mode: &str) {
     }
     // δ: the --taps-delta flag, else the F2Z_TAPS_DELTA env, else 0.
     let delta = o.taps_delta.or_else(|| {
-        std::env::var("F2Z_TAPS_DELTA").ok().and_then(|v| v.parse().ok())
+        std::env::var("F2Z_TAPS_DELTA")
+            .ok()
+            .and_then(|v| v.parse().ok())
     });
     // `cols4` runs 4 committed columns; every other mode the 2-column
     // instance layout.
@@ -2233,16 +2633,29 @@ fn run_taps(o: &Opts, mode: &str) {
     let m_p = packed_vars(&p);
     let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
     if _lig_sec.ood.is_some() {
-        eprintln!("This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim.");
+        eprintln!(
+            "This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim."
+        );
         exit(2);
     }
 
     // The instance's tap lists (identities, two 3-tap rotation
     // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
     // pinned 2-cluster stream split.
-    let rot =
-        |col, amt, off| TapOp { col, grp_log2: grp, bit_amt: amt, bit_dropout: false, off };
-    let shl = |col, amt, off| TapOp { col, grp_log2: grp, bit_amt: amt, bit_dropout: true, off };
+    let rot = |col, amt, off| TapOp {
+        col,
+        grp_log2: grp,
+        bit_amt: amt,
+        bit_dropout: false,
+        off,
+    };
+    let shl = |col, amt, off| TapOp {
+        col,
+        grp_log2: grp,
+        bit_amt: amt,
+        bit_dropout: true,
+        off,
+    };
     let claim_taps: Vec<Vec<TapOp>> = if mode == "cols4" {
         // 4 committed columns: identity claims on each, plus the two
         // XOR-mixed pairs b₁ = ROT¹(a₁) ⊕ off¹(a₂) and
@@ -2285,9 +2698,10 @@ fn run_taps(o: &Opts, mode: &str) {
             rot(1, 2, 2),
         ],
     ];
-    let forms: Vec<Vec<usize>> = vec![vec![0b000001, 0b001110, 0b110010], vec![
-        0b0000001, 0b0001110, 0b1110000,
-    ]];
+    let forms: Vec<Vec<usize>> = vec![
+        vec![0b000001, 0b001110, 0b110010],
+        vec![0b0000001, 0b0001110, 0b1110000],
+    ];
     let members: Vec<Vec<usize>> = vec![vec![0, 2, 4], vec![1, 3, 5]];
 
     let threads_eff: usize = {
@@ -2304,12 +2718,7 @@ fn run_taps(o: &Opts, mode: &str) {
     // combination) and round count (48, clipped to the shape's offset
     // envelope; the FOLDED baseline lists also eat the source's own
     // word offset).
-    let sched_src: Vec<TapOp> = vec![
-        rot(0, 7, 0),
-        rot(0, 18, 0),
-        shl(0, 3, 0),
-        rot(1, 0, 1),
-    ];
+    let sched_src: Vec<TapOp> = vec![rot(0, 7, 0), rot(0, 18, 0), shl(0, 3, 0), rot(1, 0, 1)];
     let sched_max_src_off = sched_src.iter().map(|t| t.off).max().unwrap_or(0);
     let sched_rounds = o
         .taps_rounds
@@ -2331,7 +2740,11 @@ fn run_taps(o: &Opts, mode: &str) {
         p_x.col_vars,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
-        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+        if f2z::utils::CHECKED {
+            "CHECKED (build with --features unchecked)"
+        } else {
+            "unchecked"
+        },
     );
 
     let words = p.rows().div_ceil(64);
@@ -2347,10 +2760,10 @@ fn run_taps(o: &Opts, mode: &str) {
         })
         .collect();
     reset_peak();
-    let (hint, t0) = f2z::observability::measure(
-        tracing::info_span!("f2z:hint"),
-        || commit_rs_ligerito_rows(&p, rows, &pc),
-    ).expect("measure completed operation");
+    let (hint, t0) = f2z::observability::measure(tracing::info_span!("f2z:hint"), || {
+        commit_rs_ligerito_rows(&p, rows, &pc)
+    })
+    .expect("measure completed operation");
     let commit_ms = t0.as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
@@ -2381,14 +2794,17 @@ fn run_taps(o: &Opts, mode: &str) {
             }
             y = y + colw[c] * acc;
         }
-        y.0
+        y.canonical_u128()
     };
 
     // Statement + per-mode prove/verify/size closures.
     let cs: Vec<u128> = claim_taps.iter().map(|t| eval_taps(t)).collect();
     let tclaims: Vec<TapClaim<'_>> = claim_taps
         .iter()
-        .map(|taps| TapClaim { taps, row_weights_q: &rw })
+        .map(|taps| TapClaim {
+            taps,
+            row_weights_q: &rw,
+        })
         .collect();
     let tvclaims: Vec<TapVerifyClaim<'_, PcsFq>> = claim_taps
         .iter()
@@ -2414,7 +2830,10 @@ fn run_taps(o: &Opts, mode: &str) {
         })
         .collect();
     let clusters: Vec<TapFamilyCluster<'_>> = (0..2)
-        .map(|ci| TapFamilyCluster { streams: &streams[ci], claims: &cluster_claims[ci] })
+        .map(|ci| TapFamilyCluster {
+            streams: &streams[ci],
+            claims: &cluster_claims[ci],
+        })
         .collect();
     // Point-claim sets for the collapse-style modes: `collapse` = the 13
     // deduped streams as singleton XOR sets; `rotxor` = uniform ops
@@ -2437,7 +2856,14 @@ fn run_taps(o: &Opts, mode: &str) {
         // ROT^7(a₀⊕a₁) — op OUTSIDE the XOR, 0x44 territory
         // (4 plain inner bodies, no rings).
         "mix6" => (
-            vec![vec![0], vec![1], vec![0, 1], vec![0, 1], vec![0, 1], vec![0, 1]],
+            vec![
+                vec![0],
+                vec![1],
+                vec![0, 1],
+                vec![0, 1],
+                vec![0, 1],
+                vec![0, 1],
+            ],
             vec![
                 uni(0, false, 0),
                 uni(0, false, 0),
@@ -2476,7 +2902,11 @@ fn run_taps(o: &Opts, mode: &str) {
         .zip(pc_ops.iter())
         .map(|(set, &op)| {
             let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
-            TapPointClaim { cols: set, op, claimed: eval_taps(&taps) }
+            TapPointClaim {
+                cols: set,
+                op,
+                claimed: eval_taps(&taps),
+            }
         })
         .collect();
     // Schedule claims: `off^t` of the fixed source; the claim values run
@@ -2517,34 +2947,89 @@ fn run_taps(o: &Opts, mode: &str) {
     let prove_once = |pt: &mut Blake3Transcript| -> TapProof {
         match mode {
             "vx" | "cols4" => TapProof::Vx(prove_mle_eval_mod_q_ligerito_tap_claims(
-                pt, &hint, &layout, FQ_BITS, &tclaims, alpha_of(), &pc,
+                pt,
+                &hint,
+                &layout,
+                FQ_BITS,
+                &tclaims,
+                alpha_of(),
+                &pc,
             )),
             "family" => TapProof::Fam(prove_mle_eval_mod_q_ligerito_tap_family(
-                pt, &hint, &layout, &clusters, alpha_of(), &pc,
+                pt,
+                &hint,
+                &layout,
+                &clusters,
+                alpha_of(),
+                &pc,
             )),
             "sched" => TapProof::Cmp(prove_mle_eval_mod_q_ligerito_tap_composed(
-                pt, &hint, &layout, &rw, &colw, &cclaims, alpha_of(), &pc,
+                pt,
+                &hint,
+                &layout,
+                &rw,
+                &colw,
+                &cclaims,
+                alpha_of(),
+                &pc,
             )),
             _ => TapProof::Clp(prove_mle_eval_mod_q_ligerito_tap_collapse(
-                pt, &hint, &layout, &rw, &colw, &pclaims, alpha_of(), &pc,
+                pt,
+                &hint,
+                &layout,
+                &rw,
+                &colw,
+                &pclaims,
+                alpha_of(),
+                &pc,
             )),
         }
     };
     let verify_once = |vt: &mut Blake3Transcript, proof: &TapProof| match proof {
         TapProof::Vx(pr) => verify_mle_eval_mod_q_ligerito_tap_claims(
-            vt, &hint.commitment, pr, &layout, alpha_of(), FQ_BITS, &tvclaims, &vc,
+            vt,
+            &hint.commitment,
+            pr,
+            &layout,
+            alpha_of(),
+            FQ_BITS,
+            &tvclaims,
+            &vc,
         )
         .expect("tap claims verify"),
         TapProof::Fam(pr) => verify_mle_eval_mod_q_ligerito_tap_family(
-            vt, &hint.commitment, pr, &layout, &clusters, &colw, alpha_of(), &vc,
+            vt,
+            &hint.commitment,
+            pr,
+            &layout,
+            &clusters,
+            &colw,
+            alpha_of(),
+            &vc,
         )
         .expect("stream family verifies"),
         TapProof::Cmp(pr) => verify_mle_eval_mod_q_ligerito_tap_composed(
-            vt, &hint.commitment, pr, &layout, &rw, &colw, &cclaims, alpha_of(), &vc,
+            vt,
+            &hint.commitment,
+            pr,
+            &layout,
+            &rw,
+            &colw,
+            &cclaims,
+            alpha_of(),
+            &vc,
         )
         .expect("composed schedule verifies"),
         TapProof::Clp(pr) => verify_mle_eval_mod_q_ligerito_tap_collapse(
-            vt, &hint.commitment, pr, &layout, &rw, &colw, &pclaims, alpha_of(), &vc,
+            vt,
+            &hint.commitment,
+            pr,
+            &layout,
+            &rw,
+            &colw,
+            &pclaims,
+            alpha_of(),
+            &vc,
         )
         .expect("collapse verifies"),
     };
@@ -2578,16 +3063,29 @@ fn run_taps(o: &Opts, mode: &str) {
     let mut last = None;
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
-        let (proof, t1) = f2z::observability::measure(
-            tracing::info_span!("f2z:proof"),
-            || prove_once(&mut pt),
-        ).expect("measure completed operation");
+        let (proof, t1) =
+            f2z::observability::measure(tracing::info_span!("f2z:proof"), || prove_once(&mut pt))
+                .expect("measure completed operation");
         prove_ms.push(t1.as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
-        let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t2_recording =
+            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t2 = tracing::info_span!("f2z:t2").entered();
         verify_once(&mut vt, &proof);
-        verify_ms.push({ drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "f2z:t2").expect("query completed operation") }.as_secs_f64() * 1e3);
+        verify_ms.push(
+            {
+                drop(t2);
+                f2z::observability::duration(
+                    &t2_recording
+                        .intervals()
+                        .expect("complete operation capture"),
+                    "f2z:t2",
+                )
+                .expect("query completed operation")
+            }
+            .as_secs_f64()
+                * 1e3,
+        );
         last = Some(proof);
     }
     reset_peak();
@@ -2613,9 +3111,9 @@ fn run_taps(o: &Opts, mode: &str) {
 }
 
 /// The deterministic generator α (cached — `smallest_generator` scans).
-fn alpha_of() -> f2z::poly::univariate::binary_gf128::BinaryFieldGF128 {
+fn alpha_of() -> f2z::poly::univariate::binary_gf128::Gf128 {
     use std::sync::OnceLock;
-    static A: OnceLock<f2z::poly::univariate::binary_gf128::BinaryFieldGF128> = OnceLock::new();
+    static A: OnceLock<f2z::poly::univariate::binary_gf128::Gf128> = OnceLock::new();
     *A.get_or_init(smallest_generator)
 }
 
@@ -2630,7 +3128,10 @@ const MUL_ROOT_SEED: u64 = 0x5533_326d_756c_0064;
 /// Prover steps of the multiplication SNARK (paper §2.1 numbering, code
 /// order). The Step-5 sub-rows are the paper buckets of the opening.
 const MUL_PROVE_STEP_ROWS: &[StepRow] = &[
-    step("prime projection (step2:project_prove)", &["step2:project_prove"]),
+    step(
+        "prime projection (step2:project_prove)",
+        &["step2:project_prove"],
+    ),
     step("Spartan PIOP (step3:piop_prove)", &["step3:piop_prove"]),
     step("bitification (step4:bitify_prove)", &["step4:bitify_prove"]),
     step("F2Z opening (step5:open_prove)", &["step5:open_prove"]),
@@ -2645,11 +3146,21 @@ const MUL_PROVE_TOP_LABELS: &[&str] = &[
     "step5:open_prove",
 ];
 const MUL_VERIFY_STEP_ROWS: &[StepRow] = &[
-    step("prime projection (step2:project_verify)", &["step2:project_verify"]),
+    step(
+        "prime projection (step2:project_verify)",
+        &["step2:project_verify"],
+    ),
     step("Spartan PIOP (step3:piop_verify)", &["step3:piop_verify"]),
-    step("bitification (step4:bitify_verify)", &["step4:bitify_verify"]),
+    step(
+        "bitification (step4:bitify_verify)",
+        &["step4:bitify_verify"],
+    ),
     step("F2Z opening (step5:open_verify)", &["step5:open_verify"]),
-    substep("claim → row/col weights (f2z_prepare_verifier)", &["spartan-f2z:f2z_prepare_verifier"], &[]),
+    substep(
+        "claim → row/col weights (f2z_prepare_verifier)",
+        &["spartan-f2z:f2z_prepare_verifier"],
+        &[],
+    ),
     substep("row-weight chunking (mv:chunking)", &["mv:chunking"], &[]),
     substep("fold range + read-off (mv:readoff)", &["mv:readoff"], &[]),
     substep("roots α^u_c (mv:roots)", &["mv:roots"], &[]),
@@ -2780,7 +3291,10 @@ impl MulResult {
             .filter_map(|tok| tok.split_once('='))
             .collect();
         if kv.get("schema") != Some(&MUL_RESULT_SCHEMA) {
-            return Err(format!("schema {:?} ≠ {MUL_RESULT_SCHEMA}", kv.get("schema")));
+            return Err(format!(
+                "schema {:?} ≠ {MUL_RESULT_SCHEMA}",
+                kv.get("schema")
+            ));
         }
         let raw = |k: &str| kv.get(k).copied().ok_or_else(|| format!("missing key {k}"));
         let num = |k: &str| -> Result<f64, String> {
@@ -2789,7 +3303,8 @@ impl MulResult {
         let int = |k: &str| -> Result<usize, String> {
             raw(k)?.parse::<usize>().map_err(|e| format!("{k}: {e}"))
         };
-        let ligerito: serde_json::Value = f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
+        let ligerito: serde_json::Value =
+            f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
         f2z::ligerito_flock::ResolvedLigerito::validate_report(&ligerito)?;
         Ok(MulResult {
             ligerito,
@@ -2913,11 +3428,20 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut witness_ms_v = Vec::with_capacity(o.reps);
     let mut witness = None;
     for _ in 0..o.reps.max(1) {
-        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0_recording =
+            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t0 = tracing::info_span!("f2z:t0").entered();
         let w = gen_witness();
         drop(t0);
-        witness_ms_v.push(f2z::observability::duration(&t0_recording.intervals().expect("witness capture"), "f2z:t0").expect("witness duration").as_secs_f64() * 1e3);
+        witness_ms_v.push(
+            f2z::observability::duration(
+                &t0_recording.intervals().expect("witness capture"),
+                "f2z:t0",
+            )
+            .expect("witness duration")
+            .as_secs_f64()
+                * 1e3,
+        );
         witness = Some(w);
     }
     let witness = witness.expect("reps ≥ 1");
@@ -2930,12 +3454,14 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // default (so the two paper tables share one opener), or the relation's
     // own validated-UDR default (`udr`, what the bench and the pins run).
     let lig = U32MulLigerito::parse(&o.profile, P::LIGERITO_TARGET_BITS).unwrap_or_else(|error| {
-        eprintln!("{error}"); exit(2)
+        eprintln!("{error}");
+        exit(2)
     });
     let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
-    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let t0 = tracing::info_span!("f2z:t0").entered();
     let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, lig)
         .unwrap_or_else(|err| {
@@ -2943,8 +3469,16 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
             exit(1)
         });
     drop(t0);
-    let setup_ms = f2z::observability::duration(&t0_recording.intervals().expect("setup capture"), "f2z:t0").expect("setup duration").as_secs_f64() * 1e3;
-    let lig_regime = if relation.security().ood.is_some() { "johnson" } else { "udr" };
+    let setup_ms =
+        f2z::observability::duration(&t0_recording.intervals().expect("setup capture"), "f2z:t0")
+            .expect("setup duration")
+            .as_secs_f64()
+            * 1e3;
+    let lig_regime = if relation.security().ood.is_some() {
+        "johnson"
+    } else {
+        "udr"
+    };
     let sec = relation.security();
     let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
     let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
@@ -2969,7 +3503,11 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         params.word_bits,
         sec.profile_name,
         sec.lambda,
-        if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
+        if f2z::utils::CHECKED {
+            "CHECKED (build with --features unchecked)"
+        } else {
+            "unchecked"
+        },
     );
     println!(
         "excluded from prove: witness generation {witness_ms:.2} ms (median of {}; products + Spartan \
@@ -3007,7 +3545,8 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut vsteps = StepTable::default();
     let mut last: Option<(U32MulProof, usize, usize, String)> = None;
     for rep in 0..o.reps {
-        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let recording =
+            f2z::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
 
         let mut vt = Blake3Transcript::new();
@@ -3018,11 +3557,28 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         });
         drop(verification);
         let intervals = recording.intervals().expect("query CLI mul trial");
-        let prove_ms = f2z::observability::duration(&intervals, "cli:mul.proving").unwrap().as_secs_f64() * 1e3;
-        let commit_ms = f2z::observability::duration(&intervals, "cli:mul.commit").unwrap().as_secs_f64() * 1e3;
-        verify_ms_v.push(f2z::observability::duration(&intervals, "cli:mul.verification").unwrap().as_secs_f64() * 1e3);
-        psteps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:mul.proving").unwrap());
-        vsteps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:mul.verification").unwrap());
+        let prove_ms = f2z::observability::duration(&intervals, "cli:mul.proving")
+            .unwrap()
+            .as_secs_f64()
+            * 1e3;
+        let commit_ms = f2z::observability::duration(&intervals, "cli:mul.commit")
+            .unwrap()
+            .as_secs_f64()
+            * 1e3;
+        verify_ms_v.push(
+            f2z::observability::duration(&intervals, "cli:mul.verification")
+                .unwrap()
+                .as_secs_f64()
+                * 1e3,
+        );
+        psteps.absorb(
+            rep,
+            f2z::observability::phase_totals(&intervals, "cli:mul.proving").unwrap(),
+        );
+        vsteps.absorb(
+            rep,
+            f2z::observability::phase_totals(&intervals, "cli:mul.verification").unwrap(),
+        );
 
         commit_ms_v.push(commit_ms);
         prove_ms_v.push(prove_ms);
@@ -3068,8 +3624,19 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         o.reps
     );
     // Rep totals net of the commit, so "(unattributed)" is the glue only.
-    let net: Vec<f64> = prove_ms_v.iter().zip(&commit_ms_v).map(|(p, c)| p - c).collect();
-    print_steps(&psteps, MUL_PROVE_STEP_ROWS, MUL_PROVE_TOP_LABELS, &net, prove_med, 2);
+    let net: Vec<f64> = prove_ms_v
+        .iter()
+        .zip(&commit_ms_v)
+        .map(|(p, c)| p - c)
+        .collect();
+    print_steps(
+        &psteps,
+        MUL_PROVE_STEP_ROWS,
+        MUL_PROVE_TOP_LABELS,
+        &net,
+        prove_med,
+        2,
+    );
     println!(
         "    paper buckets: commit {commit_med:.2} | PIOP incl. projection {:.2} | bitify {s4:.2} | \
          grand products {gp:.2} | ring switch (incl. sumcheck) {rs:.2} | Ligerito {lig:.2} | \
@@ -3077,7 +3644,14 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         s2 + s3
     );
     println!("verify:  {verify_med:9.2} ms");
-    print_steps(&vsteps, MUL_VERIFY_STEP_ROWS, MUL_VERIFY_TOP_LABELS, &verify_ms_v, verify_med, 3);
+    print_steps(
+        &vsteps,
+        MUL_VERIFY_STEP_ROWS,
+        MUL_VERIFY_TOP_LABELS,
+        &verify_ms_v,
+        verify_med,
+        3,
+    );
     println!(
         "proof:   {:9.1} KB  = piop {:.1} + open {:.1} (non-Ligerito {:.1} | Ligerito {:.1})",
         total_bytes as f64 / 1e3,
@@ -3099,7 +3673,9 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         lig_initial_k,
     );
     let r = MulResult {
-        ligerito: relation.ligerito_configuration().report(&o.profile, sec.ood),
+        ligerito: relation
+            .ligerito_configuration()
+            .report(&o.profile, sec.ood),
         e,
         multiplications,
         n: params.row_vars + params.col_vars,
@@ -3157,10 +3733,14 @@ fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
     println!(
         "f2z mul-sweep: e ∈ {{{}}} (2^e u32×u32→u64 multiplications) | reps={} | λ={} | threads={} | \
          W={} | one fresh process per e | table → {}",
-        es.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
+        es.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
         o.reps,
         o.lambda,
-        o.threads.map_or_else(|| "default".to_string(), |t| t.to_string()),
+        o.threads
+            .map_or_else(|| "default".to_string(), |t| t.to_string()),
         o.word_bits,
         latex_path.display(),
     );
@@ -3199,8 +3779,22 @@ fn print_mul_summary(rows: &[MulResult]) {
     );
     println!(
         "  {:>3} {:>8} {:>8} {:>8} {:>8} {:>9} {:>8} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} {:>7}",
-        "e", "witness", "commit", "piop", "bitify", "grand-pr", "ring-sw", "ligerito", "prove",
-        "verify", "proofKB", "piopKB", "nonlig", "lig", "peakMB", "λ-ach"
+        "e",
+        "witness",
+        "commit",
+        "piop",
+        "bitify",
+        "grand-pr",
+        "ring-sw",
+        "ligerito",
+        "prove",
+        "verify",
+        "proofKB",
+        "piopKB",
+        "nonlig",
+        "lig",
+        "peakMB",
+        "λ-ach"
     );
     for r in rows {
         println!(
@@ -3237,7 +3831,14 @@ fn write_mul_latex_table(
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let Provenance { cpu, cores, mem_gb, date, commit, rustc } = probe_provenance();
+    let Provenance {
+        cpu,
+        cores,
+        mem_gb,
+        date,
+        commit,
+        rustc,
+    } = probe_provenance();
     let threads = rows.first().map_or(0, |r| r.threads);
     let reps = rows.first().map_or(o.reps, |r| r.reps);
     let cmdline = reproduce_cmdline(o, "--mul-sweep", spec);
@@ -3262,8 +3863,13 @@ fn write_mul_latex_table(
     } else {
         format!("$b$ between ${q_bits_min}$ and ${q_bits_max}$ depending on the shape")
     };
-    let (lig_rate, lig_k, lig_target) =
-        first.map_or((0, 0, 0), |r| (1usize << r.lig_log_inv_rate, r.lig_initial_k, r.lig_target_bits));
+    let (lig_rate, lig_k, lig_target) = first.map_or((0, 0, 0), |r| {
+        (
+            1usize << r.lig_log_inv_rate,
+            r.lig_initial_k,
+            r.lig_target_bits,
+        )
+    });
     let lig_regime = first.map_or("?", |r| r.lig_regime.as_str());
     let lig_hash = first.map_or("?", |r| r.lig_hash.as_str());
     let regime_tex = match lig_regime {
@@ -3281,26 +3887,82 @@ fn write_mul_latex_table(
     let cell_words = 128usize >> log_w; // committed cells per multiplication
 
     let mut out = String::new();
-    let _ = writeln!(out, "% Integer-multiplication table of F2Z (c:iop_pimsat on u32 × u32 → u64) — GENERATED FILE, do not edit by hand.");
-    let _ = writeln!(out, "% Generated by `f2z --mul-sweep` (src/bin/f2z.rs) on {date} (UTC) at {commit}; {rustc}.");
-    let _ = writeln!(out, "% Regenerate (from the repo root; this file is overwritten):");
+    let _ = writeln!(
+        out,
+        "% Integer-multiplication table of F2Z (c:iop_pimsat on u32 × u32 → u64) — GENERATED FILE, do not edit by hand."
+    );
+    let _ = writeln!(
+        out,
+        "% Generated by `f2z --mul-sweep` (src/bin/f2z.rs) on {date} (UTC) at {commit}; {rustc}."
+    );
+    let _ = writeln!(
+        out,
+        "% Regenerate (from the repo root; this file is overwritten):"
+    );
     let _ = writeln!(out, "%   {cmdline}");
-    let _ = writeln!(out, "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps after one");
-    let _ = writeln!(out, "%   warm-up prove; every timed proof is verified; the one-time relation preparation (setup_ms) is excluded.");
-    let _ = writeln!(out, "% Include with \\input{{u32-mul-table}} (relative to paper/).");
-    let _ = writeln!(out, "% Same witnesses as benches/u32_mul.rs (root seed {MUL_ROOT_SEED:#018x}); prove_ms is END TO END and INCLUDES the commitment");
-    let _ = writeln!(out, "%   (docs/bench-schema.md semantics) but NOT the witness generation: witness_ms (the Witness column) is the median of {reps}");
-    let _ = writeln!(out, "%   constructions of the products + Spartan assignment from the operand pairs (drawing the pairs is untimed).");
-    let _ = writeln!(out, "%   Steps: s1 commit (bit-pack + F2Z commit), s2 prime projection, s3 Spartan PIOP,");
-    let _ = writeln!(out, "%   s4 bitification, s5 F2Z opening = grand products ({}) / ring switch incl. its sumcheck ({}) / Ligerito ({}).",
-        PAPER_GP_LABELS.join(" "), PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
-    let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual is prove_residual_ms below.");
-    let _ = writeln!(out, "% Proof split: PIOP = Spartan payload + grinding nonces; opening non-Ligerito = folds + GKR + sumcheck + ring-switch");
-    let _ = writeln!(out, "%   messages (+ codec framing); Ligerito = the serialized Ligerito proof. KB = 1000 bytes.");
-    let _ = writeln!(out, "% Security: profile {profile} (target λ={lambda}), achieved (min over rows and terms) {achieved:.2} bits, binding term {bind};");
-    let _ = writeln!(out, "%   q sampled after the commitment from [2^(b-1), 2^b), b = {q_bits_min}..{q_bits_max} per shape (q_bits below); Ligerito {lig_regime} regime, rate 1/{lig_rate}, initial k={lig_k}, target {lig_target} bits, {lig_hash} Merkle trees.");
-    let _ = writeln!(out, "% Table columns: Witness = witness_ms (outside the prover group, not in Total); PIOP = s2 + s3 + s4 (the bitification");
-    let _ = writeln!(out, "%   step s4 is ~µs and is folded in); prover Total = prove_ms; bold columns = prover Total, Verifier, proof Total.");
+    let _ = writeln!(
+        out,
+        "% Machine: {cpu} ({cores}), {mem_gb} GB; {threads} rayon threads; medians of {reps} timed reps after one"
+    );
+    let _ = writeln!(
+        out,
+        "%   warm-up prove; every timed proof is verified; the one-time relation preparation (setup_ms) is excluded."
+    );
+    let _ = writeln!(
+        out,
+        "% Include with \\input{{u32-mul-table}} (relative to paper/)."
+    );
+    let _ = writeln!(
+        out,
+        "% Same witnesses as benches/u32_mul.rs (root seed {MUL_ROOT_SEED:#018x}); prove_ms is END TO END and INCLUDES the commitment"
+    );
+    let _ = writeln!(
+        out,
+        "%   (docs/bench-schema.md semantics) but NOT the witness generation: witness_ms (the Witness column) is the median of {reps}"
+    );
+    let _ = writeln!(
+        out,
+        "%   constructions of the products + Spartan assignment from the operand pairs (drawing the pairs is untimed)."
+    );
+    let _ = writeln!(
+        out,
+        "%   Steps: s1 commit (bit-pack + F2Z commit), s2 prime projection, s3 Spartan PIOP,"
+    );
+    let _ = writeln!(
+        out,
+        "%   s4 bitification, s5 F2Z opening = grand products ({}) / ring switch incl. its sumcheck ({}) / Ligerito ({}).",
+        PAPER_GP_LABELS.join(" "),
+        PAPER_RS_LABELS.join(" "),
+        PAPER_LIG_LABELS.join(" ")
+    );
+    let _ = writeln!(
+        out,
+        "%   Bucket medians need not sum to the total median; the signed residual is prove_residual_ms below."
+    );
+    let _ = writeln!(
+        out,
+        "% Proof split: PIOP = Spartan payload + grinding nonces; opening non-Ligerito = folds + GKR + sumcheck + ring-switch"
+    );
+    let _ = writeln!(
+        out,
+        "%   messages (+ codec framing); Ligerito = the serialized Ligerito proof. KB = 1000 bytes."
+    );
+    let _ = writeln!(
+        out,
+        "% Security: profile {profile} (target λ={lambda}), achieved (min over rows and terms) {achieved:.2} bits, binding term {bind};"
+    );
+    let _ = writeln!(
+        out,
+        "%   q sampled after the commitment from [2^(b-1), 2^b), b = {q_bits_min}..{q_bits_max} per shape (q_bits below); Ligerito {lig_regime} regime, rate 1/{lig_rate}, initial k={lig_k}, target {lig_target} bits, {lig_hash} Merkle trees."
+    );
+    let _ = writeln!(
+        out,
+        "% Table columns: Witness = witness_ms (outside the prover group, not in Total); PIOP = s2 + s3 + s4 (the bitification"
+    );
+    let _ = writeln!(
+        out,
+        "%   step s4 is ~µs and is folded in); prover Total = prove_ms; bold columns = prover Total, Verifier, proof Total."
+    );
     let _ = writeln!(out, "% RESULT lines (schema={MUL_RESULT_SCHEMA}):");
     for r in rows {
         let _ = writeln!(out, "% {}", r.to_line());
@@ -3316,11 +3978,20 @@ fn write_mul_latex_table(
     // (`>{\bfseries}` needs `array`, which siunitx loads). The two widest
     // headers are two-line (`makecell`, bottom-aligned) so that 13 columns
     // fit the text width at this column separation.
-    let _ = writeln!(out, "  \\begin{{tabular}}{{@{{}}rrrrrrr>{{\\bfseries}}r>{{\\bfseries}}rrrr>{{\\bfseries}}r@{{}}}}");
+    let _ = writeln!(
+        out,
+        "  \\begin{{tabular}}{{@{{}}rrrrrrr>{{\\bfseries}}r>{{\\bfseries}}rrrr>{{\\bfseries}}r@{{}}}}"
+    );
     let _ = writeln!(out, "    \\toprule");
-    let _ = writeln!(out, "    & Witness & \\multicolumn{{6}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{4}}{{c}}{{Proof size (KB)}} \\\\");
+    let _ = writeln!(
+        out,
+        "    & Witness & \\multicolumn{{6}}{{c}}{{Prover time (ms)}} & Verifier & \\multicolumn{{4}}{{c}}{{Proof size (KB)}} \\\\"
+    );
     let _ = writeln!(out, "    \\cmidrule(lr){{3-8}} \\cmidrule(lr){{10-13}}");
-    let _ = writeln!(out, "    $\\log_2 N$ & (ms) & Commit & PIOP & \\makecell[b]{{Grand\\\\prod.}} & \\makecell[b]{{Ring\\\\switch}} & Ligerito & Total & (ms) & PIOP & Non-Lig. & Ligerito & Total \\\\");
+    let _ = writeln!(
+        out,
+        "    $\\log_2 N$ & (ms) & Commit & PIOP & \\makecell[b]{{Grand\\\\prod.}} & \\makecell[b]{{Ring\\\\switch}} & Ligerito & Total & (ms) & PIOP & Non-Lig. & Ligerito & Total \\\\"
+    );
     let _ = writeln!(out, "    \\midrule");
     for r in rows {
         let _ = writeln!(

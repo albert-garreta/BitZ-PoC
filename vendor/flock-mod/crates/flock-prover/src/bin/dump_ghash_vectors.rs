@@ -1,7 +1,7 @@
 //! Dump GF(2^128) GHASH test vectors from the *real* `flock` implementation so
 //! the CUDA port (`cuda-ghash/`) can be checked bit-for-bit against it.
 //!
-//! On this x86_64 host `F128::mul` uses the PCLMULQDQ binius path — the same
+//! On this x86_64 host `Gf128::mul` uses the PCLMULQDQ binius path — the same
 //! algorithm the CUDA `ghash_mul_binius` mirrors with `clmad`.
 //!
 //! Output: little-endian binary to the path in argv[1] (default vectors.bin):
@@ -15,9 +15,9 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 
-/// SplitMix64 — same constants as the `gf2_128::tests::Rng`, so vectors are
+/// SplitMix64 — same constants as the `gf128_kernels::tests::Rng`, so vectors are
 /// reproducible and line up with the in-tree unit tests.
 struct Rng(u64);
 impl Rng {
@@ -31,8 +31,8 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn next_f128(&mut self) -> F128 {
-        F128 {
+    fn next_f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
@@ -55,28 +55,28 @@ fn main() -> std::io::Result<()> {
 
     // Include a few structured edge cases first, then random.
     let edges = [
-        (F128::ZERO, F128::ZERO),
+        (Gf128::ZERO, Gf128::ZERO),
         (
-            F128::ONE,
-            F128 {
+            Gf128::ONE,
+            Gf128 {
                 lo: 0xDEAD_BEEF,
                 hi: 0x1234,
             },
         ),
         (
-            F128::generator(),
-            F128 {
+            Gf128::GENERATOR,
+            Gf128 {
                 lo: 0,
                 hi: 1u64 << 63,
             },
         ), // x · x^127 = 0x87
-        (F128 { lo: 0, hi: 1 }, F128 { lo: 0, hi: 1 }), // x^64 · x^64
+        (Gf128 { lo: 0, hi: 1 }, Gf128 { lo: 0, hi: 1 }), // x^64 · x^64
         (
-            F128 {
+            Gf128 {
                 lo: u64::MAX,
                 hi: u64::MAX,
             },
-            F128 {
+            Gf128 {
                 lo: u64::MAX,
                 hi: u64::MAX,
             },

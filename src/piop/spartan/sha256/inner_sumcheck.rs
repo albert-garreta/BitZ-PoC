@@ -5,13 +5,14 @@
 //! field coefficients, performs the same optional grinding step, and samples
 //! the same challenge as the field-only prover.
 
+use crate::piop::spartan::SpartanField as _;
+#[cfg(test)]
+use field::Uint;
+use field::{RingOps, Uint as FieldUint};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crypto_bigint::{Choice, CtSelect};
-use crypto_primitives::{
-    PrimeField, crypto_bigint_monty::MontyField, crypto_bigint_uint::Uint as FieldUint,
-};
+use field::{CtMask, CtSelect};
 
 use crate::transcript::traits::Transcript;
 
@@ -20,19 +21,16 @@ use super::super::{
     f2z::SpartanF2zField,
     grinding::{GrindingDomain, GrindingError, GrindingRound, MAX_GRINDING_BITS, grind_and_absorb},
     squeeze_field,
-    sumcheck::{
-        OptimizedSumcheckReducer, SumcheckError, SumcheckLinearReducer, SumcheckProductReducer,
-        SumcheckProof,
-    },
+    sumcheck::{SumcheckError, SumcheckLinearReducer, SumcheckProductReducer, SumcheckProof},
 };
 
 type Field = SpartanF2zField;
-type FieldConfig = crypto_bigint::modular::FixedMontyParams<2>;
-type LinearAccumulator = <OptimizedSumcheckReducer as SumcheckLinearReducer>::Accumulator;
-type ProductAccumulator = <OptimizedSumcheckReducer as SumcheckProductReducer<Field>>::Accumulator;
+type FieldConfig = field::FpCtx<2>;
+type LinearAccumulator = <field::FpCtx<2> as SumcheckLinearReducer>::Accumulator;
+type ProductAccumulator = <field::FpCtx<2> as SumcheckProductReducer<Field>>::Accumulator;
 type RawMontgomery = [u64; 2];
 
-/// Lazy Boolean source for the flat assignment table.
+/// Lazy Bit source for the flat assignment table.
 ///
 /// A packed word slice retains strict canonical-padding validation. A callback
 /// source is useful when the flat bit table is itself spread across packed
@@ -192,7 +190,7 @@ trait InnerSumcheckMleSource: Sync {
         h_source: &H,
         field_cfg: &FieldConfig,
         zero: &Field,
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
     ) -> Result<PrefixAccumulators, SumcheckError>
     where
         H: Sha256InnerBitSource + ?Sized,
@@ -211,7 +209,7 @@ trait InnerSumcheckMleSource: Sync {
         field_cfg: &FieldConfig,
         zero: &Field,
         one: &Field,
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
     ) -> Result<CompactPrefixVTable, SumcheckError> {
         fold_prefix_v_table_generic::<K, _>(
             num_vars, live_len, self, challenges, field_cfg, zero, one, reducer,
@@ -259,7 +257,7 @@ impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
         h_source: &H,
         field_cfg: &FieldConfig,
         zero: &Field,
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
     ) -> Result<PrefixAccumulators, SumcheckError>
     where
         H: Sha256InnerBitSource + ?Sized,
@@ -278,7 +276,7 @@ impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
         field_cfg: &FieldConfig,
         zero: &Field,
         one: &Field,
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
     ) -> Result<CompactPrefixVTable, SumcheckError> {
         fold_factored_prefix_v_table::<K>(
             num_vars, live_len, self, challenges, field_cfg, zero, one, reducer,
@@ -308,7 +306,7 @@ pub(crate) struct Sha256InnerSumcheckOutput {
     pub final_claim: Field,
     /// Terminal evaluation of the field-valued `V` table.
     pub v_evaluation: Field,
-    /// Terminal evaluation of the packed Boolean `H` table.
+    /// Terminal evaluation of the packed Bit `H` table.
     pub h_evaluation: Field,
 }
 
@@ -321,7 +319,7 @@ impl GrindingDomain for Sha256InnerGrinding {
 
 /// Proves `claim = sum_y V(y) H(y)` with a native-small prefix.
 ///
-/// `V` and the Boolean `H` table are supplied lazily. A packed `[u64]` is also
+/// `V` and the Bit `H` table are supplied lazily. A packed `[u64]` is also
 /// a valid `H` source, with table entry `i` at bit `i % 64` of word `i / 64`.
 /// Coordinates and challenges are low-coordinate first. `prefix_vars` is
 /// dispatched to separately monomorphized kernels for `K = 0, ..., 4`.
@@ -346,7 +344,7 @@ pub(crate) fn prove_sha256_inner_sumcheck<T, V, H>(
     h_source: &H,
     prefix_vars: usize,
     field_cfg: &FieldConfig,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     grinding_bits: u32,
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
@@ -384,7 +382,7 @@ pub(crate) fn prove_sha256_inner_sumcheck_factored<T, H>(
     h_source: &H,
     prefix_vars: usize,
     field_cfg: &FieldConfig,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     grinding_bits: u32,
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
@@ -418,7 +416,7 @@ fn prove_sha256_inner_sumcheck_with_source<T, S, H>(
     h_source: &H,
     prefix_vars: usize,
     field_cfg: &FieldConfig,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     grinding_bits: u32,
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
@@ -518,7 +516,7 @@ fn prove_with_prefix<const K: usize, T, S, H>(
     coefficients: &S,
     h_source: &H,
     field_cfg: &FieldConfig,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     grinding_bits: u32,
 ) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
 where
@@ -552,9 +550,10 @@ where
         for round in 0..K {
             let [at_infinity, at_zero] =
                 accumulators.evaluate_round(round, &lagrange_coefficients, reducer)?;
-            let coefficients = quadratic_coefficients(&current_claim, &at_zero, &at_infinity);
+            let coefficients =
+                quadratic_coefficients(&current_claim, &at_zero, &at_infinity, &field_cfg);
 
-            absorb_field_elements(transcript, &coefficients);
+            absorb_field_elements(transcript, &coefficients, &field_cfg);
             if grinding_bits != 0 {
                 let round_index =
                     u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
@@ -564,9 +563,15 @@ where
                     grinding_bits,
                 )?);
             }
-            let challenge = squeeze_field(transcript, field_cfg);
-            current_claim = evaluate_quadratic(&coefficients, &challenge, &zero);
-            extend_lagrange_coefficients(&mut lagrange_coefficients, &challenge, &one, &zero);
+            let challenge = squeeze_field(transcript, field_cfg)?;
+            current_claim = evaluate_quadratic(&coefficients, &challenge, &zero, &field_cfg);
+            extend_lagrange_coefficients(
+                &mut lagrange_coefficients,
+                &challenge,
+                &one,
+                &zero,
+                &field_cfg,
+            );
             round_polynomials.push(coefficients);
             eval_points.push(challenge);
         }
@@ -650,13 +655,8 @@ fn validate_inputs<const K: usize, H: Sha256InnerBitSource + ?Sized>(
 
 #[inline]
 fn validate_field_value(value: &Field, field_cfg: &FieldConfig) -> Result<(), SumcheckError> {
-    // `MontyField` embeds a copied `FixedMontyParams`; compare the configs by
-    // value rather than by address.
-    if value.cfg() != field_cfg {
-        return Err(SumcheckError::FieldConfigurationMismatch);
-    }
     value
-        .validate_element()
+        .validate_element(&Field::canonical_modulus_encoding(field_cfg))
         .map_err(|_| SumcheckError::NonCanonicalFieldElement)
 }
 
@@ -682,7 +682,7 @@ struct PrefixBuildState {
 }
 
 impl PrefixBuildState {
-    fn new<const K: usize>(zero: &Field, reducer: &OptimizedSumcheckReducer) -> Self {
+    fn new<const K: usize>(zero: &Field, reducer: &field::FpCtx<2>) -> Self {
         let prefix_size = 1usize << K;
         let extension_size = pow3(K);
         Self {
@@ -711,7 +711,7 @@ struct FactoredPrefixBuildState {
 }
 
 impl FactoredPrefixBuildState {
-    fn new<const K: usize>(zero: &Field, reducer: &OptimizedSumcheckReducer) -> Self {
+    fn new<const K: usize>(zero: &Field, reducer: &field::FpCtx<2>) -> Self {
         let prefix_size = 1usize << K;
         let extension_size = pow3(K);
         Self {
@@ -737,7 +737,7 @@ fn build_factored_prefix_accumulators<const K: usize, H>(
     h_source: &H,
     _field_cfg: &FieldConfig,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<PrefixAccumulators, SumcheckError>
 where
     H: Sha256InnerBitSource + ?Sized,
@@ -746,7 +746,7 @@ where
     debug_assert_eq!(live_len, coefficients.live_len());
     debug_assert!(live_len <= 1usize << num_vars);
     let suffix_count = live_len.div_ceil(1usize << K);
-    let extended = extend_block_coefficients::<K>(coefficients, zero);
+    let extended = extend_block_coefficients::<K>(coefficients, zero, &_field_cfg);
     let extended = extended.as_deref();
 
     #[cfg(feature = "parallel")]
@@ -805,7 +805,7 @@ where
                 |mut state, suffix| -> Result<_, SumcheckError> {
                     accumulate_suffix::<K, _, _>(
                         &mut state,
-                        zero.cfg(),
+                        &reducer,
                         live_len,
                         suffix,
                         coefficients,
@@ -844,19 +844,19 @@ where
     let interior_values = interior
         .partial_sums
         .into_iter()
-        .map(|accumulator| product_reduce(reducer, accumulator))
+        .map(|accumulator| product_reduce(reducer, accumulator, &reducer))
         .collect::<Result<Vec<_>, _>>()?;
     let boundary_values = boundary
         .partial_sums
         .into_iter()
-        .map(|accumulator| linear_reduce(reducer, accumulator))
+        .map(|accumulator| linear_reduce(reducer, accumulator, &reducer))
         .collect::<Result<Vec<_>, _>>()?;
     let beta_values = interior_values
         .into_iter()
         .zip(boundary_values)
-        .map(|(interior, boundary)| interior + &boundary)
+        .map(|(interior, boundary)| _field_cfg.add(&(interior), &(&boundary)))
         .collect::<Vec<_>>();
-    Ok(scatter_beta_values::<K>(&beta_values, zero))
+    Ok(scatter_beta_values::<K>(&beta_values, zero, &_field_cfg))
 }
 
 fn accumulate_factored_instances_sequential<const K: usize, H>(
@@ -864,7 +864,7 @@ fn accumulate_factored_instances_sequential<const K: usize, H>(
     extended: Option<&[ExtendedBlock]>,
     h_source: &H,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<FactoredPrefixBuildState, SumcheckError>
 where
     H: Sha256InnerBitSource + ?Sized,
@@ -891,7 +891,7 @@ fn accumulate_factored_instance<const K: usize, H>(
     h_source: &H,
     instance: usize,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<(), SumcheckError>
 where
     H: Sha256InnerBitSource + ?Sized,
@@ -941,7 +941,7 @@ where
             &mut state.d_values,
             &mut state.d_scratch,
             zero,
-            |high, low| high.clone() - low,
+            |high, low| reducer.sub(&(high.clone()), &(low)),
         );
         for beta in 0..pow3(K) {
             if state.h_values[beta] != 0 {
@@ -958,7 +958,7 @@ where
 
     for (partial, local) in state.partial_sums.iter_mut().zip(&mut state.local_sums) {
         let local = core::mem::replace(local, linear_accumulator_zero(reducer));
-        let local = linear_reduce(reducer, local)?;
+        let local = linear_reduce(reducer, local, &reducer)?;
         product_multiply_accumulate(
             reducer,
             partial,
@@ -981,6 +981,7 @@ struct ExtendedBlock {
 fn extend_block_coefficients<const K: usize>(
     coefficients: &FactoredMultilinearExtension<'_, Field>,
     zero: &Field,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) -> Option<Vec<ExtendedBlock>> {
     let prefix_size = 1usize << K;
     let width = coefficients.inner_factor().len();
@@ -995,9 +996,12 @@ fn extend_block_coefficients<const K: usize>(
             .map(|block| {
                 let mut values = block.to_vec();
                 extend_lsb::<Field, K, _>(&mut values, &mut scratch, zero, |high, low| {
-                    high.clone() - low
+                    field_config.sub(&(high.clone()), &(low))
                 });
-                let negated = values.iter().map(|value| zero.clone() - value).collect();
+                let negated = values
+                    .iter()
+                    .map(|value| field_config.sub(&(zero.clone()), &(value)))
+                    .collect();
                 ExtendedBlock { values, negated }
             })
             .collect(),
@@ -1023,7 +1027,7 @@ fn accumulate_factored_boundaries_sequential<const K: usize, H>(
     coefficients: &FactoredMultilinearExtension<'_, Field>,
     h_source: &H,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<PrefixBuildState, SumcheckError>
 where
     H: Sha256InnerBitSource + ?Sized,
@@ -1035,7 +1039,7 @@ where
         }
         accumulate_suffix::<K, _, _>(
             &mut state,
-            zero.cfg(),
+            &reducer,
             live_len,
             suffix,
             coefficients,
@@ -1051,7 +1055,7 @@ where
 fn merge_factored_prefix_states(
     mut left: FactoredPrefixBuildState,
     right: FactoredPrefixBuildState,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> FactoredPrefixBuildState {
     for (left, right) in left.partial_sums.iter_mut().zip(right.partial_sums) {
         product_merge(reducer, left, right);
@@ -1075,7 +1079,7 @@ impl PrefixAccumulators {
         &self,
         round: usize,
         coefficients: &[Field],
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
     ) -> Result<[Field; 2], SumcheckError> {
         let buckets = &self.rounds[round];
         debug_assert_eq!(buckets.len(), coefficients.len());
@@ -1086,8 +1090,8 @@ impl PrefixAccumulators {
             product_multiply_accumulate(reducer, &mut at_zero, coefficient, &bucket[1]);
         }
         Ok([
-            product_reduce(reducer, at_infinity)?,
-            product_reduce(reducer, at_zero)?,
+            product_reduce(reducer, at_infinity, &reducer)?,
+            product_reduce(reducer, at_zero, &reducer)?,
         ])
     }
 }
@@ -1099,7 +1103,7 @@ fn build_prefix_accumulators_generic<const K: usize, S, H>(
     h_source: &H,
     field_cfg: &FieldConfig,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<PrefixAccumulators, SumcheckError>
 where
     S: InnerSumcheckMleSource + ?Sized,
@@ -1159,9 +1163,9 @@ where
     let beta_values = state
         .partial_sums
         .into_iter()
-        .map(|accumulator| linear_reduce(reducer, accumulator))
+        .map(|accumulator| linear_reduce(reducer, accumulator, field_cfg))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(scatter_beta_values::<K>(&beta_values, zero))
+    Ok(scatter_beta_values::<K>(&beta_values, zero, &field_cfg))
 }
 
 fn accumulate_suffixes_sequential<const K: usize, S, H>(
@@ -1171,7 +1175,7 @@ fn accumulate_suffixes_sequential<const K: usize, S, H>(
     h_source: &H,
     field_cfg: &FieldConfig,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<PrefixBuildState, SumcheckError>
 where
     S: InnerSumcheckMleSource + ?Sized,
@@ -1201,7 +1205,7 @@ fn accumulate_suffix<const K: usize, S, H>(
     coefficients: &S,
     h_source: &H,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<(), SumcheckError>
 where
     S: InnerSumcheckMleSource + ?Sized,
@@ -1229,7 +1233,7 @@ where
         &mut state.v_values,
         &mut state.v_scratch,
         zero,
-        |high, low| high.clone() - low,
+        |high, low| field_cfg.sub(&(high.clone()), &(low)),
     );
     extend_lsb::<i64, K, _>(
         &mut state.h_values,
@@ -1256,7 +1260,7 @@ where
 fn merge_prefix_states(
     mut left: PrefixBuildState,
     right: PrefixBuildState,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> PrefixBuildState {
     for (left, right) in left.partial_sums.iter_mut().zip(right.partial_sums) {
         linear_merge(reducer, left, right);
@@ -1264,7 +1268,11 @@ fn merge_prefix_states(
     left
 }
 
-fn scatter_beta_values<const K: usize>(beta_values: &[Field], zero: &Field) -> PrefixAccumulators {
+fn scatter_beta_values<const K: usize>(
+    beta_values: &[Field],
+    zero: &Field,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
+) -> PrefixAccumulators {
     let mut accumulators = PrefixAccumulators::new::<K>(zero);
     for (beta, value) in beta_values.iter().enumerate() {
         for round in 0..K {
@@ -1274,7 +1282,8 @@ fn scatter_beta_values<const K: usize>(beta_values: &[Field], zero: &Field) -> P
             }
             let prefix = beta % pow3(round);
             let endpoint = usize::from(coordinate == 1);
-            accumulators.rounds[round][prefix][endpoint] += value;
+            accumulators.rounds[round][prefix][endpoint] =
+                field_config.add(&(accumulators.rounds[round][prefix][endpoint]), &(value));
         }
     }
     accumulators
@@ -1369,7 +1378,7 @@ fn fold_prefix_v_table<const K: usize, S>(
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<CompactPrefixVTable, SumcheckError>
 where
     S: InnerSumcheckMleSource + ?Sized,
@@ -1388,7 +1397,7 @@ fn fold_prefix_v_table_generic<const K: usize, S>(
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<CompactPrefixVTable, SumcheckError>
 where
     S: InnerSumcheckMleSource + ?Sized,
@@ -1397,7 +1406,7 @@ where
     debug_assert!(live_len <= 1usize << num_vars);
     let prefix_size = 1usize << K;
     let suffix_count = live_len.div_ceil(prefix_size);
-    let weights = equality_weights_lsb(challenges, zero, one);
+    let weights = equality_weights_lsb(challenges, zero, one, &field_cfg);
     let fold_suffix = |suffix: usize| -> Result<RawMontgomery, SumcheckError> {
         let base = suffix << K;
 
@@ -1419,7 +1428,7 @@ where
             }
             product_multiply_accumulate(reducer, &mut v_accumulator, weight, &value);
         }
-        let v = product_reduce(reducer, v_accumulator)?;
+        let v = product_reduce(reducer, v_accumulator, field_cfg)?;
         Ok(raw_montgomery(&v))
     };
 
@@ -1476,14 +1485,14 @@ fn fold_factored_prefix_v_table<const K: usize>(
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<CompactPrefixVTable, SumcheckError> {
     debug_assert_eq!(challenges.len(), K);
     debug_assert_eq!(live_len, coefficients.live_len());
     debug_assert!(live_len <= 1usize << num_vars);
     let prefix_size = 1usize << K;
     let suffix_count = live_len.div_ceil(prefix_size);
-    let weights = equality_weights_lsb(challenges, zero, one);
+    let weights = equality_weights_lsb(challenges, zero, one, &field_cfg);
     let block_width = coefficients.inner_factor().len();
 
     let fold_suffix = |suffix: usize| -> Result<RawMontgomery, SumcheckError> {
@@ -1524,7 +1533,7 @@ fn fold_factored_prefix_v_table<const K: usize>(
                     &coefficients.inner_factor()[local + run_offset],
                 );
             }
-            let local_fold = product_reduce(reducer, local_fold)?;
+            let local_fold = product_reduce(reducer, local_fold, field_cfg)?;
             product_multiply_accumulate(
                 reducer,
                 &mut total,
@@ -1534,7 +1543,7 @@ fn fold_factored_prefix_v_table<const K: usize>(
             cursor += run_len;
         }
 
-        Ok(raw_montgomery(&product_reduce(reducer, total)?))
+        Ok(raw_montgomery(&product_reduce(reducer, total, field_cfg)?))
     };
 
     let zero_raw = raw_montgomery(zero);
@@ -1569,7 +1578,7 @@ fn fold_factored_prefix_v_table<const K: usize>(
 
     // The source adapter validates every factor against `field_cfg`; retain an
     // explicit shape/config assertion at this boundary for future callers.
-    debug_assert_eq!(coefficients.leading_value().cfg(), field_cfg);
+
     Ok(table)
 }
 
@@ -1600,7 +1609,7 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
     prefix_challenges: &[Field],
     num_vars: usize,
     field_cfg: &FieldConfig,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     grinding_bits: u32,
     round_offset: usize,
 ) -> Result<CompactTailOutput, SumcheckError> {
@@ -1611,7 +1620,7 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
 
     let zero = Field::zero_with_cfg(field_cfg);
     let one = Field::one_with_cfg(field_cfg);
-    let prefix_weights = equality_weights_lsb(prefix_challenges, &zero, &one);
+    let prefix_weights = equality_weights_lsb(prefix_challenges, &zero, &one, &field_cfg);
     let mut round_polynomials = Vec::with_capacity(num_vars);
     let mut eval_points = Vec::with_capacity(num_vars);
     let mut round_nonces = Vec::with_capacity(if grinding_bits == 0 { 0 } else { num_vars });
@@ -1653,8 +1662,8 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
         &one,
         reducer,
     )?;
-    let coefficients = quadratic_coefficients(&current_claim, &at_zero, &leading);
-    absorb_field_elements(transcript, &coefficients);
+    let coefficients = quadratic_coefficients(&current_claim, &at_zero, &leading, &field_cfg);
+    absorb_field_elements(transcript, &coefficients, &field_cfg);
     if grinding_bits != 0 {
         let round_index =
             u64::try_from(round_offset).expect("an in-memory sumcheck round index fits in u64");
@@ -1664,8 +1673,8 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
             grinding_bits,
         )?);
     }
-    let challenge = squeeze_field(transcript, field_cfg);
-    current_claim = evaluate_quadratic(&coefficients, &challenge, &zero);
+    let challenge = squeeze_field(transcript, field_cfg)?;
+    current_claim = evaluate_quadratic(&coefficients, &challenge, &zero, &field_cfg);
     round_polynomials.push(coefficients);
     eval_points.push(challenge.clone());
     let mut stride = 1usize;
@@ -1703,8 +1712,8 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
         let [at_zero, leading] = prepared_round
             .take()
             .expect("every non-initial tail round has prepared coefficients");
-        let coefficients = quadratic_coefficients(&current_claim, &at_zero, &leading);
-        absorb_field_elements(transcript, &coefficients);
+        let coefficients = quadratic_coefficients(&current_claim, &at_zero, &leading, &field_cfg);
+        absorb_field_elements(transcript, &coefficients, &field_cfg);
         if grinding_bits != 0 {
             let round = round_offset + tail_round;
             let round_index =
@@ -1715,8 +1724,8 @@ fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?
                 grinding_bits,
             )?);
         }
-        let challenge = squeeze_field(transcript, field_cfg);
-        current_claim = evaluate_quadratic(&coefficients, &challenge, &zero);
+        let challenge = squeeze_field(transcript, field_cfg)?;
+        current_claim = evaluate_quadratic(&coefficients, &challenge, &zero, &field_cfg);
         round_polynomials.push(coefficients);
         eval_points.push(challenge.clone());
 
@@ -1760,7 +1769,7 @@ fn folded_packed_h<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<Field, SumcheckError> {
     let base = suffix << K;
     debug_assert!(base < live_len);
@@ -1777,8 +1786,8 @@ fn folded_packed_h<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     }
     // The reduced value is canonical by construction; comparing its
     // configuration here cost a full parameter comparison per suffix.
-    let value = linear_reduce(reducer, accumulator)?;
-    debug_assert!(value.cfg() == field_cfg);
+    let value = linear_reduce(reducer, accumulator, field_cfg)?;
+
     Ok(value)
 }
 
@@ -1793,7 +1802,7 @@ fn accumulate_first_tail_pair<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<(), SumcheckError> {
     let low_suffix = 2 * pair;
     let high_suffix = low_suffix + 1;
@@ -1830,8 +1839,8 @@ fn accumulate_first_tail_pair<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     product_multiply_accumulate(
         reducer,
         &mut accumulators[1],
-        &(v_one - &v_zero),
-        &(h_one - &h_zero),
+        &(field_cfg.sub(&(v_one), &(&v_zero))),
+        &(field_cfg.sub(&(h_one), &(&h_zero))),
     );
     Ok(())
 }
@@ -1845,7 +1854,7 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<[Field; 2], SumcheckError> {
     let pair_count = table.suffix_count.div_ceil(2);
 
@@ -1875,7 +1884,7 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 || std::array::from_fn(|_| product_accumulator_zero(reducer)),
                 |left, right| Ok(merge_product_accumulators(left, right, reducer)),
             )?;
-        return reduce_product_accumulators(accumulators, reducer);
+        return reduce_product_accumulators(accumulators, reducer, field_cfg);
     }
 
     let mut accumulators = std::array::from_fn(|_| product_accumulator_zero(reducer));
@@ -1893,7 +1902,7 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
             reducer,
         )?;
     }
-    reduce_product_accumulators(accumulators, reducer)
+    reduce_product_accumulators(accumulators, reducer, field_cfg)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1908,7 +1917,7 @@ fn fold_first_tail_pair_in_place<const K: usize, H: Sha256InnerBitSource + ?Size
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<[Field; 2], SumcheckError> {
     debug_assert_eq!(values.len(), 2);
     let low_suffix = 2 * pair;
@@ -1944,7 +1953,10 @@ fn fold_first_tail_pair_in_place<const K: usize, H: Sha256InnerBitSource + ?Size
         field_cfg,
         zero,
     );
-    let folded_h = h_zero.clone() + challenge * &(h_one - &h_zero);
+    let folded_h = field_cfg.add(
+        &(h_zero.clone()),
+        &(field_cfg.mul(&(challenge), &(&(field_cfg.sub(&(h_one), &(&h_zero)))))),
+    );
     values[0] = raw_montgomery(&folded_v);
     values[1] = raw_montgomery(&folded_h);
     Ok([folded_v, folded_h])
@@ -1960,7 +1972,7 @@ fn fold_first_tail_round_in_place<const K: usize, H: Sha256InnerBitSource + ?Siz
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<(), SumcheckError> {
     let suffix_count = table.suffix_count;
     let fold_pair = |pair: usize, values: &mut [RawMontgomery]| {
@@ -2013,7 +2025,7 @@ fn fold_first_tail_round_and_prepare_next_in_place<
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<[Field; 2], SumcheckError> {
     let suffix_count = table.suffix_count;
     let fold_and_accumulate = |mut accumulators: [ProductAccumulator; 2],
@@ -2062,8 +2074,8 @@ fn fold_first_tail_round_and_prepare_next_in_place<
         product_multiply_accumulate(
             reducer,
             &mut accumulators[1],
-            &(folded_one[0].clone() - &folded_zero[0]),
-            &(folded_one[1].clone() - &folded_zero[1]),
+            &(field_cfg.sub(&(folded_one[0].clone()), &(&folded_zero[0]))),
+            &(field_cfg.sub(&(folded_one[1].clone()), &(&folded_zero[1]))),
         );
         Ok(accumulators)
     };
@@ -2085,7 +2097,7 @@ fn fold_first_tail_round_and_prepare_next_in_place<
                 |left, right| Ok(merge_product_accumulators(left, right, reducer)),
             )?;
         table.suffix_count = table.values.len() / 2;
-        return reduce_product_accumulators(accumulators, reducer);
+        return reduce_product_accumulators(accumulators, reducer, field_cfg);
     }
 
     let mut accumulators = std::array::from_fn(|_| product_accumulator_zero(reducer));
@@ -2093,7 +2105,7 @@ fn fold_first_tail_round_and_prepare_next_in_place<
         accumulators = fold_and_accumulate(accumulators, superchunk, values)?;
     }
     table.suffix_count = table.values.len() / 2;
-    reduce_product_accumulators(accumulators, reducer)
+    reduce_product_accumulators(accumulators, reducer, field_cfg)
 }
 
 #[cfg(test)]
@@ -2101,7 +2113,7 @@ fn sum_interleaved_round_coefficients(
     values: &[RawMontgomery],
     stride: usize,
     field_cfg: &FieldConfig,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<[Field; 2], SumcheckError> {
     debug_assert!(!values.is_empty());
     debug_assert_eq!(values.len() % 2, 0);
@@ -2130,7 +2142,7 @@ fn sum_interleaved_round_coefficients(
                 || std::array::from_fn(|_| product_accumulator_zero(reducer)),
                 |left, right| merge_product_accumulators(left, right, reducer),
             );
-        return reduce_product_accumulators(accumulators, reducer);
+        return reduce_product_accumulators(accumulators, reducer, field_cfg);
     }
 
     let accumulators = values.chunks(chunk_len).fold(
@@ -2147,7 +2159,7 @@ fn sum_interleaved_round_coefficients(
             accumulators
         },
     );
-    reduce_product_accumulators(accumulators, reducer)
+    reduce_product_accumulators(accumulators, reducer, field_cfg)
 }
 
 #[cfg(test)]
@@ -2157,7 +2169,7 @@ fn accumulate_interleaved_chunk(
     stride: usize,
     field_cfg: &FieldConfig,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) {
     debug_assert!(values.len() >= 2);
     debug_assert!(values.len() <= 4 * stride);
@@ -2175,8 +2187,8 @@ fn accumulate_interleaved_chunk(
     product_multiply_accumulate(
         reducer,
         &mut accumulators[1],
-        &(v_one - &v_zero),
-        &(h_one - &h_zero),
+        &(field_cfg.sub(&(v_one), &(&v_zero))),
+        &(field_cfg.sub(&(h_one), &(&h_zero))),
     );
 }
 
@@ -2241,7 +2253,7 @@ fn fold_interleaved_and_prepare_next_round_in_place(
     challenge: &Field,
     field_cfg: &FieldConfig,
     zero: &Field,
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> Result<[Field; 2], SumcheckError> {
     debug_assert!(!values.is_empty());
     debug_assert_eq!(values.len() % 2, 0);
@@ -2270,8 +2282,8 @@ fn fold_interleaved_and_prepare_next_round_in_place(
         product_multiply_accumulate(
             reducer,
             &mut accumulators[1],
-            &(folded_one[0].clone() - &folded_zero[0]),
-            &(folded_one[1].clone() - &folded_zero[1]),
+            &(field_cfg.sub(&(folded_one[0].clone()), &(&folded_zero[0]))),
+            &(field_cfg.sub(&(folded_one[1].clone()), &(&folded_zero[1]))),
         );
         accumulators
     };
@@ -2288,14 +2300,14 @@ fn fold_interleaved_and_prepare_next_round_in_place(
                 || std::array::from_fn(|_| product_accumulator_zero(reducer)),
                 |left, right| merge_product_accumulators(left, right, reducer),
             );
-        return reduce_product_accumulators(accumulators, reducer);
+        return reduce_product_accumulators(accumulators, reducer, field_cfg);
     }
 
     let accumulators = values.chunks_mut(superchunk_len).fold(
         std::array::from_fn(|_| product_accumulator_zero(reducer)),
         fold_and_accumulate,
     );
-    reduce_product_accumulators(accumulators, reducer)
+    reduce_product_accumulators(accumulators, reducer, field_cfg)
 }
 
 #[inline]
@@ -2308,25 +2320,28 @@ fn interpolate_raw_pair(
 ) -> Field {
     let low = field_from_raw(low, field_cfg);
     let high = high.map_or_else(|| zero.clone(), |raw| field_from_raw(raw, field_cfg));
-    low.clone() + challenge * &(high - &low)
+    field_cfg.add(
+        &(low.clone()),
+        &(field_cfg.mul(&(challenge), &(&(field_cfg.sub(&(high), &(&low)))))),
+    )
 }
 
 #[inline]
 fn raw_montgomery(value: &Field) -> RawMontgomery {
-    let words = value.as_montgomery().as_words();
+    let words = value.as_montgomery_integer().as_words();
     [words[0], words[1]]
 }
 
 #[inline]
 fn field_from_raw(raw: &RawMontgomery, field_cfg: &FieldConfig) -> Field {
-    MontyField::from_montgomery(FieldUint::from_words(*raw), field_cfg)
+    field_cfg.from_montgomery_integer(FieldUint::from_words(*raw))
 }
 
 #[inline]
 fn merge_product_accumulators(
     mut left: [ProductAccumulator; 2],
     right: [ProductAccumulator; 2],
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
 ) -> [ProductAccumulator; 2] {
     product_merge(reducer, &mut left[0], right[0]);
     product_merge(reducer, &mut left[1], right[1]);
@@ -2336,44 +2351,60 @@ fn merge_product_accumulators(
 #[inline]
 fn reduce_product_accumulators(
     accumulators: [ProductAccumulator; 2],
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
+    config: &FieldConfig,
 ) -> Result<[Field; 2], SumcheckError> {
     let [at_zero, leading] = accumulators;
     Ok([
-        product_reduce(reducer, at_zero)?,
-        product_reduce(reducer, leading)?,
+        product_reduce(reducer, at_zero, config)?,
+        product_reduce(reducer, leading, config)?,
     ])
 }
 
-fn equality_weights_lsb(challenges: &[Field], zero: &Field, one: &Field) -> Vec<Field> {
+fn equality_weights_lsb(
+    challenges: &[Field],
+    zero: &Field,
+    one: &Field,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
+) -> Vec<Field> {
     let mut weights = vec![one.clone()];
     for challenge in challenges {
         let old_len = weights.len();
         weights.resize(2 * old_len, zero.clone());
-        let one_minus_challenge = one.clone() - challenge;
+        let one_minus_challenge = field_config.sub(&(one.clone()), &(challenge));
         for index in 0..old_len {
             let parent = weights[index].clone();
-            weights[index + old_len] = parent.clone() * challenge;
-            weights[index] = parent * &one_minus_challenge;
+            weights[index + old_len] = field_config.mul(&(parent.clone()), &(challenge));
+            weights[index] = field_config.mul(&(parent), &(&one_minus_challenge));
         }
     }
     weights
 }
 
-fn quadratic_coefficients(claim: &Field, at_zero: &Field, leading: &Field) -> [Field; 3] {
+fn quadratic_coefficients(
+    claim: &Field,
+    at_zero: &Field,
+    leading: &Field,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
+) -> [Field; 3] {
     let mut linear = claim.clone();
-    linear -= at_zero;
-    linear -= at_zero;
-    linear -= leading;
+    linear = field_config.sub(&(linear), &(at_zero));
+    linear = field_config.sub(&(linear), &(at_zero));
+    linear = field_config.sub(&(linear), &(leading));
     [at_zero.clone(), linear, leading.clone()]
 }
 
-fn evaluate_quadratic(coefficients: &[Field; 3], point: &Field, zero: &Field) -> Field {
+fn evaluate_quadratic(
+    coefficients: &[Field; 3],
+    point: &Field,
+    zero: &Field,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
+) -> Field {
     coefficients
         .iter()
         .rev()
         .fold(zero.clone(), |value, coefficient| {
-            value * point + coefficient
+            field_config.add(&(field_config.mul(&(value), &(point))), &(coefficient))
         })
 }
 
@@ -2382,18 +2413,22 @@ fn extend_lagrange_coefficients(
     challenge: &Field,
     one: &Field,
     zero: &Field,
+    field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) {
     // For U_2 = {infinity, 0, 1}, infinity denotes the quadratic leading
     // coefficient. Thus p(r) = L_inf(r)p_inf + L_0(r)p(0) + L_1(r)p(1).
     let at_one = challenge.clone();
-    let at_zero = one.clone() - challenge;
-    let at_infinity = challenge.clone() * (challenge.clone() - one);
+    let at_zero = field_config.sub(&(one.clone()), &(challenge));
+    let at_infinity = field_config.mul(
+        &(challenge.clone()),
+        &(field_config.sub(&(challenge.clone()), &(one))),
+    );
     let old_len = coefficients.len();
     let mut next = vec![zero.clone(); 3 * old_len];
     for (prefix, coefficient) in coefficients.iter().enumerate() {
-        next[prefix] = coefficient.clone() * &at_infinity;
-        next[old_len + prefix] = coefficient.clone() * &at_zero;
-        next[2 * old_len + prefix] = coefficient.clone() * &at_one;
+        next[prefix] = field_config.mul(&(coefficient.clone()), &(&at_infinity));
+        next[old_len + prefix] = field_config.mul(&(coefficient.clone()), &(&at_zero));
+        next[2 * old_len + prefix] = field_config.mul(&(coefficient.clone()), &(&at_one));
     }
     *coefficients = next;
 }
@@ -2418,22 +2453,15 @@ fn packed_bit(words: &[u64], index: usize) -> u64 {
 
 #[inline]
 fn select_field_by_bit(zero: &Field, one: &Field, bit: u64) -> Field {
-    MontyField::from_montgomery(
-        CtSelect::ct_select(
-            zero.as_montgomery(),
-            one.as_montgomery(),
-            Choice::from(bit as u8),
-        ),
-        zero.cfg(),
-    )
+    CtSelect::ct_select(zero, &one, CtMask::from_lsb(bit))
 }
 
 /// [`linear_multiply_accumulate_signed`] with the negation precomputed and a
-/// zero coefficient skipped: the accumulated value is identical, and Boolean
+/// zero coefficient skipped: the accumulated value is identical, and Bit
 /// extensions are zero at roughly half of their ternary points.
 #[inline]
 fn linear_multiply_accumulate_signed_fast(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: &mut LinearAccumulator,
     value: &Field,
     negated_value: &Field,
@@ -2443,85 +2471,79 @@ fn linear_multiply_accumulate_signed_fast(
         return;
     }
     let magnitude = signed_coefficient.unsigned_abs();
-    let selected = if signed_coefficient < 0 { negated_value } else { value };
+    let selected = if signed_coefficient < 0 {
+        negated_value
+    } else {
+        value
+    };
     linear_multiply_accumulate(reducer, accumulator, selected, &magnitude);
 }
 
 fn linear_multiply_accumulate_signed(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: &mut LinearAccumulator,
     value: &Field,
     signed_coefficient: i64,
     zero: &Field,
 ) {
-    // A Boolean K<=4 extension has magnitude at most 2^(K-1), but perform the
+    // A Bit K<=4 extension has magnitude at most 2^(K-1), but perform the
     // sign extraction in i128 so the signed-magnitude conversion is total.
     let signed_coefficient = i128::from(signed_coefficient);
     let sign_mask = (signed_coefficient >> 127) as u128;
     let magnitude = ((signed_coefficient as u128) ^ sign_mask).wrapping_sub(sign_mask) as u64;
-    let negative_value = zero.clone() - value;
-    let selected_value = MontyField::from_montgomery(
-        CtSelect::ct_select(
-            value.as_montgomery(),
-            negative_value.as_montgomery(),
-            Choice::from((sign_mask & 1) as u8),
-        ),
-        value.cfg(),
-    );
+    let negative_value = reducer.sub(&(zero.clone()), &(value));
+    let selected_value =
+        CtSelect::ct_select(value, &negative_value, CtMask::from_lsb(sign_mask as u64));
     linear_multiply_accumulate(reducer, accumulator, &selected_value, &magnitude);
 }
 
 #[inline]
-fn linear_accumulator_zero(reducer: &OptimizedSumcheckReducer) -> LinearAccumulator {
-    <OptimizedSumcheckReducer as SumcheckLinearReducer>::accumulator_zero(reducer)
+fn linear_accumulator_zero(reducer: &field::FpCtx<2>) -> LinearAccumulator {
+    <field::FpCtx<2> as SumcheckLinearReducer>::accumulator_zero(reducer)
 }
 
 #[inline]
 fn linear_multiply_accumulate(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: &mut LinearAccumulator,
     lhs: &Field,
     rhs: &u64,
 ) {
-    <OptimizedSumcheckReducer as SumcheckLinearReducer>::multiply_accumulate(
-        reducer,
-        accumulator,
-        lhs,
-        rhs,
-    );
+    <field::FpCtx<2> as SumcheckLinearReducer>::multiply_accumulate(reducer, accumulator, lhs, rhs);
 }
 
 #[cfg(feature = "parallel")]
 #[inline]
 fn linear_merge(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: &mut LinearAccumulator,
     other: LinearAccumulator,
 ) {
-    <OptimizedSumcheckReducer as SumcheckLinearReducer>::merge(reducer, accumulator, other);
+    <field::FpCtx<2> as SumcheckLinearReducer>::merge(reducer, accumulator, other);
 }
 
 #[inline]
 fn linear_reduce(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: LinearAccumulator,
+    config: &FieldConfig,
 ) -> Result<Field, SumcheckError> {
-    <OptimizedSumcheckReducer as SumcheckLinearReducer>::reduce(reducer, accumulator)
+    <field::FpCtx<2> as SumcheckLinearReducer>::reduce(reducer, accumulator, config)
 }
 
 #[inline]
-fn product_accumulator_zero(reducer: &OptimizedSumcheckReducer) -> ProductAccumulator {
-    <OptimizedSumcheckReducer as SumcheckProductReducer<Field>>::accumulator_zero(reducer)
+fn product_accumulator_zero(reducer: &field::FpCtx<2>) -> ProductAccumulator {
+    <field::FpCtx<2> as SumcheckProductReducer<Field>>::accumulator_zero(reducer)
 }
 
 #[inline]
 fn product_multiply_accumulate(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: &mut ProductAccumulator,
     lhs: &Field,
     rhs: &Field,
 ) {
-    <OptimizedSumcheckReducer as SumcheckProductReducer<Field>>::multiply_accumulate(
+    <field::FpCtx<2> as SumcheckProductReducer<Field>>::multiply_accumulate(
         reducer,
         accumulator,
         lhs,
@@ -2531,19 +2553,20 @@ fn product_multiply_accumulate(
 
 #[inline]
 fn product_merge(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: &mut ProductAccumulator,
     other: ProductAccumulator,
 ) {
-    <OptimizedSumcheckReducer as SumcheckProductReducer<Field>>::merge(reducer, accumulator, other);
+    <field::FpCtx<2> as SumcheckProductReducer<Field>>::merge(reducer, accumulator, other);
 }
 
 #[inline]
 fn product_reduce(
-    reducer: &OptimizedSumcheckReducer,
+    reducer: &field::FpCtx<2>,
     accumulator: ProductAccumulator,
+    config: &FieldConfig,
 ) -> Result<Field, SumcheckError> {
-    <OptimizedSumcheckReducer as SumcheckProductReducer<Field>>::reduce(reducer, accumulator)
+    <field::FpCtx<2> as SumcheckProductReducer<Field>>::reduce(reducer, accumulator, config)
 }
 
 const fn pow3(exponent: usize) -> usize {
@@ -2559,8 +2582,6 @@ const fn pow3(exponent: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use crypto_primitives::{FromWithConfig, crypto_bigint_uint::Uint};
 
     use crate::{
         piop::spartan::f2z::spartan_f2z_field_config,
@@ -2594,7 +2615,7 @@ mod tests {
                 & 1) as u64;
             h_words[index / u64::BITS as usize] |= bit << (index % u64::BITS as usize);
             if bit != 0 {
-                claim += value;
+                claim = field_cfg.add(&(claim), &(value));
             }
         }
         (
@@ -2608,7 +2629,7 @@ mod tests {
     fn factored_block_source_is_transcript_identical_across_shared_and_block_boundaries() {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
 
         // These widths exercise aligned blocks, blocks smaller than a K=4
         // prefix, and blocks that cross both K=3 and K=4 prefix boundaries.
@@ -2637,10 +2658,13 @@ mod tests {
                 let bit = ((index * 29 + block_width).count_ones() & 1) as u64;
                 h_words[index / 64] |= bit << (index % 64);
                 if bit != 0 {
-                    initial_claim += &source
-                        .evaluation_at(index)
-                        .map_err(|_| SumcheckError::InvalidProductDimensions)
-                        .unwrap();
+                    initial_claim = field_cfg.add(
+                        &(initial_claim),
+                        &(&source
+                            .evaluation_at(index)
+                            .map_err(|_| SumcheckError::InvalidProductDimensions)
+                            .unwrap()),
+                    );
                 }
             }
 
@@ -2705,7 +2729,7 @@ mod tests {
         pool.install(|| {
             let field_cfg = spartan_f2z_field_config();
             let zero = Field::zero_with_cfg(&field_cfg);
-            let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+            let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
             let instance_weights = (0..INSTANCES)
                 .map(|instance| field(37 * instance as u64 + 3, &field_cfg))
                 .collect::<Vec<_>>();
@@ -2730,10 +2754,13 @@ mod tests {
                 let bit = ((index * 41 + 13).count_ones() & 1) as u64;
                 h_words[index / 64] |= bit << (index % 64);
                 if bit != 0 {
-                    initial_claim += &source
-                        .evaluation_at(index)
-                        .map_err(|_| SumcheckError::InvalidProductDimensions)
-                        .unwrap();
+                    initial_claim = field_cfg.add(
+                        &(initial_claim),
+                        &(&source
+                            .evaluation_at(index)
+                            .map_err(|_| SumcheckError::InvalidProductDimensions)
+                            .unwrap()),
+                    );
                 }
             }
 
@@ -2785,7 +2812,7 @@ mod tests {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let instance_weights = [field(7, &field_cfg), field(23, &field_cfg)];
         let block_coefficients = (0..SHA_BLOCK_WIDTH)
             .map(|local| field((13 * local as u64 + 17) % 65_521, &field_cfg))
@@ -2850,7 +2877,7 @@ mod tests {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let values = (0..LIVE_LEN)
             .map(|index| field(19 * index as u64 + 5, &field_cfg))
             .collect::<Vec<_>>();
@@ -2862,7 +2889,7 @@ mod tests {
         let prefix_challenges = (0..K)
             .map(|index| field(11 * index as u64 + 7, &field_cfg))
             .collect::<Vec<_>>();
-        let prefix_weights = equality_weights_lsb(&prefix_challenges, &zero, &one);
+        let prefix_weights = equality_weights_lsb(&prefix_challenges, &zero, &one, &field_cfg);
         let table = fold_prefix_v_table::<K, _>(
             NUM_VARS,
             LIVE_LEN,
@@ -2926,7 +2953,7 @@ mod tests {
     fn fused_interleaved_fold_and_prepare_matches_separate_passes() {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
 
         for stride in [1usize, 2, 4] {
             let fold_chunk_len = 4 * stride;
@@ -2985,7 +3012,7 @@ mod tests {
         h_words: &[u64],
         prefix_vars: usize,
         field_cfg: &FieldConfig,
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
         grinding_bits: u32,
     ) -> Result<Sha256InnerSumcheckOutput, SumcheckError> {
         let num_vars = v_mle.num_vars;
@@ -3011,7 +3038,7 @@ mod tests {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let (v_mle, h_words, initial_claim) = fixture(NUM_VARS, &field_cfg);
         let h_mle = DenseMultilinearExtension::from_evaluations_vec(
             NUM_VARS,
@@ -3082,7 +3109,7 @@ mod tests {
                 assert_eq!(final_claim, output.final_claim);
                 assert_eq!(
                     final_claim,
-                    output.v_evaluation.clone() * &output.h_evaluation
+                    field_cfg.mul(&(output.v_evaluation.clone()), &(&output.h_evaluation))
                 );
                 assert_eq!(
                     verifier_transcript.get_challenge::<u128>(),
@@ -3100,7 +3127,7 @@ mod tests {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let table_len = 1usize << NUM_VARS;
         let mut v = vec![zero.clone(); table_len];
         let mut h_padded = vec![0u64; table_len.div_ceil(u64::BITS as usize)];
@@ -3110,7 +3137,7 @@ mod tests {
             let bit = ((index * 13 + 5).count_ones() & 1) as u64;
             h_padded[index / 64] |= bit << (index % 64);
             if bit != 0 {
-                initial_claim += &v[index];
+                initial_claim = field_cfg.add(&(initial_claim), &(&v[index]));
             }
         }
         let h_live = h_padded[..LIVE_LEN.div_ceil(64)].to_vec();
@@ -3171,7 +3198,10 @@ mod tests {
         }
 
         assert_eq!(core::mem::size_of::<RawMontgomery>(), 16);
-        assert!(core::mem::size_of::<Field>() > core::mem::size_of::<RawMontgomery>());
+        assert_eq!(
+            core::mem::size_of::<Field>(),
+            core::mem::size_of::<RawMontgomery>()
+        );
         let challenges = [field(7, &field_cfg), field(19, &field_cfg)];
         let table = fold_prefix_v_table::<2, _>(
             NUM_VARS,
@@ -3188,12 +3218,12 @@ mod tests {
         assert_eq!(table.suffix_count, suffix_count);
         assert_eq!(table.values.len(), (suffix_count + 1) & !1);
         assert!(table.values.len() < 2 * suffix_count);
-        assert!(
-            table
-                .values
-                .iter()
-                .all(|raw| field_from_raw(raw, &field_cfg).cfg() == &field_cfg)
-        );
+        assert!(table.values.iter().all(|raw| {
+            field_from_raw(raw, &field_cfg)
+                .as_montgomery_integer()
+                .as_words()
+                == raw
+        }));
     }
 
     #[test]
@@ -3204,7 +3234,7 @@ mod tests {
 
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let table_len = 1usize << NUM_VARS;
         let mut v = vec![zero.clone(); table_len];
         let mut h_words = vec![0u64; LIVE_LEN.div_ceil(64)];
@@ -3216,7 +3246,7 @@ mod tests {
             h_words[index / 64] |= bit << (index % 64);
             h_rows[index / ROW_BITS] |= bit << (index % ROW_BITS);
             if bit != 0 {
-                initial_claim += &v[index];
+                initial_claim = field_cfg.add(&(initial_claim), &(&v[index]));
             }
         }
 
@@ -3272,7 +3302,7 @@ mod tests {
     fn oracle_field_configuration_is_checked_before_the_transcript() {
         let field_cfg = spartan_f2z_field_config();
         let foreign_cfg = Field::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let (_, h_words, initial_claim) = fixture(3, &field_cfg);
         let mut transcript = Blake3Transcript::new();
         let mut untouched = transcript.clone();
@@ -3281,14 +3311,14 @@ mod tests {
             initial_claim,
             3,
             8,
-            &|_| Ok(field(1, &foreign_cfg)),
+            &|_| Ok(crate::piop::spartan::noncanonical_test_value(&field_cfg)),
             &h_words,
             2,
             &field_cfg,
             &reducer,
             0,
         );
-        assert_eq!(result, Err(SumcheckError::FieldConfigurationMismatch));
+        assert_eq!(result, Err(SumcheckError::NonCanonicalFieldElement));
         assert_eq!(
             transcript.get_challenge::<u128>(),
             untouched.get_challenge::<u128>()
@@ -3302,7 +3332,7 @@ mod tests {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let (v_mle, h_words, initial_claim) = fixture(NUM_VARS, &field_cfg);
         let h_mle = DenseMultilinearExtension::from_evaluations_vec(
             NUM_VARS,
@@ -3362,7 +3392,7 @@ mod tests {
     fn first_round_is_pinned_to_the_word_lsb() {
         let field_cfg = spartan_f2z_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let v_mle = DenseMultilinearExtension::from_evaluations_vec(
             2,
             [2, 5, 11, 17]
@@ -3392,7 +3422,7 @@ mod tests {
                 [
                     field(13, &field_cfg),
                     field(7, &field_cfg),
-                    zero.clone() - field(3, &field_cfg),
+                    field_cfg.sub(&(zero.clone()), &(field(3, &field_cfg))),
                 ]
             );
         }
@@ -3401,7 +3431,7 @@ mod tests {
     #[test]
     fn zero_variable_and_fully_native_prefixes_match_k0() {
         let field_cfg = spartan_f2z_field_config();
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
 
         let zero_var = prove_dense_test(
             &mut Blake3Transcript::new(),
@@ -3445,14 +3475,17 @@ mod tests {
         assert_eq!(fully_native, reference);
         assert_eq!(
             fully_native.final_claim,
-            fully_native.v_evaluation.clone() * &fully_native.h_evaluation
+            field_cfg.mul(
+                &(fully_native.v_evaluation.clone()),
+                &(&fully_native.h_evaluation)
+            )
         );
     }
 
     #[test]
     fn invalid_prefix_or_noncanonical_padding_does_not_touch_transcript() {
         let field_cfg = spartan_f2z_field_config();
-        let reducer = OptimizedSumcheckReducer::new(&field_cfg).unwrap();
+        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let (v_mle, h_words, initial_claim) = fixture(3, &field_cfg);
 
         let mut invalid_k_transcript = Blake3Transcript::new();

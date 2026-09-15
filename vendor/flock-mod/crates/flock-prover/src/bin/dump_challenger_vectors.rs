@@ -12,13 +12,13 @@
 //! Output (LE) to argv[1] (default challenger_vectors.bin), magic "CHLG":
 //!   magic u32, domain_len u32, domain bytes, n_ops u32
 //!   per op: op_type u8 then
-//!     1 observe_f128 : F128{lo,hi}
+//!     1 observe_f128 : Gf128{lo,hi}
 //!     2 observe_bytes: u32 len, bytes
-//!     3 sample_f128  : F128 result
+//!     3 sample_f128  : Gf128 result
 //!     4 observe_label: u32 len, bytes
 //!     5 grind        : u32 bits, u64 nonce
-//!     6 observe_slice: u32 n, n*F128
-//!     7 sample_vec   : u32 n, n*F128 results
+//!     6 observe_slice: u32 n, n*Gf128
+//!     7 sample_vec   : u32 n, n*Gf128 results
 //!
 //! Run:  cargo run --release --bin dump_challenger_vectors -- cuda-ghash/challenger_vectors.bin
 
@@ -27,7 +27,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use flock_prover::challenger::{Challenger, FsChallenger};
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 
 struct Rng(u64);
 impl Rng {
@@ -41,8 +41,8 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn f128(&mut self) -> F128 {
-        F128 {
+    fn f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
@@ -99,7 +99,7 @@ fn main() -> std::io::Result<()> {
     }
     // 4. observe a slice (e.g. OOD values)
     {
-        let vals: Vec<F128> = (0..4).map(|_| rng.f128()).collect();
+        let vals: Vec<Gf128> = (0..4).map(|_| rng.f128()).collect();
         ch.observe_f128_slice(&vals);
         let mut t = vec![6u8];
         t.extend_from_slice(&(vals.len() as u32).to_le_bytes());

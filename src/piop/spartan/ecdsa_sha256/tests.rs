@@ -1,5 +1,8 @@
 use super::*;
 use crate::f2map::VirtualMap;
+use crate::piop::spartan::SpartanField as _;
+use crate::piop::spartan::raw_monty::RawFieldStorage;
+use field::Uint;
 use num_bigint::{BigInt, BigUint};
 use sha2::{Digest, Sha256};
 
@@ -76,20 +79,15 @@ fn map_matches_witness(exponent: u8) {
             "virtual bit {i}"
         );
     }
-    let integer = |v: &circuit::matrix_products::StoredInteger| {
-        BigInt::from_signed_bytes_le(
-            &v.words()
-                .iter()
-                .flat_map(|w| w.to_le_bytes())
-                .collect::<Vec<_>>(),
-        )
+    let integer = |v: &[u64]| {
+        BigInt::from_signed_bytes_le(&v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>())
     };
     for (i, ((a, b), c)) in witness
         .products
         .a_mw
         .iter()
-        .zip(&witness.products.b_mw)
-        .zip(&witness.products.c_mw)
+        .zip(witness.products.b_mw.iter())
+        .zip(witness.products.c_mw.iter())
         .enumerate()
     {
         assert_eq!(integer(a) * integer(b), integer(c), "P-256 row {i}");
@@ -107,13 +105,13 @@ fn map_matches_witness(exponent: u8) {
 
 #[test]
 fn outer_raw_products_match_field_products() {
-    use crate::piop::spartan::{f2z::SpartanF2zField as F, raw_monty::RawMontyCtx};
-    use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
+    use crate::piop::spartan::f2z::SpartanF2zField as F;
+
     // Any prime above 2^64 exercises the native reduction; the sampled
     // 113-bit primes are covered by the pinned transcript.
     let modulus: u128 = (1u128 << 127) - 1;
     let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
-    let ctx = RawMontyCtx::new(&cfg);
+    let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
     let (statement, message) = fixture();
     for mode in [OuterMode::Split, OuterMode::AllRows] {
         let prepared = prepare_sha256_ecdsa(3, 100, mode).unwrap();

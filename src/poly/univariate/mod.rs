@@ -1,4 +1,5 @@
-use crypto_primitives::PrimeField;
+use crate::poly::coefficient::PolynomialField;
+
 use crate::utils::from_ref::FromRef;
 
 pub mod binary_b127;
@@ -25,7 +26,7 @@ pub trait F2AddAssign {
 /// `u64`. Bit `i` of the packed value holds the coefficient of `X^i`.
 ///
 /// `BinaryRefPoly<D>` stores its 32-or-fewer coefficients as a
-/// `[Boolean; D]` array — touching it iterates over `Boolean` values.
+/// `[Bit; D]` array — touching it iterates over `Bit` values.
 /// `BinaryU64Poly<D>` already stores a `u64`. This trait lets hot
 /// loops convert once at the boundary and work in raw bits between
 /// the conversion (where XOR is a single instruction) without
@@ -46,7 +47,7 @@ fn prepare_projection<F, P, GetCoeff, const N: usize>(
     get_coeff: GetCoeff,
 ) -> impl Fn(&P) -> F + 'static
 where
-    F: PrimeField + FromRef<F> + 'static,
+    F: PolynomialField + FromRef<F> + 'static,
     GetCoeff: Fn(&P, usize) -> bool + 'static,
 {
     let field_cfg = sampled_value.cfg().clone();

@@ -13,12 +13,13 @@
 //!    - All groups fix variable `i` at `r_i`
 //! 3. Each group produces a subclaim at the shared point r = (r_1, ..., r_n)
 
+use crate::poly::coefficient::PolynomialField;
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcribable, Transcript};
 use crate::utils::{
     add, cfg_iter, cfg_iter_mut, inner_transparent_field::InnerTransparentField, mul,
 };
-use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
+
 use num_traits::Zero;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -65,7 +66,7 @@ pub struct Round1Output<F> {
 ///   `comb_fn` expects. The framework places these into the prover
 ///   state and sets `skip_next_fold = true` so the standard path does
 ///   not double-fold them in round 2.
-pub trait Round1FastPath<F: PrimeField>: Send + Sync {
+pub trait Round1FastPath<F: PolynomialField>: Send + Sync {
     fn round_1_message(&self, config: &F::Config) -> Round1Output<F>;
     fn fold_with_r1(
         self: Box<Self>,
@@ -76,7 +77,7 @@ pub trait Round1FastPath<F: PrimeField>: Send + Sync {
 
 /// A single degree group for the multi-degree sumcheck: (degree, mles,
 /// comb_fn).
-pub struct MultiDegreeSumcheckGroup<F: PrimeField> {
+pub struct MultiDegreeSumcheckGroup<F: PolynomialField> {
     degree: usize,
     poly: Vec<DenseMultilinearExtension<F::Inner>>,
     comb_fn: CombFn<F>,
@@ -84,7 +85,7 @@ pub struct MultiDegreeSumcheckGroup<F: PrimeField> {
     round_evaluator: Option<Box<dyn RoundPolyEvaluator<F>>>,
 }
 
-impl<F: PrimeField> MultiDegreeSumcheckGroup<F> {
+impl<F: PolynomialField> MultiDegreeSumcheckGroup<F> {
     pub fn new(
         degree: usize,
         poly: Vec<DenseMultilinearExtension<F::Inner>>,
@@ -203,7 +204,7 @@ impl<F> MultiDegreeSumcheckProof<F> {
     }
 }
 
-impl<F: PrimeField> GenTranscribable for MultiDegreeSumcheckProof<F>
+impl<F: PolynomialField> GenTranscribable for MultiDegreeSumcheckProof<F>
 where
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
@@ -290,7 +291,7 @@ where
     }
 }
 
-impl<F: PrimeField> Transcribable for MultiDegreeSumcheckProof<F>
+impl<F: PolynomialField> Transcribable for MultiDegreeSumcheckProof<F>
 where
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
@@ -334,7 +335,7 @@ impl<F> MultiDegreeSubClaims<F> {
 
 pub struct MultiDegreeSumcheck<F>(PhantomData<F>);
 
-impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
+impl<F: PolynomialField> MultiDegreeSumcheck<F> {
     /// Multi-degree sumcheck prover.
     ///
     /// Runs the prover side of the sumcheck protocol for G degree groups
@@ -395,8 +396,8 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
 
         let num_groups = groups.len();
         let mut buf = vec![0; F::Inner::NUM_BYTES];
-        let nvars_field = F::from_with_cfg(num_vars as u64, config);
-        let ngroups_field = F::from_with_cfg(num_groups as u64, config);
+        let nvars_field = F::interpolation_node(num_vars as u64, config);
+        let ngroups_field = F::interpolation_node(num_groups as u64, config);
         transcript.absorb_random_field(&nvars_field, &mut buf);
         transcript.absorb_random_field(&ngroups_field, &mut buf);
 
@@ -410,7 +411,7 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         let mut fast_paths: Vec<Option<Box<dyn Round1FastPath<F>>>> =
             Vec::with_capacity(num_groups);
         for group in groups {
-            let degree_field = F::from_with_cfg(group.degree as u64, config);
+            let degree_field = F::interpolation_node(group.degree as u64, config);
             transcript.absorb_random_field(&degree_field, &mut buf);
             let mut state = SumcheckProverState::new(group.poly, num_vars, group.degree);
             state.round_evaluator = group.round_evaluator;
@@ -569,15 +570,15 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         let num_groups = expected_degrees.len();
 
         let mut buf = vec![0; F::Inner::NUM_BYTES];
-        let nvars_field = F::from_with_cfg(num_vars as u64, config);
-        let ngroups_field = F::from_with_cfg(num_groups as u64, config);
+        let nvars_field = F::interpolation_node(num_vars as u64, config);
+        let ngroups_field = F::interpolation_node(num_groups as u64, config);
         transcript.absorb_random_field(&nvars_field, &mut buf);
         transcript.absorb_random_field(&ngroups_field, &mut buf);
 
         let mut verifier_states: Vec<VerifierState<F>> = (0..num_groups)
             .map(|j| {
                 let degree = expected_degrees[j];
-                let degree_field = F::from_with_cfg(degree as u64, config);
+                let degree_field = F::interpolation_node(degree as u64, config);
                 transcript.absorb_random_field(&degree_field, &mut buf);
 
                 VerifierState::new(num_vars, degree, config)

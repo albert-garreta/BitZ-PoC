@@ -7,20 +7,21 @@
 //! `r * (A + x B + x^2 C) * w`. Nodes at one depth write disjoint adjoints, so
 //! sufficiently wide depths are evaluated in parallel without atomics.
 
+use field::ModRingCtx;
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::iter::Sum;
-use std::mem::{size_of, size_of_val};
+use std::mem::size_of;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 use std::sync::{Arc, Mutex};
 
-use crypto_bigint::modular::{FixedMontyForm, FixedMontyParams};
-use crypto_bigint::{Odd, U128};
+use field::{FpCtx, IntegerEmbedding, RingOps, Uint, create_prime_field};
 use num_traits::{One, Zero};
 use rayon::prelude::*;
 
-use crate::matrix_products::{RuntimeModulus, StoredInteger};
+use crate::integer_storage::IntegerTable;
 use crate::witgen::Z;
 use crate::{BoolWitness, Circuit, HintResult, PackedBits, ScalarBits, WitnessContext};
 
@@ -43,18 +44,15 @@ impl BoolWitness for WengertBit {
     type Repr<const N: usize, const M: usize> = ScalarBits<Self, N>;
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 struct RawTerm {
     node: u32,
-    coefficient: StoredInteger,
+    coefficient: u32,
 }
 
 impl RawTerm {
-    fn new<const LIMBS: usize>(node: u32, coefficient: Z<LIMBS>) -> Self {
-        Self {
-            node,
-            coefficient: StoredInteger::from_fixed(coefficient),
-        }
+    fn is_zero(&self) -> bool {
+        self.coefficient == 2
     }
 }
 
@@ -95,6 +93,8 @@ struct Recorder {
     power_groups: Vec<RawPowerGroup>,
     /// Number of constraints recorded so far; also the next constraint's row index.
     constraints: usize,
+    coefficients: IntegerTable,
+    coefficient_map: HashMap<Vec<u64>, u32>,
 }
 
 #[derive(Debug)]
@@ -108,14 +108,42 @@ struct RawPowerGroup {
 
 impl Recorder {
     fn new() -> Self {
-        Self {
+        let mut recorder = Self {
             // Integer-witness column zero is the implicit constant one.
             nodes: vec![RawNode::Input],
             input_nodes: vec![0],
             roots: Vec::new(),
             power_groups: Vec::new(),
             constraints: 0,
+            coefficients: IntegerTable::default(),
+            coefficient_map: HashMap::new(),
+        };
+        recorder.intern(Z::<1>::ONE);
+        recorder.intern(-Z::<1>::ONE);
+        recorder.intern(Z::<1>::ZERO);
+        recorder
+    }
+
+    // Coefficients are public circuit structure. Normalize only the hash key to
+    // deduplicate equivalent values from different gadget widths; storage keeps L.
+    fn intern<const L: usize>(&mut self, value: Z<L>) -> u32 {
+        let words = value.as_words();
+        let mut len = L;
+        while len > 1 {
+            let sign = 0u64.wrapping_sub(words[len - 2] >> 63);
+            if words[len - 1] != sign {
+                break;
+            }
+            len -= 1;
         }
+        let key = &words[..len];
+        if let Some(index) = self.coefficient_map.get(key) {
+            return *index;
+        }
+        let index = u32::try_from(self.coefficients.len()).expect("too many tape coefficients");
+        self.coefficients.push(value);
+        self.coefficient_map.insert(key.to_vec(), index);
+        index
     }
 
     fn push_input(&mut self) -> u32 {
@@ -180,12 +208,15 @@ impl<const LIMBS: usize> WengertValue<LIMBS> {
         }
     }
 
-    fn raw_term(&self) -> RawTerm {
+    fn raw_term(&self, recorder: &mut Recorder) -> RawTerm {
         let node = match self.location {
             ValueLocation::Constant => 0,
             ValueLocation::Node { node, .. } => node,
         };
-        RawTerm::new(node, self.coefficient)
+        RawTerm {
+            node,
+            coefficient: recorder.intern(self.coefficient),
+        }
     }
 
     fn same_recorder(left: &Arc<SharedRecorder>, right: &Arc<SharedRecorder>) {
@@ -255,8 +286,10 @@ impl<const LIMBS: usize> Add for WengertValue<LIMBS> {
                 if let Some(other) = rhs.recorder() {
                     Self::same_recorder(&recorder, other);
                 }
-                let terms = [self.raw_term(), rhs.raw_term()].into();
-                let node = recorder.with_mut(|tape| tape.push_sum(terms));
+                let node = recorder.with_mut(|tape| {
+                    let terms = [self.raw_term(tape), rhs.raw_term(tape)].into();
+                    tape.push_sum(terms)
+                });
                 Self::attached(recorder, node, Z::one())
             }
         }
@@ -349,7 +382,7 @@ pub struct WengertTape {
     /// Packed bit sums expanded into column weights using powers of two.
     power_groups: Box<[PowerGroup]>,
     /// Shared integer coefficients, before reduction; entries 0 and 1 are +1 and -1.
-    coefficients: Box<[StoredInteger]>,
+    coefficients: IntegerTable,
 }
 
 /// Evaluates the transpose of the tape's linear map modulo a fixed prime `q`.
@@ -380,10 +413,7 @@ pub struct WengertTape {
 #[derive(Debug)]
 pub struct PreparedWengertEvaluator<'a> {
     tape: &'a WengertTape,
-    modulus_uint: U128,
-    modulus_words: [u64; 2],
-    mod_neg_inv: u64,
-    params: FixedMontyParams<2>,
+    field: FpCtx<2>,
     coefficients: Vec<[u64; 2]>,
     weighted_challenges: Vec<[[u64; 2]; 3]>,
     adjoints: Vec<[u64; 2]>,
@@ -399,13 +429,15 @@ impl WengertTape {
             roots: raw_roots,
             power_groups: raw_power_groups,
             constraints,
+            coefficients: recorded_coefficients,
+            coefficient_map: _,
         } = recorder;
         let node_count = nodes.len();
 
         // Reverse reachability removes arithmetic that cannot affect A/B/C.
         let mut live = vec![false; node_count];
         for root in &raw_roots {
-            if !root.term.coefficient.is_zero() {
+            if !root.term.is_zero() {
                 live[root.term.node as usize] = true;
             }
         }
@@ -415,7 +447,7 @@ impl WengertTape {
             }
             if let RawNode::Sum(terms) = &nodes[node] {
                 for term in terms {
-                    if !term.coefficient.is_zero() {
+                    if !term.is_zero() {
                         live[term.node as usize] = true;
                     }
                 }
@@ -440,7 +472,7 @@ impl WengertTape {
             }
             if let RawNode::Sum(terms) = &nodes[target] {
                 for term in terms {
-                    if live[term.node as usize] && !term.coefficient.is_zero() {
+                    if live[term.node as usize] && !term.is_zero() {
                         depth[term.node as usize] = depth[term.node as usize].max(
                             depth[target]
                                 .checked_add(1)
@@ -503,20 +535,19 @@ impl WengertTape {
             old_to_new[old as usize] = new as u32;
         }
 
-        let mut coefficient_map = HashMap::new();
-        let one = StoredInteger::from_fixed(Z::<1>::one());
-        let negative_one = StoredInteger::from_fixed(-Z::<1>::one());
-        coefficient_map.insert(one.clone(), 0_u32);
-        coefficient_map.insert(negative_one.clone(), 1_u32);
-        let mut coefficients = vec![one, negative_one];
-        let mut intern = |coefficient: &StoredInteger| {
-            if let Some(index) = coefficient_map.get(coefficient) {
-                return *index;
+        let mut coefficients = IntegerTable::default();
+        recorded_coefficients.copy_row_to(0, &mut coefficients);
+        recorded_coefficients.copy_row_to(1, &mut coefficients);
+        let mut remap = vec![u32::MAX; recorded_coefficients.len()];
+        remap[0] = 0;
+        remap[1] = 1;
+        let mut intern = |index: u32| {
+            let slot = &mut remap[index as usize];
+            if *slot == u32::MAX {
+                *slot = u32::try_from(coefficients.len()).expect("too many tape coefficients");
+                recorded_coefficients.copy_row_to(index as usize, &mut coefficients);
             }
-            let index = u32::try_from(coefficients.len()).expect("too many tape coefficients");
-            coefficients.push(coefficient.clone());
-            coefficient_map.insert(coefficient.clone(), index);
-            index
+            *slot
         };
 
         let mut edge_counts = vec![0_u32; live_count];
@@ -526,7 +557,7 @@ impl WengertTape {
             }
             if let RawNode::Sum(terms) = node {
                 for term in terms {
-                    if live[term.node as usize] && !term.coefficient.is_zero() {
+                    if live[term.node as usize] && !term.is_zero() {
                         edge_counts[old_to_new[term.node as usize] as usize] += 1;
                     }
                 }
@@ -547,14 +578,14 @@ impl WengertTape {
             }
             if let RawNode::Sum(terms) = node {
                 for term in terms {
-                    if !live[term.node as usize] || term.coefficient.is_zero() {
+                    if !live[term.node as usize] || term.is_zero() {
                         continue;
                     }
                     let source = old_to_new[term.node as usize] as usize;
                     let cursor = &mut edge_cursors[source];
                     edges[*cursor as usize] = Edge {
                         dependent: old_to_new[target],
-                        coefficient: intern(&term.coefficient),
+                        coefficient: intern(term.coefficient),
                     };
                     *cursor += 1;
                 }
@@ -563,7 +594,7 @@ impl WengertTape {
 
         let mut root_counts = vec![0_u32; live_count];
         for root in &raw_roots {
-            if !root.term.coefficient.is_zero() {
+            if !root.term.is_zero() {
                 root_counts[old_to_new[root.term.node as usize] as usize] += 1;
             }
         }
@@ -578,14 +609,14 @@ impl WengertTape {
             root_offsets[live_count] as usize
         ];
         for root in raw_roots {
-            if root.term.coefficient.is_zero() {
+            if root.term.is_zero() {
                 continue;
             }
             let node = old_to_new[root.term.node as usize] as usize;
             let cursor = &mut root_cursors[node];
             roots[*cursor as usize] = Root {
                 row: root.row,
-                coefficient: intern(&root.term.coefficient),
+                coefficient: intern(root.term.coefficient),
                 kind: root.kind,
             };
             *cursor += 1;
@@ -616,7 +647,7 @@ impl WengertTape {
                     },
                 })
                 .collect(),
-            coefficients: coefficients.into_boxed_slice(),
+            coefficients,
         }
     }
 
@@ -646,7 +677,7 @@ impl WengertTape {
     }
 
     /// Number of distinct modulus-independent integer coefficients.
-    pub const fn coefficient_count(&self) -> usize {
+    pub fn coefficient_count(&self) -> usize {
         self.coefficients.len()
     }
 
@@ -659,40 +690,46 @@ impl WengertTape {
             + self.root_offsets.len() * size_of::<u32>()
             + self.roots.len() * size_of::<Root>()
             + self.power_groups.len() * size_of::<PowerGroup>()
-            + self.coefficients.len() * size_of::<StoredInteger>()
-            + self
-                .coefficients
-                .iter()
-                .map(|coefficient| size_of_val(coefficient.words()))
-                .sum::<usize>()
+            + self.coefficients.payload_bytes()
     }
 
     /// Prepares this tape for repeated evaluation modulo `modulus`.
     pub fn prepare(
         &self,
-        modulus: &RuntimeModulus<2>,
+        modulus: &ModRingCtx<2>,
     ) -> Result<PreparedWengertEvaluator<'_>, WengertApplyError> {
         self.prepare_inner(modulus, None)
     }
 
     fn prepare_inner(
         &self,
-        modulus: &RuntimeModulus<2>,
+        modulus: &ModRingCtx<2>,
         force_parallel: Option<bool>,
     ) -> Result<PreparedWengertEvaluator<'_>, WengertApplyError> {
-        let modulus_words = *modulus.modulus_words();
-        let modulus_uint = U128::from_words(modulus_words);
-        let odd = Option::<Odd<U128>>::from(Odd::new(modulus_uint))
-            .ok_or(WengertApplyError::EvenModulus)?;
-        let params = FixedMontyParams::new_vartime(odd);
-        let coefficients = parallel_map(&self.coefficients, force_parallel, |coefficient| {
-            FixedMontyForm::new(&U128::from_words(modulus.reduce(coefficient)), &params)
-                .to_montgomery()
-                .to_words()
-        });
+        let modulus_words = *modulus.modulus().as_words();
+        if modulus_words[0] & 1 == 0 {
+            return Err(WengertApplyError::EvenModulus);
+        }
+        let field = create_prime_field(Uint::from_words(modulus_words));
+        let view = self.coefficients.view();
+        let project = |index: usize| {
+            *field
+                .from_integer(&field::ZRef::from_twos_complement_words(&view[index]))
+                .as_montgomery_integer()
+                .as_words()
+        };
+        let coefficients: Vec<_> =
+            if force_parallel.unwrap_or(self.coefficients.len() >= PARALLEL_VECTOR_THRESHOLD) {
+                (0..self.coefficients.len())
+                    .into_par_iter()
+                    .map(project)
+                    .collect()
+            } else {
+                (0..self.coefficients.len()).map(project).collect()
+            };
         debug_assert_eq!(
             coefficients[0],
-            FixedMontyForm::one(&params).to_montgomery().to_words()
+            *field.one().as_montgomery_integer().as_words()
         );
         let max_power_group_len = self
             .power_groups
@@ -705,15 +742,12 @@ impl WengertTape {
             let mut power = coefficients[0];
             for _ in 0..max_power_group_len {
                 powers_of_two.push(power);
-                power = add_mod_words(power, power, modulus_words);
+                power = add_representatives(power, power, &field);
             }
         }
         Ok(PreparedWengertEvaluator {
             tape: self,
-            modulus_uint,
-            modulus_words,
-            mod_neg_inv: params.mod_neg_inv().0,
-            params,
+            field,
             coefficients,
             weighted_challenges: vec![[[0; 2]; 3]; self.row_count()],
             adjoints: vec![[0; 2]; self.level_offsets.last().copied().unwrap_or(0) as usize],
@@ -727,7 +761,7 @@ impl WengertTape {
         &self,
         challenges: &[[u64; 2]],
         x: [u64; 2],
-        modulus: &RuntimeModulus<2>,
+        modulus: &ModRingCtx<2>,
     ) -> Result<Vec<[u64; 2]>, WengertApplyError> {
         let mut output = Vec::new();
         self.apply_into(challenges, x, modulus, &mut output)?;
@@ -739,7 +773,7 @@ impl WengertTape {
         &self,
         challenges: &[[u64; 2]],
         x: [u64; 2],
-        modulus: &RuntimeModulus<2>,
+        modulus: &ModRingCtx<2>,
         output: &mut Vec<[u64; 2]>,
     ) -> Result<(), WengertApplyError> {
         self.apply_inner(challenges, x, modulus, output, None)
@@ -749,7 +783,7 @@ impl WengertTape {
         &self,
         challenges: &[[u64; 2]],
         x: [u64; 2],
-        modulus: &RuntimeModulus<2>,
+        modulus: &ModRingCtx<2>,
         output: &mut Vec<[u64; 2]>,
         force_parallel: Option<bool>,
     ) -> Result<(), WengertApplyError> {
@@ -761,7 +795,10 @@ impl WengertTape {
         // Multiplying by a cached coefficient c̄ = R c preserves this form:
         //   MontMul(r_i, c̄) = r_i (R c) R⁻¹ mod q = r_i c mod q.
         let reduced_challenges = parallel_map(challenges, force_parallel, |challenge| {
-            reduce_words(*challenge, evaluator.modulus_uint).to_words()
+            *evaluator
+                .field
+                .reduce_integer(&Uint::from_words(*challenge))
+                .as_words()
         });
         // Encode the matrix-batching challenge as x̄ = R x mod q.
         let montgomery_x = evaluator.to_montgomery(x);
@@ -780,8 +817,7 @@ impl WengertTape {
 
 struct ReverseContext<'a> {
     tape: &'a WengertTape,
-    modulus_words: [u64; 2],
-    mod_neg_inv: u64,
+    field: &'a FpCtx<2>,
     coefficients: &'a [[u64; 2]],
     weighted_challenges: &'a [[[u64; 2]; 3]],
 }
@@ -792,14 +828,9 @@ impl ReverseContext<'_> {
         if coefficient == 0 {
             source
         } else if coefficient == 1 {
-            neg_mod_words(source, self.modulus_words)
+            neg_representative(source, &self.field)
         } else {
-            montgomery_mul_2(
-                source,
-                self.coefficients[coefficient as usize],
-                self.modulus_words,
-                self.mod_neg_inv,
-            )
+            mul_representatives(source, self.coefficients[coefficient as usize], &self.field)
         }
     }
 
@@ -827,7 +858,7 @@ impl ReverseContext<'_> {
             }];
             let contribution = self.scale(seed, root.coefficient);
             if initialized {
-                value = add_mod_words(value, contribution, self.modulus_words);
+                value = add_representatives(value, contribution, &self.field);
             } else {
                 value = contribution;
                 initialized = true;
@@ -837,7 +868,7 @@ impl ReverseContext<'_> {
             debug_assert!((edge.dependent as usize) < adjoints.len());
             let contribution = self.scale(adjoints[edge.dependent as usize], edge.coefficient);
             if initialized {
-                value = add_mod_words(value, contribution, self.modulus_words);
+                value = add_representatives(value, contribution, &self.field);
             } else {
                 value = contribution;
                 initialized = true;
@@ -850,14 +881,23 @@ impl ReverseContext<'_> {
 impl PreparedWengertEvaluator<'_> {
     /// Converts a canonical element into Montgomery form for this modulus.
     pub fn to_montgomery(&self, canonical: [u64; 2]) -> [u64; 2] {
-        FixedMontyForm::new(&reduce_words(canonical, self.modulus_uint), &self.params)
-            .to_montgomery()
-            .to_words()
+        *self
+            .field
+            .from_integer(&Uint::from_words(canonical))
+            .as_montgomery_integer()
+            .as_words()
     }
 
     /// Converts a Montgomery element into canonical form for this modulus.
     pub fn from_montgomery(&self, montgomery: [u64; 2]) -> [u64; 2] {
-        montgomery_retrieve_2(montgomery, self.modulus_words, self.mod_neg_inv)
+        *self
+            .field
+            .to_integer(
+                &self
+                    .field
+                    .from_montgomery_integer(Uint::from_words(montgomery)),
+            )
+            .as_words()
     }
 
     /// Bytes occupied by reduced coefficients and reusable apply vectors.
@@ -896,10 +936,7 @@ impl PreparedWengertEvaluator<'_> {
     ) -> Result<(), WengertApplyError> {
         let Self {
             tape,
-            modulus_uint: _,
-            modulus_words,
-            mod_neg_inv,
-            params: _,
+            field,
             coefficients,
             weighted_challenges,
             adjoints,
@@ -912,15 +949,11 @@ impl PreparedWengertEvaluator<'_> {
                 actual: challenges.len(),
             });
         }
-        let x_squared = montgomery_mul_2(x, x, *modulus_words, *mod_neg_inv);
+        let x_squared = mul_representatives(x, x, field);
         let prepare_challenge = |challenge: &[u64; 2]| {
             let r = *challenge;
-            let rx = montgomery_mul_2(r, x, *modulus_words, *mod_neg_inv);
-            [
-                r,
-                rx,
-                montgomery_mul_2(r, x_squared, *modulus_words, *mod_neg_inv),
-            ]
+            let rx = mul_representatives(r, x, field);
+            [r, rx, mul_representatives(r, x_squared, field)]
         };
         let parallel = force_parallel.unwrap_or_else(|| {
             rayon::current_num_threads() > 1
@@ -968,10 +1001,7 @@ impl PreparedWengertEvaluator<'_> {
     fn run_reverse(&mut self, force_parallel: Option<bool>) {
         let Self {
             tape,
-            modulus_uint: _,
-            modulus_words,
-            mod_neg_inv,
-            params: _,
+            field,
             coefficients,
             weighted_challenges,
             adjoints,
@@ -980,8 +1010,7 @@ impl PreparedWengertEvaluator<'_> {
         } = self;
         let context = ReverseContext {
             tape,
-            modulus_words: *modulus_words,
-            mod_neg_inv: *mod_neg_inv,
+            field,
             coefficients,
             weighted_challenges,
         };
@@ -1060,17 +1089,17 @@ impl PreparedWengertEvaluator<'_> {
                 let mut base = full;
                 if column < low_end {
                     let low = read_adjoint(group.low_node);
-                    base = add_mod_words(base, low, *modulus_words);
+                    base = add_representatives(base, low, field);
                 }
                 let power = column - group_start;
-                let mut value = if power == 0 || base == [0; 2] {
+                let mut value = if power == 0 {
                     base
                 } else {
-                    montgomery_mul_2(base, powers_of_two[power], *modulus_words, *mod_neg_inv)
+                    mul_representatives(base, powers_of_two[power], field)
                 };
                 for output in &mut chunk[column - chunk_start..segment_end - chunk_start] {
                     *output = value;
-                    value = add_mod_words(value, value, *modulus_words);
+                    value = add_representatives(value, value, field);
                 }
                 column = segment_end;
                 if column == group_end {
@@ -1126,99 +1155,39 @@ fn parallel_map<T: Sync, U: Send>(
     }
 }
 
-fn reduce_words(words: [u64; 2], modulus: U128) -> U128 {
-    let value = U128::from_words(words);
-    let modulus_words = modulus.to_words();
-    if words[1] < modulus_words[1] || (words[1] == modulus_words[1] && words[0] < modulus_words[0])
-    {
-        return value;
-    }
-    let nonzero = crypto_bigint::NonZero::new(modulus).expect("validated nonzero modulus");
-    value.rem_vartime(&nonzero)
-}
-
+/// The input/output words may be canonical residues or Montgomery encodings;
+/// addition and scaling by a Montgomery coefficient preserve that representation.
 #[inline(always)]
-fn carrying_mul_add(left: u64, right: u64, addend: u64, carry: u64) -> (u64, u64) {
-    let value = u128::from(left) * u128::from(right) + u128::from(addend) + u128::from(carry);
-    (value as u64, (value >> 64) as u64)
-}
-
-/// Two-limb FIOS Montgomery multiplication with a final canonical reduction.
-#[inline(always)]
-pub(crate) fn montgomery_mul_2(
+pub(crate) fn mul_representatives(
     left: [u64; 2],
-    right: [u64; 2],
-    modulus: [u64; 2],
-    mod_neg_inv: u64,
+    coefficient: [u64; 2],
+    field: &FpCtx<2>,
 ) -> [u64; 2] {
-    let mut output = [0_u64; 2];
-    let mut meta_carry = 0_u128;
-    for left_limb in left {
-        let low_product = u128::from(left_limb) * u128::from(right[0]) + u128::from(output[0]);
-        let multiplier = (low_product as u64).wrapping_mul(mod_neg_inv);
-        let (sum, overflow) =
-            (u128::from(multiplier) * u128::from(modulus[0])).overflowing_add(low_product);
-        let mut carry = (u128::from(overflow) << 64) | (sum >> 64);
-
-        let high_product = u128::from(left_limb) * u128::from(right[1]) + u128::from(output[1]);
-        let modulus_product = u128::from(multiplier) * u128::from(modulus[1]) + carry;
-        let (sum, overflow) = high_product.overflowing_add(modulus_product);
-        output[0] = sum as u64;
-        carry = (u128::from(overflow) << 64) | (sum >> 64);
-
-        carry += meta_carry;
-        output[1] = carry as u64;
-        meta_carry = carry >> 64;
-    }
-
-    let (low, low_borrow) = output[0].overflowing_sub(modulus[0]);
-    let (high, first_borrow) = output[1].overflowing_sub(modulus[1]);
-    let (high, second_borrow) = high.overflowing_sub(u64::from(low_borrow));
-    if meta_carry == 0 && (first_borrow || second_borrow) {
-        output
-    } else {
-        [low, high]
-    }
-}
-
-/// Two-limb specialization of Montgomery retrieval. The input is reduced and
-/// in Montgomery form, so HAC 14.32 needs no final conditional subtraction.
-#[inline(always)]
-fn montgomery_retrieve_2(value: [u64; 2], modulus: [u64; 2], mod_neg_inv: u64) -> [u64; 2] {
-    let mut output = [0_u64; 2];
-    for input in value {
-        let multiplier = output[0].wrapping_add(input).wrapping_mul(mod_neg_inv);
-        let (_, carry) = carrying_mul_add(multiplier, modulus[0], input, output[0]);
-        (output[0], output[1]) = carrying_mul_add(multiplier, modulus[1], output[1], carry);
-    }
-    output
-}
-
-pub(crate) fn add_mod_words(left: [u64; 2], right: [u64; 2], modulus: [u64; 2]) -> [u64; 2] {
-    let left = u128::from(left[0]) | (u128::from(left[1]) << 64);
-    let right = u128::from(right[0]) | (u128::from(right[1]) << 64);
-    let modulus = u128::from(modulus[0]) | (u128::from(modulus[1]) << 64);
-    let (sum, overflow) = left.overflowing_add(right);
-    let reduced = if overflow {
-        sum.wrapping_sub(modulus)
-    } else if sum >= modulus {
-        sum - modulus
-    } else {
-        sum
-    };
-    [reduced as u64, (reduced >> 64) as u64]
+    *field
+        .mul_canonical(
+            &Uint::from_words(left),
+            &field.from_montgomery_integer(Uint::from_words(coefficient)),
+        )
+        .as_words()
 }
 
 #[inline(always)]
-pub(crate) fn neg_mod_words(value: [u64; 2], modulus: [u64; 2]) -> [u64; 2] {
-    if value == [0, 0] {
-        return value;
-    }
-    let (low, borrow) = modulus[0].overflowing_sub(value[0]);
-    let high = modulus[1]
-        .wrapping_sub(value[1])
-        .wrapping_sub(u64::from(borrow));
-    [low, high]
+pub(crate) fn add_representatives(left: [u64; 2], right: [u64; 2], field: &FpCtx<2>) -> [u64; 2] {
+    *field
+        .add(
+            &field.from_montgomery_integer(Uint::from_words(left)),
+            &field.from_montgomery_integer(Uint::from_words(right)),
+        )
+        .as_montgomery_integer()
+        .as_words()
+}
+
+#[inline(always)]
+pub(crate) fn neg_representative(value: [u64; 2], field: &FpCtx<2>) -> [u64; 2] {
+    *field
+        .neg(&field.from_montgomery_integer(Uint::from_words(value)))
+        .as_montgomery_integer()
+        .as_words()
 }
 
 /// One geometric run of the last [`PreparedWengertEvaluator::apply`] /
@@ -1259,18 +1228,13 @@ impl PreparedWengertEvaluator<'_> {
                     base: full,
                 });
             } else {
-                let low = add_mod_words(full, read(group.low_node), self.modulus_words);
+                let low = add_representatives(full, read(group.low_node), &self.field);
                 runs.push(PowerRun {
                     first_column,
                     len: low_len,
                     base: low,
                 });
-                let base = montgomery_mul_2(
-                    full,
-                    self.powers_of_two[low_len],
-                    self.modulus_words,
-                    self.mod_neg_inv,
-                );
+                let base = mul_representatives(full, self.powers_of_two[low_len], &self.field);
                 runs.push(PowerRun {
                     first_column: first_column + low_len,
                     len: len - low_len,
@@ -1353,10 +1317,13 @@ impl WengertGenerator {
             0 => WengertValue::zero(),
             1 => terms.pop().unwrap(),
             _ => {
-                let terms = terms.iter().map(WengertValue::raw_term).collect::<Vec<_>>();
-                let node = self
-                    .recorder
-                    .with_mut(|recorder| recorder.push_sum(terms.into_boxed_slice()));
+                let node = self.recorder.with_mut(|recorder| {
+                    let terms = terms
+                        .iter()
+                        .map(|value| value.raw_term(recorder))
+                        .collect::<Vec<_>>();
+                    recorder.push_sum(terms.into_boxed_slice())
+                });
                 WengertValue::attached(self.recorder.clone(), node, Z::one())
             }
         }
@@ -1369,7 +1336,7 @@ impl Circuit for WengertGenerator {
     type Z<const LIMBS: usize> = WengertValue<LIMBS>;
 
     fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
-        Z::from_le_words(words)
+        crate::witgen::integer_from_words(words)
     }
 
     fn xor(&mut self, _: WengertBit, _: WengertBit) -> WengertBit {
@@ -1465,21 +1432,26 @@ impl Circuit for WengertGenerator {
         self.recorder.with_mut(|recorder| {
             let row = u32::try_from(recorder.constraints).expect("too many R1CS rows");
             recorder.constraints += 1;
+            let terms = [
+                a.raw_term(recorder),
+                b.raw_term(recorder),
+                c.raw_term(recorder),
+            ];
             recorder.roots.extend([
                 RawRoot {
                     row,
                     kind: RootKind::A,
-                    term: a.raw_term(),
+                    term: terms[0],
                 },
                 RawRoot {
                     row,
                     kind: RootKind::B,
-                    term: b.raw_term(),
+                    term: terms[1],
                 },
                 RawRoot {
                     row,
                     kind: RootKind::C,
-                    term: c.raw_term(),
+                    term: terms[2],
                 },
             ]);
         });
@@ -1508,6 +1480,8 @@ mod tests {
     use super::*;
     use crate::constraints::{ConstraintGenerator, ConstraintMatrices};
     use crate::sha256::{COMPRESSION_INPUT_BITS, compression_circuit};
+    use crypto_bigint::modular::{FixedMontyForm, FixedMontyParams};
+    use crypto_bigint::{Odd, U128};
 
     fn example_circuit<CS: Circuit>(circuit: &mut CS, inputs: &[CS::Bool; 3]) {
         let a = circuit.f2z::<2>(inputs[0].clone());
@@ -1550,14 +1524,32 @@ mod tests {
         let mut output = vec![BigInt::zero(); matrices.a.column_count()];
         for (row, challenge) in challenges.iter().enumerate() {
             let challenge = as_bigint(*challenge);
-            for (column, coefficient) in matrices.a.rows()[row].entries() {
-                output[*column] += &challenge * coefficient;
+            for (column, coefficient) in matrices.a.row_entries(row) {
+                let coefficient = BigInt::from_signed_bytes_le(
+                    &coefficient
+                        .iter()
+                        .flat_map(|w| w.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                output[column] += &challenge * coefficient;
             }
-            for (column, coefficient) in matrices.b.rows()[row].entries() {
-                output[*column] += &challenge * &x * coefficient;
+            for (column, coefficient) in matrices.b.row_entries(row) {
+                let coefficient = BigInt::from_signed_bytes_le(
+                    &coefficient
+                        .iter()
+                        .flat_map(|w| w.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                output[column] += &challenge * &x * coefficient;
             }
-            for (column, coefficient) in matrices.c.rows()[row].entries() {
-                output[*column] += &challenge * &x_squared * coefficient;
+            for (column, coefficient) in matrices.c.row_entries(row) {
+                let coefficient = BigInt::from_signed_bytes_le(
+                    &coefficient
+                        .iter()
+                        .flat_map(|w| w.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                output[column] += &challenge * &x_squared * coefficient;
             }
         }
         output
@@ -1590,7 +1582,10 @@ mod tests {
             (BigUint::one() << 127_usize) - BigUint::one(),
             (BigUint::one() << 128_usize) - BigUint::from(159_u64),
         ] {
-            let runtime = RuntimeModulus::<2>::new(modulus.clone()).unwrap();
+            let runtime = ModRingCtx::<2>::new(field::Uint::from_words(
+                crate::matrix_products::biguint_words(&(modulus.clone())),
+            ))
+            .unwrap();
             assert_eq!(
                 tape.apply(&challenges, x, &runtime).unwrap(),
                 direct_product(&matrices, &challenges, x, &modulus)
@@ -1618,7 +1613,10 @@ mod tests {
             u128::MAX - 158,
         ] {
             let modulus = BigUint::from(prime);
-            let runtime = RuntimeModulus::<2>::new(modulus.clone()).unwrap();
+            let runtime = ModRingCtx::<2>::new(field::Uint::from_words(
+                crate::matrix_products::biguint_words(&(modulus.clone())),
+            ))
+            .unwrap();
             let mut prepared = tape.prepare(&runtime).unwrap();
             let cases = [0, 1, prime - 1, prime, prime + 1, u128::MAX];
             for (i, &r) in cases.iter().enumerate() {
@@ -1643,11 +1641,7 @@ mod tests {
                     let montgomery_x = prepared.to_montgomery(x);
                     let expected_encoded: Vec<_> = expected
                         .iter()
-                        .map(|value| {
-                            FixedMontyForm::new(&U128::from_words(*value), &prepared.params)
-                                .to_montgomery()
-                                .to_words()
-                        })
+                        .map(|value| prepared.to_montgomery(*value))
                         .collect();
                     let encoded = prepared
                         .apply(&montgomery_challenges, montgomery_x)
@@ -1661,9 +1655,12 @@ mod tests {
     #[test]
     fn parallel_and_sequential_reverse_batches_agree() {
         let tape = build_tape();
-        let modulus =
-            RuntimeModulus::<2>::new((BigUint::one() << 128_usize) - BigUint::from(159_u64))
-                .unwrap();
+        let modulus = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(
+                &((BigUint::one() << 128_usize) - BigUint::from(159_u64)),
+            ),
+        ))
+        .unwrap();
         let challenges = [[0x1234_5678_9abc_def0, 7], [0x0fed_cba9_8765_4321, 11]];
         let mut sequential = Vec::new();
         let mut parallel = Vec::new();
@@ -1677,9 +1674,12 @@ mod tests {
     #[test]
     fn prepared_evaluator_reuses_storage_and_matches_one_shot_apply() {
         let tape = build_tape();
-        let modulus =
-            RuntimeModulus::<2>::new((BigUint::one() << 128_usize) - BigUint::from(159_u64))
-                .unwrap();
+        let modulus = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(
+                &((BigUint::one() << 128_usize) - BigUint::from(159_u64)),
+            ),
+        ))
+        .unwrap();
         let challenges = [[0x1234_5678_9abc_def0, 7], [0x0fed_cba9_8765_4321, 11]];
         let x = [31, 3];
         let expected = tape.apply(&challenges, x, &modulus).unwrap();
@@ -1708,7 +1708,7 @@ mod tests {
         let modulus_words = [u64::MAX - 158, u64::MAX];
         let modulus = U128::from_words(modulus_words);
         let params = FixedMontyParams::new_vartime(Odd::new(modulus).unwrap());
-        let mod_neg_inv = params.mod_neg_inv().0;
+        let field = create_prime_field(Uint::from_words(modulus_words));
         let mut state = 0x4d59_5df4_d0f3_3173_u64;
         let mut random = || {
             state ^= state << 13;
@@ -1718,21 +1718,30 @@ mod tests {
         };
 
         for _ in 0..1_000 {
-            let canonical_left = reduce_words([random(), random()], modulus);
-            let canonical_right = reduce_words([random(), random()], modulus);
+            let canonical_left = U128::from_words(
+                *field
+                    .reduce_integer(&Uint::from_words([random(), random()]))
+                    .as_words(),
+            );
+            let canonical_right = U128::from_words(
+                *field
+                    .reduce_integer(&Uint::from_words([random(), random()]))
+                    .as_words(),
+            );
             let left = FixedMontyForm::new(&canonical_left, &params);
             let right = FixedMontyForm::new(&canonical_right, &params);
             let expected = (left * right).to_montgomery().to_words();
-            let actual = montgomery_mul_2(
+            let actual = mul_representatives(
                 left.to_montgomery().to_words(),
                 right.to_montgomery().to_words(),
-                modulus_words,
-                mod_neg_inv,
+                &field,
             );
 
             assert_eq!(actual, expected);
             assert_eq!(
-                montgomery_retrieve_2(actual, modulus_words, mod_neg_inv),
+                *field
+                    .to_integer(&field.from_montgomery_integer(Uint::from_words(actual)))
+                    .as_words(),
                 (left * right).retrieve().to_words()
             );
         }
@@ -1755,7 +1764,10 @@ mod tests {
             .collect();
         let x = [0x1234_5678_9abc_def0, 0x0123_4567_89ab_cdef];
         let prime = (BigUint::one() << 128_usize) - BigUint::from(159_u64);
-        let modulus = RuntimeModulus::<2>::new(prime.clone()).unwrap();
+        let modulus = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(&(prime.clone())),
+        ))
+        .unwrap();
 
         assert_eq!(tape.row_count(), matrices.a.row_count());
         assert_eq!(tape.column_count(), matrices.a.column_count());
@@ -1770,7 +1782,10 @@ mod tests {
     #[test]
     fn rejects_wrong_challenge_length_and_even_modulus() {
         let tape = build_tape();
-        let odd = RuntimeModulus::<2>::new(BigUint::from(101_u64)).unwrap();
+        let odd = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(&(BigUint::from(101_u64))),
+        ))
+        .unwrap();
         assert_eq!(
             tape.apply(&[[1, 0]], [2, 0], &odd),
             Err(WengertApplyError::ChallengeLength {
@@ -1778,7 +1793,10 @@ mod tests {
                 actual: 1,
             })
         );
-        let even = RuntimeModulus::<2>::new(BigUint::from(100_u64)).unwrap();
+        let even = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(&(BigUint::from(100_u64))),
+        ))
+        .unwrap();
         assert_eq!(
             tape.apply(&[[1, 0], [2, 0]], [3, 0], &even),
             Err(WengertApplyError::EvenModulus)
@@ -1794,7 +1812,10 @@ mod tests {
         let _dead = unused.clone() + unused;
         generator.assert_r1c(used, WengertValue::zero(), WengertValue::zero());
         let tape = generator.finish();
-        let modulus = RuntimeModulus::<2>::new(BigUint::from(101_u64)).unwrap();
+        let modulus = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(&(BigUint::from(101_u64))),
+        ))
+        .unwrap();
         assert_eq!(
             tape.apply(&[[7, 0]], [3, 0], &modulus).unwrap(),
             [[0, 0], [7, 0], [0, 0]]

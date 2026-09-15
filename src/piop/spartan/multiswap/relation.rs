@@ -23,18 +23,31 @@
 //! `t = 12 + h`, `s`, `W = 1`.  The layout keeps `t <= 13` so a 113-bit
 //! runtime prime needs exactly one mod-q weight chunk.
 
-use crypto_primitives::FromWithConfig;
+use super::super::raw_monty::{NativeLimbWitness, RawProducts};
+use crate::piop::spartan::SpartanField as _;
+#[cfg(test)]
+use crate::piop::spartan::{R1csProductMles, build_assignment_mle, build_product_mles};
+#[cfg(test)]
+use crate::poly::mle::DenseMultilinearExtension;
+use field::RingOps;
+
+use circuit::integer_storage::UnsignedIntegerTable;
+use field::{
+    Fp, FpCtx, FpLinearAcc, FpProductAcc, IntegerEmbedding, MergeAccumulator, Reduce, Uint, UintRef,
+};
+#[cfg(test)]
 use num_bigint::BigUint;
+#[cfg(test)]
 use num_traits::Zero;
 use thiserror::Error;
 
-use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
+use crate::pcs::IntegerMatrixLayout;
 
 use super::super::{
-    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SpartanField,
-    SpartanMatrixError, build_assignment_mle, build_product_mles, matrix::SparseMatrix,
+    ConstraintMatrices, PreparedConstraintMatrices, SpartanField, SpartanMatrixError,
+    matrix::SparseMatrix,
 };
-use super::circuit::{MULTISWAP_VALUE_BITS, MultiswapCircuit};
+use super::circuit::{IntegerCoo, MULTISWAP_VALUE_BITS, MultiswapCircuit};
 
 /// Number of committed bit slots per gate (`witness || quotient`).
 pub const MULTISWAP_SLOTS: usize = 2 * MULTISWAP_VALUE_BITS;
@@ -157,9 +170,10 @@ impl MultiswapLayout {
 pub struct MultiswapIntegerRelation {
     layout: MultiswapLayout,
     live_rows: usize,
-    a: Vec<Vec<(usize, BigUint)>>,
-    b: Vec<Vec<(usize, BigUint)>>,
-    c: Vec<Vec<(usize, BigUint)>>,
+    coefficients: UnsignedIntegerTable,
+    a: Vec<Vec<(usize, usize)>>,
+    b: Vec<Vec<(usize, usize)>>,
+    c: Vec<Vec<(usize, usize)>>,
 }
 
 impl MultiswapIntegerRelation {
@@ -182,25 +196,29 @@ impl MultiswapIntegerRelation {
             }
         };
 
-        let collect = |entries: &[(usize, usize, BigUint)]| -> Vec<Vec<(usize, BigUint)>> {
-            let mut columns_entries: Vec<Vec<(usize, BigUint)>> = vec![Vec::new(); columns];
-            for (row, column, value) in entries {
-                columns_entries[remap(*column)].push((*row, value.clone()));
+        let mut coefficients = UnsignedIntegerTable::default();
+        let mut collect = |entries: &IntegerCoo| -> Vec<Vec<(usize, usize)>> {
+            let mut columns_entries = vec![Vec::new(); columns];
+            for (index, (row, column, _)) in entries.iter().enumerate() {
+                let coefficient = coefficients.len();
+                entries.copy_coefficient_to(index, &mut coefficients);
+                columns_entries[remap(column)].push((row, coefficient));
             }
             columns_entries
         };
-
         let a = collect(circuit.a_entries());
         let b = collect(circuit.b_entries());
         let mut c = collect(circuit.c_entries());
-        // `mods[r] * quos[r]` becomes the linear entry `C'[r, quos_col(r)]`.
         for (row, modulus) in circuit.mods().iter().enumerate().take(live_rows) {
-            if !modulus.is_zero() {
-                c[quotient_start + row].push((row, modulus.clone()));
+            if modulus.iter().any(|&word| word != 0) {
+                let coefficient = coefficients.len();
+                circuit.mods().copy_row_to(row, &mut coefficients);
+                c[quotient_start + row].push((row, coefficient));
             }
         }
 
         let mut relation = Self {
+            coefficients,
             layout,
             live_rows,
             a,
@@ -211,21 +229,16 @@ impl MultiswapIntegerRelation {
         Ok(relation)
     }
 
-    /// Sorts every column by row and merges duplicate coordinates
-    /// additively, matching the additive COO semantics of the source.
-    #[allow(clippy::arithmetic_side_effects)]
+    /// The private circuit builder emits each coordinate exactly once. Sort
+    /// by public row and check that invariant before sparse projection.
     fn normalize(&mut self) {
         for matrix in [&mut self.a, &mut self.b, &mut self.c] {
-            for column in matrix.iter_mut() {
-                column.sort_by_key(|(row, _)| *row);
-                let mut merged: Vec<(usize, BigUint)> = Vec::with_capacity(column.len());
-                for (row, value) in column.drain(..) {
-                    match merged.last_mut() {
-                        Some((last_row, last_value)) if *last_row == row => *last_value += value,
-                        _ => merged.push((row, value)),
-                    }
-                }
-                *column = merged;
+            for column in matrix {
+                column.sort_unstable_by_key(|(row, _)| *row);
+                assert!(
+                    column.windows(2).all(|pair| pair[0].0 != pair[1].0),
+                    "MultiSwap circuit contains a duplicate coordinate"
+                );
             }
         }
     }
@@ -258,17 +271,25 @@ impl MultiswapIntegerRelation {
         field_config: &F::Config,
     ) -> Result<PreparedConstraintMatrices<F, F>, MultiswapLayoutError>
     where
-        F: SpartanField + FromWithConfig<u128>,
+        F: SpartanField,
     {
-        let modulus = field_modulus(F::canonical_modulus_encoding(field_config));
-        let project_matrix = |matrix: &Vec<Vec<(usize, BigUint)>>| {
+        let encoding = F::canonical_modulus_encoding(field_config);
+        assert!(
+            encoding[16..].iter().all(|&byte| byte == 0),
+            "MultiSwap field exceeds two limbs"
+        );
+        let field = FpCtx::from_prime_u128(u128::from_le_bytes(encoding[..16].try_into().unwrap()));
+        let project_matrix = |matrix: &Vec<Vec<(usize, usize)>>| {
             let columns = matrix
                 .iter()
                 .map(|column| {
                     column
                         .iter()
                         .filter_map(|(row, value)| {
-                            let residue = reduce_biguint(value, &modulus);
+                            let residue = u128::from(field.to_integer(&public_coefficient(
+                                &field,
+                                &self.coefficients[*value],
+                            )));
                             if residue == 0 {
                                 None
                             } else {
@@ -293,24 +314,19 @@ impl MultiswapIntegerRelation {
 #[derive(Clone, Debug)]
 pub struct MultiswapAssignment {
     layout: MultiswapLayout,
-    values: Vec<BigUint>,
+    witness: Vec<Uint<32>>,
+    quotients: Vec<Uint<32>>,
 }
 
 impl MultiswapAssignment {
     /// Materializes the block assignment from the circuit witness.
     pub fn new(circuit: &MultiswapCircuit) -> Result<Self, MultiswapLayoutError> {
         let layout = MultiswapLayout::new(circuit)?;
-        let mut values = vec![BigUint::zero(); layout.assignment_len()];
-        values[0] = BigUint::from(1u32);
-        let witness_start = layout.witness_block_start();
-        for (index, value) in circuit.witness().iter().enumerate() {
-            values[witness_start + index] = value.clone();
-        }
-        let quotient_start = layout.quotient_block_start();
-        for (index, value) in circuit.quotients().iter().enumerate() {
-            values[quotient_start + index] = value.clone();
-        }
-        Ok(Self { layout, values })
+        Ok(Self {
+            layout,
+            witness: circuit.witness().to_vec(),
+            quotients: circuit.quotients().to_vec(),
+        })
     }
 
     /// Layout shared with the integer relation.
@@ -318,9 +334,14 @@ impl MultiswapAssignment {
         &self.layout
     }
 
-    /// Complete block-aligned integer assignment.
-    pub fn values(&self) -> &[BigUint] {
-        &self.values
+    /// Borrowed declared-width blocks; the one and zero blocks are implicit.
+    pub fn native(&self) -> NativeLimbWitness<'_> {
+        NativeLimbWitness::new(self.layout.capacity, &self.witness, &self.quotients)
+    }
+
+    /// Reads one logical assignment entry, including structural padding.
+    pub fn value(&self, index: usize) -> Uint<32> {
+        self.native().read(index)
     }
 
     /// Builds the packed per-column F2Z bit rows.
@@ -336,60 +357,145 @@ impl MultiswapAssignment {
         let column_mask = (1usize << self.layout.s) - 1;
         let h = self.layout.h;
 
-        let mut write_value = |gate: usize, slot_start: usize, value: &BigUint| {
-            if value.is_zero() {
-                return;
-            }
+        let mut write_value = |gate: usize, slot_start: usize, value: &Uint<32>| {
             let column = &mut rows[gate & column_mask];
             let gate_high = gate >> self.layout.s;
-            for (limb_index, limb) in value.iter_u64_digits().enumerate() {
-                let mut remaining = limb;
-                while remaining != 0 {
-                    let bit = remaining.trailing_zeros() as usize;
-                    let slot = slot_start + limb_index * u64::BITS as usize + bit;
+            // Fixed 2048-bit work: no zero skip or set-bit iteration on a witness.
+            for (limb_index, &limb) in value.as_words().iter().enumerate() {
+                for bit in 0..64 {
+                    let slot = slot_start + limb_index * 64 + bit;
                     let row = (slot << h) | gate_high;
-                    column[row / u64::BITS as usize] |= 1u64 << (row % u64::BITS as usize);
-                    remaining &= remaining - 1;
+                    column[row / 64] |= ((limb >> bit) & 1) << (row % 64);
                 }
             }
         };
-
-        let witness_start = self.layout.witness_block_start();
-        let quotient_start = self.layout.quotient_block_start();
         for gate in 0..self.layout.capacity {
             write_value(
                 gate,
                 MULTISWAP_W_SLOT_START,
-                &self.values[witness_start + gate],
+                &self.value(self.layout.witness_block_start() + gate),
             );
             write_value(
                 gate,
                 MULTISWAP_QUOS_SLOT_START,
-                &self.values[quotient_start + gate],
+                &self.value(self.layout.quotient_block_start() + gate),
             );
         }
         rows
     }
 
-    /// Projects the assignment and the three matrix products modulo the
-    /// runtime field.
+    /// Prepares each integer residue once for reuse across the three sparse
+    /// matrix applications. Only this temporary residue table is allocated;
+    /// the inner sumcheck continues to borrow the original integers.
+    pub fn products_prepared(
+        &self,
+        relation: &MultiswapIntegerRelation,
+        field: &FpCtx<2>,
+    ) -> RawProducts {
+        assert_eq!(self.layout, relation.layout);
+        let residues: Vec<Fp<2>> = (0..self.layout.assignment_len())
+            .map(|i| field.from_integer(&self.value(i)))
+            .collect();
+        let product = |matrix: &Vec<Vec<(usize, usize)>>| {
+            let coefficients: Vec<_> = matrix
+                .iter()
+                .flatten()
+                .map(|(_, value)| public_coefficient(field, &relation.coefficients[*value]))
+                .collect();
+            let mut coefficients = coefficients.into_iter();
+            let mut sums = vec![FpProductAcc::<2>::zero(); relation.live_rows];
+            for (column, entries) in matrix.iter().enumerate() {
+                for (row, _) in entries {
+                    sums[*row].accumulate(
+                        &coefficients
+                            .next()
+                            .expect("one prepared coefficient per entry"),
+                        &residues[column],
+                    );
+                }
+            }
+            finish_products(
+                sums.into_iter().map(|sum| field.reduce(sum)),
+                self.layout.capacity,
+            )
+        };
+        RawProducts {
+            az: product(&relation.a),
+            bz: product(&relation.b),
+            cz: product(&relation.c),
+        }
+    }
+
+    /// Direct field × Uint<32> MAC for comparison with prepared reuse. The
+    /// choice is made by the caller before entering either kernel.
+    pub fn products_fused(
+        &self,
+        relation: &MultiswapIntegerRelation,
+        field: &FpCtx<2>,
+    ) -> RawProducts {
+        assert_eq!(self.layout, relation.layout);
+        let product = |matrix: &Vec<Vec<(usize, usize)>>| {
+            let coefficients: Vec<_> = matrix
+                .iter()
+                .flatten()
+                .map(|(_, value)| public_coefficient(field, &relation.coefficients[*value]))
+                .collect();
+            let mut coefficients = coefficients.into_iter();
+            let mut sums = vec![FpLinearAcc::<2, 32>::zero(); relation.live_rows];
+            for (column, entries) in matrix.iter().enumerate() {
+                if entries.is_empty() {
+                    continue;
+                } // public sparse structure
+                let value = self.value(column);
+                for (row, _) in entries {
+                    sums[*row].accumulate(
+                        &coefficients
+                            .next()
+                            .expect("one prepared coefficient per entry"),
+                        &value,
+                    );
+                }
+            }
+            finish_products(
+                sums.into_iter().map(|sum| field.reduce(sum)),
+                self.layout.capacity,
+            )
+        };
+        RawProducts {
+            az: product(&relation.a),
+            bz: product(&relation.b),
+            cz: product(&relation.c),
+        }
+    }
+
+    /// Independent projected reference, retained only for differential tests.
+    #[cfg(test)]
     pub fn project<F>(
         &self,
         relation: &MultiswapIntegerRelation,
         field_config: &F::Config,
     ) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), MultiswapLayoutError>
     where
-        F: SpartanField + FromWithConfig<u128>,
+        F: SpartanField,
     {
         let modulus = field_modulus(F::canonical_modulus_encoding(field_config));
         let zero = F::zero_with_cfg(field_config);
-        let field_assignment: Vec<F> = self
-            .values
-            .iter()
-            .map(|value| F::from_with_cfg(reduce_biguint(value, &modulus), field_config))
+        let field_assignment: Vec<F> = (0..self.layout.assignment_len())
+            .map(|index| {
+                let bytes: Vec<_> = self
+                    .value(index)
+                    .as_words()
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect();
+                F::from_with_cfg(
+                    reduce_biguint(&BigUint::from_bytes_le(&bytes), &modulus),
+                    field_config,
+                )
+            })
             .collect();
 
-        let product = |matrix: &Vec<Vec<(usize, BigUint)>>| -> Vec<F> {
+        let product = |matrix: &Vec<Vec<(usize, usize)>>| -> Vec<F> {
             let mut out = vec![zero.clone(); relation.live_rows()];
             for (column, entries) in matrix.iter().enumerate() {
                 if entries.is_empty() || F::is_zero(&field_assignment[column]) {
@@ -397,13 +503,14 @@ impl MultiswapAssignment {
                 }
                 let z = &field_assignment[column];
                 for (row, value) in entries {
-                    let residue = reduce_biguint(value, &modulus);
+                    let residue =
+                        reduce_biguint(&test_biguint(&relation.coefficients[*value]), &modulus);
                     if residue == 0 {
                         continue;
                     }
                     let mut term = F::from_with_cfg(residue, field_config);
-                    term *= z;
-                    out[*row] += &term;
+                    term = field_config.mul(&(term), &(z));
+                    out[*row] = field_config.add(&(out[*row]), &(&term));
                 }
             }
             out
@@ -422,13 +529,31 @@ impl MultiswapAssignment {
     }
 }
 
+// Public coefficients retain their source's declared width through preparation.
+fn public_coefficient(field: &FpCtx<2>, value: &[u64]) -> Fp<2> {
+    field.from_integer(&UintRef::new(value))
+}
+fn finish_products(values: impl Iterator<Item = Fp<2>>, domain: usize) -> Vec<u128> {
+    let mut out: Vec<_> = values
+        .map(|v| {
+            let w = v.as_montgomery_integer().as_words();
+            w[0] as u128 | ((w[1] as u128) << 64)
+        })
+        .collect();
+    assert!(out.len() <= domain);
+    out.resize(domain, 0);
+    out
+}
+
 /// Canonical `u128` runtime modulus recovered from its field encoding.
+#[cfg(test)]
 fn field_modulus(encoding: Vec<u8>) -> BigUint {
     BigUint::from_bytes_le(&encoding)
 }
 
 /// Reduces a nonnegative integer modulo the runtime prime into `u128`.
 #[allow(clippy::arithmetic_side_effects)]
+#[cfg(test)]
 fn reduce_biguint(value: &BigUint, modulus: &BigUint) -> u128 {
     let reduced = value % modulus;
     let digits = reduced.iter_u64_digits().collect::<Vec<_>>();
@@ -441,8 +566,17 @@ fn reduce_biguint(value: &BigUint, modulus: &BigUint) -> u128 {
 }
 
 #[cfg(test)]
+fn test_biguint(words: &[u64]) -> BigUint {
+    BigUint::from_bytes_le(
+        &words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[cfg(test)]
 mod tests {
-    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 
     use super::super::circuit::MultiswapDims;
     use super::*;
@@ -458,9 +592,9 @@ mod tests {
         (circuit, relation, assignment)
     }
 
-    fn test_config() -> <F128 as PrimeField>::Config {
+    fn test_config() -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
         // The fixed F2Z evaluation prime is a convenient valid runtime field.
-        F128::make_cfg(&Uint::from(crate::pcs::FQ_MOD)).unwrap()
+        Fp::<2>::make_cfg(&Uint::from(crate::pcs::FQ_MOD)).unwrap()
     }
 
     #[test]
@@ -477,8 +611,8 @@ mod tests {
                 (true, circuit.c_entries(), &relation.c),
             ] {
                 let mut expected = BTreeMap::<(usize, usize), BigUint>::new();
-                for (row, col, value) in source {
-                    *expected.entry((*row, *col)).or_default() += value;
+                for (row, col, value) in source.iter() {
+                    *expected.entry((row, col)).or_default() += test_biguint(value);
                 }
                 expected.retain(|_, v| !v.is_zero());
                 let mut recovered = BTreeMap::<(usize, usize), BigUint>::new();
@@ -489,7 +623,7 @@ mod tests {
                             assert!(is_c);
                             assert_eq!(column - layout.quotient_block_start(), *row);
                             assert!(*row < circuit.live_rows());
-                            assert_eq!(value, &circuit.mods()[*row]);
+                            assert_eq!(&relation.coefficients[*value], &circuit.mods()[*row]);
                             quotient_rows.push(*row);
                         } else {
                             let source_column = if column == 0 {
@@ -498,7 +632,8 @@ mod tests {
                                 assert!(column >= layout.witness_block_start());
                                 column - layout.witness_block_start()
                             };
-                            *recovered.entry((*row, source_column)).or_default() += value;
+                            *recovered.entry((*row, source_column)).or_default() +=
+                                test_biguint(&relation.coefficients[*value]);
                         }
                     }
                 }
@@ -509,7 +644,7 @@ mod tests {
                     assert_eq!(
                         quotient_rows,
                         (0..circuit.live_rows())
-                            .filter(|r| !circuit.mods()[*r].is_zero())
+                            .filter(|r| circuit.mods()[*r].iter().any(|&word| word != 0))
                             .collect::<Vec<_>>()
                     );
                 }
@@ -557,7 +692,17 @@ mod tests {
                         reconstructed.set_bit(slot as u64, true);
                     }
                 }
-                assert_eq!(&reconstructed, &assignment.values()[block_start + gate]);
+                assert_eq!(
+                    reconstructed,
+                    BigUint::from_bytes_le(
+                        &assignment
+                            .value(block_start + gate)
+                            .as_words()
+                            .iter()
+                            .flat_map(|w| w.to_le_bytes())
+                            .collect::<Vec<_>>()
+                    )
+                );
             }
         }
     }
@@ -566,8 +711,8 @@ mod tests {
     fn projected_relation_is_satisfied_row_by_row() {
         let (_, relation, assignment) = mini();
         let config = test_config();
-        let matrices = relation.project::<F128>(&config).unwrap();
-        let (mle, products) = assignment.project::<F128>(&relation, &config).unwrap();
+        let matrices = relation.project::<Fp<2>>(&config).unwrap();
+        let (mle, products) = assignment.project::<Fp<2>>(&relation, &config).unwrap();
 
         assert_eq!(mle.evaluations.len(), relation.layout().assignment_len());
         assert_eq!(matrices.matrices().row_count(), relation.live_rows());
@@ -577,8 +722,31 @@ mod tests {
         );
         for row in 0..relation.live_rows() {
             let mut left = products.az.evaluations[row].clone();
-            left *= &products.bz.evaluations[row];
+            left = config.mul(&(left), &(&products.bz.evaluations[row]));
             assert_eq!(left, products.cz.evaluations[row], "row {row}");
+        }
+    }
+
+    #[test]
+    fn shared_products_match_projected_oracle_for_both_consumption_paths() {
+        let (_, relation, assignment) = mini();
+        for q in [crate::pcs::FQ_MOD, u128::MAX - 158] {
+            let config = Fp::<2>::make_cfg(&Uint::from(q)).unwrap();
+            let field = FpCtx::from_prime_u128(q);
+            let (_, expected) = assignment.project::<Fp<2>>(&relation, &config).unwrap();
+            let prepared = assignment.products_prepared(&relation, &field);
+            let fused = assignment.products_fused(&relation, &field);
+            for (got, other, want) in [
+                (&prepared.az, &fused.az, &expected.az.evaluations),
+                (&prepared.bz, &fused.bz, &expected.bz.evaluations),
+                (&prepared.cz, &fused.cz, &expected.cz.evaluations),
+            ] {
+                assert_eq!(got, other);
+                for (got, want) in got.iter().zip(want) {
+                    let words = want.as_montgomery_integer().as_words();
+                    assert_eq!(*got, words[0] as u128 | ((words[1] as u128) << 64));
+                }
+            }
         }
     }
 
@@ -591,19 +759,22 @@ mod tests {
         // Perturb one live quotient: the folded C' row must move.
         let target = 0;
         let mut quos = circuit.quotients().to_vec();
-        quos[target] += BigUint::from(1u32);
+        quos[target] = quos[target].wrapping_add(&field::Uint::ONE);
         circuit = tampered_with_quotients(circuit, quos);
 
         let relation = MultiswapIntegerRelation::new(&circuit).unwrap();
         let assignment = MultiswapAssignment::new(&circuit).unwrap();
         let config = test_config();
-        let (_, products) = assignment.project::<F128>(&relation, &config).unwrap();
+        let (_, products) = assignment.project::<Fp<2>>(&relation, &config).unwrap();
         let mut left = products.az.evaluations[target].clone();
-        left *= &products.bz.evaluations[target];
+        left = config.mul(&(left), &(&products.bz.evaluations[target]));
         assert_ne!(left, products.cz.evaluations[target]);
     }
 
-    fn tampered_with_quotients(circuit: MultiswapCircuit, quos: Vec<BigUint>) -> MultiswapCircuit {
+    fn tampered_with_quotients(
+        circuit: MultiswapCircuit,
+        quos: Vec<field::Uint<32>>,
+    ) -> MultiswapCircuit {
         circuit.with_quotients_for_tests(quos)
     }
 }

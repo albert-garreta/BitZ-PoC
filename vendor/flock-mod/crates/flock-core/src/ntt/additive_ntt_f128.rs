@@ -41,7 +41,7 @@
 //! FRI fold processes layers in **reverse** (deepest first), at which level
 //! pairs are adjacent — matching the standard `fold_pair` formula in DP24.
 
-use crate::field::F128;
+use crate::field::Gf128;
 
 mod kernels;
 
@@ -64,9 +64,13 @@ pub static NTT_DEEP_NOFUSE: std::sync::atomic::AtomicBool =
 ///
 /// Returns `evals` where `evals[i] = [Ŵ_i(β_i), Ŵ_i(β_{i+1}), …, Ŵ_i(β_{ℓ-1})]`.
 /// The 0-th element of each row is always `1` (by normalization).
-fn generate_evals_from_subspace(basis: &[F128]) -> Vec<Vec<F128>> {
+fn generate_evals_from_subspace(basis: &[Gf128]) -> Vec<Vec<Gf128>> {
     let l = basis.len();
-    let mut evals: Vec<Vec<F128>> = Vec::with_capacity(l);
+    let mut evals: Vec<Vec<Gf128>> = Vec::with_capacity(l);
+    // The zero-dimensional domain has one point and no butterfly layers.
+    if basis.is_empty() {
+        return evals;
+    }
 
     // evals[0] = [W_0(β_0), W_0(β_1), …, W_0(β_{ℓ-1})] = basis.
     evals.push(basis.to_vec());
@@ -86,7 +90,7 @@ fn generate_evals_from_subspace(basis: &[F128]) -> Vec<Vec<F128>> {
 
     // Normalize each row by its 0-th element (= W_i(β_i)).
     for row in evals.iter_mut() {
-        let inv = row[0].inv();
+        let inv = row[0].inverse_or_zero();
         for v in row.iter_mut() {
             *v *= inv;
         }
@@ -98,8 +102,8 @@ fn generate_evals_from_subspace(basis: &[F128]) -> Vec<Vec<F128>> {
 /// Compute `Σ_j bit_j(idx) · basis[j]` — the `idx`-th element of the F_2-span
 /// of `basis`.
 #[inline]
-fn span_get(basis: &[F128], idx: usize) -> F128 {
-    let mut acc = F128::ZERO;
+fn span_get(basis: &[Gf128], idx: usize) -> Gf128 {
+    let mut acc = Gf128::ZERO;
     for (j, &b) in basis.iter().enumerate() {
         if (idx >> j) & 1 == 1 {
             acc += b;
@@ -116,12 +120,12 @@ fn span_get(basis: &[F128], idx: usize) -> F128 {
 #[derive(Clone, Debug)]
 pub struct AdditiveNttF128 {
     /// `evals[i]` of length `ℓ − i`, the normalized subspace polynomial values.
-    evals: Vec<Vec<F128>>,
+    evals: Vec<Vec<Gf128>>,
 }
 
 impl AdditiveNttF128 {
     /// Construct an NTT from an explicit F_2-basis.
-    pub fn new(basis: &[F128]) -> Self {
+    pub fn new(basis: &[Gf128]) -> Self {
         Self {
             evals: generate_evals_from_subspace(basis),
         }
@@ -131,7 +135,7 @@ impl AdditiveNttF128 {
     /// (the low 64 bits of F_{2^128} hold these basis vectors).
     pub fn standard(dim: usize) -> Self {
         assert!(dim <= 64, "standard NTT requires dim ≤ 64");
-        let basis: Vec<F128> = (0..dim).map(|i| F128::new(1u64 << i, 0)).collect();
+        let basis: Vec<Gf128> = (0..dim).map(|i| Gf128::new(1u64 << i, 0)).collect();
         Self::new(&basis)
     }
 
@@ -146,7 +150,7 @@ impl AdditiveNttF128 {
     ///
     /// (The 0-th element of the row corresponds to `Ŵ_{ℓ-l-1}(β_{ℓ-l-1}) = 1`,
     /// which is "absorbed" into the butterfly and not in the twiddle.)
-    pub fn twiddle(&self, layer: usize, block: usize) -> F128 {
+    pub fn twiddle(&self, layer: usize, block: usize) -> Gf128 {
         let v = &self.evals[self.log_domain_size() - layer - 1];
         span_get(&v[1..], block)
     }
@@ -158,7 +162,7 @@ impl AdditiveNttF128 {
     /// Dispatches to the cache-blocked batched implementation when available
     /// and the buffer is large enough to benefit; otherwise falls back to the
     /// per-layer parallel path or scalar.
-    pub fn forward_transform(&self, data: &mut [F128]) {
+    pub fn forward_transform(&self, data: &mut [Gf128]) {
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
             self.forward_transform_batched(data);
@@ -185,7 +189,7 @@ impl AdditiveNttF128 {
     /// FRI-compatible twiddles. The SoA layout is what makes each Merkle leaf
     /// = one position across all `num_ntts` lanes (= contiguous slice of
     /// `num_ntts` F_{2^128} elements).
-    pub fn forward_transform_interleaved(&self, data: &mut [F128], num_ntts: usize) {
+    pub fn forward_transform_interleaved(&self, data: &mut [Gf128], num_ntts: usize) {
         self.forward_transform_interleaved_from_layer(data, num_ntts, 0);
     }
 
@@ -200,7 +204,7 @@ impl AdditiveNttF128 {
     /// reads and multiplies here.
     pub fn forward_transform_interleaved_from_layer(
         &self,
-        data: &mut [F128],
+        data: &mut [Gf128],
         num_ntts: usize,
         start_layer: usize,
     ) {
@@ -230,7 +234,7 @@ impl AdditiveNttF128 {
     }
 
     /// Scalar reference for the interleaved forward NTT.
-    pub fn forward_transform_interleaved_scalar(&self, data: &mut [F128], num_ntts: usize) {
+    pub fn forward_transform_interleaved_scalar(&self, data: &mut [Gf128], num_ntts: usize) {
         self.forward_transform_interleaved_scalar_from_layer(data, num_ntts, 0);
     }
 
@@ -238,7 +242,7 @@ impl AdditiveNttF128 {
     /// [`Self::forward_transform_interleaved_from_layer`]).
     pub fn forward_transform_interleaved_scalar_from_layer(
         &self,
-        data: &mut [F128],
+        data: &mut [Gf128],
         num_ntts: usize,
         start_layer: usize,
     ) {
@@ -281,7 +285,7 @@ impl AdditiveNttF128 {
         all(target_arch = "aarch64", target_feature = "aes"),
         all(target_arch = "x86_64", target_feature = "pclmulqdq"),
     ))]
-    pub fn forward_transform_interleaved_parallel(&self, data: &mut [F128], num_ntts: usize) {
+    pub fn forward_transform_interleaved_parallel(&self, data: &mut [Gf128], num_ntts: usize) {
         self.forward_transform_interleaved_parallel_from_layer(data, num_ntts, 0);
     }
 
@@ -293,7 +297,7 @@ impl AdditiveNttF128 {
     ))]
     pub fn forward_transform_interleaved_parallel_from_layer(
         &self,
-        data: &mut [F128],
+        data: &mut [Gf128],
         num_ntts: usize,
         start_layer: usize,
     ) {
@@ -357,6 +361,9 @@ impl AdditiveNttF128 {
         let fused4_ok = cfg!(all(
             target_arch = "x86_64",
             target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
             target_feature = "vpclmulqdq"
         ));
         let mut layer = start_layer.min(n_top);
@@ -370,7 +377,7 @@ impl AdditiveNttF128 {
                 // instead of four. Each block contributes a 16-point butterfly.
                 let sixteenth = block_size >> 4;
                 for block in 0..num_blocks {
-                    let mut tw = [F128 { lo: 0, hi: 0 }; 15];
+                    let mut tw = [Gf128 { lo: 0, hi: 0 }; 15];
                     tw[0] = self.twiddle(layer, block);
                     for s in 0..2 {
                         tw[1 + s] = self.twiddle(layer + 1, 2 * block + s);
@@ -433,13 +440,13 @@ impl AdditiveNttF128 {
         // load/store count for those layers — the deep pass is compute-bound,
         // not DRAM-bound, so in-cache traffic and instruction count are what
         // matter). The three deepest layers stay single-layer: their twiddles
-        // are all half-width (see `mul_small_twiddle`) and the fast path in
+        // are all half-width (see `mul_polynomial_u64`) and the fast path in
         // `butterfly_interleaved_block` beats fusion's general muls.
         // `NTT_DEEP_NOFUSE` restores per-layer sweeps (A/B).
         let fuse = !NTT_DEEP_NOFUSE.load(std::sync::atomic::Ordering::Relaxed)
             && std::env::var("NTT_DEEP_NOFUSE").is_err();
         let halfwidth_start = log_d.saturating_sub(3);
-        let deep = |data: &mut [F128]| {
+        let deep = |data: &mut [Gf128]| {
             data.par_chunks_mut(sub_bytes)
                 .enumerate()
                 .for_each(|(sub_idx, sub_data)| {
@@ -511,7 +518,7 @@ impl AdditiveNttF128 {
 
     /// Scalar reference implementation. Used as the test oracle and on
     /// platforms without NEON+PMULL.
-    pub fn forward_transform_scalar(&self, data: &mut [F128]) {
+    pub fn forward_transform_scalar(&self, data: &mut [Gf128]) {
         let log_d = log2_pow2(data.len());
         assert!(log_d <= self.log_domain_size());
 
@@ -536,7 +543,7 @@ impl AdditiveNttF128 {
     /// Single-threaded NEON forward transform (uses `ghash_mul_vec2_neon` to
     /// batch 2 butterflies per PMULL pair).
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-    pub fn forward_transform_neon(&self, data: &mut [F128]) {
+    pub fn forward_transform_neon(&self, data: &mut [Gf128]) {
         let log_d = log2_pow2(data.len());
         assert!(log_d <= self.log_domain_size());
 
@@ -584,7 +591,7 @@ impl AdditiveNttF128 {
 
     /// Rayon-parallel + NEON forward transform.
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-    pub fn forward_transform_parallel(&self, data: &mut [F128]) {
+    pub fn forward_transform_parallel(&self, data: &mut [Gf128]) {
         use rayon::prelude::*;
         let log_d = log2_pow2(data.len());
         assert!(log_d <= self.log_domain_size());
@@ -605,7 +612,7 @@ impl AdditiveNttF128 {
             // Parallelize across blocks when there are enough; otherwise process
             // sequentially with NEON (still fast for small block counts).
             if num_blocks >= 4 && block_size_half >= 2 {
-                let twiddles: Vec<F128> = (0..num_blocks).map(|b| self.twiddle(layer, b)).collect();
+                let twiddles: Vec<Gf128> = (0..num_blocks).map(|b| self.twiddle(layer, b)).collect();
                 data.par_chunks_mut(block_size)
                     .zip(twiddles.par_iter())
                     .for_each(|(chunk, &twiddle)| {
@@ -633,7 +640,7 @@ impl AdditiveNttF128 {
                 // handles the trivial cases.)
                 debug_assert_eq!(block_size_half, 1);
                 if num_blocks >= 2 {
-                    let twiddles: Vec<F128> =
+                    let twiddles: Vec<Gf128> =
                         (0..num_blocks).map(|b| self.twiddle(layer, b)).collect();
                     data.par_chunks_mut(4).zip(twiddles.par_chunks(2)).for_each(
                         |(chunk, twiddle_pair)| {
@@ -675,7 +682,7 @@ impl AdditiveNttF128 {
     /// For `log_d ≤ 17` the whole NTT fits in cache and we fall back to the
     /// per-layer parallel path.
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-    pub fn forward_transform_batched(&self, data: &mut [F128]) {
+    pub fn forward_transform_batched(&self, data: &mut [Gf128]) {
         use rayon::prelude::*;
         let log_d = log2_pow2(data.len());
         assert!(log_d <= self.log_domain_size());
@@ -696,7 +703,7 @@ impl AdditiveNttF128 {
             let block_size_half = block_size >> 1;
 
             if num_blocks >= 4 {
-                let twiddles: Vec<F128> = (0..num_blocks).map(|b| self.twiddle(layer, b)).collect();
+                let twiddles: Vec<Gf128> = (0..num_blocks).map(|b| self.twiddle(layer, b)).collect();
                 data.par_chunks_mut(block_size)
                     .zip(twiddles.par_iter())
                     .for_each(|(chunk, &t)| {
@@ -752,7 +759,7 @@ impl AdditiveNttF128 {
     }
 
     /// Inverse additive NTT in place. Exact inverse of `forward_transform`.
-    pub fn inverse_transform(&self, data: &mut [F128]) {
+    pub fn inverse_transform(&self, data: &mut [Gf128]) {
         let log_d = log2_pow2(data.len());
         assert!(log_d <= self.log_domain_size());
 
@@ -782,8 +789,8 @@ impl AdditiveNttF128 {
 /// Falls back to sequential when the row count is small.
 #[inline]
 fn butterfly_interleaved_block_par_rows(
-    block: &mut [F128],
-    twiddle: F128,
+    block: &mut [Gf128],
+    twiddle: Gf128,
     block_size_half: usize,
     num_ntts: usize,
 ) {
@@ -796,7 +803,7 @@ fn butterfly_interleaved_block_par_rows(
     let half_offset = block_size_half * num_ntts;
     let (top, bot) = block.split_at_mut(half_offset);
     // Zero-twiddle fast path (see `butterfly_interleaved_block`).
-    if twiddle == F128::ZERO {
+    if twiddle == Gf128::ZERO {
         top.par_chunks_mut(num_ntts)
             .zip(bot.par_chunks_mut(num_ntts))
             .for_each(|(top_row, bot_row)| {
@@ -820,13 +827,13 @@ fn butterfly_interleaved_block_par_rows(
 /// [`kernels::butterfly_fused_2layer`].
 #[inline(always)]
 fn fused_2layer_row_op(
-    row_a: &mut [F128],
-    row_b: &mut [F128],
-    row_c: &mut [F128],
-    row_d: &mut [F128],
-    t_outer: F128,
-    t_inner_a: F128,
-    t_inner_b: F128,
+    row_a: &mut [Gf128],
+    row_b: &mut [Gf128],
+    row_c: &mut [Gf128],
+    row_d: &mut [Gf128],
+    t_outer: Gf128,
+    t_inner_a: Gf128,
+    t_inner_b: Gf128,
     zero_block: bool,
     num_ntts: usize,
 ) {
@@ -854,16 +861,16 @@ fn fused_2layer_row_op(
 /// row-parallelism would only add dispatch overhead). Same math as
 /// [`butterfly_interleaved_fused_2layer_par_rows`].
 fn butterfly_interleaved_fused_2layer_serial(
-    block: &mut [F128],
-    t_outer: F128,
-    t_inner_a: F128,
-    t_inner_b: F128,
+    block: &mut [Gf128],
+    t_outer: Gf128,
+    t_inner_a: Gf128,
+    t_inner_b: Gf128,
     quarter: usize,
     num_ntts: usize,
 ) {
     let stride = quarter * num_ntts;
     debug_assert_eq!(block.len(), 4 * stride);
-    let zero_block = t_outer == F128::ZERO && t_inner_a == F128::ZERO;
+    let zero_block = t_outer == Gf128::ZERO && t_inner_a == Gf128::ZERO;
     let (top_half, bot_half) = block.split_at_mut(2 * stride);
     let (q1, q2) = top_half.split_at_mut(stride);
     let (q3, q4) = bot_half.split_at_mut(stride);
@@ -892,10 +899,10 @@ fn butterfly_interleaved_fused_2layer_serial(
 /// the new top sub-block) and `(c,d)` (in the new bottom sub-block).
 #[inline]
 fn butterfly_interleaved_fused_2layer_par_rows(
-    block: &mut [F128],
-    t_outer: F128,
-    t_inner_a: F128,
-    t_inner_b: F128,
+    block: &mut [Gf128],
+    t_outer: Gf128,
+    t_inner_a: Gf128,
+    t_inner_b: Gf128,
     quarter: usize,
     num_ntts: usize,
 ) {
@@ -907,9 +914,9 @@ fn butterfly_interleaved_fused_2layer_par_rows(
     // Block 0 of the outer layer has t_outer = 0 AND t_inner_a =
     // twiddle(L+1, 0) = 0 — only the (c,d) inner butterfly multiplies. The
     // branch is per-row, not per-lane.
-    let zero_block = t_outer == F128::ZERO && t_inner_a == F128::ZERO;
+    let zero_block = t_outer == Gf128::ZERO && t_inner_a == Gf128::ZERO;
     let do_one =
-        |row_a: &mut [F128], row_b: &mut [F128], row_c: &mut [F128], row_d: &mut [F128]| {
+        |row_a: &mut [Gf128], row_b: &mut [Gf128], row_c: &mut [Gf128], row_d: &mut [Gf128]| {
             fused_2layer_row_op(
                 row_a, row_b, row_c, row_d, t_outer, t_inner_a, t_inner_b, zero_block, num_ntts,
             );
@@ -942,45 +949,16 @@ fn butterfly_interleaved_fused_2layer_par_rows(
     }
 }
 
-/// Butterfly one block of an interleaved (SoA) buffer with shared twiddle.
-///
-/// `block` has length `(2 * block_size_half) * num_ntts` and is laid out as
-/// `num_ntts` lanes interleaved per row, `2 * block_size_half` rows total.
-/// Pairs row `r` with row `r + block_size_half` for `r ∈ 0..block_size_half`.
-///
-/// **Note**: This is scalar-per-lane on purpose. With `num_ntts = 32` and
-/// shared twiddle, the inner loop has 32 independent F_{2^128} muls per row
-/// that the compiler ILPs effectively (each mul uses NEON via the field's
-/// `binius_mul` already). An explicit 2-lane `ghash_mul_vec2_neon` variant was
-/// tried but **regressed** by ~10-30% because the explicit batching prevented
-/// ILP across more than 2 muls and added load/store overhead.
-#[inline]
-/// `v · t` for a HALF-WIDTH twiddle (`t.hi == 0`, i.e. deg(t) ≤ 63): the
-/// schoolbook shrinks to 2 PMULL and the 192-bit product needs only a single
-/// reduction fold (overflow deg ≤ 62+7 < 128) — half the cost of the general
-/// multiply. In the polynomial basis `{1, x, x², …}` the THREE DEEPEST layers'
-/// twiddles are all half-width (they are spans/short combinations of low
-/// basis powers): 3/17 ≈ 18% of all NTT mults.
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
-fn mul_small_twiddle(v: F128, t_lo: u64) -> F128 {
-    use core::arch::aarch64::*;
-    unsafe {
-        let d0 = vreinterpretq_u64_p128(vmull_p64(v.lo, t_lo));
-        let d1 = vreinterpretq_u64_p128(vmull_p64(v.hi, t_lo));
-        // 192-bit product: r0 = d0.lo, r1 = d0.hi ^ d1.lo, r2 = d1.hi (r3 = 0).
-        let r2 = vgetq_lane_u64::<1>(d1);
-        // One fold: r2 · (x^7+x^2+x+1) lands entirely within 128 bits.
-        let h = vreinterpretq_u64_p128(vmull_p64(r2, 0x87));
-        F128 {
-            lo: vgetq_lane_u64::<0>(d0) ^ vgetq_lane_u64::<0>(h),
-            hi: vgetq_lane_u64::<1>(d0) ^ vgetq_lane_u64::<0>(d1) ^ vgetq_lane_u64::<1>(h),
-        }
-    }
-}
+use field::gf128::kernels::aarch64::mul_polynomial_u64;
 
+/// Butterfly one interleaved block with a shared twiddle. Rows contain
+/// `num_ntts` independent lanes. Keep scalar lane dispatch: the historical
+/// explicit two-lane NEON experiment regressed by 10–30% by limiting ILP and
+/// adding load/store work. That observation is not a new performance result.
 fn butterfly_interleaved_block(
-    block: &mut [F128],
-    twiddle: F128,
+    block: &mut [Gf128],
+    twiddle: Gf128,
     block_size_half: usize,
     num_ntts: usize,
 ) {
@@ -989,7 +967,7 @@ fn butterfly_interleaved_block(
     // (`twiddle(l, 0) = span_get(_, 0) = 0`), so its butterfly degenerates to
     // (u, v + u) — no multiply. Σ_l 2^-l ≈ 1 layer-equivalent ≈ 6% of all NTT
     // mults, and the NTT is mult-throughput-bound.
-    if twiddle == F128::ZERO {
+    if twiddle == Gf128::ZERO {
         for r in 0..block_size_half {
             let off_top = r * num_ntts;
             let off_bot_r = off_top + off_bot;
@@ -1000,7 +978,7 @@ fn butterfly_interleaved_block(
         }
         return;
     }
-    // Half-width-twiddle fast path (see `mul_small_twiddle`): the deep layers
+    // Half-width-twiddle fast path (see `mul_polynomial_u64`): the deep layers
     // this kernel serves are exactly where all twiddles are half-width.
     #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
     if twiddle.hi == 0 {
@@ -1009,7 +987,7 @@ fn butterfly_interleaved_block(
             let off_bot_r = off_top + off_bot;
             for lane in 0..num_ntts {
                 let v = block[off_bot_r + lane];
-                let new_u = block[off_top + lane] + mul_small_twiddle(v, twiddle.lo);
+                let new_u = block[off_top + lane] + mul_polynomial_u64(v, twiddle.lo);
                 block[off_top + lane] = new_u;
                 block[off_bot_r + lane] = v + new_u;
             }
@@ -1032,8 +1010,8 @@ fn butterfly_interleaved_block(
 /// the sub-butterflies (see module comment above). Parallel over row groups.
 #[inline]
 fn butterfly_interleaved_fused_4layer_par_rows(
-    block: &mut [F128],
-    t: &[F128; 15],
+    block: &mut [Gf128],
+    t: &[Gf128; 15],
     sixteenth: usize,
     num_ntts: usize,
 ) {
@@ -1048,14 +1026,14 @@ fn butterfly_interleaved_fused_4layer_par_rows(
         for r in 0..sixteenth {
             // SAFETY: row group r writes disjoint rows of this block.
             unsafe {
-                kernels::butterfly_fused_4layer_row(base as *mut F128, sixteenth, num_ntts, r, t)
+                kernels::butterfly_fused_4layer_row(base as *mut Gf128, sixteenth, num_ntts, r, t)
             };
         }
     } else {
         (0..sixteenth).into_par_iter().for_each(|r| {
             // SAFETY: distinct r → disjoint row groups → no aliasing.
             unsafe {
-                kernels::butterfly_fused_4layer_row(base as *mut F128, sixteenth, num_ntts, r, t)
+                kernels::butterfly_fused_4layer_row(base as *mut Gf128, sixteenth, num_ntts, r, t)
             };
         });
     }
@@ -1074,6 +1052,25 @@ fn log2_pow2(n: usize) -> usize {
 mod tests {
     use super::*;
 
+    #[test]
+    fn zero_dimensional_transforms_are_identity() {
+        for ntt in [AdditiveNttF128::new(&[]), AdditiveNttF128::standard(0)] {
+            assert_eq!(ntt.log_domain_size(), 0);
+            let value = Gf128::new(u64::MAX, 0x1234_5678_9abc_def0);
+            let mut scalar = [value];
+            ntt.forward_transform(&mut scalar);
+            assert_eq!(scalar, [value]);
+            ntt.inverse_transform(&mut scalar);
+            assert_eq!(scalar, [value]);
+            for lanes in [1, 2, 8, 32] {
+                let input: Vec<_> = (0..lanes).map(|i| Gf128::new(i as u64, u64::MAX)).collect();
+                let mut output = input.clone();
+                ntt.forward_transform_interleaved(&mut output, lanes);
+                assert_eq!(output, input);
+            }
+        }
+    }
+
     struct Rng(u64);
     impl Rng {
         fn new(seed: u64) -> Self {
@@ -1086,15 +1083,15 @@ mod tests {
             z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
             z ^ (z >> 31)
         }
-        fn f128(&mut self) -> F128 {
-            F128 {
+        fn f128(&mut self) -> Gf128 {
+            Gf128 {
                 lo: self.next_u64(),
                 hi: self.next_u64(),
             }
         }
     }
 
-    fn rand_vec(rng: &mut Rng, n: usize) -> Vec<F128> {
+    fn rand_vec(rng: &mut Rng, n: usize) -> Vec<Gf128> {
         (0..n).map(|_| rng.f128()).collect()
     }
 
@@ -1135,7 +1132,7 @@ mod tests {
             let n = 1 << log_d;
             let a = rand_vec(&mut rng, n);
             let b = rand_vec(&mut rng, n);
-            let ab: Vec<F128> = a.iter().zip(&b).map(|(x, y)| *x + *y).collect();
+            let ab: Vec<Gf128> = a.iter().zip(&b).map(|(x, y)| *x + *y).collect();
 
             let mut fa = a.clone();
             ntt.forward_transform(&mut fa);
@@ -1158,9 +1155,9 @@ mod tests {
     fn ntt_of_zero_is_zero() {
         for log_d in [1usize, 2, 3, 6] {
             let ntt = AdditiveNttF128::standard(log_d);
-            let mut v = vec![F128::ZERO; 1 << log_d];
+            let mut v = vec![Gf128::ZERO; 1 << log_d];
             ntt.forward_transform(&mut v);
-            assert!(v.iter().all(|&x| x == F128::ZERO));
+            assert!(v.iter().all(|&x| x == Gf128::ZERO));
         }
     }
 
@@ -1169,7 +1166,7 @@ mod tests {
         // At layer 0 (topmost forward butterfly), there's 1 block.
         // twiddle(0, 0) = 0 (no bits set in block index 0).
         let ntt = AdditiveNttF128::standard(4);
-        assert_eq!(ntt.twiddle(0, 0), F128::ZERO);
+        assert_eq!(ntt.twiddle(0, 0), Gf128::ZERO);
     }
 
     /// At layer log_d - 1 (deepest, where FRI starts), pairs are adjacent.
@@ -1210,7 +1207,7 @@ mod tests {
                 // Reference: per-lane, gather + scalar transform + scatter.
                 let mut v_ref = original.clone();
                 for lane in 0..num_ntts {
-                    let mut sub: Vec<F128> = (0..(1 << log_d))
+                    let mut sub: Vec<Gf128> = (0..(1 << log_d))
                         .map(|pos| v_ref[pos * num_ntts + lane])
                         .collect();
                     ntt.forward_transform_scalar(&mut sub);

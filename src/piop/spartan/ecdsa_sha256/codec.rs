@@ -1,7 +1,7 @@
 use super::{Result, Sha256EcdsaProof, error};
+use crate::piop::spartan::SpartanField as _;
 use crate::{
     ligerito_flock::IntEvalRsLigVirtProof,
-    pcs::ProjectCanonicalU128,
     piop::spartan::{
         SpartanField,
         f2z::SpartanF2zField as F,
@@ -9,30 +9,29 @@ use crate::{
     },
     proof_codec::{Reader, Writer},
 };
-use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_uint::Uint};
+use field::Uint;
 
-const MAGIC: &[u8] = b"F2ZSE002";
+const MAGIC: &[u8] = b"F2ZSE003";
 
 impl Sha256EcdsaProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut w = Writer::new();
         w.bytes(MAGIC);
-        w.bytes(&F::canonical_modulus_encoding(
-            self.outer.az_mle_claim.cfg(),
-        ));
+        let field = field::FpCtx::from_prime_u128(self.modulus);
+        w.u128(self.modulus);
         w.bytes(&self.initial_nonce.to_le_bytes());
         w.bytes(&self.batch_nonce.to_le_bytes());
         write_nonces(&mut w, &self.flock_nonces);
-        write_rounds(&mut w, &self.outer.sumcheck);
+        write_rounds(&mut w, &self.outer.sumcheck, &field);
         for x in [
             &self.outer.az_mle_claim,
             &self.outer.bz_mle_claim,
             &self.outer.cz_mle_claim,
         ] {
-            w.u128(x.canonical_u128());
+            w.u128(u128::from(field.to_integer(x)));
         }
         write_nonces(&mut w, &self.outer_nonces);
-        write_rounds(&mut w, &self.inner);
+        write_rounds(&mut w, &self.inner, &field);
         write_nonces(&mut w, &self.inner_nonces);
         let opening = self.opening.to_bytes();
         w.len(opening.len());
@@ -70,6 +69,7 @@ impl Sha256EcdsaProof {
             return Err(error("trailing proof bytes"));
         }
         Ok(Self {
+            modulus: q,
             initial_nonce,
             batch_nonce,
             flock_nonces,
@@ -87,15 +87,23 @@ impl Sha256EcdsaProof {
     }
 }
 
-fn write_rounds<const C: usize>(w: &mut Writer, proof: &SumcheckProof<F, C>) {
+fn write_rounds<const C: usize>(
+    w: &mut Writer,
+    proof: &SumcheckProof<F, C>,
+    field: &field::FpCtx<2>,
+) {
     w.len(proof.round_polynomials.len());
     for round in &proof.round_polynomials {
         for x in round {
-            w.u128(x.canonical_u128());
+            w.u128(u128::from(field.to_integer(x)));
         }
     }
 }
-fn read_field(r: &mut Reader<'_>, q: u128, cfg: &<F as PrimeField>::Config) -> Result<F> {
+fn read_field(
+    r: &mut Reader<'_>,
+    q: u128,
+    cfg: &<F as crate::piop::spartan::SpartanField>::Config,
+) -> Result<F> {
     let x = r.u128().map_err(error)?;
     if x >= q {
         return Err(error("noncanonical field element"));
@@ -105,7 +113,7 @@ fn read_field(r: &mut Reader<'_>, q: u128, cfg: &<F as PrimeField>::Config) -> R
 fn read_rounds<const C: usize>(
     r: &mut Reader<'_>,
     q: u128,
-    cfg: &<F as PrimeField>::Config,
+    cfg: &<F as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<SumcheckProof<F, C>> {
     let len = r.len().map_err(error)?;
     if len > 31 || len > r.remaining() / (16 * C) {

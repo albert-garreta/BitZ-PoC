@@ -28,8 +28,8 @@ mod common;
 
 use std::hint::black_box;
 
-use f2z::poly::univariate::binary_b127::BinaryFieldB127;
-use f2z::poly::univariate::binary_gf128::BinaryFieldGF128;
+use f2z::poly::univariate::binary_b127::B127;
+use f2z::poly::univariate::binary_gf128::Gf128;
 use f2z::utils::wide_mul::WideMulAcc;
 
 // ---------------------------------------------------------------------
@@ -75,41 +75,41 @@ trait BF:
     fn inverse(&self) -> Self;
 }
 
-impl BF for BinaryFieldGF128 {
+impl BF for Gf128 {
     const NAME: &'static str = "GF(2^128) GHASH";
     fn zero() -> Self {
-        BinaryFieldGF128::zero()
+        Gf128::zero()
     }
     fn one() -> Self {
-        BinaryFieldGF128::one()
+        Gf128::one()
     }
     fn from_u128(v: u128) -> Self {
-        BinaryFieldGF128::from(v)
+        Gf128::from_polynomial_bits(v)
     }
     fn square(&self) -> Self {
-        BinaryFieldGF128::square(self)
+        Gf128::square(*self)
     }
     fn inverse(&self) -> Self {
-        BinaryFieldGF128::inverse(self)
+        Gf128::inverse(self)
     }
 }
 
-impl BF for BinaryFieldB127 {
+impl BF for B127 {
     const NAME: &'static str = "GF(2^127) b127";
     fn zero() -> Self {
-        BinaryFieldB127::zero()
+        B127::zero()
     }
     fn one() -> Self {
-        BinaryFieldB127::one()
+        B127::one()
     }
     fn from_u128(v: u128) -> Self {
-        BinaryFieldB127::from(v)
+        B127::from_polynomial_bits(v)
     }
     fn square(&self) -> Self {
-        BinaryFieldB127::square(self)
+        B127::square(*self)
     }
     fn inverse(&self) -> Self {
-        BinaryFieldB127::inverse(self)
+        B127::inverse(self)
     }
 }
 
@@ -139,14 +139,44 @@ fn time_pair_ns_per_op<RG, RB>(
     let mut gs = Vec::with_capacity(reps);
     let mut bs = Vec::with_capacity(reps);
     for _ in 0..reps {
-        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0_recording =
+            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t0 = tracing::info_span!("field:t0").entered();
         black_box(g_body());
-        gs.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "field:t0").expect("query completed operation") }.as_secs_f64() * 1e9 / ops as f64);
-        let t1_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        gs.push(
+            {
+                drop(t0);
+                f2z::observability::duration(
+                    &t0_recording
+                        .intervals()
+                        .expect("complete operation capture"),
+                    "field:t0",
+                )
+                .expect("query completed operation")
+            }
+            .as_secs_f64()
+                * 1e9
+                / ops as f64,
+        );
+        let t1_recording =
+            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t1 = tracing::info_span!("field:t1").entered();
         black_box(b_body());
-        bs.push({ drop(t1); f2z::observability::duration(&t1_recording.intervals().expect("complete operation capture"), "field:t1").expect("query completed operation") }.as_secs_f64() * 1e9 / ops as f64);
+        bs.push(
+            {
+                drop(t1);
+                f2z::observability::duration(
+                    &t1_recording
+                        .intervals()
+                        .expect("complete operation capture"),
+                    "field:t1",
+                )
+                .expect("query completed operation")
+            }
+            .as_secs_f64()
+                * 1e9
+                / ops as f64,
+        );
     }
     (median(gs), median(bs))
 }
@@ -340,8 +370,9 @@ fn run_paired<G: BF, B: BF>(reps: usize) {
     let gcomb = Comb::new(G::from_u128(2), 128, POW_WIN);
     let bcomb = Comb::new(B::from_u128(2), 128, POW_WIN);
     let mut st = 0xE44_u64;
-    let exps: Vec<u128> =
-        (0..N_POW).map(|_| rand_u128(&mut st) & ((1u128 << POW_BITS) - 1)).collect();
+    let exps: Vec<u128> = (0..N_POW)
+        .map(|_| rand_u128(&mut st) & ((1u128 << POW_BITS) - 1))
+        .collect();
     let (g, b) = time_pair_ns_per_op(
         reps,
         N_POW,
@@ -427,10 +458,10 @@ fn run_paired<G: BF, B: BF>(reps: usize) {
 /// schoolbook default, alternating on the batch-mul shape.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 fn run_b127_kara(reps: usize) {
-    let a = gen_vec::<BinaryFieldB127>(N_BATCH, 0xA11CE);
-    let b = gen_vec::<BinaryFieldB127>(N_BATCH, 0xB0B);
-    let mut o1 = vec![BinaryFieldB127::zero(); N_BATCH];
-    let mut o2 = vec![BinaryFieldB127::zero(); N_BATCH];
+    let a = gen_vec::<B127>(N_BATCH, 0xA11CE);
+    let b = gen_vec::<B127>(N_BATCH, 0xB0B);
+    let mut o1 = vec![B127::zero(); N_BATCH];
+    let mut o2 = vec![B127::zero(); N_BATCH];
     let (school, kara) = time_pair_ns_per_op(
         reps,
         N_BATCH,
@@ -440,14 +471,18 @@ fn run_b127_kara(reps: usize) {
         },
         || {
             for ((x, y), out) in a.iter().zip(b.iter()).zip(o2.iter_mut()) {
-                *out = x.mul_karatsuba(y);
+                *out = x.mul_karatsuba(*y);
             }
             o2[N_BATCH - 1]
         },
     );
     println!(
         "{:<22} {:>14} {:>14.3}   (vs b127 schoolbook {:.3}: {:.2}x)",
-        "mul/batch b127-kara", "—", kara, school, school / kara
+        "mul/batch b127-kara",
+        "—",
+        kara,
+        school,
+        school / kara
     );
 }
 
@@ -459,12 +494,12 @@ fn run_b127_kara(reps: usize) {
 /// ceiling; the row measures the tax.
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 fn run_b127_pfold(reps: usize) {
-    let ga = gen_vec::<BinaryFieldGF128>(N_BATCH, 0xA11CE);
-    let gb = gen_vec::<BinaryFieldGF128>(N_BATCH, 0xB0B);
-    let ba = gen_vec::<BinaryFieldB127>(N_BATCH, 0xA11CE);
-    let bb = gen_vec::<BinaryFieldB127>(N_BATCH, 0xB0B);
-    let mut o1 = vec![BinaryFieldGF128::zero(); N_BATCH];
-    let mut o2 = vec![BinaryFieldB127::zero(); N_BATCH];
+    let ga = gen_vec::<Gf128>(N_BATCH, 0xA11CE);
+    let gb = gen_vec::<Gf128>(N_BATCH, 0xB0B);
+    let ba = gen_vec::<B127>(N_BATCH, 0xA11CE);
+    let bb = gen_vec::<B127>(N_BATCH, 0xB0B);
+    let mut o1 = vec![Gf128::zero(); N_BATCH];
+    let mut o2 = vec![B127::zero(); N_BATCH];
     let (g, p) = time_pair_ns_per_op(
         reps,
         N_BATCH,
@@ -474,7 +509,7 @@ fn run_b127_pfold(reps: usize) {
         },
         || {
             for ((x, y), out) in ba.iter().zip(bb.iter()).zip(o2.iter_mut()) {
-                *out = x.mul_pfold(y);
+                *out = x.mul_pfold(*y);
             }
             o2[N_BATCH - 1]
         },
@@ -499,7 +534,7 @@ fn main() {
         "\n{:<22} {:>14} {:>14} {:>9}",
         "pattern", "GF128 ns/op", "b127 ns/op", "speedup"
     );
-    run_paired::<BinaryFieldGF128, BinaryFieldB127>(reps);
+    run_paired::<Gf128, B127>(reps);
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     run_b127_kara(reps);

@@ -40,10 +40,9 @@
 pub(crate) mod common;
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
-use std::{
-    collections::HashMap, fs::File, hint::black_box, io::BufWriter, process::Command,
-};
+use std::{collections::HashMap, fs::File, hint::black_box, io::BufWriter, process::Command};
 
+use f2z::observability::Interval;
 use f2z::piop::spartan::multiswap::{
     MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims, MultiswapProof,
     PreparedMultiswapRelation, commit_multiswap_witness, prove_multiswap_mod_r1cs,
@@ -51,8 +50,6 @@ use f2z::piop::spartan::multiswap::{
 };
 use f2z::piop::spartan::{IopSecurityProfile, PrimePolicy};
 use f2z::transcript::Blake3Transcript;
-use f2z::observability::Interval;
-use num_bigint::BigUint;
 use serde_json::{Value, json};
 
 const CONSTRAINT_DIGEST_DOMAIN: &str = "f2z/multiswap/circuit-digest/v1";
@@ -100,35 +97,74 @@ struct WitnessStats {
 
 impl WitnessStats {
     fn collect(circuit: &MultiswapCircuit, assignment: &MultiswapAssignment) -> Self {
-        let nonzero = |values: &[BigUint]| values.iter().filter(|value| value.bits() != 0).count();
-        let max_bits = |values: &[BigUint]| values.iter().map(BigUint::bits).max().unwrap_or(0);
-        let set_bits = |values: &[BigUint]| {
+        let nonzero = |values: &[field::Uint<32>]| {
             values
                 .iter()
-                .flat_map(|value| value.iter_u64_digits())
+                .filter(|value| value.as_words().iter().any(|&word| word != 0))
+                .count()
+        };
+        let max_bits = |values: &[field::Uint<32>]| {
+            values
+                .iter()
+                .map(|v| {
+                    v.as_words()
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, word)| **word != 0)
+                        .map_or(0, |(i, word)| {
+                            (i * 64) as u64 + 64 - word.leading_zeros() as u64
+                        })
+                })
+                .max()
+                .unwrap_or(0)
+        };
+        let set_bits = |values: &[field::Uint<32>]| {
+            values
+                .iter()
+                .flat_map(|v| v.as_words())
                 .map(|limb| u64::from(limb.count_ones()))
                 .sum()
         };
-        let nonzero_16bit_chunks = |values: &[BigUint]| {
+        let nonzero_16bit_chunks = |values: &[field::Uint<32>]| {
             values
                 .iter()
-                .map(|value| {
-                    value
-                        .to_bytes_le()
-                        .chunks(2)
-                        .filter(|chunk| chunk.iter().any(|byte| *byte != 0))
-                        .count()
-                })
+                .flat_map(|value| value.as_words())
+                .map(|word| (0..4).filter(|i| (word >> (16 * i)) & 0xffff != 0).count())
                 .sum()
         };
-        let assignment_set_bits = set_bits(assignment.values());
-        let assignment_nonzero_16bit_chunks = nonzero_16bit_chunks(assignment.values());
+        let domain = assignment.layout().assignment_len();
+        let values = || (0..domain).map(|index| assignment.value(index));
+        let assignment_set_bits = values()
+            .map(|v| {
+                v.as_words()
+                    .iter()
+                    .map(|w| u64::from(w.count_ones()))
+                    .sum::<u64>()
+            })
+            .sum();
+        let assignment_nonzero_16bit_chunks = values()
+            .map(|v| {
+                v.as_words()
+                    .iter()
+                    .map(|w| (0..4).filter(|i| (w >> (16 * i)) & 0xffff != 0).count())
+                    .sum::<usize>()
+            })
+            .sum();
 
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"f2z/multiswap/integer-assignment/v1");
-        hasher.update(&(assignment.values().len() as u64).to_le_bytes());
-        for value in assignment.values() {
-            let bytes = value.to_bytes_le();
+        hasher.update(&(domain as u64).to_le_bytes());
+        // Historical diagnostic digest uses minimal unsigned byte encodings.
+        // This value-dependent formatting is outside all prover kernels.
+        for value in values() {
+            let mut bytes: Vec<_> = value
+                .as_words()
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect();
+            let len = bytes.iter().rposition(|b| *b != 0).map_or(1, |i| i + 1);
+            bytes.truncate(len);
             hasher.update(&(bytes.len() as u64).to_le_bytes());
             hasher.update(&bytes);
         }
@@ -142,8 +178,10 @@ impl WitnessStats {
             quotient_nonzero_entries: nonzero(circuit.quotients()),
             quotient_set_bits: set_bits(circuit.quotients()),
             quotient_nonzero_16bit_chunks: nonzero_16bit_chunks(circuit.quotients()),
-            block_assignment_entries: assignment.values().len(),
-            assignment_nonzero_entries: nonzero(assignment.values()),
+            block_assignment_entries: domain,
+            assignment_nonzero_entries: values()
+                .filter(|v| v.as_words().iter().any(|w| *w != 0))
+                .count(),
             witness_max_bits: max_bits(circuit.witness()),
             quotient_max_bits: max_bits(circuit.quotients()),
             assignment_set_bits,
@@ -203,7 +241,10 @@ struct Env {
 }
 
 fn normalized_digest(value: &str) -> Result<String, std::convert::Infallible> {
-    Ok(value.strip_prefix("0x").unwrap_or(value).to_ascii_lowercase())
+    Ok(value
+        .strip_prefix("0x")
+        .unwrap_or(value)
+        .to_ascii_lowercase())
 }
 
 struct TraceWriter {
@@ -250,8 +291,8 @@ impl TraceWriter {
                 "Apple Silicon",
             )
         });
-        let build_profile = std::env::var("F2Z_MULTISWAP_BUILD_PROFILE")
-            .unwrap_or_else(|_| "bench".to_owned());
+        let build_profile =
+            std::env::var("F2Z_MULTISWAP_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
         let expected_constraint_digest = env.expected_constraint_digest.clone();
         Some(Self {
             output,
@@ -326,12 +367,14 @@ impl TraceWriter {
         let exact_rows = circuit
             .mods()
             .iter()
-            .filter(|modulus| modulus.bits() == 0)
+            .filter(|modulus| modulus.iter().all(|&word| word == 0))
             .count();
         let modular_rows = circuit.mods().len() - exact_rows;
-        let live_exact_rows = circuit.mods()[..circuit.live_rows()]
+        let live_exact_rows = circuit
+            .mods()
             .iter()
-            .filter(|modulus| modulus.bits() == 0)
+            .take(circuit.live_rows())
+            .filter(|modulus| modulus.iter().all(|&word| word == 0))
             .count();
         let live_modular_rows = circuit.live_rows() - live_exact_rows;
         let trial_fragment = trial.id_fragment();
@@ -451,7 +494,7 @@ impl TraceWriter {
                 "f2z_rs_fast": env_setting("F2Z_RS_FAST", "default:on"),
                 "f2z_flat_forest": env_setting("F2Z_FLAT_FOREST", "default:shape-dependent"),
                 "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
-                "f2z_spartan_reduction": env_setting("F2Z_SPARTAN_REDUCTION", "default:delayed-barrett"),
+                "arithmetic": "delayed-barrett",
             },
         });
         self.output.write(&run).expect("write MultiSwap trace run");
@@ -532,10 +575,7 @@ struct SpanDescriptor {
     math_latex: Vec<&'static str>,
 }
 
-fn describe_span(
-    interval: &Interval,
-    by_order: &HashMap<u64, &Interval>,
-) -> SpanDescriptor {
+fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> SpanDescriptor {
     let mut labels = Vec::new();
     let mut cursor = Some(interval);
     while let Some(current) = cursor {
@@ -958,7 +998,8 @@ fn run_once(
     vc: &flock_core::pcs::ligerito::VerifierConfig,
     setup_ns: u64,
 ) -> (RepTiming, MultiswapProof) {
-    let recording = f2z::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
+    let recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
 
     let witness_scope = tracing::info_span!("multiswap-trace:witness_generation").entered();
@@ -1069,11 +1110,21 @@ fn main() {
     let bootstrap_stats = WitnessStats::collect(&circuit, &bootstrap_assignment);
 
     // One-time public preprocessing is excluded from every traced boundary.
-    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("multiswap:setup_started").entered();
     let prepared = common::with_profile!(profile, prepare(&circuit));
     let (pc, vc) = prepared.ligerito_configs();
-    let setup_elapsed = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "multiswap:setup_started").expect("query completed operation") };
+    let setup_elapsed = {
+        drop(setup_started);
+        f2z::observability::duration(
+            &setup_started_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "multiswap:setup_started",
+        )
+        .expect("query completed operation")
+    };
     let setup_ns = u64::try_from(setup_elapsed.as_nanos()).unwrap_or(u64::MAX);
     let setup_ms = setup_elapsed.as_secs_f64() * 1e3;
 
@@ -1261,7 +1312,8 @@ fn peak_rss_bytes() -> u64 {
 
 #[cfg(test)]
 mod reporting_tests {
-    use super::*;
+    use super::{MeasurementsNs, insert_ns, insert_optional_ns, measurements};
+
     #[test]
     fn sparse_nanoseconds_are_exact_decimal_strings() {
         assert_eq!(

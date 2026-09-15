@@ -1,8 +1,8 @@
-use crypto_primitives::PrimeField;
+use crate::poly::coefficient::PolynomialField;
 
 /// A trait for fields that allow to perform operations
 /// on inner Montgomery representations of field elements.
-pub trait InnerTransparentField: PrimeField {
+pub trait InnerTransparentField: PolynomialField {
     /// Add inner Montgomery representations using a config.
     fn add_inner(lhs: &Self::Inner, rhs: &Self::Inner, config: &Self::Config) -> Self::Inner;
 

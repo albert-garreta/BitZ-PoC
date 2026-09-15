@@ -1,0 +1,399 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ]
+  },
+  "families": [
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log10"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "reuse_products"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log16"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_blocked"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log18"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production_blocked"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ood_reuse",
+      "sizes": [
+        "log10"
+      ],
+      "baseline": "allocate",
+      "variants": [
+        "allocate",
+        "scratch",
+        "indexed_scratch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "scratch"
+        ]
+      },
+      "selection_reason": "previous confirmed improvement with headroom"
+    },
+    {
+      "name": "opt_ood_reuse",
+      "sizes": [
+        "log16"
+      ],
+      "baseline": "allocate",
+      "variants": [
+        "allocate",
+        "scratch",
+        "indexed_scratch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "allocate"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ood_reuse",
+      "sizes": [
+        "log18"
+      ],
+      "baseline": "allocate",
+      "variants": [
+        "allocate",
+        "scratch",
+        "indexed_scratch"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "allocate"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log8_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log12_lanes8"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log15_lanes8"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log15_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log16_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log18_lanes32"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "half_depth"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log8_lanes1"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "production"
+        ]
+      },
+      "selection_reason": "retain actual baseline; no new replacement or claimed speedup"
+    },
+    {
+      "name": "opt_pack",
+      "sizes": [
+        "logs9_9"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write",
+        "tiled_write"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_write"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_pack",
+      "sizes": [
+        "logs16_14"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write",
+        "tiled_write"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_write"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_pack",
+      "sizes": [
+        "logs18_18"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write",
+        "tiled_write"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_write"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_packed_ood",
+      "sizes": [
+        "logs9_9"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write_ood",
+        "tiled_indexed_ood"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_indexed_ood"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_packed_ood",
+      "sizes": [
+        "logs16_14"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write_ood",
+        "tiled_indexed_ood"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_indexed_ood"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    },
+    {
+      "name": "opt_packed_ood",
+      "sizes": [
+        "logs18_18"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "single_write_ood",
+        "tiled_indexed_ood"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_indexed_ood"
+        ]
+      },
+      "selection_reason": "repair chosen from development probes before fresh confirmation"
+    }
+  ],
+  "revision": "regression-repair-3",
+  "threads": 10,
+  "allocation_audit_passes": 64,
+  "selection_note": "Frozen before confirmation. Baseline retentions are explicit, not candidate speedups. No timing/privacy contract downgrade."
+}

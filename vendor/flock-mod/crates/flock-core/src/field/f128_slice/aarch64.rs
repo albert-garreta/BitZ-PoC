@@ -1,11 +1,11 @@
-use crate::field::F128;
+use crate::field::Gf128;
 
 /// Two-lane pair fold using NEON and PMULL.
 ///
 /// # Safety
 /// Requires the `aes` target feature.
-pub(super) unsafe fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: F128) {
-    use crate::field::gf2_128::aarch64::ghash_mul_vec2_neon;
+pub(super) unsafe fn fold_pairs(src: &[Gf128], base: usize, dst: &mut [Gf128], r: Gf128) {
+    use crate::field::gf128_kernels::aarch64::ghash_mul_vec2_neon;
 
     let lanes = dst.len() & !1;
     let mut t = 0;
@@ -15,28 +15,28 @@ pub(super) unsafe fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: 
         let o0 = src[s + 1];
         let e1 = src[s + 2];
         let o1 = src[s + 3];
-        let x0 = F128 {
+        let x0 = Gf128 {
             lo: e0.lo ^ o0.lo,
             hi: e0.hi ^ o0.hi,
         };
-        let x1 = F128 {
+        let x1 = Gf128 {
             lo: e1.lo ^ o1.lo,
             hi: e1.hi ^ o1.hi,
         };
         // SAFETY: caller guarantees the aes target feature.
         let prod = unsafe { ghash_mul_vec2_neon([r, r], [x0, x1]) };
-        dst[t] = F128 {
+        dst[t] = Gf128 {
             lo: e0.lo ^ prod[0].lo,
             hi: e0.hi ^ prod[0].hi,
         };
-        dst[t + 1] = F128 {
+        dst[t + 1] = Gf128 {
             lo: e1.lo ^ prod[1].lo,
             hi: e1.hi ^ prod[1].hi,
         };
         t += 2;
     }
 
-    let one_plus_r = F128::ONE + r;
+    let one_plus_r = Gf128::ONE + r;
     while t < dst.len() {
         let s = 2 * (base + t);
         dst[t] = src[s] * one_plus_r + src[s + 1] * r;

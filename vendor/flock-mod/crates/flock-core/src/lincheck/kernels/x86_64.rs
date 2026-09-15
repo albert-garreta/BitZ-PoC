@@ -1,15 +1,15 @@
-use super::super::{F128, build_sum_table};
+use super::super::{Gf128, build_sum_table};
 
 /// x86 single-matrix inner kernel — SSE2 mirror of
 /// [`process_block_neon_single`]. Sweeps `TILE_T = 8` stripes for one
-/// `BLOCK_K = 8` block of i_inner positions, keeping all 8 F128 accumulators in
+/// `BLOCK_K = 8` block of i_inner positions, keeping all 8 Gf128 accumulators in
 /// xmm registers so the per-tile output is read/written once (vs once per
 /// stripe in the untiled [`partial_fold_packed_z_fast_padded`] path).
 ///
 /// # Safety
 /// - `tile_bytes_ptr` must point to at least `TILE_T * k` bytes.
 /// - `tables_ptr` must point to at least `TILE_T * 256 * 16` bytes.
-/// - `out_ptr` must point to at least 8 F128 (128 bytes) of mutable storage.
+/// - `out_ptr` must point to at least 8 Gf128 (128 bytes) of mutable storage.
 #[cfg(target_arch = "x86_64")]
 #[inline]
 unsafe fn process_block_x86(
@@ -17,7 +17,7 @@ unsafe fn process_block_x86(
     k: usize,
     bs: usize,
     tables_ptr: *const u8,
-    out_ptr: *mut F128,
+    out_ptr: *mut Gf128,
 ) {
     use core::arch::x86_64::*;
     const TILE_T: usize = 8;
@@ -75,8 +75,8 @@ pub fn partial_fold_packed_z_x86_tiled_padded(
     m: usize,
     k_log: usize,
     useful_bits: usize,
-    eq_outer: &[F128],
-) -> Vec<F128> {
+    eq_outer: &[Gf128],
+) -> Vec<Gf128> {
     use rayon::prelude::*;
 
     const TILE_T: usize = 8;
@@ -106,11 +106,11 @@ pub fn partial_fold_packed_z_x86_tiled_padded(
         .par_chunks(bytes_per_chunk)
         .enumerate()
         .fold(
-            || vec![F128::ZERO; k],
+            || vec![Gf128::ZERO; k],
             |mut out, (chunk_idx, chunk_bytes)| {
                 let tile_start = chunk_idx * tiles_per_chunk;
-                // TILE_T × 256 F128 = 32 KB tables. L1 resident.
-                let mut tables = vec![F128::ZERO; TILE_T * 256];
+                // TILE_T × 256 Gf128 = 32 KB tables. L1 resident.
+                let mut tables = vec![Gf128::ZERO; TILE_T * 256];
                 let n_tiles_in_chunk = chunk_bytes.len() / (TILE_T * k);
                 for tile_rel in 0..n_tiles_in_chunk {
                     let tile_idx = tile_start + tile_rel;
@@ -129,7 +129,7 @@ pub fn partial_fold_packed_z_x86_tiled_padded(
                     for block_idx in 0..n_blocks {
                         let bs = block_idx * BLOCK_K;
                         // SAFETY: bs + BLOCK_K ≤ k ≤ out.len(); tile_bytes_ptr
-                        // covers TILE_T*k bytes; tables_ptr covers TILE_T*256 F128.
+                        // covers TILE_T*k bytes; tables_ptr covers TILE_T*256 Gf128.
                         unsafe {
                             process_block_x86(
                                 tile_bytes_ptr,
@@ -145,7 +145,7 @@ pub fn partial_fold_packed_z_x86_tiled_padded(
             },
         )
         .reduce(
-            || vec![F128::ZERO; k],
+            || vec![Gf128::ZERO; k],
             |mut a, b| {
                 for (x, y) in a.iter_mut().zip(b.iter()) {
                     *x += *y;

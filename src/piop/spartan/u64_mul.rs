@@ -13,9 +13,10 @@
 //! both below `2^128`) do not fit the native `u64` first-round path, so the
 //! Spartan PIOP runs on values projected into the runtime field.
 
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
 use std::borrow::Cow;
 
-use crypto_primitives::{FromWithConfig, PrimeField};
 use thiserror::Error;
 
 use crate::{
@@ -90,7 +91,7 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for U64MulCoefficient {
 
     fn canonical_field_encoding<'a>(
         &'a self,
-        _field_config: &<SpartanF2zField as PrimeField>::Config,
+        _field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
         field_one_encoding: &'a [u8],
     ) -> Cow<'a, [u8]> {
         match self {
@@ -102,14 +103,14 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for U64MulCoefficient {
     fn scale(
         &self,
         value: &SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
+        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
     ) -> SpartanF2zField {
         match self {
             Self::One => value.clone(),
             Self::LimbBase => {
                 let coefficient = SpartanF2zField::from_with_cfg(U64_MUL_LIMB_BASE, field_config);
                 let mut scaled = value.clone();
-                scaled *= &coefficient;
+                scaled = field_config.mul(&(scaled), &(&coefficient));
                 scaled
             }
         }
@@ -119,7 +120,7 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for U64MulCoefficient {
         column: SparseColumn<'_, Self>,
         row_weights: &[SpartanF2zField],
         zero: &SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
+        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
     ) -> SpartanF2zField {
         if let Some((row, coefficient)) = column.single() {
             return coefficient.scale(&row_weights[row], field_config);
@@ -127,14 +128,17 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for U64MulCoefficient {
 
         let mut evaluation = zero.clone();
         for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[row], field_config);
+            evaluation = field_config.add(
+                &(evaluation),
+                &(&coefficient.scale(&row_weights[row], field_config)),
+            );
         }
         evaluation
     }
 }
 
 /// Both public coefficients encode to modulus-independent bytes: `One` to
-/// the field's canonical one (exactly like a Boolean `true`) and `LimbBase`
+/// the field's canonical one (exactly like a Bit `true`) and `LimbBase`
 /// to `2^64`, which is canonical and never the unit in any accepted (at
 /// least 100-bit) Spartan field.
 impl ModulusIndependentCoefficient<SpartanF2zField> for U64MulCoefficient {
@@ -235,7 +239,10 @@ impl U64MulLayout {
         if s < 0 || s > i64::try_from(self.gate_vars).expect("small") {
             return Err(U64MulError::DomainTooLarge);
         }
-        Ok(Self { split_shift: shift, ..self })
+        Ok(Self {
+            split_shift: shift,
+            ..self
+        })
     }
 
     /// F2Z column variables: `max(gate_vars / 2, gate_vars − 10)`, i.e. the
@@ -521,7 +528,9 @@ fn selector_matrix(
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn output_matrix(layout: &U64MulLayout) -> Result<SparseMatrix<U64MulCoefficient>, SpartanMatrixError> {
+fn output_matrix(
+    layout: &U64MulLayout,
+) -> Result<SparseMatrix<U64MulCoefficient>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let lo_offset = 3 * layout.capacity;
@@ -553,7 +562,7 @@ fn output_matrix(layout: &U64MulLayout) -> Result<SparseMatrix<U64MulCoefficient
 /// field.
 pub fn prepare_u64_mul_relation(
     layout: U64MulLayout,
-    field_config: &<SpartanF2zField as PrimeField>::Config,
+    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<PreparedConstraintMatrices<SpartanF2zField, U64MulCoefficient>, U64MulError> {
     let matrices = u64_mul_constraint_matrices(&layout)?;
     Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
@@ -573,7 +582,7 @@ pub fn project_u64_mul_witness<F>(
     field_config: &F::Config,
 ) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), U64MulError>
 where
-    F: SpartanField + FromWithConfig<u64> + FromWithConfig<u128> + Send + Sync,
+    F: SpartanField + Send + Sync,
     F::Config: Sync,
 {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
@@ -635,7 +644,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::FromWithConfig;
 
     use super::*;
     use crate::piop::spartan::spartan_f2z_field_config;
@@ -762,15 +770,31 @@ mod tests {
                     .expect("one entry");
                 (row, *coefficient)
             };
-            assert_eq!(single(matrices.a(), capacity + row), (row, U64MulCoefficient::One));
-            assert_eq!(single(matrices.b(), 2 * capacity + row), (row, U64MulCoefficient::One));
-            assert_eq!(single(matrices.c(), 3 * capacity + row), (row, U64MulCoefficient::One));
+            assert_eq!(
+                single(matrices.a(), capacity + row),
+                (row, U64MulCoefficient::One)
+            );
+            assert_eq!(
+                single(matrices.b(), 2 * capacity + row),
+                (row, U64MulCoefficient::One)
+            );
+            assert_eq!(
+                single(matrices.c(), 3 * capacity + row),
+                (row, U64MulCoefficient::One)
+            );
             assert_eq!(
                 single(matrices.c(), 4 * capacity + row),
                 (row, U64MulCoefficient::LimbBase)
             );
         }
-        assert!(matrices.a().column(capacity + 300).unwrap().single().is_none());
+        assert!(
+            matrices
+                .a()
+                .column(capacity + 300)
+                .unwrap()
+                .single()
+                .is_none()
+        );
         assert!(matrices.c().column(0).unwrap().single().is_none());
     }
 
@@ -781,16 +805,22 @@ mod tests {
         let config = spartan_f2z_field_config();
         let (assignment, products) =
             project_u64_mul_witness::<SpartanF2zField>(&witness, &config).unwrap();
-        assert_eq!(assignment.evaluations.len(), witness.layout().padded_assignment_len());
+        assert_eq!(
+            assignment.evaluations.len(),
+            witness.layout().padded_assignment_len()
+        );
         let base = SpartanF2zField::from_with_cfg(U64_MUL_LIMB_BASE, &config);
         for index in 0..300 {
             let mut lhs = products.az.evaluations[index].clone();
-            lhs *= &products.bz.evaluations[index];
+            lhs = config.mul(&(lhs), &(&products.bz.evaluations[index]));
             assert_eq!(lhs, products.cz.evaluations[index]);
             let capacity = witness.layout().capacity();
             let mut recombined = assignment.evaluations[4 * capacity + index].clone();
-            recombined *= &base;
-            recombined += &assignment.evaluations[3 * capacity + index];
+            recombined = config.mul(&(recombined), &(&base));
+            recombined = config.add(
+                &(recombined),
+                &(&assignment.evaluations[3 * capacity + index]),
+            );
             assert_eq!(recombined, products.cz.evaluations[index]);
         }
         // The prepared matrices accept the coefficient encoding.

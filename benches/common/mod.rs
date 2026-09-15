@@ -220,7 +220,6 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_SHA_RESULT_PATH",
     "F2Z_SHA_SEED",
     "F2Z_SHA_TRACE_PATH",
-    "F2Z_SPARTAN_REDUCTION",
     "F2Z_T4_FACTORED",
     "F2Z_T4_PRFM",
     "F2Z_TAPS_DELTA",

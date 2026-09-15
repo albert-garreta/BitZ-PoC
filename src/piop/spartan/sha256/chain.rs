@@ -17,6 +17,8 @@
 //! product opening and the virtual F2Z opening — is the independent
 //! protocol unchanged; only the map differs.
 
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
 use std::{
     array,
     sync::{Arc, OnceLock},
@@ -31,12 +33,11 @@ use circuit::{
     },
     witgen::{PackedWitness, Witgen},
 };
-use crypto_primitives::PrimeField;
+
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
-use num_bigint::{BigInt, BigUint, Sign};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -44,7 +45,7 @@ use crate::{
     f2map::{ChainedPackedSourceMap, ChainedPackedSourceParts, PreparedVirtualMap, VirtualMap},
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito},
-    pcs::{IntegerMatrixLayout, ProjectCanonicalU128, mod_q_num_chunks},
+    pcs::{IntegerMatrixLayout, mod_q_num_chunks},
     poly::mle::FactoredMultilinearExtension,
     sparse_matrix::SparseMatrix,
     transcript::traits::Transcript,
@@ -56,13 +57,12 @@ use super::super::{
     matrix::eq_table,
     profile::{IopSecurityParams, IopSecurityProfile, Lambda100},
     protocol::{
-        FieldConfig, ProtocolError, RuntimePrime,
+        FieldConfig, ProtocolError,
         linear::{
             LinearBatching, LinearDomains, LinearProof, LinearProveOptions, LinearRelationSpec,
             OpeningClaim, frame, prove_linear, verify_linear,
         },
     },
-    sumcheck::OptimizedSumcheckReducer,
 };
 use super::{
     constraints::{
@@ -126,7 +126,7 @@ const CHAIN_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"f2z/spartan-sha256-chain/consta
 const CHAIN_LOCAL_ROW_POINT_DOMAIN: &[u8] = b"f2z/spartan-sha256-chain/local-row-point/v1";
 const CHAIN_INSTANCE_POINT_DOMAIN: &[u8] = b"f2z/spartan-sha256-chain/instance-point/v1";
 const CHAIN_OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-sha256-chain-opening/v1";
-const CHAIN_RELATION_DIGEST_DOMAIN: &[u8] = b"f2z/sha256-chain/local-relation/v1";
+const CHAIN_RELATION_DIGEST_DOMAIN: &[u8] = b"f2z/sha256-chain/local-relation/v2";
 
 /// Committed source column of output word `w`, bit `b` in the CHAINED
 /// layout (the independent layout minus its 256 state cells).
@@ -233,7 +233,7 @@ struct ChainLocalRelation {
     last: PreparedVirtualMap,
     initial_state: [u32; 8],
     digest: [u8; 32],
-    max_boolean_residual_bound: BigUint,
+    max_boolean_residual_bound: field::Uint<2>,
 }
 
 static STANDARD_CHAIN_RELATION: OnceLock<Arc<ChainLocalRelation>> = OnceLock::new();
@@ -252,7 +252,7 @@ fn chain_local_relation(
     build_chain_local_relation(initial_state).map(Arc::new)
 }
 
-/// Replays the symbolic compression circuit once and splits its Boolean map
+/// Replays the symbolic compression circuit once and splits its Bit map
 /// by source column: block and hint columns stay in `local` (shifted past
 /// the removed state cells), state columns become `prev` entries on the
 /// previous instance's output cells and, for instance 0, the parity of the
@@ -313,24 +313,15 @@ fn build_chain_local_relation(
     let first = prepared(first_rows)?;
     let last = prepared(last_rows)?;
 
-    let exact_rows = generated
-        .c
-        .rows()
-        .iter()
-        .map(|row| {
-            row.entries()
-                .iter()
-                .map(|(column, coefficient)| (*column, coefficient.clone()))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let matrix = SparseMatrix::try_from_rows(SHA256_CHAIN_H_BAR_LIVE_BITS, exact_rows)
-        .map_err(SpartanMatrixError::from)?;
     let native_rows = convert_native_integer_rows(&generated.c)?;
     let native_matrix = SparseMatrix::try_from_rows(SHA256_CHAIN_H_BAR_LIVE_BITS, native_rows)
         .map_err(SpartanMatrixError::from)?;
-    let max_boolean_residual_bound = max_boolean_linear_residual_bound(&matrix);
-    let digest = chain_relation_digest(&matrix, &[&local, &prev, &first, &last], initial_state)?;
+    let max_boolean_residual_bound = max_boolean_linear_residual_bound(&native_matrix);
+    let digest = chain_relation_digest(
+        &native_matrix,
+        &[&local, &prev, &first, &last],
+        initial_state,
+    )?;
 
     Ok(ChainLocalRelation {
         native_matrix,
@@ -345,7 +336,7 @@ fn build_chain_local_relation(
 }
 
 fn chain_relation_digest(
-    matrix: &SparseMatrix<BigInt>,
+    matrix: &SparseMatrix<i64>,
     maps: &[&PreparedVirtualMap; 4],
     initial_state: [u32; 8],
 ) -> Result<[u8; 32], Sha256ConstraintError> {
@@ -365,14 +356,7 @@ fn chain_relation_digest(
         super::constraints::hash_usize(&mut hash, column.len())?;
         for (row, coefficient) in column {
             super::constraints::hash_usize(&mut hash, row)?;
-            let (sign, magnitude) = coefficient.to_bytes_le();
-            hash.update(&[match sign {
-                Sign::NoSign => 0,
-                Sign::Plus => 1,
-                Sign::Minus => 2,
-            }]);
-            super::constraints::hash_usize(&mut hash, magnitude.len())?;
-            hash.update(&magnitude);
+            hash.update(&coefficient.to_le_bytes());
         }
     }
     Ok(*hash.finalize().as_bytes())
@@ -394,16 +378,29 @@ pub struct PreparedSha256ChainBatch {
 
 impl PreparedSha256ChainBatch {
     /// Select only this batch's Ligerito opener; the enclosing target is retained.
-    pub fn with_ligerito(mut self, selection: crate::ligerito_flock::LigeritoSelection) -> Result<Self, Sha256ConstraintError> {
-        let resolved = selection.resolve(packed_vars(&self.f_layout), self.security.ligerito_target_bits)
+    pub fn with_ligerito(
+        mut self,
+        selection: crate::ligerito_flock::LigeritoSelection,
+    ) -> Result<Self, Sha256ConstraintError> {
+        let resolved = selection
+            .resolve(
+                packed_vars(&self.f_layout),
+                self.security.ligerito_target_bits,
+            )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
         self.ligerito = Some(resolved);
         Ok(self)
     }
 
-    pub fn ligerito_configuration(&self) -> Result<&crate::ligerito_flock::ResolvedLigerito, Sha256ConstraintError> {
-        self.ligerito.as_ref().ok_or_else(|| Sha256ConstraintError::LigeritoConfig("test-only preparation has no production Ligerito policy".into()))
+    pub fn ligerito_configuration(
+        &self,
+    ) -> Result<&crate::ligerito_flock::ResolvedLigerito, Sha256ConstraintError> {
+        self.ligerito.as_ref().ok_or_else(|| {
+            Sha256ConstraintError::LigeritoConfig(
+                "test-only preparation has no production Ligerito policy".into(),
+            )
+        })
     }
 
     /// Number of chained compressions `N`.
@@ -416,7 +413,7 @@ impl PreparedSha256ChainBatch {
         self.log_instance_capacity
     }
 
-    /// F2Z geometry of the committed Boolean source rows.
+    /// F2Z geometry of the committed Bit source rows.
     pub const fn source_params(&self) -> &IntegerMatrixLayout {
         &self.f_layout
     }
@@ -427,7 +424,7 @@ impl PreparedSha256ChainBatch {
         &self.h_layout
     }
 
-    /// The chained Boolean map binding the product tensor to the source.
+    /// The chained Bit map binding the product tensor to the source.
     pub const fn map(&self) -> &ChainedPackedSourceMap {
         &self.map
     }
@@ -443,8 +440,8 @@ impl PreparedSha256ChainBatch {
         &self.local.digest
     }
 
-    /// Conservative bound on `Σ|C_i|` per local row for a Boolean assignment.
-    pub fn max_boolean_residual_bound(&self) -> &BigUint {
+    /// Conservative bound on `Σ|C_i|` per local row for a Bit assignment.
+    pub fn max_boolean_residual_bound(&self) -> &field::Uint<2> {
         &self.local.max_boolean_residual_bound
     }
 
@@ -492,8 +489,9 @@ pub fn prepare_sha256_chain_batch_with_profile_and_initial_state<P: IopSecurityP
         )
         .ok_or(Sha256ConstraintError::InvalidBatchExponent)?;
     validate_instance_capacity(instances)?;
-    let prepared = prepare_chain_instances::<P>(instances, initial_state)?
-        .with_ligerito(crate::ligerito_flock::LigeritoSelection::for_target(P::LIGERITO_TARGET_BITS))?;
+    let prepared = prepare_chain_instances::<P>(instances, initial_state)?.with_ligerito(
+        crate::ligerito_flock::LigeritoSelection::for_target(P::LIGERITO_TARGET_BITS),
+    )?;
     Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
     let max_q_bits =
         u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
@@ -1001,13 +999,11 @@ impl LinearRelationSpec for PreparedSha256ChainBatch {
     fn runtime_prime<T: Transcript>(
         &self,
         transcript: &mut T,
-    ) -> Result<RuntimePrime, ProtocolError> {
-        let profile = Sha256PrimeProfile::from_security(&self.security, self.log_instance_capacity)?;
+    ) -> Result<field::FpCtx<2>, ProtocolError> {
+        let profile =
+            Sha256PrimeProfile::from_security(&self.security, self.log_instance_capacity)?;
         let context = sample_sha256_mod_q_context(transcript, profile)?;
-        Ok(RuntimePrime::from_config(
-            context.q(),
-            context.field_config().clone(),
-        ))
+        Ok(context)
     }
 
     fn runtime_relation_frames(&self, config: &FieldConfig) -> Vec<(&'static [u8], Vec<u8>)> {
@@ -1028,14 +1024,19 @@ impl LinearRelationSpec for PreparedSha256ChainBatch {
         slot_weights: Vec<SpartanF2zField>,
         public_io_batch: SpartanF2zField,
         constant_one: SpartanF2zField,
-        reducer: &OptimizedSumcheckReducer,
+        reducer: &field::FpCtx<2>,
         config: &FieldConfig,
     ) -> Result<ChainProductBatching, ProtocolError> {
         let local_row_weights = eq_table(local_point, config).map_err(SpartanError::from)?;
         let beta = {
             let _scope = tracing::info_span!("sha256:local_relation_collapse").entered();
-            collapse_native_linear_columns(self.native_matrix(), &local_row_weights, reducer, config)
-                .map_err(SpartanError::from)?
+            collapse_native_linear_columns(
+                self.native_matrix(),
+                &local_row_weights,
+                reducer,
+                config,
+            )
+            .map_err(SpartanError::from)?
         };
         ChainProductBatching::new(
             self,
@@ -1052,16 +1053,16 @@ impl LinearRelationSpec for PreparedSha256ChainBatch {
     fn product_claim<'a>(
         &'a self,
         batching: &'a ChainProductBatching,
-        prime: &'a RuntimePrime,
+        prime: &'a field::FpCtx<2>,
     ) -> Result<OpeningClaim<'a>, ProtocolError> {
-        let config = &prime.config;
+        let config = prime;
         let (row_weights, cols, claimed) =
             chain_product_opening_claim(batching, &self.h_layout, config)?;
         Ok(OpeningClaim {
             rows: Box::new(move |row| {
                 row_weights
                     .get(row)
-                    .map(|weight| field_from_raw(*weight, config).canonical_u128())
+                    .map(|weight| u128::from(config.to_integer(&(field_from_raw(*weight, config)))))
             }),
             cols,
             claimed,
@@ -1073,7 +1074,7 @@ impl LinearRelationSpec for PreparedSha256ChainBatch {
         _point: &[SpartanF2zField],
         _coefficient_evaluation: &SpartanF2zField,
         _final_claim: SpartanF2zField,
-        _prime: &'a RuntimePrime,
+        _prime: &'a field::FpCtx<2>,
     ) -> Result<OpeningClaim<'a>, ProtocolError> {
         Err(ProtocolError::UnsupportedDischarge)
     }
@@ -1114,19 +1115,12 @@ impl ChainProductBatching {
         slot_weights: Vec<SpartanF2zField>,
         public_batch_weight: SpartanF2zField,
         constant_weight: SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
+        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
     ) -> Result<Self, Sha256F2zError> {
         validate_chain_statement(prepared, statement)?;
         if instance_point.len() != instance_vars(prepared.instances)?
             || beta.len() != SHA256_CHAIN_H_BAR_LIVE_BITS
             || slot_weights.len() != CHAIN_PUBLIC_BITS
-            || public_batch_weight.cfg() != field_config
-            || constant_weight.cfg() != field_config
-            || instance_point
-                .iter()
-                .chain(&beta)
-                .chain(&slot_weights)
-                .any(|value| value.cfg() != field_config)
         {
             return Err(Sha256F2zError::InvalidGeometry);
         }
@@ -1137,31 +1131,40 @@ impl ChainProductBatching {
             .collect::<Vec<_>>();
         let mut active_instance_sum = SpartanF2zField::zero_with_cfg(field_config);
         for weight in &instance_weights {
-            active_instance_sum += weight;
+            active_instance_sum = field_config.add(&(active_instance_sum), &(weight));
         }
 
         let mut local_coefficients = beta;
-        local_coefficients[SHARED_CONSTANT_CELL] += &constant_weight;
+        local_coefficients[SHARED_CONSTANT_CELL] = field_config.add(
+            &(local_coefficients[SHARED_CONSTANT_CELL]),
+            &(&constant_weight),
+        );
         for (slot, slot_weight) in slot_weights.iter().enumerate() {
-            let public_coefficient = public_batch_weight.clone() * slot_weight;
-            *local_coefficients
+            let public_coefficient =
+                field_config.mul(&(public_batch_weight.clone()), &(slot_weight));
+            let coefficient = local_coefficients
                 .get_mut(chain_public_h_column(slot))
-                .ok_or(Sha256F2zError::InvalidGeometry)? += &public_coefficient;
+                .ok_or(Sha256F2zError::InvalidGeometry)?;
+            *coefficient = field_config.add(coefficient, &public_coefficient);
         }
 
         let byte_tables = weighted_byte_tables(&slot_weights, field_config);
-        let mut initial_claim = constant_weight * &active_instance_sum;
+        let mut initial_claim = field_config.mul(&(constant_weight), &(&active_instance_sum));
         for (instance, instance_weight) in instance_weights.iter().enumerate() {
             let mut statement_value = SpartanF2zField::zero_with_cfg(field_config);
             for (word_slot, word) in statement.instance_words(instance).enumerate() {
                 for byte in 0..4 {
                     let value = ((word >> (8 * byte)) & 0xff) as usize;
-                    statement_value += &byte_tables[4 * word_slot + byte][value];
+                    statement_value = field_config.add(
+                        &(statement_value),
+                        &(&byte_tables[4 * word_slot + byte][value]),
+                    );
                 }
             }
-            let mut coefficient = instance_weight.clone() * &public_batch_weight;
-            coefficient *= &statement_value;
-            initial_claim += &coefficient;
+            let mut coefficient =
+                field_config.mul(&(instance_weight.clone()), &(&public_batch_weight));
+            coefficient = field_config.mul(&(coefficient), &(&statement_value));
+            initial_claim = field_config.add(&(initial_claim), &(&coefficient));
         }
 
         Ok(Self {
@@ -1201,7 +1204,7 @@ impl LinearBatching for ChainProductBatching {
 fn chain_product_opening_claim(
     batching: &ChainProductBatching,
     h_layout: &IntegerMatrixLayout,
-    field_config: &<SpartanF2zField as PrimeField>::Config,
+    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
@@ -1230,7 +1233,12 @@ fn chain_product_opening_claim(
             return 0;
         }
         let high_weight = field_from_raw(high_weights[column % high_instances], field_config);
-        (batching.local_coefficients[local_column].clone() * &high_weight).canonical_u128()
+        u128::from(field_config.to_integer(
+            &(field_config.mul(
+                &(batching.local_coefficients[local_column].clone()),
+                &(&high_weight),
+            )),
+        ))
     };
     #[cfg(feature = "parallel")]
     let col_weights = (0..h_layout.cols())
@@ -1242,7 +1250,7 @@ fn chain_product_opening_claim(
     Ok((
         row_weights,
         col_weights,
-        batching.initial_claim.canonical_u128(),
+        u128::from(field_config.to_integer(&(batching.initial_claim))),
     ))
 }
 
@@ -1503,7 +1511,7 @@ mod tests {
             relation.native_matrix.column_count(),
             SHA256_CHAIN_H_BAR_LIVE_BITS
         );
-        assert!(relation.max_boolean_residual_bound < BigUint::from(1u8) << 111);
+        assert!(u128::from(relation.max_boolean_residual_bound) < 1u128 << 111);
         // A different initial state changes only `first` and the digest.
         let other = chain_local_relation([1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
         assert_eq!(other.local, relation.local);
@@ -1569,93 +1577,99 @@ mod tests {
 
     #[test]
     fn chain_roundtrip_and_public_binding() {
-        for selection in [crate::ligerito_flock::LigeritoSelection::JOHNSON, crate::ligerito_flock::LigeritoSelection::MATCHED_UDR] {
-        const LOG_COMPRESSIONS: usize = 7;
-        let prepared = prepare_sha256_chain_batch(LOG_COMPRESSIONS).unwrap().with_ligerito(selection).unwrap();
-        let blocks = blocks(prepared.instances(), 0xbeef);
-        let witness = generate_sha256_chain_witnesses(&prepared, &blocks).unwrap();
-        let statement = witness.statement();
-        let (pc, vc) = sha256_chain_configs(&prepared).unwrap();
-        let hint = commit_sha256_chain_witness_with_config(&prepared, &witness, &pc).unwrap();
+        for selection in [
+            crate::ligerito_flock::LigeritoSelection::JOHNSON,
+            crate::ligerito_flock::LigeritoSelection::MATCHED_UDR,
+        ] {
+            const LOG_COMPRESSIONS: usize = 7;
+            let prepared = prepare_sha256_chain_batch(LOG_COMPRESSIONS)
+                .unwrap()
+                .with_ligerito(selection)
+                .unwrap();
+            let blocks = blocks(prepared.instances(), 0xbeef);
+            let witness = generate_sha256_chain_witnesses(&prepared, &blocks).unwrap();
+            let statement = witness.statement();
+            let (pc, vc) = sha256_chain_configs(&prepared).unwrap();
+            let hint = commit_sha256_chain_witness_with_config(&prepared, &witness, &pc).unwrap();
 
-        let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_sha256_chain_with_config(
-            &mut prover_transcript,
-            &prepared,
-            &statement,
-            &witness,
-            &hint,
-            &pc,
-        )
-        .unwrap();
-        assert_eq!(proof.f2z().mfs.len(), 1, "one merged forest");
-
-        let mut verifier_transcript = Blake3Transcript::new();
-        verify_sha256_chain_with_config(
-            &mut verifier_transcript,
-            &prepared,
-            &statement,
-            &hint.commitment,
-            &proof,
-            &vc,
-        )
-        .unwrap();
-
-        let reject = |statement: &Sha256ChainStatement, what: &str| {
-            let mut transcript = Blake3Transcript::new();
-            assert!(
-                verify_sha256_chain_with_config(
-                    &mut transcript,
-                    &prepared,
-                    statement,
-                    &hint.commitment,
-                    &proof,
-                    &vc,
-                )
-                .is_err(),
-                "{what} must be bound"
-            );
-        };
-        let mut wrong_digest = statement.clone();
-        wrong_digest.digest[3] ^= 1 << 17;
-        reject(&wrong_digest, "the digest");
-        let mut wrong_block = statement.clone();
-        wrong_block.blocks[5][9] ^= 1;
-        reject(&wrong_block, "a middle block");
-        let mut swapped = statement.clone();
-        swapped.blocks.swap(0, 1);
-        reject(&swapped, "the block order");
-        let mut short = statement.clone();
-        short.blocks.pop();
-        let mut transcript = Blake3Transcript::new();
-        assert!(matches!(
-            verify_sha256_chain_with_config(
-                &mut transcript,
+            let mut prover_transcript = Blake3Transcript::new();
+            let proof = prove_sha256_chain_with_config(
+                &mut prover_transcript,
                 &prepared,
-                &short,
-                &hint.commitment,
-                &proof,
-                &vc
-            ),
-            Err(Sha256F2zError::InvalidPublicStatementLength {
-                expected: 128,
-                actual: 127
-            })
-        ));
-
-        // The prover refuses a statement its witness does not satisfy.
-        let mut mismatched_transcript = Blake3Transcript::new();
-        assert!(matches!(
-            prove_sha256_chain_with_config(
-                &mut mismatched_transcript,
-                &prepared,
-                &wrong_digest,
+                &statement,
                 &witness,
                 &hint,
                 &pc,
-            ),
-            Err(Sha256F2zError::ChainStatementMismatch)
-        ));
+            )
+            .unwrap();
+            assert_eq!(proof.f2z().mfs.len(), 1, "one merged forest");
+
+            let mut verifier_transcript = Blake3Transcript::new();
+            verify_sha256_chain_with_config(
+                &mut verifier_transcript,
+                &prepared,
+                &statement,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .unwrap();
+
+            let reject = |statement: &Sha256ChainStatement, what: &str| {
+                let mut transcript = Blake3Transcript::new();
+                assert!(
+                    verify_sha256_chain_with_config(
+                        &mut transcript,
+                        &prepared,
+                        statement,
+                        &hint.commitment,
+                        &proof,
+                        &vc,
+                    )
+                    .is_err(),
+                    "{what} must be bound"
+                );
+            };
+            let mut wrong_digest = statement.clone();
+            wrong_digest.digest[3] ^= 1 << 17;
+            reject(&wrong_digest, "the digest");
+            let mut wrong_block = statement.clone();
+            wrong_block.blocks[5][9] ^= 1;
+            reject(&wrong_block, "a middle block");
+            let mut swapped = statement.clone();
+            swapped.blocks.swap(0, 1);
+            reject(&swapped, "the block order");
+            let mut short = statement.clone();
+            short.blocks.pop();
+            let mut transcript = Blake3Transcript::new();
+            assert!(matches!(
+                verify_sha256_chain_with_config(
+                    &mut transcript,
+                    &prepared,
+                    &short,
+                    &hint.commitment,
+                    &proof,
+                    &vc
+                ),
+                Err(Sha256F2zError::InvalidPublicStatementLength {
+                    expected: 128,
+                    actual: 127
+                })
+            ));
+
+            // The prover refuses a statement its witness does not satisfy.
+            let mut mismatched_transcript = Blake3Transcript::new();
+            assert!(matches!(
+                prove_sha256_chain_with_config(
+                    &mut mismatched_transcript,
+                    &prepared,
+                    &wrong_digest,
+                    &witness,
+                    &hint,
+                    &pc,
+                ),
+                Err(Sha256F2zError::ChainStatementMismatch)
+            ));
         }
     }
 

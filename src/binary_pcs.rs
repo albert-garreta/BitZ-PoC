@@ -20,17 +20,17 @@ use crate::{
     },
     ligerito_flock::{
         OodProverClaim, OodRound, OodRoundParams, OodVerifierClaim, ZincChallenger, add_ood_basis,
-        custom_johnson_config_bits, f128_to_gf, gf_to_f128, ood_residual_evals, ood_round_bits,
-        ood_round_params, prove_ood_round_packed, verify_ood_round,
+        custom_johnson_config_bits, ood_residual_evals, ood_round_bits, ood_round_params,
+        prove_ood_round_packed, verify_ood_round,
     },
     piop::spartan::profile::MAX_DERIVED_GRINDING_BITS,
-    poly::univariate::binary_gf128::BinaryFieldGF128 as Gf,
+    poly::univariate::binary_gf128::Gf128 as Gf,
     proof_codec::{CodecError, Reader, Writer},
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use bincode::Options;
 use flock_core::{
-    field::F128,
+    field::Gf128,
     merkle::{self, Hash},
     pcs::{
         commit::{Commitment, PcsParams, ProverData, commit},
@@ -139,7 +139,11 @@ impl BinaryPcs {
     }
 
     /// Solve at an explicit rate, with the rate preceding the component target.
-    pub fn with_rate(packed_log: usize, log_inv_rate: usize, component_bits: usize) -> Result<Self, Error> {
+    pub fn with_rate(
+        packed_log: usize,
+        log_inv_rate: usize,
+        component_bits: usize,
+    ) -> Result<Self, Error> {
         Self::with_log_inv_rate(packed_log, component_bits, log_inv_rate)
     }
 
@@ -307,7 +311,7 @@ impl BinaryPcs {
     }
 
     /// Commit `2^packed_log` packed words.
-    pub fn commit(&self, packed: &[F128]) -> Result<(Commitment, ProverData), Error> {
+    pub fn commit(&self, packed: &[Gf128]) -> Result<(Commitment, ProverData), Error> {
         if packed.len() != 1usize << self.packed_log {
             return Err(Error::Invalid("packed witness length"));
         }
@@ -316,7 +320,7 @@ impl BinaryPcs {
 
     /// Round 0: must run right after the commitment's root is bound, before
     /// any other challenge.
-    pub fn prove_round0(&self, t: &mut Blake3Transcript, packed: &[F128]) -> Round0Prover {
+    pub fn prove_round0(&self, t: &mut Blake3Transcript, packed: &[Gf128]) -> Round0Prover {
         debug_assert_eq!(packed.len(), 1usize << self.packed_log);
         Round0Prover(prove_ood_round_packed(t, packed, self.ood))
     }
@@ -338,10 +342,10 @@ impl BinaryPcs {
     pub fn open_basis(
         &self,
         t: &mut Blake3Transcript,
-        packed: &[F128],
+        packed: &[Gf128],
         data: &ProverData,
         round0: &Round0Prover,
-        mut basis: Vec<F128>,
+        mut basis: Vec<Gf128>,
         target: Gf,
     ) -> LigeritoProof {
         assert_eq!(
@@ -356,7 +360,7 @@ impl BinaryPcs {
             &self.pc,
             packed.to_vec(),
             basis,
-            gf_to_f128(target),
+            target,
             &data.codeword,
             &data.merkle_tree,
             &mut ZincChallenger(t),
@@ -379,20 +383,20 @@ impl BinaryPcs {
         let target = target + eta * round0.0.y;
         self.check_shape(proof)?;
         let point = &round0.0.point;
-        let eval = |prefix: &[F128], log_y: usize| -> Vec<F128> {
-            let prefix_gf: Vec<Gf> = prefix.iter().copied().map(f128_to_gf).collect();
+        let eval = |prefix: &[Gf128], log_y: usize| -> Vec<Gf128> {
+            let prefix_gf: Vec<Gf> = prefix.iter().copied().collect();
             let mut out = eval_b(&prefix_gf, log_y);
             let add = ood_residual_evals(prefix, log_y, point, eta);
             for (slot, term) in out.iter_mut().zip(add) {
                 *slot = *slot + term;
             }
-            out.into_iter().map(gf_to_f128).collect()
+            out.into_iter().collect()
         };
         let ok = ligerito::recursive_verifier_with_basis_succinct(
             &self.vc,
             proof,
             self.packed_log,
-            gf_to_f128(target),
+            target,
             root,
             eval,
             &mut ZincChallenger(t),
@@ -410,7 +414,7 @@ impl BinaryPcs {
     pub fn open_bit_mle(
         &self,
         t: &mut Blake3Transcript,
-        packed: &[F128],
+        packed: &[Gf128],
         data: &ProverData,
         round0: &Round0Prover,
         point: &[Gf],
@@ -422,7 +426,7 @@ impl BinaryPcs {
         );
         // The ring switch reads the packed words in place (no `Gf` copy).
         let (ring, basis, target) = ring_switch_prove(t, packed, &point[LOG_PACKING..]);
-        let basis: Vec<F128> = basis.into_iter().map(gf_to_f128).collect();
+        let basis: Vec<Gf128> = basis.into_iter().collect();
         let lig = self.open_basis(t, packed, data, round0, basis, target);
         BitMleOpening { ring, lig }
     }
@@ -572,7 +576,7 @@ mod tests {
     }
 
     /// Reference bit-MLE: bit `j` of word `i` sits at index `128·i + j`.
-    fn bit_mle(packed: &[F128], point: &[Gf]) -> Gf {
+    fn bit_mle(packed: &[Gf128], point: &[Gf]) -> Gf {
         let low = eq_table(&point[..LOG_PACKING]);
         let high = eq_table(&point[LOG_PACKING..]);
         let mut acc = Gf::zero();
@@ -587,14 +591,14 @@ mod tests {
         acc
     }
 
-    fn random_packed(seed: u64, packed_log: usize) -> Vec<F128> {
+    fn random_packed(seed: u64, packed_log: usize) -> Vec<Gf128> {
         let mut s = seed;
         (0..1usize << packed_log)
             .map(|_| {
                 s ^= s << 13;
                 s ^= s >> 7;
                 s ^= s << 17;
-                F128 {
+                Gf128 {
                     lo: s,
                     hi: s.rotate_left(29),
                 }
@@ -674,9 +678,10 @@ mod tests {
         let mut t = Blake3Transcript::new();
         t.absorb_slice(&c.root);
         let r0 = pcs.prove_round0(&mut t, &packed);
-        let target = packed.iter().zip(&basis).fold(Gf::zero(), |acc, (&f, &b)| {
-            acc + f128_to_gf(f) * f128_to_gf(b)
-        });
+        let target = packed
+            .iter()
+            .zip(&basis)
+            .fold(Gf::zero(), |acc, (&f, &b)| acc + (f) * (b));
         crate::ligerito::absorb_ood_value(&mut t, target);
         let proof = pcs.open_basis(&mut t, &packed, &data, &r0, basis.clone(), target);
 
@@ -684,7 +689,7 @@ mod tests {
         t.absorb_slice(&c.root);
         let r0v = pcs.verify_round0(&mut t, &r0.round()).unwrap();
         crate::ligerito::absorb_ood_value(&mut t, target);
-        let basis_gf: Vec<Gf> = basis.iter().copied().map(f128_to_gf).collect();
+        let basis_gf: Vec<Gf> = basis.iter().copied().collect();
         let eval_b = |prefix: &[Gf], log_y: usize| -> Vec<Gf> {
             (0..1usize << log_y)
                 .map(|y| {
@@ -722,9 +727,9 @@ mod tests {
         let target = packed
             .iter()
             .zip(&basis_gf)
-            .fold(Gf::zero(), |acc, (&f, &b)| acc + f128_to_gf(f) * b);
+            .fold(Gf::zero(), |acc, (&f, &b)| acc + (f) * b);
         crate::ligerito::absorb_ood_value(&mut t, target);
-        let basis: Vec<F128> = basis_gf.iter().copied().map(gf_to_f128).collect();
+        let basis: Vec<Gf128> = basis_gf.iter().copied().collect();
         let proof = pcs.open_basis(&mut t, &packed, &data, &r0, basis, target);
 
         let mut t = Blake3Transcript::new();

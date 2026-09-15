@@ -20,7 +20,7 @@
 //! Scalar/correctness-first implementation; NEON `apply_triple` and the
 //! unrolled `ntt_and_accum` can be added if the URM hot path needs them.
 
-use crate::field::F8;
+use crate::field::Gf8;
 use crate::ntt::AdditiveNttGf8;
 
 #[derive(Clone, Debug)]
@@ -30,7 +30,7 @@ pub struct InvNttTableByteSingleGf8 {
     pub n_chunks: usize,
     /// Backing allocation for the table plus at most 63 bytes of alignment
     /// padding. The logical table starts at `data_offset`.
-    data: Vec<F8>,
+    data: Vec<Gf8>,
     /// Start of the logical table inside `data`, chosen so every 64-byte row
     /// in the production `ell = 64` table starts on a cache-line boundary.
     data_offset: usize,
@@ -51,23 +51,23 @@ impl InvNttTableByteSingleGf8 {
             "n_chunks must fit the i'/chunk XOR encoding"
         );
 
-        // Vec<F8> only promises byte alignment. Over-allocate and select a
+        // Vec<Gf8> only promises byte alignment. Over-allocate and select a
         // cache-line-aligned logical start so an AVX-512 row load never
         // straddles two cache lines.
         const TABLE_ALIGNMENT: usize = 64;
         let table_len = 256 * ell;
-        let mut data = vec![F8::ZERO; table_len + TABLE_ALIGNMENT - 1];
+        let mut data = vec![Gf8::ZERO; table_len + TABLE_ALIGNMENT - 1];
         let data_offset = (TABLE_ALIGNMENT - (data.as_ptr() as usize & (TABLE_ALIGNMENT - 1)))
             & (TABLE_ALIGNMENT - 1);
         let table = &mut data[data_offset..data_offset + table_len];
 
         // Compute the 8 unit-column images cols[t] = fwd_NTT_Λ ∘ inv_NTT_S (e_t)
         // for t ∈ 0..8. The remaining columns of M are XOR-shifted versions.
-        let mut tmp = vec![F8::ZERO; ell];
-        let mut cols: Vec<Vec<F8>> = Vec::with_capacity(8);
+        let mut tmp = vec![Gf8::ZERO; ell];
+        let mut cols: Vec<Vec<Gf8>> = Vec::with_capacity(8);
         for t in 0..8 {
-            tmp.iter_mut().for_each(|x| *x = F8::ZERO);
-            tmp[t] = F8::ONE;
+            tmp.iter_mut().for_each(|x| *x = Gf8::ZERO);
+            tmp[t] = Gf8::ONE;
             ntt_s.inverse(&mut tmp);
             ntt_l.forward(&mut tmp);
             cols.push(tmp.clone());
@@ -114,7 +114,7 @@ impl InvNttTableByteSingleGf8 {
     }
 
     #[inline]
-    fn table(&self) -> &[F8] {
+    fn table(&self) -> &[Gf8] {
         &self.data[self.data_offset..self.data_offset + 256 * self.ell]
     }
 
@@ -125,7 +125,7 @@ impl InvNttTableByteSingleGf8 {
     /// Dispatches: NEON on aarch64 when `ell ≥ 16` (true for the protocol
     /// path k_skip=6 ⇒ ell=64), scalar otherwise.
     #[inline]
-    pub fn apply(&self, bytes: &[u8], out: &mut [F8]) {
+    pub fn apply(&self, bytes: &[u8], out: &mut [Gf8]) {
         #[cfg(target_arch = "aarch64")]
         if self.ell >= 16 {
             // SAFETY: aarch64 statically guarantees NEON; ell ≥ 16 ⇒ at least
@@ -151,10 +151,10 @@ impl InvNttTableByteSingleGf8 {
 
     /// Scalar reference. Kept public so tests can use it as the cross-check
     /// oracle for the NEON variant.
-    pub fn apply_scalar(&self, bytes: &[u8], out: &mut [F8]) {
+    pub fn apply_scalar(&self, bytes: &[u8], out: &mut [Gf8]) {
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell);
-        out.iter_mut().for_each(|x| *x = F8::ZERO);
+        out.iter_mut().for_each(|x| *x = Gf8::ZERO);
         let table = self.table();
         for (b, &byte_b) in bytes.iter().enumerate() {
             let row_off = byte_b as usize * self.ell;
@@ -180,7 +180,7 @@ impl InvNttTableByteSingleGf8 {
     /// Caller must be on aarch64 (statically true at the dispatch site). The
     /// method validates slice lengths.
     #[cfg(target_arch = "aarch64")]
-    pub unsafe fn apply_neon_unchecked(&self, bytes: &[u8], out: &mut [F8]) {
+    pub unsafe fn apply_neon_unchecked(&self, bytes: &[u8], out: &mut [Gf8]) {
         use core::arch::aarch64::*;
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell);
@@ -233,7 +233,7 @@ impl InvNttTableByteSingleGf8 {
     /// method validates slice lengths.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse2")]
-    pub unsafe fn apply_x86_unchecked(&self, bytes: &[u8], out: &mut [F8]) {
+    pub unsafe fn apply_x86_unchecked(&self, bytes: &[u8], out: &mut [Gf8]) {
         use core::arch::x86_64::*;
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell);
@@ -286,7 +286,7 @@ impl InvNttTableByteSingleGf8 {
     /// Caller must be on x86_64 with `avx512f`, and `self.ell == 64`.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx512f")]
-    pub unsafe fn apply_x86_avx512_unchecked(&self, bytes: &[u8], out: &mut [F8]) {
+    pub unsafe fn apply_x86_avx512_unchecked(&self, bytes: &[u8], out: &mut [Gf8]) {
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell);
         debug_assert_eq!(self.ell, 64, "avx512 apply is specialized for ell = 64");
@@ -351,11 +351,11 @@ impl InvNttTableByteSingleGf8 {
     pub fn apply_triple(
         &self,
         a_bytes: &[u8],
-        a_out: &mut [F8],
+        a_out: &mut [Gf8],
         b_bytes: &[u8],
-        b_out: &mut [F8],
+        b_out: &mut [Gf8],
         c_bytes: &[u8],
-        c_out: &mut [F8],
+        c_out: &mut [Gf8],
     ) {
         self.apply(a_bytes, a_out);
         self.apply(b_bytes, b_out);
@@ -381,16 +381,16 @@ mod tests {
         }
     }
 
-    /// Naive reference: unpack `bytes` into `ell` GF(2)-valued F8 elements
+    /// Naive reference: unpack `bytes` into `ell` GF(2)-valued Gf8 elements
     /// (one per coefficient bit), apply inv_NTT_S, then fwd_NTT_Λ.
-    fn naive_apply(ntt_s: &AdditiveNttGf8, ntt_l: &AdditiveNttGf8, bytes: &[u8]) -> Vec<F8> {
+    fn naive_apply(ntt_s: &AdditiveNttGf8, ntt_l: &AdditiveNttGf8, bytes: &[u8]) -> Vec<Gf8> {
         let ell = 1usize << ntt_s.k();
         assert_eq!(bytes.len(), ell / 8);
-        let mut v = vec![F8::ZERO; ell];
+        let mut v = vec![Gf8::ZERO; ell];
         for (b, &byte) in bytes.iter().enumerate() {
             for t in 0..8 {
                 if (byte >> t) & 1 != 0 {
-                    v[8 * b + t] = F8::ONE;
+                    v[8 * b + t] = Gf8::ONE;
                 }
             }
         }
@@ -402,8 +402,8 @@ mod tests {
     #[test]
     fn table_storage_is_cache_line_aligned() {
         for k in 3..=7 {
-            let ntt_s = AdditiveNttGf8::new(k, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(k, F8(1u8 << k));
+            let ntt_s = AdditiveNttGf8::new(k, Gf8::ZERO);
+            let ntt_l = AdditiveNttGf8::new(k, Gf8(1u8 << k));
             let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
             assert_eq!(table.data_ptr() as usize % 64, 0, "k={k}");
         }
@@ -411,14 +411,14 @@ mod tests {
 
     #[test]
     fn matches_naive_k3() {
-        let ntt_s = AdditiveNttGf8::new(3, F8::ZERO);
-        let ntt_l = AdditiveNttGf8::new(3, F8(1 << 3));
+        let ntt_s = AdditiveNttGf8::new(3, Gf8::ZERO);
+        let ntt_l = AdditiveNttGf8::new(3, Gf8(1 << 3));
         let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
         assert_eq!(table.ell, 8);
         assert_eq!(table.n_chunks, 1);
 
         let mut rng = Rng::new(100);
-        let mut out = vec![F8::ZERO; 8];
+        let mut out = vec![Gf8::ZERO; 8];
         for _ in 0..64 {
             let bytes = [(rng.next_u64() & 0xff) as u8];
             table.apply(&bytes, &mut out);
@@ -429,14 +429,14 @@ mod tests {
 
     #[test]
     fn matches_naive_k4() {
-        let ntt_s = AdditiveNttGf8::new(4, F8::ZERO);
-        let ntt_l = AdditiveNttGf8::new(4, F8(1 << 4));
+        let ntt_s = AdditiveNttGf8::new(4, Gf8::ZERO);
+        let ntt_l = AdditiveNttGf8::new(4, Gf8(1 << 4));
         let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
         assert_eq!(table.ell, 16);
         assert_eq!(table.n_chunks, 2);
 
         let mut rng = Rng::new(101);
-        let mut out = vec![F8::ZERO; 16];
+        let mut out = vec![Gf8::ZERO; 16];
         for _ in 0..64 {
             let bytes: [u8; 2] = [(rng.next_u64() & 0xff) as u8, (rng.next_u64() & 0xff) as u8];
             table.apply(&bytes, &mut out);
@@ -448,14 +448,14 @@ mod tests {
     #[test]
     fn matches_naive_k6_protocol_size() {
         // k_skip = 6 is the headline parameter for the m=29 workload.
-        let ntt_s = AdditiveNttGf8::new(6, F8::ZERO);
-        let ntt_l = AdditiveNttGf8::new(6, F8(1 << 6));
+        let ntt_s = AdditiveNttGf8::new(6, Gf8::ZERO);
+        let ntt_l = AdditiveNttGf8::new(6, Gf8(1 << 6));
         let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
         assert_eq!(table.ell, 64);
         assert_eq!(table.n_chunks, 8);
 
         let mut rng = Rng::new(102);
-        let mut out = vec![F8::ZERO; 64];
+        let mut out = vec![Gf8::ZERO; 64];
         for _ in 0..16 {
             let bytes: Vec<u8> = (0..8).map(|_| (rng.next_u64() & 0xff) as u8).collect();
             table.apply(&bytes, &mut out);
@@ -470,8 +470,8 @@ mod tests {
         // Cover both k=4 (n_chunks=2, n128=1) and k=6 (n_chunks=8, n128=4 —
         // the headline protocol size).
         for &k in &[4usize, 5, 6] {
-            let ntt_s = AdditiveNttGf8::new(k, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(k, F8(1u8 << k));
+            let ntt_s = AdditiveNttGf8::new(k, Gf8::ZERO);
+            let ntt_l = AdditiveNttGf8::new(k, Gf8(1u8 << k));
             let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
             let n_chunks = table.n_chunks;
             let ell = table.ell;
@@ -481,8 +481,8 @@ mod tests {
                 let bytes: Vec<u8> = (0..n_chunks)
                     .map(|_| (rng.next_u64() & 0xff) as u8)
                     .collect();
-                let mut out_scalar = vec![F8::ZERO; ell];
-                let mut out_neon = vec![F8::ZERO; ell];
+                let mut out_scalar = vec![Gf8::ZERO; ell];
+                let mut out_neon = vec![Gf8::ZERO; ell];
                 table.apply_scalar(&bytes, &mut out_scalar);
                 // SAFETY: on aarch64.
                 unsafe { table.apply_neon_unchecked(&bytes, &mut out_neon) };
@@ -501,8 +501,8 @@ mod tests {
         // Cover k=4 (n_chunks=2, n128=1), k=5, and k=6 (n_chunks=8, n128=4 —
         // the headline protocol size).
         for &k in &[4usize, 5, 6] {
-            let ntt_s = AdditiveNttGf8::new(k, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(k, F8(1u8 << k));
+            let ntt_s = AdditiveNttGf8::new(k, Gf8::ZERO);
+            let ntt_l = AdditiveNttGf8::new(k, Gf8(1u8 << k));
             let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
             let n_chunks = table.n_chunks;
             let ell = table.ell;
@@ -512,8 +512,8 @@ mod tests {
                 let bytes: Vec<u8> = (0..n_chunks)
                     .map(|_| (rng.next_u64() & 0xff) as u8)
                     .collect();
-                let mut out_scalar = vec![F8::ZERO; ell];
-                let mut out_x86 = vec![F8::ZERO; ell];
+                let mut out_scalar = vec![Gf8::ZERO; ell];
+                let mut out_x86 = vec![Gf8::ZERO; ell];
                 table.apply_scalar(&bytes, &mut out_scalar);
                 // SAFETY: on x86_64.
                 unsafe { table.apply_x86_unchecked(&bytes, &mut out_x86) };
@@ -525,7 +525,7 @@ mod tests {
                 // AVX-512 path is specialized for ell == 64 (k = 6).
                 #[cfg(target_feature = "avx512f")]
                 if ell == 64 {
-                    let mut out_avx = vec![F8::ZERO; ell];
+                    let mut out_avx = vec![Gf8::ZERO; ell];
                     // SAFETY: build carries avx512f; ell == 64.
                     unsafe { table.apply_x86_avx512_unchecked(&bytes, &mut out_avx) };
                     assert_eq!(
@@ -540,8 +540,8 @@ mod tests {
 
     #[test]
     fn apply_triple_matches_three_singles() {
-        let ntt_s = AdditiveNttGf8::new(5, F8::ZERO);
-        let ntt_l = AdditiveNttGf8::new(5, F8(1 << 5));
+        let ntt_s = AdditiveNttGf8::new(5, Gf8::ZERO);
+        let ntt_l = AdditiveNttGf8::new(5, Gf8(1 << 5));
         let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
 
         let mut rng = Rng::new(103);
@@ -551,16 +551,16 @@ mod tests {
         let bb: Vec<u8> = (0..nc).map(|_| (rng.next_u64() & 0xff) as u8).collect();
         let cb: Vec<u8> = (0..nc).map(|_| (rng.next_u64() & 0xff) as u8).collect();
 
-        let mut a1 = vec![F8::ZERO; ell];
-        let mut b1 = vec![F8::ZERO; ell];
-        let mut c1 = vec![F8::ZERO; ell];
+        let mut a1 = vec![Gf8::ZERO; ell];
+        let mut b1 = vec![Gf8::ZERO; ell];
+        let mut c1 = vec![Gf8::ZERO; ell];
         table.apply(&ab, &mut a1);
         table.apply(&bb, &mut b1);
         table.apply(&cb, &mut c1);
 
-        let mut a2 = vec![F8::ZERO; ell];
-        let mut b2 = vec![F8::ZERO; ell];
-        let mut c2 = vec![F8::ZERO; ell];
+        let mut a2 = vec![Gf8::ZERO; ell];
+        let mut b2 = vec![Gf8::ZERO; ell];
+        let mut c2 = vec![Gf8::ZERO; ell];
         table.apply_triple(&ab, &mut a2, &bb, &mut b2, &cb, &mut c2);
 
         assert_eq!(a1, a2);

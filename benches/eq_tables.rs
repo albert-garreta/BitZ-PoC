@@ -2,17 +2,17 @@
 //!
 //! This is a plain `harness = false` benchmark. The `legacy_*` functions are
 //! intentionally local copies of the pre-refactor algorithms: suffix tensors
-//! allocate and clone every level and multiply both children, while the `Fq`
+//! allocate and clone every level and multiply both children, while the `Q100Element`
 //! builder allocates a fresh table and multiplies both halves at every step.
 //! Each current builder is checked entry-for-entry before any measurements.
 
 mod common;
 
-use std::{hint::black_box};
+use std::hint::black_box;
 
 use f2z::{
-    BinaryFieldGF128,
-    pcs::{FQ_MOD, Fq, eq_le_table_fq, fq_sub},
+    Gf128,
+    pcs::{FQ_MOD, Q100Element, eq_le_table_fq},
     piop::sumcheck::eq_factored::suffix_tensor_arena_for_bench,
 };
 
@@ -41,29 +41,29 @@ fn splitmix64(state: &mut u64) -> u64 {
     value ^ (value >> 31)
 }
 
-fn deterministic_gf128_point(width: usize) -> Vec<BinaryFieldGF128> {
+fn deterministic_gf128_point(width: usize) -> Vec<Gf128> {
     let mut state = 0x6571_5f73_7566_6669u64 ^ width as u64;
     (0..width)
-        .map(|_| BinaryFieldGF128::from_words([splitmix64(&mut state), splitmix64(&mut state)]))
+        .map(|_| Gf128::from_polynomial_words([splitmix64(&mut state), splitmix64(&mut state)]))
         .collect()
 }
 
-fn deterministic_fq_point(width: usize) -> Vec<Fq> {
+fn deterministic_fq_point(width: usize) -> Vec<Q100Element> {
     let mut state = 0x6571_5f66_715f_6c65u64 ^ width as u64;
     (0..width)
         .map(|_| {
             let value =
                 u128::from(splitmix64(&mut state)) | (u128::from(splitmix64(&mut state)) << 64);
-            Fq(value % FQ_MOD)
+            Q100Element::from_u128(value % FQ_MOD)
         })
         .collect()
 }
 
 /// The old suffix builder, preserved verbatim in shape for controlled A/B
 /// timing. Returned levels are in round order `[V_1, ..., V_k]`.
-fn legacy_suffix_tensors(q: &[BinaryFieldGF128]) -> Vec<Vec<BinaryFieldGF128>> {
-    let one = BinaryFieldGF128::one();
-    let zero = BinaryFieldGF128::zero();
+fn legacy_suffix_tensors(q: &[Gf128]) -> Vec<Vec<Gf128>> {
+    let one = Gf128::one();
+    let zero = Gf128::zero();
     let mut suffix = Vec::with_capacity(q.len());
     let mut current = vec![one];
     suffix.push(current.clone());
@@ -86,7 +86,7 @@ fn legacy_suffix_tensors(q: &[BinaryFieldGF128]) -> Vec<Vec<BinaryFieldGF128>> {
 
 /// Converts round-ordered legacy levels to the arena's physical
 /// `[V_k, ..., V_1]` representation.
-fn flatten_legacy_suffix(levels: &[Vec<BinaryFieldGF128>]) -> (Vec<BinaryFieldGF128>, Vec<usize>) {
+fn flatten_legacy_suffix(levels: &[Vec<Gf128>]) -> (Vec<Gf128>, Vec<usize>) {
     let total_len = levels.iter().map(Vec::len).sum();
     let mut values = Vec::with_capacity(total_len);
     let mut offsets = vec![0usize; levels.len()];
@@ -97,11 +97,7 @@ fn flatten_legacy_suffix(levels: &[Vec<BinaryFieldGF128>]) -> (Vec<BinaryFieldGF
     (values, offsets)
 }
 
-fn arena_tensor<'a>(
-    values: &'a [BinaryFieldGF128],
-    offsets: &[usize],
-    round: usize,
-) -> &'a [BinaryFieldGF128] {
+fn arena_tensor<'a>(values: &'a [Gf128], offsets: &[usize], round: usize) -> &'a [Gf128] {
     let start = offsets[round];
     let end = if round == 0 {
         values.len()
@@ -111,7 +107,7 @@ fn arena_tensor<'a>(
     &values[start..end]
 }
 
-fn verify_suffix_builder(point: &[BinaryFieldGF128]) {
+fn verify_suffix_builder(point: &[Gf128]) {
     let legacy_levels = legacy_suffix_tensors(point);
     let (expected_values, expected_offsets) = flatten_legacy_suffix(&legacy_levels);
     let (values, offsets) = suffix_tensor_arena_for_bench(point, &());
@@ -124,13 +120,13 @@ fn verify_suffix_builder(point: &[BinaryFieldGF128]) {
     }
 }
 
-/// The old little-endian `Fq` table builder: two child multiplications and a
+/// The old little-endian `Q100Element` table builder: two child multiplications and a
 /// fresh allocation at every coordinate.
-fn legacy_eq_le_table_fq(point: &[Fq]) -> Vec<Fq> {
-    let one = Fq(1);
+fn legacy_eq_le_table_fq(point: &[Q100Element]) -> Vec<Q100Element> {
+    let one = Q100Element::from_u128(1);
     let mut table = vec![one];
     for challenge in point {
-        let zero_factor = Fq(fq_sub(one.0, challenge.0));
+        let zero_factor = one - *challenge;
         let mut next = Vec::with_capacity(table.len() * 2);
         for &parent in &table {
             next.push(parent * zero_factor);
@@ -152,10 +148,9 @@ fn median(mut samples: Vec<u128>) -> u128 {
 /// the timestamp, so differences in nested-container destruction are not
 /// accidentally counted as builder time.
 fn timed_ns<R>(body: &mut impl FnMut() -> R) -> u128 {
-    let (result, started) = f2z::observability::measure(
-        tracing::info_span!("eq_tables:result"),
-        || body(),
-    ).expect("measure completed operation");
+    let (result, started) =
+        f2z::observability::measure(tracing::info_span!("eq_tables:result"), || body())
+            .expect("measure completed operation");
     let elapsed = started.as_nanos();
     black_box(result);
     elapsed
@@ -241,7 +236,7 @@ fn benchmark_fq(samples: usize) -> bool {
         assert_eq!(
             eq_le_table_fq(&point),
             legacy_eq_le_table_fq(&point),
-            "Fq equality tables differ at width {width}",
+            "Q100Element equality tables differ at width {width}",
         );
         let medians = alternating_medians(
             samples,
@@ -263,7 +258,8 @@ fn benchmark_fq(samples: usize) -> bool {
 fn main() {
     common::cli::EnvironmentCli::parse();
     let samples = common::cli::env::<usize>("F2Z_EQ_TABLE_SAMPLES")
-        .unwrap_or(DEFAULT_SAMPLES).max(DEFAULT_SAMPLES);
+        .unwrap_or(DEFAULT_SAMPLES)
+        .max(DEFAULT_SAMPLES);
     f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();

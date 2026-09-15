@@ -1,0 +1,250 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ]
+  },
+  "families": [
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_zero_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_zero_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_prefix_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_prefix_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_prefix_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_prefix_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_alternating_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_alternating_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "public_scan",
+        "public_prefix"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_prefix"
+        ]
+      },
+      "selection_reason": "Development: consume dense prefix once before the sparse suffix."
+    }
+  ],
+  "revision": "candidate-fix-prefix-development-5",
+  "threads": 1,
+  "allocation_audit_passes": 64,
+  "selection_note": "Focused replacement confirmation for the eight requested regressions and neighboring workloads. No actual baseline retentions. Small batch inversion remains outside this focused performance gate; all small correctness cases are tested. Signed column masks use CtSelect after instruction review rejected compiler-generated sign branches in revision 1."
+}

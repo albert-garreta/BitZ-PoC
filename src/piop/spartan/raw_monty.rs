@@ -1,14 +1,11 @@
 //! Compact raw-residue kernels for the two-limb runtime-field Spartan prover.
 //!
-//! `MontyField<2>` embeds its 64-byte modulus configuration in every element,
-//! so a dense table of `2^k` field elements occupies `80 · 2^k` bytes and every
-//! clone, fold, and accumulation moves five times the arithmetic payload. The
-//! generic multiplication also re-derives `-q^{-1} mod 2^64` from the modulus
-//! on every call. The kernels in this module keep the prover's dense tables as
-//! canonical Montgomery residues (`u128`, little-endian limbs, always reduced
-//! below the modulus) next to ONE shared [`RawMontyCtx`], and perform the
-//! field arithmetic with a fixed two-limb Montgomery multiplication whose
-//! constants are prepared once.
+//! Dense tables retain reduced Montgomery residues as `u128` beside one shared
+//! [`field::FpCtx<2>`]. Both this storage and the shared `Fp<2>` element occupy
+//! two limbs; neither stores a per-element context. Native witness/product
+//! segments remain borrowed until their first fold, whose output representation
+//! matches the next round. Scalar arithmetic, exact accumulation and reduction
+//! delegate to the shared provider with its prepared constants.
 //!
 //! Every kernel computes exactly the field elements the generic `sumcheck.rs`
 //! and `matrix.rs` prover code computes: the same equality tables, the same
@@ -25,28 +22,21 @@
 //! of the row-weight vector, so one weight table is folded alongside the
 //! witness blocks (`prove_inner_structured_raw`).
 
+use crate::piop::spartan::SpartanField as _;
+use crate::utils::delayed_reduction::EncodedMac;
+#[cfg(test)]
+use field::Uint;
+use field::{Fp, RingOps};
 use std::borrow::Cow;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crypto_bigint::modular::FixedMontyParams;
-use crypto_primitives::{
-    FromWithConfig, PrimeField, crypto_bigint_monty::MontyField,
-    crypto_bigint_uint::Uint as FieldUint,
-};
-
-use crate::{
-    transcript::traits::Transcript,
-    utils::delayed_reduction::{
-        MontyLinearAccumulator128, MontyProductAccumulator128, OptimizedMonty128Reducer,
-    },
-};
+use crate::transcript::traits::Transcript;
 
 use super::{
     absorb_field_elements,
     baby_bear_mul::{BABY_BEAR_MODULUS, BabyBearMulCoefficient},
-    u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
     matrix::{
         BlockSelectorLayout, PrefixUnivariateRowFactors, PreparedConstraintMatrices,
         SpartanMatrixCoefficient,
@@ -59,13 +49,22 @@ use super::{
         recover_full_round_polynomial_and_sample_next_challenge,
         recover_full_round_polynomial_and_sample_next_challenge_with_boundary,
     },
+    u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
 };
 
-type Field = MontyField<2>;
-type FieldConfig = FixedMontyParams<2>;
+mod folded;
+mod native_products;
+mod native_witness;
+use folded::{FoldedValue, FoldedWitness};
+pub(crate) use native_products::NativeOuterInput;
+pub use native_products::NativeWideProducts;
+pub use native_witness::{NativeLimbWitness, NativeU128Witness};
+
+type Field = Fp<2>;
+type FieldConfig = field::FpCtx<2>;
 
 /// One canonical Montgomery residue of the runtime field: the same two limbs
-/// `MontyField<2>::as_montgomery` exposes, packed little-endian into a `u128`.
+/// `Fp<2>::as_montgomery` exposes, packed little-endian into a `u128`.
 pub(crate) type Raw = u128;
 
 /// Minimum work items before a kernel splits across the rayon pool. Matches
@@ -96,246 +95,117 @@ const fn raw_to_words(value: Raw) -> [u64; 2] {
     [value as u64, (value >> 64) as u64]
 }
 
-/// The shared modulus context: everything a raw residue needs to be a field
-/// element again, prepared once per proof.
-#[derive(Clone, Copy, Debug)]
-pub struct RawMontyCtx {
-    modulus: u128,
-    /// `-q^{-1} mod 2^64`.
-    neg_inv: u64,
-    /// `R mod q`, the residue of one.
-    one: Raw,
-    /// `R² mod q`, the raw-form conversion constant.
-    r2: Raw,
-    config: FieldConfig,
+/// Prepares the shared arithmetic provider from the current protocol's config.
+/// Configuration ownership stays with the prepared relation and round scalars.
+pub(crate) fn field_context(config: &FieldConfig) -> field::FpCtx<2> {
+    config.clone()
 }
 
-impl RawMontyCtx {
-    pub(crate) fn new(config: &FieldConfig) -> Self {
-        let modulus = words_to_raw(config.modulus().as_ref().as_words());
-        let one = words_to_raw(config.one().as_words());
-        let r2 = words_to_raw(config.r2().as_words());
-        let neg_inv = config.mod_neg_inv().0;
-        debug_assert_eq!((modulus as u64).wrapping_mul(neg_inv), u64::MAX);
-        Self {
-            modulus,
-            neg_inv,
-            one,
-            r2,
-            config: *config,
-        }
-    }
+pub trait RawFieldStorage {
+    fn one_raw(&self) -> Raw;
+    fn raw(&self, value: &Field) -> Raw;
+    fn native_residue(&self, value: u64) -> Raw;
+    fn native_residue_u128(&self, value: u128) -> Raw;
+    fn two_pow_128_residue(&self) -> Raw;
+    fn native_residue_u256(&self, low: u128, high: u128, two_pow_128: Raw) -> Raw;
+    fn raw_vec(&self, values: &[Field]) -> Vec<Raw>;
+    fn add_raw(&self, lhs: Raw, rhs: Raw) -> Raw;
+    fn sub_raw(&self, lhs: Raw, rhs: Raw) -> Raw;
+    fn neg_raw(&self, value: Raw) -> Raw;
+    fn mul_raw(&self, lhs: Raw, rhs: Raw) -> Raw;
+    fn plain_to_raw(&self, plain: Raw) -> Raw;
+    fn redc_linear(&self, accumulator: &field::FpLinearAcc<2, 1>) -> Raw;
+    fn redc(&self, value: [u64; 4]) -> Raw;
+    fn interpolate(&self, at_zero: Raw, at_one: Raw, point: Raw) -> Raw;
+}
 
-    pub(crate) const fn config(&self) -> &FieldConfig {
-        &self.config
-    }
-
-    /// The residue of the field one.
-    pub(crate) const fn one(&self) -> Raw {
-        self.one
-    }
-
-    /// The raw residue of a field element (a plain limb copy).
-    #[inline(always)]
-    pub(crate) fn raw(&self, value: &Field) -> Raw {
-        words_to_raw(value.as_montgomery().as_words())
-    }
-
-    /// The field element of a canonical raw residue (a plain limb copy).
-    #[inline(always)]
-    pub(crate) fn field(&self, value: Raw) -> Field {
-        debug_assert!(value < self.modulus);
-        MontyField::from_montgomery(FieldUint::from_words(raw_to_words(value)), &self.config)
-    }
-
-    /// The residue of a small integer.
-    pub(crate) fn native_residue(&self, value: u64) -> Raw {
-        self.raw(&Field::from_with_cfg(value, &self.config))
-    }
-
-    /// The residue of an integer below `2^128`.
-    pub(crate) fn native_residue_u128(&self, value: u128) -> Raw {
-        self.raw(&Field::from_with_cfg(value, &self.config))
-    }
-
-    /// The residue of `2^128`.
-    pub(crate) fn two_pow_128_residue(&self) -> Raw {
-        let half = self.native_residue_u128(1_u128 << 127);
-        self.add(half, half)
-    }
-
-    /// The residue of the 256-bit integer `low + 2^128 · high`, given the
-    /// residue of `2^128` from [`Self::two_pow_128_residue`].
+impl RawFieldStorage for field::FpCtx<2> {
     #[inline]
-    pub(crate) fn native_residue_u256(&self, low: u128, high: u128, two_pow_128: Raw) -> Raw {
-        let high = self.mul(self.native_residue_u128(high), two_pow_128);
-        self.add(self.native_residue_u128(low), high)
+    fn one_raw(&self) -> Raw {
+        raw_shared(field::RingOps::one(&self))
     }
-
-    /// Converts a table of field elements into raw residues.
-    pub(crate) fn raw_vec(&self, values: &[Field]) -> Vec<Raw> {
+    #[inline]
+    fn raw(&self, value: &Field) -> Raw {
+        words_to_raw(value.as_montgomery_integer().as_words())
+    }
+    #[inline]
+    fn native_residue(&self, value: u64) -> Raw {
+        raw_shared(field::IntegerEmbedding::from_integer(&self, &value))
+    }
+    #[inline]
+    fn native_residue_u128(&self, value: u128) -> Raw {
+        raw_shared(field::IntegerEmbedding::from_integer(&self, &value))
+    }
+    #[inline]
+    fn two_pow_128_residue(&self) -> Raw {
+        let half = self.native_residue_u128(1_u128 << 127);
+        self.add_raw(half, half)
+    }
+    #[inline]
+    fn native_residue_u256(&self, low: u128, high: u128, two_pow_128: Raw) -> Raw {
+        let high = self.mul_raw(self.native_residue_u128(high), two_pow_128);
+        self.add_raw(self.native_residue_u128(low), high)
+    }
+    #[inline]
+    fn raw_vec(&self, values: &[Field]) -> Vec<Raw> {
         #[cfg(feature = "parallel")]
         if parallel(values.len()) {
             return values.par_iter().map(|value| self.raw(value)).collect();
         }
         values.iter().map(|value| self.raw(value)).collect()
     }
-
-    #[inline(always)]
-    pub(crate) fn add(&self, lhs: Raw, rhs: Raw) -> Raw {
-        let (sum, carry) = lhs.overflowing_add(rhs);
-        let (reduced, borrow) = sum.overflowing_sub(self.modulus);
-        if carry || !borrow { reduced } else { sum }
+    #[inline]
+    fn add_raw(&self, lhs: Raw, rhs: Raw) -> Raw {
+        self.add_canonical_u128(lhs, rhs)
     }
-
-    #[inline(always)]
-    pub(crate) fn sub(&self, lhs: Raw, rhs: Raw) -> Raw {
-        let (difference, borrow) = lhs.overflowing_sub(rhs);
-        if borrow {
-            difference.wrapping_add(self.modulus)
-        } else {
-            difference
-        }
+    #[inline]
+    fn sub_raw(&self, lhs: Raw, rhs: Raw) -> Raw {
+        self.sub_canonical_u128(lhs, rhs)
     }
-
-    #[inline(always)]
-    pub(crate) fn neg(&self, value: Raw) -> Raw {
-        self.sub(0, value)
+    #[inline]
+    fn neg_raw(&self, value: Raw) -> Raw {
+        self.sub_raw(0, value)
     }
-
-    /// Montgomery product of two canonical residues: `lhs · rhs · R^{-1}`,
-    /// reduced. Two fixed reduction rounds followed by one conditional
-    /// subtraction (the pre-subtraction value is below `2q < 2^129`).
-    #[inline(always)]
-    pub(crate) fn mul(&self, lhs: Raw, rhs: Raw) -> Raw {
-        let (a0, a1) = (lhs as u64, (lhs >> 64) as u64);
-        let (b0, b1) = (rhs as u64, (rhs >> 64) as u64);
-
-        // t = a * b as four limbs.
-        let p00 = (a0 as u128) * (b0 as u128);
-        let p01 = (a0 as u128) * (b1 as u128);
-        let p10 = (a1 as u128) * (b0 as u128);
-        let p11 = (a1 as u128) * (b1 as u128);
-        let t0 = p00 as u64;
-        let mid = (p00 >> 64) + ((p01 as u64) as u128) + ((p10 as u64) as u128);
-        let t1 = mid as u64;
-        let mid2 = (mid >> 64) + (p01 >> 64) + (p10 >> 64) + ((p11 as u64) as u128);
-        let t2 = mid2 as u64;
-        let t3 = ((mid2 >> 64) + (p11 >> 64)) as u64;
-        self.redc([t0, t1, t2, t3])
+    #[inline]
+    fn mul_raw(&self, lhs: Raw, rhs: Raw) -> Raw {
+        raw_shared(field::RingOps::mul(
+            &self,
+            &shared_raw(&self, lhs),
+            &shared_raw(&self, rhs),
+        ))
     }
-
-    /// Converts a plain canonical residue (the integer `v mod q`) into raw
-    /// Montgomery form: `v · R mod q = REDC(v · R²)`.
-    #[inline(always)]
-    pub(crate) fn plain_to_raw(&self, plain: Raw) -> Raw {
-        self.mul(plain, self.r2)
+    #[inline]
+    fn plain_to_raw(&self, plain: Raw) -> Raw {
+        raw_shared(self.from_canonical_integer(&field::Uint::from_words(raw_to_words(plain))))
     }
-
-    /// The residue of `2^64`: the Horner base of [`Self::signed_words_residue`].
-    pub(crate) fn two_pow_64_residue(&self) -> Raw {
-        let half = self.native_residue(1_u64 << 63);
-        self.add(half, half)
-    }
-
-    /// `2^{64·k} mod q` as plain canonical values for `k = 0..=max_words`:
-    /// the two's-complement corrections of [`Self::signed_words_residue`].
-    pub(crate) fn two_pow_64_plain_powers(&self, two_pow_64: Raw, max_words: usize) -> Vec<Raw> {
-        let mut powers = Vec::with_capacity(max_words + 1);
-        powers.push(1);
-        for k in 0..max_words {
-            powers.push(self.mul(powers[k], two_pow_64));
-        }
-        powers
-    }
-
-    /// The residue of a signed two's-complement integer given as normalized
-    /// little-endian words (zero is the empty slice; the sign is the top bit
-    /// of the last word), for a modulus above `2^64`. Horner in the plain
-    /// domain: each step is one Montgomery product by the residue of `2^64`
-    /// (a plain result) plus one word, canonical below `2q`; a negative
-    /// value is corrected by `2^{64·len} mod q` (`two_pow_64_powers[len]`,
-    /// from [`Self::two_pow_64_plain_powers`]); one conversion into
-    /// Montgomery form closes.
-    pub(crate) fn signed_words_residue(
-        &self,
-        words: &[u64],
-        two_pow_64: Raw,
-        two_pow_64_powers: &[Raw],
-    ) -> Raw {
-        debug_assert!(self.modulus > Raw::from(u64::MAX));
-        let mut plain: Raw = 0;
-        for &word in words.iter().rev() {
-            plain = self.add(self.mul(plain, two_pow_64), Raw::from(word));
-        }
-        if words.last().is_some_and(|word| word >> 63 == 1) {
-            plain = self.sub(plain, two_pow_64_powers[words.len()]);
-        }
-        self.plain_to_raw(plain)
-    }
-
-    /// The plain residue of an `R`-scaled linear accumulator whose exact sum
-    /// is below `q · R` (a bounded number of `raw × u64` products, e.g. one
-    /// prefix block): one Montgomery reduction instead of the Barrett
-    /// remainder.
-    #[inline(always)]
-    pub(crate) fn redc_linear(&self, accumulator: &MontyLinearAccumulator128) -> Raw {
-        let limbs = accumulator.limbs();
+    #[inline]
+    fn redc_linear(&self, accumulator: &field::FpLinearAcc<2, 1>) -> Raw {
+        let (lo, hi, head) = accumulator.unreduced_integer().as_parts();
+        let limbs = [lo[0], lo[1], hi[0], head, 0];
         debug_assert_eq!(limbs[4], 0);
         // Sufficient for `sum < q · R`: the top limb stays below q's top limb.
-        debug_assert!(limbs[3] < (self.modulus >> 64) as u64);
+        debug_assert!(limbs[3] < (self.modulus_u128() >> 64) as u64);
         self.redc([limbs[0], limbs[1], limbs[2], limbs[3]])
     }
-
-    /// `value · R^{-1} mod q`, canonical, for a four-limb `value < q · R`.
-    /// Two fixed Montgomery rounds and one conditional subtraction (the
-    /// pre-subtraction result is below `2q < 2^129`).
-    #[inline(always)]
-    pub(crate) fn redc(&self, value: [u64; 4]) -> Raw {
-        let (q0, q1) = (self.modulus as u64, (self.modulus >> 64) as u64);
-        let [t0, t1, t2, t3] = value;
-
-        // Round one clears limb zero.
-        let m0 = t0.wrapping_mul(self.neg_inv);
-        let mq0 = (m0 as u128) * (q0 as u128);
-        let mq1 = (m0 as u128) * (q1 as u128);
-        let c0 = (t0 as u128) + ((mq0 as u64) as u128);
-        debug_assert_eq!(c0 as u64, 0);
-        let c1 = (t1 as u128) + (mq0 >> 64) + ((mq1 as u64) as u128) + (c0 >> 64);
-        let u1 = c1 as u64;
-        let c2 = (t2 as u128) + (mq1 >> 64) + (c1 >> 64);
-        let u2 = c2 as u64;
-        let c3 = (t3 as u128) + (c2 >> 64);
-        let u3 = c3 as u64;
-        let u4 = (c3 >> 64) as u64;
-
-        // Round two clears limb one.
-        let m1 = u1.wrapping_mul(self.neg_inv);
-        let n0 = (m1 as u128) * (q0 as u128);
-        let n1 = (m1 as u128) * (q1 as u128);
-        let d1 = (u1 as u128) + ((n0 as u64) as u128);
-        debug_assert_eq!(d1 as u64, 0);
-        let d2 = (u2 as u128) + (n0 >> 64) + ((n1 as u64) as u128) + (d1 >> 64);
-        let r0 = d2 as u64;
-        let d3 = (u3 as u128) + (n1 >> 64) + (d2 >> 64);
-        let r1 = d3 as u64;
-        let overflow = u4 + ((d3 >> 64) as u64);
-        debug_assert!(overflow <= 1);
-
-        let result = (r0 as u128) | ((r1 as u128) << 64);
-        let (reduced, borrow) = result.overflowing_sub(self.modulus);
-        if overflow != 0 || !borrow {
-            reduced
-        } else {
-            result
-        }
+    #[inline]
+    fn redc(&self, value: [u64; 4]) -> Raw {
+        words_to_raw(
+            self.reduce_montgomery_bounded(&field::Uint::from_words(value))
+                .as_words(),
+        )
     }
-
-    /// `at_zero + point · (at_one - at_zero)`.
-    #[inline(always)]
-    pub(crate) fn interpolate(&self, at_zero: Raw, at_one: Raw, point: Raw) -> Raw {
-        self.add(at_zero, self.mul(point, self.sub(at_one, at_zero)))
+    #[inline]
+    fn interpolate(&self, at_zero: Raw, at_one: Raw, point: Raw) -> Raw {
+        self.add_raw(at_zero, self.mul_raw(point, self.sub_raw(at_one, at_zero)))
     }
+}
+#[inline(always)]
+fn shared_raw(ctx: &field::FpCtx<2>, raw: Raw) -> field::Fp<2> {
+    ctx.from_montgomery_integer(field::Uint::from_words(raw_to_words(raw)))
+}
+#[inline(always)]
+fn raw_shared(value: field::Fp<2>) -> Raw {
+    words_to_raw(value.as_montgomery_integer().as_words())
 }
 
 // ---------------------------------------------------------------------------
@@ -344,16 +214,16 @@ impl RawMontyCtx {
 
 /// `eq(boolean_index, point)` in little-endian index order, the raw twin of
 /// `matrix::eq_table`: the same doubling recurrence, entry for entry.
-pub(crate) fn eq_table_raw(ctx: &RawMontyCtx, point: &[Raw]) -> Vec<Raw> {
+pub(crate) fn eq_table_raw(ctx: &field::FpCtx<2>, point: &[Raw]) -> Vec<Raw> {
     let mut table = vec![0 as Raw; 1usize << point.len()];
-    table[0] = ctx.one();
+    table[0] = ctx.one_raw();
     for (coordinate, &challenge) in point.iter().enumerate() {
         let half = 1usize << coordinate;
         let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
         let expand = |zero_child: &mut Raw, one_child: &mut Raw| {
             let parent = *zero_child;
-            *one_child = ctx.mul(parent, challenge);
-            *zero_child = ctx.sub(parent, *one_child);
+            *one_child = ctx.mul_raw(parent, challenge);
+            *zero_child = ctx.sub_raw(parent, *one_child);
         };
         #[cfg(feature = "parallel")]
         if half >= (1 << 13) && rayon::current_num_threads() > 1 {
@@ -373,7 +243,7 @@ pub(crate) fn eq_table_raw(ctx: &RawMontyCtx, point: &[Raw]) -> Vec<Raw> {
 /// The low- and high-coordinate equality factors of `matrix::make_equality_factors`,
 /// as raw tables: the first `len / 2` coordinates form the low table.
 pub(crate) fn make_equality_factors_raw(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     point: &[Field],
 ) -> (Vec<Raw>, Vec<Raw>) {
     let split = point.len() / 2;
@@ -386,18 +256,18 @@ pub(crate) fn make_equality_factors_raw(
 
 /// Sums adjacent pairs: the equality table with its active (lowest) coordinate
 /// removed.
-fn strip_coordinate_raw(ctx: &RawMontyCtx, input: &[Raw]) -> Vec<Raw> {
+fn strip_coordinate_raw(ctx: &field::FpCtx<2>, input: &[Raw]) -> Vec<Raw> {
     debug_assert!(input.len() >= 2 && input.len().is_power_of_two());
     #[cfg(feature = "parallel")]
     if parallel(input.len() / 2) {
         return input
             .par_chunks_exact(2)
-            .map(|pair| ctx.add(pair[0], pair[1]))
+            .map(|pair| ctx.add_raw(pair[0], pair[1]))
             .collect();
     }
     input
         .chunks_exact(2)
-        .map(|pair| ctx.add(pair[0], pair[1]))
+        .map(|pair| ctx.add_raw(pair[0], pair[1]))
         .collect()
 }
 
@@ -412,9 +282,9 @@ struct RawEqWeights<'a> {
 
 impl<'a> RawEqWeights<'a> {
     #[inline(always)]
-    fn pair_weight(&self, ctx: &RawMontyCtx, pair: usize) -> Raw {
+    fn pair_weight(&self, ctx: &field::FpCtx<2>, pair: usize) -> Raw {
         match self.low {
-            Some(low) => ctx.mul(low[pair % low.len()], self.high[pair / low.len()]),
+            Some(low) => ctx.mul_raw(low[pair % low.len()], self.high[pair / low.len()]),
             None => self.high[pair],
         }
     }
@@ -475,122 +345,11 @@ impl RawProducts {
         }
     }
 
-    pub(crate) fn from_field(ctx: &RawMontyCtx, products: &R1csProductMles<Field>) -> Self {
+    pub(crate) fn from_field(ctx: &field::FpCtx<2>, products: &R1csProductMles<Field>) -> Self {
         Self {
             az: ctx.raw_vec(&products.az.evaluations),
             bz: ctx.raw_vec(&products.bz.evaluations),
             cz: ctx.raw_vec(&products.cz.evaluations),
-        }
-    }
-
-    /// Raw residues of exact native tables of 128-bit operands and 256-bit
-    /// products given as `(low, high)` halves, zero-padded to `rows` (the
-    /// u128 multiplication relation). Residue-for-residue identical to
-    /// [`Self::from_field`] on the projected tables.
-    pub(crate) fn from_native_u128_halves(
-        ctx: &RawMontyCtx,
-        az: &[u128],
-        bz: &[u128],
-        cz_lo: &[u128],
-        cz_hi: &[u128],
-        rows: usize,
-    ) -> Self {
-        let live = az.len();
-        debug_assert!(bz.len() == live && cz_lo.len() == live && cz_hi.len() == live);
-        debug_assert!(live <= rows);
-        let two_pow_128 = ctx.two_pow_128_residue();
-        let operands = |values: &[u128]| -> Vec<Raw> {
-            let mut out = vec![0; rows];
-            #[cfg(feature = "parallel")]
-            if parallel(live) {
-                out[..live]
-                    .par_iter_mut()
-                    .zip(values.par_iter())
-                    .for_each(|(slot, &value)| *slot = ctx.native_residue_u128(value));
-                return out;
-            }
-            for (slot, &value) in out.iter_mut().zip(values) {
-                *slot = ctx.native_residue_u128(value);
-            }
-            out
-        };
-        let mut cz = vec![0; rows];
-        #[cfg(feature = "parallel")]
-        if parallel(live) {
-            cz[..live]
-                .par_iter_mut()
-                .zip(cz_lo.par_iter())
-                .zip(cz_hi.par_iter())
-                .for_each(|((slot, &lo), &hi)| *slot = ctx.native_residue_u256(lo, hi, two_pow_128));
-            return Self {
-                az: operands(az),
-                bz: operands(bz),
-                cz,
-            };
-        }
-        for ((slot, &lo), &hi) in cz.iter_mut().zip(cz_lo).zip(cz_hi) {
-            *slot = ctx.native_residue_u256(lo, hi, two_pow_128);
-        }
-        Self {
-            az: operands(az),
-            bz: operands(bz),
-            cz,
-        }
-    }
-
-    /// Raw residues of exact native tables whose products exceed `u64`: the
-    /// operand columns are `u64` values and each product is given as two
-    /// `u64` limbs (`cz = cz_lo + 2^64 · cz_hi`), all zero-padded to `rows`
-    /// (the u64 multiplication relation). Residue-for-residue identical to
-    /// [`Self::from_field`] on the projected tables.
-    pub(crate) fn from_native_limbs(
-        ctx: &RawMontyCtx,
-        az: &[u64],
-        bz: &[u64],
-        cz_lo: &[u64],
-        cz_hi: &[u64],
-        rows: usize,
-    ) -> Self {
-        let live = az.len();
-        debug_assert!(bz.len() == live && cz_lo.len() == live && cz_hi.len() == live);
-        debug_assert!(live <= rows);
-        let operands = |values: &[u64]| -> Vec<Raw> {
-            let mut out = vec![0; rows];
-            #[cfg(feature = "parallel")]
-            if parallel(live) {
-                out[..live]
-                    .par_iter_mut()
-                    .zip(values.par_iter())
-                    .for_each(|(slot, &value)| *slot = ctx.native_residue(value));
-                return out;
-            }
-            for (slot, &value) in out.iter_mut().zip(values) {
-                *slot = ctx.native_residue(value);
-            }
-            out
-        };
-        let product = |lo: u64, hi: u64| ctx.native_residue_u128(u128::from(lo) | (u128::from(hi) << 64));
-        let mut cz = vec![0; rows];
-        #[cfg(feature = "parallel")]
-        if parallel(live) {
-            cz[..live]
-                .par_iter_mut()
-                .zip(cz_lo.par_iter())
-                .zip(cz_hi.par_iter())
-                .for_each(|((slot, &lo), &hi)| *slot = product(lo, hi));
-            return Self {
-                az: operands(az),
-                bz: operands(bz),
-                cz,
-            };
-        }
-        for ((slot, &lo), &hi) in cz.iter_mut().zip(cz_lo).zip(cz_hi) {
-            *slot = product(lo, hi);
-        }
-        Self {
-            az: operands(az),
-            bz: operands(bz),
-            cz,
         }
     }
 
@@ -613,22 +372,22 @@ impl RawProducts {
     }
 }
 
-type ProductPair = [MontyProductAccumulator128; 2];
-type LinearPair = [MontyLinearAccumulator128; 2];
+type ProductPair = [field::FpProductAcc<2>; 2];
+type LinearPair = [field::FpLinearAcc<2, 1>; 2];
 
 #[inline(always)]
 fn product_pair() -> ProductPair {
     [
-        MontyProductAccumulator128::default(),
-        MontyProductAccumulator128::default(),
+        field::FpProductAcc::<2>::default(),
+        field::FpProductAcc::<2>::default(),
     ]
 }
 
 #[inline(always)]
 fn linear_pair() -> LinearPair {
     [
-        MontyLinearAccumulator128::default(),
-        MontyLinearAccumulator128::default(),
+        field::FpLinearAcc::<2, 1>::default(),
+        field::FpLinearAcc::<2, 1>::default(),
     ]
 }
 
@@ -640,22 +399,28 @@ fn merge_product_pair(mut left: ProductPair, right: ProductPair) -> ProductPair 
 }
 
 #[inline(always)]
-fn reduce_product_pair(pair: ProductPair, reducer: &OptimizedMonty128Reducer) -> [Raw; 2] {
+fn reduce_product_pair(pair: ProductPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
     let [endpoint, infinity] = pair;
-    [endpoint.reduce_raw(reducer), infinity.reduce_raw(reducer)]
+    [
+        endpoint.reduce_encoded(reducer),
+        infinity.reduce_encoded(reducer),
+    ]
 }
 
 #[inline(always)]
-fn reduce_linear_pair(pair: LinearPair, reducer: &OptimizedMonty128Reducer) -> [Raw; 2] {
+fn reduce_linear_pair(pair: LinearPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
     let [endpoint, infinity] = pair;
-    [endpoint.reduce_raw(reducer), infinity.reduce_raw(reducer)]
+    [
+        endpoint.reduce_encoded(reducer),
+        infinity.reduce_encoded(reducer),
+    ]
 }
 
 /// Adds one pair's endpoint residual and leading coefficient, weighted.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn accumulate_cofactor_raw(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     accumulators: &mut ProductPair,
     weight: Raw,
     endpoint: FactoredEndpoint,
@@ -667,18 +432,19 @@ fn accumulate_cofactor_raw(
     cz1: Raw,
 ) {
     let residual = match endpoint {
-        FactoredEndpoint::Zero => ctx.sub(ctx.mul(az0, bz0), cz0),
-        FactoredEndpoint::One => ctx.sub(ctx.mul(az1, bz1), cz1),
+        FactoredEndpoint::Zero => ctx.sub_raw(ctx.mul_raw(az0, bz0), cz0),
+        FactoredEndpoint::One => ctx.sub_raw(ctx.mul_raw(az1, bz1), cz1),
     };
-    accumulators[0].multiply_accumulate_raw(weight, residual);
-    let infinity = ctx.mul(ctx.sub(az1, az0), ctx.sub(bz1, bz0));
-    accumulators[1].multiply_accumulate_raw(weight, infinity);
+    accumulators[0].accumulate_encoded(ctx, weight, residual);
+    let infinity = ctx.mul_raw(ctx.sub_raw(az1, az0), ctx.sub_raw(bz1, bz0));
+    accumulators[1].accumulate_encoded(ctx, weight, infinity);
 }
 
 /// Branch-free `accumulator += (±weight) · |value|` for `|value| ≤ u64::MAX`.
 #[inline(always)]
 fn accumulate_signed_raw(
-    accumulator: &mut MontyLinearAccumulator128,
+    ctx: &field::FpCtx<2>,
+    accumulator: &mut field::FpLinearAcc<2, 1>,
     weight: Raw,
     negative_weight: Raw,
     value: i128,
@@ -687,13 +453,14 @@ fn accumulate_signed_raw(
     let magnitude = ((value as u128) ^ mask).wrapping_sub(mask);
     debug_assert!(magnitude <= u128::from(u64::MAX));
     let selected = (weight & !mask) | (negative_weight & mask);
-    accumulator.multiply_accumulate_raw(selected, magnitude as u64);
+    accumulator.accumulate_encoded(ctx, selected, magnitude as u64);
 }
 
 /// Adds one native pair's exact endpoint residual and leading coefficient.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn accumulate_native_cofactor_raw(
+    ctx: &field::FpCtx<2>,
     accumulators: &mut LinearPair,
     weight: Raw,
     negative_weight: Raw,
@@ -713,15 +480,15 @@ fn accumulate_native_cofactor_raw(
     // residual magnitude is at most u64::MAX; each delta is below 2^32.
     let residual = i128::from(az_e * bz_e) - i128::from(cz_e);
     let infinity = (i128::from(az1) - i128::from(az0)) * (i128::from(bz1) - i128::from(bz0));
-    accumulate_signed_raw(&mut accumulators[0], weight, negative_weight, residual);
-    accumulate_signed_raw(&mut accumulators[1], weight, negative_weight, infinity);
+    accumulate_signed_raw(ctx, &mut accumulators[0], weight, negative_weight, residual);
+    accumulate_signed_raw(ctx, &mut accumulators[1], weight, negative_weight, infinity);
 }
 
 /// `[endpoint evaluation, leading coefficient]` of the cofactor over the
 /// current raw product tables.
 fn cofactor_evaluations_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     products: &RawProducts,
     weights: RawEqWeights<'_>,
     endpoint: FactoredEndpoint,
@@ -752,8 +519,8 @@ fn cofactor_evaluations_raw(
             let inner = reduce_product_pair(inner, reducer);
             let high_weight = weights.high[high_index];
             let mut outer = product_pair();
-            outer[0].multiply_accumulate_raw(high_weight, inner[0]);
-            outer[1].multiply_accumulate_raw(high_weight, inner[1]);
+            outer[0].accumulate_encoded(ctx, high_weight, inner[0]);
+            outer[1].accumulate_encoded(ctx, high_weight, inner[1]);
             outer
         };
         #[cfg(feature = "parallel")]
@@ -805,8 +572,8 @@ fn cofactor_evaluations_raw(
 /// The native (exact `u64`) twin of [`cofactor_evaluations_raw`] for the first
 /// outer round: field × `u64` accumulation, one reduction per bucket.
 fn native_cofactor_evaluations_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     products: NativeProducts<'_>,
     weights: RawEqWeights<'_>,
     endpoint: FactoredEndpoint,
@@ -816,7 +583,7 @@ fn native_cofactor_evaluations_raw(
     debug_assert_eq!(pair_count, weights.pair_count());
 
     if let Some(low) = weights.two_level_low() {
-        let negative_low: Vec<Raw> = low.iter().map(|&weight| ctx.neg(weight)).collect();
+        let negative_low: Vec<Raw> = low.iter().map(|&weight| ctx.neg_raw(weight)).collect();
         let low_pairs = low.len();
         let bucket = |high_index: usize| -> ProductPair {
             let mut inner = linear_pair();
@@ -826,6 +593,7 @@ fn native_cofactor_evaluations_raw(
             {
                 let index = start + 2 * low_index;
                 accumulate_native_cofactor_raw(
+                    ctx,
                     &mut inner,
                     weight,
                     negative_weight,
@@ -841,8 +609,8 @@ fn native_cofactor_evaluations_raw(
             let inner = reduce_linear_pair(inner, reducer);
             let high_weight = weights.high[high_index];
             let mut outer = product_pair();
-            outer[0].multiply_accumulate_raw(high_weight, inner[0]);
-            outer[1].multiply_accumulate_raw(high_weight, inner[1]);
+            outer[0].accumulate_encoded(ctx, high_weight, inner[0]);
+            outer[1].accumulate_encoded(ctx, high_weight, inner[1]);
             outer
         };
         #[cfg(feature = "parallel")]
@@ -865,9 +633,10 @@ fn native_cofactor_evaluations_raw(
             let index = 2 * pair;
             let weight = weights.pair_weight(ctx, pair);
             accumulate_native_cofactor_raw(
+                ctx,
                 &mut accumulators,
                 weight,
-                ctx.neg(weight),
+                ctx.neg_raw(weight),
                 endpoint,
                 az[index],
                 az[index + 1],
@@ -911,7 +680,7 @@ struct ProductSlicesMut<'a> {
 
 /// Folds every table at `challenge` (no accumulation): the last round.
 fn fold_products_raw(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     input: &RawProducts,
     output: &mut RawProducts,
     challenge: Raw,
@@ -938,8 +707,8 @@ fn fold_products_raw(
 /// Folds the tables at `challenge` and accumulates the next round's cofactor
 /// evaluations from the folded pairs in the same pass.
 fn fold_products_and_cofactor_evaluations_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     input: &RawProducts,
     output: &mut RawProducts,
     challenge: Raw,
@@ -994,8 +763,8 @@ fn fold_products_and_cofactor_evaluations_raw(
                 }
                 let inner = reduce_product_pair(inner, reducer);
                 let high_weight = weights.high[high_index];
-                accumulators[0].multiply_accumulate_raw(high_weight, inner[0]);
-                accumulators[1].multiply_accumulate_raw(high_weight, inner[1]);
+                accumulators[0].accumulate_encoded(ctx, high_weight, inner[0]);
+                accumulators[1].accumulate_encoded(ctx, high_weight, inner[1]);
                 high_index += 1;
                 base += low_pairs;
             }
@@ -1098,8 +867,8 @@ fn fold_products_and_cofactor_evaluations_raw(
 /// converted to raw form — and accumulates the next round's cofactor
 /// evaluations in the same pass.
 fn fold_native_products_and_cofactor_evaluations_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     products: NativeProducts<'_>,
     output: &mut RawProducts,
     challenge: Raw,
@@ -1107,7 +876,7 @@ fn fold_native_products_and_cofactor_evaluations_raw(
 ) -> [Raw; 2] {
     let (az_in, bz_in, cz_in) = (products.az, products.bz, products.cz);
     debug_assert_eq!(az_in.len(), 2 * output.len());
-    let one_minus_challenge = ctx.sub(ctx.one(), challenge);
+    let one_minus_challenge = ctx.sub_raw(ctx.one_raw(), challenge);
     // Plain Montgomery reduction plus one conversion multiply: cheaper than
     // the Barrett remainder of the R-scaled sum, same canonical residue.
     let fold = |v0: u64, v1: u64| -> Raw {
@@ -1179,8 +948,8 @@ fn fold_native_products_and_cofactor_evaluations_raw(
                 }
                 let inner = reduce_product_pair(inner, reducer);
                 let high_weight = weights.high[high_index];
-                accumulators[0].multiply_accumulate_raw(high_weight, inner[0]);
-                accumulators[1].multiply_accumulate_raw(high_weight, inner[1]);
+                accumulators[0].accumulate_encoded(ctx, high_weight, inner[0]);
+                accumulators[1].accumulate_encoded(ctx, high_weight, inner[1]);
                 high_index += 1;
                 base += low_pairs;
             }
@@ -1248,8 +1017,9 @@ fn fold_native_products_and_cofactor_evaluations_raw(
 
 /// Shared prover-side scalars of one outer sumcheck.
 struct OuterScalars<'a> {
-    ctx: &'a RawMontyCtx,
-    reducer: &'a OptimizedMonty128Reducer,
+    config: FieldConfig,
+    ctx: &'a field::FpCtx<2>,
+    reducer: &'a field::FpCtx<2>,
     tau: &'a [Field],
     tau_inverses: Vec<Field>,
     zero: Field,
@@ -1271,18 +1041,19 @@ impl OuterScalars<'_> {
             &self.tau_inverses[round],
             endpoint,
             [
-                self.ctx.field(evaluations[0]),
-                self.ctx.field(evaluations[1]),
+                crate::utils::delayed_reduction::element(&self.config, evaluations[0]),
+                crate::utils::delayed_reduction::element(&self.config, evaluations[1]),
             ],
             bound_equality,
             &self.one,
+            &self.config,
         )
     }
 }
 
 /// Removes the active coordinate from the equality factors: the low table
 /// while it has more than one entry, then the high table.
-fn strip_active_coordinate(ctx: &RawMontyCtx, eq_low: &mut Vec<Raw>, eq_high: &mut Vec<Raw>) {
+fn strip_active_coordinate(ctx: &field::FpCtx<2>, eq_low: &mut Vec<Raw>, eq_high: &mut Vec<Raw>) {
     if eq_low.len() > 1 {
         *eq_low = strip_coordinate_raw(ctx, eq_low);
     } else {
@@ -1327,12 +1098,12 @@ fn outer_rounds_raw<T: Transcript, P: RoundBoundaryPolicy>(
             round_polynomials,
             eval_points,
             &scalars.zero,
-            ctx.config(),
+            &scalars.config,
             round_boundary,
         )?;
         let bound_factor =
-            equality_coordinate_evaluation(&scalars.tau[round], &challenge, &scalars.one);
-        bound_equality *= &bound_factor;
+            equality_coordinate_evaluation(&scalars.tau[round], &challenge, &scalars.one, &ctx);
+        bound_equality = ctx.mul(&(bound_equality), &(&bound_factor));
         let challenge_raw = ctx.raw(&challenge);
 
         let next_len = products.len() / 2;
@@ -1374,7 +1145,7 @@ fn outer_rounds_raw<T: Transcript, P: RoundBoundaryPolicy>(
 #[allow(clippy::too_many_arguments)]
 fn finish_outer<T: Transcript>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     current_claim: Field,
     bound_equality: &Field,
     products: &RawProducts,
@@ -1382,11 +1153,18 @@ fn finish_outer<T: Transcript>(
     eval_points: Vec<Field>,
     reject_inconsistent_terminal: bool,
 ) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
+    let cfg = ctx.clone();
     debug_assert_eq!(products.len(), 1);
-    let az_mle_claim = ctx.field(products.az[0]);
-    let bz_mle_claim = ctx.field(products.bz[0]);
-    let cz_mle_claim = ctx.field(products.cz[0]);
-    let expected = bound_equality.clone() * &(az_mle_claim.clone() * &bz_mle_claim - &cz_mle_claim);
+    let az_mle_claim = crate::utils::delayed_reduction::element(&cfg, products.az[0]);
+    let bz_mle_claim = crate::utils::delayed_reduction::element(&cfg, products.bz[0]);
+    let cz_mle_claim = crate::utils::delayed_reduction::element(&cfg, products.cz[0]);
+    let expected = cfg.mul(
+        &(bound_equality.clone()),
+        &(&(cfg.sub(
+            &(cfg.mul(&(az_mle_claim.clone()), &(&bz_mle_claim))),
+            &(&cz_mle_claim),
+        ))),
+    );
     if reject_inconsistent_terminal {
         if current_claim != expected {
             return Err(SumcheckError::InvalidTerminalClaim);
@@ -1401,6 +1179,7 @@ fn finish_outer<T: Transcript>(
             bz_mle_claim.clone(),
             cz_mle_claim.clone(),
         ],
+        &cfg,
     );
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -1415,17 +1194,19 @@ fn finish_outer<T: Transcript>(
 }
 
 fn outer_scalars<'a>(
-    ctx: &'a RawMontyCtx,
-    reducer: &'a OptimizedMonty128Reducer,
+    ctx: &'a field::FpCtx<2>,
+    reducer: &'a field::FpCtx<2>,
     tau: &'a [Field],
+    cfg: FieldConfig,
 ) -> OuterScalars<'a> {
     OuterScalars {
+        config: cfg.clone(),
         ctx,
         reducer,
         tau,
-        tau_inverses: batch_invert_nonzero(tau, ctx.config()),
-        zero: Field::zero_with_cfg(ctx.config()),
-        one: Field::one_with_cfg(ctx.config()),
+        tau_inverses: batch_invert_nonzero(tau, &cfg),
+        zero: Field::zero_with_cfg(&cfg),
+        one: Field::one_with_cfg(&cfg),
     }
 }
 
@@ -1435,8 +1216,8 @@ fn outer_scalars<'a>(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_outer_field_raw<T: Transcript>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     initial_claim: Field,
     tau: &[Field],
     eq_low: Vec<Raw>,
@@ -1463,8 +1244,8 @@ pub(crate) fn prove_outer_field_raw<T: Transcript>(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn prove_outer_field_raw_with_boundary<T: Transcript, P: RoundBoundaryPolicy>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     initial_claim: Field,
     tau: &[Field],
     mut eq_low: Vec<Raw>,
@@ -1477,7 +1258,7 @@ pub(super) fn prove_outer_field_raw_with_boundary<T: Transcript, P: RoundBoundar
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
     round_boundary.validate(num_vars)?;
-    let scalars = outer_scalars(ctx, reducer, tau);
+    let scalars = outer_scalars(ctx, reducer, tau, ctx.clone());
     let bound_equality = scalars.one.clone();
     let mut round_polynomials = Vec::with_capacity(num_vars);
     let mut eval_points = Vec::with_capacity(num_vars);
@@ -1538,34 +1319,31 @@ pub(super) fn prove_outer_field_raw_with_boundary<T: Transcript, P: RoundBoundar
 /// products: the raw twin of `prove_outer_sumcheck_u32_native_with_reducer`.
 /// `Az`/`Bz` must already be validated 32-bit wide.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_outer_native_raw<T: Transcript>(
+pub(crate) fn prove_outer_native_raw<T: Transcript, P: NativeOuterInput>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     initial_claim: Field,
     tau: &[Field],
     mut eq_low: Vec<Raw>,
     mut eq_high: Vec<Raw>,
-    products: NativeProducts<'_>,
+    products: P,
 ) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
     let num_vars = tau.len();
-    let len = products.az.len();
-    if len != 1usize << num_vars
-        || products.bz.len() != len
-        || products.cz.len() != len
-        || eq_low.len() * eq_high.len() != len
-    {
+    let len = products.len();
+    if len != 1usize << num_vars || !products.valid_shape() || eq_low.len() * eq_high.len() != len {
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
-    let scalars = outer_scalars(ctx, reducer, tau);
+    let scalars = outer_scalars(ctx, reducer, tau, ctx.clone());
     let mut bound_equality = scalars.one.clone();
     let mut round_polynomials = Vec::with_capacity(num_vars);
     let mut eval_points = Vec::with_capacity(num_vars);
     if num_vars == 0 {
+        let [a, b, c] = products.singleton(ctx);
         let single = RawProducts {
-            az: vec![ctx.native_residue(products.az[0])],
-            bz: vec![ctx.native_residue(products.bz[0])],
-            cz: vec![ctx.native_residue(products.cz[0])],
+            az: vec![a],
+            bz: vec![b],
+            cz: vec![c],
         };
         return finish_outer(
             transcript,
@@ -1584,13 +1362,7 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
     let endpoint = FactoredEndpoint::for_tau(&tau[0]);
     let evaluations = {
         let _scope = tracing::info_span!("raw:outer_native_round0").entered();
-        native_cofactor_evaluations_raw(
-            ctx,
-            reducer,
-            products,
-            weights_of(&eq_low, &eq_high),
-            endpoint,
-        )
+        products.round0(ctx, reducer, weights_of(&eq_low, &eq_high), endpoint)
     };
     let coefficients =
         scalars.coefficients(0, &initial_claim, endpoint, evaluations, &bound_equality);
@@ -1602,22 +1374,18 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
         &mut round_polynomials,
         &mut eval_points,
         &scalars.zero,
-        ctx.config(),
+        &scalars.config,
+    )?;
+    bound_equality = ctx.mul(
+        &(bound_equality),
+        &(&equality_coordinate_evaluation(&tau[0], &challenge, &scalars.one, ctx)),
     );
-    bound_equality *= &equality_coordinate_evaluation(&tau[0], &challenge, &scalars.one);
     let challenge_raw = ctx.raw(&challenge);
 
     // Fold into the field, preparing round one in the same pass.
     let mut folded = RawProducts::zeros(len / 2);
     if len == 2 {
-        fold_native_products_and_cofactor_evaluations_raw(
-            ctx,
-            reducer,
-            products,
-            &mut folded,
-            challenge_raw,
-            None,
-        );
+        products.fold(ctx, reducer, &mut folded, challenge_raw, None);
         return finish_outer(
             transcript,
             ctx,
@@ -1633,10 +1401,9 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
     let endpoint = FactoredEndpoint::for_tau(&tau[1]);
     let evaluations = {
         let _scope = tracing::info_span!("raw:outer_native_fold0").entered();
-        fold_native_products_and_cofactor_evaluations_raw(
+        products.fold(
             ctx,
             reducer,
-            products,
             &mut folded,
             challenge_raw,
             Some((weights_of(&eq_low, &eq_high), endpoint)),
@@ -1685,6 +1452,10 @@ pub enum RawWitness<'a> {
         values: Cow<'a, [u64]>,
         domain: usize,
     },
+    /// Borrowed declared-width x/y/u256 product segments.
+    Wide(NativeU128Witness<'a>),
+    /// Borrowed 32-limb witness and quotient blocks.
+    Limbs(NativeLimbWitness<'a>),
     /// Raw field residues.
     Field(Vec<Raw>),
 }
@@ -1715,6 +1486,8 @@ impl<'a> RawWitness<'a> {
         match self {
             Self::Native { domain, .. } => *domain,
             Self::Field(values) => values.len(),
+            Self::Wide(values) => values.len(),
+            Self::Limbs(values) => values.len(),
         }
     }
 
@@ -1733,16 +1506,16 @@ impl<'a> RawWitness<'a> {
 
 #[inline(always)]
 fn fold_native_pair(
-    reducer: &OptimizedMonty128Reducer,
+    reducer: &field::FpCtx<2>,
     one_minus_challenge: Raw,
     challenge: Raw,
     at_zero: u64,
     at_one: u64,
 ) -> Raw {
-    let mut accumulator = MontyLinearAccumulator128::default();
-    accumulator.multiply_accumulate_raw(one_minus_challenge, at_zero);
-    accumulator.multiply_accumulate_raw(challenge, at_one);
-    accumulator.reduce_raw(reducer)
+    let mut accumulator = field::FpLinearAcc::<2, 1>::default();
+    accumulator.accumulate_encoded(reducer, one_minus_challenge, at_zero);
+    accumulator.accumulate_encoded(reducer, challenge, at_one);
+    accumulator.reduce_encoded(reducer)
 }
 
 /// `(1 - c) · w0 + c · w1` as a PLAIN residue (scale one) from the raw
@@ -1751,65 +1524,28 @@ fn fold_native_pair(
 /// which is far cheaper than the Barrett remainder the raw form needs.
 #[inline(always)]
 fn fold_native_pair_plain(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     one_minus_challenge: Raw,
     challenge: Raw,
     at_zero: u64,
     at_one: u64,
 ) -> Raw {
-    let (a0, a1) = (
-        one_minus_challenge as u64,
-        (one_minus_challenge >> 64) as u64,
-    );
-    let (b0, b1) = (challenge as u64, (challenge >> 64) as u64);
-    let pa0 = (a0 as u128) * (at_zero as u128);
-    let pa1 = (a1 as u128) * (at_zero as u128);
-    let pb0 = (b0 as u128) * (at_one as u128);
-    let pb1 = (b1 as u128) * (at_one as u128);
-    let s0 = ((pa0 as u64) as u128) + ((pb0 as u64) as u128);
-    let s1 =
-        (pa0 >> 64) + (pb0 >> 64) + ((pa1 as u64) as u128) + ((pb1 as u64) as u128) + (s0 >> 64);
-    let s2 = (pa1 >> 64) + (pb1 >> 64) + (s1 >> 64);
-    let s3 = (s2 >> 64) as u64;
-    debug_assert!(s3 <= 1);
-    ctx.redc([s0 as u64, s1 as u64, s2 as u64, s3])
-}
-
-/// How the inner witness table is scaled: raw Montgomery residues (`R`) or
-/// plain residues (scale one, the native witness after its first fold). The
-/// matrix table is always raw, so a `raw × plain` product sum has scale `R`
-/// and reduces to the raw field sum by a plain remainder, while a `raw × raw`
-/// sum (scale `R²`) needs the Montgomery division as well.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum WitnessScale {
-    Raw,
-    Plain,
-}
-
-impl WitnessScale {
-    #[inline(always)]
-    fn reduce_pair(self, pair: ProductPair, reducer: &OptimizedMonty128Reducer) -> [Raw; 2] {
-        let [c0, c2] = pair;
-        match self {
-            Self::Raw => [c0.reduce_raw(reducer), c2.reduce_raw(reducer)],
-            Self::Plain => [c0.reduce_raw_mod_q(reducer), c2.reduce_raw_mod_q(reducer)],
-        }
-    }
-
-    #[inline(always)]
-    fn to_raw(self, ctx: &RawMontyCtx, value: Raw) -> Raw {
-        match self {
-            Self::Raw => value,
-            Self::Plain => ctx.plain_to_raw(value),
-        }
-    }
+    let coefficients = [
+        crate::utils::delayed_reduction::element(ctx, one_minus_challenge),
+        crate::utils::delayed_reduction::element(ctx, challenge),
+    ];
+    let values = [
+        field::Uint::from_words([at_zero]),
+        field::Uint::from_words([at_one]),
+    ];
+    u128::from(ctx.weighted_pair_to_integer(&coefficients, &values))
 }
 
 /// Round-zero `[c0, c2]` over a field witness: `Σ m0·w0` and
 /// `Σ (m1 − m0)(w1 − w0)` over adjacent pairs.
 fn inner_coefficients_field_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     matrix: &[Raw],
     witness: &[Raw],
 ) -> [Raw; 2] {
@@ -1818,8 +1554,12 @@ fn inner_coefficients_field_raw(
     let block = |matrix: &[Raw], witness: &[Raw]| -> ProductPair {
         let mut accumulators = product_pair();
         for (m, w) in matrix.chunks_exact(2).zip(witness.chunks_exact(2)) {
-            accumulators[0].multiply_accumulate_raw(m[0], w[0]);
-            accumulators[1].multiply_accumulate_raw(ctx.sub(m[1], m[0]), ctx.sub(w[1], w[0]));
+            accumulators[0].accumulate_encoded(ctx, m[0], w[0]);
+            accumulators[1].accumulate_encoded(
+                ctx,
+                ctx.sub_raw(m[1], m[0]),
+                ctx.sub_raw(w[1], w[0]),
+            );
         }
         accumulators
     };
@@ -1837,8 +1577,8 @@ fn inner_coefficients_field_raw(
 
 /// Round-zero `[c0, c2]` over an exact native witness.
 fn inner_coefficients_native_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     matrix: &[Raw],
     witness: &[u64],
 ) -> [Raw; 2] {
@@ -1847,15 +1587,15 @@ fn inner_coefficients_native_raw(
     let block = |matrix: &[Raw], witness: &[u64]| -> LinearPair {
         let mut accumulators = linear_pair();
         for (m, w) in matrix.chunks_exact(2).zip(witness.chunks_exact(2)) {
-            accumulators[0].multiply_accumulate_raw(m[0], w[0]);
+            accumulators[0].accumulate_encoded(ctx, m[0], w[0]);
             // (m1 - m0)(w1 - w0) as (±(m1 - m0)) · |w1 - w0|: one product,
             // congruent modulo q to the two-product form.
-            let delta = ctx.sub(m[1], m[0]);
+            let delta = ctx.sub_raw(m[1], m[0]);
             let mask = 0u64.wrapping_sub(u64::from(w[1] < w[0]));
             let magnitude = (w[1].wrapping_sub(w[0]) ^ mask).wrapping_sub(mask);
             let mask128 = (mask as u128) | ((mask as u128) << 64);
-            let signed = (delta & !mask128) | (ctx.neg(delta) & mask128);
-            accumulators[1].multiply_accumulate_raw(signed, magnitude);
+            let signed = (delta & !mask128) | (ctx.neg_raw(delta) & mask128);
+            accumulators[1].accumulate_encoded(ctx, signed, magnitude);
         }
         accumulators
     };
@@ -1876,88 +1616,27 @@ fn inner_coefficients_native_raw(
     reduce_linear_pair(block(matrix, witness), reducer)
 }
 
-/// Folds both field tables at `challenge` (four inputs → two outputs per
-/// window) and accumulates the next round's `[c0, c2]` from the folded pairs.
-#[allow(clippy::too_many_arguments)]
-fn fold_inner_field_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
-    matrix_in: &[Raw],
-    witness_in: &[Raw],
-    matrix_out: &mut [Raw],
-    witness_out: &mut [Raw],
-    challenge: Raw,
-    scale: WitnessScale,
-) -> [Raw; 2] {
-    debug_assert_eq!(matrix_in.len(), 2 * matrix_out.len());
-    debug_assert_eq!(witness_in.len(), 2 * witness_out.len());
-    debug_assert_eq!(matrix_out.len(), witness_out.len());
-    debug_assert_eq!(matrix_out.len() % 2, 0);
-    let block = |matrix_in: &[Raw],
-                 witness_in: &[Raw],
-                 matrix_out: &mut [Raw],
-                 witness_out: &mut [Raw]|
-     -> ProductPair {
-        let mut accumulators = product_pair();
-        for (((m, w), m_out), w_out) in matrix_in
-            .chunks_exact(4)
-            .zip(witness_in.chunks_exact(4))
-            .zip(matrix_out.chunks_exact_mut(2))
-            .zip(witness_out.chunks_exact_mut(2))
-        {
-            let m0 = ctx.interpolate(m[0], m[1], challenge);
-            let m1 = ctx.interpolate(m[2], m[3], challenge);
-            let w0 = ctx.interpolate(w[0], w[1], challenge);
-            let w1 = ctx.interpolate(w[2], w[3], challenge);
-            m_out[0] = m0;
-            m_out[1] = m1;
-            w_out[0] = w0;
-            w_out[1] = w1;
-            accumulators[0].multiply_accumulate_raw(m0, w0);
-            accumulators[1].multiply_accumulate_raw(ctx.sub(m1, m0), ctx.sub(w1, w0));
-        }
-        accumulators
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(matrix_out.len() / 2) {
-        let total = (
-            matrix_in.par_chunks(2 * FOLD_BLOCK),
-            witness_in.par_chunks(2 * FOLD_BLOCK),
-            matrix_out.par_chunks_mut(FOLD_BLOCK),
-            witness_out.par_chunks_mut(FOLD_BLOCK),
-        )
-            .into_par_iter()
-            .map(|(m, w, m_out, w_out)| block(m, w, m_out, w_out))
-            .reduce(product_pair, merge_product_pair);
-        return scale.reduce_pair(total, reducer);
-    }
-    scale.reduce_pair(
-        block(matrix_in, witness_in, matrix_out, witness_out),
-        reducer,
-    )
-}
-
-/// The native-witness twin of [`fold_inner_field_raw`] for the first fold.
+/// First native fold with canonical integer output and typed linear MAC.
 fn fold_inner_native_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     matrix_in: &[Raw],
     witness_in: &[u64],
     matrix_out: &mut [Raw],
-    witness_out: &mut [Raw],
+    witness_out: &mut [field::Uint<2>],
     challenge: Raw,
 ) -> [Raw; 2] {
     debug_assert_eq!(matrix_in.len(), 2 * matrix_out.len());
     debug_assert_eq!(witness_in.len(), 2 * witness_out.len());
     debug_assert_eq!(matrix_out.len(), witness_out.len());
     debug_assert_eq!(matrix_out.len() % 2, 0);
-    let one_minus_challenge = ctx.sub(ctx.one(), challenge);
+    let one_minus_challenge = ctx.sub_raw(ctx.one_raw(), challenge);
     let block = |matrix_in: &[Raw],
                  witness_in: &[u64],
                  matrix_out: &mut [Raw],
-                 witness_out: &mut [Raw]|
-     -> ProductPair {
-        let mut accumulators = product_pair();
+                 witness_out: &mut [field::Uint<2>]|
+     -> [field::FpLinearAcc<2, 2>; 2] {
+        let mut accumulators = folded::pair::<field::Uint<2>>();
         for (((m, w), m_out), w_out) in matrix_in
             .chunks_exact(4)
             .zip(witness_in.chunks_exact(4))
@@ -1970,10 +1649,20 @@ fn fold_inner_native_raw(
             let w1 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, w[2], w[3]);
             m_out[0] = m0;
             m_out[1] = m1;
-            w_out[0] = w0;
-            w_out[1] = w1;
-            accumulators[0].multiply_accumulate_raw(m0, w0);
-            accumulators[1].multiply_accumulate_raw(ctx.sub(m1, m0), ctx.sub(w1, w0));
+            w_out[0] = field::Uint::from_words(raw_to_words(w0));
+            w_out[1] = field::Uint::from_words(raw_to_words(w1));
+            <field::Uint<2> as FoldedValue>::accumulate(
+                ctx,
+                &mut accumulators[0],
+                m0,
+                field::Uint::from_words(raw_to_words(w0)),
+            );
+            <field::Uint<2> as FoldedValue>::accumulate(
+                ctx,
+                &mut accumulators[1],
+                ctx.sub_raw(m1, m0),
+                field::Uint::from_words(raw_to_words(ctx.sub_raw(w1, w0))),
+            );
         }
         accumulators
     };
@@ -1987,13 +1676,13 @@ fn fold_inner_native_raw(
         )
             .into_par_iter()
             .map(|(m, w, m_out, w_out)| block(m, w, m_out, w_out))
-            .reduce(product_pair, merge_product_pair);
-        return WitnessScale::Plain.reduce_pair(total, reducer);
+            .reduce(
+                folded::pair::<field::Uint<2>>,
+                folded::merge::<field::Uint<2>>,
+            );
+        return folded::reduce::<field::Uint<2>>(ctx, total);
     }
-    WitnessScale::Plain.reduce_pair(
-        block(matrix_in, witness_in, matrix_out, witness_out),
-        reducer,
-    )
+    folded::reduce::<field::Uint<2>>(ctx, block(matrix_in, witness_in, matrix_out, witness_out))
 }
 
 /// Proves the quadratic inner sumcheck `initial_claim = Σ_y matrix(y) · witness(y)`
@@ -2008,13 +1697,14 @@ fn fold_inner_native_raw(
 /// of the full-table prover, whose padded pairs contribute zero.
 pub(crate) fn prove_inner_raw<T: Transcript>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     initial_claim: Field,
     matrix: Vec<Raw>,
     witness: RawWitness<'_>,
     live: usize,
 ) -> Result<InnerSumcheckOutput<Field>, SumcheckError> {
+    let cfg = ctx.clone();
     let len = matrix.len();
     if !len.is_power_of_two() || witness.len() != len || live > len {
         return Err(SumcheckError::InvalidProductDimensions);
@@ -2026,7 +1716,7 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
     }
     let witness = witness.materialize();
     let num_vars = len.trailing_zeros() as usize;
-    let zero = Field::zero_with_cfg(ctx.config());
+    let zero = Field::zero_with_cfg(&cfg);
     let mut current_claim = initial_claim;
     let mut eval_points = Vec::with_capacity(num_vars);
     let mut round_polynomials = Vec::with_capacity(num_vars);
@@ -2036,11 +1726,12 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
                   current_claim: Field,
                   round_polynomials: Vec<[Field; 3]>,
                   eval_points: Vec<Field>| {
-        let batched_matrix_evaluation = ctx.field(matrix_evaluation);
-        let witness_evaluation = ctx.field(witness_evaluation);
+        let batched_matrix_evaluation =
+            crate::utils::delayed_reduction::element(&cfg, matrix_evaluation);
+        let witness_evaluation = crate::utils::delayed_reduction::element(&cfg, witness_evaluation);
         debug_assert_eq!(
             current_claim,
-            batched_matrix_evaluation.clone() * &witness_evaluation
+            cfg.mul(&(batched_matrix_evaluation.clone()), &(&witness_evaluation))
         );
         Ok(InnerSumcheckOutput {
             sumcheck: SumcheckProverOutput {
@@ -2057,6 +1748,12 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
         let witness_evaluation = match &witness {
             RawWitness::Native { values, .. } => ctx.native_residue(values[0]),
             RawWitness::Field(values) => values[0],
+            RawWitness::Wide(values) => {
+                raw_shared(field::IntegerEmbedding::from_integer(ctx, &values.read(0)))
+            }
+            RawWitness::Limbs(values) => {
+                raw_shared(field::IntegerEmbedding::from_integer(ctx, &values.read(0)))
+            }
         };
         return finish(
             matrix[0],
@@ -2075,12 +1772,21 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
         RawWitness::Native { values, .. } => {
             inner_coefficients_native_raw(ctx, reducer, &matrix[..2 * pairs], &values[..2 * pairs])
         }
+        RawWitness::Wide(values) => {
+            native_witness::wide_coefficients(ctx, &matrix[..2 * pairs], |i| values.read(i))
+        }
+        RawWitness::Limbs(values) => {
+            native_witness::wide_coefficients(ctx, &matrix[..2 * pairs], |i| values.read(i))
+        }
         RawWitness::Field(values) => {
             inner_coefficients_field_raw(ctx, reducer, &matrix[..2 * pairs], &values[..2 * pairs])
         }
     };
     drop(round0_scope);
-    let mut coefficients_without_linear = [ctx.field(coefficients[0]), ctx.field(coefficients[1])];
+    let mut coefficients_without_linear = [
+        crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
+        crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
+    ];
     let challenge = recover_full_round_polynomial_and_sample_next_challenge(
         transcript,
         &mut current_claim,
@@ -2088,24 +1794,43 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
         &mut round_polynomials,
         &mut eval_points,
         &zero,
-        ctx.config(),
-    );
+        &cfg,
+    )?;
     let challenge_raw = ctx.raw(&challenge);
     let next_len = len / 2;
     let live = live.div_ceil(2);
     let mut matrix_next = vec![0 as Raw; next_len];
-    let mut witness_next = vec![0 as Raw; next_len];
     if next_len == 1 {
         let matrix_evaluation = ctx.interpolate(matrix[0], matrix[1], challenge_raw);
         let witness_evaluation = match &witness {
             RawWitness::Native { values, .. } => fold_native_pair(
                 reducer,
-                ctx.sub(ctx.one(), challenge_raw),
+                ctx.sub_raw(ctx.one_raw(), challenge_raw),
                 challenge_raw,
                 values[0],
                 values[1],
             ),
             RawWitness::Field(values) => ctx.interpolate(values[0], values[1], challenge_raw),
+            RawWitness::Wide(values) => {
+                let f = ctx;
+                raw_shared(f.weighted_pair(
+                    &[
+                        shared_raw(f, ctx.sub_raw(ctx.one_raw(), challenge_raw)),
+                        shared_raw(f, challenge_raw),
+                    ],
+                    &[values.read(0), values.read(1)],
+                ))
+            }
+            RawWitness::Limbs(values) => {
+                let f = ctx;
+                raw_shared(f.weighted_pair(
+                    &[
+                        shared_raw(f, ctx.sub_raw(ctx.one_raw(), challenge_raw)),
+                        shared_raw(f, challenge_raw),
+                    ],
+                    &[values.read(0), values.read(1)],
+                ))
+            }
         };
         return finish(
             matrix_evaluation,
@@ -2117,50 +1842,92 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
     }
     let written = 2 * live.div_ceil(2);
     let fold0_scope = tracing::info_span!("raw:inner_fold0").entered();
-    let scale = match &witness {
-        RawWitness::Native { .. } => WitnessScale::Plain,
-        RawWitness::Field(_) => WitnessScale::Raw,
+    let (coefficients, witness_next) = match &witness {
+        RawWitness::Native { values, .. } => {
+            let mut out = vec![field::Uint::<2>::ZERO; next_len];
+            let coefficients = fold_inner_native_raw(
+                ctx,
+                reducer,
+                &matrix[..2 * written],
+                &values[..2 * written],
+                &mut matrix_next[..written],
+                &mut out[..written],
+                challenge_raw,
+            );
+            (coefficients, FoldedWitness::Integers(out))
+        }
+        RawWitness::Wide(values) => {
+            let mut out = vec![field::Uint::<2>::ZERO; next_len];
+            let coefficients = native_witness::wide_fold::<4, true>(
+                ctx,
+                &matrix[..2 * written],
+                |i| values.read(i),
+                &mut matrix_next[..written],
+                &mut out[..written],
+                challenge_raw,
+            );
+            (coefficients, FoldedWitness::Integers(out))
+        }
+        RawWitness::Limbs(values) => {
+            let mut out = vec![field::Uint::<2>::ZERO; next_len];
+            let coefficients = native_witness::wide_fold::<32, true>(
+                ctx,
+                &matrix[..2 * written],
+                |i| values.read(i),
+                &mut matrix_next[..written],
+                &mut out[..written],
+                challenge_raw,
+            );
+            (coefficients, FoldedWitness::Integers(out))
+        }
+        RawWitness::Field(values) => {
+            let mut out = vec![shared_raw(ctx, 0); next_len];
+            let coefficients = folded::fold_round::<field::Fp<2>, true>(
+                ctx,
+                &matrix[..2 * written],
+                |i| shared_raw(ctx, values[i]),
+                &mut matrix_next[..written],
+                &mut out[..written],
+                challenge_raw,
+            );
+            (coefficients, FoldedWitness::Field(out))
+        }
     };
-    let coefficients = match &witness {
-        RawWitness::Native { values, .. } => fold_inner_native_raw(
-            ctx,
-            reducer,
-            &matrix[..2 * written],
-            &values[..2 * written],
-            &mut matrix_next[..written],
-            &mut witness_next[..written],
-            challenge_raw,
-        ),
-        RawWitness::Field(values) => fold_inner_field_raw(
-            ctx,
-            reducer,
-            &matrix[..2 * written],
-            &values[..2 * written],
-            &mut matrix_next[..written],
-            &mut witness_next[..written],
-            challenge_raw,
-            scale,
-        ),
-    };
-    coefficients_without_linear = [ctx.field(coefficients[0]), ctx.field(coefficients[1])];
+    coefficients_without_linear = [
+        crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
+        crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
+    ];
     drop(matrix);
     drop(witness);
     drop(fold0_scope);
 
     let _rounds_scope = tracing::info_span!("raw:inner_rounds").entered();
-    let (matrix_evaluation, witness_evaluation) = inner_dense_rounds(
-        transcript,
-        ctx,
-        reducer,
-        &mut current_claim,
-        matrix_next,
-        witness_next,
-        scale,
-        live,
-        coefficients_without_linear,
-        &mut round_polynomials,
-        &mut eval_points,
-    );
+    let (matrix_evaluation, witness_evaluation) = match witness_next {
+        FoldedWitness::Integers(values) => inner_dense_rounds(
+            transcript,
+            ctx,
+            reducer,
+            &mut current_claim,
+            matrix_next,
+            values,
+            live,
+            coefficients_without_linear,
+            &mut round_polynomials,
+            &mut eval_points,
+        )?,
+        FoldedWitness::Field(values) => inner_dense_rounds(
+            transcript,
+            ctx,
+            reducer,
+            &mut current_claim,
+            matrix_next,
+            values,
+            live,
+            coefficients_without_linear,
+            &mut round_polynomials,
+            &mut eval_points,
+        )?,
+    };
     finish(
         matrix_evaluation,
         witness_evaluation,
@@ -2176,23 +1943,23 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
 /// already computed. Returns the terminal `(matrix, witness)` values, both
 /// as raw residues.
 #[allow(clippy::too_many_arguments)]
-fn inner_dense_rounds<T: Transcript>(
+fn inner_dense_rounds<T: Transcript, W: FoldedValue>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     current_claim: &mut Field,
     mut matrix: Vec<Raw>,
-    mut witness: Vec<Raw>,
-    scale: WitnessScale,
+    mut witness: Vec<W>,
     mut live: usize,
     mut coefficients_without_linear: [Field; 2],
     round_polynomials: &mut Vec<[Field; 3]>,
     eval_points: &mut Vec<Field>,
-) -> (Raw, Raw) {
+) -> Result<(Raw, Raw), SumcheckError> {
+    let cfg = ctx.clone();
     debug_assert_eq!(matrix.len(), witness.len());
-    let zero = Field::zero_with_cfg(ctx.config());
+    let zero = Field::zero_with_cfg(&cfg);
     let mut matrix_scratch = vec![0 as Raw; matrix.len() / 2];
-    let mut witness_scratch = vec![0 as Raw; witness.len() / 2];
+    let mut witness_scratch = vec![W::zero(ctx); witness.len() / 2];
     while matrix.len() > 1 {
         let challenge = recover_full_round_polynomial_and_sample_next_challenge(
             transcript,
@@ -2201,8 +1968,8 @@ fn inner_dense_rounds<T: Transcript>(
             round_polynomials,
             eval_points,
             &zero,
-            ctx.config(),
-        );
+            &cfg,
+        )?;
         let challenge_raw = ctx.raw(&challenge);
         let next_len = matrix.len() / 2;
         let next_live = live.div_ceil(2);
@@ -2210,28 +1977,32 @@ fn inner_dense_rounds<T: Transcript>(
         witness_scratch.truncate(next_len);
         if next_len == 1 {
             matrix_scratch[0] = ctx.interpolate(matrix[0], matrix[1], challenge_raw);
-            witness_scratch[0] = ctx.interpolate(witness[0], witness[1], challenge_raw);
+            witness_scratch[0] = W::from_encoding(
+                ctx,
+                ctx.interpolate(witness[0].encoding(), witness[1].encoding(), challenge_raw),
+            );
         } else {
             let written = 2 * next_live.div_ceil(2);
-            let coefficients = fold_inner_field_raw(
+            let coefficients = folded::fold_round::<W, true>(
                 ctx,
-                reducer,
                 &matrix[..2 * written],
-                &witness[..2 * written],
+                |i| witness[i],
                 &mut matrix_scratch[..written],
                 &mut witness_scratch[..written],
                 challenge_raw,
-                scale,
             );
             matrix_scratch[written..].fill(0);
-            witness_scratch[written..].fill(0);
-            coefficients_without_linear = [ctx.field(coefficients[0]), ctx.field(coefficients[1])];
+            witness_scratch[written..].fill(W::zero(ctx));
+            coefficients_without_linear = [
+                crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
+                crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
+            ];
         }
         std::mem::swap(&mut matrix, &mut matrix_scratch);
         std::mem::swap(&mut witness, &mut witness_scratch);
         live = next_live;
     }
-    (matrix[0], scale.to_raw(ctx, witness[0]))
+    Ok((matrix[0], witness[0].final_raw(ctx)))
 }
 
 // ---------------------------------------------------------------------------
@@ -2250,7 +2021,7 @@ pub(crate) struct BlockScales {
 
 /// Aggregates a [`BlockSelectorLayout`] into per-block scales for `ρ`.
 pub(crate) fn block_scales_raw<C: RawMontyCoefficient>(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     layout: &BlockSelectorLayout<C>,
     rho: Raw,
     num_column_vars: usize,
@@ -2258,17 +2029,20 @@ pub(crate) fn block_scales_raw<C: RawMontyCoefficient>(
     let blocks = (1usize << num_column_vars) / layout.block_len;
     let prepared = C::prepare_raw(ctx);
     let mut scales = vec![None; blocks];
-    let factors = [ctx.one(), rho, ctx.mul(rho, rho)];
+    let factors = [ctx.one_raw(), rho, ctx.mul_raw(rho, rho)];
     for (runs, factor) in [
         (&layout.a, factors[0]),
         (&layout.b, factors[1]),
         (&layout.c, factors[2]),
     ] {
         for run in runs {
-            let scale = ctx.mul(factor, run.coefficient.raw_scale(&prepared, ctx.one(), ctx));
+            let scale = ctx.mul_raw(
+                factor,
+                run.coefficient.raw_scale(&prepared, ctx.one_raw(), ctx),
+            );
             let slot = &mut scales[run.start / layout.block_len];
             *slot = Some(match *slot {
-                Some(existing) => ctx.add(existing, scale),
+                Some(existing) => ctx.add_raw(existing, scale),
                 None => scale,
             });
         }
@@ -2281,7 +2055,7 @@ pub(crate) fn block_scales_raw<C: RawMontyCoefficient>(
 }
 
 /// Folds one table at `challenge` (no accumulation).
-fn fold_table_raw(ctx: &RawMontyCtx, input: &[Raw], output: &mut [Raw], challenge: Raw) {
+fn fold_table_raw(ctx: &field::FpCtx<2>, input: &[Raw], output: &mut [Raw], challenge: Raw) {
     debug_assert_eq!(input.len(), 2 * output.len());
     #[cfg(feature = "parallel")]
     if parallel(output.len()) {
@@ -2298,66 +2072,25 @@ fn fold_table_raw(ctx: &RawMontyCtx, input: &[Raw], output: &mut [Raw], challeng
 
 /// Folds one witness block at `challenge` against the ALREADY folded weight
 /// vector and accumulates the block's next-round partial sums
-/// `[Σ w'(2i) z'(2i), Σ Δw'(i) Δz'(i)]` in the same pass.
-fn fold_block_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
-    weights_next: &[Raw],
-    z_in: &[Raw],
-    z_out: &mut [Raw],
-    challenge: Raw,
-    scale: WitnessScale,
-) -> [Raw; 2] {
-    debug_assert_eq!(z_in.len(), 2 * z_out.len());
-    debug_assert_eq!(weights_next.len(), z_out.len());
-    debug_assert_eq!(z_out.len() % 2, 0);
-    let block = |weights: &[Raw], z_in: &[Raw], z_out: &mut [Raw]| -> ProductPair {
-        let mut accumulators = product_pair();
-        for ((w, z), out) in weights
-            .chunks_exact(2)
-            .zip(z_in.chunks_exact(4))
-            .zip(z_out.chunks_exact_mut(2))
-        {
-            let z0 = ctx.interpolate(z[0], z[1], challenge);
-            let z1 = ctx.interpolate(z[2], z[3], challenge);
-            out[0] = z0;
-            out[1] = z1;
-            accumulators[0].multiply_accumulate_raw(w[0], z0);
-            accumulators[1].multiply_accumulate_raw(ctx.sub(w[1], w[0]), ctx.sub(z1, z0));
-        }
-        accumulators
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(z_out.len() / 2) {
-        let total = (
-            weights_next.par_chunks(FOLD_BLOCK),
-            z_in.par_chunks(2 * FOLD_BLOCK),
-            z_out.par_chunks_mut(FOLD_BLOCK),
-        )
-            .into_par_iter()
-            .map(|(w, z, out)| block(w, z, out))
-            .reduce(product_pair, merge_product_pair);
-        return scale.reduce_pair(total, reducer);
-    }
-    scale.reduce_pair(block(weights_next, z_in, z_out), reducer)
-}
-
-/// The native-witness twin of [`fold_block_raw`] for the first fold: the
+/// First native block fold: the
 /// folded block is emitted in plain form.
 fn fold_block_native_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     weights_next: &[Raw],
     z_in: &[u64],
-    z_out: &mut [Raw],
+    z_out: &mut [field::Uint<2>],
     challenge: Raw,
 ) -> [Raw; 2] {
     debug_assert_eq!(z_in.len(), 2 * z_out.len());
     debug_assert_eq!(weights_next.len(), z_out.len());
     debug_assert_eq!(z_out.len() % 2, 0);
-    let one_minus_challenge = ctx.sub(ctx.one(), challenge);
-    let block = |weights: &[Raw], z_in: &[u64], z_out: &mut [Raw]| -> ProductPair {
-        let mut accumulators = product_pair();
+    let one_minus_challenge = ctx.sub_raw(ctx.one_raw(), challenge);
+    let block = |weights: &[Raw],
+                 z_in: &[u64],
+                 z_out: &mut [field::Uint<2>]|
+     -> [field::FpLinearAcc<2, 2>; 2] {
+        let mut accumulators = folded::pair::<field::Uint<2>>();
         for ((w, z), out) in weights
             .chunks_exact(2)
             .zip(z_in.chunks_exact(4))
@@ -2365,10 +2098,20 @@ fn fold_block_native_raw(
         {
             let z0 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, z[0], z[1]);
             let z1 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, z[2], z[3]);
-            out[0] = z0;
-            out[1] = z1;
-            accumulators[0].multiply_accumulate_raw(w[0], z0);
-            accumulators[1].multiply_accumulate_raw(ctx.sub(w[1], w[0]), ctx.sub(z1, z0));
+            out[0] = field::Uint::from_words(raw_to_words(z0));
+            out[1] = field::Uint::from_words(raw_to_words(z1));
+            <field::Uint<2> as FoldedValue>::accumulate(
+                ctx,
+                &mut accumulators[0],
+                w[0],
+                field::Uint::from_words(raw_to_words(z0)),
+            );
+            <field::Uint<2> as FoldedValue>::accumulate(
+                ctx,
+                &mut accumulators[1],
+                ctx.sub_raw(w[1], w[0]),
+                field::Uint::from_words(raw_to_words(ctx.sub_raw(z1, z0))),
+            );
         }
         accumulators
     };
@@ -2381,49 +2124,46 @@ fn fold_block_native_raw(
         )
             .into_par_iter()
             .map(|(w, z, out)| block(w, z, out))
-            .reduce(product_pair, merge_product_pair);
-        return WitnessScale::Plain.reduce_pair(total, reducer);
+            .reduce(
+                folded::pair::<field::Uint<2>>,
+                folded::merge::<field::Uint<2>>,
+            );
+        return folded::reduce::<field::Uint<2>>(ctx, total);
     }
-    WitnessScale::Plain.reduce_pair(block(weights_next, z_in, z_out), reducer)
+    folded::reduce::<field::Uint<2>>(ctx, block(weights_next, z_in, z_out))
 }
 
-/// The terminal in-block fold of a block that carries no matrix scale when
-/// it is zero beyond its first entry (the constant block of the generated
-/// relations): `eq(0) · z[0]`. `None` when the block is not of that shape.
-fn sparse_block_value_raw(
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
-    eq_at_zero: Raw,
-    block: BlockValues<'_>,
-) -> Option<Raw> {
+/// Terminal folds for structural constant/zero blocks. Private values never
+/// determine whether a block receives the full weighted-sum kernel.
+fn sparse_block_value_raw(eq_at_zero: Raw, block: BlockValues<'_>) -> Option<Raw> {
     match block {
+        BlockValues::ConstantOne => Some(eq_at_zero),
+        BlockValues::Zero => Some(0),
         BlockValues::Native([]) | BlockValues::Field([]) => Some(0),
-        BlockValues::Native(values) => values[1..].iter().all(|&value| value == 0).then(|| {
-            let mut accumulator = MontyLinearAccumulator128::default();
-            accumulator.multiply_accumulate_raw(eq_at_zero, values[0]);
-            accumulator.reduce_raw(reducer)
-        }),
-        BlockValues::Field(values) => values[1..]
-            .iter()
-            .all(|&value| value == 0)
-            .then(|| ctx.mul(eq_at_zero, values[0])),
+        _ => None,
     }
 }
 
 /// `Σ_y eq[y] · z[y]` as a raw residue, for a block that carries no matrix
 /// scale (its fold never enters a message before the block rounds).
 fn weighted_block_sum_raw(
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     eq: &[Raw],
     block: BlockValues<'_>,
 ) -> Raw {
     match block {
+        BlockValues::U128(_)
+        | BlockValues::U256(_, _)
+        | BlockValues::ConstantOne
+        | BlockValues::Limbs(_)
+        | BlockValues::Zero => native_witness::weighted_wide_block(ctx, eq, block),
         BlockValues::Native(values) => {
             debug_assert!(values.len() <= eq.len());
-            let block = |eq: &[Raw], values: &[u64]| -> MontyLinearAccumulator128 {
-                let mut accumulator = MontyLinearAccumulator128::default();
+            let block = |eq: &[Raw], values: &[u64]| -> field::FpLinearAcc<2, 1> {
+                let mut accumulator = field::FpLinearAcc::<2, 1>::default();
                 for (&weight, &value) in eq.iter().zip(values) {
-                    accumulator.multiply_accumulate_raw(weight, value);
+                    accumulator.accumulate_encoded(ctx, weight, value);
                 }
                 accumulator
             };
@@ -2433,20 +2173,20 @@ fn weighted_block_sum_raw(
                     .par_chunks(2 * FOLD_BLOCK)
                     .zip(values.par_chunks(2 * FOLD_BLOCK))
                     .map(|(eq, values)| block(eq, values))
-                    .reduce(MontyLinearAccumulator128::default, |mut left, right| {
+                    .reduce(field::FpLinearAcc::<2, 1>::default, |mut left, right| {
                         left += right;
                         left
                     });
-                return total.reduce_raw(reducer);
+                return total.reduce_encoded(reducer);
             }
-            block(&eq[..values.len()], values).reduce_raw(reducer)
+            block(&eq[..values.len()], values).reduce_encoded(reducer)
         }
         BlockValues::Field(values) => {
             debug_assert!(values.len() <= eq.len());
-            let block = |eq: &[Raw], values: &[Raw]| -> MontyProductAccumulator128 {
-                let mut accumulator = MontyProductAccumulator128::default();
+            let block = |eq: &[Raw], values: &[Raw]| -> field::FpProductAcc<2> {
+                let mut accumulator = field::FpProductAcc::<2>::default();
                 for (&weight, &value) in eq.iter().zip(values) {
-                    accumulator.multiply_accumulate_raw(weight, value);
+                    accumulator.accumulate_encoded(ctx, weight, value);
                 }
                 accumulator
             };
@@ -2456,22 +2196,28 @@ fn weighted_block_sum_raw(
                     .par_chunks(2 * FOLD_BLOCK)
                     .zip(values.par_chunks(2 * FOLD_BLOCK))
                     .map(|(eq, values)| block(eq, values))
-                    .reduce(MontyProductAccumulator128::default, |mut left, right| {
+                    .reduce(field::FpProductAcc::<2>::default, |mut left, right| {
                         left += right;
                         left
                     });
-                return total.reduce_raw(reducer);
+                return total.reduce_encoded(reducer);
             }
-            block(&eq[..values.len()], values).reduce_raw(reducer)
+            block(&eq[..values.len()], values).reduce_encoded(reducer)
         }
     }
 }
 
 /// One whole witness block in the caller's representation (entries past the
 /// live prefix are zero).
+#[derive(Clone, Copy)]
 enum BlockValues<'a> {
     Native(&'a [u64]),
     Field(&'a [Raw]),
+    U128(&'a [u128]),
+    U256(&'a [u128], &'a [u128]),
+    ConstantOne,
+    Zero,
+    Limbs(&'a [field::Uint<32>]),
 }
 
 /// Proves the inner sumcheck of a block-selector relation without the dense
@@ -2488,8 +2234,8 @@ enum BlockValues<'a> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_inner_structured_raw<T: Transcript>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     initial_claim: Field,
     weights: &[Raw],
     scales: &BlockScales,
@@ -2497,6 +2243,46 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
     live: usize,
     num_column_vars: usize,
 ) -> Result<InnerSumcheckOutput<Field>, SumcheckError> {
+    match witness {
+        RawWitness::Field(_) => prove_inner_structured_typed::<T, field::Fp<2>>(
+            transcript,
+            ctx,
+            reducer,
+            initial_claim,
+            weights,
+            scales,
+            witness,
+            live,
+            num_column_vars,
+        ),
+        RawWitness::Native { .. } | RawWitness::Wide(_) | RawWitness::Limbs(_) => {
+            prove_inner_structured_typed::<T, field::Uint<2>>(
+                transcript,
+                ctx,
+                reducer,
+                initial_claim,
+                weights,
+                scales,
+                witness,
+                live,
+                num_column_vars,
+            )
+        }
+    }
+}
+
+fn prove_inner_structured_typed<T: Transcript, W: FoldedValue>(
+    transcript: &mut T,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
+    initial_claim: Field,
+    weights: &[Raw],
+    scales: &BlockScales,
+    witness: RawWitness<'_>,
+    live: usize,
+    num_column_vars: usize,
+) -> Result<InnerSumcheckOutput<Field>, SumcheckError> {
+    let cfg = ctx.clone();
     let block_len = scales.block_len;
     let blocks = scales.scales.len();
     let domain = 1usize << num_column_vars;
@@ -2521,7 +2307,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
         }
         other => other,
     };
-    let zero = Field::zero_with_cfg(ctx.config());
+    let zero = Field::zero_with_cfg(&cfg);
     let mut current_claim = initial_claim;
     let mut eval_points = Vec::with_capacity(num_column_vars);
     let mut round_polynomials = Vec::with_capacity(num_column_vars);
@@ -2537,11 +2323,15 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
                 BlockValues::Native(values.get(start..end).unwrap_or(&[]))
             }
             RawWitness::Field(values) => BlockValues::Field(&values[start..end]),
+            RawWitness::Wide(values) => {
+                assert_eq!(values.len() / 4, block_len);
+                values.block(block)
+            }
+            RawWitness::Limbs(values) => {
+                assert_eq!(values.len() / 4, block_len);
+                values.block(block)
+            }
         }
-    };
-    let scale = match &witness {
-        RawWitness::Native { .. } => WitnessScale::Plain,
-        RawWitness::Field(_) => WitnessScale::Raw,
     };
 
     // The weight vector as one block: zero beyond the logical rows.
@@ -2557,10 +2347,13 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
         let mut c0 = 0 as Raw;
         let mut c2 = 0 as Raw;
         for ((_, scale), partial) in scaled.iter().zip(partials) {
-            c0 = ctx.add(c0, ctx.mul(*scale, partial[0]));
-            c2 = ctx.add(c2, ctx.mul(*scale, partial[1]));
+            c0 = ctx.add_raw(c0, ctx.mul_raw(*scale, partial[0]));
+            c2 = ctx.add_raw(c2, ctx.mul_raw(*scale, partial[1]));
         }
-        [ctx.field(c0), ctx.field(c2)]
+        [
+            crate::utils::delayed_reduction::element(&cfg, c0),
+            crate::utils::delayed_reduction::element(&cfg, c2),
+        ]
     };
 
     // Round zero over the original witness.
@@ -2569,20 +2362,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
         .iter()
         .map(|&(block, _)| {
             let pairs = live_of(block).div_ceil(2);
-            match block_values(block) {
-                BlockValues::Native(values) => inner_coefficients_native_raw(
-                    ctx,
-                    reducer,
-                    &wz[..2 * pairs],
-                    &values[..2 * pairs],
-                ),
-                BlockValues::Field(values) => inner_coefficients_field_raw(
-                    ctx,
-                    reducer,
-                    &wz[..2 * pairs],
-                    &values[..2 * pairs],
-                ),
-            }
+            block_values(block).coefficients(ctx, reducer, &wz[..2 * pairs])
         })
         .collect();
     let mut coefficients_without_linear = combine(&partials);
@@ -2592,8 +2372,8 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
     // block against them. `tables[i]` holds scaled block `i` after its first
     // fold (plain for a native witness).
     let mut challenges_raw: Vec<Raw> = Vec::with_capacity(num_column_vars);
-    let mut tables: Vec<Vec<Raw>> = Vec::new();
-    let mut scratches: Vec<Vec<Raw>> = Vec::new();
+    let mut tables: Vec<Vec<W>> = Vec::new();
+    let mut scratches: Vec<Vec<W>> = Vec::new();
     let mut lives: Vec<usize> = scaled.iter().map(|&(block, _)| live_of(block)).collect();
     let mut wz_scratch = vec![0 as Raw; block_len / 2];
     let mut len = block_len;
@@ -2608,8 +2388,8 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
             &mut round_polynomials,
             &mut eval_points,
             &zero,
-            ctx.config(),
-        );
+            &cfg,
+        )?;
         let challenge_raw = ctx.raw(&challenge);
         challenges_raw.push(challenge_raw);
         let next_len = len / 2;
@@ -2624,21 +2404,18 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
                 .enumerate()
                 .map(|(index, &(block, _))| {
                     if first_fold {
-                        match block_values(block) {
-                            BlockValues::Native(values) => fold_native_pair(
-                                reducer,
-                                ctx.sub(ctx.one(), challenge_raw),
-                                challenge_raw,
-                                values[0],
-                                values[1],
-                            ),
-                            BlockValues::Field(values) => {
-                                ctx.interpolate(values[0], values[1], challenge_raw)
-                            }
-                        }
+                        block_values(block).folded_pair(ctx, reducer, challenge_raw)
                     } else {
                         let table = &tables[index];
-                        scale.to_raw(ctx, ctx.interpolate(table[0], table[1], challenge_raw))
+                        W::from_encoding(
+                            ctx,
+                            ctx.interpolate(
+                                table[0].encoding(),
+                                table[1].encoding(),
+                                challenge_raw,
+                            ),
+                        )
+                        .final_raw(ctx)
                     }
                 })
                 .collect();
@@ -2651,42 +2428,30 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
             let next_live = lives[index].div_ceil(2);
             let written = 2 * next_live.div_ceil(2);
             if first_fold {
-                let mut out = vec![0 as Raw; next_len];
-                let partial = match block_values(block) {
-                    BlockValues::Native(values) => fold_block_native_raw(
-                        ctx,
-                        reducer,
-                        &wz[..written],
-                        &values[..2 * written],
-                        &mut out[..written],
-                        challenge_raw,
-                    ),
-                    BlockValues::Field(values) => fold_block_raw(
-                        ctx,
-                        reducer,
-                        &wz[..written],
-                        &values[..2 * written],
-                        &mut out[..written],
-                        challenge_raw,
-                        scale,
-                    ),
-                };
+                let mut out = vec![W::zero(ctx); next_len];
+                let partial = W::fold_initial(
+                    ctx,
+                    reducer,
+                    block_values(block),
+                    &wz[..written],
+                    &mut out[..written],
+                    challenge_raw,
+                );
                 tables.push(out);
-                scratches.push(vec![0 as Raw; next_len / 2]);
+                scratches.push(vec![W::zero(ctx); next_len / 2]);
                 partials.push(partial);
             } else {
                 let scratch = &mut scratches[index];
                 scratch.truncate(next_len);
-                let partial = fold_block_raw(
+                let partial = folded::fold_round::<W, false>(
                     ctx,
-                    reducer,
                     &wz[..written],
-                    &tables[index][..2 * written],
+                    |i| tables[index][i],
+                    &mut [],
                     &mut scratch[..written],
                     challenge_raw,
-                    scale,
                 );
-                scratch[written..].fill(0);
+                scratch[written..].fill(W::zero(ctx));
                 std::mem::swap(&mut tables[index], scratch);
                 partials.push(partial);
             }
@@ -2704,25 +2469,25 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
     // them is not the sparse constant block.
     let eq_at_zero = challenges_raw
         .iter()
-        .fold(ctx.one(), |product, &challenge| {
-            ctx.mul(product, ctx.sub(ctx.one(), challenge))
+        .fold(ctx.one_raw(), |product, &challenge| {
+            ctx.mul_raw(product, ctx.sub_raw(ctx.one_raw(), challenge))
         });
     let mut eq: Option<Vec<Raw>> = None;
     let mut matrix = vec![0 as Raw; blocks];
     let mut witness_final = vec![0 as Raw; blocks];
     for (index, &(block, scale_value)) in scaled.iter().enumerate() {
-        matrix[block] = ctx.mul(scale_value, weight_final);
+        matrix[block] = ctx.mul_raw(scale_value, weight_final);
         witness_final[block] = finals[index];
     }
     for (block, slot) in witness_final.iter_mut().enumerate() {
         if live_of(block) == 0 || scales.scales[block].is_some() {
             continue;
         }
-        *slot = match sparse_block_value_raw(ctx, reducer, eq_at_zero, block_values(block)) {
+        *slot = match sparse_block_value_raw(eq_at_zero, block_values(block)) {
             Some(value) => value,
             None => {
                 let eq = eq.get_or_insert_with(|| eq_table_raw(ctx, &challenges_raw));
-                weighted_block_sum_raw(reducer, eq, block_values(block))
+                weighted_block_sum_raw(ctx, reducer, eq, block_values(block))
             }
         };
     }
@@ -2733,11 +2498,12 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
                   current_claim: Field,
                   round_polynomials: Vec<[Field; 3]>,
                   eval_points: Vec<Field>| {
-        let batched_matrix_evaluation = ctx.field(matrix_evaluation);
-        let witness_evaluation = ctx.field(witness_evaluation);
+        let batched_matrix_evaluation =
+            crate::utils::delayed_reduction::element(&cfg, matrix_evaluation);
+        let witness_evaluation = crate::utils::delayed_reduction::element(&cfg, witness_evaluation);
         debug_assert_eq!(
             current_claim,
-            batched_matrix_evaluation.clone() * &witness_evaluation
+            cfg.mul(&(batched_matrix_evaluation.clone()), &(&witness_evaluation))
         );
         Ok(InnerSumcheckOutput {
             sumcheck: SumcheckProverOutput {
@@ -2759,20 +2525,25 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
         );
     }
     let coefficients = inner_coefficients_field_raw(ctx, reducer, &matrix, &witness_final);
-    let coefficients_without_linear = [ctx.field(coefficients[0]), ctx.field(coefficients[1])];
+    let coefficients_without_linear = [
+        crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
+        crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
+    ];
     let (matrix_evaluation, witness_evaluation) = inner_dense_rounds(
         transcript,
         ctx,
         reducer,
         &mut current_claim,
         matrix,
-        witness_final,
-        WitnessScale::Raw,
+        witness_final
+            .into_iter()
+            .map(|v| shared_raw(ctx, v))
+            .collect::<Vec<_>>(),
         blocks,
         coefficients_without_linear,
         &mut round_polynomials,
         &mut eval_points,
-    );
+    )?;
     finish(
         matrix_evaluation,
         witness_evaluation,
@@ -2793,19 +2564,19 @@ pub trait RawMontyCoefficient: Sync {
     /// Constants derived from the field context once per binding.
     type Prepared: Sync;
 
-    fn prepare_raw(ctx: &RawMontyCtx) -> Self::Prepared;
+    fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared;
 
     /// `self · value`.
-    fn raw_scale(&self, prepared: &Self::Prepared, value: Raw, ctx: &RawMontyCtx) -> Raw;
+    fn raw_scale(&self, prepared: &Self::Prepared, value: Raw, ctx: &field::FpCtx<2>) -> Raw;
 }
 
 impl RawMontyCoefficient for bool {
     type Prepared = ();
 
-    fn prepare_raw(_ctx: &RawMontyCtx) -> Self::Prepared {}
+    fn prepare_raw(_ctx: &field::FpCtx<2>) -> Self::Prepared {}
 
     #[inline(always)]
-    fn raw_scale(&self, _prepared: &(), value: Raw, _ctx: &RawMontyCtx) -> Raw {
+    fn raw_scale(&self, _prepared: &(), value: Raw, _ctx: &field::FpCtx<2>) -> Raw {
         if *self { value } else { 0 }
     }
 }
@@ -2813,11 +2584,11 @@ impl RawMontyCoefficient for bool {
 impl RawMontyCoefficient for Field {
     type Prepared = ();
 
-    fn prepare_raw(_ctx: &RawMontyCtx) -> Self::Prepared {}
+    fn prepare_raw(_ctx: &field::FpCtx<2>) -> Self::Prepared {}
 
     #[inline(always)]
-    fn raw_scale(&self, _prepared: &(), value: Raw, ctx: &RawMontyCtx) -> Raw {
-        ctx.mul(ctx.raw(self), value)
+    fn raw_scale(&self, _prepared: &(), value: Raw, ctx: &field::FpCtx<2>) -> Raw {
+        ctx.mul_raw(ctx.raw(self), value)
     }
 }
 
@@ -2825,15 +2596,15 @@ impl RawMontyCoefficient for U64MulCoefficient {
     /// The public limb base `2^64` as a residue of the runtime field.
     type Prepared = Raw;
 
-    fn prepare_raw(ctx: &RawMontyCtx) -> Self::Prepared {
-        ctx.raw(&Field::from_with_cfg(U64_MUL_LIMB_BASE, ctx.config()))
+    fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared {
+        ctx.native_residue_u128(U64_MUL_LIMB_BASE)
     }
 
     #[inline(always)]
-    fn raw_scale(&self, limb_base: &Raw, value: Raw, ctx: &RawMontyCtx) -> Raw {
+    fn raw_scale(&self, limb_base: &Raw, value: Raw, ctx: &field::FpCtx<2>) -> Raw {
         match self {
             Self::One => value,
-            Self::LimbBase => ctx.mul(*limb_base, value),
+            Self::LimbBase => ctx.mul_raw(*limb_base, value),
         }
     }
 }
@@ -2842,15 +2613,15 @@ impl RawMontyCoefficient for BabyBearMulCoefficient {
     /// The embedded BabyBear modulus as a residue of the runtime field.
     type Prepared = Raw;
 
-    fn prepare_raw(ctx: &RawMontyCtx) -> Self::Prepared {
+    fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared {
         ctx.native_residue(BABY_BEAR_MODULUS)
     }
 
     #[inline(always)]
-    fn raw_scale(&self, modulus: &Raw, value: Raw, ctx: &RawMontyCtx) -> Raw {
+    fn raw_scale(&self, modulus: &Raw, value: Raw, ctx: &field::FpCtx<2>) -> Raw {
         match self {
             Self::One => value,
-            Self::Modulus => ctx.mul(*modulus, value),
+            Self::Modulus => ctx.mul_raw(*modulus, value),
         }
     }
 }
@@ -2859,7 +2630,7 @@ impl RawMontyCoefficient for BabyBearMulCoefficient {
 /// column domain: the raw twin of
 /// `PreparedConstraintMatrices::bind_and_batch_with_validated_row_weights`.
 pub(crate) fn bind_and_batch_raw<C>(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     matrices: &PreparedConstraintMatrices<Field, C>,
     row_weights: &[Raw],
     rho: Raw,
@@ -2868,7 +2639,7 @@ where
     C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
 {
     debug_assert_eq!(row_weights.len(), 1usize << matrices.num_row_vars());
-    let rho_squared = ctx.mul(rho, rho);
+    let rho_squared = ctx.mul_raw(rho, rho);
     let prepared = C::prepare_raw(ctx);
     let m = matrices.matrices();
     let live_columns = m
@@ -2894,7 +2665,7 @@ where
     let dot = |offsets: &[usize], rows: &[usize], coefficients: &[C], column: usize| -> Raw {
         let mut evaluation = 0;
         for entry in offsets[column]..offsets[column + 1] {
-            evaluation = ctx.add(
+            evaluation = ctx.add_raw(
                 evaluation,
                 coefficients[entry].raw_scale(&prepared, row_weights[rows[entry]], ctx),
             );
@@ -2908,15 +2679,15 @@ where
             let column = first_column + offset;
             let mut evaluation = dot(a_offsets, a_rows, a_coefficients, column);
             if b_offsets[column + 1] > b_offsets[column] {
-                evaluation = ctx.add(
+                evaluation = ctx.add_raw(
                     evaluation,
-                    ctx.mul(rho, dot(b_offsets, b_rows, b_coefficients, column)),
+                    ctx.mul_raw(rho, dot(b_offsets, b_rows, b_coefficients, column)),
                 );
             }
             if c_offsets[column + 1] > c_offsets[column] {
-                evaluation = ctx.add(
+                evaluation = ctx.add_raw(
                     evaluation,
-                    ctx.mul(rho_squared, dot(c_offsets, c_rows, c_coefficients, column)),
+                    ctx.mul_raw(rho_squared, dot(c_offsets, c_rows, c_coefficients, column)),
                 );
             }
             *slot = evaluation;
@@ -2949,8 +2720,8 @@ pub(crate) enum RowFunctional<'a> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn inner_sumcheck_raw<T, C>(
     transcript: &mut T,
-    ctx: &RawMontyCtx,
-    reducer: &OptimizedMonty128Reducer,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
     matrices: &PreparedConstraintMatrices<Field, C>,
     initial_claim: Field,
     functional: RowFunctional<'_>,
@@ -3015,7 +2786,7 @@ where
 /// canonical row order (`s + 2^K x`), the raw twin of
 /// `PrefixUnivariateRowFactors::materialize`.
 pub(crate) fn prefix_row_weights_raw(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     factors: &PrefixUnivariateRowFactors<Field>,
 ) -> Vec<Raw> {
     let parts = factors.parts();
@@ -3027,12 +2798,12 @@ pub(crate) fn prefix_row_weights_raw(
     let total_rows = 1usize << parts.num_row_vars;
     let mut weights = vec![0 as Raw; total_rows];
     let fill = |suffix: usize, block: &mut [Raw]| {
-        let tail = ctx.mul(
+        let tail = ctx.mul_raw(
             tail_low[suffix & low_mask],
             tail_high[suffix >> parts.tail_low_vars],
         );
         for (weight, &prefix_weight) in block.iter_mut().zip(&prefix) {
-            *weight = ctx.mul(prefix_weight, tail);
+            *weight = ctx.mul_raw(prefix_weight, tail);
         }
     };
     #[cfg(feature = "parallel")]
@@ -3054,7 +2825,7 @@ pub(crate) fn prefix_row_weights_raw(
 /// without materializing the row-weight tensor; other layouts materialize
 /// the weights and bind generically.
 pub(crate) fn bind_and_batch_prefix_raw<C>(
-    ctx: &RawMontyCtx,
+    ctx: &field::FpCtx<2>,
     matrices: &PreparedConstraintMatrices<Field, C>,
     factors: &PrefixUnivariateRowFactors<Field>,
     rho: Raw,
@@ -3069,7 +2840,7 @@ where
     let block_len = 1usize << parts.skip_vars;
     let low_mask = tail_low.len() - 1;
     let tail_weight = |suffix: usize| -> Raw {
-        ctx.mul(
+        ctx.mul_raw(
             tail_low[suffix & low_mask],
             tail_high[suffix >> parts.tail_low_vars],
         )
@@ -3088,7 +2859,7 @@ where
         return bind_and_batch_raw(ctx, matrices, &weights, rho);
     };
 
-    let rho_squared = ctx.mul(rho, rho);
+    let rho_squared = ctx.mul_raw(rho, rho);
     let mut evaluations = vec![0 as Raw; domain];
     // Carve the three disjoint selector regions out of the table.
     let mut order = [(a_offset, 0usize), (b_offset, 1), (c_offset, 2)];
@@ -3107,10 +2878,10 @@ where
     let fill = |suffix: usize, a: &mut [Raw], b: &mut [Raw], c: &mut [Raw]| {
         let tail = tail_weight(suffix);
         for (((a, b), c), &prefix_weight) in a.iter_mut().zip(b).zip(c).zip(&prefix) {
-            let weight = ctx.mul(prefix_weight, tail);
+            let weight = ctx.mul_raw(prefix_weight, tail);
             *a = weight;
-            *b = ctx.mul(rho, weight);
-            *c = ctx.mul(rho_squared, weight);
+            *b = ctx.mul_raw(rho, weight);
+            *c = ctx.mul_raw(rho_squared, weight);
         }
     };
     #[cfg(feature = "parallel")]
@@ -3138,9 +2909,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
-    };
     use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     use super::super::{
@@ -3151,9 +2919,8 @@ mod tests {
         },
         squeeze_field,
         sumcheck::{
-            OptimizedSumcheckReducer, prove_inner_sumcheck_u32_native_with_reducer,
-            prove_inner_sumcheck_with_reducer, prove_outer_sumcheck_u32_native_with_reducer,
-            prove_outer_sumcheck_with_reducer,
+            prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
+            prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
         },
         u32_mul::{U32MulLayout, u32_mul_constraint_matrices},
         univariate_skip::PrefixUnivariateRowBinding,
@@ -3168,7 +2935,7 @@ mod tests {
     const MODULI: [u128; 3] = [(1_u128 << 100) - 15, (1_u128 << 127) - 1, u128::MAX - 158];
 
     fn config(modulus: u128) -> FieldConfig {
-        F128::make_cfg(&Uint::from(modulus)).expect("odd test modulus")
+        Fp::<2>::make_cfg(&Uint::from(modulus)).expect("odd test modulus")
     }
 
     fn random_field(rng: &mut StdRng, cfg: &FieldConfig) -> Field {
@@ -3189,7 +2956,7 @@ mod tests {
     }
 
     fn next_challenge(transcript: &mut Blake3Transcript, cfg: &FieldConfig) -> Field {
-        squeeze_field::<Field, _>(transcript, cfg)
+        squeeze_field::<Field, _>(transcript, cfg).unwrap()
     }
 
     /// `signed_words_residue` against a BigInt reference: two's-complement
@@ -3203,13 +2970,17 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(11);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            let two_pow_64 = ctx.two_pow_64_residue();
-            let powers = ctx.two_pow_64_plain_powers(two_pow_64, 9);
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            let shared = field::create_prime_field(field::Uint::from_words([
+                modulus as u64,
+                (modulus >> 64) as u64,
+            ]));
+            let projection = field::PreparedSignedProjection::new(shared, 9);
             let q = BigInt::from(modulus);
             for len in 0..=9usize {
-                let mut cases: Vec<Vec<u64>> =
-                    (0..16).map(|_| (0..len).map(|_| rng.random::<u64>()).collect()).collect();
+                let mut cases: Vec<Vec<u64>> = (0..16)
+                    .map(|_| (0..len).map(|_| rng.random::<u64>()).collect())
+                    .collect();
                 cases.push(vec![u64::MAX; len]);
                 if len > 0 {
                     let mut minimum = vec![0; len];
@@ -3222,7 +2993,11 @@ mod tests {
                     let expected = ((value % &q) + &q) % &q;
                     let expected = Field::from_with_cfg(expected.to_u128().unwrap(), &cfg);
                     assert_eq!(
-                        ctx.field(ctx.signed_words_residue(&words, two_pow_64, &powers)),
+                        crate::utils::delayed_reduction::element(&cfg, {
+                            let value = projection.project(&words);
+                            let w = value.as_montgomery_integer().as_words();
+                            Raw::from(w[0]) | (Raw::from(w[1]) << 64)
+                        }),
                         expected,
                         "modulus {modulus} words {words:?}"
                     );
@@ -3233,14 +3008,14 @@ mod tests {
 
     /// Throughput microbenchmark of the raw kernels (run with `--ignored
     /// --nocapture`): dependent and independent multiplication chains, the
-    /// two reductions, and a generic `MontyField` multiplication for scale.
+    /// two reductions, and a generic `Fp` multiplication for scale.
     #[test]
     #[ignore]
     fn raw_arithmetic_microbench() {
         use std::time::Instant;
         let cfg = config(MODULI[0]);
-        let ctx = RawMontyCtx::new(&cfg);
-        let reducer = OptimizedMonty128Reducer::new(&cfg).unwrap();
+        let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+        let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
         let mut rng = StdRng::seed_from_u64(7);
         let n = 1usize << 22;
         let a: Vec<Raw> = (0..n)
@@ -3249,15 +3024,21 @@ mod tests {
         let b: Vec<Raw> = (0..n)
             .map(|_| ctx.raw(&random_field(&mut rng, &cfg)))
             .collect();
-        let fa: Vec<Field> = a.iter().map(|&v| ctx.field(v)).collect();
-        let fb: Vec<Field> = b.iter().map(|&v| ctx.field(v)).collect();
+        let fa: Vec<Field> = a
+            .iter()
+            .map(|&v| crate::utils::delayed_reduction::element(&cfg, v))
+            .collect();
+        let fb: Vec<Field> = b
+            .iter()
+            .map(|&v| crate::utils::delayed_reduction::element(&cfg, v))
+            .collect();
         let ns = |started: Instant| started.elapsed().as_secs_f64() * 1e9 / n as f64;
 
         // Dependent chain.
         let started = Instant::now();
         let mut acc = a[0];
         for &x in &b {
-            acc = ctx.mul(acc, x);
+            acc = ctx.mul_raw(acc, x);
         }
         let dep = ns(started);
         std::hint::black_box(acc);
@@ -3266,7 +3047,7 @@ mod tests {
         let mut out = vec![0 as Raw; n];
         let started = Instant::now();
         for i in 0..n {
-            out[i] = ctx.mul(a[i], b[i]);
+            out[i] = ctx.mul_raw(a[i], b[i]);
         }
         let indep = ns(started);
         std::hint::black_box(&out);
@@ -3284,11 +3065,11 @@ mod tests {
         let started = Instant::now();
         let mut total = 0 as Raw;
         for chunk in a.chunks_exact(64).zip(b.chunks_exact(64)) {
-            let mut acc = MontyProductAccumulator128::default();
+            let mut acc = field::FpProductAcc::<2>::default();
             for (&x, &y) in chunk.0.iter().zip(chunk.1) {
-                acc.multiply_accumulate_raw(x, y);
+                acc.accumulate_encoded(&ctx, x, y);
             }
-            total ^= acc.reduce_raw(&reducer);
+            total ^= acc.reduce_encoded(&reducer);
         }
         let mac = ns(started);
         std::hint::black_box(total);
@@ -3297,19 +3078,19 @@ mod tests {
         let started = Instant::now();
         let mut total = 0 as Raw;
         for i in 0..n {
-            let mut acc = MontyLinearAccumulator128::default();
-            acc.multiply_accumulate_raw(a[i], b[i] as u64);
-            acc.multiply_accumulate_raw(b[i], a[i] as u64);
-            total ^= acc.reduce_raw(&reducer);
+            let mut acc = field::FpLinearAcc::<2, 1>::default();
+            acc.accumulate_encoded(&ctx, a[i], b[i] as u64);
+            acc.accumulate_encoded(&ctx, b[i], a[i] as u64);
+            total ^= acc.reduce_encoded(&reducer);
         }
         let linear = ns(started);
         std::hint::black_box(total);
 
-        // Generic MontyField multiplication.
+        // Generic Fp multiplication.
         let mut fout = vec![Field::zero_with_cfg(&cfg); n];
         let started = Instant::now();
         for i in 0..n {
-            fout[i] = fa[i].clone() * &fb[i];
+            fout[i] = cfg.mul(&(fa[i].clone()), &(&fb[i]));
         }
         let generic = ns(started);
         std::hint::black_box(&fout);
@@ -3317,7 +3098,7 @@ mod tests {
         eprintln!(
             "raw mul: dependent {dep:.2} ns, independent {indep:.2} ns, interpolate {interp:.2} ns, \
              product MAC+reduce/64 {mac:.2} ns, 2 linear MAC + reduce {linear:.2} ns; \
-             MontyField mul {generic:.2} ns"
+             Fp mul {generic:.2} ns"
         );
     }
 
@@ -3326,9 +3107,15 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x5eed_a11c);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            assert_eq!(ctx.field(ctx.one()), Field::one_with_cfg(&cfg));
-            assert_eq!(ctx.field(0), Field::zero_with_cfg(&cfg));
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            assert_eq!(
+                crate::utils::delayed_reduction::element(&cfg, ctx.one_raw()),
+                Field::one_with_cfg(&cfg)
+            );
+            assert_eq!(
+                crate::utils::delayed_reduction::element(&cfg, 0),
+                Field::zero_with_cfg(&cfg)
+            );
             let edge = [0_u128, 1, 2, modulus - 2, modulus - 1];
             let mut samples: Vec<(Field, Field, Field)> = edge
                 .iter()
@@ -3350,19 +3137,34 @@ mod tests {
             }
             for (a, b, c) in samples {
                 let (ra, rb, rc) = (ctx.raw(&a), ctx.raw(&b), ctx.raw(&c));
-                assert_eq!(ctx.field(ra), a);
-                assert_eq!(ctx.field(ctx.add(ra, rb)), a.clone() + &b);
-                assert_eq!(ctx.field(ctx.sub(ra, rb)), a.clone() - &b);
-                assert_eq!(ctx.field(ctx.neg(ra)), -a.clone());
-                assert_eq!(ctx.field(ctx.mul(ra, rb)), a.clone() * &b);
+                assert_eq!(crate::utils::delayed_reduction::element(&cfg, ra), a);
                 assert_eq!(
-                    ctx.field(ctx.interpolate(ra, rb, rc)),
-                    a.clone() + &(c.clone() * &(b.clone() - &a))
+                    crate::utils::delayed_reduction::element(&cfg, ctx.add_raw(ra, rb)),
+                    cfg.add(&(a.clone()), &(&b))
+                );
+                assert_eq!(
+                    crate::utils::delayed_reduction::element(&cfg, ctx.sub_raw(ra, rb)),
+                    cfg.sub(&(a.clone()), &(&b))
+                );
+                assert_eq!(
+                    crate::utils::delayed_reduction::element(&cfg, ctx.neg_raw(ra)),
+                    cfg.neg(&a)
+                );
+                assert_eq!(
+                    crate::utils::delayed_reduction::element(&cfg, ctx.mul_raw(ra, rb)),
+                    cfg.mul(&(a.clone()), &(&b))
+                );
+                assert_eq!(
+                    crate::utils::delayed_reduction::element(&cfg, ctx.interpolate(ra, rb, rc)),
+                    cfg.add(
+                        &(a.clone()),
+                        &(&(cfg.mul(&(c.clone()), &(&(cfg.sub(&(b.clone()), &(&a)))))))
+                    )
                 );
             }
             for value in [0_u64, 1, 7, u32::MAX as u64, u64::MAX - 3, u64::MAX] {
                 assert_eq!(
-                    ctx.field(ctx.native_residue(value)),
+                    crate::utils::delayed_reduction::element(&cfg, ctx.native_residue(value)),
                     Field::from_with_cfg(value, &cfg)
                 );
             }
@@ -3374,13 +3176,17 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0xe9_7ab1e);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
             for len in 0..=15 {
                 let point = random_fields(&mut rng, &cfg, len);
                 let expected = eq_table(&point, &cfg).unwrap();
                 let raw = eq_table_raw(&ctx, &ctx.raw_vec(&point));
                 assert_eq!(raw.len(), expected.len());
-                assert!(raw.iter().zip(&expected).all(|(r, e)| ctx.field(*r) == *e));
+                assert!(
+                    raw.iter()
+                        .zip(&expected)
+                        .all(|(r, e)| { crate::utils::delayed_reduction::element(&cfg, *r) == *e })
+                );
                 let (low, high) = make_equality_factors(&point, &cfg).unwrap();
                 let (raw_low, raw_high) = make_equality_factors_raw(&ctx, &point);
                 assert_eq!(ctx.raw_vec(&low.evaluations), raw_low);
@@ -3393,9 +3199,14 @@ mod tests {
         let weights = eq_table(tau, cfg).unwrap();
         let mut claim = Field::zero_with_cfg(cfg);
         for (index, weight) in weights.iter().enumerate() {
-            let residual = products.az.evaluations[index].clone() * &products.bz.evaluations[index]
-                - &products.cz.evaluations[index];
-            claim += &(weight.clone() * &residual);
+            let residual = cfg.sub(
+                &(cfg.mul(
+                    &(products.az.evaluations[index].clone()),
+                    &(&products.bz.evaluations[index]),
+                )),
+                &(&products.cz.evaluations[index]),
+            );
+            claim = cfg.add(&(claim), &(&(cfg.mul(&(weight.clone()), &(&residual)))));
         }
         claim
     }
@@ -3405,9 +3216,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x0a7e_0000);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            let reducer = OptimizedMonty128Reducer::new(&cfg).unwrap();
-            let generic_reducer = OptimizedSumcheckReducer::new(&cfg).unwrap();
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+            let generic_reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
             for num_vars in 0..=13 {
                 let len = 1usize << num_vars;
                 let tau = random_fields(&mut rng, &cfg, num_vars);
@@ -3457,9 +3268,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x0a7e_4a71);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            let reducer = OptimizedMonty128Reducer::new(&cfg).unwrap();
-            let generic_reducer = OptimizedSumcheckReducer::new(&cfg).unwrap();
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+            let generic_reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
             for num_vars in 0..=13 {
                 let len = 1usize << num_vars;
                 let tau = random_fields(&mut rng, &cfg, num_vars);
@@ -3547,9 +3358,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x1aa3_11fe);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            let reducer = OptimizedMonty128Reducer::new(&cfg).unwrap();
-            let generic_reducer = OptimizedSumcheckReducer::new(&cfg).unwrap();
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+            let generic_reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
             for num_vars in 0..=14 {
                 let len = 1usize << num_vars;
                 for live in [
@@ -3571,7 +3382,7 @@ mod tests {
                             .iter()
                             .zip(witness)
                             .fold(Field::zero_with_cfg(&cfg), |sum, (m, w)| {
-                                sum + &(m.clone() * w)
+                                cfg.add(&(sum), &(&(cfg.mul(&(m.clone()), &(w)))))
                             })
                     };
 
@@ -3654,7 +3465,7 @@ mod tests {
                     for column in 0..columns {
                         if rng.random::<u8>() < 96 {
                             let mut value = random_field(rng, cfg);
-                            if <Field as PrimeField>::is_zero(&value) {
+                            if <Field as crate::piop::spartan::SpartanField>::is_zero(&value) {
                                 value = Field::one_with_cfg(cfg);
                             }
                             row.push((column, value));
@@ -3669,7 +3480,7 @@ mod tests {
     }
 
     fn assert_binding_matches<C>(
-        ctx: &RawMontyCtx,
+        ctx: &field::FpCtx<2>,
         rng: &mut StdRng,
         cfg: &FieldConfig,
         matrices: &PreparedConstraintMatrices<Field, C>,
@@ -3710,7 +3521,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0xb1_4d00);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
 
             for (rows, columns) in [(1, 1), (5, 9), (16, 16), (37, 70), (300, 129)] {
                 let prepared = PreparedConstraintMatrices::<Field, Field>::new(
@@ -3747,8 +3558,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x57ac_7ed0);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            let reducer = OptimizedMonty128Reducer::new(&cfg).unwrap();
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
             for &(block_log, blocks_log) in &[
                 (1usize, 0usize),
                 (1, 1),
@@ -3800,7 +3611,7 @@ mod tests {
                     for (block, scale) in scales.iter().enumerate() {
                         if let Some(scale) = scale {
                             for (row, weight) in weights[..rows].iter().enumerate() {
-                                dense[block * block_len + row] = ctx.mul(*scale, *weight);
+                                dense[block * block_len + row] = ctx.mul_raw(*scale, *weight);
                             }
                         }
                     }
@@ -3825,24 +3636,23 @@ mod tests {
                         rows,
                         scales: scales.clone(),
                     };
-                    let field_claim = dense
-                        .iter()
-                        .zip(&field)
-                        .fold(0 as Raw, |sum, (&d, &w)| ctx.add(sum, ctx.mul(d, w)));
+                    let field_claim = dense.iter().zip(&field).fold(0 as Raw, |sum, (&d, &w)| {
+                        ctx.add_raw(sum, ctx.mul_raw(d, w))
+                    });
                     let native_claim = dense.iter().zip(&native).fold(0 as Raw, |sum, (&d, &w)| {
-                        ctx.add(sum, ctx.mul(d, ctx.native_residue(w)))
+                        ctx.add_raw(sum, ctx.mul_raw(d, ctx.native_residue(w)))
                     });
 
                     for kind in 0..2 {
                         let (claim, dense_witness, structured_witness) = if kind == 0 {
                             (
-                                ctx.field(native_claim),
+                                crate::utils::delayed_reduction::element(&cfg, native_claim),
                                 RawWitness::native_owned(native.clone()),
                                 RawWitness::native_owned(native.clone()),
                             )
                         } else {
                             (
-                                ctx.field(field_claim),
+                                crate::utils::delayed_reduction::element(&cfg, field_claim),
                                 RawWitness::Field(field.clone()),
                                 RawWitness::Field(field.clone()),
                             )
@@ -3972,9 +3782,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0x5c1b_0000);
         for modulus in MODULI {
             let cfg = config(modulus);
-            let ctx = RawMontyCtx::new(&cfg);
-            let reducer = OptimizedMonty128Reducer::new(&cfg).unwrap();
-            let generic_reducer = OptimizedSumcheckReducer::new(&cfg).unwrap();
+            let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+            let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+            let generic_reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
             for num_vars in 1..=13 {
                 let len = 1usize << num_vars;
                 let az: Vec<u64> = (0..len).map(|_| u64::from(rng.random::<u32>())).collect();
@@ -4011,7 +3821,7 @@ mod tests {
                     .unwrap();
                     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau_tail);
                     let actual = compute_u32_native_skip_message_raw(
-                        skip_vars, &eq_low, &eq_high, products, &ctx, &reducer,
+                        &cfg, skip_vars, &eq_low, &eq_high, products, &ctx, &reducer,
                     )
                     .unwrap();
                     assert_eq!(actual, expected, "skip message K={skip_vars} n={num_vars}");

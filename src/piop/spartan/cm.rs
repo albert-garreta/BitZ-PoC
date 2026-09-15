@@ -29,7 +29,11 @@
 //! reconstructions, exactly as in the direct `u32_mul` bridge but over
 //! a 3-variable block selector.
 
-use crypto_primitives::{FromWithConfig, PrimeField};
+use crate::piop::spartan::SpartanField as _;
+use field::RingOps;
+#[cfg(test)]
+use field::{Fp, Uint};
+
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
@@ -54,12 +58,11 @@ use super::{
         ConstraintMatrices, PreparedConstraintMatrices, SparseMatrix, SpartanMatrixError,
         build_assignment_mle, build_product_mles,
     },
-    piop::SpartanReductionStrategy,
     profile::{IopInstanceFacts, IopSecurityParams, Lambda100},
     protocol::{
         self, BindingHasher, BlockTable, ClaimFrame, Domains, FieldConfig, Kernel, MatrixSource,
         Opener, PiopWitness, PreparedRelation, PreparedRelationPrefix, PrimeStrategy, Proof,
-        ProtocolError, ProveOptions, RelationSpec, RuntimePrime, ScaleSide, Schedule, SlotRange,
+        ProtocolError, RelationSpec, ScaleSide, Schedule, SlotRange,
     },
 };
 
@@ -122,7 +125,6 @@ impl From<CmAndError> for ProtocolError {
         Self::relation(error)
     }
 }
-
 
 /// Shared shape of the CM-AND assignment, the derived grid `h`, and the
 /// committed grid `f`.
@@ -429,9 +431,9 @@ impl RelationSpec for CmAndSpec {
 
         let one = SpartanF2zField::one_with_cfg(field_config);
         let mut minus_one = SpartanF2zField::zero_with_cfg(field_config);
-        minus_one -= &one;
+        minus_one = field_config.sub(&(minus_one), &(&one));
         let mut minus_two = minus_one.clone();
-        minus_two -= &one;
+        minus_two = field_config.sub(&(minus_two), &(&one));
 
         let empty = SparseMatrix::try_from_rows(columns, vec![Vec::new(); live])
             .map_err(SpartanMatrixError::from)
@@ -495,7 +497,10 @@ impl RelationSpec for CmAndSpec {
         Kernel::Plain
     }
 
-    fn check_witness(&self, witness: &ProjectedCmAndWitness<SpartanF2zField>) -> Result<(), ProtocolError> {
+    fn check_witness(
+        &self,
+        witness: &ProjectedCmAndWitness<SpartanF2zField>,
+    ) -> Result<(), ProtocolError> {
         if witness.layout() != &self.layout {
             return Err(ProtocolError::RelationWitnessLayoutMismatch);
         }
@@ -532,7 +537,7 @@ impl RelationSpec for CmAndSpec {
         &self,
         _transcript: &mut T,
         _security: &IopSecurityParams,
-    ) -> Result<RuntimePrime, ProtocolError> {
+    ) -> Result<field::FpCtx<2>, ProtocolError> {
         protocol::runtime_field(self.modulus())
     }
 
@@ -540,12 +545,10 @@ impl RelationSpec for CmAndSpec {
         &self,
         witness: &'w ProjectedCmAndWitness<SpartanF2zField>,
         _config: &FieldConfig,
-        _options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
         Ok(PiopWitness::Field {
             products: witness.spartan().products().clone(),
             assignment: witness.spartan().assignment().clone(),
-            strategy: SpartanReductionStrategy::Immediate,
         })
     }
 
@@ -554,7 +557,10 @@ impl RelationSpec for CmAndSpec {
     }
 
     /// The virtual opening runs against the derived grid `h = M·f`.
-    fn derived_rows(&self, witness: &ProjectedCmAndWitness<SpartanF2zField>) -> Option<Vec<Vec<u64>>> {
+    fn derived_rows(
+        &self,
+        witness: &ProjectedCmAndWitness<SpartanF2zField>,
+    ) -> Option<Vec<Vec<u64>>> {
         Some(witness.h_rows().to_vec())
     }
 
@@ -566,10 +572,10 @@ impl RelationSpec for CmAndSpec {
             .bytes(frame.matrices_digest);
         hasher.usize(frame.terminal_claim.point().len())?;
         for coordinate in frame.terminal_claim.point() {
-            hasher.element(coordinate);
+            hasher.element(coordinate, frame.field);
         }
-        hasher.element(frame.terminal_claim.scale());
-        hasher.element(frame.terminal_claim.value());
+        hasher.element(frame.terminal_claim.scale(), frame.field);
+        hasher.element(frame.terminal_claim.value(), frame.field);
         hasher.usize(frame.row_weights.len())?;
         for weight in frame.row_weights {
             hasher.u128_le(*weight);
@@ -578,7 +584,7 @@ impl RelationSpec for CmAndSpec {
         for weight in frame.col_weights {
             hasher.u128_le(*weight);
         }
-        hasher.u128_le(frame.opening.claimed.0);
+        hasher.u128_le(frame.opening.claimed);
         Ok(hasher.finalize())
     }
 }
@@ -650,7 +656,9 @@ impl PreparedCmAndRelation {
         })
     }
 
-    pub fn ligerito_configuration(&self) -> Result<&crate::ligerito_flock::ResolvedLigerito, CmF2zError> {
+    pub fn ligerito_configuration(
+        &self,
+    ) -> Result<&crate::ligerito_flock::ResolvedLigerito, CmF2zError> {
         Ok(self.production()?.ligerito_configuration())
     }
 
@@ -737,7 +745,7 @@ pub fn project_cm_and_witness<F>(
     field_config: &F::Config,
 ) -> Result<ProjectedCmAndWitness<F>, CmAndError>
 where
-    F: SpartanField + FromWithConfig<u64>,
+    F: SpartanField,
 {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
     let field_assignment: Vec<F> = witness
@@ -754,11 +762,20 @@ where
         .map(|i| {
             // x + y − 2z − w, in the field.
             let mut acc = field_assignment[witness.layout.capacity + i].clone();
-            acc += &field_assignment[2 * witness.layout.capacity + i];
+            acc = field_config.add(
+                &(acc),
+                &(&field_assignment[2 * witness.layout.capacity + i]),
+            );
             let mut two_z = field_assignment[3 * witness.layout.capacity + i].clone();
-            two_z += &field_assignment[3 * witness.layout.capacity + i];
-            acc -= &two_z;
-            acc -= &field_assignment[4 * witness.layout.capacity + i];
+            two_z = field_config.add(
+                &(two_z),
+                &(&field_assignment[3 * witness.layout.capacity + i]),
+            );
+            acc = field_config.sub(&(acc), &(&two_z));
+            acc = field_config.sub(
+                &(acc),
+                &(&field_assignment[4 * witness.layout.capacity + i]),
+            );
             acc
         })
         .collect();
@@ -872,16 +889,7 @@ pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
         prover: Some(pc.clone()),
         verifier: None,
     };
-    protocol::prove_virtual_with_opener(
-        transcript,
-        relation.prefix(),
-        &opener,
-        &witness,
-        hint_f,
-        ProveOptions {
-            strategy: SpartanReductionStrategy::Immediate,
-        },
-    )
+    protocol::prove_virtual_with_opener(transcript, relation.prefix(), &opener, &witness, hint_f)
 }
 
 /// Proves with the production (validator-gated) configuration.
@@ -891,15 +899,7 @@ pub fn prove_cm_and_f2z<T: Transcript + Send>(
     witness: ProjectedCmAndWitness<SpartanF2zField>,
     hint_f: &FlockCommitHint,
 ) -> Result<CmF2zProof, CmF2zError> {
-    protocol::prove_virtual(
-        transcript,
-        relation.production()?,
-        &witness,
-        hint_f,
-        ProveOptions {
-            strategy: SpartanReductionStrategy::Immediate,
-        },
-    )
+    protocol::prove_virtual(transcript, relation.production()?, &witness, hint_f)
 }
 
 /// Verifies both proof systems on one transcript, under an explicit
@@ -931,13 +931,13 @@ pub fn verify_cm_and_f2z<T: Transcript + Send>(
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 
     use super::*;
     use crate::{
-        ext_proj::ProjArith,
-        pcs::{FQ_MOD, Fq, eq_le_table_fq},
-        piop::spartan::{f2z::spartan_f2z_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify},
+        pcs::{FQ_MOD, Q100Element, eq_le_table_fq},
+        piop::spartan::{
+            f2z::spartan_f2z_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify,
+        },
     };
 
     #[test]
@@ -1061,20 +1061,22 @@ mod tests {
         assert_eq!(projected.spartan().products().cz.evaluations[1], zero);
     }
 
-
     #[test]
     fn relation_coefficients_follow_the_runtime_field_modulus() {
-        let config = F128::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+        let config = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
         let witness = CmAndWitness::from_inputs(&[(3, 5), (0xffff_0000, 0x00ff_00ff)]).unwrap();
         let relation = prepare_cm_and_relation(*witness.layout(), &config).unwrap();
-        let projected = project_cm_and_witness::<F128>(&witness, &config).unwrap();
+        let projected = project_cm_and_witness::<Fp<2>>(&witness, &config).unwrap();
 
-        let mut matrix_products = vec![F128::zero_with_cfg(&config); witness.layout().gates()];
+        let mut matrix_products = vec![Fp::<2>::zero_with_cfg(&config); witness.layout().gates()];
         for (column, entries) in relation.matrices().matrices().c().columns().enumerate() {
             for (row, coefficient) in entries {
                 let mut term = coefficient.clone();
-                term *= &projected.spartan().assignment().evaluations[column];
-                matrix_products[row] += &term;
+                term = config.mul(
+                    &(term),
+                    &(&projected.spartan().assignment().evaluations[column]),
+                );
+                matrix_products[row] = config.add(&(matrix_products[row]), &(&term));
             }
         }
 
@@ -1085,41 +1087,44 @@ mod tests {
         assert!(
             matrix_products
                 .iter()
-                .all(|value| <F128 as PrimeField>::is_zero(value))
+                .all(|value| <Fp<2> as crate::piop::spartan::SpartanField>::is_zero(value))
         );
     }
 
     #[test]
     fn bitification_is_the_adjoint_of_the_blocked_reconstruction() {
-        use crypto_primitives::FromWithConfig;
         let witness =
             CmAndWitness::from_inputs(&[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)]).unwrap();
         let layout = *witness.layout();
         let p = layout.f2z_params();
         let config = spartan_f2z_field_config();
-        let arith = ProjArith::new(FQ_MOD);
+        let arith = field::FpCtx::from_prime_u128(FQ_MOD);
         let spec = CmAndSpec {
             layout,
             map: cm_and_map(&layout).unwrap(),
             field_config: config.clone(),
         };
 
-        let gate_point: Vec<Fq> = (0..layout.gate_vars())
-            .map(|i| Fq((i + 2) as u128))
+        let gate_point: Vec<Q100Element> = (0..layout.gate_vars())
+            .map(|i| Q100Element::from_u128((i + 2) as u128))
             .collect();
-        let sel: [Fq; 3] = [Fq(7), Fq(11), Fq(29)];
-        let scale = Fq(13);
+        let sel: [Q100Element; 3] = [
+            Q100Element::from_u128(7),
+            Q100Element::from_u128(11),
+            Q100Element::from_u128(29),
+        ];
+        let scale = Q100Element::from_u128(13);
         let eq_sel = eq_le_table_fq(&sel);
         let eq_gate = eq_le_table_fq(&gate_point);
 
         // Z(point) directly from the five logical blocks.
-        let mut z_eval = Fq(0);
+        let mut z_eval = Q100Element::from_u128(0);
         for block in 0..ASSIGNMENT_BLOCKS {
             for gate in 0..layout.capacity() {
                 z_eval = z_eval
                     + eq_sel[block]
                         * eq_gate[gate]
-                        * Fq::from(u128::from(
+                        * Q100Element::from(u128::from(
                             witness.assignment()[block * layout.capacity() + gate],
                         ));
             }
@@ -1130,30 +1135,39 @@ mod tests {
         point.extend(sel);
         let point_f: Vec<SpartanF2zField> = point
             .iter()
-            .map(|c| SpartanF2zField::from_with_cfg(c.0, &config))
+            .map(|c| SpartanF2zField::from_with_cfg(c.canonical_u128(), &config))
             .collect();
         let claim = ScaledMleEvaluationClaim::new(
             point_f.into_boxed_slice(),
-            SpartanF2zField::from_with_cfg(scale.0, &config),
-            SpartanF2zField::from_with_cfg(value.0, &config),
+            SpartanF2zField::from_with_cfg(scale.canonical_u128(), &config),
+            SpartanF2zField::from_with_cfg(value.canonical_u128(), &config),
         );
         let table = spec.block_table();
-        let opening =
-            bitify::bitify(&claim, p, layout.gate_vars(), &table, ScaleSide::Columns, &arith).unwrap();
+        let opening = bitify::bitify(
+            &claim,
+            p,
+            layout.gate_vars(),
+            &table,
+            ScaleSide::Columns,
+            &arith,
+        )
+        .unwrap();
         let row_weights = bitify::dense_row_weights(&opening, &table, &arith).unwrap();
         let col_weights = bitify::column_weights(&opening, &arith).unwrap();
 
         // Read the DERIVED grid h = M·f through the opening weights.
         let h_rows = witness.h_bit_rows();
-        let mut read_off = Fq(0);
+        let mut read_off = Q100Element::from_u128(0);
         for b in 0..p.rows() {
             for c in 0..p.cols() {
                 let bit = (h_rows[c][b / 64] >> (b % 64)) & 1;
-                read_off =
-                    read_off + Fq::from(u128::from(bit)) * Fq(row_weights[b]) * col_weights[c];
+                read_off = read_off
+                    + Q100Element::from(u128::from(bit))
+                        * Q100Element::from_u128(row_weights[b])
+                        * Q100Element::from_u128(col_weights[c]);
             }
         }
-        assert_eq!(read_off, opening.claimed);
+        assert_eq!(read_off.canonical_u128(), opening.claimed);
     }
 
     #[test]

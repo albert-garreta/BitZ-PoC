@@ -1,5 +1,5 @@
-use crate::field::gf2_128::x86_64::{WideGhashX4, f128x4_loadu};
-use crate::field::{F128, F256Unreduced};
+use crate::field::gf128_kernels::x86_64::{WideGhashX4, f128x4_loadu};
+use crate::field::{Gf128, Gf128Product};
 
 /// Fold the four rows for one round-2 pair in parallel x86 SIMD registers.
 /// Returns `[a0, a1, b0, b1]`.
@@ -10,25 +10,28 @@ use crate::field::{F128, F256Unreduced};
 /// into the AVX-512 GHASH message kernel.
 ///
 /// # Safety
-/// `table_data` must point to an 8 × 256 `F128` table and every row pointer
+/// `table_data` must point to an 8 × 256 `Gf128` table and every row pointer
 /// must expose 8 readable bytes.
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 ))]
 #[inline(always)]
 pub(crate) unsafe fn fold_round2_pair_x86_unchecked_8(
-    table_data: *const F128,
+    table_data: *const Gf128,
     a0_bytes: *const u8,
     a1_bytes: *const u8,
     b0_bytes: *const u8,
     b1_bytes: *const u8,
-) -> [F128; 4] {
+) -> [Gf128; 4] {
     use core::arch::x86_64::*;
 
     // SAFETY: the caller guarantees all table and row bounds. Every table
-    // entry is 16-byte aligned because F128 has align(16).
+    // entry is 16-byte aligned because Gf128 has align(16).
     unsafe {
         let rows = [a0_bytes, a1_bytes, b0_bytes, b1_bytes];
         let mut acc = [_mm_setzero_si128(); 4];
@@ -39,8 +42,8 @@ pub(crate) unsafe fn fold_round2_pair_x86_unchecked_8(
                 acc[lane] = _mm_xor_si128(acc[lane], _mm_load_si128(entry.cast::<__m128i>()));
             }
         }
-        // F128 is exactly two u64 words and accepts every bit pattern.
-        acc.map(|value| core::mem::transmute::<__m128i, F128>(value))
+        // Gf128 is exactly two u64 words and accepts every bit pattern.
+        acc.map(|value| core::mem::transmute::<__m128i, Gf128>(value))
     }
 }
 
@@ -57,17 +60,20 @@ pub(crate) unsafe fn fold_round2_pair_x86_unchecked_8(
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 ))]
 pub(crate) unsafe fn fold_and_message_x86_avx512(
-    a_in: &[F128],
-    b_in: &[F128],
-    a_out: &mut [F128],
-    b_out: &mut [F128],
-    r_fold: F128,
-    eq_lo: &[F128],
-) -> (F128, F128) {
-    use crate::field::gf2_128::x86_64::ghash_mul_x4;
+    a_in: &[Gf128],
+    b_in: &[Gf128],
+    a_out: &mut [Gf128],
+    b_out: &mut [Gf128],
+    r_fold: Gf128,
+    eq_lo: &[Gf128],
+) -> (Gf128, Gf128) {
+    use crate::field::gf128_kernels::x86_64::ghash_mul_x4;
     use core::arch::x86_64::*;
 
     debug_assert_eq!(a_in.len(), 2 * a_out.len());
@@ -77,15 +83,15 @@ pub(crate) unsafe fn fold_and_message_x86_avx512(
     // Fold four adjacent output elements and return them in one ZMM.
     #[inline(always)]
     unsafe fn fold_x4(
-        src: *const F128,
+        src: *const Gf128,
         r: __m512i,
         even_idx: __m512i,
         odd_idx: __m512i,
     ) -> __m512i {
-        use crate::field::gf2_128::x86_64::ghash_mul_x4;
+        use crate::field::gf128_kernels::x86_64::ghash_mul_x4;
         use core::arch::x86_64::*;
 
-        // SAFETY: caller supplies eight readable F128 values at src.
+        // SAFETY: caller supplies eight readable Gf128 values at src.
         unsafe {
             let lo = _mm512_loadu_si512(src.cast::<__m512i>());
             let hi = _mm512_loadu_si512(src.add(4).cast::<__m512i>());
@@ -99,14 +105,14 @@ pub(crate) unsafe fn fold_and_message_x86_avx512(
     // cfg gate supplies every intrinsic feature.
     unsafe {
         let r = _mm512_broadcast_i32x4(_mm_set_epi64x(r_fold.hi as i64, r_fold.lo as i64));
-        // Select even/odd F128 lanes from two concatenated ZMM inputs. The same
+        // Select even/odd Gf128 lanes from two concatenated ZMM inputs. The same
         // selectors deinterleave fold inputs and gather message a0/a1 lanes.
         let even_idx = _mm512_set_epi64(13, 12, 9, 8, 5, 4, 1, 0);
         let odd_idx = _mm512_set_epi64(15, 14, 11, 10, 7, 6, 3, 2);
         let mut p1_wide = WideGhashX4::zero();
         let mut pinf_wide = WideGhashX4::zero();
-        let mut p1_tail = F256Unreduced::ZERO;
-        let mut pinf_tail = F256Unreduced::ZERO;
+        let mut p1_tail = Gf128Product::zero();
+        let mut pinf_tail = Gf128Product::zero();
         let mut x_lo = 0;
 
         while x_lo + 4 <= eq_lo.len() {

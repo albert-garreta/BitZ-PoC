@@ -6,10 +6,9 @@
 //! witness. In particular, no field table of the original bit domain exists.
 use super::{BinaryClaim, Error, Gf, opening::Geometry};
 use crate::ligerito::transpose_8x8_bits;
-use crate::ligerito_flock::{f128_to_gf, gf_to_f128};
-use crate::utils::{cfg_chunks_mut, cfg_into_iter};
 use crate::transcript::{Blake3Transcript, traits::Transcript};
-use flock_core::field::F128 as F;
+use crate::utils::{cfg_chunks_mut, cfg_into_iter};
+use flock_core::field::Gf128 as F;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -32,7 +31,10 @@ pub(crate) fn eq_table(point: &[F]) -> Vec<F> {
         };
         #[cfg(feature = "parallel")]
         if n >= 1 << 12 {
-            lo.par_iter_mut().zip(hi.par_iter_mut()).with_min_len(1 << 10).for_each(step);
+            lo.par_iter_mut()
+                .zip(hi.par_iter_mut())
+                .with_min_len(1 << 10)
+                .for_each(step);
             continue;
         }
         lo.iter_mut().zip(hi.iter_mut()).for_each(step);
@@ -70,7 +72,7 @@ fn observe(t: &mut Blake3Transcript, values: &[F]) {
 }
 
 fn sample(t: &mut Blake3Transcript) -> F {
-    gf_to_f128(t.get_field_challenge::<Gf>(&()))
+    (t.get_field_challenge::<Gf>(&()))
 }
 
 fn evaluate_round([u0, u2]: [F; 2], sum: F, r: F) -> F {
@@ -470,7 +472,7 @@ pub(super) fn prove(
             rounds,
             value: terminal,
         },
-        point.into_iter().map(f128_to_gf).collect(),
+        point.into_iter().collect(),
     )
 }
 
@@ -502,7 +504,7 @@ pub(super) fn verify(
         return Err(Error::Invalid("joint sumcheck terminal claim"));
     }
     observe(t, &[proof.value]);
-    Ok(point.into_iter().map(f128_to_gf).collect())
+    Ok(point.into_iter().collect())
 }
 
 #[cfg(test)]
@@ -589,7 +591,7 @@ mod tests {
                 observe(&mut reference_t, &message);
                 let r = sample(&mut reference_t);
                 rounds.push(message);
-                reference_point.push(f128_to_gf(r));
+                reference_point.push((r));
                 fold(&mut v, r);
                 fold(&mut w, r);
             }

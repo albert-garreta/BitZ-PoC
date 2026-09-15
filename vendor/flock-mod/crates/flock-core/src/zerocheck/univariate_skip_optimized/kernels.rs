@@ -1,4 +1,4 @@
-use super::{F8, InvNttTableByteSingleGf8};
+use super::{Gf8, InvNttTableByteSingleGf8};
 
 mod portable;
 
@@ -58,8 +58,8 @@ pub(super) fn shift_reduce_inner_ab(
     chunk_byte_base: usize,
     b_med: usize,
     out: &mut [u8; 64],
-    a_col: &mut [F8],
-    b_col: &mut [F8],
+    a_col: &mut [Gf8],
+    b_col: &mut [Gf8],
 ) {
     #[cfg(target_arch = "aarch64")]
     {
@@ -136,10 +136,10 @@ pub(super) fn accumulate_convert(
     chunk_ab_bytes: &[[u8; 64]; 16],
     chunk_c_bytes: &[[u8; 64]; 16],
     n_b_med: usize,
-    convert: &[super::F128],
-    eq_lo_val: super::F128,
-    partial_ab: &mut [super::F128; 64],
-    partial_c: &mut [super::F128; 64],
+    convert: &[super::Gf128],
+    eq_lo_val: super::Gf128,
+    partial_ab: &mut [super::Gf128; 64],
+    partial_c: &mut [super::Gf128; 64],
 ) {
     #[cfg(target_arch = "aarch64")]
     // SAFETY: aarch64 statically guarantees NEON and the fixed arrays cover
@@ -174,11 +174,11 @@ pub(super) fn accumulate_convert_with_s_hat_v(
     chunk_ab_bytes: &[[u8; 64]; 16],
     chunk_c_bytes: &[[u8; 64]; 16],
     n_b_med: usize,
-    convert: &[super::F128],
-    eq_lo_val: super::F128,
-    partial_ab: &mut [super::F128; 64],
-    partial_c_0: &mut [super::F128; 64],
-    partial_c_1: &mut [super::F128; 64],
+    convert: &[super::Gf128],
+    eq_lo_val: super::Gf128,
+    partial_ab: &mut [super::Gf128; 64],
+    partial_c_0: &mut [super::Gf128; 64],
+    partial_c_1: &mut [super::Gf128; 64],
 ) {
     #[cfg(target_arch = "aarch64")]
     // SAFETY: aarch64 statically guarantees NEON and the fixed arrays cover
@@ -199,6 +199,9 @@ pub(super) fn accumulate_convert_with_s_hat_v(
     #[cfg(all(
         target_arch = "x86_64",
         target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
         target_feature = "vpclmulqdq"
     ))]
     // SAFETY: the cfg gate guarantees the SIMD features and the fixed arrays
@@ -221,6 +224,9 @@ pub(super) fn accumulate_convert_with_s_hat_v(
         all(
             target_arch = "x86_64",
             target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
             target_feature = "vpclmulqdq"
         )
     )))]

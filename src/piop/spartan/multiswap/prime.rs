@@ -45,25 +45,18 @@
 //! at a total grinding cost of `2^10` hashes instead of the earlier
 //! single-prime profile's `2^21 + 2^18`.
 
+#[cfg(test)]
 use crypto_primes::{Flavor, is_prime};
-use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
 use thiserror::Error;
 
 use crate::{
     ext_proj::{PrimeSamplingError, sample_prime_in_interval},
-    piop::spartan::{SpartanField, absorb_spartan_message},
-    poly::univariate::binary_gf128::BinaryFieldGF128,
+    piop::spartan::absorb_spartan_message,
     transcript::traits::Transcript,
 };
 
-use super::super::SpartanF2zField;
-
 pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/fingerprint-prime/v2";
 pub(crate) const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/reduction-prime/v2";
-
-/// Draw attempts before concluding the transcript is adversarial: a random
-/// 128-bit odd integer is prime with probability about `2/(127 ln 2)`.
-const FINGERPRINT_SAMPLING_ATTEMPTS: usize = 64 * 128;
 
 use crate::piop::spartan::profile::{IopInstanceFacts, IopSecurityParams};
 
@@ -173,74 +166,12 @@ impl MultiswapPrimeProfile {
     }
 }
 
-/// Runtime arithmetic context of the sampled fingerprint prime `Q`.
-pub struct MultiswapFingerprintContext {
-    profile: MultiswapPrimeProfile,
-    q: u128,
-    field_config: <SpartanF2zField as PrimeField>::Config,
-}
-
-impl core::fmt::Debug for MultiswapFingerprintContext {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("MultiswapFingerprintContext")
-            .field("profile", &self.profile)
-            .field("q", &self.q)
-            .finish_non_exhaustive()
-    }
-}
-
-impl MultiswapFingerprintContext {
-    fn new(profile: MultiswapPrimeProfile, q: u128) -> Result<Self, MultiswapPrimeError> {
-        if !profile.accepts_fingerprint_prime(q) {
-            return Err(MultiswapPrimeError::PrimeOutsideProfile { q });
-        }
-        let field_config = F128::make_cfg(&Uint::from(q))
-            .map_err(|_| MultiswapPrimeError::InvalidFieldConfiguration)?;
-        F128::validate_config(&field_config)
-            .map_err(|_| MultiswapPrimeError::InvalidFieldConfiguration)?;
-        Ok(Self {
-            profile,
-            q,
-            field_config,
-        })
-    }
-
-    /// Public profile used to sample this modulus.
-    pub const fn profile(&self) -> MultiswapPrimeProfile {
-        self.profile
-    }
-
-    /// Sampled fingerprint prime in canonical integer form.
-    pub const fn q(&self) -> u128 {
-        self.q
-    }
-
-    /// Bit length of `Q` (always 128 in this profile).
-    pub const fn q_bits(&self) -> usize {
-        128
-    }
-
-    /// Runtime Montgomery configuration of the 128-bit-backed prime field.
-    pub const fn field_config(&self) -> &<SpartanF2zField as PrimeField>::Config {
-        &self.field_config
-    }
-}
-
-/// Samples the fingerprint prime `Q` from `[2^127, 2^128)` and binds its
-/// canonical encoding before any field-valued challenge is drawn.
-///
-/// The interval exceeds the general sampler's `2^126` operating cap, so
-/// this dedicated sampler draws exactly uniform odd candidates (the
-/// `2^126` odd residues divide the `u128` draw space evenly, so masking a
-/// uniform draw is exact) and tests them with the same deterministic
-/// BPSW-style `crypto_primes` check that guards every runtime Spartan
-/// field configuration.  Rejected draws advance the transcript for prover
-/// and verifier identically.
+/// Samples and binds the fingerprint modulus using the shared bounded policy.
+/// Internal reads advance the transcript without adding grinding boundaries.
 pub fn sample_multiswap_fingerprint_context(
     transcript: &mut impl Transcript,
     profile: MultiswapPrimeProfile,
-) -> Result<MultiswapFingerprintContext, MultiswapPrimeError> {
+) -> Result<field::FpCtx<2>, MultiswapPrimeError> {
     absorb_spartan_message(transcript, b"prime-domain", FINGERPRINT_SAMPLING_DOMAIN);
     absorb_spartan_message(
         transcript,
@@ -253,20 +184,15 @@ pub fn sample_multiswap_fingerprint_context(
         &profile.fingerprint_max.to_le_bytes(),
     );
 
-    let mut q = None;
-    for _ in 0..FINGERPRINT_SAMPLING_ATTEMPTS {
-        let draw = transcript_u128(transcript) & ((1u128 << 126) - 1);
-        let candidate = (1u128 << 127) | (draw << 1) | 1;
-        if is_prime(Flavor::Any, &crypto_bigint::U128::from(candidate)) {
-            q = Some(candidate);
-            break;
-        }
-    }
-    let q = q.ok_or(MultiswapPrimeError::FingerprintSearchExhausted {
-        attempts: FINGERPRINT_SAMPLING_ATTEMPTS,
-    })?;
+    let field = crate::ext_proj::sample_prime_context(
+        transcript,
+        profile.fingerprint_min,
+        profile.fingerprint_max,
+        128,
+    )?;
+    let q = u128::from(*field.modulus());
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
-    MultiswapFingerprintContext::new(profile, q)
+    Ok(field)
 }
 
 /// Samples the Step 5.0 reduction prime `q'` from `[2^112, 2^113)` and
@@ -298,12 +224,6 @@ pub fn sample_multiswap_reduction_prime(
     let q_bits = (u128::BITS - q_prime.leading_zeros()) as usize;
     debug_assert_eq!(q_bits, 113);
     Ok((q_prime, q_bits))
-}
-
-fn transcript_u128(transcript: &mut impl Transcript) -> u128 {
-    let draw: BinaryFieldGF128 = transcript.get_field_challenge(&());
-    let words = draw.words();
-    u128::from(words[0]) | (u128::from(words[1]) << 64)
 }
 
 /// Errors in deriving the MultiSwap runtime-prime contexts.
@@ -351,11 +271,14 @@ mod tests {
         let mut second = Blake3Transcript::new();
         let first = sample_multiswap_fingerprint_context(&mut first, profile).unwrap();
         let second = sample_multiswap_fingerprint_context(&mut second, profile).unwrap();
-        assert_eq!(first.q(), second.q());
-        assert!(first.q() >= 1u128 << 127);
-        assert_eq!(first.q_bits(), 128);
-        assert!(profile.accepts_fingerprint_prime(first.q()));
-        assert!(is_prime(Flavor::Any, &crypto_bigint::U128::from(first.q())));
+        assert_eq!(first.modulus_u128(), second.modulus_u128());
+        assert!(first.modulus_u128() >= 1u128 << 127);
+        assert_eq!(first.modulus_bits(), 128);
+        assert!(profile.accepts_fingerprint_prime(first.modulus_u128()));
+        assert!(is_prime(
+            Flavor::Any,
+            &crypto_bigint::U128::from(first.modulus_u128())
+        ));
     }
 
     #[test]
@@ -376,6 +299,6 @@ mod tests {
         let mut transcript = Blake3Transcript::new();
         let fingerprint = sample_multiswap_fingerprint_context(&mut transcript, profile).unwrap();
         let (reduction, _) = sample_multiswap_reduction_prime(&mut transcript, profile).unwrap();
-        assert!(fingerprint.q() > reduction);
+        assert!(fingerprint.modulus_u128() > reduction);
     }
 }

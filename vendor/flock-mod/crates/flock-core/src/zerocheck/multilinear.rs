@@ -36,10 +36,13 @@
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 ))]
-use crate::field::gf2_128::x86_64::{WideGhashX4, f128x4_loadu, f128x4_set, ghash_mul_x4};
-use crate::field::{F128, F256Unreduced, PHI_8_TABLE};
+use crate::field::gf128_kernels::x86_64::{WideGhashX4, f128x4_loadu, f128x4_set, ghash_mul_x4};
+use crate::field::{Gf128, Gf128Product, AES_EMBEDDING_TABLE};
 use crate::zerocheck::PaddingSpec;
 use crate::zerocheck::univariate_skip::{SplitEqGhash, build_eq, pack_bits};
 
@@ -50,6 +53,9 @@ use kernels::aarch64::fold_one_row_neon_unchecked_8;
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 ))]
 use kernels::x86_64::{fold_and_message_x86_avx512, fold_round2_pair_x86_unchecked_8};
@@ -89,23 +95,23 @@ fn round2_pair_skip(padding: &PaddingSpec, k_skip: usize) -> (usize, usize) {
 /// F_{2^128} via `φ_8`. Subtraction is XOR in characteristic 2.
 ///
 /// O(2^{2·k_skip}) field multiplies — one-time cost.
-pub fn lagrange_weights_naive(k_skip: usize, z: F128) -> Vec<F128> {
+pub fn lagrange_weights_naive(k_skip: usize, z: Gf128) -> Vec<Gf128> {
     let ell = 1usize << k_skip;
-    assert!(ell <= 256, "k_skip > 8 would exceed PHI_8_TABLE");
-    let mut weights = vec![F128::ZERO; ell];
+    assert!(ell <= 256, "k_skip > 8 would exceed AES_EMBEDDING_TABLE");
+    let mut weights = vec![Gf128::ZERO; ell];
     for i in 0..ell {
-        let si = PHI_8_TABLE[i];
-        let mut num = F128::ONE;
-        let mut den = F128::ONE;
+        let si = AES_EMBEDDING_TABLE[i];
+        let mut num = Gf128::ONE;
+        let mut den = Gf128::ONE;
         for j in 0..ell {
             if j == i {
                 continue;
             }
-            let sj = PHI_8_TABLE[j];
+            let sj = AES_EMBEDDING_TABLE[j];
             num *= z + sj;
             den *= si + sj;
         }
-        weights[i] = num * den.inv();
+        weights[i] = num * den.inverse_or_zero();
     }
     weights
 }
@@ -116,23 +122,23 @@ pub fn lagrange_weights_naive(k_skip: usize, z: F128) -> Vec<F128> {
 ///
 /// Used to interpolate the extract_c round-1 output `round1_c` (which carries
 /// the polynomial `P^C` as its 2^k_skip evaluations on Λ) at the URM challenge `z`.
-pub fn lagrange_weights_lambda_naive(k_skip: usize, z: F128) -> Vec<F128> {
+pub fn lagrange_weights_lambda_naive(k_skip: usize, z: Gf128) -> Vec<Gf128> {
     let ell = 1usize << k_skip;
     assert!(2 * ell <= 256, "Λ ∪ S must fit in F_8 (need k_skip ≤ 7)");
-    let mut weights = vec![F128::ZERO; ell];
+    let mut weights = vec![Gf128::ZERO; ell];
     for i in 0..ell {
-        let si = PHI_8_TABLE[ell + i];
-        let mut num = F128::ONE;
-        let mut den = F128::ONE;
+        let si = AES_EMBEDDING_TABLE[ell + i];
+        let mut num = Gf128::ONE;
+        let mut den = Gf128::ONE;
         for j in 0..ell {
             if j == i {
                 continue;
             }
-            let sj = PHI_8_TABLE[ell + j];
+            let sj = AES_EMBEDDING_TABLE[ell + j];
             num *= z + sj;
             den *= si + sj;
         }
-        weights[i] = num * den.inv();
+        weights[i] = num * den.inverse_or_zero();
     }
     weights
 }
@@ -143,11 +149,11 @@ pub fn lagrange_weights_lambda_naive(k_skip: usize, z: F128) -> Vec<F128> {
 /// In the extract_c protocol the prover ships `round1_c` (the `P^C` polynomial
 /// in Λ-form) and the verifier (or higher-level prover) needs `P^C(z) = ĉ(z, r_rest)`.
 /// That value is *the c-claim* at the bound point `(z, r_rest)`.
-pub fn interpolate_at_z_on_lambda(values: &[F128], k_skip: usize, z: F128) -> F128 {
+pub fn interpolate_at_z_on_lambda(values: &[Gf128], k_skip: usize, z: Gf128) -> Gf128 {
     let ell = 1usize << k_skip;
     assert_eq!(values.len(), ell);
     let weights = lagrange_weights_lambda_naive(k_skip, z);
-    let mut acc = F128::ZERO;
+    let mut acc = Gf128::ZERO;
     for i in 0..ell {
         acc += weights[i] * values[i];
     }
@@ -163,30 +169,30 @@ pub fn interpolate_at_z_on_lambda(values: &[F128], k_skip: usize, z: F128) -> F1
 /// evaluations on Λ that the prover sends, that's `2·2^k_skip` evaluations —
 /// enough to interpolate the degree-`< 2·2^k_skip` polynomial uniquely.
 ///
-/// Cost: `2·ell × (2·ell − 1)` F128 muls + `ell` inversions for the Lagrange
+/// Cost: `2·ell × (2·ell − 1)` Gf128 muls + `ell` inversions for the Lagrange
 /// weights. At ell=64 that's ~16K muls + 64 inversions. Sub-millisecond
 /// one-time cost in the verifier.
-pub fn interpolate_at_z_combined(values_on_lambda: &[F128], k_skip: usize, z: F128) -> F128 {
+pub fn interpolate_at_z_combined(values_on_lambda: &[Gf128], k_skip: usize, z: Gf128) -> Gf128 {
     let ell = 1usize << k_skip;
     assert_eq!(values_on_lambda.len(), ell);
     assert!(2 * ell <= 256, "Λ ∪ S must fit in F_8 (need k_skip ≤ 7)");
     let n_total = 2 * ell;
-    let mut acc = F128::ZERO;
+    let mut acc = Gf128::ZERO;
     for i in 0..ell {
-        // i-th Λ node = node index `ell + i` in PHI_8_TABLE.
+        // i-th Λ node = node index `ell + i` in AES_EMBEDDING_TABLE.
         let node_idx = ell + i;
-        let si = PHI_8_TABLE[node_idx];
-        let mut num = F128::ONE;
-        let mut den = F128::ONE;
+        let si = AES_EMBEDDING_TABLE[node_idx];
+        let mut num = Gf128::ONE;
+        let mut den = Gf128::ONE;
         for j in 0..n_total {
             if j == node_idx {
                 continue;
             }
-            let sj = PHI_8_TABLE[j];
+            let sj = AES_EMBEDDING_TABLE[j];
             num *= z + sj;
             den *= si + sj;
         }
-        let weight = num * den.inv();
+        let weight = num * den.inverse_or_zero();
         acc += weight * values_on_lambda[i];
     }
     acc
@@ -194,26 +200,26 @@ pub fn interpolate_at_z_combined(values_on_lambda: &[F128], k_skip: usize, z: F1
 
 /// Evaluate the multilinear eq polynomial at a point: `eq(r, x) = Π_i (1 + r_i + x_i)`
 /// for `r, x ∈ F_{2^128}^n` (char-2 simplification of `(1-r)(1-x) + r·x`).
-pub fn eq_eval(r: &[F128], x: &[F128]) -> F128 {
+pub fn eq_eval(r: &[Gf128], x: &[Gf128]) -> Gf128 {
     assert_eq!(r.len(), x.len());
-    let mut acc = F128::ONE;
+    let mut acc = Gf128::ONE;
     for i in 0..r.len() {
-        acc *= F128::ONE + r[i] + x[i];
+        acc *= Gf128::ONE + r[i] + x[i];
     }
     acc
 }
 
 /// Specialized variant of [`eq_eval`] for the case where `x` is binary,
 /// encoded as a bitmask. Each factor reduces to `r_i` (bit=1) or `1 + r_i`
-/// (bit=0), saving one F128 add per coord.
-pub fn eq_eval_binary_x(r: &[F128], x_bits: u32) -> F128 {
+/// (bit=0), saving one Gf128 add per coord.
+pub fn eq_eval_binary_x(r: &[Gf128], x_bits: u32) -> Gf128 {
     debug_assert!(r.len() <= 32, "x_bits is u32; r > 32 dims not supported");
-    let mut acc = F128::ONE;
+    let mut acc = Gf128::ONE;
     for (i, &r_i) in r.iter().enumerate() {
         let factor = if (x_bits >> i) & 1 == 1 {
             r_i
         } else {
-            F128::ONE + r_i
+            Gf128::ONE + r_i
         };
         acc *= factor;
     }
@@ -232,17 +238,17 @@ pub fn eq_eval_binary_x(r: &[F128], x_bits: u32) -> F128 {
 ///
 /// `a(s, x_rest)` is the witness bit at index `x_rest * 2^k_skip + s` (low
 /// bits = skip variable, high bits = rest variables).
-pub fn fold_at_z_naive(witness: &[bool], m: usize, k_skip: usize, weights: &[F128]) -> Vec<F128> {
+pub fn fold_at_z_naive(witness: &[bool], m: usize, k_skip: usize, weights: &[Gf128]) -> Vec<Gf128> {
     assert!(k_skip <= m);
     let ell = 1usize << k_skip;
     let n_rest = 1usize << (m - k_skip);
     assert_eq!(witness.len(), 1usize << m);
     assert_eq!(weights.len(), ell);
 
-    let mut folded = vec![F128::ZERO; n_rest];
+    let mut folded = vec![Gf128::ZERO; n_rest];
     for x_rest in 0..n_rest {
         let base = x_rest * ell;
-        let mut acc = F128::ZERO;
+        let mut acc = Gf128::ZERO;
         for s in 0..ell {
             if witness[base + s] {
                 acc += weights[s];
@@ -261,7 +267,7 @@ pub fn fold_at_z_naive(witness: &[bool], m: usize, k_skip: usize, weights: &[F12
 /// multilinear sumcheck.
 ///
 /// Inputs:
-/// - `a_mlv`, `b_mlv`: F128 vectors of length `2^n` for some `n ≥ 1`.
+/// - `a_mlv`, `b_mlv`: Gf128 vectors of length `2^n` for some `n ≥ 1`.
 /// - `r`: full eq challenges, length `n`. `r[0]` is the challenge for the
 ///   variable being bound *this* round; `r[1..]` is for the remaining `n − 1`
 ///   variables.
@@ -273,7 +279,7 @@ pub fn fold_at_z_naive(witness: &[bool], m: usize, k_skip: usize, weights: &[F12
 /// The `r[0]` prefactor matches the C++ `sumcheck_round_pair` convention: the
 /// quantity sent on the wire is `Π(1) = eq(r[0], 1) · G(1) = r[0] · G(1)`,
 /// where `Π(X) = eq(r[0], X) · G(X)` is the actual round polynomial.
-pub fn round_pair_naive(a_mlv: &[F128], b_mlv: &[F128], r: &[F128]) -> (F128, F128) {
+pub fn round_pair_naive(a_mlv: &[Gf128], b_mlv: &[Gf128], r: &[Gf128]) -> (Gf128, Gf128) {
     let n = a_mlv.len();
     assert_eq!(b_mlv.len(), n);
     assert!(n.is_power_of_two() && n >= 2);
@@ -284,8 +290,8 @@ pub fn round_pair_naive(a_mlv: &[F128], b_mlv: &[F128], r: &[F128]) -> (F128, F1
     let eq_remaining = build_eq(&r[1..]);
     assert_eq!(eq_remaining.len(), half);
 
-    let mut g_one = F128::ZERO;
-    let mut g_inf = F128::ZERO;
+    let mut g_one = Gf128::ZERO;
+    let mut g_inf = Gf128::ZERO;
     for x_prime in 0..half {
         let a0 = a_mlv[2 * x_prime];
         let a1 = a_mlv[2 * x_prime + 1];
@@ -321,9 +327,9 @@ pub fn uni_skip_fold_and_round_pair_naive(
     b: &[bool],
     m: usize,
     k_skip: usize,
-    z: F128,
-    mlv_challenges: &[F128],
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+    z: Gf128,
+    mlv_challenges: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     assert_eq!(a.len(), 1usize << m);
     assert_eq!(b.len(), 1usize << m);
     assert!(
@@ -345,7 +351,7 @@ pub fn uni_skip_fold_and_round_pair_naive(
 
 /// Precomputed fold table for the univariate-skip fold at a fixed `z`.
 ///
-/// Storage: `n_chunks × 256` F128 entries (32 KB at `k_skip=6`). For each
+/// Storage: `n_chunks × 256` Gf128 entries (32 KB at `k_skip=6`). For each
 /// byte-chunk `j ∈ 0..n_chunks` and byte value `v ∈ 0..256`:
 ///
 ///   `data[j * 256 + v] = Σ_{b : bit b of v set} weights[8j + b]`
@@ -358,17 +364,17 @@ pub fn uni_skip_fold_and_round_pair_naive(
 #[derive(Clone, Debug)]
 pub struct UniSkipFoldTable {
     pub n_chunks: usize,
-    pub data: Vec<F128>,
+    pub data: Vec<Gf128>,
 }
 
 impl UniSkipFoldTable {
-    pub fn new(k_skip: usize, z: F128) -> Self {
+    pub fn new(k_skip: usize, z: Gf128) -> Self {
         let ell = 1usize << k_skip;
         assert_eq!(ell % 8, 0, "k_skip must be ≥ 3 (need ell divisible by 8)");
         let n_chunks = ell / 8;
         let weights = lagrange_weights_naive(k_skip, z);
 
-        let mut data = vec![F128::ZERO; n_chunks * 256];
+        let mut data = vec![Gf128::ZERO; n_chunks * 256];
         for j in 0..n_chunks {
             let basis = &weights[8 * j..8 * j + 8];
             // v = 0: zero (already initialized).
@@ -391,9 +397,9 @@ impl UniSkipFoldTable {
     /// Scalar one-row fold: `Σ_j table[j][bytes[j]]`. Ports the NEON
     /// `uni_skip_fold_one_output_ghash` in scalar form.
     #[inline]
-    pub fn fold_one_row(&self, bytes: &[u8]) -> F128 {
+    pub fn fold_one_row(&self, bytes: &[u8]) -> Gf128 {
         assert_eq!(bytes.len(), self.n_chunks);
-        let mut acc = F128::ZERO;
+        let mut acc = Gf128::ZERO;
         for j in 0..self.n_chunks {
             acc += self.data[j * 256 + bytes[j] as usize];
         }
@@ -406,7 +412,7 @@ impl UniSkipFoldTable {
 /// by default** via rayon — the outer x_hi loop is distributed across workers,
 /// each writing to a disjoint chunk of `a_folded`/`b_folded` via `par_chunks_mut`
 /// and accumulating its own `(sum1_contrib, sum_inf_contrib)`. The final
-/// reduce sums the per-worker contributions (commutative + associative F128
+/// reduce sums the per-worker contributions (commutative + associative Gf128
 /// XOR/multiply).
 ///
 /// Algorithm (per worker, one x_hi):
@@ -428,8 +434,8 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed(
     m: usize,
     k_skip: usize,
     table: &UniSkipFoldTable,
-    mlv_challenges: &[F128],
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+    mlv_challenges: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     uni_skip_fold_and_round_pair_optimized_packed_padded(
         a_packed,
         b_packed,
@@ -451,9 +457,9 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
     m: usize,
     k_skip: usize,
     table: &UniSkipFoldTable,
-    mlv_challenges: &[F128],
+    mlv_challenges: &[Gf128],
     padding: &PaddingSpec,
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     use rayon::prelude::*;
 
     assert_eq!(
@@ -468,11 +474,11 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
     assert_eq!(mlv_challenges.len(), m - k_skip);
 
     // Uninit alloc — the parallel loop below writes every slot (dense path)
-    // or explicitly writes F128::ZERO at padding holes (padded path).
+    // or explicitly writes Gf128::ZERO at padding holes (padded path).
     // Saves ~22 ms of sequential zero-fill at m=29 (256 MB total) that would
     // otherwise cap the parallel speedup of this phase at ~2.5× on 8 cores.
-    let mut a_folded: Vec<F128> = crate::scratch::take_f128(n_out);
-    let mut b_folded: Vec<F128> = crate::scratch::take_f128(n_out);
+    let mut a_folded: Vec<Gf128> = crate::scratch::take_f128(n_out);
+    let mut b_folded: Vec<Gf128> = crate::scratch::take_f128(n_out);
 
     let eq = SplitEqGhash::new(&mlv_challenges[1..]);
     let lo_size = 1usize << eq.n_lo;
@@ -485,14 +491,14 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
     let (pair_in_block_mask, useful_pairs_inclusive) = round2_pair_skip(padding, k_skip);
 
     // Parallel: each worker writes one disjoint chunk of a_folded/b_folded
-    // and returns its (sum1, sum_inf) contribution. Reduce by F128 XOR.
+    // and returns its (sum1, sum_inf) contribution. Reduce by Gf128 XOR.
     let (sum1, sum_inf) = a_folded
         .par_chunks_mut(chunk_size)
         .zip(b_folded.par_chunks_mut(chunk_size))
         .enumerate()
         .map(|(x_hi, (a_chunk, b_chunk))| {
-            let mut p1_acc = F256Unreduced::ZERO;
-            let mut pinf_acc = F256Unreduced::ZERO;
+            let mut p1_acc = Gf128Product::zero();
+            let mut pinf_acc = Gf128Product::zero();
             let pair_idx_base = x_hi * lo_size;
 
             #[cfg(target_arch = "aarch64")]
@@ -508,10 +514,10 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
                     if ((pair_idx_base + x_lo) & pair_in_block_mask) >= useful_pairs_inclusive {
                         // Padding hole: write zero (a_folded/b_folded were alloc'd
                         // uninit, so we have to write every slot we don't fold into).
-                        a_chunk[x0l] = F128::ZERO;
-                        a_chunk[x1l] = F128::ZERO;
-                        b_chunk[x0l] = F128::ZERO;
-                        b_chunk[x1l] = F128::ZERO;
+                        a_chunk[x0l] = Gf128::ZERO;
+                        a_chunk[x1l] = Gf128::ZERO;
+                        b_chunk[x0l] = Gf128::ZERO;
+                        b_chunk[x1l] = Gf128::ZERO;
                         continue;
                     }
                     let x0g = base + 2 * x_lo;
@@ -537,6 +543,9 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
             #[cfg(all(
                 target_arch = "x86_64",
                 target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                 target_feature = "vpclmulqdq"
             ))]
             unsafe {
@@ -549,20 +558,20 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
                 let mut x_lo = 0;
 
                 while x_lo + 4 <= lo_size {
-                    let mut a0 = [F128::ZERO; 4];
-                    let mut a1 = [F128::ZERO; 4];
-                    let mut b0 = [F128::ZERO; 4];
-                    let mut b1 = [F128::ZERO; 4];
+                    let mut a0 = [Gf128::ZERO; 4];
+                    let mut a1 = [Gf128::ZERO; 4];
+                    let mut b0 = [Gf128::ZERO; 4];
+                    let mut b1 = [Gf128::ZERO; 4];
 
                     for lane in 0..4 {
                         let pair = x_lo + lane;
                         let x0l = 2 * pair;
                         let x1l = x0l + 1;
                         if ((pair_idx_base + pair) & pair_in_block_mask) >= useful_pairs_inclusive {
-                            a_chunk[x0l] = F128::ZERO;
-                            a_chunk[x1l] = F128::ZERO;
-                            b_chunk[x0l] = F128::ZERO;
-                            b_chunk[x1l] = F128::ZERO;
+                            a_chunk[x0l] = Gf128::ZERO;
+                            a_chunk[x1l] = Gf128::ZERO;
+                            b_chunk[x0l] = Gf128::ZERO;
+                            b_chunk[x1l] = Gf128::ZERO;
                             continue;
                         }
 
@@ -601,10 +610,10 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
                     let x0l = 2 * x_lo;
                     let x1l = x0l + 1;
                     if ((pair_idx_base + x_lo) & pair_in_block_mask) >= useful_pairs_inclusive {
-                        a_chunk[x0l] = F128::ZERO;
-                        a_chunk[x1l] = F128::ZERO;
-                        b_chunk[x0l] = F128::ZERO;
-                        b_chunk[x1l] = F128::ZERO;
+                        a_chunk[x0l] = Gf128::ZERO;
+                        a_chunk[x1l] = Gf128::ZERO;
+                        b_chunk[x0l] = Gf128::ZERO;
+                        b_chunk[x1l] = Gf128::ZERO;
                         x_lo += 1;
                         continue;
                     }
@@ -636,6 +645,9 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
                 all(
                     target_arch = "x86_64",
                     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                     target_feature = "vpclmulqdq"
                 )
             )))]
@@ -646,10 +658,10 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
                     let x1l = x0l + 1;
                     if ((pair_idx_base + x_lo) & pair_in_block_mask) >= useful_pairs_inclusive {
                         // See aarch64 branch above for why this zero write is needed.
-                        a_chunk[x0l] = F128::ZERO;
-                        a_chunk[x1l] = F128::ZERO;
-                        b_chunk[x0l] = F128::ZERO;
-                        b_chunk[x1l] = F128::ZERO;
+                        a_chunk[x0l] = Gf128::ZERO;
+                        a_chunk[x1l] = Gf128::ZERO;
+                        b_chunk[x0l] = Gf128::ZERO;
+                        b_chunk[x1l] = Gf128::ZERO;
                         continue;
                     }
                     let x0g = base + 2 * x_lo;
@@ -676,7 +688,7 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
             (eq_h * p1, eq_h * pinf)
         })
         .reduce(
-            || (F128::ZERO, F128::ZERO),
+            || (Gf128::ZERO, Gf128::ZERO),
             |(s1, sinf), (c1, cinf)| (s1 + c1, sinf + cinf),
         );
 
@@ -690,7 +702,7 @@ pub fn uni_skip_fold_and_round_pair_optimized_packed_padded(
 /// In-place fold of a single multilinear polynomial table at `challenge`.
 /// Pairs `(a[2x], a[2x+1])` collapse to `a[x] = a[2x] + challenge · (a[2x+1] + a[2x])`.
 /// After the call, `a.len()` is halved.
-pub fn fold_in_place_single(a: &mut Vec<F128>, challenge: F128) {
+pub fn fold_in_place_single(a: &mut Vec<Gf128>, challenge: Gf128) {
     let n = a.len();
     assert!(n.is_power_of_two() && n >= 2);
     let half = n / 2;
@@ -716,12 +728,12 @@ pub fn fold_packed_witness_at_z(
     m: usize,
     k_skip: usize,
     table: &UniSkipFoldTable,
-) -> Vec<F128> {
+) -> Vec<Gf128> {
     use rayon::prelude::*;
     assert_eq!(witness_packed.len(), (1usize << m) / 8);
     let n_chunks = table.n_chunks;
     let n_out = 1usize << (m - k_skip);
-    let mut out = vec![F128::ZERO; n_out];
+    let mut out = vec![Gf128::ZERO; n_out];
     out.par_iter_mut().enumerate().for_each(|(x_rest, slot)| {
         *slot = table.fold_one_row(&witness_packed[x_rest * n_chunks..(x_rest + 1) * n_chunks]);
     });
@@ -735,7 +747,7 @@ pub fn fold_packed_witness_at_z(
 ///
 /// Used at the tail of the multilinear-round sequence where the polynomial is
 /// small enough that parallel/fusion overhead outweighs benefit.
-pub fn fold_in_place_pair(a: &mut Vec<F128>, b: &mut Vec<F128>, challenge: F128) {
+pub fn fold_in_place_pair(a: &mut Vec<Gf128>, b: &mut Vec<Gf128>, challenge: Gf128) {
     let n = a.len();
     assert_eq!(b.len(), n);
     assert!(n.is_power_of_two() && n >= 2);
@@ -763,11 +775,11 @@ pub fn fold_in_place_pair(a: &mut Vec<F128>, b: &mut Vec<F128>, challenge: F128)
 /// one bit of x_lo (lo_size ≥ 2). Smaller polynomials should use the
 /// unfused `fold_in_place_pair + round_pair_naive` pair.
 pub fn fold_and_compute_round_pair_optimized(
-    a: &[F128],
-    b: &[F128],
-    r_fold: F128,
-    r_next: &[F128],
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+    a: &[Gf128],
+    b: &[Gf128],
+    r_fold: Gf128,
+    r_next: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     let half = a.len() / 2;
     // Uninit alloc — `_into` writes every slot of a_new/b_new.
     let mut a_new = crate::alloc_uninit_f128_vec(half);
@@ -785,13 +797,13 @@ pub fn fold_and_compute_round_pair_optimized(
 /// than per round. The per-round `munmap` of the old buffer (64 MB at m=29)
 /// runs single-threaded and otherwise caps the tail's parallel speedup.
 pub fn fold_and_compute_round_pair_into(
-    a: &[F128],
-    b: &[F128],
-    a_out: &mut [F128],
-    b_out: &mut [F128],
-    r_fold: F128,
-    r_next: &[F128],
-) -> (F128, F128) {
+    a: &[Gf128],
+    b: &[Gf128],
+    a_out: &mut [Gf128],
+    b_out: &mut [Gf128],
+    r_fold: Gf128,
+    r_next: &[Gf128],
+) -> (Gf128, Gf128) {
     use rayon::prelude::*;
 
     let n = a.len();
@@ -826,6 +838,9 @@ pub fn fold_and_compute_round_pair_into(
             #[cfg(all(
                 target_arch = "x86_64",
                 target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                 target_feature = "vpclmulqdq"
             ))]
             // SAFETY: chunk geometry supplies two inputs per output and two
@@ -836,6 +851,9 @@ pub fn fold_and_compute_round_pair_into(
             #[cfg(not(all(
                 target_arch = "x86_64",
                 target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                 target_feature = "vpclmulqdq"
             )))]
             let (p1, pinf) = {
@@ -845,14 +863,17 @@ pub fn fold_and_compute_round_pair_into(
                 crate::field::f128_slice::fold_pairs(a_in, 0, a_out, r_fold);
                 crate::field::f128_slice::fold_pairs(b_in, 0, b_out, r_fold);
 
-                let mut p1_acc = F256Unreduced::ZERO;
-                let mut pinf_acc = F256Unreduced::ZERO;
+                let mut p1_acc = Gf128Product::zero();
+                let mut pinf_acc = Gf128Product::zero();
                 // x86: 4-wide deferred-reduction accumulators for the unrolled loop;
                 // the 2-wide tail still uses the scalar `*_acc` above, folded in
                 // before the final reduce.
                 #[cfg(all(
                     target_arch = "x86_64",
                     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                     target_feature = "vpclmulqdq"
                 ))]
                 // SAFETY: vpclmulqdq+avx512f guaranteed by the cfg gate.
@@ -903,6 +924,9 @@ pub fn fold_and_compute_round_pair_into(
                         #[cfg(all(
                             target_arch = "x86_64",
                             target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                             target_feature = "vpclmulqdq"
                         ))]
                         // SAFETY: vpclmulqdq+avx512f guaranteed by the cfg gate; the
@@ -916,6 +940,9 @@ pub fn fold_and_compute_round_pair_into(
                         #[cfg(not(all(
                             target_arch = "x86_64",
                             target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                             target_feature = "vpclmulqdq"
                         )))]
                         {
@@ -971,6 +998,9 @@ pub fn fold_and_compute_round_pair_into(
                 #[cfg(all(
                     target_arch = "x86_64",
                     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
                     target_feature = "vpclmulqdq"
                 ))]
                 // SAFETY: vpclmulqdq+avx512f+sse4.1 guaranteed by the cfg gate.
@@ -986,7 +1016,7 @@ pub fn fold_and_compute_round_pair_into(
             (eq_h * p1, eq_h * pinf)
         })
         .reduce(
-            || (F128::ZERO, F128::ZERO),
+            || (Gf128::ZERO, Gf128::ZERO),
             |(s1, sinf), (c1, cinf)| (s1 + c1, sinf + cinf),
         );
 
@@ -1003,22 +1033,22 @@ fn uni_skip_fold_and_round_pair_optimized_packed_serial(
     m: usize,
     k_skip: usize,
     table: &UniSkipFoldTable,
-    mlv_challenges: &[F128],
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+    mlv_challenges: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     assert_eq!(k_skip, 6);
     assert_eq!(table.n_chunks, 8);
     let n_chunks = table.n_chunks;
     let n_out = 1usize << (m - k_skip);
-    let mut a_folded = vec![F128::ZERO; n_out];
-    let mut b_folded = vec![F128::ZERO; n_out];
+    let mut a_folded = vec![Gf128::ZERO; n_out];
+    let mut b_folded = vec![Gf128::ZERO; n_out];
     let eq = SplitEqGhash::new(&mlv_challenges[1..]);
     let lo_size = 1usize << eq.n_lo;
     let hi_size = 1usize << eq.n_hi;
-    let mut sum1 = F128::ZERO;
-    let mut sum_inf = F128::ZERO;
+    let mut sum1 = Gf128::ZERO;
+    let mut sum_inf = Gf128::ZERO;
     for x_hi in 0..hi_size {
-        let mut p1_acc = F256Unreduced::ZERO;
-        let mut pinf_acc = F256Unreduced::ZERO;
+        let mut p1_acc = Gf128Product::zero();
+        let mut pinf_acc = Gf128Product::zero();
         let k_base = x_hi << eq.n_lo;
         for x_lo in 0..lo_size {
             let k = k_base | x_lo;
@@ -1075,17 +1105,17 @@ fn uni_skip_fold_and_round_pair_optimized_packed_serial(
 /// The reduced lookahead sums for one pass.
 #[derive(Clone, Copy, Debug)]
 pub struct LookaheadSums {
-    pub s10: F128,
-    pub sinf0: F128,
-    pub s1: [F128; 3],
-    pub sinf: [F128; 3],
+    pub s10: Gf128,
+    pub sinf0: Gf128,
+    pub s1: [Gf128; 3],
+    pub sinf: [Gf128; 3],
 }
 
 /// First-message derivation (Convention A, the AG tail's `r_next[0] = ONE`):
 /// eq-weighted combination of the Y∈{0,1} rows, `r_y` = eq coord of Y.
 #[inline]
-pub fn lookahead_msg_first(q: &LookaheadSums, r_y: F128) -> (F128, F128) {
-    let om = F128::ONE + r_y; // 1−r_y in char 2
+pub fn lookahead_msg_first(q: &LookaheadSums, r_y: Gf128) -> (Gf128, Gf128) {
+    let om = Gf128::ONE + r_y; // 1−r_y in char 2
     let col1_at1 = q.s1[0] + q.s1[1] + q.s1[2];
     (om * q.s10 + r_y * col1_at1, om * q.sinf0 + r_y * q.s1[2])
 }
@@ -1093,7 +1123,7 @@ pub fn lookahead_msg_first(q: &LookaheadSums, r_y: F128) -> (F128, F128) {
 /// Second-message derivation after the first variable binds to `rho`:
 /// evaluate the two column polynomials at `rho`. Zero passes.
 #[inline]
-pub fn lookahead_msg_second(q: &LookaheadSums, rho: F128) -> (F128, F128) {
+pub fn lookahead_msg_second(q: &LookaheadSums, rho: Gf128) -> (Gf128, Gf128) {
     let r2 = rho * rho;
     (
         q.s1[0] + rho * q.s1[1] + r2 * q.s1[2],
@@ -1105,7 +1135,7 @@ pub fn lookahead_msg_second(q: &LookaheadSums, rho: F128) -> (F128, F128) {
 /// (index = x + 2y): [s10, sinf0, c0, t11, c2, d0, dt, d2] — see the module
 /// comment for which sum each feeds.
 #[inline(always)]
-pub(crate) fn lookahead_products(ga: &[F128; 4], gb: &[F128; 4]) -> [F128; 8] {
+pub(crate) fn lookahead_products(ga: &[Gf128; 4], gb: &[Gf128; 4]) -> [Gf128; 8] {
     let (ga00, ga10, ga01, ga11) = (ga[0], ga[1], ga[2], ga[3]);
     let (gb00, gb10, gb01, gb11) = (gb[0], gb[1], gb[2], gb[3]);
     let sxa0 = ga00 + ga10;
@@ -1130,14 +1160,14 @@ pub(crate) fn lookahead_products(ga: &[F128; 4], gb: &[F128; 4]) -> [F128; 8] {
 
 /// Per-position Q contribution, eq-weighted into the 8 unreduced accumulators.
 #[inline(always)]
-fn lookahead_accum(ga: &[F128; 4], gb: &[F128; 4], eq: F128, acc: &mut [F256Unreduced; 8]) {
+fn lookahead_accum(ga: &[Gf128; 4], gb: &[Gf128; 4], eq: Gf128, acc: &mut [Gf128Product; 8]) {
     let p = lookahead_products(ga, gb);
     for k in 0..8 {
         acc[k] ^= eq.mul_unreduced(p[k]);
     }
 }
 
-pub(crate) fn lookahead_finish(s: [F128; 8]) -> LookaheadSums {
+pub(crate) fn lookahead_finish(s: [Gf128; 8]) -> LookaheadSums {
     let [s10, sinf0, c0, t11, c2, d0, dt, d2] = s;
     LookaheadSums {
         s10,
@@ -1155,12 +1185,12 @@ macro_rules! lookahead_pass {
         /// the SECOND lookahead variable; `rest` the coords after it
         /// (`rest.len() == log2(out_len/4)`). Parallel over the eq-hi chunks.
         pub fn $name(
-            a: &[F128],
-            b: &[F128],
-            a_out: &mut [F128],
-            b_out: &mut [F128],
-            rhos: (F128, F128),
-            rest: &[F128],
+            a: &[Gf128],
+            b: &[Gf128],
+            a_out: &mut [Gf128],
+            b_out: &mut [Gf128],
+            rhos: (Gf128, Gf128),
+            rest: &[Gf128],
         ) -> LookaheadSums {
             use rayon::prelude::*;
             const PER_U: usize = $per_u;
@@ -1184,12 +1214,12 @@ macro_rules! lookahead_pass {
                 .zip(b_out.par_chunks_mut(4 * lo_size))
                 .enumerate()
                 .map(|(u_hi, (ao, bo))| {
-                    let mut acc = [F256Unreduced::ZERO; 8];
+                    let mut acc = [Gf128Product::zero(); 8];
                     let base_u = u_hi * lo_size;
                     for u_lo in 0..lo_size {
                         let u = base_u + u_lo;
-                        let mut ga = [F128::ZERO; 4];
-                        let mut gb = [F128::ZERO; 4];
+                        let mut ga = [Gf128::ZERO; 4];
+                        let mut gb = [Gf128::ZERO; 4];
                         for v in 0..4usize {
                             let base = u * PER_U + v * (PER_U / 4);
                             ga[v] = fold(&a[base..], rhos);
@@ -1200,14 +1230,14 @@ macro_rules! lookahead_pass {
                         lookahead_accum(&ga, &gb, eq_lo[u_lo], &mut acc);
                     }
                     let eh = eq_hi[u_hi];
-                    let mut out = [F128::ZERO; 8];
+                    let mut out = [Gf128::ZERO; 8];
                     for k in 0..8 {
                         out[k] = eh * acc[k].reduce();
                     }
                     out
                 })
                 .reduce(
-                    || [F128::ZERO; 8],
+                    || [Gf128::ZERO; 8],
                     |mut p, q| {
                         for k in 0..8 {
                             p[k] += q[k];
@@ -1223,13 +1253,13 @@ macro_rules! lookahead_pass {
 lookahead_pass!(
     fold1_lookahead_into,
     8,
-    |e: &[F128], r: (F128, F128)| e[0] + r.0 * (e[0] + e[1]),
+    |e: &[Gf128], r: (Gf128, Gf128)| e[0] + r.0 * (e[0] + e[1]),
     "Entry lookahead pass: fold ONE pending variable (`rhos.0`; `rhos.1` unused), n → n/2."
 );
 lookahead_pass!(
     fold2_lookahead_into,
     16,
-    |e: &[F128], r: (F128, F128)| {
+    |e: &[Gf128], r: (Gf128, Gf128)| {
         let x0 = e[0] + r.0 * (e[0] + e[1]);
         let x1 = e[2] + r.0 * (e[2] + e[3]);
         x0 + r.1 * (x0 + x1)
@@ -1245,9 +1275,9 @@ pub fn uni_skip_fold_and_round_pair_optimized(
     b: &[bool],
     m: usize,
     k_skip: usize,
-    z: F128,
-    mlv_challenges: &[F128],
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+    z: Gf128,
+    mlv_challenges: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     assert_eq!(a.len(), 1usize << m);
     assert_eq!(b.len(), 1usize << m);
     let a_packed = pack_bits(a);
@@ -1289,13 +1319,13 @@ mod tests {
         fn bits(&mut self, n: usize) -> Vec<bool> {
             (0..n).map(|_| self.bit()).collect()
         }
-        fn f128(&mut self) -> F128 {
-            F128 {
+        fn f128(&mut self) -> Gf128 {
+            Gf128 {
                 lo: self.next_u64(),
                 hi: self.next_u64(),
             }
         }
-        fn f128_vec(&mut self, n: usize) -> Vec<F128> {
+        fn f128_vec(&mut self, n: usize) -> Vec<Gf128> {
             (0..n).map(|_| self.f128()).collect()
         }
     }
@@ -1313,8 +1343,8 @@ mod tests {
             for _ in 0..4 {
                 let z = rng.f128();
                 let weights = lagrange_weights_naive(k_skip, z);
-                let sum: F128 = weights.iter().copied().fold(F128::ZERO, |a, b| a + b);
-                assert_eq!(sum, F128::ONE, "Σ L_i ≠ 1 at k_skip={k_skip}");
+                let sum: Gf128 = weights.iter().copied().fold(Gf128::ZERO, |a, b| a + b);
+                assert_eq!(sum, Gf128::ONE, "Σ L_i ≠ 1 at k_skip={k_skip}");
             }
         }
     }
@@ -1325,10 +1355,10 @@ mod tests {
         for k_skip in [2usize, 3, 4, 5] {
             let ell = 1usize << k_skip;
             for i in 0..ell {
-                let z = PHI_8_TABLE[i];
+                let z = AES_EMBEDDING_TABLE[i];
                 let weights = lagrange_weights_naive(k_skip, z);
                 for j in 0..ell {
-                    let expected = if j == i { F128::ONE } else { F128::ZERO };
+                    let expected = if j == i { Gf128::ONE } else { Gf128::ZERO };
                     assert_eq!(weights[j], expected, "k_skip={k_skip}, z=node{i}, j={j}");
                 }
             }
@@ -1350,14 +1380,14 @@ mod tests {
         let mut rng = Rng::new(7);
         let a = rng.bits(1 << m);
         for i in 0..ell {
-            let z = PHI_8_TABLE[i];
+            let z = AES_EMBEDDING_TABLE[i];
             let weights = lagrange_weights_naive(k_skip, z);
             let a_mlv = fold_at_z_naive(&a, m, k_skip, &weights);
             for x_rest in 0..n_rest {
                 let expected = if a[x_rest * ell + i] {
-                    F128::ONE
+                    Gf128::ONE
                 } else {
-                    F128::ZERO
+                    Gf128::ZERO
                 };
                 assert_eq!(
                     a_mlv[x_rest], expected,
@@ -1406,8 +1436,8 @@ mod tests {
             uni_skip_fold_and_round_pair_naive(&zeros, &zeros, m, k_skip, z, &mlv_challenges);
         assert!(a_mlv.iter().all(|v| v.is_zero()));
         assert!(b_mlv.iter().all(|v| v.is_zero()));
-        assert_eq!(msg_1, F128::ZERO);
-        assert_eq!(msg_inf, F128::ZERO);
+        assert_eq!(msg_1, Gf128::ZERO);
+        assert_eq!(msg_inf, Gf128::ZERO);
     }
 
     #[test]
@@ -1475,6 +1505,9 @@ mod tests {
     #[cfg(all(
         target_arch = "x86_64",
         target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
         target_feature = "vpclmulqdq"
     ))]
     #[test]
@@ -1510,8 +1543,8 @@ mod tests {
         let mut rng = Rng::new(300);
         for &log_n in &[1usize, 2, 3, 4, 6] {
             let n = 1usize << log_n;
-            let a_orig: Vec<F128> = (0..n).map(|_| rng.f128()).collect();
-            let b_orig: Vec<F128> = (0..n).map(|_| rng.f128()).collect();
+            let a_orig: Vec<Gf128> = (0..n).map(|_| rng.f128()).collect();
+            let b_orig: Vec<Gf128> = (0..n).map(|_| rng.f128()).collect();
             let challenge = rng.f128();
 
             let mut a = a_orig.clone();
@@ -1537,7 +1570,7 @@ mod tests {
     /// prover skip per-round c tracking entirely.
     #[test]
     fn c_eval_from_round1_c_matches_direct_fold() {
-        use crate::field::F8;
+        use crate::field::Gf8;
         use crate::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
         use crate::zerocheck::univariate_skip_optimized::{
             c_s_f128, medium_challenges_ghash, round1_shift_reduce_extract_c_packed,
@@ -1555,7 +1588,7 @@ mod tests {
 
             // Build r with protocol-fixed constants in the middle 7 dims,
             // matching how `prove` constructs it.
-            let mut r = vec![F128::ZERO; m];
+            let mut r = vec![Gf128::ZERO; m];
             for slot in r[..K_SKIP].iter_mut() {
                 *slot = rng.f128();
             }
@@ -1574,8 +1607,8 @@ mod tests {
             let b_packed = pack_bits(&b);
             let c_packed = pack_bits(&c);
 
-            let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(K_SKIP, F8(1u8 << K_SKIP));
+            let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+            let ntt_l = AdditiveNttGf8::new(K_SKIP, Gf8(1u8 << K_SKIP));
             let inv_table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
             let (_round1_ab, round1_c) = round1_shift_reduce_extract_c_packed(
                 &a_packed, &b_packed, &c_packed, m, K_SKIP, &r, &inv_table,
@@ -1613,8 +1646,8 @@ mod tests {
         // eq size ≥ 8 ⇒ log_n ≥ 10. Smaller cases use the unfused path.
         for &log_n in &[10usize, 11, 12] {
             let n = 1usize << log_n;
-            let a: Vec<F128> = (0..n).map(|_| rng.f128()).collect();
-            let b: Vec<F128> = (0..n).map(|_| rng.f128()).collect();
+            let a: Vec<Gf128> = (0..n).map(|_| rng.f128()).collect();
+            let b: Vec<Gf128> = (0..n).map(|_| rng.f128()).collect();
             let r_fold = rng.f128();
             let r_next = rng.f128_vec(log_n - 1);
 
@@ -1636,7 +1669,7 @@ mod tests {
     }
 
     /// Parallel `uni_skip_fold_and_round_pair_optimized_packed` produces
-    /// byte-identical output to the serial version. F128 XOR + multiply sum
+    /// byte-identical output to the serial version. Gf128 XOR + multiply sum
     /// is commutative + associative, so worker scheduling order doesn't
     /// affect the result.
     #[test]
@@ -1772,7 +1805,7 @@ mod tests {
 
         for x_rest in 0..(1usize << (m - k_skip)) {
             let direct = {
-                let mut acc = F128::ZERO;
+                let mut acc = Gf128::ZERO;
                 for s in 0..(1usize << k_skip) {
                     if a[x_rest * (1usize << k_skip) + s] {
                         acc += weights[s];
@@ -1841,9 +1874,9 @@ mod tests {
         let eq_remaining = build_eq(&r[1..]);
 
         // G(0), G(1), G(∞) by direct definition.
-        let mut g0 = F128::ZERO;
-        let mut g1 = F128::ZERO;
-        let mut g_inf = F128::ZERO;
+        let mut g0 = Gf128::ZERO;
+        let mut g1 = Gf128::ZERO;
+        let mut g_inf = Gf128::ZERO;
         for x_prime in 0..half {
             let a0 = a_mlv[2 * x_prime];
             let a1 = a_mlv[2 * x_prime + 1];
@@ -1864,8 +1897,8 @@ mod tests {
         // agree with the direct multilinear evaluation at a fresh point X.
         // Char-2 interpolation: G(X) = G(0) + X·(G(0)+G(1)) + X·(X+1)·G(∞).
         let x = rng.f128();
-        let g_via_poly = g0 + x * (g0 + g1) + x * (x + F128::ONE) * g_inf;
-        let mut g_via_sum = F128::ZERO;
+        let g_via_poly = g0 + x * (g0 + g1) + x * (x + Gf128::ONE) * g_inf;
+        let mut g_via_sum = Gf128::ZERO;
         for x_prime in 0..half {
             let a0 = a_mlv[2 * x_prime];
             let a1 = a_mlv[2 * x_prime + 1];

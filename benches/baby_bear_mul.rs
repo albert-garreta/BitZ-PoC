@@ -24,8 +24,7 @@
 //!   cargo bench --bench baby_bear_mul --features unchecked
 //! ```
 //!
-//! `F2Z_SPARTAN_REDUCTION` selects `immediate`, `delayed-barrett`, or
-//! `delayed-crypto-bigint`; the production default is `delayed-barrett`.
+//! Arithmetic uses the single delayed Barrett production path.
 //! NOTE: the pre-schema output (and its `bench-peak-memory` pass) that
 //! `scripts/baby_bear_mul_bench_report.py` parses is available at commit
 //! b7713d8; the script has not been ported to `schema=f2z/1`.
@@ -36,27 +35,12 @@ use std::hint::black_box;
 
 use f2z::piop::spartan::{
     BABY_BEAR_MODULUS, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile, Lambda100,
-    Lambda128, PreparedBabyBearMulRelation, PrimePolicy, SpartanReductionStrategy,
+    Lambda128, PreparedBabyBearMulRelation, PrimePolicy,
     commit_baby_bear_mul_paper_witness, prove_baby_bear_mul_paper, sample_baby_bear_operand_with,
     verify_baby_bear_mul_paper,
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-
-#[derive(clap::Parser)]
-struct Env {
-    #[arg(long, env = "F2Z_SPARTAN_REDUCTION", default_value = "delayed-barrett",
-        value_parser = ["immediate", "delayed-barrett", "delayed-crypto-bigint"])]
-    reduction: String,
-}
-
-const fn strategy_name(strategy: SpartanReductionStrategy) -> &'static str {
-    match strategy {
-        SpartanReductionStrategy::Immediate => "immediate",
-        SpartanReductionStrategy::DelayedBarrett => "delayed-barrett",
-        SpartanReductionStrategy::DelayedCryptoBigint => "delayed-crypto-bigint",
-    }
-}
 
 fn exponents() -> Vec<usize> {
     common::shape_values(Some("F2Z_BABY_BEAR_MUL_EXPONENTS"), clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
@@ -69,7 +53,6 @@ fn bench_profile<P: IopSecurityProfile>(
     witness: &BabyBearMulWitness,
     witness_ms: f64,
     reps: usize,
-    strategy: SpartanReductionStrategy,
     threads: usize,
     seed: u64,
     shape_seed: u64,
@@ -103,7 +86,7 @@ fn bench_profile<P: IopSecurityProfile>(
     println!(
         "baby_bear_mul gates=2^{exponent} ({multiplications}) p={BABY_BEAR_MODULUS} \
          [{}] profile={} seed={shape_seed:#018x}",
-        strategy_name(strategy),
+        "delayed-barrett",
         P::NAME,
     );
     println!(
@@ -123,7 +106,7 @@ fn bench_profile<P: IopSecurityProfile>(
         commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut warm_transcript = Blake3Transcript::new();
     let warm_proof =
-        prove_baby_bear_mul_paper(&mut warm_transcript, &prepared, witness, &warm_hint, strategy)
+        prove_baby_bear_mul_paper(&mut warm_transcript, &prepared, witness, &warm_hint)
             .expect("warm-up prove");
     let mut warm_verifier = Blake3Transcript::new();
     verify_baby_bear_mul_paper(&mut warm_verifier, &prepared, &warm_hint.commitment, &warm_proof)
@@ -142,7 +125,7 @@ fn bench_profile<P: IopSecurityProfile>(
         drop(commit);
         let mut prover_transcript = Blake3Transcript::new();
         let proof =
-            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, witness, &hint, strategy)
+            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, witness, &hint)
                 .expect("prove");
         drop(proving);
 
@@ -175,7 +158,7 @@ fn bench_profile<P: IopSecurityProfile>(
             common::ligerito_identity(prepared.ligerito_configuration(), prepared.security().ood),
             ("profile".into(), P::NAME.into()),
             ("multiplications".into(), multiplications.to_string()),
-            ("strategy".into(), strategy_name(strategy).into()),
+            ("arithmetic".into(), "delayed-barrett".into()),
             ("baby_bear_modulus".into(), BABY_BEAR_MODULUS.to_string()),
             ("f2z_t".into(), params.row_vars.to_string()),
             ("f2z_s".into(), params.col_vars.to_string()),
@@ -206,12 +189,6 @@ fn bench_profile<P: IopSecurityProfile>(
 fn main() {
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
-    let strategy = match common::cli::environment::<Env>().reduction.as_str() {
-        "immediate" => SpartanReductionStrategy::Immediate,
-        "delayed-barrett" => SpartanReductionStrategy::DelayedBarrett,
-        "delayed-crypto-bigint" => SpartanReductionStrategy::DelayedCryptoBigint,
-        _ => unreachable!("clap validates the reduction strategy"),
-    };
     let seed = common::seed(Some("F2Z_BABY_BEAR_MUL_SEED"), 0x6262_6d75_6c5f_0031);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
 
@@ -223,8 +200,8 @@ fn main() {
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
-        "repetitions: {reps}; root seed: {seed:#018x}; strategy: {}; {}",
-        strategy_name(strategy),
+        "repetitions: {reps}; root seed: {seed:#018x}; arithmetic: {}; {}",
+        "delayed-barrett",
         match selected {
             Some(profile) => format!(
                 "one row per shape: {} (λ={}, F2Z_BENCH_LAMBDA={})",
@@ -261,16 +238,16 @@ fn main() {
         match selected {
             None => {
                 bench_profile::<Lambda100>(
-                    exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
+                    exponent, &witness, witness_ms, reps, threads, seed, shape_seed,
                 );
                 bench_profile::<Lambda128>(
-                    exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
+                    exponent, &witness, witness_ms, reps, threads, seed, shape_seed,
                 );
             }
             Some(profile) => common::with_profile!(
                 profile,
                 bench_profile(
-                    exponent, &witness, witness_ms, reps, strategy, threads, seed, shape_seed,
+                    exponent, &witness, witness_ms, reps, threads, seed, shape_seed,
                 )
             ),
         }

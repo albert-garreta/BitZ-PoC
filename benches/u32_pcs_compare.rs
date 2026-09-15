@@ -6,9 +6,9 @@
 //! exact 128-bit packed row per gate before ring switching to BaseFold.
 
 mod common;
-use common::pcs_cli::{Backend, binius_log_inv_rate, selected_backends, Whir};
 use common::mul_witness::u32_digest as witness_digest;
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
+use common::pcs_cli::{Backend, Whir, binius_log_inv_rate, selected_backends};
 mod integer_pcs_compare {
     pub mod binius;
     pub mod ligerito;
@@ -22,21 +22,19 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crypto_primitives::FromWithConfig;
-use f2z::ext_proj::ProjArith;
-use f2z::pcs::{FQ_MOD, ProjectCanonicalU128};
+use f2z::observability::Interval;
+use f2z::pcs::FQ_MOD;
 use f2z::piop::spartan::f2z::{
     PreparedU32TerminalF2zOpening, commit_u32_terminal_f2z_witness,
     prepare_u32_terminal_f2z_opening, prove_u32_terminal_claim_f2z,
     u32_terminal_claim_f2z_proof_bytes, verify_u32_terminal_claim_f2z,
 };
 use f2z::piop::spartan::{
-    PreparedU32MulRelation, ScaledMleEvaluationClaim, SpartanF2zField, U32MulF2zWidth,
-    U32MulWitness, commit_u32_mul_witness, spartan_f2z_field_config,
+    PreparedU32MulRelation, ScaledMleEvaluationClaim, SpartanF2zField, SpartanField,
+    U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness, spartan_f2z_field_config,
 };
 use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
-use f2z::observability::Interval;
 use integer_pcs_compare::binius::{self, BiniusBackend};
 use integer_pcs_compare::ligerito::{self, LigeritoBackend};
 use integer_pcs_compare::whir_goldilocks::{self as whir, Backend as WhirBackend};
@@ -55,7 +53,6 @@ const COMMIT_SCOPE: &str = "pcs-compare:commit";
 const CLAIM_SCOPE: &str = "pcs-compare:claim_setup";
 const OPENING_SCOPE: &str = "pcs-compare:opening";
 const VERIFY_SCOPE: &str = "pcs-compare:verification";
-
 
 impl Backend {
     const fn seed_tag(self) -> u64 {
@@ -293,17 +290,12 @@ impl TraceWriter {
     }
 }
 
-fn ancestry<'a>(
-    interval: &'a Interval,
-    parents: &HashMap<u64, &'a Interval>,
-) -> Vec<&'a str> {
+fn ancestry<'a>(interval: &'a Interval, parents: &HashMap<u64, &'a Interval>) -> Vec<&'a str> {
     let mut labels = Vec::new();
     let mut cursor = Some(interval);
     while let Some(current) = cursor {
         labels.push(current.label());
-        cursor = current
-            .parent
-            .and_then(|id| parents.get(&id).copied());
+        cursor = current.parent.and_then(|id| parents.get(&id).copied());
     }
     labels
 }
@@ -453,8 +445,12 @@ fn math_for(label: &str, backend: Backend) -> Vec<&'static str> {
 }
 
 fn exponents() -> Vec<usize> {
-    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(MIN_EXPONENT as u64..=MAX_EXPONENT as u64))
-        .unwrap_or_else(|| (MIN_EXPONENT..=MAX_EXPONENT).collect())
+    common::shape_values(
+        None,
+        clap::builder::RangedU64ValueParser::<usize>::new()
+            .range(MIN_EXPONENT as u64..=MAX_EXPONENT as u64),
+    )
+    .unwrap_or_else(|| (MIN_EXPONENT..=MAX_EXPONENT).collect())
 }
 
 fn ordered(selected: &[Backend], exponent: usize) -> Vec<Backend> {
@@ -487,18 +483,18 @@ fn trial_seed(shape_seed: u64, backend: Backend, trial: Trial) -> u64 {
     mix_seed(shape_seed ^ backend.seed_tag() ^ trial.word().rotate_left(17))
 }
 
-fn equality_table(point: &[u128], arith: &ProjArith) -> Vec<u128> {
+fn equality_table(point: &[u128], arith: &field::FpCtx<2>) -> Vec<u128> {
     let mut table = vec![0; 1usize << point.len()];
     table[0] = 1;
     let mut half = 1;
     for &coordinate in point {
         for index in 0..half {
             let parent = table[index];
-            let one = arith.mul(parent, coordinate);
+            let one = arith.mul_u128(parent, coordinate);
             table[index] = if one == 0 {
                 parent
             } else {
-                arith.add(parent, arith.q() - one)
+                arith.add_u128(parent, arith.modulus_u128() - one)
             };
             table[index + half] = one;
         }
@@ -526,39 +522,56 @@ fn derive_f2z_claim(
 ) {
     let config = spartan_f2z_field_config();
     let gate_vars = witness.layout().gate_vars();
-    let point = prover.get_field_challenges::<SpartanF2zField>(gate_vars + 2, &config);
-    let scale = prover.get_field_challenge::<SpartanF2zField>(&config);
-    let verifier_point = verifier.get_field_challenges::<SpartanF2zField>(gate_vars + 2, &config);
-    let verifier_scale = verifier.get_field_challenge::<SpartanF2zField>(&config);
+    let draw = |transcript: &mut Blake3Transcript| {
+        transcript.begin_sampling();
+        SpartanF2zField::sample_uniform(transcript, &config).expect("bounded public claim sampling")
+    };
+    let point = (0..gate_vars + 2)
+        .map(|_| draw(&mut prover))
+        .collect::<Vec<_>>();
+    let scale = draw(&mut prover);
+    let verifier_point = (0..gate_vars + 2)
+        .map(|_| draw(&mut verifier))
+        .collect::<Vec<_>>();
+    let verifier_scale = draw(&mut verifier);
     assert_eq!(verifier_point, point);
     assert_eq!(verifier_scale, scale);
     let canonical = point
         .iter()
-        .map(ProjectCanonicalU128::canonical_u128)
+        .map(|x| u128::from(config.to_integer(x)))
         .collect::<Vec<_>>();
-    let eq = equality_table(&canonical[..gate_vars], &ProjArith::new(FQ_MOD));
+    let eq = equality_table(
+        &canonical[..gate_vars],
+        &field::FpCtx::from_prime_u128(FQ_MOD),
+    );
     let b0 = canonical[gate_vars];
     let b1 = canonical[gate_vars + 1];
-    let arith = ProjArith::new(FQ_MOD);
-    let sub_one = |v: u128| if v == 0 { 1 } else { arith.add(1, FQ_MOD - v) };
+    let arith = field::FpCtx::from_prime_u128(FQ_MOD);
+    let sub_one = |v: u128| {
+        if v == 0 {
+            1
+        } else {
+            arith.add_u128(1, FQ_MOD - v)
+        }
+    };
     let chi = [
-        arith.mul(sub_one(b0), sub_one(b1)),
-        arith.mul(b0, sub_one(b1)),
-        arith.mul(sub_one(b0), b1),
-        arith.mul(b0, b1),
+        arith.mul_u128(sub_one(b0), sub_one(b1)),
+        arith.mul_u128(b0, sub_one(b1)),
+        arith.mul_u128(sub_one(b0), b1),
+        arith.mul_u128(b0, b1),
     ];
-    let mut value = arith.mul(chi[0], eq[0]);
+    let mut value = arith.mul_u128(chi[0], eq[0]);
     for gate in 0..witness.layout().capacity() {
-        let selected = arith.add(
-            arith.add(
-                arith.mul(chi[1], u128::from(witness.x_values()[gate])),
-                arith.mul(chi[2], u128::from(witness.y_values()[gate])),
+        let selected = arith.add_u128(
+            arith.add_u128(
+                arith.mul_u128(chi[1], u128::from(witness.x_values()[gate])),
+                arith.mul_u128(chi[2], u128::from(witness.y_values()[gate])),
             ),
-            arith.mul(chi[3], u128::from(witness.product_values()[gate])),
+            arith.mul_u128(chi[3], u128::from(witness.product_values()[gate])),
         );
-        value = arith.add(value, arith.mul(eq[gate], selected));
+        value = arith.add_u128(value, arith.mul_u128(eq[gate], selected));
     }
-    value = arith.mul(scale.canonical_u128(), value);
+    value = arith.mul_u128(u128::from(config.to_integer(&scale)), value);
     (
         ScaledMleEvaluationClaim::new(
             point.into_boxed_slice(),
@@ -580,7 +593,8 @@ fn run_f2z(
     witness_ms: f64,
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
     let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<
         f2z::piop::spartan::Lambda100,
@@ -594,7 +608,18 @@ fn run_f2z(
     let ligerito =
         common::ligerito_report(relation.ligerito_configuration(), relation.security().ood);
     drop((relation, commitment));
-    let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
+    let setup_ms = {
+        drop(setup);
+        f2z::observability::duration(
+            &setup_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "u32_pcs_compare:setup",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"F2Z Lambda100 terminal opening","ligerito":ligerito,"target_bits":100,"evaluation_modulus":FQ_MOD.to_string(),"commitment_field":"GF(2^128)","transcript_hash":"BLAKE3"});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
@@ -662,7 +687,8 @@ fn run_whir(
     reps: usize,
     tuning: (usize, usize, usize),
 ) -> Result<(), Box<dyn Error>> {
-    let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
     let (folding, log_inv_rate, max_pow_bits) = tuning;
     let backend = match WhirBackend::setup_with_params(
@@ -678,7 +704,18 @@ fn run_whir(
         Err(error) => return Err(error.into()),
     };
     let summary = backend.security_summary();
-    let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
+    let setup_ms = {
+        drop(setup);
+        f2z::observability::duration(
+            &setup_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "u32_pcs_compare:setup",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":format!("WHIR Goldilocks degree {} {}",whir::CHALLENGE_EXTENSION_DEGREE,whir::SECURITY_ASSUMPTION_LABEL),"target_bits":100,"internal_target_bits":summary.target_bits,"challenge_extension_degree":whir::CHALLENGE_EXTENSION_DEGREE,"configured_max_pow_bits":summary.configured_max_pow_bits,"derived_max_pow_bits":summary.derived_max_pow_bits,"folding_factor":summary.folding_factor,"starting_log_inverse_rate":summary.starting_log_inverse_rate,"commitment_ood_samples":summary.commitment_ood_samples,"round_queries":summary.round_queries,"round_pow_bits":summary.round_pow_bits,"final_queries":summary.final_queries,"final_pow_bits":summary.final_pow_bits,"hash":"Poseidon2Goldilocks<8>","hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
@@ -758,11 +795,23 @@ fn run_binius(
     reps: usize,
     log_inv_rate: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let setup_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
 
     let backend = BiniusBackend::setup(exponent, log_inv_rate);
-    let setup_ms = { drop(setup); f2z::observability::duration(&setup_recording.intervals().expect("complete operation capture"), "u32_pcs_compare:setup").expect("query completed operation") }.as_secs_f64() * 1e3;
+    let setup_ms = {
+        drop(setup);
+        f2z::observability::duration(
+            &setup_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "u32_pcs_compare:setup",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
     let security = json!({"profile":"Binius64 ring-switch + BaseFold","target_bits":binius::SECURITY_BITS,"soundness_bound_model":"Diamond-Posen Eq. 42 plus 128-bit SHA-256 cap","estimated_query_soundness_bits":backend.estimated_soundness_bits(),"challenge_field":"GF(2^128)-GHASH","hash":"SHA-256","log_inverse_rate":backend.log_inv_rate(),"test_queries":backend.n_test_queries(),"hiding":false});
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
@@ -803,10 +852,11 @@ fn run_ligerito(
     witness_ms: f64,
     reps: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let (backend, setup) = f2z::observability::measure(
-        tracing::info_span!("u32_pcs_compare:backend"),
-        || LigeritoBackend::setup(exponent),
-    ).expect("measure completed operation");
+    let (backend, setup) =
+        f2z::observability::measure(tracing::info_span!("u32_pcs_compare:backend"), || {
+            LigeritoBackend::setup(exponent)
+        })
+        .expect("measure completed operation");
     let backend = backend?;
     let setup_ms = setup.as_secs_f64() * 1e3;
     eprintln!("    backend_setup_ms={setup_ms:.3}");
@@ -871,8 +921,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let root_seed = common::seed(None, DEFAULT_SEED);
     let selected = selected_backends();
     let exponents = exponents();
-    let whir = selected.contains(&Backend::Whir).then(common::cli::environment::<Whir>);
-    let binius_rate = selected.contains(&Backend::Binius).then(binius_log_inv_rate);
+    let whir = selected
+        .contains(&Backend::Whir)
+        .then(common::cli::environment::<Whir>);
+    let binius_rate = selected
+        .contains(&Backend::Binius)
+        .then(binius_log_inv_rate);
     f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
     let mut writer = TraceWriter::new(threads, campaign_id())?;
@@ -888,12 +942,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         flock_core::scratch::clear();
         let shape_seed = common::mul_witness::shape_seed(root_seed, exponent);
         let mut rng = StdRng::seed_from_u64(shape_seed);
-        let (witness, start) = f2z::observability::measure(
-            tracing::info_span!("u32_pcs_compare:witness"),
-            || U32MulWitness::from_fn_with_f2z_width(1usize << exponent, U32MulF2zWidth::W1, |_| {
-                (rng.random::<u32>(), rng.random::<u32>())
-            }),
-        ).expect("measure completed operation");
+        let (witness, start) =
+            f2z::observability::measure(tracing::info_span!("u32_pcs_compare:witness"), || {
+                U32MulWitness::from_fn_with_f2z_width(
+                    1usize << exponent,
+                    U32MulF2zWidth::W1,
+                    |_| (rng.random::<u32>(), rng.random::<u32>()),
+                )
+            })
+            .expect("measure completed operation");
         let witness = witness?;
         let witness_ms = start.as_secs_f64() * 1e3;
         let digest = witness_digest(&witness);

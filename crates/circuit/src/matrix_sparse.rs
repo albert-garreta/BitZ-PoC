@@ -5,17 +5,18 @@
 //! together in column-major order so a prepared evaluator can gather each
 //! output column independently and in parallel.
 
+use field::ModRingCtx;
+
 use std::error::Error;
 use std::fmt::{self, Display};
-use std::mem::{size_of, size_of_val};
+use std::mem::size_of;
 
-use crypto_bigint::modular::{FixedMontyForm, FixedMontyParams};
-use crypto_bigint::{Odd, U128};
+use field::{FpCtx, IntegerEmbedding, Uint, create_prime_field};
 use rayon::prelude::*;
 
-use crate::constraints::{ConstraintMatrices, SparseMatrix};
-use crate::matrix_products::{RuntimeModulus, StoredInteger};
-use crate::matrix_wengert::{add_mod_words, montgomery_mul_2, neg_mod_words};
+use crate::constraints::{CoefficientIndex, ConstraintMatrices, SparseIntegerMatrix};
+use crate::integer_storage::IntegerTable;
+use crate::matrix_wengert::{add_representatives, mul_representatives, neg_representative};
 
 const PARALLEL_NNZ_THRESHOLD: usize = 1 << 15;
 const PARALLEL_VECTOR_THRESHOLD: usize = 1 << 14;
@@ -42,22 +43,26 @@ enum CoefficientClass {
 #[derive(Debug)]
 struct IntegerEntry {
     coordinate: u32,
-    coefficient: StoredInteger,
+    coefficient: CoefficientIndex,
+    kind: MatrixKind,
 }
 
 impl IntegerEntry {
-    fn new(row: usize, kind: MatrixKind, coefficient: StoredInteger) -> Self {
+    fn new(row: usize, kind: MatrixKind, coefficient: CoefficientIndex, words: &[u64]) -> Self {
         assert!(row <= ROW_MASK as usize, "too many sparse matrix rows");
-        let class = match coefficient.words() {
-            [1] => CoefficientClass::One,
-            [u64::MAX] => CoefficientClass::NegativeOne,
-            _ => CoefficientClass::General,
+        let class = if words[0] == 1 && words[1..].iter().all(|&w| w == 0) {
+            CoefficientClass::One
+        } else if words.iter().all(|&w| w == u64::MAX) {
+            CoefficientClass::NegativeOne
+        } else {
+            CoefficientClass::General
         };
         Self {
             coordinate: u32::try_from(row).expect("too many sparse matrix rows")
                 | (kind as u32) << KIND_SHIFT
                 | (class as u32) << CLASS_SHIFT,
             coefficient,
+            kind,
         }
     }
 }
@@ -68,7 +73,7 @@ pub struct MaterializedAbc {
     row_count: usize,
     column_offsets: Box<[u32]>,
     coordinates: Box<[u32]>,
-    coefficients: Box<[StoredInteger]>,
+    coefficients: IntegerTable,
     matrix_nonzeros: [usize; 3],
 }
 
@@ -125,16 +130,19 @@ impl MaterializedAbc {
                     columns[*column].push(IntegerEntry::new(
                         row,
                         kind,
-                        StoredInteger::from_bigint(coefficient),
+                        *coefficient,
+                        matrix.coefficient_words(*coefficient),
                     ));
                 }
             }
         }
         let mut coordinates = Vec::with_capacity(total_nonzeros);
-        let mut coefficients = Vec::with_capacity(total_nonzeros);
+        let mut coefficients = IntegerTable::default();
         for entry in columns.into_iter().flatten() {
             coordinates.push(entry.coordinate);
-            coefficients.push(entry.coefficient);
+            sources[entry.kind as usize]
+                .0
+                .copy_coefficient_to(entry.coefficient, &mut coefficients);
         }
         debug_assert_eq!(coordinates.len(), total_nonzeros);
 
@@ -142,7 +150,7 @@ impl MaterializedAbc {
             row_count,
             column_offsets: column_offsets.into_boxed_slice(),
             coordinates: coordinates.into_boxed_slice(),
-            coefficients: coefficients.into_boxed_slice(),
+            coefficients,
             matrix_nonzeros,
         }
     }
@@ -171,39 +179,32 @@ impl MaterializedAbc {
     pub fn payload_bytes(&self) -> usize {
         self.column_offsets.len() * size_of::<u32>()
             + self.coordinates.len() * size_of::<u32>()
-            + self.coefficients.len() * size_of::<StoredInteger>()
-            + self
-                .coefficients
-                .iter()
-                .map(|coefficient| size_of_val(coefficient.words()))
-                .sum::<usize>()
+            + self.coefficients.payload_bytes()
     }
 
     /// Reduces all integer coefficients and allocates reusable apply storage.
     pub fn prepare(
         &self,
-        modulus: &RuntimeModulus<2>,
+        modulus: &ModRingCtx<2>,
     ) -> Result<PreparedMaterializedAbc<'_>, SparseAbcApplyError> {
-        let modulus_words = *modulus.modulus_words();
-        let modulus_uint = U128::from_words(modulus_words);
-        let odd = Option::<Odd<U128>>::from(Odd::new(modulus_uint))
-            .ok_or(SparseAbcApplyError::EvenModulus)?;
-        let params = FixedMontyParams::new_vartime(odd);
-        let coefficients = self
-            .coefficients
-            .par_iter()
-            .map(|coefficient| {
-                FixedMontyForm::new(&U128::from_words(modulus.reduce(coefficient)), &params)
-                    .to_montgomery()
-                    .to_words()
+        let modulus_words = *modulus.modulus().as_words();
+        if modulus_words[0] & 1 == 0 {
+            return Err(SparseAbcApplyError::EvenModulus);
+        }
+        let field = create_prime_field(Uint::from_words(modulus_words));
+        let view = self.coefficients.view();
+        let coefficients = (0..view.len())
+            .into_par_iter()
+            .map(|index| {
+                *field
+                    .from_integer(&field::ZRef::from_twos_complement_words(&view[index]))
+                    .as_montgomery_integer()
+                    .as_words()
             })
             .collect();
         Ok(PreparedMaterializedAbc {
             matrix: self,
-            modulus_uint,
-            modulus_words,
-            mod_neg_inv: params.mod_neg_inv().0,
-            params,
+            field,
             coefficients,
             weighted_challenges: vec![[[0; 2]; 3]; self.row_count()],
             output: vec![[0; 2]; self.column_count()],
@@ -211,7 +212,7 @@ impl MaterializedAbc {
     }
 }
 
-fn nonzero_count(matrix: &SparseMatrix<num_bigint::BigInt>) -> usize {
+fn nonzero_count(matrix: &SparseIntegerMatrix) -> usize {
     matrix.rows().iter().map(|row| row.entries().len()).sum()
 }
 
@@ -219,10 +220,7 @@ fn nonzero_count(matrix: &SparseMatrix<num_bigint::BigInt>) -> usize {
 #[derive(Debug)]
 pub struct PreparedMaterializedAbc<'a> {
     matrix: &'a MaterializedAbc,
-    modulus_uint: U128,
-    modulus_words: [u64; 2],
-    mod_neg_inv: u64,
-    params: FixedMontyParams<2>,
+    field: FpCtx<2>,
     coefficients: Vec<[u64; 2]>,
     weighted_challenges: Vec<[[u64; 2]; 3]>,
     output: Vec<[u64; 2]>,
@@ -231,12 +229,11 @@ pub struct PreparedMaterializedAbc<'a> {
 impl PreparedMaterializedAbc<'_> {
     /// Converts a canonical element into Montgomery form for this modulus.
     pub fn to_montgomery(&self, canonical: [u64; 2]) -> [u64; 2] {
-        let canonical = U128::from_words(canonical).rem_vartime(
-            &crypto_bigint::NonZero::new(self.modulus_uint).expect("validated modulus"),
-        );
-        FixedMontyForm::new(&canonical, &self.params)
-            .to_montgomery()
-            .to_words()
+        *self
+            .field
+            .from_integer(&Uint::from_words(canonical))
+            .as_montgomery_integer()
+            .as_words()
     }
 
     /// Bytes added by reduced coefficients and reusable apply vectors.
@@ -259,15 +256,11 @@ impl PreparedMaterializedAbc<'_> {
             });
         }
 
-        let x_squared = montgomery_mul_2(x, x, self.modulus_words, self.mod_neg_inv);
+        let x_squared = mul_representatives(x, x, &self.field);
         let prepare_challenge = |challenge: &[u64; 2]| {
             let r = *challenge;
-            let rx = montgomery_mul_2(r, x, self.modulus_words, self.mod_neg_inv);
-            [
-                r,
-                rx,
-                montgomery_mul_2(r, x_squared, self.modulus_words, self.mod_neg_inv),
-            ]
+            let rx = mul_representatives(r, x, &self.field);
+            [r, rx, mul_representatives(r, x_squared, &self.field)]
         };
         if rayon::current_num_threads() > 1
             && self.weighted_challenges.len() >= PARALLEL_VECTOR_THRESHOLD
@@ -297,17 +290,12 @@ impl PreparedMaterializedAbc<'_> {
                 let contribution = match class {
                     value if value == CoefficientClass::One as u32 => source,
                     value if value == CoefficientClass::NegativeOne as u32 => {
-                        neg_mod_words(source, self.modulus_words)
+                        neg_representative(source, &self.field)
                     }
-                    _ => montgomery_mul_2(
-                        source,
-                        self.coefficients[index],
-                        self.modulus_words,
-                        self.mod_neg_inv,
-                    ),
+                    _ => mul_representatives(source, self.coefficients[index], &self.field),
                 };
                 if initialized {
-                    value = add_mod_words(value, contribution, self.modulus_words);
+                    value = add_representatives(value, contribution, &self.field);
                 } else {
                     value = contribution;
                     initialized = true;
@@ -401,9 +389,12 @@ mod tests {
         example_circuit(&mut tape_generator, &tape_inputs);
         let tape = tape_generator.finish();
 
-        let modulus =
-            RuntimeModulus::<2>::new((BigUint::one() << 128_usize) - BigUint::from(159_u64))
-                .unwrap();
+        let modulus = ModRingCtx::<2>::new(field::Uint::from_words(
+            crate::matrix_products::biguint_words(
+                &((BigUint::one() << 128_usize) - BigUint::from(159_u64)),
+            ),
+        ))
+        .unwrap();
         let challenges = [[23, 0], [29, 0]];
         let x = [17, 0];
         let mut sparse_evaluator = sparse.prepare(&modulus).unwrap();

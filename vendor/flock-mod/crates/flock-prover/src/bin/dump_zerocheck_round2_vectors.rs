@@ -3,12 +3,12 @@
 //! CUDA port (`cuda-ghash/test_zerocheck_round2.cu`) can be checked bit-for-bit.
 //!
 //! Round-2 folds the packed witness a/b at the URM challenge z (over the skip
-//! domain) into a_mlv/b_mlv (F128, length 2^(m-6)), then computes the first
+//! domain) into a_mlv/b_mlv (Gf128, length 2^(m-6)), then computes the first
 //! multilinear sumcheck message:
 //!   a_mlv[row] = Σ_{j=0..8} foldtable[j*256 + a_packed[row*8 + j]]
 //!   (msg_1, msg_inf) = eq-weighted deg-2 message over (a_mlv, b_mlv),
 //!                      eq = build_eq(mlv_challenges[1..]), msg_1 = mlv[0]·g_one
-//! foldtable = UniSkipFoldTable::new(6, z).data  (8×256 F128).
+//! foldtable = UniSkipFoldTable::new(6, z).data  (8×256 Gf128).
 //!
 //! Output (LE) to argv[1] (default zerocheck_round2_vectors.bin):
 //!   magic u32 = 0x5A523202 ("ZR2"); m u32
@@ -24,7 +24,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::zerocheck::PaddingSpec;
 use flock_prover::zerocheck::multilinear::{
     UniSkipFoldTable, uni_skip_fold_and_round_pair_optimized_packed_padded,
@@ -45,8 +45,8 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn f128(&mut self) -> F128 {
-        F128 {
+    fn f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
@@ -56,7 +56,7 @@ impl Rng {
     }
 }
 
-fn wf(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn wf(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -81,7 +81,7 @@ fn main() -> std::io::Result<()> {
 
     let z = rng.f128();
     // mlv_challenges[0] = ONE (Convention A), rest random.
-    let mut mlv = vec![F128::ONE; m - K_SKIP];
+    let mut mlv = vec![Gf128::ONE; m - K_SKIP];
     for v in mlv.iter_mut().skip(1) {
         *v = rng.f128();
     }

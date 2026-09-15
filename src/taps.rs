@@ -45,7 +45,7 @@
 //! width).
 
 use crate::pcs::ShaF2Layout;
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 use crate::utils::cfg_into_iter;
 
@@ -78,7 +78,13 @@ pub struct TapOp {
 impl TapOp {
     /// The identity tap on `col` (a plain virtual-column term).
     pub fn ident(col: usize) -> Self {
-        Self { col, grp_log2: 0, bit_amt: 0, bit_dropout: false, off: 0 }
+        Self {
+            col,
+            grp_log2: 0,
+            bit_amt: 0,
+            bit_dropout: false,
+            off: 0,
+        }
     }
 
     /// Whether this tap is the identity op (plain column slice).
@@ -115,7 +121,12 @@ pub struct TapUniOp {
 impl TapUniOp {
     /// The identity op.
     pub fn ident() -> Self {
-        Self { grp_log2: 0, bit_amt: 0, bit_dropout: false, off: 0 }
+        Self {
+            grp_log2: 0,
+            bit_amt: 0,
+            bit_dropout: false,
+            off: 0,
+        }
     }
 
     /// Attach a column, giving a full [`TapOp`].
@@ -176,7 +187,10 @@ pub fn tap_canonical_ops(taps: &[TapOp]) -> Vec<TapOp> {
 /// machinery — which is built on the flat geometry — is δ-independent;
 /// only the extraction's row split and the weight-vector shapes move).
 pub(crate) fn assert_tap_layout(layout: &ShaF2Layout) {
-    assert_eq!(layout.p.word_bits, 1, "tap claims assume the W=1 SHA layout");
+    assert_eq!(
+        layout.p.word_bits, 1,
+        "tap claims assume the W=1 SHA layout"
+    );
     assert!(
         layout.x_fold_extra < layout.p.col_vars,
         "x_fold_extra must leave a clear variable"
@@ -219,7 +233,11 @@ pub(crate) fn assert_tap_op(layout: &ShaF2Layout, op: &TapUniOp) {
 
 /// Validate one tap against the layout.
 pub(crate) fn assert_tap(layout: &ShaF2Layout, tap: &TapOp) {
-    assert!(tap.col < layout.num_cols, "tap column {} out of range", tap.col);
+    assert!(
+        tap.col < layout.num_cols,
+        "tap column {} out of range",
+        tap.col
+    );
     assert_tap_op(layout, &tap.uni());
 }
 
@@ -234,7 +252,14 @@ pub(crate) fn assert_tap(layout: &ShaF2Layout, tap: &TapOp) {
 /// `len ≥ 64` (word path); below that, offsets are multiples of `len` and
 /// runs sit inside one word on both sides (the extraction's run geometry).
 #[allow(clippy::arithmetic_side_effects)]
-fn xor_run_shifted(dst: &mut [u64], dst_off: usize, src: &[u64], src_off: usize, len: usize, sh: usize) {
+fn xor_run_shifted(
+    dst: &mut [u64],
+    dst_off: usize,
+    src: &[u64],
+    src_off: usize,
+    len: usize,
+    sh: usize,
+) {
     if sh >= len {
         return;
     }
@@ -470,7 +495,13 @@ pub(crate) fn tap_support_tables(
         let eq_hi = build_eq_x_r_vec(&pt_x[7..tw], &()).expect("tw > 7");
         let c = class.cut as usize;
         (0..1usize << hs)
-            .map(|h| if h + c < (1usize << hs) { eq_hi[h + c] } else { Gf::zero() })
+            .map(|h| {
+                if h + c < (1usize << hs) {
+                    eq_hi[h + c]
+                } else {
+                    Gf::zero()
+                }
+            })
             .collect()
     };
     let t_mid: Vec<Gf> = if bv == 0 {
@@ -486,7 +517,11 @@ pub(crate) fn tap_support_tables(
         (0..n_g)
             .map(|j| {
                 if tap.bit_dropout {
-                    if j + tap.bit_amt < n_g { eq_g[j + tap.bit_amt] } else { Gf::zero() }
+                    if j + tap.bit_amt < n_g {
+                        eq_g[j + tap.bit_amt]
+                    } else {
+                        Gf::zero()
+                    }
                 } else {
                     eq_g[(j + tap.bit_amt) & (n_g - 1)]
                 }
@@ -501,7 +536,11 @@ pub(crate) fn tap_support_tables(
         (0..n_w)
             .map(|x| {
                 if class.gamma == 0 {
-                    if x < n_w - tap.off { eq_w[x + tap.off] } else { Gf::zero() }
+                    if x < n_w - tap.off {
+                        eq_w[x + tap.off]
+                    } else {
+                        Gf::zero()
+                    }
                 } else if x >= n_w - tap.off {
                     eq_w[x + tap.off - n_w]
                 } else {
@@ -510,12 +549,21 @@ pub(crate) fn tap_support_tables(
             })
             .collect()
     };
-    let (w_start, w_end) =
-        if class.gamma == 0 { (0, n_w - tap.off) } else { (n_w - tap.off, n_w) };
+    let (w_start, w_end) = if class.gamma == 0 {
+        (0, n_w - tap.off)
+    } else {
+        (n_w - tap.off, n_w)
+    };
     let t_lo: Vec<Gf> = (0..1usize << s)
         .map(|rl| t_grp[rl & (n_g - 1)] * t_wrd[rl >> g])
         .collect();
-    TapSupportTables { t_hi, t_mid, t_lo, lo_band: (w_start << g, w_end << g), hs }
+    TapSupportTables {
+        t_hi,
+        t_mid,
+        t_lo,
+        lo_band: (w_start << g, w_end << g),
+        hs,
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -532,7 +580,12 @@ pub(crate) enum TapCoord {
     /// One bit of a carry chain: right-leg point `h`, addend bit `d`;
     /// `entry` pins the carry-in when this bit starts a segment, `exit`
     /// contracts the carry-out when it ends one.
-    Chain { h: Gf, d: u8, entry: Option<u8>, exit: Option<TapExit> },
+    Chain {
+        h: Gf,
+        d: u8,
+        entry: Option<u8>,
+        exit: Option<TapExit>,
+    },
 }
 
 /// Segment-end contraction: pin the carry (dropout validity / class
@@ -571,14 +624,22 @@ pub(crate) fn tap_closure_desc(
                 h,
                 d: 0,
                 entry: if k == 7 { Some(class.cut) } else { None },
-                exit: if k == tw - 1 { Some(TapExit::Pin(0)) } else { None },
+                exit: if k == tw - 1 {
+                    Some(TapExit::Pin(0))
+                } else {
+                    None
+                },
             });
         } else {
             out.push(TapCoord::Plain(h));
         }
     }
     for k in tw.max(7)..tw + lc {
-        out.push(TapCoord::Plain(if (tap.col >> (k - tw)) & 1 == 1 { one } else { zero }));
+        out.push(TapCoord::Plain(if (tap.col >> (k - tw)) & 1 == 1 {
+            one
+        } else {
+            zero
+        }));
     }
     for m in 0..bv {
         out.push(TapCoord::Plain(pt_x[tw + m]));
@@ -592,7 +653,11 @@ pub(crate) fn tap_closure_desc(
                 d: ((tap.bit_amt >> m) & 1) as u8,
                 entry: if m == 0 { Some(0) } else { None },
                 exit: if m == g - 1 {
-                    Some(if tap.bit_dropout { TapExit::Pin(0) } else { TapExit::Sum })
+                    Some(if tap.bit_dropout {
+                        TapExit::Pin(0)
+                    } else {
+                        TapExit::Sum
+                    })
                 } else {
                     None
                 },
@@ -609,7 +674,11 @@ pub(crate) fn tap_closure_desc(
                 h,
                 d: ((tap.off >> (m - g)) & 1) as u8,
                 entry: if m == g { Some(0) } else { None },
-                exit: if m == s - 1 { Some(TapExit::Pin(class.gamma)) } else { None },
+                exit: if m == s - 1 {
+                    Some(TapExit::Pin(class.gamma))
+                } else {
+                    None
+                },
             });
         } else {
             out.push(TapCoord::Plain(h));
@@ -652,7 +721,11 @@ fn tap_state_apply(st: &mut TapState, coord: &TapCoord, left: (Gf, Gf), boolean:
                 debug_assert_eq!(st.states.len(), 1, "chain entry from plain mode");
                 let cur = st.states.pop().expect("state");
                 let zeros = vec![Gf::zero(); 128];
-                st.states = if *c0 == 0 { vec![cur, zeros] } else { vec![zeros, cur] };
+                st.states = if *c0 == 0 {
+                    vec![cur, zeros]
+                } else {
+                    vec![zeros, cur]
+                };
             }
             debug_assert_eq!(st.states.len(), 2, "chain bit inside a segment");
             let mut new = vec![vec![Gf::zero(); 128], vec![Gf::zero(); 128]];
@@ -694,8 +767,7 @@ fn tap_state_apply(st: &mut TapState, coord: &TapCoord, left: (Gf, Gf), boolean:
                 }
                 Some(TapExit::Sum) => {
                     let (a, b) = (new.remove(0), new.remove(0));
-                    st.states =
-                        vec![a.iter().zip(b.iter()).map(|(x, y)| *x + *y).collect()];
+                    st.states = vec![a.iter().zip(b.iter()).map(|(x, y)| *x + *y).collect()];
                 }
                 None => st.states = new,
             }
@@ -717,7 +789,11 @@ pub(crate) fn residual_b_evals_tap(
     desc: &[TapCoord],
     eq_r2: &[Gf],
 ) -> Vec<Gf> {
-    assert_eq!(prefix.len() + yr_log_n, desc.len(), "prefix + tail must cover the coordinates");
+    assert_eq!(
+        prefix.len() + yr_log_n,
+        desc.len(),
+        "prefix + tail must cover the coordinates"
+    );
     assert_eq!(eq_r2.len(), 128);
     let one = Gf::one();
     let mut init = vec![Gf::zero(); 128];
@@ -732,7 +808,9 @@ pub(crate) fn residual_b_evals_tap(
         let mut next: Vec<TapState> = Vec::with_capacity(cur.len() * 2);
         for b in 0..2u8 {
             for stt in cur.iter() {
-                let mut branch = TapState { states: stt.states.to_vec() };
+                let mut branch = TapState {
+                    states: stt.states.to_vec(),
+                };
                 tap_state_apply(&mut branch, coord, (one, one), Some(b));
                 next.push(branch);
             }
@@ -846,11 +924,7 @@ mod tests {
     /// semantics: output entry `p = (k ≪ g)|j` of stream `op(col)` reads
     /// committed entry `((k − off) ≪ g)|((j − r) mod 2^g)` (dropouts →
     /// zero), at every word-bit position of the untapped bv axis.
-    fn extract_naive(
-        layout: &ShaF2Layout,
-        rows: &[Vec<u64>],
-        taps: &[TapOp],
-    ) -> Vec<Vec<u64>> {
+    fn extract_naive(layout: &ShaF2Layout, rows: &[Vec<u64>], taps: &[TapOp]) -> Vec<Vec<u64>> {
         let tw = layout.tw;
         let lc = layout.log_cols;
         let bv = layout.bit_vars;
@@ -902,8 +976,13 @@ mod tests {
                 bit_dropout: false,
                 off,
             };
-            let shl =
-                |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+            let shl = |col, amt, off| TapOp {
+                col,
+                grp_log2: g,
+                bit_amt: amt,
+                bit_dropout: true,
+                off,
+            };
             let cases: Vec<Vec<TapOp>> = vec![
                 vec![TapOp::ident(0)],
                 vec![rot(0, 1, 0)],
@@ -931,8 +1010,20 @@ mod tests {
         let rows = test_rows(&base, 11);
         let g = grp_of(&base);
         let taps = vec![
-            TapOp { col: 0, grp_log2: g, bit_amt: 2, bit_dropout: false, off: 1 },
-            TapOp { col: 1, grp_log2: g, bit_amt: 3, bit_dropout: true, off: 0 },
+            TapOp {
+                col: 0,
+                grp_log2: g,
+                bit_amt: 2,
+                bit_dropout: false,
+                off: 1,
+            },
+            TapOp {
+                col: 1,
+                grp_log2: g,
+                bit_amt: 3,
+                bit_dropout: true,
+                off: 0,
+            },
         ];
         let flat = extract_virtual_tap_rows(&base, &rows, &taps);
         for delta in [1usize, 2] {
@@ -942,8 +1033,9 @@ mod tests {
             let m = 1usize << delta;
             assert_eq!(got.len(), flat.len() / m);
             for (c, row) in got.iter().enumerate() {
-                let want: Vec<u64> =
-                    (0..m).flat_map(|lc| flat[(c << delta) | lc].iter().copied()).collect();
+                let want: Vec<u64> = (0..m)
+                    .flat_map(|lc| flat[(c << delta) | lc].iter().copied())
+                    .collect();
                 assert_eq!(*row, want, "delta {delta} row {c}");
             }
         }
@@ -956,10 +1048,20 @@ mod tests {
     fn tap_extraction_matches_naive_g6() {
         let layout = tap_layout_tw6();
         let rows = test_rows(&layout, 21);
-        let rot =
-            |col, amt, off| TapOp { col, grp_log2: 6, bit_amt: amt, bit_dropout: false, off };
-        let shl =
-            |col, amt, off| TapOp { col, grp_log2: 6, bit_amt: amt, bit_dropout: true, off };
+        let rot = |col, amt, off| TapOp {
+            col,
+            grp_log2: 6,
+            bit_amt: amt,
+            bit_dropout: false,
+            off,
+        };
+        let shl = |col, amt, off| TapOp {
+            col,
+            grp_log2: 6,
+            bit_amt: amt,
+            bit_dropout: true,
+            off,
+        };
         let cases: Vec<Vec<TapOp>> = vec![
             vec![rot(0, 33, 0)],
             vec![shl(1, 40, 1)],
@@ -977,13 +1079,30 @@ mod tests {
 
     #[test]
     fn tap_canonical_ops_normalizes() {
-        let rot =
-            |col, amt, off| TapOp { col, grp_log2: 3, bit_amt: amt, bit_dropout: false, off };
+        let rot = |col, amt, off| TapOp {
+            col,
+            grp_log2: 3,
+            bit_amt: amt,
+            bit_dropout: false,
+            off,
+        };
         // SHIFT^0 normalizes to ROT^0; a full identity clears the group
         // width; an off-only tap keeps it (the word stride).
-        let shl0 = TapOp { col: 1, grp_log2: 3, bit_amt: 0, bit_dropout: true, off: 0 };
+        let shl0 = TapOp {
+            col: 1,
+            grp_log2: 3,
+            bit_amt: 0,
+            bit_dropout: true,
+            off: 0,
+        };
         assert_eq!(tap_canonical_ops(&[shl0]), vec![TapOp::ident(1)]);
-        let id5 = TapOp { col: 0, grp_log2: 5, bit_amt: 0, bit_dropout: false, off: 0 };
+        let id5 = TapOp {
+            col: 0,
+            grp_log2: 5,
+            bit_amt: 0,
+            bit_dropout: false,
+            off: 0,
+        };
         assert_eq!(tap_canonical_ops(&[id5]), vec![TapOp::ident(0)]);
         let off_tap = rot(0, 0, 2);
         assert_eq!(tap_canonical_ops(&[off_tap]), vec![off_tap]);
@@ -1001,7 +1120,7 @@ mod tests {
                 let x = (i as u64 ^ seed)
                     .wrapping_mul(0xA24B_AED4_963E_E407)
                     .wrapping_add(0x9FB2_1C65_1E98_DF25);
-                Gf::from_words([x, x.rotate_left(17) ^ seed])
+                Gf::from_polynomial_words([x, x.rotate_left(17) ^ seed])
             })
             .collect()
     }
@@ -1029,11 +1148,20 @@ mod tests {
                 bit_dropout: false,
                 off,
             };
-            let shl =
-                |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
-            for tap in
-                [TapOp::ident(1), rot(0, 3, 0), shl(1, 5, 1), rot(0, 6, 2), rot(0, 0, 3)]
-            {
+            let shl = |col, amt, off| TapOp {
+                col,
+                grp_log2: g,
+                bit_amt: amt,
+                bit_dropout: true,
+                off,
+            };
+            for tap in [
+                TapOp::ident(1),
+                rot(0, 3, 0),
+                shl(1, 5, 1),
+                rot(0, 6, 2),
+                rot(0, 0, 3),
+            ] {
                 let classes = tap_classes(&layout, &tap);
                 let plans: Vec<(Vec<Gf>, TapSupportTables)> = classes
                     .iter()
@@ -1060,9 +1188,8 @@ mod tests {
                     };
                     let expected = if trace_ok && bit_ok {
                         let dst_trace = (k_out << g) | dst_j;
-                        let dst_x = (dst_trace >> s)
-                            | (jm << tw)
-                            | ((dst_trace & ((1 << s) - 1)) << t_x);
+                        let dst_x =
+                            (dst_trace >> s) | (jm << tw) | ((dst_trace & ((1 << s) - 1)) << t_x);
                         eqx[dst_x]
                     } else {
                         Gf::zero()
@@ -1099,7 +1226,7 @@ mod tests {
             let pt = test_point(n_x, 0xC0FFEE ^ (tw as u64));
             let eq_r2 = build_eq_x_r_vec(&test_point(7, 99)[..7], &()).unwrap();
             let phi = |gg: Gf| -> Gf {
-                let wds = gg.words();
+                let wds = gg.as_words();
                 let mut acc = Gf::zero();
                 for wi in 0..2usize {
                     let mut bits = wds[wi];
@@ -1119,8 +1246,13 @@ mod tests {
                 bit_dropout: false,
                 off,
             };
-            let shl =
-                |col, amt, off| TapOp { col, grp_log2: g, bit_amt: amt, bit_dropout: true, off };
+            let shl = |col, amt, off| TapOp {
+                col,
+                grp_log2: g,
+                bit_amt: amt,
+                bit_dropout: true,
+                off,
+            };
             for tap in [TapOp::ident(0), rot(1, 2, 0), shl(0, 4, 1), rot(1, 7, 2)] {
                 for &cl in &tap_classes(&layout, &tap) {
                     let sup = tap_support_tables(&layout, &tap, &pt, cl);
@@ -1136,11 +1268,7 @@ mod tests {
                         if val.is_zero() {
                             continue;
                         }
-                        let z = crate::ligerito_flock::embed_xor_index(
-                            &layout,
-                            yx << p0,
-                            tap.col,
-                        );
+                        let z = crate::ligerito_flock::embed_xor_index(&layout, yx << p0, tap.col);
                         bphi[z >> 7] = phi(val);
                     }
                     let desc = tap_closure_desc(&layout, &tap, &pt, cl);

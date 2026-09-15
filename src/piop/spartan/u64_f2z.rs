@@ -9,10 +9,11 @@
 //! and is zero-padded to eight blocks for Spartan's assignment MLE. The
 //! commitment stores four 64-bit little-endian values per multiplication in
 //! 256 physical slots. This module describes that relation to the shared
-//! protocol of [`super::protocol`]: the exact `u64` assignment enters the
-//! inner sumcheck natively; only the `2^128`-sized products are reduced into
-//! the field, as raw residues built straight from the witness limbs.
+//! protocol of [`super::protocol`]: the assignment, native operands and
+//! split-limb products remain borrowed. Mixed first-round kernels fuse
+//! projection with accumulation and folding.
 
+use field::RingOps;
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
 
 use crate::{
@@ -25,10 +26,11 @@ use crate::{
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
-        self, BindingHasher, BlockTable, Domains, Kernel, PiopWitness, PreparedRelation, Proof,
-        ProtocolError, ProveOptions, RelationSpec, SlotRange, MatrixSource, FieldConfig, checked_pow2, packed_variables,
+        self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+        PreparedRelation, Proof, ProtocolError, RelationSpec, SlotRange, checked_pow2,
+        packed_variables,
     },
-    raw_monty::{RawMontyCtx, RawProducts},
+    raw_monty::NativeWideProducts,
     u64_mul::{
         U64_MUL_BIT_SLOTS, U64_MUL_LIMB_BASE, U64_MUL_LOGICAL_ASSIGNMENT_BLOCKS,
         U64_MUL_PADDED_ASSIGNMENT_BLOCKS, U64_MUL_SLOT_VARS, U64_MUL_VALUE_BITS,
@@ -264,24 +266,21 @@ impl RelationSpec for U64MulLayout {
         Ok(())
     }
 
-    /// Only the products need residues; the assignment stays native.
+    /// Borrow native assignment and split products without projection tables.
     fn piop_witness<'w>(
         &self,
         witness: &'w U64MulWitness,
-        config: &FieldConfig,
-        _options: ProveOptions,
+        _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        let ctx = &RawMontyCtx::new(config);
         let live = self.multiplications();
-        let products = RawProducts::from_native_limbs(
-            ctx,
+        let products = NativeWideProducts::new(
             &witness.x_values()[..live],
             &witness.y_values()[..live],
             &witness.z_lo_values()[..live],
             &witness.z_hi_values()[..live],
             live.next_power_of_two(),
         );
-        Ok(PiopWitness::RawProductsNative {
+        Ok(PiopWitness::NativeU64 {
             products,
             assignment: witness.assignment(),
         })
@@ -366,7 +365,13 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u64_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u64_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof).unwrap();
+        verify_u64_mul(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
         assert!(proof.size_bytes(prepared.security()) > 0);
 
         let mut second_transcript = Blake3Transcript::new();
@@ -399,8 +404,13 @@ mod tests {
         if let Ok(proof) = outcome {
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(
-                verify_u64_mul(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-                    .is_err()
+                verify_u64_mul(
+                    &mut verifier_transcript,
+                    &prepared,
+                    &hint.commitment,
+                    &proof
+                )
+                .is_err()
             );
         }
     }

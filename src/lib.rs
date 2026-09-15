@@ -54,18 +54,18 @@
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
 pub mod binary_pcs;
-#[cfg(feature = "span-metrics")]
-pub mod observability;
 #[cfg(feature = "binius64-bench")]
 pub mod binius_ligerito;
 pub mod dual_basis;
 pub mod ext_proj;
+pub mod f2map;
 #[cfg(feature = "hybrid")]
 pub mod hybrid;
-pub mod f2map;
 pub mod ligerito;
 pub mod ligerito_flock;
 pub mod merged_forest;
+#[cfg(feature = "span-metrics")]
+pub mod observability;
 pub mod pcs;
 pub mod piop;
 pub mod poly;
@@ -117,13 +117,13 @@ pub use ligerito_flock::{
 // EXPERIMENTAL — the single-tap shared-point collapse: k single-tap
 // claims at one point become ≤ #columns × 2 plain single-column claims
 // (weight transform; no streams, channels, or translated-eq rings).
+pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
 pub use ligerito_flock::{
     TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
     verify_mle_eval_mod_q_ligerito_tap_collapse,
 };
 pub use pcs::IntegerMatrixLayout;
-pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
+pub use poly::univariate::binary_b127::B127;
+pub use poly::univariate::binary_gf128::Gf128;
 pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
-pub use poly::univariate::binary_b127::BinaryFieldB127;
-pub use poly::univariate::binary_gf128::BinaryFieldGF128;
 pub use taps::{TapOp, extract_virtual_tap_rows};

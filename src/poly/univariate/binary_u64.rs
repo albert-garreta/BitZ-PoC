@@ -1,18 +1,7 @@
+use crate::poly::coefficient::{Coefficient, PolynomialField};
 use crate::poly::{
     ConstCoeffBitWidth, EvaluatablePolynomial, EvaluationError, Polynomial,
     univariate::{F2AddAssign, dense::DensePolynomial, prepare_projection},
-};
-use core::mem::MaybeUninit;
-use crypto_primitives::{PrimeField, Semiring, semiring::boolean::Boolean};
-use derive_more::{AsRef, Display};
-use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Zero};
-use rand::{distr::StandardUniform, prelude::*};
-use std::{
-    array,
-    hash::Hash,
-    iter::{Product, Sum},
-    marker::PhantomData,
-    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 use crate::transcript::delegate_const_transcribable;
 use crate::utils::{
@@ -21,6 +10,18 @@ use crate::utils::{
     mul_by_scalar::MulByScalar,
     named::Named,
     projectable_to_field::ProjectableToField,
+};
+use core::mem::MaybeUninit;
+use derive_more::{AsRef, Display};
+use field::Bit;
+use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Zero};
+use rand::{distr::StandardUniform, prelude::*};
+use std::{
+    array,
+    hash::Hash,
+    iter::{Product, Sum},
+    marker::PhantomData,
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 #[derive(AsRef, Clone, Copy, Debug, Default, Display, Hash, PartialEq, Eq)]
@@ -42,12 +43,12 @@ impl<const DEGREE_PLUS_ONE: usize> From<BinaryU64Poly<DEGREE_PLUS_ONE>> for u64 
 }
 
 impl<const DEGREE_PLUS_ONE: usize> From<BinaryU64Poly<DEGREE_PLUS_ONE>>
-    for DensePolynomial<Boolean, DEGREE_PLUS_ONE>
+    for DensePolynomial<Bit, DEGREE_PLUS_ONE>
 {
     #[inline(always)]
     fn from(binary_poly: BinaryU64Poly<DEGREE_PLUS_ONE>) -> Self {
         DensePolynomial {
-            coeffs: array::from_fn(|i| Boolean::new(!(binary_poly.0 & (1 << i)).is_zero())),
+            coeffs: array::from_fn(|i| Bit::from_bool(!(binary_poly.0 & (1 << i)).is_zero())),
         }
     }
 }
@@ -70,13 +71,13 @@ impl<const DEGREE_PLUS_ONE: usize> BinaryU64Poly<DEGREE_PLUS_ONE> {
     /// be filled with zeros. If the input has more than N+1 coefficients,
     /// it will panic.
     #[inline(always)]
-    pub fn new(coeffs: impl AsRef<[Boolean]>) -> Self {
+    pub fn new(coeffs: impl AsRef<[Bit]>) -> Self {
         // Self(DensePolynomial::new(coeffs))
         let coeffs = coeffs.as_ref();
         assert!(coeffs.len() <= DEGREE_PLUS_ONE);
         let mut value: u64 = 0;
         for (i, coeff) in coeffs.iter().enumerate() {
-            if coeff.inner() {
+            if bool::from(*coeff) {
                 value |= 1 << i;
             }
         }
@@ -88,12 +89,12 @@ impl<const DEGREE_PLUS_ONE: usize> BinaryU64Poly<DEGREE_PLUS_ONE> {
     /// be filled with zeros. If the input has more than N+1 coefficients,
     /// it will panic.
     #[inline(always)]
-    pub fn new_padded(coeffs: impl AsRef<[Boolean]>) -> Self {
+    pub fn new_padded(coeffs: impl AsRef<[Bit]>) -> Self {
         let coeffs = coeffs.as_ref();
         assert!(coeffs.len() <= DEGREE_PLUS_ONE);
         let mut value: u64 = 0;
         for (i, coeff) in coeffs.iter().enumerate() {
-            if coeff.inner() {
+            if bool::from(*coeff) {
                 value |= 1 << i;
             }
         }
@@ -326,11 +327,13 @@ impl<const DEGREE_PLUS_ONE: usize> Sum for BinaryU64Poly<DEGREE_PLUS_ONE> {
 impl<const DEGREE_PLUS_ONE: usize> Product for BinaryU64Poly<DEGREE_PLUS_ONE> {
     #[inline(always)]
     fn product<I: Iterator<Item = Self>>(_iter: I) -> Self {
-        unimplemented!("Product for BinaryU64Poly relies on multiplication, which is unimplemented");
+        unimplemented!(
+            "Product for BinaryU64Poly relies on multiplication, which is unimplemented"
+        );
     }
 }
 
-impl<const DEGREE_PLUS_ONE: usize> Semiring for BinaryU64Poly<DEGREE_PLUS_ONE> {}
+impl<const DEGREE_PLUS_ONE: usize> Coefficient for BinaryU64Poly<DEGREE_PLUS_ONE> {}
 
 impl<const DEGREE_PLUS_ONE: usize> Distribution<BinaryU64Poly<DEGREE_PLUS_ONE>>
     for StandardUniform
@@ -349,13 +352,13 @@ impl<const DEGREE_PLUS_ONE: usize> Distribution<BinaryU64Poly<DEGREE_PLUS_ONE>>
 //
 // Zip-specific traits
 //
-impl<const DEGREE_PLUS_ONE: usize> Polynomial<Boolean> for BinaryU64Poly<DEGREE_PLUS_ONE> {
-    const DEGREE_BOUND: usize = DensePolynomial::<Boolean, DEGREE_PLUS_ONE>::DEGREE_BOUND;
+impl<const DEGREE_PLUS_ONE: usize> Polynomial<Bit> for BinaryU64Poly<DEGREE_PLUS_ONE> {
+    const DEGREE_BOUND: usize = DensePolynomial::<Bit, DEGREE_PLUS_ONE>::DEGREE_BOUND;
 }
 
 #[allow(clippy::arithmetic_side_effects)]
 impl<R: Clone + Zero + One + CheckedAdd + CheckedMul, const DEGREE_PLUS_ONE: usize>
-    EvaluatablePolynomial<Boolean, R> for BinaryU64Poly<DEGREE_PLUS_ONE>
+    EvaluatablePolynomial<Bit, R> for BinaryU64Poly<DEGREE_PLUS_ONE>
 {
     type EvaluationPoint = R;
 
@@ -380,7 +383,7 @@ impl<R: Clone + Zero + One + CheckedAdd + CheckedMul, const DEGREE_PLUS_ONE: usi
 }
 
 impl<const DEGREE_PLUS_ONE: usize> ConstCoeffBitWidth for BinaryU64Poly<DEGREE_PLUS_ONE> {
-    const COEFF_BIT_WIDTH: usize = DensePolynomial::<Boolean, DEGREE_PLUS_ONE>::COEFF_BIT_WIDTH;
+    const COEFF_BIT_WIDTH: usize = DensePolynomial::<Bit, DEGREE_PLUS_ONE>::COEFF_BIT_WIDTH;
 }
 
 impl<const DEGREE_PLUS_ONE: usize> Named for BinaryU64Poly<DEGREE_PLUS_ONE> {
@@ -421,7 +424,7 @@ impl<'a, const DEGREE_PLUS_ONE: usize> BinaryU64PolyIter<'a, DEGREE_PLUS_ONE> {
 }
 
 impl<'a, const DEGREE_PLUS_ONE: usize> Iterator for BinaryU64PolyIter<'a, DEGREE_PLUS_ONE> {
-    type Item = Boolean;
+    type Item = Bit;
 
     #[allow(clippy::arithmetic_side_effects)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -486,7 +489,7 @@ where
 
 impl<F, const DEGREE_PLUS_ONE: usize> ProjectableToField<F> for BinaryU64Poly<DEGREE_PLUS_ONE>
 where
-    F: PrimeField + FromRef<F> + 'static,
+    F: PolynomialField + FromRef<F> + 'static,
 {
     fn prepare_projection(sampled_value: &F) -> impl Fn(&Self) -> F + 'static {
         prepare_projection::<F, Self, _, DEGREE_PLUS_ONE>(sampled_value, |poly, i| {

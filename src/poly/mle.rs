@@ -5,7 +5,8 @@ pub(crate) use structured::{
     CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
 };
 
-use crypto_primitives::PrimeField;
+use crate::poly::coefficient::PolynomialField;
+
 pub use dense::DenseMultilinearExtension;
 
 use crate::utils::mul_by_scalar::MulByScalar;
@@ -20,7 +21,7 @@ use crate::poly::EvaluationError;
 /// This trait describes an interface for the multilinear extension
 /// of an array.
 /// The latter is a multilinear polynomial represented in terms of its
-/// evaluations over the domain {0,1}^`num_vars` (i.e. the Boolean hypercube).
+/// evaluations over the domain {0,1}^`num_vars` (i.e. the Bit hypercube).
 ///
 /// Index represents a point, which is a vector in {0,1}^`num_vars` in little
 /// endian form. For example, `0b1011` represents `P(1,1,0,1)`
@@ -53,7 +54,7 @@ pub trait MultilinearExtension<T>:
 /// `F::Inner` Montgomery representations
 /// instead of field elements `F` which are typically
 /// an `F::Inner` and the field config.
-pub trait MultilinearExtensionWithConfig<F: PrimeField> {
+pub trait MultilinearExtensionWithConfig<F: PolynomialField> {
     /// Reduce the number of variables of `self` by fixing the
     /// `partial_point.len()` variables at `partial_point`.
     fn fix_variables_with_config(&mut self, partial_point: &[F], config: &F::Config);

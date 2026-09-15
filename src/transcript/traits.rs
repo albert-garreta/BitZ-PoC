@@ -2,14 +2,9 @@
 // Transcribable and Transcript
 //
 
-use crypto_bigint::{BitOps, BoxedUint, Word};
-use crypto_primitives::{
-    ConstIntSemiring, PrimeField, WORD_FACTOR, boolean::Boolean, crypto_bigint_int::Int,
-    crypto_bigint_uint::Uint,
-};
-use itertools::Itertools;
-use crate::utils::primality::PrimalityTest;
-use crate::utils::{add, from_ref::FromRef, mul};
+use crate::poly::coefficient::PolynomialField;
+use crate::utils::{add, mul};
+use field::{Bit, Uint, Z};
 
 /// Common trait for both `Transcribable` and `ConstTranscribable` to avoid code
 /// duplication in their implementations.
@@ -331,7 +326,15 @@ pub trait Transcript {
     /// current transcript state, updating it.
     fn get_challenge<T: ConstTranscribable>(&mut self) -> T;
 
-    fn get_field_challenge<F: PrimeField>(&mut self, cfg: &F::Config) -> F
+    /// Starts one public sampling request. Grinding wrappers establish exactly
+    /// one boundary here; rejection retries use `fill_sampling_bytes` only.
+    fn begin_sampling(&mut self) {}
+
+    /// Advances the sampling stream without creating a challenge boundary.
+    /// Every adapter must forward this to preserve prover/verifier replay.
+    fn fill_sampling_bytes(&mut self, output: &mut [u8]);
+
+    fn get_field_challenge<F: PolynomialField>(&mut self, cfg: &F::Config) -> F
     where
         F::Inner: ConstTranscribable,
     {
@@ -346,7 +349,7 @@ pub trait Transcript {
     //             to call in a batch because each call allocates its own buffer.
     //             It might make sense to make a separate `get_challenge_with_buf`
     //             alternative to `get_challenge`.
-    fn get_field_challenges<F: PrimeField>(&mut self, n: usize, cfg: &F::Config) -> Vec<F>
+    fn get_field_challenges<F: PolynomialField>(&mut self, n: usize, cfg: &F::Config) -> Vec<F>
     where
         F::Inner: ConstTranscribable,
     {
@@ -359,20 +362,6 @@ pub trait Transcript {
         (0..n).map(|_| self.get_challenge()).collect()
     }
 
-    fn get_prime<R: ConstIntSemiring + ConstTranscribable, T: PrimalityTest<R>>(&mut self) -> R;
-
-    fn get_random_field_cfg<F, FMod, T>(&mut self) -> F::Config
-    where
-        F: PrimeField,
-        FMod: ConstTranscribable + ConstIntSemiring,
-        F::Modulus: FromRef<FMod>,
-        T: PrimalityTest<FMod>,
-    {
-        let prime = self.get_prime::<FMod, T>();
-
-        F::make_cfg(&F::Modulus::from_ref(&prime)).expect("prime is guaranteed to be prime")
-    }
-
     /// Absorbs a byte slice into the hash sponge.
     /// This updates the internal state of the hasher with the provided data.
     /// Should not be used directly.
@@ -381,6 +370,7 @@ pub trait Transcript {
     /// Absorbs a byte slice into the transcript.
     fn absorb_slice(&mut self, buf: &[u8]) {
         self.absorb_inner(&[0x6]);
+        self.absorb_inner(&(buf.len() as u64).to_le_bytes());
         self.absorb_inner(buf);
         self.absorb_inner(&[0x7]);
     }
@@ -392,7 +382,7 @@ pub trait Transcript {
     // have the same byte length
     fn absorb_random_field<F>(&mut self, v: &F, buf: &mut [u8])
     where
-        F: PrimeField,
+        F: PolynomialField,
         F::Inner: Transcribable,
         F::Modulus: Transcribable,
     {
@@ -417,7 +407,7 @@ pub trait Transcript {
     /// absorb_into_transcript.
     fn absorb_random_field_slice<F>(&mut self, v: &[F], buf: &mut [u8])
     where
-        F: PrimeField,
+        F: PolynomialField,
         F::Inner: Transcribable,
         F::Modulus: Transcribable,
     {
@@ -453,17 +443,19 @@ macro_rules! impl_transcribable_for_primitives {
 impl_transcribable_for_primitives!(u8, u16, u32, u64, u128);
 impl_transcribable_for_primitives!(i8, i16, i32, i64, i128);
 
-impl GenTranscribable for Boolean {
+impl GenTranscribable for Bit {
     fn read_transcription_bytes_exact(bytes: &[u8]) -> Self {
-        (bytes[0] != 0).into()
+        field::CanonicalCodec::decode_public(&field::F2Ops, bytes)
+            .expect("canonical bit encoding")
+            .bit()
     }
 
     fn write_transcription_bytes_exact(&self, buf: &mut [u8]) {
-        buf[0] = self.to_u8();
+        field::CanonicalCodec::encode_into(&field::F2Ops, &field::F2::from_bit(*self), buf);
     }
 }
 
-impl ConstTranscribable for Boolean {
+impl ConstTranscribable for Bit {
     const NUM_BYTES: usize = 1;
     const NUM_BITS: usize = 1;
 }
@@ -483,104 +475,23 @@ impl ConstTranscribable for () {
     const NUM_BITS: usize = 0;
 }
 
-impl<const LIMBS: usize> GenTranscribable for Uint<LIMBS> {
+impl<const L: usize> GenTranscribable for Z<L> {
     fn read_transcription_bytes_exact(bytes: &[u8]) -> Self {
-        // crypto_bigint::Uint stores limbs in least-to-most significant order.
-        // It matches little-endian order ef limbs encoding, so platform pointer width
-        // does not matter.
-        let (chunked, rem) = bytes.as_chunks::<{ 8 / WORD_FACTOR }>();
-        assert!(rem.is_empty(), "Invalid byte slice length for Uint");
-        let words = chunked
-            .iter()
-            .map(|chunk| Word::from_le_bytes(*chunk))
-            .collect_array::<LIMBS>()
-            .expect("Invalid length for Uint");
-        Uint::<LIMBS>::from_words(words)
+        Self::from_twos_complement_words(
+            *Uint::<L>::read_transcription_bytes_exact(bytes).as_words(),
+        )
     }
-
-    #[allow(clippy::arithmetic_side_effects)]
-    fn write_transcription_bytes_exact(&self, buf: &mut [u8]) {
-        // crypto_bigint::Uint stores limbs in least-to-most significant order.
-        // It matches little-endian order ef limbs encoding, so platform pointer width
-        // does not matter.
-        assert_eq!(buf.len(), Self::NUM_BYTES, "Buffer size mismatch for Uint");
-        const W_SIZE: usize = size_of::<Word>();
-        for (i, w) in self.as_words().iter().enumerate() {
-            // Performance: reuse buffer and help compiler optimize away materializing
-            // vector
-            buf[(i * W_SIZE)..(i * W_SIZE + W_SIZE)].copy_from_slice(w.to_le_bytes().as_ref());
-        }
+    fn write_transcription_bytes_exact(&self, out: &mut [u8]) {
+        Uint::from_words(*self.as_words()).write_transcription_bytes_exact(out)
     }
 }
-
-impl<const LIMBS: usize> ConstTranscribable for Uint<LIMBS> {
-    const NUM_BYTES: usize = 8 * LIMBS / WORD_FACTOR;
-}
-
-impl<const LIMBS: usize> GenTranscribable for Int<LIMBS> {
-    fn read_transcription_bytes_exact(bytes: &[u8]) -> Self {
-        *Uint::<LIMBS>::read_transcription_bytes_exact(bytes).as_int()
-    }
-
-    fn write_transcription_bytes_exact(&self, buf: &mut [u8]) {
-        self.as_uint().write_transcription_bytes_exact(buf)
-    }
-}
-
-impl<const LIMBS: usize> ConstTranscribable for Int<LIMBS> {
-    const NUM_BYTES: usize = Uint::<LIMBS>::NUM_BYTES;
-}
-
-impl GenTranscribable for BoxedUint {
-    fn read_transcription_bytes_exact(bytes: &[u8]) -> Self {
-        // crypto_bigint::BoxedUint stores limbs in least-to-most significant order.
-        // It matches little-endian order ef limbs encoding, so platform pointer width
-        // does not matter.
-        let (chunked, rem) = bytes.as_chunks::<{ 8 / WORD_FACTOR }>();
-        assert!(rem.is_empty(), "Invalid byte slice length for BoxedUint");
-        let words = chunked
-            .iter()
-            .map(|chunk| Word::from_le_bytes(*chunk))
-            .collect_vec();
-        BoxedUint::from_words(words)
-    }
-
-    #[allow(clippy::arithmetic_side_effects)]
-    fn write_transcription_bytes_exact(&self, buf: &mut [u8]) {
-        // crypto_bigint::BoxedUint stores limbs in least-to-most significant order.
-        // It matches little-endian order ef limbs encoding, so platform pointer width
-        // does not matter.
-        assert_eq!(
-            buf.len(),
-            self.bytes_precision(),
-            "Buffer size mismatch for BoxedUint"
-        );
-        const W_SIZE: usize = size_of::<Word>();
-        for (i, w) in self.as_words().iter().enumerate() {
-            // Performance: reuse buffer and help compiler optimize away materializing
-            // vector
-            buf[(i * W_SIZE)..(i * W_SIZE + W_SIZE)].copy_from_slice(w.to_le_bytes().as_ref());
-        }
-    }
-}
-
-impl Transcribable for BoxedUint {
-    /// Up to 255 bytes - so up to 2040 bits - should be plenty.
-    const LENGTH_NUM_BYTES: usize = 1;
-
-    fn read_num_bytes(bytes: &[u8]) -> usize {
-        assert_eq!(bytes.len(), Self::LENGTH_NUM_BYTES);
-        usize::from(bytes[0])
-    }
-
-    fn get_num_bytes(&self) -> usize {
-        usize::from(u8::try_from(self.bytes_precision()).expect("BoxedUint size must fit into u8"))
-    }
+impl<const L: usize> ConstTranscribable for Z<L> {
+    const NUM_BYTES: usize = 8 * L;
 }
 
 impl<F> GenTranscribable for Vec<F>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
 {
@@ -608,7 +519,7 @@ where
 
 impl<F> Transcribable for Vec<F>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
 {
@@ -619,4 +530,17 @@ where
             add!(F::Modulus::NUM_BYTES, mul!(self.len(), F::Inner::NUM_BYTES))
         }
     }
+}
+
+impl<const L: usize> GenTranscribable for field::Uint<L> {
+    fn read_transcription_bytes_exact(bytes: &[u8]) -> Self {
+        field::CanonicalCodec::decode_public(&field::IntegerOps, bytes)
+            .expect("fixed-width integer encoding")
+    }
+    fn write_transcription_bytes_exact(&self, bytes: &mut [u8]) {
+        field::CanonicalCodec::encode_into(&field::IntegerOps, self, bytes);
+    }
+}
+impl<const L: usize> ConstTranscribable for field::Uint<L> {
+    const NUM_BYTES: usize = L * 8;
 }

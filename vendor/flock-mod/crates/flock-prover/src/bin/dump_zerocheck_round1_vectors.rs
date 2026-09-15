@@ -6,7 +6,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::{F8, F128};
+use flock_prover::field::{Gf8, Gf128};
 use flock_prover::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
 use flock_prover::zerocheck::PaddingSpec;
 use flock_prover::zerocheck::univariate_skip::{pack_bits, round1_naive};
@@ -30,8 +30,8 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn f128(&mut self) -> F128 {
-        F128 {
+    fn f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
@@ -41,7 +41,7 @@ impl Rng {
     }
 }
 
-fn write_f128(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn write_f128(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -83,7 +83,7 @@ fn main() -> std::io::Result<()> {
     let b_packed = pack_bits(&b);
     let c_packed = pack_bits(&c);
 
-    let mut r = vec![F128::ZERO; m];
+    let mut r = vec![Gf128::ZERO; m];
     for value in r.iter_mut().take(K_SKIP) {
         *value = rng.f128();
     }
@@ -101,23 +101,23 @@ fn main() -> std::io::Result<()> {
         k_log,
         useful_bits_per_block: useful_bits,
     };
-    let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-    let ntt_l = AdditiveNttGf8::new(K_SKIP, F8(1u8 << K_SKIP));
+    let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+    let ntt_l = AdditiveNttGf8::new(K_SKIP, Gf8(1u8 << K_SKIP));
     let inv_table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
     let (ab_opt, c_opt) = round1_shift_reduce_extract_c_packed_padded(
         &a_packed, &b_packed, &c_packed, m, K_SKIP, &r, &inv_table, &padding,
     );
     let c_s = c_s_f128();
-    let round1_ab: Vec<F128> = ab_opt.iter().map(|x| c_s * *x).collect();
-    let round1_c: Vec<F128> = c_opt.iter().map(|x| c_s * *x).collect();
+    let round1_ab: Vec<Gf128> = ab_opt.iter().map(|x| c_s * *x).collect();
+    let round1_c: Vec<Gf128> = c_opt.iter().map(|x| c_s * *x).collect();
     let (ab_naive, c_naive) = round1_naive(&a, &b, &c, m, K_SKIP, &r);
     assert_eq!(ab_naive, round1_ab);
     assert_eq!(c_naive, round1_c);
 
     let mut mcol = vec![0u8; 64 * 64];
     for s in 0..64 {
-        let mut column = vec![F8::ZERO; 64];
-        column[s] = F8(1);
+        let mut column = vec![Gf8::ZERO; 64];
+        column[s] = Gf8(1);
         ntt_s.inverse(&mut column);
         ntt_l.forward(&mut column);
         for i in 0..64 {
@@ -127,7 +127,7 @@ fn main() -> std::io::Result<()> {
     let mut f8mul = vec![0u8; 256 * 256];
     for x in 0..256 {
         for y in 0..256 {
-            f8mul[x * 256 + y] = (F8(x as u8) * F8(y as u8)).0;
+            f8mul[x * 256 + y] = (Gf8(x as u8) * Gf8(y as u8)).0;
         }
     }
 

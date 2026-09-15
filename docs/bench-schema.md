@@ -175,7 +175,7 @@ if their measurement configurations were identical.
   SHA profiles, or the one `F2Z_BENCH_LAMBDA` selects), `pcs` (PCS-only:
   steps 2/3/4/5.0 are `na`).
 - **Micro/policy benches — exempt** (own output, strict-env check only):
-  `field`, `eq_tables`, `u32_mul_inner_policy`, `u32_mul_outer_skip`,
+  `field`, `eq_tables`, `u32_mul_outer_skip`,
   `cm_and`. (`scripts/baby_bear_mul_bench_report.py` still targets the
   pre-schema BabyBear output — commit b7713d8; porting it is open.)
 - `examples/reference_measure.rs`: unchanged output, documented here as

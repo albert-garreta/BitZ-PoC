@@ -9,7 +9,7 @@ use std::fmt::{self, Display};
 use std::mem::size_of;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use field::F128;
+use field::Gf128;
 use rayon::prelude::*;
 
 use crate::witgen::Z;
@@ -304,7 +304,7 @@ impl MaterializedMTranspose {
     }
 
     /// Computes `r * M` and allocates the result vector.
-    pub fn apply(&self, challenges: &[F128]) -> Result<Vec<F128>, MatrixApplyError> {
+    pub fn apply(&self, challenges: &[Gf128]) -> Result<Vec<Gf128>, MatrixApplyError> {
         let mut output = Vec::new();
         self.apply_into(challenges, &mut output)?;
         Ok(output)
@@ -313,16 +313,16 @@ impl MaterializedMTranspose {
     /// Computes `r * M` into a reusable result allocation.
     pub fn apply_into(
         &self,
-        challenges: &[F128],
-        output: &mut Vec<F128>,
+        challenges: &[Gf128],
+        output: &mut Vec<Gf128>,
     ) -> Result<(), MatrixApplyError> {
         self.apply_inner(challenges, output, None)
     }
 
     fn apply_inner(
         &self,
-        challenges: &[F128],
-        output: &mut Vec<F128>,
+        challenges: &[Gf128],
+        output: &mut Vec<Gf128>,
         force_parallel: Option<bool>,
     ) -> Result<(), MatrixApplyError> {
         if challenges.len() != self.row_count {
@@ -331,7 +331,7 @@ impl MaterializedMTranspose {
                 actual: challenges.len(),
             });
         }
-        output.resize(self.column_count(), F128::new(0, 0));
+        output.resize(self.column_count(), Gf128::new(0, 0));
 
         let evaluate = |column: usize| {
             let start = self.column_offsets[column] as usize;
@@ -343,7 +343,7 @@ impl MaterializedMTranspose {
                 lo ^= challenge.lo;
                 hi ^= challenge.hi;
             }
-            F128::new(lo, hi)
+            Gf128::new(lo, hi)
         };
         let parallel = force_parallel.unwrap_or_else(|| {
             rayon::current_num_threads() > 1
@@ -425,7 +425,7 @@ impl Circuit for MTransposeGenerator {
     type Z<const LIMBS: usize> = Z<LIMBS>;
 
     fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
-        Z::from_le_words(words)
+        crate::witgen::integer_from_words(words)
     }
 
     fn xor(&mut self, lhs: MatrixBit, rhs: MatrixBit) -> MatrixBit {
@@ -460,7 +460,7 @@ impl Circuit for MTransposeGenerator {
             self.recorder.push_row(bit);
             bit.constant_term()
         });
-        (Z::from_le_bits(&values), Z::from_le_bits(&values[..LOW]))
+        (crate::witgen::integer_from_bits(&values), crate::witgen::integer_from_bits(&values[..LOW]))
     }
 
     fn assert_r1c<const LIMBS: usize>(&mut self, _: Z<LIMBS>, _: Z<LIMBS>, _: Z<LIMBS>) {}
@@ -503,10 +503,10 @@ mod tests {
         let _: (CS::Z<1>, CS::Z<1>) = circuit.f2z_unsigned::<1, 2, 1, 1>(&hinted);
     }
 
-    fn challenges(count: usize) -> Vec<F128> {
+    fn challenges(count: usize) -> Vec<Gf128> {
         (0..count)
             .map(|index| {
-                F128::new(
+                Gf128::new(
                     (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
                     (index as u64).wrapping_mul(0xd1b5_4a32_d192_ed03) ^ 0xa5a5,
                 )
@@ -527,7 +527,7 @@ mod tests {
         let matrices = generator.into_matrices();
         let r = challenges(matrices.m.row_count());
 
-        let mut expected = vec![F128::new(0, 0); matrices.m.column_count()];
+        let mut expected = vec![Gf128::new(0, 0); matrices.m.column_count()];
         for (row, challenge) in matrices.m.rows().iter().zip(&r) {
             for &column in row.positions() {
                 expected[column] += *challenge;
@@ -587,11 +587,11 @@ mod tests {
         }
         recorder.push_row(&expression);
         let transpose = recorder.finish();
-        let challenge = F128::new(7, 11);
-        let product = transpose.apply(&[F128::new(3, 5), challenge]).unwrap();
+        let challenge = Gf128::new(7, 11);
+        let product = transpose.apply(&[Gf128::new(3, 5), challenge]).unwrap();
 
         assert_eq!(transpose.nonzero_count(), 7);
-        assert_eq!(product[0], F128::new(3, 5));
+        assert_eq!(product[0], Gf128::new(3, 5));
         assert!(product[1..].iter().all(|value| *value == challenge));
     }
 

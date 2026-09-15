@@ -1,8 +1,8 @@
-use crate::field::F128;
+use crate::field::Gf128;
 
-#[target_feature(enable = "avx512f,vpclmulqdq")]
-pub(super) unsafe fn butterfly_row_pair(top: &mut [F128], bot: &mut [F128], twiddle: F128) {
-    use crate::field::gf2_128::x86_64::ghash_mul_x4;
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq,pclmulqdq,sse4.1")]
+pub(super) unsafe fn butterfly_row_pair(top: &mut [Gf128], bot: &mut [Gf128], twiddle: Gf128) {
+    use crate::field::gf128_kernels::x86_64::ghash_mul_x4;
     use core::arch::x86_64::*;
 
     // SAFETY: caller guarantees the target features and equal slice lengths.
@@ -25,23 +25,23 @@ pub(super) unsafe fn butterfly_row_pair(top: &mut [F128], bot: &mut [F128], twid
 }
 
 #[allow(clippy::too_many_arguments)]
-#[target_feature(enable = "avx512f,vpclmulqdq")]
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq,pclmulqdq,sse4.1")]
 pub(super) unsafe fn butterfly_fused_2layer(
-    a: &mut [F128],
-    b: &mut [F128],
-    c: &mut [F128],
-    d: &mut [F128],
-    t_outer: F128,
-    t_inner_a: F128,
-    t_inner_b: F128,
+    a: &mut [Gf128],
+    b: &mut [Gf128],
+    c: &mut [Gf128],
+    d: &mut [Gf128],
+    t_outer: Gf128,
+    t_inner_a: Gf128,
+    t_inner_b: Gf128,
 ) {
-    use crate::field::gf2_128::x86_64::ghash_mul_x4;
+    use crate::field::gf128_kernels::x86_64::ghash_mul_x4;
     use core::arch::x86_64::*;
 
     // SAFETY: caller guarantees the target features and equal slice lengths.
     unsafe {
         let broadcast =
-            |value: F128| _mm512_broadcast_i32x4(_mm_set_epi64x(value.hi as i64, value.lo as i64));
+            |value: Gf128| _mm512_broadcast_i32x4(_mm_set_epi64x(value.hi as i64, value.lo as i64));
         let outer = broadcast(t_outer);
         let inner_a = broadcast(t_inner_a);
         let inner_b = broadcast(t_inner_b);
@@ -87,21 +87,21 @@ pub(super) unsafe fn butterfly_fused_2layer(
 
 /// # Safety
 /// The caller guarantees target features, pointer validity, and disjoint rows.
-#[target_feature(enable = "avx512f,vpclmulqdq")]
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq,pclmulqdq,sse4.1")]
 pub(super) unsafe fn butterfly_fused_4layer_row(
-    ptr: *mut F128,
+    ptr: *mut Gf128,
     sixteenth: usize,
     num_ntts: usize,
     r: usize,
-    twiddles: &[F128; 15],
+    twiddles: &[Gf128; 15],
 ) {
-    use crate::field::gf2_128::x86_64::ghash_mul_x4;
+    use crate::field::gf128_kernels::x86_64::ghash_mul_x4;
     use core::arch::x86_64::*;
 
     // SAFETY: caller provides target features and pointer geometry.
     unsafe {
         let broadcast =
-            |value: F128| _mm512_broadcast_i32x4(_mm_set_epi64x(value.hi as i64, value.lo as i64));
+            |value: Gf128| _mm512_broadcast_i32x4(_mm_set_epi64x(value.hi as i64, value.lo as i64));
         let row = |i: usize| ptr.add((i * sixteenth + r) * num_ntts);
         let lanes = num_ntts & !3;
         let mut lane = 0;
@@ -147,7 +147,7 @@ pub(super) unsafe fn butterfly_fused_4layer_row(
         }
 
         while lane < num_ntts {
-            let mut values = [F128::ZERO; 16];
+            let mut values = [Gf128::ZERO; 16];
             for (i, value) in values.iter_mut().enumerate() {
                 *value = *row(i).add(lane);
             }

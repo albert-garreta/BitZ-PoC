@@ -86,11 +86,15 @@ def release() -> None:
     shutil.rmtree(LOCK, ignore_errors=True)
 
 
-def wait_idle(label: str, min_idle: float, hold_seconds: float, poll_seconds: float) -> None:
+def wait_idle(label: str, min_idle: float, hold_seconds: float, poll_seconds: float,
+              max_wait_seconds: float | None = None) -> None:
     """Require `hold_seconds` of consecutive samples at or above `min_idle`."""
     needed = max(1, round(hold_seconds / poll_seconds))
     streak = 0
+    started = time.monotonic()
     while streak < needed:
+        if max_wait_seconds is not None and time.monotonic() - started >= max_wait_seconds:
+            raise TimeoutError(f"{label}: host did not sustain {min_idle}% idle within {max_wait_seconds}s")
         idle = idle_percent()
         streak = streak + 1 if idle >= min_idle else 0
         print(f"[bench_gate] {label}: idle {idle:.0f}% (streak {streak}/{needed})", flush=True)
@@ -107,6 +111,8 @@ def main() -> int:
     run.add_argument("--min-idle", type=float, default=88.0)
     run.add_argument("--hold-seconds", type=float, default=120.0)
     run.add_argument("--poll-seconds", type=float, default=20.0)
+    run.add_argument("--max-idle-wait-seconds", type=float,
+                     help="fail without running the campaign if the host cannot qualify in time")
     run.add_argument("--swap-grow-gb", type=float, default=12.0,
                      help="abort the campaign if swap grows past this over its baseline")
     run.add_argument("command", nargs=argparse.REMAINDER,
@@ -117,7 +123,8 @@ def main() -> int:
         parser.error("no command given after --")
     acquire(args.label, args.poll_seconds)
     try:
-        wait_idle(args.label, args.min_idle, args.hold_seconds, args.poll_seconds)
+        wait_idle(args.label, args.min_idle, args.hold_seconds, args.poll_seconds,
+                  args.max_idle_wait_seconds)
         baseline = swap_used_gb()
         print(f"[bench_gate] {args.label}: starting (swap baseline {baseline:.2f} GB, "
               f"guard +{args.swap_grow_gb:.0f} GB)", flush=True)

@@ -87,7 +87,7 @@ fn main() -> std::io::Result<()> {
         merkle_hash: HashKind::Sha256,
     };
 
-    // Reproducible Boolean witness → packed F128 message, then the real commit.
+    // Reproducible Boolean witness → packed Gf128 message, then the real commit.
     let mut rng = Rng::new(0xC0FFEE);
     let z = rng.bits(1usize << m);
     let z_packed = pack_witness(&z, m);
@@ -129,7 +129,7 @@ fn main() -> std::io::Result<()> {
 
     eprintln!(
         "wrote commit oracle to {path}: m={m} rate=1/2^{log_inv_rate} lanes={} \
-         | msg={} F128, codeword={} F128 ({:.1} MB), root={}",
+         | msg={} Gf128, codeword={} Gf128 ({:.1} MB), root={}",
         params.num_ntts(),
         z_packed.len(),
         codeword.len(),

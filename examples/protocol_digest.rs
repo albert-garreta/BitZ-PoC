@@ -61,7 +61,12 @@ fn multiswap_digest() -> String {
 
     // Every transcript-visible proof component, framed.
     let f2z_bytes = proof.f2z().to_bytes();
-    let mu_prime = proof.mu_prime().expect("lift").to_bytes_le();
+    let mut mu_prime = [0u8; 40];
+    field::CanonicalCodec::encode_into(
+        &field::IntegerOps,
+        proof.mu_prime().expect("lift"),
+        &mut mu_prime,
+    );
     let nonce = proof.reduction_nonce().expect("nonce").to_le_bytes();
     let spartan = format!("{:?}", proof.spartan());
     digest_hex(&[

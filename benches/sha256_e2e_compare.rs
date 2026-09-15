@@ -392,7 +392,7 @@ impl F2zContext {
                 .inner()
                 .round_polynomials
                 .first()
-                .map_or(0, |round| round[0].canonical_element_encoding().len())
+                .map_or(0, |_| field::Fp::<2>::canonical_encoding_width())
             + 8 * (proof.inner_nonces().len() + 2);
         let proof_bytes = F2Z_COMMITMENT_BYTES + piop_bytes + proof.f2z().to_bytes().len();
         black_box((&proof, &hint));

@@ -1,0 +1,5188 @@
+{
+  "scope": "Per-workload experimental promotion eligibility, not production dispatch. Fixed-source selections only; no promotion from post-hoc diagnostic winners. Timing/privacy contracts must also match.",
+  "binary_sha256": "505453b9cc6c223f22879cff439a88c357ca36ff0df6243098c2f0845a936724",
+  "decisions": [
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l1_signed16_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "regression",
+          "median_ratio": 1.0541810765274453,
+          "p95_ratio": 1.052083972476662,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l1_signed16_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "inconclusive",
+          "median_ratio": 1.0045725415908286,
+          "p95_ratio": 1.0018268481675872,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l1_signed16_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 1.0010698637858308,
+          "p95_ratio": 1.0007707776153651,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l1_full_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "regression",
+          "median_ratio": 1.05120401038403,
+          "p95_ratio": 1.0441506916649113,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l1_full_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "inconclusive",
+          "median_ratio": 1.0032363185530486,
+          "p95_ratio": 1.010142147960014,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l1_full_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.9986905962081464,
+          "p95_ratio": 0.9949832456714065,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l2_signed16_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8482411662177152,
+          "p95_ratio": 0.8537596096870262,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l2_signed16_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.9520927923797473,
+          "p95_ratio": 0.9397533088125676,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l2_signed16_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.9515468363080236,
+          "p95_ratio": 0.9492425072891342,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l2_full_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8502559219140579,
+          "p95_ratio": 0.8580551129076139,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l2_full_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.9542394662142086,
+          "p95_ratio": 0.9520712483815347,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l2_full_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.9490124666017675,
+          "p95_ratio": 0.9447599342958459,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l9_signed16_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8083219713606754,
+          "p95_ratio": 0.8039311017116179,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l9_signed16_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8016970297310505,
+          "p95_ratio": 0.8021438051941528,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l9_signed16_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8096985789372476,
+          "p95_ratio": 0.8149491593787945,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l9_full_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8083888978955618,
+          "p95_ratio": 0.8137683692475849,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l9_full_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8107513719191818,
+          "p95_ratio": 0.8042908061399795,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l9_full_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "incumbent",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "incumbent",
+          "status": "pass",
+          "median_ratio": 0.8067444578218441,
+          "p95_ratio": 0.8038923185041149,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l4_signed16_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native128x2",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native128x2",
+          "status": "pass",
+          "median_ratio": 0.9010474372701457,
+          "p95_ratio": 0.905570992776087,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l4_signed16_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native128x2",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native128x2",
+          "status": "pass",
+          "median_ratio": 0.9086088827925977,
+          "p95_ratio": 0.927601675848415,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l4_signed16_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native128x2",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native128x2",
+          "status": "pass",
+          "median_ratio": 0.9242584043801547,
+          "p95_ratio": 0.9284445125023795,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l4_full_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native128x2",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native128x2",
+          "status": "pass",
+          "median_ratio": 0.9032344863420426,
+          "p95_ratio": 0.8978725076262529,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l4_full_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native128x2",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native128x2",
+          "status": "pass",
+          "median_ratio": 0.9113154140473763,
+          "p95_ratio": 0.9149112167395538,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_integer_mac",
+      "size": "l4_full_n65536",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 85
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native128x2",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native128x2",
+          "status": "pass",
+          "median_ratio": 0.9213515235605323,
+          "p95_ratio": 0.9217161317118778,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q100_l2_n16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.04227889100130624,
+          "p95_ratio": 0.042370049144757393,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.09682586923138864,
+          "p95_ratio": 0.09746786709161485,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q100_l2_n1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.013547730158652283,
+          "p95_ratio": 0.013598261636860686,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.013872875682459937,
+          "p95_ratio": 0.013942245557292038,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q128_l2_n16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.4157919580740343,
+          "p95_ratio": 0.42076952931366407,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "inconclusive",
+          "median_ratio": 0.8877002686035664,
+          "p95_ratio": 0.8811829217213539,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q128_l2_n1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.3339454191033138,
+          "p95_ratio": 0.3395794604807345,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.3407536612442332,
+          "p95_ratio": 0.340039870149365,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q100_l4_n16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.08152693811713359,
+          "p95_ratio": 0.0746270420664273,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.11191403875578566,
+          "p95_ratio": 0.10225066227287544,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q100_l4_n1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.02144734534938003,
+          "p95_ratio": 0.02230086653200953,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.021572773748391724,
+          "p95_ratio": 0.022213883710972344,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q128_l4_n16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.4569702360877311,
+          "p95_ratio": 0.44516664628154984,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.6152615835958521,
+          "p95_ratio": 0.6097166608395288,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q128_l4_n1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.35556940996479697,
+          "p95_ratio": 0.3557125099157602,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.35938806631814635,
+          "p95_ratio": 0.36264866980385935,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q100_l9_n16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.05080639560814904,
+          "p95_ratio": 0.04458055496126467,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.05891129492384038,
+          "p95_ratio": 0.0537791999153047,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q100_l9_n1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.02834857196366701,
+          "p95_ratio": 0.028246363354709942,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.02849630523299653,
+          "p95_ratio": 0.028919032853625633,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q128_l9_n16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.512114359735771,
+          "p95_ratio": 0.5224753342439004,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.5997212087985259,
+          "p95_ratio": 0.5926809238150473,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection",
+      "size": "q128_l9_n1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "horner_prepared",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "horner_prepared",
+          "status": "pass",
+          "median_ratio": 0.40508063838701036,
+          "p95_ratio": 0.40987590306204785,
+          "allocations_ok": true
+        },
+        {
+          "variant": "horner_one_shot",
+          "status": "pass",
+          "median_ratio": 0.40632427689077694,
+          "p95_ratio": 0.41437187770314204,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection_setup",
+      "size": "q100_l2",
+      "baseline": "horner",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection_setup",
+      "size": "q128_l2",
+      "baseline": "horner",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection_setup",
+      "size": "q100_l4",
+      "baseline": "horner",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection_setup",
+      "size": "q128_l4",
+      "baseline": "horner",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection_setup",
+      "size": "q100_l9",
+      "baseline": "horner",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_projection_setup",
+      "size": "q128_l9",
+      "baseline": "horner",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 193
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l2_n16",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.26418762132876183,
+          "p95_ratio": 0.27027485754226815,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l2_n1024",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.265489453547743,
+          "p95_ratio": 0.26915681435065036,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l4_n16",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.39317693395498593,
+          "p95_ratio": 0.4021310986370369,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l4_n1024",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.3931722057860072,
+          "p95_ratio": 0.40129757950394085,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l9_n16",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.5441534812948937,
+          "p95_ratio": 0.5590963596336165,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l9_n1024",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.5464149761624272,
+          "p95_ratio": 0.54553383787105,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l32_n16",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.8334587793000463,
+          "p95_ratio": 0.8374210928448333,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l32_n1024",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.8271891453039137,
+          "p95_ratio": 0.8288149278537522,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l64_n16",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.8621543935835935,
+          "p95_ratio": 0.8590882468523734,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_divrem64",
+      "size": "l64_n1024",
+      "baseline": "public_divisor",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/integer.rs",
+        "line": 327
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "prepared_reciprocal",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "prepared_reciprocal",
+          "status": "pass",
+          "median_ratio": 0.8640419121728964,
+          "p95_ratio": 0.8638772254670093,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l1_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "regression",
+          "median_ratio": 1.063422131147541,
+          "p95_ratio": 1.0662320043736204,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l1_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "inconclusive",
+          "median_ratio": 0.9996841602874843,
+          "p95_ratio": 1.0012694550857018,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l2_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "regression",
+          "median_ratio": 1.0269435013493515,
+          "p95_ratio": 1.0233925012481684,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l2_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_carry",
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "pass",
+          "median_ratio": 1.0014209875978217,
+          "p95_ratio": 0.9972607063012967,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l4_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_carry",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "pass",
+          "median_ratio": 0.78392588883325,
+          "p95_ratio": 0.7921567173631642,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l4_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_carry",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "pass",
+          "median_ratio": 0.7425099791496353,
+          "p95_ratio": 0.7488647478546309,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l9_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_carry",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "pass",
+          "median_ratio": 0.9088086990836147,
+          "p95_ratio": 0.9037182437653909,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_add",
+      "size": "l9_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_carry",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "pass",
+          "median_ratio": 0.8993117315308159,
+          "p95_ratio": 0.903140945219621,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l1_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "regression",
+          "median_ratio": 1.0675913466514853,
+          "p95_ratio": 1.0510888252148995,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l1_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "inconclusive",
+          "median_ratio": 0.998672977906813,
+          "p95_ratio": 0.9850016537419973,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l2_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "regression",
+          "median_ratio": 1.0271282780002584,
+          "p95_ratio": 1.0212657555829565,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l2_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "inconclusive",
+          "median_ratio": 0.9989352562798643,
+          "p95_ratio": 0.9984634849744041,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l4_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "inconclusive",
+          "median_ratio": 1.0077589115034296,
+          "p95_ratio": 1.008343278747682,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l4_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "inconclusive",
+          "median_ratio": 1.006113775061365,
+          "p95_ratio": 1.011113828634608,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l9_n16",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "inconclusive",
+          "median_ratio": 1.0085274940813216,
+          "p95_ratio": 1.000344993134484,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_sub",
+      "size": "l9_n1024",
+      "baseline": "circuit_z",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_carry",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_carry",
+          "status": "pass",
+          "median_ratio": 0.9887787275128282,
+          "p95_ratio": 0.9802024750518314,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l1_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.47777112978330427,
+          "p95_ratio": 0.4845871834675216,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l1_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "inconclusive",
+          "median_ratio": 1.006703341814546,
+          "p95_ratio": 0.9918845050147066,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l2_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "regression",
+          "median_ratio": 1.6151735742766213,
+          "p95_ratio": 1.3923458393600374,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l2_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "regression",
+          "median_ratio": 1.7363589885272237,
+          "p95_ratio": 1.717715217450154,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l4_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.6092076129984568,
+          "p95_ratio": 0.6125872222551466,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l4_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.4244951359167651,
+          "p95_ratio": 0.4349186435215503,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l9_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.7314441097928276,
+          "p95_ratio": 0.7414092115966051,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_add",
+      "size": "l9_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5717705504667449,
+          "p95_ratio": 0.5791372530898764,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l1_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.6878743140477451,
+          "p95_ratio": 0.6811146997090302,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l1_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "regression",
+          "median_ratio": 1.4323959770215293,
+          "p95_ratio": 1.4267402446099042,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l2_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "regression",
+          "median_ratio": 1.0315314233567876,
+          "p95_ratio": 1.0383329039618716,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l2_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "regression",
+          "median_ratio": 1.0170854602833188,
+          "p95_ratio": 1.0138985296689538,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l4_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.6083867005877709,
+          "p95_ratio": 0.6356315629161747,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l4_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5192710115315854,
+          "p95_ratio": 0.5422457016851355,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l9_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.718265720588317,
+          "p95_ratio": 0.7209231459756348,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_uint_checked_sub",
+      "size": "l9_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5669880977074465,
+          "p95_ratio": 0.5726452635191087,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l1_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5794604827259819,
+          "p95_ratio": 0.5897006979770496,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l1_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5765533421038698,
+          "p95_ratio": 0.5686223151662985,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l2_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.81573756118945,
+          "p95_ratio": 0.827625471926847,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l2_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.47095664772087287,
+          "p95_ratio": 0.47608948493520137,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l4_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.4724430568519532,
+          "p95_ratio": 0.499309367770023,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l4_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.3409144288344238,
+          "p95_ratio": 0.361488586120225,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l9_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.57130299148277,
+          "p95_ratio": 0.5791565285809623,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_add",
+      "size": "l9_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.4548447792478772,
+          "p95_ratio": 0.4696598262007662,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l1_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.7056406100772726,
+          "p95_ratio": 0.7130357428891788,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l1_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.678369729280889,
+          "p95_ratio": 0.5523082648105078,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l2_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.8212346038211618,
+          "p95_ratio": 0.8326729102382472,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l2_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5382142101341414,
+          "p95_ratio": 0.46934651857939635,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l4_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.4935698099881304,
+          "p95_ratio": 0.5137309289999551,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l4_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.3530042554882754,
+          "p95_ratio": 0.36201810829980774,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l9_n16",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.5770147830233666,
+          "p95_ratio": 0.5781442118349377,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_int_checked_sub",
+      "size": "l9_n1024",
+      "baseline": "vendor_option",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 57
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "word_option",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "word_option",
+          "status": "pass",
+          "median_ratio": 0.46731367502208526,
+          "p95_ratio": 0.48130114577454075,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a1_b1_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a1_b1_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a2_b2_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a2_b2_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a4_b4_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a4_b4_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a9_b9_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a9_b9_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a2_b9_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a2_b9_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a32_b32_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a32_b32_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a64_b64_n16",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_product",
+      "size": "a64_b64_n1024",
+      "baseline": "crypto_bigint",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 182
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_signed_mac",
+      "size": "l2_n16",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fused_exact",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "pass",
+          "median_ratio": 0.8027216070441595,
+          "p95_ratio": 0.8033446535588491,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_signed_mac",
+      "size": "l2_n1024",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fused_exact",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "pass",
+          "median_ratio": 0.78466390782316,
+          "p95_ratio": 0.7845262843925924,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_signed_mac",
+      "size": "l4_n16",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fused_exact",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "pass",
+          "median_ratio": 0.9667487768146831,
+          "p95_ratio": 0.9667680310005616,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_signed_mac",
+      "size": "l4_n1024",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fused_exact",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "pass",
+          "median_ratio": 0.9683134766077488,
+          "p95_ratio": 0.9690841806258393,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_signed_mac",
+      "size": "l9_n16",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_signed_mac",
+      "size": "l9_n1024",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_unsigned_mac",
+      "size": "l2_n16",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fused_exact",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "pass",
+          "median_ratio": 0.8984357652167478,
+          "p95_ratio": 0.898101048693021,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_unsigned_mac",
+      "size": "l2_n1024",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fused_exact",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "pass",
+          "median_ratio": 0.878287791105343,
+          "p95_ratio": 0.8776649640573821,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_unsigned_mac",
+      "size": "l4_n16",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "regression",
+          "median_ratio": 1.0286070559207252,
+          "p95_ratio": 1.0248058334809964,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_unsigned_mac",
+      "size": "l4_n1024",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "fused_exact",
+          "status": "regression",
+          "median_ratio": 1.0312689326375624,
+          "p95_ratio": 1.0265279338270468,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_unsigned_mac",
+      "size": "l9_n16",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_exact_unsigned_mac",
+      "size": "l9_n1024",
+      "baseline": "wide_then_add",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/words.rs",
+        "line": 255
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_dot",
+      "size": "q100_n16",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "length_dispatch",
+          "status": "inconclusive",
+          "median_ratio": 1.005290785215749,
+          "p95_ratio": 1.0063501783907556,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_dot",
+      "size": "q100_n1024",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "length_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "length_dispatch",
+          "status": "pass",
+          "median_ratio": 0.9900831247747823,
+          "p95_ratio": 0.9849133442895724,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_dot",
+      "size": "q100_n65536",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "length_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "length_dispatch",
+          "status": "pass",
+          "median_ratio": 0.985181656713271,
+          "p95_ratio": 0.9942122718995227,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_dot",
+      "size": "q128_n16",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "length_dispatch",
+          "status": "inconclusive",
+          "median_ratio": 1.000450785117413,
+          "p95_ratio": 1.0072434120168918,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_dot",
+      "size": "q128_n1024",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "length_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "length_dispatch",
+          "status": "pass",
+          "median_ratio": 0.9841796778922813,
+          "p95_ratio": 0.9725202666601737,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_dot",
+      "size": "q128_n65536",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "length_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "length_dispatch",
+          "status": "pass",
+          "median_ratio": 0.9902860135251985,
+          "p95_ratio": 0.9873085443720866,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_linear",
+      "size": "q100_n16",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "acc4",
+          "status": "inconclusive",
+          "median_ratio": 0.9950403871387126,
+          "p95_ratio": 0.9858515025062348,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_linear",
+      "size": "q100_n1024",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "acc4",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "acc4",
+          "status": "pass",
+          "median_ratio": 0.8855130225721047,
+          "p95_ratio": 0.8907845739534709,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_linear",
+      "size": "q100_n65536",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "acc4",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "acc4",
+          "status": "pass",
+          "median_ratio": 0.8685378000073586,
+          "p95_ratio": 0.8664016196907741,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_linear",
+      "size": "q128_n16",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "acc4",
+          "status": "inconclusive",
+          "median_ratio": 0.9953390449301466,
+          "p95_ratio": 0.9966106359232608,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_linear",
+      "size": "q128_n1024",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "acc4",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "acc4",
+          "status": "pass",
+          "median_ratio": 0.8875734064816375,
+          "p95_ratio": 0.8896820222948637,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_linear",
+      "size": "q128_n65536",
+      "baseline": "one_acc",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 175
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "acc4",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "acc4",
+          "status": "pass",
+          "median_ratio": 0.8686457423192776,
+          "p95_ratio": 0.8666078710894769,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q100_nonzero_n16",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q100_nonzero_n1024",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q100_mixed_n16",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q100_mixed_n1024",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q100_zero_n16",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q100_zero_n1024",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q128_nonzero_n16",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q128_nonzero_n1024",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q128_mixed_n16",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q128_mixed_n1024",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q128_zero_n16",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse",
+      "size": "q128_zero_n1024",
+      "baseline": "production_one_inverse",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 50
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q100_nonzero_n16",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q100_nonzero_n1024",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q100_mixed_n16",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q100_mixed_n1024",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q100_zero_n16",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q100_zero_n1024",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q128_nonzero_n16",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q128_nonzero_n1024",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q128_mixed_n16",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q128_mixed_n1024",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q128_zero_n16",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_batch_inverse_reuse",
+      "size": "q128_zero_n1024",
+      "baseline": "compact_vartime",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 27
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_public_pow",
+      "size": "e17_n16",
+      "baseline": "bounded_window",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 247
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_binary",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_binary",
+          "status": "pass",
+          "median_ratio": 0.3736414802646036,
+          "p95_ratio": 0.3827543331550872,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_public_pow",
+      "size": "e17_n1024",
+      "baseline": "bounded_window",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 247
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_binary",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_binary",
+          "status": "pass",
+          "median_ratio": 0.3740364402537951,
+          "p95_ratio": 0.38394185907969125,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_public_pow",
+      "size": "e127_n16",
+      "baseline": "bounded_window",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 247
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_binary",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_binary",
+          "status": "pass",
+          "median_ratio": 0.7150851459364914,
+          "p95_ratio": 0.7105985326306459,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_prime_public_pow",
+      "size": "e127_n1024",
+      "baseline": "bounded_window",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/prime.rs",
+        "line": 247
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_binary",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_binary",
+          "status": "pass",
+          "median_ratio": 0.7127601878407765,
+          "p95_ratio": 0.7209895984325441,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "zero_n16",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.600395726157499,
+          "p95_ratio": 0.6067444276754362,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "zero_n1024",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.4593045308157515,
+          "p95_ratio": 0.46890411911774893,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "zero_n65536",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.44343341518865004,
+          "p95_ratio": 0.46572565676560806,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "half_n16",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.7335738111860989,
+          "p95_ratio": 0.7388419828706484,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "half_n1024",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.6114790843091382,
+          "p95_ratio": 0.6264015212058266,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "half_n65536",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.6108684798823769,
+          "p95_ratio": 0.6359660957984986,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "full_n16",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "full_n1024",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fixed",
+      "size": "full_n65536",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 13
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "zero_n16",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.8483773146654623,
+          "p95_ratio": 0.8502725091281909,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "zero_n1024",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.831805017316153,
+          "p95_ratio": 0.8419557980029132,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "zero_n65536",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.8326455604806179,
+          "p95_ratio": 0.8354748704351671,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "half_n16",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.8596728957236945,
+          "p95_ratio": 0.8669440104411774,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "half_n1024",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.7412307183817103,
+          "p95_ratio": 0.7511396334550337,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "half_n65536",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "public_scalar_dispatch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "public_scalar_dispatch",
+          "status": "pass",
+          "median_ratio": 0.7453434545214135,
+          "p95_ratio": 0.7732174110567328,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "full_n16",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "full_n1024",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_butterfly",
+      "size": "full_n65536",
+      "baseline": "actual_fixed_gf",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 47
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_round",
+      "size": "16",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 143
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "wide1",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "wide1",
+          "status": "pass",
+          "median_ratio": 0.8123849613470127,
+          "p95_ratio": 0.814786339471869,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_round",
+      "size": "1024",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 143
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "wide1",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "wide1",
+          "status": "pass",
+          "median_ratio": 0.8164687099627683,
+          "p95_ratio": 0.8169860724183268,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_round",
+      "size": "65536",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 143
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "wide1",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "wide1",
+          "status": "pass",
+          "median_ratio": 0.8187828745773434,
+          "p95_ratio": 0.8184215526326987,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf8_mul",
+      "size": "16",
+      "baseline": "flock_scalar",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 398
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native_batch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native_batch",
+          "status": "pass",
+          "median_ratio": 0.1344458908640816,
+          "p95_ratio": 0.1360994477846033,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf8_mul",
+      "size": "1024",
+      "baseline": "flock_scalar",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 398
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native_batch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native_batch",
+          "status": "pass",
+          "median_ratio": 0.04582068388136223,
+          "p95_ratio": 0.045809150007680925,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf8_mul",
+      "size": "65536",
+      "baseline": "flock_scalar",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 398
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "native_batch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "native_batch",
+          "status": "pass",
+          "median_ratio": 0.04603272305933707,
+          "p95_ratio": 0.047383236039275245,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_phi8",
+      "size": "16",
+      "baseline": "table_public_input",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 471
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_phi8",
+      "size": "1024",
+      "baseline": "table_public_input",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 471
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_phi8",
+      "size": "65536",
+      "baseline": "table_public_input",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 471
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_b127_mul",
+      "size": "16",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 471
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_b127_mul",
+      "size": "1024",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 471
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_b127_mul",
+      "size": "65536",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 471
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_ood",
+      "size": "log10",
+      "baseline": "production_blocked",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "reuse_products",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "reuse_products",
+          "status": "pass",
+          "median_ratio": 0.7217305945725875,
+          "p95_ratio": 0.7174104963383915,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ood",
+      "size": "log16",
+      "baseline": "production_blocked",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "reuse_products",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "reuse_products",
+          "status": "pass",
+          "median_ratio": 0.8648429734674233,
+          "p95_ratio": 0.9054317786335002,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ood",
+      "size": "log18",
+      "baseline": "production_blocked",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "reuse_products",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "reuse_products",
+          "status": "pass",
+          "median_ratio": 0.8910231766148056,
+          "p95_ratio": 0.8886189924540109,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ood_reuse",
+      "size": "log10",
+      "baseline": "allocate",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "scratch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "scratch",
+          "status": "pass",
+          "median_ratio": 0.8223676366573466,
+          "p95_ratio": 0.8340979005989522,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ood_reuse",
+      "size": "log16",
+      "baseline": "allocate",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "scratch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "scratch",
+          "status": "pass",
+          "median_ratio": 0.9764493952223866,
+          "p95_ratio": 0.9634364885409097,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ood_reuse",
+      "size": "log18",
+      "baseline": "allocate",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "scratch",
+          "status": "inconclusive",
+          "median_ratio": 0.9873224887466062,
+          "p95_ratio": 0.997144387644458,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log8_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.9084103815358285,
+          "p95_ratio": 0.9060361777729956,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log12_lanes8",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.8906087827708157,
+          "p95_ratio": 0.882399214873825,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log15_lanes8",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.9358929390497261,
+          "p95_ratio": 0.9465274841631589,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log15_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.9393770931978351,
+          "p95_ratio": 0.981586098864309,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log16_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "inconclusive",
+          "median_ratio": 0.9569809336159777,
+          "p95_ratio": 0.9892729178909125,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log18_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.9626904491562,
+          "p95_ratio": 0.9643760537942385,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_ntt",
+      "size": "log8_lanes1",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_pack",
+      "size": "logs9_9",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 199
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write",
+          "status": "pass",
+          "median_ratio": 0.02734989397293329,
+          "p95_ratio": 0.026596798394404604,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_pack",
+      "size": "logs16_14",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 199
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write",
+          "status": "pass",
+          "median_ratio": 0.74957158161558,
+          "p95_ratio": 0.7362935917814328,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_pack",
+      "size": "logs18_18",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 199
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "single_write",
+          "status": "regression",
+          "median_ratio": 1.081460909438288,
+          "p95_ratio": 1.0699071858939209,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_packed_ood",
+      "size": "logs9_9",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 218
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write_ood",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write_ood",
+          "status": "pass",
+          "median_ratio": 0.2330017563768903,
+          "p95_ratio": 0.08693814859378743,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_packed_ood",
+      "size": "logs16_14",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 218
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "single_write_ood",
+          "status": "regression",
+          "median_ratio": 1.1136436127655582,
+          "p95_ratio": 1.072852207235459,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_packed_ood",
+      "size": "logs18_18",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 218
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "single_write_ood",
+          "status": "regression",
+          "median_ratio": 1.1451898914214957,
+          "p95_ratio": 1.1261146484210225,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_two_pair",
+      "size": "16",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 212
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "separate_wide",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "separate_wide",
+          "status": "pass",
+          "median_ratio": 0.8295066813479604,
+          "p95_ratio": 0.8366420429241178,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_two_pair",
+      "size": "1024",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 212
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "separate_wide",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "separate_wide",
+          "status": "pass",
+          "median_ratio": 0.8293854177209751,
+          "p95_ratio": 0.8376616303232752,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fold_round",
+      "size": "16",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 212
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fold_then_wide",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fold_then_wide",
+          "status": "pass",
+          "median_ratio": 0.9221079503814419,
+          "p95_ratio": 0.9259274165517192,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_fold_round",
+      "size": "1024",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 212
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fold_then_wide",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fold_then_wide",
+          "status": "pass",
+          "median_ratio": 0.9450826833635532,
+          "p95_ratio": 0.9355903801324211,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_grid",
+      "size": "16",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 212
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf_grid",
+      "size": "1024",
+      "baseline": "production_fused",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 212
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf8_inverse",
+      "size": "16",
+      "baseline": "flock_scalar",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 438
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "vector_chain",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "vector_chain",
+          "status": "pass",
+          "median_ratio": 0.050485314345541044,
+          "p95_ratio": 0.0513163493220719,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf8_inverse",
+      "size": "1024",
+      "baseline": "flock_scalar",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 438
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "vector_chain",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "vector_chain",
+          "status": "pass",
+          "median_ratio": 0.044070155606216785,
+          "p95_ratio": 0.0444277328525508,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_gf8_inverse",
+      "size": "65536",
+      "baseline": "flock_scalar",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 438
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "vector_chain",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "vector_chain",
+          "status": "pass",
+          "median_ratio": 0.0434296155151262,
+          "p95_ratio": 0.04431625675157626,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a1_b1_dense_n16",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.47379591836734697,
+          "p95_ratio": 0.4894611250761882,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a1_b1_dense_n1024",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.3843263392744076,
+          "p95_ratio": 0.39236385386211076,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a1_b1_sparse_n16",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.45427880613579613,
+          "p95_ratio": 0.4600359464000967,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a1_b1_sparse_n1024",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.33453327882733463,
+          "p95_ratio": 0.3444700897795972,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a3_b7_dense_n16",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.6088057541709228,
+          "p95_ratio": 0.6181951984758297,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a3_b7_dense_n1024",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.795265653780863,
+          "p95_ratio": 0.7956450348833627,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a3_b7_sparse_n16",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "regression",
+          "median_ratio": 1.511879011224753,
+          "p95_ratio": 1.4986410992648738,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a3_b7_sparse_n1024",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "regression",
+          "median_ratio": 1.8865304684288482,
+          "p95_ratio": 1.842936213913026,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a9_b9_dense_n16",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.41969529439091974,
+          "p95_ratio": 0.41731816808410827,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a9_b9_dense_n1024",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "fixed_schedule",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "pass",
+          "median_ratio": 0.4194804909324052,
+          "p95_ratio": 0.4263703752244402,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a9_b9_sparse_n16",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "regression",
+          "median_ratio": 3.9984499974922914,
+          "p95_ratio": 3.911404569337272,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 1,
+      "family": "opt_f2_poly_dot",
+      "size": "a9_b9_sparse_n1024",
+      "baseline": "production_zero_skip",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/binary.rs",
+        "line": 584
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "fixed_schedule",
+          "status": "regression",
+          "median_ratio": 3.1089291946223834,
+          "p95_ratio": 1.8668111667259202,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ood",
+      "size": "log10",
+      "baseline": "production_blocked",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "reuse_products",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "reuse_products",
+          "status": "pass",
+          "median_ratio": 0.7244152653428314,
+          "p95_ratio": 0.7127671239349925,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ood",
+      "size": "log16",
+      "baseline": "production_blocked",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "reuse_products",
+          "status": "regression",
+          "median_ratio": 1.20221830204114,
+          "p95_ratio": 1.1737726828244943,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ood",
+      "size": "log18",
+      "baseline": "production_blocked",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "reuse_products",
+          "status": "regression",
+          "median_ratio": 1.1098918765255719,
+          "p95_ratio": 1.0773219903217597,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ood_reuse",
+      "size": "log10",
+      "baseline": "allocate",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "scratch",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "scratch",
+          "status": "pass",
+          "median_ratio": 0.8210298882888051,
+          "p95_ratio": 0.8242334635746223,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ood_reuse",
+      "size": "log16",
+      "baseline": "allocate",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "scratch",
+          "status": "inconclusive",
+          "median_ratio": 0.9973640659582308,
+          "p95_ratio": 1.0141509852239823,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ood_reuse",
+      "size": "log18",
+      "baseline": "allocate",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 29
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "scratch",
+          "status": "inconclusive",
+          "median_ratio": 1.0157393079378592,
+          "p95_ratio": 0.9357854166951636,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log8_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.9156046469180699,
+          "p95_ratio": 0.9105980013073274,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log12_lanes8",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.554173851628066,
+          "p95_ratio": 0.545455704271317,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log15_lanes8",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "depth_first",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "pass",
+          "median_ratio": 0.7379046971933984,
+          "p95_ratio": 0.7241959121252275,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log15_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "regression",
+          "median_ratio": 0.9879111461619348,
+          "p95_ratio": 1.0002528566659477,
+          "allocations_ok": false
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log16_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "inconclusive",
+          "median_ratio": 1.0147112675254268,
+          "p95_ratio": 0.9817555334137812,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log18_lanes32",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "depth_first",
+          "status": "inconclusive",
+          "median_ratio": 1.005829819099281,
+          "p95_ratio": 0.8654415693863866,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_ntt",
+      "size": "log8_lanes1",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 140
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": []
+    },
+    {
+      "threads": 10,
+      "family": "opt_pack",
+      "size": "logs9_9",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 199
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write",
+          "status": "pass",
+          "median_ratio": 0.022315750828080013,
+          "p95_ratio": 0.02014924459207697,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_pack",
+      "size": "logs16_14",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 199
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write",
+          "status": "pass",
+          "median_ratio": 0.45139385192668496,
+          "p95_ratio": 0.30647584827342883,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_pack",
+      "size": "logs18_18",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 199
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "single_write",
+          "status": "inconclusive",
+          "median_ratio": 1.0543596156470427,
+          "p95_ratio": 0.9379588151787273,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_packed_ood",
+      "size": "logs9_9",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 218
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write_ood",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write_ood",
+          "status": "pass",
+          "median_ratio": 0.05484738366447573,
+          "p95_ratio": 0.04597772128050343,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_packed_ood",
+      "size": "logs16_14",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 218
+      },
+      "recommendation": "eligible for this workload",
+      "candidate": "single_write_ood",
+      "confirmed_faster": true,
+      "selected": [
+        {
+          "variant": "single_write_ood",
+          "status": "pass",
+          "median_ratio": 0.8084069162980946,
+          "p95_ratio": 0.8344079892149947,
+          "allocations_ok": true
+        }
+      ]
+    },
+    {
+      "threads": 10,
+      "family": "opt_packed_ood",
+      "size": "logs18_18",
+      "baseline": "production",
+      "source": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/experiments/field-regressions/src/campaign/candidates/composite.rs",
+        "line": 218
+      },
+      "recommendation": "retain baseline; no promotion",
+      "candidate": null,
+      "confirmed_faster": false,
+      "selected": [
+        {
+          "variant": "single_write_ood",
+          "status": "regression",
+          "median_ratio": 1.1811220963384168,
+          "p95_ratio": 1.063827518216923,
+          "allocations_ok": true
+        }
+      ]
+    }
+  ]
+}

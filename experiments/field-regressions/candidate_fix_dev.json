@@ -1,0 +1,773 @@
+{
+  "schema": 2,
+  "suite": "arithmetic",
+  "max_slowdown": 0.01,
+  "confirmation_runs": 5,
+  "confirmation_samples": 32,
+  "retry_multiplier": 2,
+  "architectures": [
+    "aarch64"
+  ],
+  "required_features": {
+    "aarch64": [
+      "aes"
+    ]
+  },
+  "families": [
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l2_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "signed_columns"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "signed_columns"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l2_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "signed_columns"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "signed_columns"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l4_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "signed_columns"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "signed_columns"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l4_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "signed_columns"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "signed_columns"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l9_n16"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "signed_columns"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "signed_columns"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_exact_signed_mac",
+      "sizes": [
+        "l9_n1024"
+      ],
+      "baseline": "wide_then_add",
+      "variants": [
+        "wide_then_add",
+        "fused_exact",
+        "signed_columns"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "signed_columns"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_nonzero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_nonzero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_mixed_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_mixed_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_zero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q100_zero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_nonzero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_nonzero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_mixed_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_mixed_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_zero_n16"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_batch_inverse",
+      "sizes": [
+        "q128_zero_n1024"
+      ],
+      "baseline": "production_one_inverse",
+      "variants": [
+        "production_one_inverse",
+        "compact_vartime",
+        "compact_ct",
+        "public_nonzero"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_nonzero"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log10"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products",
+        "tiled_1024",
+        "tiled_256"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_1024"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log16"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products",
+        "tiled_1024",
+        "tiled_256"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_1024"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_ood",
+      "sizes": [
+        "log18"
+      ],
+      "baseline": "production_blocked",
+      "variants": [
+        "production_blocked",
+        "reuse_products",
+        "indexed_products",
+        "collect_products",
+        "vector_products",
+        "prepared_products",
+        "tiled_1024",
+        "tiled_256"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "tiled_1024"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_ntt",
+      "sizes": [
+        "log8_lanes1"
+      ],
+      "baseline": "production",
+      "variants": [
+        "production",
+        "depth_first",
+        "tiled_half",
+        "half_depth",
+        "incremental"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "incremental"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_gf_grid",
+      "sizes": [
+        "16"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "chunked",
+        "direct_tiles",
+        "direct_pass"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "direct_tiles"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_gf_grid",
+      "sizes": [
+        "1024"
+      ],
+      "baseline": "production_fused",
+      "variants": [
+        "production_fused",
+        "chunked",
+        "direct_tiles",
+        "direct_pass"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "direct_tiles"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_zero_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_zero_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_prefix_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_dense_prefix_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_prefix_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_sparse_prefix_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_alternating_n16"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    },
+    {
+      "name": "opt_f2_poly_dot",
+      "sizes": [
+        "a3_b7_alternating_n1024"
+      ],
+      "baseline": "production_zero_skip",
+      "variants": [
+        "production_zero_skip",
+        "fixed_schedule",
+        "public_fused",
+        "public_adaptive",
+        "row_density",
+        "public_masks"
+      ],
+      "arm_variants": [],
+      "selected": {
+        "aarch64": [
+          "public_masks"
+        ]
+      },
+      "selection_reason": "development candidate; confirmation selection pending"
+    }
+  ],
+  "revision": "candidate-fix-development-1",
+  "threads": 1,
+  "allocation_audit_passes": 64,
+  "selection_note": "Frozen before confirmation. Baseline retentions are explicit, not candidate speedups. No timing/privacy contract downgrade."
+}

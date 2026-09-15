@@ -1,12 +1,14 @@
 //! Borrowed MLEs with a tensor-product table and implicit zero padding.
 
-use crypto_primitives::PrimeField;
+use crate::piop::spartan::SpartanField;
+use field::RingOps;
 
-use crate::poly::{EvaluationError, utils::build_eq_x_r_vec};
+use crate::poly::EvaluationError;
 
-/// Boolean evaluations `[leading?, outer[0] * inner[..], outer[1] * inner[..], …]`.
+/// Bit evaluations `[leading?, outer[0] * inner[..], outer[1] * inner[..], …]`.
 /// The remaining entries of the `2^num_vars` domain are zero.
-pub(crate) struct FactoredMultilinearExtension<'a, F> {
+pub(crate) struct FactoredMultilinearExtension<'a, F: SpartanField> {
+    field: F::Config,
     /// Domain size is `2^num_vars`, including zero padding.
     num_vars: usize,
     /// Zero, or one when a leading value precedes the tensor product.
@@ -21,9 +23,9 @@ pub(crate) struct FactoredMultilinearExtension<'a, F> {
     live_len: usize,
 }
 
-/// Boolean evaluations `[outer ⊗ inner, tail]`, with `origin_adjustment` added
+/// Bit evaluations `[outer ⊗ inner, tail]`, with `origin_adjustment` added
 /// at index zero. The tail starts at the unpadded tensor-product length.
-pub(crate) struct CompositeMultilinearExtension<'a, F> {
+pub(crate) struct CompositeMultilinearExtension<'a, F: SpartanField> {
     /// Initial tensor-product segment, with no leading value.
     repeated: FactoredMultilinearExtension<'a, F>,
     /// Entries immediately following the unpadded tensor product.
@@ -39,7 +41,7 @@ pub(crate) struct CompositeMultilinearExtension<'a, F> {
     tail_runs: Option<&'a [(usize, usize, F)]>,
 }
 
-impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
+impl<'a, F: SpartanField> FactoredMultilinearExtension<'a, F> {
     pub(crate) fn from_factors(
         num_vars: usize,
         outer_factor: &'a [F],
@@ -89,32 +91,36 @@ impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
             return Err(EvaluationError::InvalidShape);
         }
         if index >= self.live_len {
-            return Ok(F::zero_with_cfg(self.leading_value.cfg()));
+            return Ok(F::zero_with_cfg(&self.field));
         }
         if index < self.tensor_start {
             return Ok(self.leading_value.clone());
         }
         let offset = index - self.tensor_start;
-        Ok(self.outer_factor[offset / self.inner_factor.len()].clone()
-            * &self.inner_factor[offset % self.inner_factor.len()])
+        Ok(self.field.mul(
+            &self.outer_factor[offset / self.inner_factor.len()],
+            &self.inner_factor[offset % self.inner_factor.len()],
+        ))
     }
 
     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
         check_point(self.num_vars, point)?;
         if self.tensor_start == 0 && self.inner_factor.len().is_power_of_two() {
             let split = self.inner_factor.len().ilog2() as usize;
-            return Ok(dot_with_equality(self.inner_factor, &point[..split], cfg)
-                * &dot_with_equality(self.outer_factor, &point[split..], cfg));
+            return Ok(cfg.mul(
+                &dot_with_equality(self.inner_factor, &point[..split], cfg),
+                &dot_with_equality(self.outer_factor, &point[split..], cfg),
+            ));
         }
         let weights = EqualityWeights::new(point, cfg);
         let mut value = F::zero_with_cfg(cfg);
         if self.tensor_start != 0 {
-            value += &(self.leading_value.clone() * &weights.at(0));
+            value = cfg.add(&value, &cfg.mul(&self.leading_value, &weights.at(0)));
         }
         for (outer_index, outer) in self.outer_factor.iter().enumerate() {
             for (inner_index, inner) in self.inner_factor.iter().enumerate() {
                 let index = self.tensor_start + outer_index * self.inner_factor.len() + inner_index;
-                value += &(outer.clone() * inner * &weights.at(index));
+                value = cfg.add(&value, &cfg.mul(&cfg.mul(outer, inner), &weights.at(index)));
             }
         }
         Ok(value)
@@ -140,6 +146,7 @@ impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
             return Err(EvaluationError::InvalidShape);
         }
         Ok(Self {
+            field: cfg.clone(),
             num_vars,
             tensor_start,
             leading_value: leading.unwrap_or_else(|| F::zero_with_cfg(cfg)),
@@ -150,7 +157,7 @@ impl<'a, F: PrimeField> FactoredMultilinearExtension<'a, F> {
     }
 }
 
-impl<'a, F: PrimeField> CompositeMultilinearExtension<'a, F> {
+impl<'a, F: SpartanField> CompositeMultilinearExtension<'a, F> {
     pub(crate) fn from_parts(
         num_vars: usize,
         high: &'a [F],
@@ -228,10 +235,10 @@ impl<'a, F: PrimeField> CompositeMultilinearExtension<'a, F> {
         } else if index < self.live_len {
             self.tail_evaluations[index - self.repeated.live_len()].clone()
         } else {
-            F::zero_with_cfg(self.origin_adjustment.cfg())
+            F::zero_with_cfg(&self.repeated.field)
         };
         if index == 0 {
-            value += &self.origin_adjustment;
+            value = self.repeated.field.add(&value, &self.origin_adjustment);
         }
         Ok(value)
     }
@@ -240,9 +247,12 @@ impl<'a, F: PrimeField> CompositeMultilinearExtension<'a, F> {
         let mut value = self.repeated.evaluate(point, cfg)?;
         let weights = EqualityWeights::new(point, cfg);
         for (index, entry) in self.tail_evaluations.iter().enumerate() {
-            value += &(entry.clone() * &weights.at(self.repeated.live_len() + index));
+            value = cfg.add(
+                &value,
+                &cfg.mul(entry, &weights.at(self.repeated.live_len() + index)),
+            );
         }
-        value += &(self.origin_adjustment.clone() * &weights.at(0));
+        value = cfg.add(&value, &cfg.mul(&self.origin_adjustment, &weights.at(0)));
         Ok(value)
     }
 }
@@ -263,22 +273,28 @@ fn check_point<F>(num_vars: usize, point: &[F]) -> Result<(), EvaluationError> {
 }
 
 /// Equality weights use O(sqrt(domain)) storage, including for unaligned tails.
-pub(crate) struct EqualityWeights<F> {
+pub(crate) struct EqualityWeights<F: SpartanField> {
+    field: F::Config,
     low: Vec<F>,
     high: Vec<F>,
 }
 
-impl<F: PrimeField> EqualityWeights<F> {
+impl<F: SpartanField> EqualityWeights<F> {
     fn new(point: &[F], cfg: &F::Config) -> Self {
         let split = point.len() / 2;
         Self::from_tables(
             equality_table(&point[..split], cfg),
             equality_table(&point[split..], cfg),
+            cfg,
         )
     }
-    pub(crate) fn from_tables(low: Vec<F>, high: Vec<F>) -> Self {
+    pub(crate) fn from_tables(low: Vec<F>, high: Vec<F>, field: &F::Config) -> Self {
         assert!(low.len().is_power_of_two() && high.len().is_power_of_two());
-        Self { low, high }
+        Self {
+            low,
+            high,
+            field: field.clone(),
+        }
     }
     pub(crate) fn low(&self) -> &[F] {
         &self.low
@@ -287,25 +303,37 @@ impl<F: PrimeField> EqualityWeights<F> {
         &self.high
     }
     pub(crate) fn at(&self, index: usize) -> F {
-        self.low[index & (self.low.len() - 1)].clone() * &self.high[index >> self.low.len().ilog2()]
+        self.field.mul(
+            &self.low[index & (self.low.len() - 1)],
+            &self.high[index >> self.low.len().ilog2()],
+        )
     }
 }
 
-fn equality_table<F: PrimeField>(point: &[F], cfg: &F::Config) -> Vec<F> {
-    if point.is_empty() {
-        vec![F::one_with_cfg(cfg)]
-    } else {
-        build_eq_x_r_vec(point, cfg).expect("nonempty point with a checked domain")
+fn equality_table<F: SpartanField>(point: &[F], cfg: &F::Config) -> Vec<F> {
+    let len = 1usize
+        .checked_shl(point.len() as u32)
+        .expect("checked equality table shape");
+    let mut out = vec![cfg.zero(); len];
+    out[0] = cfg.one();
+    for (i, r) in point.iter().enumerate() {
+        let half = 1usize << i;
+        for j in 0..half {
+            let hi = cfg.mul(&out[j], r);
+            out[j + half] = hi;
+            out[j] = cfg.sub(&out[j], &hi);
+        }
     }
+    out
 }
 
-fn dot_with_equality<F: PrimeField>(values: &[F], point: &[F], cfg: &F::Config) -> F {
+fn dot_with_equality<F: SpartanField>(values: &[F], point: &[F], cfg: &F::Config) -> F {
     let weights = EqualityWeights::new(point, cfg);
     values
         .iter()
         .enumerate()
         .fold(F::zero_with_cfg(cfg), |mut sum, (index, value)| {
-            sum += &(value.clone() * &weights.at(index));
+            sum = cfg.add(&sum, &cfg.mul(value, &weights.at(index)));
             sum
         })
 }
@@ -314,14 +342,19 @@ fn dot_with_equality<F: PrimeField>(values: &[F], point: &[F], cfg: &F::Config) 
 mod tests {
     use super::*;
     use crate::poly::mle::DenseMultilinearExtension;
-    use crypto_primitives::{FromWithConfig, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
+    use field::{Fp as Prime, Uint};
+    type F128 = Prime<2>;
 
-    fn evaluate_dense(mle: &DenseMultilinearExtension<F128>, point: &[F128]) -> F128 {
+    fn evaluate_dense(
+        mle: &DenseMultilinearExtension<F128>,
+        point: &[F128],
+        cfg: &field::FpCtx<2>,
+    ) -> F128 {
         let mut values = mle.evaluations.clone();
         for coordinate in point {
             values = values
                 .chunks_exact(2)
-                .map(|pair| pair[0].clone() + &((pair[1].clone() - &pair[0]) * coordinate))
+                .map(|pair| cfg.add(&pair[0], &cfg.mul(&cfg.sub(&pair[1], &pair[0]), coordinate)))
                 .collect();
         }
         values.pop().unwrap()
@@ -339,10 +372,7 @@ mod tests {
                     FactoredMultilinearExtension::from_parts(5, leading.clone(), &high, &low, &cfg)
                         .unwrap();
                 let mut values: Vec<_> = leading.into_iter().collect();
-                values.extend(
-                    high.iter()
-                        .flat_map(|a| low.iter().map(move |b| a.clone() * b)),
-                );
+                values.extend(high.iter().flat_map(|a| low.iter().map(|b| cfg.mul(a, b))));
                 let dense = DenseMultilinearExtension::from_evaluations_vec(5, values, f(0));
                 for (index, expected) in dense.evaluations.iter().enumerate() {
                     assert_eq!(&mle.evaluation_at(index).unwrap(), expected);
@@ -354,7 +384,7 @@ mod tests {
                 ] {
                     assert_eq!(
                         mle.evaluate(&point, &cfg).unwrap(),
-                        evaluate_dense(&dense, &point)
+                        evaluate_dense(&dense, &point, &cfg)
                     );
                 }
                 assert!(mle.evaluate(&[f(0)], &cfg).is_err());
@@ -367,10 +397,10 @@ mod tests {
                         .unwrap();
                 let mut values: Vec<_> = high
                     .iter()
-                    .flat_map(|a| low.iter().map(move |b| a.clone() * b))
+                    .flat_map(|a| low.iter().map(|b| cfg.mul(a, b)))
                     .collect();
                 values.extend(tail.iter().cloned());
-                values[0] += &f(43);
+                values[0] = cfg.add(&values[0], &f(43));
                 let dense = DenseMultilinearExtension::from_evaluations_vec(5, values, f(0));
                 for index in 0..32 {
                     assert_eq!(mle.evaluation_at(index).unwrap(), dense.evaluations[index]);
@@ -378,7 +408,7 @@ mod tests {
                 let point = [f(11), f(13), f(17), f(23), f(29)];
                 assert_eq!(
                     mle.evaluate(&point, &cfg).unwrap(),
-                    evaluate_dense(&dense, &point)
+                    evaluate_dense(&dense, &point, &cfg)
                 );
                 assert!(mle.evaluate(&point[..4], &cfg).is_err());
             }

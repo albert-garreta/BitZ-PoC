@@ -52,7 +52,7 @@ use rayon::prelude::*;
 
 use crate::{
     ligerito::{LOG_PACKING, PackedBits, phi_byte_tables, phi_from_words, transpose_8x8_bits},
-    poly::univariate::binary_gf128::BinaryFieldGF128 as Gf,
+    poly::univariate::binary_gf128::Gf128 as Gf,
     utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter, wide_mul::WideMulAcc},
 };
 
@@ -76,89 +76,24 @@ const MIN_LOCAL_WIDTH: usize = 512;
 // Fixed-scalar unreduced multiply-accumulate kernel
 // ---------------------------------------------------------------------
 
-/// `acc += x·fixed` with the pass-fixed multiplier preprocessed and the
-/// product kept unreduced (`t_lo + X^64·t_mid`, 191 bits), reduced once
-/// per accumulator. NEON: `prep_fixed` / `mul_fixed_wide` / `fold_x64` of
-/// the field module; elsewhere the generic wide accumulator.
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod kernel {
-    use core::arch::aarch64::{uint64x2_t, vdupq_n_u64, veorq_u64, vst1q_u64};
-
-    use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, neon};
-
-    #[derive(Clone, Copy)]
-    pub(super) struct Fixed(uint64x2_t, uint64x2_t);
-
-    #[derive(Clone, Copy)]
-    pub(super) struct Acc(uint64x2_t, uint64x2_t);
-
+    use super::Gf;
+    pub(super) use field::{Gf128PreparedAcc as Acc, PreparedGf128Mul as Fixed};
     #[inline(always)]
     pub(super) fn fixed(x: &Gf) -> Fixed {
-        // SAFETY: as `neon::pmull_lo` (NEON+PMULL enabled by the build).
-        let (rl, rh) = unsafe { neon::prep_fixed(x) };
-        Fixed(rl, rh)
+        Fixed::new((*x).into())
     }
-
     #[inline(always)]
     pub(super) fn zero() -> Acc {
-        // SAFETY: plain NEON constants.
-        unsafe { Acc(vdupq_n_u64(0), vdupq_n_u64(0)) }
+        Acc::zero()
     }
-
     #[inline(always)]
     pub(super) fn mul_acc(acc: &mut Acc, x: &Gf, fixed: &Fixed) {
-        // SAFETY: as `neon::pmull_lo`.
-        unsafe {
-            let (lo, mid) = neon::mul_fixed_wide(neon::ld(x), fixed.0, fixed.1);
-            acc.0 = veorq_u64(acc.0, lo);
-            acc.1 = veorq_u64(acc.1, mid);
-        }
+        acc.add_mul(&(*x).into(), fixed);
     }
-
     #[inline(always)]
     pub(super) fn reduce(acc: &Acc) -> Gf {
-        // SAFETY: as `neon::pmull_lo`; the store targets a valid word pair.
-        unsafe {
-            let g = vdupq_n_u64(0x87);
-            let z = vdupq_n_u64(0);
-            let r = neon::fold_x64(acc.0, acc.1, g, z);
-            let mut out = [0u64; 2];
-            vst1q_u64(out.as_mut_ptr(), r);
-            Gf::from_words(out)
-        }
-    }
-}
-
-#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-mod kernel {
-    use crate::{
-        poly::univariate::binary_gf128::BinaryFieldGF128 as Gf, utils::wide_mul::WideMulAcc,
-    };
-
-    #[derive(Clone, Copy)]
-    pub(super) struct Fixed(Gf);
-
-    #[derive(Clone)]
-    pub(super) struct Acc(<Gf as WideMulAcc>::Wide);
-
-    #[inline(always)]
-    pub(super) fn fixed(x: &Gf) -> Fixed {
-        Fixed(*x)
-    }
-
-    #[inline(always)]
-    pub(super) fn zero() -> Acc {
-        Acc(Gf::wide_zero(&Gf::zero()))
-    }
-
-    #[inline(always)]
-    pub(super) fn mul_acc(acc: &mut Acc, x: &Gf, fixed: &Fixed) {
-        Gf::wide_add_assign(&mut acc.0, &Gf::mul_wide(x, &fixed.0));
-    }
-
-    #[inline(always)]
-    pub(super) fn reduce(acc: &Acc) -> Gf {
-        Gf::from_wide(acc.0.clone())
+        acc.reduce().into()
     }
 }
 
@@ -177,7 +112,11 @@ const DUAL_CORR: [u64; 64] = {
         let mut v = 1usize;
         while v <= 6 {
             if (mask >> (v - 1)) & 1 == 1 {
-                corr ^= if v == 1 { (1 << 6) | (1 << 1) } else { 1 << (7 - v) };
+                corr ^= if v == 1 {
+                    (1 << 6) | (1 << 1)
+                } else {
+                    1 << (7 - v)
+                };
             }
             v += 1;
         }
@@ -196,7 +135,7 @@ pub(crate) fn dual_pack(u: [u64; 2]) -> Gf {
     let r1 = u[0].reverse_bits();
     let lo = ((r0 << 1) | (u[0] & 1)) ^ DUAL_CORR[((u[0] >> 1) & 63) as usize];
     let hi = (r1 << 1) | (r0 >> 63);
-    Gf::from_words([lo, hi])
+    Gf::from_polynomial_words([lo, hi])
 }
 
 /// `A⁻¹(s)`: the slot vector with `bit_a = c₀(X^a·s)`, so that
@@ -205,7 +144,7 @@ pub(crate) fn dual_unpack(s: Gf) -> [u64; 2] {
     let mut z = s;
     let mut out = [0u64; 2];
     for a in 0..PACK {
-        out[a >> 6] |= (z.words()[0] & 1) << (a & 63);
+        out[a >> 6] |= (z.as_words()[0] & 1) << (a & 63);
         z = z.mul_x();
     }
     out
@@ -299,7 +238,7 @@ fn phi_byte_tables_into(out: &mut [Gf], eq: &[Gf]) {
 fn monomial(u: usize) -> Gf {
     let mut w = [0u64; 2];
     w[u >> 6] = 1u64 << (u & 63);
-    Gf::from_words(w)
+    Gf::from_polynomial_words(w)
 }
 
 /// The ρ-only tables of the instance coefficients
@@ -318,7 +257,7 @@ impl RhoTables {
                 let images = instance_dual_images(monomial(u));
                 let mut rows = [[0u64; 2]; PACK];
                 for (row, g) in rows.iter_mut().zip(images.iter()) {
-                    *row = *g.words();
+                    *row = *g.as_words();
                 }
                 let cols = transpose_128x128(&rows);
                 let mut out = [Gf::zero(); PACK];
@@ -352,7 +291,7 @@ impl RhoTables {
     #[inline]
     fn coefficients(&self, e: Gf, out: &mut [Gf]) {
         debug_assert_eq!(out.len(), PACK);
-        let w = e.words();
+        let w = e.as_words();
         let lb = w[0].to_le_bytes();
         let hb = w[1].to_le_bytes();
         out.fill(Gf::zero());
@@ -453,8 +392,9 @@ impl PackedSourcePlanes {
         let planes: Vec<Vec<[[u64; 2]; PACK]>> = s
             .iter()
             .map(|s_l| {
-                let unpacked: Vec<[u64; 2]> =
-                    cfg_iter!(s_l[1..]).map(|&value| dual_unpack(value)).collect();
+                let unpacked: Vec<[u64; 2]> = cfg_iter!(s_l[1..])
+                    .map(|&value| dual_unpack(value))
+                    .collect();
                 cfg_into_iter!(0..aligned)
                     .map(|block| {
                         let mut rows = [[0u64; 2]; PACK];
@@ -499,8 +439,7 @@ impl PackedSourcePlanes {
                 ((l, phase), table)
             })
             .collect();
-        let mut r_tables: Vec<Vec<Vec<Gf>>> =
-            (0..chunks).map(|_| vec![Vec::new(); PACK]).collect();
+        let mut r_tables: Vec<Vec<Vec<Gf>>> = (0..chunks).map(|_| vec![Vec::new(); PACK]).collect();
         let mut r_tables_by_plane: Vec<Vec<Vec<Gf>>> =
             (0..chunks).map(|_| vec![Vec::new(); PACK]).collect();
         for ((l, phase), table) in built {
@@ -556,8 +495,8 @@ impl PackedSourcePlanes {
                 let mut hs = [Gf::zero(); PACK];
                 if y_lo == 0 {
                     // The shared constant column: weight W₀, basis A(e₀) = 1.
-                    let p0 = Gf::from_words(p_msg[0].bit_words());
-                    let w0 = self.constant_weight.words();
+                    let p0 = Gf::from_polynomial_words(p_msg[0].bit_words());
+                    let w0 = self.constant_weight.as_words();
                     for (b, h) in hs.iter_mut().enumerate() {
                         if (w0[b >> 6] >> (b & 63)) & 1 == 1 {
                             *h += p0;
@@ -570,7 +509,8 @@ impl PackedSourcePlanes {
                     return hs;
                 }
                 let mut tables = vec![Gf::zero(); 16 * 256];
-                let mut fixed: Vec<kernel::Fixed> = Vec::with_capacity(TASK_PACKS.min(w / PACK + 2));
+                let mut fixed: Vec<kernel::Fixed> =
+                    Vec::with_capacity(TASK_PACKS.min(w / PACK + 2));
                 let mut reduced = [Gf::zero(); PACK];
                 for instance in (col_lo - 1) / w..=(col_hi - 2) / w {
                     let start = 1 + instance * w;
@@ -581,7 +521,7 @@ impl PackedSourcePlanes {
                     let m_hi = y_hi.min(y_i + n_m) - y_i;
                     fixed.clear();
                     fixed.extend((m_lo..m_hi).map(|m| {
-                        kernel::fixed(&Gf::from_words(p_msg[y_i + m].bit_words()))
+                        kernel::fixed(&Gf::from_polynomial_words(p_msg[y_i + m].bit_words()))
                     }));
                     for (l, eq_inst_l) in self.eq_inst.iter().enumerate() {
                         let table = &self.r_tables_by_plane[l][phase];
@@ -596,7 +536,7 @@ impl PackedSourcePlanes {
                         phi_byte_tables_into(&mut tables, &reduced);
                         let images = instance_dual_images(eq_inst_l[instance]);
                         for (h, g) in hs.iter_mut().zip(images.iter()) {
-                            *h += phi_from_words(*g.words(), &tables);
+                            *h += phi_from_words(*g.as_words(), &tables);
                         }
                     }
                 }
@@ -620,7 +560,10 @@ impl PackedSourcePlanes {
     pub(crate) fn a_prime<T: PackedBits>(&self, rho: &[Gf], p_msg: &[T]) -> (Vec<Gf>, (Gf, Gf)) {
         let chunks = self.r_tables.len();
         let n_packs = p_msg.len();
-        debug_assert!(n_packs.is_multiple_of(2) || n_packs == 1, "flock messages are even-sized");
+        debug_assert!(
+            n_packs.is_multiple_of(2) || n_packs == 1,
+            "flock messages are even-sized"
+        );
         let rho_tables = phi_byte_tables(rho, Gf::one());
         let coefficient_tables = RhoTables::new(&rho_tables);
         let mut out = vec![Gf::zero(); n_packs];
@@ -636,7 +579,7 @@ impl PackedSourcePlanes {
                     let mut acc = kernel::zero();
                     if y == 0 {
                         // Φ_ρ(W₀)·A(e₀) = Φ_ρ(W₀).
-                        *slot += phi_from_words(*self.constant_weight.words(), &rho_tables);
+                        *slot += phi_from_words(*self.constant_weight.as_words(), &rho_tables);
                     }
                     self.runs(y, |instance, phase, m| {
                         if current != Some(instance) {
@@ -653,8 +596,8 @@ impl PackedSourcePlanes {
                             current = Some(instance);
                         }
                         for l in 0..chunks {
-                            let r = &self.r_tables[l][phase]
-                                [m << LOG_PACKING..(m + 1) << LOG_PACKING];
+                            let r =
+                                &self.r_tables[l][phase][m << LOG_PACKING..(m + 1) << LOG_PACKING];
                             let f = &fixed[l << LOG_PACKING..(l + 1) << LOG_PACKING];
                             for (r_a, f_a) in r.iter().zip(f.iter()) {
                                 kernel::mul_acc(&mut acc, r_a, f_a);
@@ -671,8 +614,8 @@ impl PackedSourcePlanes {
                 while j + 1 < slots.len() {
                     let b0 = slots[j];
                     let b1 = slots[j + 1];
-                    let f0 = Gf::from_words(p_msg[y_lo + j].bit_words());
-                    let f1 = Gf::from_words(p_msg[y_lo + j + 1].bit_words());
+                    let f0 = Gf::from_polynomial_words(p_msg[y_lo + j].bit_words());
+                    let f1 = Gf::from_polynomial_words(p_msg[y_lo + j + 1].bit_words());
                     Gf::wide_add_assign(&mut u0, &Gf::mul_wide(&f0, &b0));
                     Gf::wide_add_assign(&mut u2, &Gf::mul_wide(&(f0 + f1), &(b0 + b1)));
                     j += 2;
@@ -713,7 +656,7 @@ mod tests {
     }
 
     fn sample(seed: u64) -> Gf {
-        Gf::from_words([splitmix(seed), splitmix(seed ^ 0xD1CE)])
+        Gf::from_polynomial_words([splitmix(seed), splitmix(seed ^ 0xD1CE)])
     }
 
     fn bit(w: &[u64; 2], i: usize) -> u64 {
@@ -753,11 +696,18 @@ mod tests {
             let product = e * s;
             let images = instance_dual_images(e);
             for b in 0..PACK {
-                let g = images[b].words();
+                let g = images[b].as_words();
                 let parity =
                     ((g[0] & unpacked[0]).count_ones() + (g[1] & unpacked[1]).count_ones()) & 1;
-                assert_eq!(u64::from(parity), bit(product.words(), b), "sample {t} bit {b}");
-                assert_eq!(c0_bit(product * dual_basis_cols()[b]), bit(product.words(), b));
+                assert_eq!(
+                    u64::from(parity),
+                    bit(product.as_words(), b),
+                    "sample {t} bit {b}"
+                );
+                assert_eq!(
+                    c0_bit(product * dual_basis_cols()[b]),
+                    bit(product.as_words(), b)
+                );
             }
         }
     }
@@ -845,7 +795,7 @@ mod tests {
             for a in 0..PACK {
                 let mut expect = Gf::zero();
                 for (b, g) in images.iter().enumerate() {
-                    if bit(g.words(), a) == 1 {
+                    if bit(g.as_words(), a) == 1 {
                         expect += rho[b];
                     }
                 }

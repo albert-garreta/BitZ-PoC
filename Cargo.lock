@@ -701,9 +701,7 @@ dependencies = [
 name = "circuit"
 version = "0.1.0"
 dependencies = [
- "crypto-bigint 0.7.5",
  "field",
- "num-bigint 0.4.8",
  "num-traits",
  "rayon",
 ]
@@ -935,7 +933,7 @@ dependencies = [
  "ark-ff",
  "ark-std",
  "crypto-bigint 0.7.5",
- "crypto-primitives-proc-macros 0.1.0",
+ "crypto-primitives-proc-macros",
  "num-traits",
  "pastey",
  "rand 0.10.2",
@@ -945,37 +943,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto-primitives"
-version = "0.1.0"
-source = "git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b#3c4232bf362339041414a73254a3af303538ac81"
-dependencies = [
- "ark-ff",
- "ark-std",
- "crypto-bigint 0.7.5",
- "crypto-primitives-proc-macros 0.1.0 (git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b)",
- "num-traits",
- "pastey",
- "rand 0.10.2",
- "serde",
- "thiserror 2.0.18",
- "zerocopy",
- "zerocopy-derive",
- "zeroize",
-]
-
-[[package]]
 name = "crypto-primitives-proc-macros"
 version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
-name = "crypto-primitives-proc-macros"
-version = "0.1.0"
-source = "git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b#3c4232bf362339041414a73254a3af303538ac81"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1204,10 +1173,11 @@ dependencies = [
  "clap",
  "crypto-bigint 0.7.5",
  "crypto-primes",
- "crypto-primitives 0.1.0",
+ "crypto-primitives",
  "csv",
  "derive_more",
  "ff",
+ "field",
  "flock-core",
  "itertools 0.14.0",
  "libc",
@@ -1288,9 +1258,8 @@ dependencies = [
 name = "field"
 version = "0.1.0"
 dependencies = [
- "crypto-primitives 0.1.0 (git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b)",
- "crypto-primitives-proc-macros 0.1.0 (git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b)",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -1322,6 +1291,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "blake3",
+ "field",
  "rand_core 0.9.5",
  "rayon",
  "serde",

@@ -21,6 +21,7 @@ hash-count = []
 unsound-challenger = []
 
 [dependencies]
+field = { path = "../../../field", features = ["serde"] }
 rayon = { workspace = true }
 sha2 = { workspace = true }
 rand_core = { workspace = true }

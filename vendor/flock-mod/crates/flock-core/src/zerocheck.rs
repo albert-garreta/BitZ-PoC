@@ -16,7 +16,7 @@
 //! shape-corrupted ones.
 
 use crate::challenger::Challenger;
-use crate::field::{F8, F128};
+use crate::field::{Gf8, Gf128};
 use crate::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,7 @@ use univariate_skip_optimized::{
 
 /// Number of variables folded in round 1 via the additive-NTT univariate skip.
 /// |Λ| = 2^K_SKIP = 64 elements; the round-1 prover message is two length-64
-/// vectors of F128.
+/// vectors of Gf128.
 pub const K_SKIP: usize = 6;
 
 /// Witness padding descriptor for URM work-skipping.
@@ -95,37 +95,37 @@ impl PaddingSpec {
 pub struct ZerocheckClaim {
     /// Univariate-skip challenge sampled after round 1 (binds the K_SKIP
     /// skip variables).
-    pub z: F128,
+    pub z: Gf128,
     /// AB sumcheck bind challenges, one per multilinear round; length = `m - K_SKIP`.
-    pub mlv_challenges: Vec<F128>,
+    pub mlv_challenges: Vec<Gf128>,
     /// Eq weights for the rest variables = the zerocheck challenge restricted
     /// to `r[K_SKIP..m]`. This is the *rest part of the c-claim's point*.
     /// Length = `m - K_SKIP`.
-    pub r_rest: Vec<F128>,
+    pub r_rest: Vec<Gf128>,
     /// `â(z, mlv_challenges)`.
-    pub a_eval: F128,
+    pub a_eval: Gf128,
     /// `b̂(z, mlv_challenges)`.
-    pub b_eval: F128,
+    pub b_eval: Gf128,
     /// `ĉ(z, r_rest)` — at a *different point* than a_eval, b_eval.
-    pub c_eval: F128,
+    pub c_eval: Gf128,
 }
 
 /// All round messages the prover sends, in order.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZerocheckProof {
     /// Round 1 (univariate skip): `P^{AB}(λ)` for λ ∈ Λ, length 2^K_SKIP.
-    pub round1_ab: Vec<F128>,
+    pub round1_ab: Vec<Gf128>,
     /// Round 1 (extract_c): `P^C(λ)` for λ ∈ Λ, length 2^K_SKIP. Sent separately
     /// from `round1_ab` so the verifier can evaluate the C-claim immediately
     /// and skip the C-column in all subsequent rounds.
-    pub round1_c: Vec<F128>,
+    pub round1_c: Vec<Gf128>,
     /// Multilinear sumcheck rounds: each entry is `(P_r(1), P_r(∞))` via the
     /// Karatsuba ∞-trick. Length = `m - K_SKIP`.
-    pub multilinear_rounds: Vec<(F128, F128)>,
+    pub multilinear_rounds: Vec<(Gf128, Gf128)>,
     /// Final MLE evaluations sent at the end of the protocol.
-    pub final_a_eval: F128,
-    pub final_b_eval: F128,
-    pub final_c_eval: F128,
+    pub final_a_eval: Gf128,
+    pub final_b_eval: Gf128,
+    pub final_c_eval: Gf128,
 }
 
 /// Reasons the verifier may reject a proof.
@@ -212,7 +212,7 @@ pub fn prove_packed_padded_capture_s_hat_v_c<C: Challenger>(
     m: usize,
     padding: &PaddingSpec,
     challenger: &mut C,
-) -> (ZerocheckProof, ZerocheckClaim, Vec<F128>) {
+) -> (ZerocheckProof, ZerocheckClaim, Vec<Gf128>) {
     let (proof, claim, captured) =
         prove_packed_padded_inner(a_packed, b_packed, c_packed, m, padding, true, challenger);
     (
@@ -231,7 +231,7 @@ fn prove_packed_padded_inner<C: Challenger>(
     padding: &PaddingSpec,
     capture_s_hat_v_c: bool,
     challenger: &mut C,
-) -> (ZerocheckProof, ZerocheckClaim, Option<Vec<F128>>) {
+) -> (ZerocheckProof, ZerocheckClaim, Option<Vec<Gf128>>) {
     let k_skip = K_SKIP;
     const N_INNER: usize = 7; // 3 small + 4 medium fixed-constant eq dims
     assert!(
@@ -258,7 +258,7 @@ fn prove_packed_padded_inner<C: Challenger>(
     //                                  the URM and multilinear rounds)
     let r_skip = challenger.sample_f128_vec(k_skip);
     let r_outer = challenger.sample_f128_vec(m - k_skip - N_INNER);
-    let mut r = vec![F128::ZERO; m];
+    let mut r = vec![Gf128::ZERO; m];
     r[..k_skip].copy_from_slice(&r_skip);
     for (i, val) in small_challenges_ghash().iter().enumerate() {
         r[k_skip + i] = *val;
@@ -277,8 +277,8 @@ fn prove_packed_padded_inner<C: Challenger>(
     // about this internal optimization; we restore the C_s factor here.
     let zc_timing = std::env::var_os("FLOCK_ZC_TIMING").is_some();
     let t_round1 = std::time::Instant::now();
-    let ntt_s = AdditiveNttGf8::new(k_skip, F8::ZERO);
-    let ntt_l = AdditiveNttGf8::new(k_skip, F8(1u8 << k_skip));
+    let ntt_s = AdditiveNttGf8::new(k_skip, Gf8::ZERO);
+    let ntt_l = AdditiveNttGf8::new(k_skip, Gf8(1u8 << k_skip));
     let inv_table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
     let (round1_ab_opt, round1_c_opt, s_hat_v_c) = if capture_s_hat_v_c {
         let (ab, c, s) =
@@ -300,8 +300,8 @@ fn prove_packed_padded_inner<C: Challenger>(
         (ab, c, None)
     };
     let c_s = c_s_f128();
-    let round1_ab: Vec<F128> = round1_ab_opt.iter().map(|x| c_s * *x).collect();
-    let round1_c: Vec<F128> = round1_c_opt.iter().map(|x| c_s * *x).collect();
+    let round1_ab: Vec<Gf128> = round1_ab_opt.iter().map(|x| c_s * *x).collect();
+    let round1_c: Vec<Gf128> = round1_c_opt.iter().map(|x| c_s * *x).collect();
     if zc_timing {
         eprintln!(
             "[zc-timing] round1 URM: {:.2} ms",
@@ -320,7 +320,7 @@ fn prove_packed_padded_inner<C: Challenger>(
     // as its 2^k_skip evaluations on Λ. Interpolating to λ=z gives
     // `ĉ(z, r_rest)` directly (the eq-weighted sum collapses to the MLE
     // evaluation because ĉ is linear). This is **the c-claim** — at point
-    // `(z, r_rest)`, *not* `(z, ρ-values)`. ~64 F128 muls + Lagrange weights.
+    // `(z, r_rest)`, *not* `(z, ρ-values)`. ~64 Gf128 muls + Lagrange weights.
     let final_c_eval = interpolate_at_z_on_lambda(&round1_c, k_skip, z);
 
     // ---- 6. Round 2: fused fold + first multilinear message ----
@@ -330,7 +330,7 @@ fn prove_packed_padded_inner<C: Challenger>(
     // verifier samples ρ_1 after observing this message.
     let t_round2 = std::time::Instant::now();
     let fold_table = UniSkipFoldTable::new(k_skip, z);
-    let mut mlv_arg = vec![F128::ONE; n_mlv];
+    let mut mlv_arg = vec![Gf128::ONE; n_mlv];
     mlv_arg[1..].copy_from_slice(&r[k_skip + 1..]);
     let (mut a_mlv, mut b_mlv, msg_1, msg_inf) =
         uni_skip_fold_and_round_pair_optimized_packed_padded(
@@ -354,7 +354,7 @@ fn prove_packed_padded_inner<C: Challenger>(
     multilinear_msgs.push((msg_1, msg_inf));
     challenger.observe_f128(msg_1);
     challenger.observe_f128(msg_inf);
-    let mut mlv_rhos: Vec<F128> = Vec::with_capacity(n_mlv);
+    let mut mlv_rhos: Vec<Gf128> = Vec::with_capacity(n_mlv);
     mlv_rhos.push(challenger.sample_f128());
 
     // ---- 7. Rounds 3..(n_mlv + 1) — AB only (c is done) ----
@@ -387,7 +387,7 @@ fn prove_packed_padded_inner<C: Challenger>(
         // r_next for the next round's message: length log_n_before - 1.
         // r_next[0] = ONE (Convention A factor); r_next[1..] are the eq
         // weights for the remaining variables = r[k_skip + i + 2..m].
-        let mut r_next = vec![F128::ONE; log_n_before - 1];
+        let mut r_next = vec![Gf128::ONE; log_n_before - 1];
         r_next[1..].copy_from_slice(&r[k_skip + i + 2..]);
 
         let (m1, mi) = if log_n_before >= 10 {
@@ -457,7 +457,7 @@ fn prove_packed_padded_inner<C: Challenger>(
         );
     }
 
-    let r_rest: Vec<F128> = r[k_skip..].to_vec();
+    let r_rest: Vec<Gf128> = r[k_skip..].to_vec();
 
     let proof = ZerocheckProof {
         round1_ab,
@@ -526,7 +526,7 @@ pub fn verify<C: Challenger>(
     // ---- Re-derive r (in lockstep with prove_packed) ----
     let r_skip = challenger.sample_f128_vec(k_skip);
     let r_outer = challenger.sample_f128_vec(m - k_skip - N_INNER);
-    let mut r = vec![F128::ZERO; m];
+    let mut r = vec![Gf128::ZERO; m];
     r[..k_skip].copy_from_slice(&r_skip);
     for (i, val) in small_challenges_ghash().iter().enumerate() {
         r[k_skip + i] = *val;
@@ -565,7 +565,7 @@ pub fn verify<C: Challenger>(
     // If the prover's witness is dishonest the S-zero assumption fails, the
     // reconstructed c_0 is wrong, and the running-claim chain ends at a value
     // inconsistent with `â · b̂`. We catch that at the final sumcheck check.
-    let combined_at_lambda: Vec<F128> = proof
+    let combined_at_lambda: Vec<Gf128> = proof
         .round1_ab
         .iter()
         .zip(&proof.round1_c)
@@ -591,21 +591,21 @@ pub fn verify<C: Challenger>(
     //   3. update `c_running ← G(ρ_i)`,
     //      where `G(X) = G(0)·(1+X) + G(1)·X + G(∞)·X·(X+1)` (char-2 quadratic
     //      interpolation through G(0), G(1), G(∞)).
-    let mut mlv_rhos: Vec<F128> = Vec::with_capacity(n_mlv);
+    let mut mlv_rhos: Vec<Gf128> = Vec::with_capacity(n_mlv);
     for (i, &(msg_1, msg_inf)) in proof.multilinear_rounds.iter().enumerate() {
         let r_eq = r[k_skip + i];
-        let one_plus_r_eq = F128::ONE + r_eq;
+        let one_plus_r_eq = Gf128::ONE + r_eq;
 
         let g1 = msg_1;
         let g_inf = msg_inf;
-        let g0 = (c_running + r_eq * g1) * one_plus_r_eq.inv();
+        let g0 = (c_running + r_eq * g1) * one_plus_r_eq.inverse_or_zero();
 
         challenger.observe_f128(msg_1);
         challenger.observe_f128(msg_inf);
         let rho = challenger.sample_f128();
         mlv_rhos.push(rho);
 
-        let one_plus_rho = F128::ONE + rho;
+        let one_plus_rho = Gf128::ONE + rho;
         // G(ρ) = G(0)·(1+ρ) + G(1)·ρ + G(∞)·ρ·(1+ρ).
         c_running = g0 * one_plus_rho + g1 * rho + g_inf * rho * one_plus_rho;
     }
@@ -617,7 +617,7 @@ pub fn verify<C: Challenger>(
     //   G_final(ρ_all) = â(z, ρ) · b̂(z, ρ) = final_a_eval · final_b_eval.
     // (The eq factors were absorbed round-by-round into the consistency checks,
     // never accumulating into the running claim.)
-    let r_rest: Vec<F128> = r[k_skip..].to_vec();
+    let r_rest: Vec<Gf128> = r[k_skip..].to_vec();
     let expected_final = proof.final_a_eval * proof.final_b_eval;
     if c_running != expected_final {
         return Err(VerifyError::SumcheckFinalFailed);
@@ -730,7 +730,7 @@ mod tests {
     }
 
     /// **Verify rejects byte-mutated proofs.** Walk each component of the
-    /// proof and flip one F128 entry; the verifier must return an `Err`
+    /// proof and flip one Gf128 entry; the verifier must return an `Err`
     /// (rather than panicking or silently accepting).
     #[test]
     fn verify_rejects_mutations() {
@@ -893,7 +893,7 @@ mod tests {
         // a sound verifier should reject (overwhelming probability).
         for idx in 0..proof.multilinear_rounds.len() {
             let mut bad = proof.clone();
-            bad.multilinear_rounds[idx].1 += F128::ONE;
+            bad.multilinear_rounds[idx].1 += Gf128::ONE;
             let mut ch = FsChallenger::new(b"flock-test-v0");
             let res = verify(m, &bad, &mut ch);
             assert!(res.is_err(), "msg_inf tamper at round {idx} ACCEPTED");
@@ -917,7 +917,7 @@ mod tests {
 
         let last = proof.multilinear_rounds.len() - 1;
         let mut bad = proof.clone();
-        bad.multilinear_rounds[last].1 += F128::ONE;
+        bad.multilinear_rounds[last].1 += Gf128::ONE;
         let mut ch = FsChallenger::new(b"flock-test-v0");
         assert!(
             verify(m, &bad, &mut ch).is_err(),
@@ -965,14 +965,14 @@ mod tests {
 
         // Product-preserving tamper: â' = â·t, b̂' = b̂·t⁻¹ ⇒ â'·b̂' = â·b̂, so the
         // zerocheck's `c_running == â·b̂` check still holds for the tampered pair.
-        let t = F128 {
+        let t = Gf128 {
             lo: 0x0123_4567_89ab_cdef,
             hi: 0xfedc_ba98_7654_3210,
         };
-        assert!(t != F128::ZERO && t != F128::ONE, "t must be nontrivial");
+        assert!(t != Gf128::ZERO && t != Gf128::ONE, "t must be nontrivial");
         let mut bad = proof.clone();
         bad.final_a_eval *= t;
-        bad.final_b_eval *= t.inv();
+        bad.final_b_eval *= t.inverse_or_zero();
         assert_ne!(bad.final_a_eval, proof.final_a_eval, "tamper must change â");
         assert_ne!(bad.final_b_eval, proof.final_b_eval, "tamper must change b̂");
         assert_eq!(
@@ -1044,7 +1044,7 @@ mod tests {
         let (proof, _) = prove_packed(&a_p, &b_p, &c_p, m, &mut ch_prove);
         for idx in 0..proof.multilinear_rounds.len() {
             let mut bad = proof.clone();
-            bad.multilinear_rounds[idx].0 += F128::ONE;
+            bad.multilinear_rounds[idx].0 += Gf128::ONE;
             let mut ch = FsChallenger::new(b"flock-test-v0");
             assert!(
                 verify(m, &bad, &mut ch).is_err(),

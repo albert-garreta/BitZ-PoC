@@ -1,9 +1,9 @@
-use crate::field::F128;
+use crate::field::Gf128;
 
 /// NEON one-row fold: 8 aligned 16-byte loads + 8 XORs, hand-unrolled for
-/// `n_chunks = 8` (the k_skip=6 protocol size). Returns the folded F128.
+/// `n_chunks = 8` (the k_skip=6 protocol size). Returns the folded Gf128.
 ///
-/// The table is `Vec<F128>` with each entry 16-byte aligned (F128 is
+/// The table is `Vec<Gf128>` with each entry 16-byte aligned (Gf128 is
 /// `repr(C, align(16))`), so every `vld1q_u8` lands on an aligned address.
 ///
 /// # Safety
@@ -14,7 +14,7 @@ use crate::field::F128;
 pub(crate) unsafe fn fold_one_row_neon_unchecked_8(
     table_data: *const u8,
     bytes_ptr: *const u8,
-) -> F128 {
+) -> Gf128 {
     use core::arch::aarch64::*;
     unsafe {
         const STRIDE: usize = 256 * 16;
@@ -48,7 +48,7 @@ pub(crate) unsafe fn fold_one_row_neon_unchecked_8(
             vld1q_u8(table_data.add(7 * STRIDE + (*bytes_ptr.add(7)) as usize * 16)),
         );
         let acc_u64 = vreinterpretq_u64_u8(acc);
-        F128 {
+        Gf128 {
             lo: vgetq_lane_u64::<0>(acc_u64),
             hi: vgetq_lane_u64::<1>(acc_u64),
         }

@@ -20,7 +20,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use flock_prover::challenger::{Challenger, FsChallenger};
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::hash::HashKind;
 use flock_prover::lincheck::build_eq_table;
 use flock_prover::merkle::merkle_multi_proof;
@@ -43,8 +43,8 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn f128(&mut self) -> F128 {
-        F128 {
+    fn f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
@@ -79,7 +79,7 @@ fn sample_distinct_queries<Ch: Challenger>(
     out
 }
 
-fn wf(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn wf(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -116,8 +116,8 @@ fn main() -> std::io::Result<()> {
     let n1 = log_n - initial_k;
 
     let mut rng = Rng::new(0xC0FFEE);
-    let f: Vec<F128> = (0..len).map(|_| rng.f128()).collect();
-    let b1: Vec<F128> = (0..len).map(|_| rng.f128()).collect();
+    let f: Vec<Gf128> = (0..len).map(|_| rng.f128()).collect();
+    let b1: Vec<Gf128> = (0..len).map(|_| rng.f128()).collect();
     let target = rng.f128();
 
     // ---- L0 commit (the upstream witness commit) ----
@@ -222,7 +222,7 @@ fn main() -> std::io::Result<()> {
     let queries_0 = sample_distinct_queries(&mut ch, l0_block_len, num_queries_0);
     let alpha_len = ceil_log2(num_queries_0);
     let alpha_0 = ch.sample_f128_vec(alpha_len);
-    let opened_rows_0: Vec<Vec<F128>> = queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
+    let opened_rows_0: Vec<Vec<Gf128>> = queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
     let merkle_proof_0 = merkle_multi_proof(&wtns_0.tree, l0_block_len, &queries_0);
 
     w.write_all(&query_grind_bits.to_le_bytes())?;
@@ -355,7 +355,7 @@ fn main() -> std::io::Result<()> {
             let queries_i = sample_distinct_queries(&mut ch, prev_block_len, nq_rec);
             let alpha_len_i = ceil_log2(nq_rec);
             let alpha_i = ch.sample_f128_vec(alpha_len_i);
-            let opened_rows_i: Vec<Vec<F128>> = queries_i
+            let opened_rows_i: Vec<Vec<Gf128>> = queries_i
                 .iter()
                 .map(|&q| prev_mat[q * prev_ni..(q + 1) * prev_ni].to_vec())
                 .collect();

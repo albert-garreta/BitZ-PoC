@@ -24,7 +24,7 @@
 //! plane-decomposition and per-pack identities the virtual opening's
 //! batching protocol relies on.
 
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 
 /// The monomial `X^k` as a field element (bit `k` set).
 #[inline]
@@ -32,13 +32,13 @@ pub(crate) fn monomial(k: usize) -> Gf {
     debug_assert!(k < 128);
     let mut w = [0u64; 2];
     w[k >> 6] = 1u64 << (k & 63);
-    Gf::from_words(w)
+    Gf::from_polynomial_words(w)
 }
 
 /// `H = c₀`: the coefficient of `X⁰` (bit 0).
 #[inline(always)]
 pub(crate) fn c0_bit(g: Gf) -> u64 {
-    g.words()[0] & 1
+    g.as_words()[0] & 1
 }
 
 /// The 128 columns `A(e_v)` of the dual-basis embedding (see the module
@@ -91,14 +91,14 @@ mod tests {
     }
 
     fn sample(seed: u64) -> Gf {
-        Gf::from_words([splitmix(seed), splitmix(seed ^ 0xD1CE)])
+        Gf::from_polynomial_words([splitmix(seed), splitmix(seed ^ 0xD1CE)])
     }
 
     /// `Φ_ρ(x) = Σ_i ρ_i·bit_i(x)` — the scalar reference (the production
     /// path uses `phi_byte_tables`/`phi_from_words`, pinned equal by
     /// `phi_byte_tables_match_bitscan` in `ligerito.rs`).
     fn phi(x: Gf, rho: &[Gf]) -> Gf {
-        let w = x.words();
+        let w = x.as_words();
         let mut acc = Gf::zero();
         for i in 0..128usize {
             if (w[i >> 6] >> (i & 63)) & 1 == 1 {
@@ -150,7 +150,7 @@ mod tests {
                     d[j >> 6] |= 1u64 << (j & 63);
                 }
             }
-            assert_eq!(Gf::from_words(d), cols[v], "dual column {v}");
+            assert_eq!(Gf::from_polynomial_words(d), cols[v], "dual column {v}");
         }
     }
 
@@ -186,15 +186,18 @@ mod tests {
                     }
                 }
             }
-            assert_eq!(Gf::from_words(w), col, "Hankel column {v}");
+            assert_eq!(Gf::from_polynomial_words(w), col, "Hankel column {v}");
             if v >= 1 {
                 let rev = monomial(128 - v);
                 let diff = col + rev;
                 corrections +=
-                    (diff.words()[0].count_ones() + diff.words()[1].count_ones()) as usize;
+                    (diff.as_words()[0].count_ones() + diff.as_words()[1].count_ones()) as usize;
             }
         }
-        assert_eq!(corrections, 7, "reversal plus exactly seven XOR corrections");
+        assert_eq!(
+            corrections, 7,
+            "reversal plus exactly seven XOR corrections"
+        );
     }
 
     #[test]
@@ -207,11 +210,7 @@ mod tests {
                 .iter()
                 .zip(cols.iter())
                 .fold(Gf::zero(), |acc, (&value, &column)| acc + value * column);
-            assert_eq!(
-                dual_basis_linear_combination(&q),
-                expected,
-                "trial {trial}"
-            );
+            assert_eq!(dual_basis_linear_combination(&q), expected, "trial {trial}");
         }
     }
 
@@ -232,7 +231,11 @@ mod tests {
                     packed_a += cols[v];
                 }
             }
-            assert_eq!(c0_bit(Gf::from_words(w) * packed_a), dot, "block {t}");
+            assert_eq!(
+                c0_bit(Gf::from_polynomial_words(w) * packed_a),
+                dot,
+                "block {t}"
+            );
         }
     }
 
@@ -255,7 +258,7 @@ mod tests {
         for i in 0..128usize {
             let mut plane_dot = 0u64;
             for (j, wj) in weights.iter().enumerate() {
-                let w = wj.words();
+                let w = wj.as_words();
                 plane_dot ^= ((w[i >> 6] >> (i & 63)) & 1) & f_bit(j);
             }
             if plane_dot == 1 {
@@ -274,15 +277,16 @@ mod tests {
     fn batching_protocol_identities_tiny() {
         let cols = dual_basis_cols();
         let packs = 2usize;
-        let weights: Vec<Gf> =
-            (0..packs * 128).map(|j| sample(0x33_0000 + j as u64)).collect();
+        let weights: Vec<Gf> = (0..packs * 128)
+            .map(|j| sample(0x33_0000 + j as u64))
+            .collect();
         let f_bit = |j: usize| splitmix(0x44_0000 + j as u64) & 1;
         let pack = |y: usize| -> Gf {
             let mut w = [0u64; 2];
             for v in 0..128usize {
                 w[v >> 6] |= (f_bit((y << 7) | v)) << (v & 63);
             }
-            Gf::from_words(w)
+            Gf::from_polynomial_words(w)
         };
         let rho: Vec<Gf> = (0..128).map(|i| sample(0x55_0000 + i as u64)).collect();
 
@@ -291,7 +295,7 @@ mod tests {
         for y in 0..packs {
             let p = pack(y);
             for v in 0..128usize {
-                let w = weights[(y << 7) | v].words();
+                let w = weights[(y << 7) | v].as_words();
                 let g = p * cols[v];
                 for (i, h) in hs.iter_mut().enumerate() {
                     if (w[i >> 6] >> (i & 63)) & 1 == 1 {
@@ -312,7 +316,7 @@ mod tests {
         for (i, h) in hs.iter().enumerate() {
             assembled[i >> 6] |= c0_bit(*h) << (i & 63);
         }
-        assert_eq!(Gf::from_words(assembled), h_direct, "step 3");
+        assert_eq!(Gf::from_polynomial_words(assembled), h_direct, "step 3");
 
         // (b) Step 4: ρ-batched target vs the per-pack batched basis.
         let mut lhs = Gf::zero();

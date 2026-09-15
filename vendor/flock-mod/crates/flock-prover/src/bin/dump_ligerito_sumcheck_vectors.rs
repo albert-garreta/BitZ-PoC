@@ -23,7 +23,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::pcs::ligerito::SumcheckProver;
 
 /// SplitMix64 — same constants as the other `dump_*_vectors` bins.
@@ -39,15 +39,15 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn next_f128(&mut self) -> F128 {
-        F128 {
+    fn next_f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
     }
 }
 
-fn write_f128(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn write_f128(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -63,15 +63,15 @@ fn main() -> std::io::Result<()> {
     let init_len = 1usize << log_len;
 
     let mut rng = Rng::new(0xC0FFEE);
-    let f: Vec<F128> = (0..init_len).map(|_| rng.next_f128()).collect();
-    let basis: Vec<F128> = (0..init_len).map(|_| rng.next_f128()).collect();
+    let f: Vec<Gf128> = (0..init_len).map(|_| rng.next_f128()).collect();
+    let basis: Vec<Gf128> = (0..init_len).map(|_| rng.next_f128()).collect();
 
     // The real Ligerito sumcheck prover. h1 (initial claim) does not affect the
     // fold/message values; pass the honest sum for realism.
     let h1 = f
         .iter()
         .zip(basis.iter())
-        .fold(F128::ZERO, |acc, (&x, &y)| acc + x * y);
+        .fold(Gf128::ZERO, |acc, (&x, &y)| acc + x * y);
     let (mut sc, mut msg) = SumcheckProver::new(f.clone(), basis.clone(), h1);
 
     let mut w = BufWriter::new(File::create(&path)?);
@@ -97,7 +97,7 @@ fn main() -> std::io::Result<()> {
         write_f128(&mut w, msg.u_2)?;
 
         let half = bcur.len() / 2;
-        let one_plus_r = F128::ONE + r;
+        let one_plus_r = Gf128::ONE + r;
         let mut nb = Vec::with_capacity(half);
         for j in 0..half {
             nb.push(bcur[2 * j] * one_plus_r + bcur[2 * j + 1] * r);

@@ -49,9 +49,9 @@ pub enum WitnessLayout {
 ///
 /// `k_skip` is the zerocheck's univariate-skip dimension (`k_skip ≤ k_log`).
 /// It defines how the m-dim claim point is laid out in the protocol: one
-/// univariate F128 coord binds the LSB `k_skip` bits, `k_log − k_skip`
-/// multilinear F128 coords bind the next inner bits, and `n_log` multilinear
-/// F128 coords bind the outer bits.
+/// univariate Gf128 coord binds the LSB `k_skip` bits, `k_log − k_skip`
+/// multilinear Gf128 coords bind the next inner bits, and `n_log` multilinear
+/// Gf128 coords bind the outer bits.
 #[derive(Debug)]
 pub struct BlockR1cs {
     pub m: usize,
@@ -197,17 +197,17 @@ impl BlockR1cs {
     // -----------------------------------------------------------------------
 
     /// Packed `a = A · z` ∈ GF(2)^N. Output is F_{2^128}-packed (length 2^(m-7)).
-    pub fn apply_a_packed(&self, z_packed: &[crate::field::F128]) -> Vec<crate::field::F128> {
+    pub fn apply_a_packed(&self, z_packed: &[crate::field::Gf128]) -> Vec<crate::field::Gf128> {
         apply_block_diag_packed(&self.a_0, z_packed, self.m, self.k_log)
     }
 
     /// Packed `b = B · z`.
-    pub fn apply_b_packed(&self, z_packed: &[crate::field::F128]) -> Vec<crate::field::F128> {
+    pub fn apply_b_packed(&self, z_packed: &[crate::field::Gf128]) -> Vec<crate::field::Gf128> {
         apply_block_diag_packed(&self.b_0, z_packed, self.m, self.k_log)
     }
 
     /// Packed `c = C · z`.
-    pub fn apply_c_packed(&self, z_packed: &[crate::field::F128]) -> Vec<crate::field::F128> {
+    pub fn apply_c_packed(&self, z_packed: &[crate::field::Gf128]) -> Vec<crate::field::Gf128> {
         apply_block_diag_packed(&self.c_0, z_packed, self.m, self.k_log)
     }
 
@@ -246,7 +246,7 @@ impl BlockR1cs {
     pub fn x_ab_from_mlv(
         &self,
         z_skip: crate::lincheck::SkipPoint,
-        mlv: &[crate::field::F128],
+        mlv: &[crate::field::Gf128],
     ) -> crate::lincheck::QuirkyPoint {
         let inner_rest_len = self.k_log - self.k_skip;
         assert_eq!(mlv.len(), self.m - self.k_skip);
@@ -280,8 +280,8 @@ impl BlockR1cs {
     pub fn ab_claim_point(
         &self,
         r_inner_skip: crate::lincheck::SkipPoint,
-        r_inner_rest: &[crate::field::F128],
-        x_outer: &[crate::field::F128],
+        r_inner_rest: &[crate::field::Gf128],
+        x_outer: &[crate::field::Gf128],
     ) -> crate::lincheck::QuirkyPoint {
         match self.layout {
             WitnessLayout::RowMajor => crate::lincheck::QuirkyPoint {
@@ -307,7 +307,7 @@ impl BlockR1cs {
     pub fn c_claim_point(
         &self,
         z_skip: crate::lincheck::SkipPoint,
-        r_rest: &[crate::field::F128],
+        r_rest: &[crate::field::Gf128],
     ) -> crate::lincheck::QuirkyPoint {
         let inner_rest_len = self.k_log - self.k_skip;
         match self.layout {
@@ -353,14 +353,14 @@ impl BlockR1cs {
 
     /// Check the R1CS constraint `(A·z) ⊙ (B·z) = C·z` over GF(2) on a packed
     /// witness. Per-element check is `a & b == c` bitwise.
-    pub fn satisfies_packed(&self, z_packed: &[crate::field::F128]) -> bool {
-        use crate::field::F128;
+    pub fn satisfies_packed(&self, z_packed: &[crate::field::Gf128]) -> bool {
+        use crate::field::Gf128;
         assert_eq!(z_packed.len(), 1usize << (self.m - 7));
         let a = self.apply_a_packed(z_packed);
         let b = self.apply_b_packed(z_packed);
         let c = self.apply_c_packed(z_packed);
         a.iter().zip(b.iter()).zip(c.iter()).all(|((ai, bi), ci)| {
-            let ab = F128 {
+            let ab = Gf128 {
                 lo: ai.lo & bi.lo,
                 hi: ai.hi & bi.hi,
             };
@@ -414,11 +414,11 @@ fn apply_block_diag(m_0: &SparseBinaryMatrix, z: &[bool], k_log: usize) -> Vec<b
 /// = `n_outer · k · s` bit ops.
 pub fn apply_block_diag_packed(
     m_0: &SparseBinaryMatrix,
-    z_packed: &[crate::field::F128],
+    z_packed: &[crate::field::Gf128],
     m: usize,
     k_log: usize,
-) -> Vec<crate::field::F128> {
-    use crate::field::F128;
+) -> Vec<crate::field::Gf128> {
+    use crate::field::Gf128;
     use rayon::prelude::*;
 
     let k = 1usize << k_log;
@@ -428,7 +428,7 @@ pub fn apply_block_diag_packed(
     assert_eq!(z_packed.len(), n_packed);
     let n_outer = 1usize << (m - k_log);
 
-    let mut out = vec![F128::ZERO; n_packed];
+    let mut out = vec![Gf128::ZERO; n_packed];
 
     if k_log >= 7 {
         // Fast path: flatten the matrix to CSR once (one pass over the
@@ -469,7 +469,7 @@ pub fn apply_block_diag_packed(
                 }
             });
     } else {
-        // Slow path (k_log < 7): blocks straddle F128 elements. Used only by
+        // Slow path (k_log < 7): blocks straddle Gf128 elements. Used only by
         // small tests; production R1CS always has k_log ≥ 7.
         for i_outer in 0..n_outer {
             let block_start_bit = i_outer * k;
@@ -513,11 +513,11 @@ fn flatten_csr(m: &SparseBinaryMatrix) -> (Vec<u32>, Vec<u32>) {
     (row_ptr, cols)
 }
 
-/// View a block of F128s as u128 words (F128 is repr(C, align(16)) with two
+/// View a block of F128s as u128 words (Gf128 is repr(C, align(16)) with two
 /// little-endian u64s — bit `b` of the u128 is logical bit `b` of the block).
 #[inline]
-fn as_u128s(block: &[crate::field::F128]) -> &[u128] {
-    // SAFETY: F128 has u128's size and alignment on all supported targets;
+fn as_u128s(block: &[crate::field::Gf128]) -> &[u128] {
+    // SAFETY: Gf128 has u128's size and alignment on all supported targets;
     // the lo/hi little-endian layout matches the u128 bit order.
     unsafe { std::slice::from_raw_parts(block.as_ptr() as *const u128, block.len()) }
 }
@@ -537,8 +537,8 @@ fn as_u128s(block: &[crate::field::F128]) -> &[u128] {
 fn apply_strip_csr(
     row_ptr: &[u32],
     cols: &[u32],
-    z_strip: &[crate::field::F128],
-    out_strip: &mut [crate::field::F128],
+    z_strip: &[crate::field::Gf128],
+    out_strip: &mut [crate::field::Gf128],
     f128_per_block: usize,
 ) {
     use crate::bits::transpose_8_u64s_to_64_bytes;
@@ -547,7 +547,7 @@ fn apply_strip_csr(
     debug_assert_eq!(out_strip.len(), APPLY_STRIP * f128_per_block);
     let k = f128_per_block * 128;
     let u64_per_block = k / 64;
-    // SAFETY: F128 is repr(C, align(16)) = two little-endian u64s; viewing the
+    // SAFETY: Gf128 is repr(C, align(16)) = two little-endian u64s; viewing the
     // strip as u64 words preserves bit order within each block.
     let z_u64: &[u64] =
         unsafe { std::slice::from_raw_parts(z_strip.as_ptr() as *const u64, z_strip.len() * 2) };
@@ -617,15 +617,15 @@ fn transpose_64x64(a: &mut [u64; 64]) {
 fn apply_strip64_csr(
     row_ptr: &[u32],
     cols: &[u32],
-    z_strip: &[crate::field::F128],
-    out_strip: &mut [crate::field::F128],
+    z_strip: &[crate::field::Gf128],
+    out_strip: &mut [crate::field::Gf128],
     f128_per_block: usize,
 ) {
     const S: usize = 64;
     debug_assert_eq!(z_strip.len(), S * f128_per_block);
     let k = f128_per_block * 128;
     let u64_per_block = k / 64;
-    // SAFETY: F128 is repr(C, align(16)) = two little-endian u64s; u64 views
+    // SAFETY: Gf128 is repr(C, align(16)) = two little-endian u64s; u64 views
     // preserve bit order within each block.
     let z_u64: &[u64] =
         unsafe { std::slice::from_raw_parts(z_strip.as_ptr() as *const u64, z_strip.len() * 2) };
@@ -670,8 +670,8 @@ fn apply_strip64_csr(
 fn apply_one_block_csr(
     row_ptr: &[u32],
     cols: &[u32],
-    z_block: &[crate::field::F128],
-    out_block: &mut [crate::field::F128],
+    z_block: &[crate::field::Gf128],
+    out_block: &mut [crate::field::Gf128],
 ) {
     let z = as_u128s(z_block);
     let f128_per_block = z_block.len();
@@ -695,7 +695,7 @@ fn apply_one_block_csr(
 }
 
 #[inline]
-fn get_bit_packed(z_packed: &[crate::field::F128], global_bit: usize) -> bool {
+fn get_bit_packed(z_packed: &[crate::field::Gf128], global_bit: usize) -> bool {
     let i_packed = global_bit / 128;
     let local = global_bit % 128;
     if local < 64 {
@@ -706,7 +706,7 @@ fn get_bit_packed(z_packed: &[crate::field::F128], global_bit: usize) -> bool {
 }
 
 #[inline]
-fn set_bit_packed(z_packed: &mut [crate::field::F128], global_bit: usize) {
+fn set_bit_packed(z_packed: &mut [crate::field::Gf128], global_bit: usize) {
     let i_packed = global_bit / 128;
     let local = global_bit % 128;
     if local < 64 {

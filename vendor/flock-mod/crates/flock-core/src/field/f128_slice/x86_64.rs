@@ -1,12 +1,12 @@
-use crate::field::F128;
+use crate::field::Gf128;
 
 /// Four-lane pair fold using AVX-512 lane deinterleaving and VPCLMULQDQ.
 ///
 /// # Safety
 /// Requires `avx512f` and `vpclmulqdq`.
-#[target_feature(enable = "avx512f,vpclmulqdq")]
-pub(super) unsafe fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: F128) {
-    use crate::field::gf2_128::x86_64::ghash_mul_x4;
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq,pclmulqdq,sse4.1")]
+pub(super) unsafe fn fold_pairs(src: &[Gf128], base: usize, dst: &mut [Gf128], r: Gf128) {
+    use crate::field::gf128_kernels::x86_64::ghash_mul_x4;
     use core::arch::x86_64::*;
 
     // SAFETY: caller guarantees the target features and source bounds.
@@ -33,8 +33,8 @@ pub(super) unsafe fn fold_pairs(src: &[F128], base: usize, dst: &mut [F128], r: 
 }
 
 #[inline]
-fn portable_tail(src: &[F128], base: usize, dst: &mut [F128], r: F128, mut t: usize) {
-    let one_plus_r = F128::ONE + r;
+fn portable_tail(src: &[Gf128], base: usize, dst: &mut [Gf128], r: Gf128, mut t: usize) {
+    let one_plus_r = Gf128::ONE + r;
     while t < dst.len() {
         let s = 2 * (base + t);
         dst[t] = src[s] * one_plus_r + src[s + 1] * r;

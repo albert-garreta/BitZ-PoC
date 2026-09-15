@@ -1,0 +1,18 @@
+{
+  "commit": "6271724d75570513aa1963381fbf5989933e5b42",
+  "purpose": "Immutable arithmetic comparison sources; production labels in historical CSV procedures refer to this baseline. Current shared API is linked from vendor/field.",
+  "files": {
+    "delayed_reduction.rs": {
+      "source": "src/utils/delayed_reduction.rs",
+      "sha256": "a1344e325e2f3bf078822fe782d17cfc156dea9fc17b7fe1315b2c88a411f284"
+    },
+    "raw_monty.rs": {
+      "source": "src/piop/spartan/raw_monty.rs",
+      "sha256": "96e2709702ca35c0b5c17f246cddf317150b311865ccf0a67dec5716347ceb89"
+    },
+    "binary_gf128.rs": {
+      "source": "src/poly/univariate/binary_gf128.rs",
+      "sha256": "ed4d7a9d6b9a0c3910d48c2550945f4f680fbd7c1a5927500d39ae19d0a31a13"
+    }
+  }
+}

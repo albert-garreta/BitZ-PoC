@@ -45,7 +45,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use flock_prover::challenger::{Challenger, FsChallenger};
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::lincheck::{
     self, CscCircuit, LincheckCircuit, QuirkyPoint, SkipPoint, build_eq_table,
     build_quirky_eq_table,
@@ -67,15 +67,15 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn next_f128(&mut self) -> F128 {
-        F128 {
+    fn next_f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
     }
 }
 
-fn write_f128(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn write_f128(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -203,14 +203,14 @@ fn main() -> std::io::Result<()> {
     let mut ch2 = FsChallenger::new(DOMAIN);
     ch2.observe_label(b"flock-lincheck-v0");
     let alpha = ch2.sample_f128();
-    let eq_inner = build_quirky_eq_table(x_ab.z_skip.phi8(), &x_ab.x_inner_rest, k_skip);
+    let eq_inner = build_quirky_eq_table(x_ab.z_skip.embed_gf8(), &x_ab.x_inner_rest, k_skip);
     let comb_vec = circuit.fold_alpha_batched(alpha, &eq_inner);
     assert_eq!(comb_vec.len(), k);
     // sanity: the public build_eq_table(x_outer) the prover folds against.
     debug_assert_eq!(build_eq_table(&x_ab.x_outer).len(), 1usize << n_log);
 
     // r_rounds: prove() reverses r_rounds into claim.r_inner_rest, so undo it.
-    let r_rounds: Vec<F128> = claim.r_inner_rest.iter().rev().copied().collect();
+    let r_rounds: Vec<Gf128> = claim.r_inner_rest.iter().rev().copied().collect();
 
     // --- Write.
     let mut w = BufWriter::new(File::create(&path)?);
@@ -238,7 +238,7 @@ fn main() -> std::io::Result<()> {
         write_u32(&mut w, v)?;
     }
 
-    write_f128(&mut w, x_ab.z_skip.phi8())?;
+    write_f128(&mut w, x_ab.z_skip.embed_gf8())?;
     for &x in &x_ab.x_inner_rest {
         write_f128(&mut w, x)?;
     }
@@ -262,7 +262,7 @@ fn main() -> std::io::Result<()> {
     for &x in &proof.z_partial {
         write_f128(&mut w, x)?;
     }
-    write_f128(&mut w, claim.r_inner_skip.phi8())?;
+    write_f128(&mut w, claim.r_inner_skip.embed_gf8())?;
     write_f128(&mut w, claim.w)?;
     w.flush()?;
 

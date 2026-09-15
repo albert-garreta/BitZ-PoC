@@ -21,7 +21,7 @@ use super::multilinear::{
     fold2_lookahead_into, lookahead_msg_first, lookahead_msg_second, round_pair_naive,
 };
 use crate::challenger::Challenger;
-use crate::field::{F128, F256Unreduced, mul_by_x};
+use crate::field::{Gf128, Gf128Product, mul_by_x};
 use crate::genus95_curve_code::{
     EvaluationPoint, base_evaluation_functional, product_evaluation_functional,
 };
@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub static DISABLE_FRIENDLY_HORNER: AtomicBool = AtomicBool::new(false);
 
 /// Bench-only A/B toggle: when set, the tail's ping-pong buffers `a_nxt`/`b_nxt`
-/// are `vec![F128::ZERO; n_in/2]` (the old serial-zero-filled, non-pooled path)
+/// are `vec![Gf128::ZERO; n_in/2]` (the old serial-zero-filled, non-pooled path)
 /// instead of uninit pooled `take_f128`. Lets one process time both back-to-back.
 pub static NXT_ZEROFILL: AtomicBool = AtomicBool::new(false);
 
@@ -69,10 +69,10 @@ pub const K_SKIP: usize = 6;
 /// reinterpret (matches the RS path's `N_INNER`, but all over `γ`).
 pub const N_INNER: usize = 7;
 
-/// `γ^b ∈ F128` (the GHASH generator to the `b`-th power). For `b < 128` this is
+/// `γ^b ∈ Gf128` (the GHASH generator to the `b`-th power). For `b < 128` this is
 /// the element with bit `b` set; computed via `mul_by_x` for clarity/reduction.
-pub fn gamma_pow(b: usize) -> F128 {
-    let mut g = F128::ONE;
+pub fn gamma_pow(b: usize) -> Gf128 {
+    let mut g = Gf128::ONE;
     for _ in 0..b {
         g = mul_by_x(g);
     }
@@ -83,29 +83,29 @@ pub fn gamma_pow(b: usize) -> F128 {
 /// `r_j = γ^{2^j} / (1 + γ^{2^j})`, chosen so that
 /// `eq(r_inner, b) = γ^{int(b)} / D` with `D = ∏_j (1 + γ^{2^j})`.
 /// The verifier pins `r[K_SKIP .. K_SKIP+N_INNER]` to these constants.
-pub fn friendly_challenges() -> [F128; N_INNER] {
-    let mut out = [F128::ZERO; N_INNER];
+pub fn friendly_challenges() -> [Gf128; N_INNER] {
+    let mut out = [Gf128::ZERO; N_INNER];
     for j in 0..N_INNER {
         let g = gamma_pow(1 << j);
-        out[j] = g * (F128::ONE + g).inv();
+        out[j] = g * (Gf128::ONE + g).inverse_or_zero();
     }
     out
 }
 
 /// `D = ∏_{j=0}^{N_INNER-1} (1 + γ^{2^j})` — the normalizing constant the
 /// kernel's raw `γ^b` reinterpret omits (`kernel_output = D · true_message`).
-pub fn d_const() -> F128 {
-    let mut d = F128::ONE;
+pub fn d_const() -> Gf128 {
+    let mut d = Gf128::ONE;
     for j in 0..N_INNER {
-        d *= F128::ONE + gamma_pow(1 << j);
+        d *= Gf128::ONE + gamma_pow(1 << j);
     }
     d
 }
 
 /// `D⁻¹`: the per-coordinate rescale applied to the kernel output to recover the
 /// true eq-weighted round-1 message (the AG analog of restoring the RS `C_s`).
-pub fn d_inv() -> F128 {
-    d_const().inv()
+pub fn d_inv() -> Gf128 {
+    d_const().inverse_or_zero()
 }
 
 // ---------------------------------------------------------------------------
@@ -116,12 +116,12 @@ pub fn d_inv() -> F128 {
 pub struct Round1Message {
     /// `P^{ab}` fresh coords (158): kernel fresh slot `s` ↦ evaluator product
     /// coord `64 + s`. (Garbage kernel slots 158/159 dropped.)
-    pub ab_fresh: Vec<F128>,
+    pub ab_fresh: Vec<Gf128>,
     /// The folded c message `w̄ = Σ_x eq(r_rest, x)·c(·, x)` (64). For an honest
     /// witness this equals `P^{ab}`'s value (order0) section (systematic
     /// vanishing: `P^{ab} − P^{c} = 0` on the value coords), so the verifier
     /// reuses it to reconstruct `P^{ab}`'s value rather than receiving it.
-    pub c_msg: Vec<F128>,
+    pub c_msg: Vec<Gf128>,
 }
 
 /// Prover round 1: run the kernel on the packed witness, rescale by `D⁻¹`, and
@@ -132,7 +132,7 @@ pub fn prove_round1(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
+    eq: &[Gf128],
 ) -> Round1Message {
     let (res_ab, wbar) =
         crate::genus95_curve_code::round1::round1_slp_packed(a_packed, b_packed, c_packed, eq);
@@ -143,13 +143,13 @@ pub fn prove_round1(
     }
 }
 
-/// Verifier: `P^{ab}(r₁) = ⟨E(r₁), [w̄ | P^{ab}_fresh]⟩` — a 222-term F128 inner
+/// Verifier: `P^{ab}(r₁) = ⟨E(r₁), [w̄ | P^{ab}_fresh]⟩` — a 222-term Gf128 inner
 /// product over the product-code evaluation functional. The value (order0)
 /// section is reconstructed as `w̄` via systematic vanishing; the fresh coords
 /// map by the identity bridge (kernel slot `s` ↦ coord `64+s`).
-pub fn eval_ab_at(msg: &Round1Message, point: &EvaluationPoint) -> F128 {
+pub fn eval_ab_at(msg: &Round1Message, point: &EvaluationPoint) -> Gf128 {
     let pf = product_evaluation_functional(point).expect("denominator nonzero at r1");
-    let mut acc = F128::ZERO;
+    let mut acc = Gf128::ZERO;
     for i in 0..64 {
         acc += pf[i] * msg.c_msg[i];
     }
@@ -160,9 +160,9 @@ pub fn eval_ab_at(msg: &Round1Message, point: &EvaluationPoint) -> F128 {
 }
 
 /// Verifier: `ĉ(r₁, r_rest) = ⟨base(r₁), w̄⟩` via the 64-coord base functional.
-pub fn eval_c_at(msg: &Round1Message, point: &EvaluationPoint) -> F128 {
+pub fn eval_c_at(msg: &Round1Message, point: &EvaluationPoint) -> Gf128 {
     let bf = base_evaluation_functional(point).expect("denominator nonzero at r1");
-    let mut acc = F128::ZERO;
+    let mut acc = Gf128::ZERO;
     for i in 0..64 {
         acc += bf[i] * msg.c_msg[i];
     }
@@ -172,9 +172,9 @@ pub fn eval_c_at(msg: &Round1Message, point: &EvaluationPoint) -> F128 {
 /// 8×256 byte-dot tables for the base functional `w` (64 coords): `table[pos][byte]`
 /// = Σ of `w[pos*8+bit]` over the set bits of `byte`. A message's `â(r₁,·)` is then
 /// `Σ_pos table[pos][byte_pos]` — 8 lookups + 7 adds instead of ~32 set-bit adds.
-pub(super) fn build_w_tables(w: &[F128]) -> Vec<[F128; 256]> {
+pub(super) fn build_w_tables(w: &[Gf128]) -> Vec<[Gf128; 256]> {
     assert_eq!(w.len(), 64, "base functional has 64 coords");
-    let mut table = vec![[F128::ZERO; 256]; 8];
+    let mut table = vec![[Gf128::ZERO; 256]; 8];
     for pos in 0..8 {
         for bit in 0..8 {
             let coord = w[pos * 8 + bit];
@@ -199,7 +199,7 @@ pub(super) fn build_w_tables(w: &[F128]) -> Vec<[F128; 256]> {
 /// is contention relief, not raw lookup speed). Tree-associated adds shorten
 /// the XOR chain from depth 7 to 3. Output bit-identical.
 #[inline]
-pub(super) fn byte_dot(packed: &[u8], r: usize, table: &[[F128; 256]]) -> F128 {
+pub(super) fn byte_dot(packed: &[u8], r: usize, table: &[[Gf128; 256]]) -> Gf128 {
     unsafe {
         let v = (packed.as_ptr().add(r * 8) as *const u64).read_unaligned();
         byte_dot_u64(v, table)
@@ -209,7 +209,7 @@ pub(super) fn byte_dot(packed: &[u8], r: usize, table: &[[F128; 256]]) -> F128 {
 /// [`byte_dot`] on a pre-loaded (possibly pre-combined) 64-bit message. Lets
 /// the tensor fold dot `m₀⊕m₁` without a memory round-trip.
 #[inline]
-pub(super) fn byte_dot_u64(v: u64, table: &[[F128; 256]]) -> F128 {
+pub(super) fn byte_dot_u64(v: u64, table: &[[Gf128; 256]]) -> Gf128 {
     unsafe {
         let t0 = *table.get_unchecked(0).get_unchecked((v & 0xFF) as usize);
         let t1 = *table
@@ -239,7 +239,7 @@ pub(super) fn byte_dot_u64(v: u64, table: &[[F128; 256]]) -> F128 {
 /// rest position — the AG analog of the RS `UniSkipFoldTable(z)` fold. Witness
 /// order is skip = low 6 bits, rest = high, so rest position `r`'s 64-bit message
 /// is the 8 bytes at offset `r*8`. Parallel byte-dot.
-pub fn fold_witness_at_r1(packed: &[u8], w: &[F128]) -> Vec<F128> {
+pub fn fold_witness_at_r1(packed: &[u8], w: &[Gf128]) -> Vec<Gf128> {
     use rayon::prelude::*;
     assert_eq!(
         packed.len() % 8,
@@ -260,13 +260,9 @@ pub fn fold_witness_at_r1(packed: &[u8], w: &[F128]) -> Vec<F128> {
 /// XOR tree was tried and is slower: the chain is already hidden by across-block
 /// parallelism, and the tree's 64-wide working set adds L1 traffic.)
 #[inline]
-pub(super) fn shl2_xor(acc: F256Unreduced, p: F128) -> F256Unreduced {
-    F256Unreduced {
-        r0: (acc.r0 << 2) ^ p.lo,
-        r1: ((acc.r1 << 2) | (acc.r0 >> 62)) ^ p.hi,
-        r2: (acc.r2 << 2) | (acc.r1 >> 62),
-        r3: (acc.r3 << 2) | (acc.r2 >> 62),
-    }
+pub(super) fn shl2_xor(acc: Gf128Product, p: Gf128) -> Gf128Product {
+    let acc = acc.to_polynomial_words();
+    Gf128Product::from_polynomial_words([(acc[0] << 2) ^ p.lo, ((acc[1] << 2) | (acc[0] >> 62)) ^ p.hi, (acc[2] << 2) | (acc[1] >> 62), (acc[3] << 2) | (acc[2] >> 62)])
 }
 
 /// Fused fold + first multilinear message — the AG analog of RS's
@@ -285,9 +281,9 @@ pub(super) fn shl2_xor(acc: F256Unreduced, p: F128) -> F256Unreduced {
 pub fn fold_and_first_round(
     a_packed: &[u8],
     b_packed: &[u8],
-    w: &[F128],
-    r_rest: &[F128],
-) -> (Vec<F128>, Vec<F128>, F128, F128) {
+    w: &[Gf128],
+    r_rest: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>, Gf128, Gf128) {
     use rayon::prelude::*;
     assert_eq!(a_packed.len(), b_packed.len());
     debug_assert_eq!(
@@ -302,11 +298,11 @@ pub fn fold_and_first_round(
     assert_eq!(n, n_outer * 128, "each outer block is 128 (2^7) messages");
     // D₁ = ∏_{j=1}^{6}(1+γ^{2^j}); the eq over the remaining friendly dims is
     // γ^{2·int(inner')}/D₁, so the Horner (which omits 1/D₁) is rescaled by D₁⁻¹.
-    let mut d1 = F128::ONE;
+    let mut d1 = Gf128::ONE;
     for j in 1..N_INNER {
-        d1 *= F128::ONE + gamma_pow(1usize << j);
+        d1 *= Gf128::ONE + gamma_pow(1usize << j);
     }
-    let d1_inv = d1.inv();
+    let d1_inv = d1.inverse_or_zero();
 
     // Uninit alloc: the parallel loop below writes every slot of a_mlv/b_mlv, so
     // `vec![ZERO; n]`'s serial zero-fill (512 MB at m=30) is pure waste and caps
@@ -328,8 +324,8 @@ pub fn fold_and_first_round(
             // accumulator (no per-step reduction — max degree 2·63+127 = 253 <
             // 256), reduced once per block.
             let base = outer * 128;
-            let mut s1 = F256Unreduced::ZERO;
-            let mut s_inf = F256Unreduced::ZERO;
+            let mut s1 = Gf128Product::zero();
+            let mut s_inf = Gf128Product::zero();
             for inner in (0..64).rev() {
                 let (i0, i1) = (2 * inner, 2 * inner + 1);
                 let a0 = byte_dot(a_packed, base + i0, &table);
@@ -346,7 +342,7 @@ pub fn fold_and_first_round(
             let e = eo * d1_inv;
             (e * s1.reduce(), e * s_inf.reduce())
         })
-        .reduce(|| (F128::ZERO, F128::ZERO), |(p, q), (r, s)| (p + r, q + s));
+        .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(p, q), (r, s)| (p + r, q + s));
     (a_mlv, b_mlv, g1, g_inf)
 }
 
@@ -357,22 +353,13 @@ pub fn fold_and_first_round(
 /// `S ∈ {4,8,16,32,64}` — the `S == 64` case is split out because `u64 << 64`
 /// is UB (and the const generic makes the branch compile away).
 #[inline]
-pub(super) fn shl_xor<const S: u32>(acc: F256Unreduced, p: F128) -> F256Unreduced {
+pub(super) fn shl_xor<const S: u32>(acc: Gf128Product, p: Gf128) -> Gf128Product {
+    let acc = acc.to_polynomial_words();
     if S == 64 {
-        F256Unreduced {
-            r0: p.lo,
-            r1: acc.r0 ^ p.hi,
-            r2: acc.r1,
-            r3: acc.r2,
-        }
+        Gf128Product::from_polynomial_words([p.lo, acc[0] ^ p.hi, acc[1], acc[2]])
     } else {
         let inv = 64 - S;
-        F256Unreduced {
-            r0: (acc.r0 << S) ^ p.lo,
-            r1: ((acc.r1 << S) | (acc.r0 >> inv)) ^ p.hi,
-            r2: (acc.r2 << S) | (acc.r1 >> inv),
-            r3: (acc.r3 << S) | (acc.r2 >> inv),
-        }
+        Gf128Product::from_polynomial_words([(acc[0] << S) ^ p.lo, ((acc[1] << S) | (acc[0] >> inv)) ^ p.hi, (acc[2] << S) | (acc[1] >> inv), (acc[3] << S) | (acc[2] >> inv)])
     }
 }
 
@@ -380,12 +367,12 @@ pub(super) fn shl_xor<const S: u32>(acc: F256Unreduced, p: F128) -> F256Unreduce
 /// `fold_and_first_round`'s `d1_inv` (which is `norm_0`). The friendly eq over
 /// the message's remaining dims (`vars i+1..6`) is `norm_i · (γ^{2^{i+1}})^p`,
 /// so the Horner (which omits `norm_i`) is rescaled by it.
-fn friendly_norm(i: usize) -> F128 {
-    let mut d = F128::ONE;
+fn friendly_norm(i: usize) -> Gf128 {
+    let mut d = Gf128::ONE;
     for j in (i + 1)..N_INNER {
-        d *= F128::ONE + gamma_pow(1usize << j);
+        d *= Gf128::ONE + gamma_pow(1usize << j);
     }
-    d.inv()
+    d.inverse_or_zero()
 }
 
 /// Fused fold-by-`rho` + friendly-Horner round message — the rounds-1..5 analog
@@ -406,16 +393,16 @@ fn friendly_norm(i: usize) -> F128 {
 /// (Convention A). Parallel over the outer-hi dim.
 #[allow(clippy::too_many_arguments)]
 fn fold_and_friendly_round_pair_into<const SHIFT: u32>(
-    a: &[F128],
-    b: &[F128],
-    a_out: &mut [F128],
-    b_out: &mut [F128],
-    rho: F128,
+    a: &[Gf128],
+    b: &[Gf128],
+    a_out: &mut [Gf128],
+    b_out: &mut [Gf128],
+    rho: Gf128,
     lo_size: usize,
-    eq_outer_lo: &[F128],
-    eq_outer_hi: &[F128],
-    c_inv: F128,
-) -> (F128, F128) {
+    eq_outer_lo: &[Gf128],
+    eq_outer_hi: &[Gf128],
+    c_inv: Gf128,
+) -> (Gf128, Gf128) {
     use rayon::prelude::*;
     let half = a.len() / 2;
     debug_assert_eq!(a_out.len(), half);
@@ -435,13 +422,13 @@ fn fold_and_friendly_round_pair_into<const SHIFT: u32>(
         .map(|(oh, (a_oc, b_oc))| {
             let a_ic = &a[oh * chunk_in..(oh + 1) * chunk_in];
             let b_ic = &b[oh * chunk_in..(oh + 1) * chunk_in];
-            let mut p1_acc = F256Unreduced::ZERO;
-            let mut pinf_acc = F256Unreduced::ZERO;
+            let mut p1_acc = Gf128Product::zero();
+            let mut pinf_acc = Gf128Product::zero();
             for ol in 0..n_ol {
                 let ib = ol * block_in;
                 let ob = ol * block_out;
-                let mut s1 = F256Unreduced::ZERO;
-                let mut sinf = F256Unreduced::ZERO;
+                let mut s1 = Gf128Product::zero();
+                let mut sinf = Gf128Product::zero();
                 // Reverse for the Horner: the first-processed pair carries the
                 // highest power of ω = x^SHIFT.
                 for p in (0..lo_size).rev() {
@@ -466,7 +453,7 @@ fn fold_and_friendly_round_pair_into<const SHIFT: u32>(
             let eh = eq_outer_hi[oh] * c_inv;
             (eh * p1_acc.reduce(), eh * pinf_acc.reduce())
         })
-        .reduce(|| (F128::ZERO, F128::ZERO), |(x, y), (u, v)| (x + u, y + v));
+        .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(x, y), (u, v)| (x + u, y + v));
     (sum1, sum_inf)
 }
 
@@ -480,15 +467,15 @@ fn fold_and_friendly_round_pair_into<const SHIFT: u32>(
 /// Output identical to the general lookahead pass (exact field arithmetic).
 #[allow(clippy::too_many_arguments)]
 fn lookahead_friendly_pass<const SHIFT: u32, const PER_U: usize>(
-    a: &[F128],
-    b: &[F128],
-    a_out: &mut [F128],
-    b_out: &mut [F128],
-    rhos: (F128, F128),
+    a: &[Gf128],
+    b: &[Gf128],
+    a_out: &mut [Gf128],
+    b_out: &mut [Gf128],
+    rhos: (Gf128, Gf128),
     lo_size: usize,
-    eq_outer_lo: &[F128],
-    eq_outer_hi: &[F128],
-    c_inv: F128,
+    eq_outer_lo: &[Gf128],
+    eq_outer_hi: &[Gf128],
+    c_inv: Gf128,
 ) -> crate::zerocheck::multilinear::LookaheadSums {
     use crate::zerocheck::multilinear::{lookahead_finish, lookahead_products};
     use rayon::prelude::*;
@@ -504,15 +491,15 @@ fn lookahead_friendly_pass<const SHIFT: u32, const PER_U: usize>(
         .zip(b_out.par_chunks_mut(4 * chunk_u))
         .enumerate()
         .map(|(oh, (ao, bo))| {
-            let mut chunk_acc = [F256Unreduced::ZERO; 8];
+            let mut chunk_acc = [Gf128Product::zero(); 8];
             for ol in 0..n_ol {
-                let mut horner = [F256Unreduced::ZERO; 8];
+                let mut horner = [Gf128Product::zero(); 8];
                 // Reverse, so the first-processed position carries the highest
                 // power of ω = x^SHIFT.
                 for p in (0..lo_size).rev() {
                     let u = (oh * n_ol + ol) * lo_size + p;
-                    let mut ga = [F128::ZERO; 4];
-                    let mut gb = [F128::ZERO; 4];
+                    let mut ga = [Gf128::ZERO; 4];
+                    let mut gb = [Gf128::ZERO; 4];
                     for v in 0..4usize {
                         let base = u * PER_U + v * (PER_U / 4);
                         let (fa, fb) = if PER_U == 8 {
@@ -544,14 +531,14 @@ fn lookahead_friendly_pass<const SHIFT: u32, const PER_U: usize>(
                 }
             }
             let eh = eq_outer_hi[oh] * c_inv;
-            let mut out = [F128::ZERO; 8];
+            let mut out = [Gf128::ZERO; 8];
             for k in 0..8 {
                 out[k] = eh * chunk_acc[k].reduce();
             }
             out
         })
         .reduce(
-            || [F128::ZERO; 8],
+            || [Gf128::ZERO; 8],
             |mut p, q| {
                 for k in 0..8 {
                     p[k] += q[k];
@@ -565,14 +552,10 @@ fn lookahead_friendly_pass<const SHIFT: u32, const PER_U: usize>(
 /// [`shl_xor`] with the shift as a const generic (the friendly bases here are
 /// `x^8` and `x^32`; both < 64 so the plain path suffices).
 #[inline]
-fn shl_xor_generic<const S: u32>(acc: F256Unreduced, p: F128) -> F256Unreduced {
+fn shl_xor_generic<const S: u32>(acc: Gf128Product, p: Gf128) -> Gf128Product {
+    let acc = acc.to_polynomial_words();
     let inv = 64 - S;
-    F256Unreduced {
-        r0: (acc.r0 << S) ^ p.lo,
-        r1: ((acc.r1 << S) | (acc.r0 >> inv)) ^ p.hi,
-        r2: (acc.r2 << S) | (acc.r1 >> inv),
-        r3: (acc.r3 << S) | (acc.r2 >> inv),
-    }
+    Gf128Product::from_polynomial_words([(acc[0] << S) ^ p.lo, ((acc[1] << S) | (acc[0] >> inv)) ^ p.hi, (acc[2] << S) | (acc[1] >> inv), (acc[3] << S) | (acc[2] >> inv)])
 }
 
 // ---------------------------------------------------------------------------
@@ -587,11 +570,11 @@ fn shl_xor_generic<const S: u32>(acc: F256Unreduced, p: F128) -> F256Unreduced {
 /// `r_rest` are the eq weights (friendly inner, then outer). Returns the
 /// per-round messages and the final evals `(â(r₁,ρ), b̂(r₁,ρ))`.
 pub fn prove_multilinear(
-    mut a_mlv: Vec<F128>,
-    mut b_mlv: Vec<F128>,
-    r_rest: &[F128],
-    rhos: &[F128],
-) -> (Vec<(F128, F128)>, F128, F128) {
+    mut a_mlv: Vec<Gf128>,
+    mut b_mlv: Vec<Gf128>,
+    r_rest: &[Gf128],
+    rhos: &[Gf128],
+) -> (Vec<(Gf128, Gf128)>, Gf128, Gf128) {
     let n_mlv = r_rest.len();
     assert_eq!(rhos.len(), n_mlv);
     assert_eq!(a_mlv.len(), 1usize << n_mlv);
@@ -612,7 +595,7 @@ pub fn prove_multilinear(
                 let e = eq[x];
                 (e * a1 * b1, e * (a0 + a1) * (b0 + b1))
             })
-            .reduce(|| (F128::ZERO, F128::ZERO), |(p, q), (r, s)| (p + r, q + s));
+            .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(p, q), (r, s)| (p + r, q + s));
         msgs.push((g1, g_inf));
     }
 
@@ -635,7 +618,7 @@ pub fn prove_multilinear(
     for i in 1..n_mlv {
         let rho_prev = rhos[i - 1];
         let log_before = a_mlv.len().trailing_zeros() as usize;
-        let mut r_next = vec![F128::ONE; log_before - 1];
+        let mut r_next = vec![Gf128::ONE; log_before - 1];
         r_next[1..].copy_from_slice(&r_rest[i + 1..]);
         let pair = if log_before >= 10 {
             let half = a_mlv.len() / 2;
@@ -669,20 +652,20 @@ pub fn prove_multilinear(
 /// eq weight and interpolating at `ρ`. Returns the final running claim, which the
 /// caller checks equals `a_eval · b_eval`.
 pub fn verify_multilinear(
-    claim_ab: F128,
-    r_rest: &[F128],
-    msgs: &[(F128, F128)],
-    rhos: &[F128],
-) -> F128 {
+    claim_ab: Gf128,
+    r_rest: &[Gf128],
+    msgs: &[(Gf128, Gf128)],
+    rhos: &[Gf128],
+) -> Gf128 {
     let mut c = claim_ab;
     for i in 0..r_rest.len() {
         let (g1, g_inf) = msgs[i];
         let r_eq = r_rest[i];
         // c = (1+r_eq)·G(0) + r_eq·G(1)  ⇒  G(0) = (c + r_eq·G(1))·(1+r_eq)⁻¹.
-        let g0 = (c + r_eq * g1) * (F128::ONE + r_eq).inv();
+        let g0 = (c + r_eq * g1) * (Gf128::ONE + r_eq).inverse_or_zero();
         let rho = rhos[i];
         // G(ρ) = G(0)(1+ρ) + G(1)ρ + G(∞)ρ(ρ+1).
-        c = g0 * (F128::ONE + rho) + g1 * rho + g_inf * rho * (rho + F128::ONE);
+        c = g0 * (Gf128::ONE + rho) + g1 * rho + g_inf * rho * (rho + Gf128::ONE);
     }
     c
 }
@@ -703,30 +686,30 @@ pub fn verify_multilinear(
 /// linked to the sampler's attempt cap; lowering the cap raises `P_fail`.)
 pub(crate) fn fallback_point() -> EvaluationPoint {
     EvaluationPoint {
-        x: F128 {
+        x: Gf128 {
             lo: 17376575154980521683,
             hi: 16956381729448392221,
         },
-        y: F128 {
+        y: Gf128 {
             lo: 3703262331298828801,
             hi: 354800370152310762,
         },
-        z1: F128 {
+        z1: Gf128 {
             lo: 12509146339372511806,
             hi: 14754238706087384589,
         },
-        z2: F128 {
+        z2: Gf128 {
             lo: 7848999207301165946,
             hi: 6313416638638821140,
         },
-        z3: F128 {
+        z3: Gf128 {
             lo: 4302402807812267211,
             hi: 11246714171241606505,
         },
     }
 }
 
-/// Squeeze the 32-byte SHA-256 seed for `r₁` from the transcript (two `F128`
+/// Squeeze the 32-byte SHA-256 seed for `r₁` from the transcript (two `Gf128`
 /// samples). Shared by the prover's nonce grind and the verifier's replay.
 fn r1_seed<C: Challenger>(challenger: &mut C) -> [u8; 32] {
     challenger.observe_label(b"flock-ag-skip-r1-point");
@@ -797,17 +780,17 @@ pub(super) fn replay_r1_verifier<C: Challenger>(
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgProof {
     /// Round 1: `P^{ab}` fresh coords (158).
-    pub round1_ab: Vec<F128>,
+    pub round1_ab: Vec<Gf128>,
     /// Round 1: the folded c message `w̄` (64).
-    pub round1_c: Vec<F128>,
+    pub round1_c: Vec<Gf128>,
     /// Grinding nonce for `r₁`: the verifier re-derives the point from
     /// `SHA256(seed ‖ nonce)` in one attempt (see [`replay_r1_verifier`]).
     pub r1_nonce: u32,
     /// Multilinear rounds: `(G(1), G(∞))` each; length `m − K_SKIP`.
-    pub multilinear_rounds: Vec<(F128, F128)>,
-    pub final_a_eval: F128,
-    pub final_b_eval: F128,
-    pub final_c_eval: F128,
+    pub multilinear_rounds: Vec<(Gf128, Gf128)>,
+    pub final_a_eval: Gf128,
+    pub final_b_eval: Gf128,
+    pub final_c_eval: Gf128,
 }
 
 /// Evaluation claims the AG-skip zerocheck reduces to (no PCS). `a_eval`, `b_eval`
@@ -816,11 +799,11 @@ pub struct AgProof {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgClaim {
     pub r1: EvaluationPoint,
-    pub mlv_challenges: Vec<F128>,
-    pub r_rest: Vec<F128>,
-    pub a_eval: F128,
-    pub b_eval: F128,
-    pub c_eval: F128,
+    pub mlv_challenges: Vec<Gf128>,
+    pub r_rest: Vec<Gf128>,
+    pub a_eval: Gf128,
+    pub b_eval: Gf128,
+    pub c_eval: Gf128,
 }
 
 /// Verifier rejection reasons.
@@ -889,7 +872,7 @@ pub fn prove_capture_s_hat_v_c<C: Challenger>(
     c_packed: &[u8],
     m: usize,
     challenger: &mut C,
-) -> (AgProof, AgClaim, Vec<F128>) {
+) -> (AgProof, AgClaim, Vec<Gf128>) {
     assert!(m >= K_SKIP + N_INNER, "m >= 13 required");
     let expected = (1usize << m) / 8;
     assert_eq!(a_packed.len(), expected);
@@ -913,8 +896,8 @@ fn prove_round1_banks(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> (Round1Message, Vec<F128>) {
+    eq: &[Gf128],
+) -> (Round1Message, Vec<Gf128>) {
     let (res_ab, bank0, bank1) = if ROUND1_UNFUSED.load(Ordering::Relaxed) {
         crate::genus95_curve_code::round1::round1_slp_packed_banks(a_packed, b_packed, c_packed, eq)
     } else {
@@ -930,10 +913,10 @@ fn prove_round1_banks(
     // Canonical s_hat_v_c[skip + b·64] = bank_b[skip] / D₁, with γ⁻¹ for bank 1
     // (the kernel's odd-i bank carries an extra γ from friendly bit 0 = 1).
     // 1/D₁ = (1+γ)·κ since D = (1+γ)·D₁ and κ = D⁻¹ = d_inv().
-    let inv_d1 = (F128::ONE + gamma_pow(1)) * di;
-    let gamma_inv = gamma_pow(1).inv();
+    let inv_d1 = (Gf128::ONE + gamma_pow(1)) * di;
+    let gamma_inv = gamma_pow(1).inverse_or_zero();
     let n_skip = 1usize << K_SKIP;
-    let mut s_hat_v_c = vec![F128::ZERO; 1 << crate::pcs::LOG_PACKING];
+    let mut s_hat_v_c = vec![Gf128::ZERO; 1 << crate::pcs::LOG_PACKING];
     for skip in 0..n_skip {
         s_hat_v_c[skip] = bank0[skip] * inv_d1;
         s_hat_v_c[n_skip + skip] = bank1[skip] * inv_d1 * gamma_inv;
@@ -949,7 +932,7 @@ fn prove_from_round1<C: Challenger>(
     a_packed: &[u8],
     b_packed: &[u8],
     msg: Round1Message,
-    r_outer: &[F128],
+    r_outer: &[Gf128],
     challenger: &mut C,
 ) -> (AgProof, AgClaim) {
     challenger.observe_f128_slice(&msg.ab_fresh);
@@ -959,7 +942,7 @@ fn prove_from_round1<C: Challenger>(
     let c_eval = eval_c_at(&msg, &r1);
 
     let bf = base_evaluation_functional(&r1).expect("denominator nonzero at r1");
-    let w: Vec<F128> = bf.iter().copied().collect();
+    let w: Vec<Gf128> = bf.iter().copied().collect();
     let mut r_rest = friendly_challenges().to_vec();
     r_rest.extend_from_slice(r_outer);
 
@@ -994,13 +977,13 @@ fn prove_from_round1<C: Challenger>(
 /// `friendly ‖ outer`; the wire output is bit-identical across the internal
 /// path choices (lookahead on/off, friendly on/off).
 pub(super) fn mlv_tail_fs<C: Challenger>(
-    a_mlv: Vec<F128>,
-    b_mlv: Vec<F128>,
-    g1_0: F128,
-    ginf_0: F128,
-    r_rest: &[F128],
+    a_mlv: Vec<Gf128>,
+    b_mlv: Vec<Gf128>,
+    g1_0: Gf128,
+    ginf_0: Gf128,
+    r_rest: &[Gf128],
     challenger: &mut C,
-) -> (Vec<(F128, F128)>, Vec<F128>, F128, F128) {
+) -> (Vec<(Gf128, Gf128)>, Vec<Gf128>, Gf128, Gf128) {
     let mut rounds = Vec::with_capacity(r_rest.len());
     let mut rhos = Vec::with_capacity(r_rest.len());
     rounds.push((g1_0, ginf_0));
@@ -1021,14 +1004,14 @@ pub(super) fn mlv_tail_fs<C: Challenger>(
 /// round messages elsewhere (e.g. the swoop's fold-level lookahead, which
 /// covers rounds 0–1 during the witness fold) hand off without extra passes.
 pub(super) fn mlv_tail_fs_resume<C: Challenger>(
-    mut a_mlv: Vec<F128>,
-    mut b_mlv: Vec<F128>,
+    mut a_mlv: Vec<Gf128>,
+    mut b_mlv: Vec<Gf128>,
     i0: usize,
-    mut rho_prev: F128,
-    mut pending2: Option<F128>,
-    r_rest: &[F128],
+    mut rho_prev: Gf128,
+    mut pending2: Option<Gf128>,
+    r_rest: &[Gf128],
     challenger: &mut C,
-) -> (Vec<(F128, F128)>, Vec<F128>, F128, F128) {
+) -> (Vec<(Gf128, Gf128)>, Vec<Gf128>, Gf128, Gf128) {
     if LOOKAHEAD_DISABLE.load(Ordering::Relaxed) {
         crate::suboptimal_path!(
             "classic per-round tail (LOOKAHEAD_DISABLE set)",
@@ -1075,7 +1058,7 @@ pub(super) fn mlv_tail_fs_resume<C: Challenger>(
         // parallel loop (Amdahl), the same trap `a_mlv`/`b_mlv` avoid via the pool.
         // (`NXT_ZEROFILL` restores the old vec![ZERO] path for a within-process A/B.)
         if NXT_ZEROFILL.load(Ordering::Relaxed) {
-            (vec![F128::ZERO; n_in / 2], vec![F128::ZERO; n_in / 2])
+            (vec![Gf128::ZERO; n_in / 2], vec![Gf128::ZERO; n_in / 2])
         } else {
             (
                 crate::scratch::take_f128(n_in / 2),
@@ -1124,7 +1107,7 @@ pub(super) fn mlv_tail_fs_resume<C: Challenger>(
                     &b_mlv,
                     ao,
                     bo,
-                    (rho_prev, F128::ZERO),
+                    (rho_prev, Gf128::ZERO),
                     16,
                     &split_outer.lo,
                     &split_outer.hi,
@@ -1136,7 +1119,7 @@ pub(super) fn mlv_tail_fs_resume<C: Challenger>(
                     &b_mlv,
                     ao,
                     bo,
-                    (rho_prev, F128::ZERO),
+                    (rho_prev, Gf128::ZERO),
                     &r_rest[i + 2..],
                 )
             };
@@ -1198,7 +1181,7 @@ pub(super) fn mlv_tail_fs_resume<C: Challenger>(
                     _ => unreachable!(),
                 }
             } else {
-                let mut r_next = vec![F128::ONE; log_before - 1];
+                let mut r_next = vec![Gf128::ONE; log_before - 1];
                 r_next[1..].copy_from_slice(&r_rest[i + 1..]);
                 fold_and_compute_round_pair_into(
                     &a_mlv,
@@ -1215,7 +1198,7 @@ pub(super) fn mlv_tail_fs_resume<C: Challenger>(
             b_mlv.truncate(half);
             pair
         } else {
-            let mut r_next = vec![F128::ONE; log_before - 1];
+            let mut r_next = vec![Gf128::ONE; log_before - 1];
             r_next[1..].copy_from_slice(&r_rest[i + 1..]);
             fold_in_place_pair(&mut a_mlv, &mut b_mlv, rho_prev);
             round_pair_naive(&a_mlv, &b_mlv, &r_next)
@@ -1300,12 +1283,12 @@ pub fn verify<C: Challenger>(
     for i in 0..n_mlv {
         let (g1, g_inf) = proof.multilinear_rounds[i];
         let r_eq = r_rest[i];
-        let g0 = (c_running + r_eq * g1) * (F128::ONE + r_eq).inv();
+        let g0 = (c_running + r_eq * g1) * (Gf128::ONE + r_eq).inverse_or_zero();
         challenger.observe_f128(g1);
         challenger.observe_f128(g_inf);
         let rho = challenger.sample_f128();
         rhos.push(rho);
-        c_running = g0 * (F128::ONE + rho) + g1 * rho + g_inf * rho * (rho + F128::ONE);
+        c_running = g0 * (Gf128::ONE + rho) + g1 * rho + g_inf * rho * (rho + Gf128::ONE);
     }
     challenger.observe_f128(proof.final_a_eval);
     challenger.observe_f128(proof.final_b_eval);
@@ -1335,12 +1318,12 @@ mod tests {
         let r = friendly_challenges();
         let di = d_inv();
         for b in 0..(1usize << N_INNER) {
-            let mut eq = F128::ONE;
+            let mut eq = Gf128::ONE;
             for j in 0..N_INNER {
                 eq *= if (b >> j) & 1 == 1 {
                     r[j]
                 } else {
-                    F128::ONE + r[j]
+                    Gf128::ONE + r[j]
                 };
             }
             assert_eq!(eq, gamma_pow(b) * di, "b={b}");
@@ -1349,7 +1332,7 @@ mod tests {
 
     #[test]
     fn d_times_d_inv_is_one() {
-        assert_eq!(d_const() * d_inv(), F128::ONE);
+        assert_eq!(d_const() * d_inv(), Gf128::ONE);
     }
 
     /// The SHA-256 DRBG drives the rejection sampler deterministically: equal
@@ -1395,8 +1378,8 @@ mod tests {
             }
             p
         };
-        let eq: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             })
@@ -1411,8 +1394,8 @@ mod tests {
         let bf =
             crate::genus95_curve_code::base_evaluation_functional(&r1).expect("base functional");
         let di = d_inv();
-        let mut d_ab = F128::ZERO;
-        let mut d_c = F128::ZERO;
+        let mut d_ab = Gf128::ZERO;
+        let mut d_c = Gf128::ZERO;
         for o in 0..n {
             for b in 0..128 {
                 let w = eq[o] * gamma_pow(b) * di;
@@ -1462,8 +1445,8 @@ mod tests {
             p
         };
         let (a_packed, b_packed, c_packed) = (pack(&am), pack(&bm), pack(&cm));
-        let eq: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             })
@@ -1472,7 +1455,7 @@ mod tests {
         let msg = prove_round1(&a_packed, &b_packed, &c_packed, &eq);
         let r1 = sample_random_evaluation_point(&mut Sha256Rng::new([7u8; 32])).expect("point");
         let bf = base_evaluation_functional(&r1).expect("base functional");
-        let w: Vec<F128> = bf.iter().copied().collect();
+        let w: Vec<Gf128> = bf.iter().copied().collect();
 
         let a_mlv = fold_witness_at_r1(&a_packed, &w);
         let b_mlv = fold_witness_at_r1(&b_packed, &w);
@@ -1490,7 +1473,7 @@ mod tests {
 
         // (2) eq-weighted fold sum == round-1 AB claim.
         let di = d_inv();
-        let mut s = F128::ZERO;
+        let mut s = Gf128::ZERO;
         for o in 0..n {
             for b in 0..128 {
                 let r = o * 128 + b;
@@ -1520,8 +1503,8 @@ mod tests {
         for x in b.iter_mut() {
             *x = rng.next_u64() as u8;
         }
-        let r_outer: Vec<F128> = (0..m - K_SKIP - N_INNER)
-            .map(|_| F128 {
+        let r_outer: Vec<Gf128> = (0..m - K_SKIP - N_INNER)
+            .map(|_| Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             })
@@ -1531,7 +1514,7 @@ mod tests {
         let _ = build_eq(&r_outer); // (eq weights are derived inside)
         let r1 = sample_random_evaluation_point(&mut Sha256Rng::new([3u8; 32])).expect("point");
         let bf = base_evaluation_functional(&r1).expect("bf");
-        let w: Vec<F128> = bf.iter().copied().collect();
+        let w: Vec<Gf128> = bf.iter().copied().collect();
 
         let (a_mlv_f, b_mlv_f, g1, ginf) = fold_and_first_round(&a, &b, &w, &r_rest);
         let a_mlv = fold_witness_at_r1(&a, &w);
@@ -1540,7 +1523,7 @@ mod tests {
         assert_eq!(b_mlv_f, b_mlv, "fused b_mlv != separate fold");
 
         let log_now = a_mlv.len().trailing_zeros() as usize;
-        let mut r_next = vec![F128::ONE; log_now];
+        let mut r_next = vec![Gf128::ONE; log_now];
         r_next[1..].copy_from_slice(&r_rest[1..]);
         assert_eq!(
             (g1, ginf),
@@ -1562,8 +1545,8 @@ mod tests {
 
         let mut rng = Sha256Rng::new([0x1f; 32]);
         let o = 9usize; // outer dims (m - 13), big enough to exercise n_ol > 1
-        let r_outer: Vec<F128> = (0..o)
-            .map(|_| F128 {
+        let r_outer: Vec<Gf128> = (0..o)
+            .map(|_| Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             })
@@ -1574,26 +1557,26 @@ mod tests {
         for i in 1..=5usize {
             let l = 8 - i + o; // array log at the start of round i
             let n = 1usize << l;
-            let a: Vec<F128> = (0..n)
-                .map(|_| F128 {
+            let a: Vec<Gf128> = (0..n)
+                .map(|_| Gf128 {
                     lo: rng.next_u64(),
                     hi: rng.next_u64(),
                 })
                 .collect();
-            let b: Vec<F128> = (0..n)
-                .map(|_| F128 {
+            let b: Vec<Gf128> = (0..n)
+                .map(|_| Gf128 {
                     lo: rng.next_u64(),
                     hi: rng.next_u64(),
                 })
                 .collect();
-            let rho = F128 {
+            let rho = Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             };
             let half = n / 2;
 
             // General kernel: r_next = [ONE, friendly[i+1..7], r_outer].
-            let mut r_next = vec![F128::ONE; l - 1];
+            let mut r_next = vec![Gf128::ONE; l - 1];
             let mut tail = friendly[i + 1..N_INNER].to_vec();
             tail.extend_from_slice(&r_outer);
             r_next[1..].copy_from_slice(&tail);
@@ -1667,7 +1650,7 @@ mod tests {
         let (a_packed, b_packed, c_packed) = (pack(&am), pack(&bm), pack(&cm));
 
         // One outer challenge → eq weights (one per block); r_rest = friendly ‖ outer.
-        let r_outer = vec![F128 {
+        let r_outer = vec![Gf128 {
             lo: rng.next_u64(),
             hi: rng.next_u64(),
         }];
@@ -1680,14 +1663,14 @@ mod tests {
 
         let bf =
             crate::genus95_curve_code::base_evaluation_functional(&r1).expect("base functional");
-        let w: Vec<F128> = bf.iter().copied().collect();
+        let w: Vec<Gf128> = bf.iter().copied().collect();
         let a_mlv = fold_witness_at_r1(&a_packed, &w);
         let b_mlv = fold_witness_at_r1(&b_packed, &w);
 
         let mut r_rest = friendly_challenges().to_vec();
         r_rest.extend_from_slice(&r_outer);
-        let rhos: Vec<F128> = (0..r_rest.len())
-            .map(|_| F128 {
+        let rhos: Vec<Gf128> = (0..r_rest.len())
+            .map(|_| Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             })
@@ -1797,7 +1780,7 @@ mod tests {
         let m = 14usize;
         let (a, b, c) = random_witness(m, 66);
         let (mut proof, _) = prove(&a, &b, &c, m, &mut FsChallenger::new(b"flock-ag-skip-test"));
-        proof.multilinear_rounds[0].0 += F128::ONE;
+        proof.multilinear_rounds[0].0 += Gf128::ONE;
         assert!(
             verify(m, &proof, &mut FsChallenger::new(b"flock-ag-skip-test")).is_err(),
             "must reject a tampered round message"
@@ -1898,7 +1881,7 @@ mod tests {
 
             // AG base weights for the skip (64), tensored with eq(x_outer[0]).
             let bf = base_evaluation_functional(&claim.r1).expect("base functional");
-            let skip_w: Vec<F128> = (0..(1usize << K_SKIP)).map(|i| bf[i]).collect();
+            let skip_w: Vec<Gf128> = (0..(1usize << K_SKIP)).map(|i| bf[i]).collect();
             let weights = build_claim_weights_from_skip(&skip_w, x_outer[0]);
 
             assert_eq!(

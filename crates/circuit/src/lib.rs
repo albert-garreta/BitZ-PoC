@@ -16,6 +16,7 @@ use num_traits::{One, Zero};
 pub mod constraints;
 #[cfg(feature = "full")]
 pub mod ecdsa_sha256;
+pub mod integer_storage;
 pub mod matrix_products;
 #[cfg(feature = "full")]
 pub mod matrix_sparse;
