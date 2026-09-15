@@ -381,22 +381,19 @@ impl<const L: usize> LinearCombination<L> {
     fn into_sparse_row(self, storage: &mut IntegerTable) -> SparseRow<CoefficientIndex> {
         let mut entries =
             Vec::with_capacity(self.witnesses.len() + usize::from(!self.constant.is_zero()));
+        // Store the compact handles directly. Collecting them from a Vec of
+        // full-width coefficients can retain that much larger allocation.
+        let mut push = |column, coefficient| {
+            let index = storage.len();
+            storage.push(coefficient);
+            entries.push((column, CoefficientIndex(index)));
+        };
         if !self.constant.is_zero() {
-            entries.push((0, self.constant));
+            push(0, self.constant);
         }
-        entries.extend(
-            self.witnesses
-                .into_iter()
-                .map(|(witness, coefficient)| (witness + 1, coefficient)),
-        );
-        let entries = entries
-            .into_iter()
-            .map(|(column, coefficient)| {
-                let index = storage.len();
-                storage.push(coefficient);
-                (column, CoefficientIndex(index))
-            })
-            .collect();
+        for (witness, coefficient) in self.witnesses {
+            push(witness + 1, coefficient);
+        }
         SparseRow { entries }
     }
 }
