@@ -5,7 +5,7 @@
 %% See lncs-switch.tex.  main-lncs.tex builds the LNCS version without touching this
 %% line (it predefines \LNCS).
 \newif\iflncs
-\lncstrue
+\lncsfalse
 \ifdefined\LNCS\lncstrue\fi \ifdefined\FULLVERSION\lncsfalse\fi % main-lncs.tex / main-full.tex force one or the other
 \iflncs
   \documentclass[runningheads]{llncs}
@@ -119,13 +119,15 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 
 \begin{abstract}
-We introduce \ftwoz\, a Polynomial Commitment Scheme for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Moreover, given any ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$. 
+We introduce \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Moreover, given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
 
-\ftwoz \ can thus be used as a PCS in essentially any proof system. We do so to build a  SNARK for proving integer polynomial constraints, using the fingerprinting technique of \cite{zaratan} that commits over $\ZZ$ and proves the constraints over a random prime field $\FF$, so \ftwoz\ is deployed with $S=\ZZ$, $R=\FF$, and $\psi$ is reduction modulo $|R|$. \ftwoz\ can similarly be used as PCS in other ring-based proof systems, or even field-based ones.
+\ftwoz\ can thus be used as a PCS in essentially any proof system. We do so to build a SNARK, called \ftwoz-SNARK, for integer polynomial constraints, following the fingerprinting technique of Campanelli and Hall-Andersen, where one commits over $\ZZ$ and proves the constraints over a random prime field $\FF_q$, i.e.\ \ftwoz\ is deployed with $S=\ZZ$, $R=\FF_q$, and $\psi$ reduction modulo $q$. \ftwoz\ applies equally to other ring-based proof systems, or field-based ones.
 
-Our approach decomposes the witness into a string of bits and commits to it over a binary field $\comfield$, in packed form. Then, if necessary, transforms the evaluation claim over $R$ into an evaluation claim over $\ZZ$ via a randomized process. Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  evaluation claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit the fact that the factors across all the grand products have low entropy (i.e.\ take a ``small'' amount of different values).   
+Our approach decomposes the witness into a string of bits and commits to it over a binary field $\comfield$, in packed form. Then, if necessary, transforms the evaluation claim over $R$ into one over $\ZZ$ via a randomized process. 
+Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit that the factors across all the grand products have low entropy (i.e.\ they take a ``small'' amount of different values).   
 
-We implement \ftwoz-SNARK and use it to prove a variety of computations of practical interest, namely SHA hashing followed by ECDSA signing; RSA modular exponentiation and Poseidon hashing; and integer multiplication, and we obtain better performance than prior approaches.  For example, we prove a SHA-256 hash of a $2$ KB message followed by an ECDSA signature verification with $67$ms and $38$ms prover and verifier time, respectively, and with a proof  of $76$ KB, on a single-threaded MacBook Air M5. 
+
+ We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing; and integer multiplication, consistently obtaining better performance than prior approaches on most tasks, sometimes by several multiples. For example, we prove a SHA-256 hash of a $8$\,kB ($2^7$ compressions) message followed by an ECDSA signature verification with $83$\,ms and $4.4$\,ms prover and verifier time, respectively, and with a proof of $92$\,kB, single-threaded on a MacBook Air M5, at $100$ bits of round-by-round knowledge soundness.
 
 \end{abstract}
 
@@ -358,7 +360,18 @@ In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \alber
 \lncsnote{Can be shortened}
 
 % [AI-edited (Claude Fable 5.1), 2026-09-15: the five paragraphs below were compressed into one at the author's request (\lncsnote ``Can be shortened''); all citations and claims kept]
-\paragraph{Proof systems over integers and other rings.} Campanelli and Hall-Andersen \cite{zaratan} propose proving polynomial constraints over the integers by projecting them onto a random prime field sampled by the verifier, a technique they call \emph{fingerprinting}, which subsequent works have adopted \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}; it is not implemented, so we do not compare against it. Zinc \cite{zinc} combines fingerprinting with a hash-based PCS over the rationals $\QQ$, providing the first relatively practical proof system over the integers, and addresses the subtle issues that arise when committing to \emph{integer} vectors with error correcting codes (malicious provers can potentially use rational numbers that are very close to being integers of the target magnitude). Zinc+ \cite{zincplus} extends \cite{zinc} in two directions: it proposes a constraint system with polynomial constraints simultaneously over many types of rings\footnote{In the terminology of \cite{zincplus}, the constraints are over \emph{polynomial rings with ideal membership constraints}, for certain types of ideals (generated by a monic and non-constant polynomial, or zero). However this is equivalent to saying the constraints are over different types of rings (within a certain class)} and fields, together with a method for constructing PIOPs for it that projects not only $\ZZ$ but all such rings and fields onto a random prime field; and it improves the soundness analysis of the PCS of \cite{zinc} and proposes the Integer Pseudo Reed-Solomon (IPRS) codes over $\ZZ$ or $\QQ$, obtained by ``lifting'' an FFT encoding algorithm over a small finite field to the integers. \albert{compare \ftwoz \  to Zinc+?} $\QQ$aren \cite{qaren} is a compiler that turns any PCS over a finite field of sufficiently large characteristic into a PCS for integer polynomials (more precisely, for rational polynomials close to the target integer polynomials, as above), yielding the first transparent and fully succinct PCS over integers/rationals, whereas \cite{zinc,zincplus} are not succinct in the bit-size of the committed integers; no implementation or performance reports are provided in \cite{qaren}. The concurrent work Limber \cite{limber} is a compiler of the same kind which only requires characteristic $q=\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size (versus $\Omega(2^\lambda)$ in \cite{qaren}), compiles into strictly integer PCS (so that the ``almost integers'' issue does not arise), and is instantiated with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
+
+\paragraph{Proof systems over integers and other rings.} In \cite{zaratan}, Campanelli and Hall-Andersen propose proving polynomial constraints over integers, by projecting them onto a random prime field (sampled by the verifier), a technique which the authors call \emph{fingerprinting}. Subsequent works have adopted this idea \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}. The PCS is not implemented and so we do not compare against it.
+
+The Zinc \cite{zinc} work adopts \emph{fingerprinting} and designs a hash-based PCS over the rationals $\QQ$, suitable for the fingerprinting approach, providing the first relatively practical proof system over the integers. \cite{zinc} addresses subtle technical issues that arise when aiming to commit to \emph{integer} vectors with error correcting codes (namely, malicious provers can potentially use rational numbers that are very close to being integers of the target magnitude).
+
+The Zinc+ \cite{zincplus} work extends \cite{zinc} in two directions: 1) It proposes a constraint system that includes polynomial constraints simultaneously over many types of rings\footnote{In the terminology of \cite{zincplus}, the constraints are over \emph{polynomial rings with ideal membership constraints}, for certain types of ideals (generated by a monic and non-constant polynomial, or zero). However this is equivalent to saying the constraints are over different types of rings (within a certain class)} and fields, and provides a method for constructing PIOP's for those. This method extends the fingerprinting approach by not only projecting $\ZZ$ onto a random prime field, but projecting all sorts of rings and fields onto a random prime field. 2) It improves the soundness analysis of the PCS in \cite{zinc}, plus it proposes a new linear code over $\ZZ$ or $\QQ$, called Integer Pseudo Reed-Solomon (IPRS) code, obtained by ``lifting'' (in a suitable way) an FFT encoding algorithm over a small finite field, to the integers. \albert{compare \ftwoz \  to Zinc+?}
+
+
+
+In \cite{qaren} the authors propose $\QQ$aren, a compiler that takes any PCS over a finite field of sufficiently large characteristic and creates a PCS for integer polynomials (or, more precisely, rational polynomials close to the target integer polynomials, see the overview of \cite{zinc} above). The authors instantiate their compiler to obtain the first transparent and fully succinct PCS over integers/rationals. The prior work \cite{zinc,zincplus} is not succinct on the bit-size of the integers being committed. No implementation or performance reports are provided in \cite{qaren}.
+
+The concurrent work Limber \cite{limber} proposes a new compiler that transforms any PCS over fields of sufficiently large characteristic $q$ (in this case, $q$ is $\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size, while in \cite{qaren} it is $\Omega(2^\lambda)$) into a PCS for integer polynomials. Additionally Limber compiles into strictly integer PCS, and does not present the issue that a malicious prover could use rationals that are ``almost integers''. Limber is instantiated in practice with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
 
 \paragraph{Proof systems over binary fields.} \albertimportant{Review. This is Ulrich} Hash-based SNARKs over binary fields were pioneered by the line of work of Ben-Sasson et al.~\cite{fri,stark,linearSizedIOPs,cryptoeprint:2022/1542}, but did not see widespread adoption until the introduction of \textit{packed} polynomial commitment schemes by Diamond and Posen~\cite{binius,binius2}; see also \cite{binius64}. Such schemes allow one to commit to a bit-valued witness over an extension field without incurring embedding overhead, while still providing evaluation proofs for its original ``uncompressed'' representation. The \emph{ring-switching} technique of Diamond and Posen~\cite{binius2} is generic, enabling the use of codes over larger alphabets without introducing representational redundancy.\footnotemark 
 A particularly attractive choice is Reed--Solomon codes over $GF(2^k)$ \cite{binius64,hashcaster:repo}, which offer an excellent trade-off between distance and encoding cost, although several works~\cite{Blaze,tensorswitch,Bolt} explore this design space using more efficient codes.
@@ -564,8 +577,9 @@ $
 \end{itemize}
 
 % [AI-drafted (Claude Fable 5.1), 2026-09-15: sentence explaining $D$ and $N_R$, at the author's request; please review]
-\Cref{t:core_iop_complexity} records the concrete costs of this protocol, stated for the general setting of \cref{s:to_general_rings} with $R$ of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ (\cref{c:core_iop} gives the formal description). There, $D$ denotes the maximum total degree, and $N_R$ the maximum absolute value of a coefficient, of the integer polynomials $\picanon^{-1}(\uu^{(1)}_i)$ and $\picanon^{-1}(\uu^{(2)}_j)$ lifting the entries of $\uu^{(1)}$ and $\uu^{(2)}$ (cf.\ \eqref{e:ring_theta_params}); in the prime field case of this section, $D=0$ and $N_R<q$. \lncsnote{Strange sentence} \lncsnote{Explain what $D$ and $N_R$ for us} 
-\lncsplace{TabCoreIopCosts}
+\Cref{t:core_iop_complexity} records the concrete costs of this protocol, stated for the general setting of \cref{s:to_general_rings}. %\iflncs  The table considers the case when $R$ is $\ZZ_n$ or $\ZZ_n[X]/(h(X))$. There, $D$ denotes the maximum total degree, and $N_R$ the maximum absolute value of a coefficient, of the integer polynomials $\picanon^{-1}(\uu^{(1)}_i)$ and $\picanon^{-1}(\uu^{(2)}_j)$ lifting the entries of $\uu^{(1)}$ and $\uu^{(2)}$ (cf.\ \eqref{e:ring_theta_params}); in the prime field case of this section, $D=0$ and $N_R<q$. \fi
+
+\lncsnote{Explain what $D$ and $N_R$ for us} 
 
 
 \end{lncsmove}
@@ -697,6 +711,11 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \uu^{(2)}{} &\gets \pirand\circ \picanon^{-1}\left(\uu^{(2)}\right)\in \FF_{q}^{\codedim_2},\\
 \mu&\gets \pirand(\mu')\in \FF_q.
 \end{align*}
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only sentences introducing the cost table and defining $D$, $N_R$, at the author's request; please review]
+\Cref{t:core_iop_complexity} records the concrete costs of the protocols of this section and of \cref{s:to_simple_bitz}, for rings $R$ of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$, beyond those of the grand product argument of \cref{s:to_low_entropy_gkr} and of the final IOP $\Pi_\iopp$ (see \cref{c:core_iop} for a full formal description). In the table, $D$ denotes the maximum total degree, and $N_R$ the maximum absolute value of a coefficient of the polynomials $\picanon^{-1}(\uu^{(1)}_i)$ and $\picanon^{-1}(\uu^{(2)}_j)$ in $\ZZ[X_1,\ldots,X_{k'}]$ lifting the entries of $\uu^{(1)}$ and $\uu^{(2)}$ (cf.\ \eqref{e:ring_theta_params}). For a prime field $R=\FF_q$, we have $D=0$ and $N_R<q$.
+\fi
+\lncsplace{TabCoreIopCosts}
 
 
 \end{lncsmove}
@@ -780,7 +799,9 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \end{comment}
 
 
-\subsubsection{Efficiency and comparison to other ``prove-in-the-exponent'' usages}\label{r:comparison_grand_product_binius_lev}
+\end{lncsmove}
+\begin{lncsappendix}{gkr-comparison}
+\iflncs\subsection{Efficiency and comparison to other ``prove-in-the-exponent'' usages}\else\subsubsection{Efficiency and comparison to other ``prove-in-the-exponent'' usages}\fi\label{r:comparison_grand_product_binius_lev}
 
 \lncsnote{Can go to the appendix if we have made the point of witness x public versus witness x witness clear in the intro}
 
@@ -816,7 +837,7 @@ We next discuss other existing approaches to proving foreign field statements in
 
         %\albertimportant{The comparison of Lev and \ftwoz\ right now has several unbacked claims (which I believe are true, but can't really prove them, especially without an implementation). So probably it's better to not push it, remove the unbacked claims, and leave it as it is}
         
-\end{lncsmove}
+\end{lncsappendix}
 \begin{lncsmove}{Virtual}
 \subsection{Virtual $\FF_2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}\label{s:to_f2_virtual}
 
@@ -951,6 +972,10 @@ We want to prove that $(\inp_\ZZ, \bff_\ZZ)\in \Relation_\ZZ$ and $(\inp_{\FF_2}
 \begin{lncsmove}{SoundnessPrime}
 \lncsnote{The soundness theorems and proofs should be  in Sections 3 and 4 respectively }
 \subsubsection{\iflncs Round-by-round knowledge soundness\else Soundness of \cref{s:to_simple_bitz}\fi}\label{s:to_soundness_prime}\iflncs\label{s:to_soundness}\fi
+\iflncs
+% [AI-drafted (Claude Fable 5.1), 2026-09-15: LNCS-only pointer to the IOR definitions, which moved to the supplementary material at the author's request; please review]
+In this section and in \cref{s:to_soundness_rings} we use the notions of  Interactive Oracle Reductions (IORs) and round-by-round knowledge soundness with relaxation, in the formulation of \cite{BCFW25,zook}. We recall the definitions in \cref{s:IORs} of the appendix.
+\fi
 
 
 
@@ -1225,6 +1250,7 @@ $$
 \paragraph{Multilinear extensions.} Given a field $\FF$ and $\uu\in \FF^{2^r}$ indexed by $\bits^r$, we denote by $\mle{\uu}\in \FF[X_1,\ldots,X_r]$  the unique multilinear polynomial with $\mle{\uu}(\bb)=\uu_\bb$ for all $\bb\in\bits^r$. For $\bm\alpha,\bm\beta\in\FF^r$ we let $\eq(\bm\alpha;\bm\beta)\defeq \prod_{i\in[r]}\bigl(\alpha_i\cdot \beta_i+(1-\alpha_i)\cdot (1-\beta_i)\bigr)$, so that $\mle{\uu}(\bm\alpha)=\sum_{\bb\in\bits^r}\uu_\bb\cdot \eq(\bb;\bm\alpha)$. We write $\eq(\bb,\cc;\bm\alpha)$ for $\eq((\bb,\cc);\bm\alpha)$.
 
 
+\begin{lncsappendix}[Additional preliminaries]{prelims-iors}
 \subsection{Interactive Oracle Reductions (IOR) of proximity}\label{s:IORs}
 
 \lncsnote{Can go to appendix}
@@ -1282,7 +1308,6 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 \end{lemma}
 
 
-\begin{lncsappendix}[Additional preliminaries]{prelims-grinding}
 \paragraph{Grinding}\albert{Review}
  Grinding \cite{ethstark} is a technique where, given an IOP $\Pi$ for a relation $\Relation$ with relaxation $\widetilde{\Relation}$ with round-by-round knowledge errors $\kappa_1,\ldots, \kappa_k$,  produces a new IOP $\Pi'$ for $\Relation$ with   round-by-round knowledge with relaxation $\widetilde{\Relation}$ with errors $$2^{-\alpha_1}\cdot \kappa_1,\ldots, 2^{-\alpha_k}\cdot \kappa_k.$$ The new IOP $\Pi'$ works exactly as $\Pi$, except that, at each round $i\in [k]$, the verifier samples a random string of $\alpha_i$ bits, called \emph{grinding string}, which it sends alongside its message, and rejects unless all bits are $0$. 
 
@@ -3592,9 +3617,9 @@ We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS-over the p
 \appendix
 \iflncs
 \clearpage
-\begin{center}\Large\bfseries Supplementary Material\end{center}
+\begin{center}\Large\bfseries Appendix\end{center}
 \fi
-\lncsappendixspine
+\lncsappendixspine[prelims-iors,iop,snark,gkr,gkr-comparison,experiments]
 
 \section{Deferred proofs}
 
