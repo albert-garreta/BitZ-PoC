@@ -370,6 +370,38 @@ pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
 /// The delayed-Barrett native-u64 prover on borrowed tables (see
 /// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for the
 /// table conventions).
+/// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for any
+/// raw-Montgomery coefficient type: the exact `u64` products and the
+/// borrowed native assignment under the known-zero univariate prefix skip.
+pub(crate) fn prove_spartan_piop_native_u64_with_univariate_skip_borrowed<C>(
+    transcript: &mut impl Transcript,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
+    assignment_oracle_binding: &[u8; 32],
+    products: NativeProducts<'_>,
+    assignment: &[u64],
+    skip_vars: usize,
+) -> Result<
+    (
+        UnivariateSkipSpartanPiopProof<MontyField<2>>,
+        ScaledMleEvaluationClaim<MontyField<2>>,
+    ),
+    SpartanError,
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
+    validate_native_u32_prover_slices(matrices, products, assignment)?;
+    let domain = 1usize << matrices.num_column_vars();
+    prove_spartan_piop_raw_native_u64_with_skip_core(
+        transcript,
+        matrices,
+        assignment_oracle_binding,
+        products,
+        RawWitness::native_borrowed(assignment, domain),
+        skip_vars,
+    )
+}
+
 pub(crate) fn prove_spartan_piop_native_u64_borrowed<C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
@@ -477,11 +509,11 @@ where
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = {
-        let _g = crate::utils::prof::scope("sp:eq");
+        let _g = tracing::info_span!("sp:eq").entered();
         make_equality_factors_raw(&ctx, &tau)
     };
     let outer = {
-        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
         prove_outer_field_raw(
             transcript,
             &ctx,
@@ -502,7 +534,7 @@ where
         &rho,
     );
     let inner = {
-        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         inner_sumcheck_raw(
             transcript,
             &ctx,
@@ -797,7 +829,7 @@ where
         .collect::<Vec<MontyField<2>>>();
     let equality_factors = make_equality_factors(&tau, field_config)?;
     let outer = {
-        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
         prove_outer_sumcheck_u32_native_with_reducer(
             transcript,
             MontyField::<2>::zero_with_cfg(field_config),
@@ -817,11 +849,11 @@ where
         &rho,
     );
     let batched_matrix = {
-        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+        let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
         matrices.bind_and_batch(&outer.eval_points, &rho)?
     };
     let inner = {
-        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         prove_inner(
             transcript,
             inner_initial_claim,
@@ -857,7 +889,7 @@ where
     R: SumcheckProductReducer<F>,
 {
     {
-        let _g = crate::utils::prof::scope("sp:validate");
+        let _g = tracing::info_span!("sp:validate").entered();
         validate_prover_inputs(matrices, &products, &assignment)?;
     }
     absorb_statement(transcript, matrices, assignment_oracle_binding);
@@ -867,11 +899,11 @@ where
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<F>>();
     let equality_factors = {
-        let _g = crate::utils::prof::scope("sp:eq");
+        let _g = tracing::info_span!("sp:eq").entered();
         make_equality_factors(&tau, field_config)?
     };
     let outer = {
-        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
         prove_outer_sumcheck_with_reducer(
             transcript,
             F::zero_with_cfg(field_config),
@@ -892,11 +924,11 @@ where
         &rho,
     );
     let batched_matrix = {
-        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+        let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
         matrices.bind_and_batch(&outer.eval_points, &rho)?
     };
     let inner = {
-        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         prove_inner_sumcheck_with_reducer(
             transcript,
             inner_initial_claim,
@@ -951,7 +983,7 @@ where
         .collect::<Vec<F>>();
     let equality_factors = make_equality_factors(&tau_tail, field_config)?;
     let outer = {
-        let _scope = crate::utils::prof::scope("spartan:outer_univariate_skip");
+        let _scope = tracing::info_span!("spartan:outer_univariate_skip").entered();
         prove_univariate_skip_outer_sumcheck_with_reducer(
             transcript,
             usize::from(skip_vars),
@@ -972,14 +1004,14 @@ where
         &rho,
     );
     let batched_matrix = {
-        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+        let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
         let row_factors = outer
             .row_binding
             .row_factors(matrices.num_row_vars(), field_config)?;
         matrices.bind_and_batch_with_prefix_univariate_factors(&row_factors, &rho)?
     };
     let inner = {
-        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         prove_inner_sumcheck_with_reducer(
             transcript,
             inner_initial_claim,
@@ -1022,7 +1054,7 @@ where
     C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
 {
     {
-        let _g = crate::utils::prof::scope("sp:validate");
+        let _g = tracing::info_span!("sp:validate").entered();
         validate_prover_inputs(matrices, &products, &assignment)?;
     }
     absorb_statement(transcript, matrices, assignment_oracle_binding);
@@ -1034,11 +1066,11 @@ where
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = {
-        let _g = crate::utils::prof::scope("sp:eq");
+        let _g = tracing::info_span!("sp:eq").entered();
         make_equality_factors_raw(&ctx, &tau)
     };
     let outer = {
-        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
         let raw_products = RawProducts::from_field(&ctx, &products);
         drop(products);
         prove_outer_field_raw(
@@ -1118,7 +1150,7 @@ where
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
     let outer = {
-        let _scope = crate::utils::prof::scope("spartan:outer_sumcheck");
+        let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
         prove_outer_native_raw(
             transcript,
             &ctx,
@@ -1166,9 +1198,9 @@ where
 /// The raw-table native univariate-skip prover core. Inputs must already have
 /// passed [`validate_native_u32_prover_inputs`] or
 /// [`validate_native_u32_prover_slices`].
-fn prove_spartan_piop_raw_native_u64_with_skip_core(
+fn prove_spartan_piop_raw_native_u64_with_skip_core<C>(
     transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<MontyField<2>, bool>,
+    matrices: &PreparedConstraintMatrices<MontyField<2>, C>,
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     witness: RawWitness<'_>,
@@ -1179,7 +1211,10 @@ fn prove_spartan_piop_raw_native_u64_with_skip_core(
         ScaledMleEvaluationClaim<MontyField<2>>,
     ),
     SpartanError,
-> {
+>
+where
+    C: SpartanMatrixCoefficient<MontyField<2>> + RawMontyCoefficient,
+{
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
     absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
 
@@ -1193,9 +1228,9 @@ fn prove_spartan_piop_raw_native_u64_with_skip_core(
     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau_tail);
 
     let (outer_proof, row_binding) = {
-        let _scope = crate::utils::prof::scope("spartan:outer_univariate_skip");
+        let _scope = tracing::info_span!("spartan:outer_univariate_skip").entered();
         let message = {
-            let _scope = crate::utils::prof::scope("spartan:univariate_skip_message");
+            let _scope = tracing::info_span!("spartan:univariate_skip_message").entered();
             compute_u32_native_skip_message_raw(
                 usize::from(skip_vars),
                 &eq_low,
@@ -1208,11 +1243,11 @@ fn prove_spartan_piop_raw_native_u64_with_skip_core(
         let skip = UnivariateSkipProof::from_ordered_message(usize::from(skip_vars), message)?;
         let reduction = skip.verify_reduction(transcript, field_config)?;
         let folded = {
-            let _scope = crate::utils::prof::scope("spartan:univariate_skip_prefix_fold");
+            let _scope = tracing::info_span!("spartan:univariate_skip_prefix_fold").entered();
             fold_u32_native_prefix_raw(usize::from(skip_vars), products, &reduction.z, &ctx)?
         };
         let tail = {
-            let _scope = crate::utils::prof::scope("spartan:univariate_skip_tail");
+            let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
             prove_outer_field_raw(
                 transcript,
                 &ctx,

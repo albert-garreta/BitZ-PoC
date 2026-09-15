@@ -1,3 +1,4 @@
+//! Historical kernel experiment; no production security claim.
 //! Byte-identity pin for the eq-factored pass-fusion experiment: dump one
 //! deterministic proof's bytes to a file — run under different `F2Z_EQF_*`
 //! flag combinations and `cmp` the outputs (the flags are process-cached,
@@ -10,8 +11,8 @@
 //! ```
 
 use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs};
-use f2z::pcs::{IntEvalParams, smallest_generator};
+use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
+use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
 
 const Q: u128 = (1u128 << 100) - 15;
 
@@ -22,9 +23,13 @@ fn main() {
     let mut all = Vec::new();
     // Two shapes: one exercising every layer type at real depth, one small.
     for (t, s) in [(14usize, 8usize), (10, 5)] {
-        let p = IntEvalParams { t, s, word_bits: 1 };
+        let p = IntegerMatrixLayout {
+            row_vars: t,
+            col_vars: s,
+            word_bits: 1,
+        };
         let m_p = packed_vars(&p);
-        let (pc, _vc) = sha_lig_configs(m_p).expect("lig cfg");
+        let (pc, _vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
         let cell = |b: usize, c: usize| -> u128 {
             (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
         };

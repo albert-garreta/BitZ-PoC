@@ -20,15 +20,15 @@ def main() -> None:
     destination = args.destination.resolve()
     if destination.exists():
         parser.error("destination already exists; choose an unused checkout path")
-    patch = Path(__file__).resolve().parents[1] / "patches/limber-multiswap-112.patch"
+    patch = Path(__file__).resolve().parents[1] / "patches/limber-multiswap.patch"
     subprocess.run(["git", "clone", "--no-checkout", args.source, str(destination)], check=True)
-    subprocess.run(["git", "checkout", "-b", "codex/multiswap-112", BASE_REVISION], cwd=destination, check=True)
+    subprocess.run(["git", "checkout", "-b", "codex/multiswap-matched", BASE_REVISION], cwd=destination, check=True)
     subprocess.run(["git", "apply", "--check", str(patch)], cwd=destination, check=True)
     subprocess.run(["git", "apply", str(patch)], cwd=destination, check=True)
     patch_sha256 = hashlib.sha256(patch.read_bytes()).hexdigest()
     subprocess.run(["git", "add", "--all"], cwd=destination, check=True)
     subprocess.run([
-        "git", "-c", "user.name=Codex", "-c", "user.email=codex@openai.com", "commit",
+        "git", "-c", "user.name=Codex", "-c", "user.email=codex@openai.com", "commit", "--no-gpg-sign",
         "-m", "Match MultiSwap batches and integer commitment security targets",
         "-m", f"Base: {BASE_REVISION}\nPatch-SHA256: {patch_sha256}",
     ], cwd=destination, check=True)

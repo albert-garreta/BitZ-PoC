@@ -98,7 +98,7 @@ const fn raw_to_words(value: Raw) -> [u64; 2] {
 /// The shared modulus context: everything a raw residue needs to be a field
 /// element again, prepared once per proof.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RawMontyCtx {
+pub struct RawMontyCtx {
     modulus: u128,
     /// `-q^{-1} mod 2^64`.
     neg_inv: u64,
@@ -417,7 +417,7 @@ impl<'a> NativeProducts<'a> {
 }
 
 /// Owned raw `Az`, `Bz`, `Cz` tables.
-pub(crate) struct RawProducts {
+pub struct RawProducts {
     pub az: Vec<Raw>,
     pub bz: Vec<Raw>,
     pub cz: Vec<Raw>,
@@ -1420,7 +1420,7 @@ pub(crate) fn prove_outer_field_raw<T: Transcript>(
     strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
     let endpoint = FactoredEndpoint::for_tau(&tau[0]);
     let evaluations = {
-        let _scope = crate::utils::prof::scope("raw:outer_round0");
+        let _scope = tracing::info_span!("raw:outer_round0").entered();
         cofactor_evaluations_raw(
             ctx,
             reducer,
@@ -1431,7 +1431,7 @@ pub(crate) fn prove_outer_field_raw<T: Transcript>(
     };
     let coefficients =
         scalars.coefficients(0, &initial_claim, endpoint, evaluations, &bound_equality);
-    let _rounds_scope = crate::utils::prof::scope("raw:outer_rounds");
+    let _rounds_scope = tracing::info_span!("raw:outer_rounds").entered();
     let (current_claim, bound_equality, products) = outer_rounds_raw(
         transcript,
         &scalars,
@@ -1505,7 +1505,7 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
     strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
     let endpoint = FactoredEndpoint::for_tau(&tau[0]);
     let evaluations = {
-        let _scope = crate::utils::prof::scope("raw:outer_native_round0");
+        let _scope = tracing::info_span!("raw:outer_native_round0").entered();
         native_cofactor_evaluations_raw(
             ctx,
             reducer,
@@ -1554,7 +1554,7 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
     strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
     let endpoint = FactoredEndpoint::for_tau(&tau[1]);
     let evaluations = {
-        let _scope = crate::utils::prof::scope("raw:outer_native_fold0");
+        let _scope = tracing::info_span!("raw:outer_native_fold0").entered();
         fold_native_products_and_cofactor_evaluations_raw(
             ctx,
             reducer,
@@ -1566,7 +1566,7 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
     };
     let coefficients =
         scalars.coefficients(1, &current_claim, endpoint, evaluations, &bound_equality);
-    let _rounds_scope = crate::utils::prof::scope("raw:outer_rounds");
+    let _rounds_scope = tracing::info_span!("raw:outer_rounds").entered();
     let (current_claim, bound_equality, products) = outer_rounds_raw(
         transcript,
         &scalars,
@@ -1596,7 +1596,7 @@ pub(crate) fn prove_outer_native_raw<T: Transcript>(
 // ---------------------------------------------------------------------------
 
 /// The assignment table entering the inner sumcheck.
-pub(crate) enum RawWitness<'a> {
+pub enum RawWitness<'a> {
     /// Exact native values (the u32 and BabyBear relations): the first round
     /// accumulates field × `u64` products and its fold projects into the
     /// field. `values` holds the leading entries of a `domain`-length table
@@ -1991,7 +1991,7 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
     // Round zero over the live prefix, then the first fold (which is also the
     // native → field projection when the witness is exact).
     let pairs = live.div_ceil(2);
-    let round0_scope = crate::utils::prof::scope("raw:inner_round0");
+    let round0_scope = tracing::info_span!("raw:inner_round0").entered();
     let coefficients = match &witness {
         RawWitness::Native { values, .. } => {
             inner_coefficients_native_raw(ctx, reducer, &matrix[..2 * pairs], &values[..2 * pairs])
@@ -2037,7 +2037,7 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
         );
     }
     let written = 2 * live.div_ceil(2);
-    let fold0_scope = crate::utils::prof::scope("raw:inner_fold0");
+    let fold0_scope = tracing::info_span!("raw:inner_fold0").entered();
     let scale = match &witness {
         RawWitness::Native { .. } => WitnessScale::Plain,
         RawWitness::Field(_) => WitnessScale::Raw,
@@ -2068,7 +2068,7 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
     drop(witness);
     drop(fold0_scope);
 
-    let _rounds_scope = crate::utils::prof::scope("raw:inner_rounds");
+    let _rounds_scope = tracing::info_span!("raw:inner_rounds").entered();
     let (matrix_evaluation, witness_evaluation) = inner_dense_rounds(
         transcript,
         ctx,
@@ -2485,7 +2485,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
     };
 
     // Round zero over the original witness.
-    let round0_scope = crate::utils::prof::scope("raw:inner_round0");
+    let round0_scope = tracing::info_span!("raw:inner_round0").entered();
     let partials: Vec<[Raw; 2]> = scaled
         .iter()
         .map(|&(block, _)| {
@@ -2519,7 +2519,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
     let mut wz_scratch = vec![0 as Raw; block_len / 2];
     let mut len = block_len;
     let mut finals: Vec<Raw> = Vec::new(); // scaled blocks' terminal values (raw)
-    let _low_scope = crate::utils::prof::scope("raw:inner_block_rounds");
+    let _low_scope = tracing::info_span!("raw:inner_block_rounds").entered();
     while len > 1 {
         let first_fold = tables.is_empty();
         let challenge = recover_full_round_polynomial_and_sample_next_challenge(
@@ -2710,7 +2710,7 @@ pub(crate) fn prove_inner_structured_raw<T: Transcript>(
 /// Coefficient scaling on raw residues: the prover-side twin of
 /// [`SpartanMatrixCoefficient::scale`], with per-proof constants prepared once
 /// instead of per matrix entry.
-pub(crate) trait RawMontyCoefficient: Sync {
+pub trait RawMontyCoefficient: Sync {
     /// Constants derived from the field context once per binding.
     type Prepared: Sync;
 
@@ -2889,14 +2889,14 @@ where
         .filter(|layout| layout.block_len >= 2)
     {
         let (weights, scales) = {
-            let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+            let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
             let weights = match functional {
                 RowFunctional::Point(point) => eq_table_raw(ctx, &ctx.raw_vec(point)),
                 RowFunctional::Prefix(factors) => prefix_row_weights_raw(ctx, factors),
             };
             (weights, block_scales_raw(ctx, layout, rho, num_column_vars))
         };
-        let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         return prove_inner_structured_raw(
             transcript,
             ctx,
@@ -2910,7 +2910,7 @@ where
         );
     }
     let matrix = {
-        let _scope = crate::utils::prof::scope("spartan:bind_and_batch");
+        let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
         match functional {
             RowFunctional::Point(point) => {
                 bind_and_batch_raw(ctx, matrices, &eq_table_raw(ctx, &ctx.raw_vec(point)), rho)
@@ -2920,7 +2920,7 @@ where
             }
         }
     };
-    let _scope = crate::utils::prof::scope("spartan:inner_sumcheck");
+    let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
     prove_inner_raw(
         transcript,
         ctx,

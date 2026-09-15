@@ -1,154 +1,114 @@
 //! One method/configuration per process; fixture construction is outside timers.
+mod common;
 #[path = "support/sha256_ecdsa_fixture.rs"]
 mod shared_fixture;
+
 use bincode::Options;
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript, utils::prof};
+use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use flock_core::pcs::commit::Commitment;
-use p256::ecdsa::{
-    signature::{Signer, Verifier},
-    Signature, SigningKey,
-};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::{error::Error, time::Instant};
+use serde_json::{Value, json};
+use std::error::Error;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+#[derive(clap::Parser)]
+#[command(args_override_self = true)]
 struct Args {
+    #[command(flatten)]
+    cargo: common::cli::CargoArgs,
+    #[arg(long, value_parser = ["f2z-split", "f2z-all", "spartan-mc", "binius64"])]
     method: String,
+    #[arg(long)]
     r: usize,
+    #[arg(long)]
     c: usize,
+    #[arg(long, default_value = "100", value_parser = common::cli::ecdsa_target)]
     target: u32,
+    #[arg(long, default_value = "1", value_parser = common::cli::positive)]
     threads: usize,
+    #[arg(long, default_value = "3", value_parser = common::cli::positive)]
     reps: usize,
+    #[arg(long, default_value = "0")]
     seed: u64,
+    #[arg(long)]
     fixture: Option<std::path::PathBuf>,
+    #[arg(long)]
     export_fixture: Option<std::path::PathBuf>,
+    #[arg(long)]
+    binius64_worker: Option<std::path::PathBuf>,
 }
 
 impl Args {
-    fn parse() -> Result<Self> {
-        let mut args = std::env::args().skip(1);
-        let (mut method, mut r, mut c) = (None, None, None);
-        let (mut target, mut threads, mut reps, mut seed) = (100, 1, 3, 0);
-        let (mut fixture, mut export_fixture) = (None, None);
-        while let Some(flag) = args.next() {
-            if flag == "--bench" {
-                continue;
-            }
-            if flag == "--help" {
-                println!(
-                    "sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc --r R --c C [--target 100|128] [--threads N] [--reps N] [--seed N] [--fixture FILE] [--export-fixture FILE]"
-                );
-                std::process::exit(0);
-            }
-            let value = args
-                .next()
-                .ok_or_else(|| format!("missing value for {flag}"))?;
-            match flag.as_str() {
-                "--method" => method = Some(value),
-                "--r" => r = Some(value.parse::<usize>()?),
-                "--c" => c = Some(value.parse::<usize>()?),
-                "--target" => target = value.parse()?,
-                "--threads" => threads = value.parse()?,
-                "--reps" => reps = value.parse()?,
-                "--seed" => seed = value.parse()?,
-                "--fixture" => fixture = Some(value.into()),
-                "--export-fixture" => export_fixture = Some(value.into()),
-                _ => return Err(format!("unknown option {flag}").into()),
-            }
-        }
-        let out = Self {
-            method: method.ok_or("--method is required")?,
-            r: r.ok_or("--r is required")?,
-            c: c.ok_or("--c is required")?,
-            target,
-            threads,
-            reps,
-            seed,
-            fixture,
-            export_fixture,
-        };
-        let i = out.r.checked_add(out.c).ok_or("exponent overflow")?;
-        if !(3..=16).contains(&i) || ![100, 128].contains(&target) || threads == 0 || reps == 0 {
-            return Err("require 3 <= r+c <= 16, target 100/128 and positive threads/reps".into());
-        }
-        if !["f2z-split", "f2z-all", "spartan-mc"].contains(&out.method.as_str()) {
-            return Err("unknown method".into());
-        }
-        Ok(out)
-    }
     fn exponent(&self) -> usize {
         self.r + self.c
     }
 }
 
-struct Fixture {
-    message: Vec<u8>,
-    statement: Sha256EcdsaStatement,
-    id: String,
-    shared: Option<shared_fixture::SignedFixture>,
-}
+type Fixture = shared_fixture::SignedFixture;
 
 fn fixture(args: &Args) -> Result<Fixture> {
-    if let Some(path) = &args.fixture {
-        let f = shared_fixture::SignedFixture::read(path)?;
-        if f.log_compressions as usize != args.exponent() || f.seed != args.seed {
-            return Err("fixture configuration mismatch".into());
-        }
-        return Ok(Fixture {
-            message: f.message.clone(),
-            statement: Sha256EcdsaStatement {
-                log_compressions: f.log_compressions,
-                qx: f.qx,
-                qy: f.qy,
-                r: f.r,
-                s: f.s,
-            },
-            id: f.id.clone(),
-            shared: Some(f),
-        });
-    }
-    let mut h = blake3::Hasher::new();
-    h.update(b"sha256-ecdsa-compare/fixture/v1");
-    h.update(&args.seed.to_le_bytes());
-    h.update(&(args.exponent() as u64).to_le_bytes());
-    let mut message = vec![0; 64 * ((1 << args.exponent()) - 1)];
-    h.finalize_xof().fill(&mut message);
-    let mut key_bytes = blake3::derive_key("sha256-ecdsa-compare/key/v1", &args.seed.to_le_bytes());
-    // A nonzero integer below 2^255 is always a valid P-256 scalar.
-    key_bytes[0] &= 0x7f;
-    key_bytes[31] |= 1;
-    let key = SigningKey::from_bytes((&key_bytes).into())?;
-    let signature: Signature = key.sign(&message);
-    key.verifying_key().verify(&message, &signature)?;
-    let q = key.verifying_key().to_encoded_point(false);
-    let (r, s) = signature.split_bytes();
-    let statement = Sha256EcdsaStatement {
-        log_compressions: args.exponent() as u8,
-        qx: q.x().unwrap().as_slice().try_into()?,
-        qy: q.y().unwrap().as_slice().try_into()?,
-        r: r.into(),
-        s: s.into(),
+    let fixture = match &args.fixture {
+        Some(path) => Fixture::read(path)?,
+        None => Fixture::generate(args.exponent() as u8, args.seed)?,
     };
-    h.update(&message);
-    for word in [&statement.qx, &statement.qy, &statement.r, &statement.s] {
-        h.update(word);
+    if fixture.log_compressions as usize != args.exponent() || fixture.seed != args.seed {
+        return Err("fixture configuration mismatch".into());
     }
-    Ok(Fixture {
-        message,
-        statement,
-        id: h.finalize().to_hex().to_string(),
-        shared: None,
-    })
+    Ok(fixture)
 }
 
-fn timed<T, E: Into<Box<dyn Error>>>(
+fn statement(fixture: &Fixture) -> Sha256EcdsaStatement {
+    Sha256EcdsaStatement {
+        log_compressions: fixture.log_compressions,
+        qx: fixture.qx,
+        qy: fixture.qy,
+        r: fixture.r,
+        s: fixture.s,
+    }
+}
+
+fn dispatch_binius(args: &Args) -> Result<()> {
+    let worker = args
+        .binius64_worker
+        .as_ref()
+        .ok_or("binius64 requires --binius64-worker PATH")?;
+    let mut command = std::process::Command::new(worker);
+    command.args([
+        "--method",
+        "binius64",
+        "--r",
+        &args.r.to_string(),
+        "--c",
+        &args.c.to_string(),
+        "--target",
+        &args.target.to_string(),
+        "--threads",
+        &args.threads.to_string(),
+        "--reps",
+        &args.reps.to_string(),
+        "--seed",
+        &args.seed.to_string(),
+    ]);
+    if let Some(path) = &args.fixture {
+        command.arg("--fixture").arg(path);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        Err(command.exec().into())
+    }
+    #[cfg(not(unix))]
+    {
+        std::process::exit(command.status()?.code().unwrap_or(1));
+    }
+}
+
+fn setup<T, E: Into<Box<dyn Error>>>(
     f: impl FnOnce() -> std::result::Result<T, E>,
 ) -> Result<(T, f64)> {
-    let start = Instant::now();
-    let value = f().map_err(Into::into)?;
-    Ok((value, start.elapsed().as_secs_f64() * 1000.))
+    let (value, duration) = f2z::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
+    Ok((value.map_err(Into::into)?, duration.as_secs_f64() * 1000.))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -169,57 +129,164 @@ fn spartan_revision() -> Option<&'static str> {
         .map(|(_, rev)| rev)
 }
 
-fn emit(args: &Args, fixture: &Fixture, trial: usize, mut row: Value) {
-    let object = row.as_object_mut().unwrap();
-    object.extend(
-        json!({
-            "schema": "f2z/sha256-ecdsa-compare/v1", "method": args.method,
-            "trial": if trial == 0 {"warmup"} else {"sample"}, "sample": trial,
-            "log_compressions": args.exponent(), "compressions": 1usize << args.exponent(),
-            "message_bytes": fixture.message.len(), "signatures": 1,
-            "r": if args.method == "spartan-mc" {Some(args.r)} else {None},
-            "c": if args.method == "spartan-mc" {Some(args.c)} else {None},
-            "security_target": if args.method == "spartan-mc" {None} else {Some(args.target)},
-            "threads": args.threads, "seed": args.seed, "fixture_id": fixture.id,
-            "statement_bytes": 129, "statement": "public-key-signature; witness-message",
-            "spartan_revision": spartan_revision(), "verified": true,
-        })
-        .as_object()
-        .unwrap()
-        .clone(),
-    );
-    let witness = object["witness_ms"].as_f64().unwrap();
-    let commit = object["commit_ms"].as_f64().unwrap();
-    let protocol = object["protocol_ms"].as_f64().unwrap();
-    object.insert("prove_ms".into(), json!(commit + protocol));
-    object.insert(
-        "witness_to_proof_ms".into(),
-        json!(witness + commit + protocol),
-    );
-    println!("{row}");
+#[derive(Serialize)]
+struct Measurements<D> {
+    setup_ms: f64,
+    witness_ms: f64,
+    commit_ms: f64,
+    e2e_prover_ms: f64,
+    protocol_ms: f64,
+    verify_ms: f64,
+    codec_ms: f64,
+    proof_object_bytes: usize,
+    proof_material_bytes: usize,
+    outer_ms: Option<f64>,
+    inner_ms: Option<f64>,
+    opening_ms: Option<f64>,
+    folding_ms: Option<f64>,
+    #[serde(flatten)]
+    details: D,
 }
 
+#[derive(Serialize)]
+struct F2zDetails {
+    phases_seconds: Vec<(String, f64)>,
+    verify_phases_seconds: Vec<(String, f64)>,
+    security: Value,
+    circuit: Value,
+}
+
+#[derive(Serialize)]
+struct SpartanDetails<P> {
+    phases_ms: P,
+    security: Value,
+    circuit: Value,
+}
+
+#[derive(Serialize)]
+struct SpartanPhases {
+    matrix_ms: f64,
+    folding_ms: f64,
+    outer_ms: f64,
+    inner_ms: f64,
+    opening_ms: f64,
+}
+
+impl SpartanPhases {
+    fn from_intervals(
+        intervals: &[f2z::observability::Interval],
+        folding: bool,
+    ) -> std::io::Result<Self> {
+        let millis = |label| {
+            f2z::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
+        };
+        let folding_ms = millis("spartan2.folding")?;
+        Ok(Self {
+            matrix_ms: millis("spartan2.matrix")?,
+            // A single-step proof has a preparation span but no folding rounds.
+            // Keep the existing JSON representation for that case.
+            folding_ms: if folding { folding_ms } else { 0.0 },
+            outer_ms: millis("spartan2.outer")?,
+            inner_ms: millis("spartan2.inner")?,
+            opening_ms: millis("spartan2.opening")?,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct ResultRecord<'a, D> {
+    schema: &'static str,
+    method: &'a str,
+    zk: bool,
+    fixture_profile: &'static str,
+    trial: &'static str,
+    sample: usize,
+    log_compressions: usize,
+    compressions: usize,
+    message_bytes: usize,
+    signatures: usize,
+    r: Option<usize>,
+    c: Option<usize>,
+    security_target: Option<u32>,
+    threads: usize,
+    seed: u64,
+    fixture_id: &'a str,
+    statement_bytes: usize,
+    statement: &'static str,
+    spartan_revision: Option<&'static str>,
+    verified: bool,
+    prove_ms: f64,
+    witness_to_proof_ms: f64,
+    #[serde(flatten)]
+    measurements: Measurements<D>,
+}
+
+fn result_record<'a, D>(
+    args: &'a Args,
+    fixture: &'a Fixture,
+    trial: usize,
+    row: Measurements<D>,
+) -> ResultRecord<'a, D> {
+    ResultRecord {
+        schema: "f2z/sha256-ecdsa-compare/v1",
+        method: &args.method,
+        zk: false,
+        fixture_profile: shared_fixture::SCHEMA,
+        trial: if trial == 0 { "warmup" } else { "sample" },
+        sample: trial,
+        log_compressions: args.exponent(),
+        compressions: 1usize << args.exponent(),
+        message_bytes: fixture.message.len(),
+        signatures: 1,
+        r: (args.method == "spartan-mc").then_some(args.r),
+        c: (args.method == "spartan-mc").then_some(args.c),
+        security_target: (args.method != "spartan-mc").then_some(args.target),
+        threads: args.threads,
+        seed: args.seed,
+        fixture_id: &fixture.id,
+        statement_bytes: 129,
+        statement: "public-key-signature; witness-message",
+        spartan_revision: spartan_revision(),
+        verified: true,
+        prove_ms: row.commit_ms + row.protocol_ms,
+        witness_to_proof_ms: row.witness_ms + row.commit_ms + row.protocol_ms,
+        measurements: row,
+    }
+}
+
+fn emit<D: Serialize>(args: &Args, fixture: &Fixture, trial: usize, row: Measurements<D>) {
+    println!(
+        "{}",
+        serde_json::to_string(&result_record(args, fixture, trial, row))
+            .expect("serialize SHA/ECDSA result")
+    );
+}
 fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
-    let (prepared, setup_ms) = timed(|| prepare_sha256_ecdsa(args.exponent(), args.target, mode))?;
+    let statement = statement(fixture);
+    let (prepared, setup_ms) = setup(|| {
+        prepare_sha256_ecdsa(args.exponent(), args.target, mode)
+            .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
+    })?;
     let security = prepared.security()?;
     for trial in 0..=args.reps {
-        prof::take_totals();
-        let (witness, witness_ms) = timed(|| {
-            generate_sha256_ecdsa_witness(&prepared, &fixture.statement, &fixture.message)
-        })?;
-        let (hint, commit_ms) = timed(|| commit_sha256_ecdsa(&prepared, &witness))?;
-        let (proof, protocol_ms) = timed(|| {
+        let recording = f2z::observability::Recording::start(Vec::new())?;
+        let e2e = tracing::info_span!("benchmark:e2e").entered();
+        let witness = tracing::info_span!("benchmark:witness")
+            .in_scope(|| generate_sha256_ecdsa_witness(&prepared, &statement, &fixture.message))?;
+        let hint = tracing::info_span!("benchmark:commit")
+            .in_scope(|| commit_sha256_ecdsa(&prepared, &witness))?;
+        let proof = tracing::info_span!("benchmark:protocol").in_scope(|| {
             prove_sha256_ecdsa(
                 &mut Blake3Transcript::new(),
                 &prepared,
-                &fixture.statement,
+                &statement,
                 &witness,
                 &hint,
                 4,
             )
         })?;
-        let phases = prof::take_totals();
-        let codec = Instant::now();
+        drop(e2e);
+        let codec = tracing::info_span!("benchmark:codec").entered();
         let proof_bytes = proof.to_bytes();
         let object_bytes = proof_bytes.len();
         let wire = bincode::DefaultOptions::new()
@@ -234,20 +301,27 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             .reject_trailing_bytes()
             .deserialize(&wire)?;
         let decoded_proof = Sha256EcdsaProof::from_bytes(&decoded.proof)?;
-        let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
-        let (_, verify_ms) = timed(|| {
-            if let Some(f) = &fixture.shared {
-                f.validate_statement()?;
-            }
+        drop(codec);
+        tracing::info_span!("benchmark:verification").in_scope(|| {
+            fixture.validate_statement()?;
             verify_sha256_ecdsa(
                 &mut Blake3Transcript::new(),
                 &prepared,
-                &fixture.statement,
+                &statement,
                 &decoded.commitment,
                 &decoded_proof,
             )
             .map_err(|e| -> Box<dyn Error> { e.into() })
         })?;
+        let intervals = recording.intervals()?;
+        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
+        let e2e_prover_ms = common::span_ms(&intervals, "benchmark:e2e");
+        let codec_ms = common::span_ms(&intervals, "benchmark:codec");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+        let phases = f2z::observability::phase_totals(&intervals, "benchmark:e2e")?;
+        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification")?;
         let phase = |name: &str| {
             phases
                 .iter()
@@ -258,19 +332,31 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             args,
             fixture,
             trial,
-            json!({
-                "setup_ms": setup_ms, "witness_ms": witness_ms, "commit_ms": commit_ms,
-                "protocol_ms": protocol_ms, "verify_ms": verify_ms, "codec_ms": codec_ms,
-                "proof_object_bytes": object_bytes, "proof_material_bytes": wire.len(),
-                "outer_ms": phase("ecdsa:outer_prove"), "inner_ms": phase("ecdsa:shared_inner_prove"),
-                "opening_ms": phase("ecdsa:f2z_prove"), "folding_ms": null,
-                "phases_seconds": phases, "verify_phases_seconds": prof::take_totals(),
-                "security": {"model": "round-by-round-economic", "economic_bits": security.economic_bits(),
-                    "statistical_bits_lower_bound": security.statistical_bits(), "projection_bits": 113},
-                "circuit": {"nonlinear_rows": prepared.nonlinear_rows(), "linear_rows": prepared.linear_rows(),
+            Measurements {
+                setup_ms,
+                witness_ms,
+                commit_ms,
+                e2e_prover_ms,
+                protocol_ms,
+                verify_ms,
+                codec_ms,
+                proof_object_bytes: object_bytes,
+                proof_material_bytes: wire.len(),
+                outer_ms: phase("ecdsa:outer_prove"),
+                inner_ms: phase("ecdsa:shared_inner_prove"),
+                opening_ms: phase("ecdsa:f2z_prove"),
+                folding_ms: None,
+                details: F2zDetails {
+                    phases_seconds: phases,
+                    verify_phases_seconds: verify_phases,
+                    security: json!({"model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(),
+                    "statistical_bits_lower_bound": security.compute_statistical_security_bits(), "projection_bits": 113,
+                    "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(args.target)?) }),
+                    circuit: json!({"nonlinear_rows": prepared.nonlinear_rows(), "linear_rows": prepared.linear_rows(),
                     "outer_active_rows": prepared.outer_rows(), "outer_slots": prepared.outer_domain_size(),
-                    "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits()},
-            }),
+                    "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits()}),
+                },
+            },
         );
     }
     Ok(())
@@ -278,7 +364,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
 
 fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
     use spartan2::sha256_ecdsa::{Prepared, Proof, Statement};
-    let s = &fixture.statement;
+    let s = fixture;
     let statement = Statement {
         log_compressions: s.log_compressions,
         qx: s.qx,
@@ -286,58 +372,235 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
         r: s.r,
         s: s.s,
     };
-    let (prepared, setup_ms) = timed(|| Prepared::setup(args.r, args.c))?;
+    let (prepared, setup_ms) = setup(|| Prepared::setup(args.r, args.c))?;
     for trial in 0..=args.reps {
-        let (witness, witness_ms) =
-            timed(|| prepared.generate_witness(&statement, &fixture.message))?;
-        let (committed, commit_ms) = timed(|| prepared.commit(witness))?;
-        let ((proof, phases), protocol_ms) = timed(|| prepared.prove(&statement, &committed))?;
-        let codec = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new())?;
+        let e2e = tracing::info_span!("benchmark:e2e").entered();
+        let witness = tracing::info_span!("benchmark:witness")
+            .in_scope(|| prepared.generate_witness(&statement, &fixture.message))?;
+        let committed =
+            tracing::info_span!("benchmark:commit").in_scope(|| prepared.commit(witness))?;
+        let proof = tracing::info_span!("benchmark:protocol")
+            .in_scope(|| prepared.prove(&statement, &committed))?;
+        drop(e2e);
+        let codec = tracing::info_span!("benchmark:codec").entered();
         let bytes = proof.to_bytes()?;
         let decoded = Proof::from_bytes(&bytes)?;
-        let codec_ms = codec.elapsed().as_secs_f64() * 1000.;
-        let (_, verify_ms) = timed(|| -> Result<()> {
-            if let Some(f) = &fixture.shared {
-                f.validate_statement()?;
-            }
+        drop(codec);
+        tracing::info_span!("benchmark:verification").in_scope(|| -> Result<()> {
+            fixture.validate_statement()?;
             prepared.verify(&statement, &decoded)?;
             Ok(())
         })?;
+        let intervals = recording.intervals()?;
+        let phases = SpartanPhases::from_intervals(&intervals, args.c != 0)?;
+        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
+        let e2e_prover_ms = common::span_ms(&intervals, "benchmark:e2e");
+        let codec_ms = common::span_ms(&intervals, "benchmark:codec");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
         emit(
             args,
             fixture,
             trial,
-            json!({
-                "setup_ms": setup_ms, "witness_ms": witness_ms, "commit_ms": commit_ms,
-                "protocol_ms": protocol_ms, "verify_ms": verify_ms, "codec_ms": codec_ms,
-                "proof_object_bytes": bytes.len(), "proof_material_bytes": bytes.len(),
-                "outer_ms": phases.outer_ms, "inner_ms": phases.inner_ms,
-                "opening_ms": phases.opening_ms, "folding_ms": if args.c == 0 {None} else {Some(phases.folding_ms)},
-                "phases_ms": phases, "circuit": {"sha": prepared.sizes()[0], "p256": prepared.sizes()[1]},
-                "security": {"model": "discrete-log-and-fiat-shamir", "group": "T256", "constraint_field": "P256-Fp",
+            Measurements {
+                setup_ms,
+                witness_ms,
+                commit_ms,
+                e2e_prover_ms,
+                protocol_ms,
+                verify_ms,
+                codec_ms,
+                proof_object_bytes: bytes.len(),
+                proof_material_bytes: bytes.len(),
+                outer_ms: Some(phases.outer_ms),
+                inner_ms: Some(phases.inner_ms),
+                opening_ms: Some(phases.opening_ms),
+                folding_ms: if args.c == 0 {
+                    None
+                } else {
+                    Some(phases.folding_ms)
+                },
+                details: SpartanDetails {
+                    phases_ms: phases,
+                    circuit: json!({"sha": prepared.sizes()[0], "p256": prepared.sizes()[1]}),
+                    security: json!({"model": "discrete-log-and-fiat-shamir", "group": "T256", "constraint_field": "P256-Fp",
                     "transcript": "Keccak256", "pcs": "Hyrax-direct", "hyrax_columns": 2048,
-                    "nominal_group_security_bits": 128, "statistical_bits_lower_bound": null},
-            }),
+                    "nominal_group_security_bits": 128, "statistical_bits_lower_bound": null}),
+                },
+            },
         );
     }
     Ok(())
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse()?;
+    let args = <Args as clap::Parser>::parse();
+    let exponent = args.r.checked_add(args.c).ok_or("exponent overflow")?;
+    if !(3..=16).contains(&exponent) {
+        return Err("require 3 <= r+c <= 16 and target 100/128".into());
+    }
+    f2z::observability::install().expect("install Perfetto subscriber");
     if let Some(path) = &args.export_fixture {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
             .write(path);
     }
+    if args.method == "binius64" {
+        return dispatch_binius(&args);
+    }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
-    prof::force_enable();
+
     let fixture = fixture(&args)?;
     match args.method.as_str() {
         "f2z-split" => f2z(&args, &fixture, OuterMode::Split),
         "f2z-all" => f2z(&args, &fixture, OuterMode::AllRows),
         "spartan-mc" => spartan(&args, &fixture),
         _ => unreachable!(),
+    }
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+
+    #[test]
+    fn spartan_phases_preserve_numeric_fields_and_single_step_folding_zero() {
+        let intervals: Vec<_> = ["matrix", "folding", "outer", "inner", "opening"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| f2z::observability::Interval {
+                id: i as u64,
+                parent: None,
+                track_id: 0,
+                depth: 0,
+                name: name.into(),
+                component: Some(format!("spartan2.{name}")),
+                start_ns: i as u64 * 10_000_000,
+                end_ns: i as u64 * 10_000_000 + (i as u64 + 1) * 1_000_000,
+            })
+            .collect();
+        for folding in [false, true] {
+            let phases = SpartanPhases::from_intervals(&intervals, folding).unwrap();
+            assert_eq!(
+                serde_json::to_value(phases).unwrap(),
+                json!({
+                    "matrix_ms": 1.0, "folding_ms": if folding { 2.0 } else { 0.0 },
+                    "outer_ms": 3.0, "inner_ms": 4.0, "opening_ms": 5.0,
+                })
+            );
+        }
+        assert!(SpartanPhases::from_intervals(&intervals[..4], true).is_err());
+        let mut duplicate = intervals.clone();
+        duplicate.push(intervals[0].clone());
+        assert!(SpartanPhases::from_intervals(&duplicate, true).is_err());
+    }
+
+    #[test]
+    fn result_envelope_keeps_totals_nulls_and_trial_numbering() {
+        let mut args = Args {
+            cargo: Default::default(),
+            method: "f2z-split".into(),
+            r: 1,
+            c: 2,
+            target: 100,
+            threads: 1,
+            reps: 1,
+            seed: 0,
+            fixture: None,
+            export_fixture: None,
+            binius64_worker: None,
+        };
+        let fixture = Fixture::generate(3, 0).unwrap();
+        let row = || Measurements {
+            setup_ms: 1.0,
+            witness_ms: 2.0,
+            commit_ms: 3.0,
+            e2e_prover_ms: 15.0,
+            protocol_ms: 4.0,
+            verify_ms: 5.0,
+            codec_ms: 6.0,
+            proof_object_bytes: 7,
+            proof_material_bytes: 8,
+            outer_ms: None,
+            inner_ms: None,
+            opening_ms: None,
+            folding_ms: None,
+            details: F2zDetails {
+                phases_seconds: vec![("commit".into(), 0.003)],
+                verify_phases_seconds: vec![],
+                security: json!({"bits":100}),
+                circuit: json!({}),
+            },
+        };
+        let warmup = serde_json::to_value(result_record(&args, &fixture, 0, row())).unwrap();
+        assert_eq!(warmup["trial"], "warmup");
+        assert_eq!(warmup["sample"], 0);
+        assert_eq!(warmup["prove_ms"], 7.0);
+        assert_eq!(warmup["witness_to_proof_ms"], 9.0);
+        for key in ["r", "c", "outer_ms", "inner_ms", "opening_ms", "folding_ms"] {
+            assert!(warmup.get(key).unwrap().is_null(), "{key}");
+        }
+        assert_eq!(warmup["phases_seconds"], json!([["commit", 0.003]]));
+        assert!(warmup.get("phases_ms").is_none());
+        assert!(warmup["proof_object_bytes"].is_u64());
+        args.method = "spartan-mc".into();
+        let sample = serde_json::to_value(result_record(&args, &fixture, 1, row())).unwrap();
+        assert_eq!(sample["trial"], "sample");
+        assert_eq!(sample["sample"], 1);
+        assert_eq!(sample["r"], 1);
+        assert_eq!(sample["c"], 2);
+        assert!(sample.get("security_target").unwrap().is_null());
+    }
+}
+
+
+#[cfg(test)]
+mod cli_tests {
+    use super::Args;
+    use clap::{CommandFactory, Parser, error::ErrorKind};
+
+    fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
+        Args::try_parse_from(["ecdsa", "--method", "f2z-split", "--r", "1", "--c", "2"]
+            .into_iter().chain(extra.iter().copied()))
+    }
+
+    #[test]
+    fn defaults_script_options_and_last_value_wins() {
+        Args::command().debug_assert();
+        let defaults = parse(&["--bench"]).unwrap();
+        assert_eq!((defaults.exponent(), defaults.target, defaults.threads, defaults.reps, defaults.seed),
+            (3, 100, 1, 3, 0));
+        let args = parse(&["--method", "spartan-mc", "--r", "14", "--c", "2", "--target", "128",
+            "--threads", "8", "--reps", "5", "--seed", "42", "--fixture", "fixture.json",
+            "--export-fixture", "export.json", "--binius64-worker", "worker"]).unwrap();
+        assert_eq!((args.method.as_str(), args.exponent(), args.target, args.threads, args.reps, args.seed),
+            ("spartan-mc", 16, 128, 8, 5, 42));
+        assert_eq!(args.fixture.as_deref(), Some(std::path::Path::new("fixture.json")));
+        assert_eq!(args.export_fixture.as_deref(), Some(std::path::Path::new("export.json")));
+        assert_eq!(args.binius64_worker.as_deref(), Some(std::path::Path::new("worker")));
+        for method in ["f2z-all", "binius64"] {
+            assert_eq!(parse(&["--method", method]).unwrap().method, method);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_missing_and_invalid_scalar_options() {
+        for value in ["100", "0100", "+100"] {
+            assert_eq!(parse(&["--target", value]).unwrap().target, 100);
+        }
+        for extra in [
+            &["--method", "unknown"][..], &["--target", "114"], &["--target", "129"],
+            &["--threads", "0"], &["--reps", "0"], &["--r", "nope"],
+            &["--seed", "-1"], &["--unknown"], &["--fixture"],
+        ] {
+            assert!(parse(extra).is_err(), "accepted {extra:?}");
+        }
+        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "f2z-split", "--r", "1"]] {
+            assert!(Args::try_parse_from(argv).is_err());
+        }
+        assert_eq!(Args::try_parse_from(["ecdsa", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
     }
 }

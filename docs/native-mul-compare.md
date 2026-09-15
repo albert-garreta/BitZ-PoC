@@ -1,320 +1,253 @@
-# Native end-to-end multiplication comparison
+# Independent multiplication modulo 2^32
 
-`mul_e2e_compare` proves batches of u32 × u32 → u64, BabyBear,
-u64 × u64 → u128, and u128 × u128 → u256 multiplications with F2Z, Binius64,
-Plonky3-WHIR, and Limber-Hyrax (the u64 and u128 workloads run on F2Z and
-Binius64 only, see below). Every
-warmup and measured trial regenerates the native witness, produces the complete
-proof, and verifies it. This is the full-proving multiplication comparison for
-the paper benchmark suite; commitment, constraint proving, opening, and
-verification are all exercised on every trial.
+The comparison proves N=2^L independent rows with unsigned 32-bit x, y, z
+and z = x*y mod 2^32. There are no links between successive rows. Select
+`u32-mod32` (default); `u32` is an alias. BabyBear has been removed from this
+comparison. The optional `plonky3-whir` backend uses the same mod32 AIR as FRI.
+
+## Run
+
+Use Rust 1.98.1. Every backend, Limber included, runs inside the comparison
+binary, so one process builds the shared corpus and derives each backend's
+witness from it. Limber is proved through the `limber` crate at the pinned
+revision in `Cargo.toml`; no sibling checkout and no `LIMBER_REPO` are needed.
+
+`binius64-ligerito` is Binius64's own circuit and PIOP (the same wires and
+constraint reductions as `binius64`, including the IntMul reduction's logup*
+pushforward oracle) with every oracle committed and opened by F2Z's opener
+instead of ring switching + BaseFold: rate 1/2, Round 0 (the out-of-domain
+sample) right after each commitment, ring switching, and a Johnson-regime
+Ligerito opening with fold and query grinding. Its security column is a
+whole-protocol union bound gated at 100 bits (the same yardstick as the `f2z`
+row), with the opener's round-by-round target solved to the smallest value
+that clears the gate; the `binius64` row's 100 bits is Binius64's query-phase
+target only. The rate is fixed at 1/2 (`F2Z_BINIUS_LOG_INV_RATE` does not
+apply). See `src/binius_ligerito/` and `src/binary_pcs.rs`.
 
 ```sh
-# Both workloads, all four backends, 2^15 multiplications, five samples
-# plus one warmup and one isolated memory pass per workload/backend/size.
+# Four-backend smoke: L=15, one warmup, five measured proofs, isolated RSS.
 bash scripts/run_native_mul_compare.sh
 
-# Select sizes, repetitions, workloads, and backends independently.
-F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u32 babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
-RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
-```
-
-The full sweeps use all four backends, including Limber-Hyrax, at exponents
-15–24 for BabyBear and 15–25 for u32. Run each workload separately so its size
-limit is respected:
-
-BabyBear multiplication, exponents 15–24:
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="babybear" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+# Five-sample sweep over L=15..20.
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
 bash scripts/run_native_mul_compare.sh
-```
 
-u32 multiplication, exponents 15–25:
+# Only the two Binius64 rows (Binius64's BaseFold opener and the F2Z opener).
+F2Z_BENCH_SHAPES="15 18 20" F2Z_BENCH_REPS=5 \
+F2Z_MUL_COMPARE_BACKENDS="binius64 binius64-ligerito" \
+bash scripts/run_native_mul_compare.sh
 
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24 25" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-whir limber" \
+# Inspect commands without starting Cargo.
+bash scripts/run_native_mul_compare.sh --dry-run
+
+# The paper's second Binius64 row: the same sweep at rate 1/8.
+F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=3 \
+F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
 bash scripts/run_native_mul_compare.sh
 ```
 
-Each case includes one warmup and five measured trials. Use 21 measured
-trials for the final comparison. Accepted size ranges describe harness input
-limits; completion at the largest sizes depends on the backend and available
-memory. The native measurements recorded so far cover exponents 15–17.
+`F2Z_MUL_COMPARE_BACKENDS` accepts `f2z binius64 binius64-ligerito plonky3-fri plonky3-whir limber`.
+The default is `f2z binius64 binius64-ligerito plonky3-fri limber`. Select WHIR explicitly
+to tune it for each run and size; see [WHIR tuning and replay](native-whir-tuning.md).
+`F2Z_MUL_COMPARE_OUTPUT_DIR` selects a new, non-existing output directory;
+default output is a timestamped directory in `PerfRuns/`.
+The complete comparison supports exponents 15..24. Without F2Z, exponents
+start at 4. FRI accepts through exponent 29, the Goldilocks FFT domain limit
+with log blowup 3. Limber retains its existing exponent-24 runner limit.
+Other native cases use address-space and backend domain bounds rather than
+a machine-specific RAM cap. Choose sizes that fit the machine being measured.
 
+Limber proves the same wrapping row as the authors' own `int_mult` example:
+one modular row `x * y = z_lo (mod 2^w)` per gate, whose quotient is the high
+half of the exact `2w`-bit product. Every committed value stays below `2^w`,
+so the IntEval limb range check the Mod-PCS already runs is the operand range
+check and the program needs no bit columns. The commitment is Brakedown
+(`T256DynPrimeBdEngine`), which the crate documents as its comparison
+instantiation against code-commitment systems. The adapter is pinned to the
+authors' own accounting: at `2^15` it reproduces their recorded proof size of
+`3417232` bytes exactly, with the same derived IntEval and Brakedown
+parameters. Unlike `int_mult` the gates are independent, matching the corpus
+and every other backend here.
 
+Both jobs enforce `RUSTFLAGS=-C target-cpu=native`. `RAYON_NUM_THREADS`
+selects a positive thread count, defaulting to eight, and is recorded in
+provenance. Use the same count across backends in a campaign.
+The runner clears `CARGO_ENCODED_RUSTFLAGS`, `DUMP`, `CHAIN_BITS`, `BDLAMBDA`,
+`BDSPEC`, `BDROWLEN`, `BDDIRECT`, `BDSPLIT`, and ambient memory-only mode.
+`F2Z_BINIUS_LOG_INV_RATE` is not inherited either: an explicit value selects the
+Binius rate for the whole campaign, is recorded in `campaign.json`, and must
+match the rate the compiled circuit reports. For mod32 it selects the default
+rate 1/2 (`1`) or the paper's second row, rate 1/8 (`3`). Effective configurations,
+Rust toolchain, build profile, revisions, dirty state, source hashes, lockfile
+hashes and machine information are saved. Repository state must remain stable
+while a campaign runs. Results made from uncommitted changes record both the
+base revision and the hash of the actual source tree; the base alone is not a
+reproducible revision of those edits.
 
-u64 × u64 → u128 multiplication, exponents 15–24, F2Z and Binius64 only:
+## Relations and native security policies
+
+| Backend | Arithmetic relation and cost per operation | Native security configuration |
+|---|---|---|
+| F2Z | One integer R1CS constraint x*y=P, four 32-bit committed limbs representing x,y,z,w with P=z+2^32*w | Explicit Lambda100, Johnson `custom:1:4` (rate 1/2), required Round-0 OOD |
+| Binius64 | Bound x,y to 32 bits, native IMUL, mask and equate low 32-bit output; one IMUL plus four word-level ANDs | Explicit 100-bit FRI query target, rate 1/2 or the paper's second rate 1/8 |
+| Limber-Brakedown | One independent wrapping integer-mod row `x*y = z_lo (mod 2^w)`, 3N live witness values padded to 4N, N private quotients (the high halves) | T256DynPrimeBdEngine; `derive_no_limb_split(w,9,L+2)` for `w <= 64`, `derive(128,32,9,L+2)` for `u128`; native approximately 114-bit policy |
+| Plonky3-FRI | Two limb equations; 137 columns and 139 constraints per row | Goldilocks, degree-five extension, Poseidon2/MMCS, rate 1/8, 100 queries, binary folding, final polynomial length one, zero PoW |
+| Plonky3-WHIR (optional) | The same 137-column, 139-constraint mod32 AIR | Multilinear zerocheck/sumcheck PIOP; Goldilocks; per-run WHIR tuning with evaluated Johnson accounting of at least 100 bits |
+
+Plonky3 splits each operand and output into base B=2^16 limbs and enforces
+
+```
+x0*y0 = z0 + B*c0
+x0*y1 + x1*y0 + c0 = z1 + B*c1
+```
+
+All operand/result limbs and c0 are bounded to 16 bits; c1 is bounded to
+17 bits. Thus integer equations cannot acquire Goldilocks wraparound
+aliases. There are 129 Boolean checks, eight recompositions and two
+arithmetic equations. FRI's pinned library AIR-derived security
+report must reach 100 bits before proving and on the returned proof. WHIR
+uses its separate AIR/WHIR security model and records the selected schedule.
+Both generate identical trace rows and verify their complete proofs.
+
+F2Z reports geometry, all Ligerito levels, query and folding grinding,
+Round-0 grinding and security-accounting terms. Its reported accounting is
+round-by-round economic security. Binius reports its query-phase target and
+actual compiled counts. Limber preserves native parameter validation,
+IntEval target 128, challenge target 117, and Brakedown target 114. These are
+documented native policies, not a derived uniform complete-protocol bound.
+
+## Shared input and witness audit
+
+Initialize BLAKE3 and update, in order:
+
+1. ASCII bytes `native-mul/mod32/inputs/v1` (no terminator).
+2. Seed as little-endian u64, default `0x5533_3250_4353_0064`.
+3. Exponent as little-endian u32.
+
+Read successive eight-byte chunks from the XOF. Decode the first and last
+four bytes as little-endian u32 x and y. Use their wrapping product for z.
+`F2Z_BENCH_SEED` overrides the seed in decimal or hexadecimal.
+
+The canonical digest is BLAKE3 of `native-mul/mod32/rows/v1`, then N as
+little-endian u64, then each x,y,z as little-endian u32. Audit native witness
+materialization and compare these canonical rows. Quotients and native carry
+representations are private and may differ between backends.
+
+Golden digests (tested independently in both repositories):
+
+- L=4: `90f3ca71e3e95a08eb8960a5daea013132ea10b2f69784b2b96604683d417f0d`.
+- L=15: `a006d0e2143cfce1ec9dc60dd92be801f48a126b8076d4704cb698e7fd4ac9da`.
+
+At L=4 the first four pairs are `(1210304475,2365989708)`,
+`(1744110415,2023825938)`, `(587259919,3206144740)`, and
+`(686439776,1601866294)`.
+
+## Measurement and output contract
+
+Public setup occurs once per backend and size. Every trial regenerates its
+native witness, proves, and verifies. The first trial is an in-process warmup
+and is excluded from medians. Five measured trials are the default.
+
+- `setup_ms`: public setup, measured separately.
+- `witness_ms`: native witness generation. Binius includes packing performed
+  inside its prover, so this metric overlaps its prover metric.
+- `online_prover_ms`: commitment-inclusive proving.
+- `witness_to_proof_ms`: directly measured witness-to-complete-proof interval;
+  do not construct it by adding potentially overlapping metrics.
+- `post_proof_ms`: proof serialization and accounting after the PCS proof is ready
+  (native backends), excluded from `witness_to_proof_ms`.
+- `verify_ms`: complete native verification.
+- `peak_rss_bytes`: fresh-process high-water RSS across corpus generation,
+  setup, witness generation, commitment, proof, verification and size accounting.
+  Linux uses VmHWM; macOS uses getrusage bytes. Disable only with
+  `F2Z_MUL_COMPARE_MEMORY=0`, which leaves memory absent.
+- `proof_bytes`: complete transmitted payload including initial commitments.
+  Binius uses native transcript bytes; Plonky3 uses the complete postcard
+  proof encoding. F2Z includes the root, canonical opening and analytically
+  counted fixed-width PIOP elements/nonces. Limber includes canonical input
+  commitments, canonical eval argument and an analytically counted sumcheck
+  payload `(3*L + 2*(L+2) + 6)*16` bytes, reported as `piop_payload_bytes` in
+  its recorded configuration. Encoding conventions are recorded.
+
+Native phase diagnostics remain available. The runner rejects missing,
+unverified, mismatched or incomplete records, wrong trial counts, wrong
+backends and changed configurations. All gate counts and corpus digests
+must match before the campaign is marked complete; the in-process witness
+audit checks Limber's recovered rows against the shared corpus digest, like
+every other backend.
+
+The run root contains `campaign.json`, unified `summary.json`, `samples.jsonl`
+and `metrics.csv`. Traces and logs are under `native/`. Table generation uses the
+root results, including their recorded machine rather than the export host:
 
 ```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21 22 23 24" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u64" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64" \
+python3 scripts/native_mul_table.py PerfRuns/<run-directory> \
+  --workload u32-mod32 --out paper/native-mul-table.tex
+```
+
+Multiple directories extend the size sweep. Overlapping rows or
+`--proof-sizes-from` imports must match workload version, protocol/config,
+source/build fingerprint, corpus, machine and measurement policy. Historical
+chain, Hyrax, WHIR and full-product results are not relabeled or imported.
+The exporter retains size selection, memory-bound exclusions, rate labels
+and proof-size columns.
+
+## Wider workloads
+
+The existing full-product u64 and u128 relations, corpus generation and
+F2Z/Binius implementations are preserved. Run them separately:
+
+```sh
+F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS="f2z binius64" \
+F2Z_BENCH_SHAPES="15 16 17" bash scripts/run_native_mul_compare.sh
+
+F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=binius64 \
+F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BENCH_SHAPES="15 16 17" \
 bash scripts/run_native_mul_compare.sh
 ```
 
-The u64 workload draws random full 64-bit operands and proves the exact
-128-bit product as two 64-bit limbs. F2Z uses the `u64_mul` relation:
-one integer R1CS row `x · y = z_lo + 2^64 · z_hi` per multiplication with
-the limb base as a public coefficient of matrix `C`, 256 committed bits per
-multiplication (`2^(n+8)` bits, so its size limit is that of BabyBear), the
-Spartan PIOP over the transcript-sampled prime with the exact `u64`
-assignment entering the inner sumcheck natively and only the `2^128`-sized
-products reduced into the field (as raw residues built from the witness
-limbs, since they have no native `u64` first round), and the same Lambda100
-profile and validated-UDR Ligerito opener as the u32 relation.
-Binius64 asserts both words of its native `imul` against witness words and
-needs no operand range checks. The Plonky3 adapter's AIR decomposes 32-bit
-operands and the Limber program uses `u64` linear-combination coefficients,
-so selecting either with the u64 workload is rejected at startup. F2Z's
-`proof_bytes` are now recorded for every workload (Spartan payload as 16-byte
-elements, nonces as 8-byte words, plus the F2Z opening's exact codec bytes).
+F2Z requires exponents of at least 15. Upper limits follow address-space and
+backend domain bounds; they do not assume a particular RAM capacity. The wider
+Binius rate override remains available and is represented separately in tables.
 
-u128 × u128 → u256 multiplication, exponents 15–23, F2Z and Binius64 only
-(run the backends separately: on a 16 GB machine Binius64's bignum prover pages
-from 2^18, so its clean sizes are 2^15–2^17, while F2Z runs to 2^21; the
-paper's tables list Binius64 at both rate 1/2 (the default) and rate 1/8,
-`F2Z_BINIUS_LOG_INV_RATE=3`, so run it once per rate):
+## Validation and tested sources
 
 ```sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u128" \
-F2Z_MUL_COMPARE_BACKENDS="f2z" \
-bash scripts/run_native_mul_compare.sh
-RUSTFLAGS="-Ctarget-cpu=native" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u128" \
-F2Z_MUL_COMPARE_BACKENDS="binius64" \
-F2Z_BINIUS_LOG_INV_RATE=3 \
-bash scripts/run_native_mul_compare.sh
-```
-
-The u128 workload draws random full 128-bit operands and proves the exact
-256-bit product as two 128-bit halves. F2Z uses the `u128_mul` relation: one
-integer R1CS row `x · y = z` per multiplication over the four-block assignment
-`[1 | x | y | z]` (128-, 128-, and 256-bit entries; the block selector is two
-Boolean coordinates, since a public coefficient as large as `2^128` could not
-be modulus independent), 512 committed bits per multiplication (`2^(n+9)`
-bits, so its size limit is one below u64's), the Spartan PIOP over the
-transcript-sampled prime on raw residues built straight from the witness
-limbs for both the products and the assignment (neither has a native `u64`
-first round), and the same Lambda100 profile and validated-UDR Ligerito
-opener as the narrower relations. Binius64 uses its bignum circuit: the
-four native `imul` limb products of the two-limb operands, accumulated with
-carry chains into the four witness limbs of the product, again without range
-checks. The Plonky3 and Limber adapters reject the workload at startup as
-they do for u64. The `mul_witness_compare` audit reconstructs the canonical
-assignment from each backend's native 128-bit values and hashes every entry
-as 32 little-endian bytes under its own domain.
-
-
-The direct Cargo command is:
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=5 \
-cargo bench --bench mul_e2e_compare --features bench-internals,native-mul-compare
-```
-
-Run one benchmark process at a time, after other builds and benchmark jobs
-finish. The harness runs workloads, backends, warmups, and samples sequentially;
-only the selected prover uses Rayon threads. Run `mul_witness_compare` separately
-from `mul_e2e_compare` so they do not contend for CPU or memory bandwidth.
-
-The size exponent is the number of logical multiplications, not native
-constraint rows. Supported exponents are 4–23 for u128, 4–24 for BabyBear and
-u64, and 4–25 for u32; selecting F2Z requires at least 15. A shape list shared
-by several workloads must stay within the tightest of those ranges. Small exponents are useful for checking the other adapters. Native trace
-widths differ substantially, particularly Limber's explicit input range checks;
-large multiplication counts need correspondingly larger memory budgets.
-
-## Reusing the existing witnesses
-
-The root seeds, per-shape seed derivation, operand sampling, canonical F2Z
-assignment types, and BLAKE3 witness-digest format match the existing PCS
-benchmarks. `F2Z_BENCH_SEED` overrides the per-workload root seed in both
-workflows. For a fixed workload, seed, and size, all backends receive one shared
-immutable operand corpus. Their trace metadata records the same
-`witness_digest_blake3` as the PCS baseline. Regression tests pin the 2^15
-digests to the saved September 6 PCS campaign.
-
-Each backend derives its auxiliary values from those operands on every trial.
-F2Z builds its packed assignment, Binius evaluates its wire circuit, Plonky3
-builds and transposes its AIR trace, and Limber builds its integer assignment
-and quotient vectors. Generated products/remainders are checked against the
-canonical integer computation.
-
-These are native prover comparisons. The logical multiplication inputs match;
-the constraint layouts, PIOPs, challenge fields, and encoded witnesses differ.
-All witnesses are private; this benchmark proves satisfaction of the native
-multiplication relation, not a public statement binding a published corpus.
-The digest is benchmark provenance, not an extra cryptographic public input.
-
-## Separate witness-equivalence benchmark
-
-```sh
-RUSTFLAGS="-Ctarget-cpu=native" RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="10 15" F2Z_BENCH_REPS=5 \
-cargo bench --bench mul_witness_compare \
+python3 -B -m unittest discover -s scripts -p test_native_mul_runner.py -v
+RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
+cargo +1.98.1 test --release --test native_mul_compare \
   --features bench-internals,native-mul-compare
 ```
 
-This benchmark uses the same workload/backend/seed selectors. It builds each
-native witness, reads its actual input and output values, reconstructs the
-canonical assignment, compares every row with the reference, and hashes the
-recovered assignment. A changed value, row count, or digest aborts the run.
-The native full-proof harness also performs this audit before accepting timings.
+Validation covers zero and maximum values, overflow, incorrect low results,
+bad carries, bounds, independent indexing, Goldilocks aliases, shared golden
+vectors, compiled Binius counts, Johnson/OOD selection, actual FRI/Brakedown
+selection, FRI security over supported sizes, WHIR proof rejection for incorrect
+results/carries and limb bounds, real proofs and tampering.
+Runner tests cover warmup exclusion, repetitions, environment normalization,
+structured failures, selectable thread counts, WHIR eligibility/configuration
+identity and incompatible result rejection.
 
-The check is equality of canonical multiplication data, not equality of native
-auxiliary-wire arrays or field encodings. In particular, native Plonky3
-BabyBear has no integer quotient column: the audit explicitly marks that
-quotient as reconstructed from its native inputs and remainder. F2Z, Binius,
-and Limber read the quotient from their generated assignments. Binius uses
-the same witness filler as its full prover; Limber also validates its exact
-and modular rows before comparison.
+The historical validation build used BitZ `b79b869` on `independent-u32-multiplication`
+after its rebase and Limber `861f10a6a4d705d92a9faf13a8f860d8ba057ca0` on
+`f2z-benching`, with the working-tree changes recorded in the smoke manifest.
+Pinned Plonky3: `62f49209aec15ab060c83afbaf9eeb74d8c0c411`.
+Its Binius64 revision was `2b27daea4a893fab930259cc7ad59d0a37c2ef95` plus
+vendored prover/verifier patches. Exact tested source and Cargo.lock SHA256
+values are recorded per result in `provenance`; use those with the recorded
+base revisions to identify that build.
 
-It writes `witness-checks.jsonl` with per-trial digests, representations,
-quotient provenance, and witness-generation times, plus
-`witness-summary.json` with warmup-excluded medians. Its default size is 2^10,
-with five measured trials and one warmup. Circuit compilation, recovery, and
-equality checks are outside witness-generation timings. No PCS or PIOP is run
-by this independent equivalence benchmark.
+Current Binius64 uses the [consolidated fork](binius64-consolidation.md), pinned
+at `bc73510ed63bf47eec25d4d10ade84f1c1fe2790` without local Binius patches.
+The new compiler emits one AND and three zero constraints per modular u32 row;
+negative tests still independently check operand bounds and product correctness.
 
-## Timing boundaries
+## Deferred work
 
-Every sample records monotonic intervals, rather than adding phase medians:
-
-| Metric | Measured work |
-| --- | --- |
-| `witness_ms` | Native witness generation; includes Binius's internal witness packing |
-| `commit_ms` | Initial witness commitment (F2Z includes bit packing) |
-| `piop_ms` | Actual constraint proof/reduction, before the PCS opening |
-| `opening_ms` | PCS opening and required claim bridge/ring switching |
-| `pcs_ms` | Union of initial commitment and opening intervals |
-| `online_prover_ms` | Complete native prover call after initial witness generation |
-| `witness_to_proof_ms` | Initial witness generation through proof readiness |
-| `verify_ms` | Complete native verification |
-
-F2Z uses its existing `step3:piop_prove` scope; prime sampling/projection is
-reported separately as preparation. Its opening includes Steps 4 and 5.
-Limber uses its `imod_modp_piop` scope; runtime-prime projection is separate.
-Binius uses the interval between initial witness commitment and ring switching.
-Plonky3 uses the interval between initial WHIR commitment and opening, covering
-the AIR zerocheck/sumcheck reduction. Missing native phase instrumentation is
-an error, never a fabricated zero or a PCS-only fallback.
-
-Binius packs the witness inside its online prover, so `witness_ms` overlaps
-`online_prover_ms`. Do not add those columns. `witness_to_proof_ms` measures
-the combined interval directly. Public setup/circuit compilation and random
-corpus sampling happen outside trials. Setup is recorded separately. Proof
-serialization, when measured outside proof readiness, is not included in
-prover time.
-
-## Proof sizes and peak memory
-
-Every backend reports a positive `proof_bytes` value, including the initial
-commitment and the proof needed to verify it. Public setup parameters and the
-public relation are excluded. Size accounting runs outside the prover and
-verification timing intervals.
-
-| Backend | Size encoding |
-| --- | --- |
-| F2Z | Commitment root, 16 bytes per Spartan payload field element, 8 bytes per transmitted nonce outside the opening, and the actual canonical F2Z opening bytes. Opening nonces are counted only inside that serialization. |
-| Binius64 | Actual finalized native transcript bytes, including the commitment. |
-| Plonky3-WHIR | Actual postcard serialization of the complete native proof, including the commitment. |
-| Limber | Actual canonical commitment and batch-opening bytes (both W and Q), plus the fixed-width PIOP payload described below. |
-
-F2Z and the pinned Limber dependency do not expose a complete-proof serializer.
-Their sizes use component payload accounting, excluding any hypothetical outer
-container framing. Limber's unsegmented PIOP has three field elements per outer
-sumcheck round, two per inner round, five outer claims, and one witness
-evaluation: `scalar_bytes * (3 * log2(num_cons) + 2 * (log2(num_vars) + 1) + 6)`.
-The padded dimensions are public, and the scalar encoding is currently 16
-bytes. The sampled modulus is derived from the transcript. This PIOP count is
-derived from the pinned driver's shape, rather than a serialized whole proof.
-The backend's `config.proof_size_encoding` records the accounting used.
-
-Peak memory is enabled by default. Each workload/backend/size runs one
-additional proof in a fresh child process, before the parent's backend setup.
-The child uses the same corpus and Rayon thread count and must verify its proof.
-`peak_rss_bytes` is the OS high-water resident set size for the whole child:
-corpus generation, public setup, witness generation, commitment, proving,
-verification, and proof-size accounting. It includes resident runtime and
-library memory; it is not an allocator-only or prover-only measurement.
-The child has no warmup, and its memory sample is separate from the latency
-trials and their medians. Linux uses `VmHWM` from `/proc/self/status`; macOS
-uses `getrusage(RUSAGE_SELF)`. Both are normalized to bytes. Linux's current
-address-space counter avoids carrying a pre-exec peak into the new case.
-
-Set `F2Z_MUL_COMPARE_MEMORY=0` for a run without the extra memory pass. Disabled
-memory is `na` in stdout, blank in CSV, and `null` in the summary; it is never
-reported as zero. A failed memory pass aborts the campaign.
-
-## Native configurations
-
-- F2Z: Lambda100, transcript-sampled prime, production Spartan reduction and
-  F2Z/Ligerito opening, one-bit packing.
-- Binius64: native IMUL and bit constraints, ring switching/BaseFold, inverse
-  rate 2 and a 100-bit FRI query target. `F2Z_BINIUS_LOG_INV_RATE=<k>` selects
-  inverse rate `2^k` instead (the query count follows from the rate: 241, 148,
-  121, and 110 queries at rates 1/2, 1/4, 1/8, and 1/16); the run records
-  `log_inv_rate` and `fri_queries` in its config, and the paper's u64 and
-  u128 tables list both rate 1/2 and rate 1/8 rows. u32 operands are range checked; the
-  BabyBear circuit constrains `a*b = p*q+c`, canonical operands/remainder, and
-  nonoverflowing reconstruction.
-- Plonky3: Goldilocks AIR with 32-bit input decompositions for u32; native
-  BabyBear AIR for field multiplication. Both use a degree-5 challenge field,
-  WHIR Johnson-bound parameters, folding 4, inverse rate 2, a 100-bit target,
-  and a maximum of 12 PoW bits.
-- Limber: integer Mod-R1CS with exact bit constraints for operand ranges,
-  canonical BabyBear remainders, IntEval/Hyrax, `log_t_f=64`, `log_t=32`, `k=9`.
-  Its native security policy is recorded separately; the harness does not
-  assert all four systems have identical security guarantees.
-
-## Outputs and verification
-
-The runner reserves a new `PerfRuns/<UTC>-native-mul` directory, or uses
-`F2Z_MUL_COMPARE_OUTPUT_DIR`; it refuses to overwrite existing results.
-`trace.jsonl` contains canonical `zkperf.trace/v1` intervals, `samples.jsonl`
-contains raw per-trial metrics including proof size, and `metrics.csv` plus
-`summary.json` contain warmup-excluded medians including `proof_bytes`.
-The CSV also has `peak_rss_bytes`; the summary has `peak_rss_bytes` and the full
-`memory` record. `memory.jsonl` contains one isolated memory record per case,
-including its corpus digest, verified proof size, and measurement boundary.
-
-Both the shell runner and direct Cargo command print one
-`RESULT schema=native-mul/2` line to stdout per completed case. It identifies
-the workload, backend, size, and sample count, then reports `witness_ms`,
-`online_prover_ms`, `verify_ms`, median `proof_bytes`, and the separate
-`peak_rss_bytes` measurement. The runner also saves stdout and stderr in
-`cargo-bench.log`.
-
-When the zk-proof-profiler script is installed, the
-runner validates traces and renders `reports/intervals.html`; set
-`ZK_TRACE_SCRIPT` to override its location. A failed proof aborts the campaign; it is never emitted
-as a successful sample.
-
-```sh
-cargo test --release --test native_mul_compare \
-  --features bench-internals,native-mul-compare
-```
+- Spartan2 integration.
+- Wider-workload security changes.
+- The remaining all-benchmark Johnson/Round-0 OOD audit.
+- SHA-chain and SHA+ECDSA comparisons, including smaller SHA sizes.
+- Witness-generation improvements.
+- Transcript equivalence between implementations.
+- A uniform complete-protocol 100-bit bound across all backends.

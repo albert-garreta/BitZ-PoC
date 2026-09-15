@@ -1,5 +1,9 @@
 # Fdb version 4
+<<<<<<< HEAD
 ["bibtex main"] 1789420955.14588 "main.aux" "main.bbl" "main" 1789423456.71985 0
+=======
+["bibtex main"] 0 "main.aux" "main.bbl" "main" 1788936859.2375 0
+>>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
   "/usr/local/texlive/2026/texmf-dist/bibtex/bst/base/alpha.bst" 1292289607 23907 a5f93555796fb564b924339521f10a7c ""
   "main.aux" 1789421992.15938 62370 f8937fb9aaab31023ec4cbce0454c679 "pdflatex"
   "paper/references.bib" 0 -1 0 ""
@@ -7,9 +11,16 @@
   "main.bbl"
   "main.blg"
   (rewritten before read)
+<<<<<<< HEAD
 ["pdflatex"] 1789423455.02022 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1789423456.72003 0
   "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
   "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1789423452.77504 334994 400472d0d5e8ce4dadd2b5d22812e024 ""
+=======
+["pdflatex"] 1788936857.50635 "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" "main.pdf" "main" 1788936859.23768 0
+  "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm10.657pk" 1776501489.11392 7808 6a049d449f6ee1b878a120976685d109 ""
+  "/Users/albertgarretafontelles/Library/texlive/2026/texmf-var/fonts/pk/ljfour/public/bbm/bbm8.600pk" 1776501487.73383 5580 11384d216537db22ad7711221f99aacd ""
+  "/Users/albertgarretafontelles/f2z-pcs/paper/main.tex" 1788936855.1665 277343 a76ac284ac434f63bfa698c2bd774808 ""
+>>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -373,11 +384,21 @@
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1776500545 3636771 b0d19629fdc98bdfa4d378986b1cd147 ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
   "macros.tex" 1788695960.25982 52919 70c3fe6acd58dc40740b39a271f13e01 ""
+<<<<<<< HEAD
   "main.aux" 1789423456.4248 62370 e59f3c07e91b8171929c80fc58380116 "pdflatex"
   "main.bbl" 1789420955.30612 11298 f339f1cc5cf85fa3dfb8fb96080c970c "bibtex main"
   "main.out" 1789423456.42758 9201 9ae9517f096c6608b0c18a6dd349dfa9 "pdflatex"
   "main.tex" 1789423452.77504 334994 400472d0d5e8ce4dadd2b5d22812e024 ""
   "main.toc" 1789423456.42782 9832 0c0f96d44fb4ee99c57de143cde87109 "pdflatex"
+=======
+  "main.aux" 1788936858.93435 56186 01c7ab8223a20c87b72f9cae23029f3a "pdflatex"
+  "main.bbl" 1788871490.59553 6909 f3e000dacc1785c18993bfe2b4f9dd84 "bibtex main"
+  "main.out" 1788936858.93712 8407 e30621d6d72a73c06eb49e890f2dd52d "pdflatex"
+  "main.tex" 1788936855.1665 277343 a76ac284ac434f63bfa698c2bd774808 ""
+  "main.toc" 1788936858.93732 8477 0f8720c72a75bb476feb9a3a049e830f "pdflatex"
+  "raw-performance-table.tex" 1788887284.377 10434 adfc8bab7542c38afc9091f22d0d39ac ""
+  "u32-mul-table.tex" 1788879672.8766 8653 25ed9d7f4a838e6811cf570022e5fa22 ""
+>>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
   (generated)
   "main.aux"
   "main.log"

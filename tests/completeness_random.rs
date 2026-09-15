@@ -29,7 +29,7 @@ use f2z::ligerito_flock::{
     IntEvalRsLigModQProof, commit_rs_flock_with, commit_rs_ligerito_rows,
     prove_mle_eval_mod_q_ligerito, sha_lig_configs, verify_mle_eval_mod_q_ligerito,
 };
-use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::transcript::Blake3Transcript;
 
 // ---------------------------------------------------------------------
@@ -485,7 +485,7 @@ fn build_instance<const Q: u128>(cfg: &TrialCfg) -> Instance {
 fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
     let t0 = Instant::now();
     let q_bits = bits_of(Q);
-    let p = IntEvalParams { t: cfg.t, s: cfg.s, word_bits: cfg.w };
+    let p = IntegerMatrixLayout { row_vars: cfg.t, col_vars: cfg.s, word_bits: cfg.w };
     let m_p = packed_vars(&p);
     let m = m_p + 7;
     let regime = if m >= 22 { "emb" } else { "adhoc" };
@@ -950,7 +950,7 @@ fn replica_of_in_crate_instance_validates_harness() {
     assert!(rep.failures.is_empty(), "replica trial failed:\n{}", rep.failures.join("\n"));
 
     // Packed-rows commit == u128-tensor commit (same root) on this instance.
-    let p = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+    let p = IntegerMatrixLayout { row_vars: 10, col_vars: 5, word_bits: 1 };
     let (pc, _vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
     let dgen = DataGen {
         class: DataClass::Uniform,
@@ -1264,7 +1264,7 @@ fn domain_boundary_probes() {
     // (2) t + log2 W < 7 must panic at the packing assert
     //     (ligerito_flock.rs:284 'packing needs t + log2(W) >= 7').
     let r = catch_unwind(|| {
-        let p = IntEvalParams { t: 6, s: 9, word_bits: 1 };
+        let p = IntegerMatrixLayout { row_vars: 6, col_vars: 9, word_bits: 1 };
         let (pc, _vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
         let dgen = DataGen {
             class: DataClass::AllZero,
@@ -1283,7 +1283,7 @@ fn domain_boundary_probes() {
     }
 
     // (3) t + W > 126 must panic in mod_q_chunk_width (pcs.rs:1005).
-    let r = catch_unwind(|| mod_q_chunk_width(&IntEvalParams { t: 100, s: 1, word_bits: 32 }));
+    let r = catch_unwind(|| mod_q_chunk_width(&IntegerMatrixLayout { row_vars: 100, col_vars: 1, word_bits: 32 }));
     match r {
         Err(e) => println!("probe: t+W=132 chunk width panicked as expected: {}", panic_msg(&e)),
         Ok(v) => panic!("t+W=132 mod_q_chunk_width unexpectedly returned {v}"),
@@ -1398,7 +1398,7 @@ fn diagnose_byte_flip_findings() {
         replica: false,
     };
     let q_bits = bits_of(Q);
-    let p = IntEvalParams { t: cfg.t, s: cfg.s, word_bits: cfg.w };
+    let p = IntegerMatrixLayout { row_vars: cfg.t, col_vars: cfg.s, word_bits: cfg.w };
     let (pc, vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
     let inst = build_instance::<Q>(&cfg);
     let rows = build_rows(cfg.t, cfg.s, cfg.w, &inst.dgen);
@@ -1707,7 +1707,7 @@ fn rhatzero_boolean_point_completeness_gap() {
     const Q: u128 = (1u128 << 127) - 1;
     let (t, s, w) = (7usize, 8usize, 1usize);
     let q_bits = bits_of(Q);
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: w };
     assert_eq!(mod_q_num_chunks(&p, q_bits), 2, "shape must be multi-chunk (L=2)");
     let (pc, vc) = sha_lig_configs(packed_vars(&p)).expect("cfg");
     let alpha = smallest_generator();

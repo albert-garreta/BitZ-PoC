@@ -1,14 +1,19 @@
 pub mod dense;
+mod structured;
+
+pub(crate) use structured::{
+    CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
+};
 
 use crypto_primitives::PrimeField;
 pub use dense::DenseMultilinearExtension;
 
+use crate::utils::mul_by_scalar::MulByScalar;
 use rand::Rng;
 use std::{
     fmt::Debug,
     ops::{Add, AddAssign, SubAssign},
 };
-use crate::utils::mul_by_scalar::MulByScalar;
 
 use crate::poly::EvaluationError;
 

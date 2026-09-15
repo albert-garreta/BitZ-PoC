@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import platform
 import resource
-import shutil
 import signal
 import statistics
 import subprocess
@@ -20,9 +19,10 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "f2z/sha256-ecdsa-compare/v1"
 DEFAULT_METHODS = ["f2z-split", "f2z-all", "spartan-mc"]
-METHODS = [*DEFAULT_METHODS, "zkpassport-honk"]
+METHODS = [*DEFAULT_METHODS, "binius64"]
+FIXTURE_SCHEMA = "f2z/sha256-ecdsa-fixture/standard-p256/v1"
 METRICS = ["setup_ms", "witness_ms", "commit_ms", "protocol_ms", "prove_ms",
-           "witness_to_proof_ms", "verify_ms", "codec_ms", "outer_ms", "inner_ms",
+           "witness_to_proof_ms", "e2e_prover_ms", "verify_ms", "codec_ms", "outer_ms", "inner_ms",
            "opening_ms", "folding_ms", "piop_ms", "iop_ms", "proof_object_bytes", "proof_material_bytes"]
 
 
@@ -49,10 +49,6 @@ def cases(spartan_splits, methods, targets, threads, seeds):
         if method == "spartan-mc":
             for r, c in sorted(set(spartan_splits)):
                 yield dict(method=method, log_compressions=r+c, r=r, c=c,
-                           security_target=None, threads=workers, seed=seed)
-        elif method == "zkpassport-honk":
-            for exponent in work:
-                yield dict(method=method, log_compressions=exponent, r=None, c=None,
                            security_target=None, threads=workers, seed=seed)
         else:
             for exponent, target in itertools.product(work, targets):
@@ -82,22 +78,32 @@ def validate_rows(rows, case, reps):
             return False
         if not isinstance(row.get("security"), dict) or "model" not in row["security"]:
             return False
-        honk = case["method"] == "zkpassport-honk"
-        if honk and (row.get("zk") is not False or row.get("barretenberg_version") != "5.0.0"):
+        if row.get("zk") is not False or row.get("fixture_profile") != FIXTURE_SCHEMA:
             return False
-        revision = row.get("zkpassport_revision" if honk else "spartan_revision")
+        if case["method"].startswith("f2z"):
+            from ligerito_results import validate_ligerito
+            try:
+                validate_ligerito(row["security"].get("ligerito"), case["security_target"])
+                if row["security"]["ligerito"] != rows[0]["security"].get("ligerito"):
+                    return False
+            except ValueError:
+                return False
+        binius = case["method"] == "binius64"
+        revision = row.get("binius_revision" if binius else "spartan_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
+            return False
+        if binius and (row["security"].get("fri_query_target_bits") != case["security_target"]
+                       or row["security"].get("pcs") != "BaseFold"
+                       or row.get("circuit_profile") != "sha256-chain-p256/standard/v1"):
             return False
         for key in METRICS:
             value = row.get(key)
             optional = ["folding_ms", "outer_ms", "inner_ms", "opening_ms"]
-            if honk:
-                optional += ["commit_ms", "protocol_ms", "piop_ms", "iop_ms"]
             if value is None and key in optional:
                 continue
             if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                 return False
-        if not honk and not math.isclose(row["prove_ms"], row["commit_ms"] + row["protocol_ms"], abs_tol=1e-6):
+        if not math.isclose(row["prove_ms"], row["commit_ms"] + row["protocol_ms"], abs_tol=1e-6):
             return False
         if not math.isclose(row["witness_to_proof_ms"], row["witness_ms"] + row["prove_ms"], abs_tol=1e-6):
             return False
@@ -112,7 +118,7 @@ def summarize(directory):
               "economic_bits", "statistical_bits_lower_bound", *METRICS]
     fixture_ids = {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
-                     "fixture_id", "spartan_revision", "zkpassport_revision", "artifact_id", "security_model", "economic_bits",
+                     "fixture_id", "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", "security_model", "economic_bits",
                      "statistical_bits_lower_bound", *METRICS]
     with (directory / "summary.csv").open("w", newline="") as stream, \
             (directory / "samples.csv").open("w", newline="") as sample_stream:
@@ -127,7 +133,7 @@ def summarize(directory):
             for sample in normalized:
                 record = dict(row, source_file=path.name)
                 record.update({k: sample.get(k) for k in ["trial", "sample", "verified", "fixture_id",
-                                                         "spartan_revision", "zkpassport_revision", "artifact_id", *METRICS]})
+                                                         "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", *METRICS]})
                 security = sample.get("security")
                 if isinstance(security, dict):
                     record.update(security_model=security.get("model"), economic_bits=security.get("economic_bits"),
@@ -153,9 +159,9 @@ def summarize(directory):
     (directory / "comparison.json").write_text(json.dumps({
         "all_recorded_cases_complete": all(r["status"] == "complete" for r in results),
         "matched_fixtures": not mismatches, "mismatched_exponent_seed_pairs": mismatches,
-        "security_note": "F2Z economic targets, Spartan group security, and BN254 KZG use different accounting; see each row.",
+        "security_note": "F2Z economic targets, Spartan group security, and Binius FRI query targets use different accounting; see each row.",
         "proof_size_note": "proof_material_bytes includes commitments and auxiliary inputs; statement bytes are separate.",
-        "timing_note": "Per sample: IOP/PCS = opening_ms; PIOP/preparation = protocol_ms - opening_ms. Barretenberg exposes only aggregate prove_ms; unavailable components remain null.",
+        "timing_note": "Per sample: IOP/PCS = opening_ms; PIOP/preparation = protocol_ms - opening_ms. e2e_prover_ms is independently measured from witness generation through proof completion, excluding reusable setup and codec. Historical unavailable measurements remain null.",
         "memory_note": "peak_rss_bytes is the whole worker maximum, including setup and all trials; repeated in samples.csv, not measured per proof.",
     }, indent=2) + "\n")
     return not mismatches
@@ -196,6 +202,7 @@ def metadata(binary):
                    "test-bench-sha256_ecdsa_compare.json")
     build_info = json.loads(fingerprint.read_text()) if fingerprint.exists() else None
     return dict(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                runner_sha256=file_hash(Path(__file__)), memory_limit_enforced=sys.platform.startswith("linux"),
                 revision=output(["git", "rev-parse", "HEAD"]), git_status=output(["git", "status", "--short"]),
                 tracked_diff_sha256=hashlib.sha256(diff).hexdigest(), rustc=output(["rustc", "-Vv"]),
                 build=build_info, cpu=cpu, platform=platform.platform(), logical_cpus=os.cpu_count(),
@@ -231,32 +238,24 @@ def run_case(binary, case, args, directory):
             return existing["status"] == "complete"
     r = case["r"] if case["r"] is not None else case["log_compressions"]
     c = case["c"] if case["c"] is not None else 0
-    worker = args.zkpassport_worker if case["method"] == "zkpassport-honk" else binary
+    worker = args.binius64_worker if case["method"] == "binius64" else binary
     command = [str(worker), "--method", case["method"], "--r", str(r), "--c", str(c),
                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
     if case["security_target"] is not None:
         command.extend(["--target", str(case["security_target"])])
-    expected_fixture = None
-    if getattr(args, "with_zkpassport", False):
-        fixture = directory / "fixtures" / f"i{case['log_compressions']}-seed{case['seed']}.json"
-        expected_fixture = json.loads(fixture.read_text())["id"]
-        command.extend(["--fixture", str(fixture)])
-    if case["method"] == "zkpassport-honk":
-        exponent = case["log_compressions"]
-        if exponent in args.zkpassport_errors:
-            result = dict(case=case, status="preparation_failed", returncode=None, rows=[],
-                          peak_rss_bytes=None, error=args.zkpassport_errors[exponent], elapsed_seconds=0)
-            path.write_text(json.dumps(result, indent=2) + "\n")
-            print(f"{name}: preparation_failed", flush=True)
-            return False
-        command.extend(["--artifact", str(args.zkpassport_artifacts[exponent]),
-                        "--srs-cache", str(ROOT / "benchmarks/zkpassport/.cache/srs"),
-                        "--revision", args.zkpassport_revision])
-        if args.offline:
-            command.append("--offline")
+    fixture = directory / "fixtures" / f"i{case['log_compressions']}-seed{case['seed']}.json"
+    expected_fixture = json.loads(fixture.read_text())["id"]
+    command.extend(["--fixture", str(fixture)])
     rss_path = directory / f"{name}.rss-kib"
+    rss_path.unlink(missing_ok=True)
     if Path("/usr/bin/time").exists() and sys.platform.startswith("linux"):
         command = ["/usr/bin/time", "-f", "%M", "-o", str(rss_path), *command]
+    elif sys.platform == "darwin":
+        command = ["/usr/bin/time", "-l", *command]
+
+    def memory_limit():
+        limit = args.memory_gib * 1024**3
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
     started = time.monotonic()
     status, returncode = "failed", None
@@ -264,10 +263,10 @@ def run_case(binary, case, args, directory):
         try:
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr, cwd=ROOT,
                                        start_new_session=True,
-                                       preexec_fn=address_space_limit(args.memory_gib),
+                                       preexec_fn=memory_limit if sys.platform.startswith("linux") else None,
                                        env=dict(os.environ, RAYON_NUM_THREADS=str(case["threads"]),
                                                 HARDWARE_CONCURRENCY=str(case["threads"])))
-        except OSError as exc:
+        except (OSError, subprocess.SubprocessError) as exc:
             stderr.write(str(exc) + "\n")
         else:
             try:
@@ -285,13 +284,10 @@ def run_case(binary, case, args, directory):
         if isinstance(row, dict) and row.get("schema") == SCHEMA:
             rows.append(row)
     if (returncode == 0 and validate_rows(rows, case, args.reps)
-            and (expected_fixture is None or all(row["fixture_id"] == expected_fixture for row in rows))):
+            and all(row["fixture_id"] == expected_fixture for row in rows)
+            and (case["method"] != "binius64" or all(row["binius_revision"] == args.binius64_info["binius_revision"] for row in rows))):
         status = "complete"
-    rss = None
-    if rss_path.exists():
-        lines = rss_path.read_text().splitlines()
-        if lines and lines[-1].isdigit():
-            rss = int(lines[-1]) * 1024
+    rss = peak_rss_bytes(rss_path, directory / f"{name}.stderr")
     result = dict(case=case, status=status, returncode=returncode, rows=rows,
                   peak_rss_bytes=rss, elapsed_seconds=time.monotonic()-started)
     temporary = path.with_suffix(".tmp")
@@ -303,136 +299,75 @@ def run_case(binary, case, args, directory):
 
 
 def file_hash(path):
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def noir_source_hash(checkout):
-    paths = subprocess.check_output(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=checkout
-    ).decode().split("\0")
-    files = {p: file_hash(checkout / p) for p in paths if p and
-             (p.endswith(".nr") or p.endswith("Nargo.toml") or p.startswith("benchmarks/sha256-ecdsa/"))}
-    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+def peak_rss_bytes(linux_rss_path, stderr_path):
+    if sys.platform == "darwin":
+        for line in stderr_path.read_text().splitlines():
+            fields = line.split()
+            if fields[1:] == ["maximum", "resident", "set", "size"] and fields[0].isdigit():
+                return int(fields[0])  # BSD time reports bytes; GNU time reports KiB.
+    elif linux_rss_path.exists():
+        lines = linux_rss_path.read_text().splitlines()
+        if lines and lines[-1].isdigit():
+            return int(lines[-1]) * 1024
+    return None
 
 
-def compile_noir(args, directory, exponent):
-    log = directory / f"noir-compile-i{exponent}.log"
-    command = [sys.executable, str(args.zkpassport_checkout / "benchmarks/sha256-ecdsa/compile.py"),
-               "--nargo", str(args.nargo), "--exponents", str(exponent)]
-    if args.offline:
-        command.append("--offline")
-    with log.open("w") as output:
-        process = subprocess.Popen(command, stdout=output, stderr=output, start_new_session=True,
-                                   preexec_fn=address_space_limit(args.memory_gib))
-        try:
-            code = process.wait(timeout=args.timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
-            raise RuntimeError(f"Noir compilation timed out; see {log.name}")
-    if code:
-        raise RuntimeError(f"Noir compilation failed ({code}); see {log.name}")
-
-
-def prepare_zkpassport(args, directory, binary, splits):
-    args.zkpassport_checkout = args.zkpassport_checkout.resolve(strict=True)
-    source_hash = noir_source_hash(args.zkpassport_checkout)
-    old_manifest = directory / "manifest.json"
-    previous = {}
-    if old_manifest.exists():
-        previous = json.loads(old_manifest.read_text()).get("zkpassport", {})
-        if previous.get("source_hash") != source_hash:
-            raise RuntimeError("Noir sources changed; use a new output directory")
-    args.zkpassport_revision = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=args.zkpassport_checkout, text=True).strip()
-    build_info = {}
-    if args.zkpassport_binary:
-        args.zkpassport_worker = args.zkpassport_binary.resolve(strict=True)
-        cached_build = ROOT / "benchmarks/zkpassport/.cache/build.json"
-        if cached_build.exists():
-            candidate = json.loads(cached_build.read_text())
-            if candidate.get("binary_sha256") == file_hash(args.zkpassport_worker):
-                build_info = candidate
-    else:
-        print("Building pinned native ZKPassport worker...", flush=True)
-        command = [sys.executable, str(ROOT / "benchmarks/zkpassport/build.py")]
-        if args.offline:
-            command.append("--offline")
-        with (directory / "zkpassport-build.log").open("w") as log:
-            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=log, text=True)
-        if result.returncode:
-            raise RuntimeError("ZKPassport build failed; see zkpassport-build.log")
-        build_info = json.loads(result.stdout.splitlines()[-1])
-        args.zkpassport_worker = Path(build_info["binary"])
-    args.nargo = (args.nargo or Path(build_info.get("nargo", ROOT / "benchmarks/zkpassport/.cache/tools/nargo/nargo"))).resolve(strict=True)
-    input_hash = hashlib.sha256((source_hash + file_hash(args.nargo)).encode()).hexdigest()
-    args.zkpassport_artifacts, args.zkpassport_errors = {}, {}
-    artifacts = {}
-    for exponent in sorted({r+c for r, c in splits}):
-        old_artifact = previous.get("artifacts", {}).get(str(exponent))
-        if old_artifact == "preparation_failed" and not args.retry_failed:
-            args.zkpassport_errors[exponent] = "Previously failed preparation; use --retry-failed to retry"
-            artifacts[str(exponent)] = old_artifact
-            continue
-        cache = args.zkpassport_checkout / "benchmarks/sha256-ecdsa/build" / f"i{exponent}"
-        artifact, meta = cache / "circuit.json", cache / "manifest.json"
-        try:
-            cached = json.loads(meta.read_text()) if meta.exists() else {}
-            if (cached.get("input_hash") != input_hash or not artifact.exists()
-                    or cached.get("artifact_sha256") != file_hash(artifact)):
-                print(f"Compiling Noir: {1 << exponent} compressions...", flush=True)
-                compile_noir(args, directory, exponent)
-                cached = json.loads(meta.read_text())
-                cached["input_hash"] = input_hash
-                meta.write_text(json.dumps(cached, indent=2) + "\n")
-            saved = directory / "artifacts" / f"i{exponent}"
-            saved.mkdir(parents=True, exist_ok=True)
-            if old_artifact not in (None, "preparation_failed", file_hash(artifact)):
-                raise ValueError("compiled artifact changed; use a new output directory")
-            shutil.copyfile(artifact, saved / "circuit.json")
-            shutil.copyfile(meta, saved / "manifest.json")
-            if (cache / "compile.log").exists():
-                shutil.copyfile(cache / "compile.log", saved / "compile.log")
-            args.zkpassport_artifacts[exponent] = saved / "circuit.json"
-            artifacts[str(exponent)] = file_hash(artifact)
-        except (OSError, RuntimeError, ValueError) as error:
-            args.zkpassport_errors[exponent] = str(error)
-            artifacts[str(exponent)] = "preparation_failed"
-            print(f"Noir i={exponent}: {error}", flush=True)
+def prepare_fixtures(args, directory, binary, splits):
     fixtures = directory / "fixtures"
     fixtures.mkdir(exist_ok=True)
     hashes = {}
-    for exponent, seed in itertools.product(sorted({r+c for r, c in splits}), sorted(set(args.seeds))):
+    for exponent, seed in itertools.product(sorted({r+c for r,c in splits}), sorted(set(args.seeds))):
         path = fixtures / f"i{exponent}-seed{seed}.json"
         if not path.exists():
             subprocess.run([str(binary), "--method", "f2z-split", "--r", str(exponent), "--c", "0",
                             "--seed", str(seed), "--export-fixture", str(path)], check=True)
+        if json.loads(path.read_text()).get("schema") != FIXTURE_SCHEMA:
+            raise ValueError("Legacy fixture profile: regenerate fixtures in a new output directory")
         hashes[path.name] = file_hash(path)
-    return dict(checkout=str(args.zkpassport_checkout), revision=args.zkpassport_revision,
-                source_hash=source_hash, binary_sha256=file_hash(args.zkpassport_worker),
-                nargo_sha256=file_hash(args.nargo), artifacts=artifacts, fixtures=hashes,
-                native_build=build_info or None, fixture_profile="low-s/v1")
+    return dict(profile=FIXTURE_SCHEMA, files=hashes)
 
 
-def compatible_zkpassport(previous, current):
-    """A failed preparation may succeed on retry; existing artifacts stay fixed."""
-    if previous is None or current is None:
-        return previous == current
-    old, new = dict(previous), dict(current)
-    old_artifacts, new_artifacts = old.pop("artifacts"), new.pop("artifacts")
-    return (old == new and old_artifacts.keys() == new_artifacts.keys()
-            and all(value == "preparation_failed" or value == new_artifacts[key]
-                    for key, value in old_artifacts.items()))
+def prepare_binius(args, directory):
+    worker_root = ROOT / "benchmarks/binius64"
+    if args.binius64_binary:
+        worker = args.binius64_binary.resolve(strict=True)
+        metadata_path = worker.with_suffix(".build.json")
+        if not metadata_path.is_file():
+            raise ValueError("Prebuilt Binius worker requires its .build.json provenance sidecar")
+        info = json.loads(metadata_path.read_text())
+        if info["binary_sha256"] != file_hash(worker):
+            raise ValueError("Binius binary does not match its build provenance")
+    else:
+        command = [sys.executable, str(worker_root / "build.py")]
+        if args.offline:
+            command.append("--offline")
+        with (directory / "binius64-build.log").open("w") as log:
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=log, text=True, check=True)
+        info = json.loads(result.stdout.splitlines()[-1])
+        worker = Path(info["binary"])
+    embedded = json.loads(subprocess.check_output([str(worker), "--build-info"], text=True))
+    for key in ["binius_revision", "lock_sha256", "source_sha256", "rustc", "rustflags"]:
+        if embedded[key] != info[key]:
+            raise ValueError(f"Binius embedded provenance mismatch: {key}")
+    if len(info["binius_revision"]) != 40 or any(c not in "0123456789abcdef" for c in info["binius_revision"]):
+        raise ValueError("Binius worker must be built from a pinned published commit")
+    args.binius64_worker, args.binius64_info = worker, info
+    return info
+
+
+def compatible_manifest(previous, current):
+    return all(previous.get(key) == current.get(key) for key in
+               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile"])
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--zkpassport-checkout", type=Path, default=ROOT.parent / "zk-passport-circuits")
-    parser.add_argument("--zkpassport-binary", type=Path)
-    parser.add_argument("--nargo", type=Path)
+    parser.add_argument("--binius64-binary", type=Path, help="Prebuilt worker with its .build.json sidecar")
     shapes = parser.add_mutually_exclusive_group()
     shapes.add_argument("--spartan-splits", nargs="+",
                         help="Spartan r:c pairs: 2^r compressions per instance, 2^c instances; F2Z uses only i=r+c")
@@ -449,11 +384,9 @@ def main():
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()
-    args.with_zkpassport = "zkpassport-honk" in args.methods
+    args.with_binius64 = "binius64" in args.methods
     if args.threads is None:
-        args.threads = [1, 16] if args.with_zkpassport else sorted({1, os.cpu_count() or 1})
-    if args.exponents is None and args.spartan_splits is None and args.with_zkpassport:
-        args.exponents = list(range(3, 17))
+        args.threads = sorted({1, os.cpu_count() or 1})
     if args.summarize_only:
         if not args.output.is_dir() or not any(args.output.glob("*.result.json")):
             parser.error("--summarize-only requires an output directory with recorded cases")
@@ -474,21 +407,18 @@ def main():
     directory = args.output.resolve()
     binary = args.binary.resolve(strict=True) if args.binary else build(args, directory)
     manifest = metadata(binary)
-    if args.with_zkpassport:
-        manifest["zkpassport"] = prepare_zkpassport(args, directory, binary, spartan_splits)
+    manifest["ligerito_profile"] = os.environ.get("F2Z_LIG_PROFILE", "default-by-target")
+    manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
+    if args.with_binius64:
+        manifest["binius64"] = prepare_binius(args, directory)
     manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
                                 seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib,
                                 memory_cap_enforced=address_space_limit(args.memory_gib) is not None)
     manifest_path = directory / "manifest.json"
     if manifest_path.exists():
         previous = json.loads(manifest_path.read_text())
-        if (previous["binary_sha256"] != manifest["binary_sha256"]
-                or not compatible_zkpassport(previous.get("zkpassport"), manifest.get("zkpassport"))):
+        if not compatible_manifest(previous, manifest):
             parser.error("output belongs to different binaries, circuits, or fixtures; choose a new output directory")
-        # Preserve the initial machine/build metadata, recording newly prepared artifacts.
-        if args.with_zkpassport:
-            previous["zkpassport"] = manifest["zkpassport"]
-            manifest_path.write_text(json.dumps(previous, indent=2)+"\n")
     else:
         manifest_path.write_text(json.dumps(manifest, indent=2)+"\n")
         patch = subprocess.run(["git", "diff", "--binary", "HEAD"], cwd=ROOT, capture_output=True, check=True).stdout
@@ -496,12 +426,9 @@ def main():
         # Preserve this task's new source files, which git diff does not include.
         sources = ["benches/sha256_ecdsa_compare.rs", "scripts/run_sha256_ecdsa_compare.py",
                    "benches/support/sha256_ecdsa_fixture.rs"]
-        if args.with_zkpassport:
-            sources += ["benchmarks/zkpassport/" + path for path in
-                        ["Cargo.toml", "Cargo.lock", "build.py", "src/main.rs"]]
-            shutil.copytree(args.zkpassport_checkout / "benchmarks/sha256-ecdsa",
-                            directory / "source/zkpassport-circuit",
-                            ignore=shutil.ignore_patterns("build", "target", "__pycache__"))
+        if args.with_binius64:
+            sources += ["benchmarks/binius64/" + path for path in
+                        ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "build.py", "build.rs", "src/main.rs"]]
         for relative in sources:
             target = directory / "source" / relative
             target.parent.mkdir(parents=True, exist_ok=True)

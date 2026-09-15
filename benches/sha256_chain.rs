@@ -33,7 +33,7 @@
 
 mod common;
 
-use std::{hint::black_box, time::Instant};
+use std::{hint::black_box};
 
 use f2z::{
     f2map::VirtualMap,
@@ -53,8 +53,8 @@ struct RepTiming {
     commit_ms: f64,
     prove_ms: f64,
     verify_ms: f64,
-    prove_phases: Vec<(&'static str, f64)>,
-    verify_phases: Vec<(&'static str, f64)>,
+    prove_phases: Vec<(String, f64)>,
+    verify_phases: Vec<(String, f64)>,
     piop_bytes: usize,
     f2z_bytes: usize,
     forests: usize,
@@ -85,25 +85,8 @@ fn make_blocks(compressions: usize, seed: u64) -> Vec<[u32; 16]> {
 }
 
 fn shapes() -> Vec<usize> {
-    let shapes = common::shapes(None).unwrap_or_else(|| {
-        "7 8 9 10 11 12 13 14 15 16"
-            .split(' ')
-            .map(str::to_owned)
-            .collect()
-    });
-    shapes
-        .iter()
-        .map(|part| {
-            let exponent = part
-                .parse::<usize>()
-                .expect("F2Z_BENCH_SHAPES contains integer exponents");
-            assert!(
-                (7..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-                "SHA-256 chain supports exponents 7 through 16"
-            );
-            exponent
-        })
-        .collect()
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(7..=SHA256_MAX_LOG_COMPRESSIONS as u64))
+        .unwrap_or_else(|| (7..=16).collect())
 }
 
 fn fmt_ms(milliseconds: f64) -> String {
@@ -122,25 +105,24 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> RepTiming {
-    let _ = f2z::utils::prof::take_totals();
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start SHA chain trial");
 
     // Witness synthesis (the native chain, the per-compression circuit
     // replay, and packing) is excluded from the prover boundary
     // (docs/bench-schema.md).
-    let started = Instant::now();
+    let witness_scope = tracing::info_span!("chain:witness").entered();
     let witness = generate_sha256_chain_witnesses(prepared, blocks)
         .expect("SHA chain witness synthesis succeeds");
     let statement = witness.statement();
     black_box(&statement);
-    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
-    let _ = f2z::utils::prof::take_totals();
+    drop(witness_scope);
 
     // End-to-end prove: Step 1 commitment plus the runtime-prime proof.
-    let prove_started = Instant::now();
-    let started = Instant::now();
+    let proving = tracing::info_span!("chain:proving").entered();
+    let commit = tracing::info_span!("chain:commit").entered();
     let hint = commit_sha256_chain_witness_with_config(prepared, &witness, pc)
         .expect("SHA chain source commitment succeeds");
-    let commit_ms = started.elapsed().as_secs_f64() * 1e3;
+    drop(commit);
 
     let mut prover_transcript = Blake3Transcript::new();
     let proof = prove_sha256_chain_with_config(
@@ -152,8 +134,7 @@ fn run_once(
         pc,
     )
     .expect("SHA chain proof succeeds");
-    let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
-    let prove_phases = f2z::utils::prof::take_totals();
+    drop(proving);
     let forests = proof.f2z().mfs.len();
     assert_eq!(
         forests, 1,
@@ -161,7 +142,7 @@ fn run_once(
     );
 
     let mut verifier_transcript = Blake3Transcript::new();
-    let started = Instant::now();
+    let verification = tracing::info_span!("chain:verification").entered();
     verify_sha256_chain_with_config(
         &mut verifier_transcript,
         prepared,
@@ -171,8 +152,14 @@ fn run_once(
         vc,
     )
     .expect("SHA chain proof verifies");
-    let verify_ms = started.elapsed().as_secs_f64() * 1e3;
-    let verify_phases = f2z::utils::prof::take_totals();
+    drop(verification);
+    let intervals = recording.intervals().expect("query SHA chain trial");
+    let witness_ms = common::span_ms(&intervals, "chain:witness");
+    let commit_ms = common::span_ms(&intervals, "chain:commit");
+    let prove_ms = common::span_ms(&intervals, "chain:proving");
+    let verify_ms = common::span_ms(&intervals, "chain:verification");
+    let prove_phases = f2z::observability::phase_totals(&intervals, "chain:proving").unwrap();
+    let verify_phases = f2z::observability::phase_totals(&intervals, "chain:verification").unwrap();
     black_box(&proof);
 
     RepTiming {
@@ -198,8 +185,10 @@ fn bench_shape<P: IopSecurityProfile>(
         root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x6368_6169_6e5f_7368; // "chain_sh"
     let slug = format!("chain-2p{exponent}");
 
-    let setup_started = Instant::now();
-    let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent) {
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("sha256_chain:setup_started").entered();
+    let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS))) {
         Ok(prepared) => prepared,
         Err(
             error @ (Sha256ConstraintError::Profile(_) | Sha256ConstraintError::PrimeProfile(_)),
@@ -210,8 +199,9 @@ fn bench_shape<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().expect("validated Ligerito"), prepared.security().ood));
     let (pc, vc) = sha256_chain_configs(&prepared).expect("valid Ligerito config");
-    let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "sha256_chain:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
     let compressions = prepared.instances();
     let message_bytes = 64 * compressions;
     let live_source_cells = 1 + SHA256_CHAIN_F_INSTANCE_BITS * compressions;
@@ -247,7 +237,7 @@ fn bench_shape<P: IopSecurityProfile>(
     let warm = run_once(&make_blocks(compressions, shape_seed), &prepared, &pc, &vc);
     println!(
         "  opening layout: direct product opening on the chained map | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-        opening.t, opening.s, warm.forests, opening.s
+        opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
     );
     black_box(warm);
 
@@ -285,6 +275,7 @@ fn bench_shape<P: IopSecurityProfile>(
         bench: "sha256_chain",
         shape: slug,
         extra: vec![
+            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
             ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("message_bytes".into(), message_bytes.to_string()),
@@ -312,11 +303,15 @@ fn bench_shape<P: IopSecurityProfile>(
 }
 
 fn main() {
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 3);
     let root_seed = common::seed(None, 0x4632_5a5f_4348_4149);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
+
+    let shapes = shapes();
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     println!(
         "SHA-256 chain: H_{{i+1}} = Compress(H_i, M_i) from the IV; source [1|block₀,hints₀|block₁,hints₁|…], chained map + direct product opening + virtual F2Z"
@@ -329,7 +324,7 @@ fn main() {
         common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
 
-    for exponent in shapes() {
+    for exponent in shapes {
         flock_core::scratch::clear();
         common::with_profile!(profile, bench_shape(exponent, reps, root_seed, threads));
     }

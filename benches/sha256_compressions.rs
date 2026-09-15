@@ -39,9 +39,8 @@
 //! `Limber114` profile is MultiSwap-only and is rejected here).
 //!
 //! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
-//! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` together with
-//! `OBLONG_PROFILE_INTERVALS=1` to emit one canonical `zkperf.trace/v1` run per
-//! warm-up/sample, including observed nested profiler intervals.
+//! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` to emit one canonical
+//! `zkperf.trace/v1` run per warm-up/sample, including observed nested spans.
 //!
 //! Enable `bench-peak-memory` to measure peak live Rust heap during witness
 //! generation, commitment, and proving. Each run resets the peak; each shape
@@ -49,6 +48,8 @@
 //! also instruments timed runs. Without the feature, memory fields are `na`.
 
 pub(crate) mod common;
+use clap::builder::TypedValueParser;
+use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 #[cfg(feature = "bench-peak-memory")]
 #[global_allocator]
@@ -62,16 +63,16 @@ const MEMORY_TRACKING: &str = if cfg!(feature = "bench-peak-memory") {
 
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::File,
     hint::black_box,
     io::{BufWriter, Write},
-    path::Path,
+    path::PathBuf,
     process::Command,
-    time::Instant,
 };
 
 use f2z::{
     f2map::VirtualMap,
+    observability::Interval,
     piop::spartan::{
         IopSecurityProfile, PreparedSha256CompressionBatch, PrimePolicy,
         SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS, SHA256_DEFAULT_INNER_PREFIX_VARS,
@@ -85,7 +86,6 @@ use f2z::{
         verify_sha256_compressions_with_config,
     },
     transcript::Blake3Transcript,
-    utils::prof::ProfileInterval,
 };
 use serde_json::{Value, json};
 
@@ -100,8 +100,8 @@ struct RepTiming {
     commit_ms: f64,
     prove_ms: f64,
     verify_ms: f64,
-    prove_phases: Vec<(&'static str, f64)>,
-    verify_phases: Vec<(&'static str, f64)>,
+    prove_phases: Vec<(String, f64)>,
+    verify_phases: Vec<(String, f64)>,
     spartan_bytes: usize,
     f2z_bytes: usize,
     forests: usize,
@@ -174,6 +174,7 @@ impl BenchShape {
                 prepare_sha256_compression_batch_for_product_t_fixed98(14, t)
             }
         }
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
     }
 }
 
@@ -194,7 +195,7 @@ impl Trial {
 }
 
 struct TraceWriter {
-    output: BufWriter<File>,
+    output: JsonlWriter<BufWriter<File>>,
     git_rev: String,
     git_dirty: bool,
     build_profile: String,
@@ -203,38 +204,37 @@ struct TraceWriter {
 }
 
 impl TraceWriter {
-    fn from_env(threads: usize) -> Option<Self> {
-        let path = std::env::var_os("F2Z_SHA_TRACE_PATH")?;
-        assert!(
-            std::env::var_os("OBLONG_PROFILE_INTERVALS").is_some(),
-            "F2Z_SHA_TRACE_PATH requires OBLONG_PROFILE_INTERVALS=1"
-        );
-        let path = Path::new(&path);
+    fn new(env: &Env, threads: usize) -> Option<Self> {
+        let path = env.trace_path.as_deref()?;
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            fs::create_dir_all(parent).expect("create SHA trace directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create SHA trace directory");
         }
-        let output = BufWriter::new(File::create(path).expect("create SHA trace JSONL"));
-        let git_rev = std::env::var("F2Z_SHA_GIT_REV").unwrap_or_else(|_| {
-            command_output("git", &["rev-parse", "--short", "HEAD"], "unknown")
-        });
+        let output = BenchmarkOutput::new("")
+            .jsonl(path, FileMode::Replace)
+            .expect("create SHA trace JSONL");
+        let git_rev = env
+            .git_rev
+            .clone()
+            .unwrap_or_else(|| command_output("git", &["rev-parse", "--short", "HEAD"], "unknown"));
         let git_dirty = Command::new("git")
             .args(["status", "--porcelain", "--untracked-files=no"])
             .output()
             .map_or(true, |output| {
                 !output.status.success() || !output.stdout.is_empty()
             });
-        let cpu = std::env::var("F2Z_SHA_CPU").unwrap_or_else(|_| {
+        let cpu = env.cpu.clone().unwrap_or_else(|| {
             command_output(
                 "sysctl",
                 &["-n", "machdep.cpu.brand_string"],
                 "Apple Silicon",
             )
         });
-        let build_profile =
-            std::env::var("F2Z_SHA_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
+        let build_profile = env.build_profile.clone();
         Some(Self {
             output,
             git_rev,
@@ -252,18 +252,18 @@ impl TraceWriter {
         prepared: &PreparedSha256CompressionBatch,
         inner_prefix_vars: usize,
         trial: Trial,
-        intervals: &[ProfileInterval],
+        intervals: &[Interval],
     ) {
         let roots = intervals
             .iter()
-            .filter(|interval| interval.parent_order.is_none())
+            .filter(|interval| interval.parent.is_none())
             .collect::<Vec<_>>();
         assert_eq!(
             roots.len(),
             1,
             "a traced benchmark run has exactly one root"
         );
-        assert_eq!(roots[0].label, "sha256-trace:verified_trial");
+        assert_eq!(roots[0].label(), "sha256-trace:verified_trial");
 
         let exponent = shape.exponent();
         let compressions = prepared.instances();
@@ -281,7 +281,7 @@ impl TraceWriter {
             self.git_rev, self.threads, self.build_profile,
         );
         let clock_id = format!("mono-process-{}-{run_id}", std::process::id());
-        let root_span_id = span_id(roots[0].order);
+        let root_span_id = span_id(roots[0].id);
         let run = json!({
             "schema": "zkperf.trace/v1",
             "record": "run",
@@ -314,7 +314,7 @@ impl TraceWriter {
                 "id": clock_id,
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "std::time::Instant",
+                "source": "Perfetto SDK",
             },
             "status": "ok",
             "trace_complete": true,
@@ -362,6 +362,7 @@ impl TraceWriter {
                     "terminal_grinding_bits": security.terminal_grinding_bits,
                     "forest_round_grinding_bits": security.forest_round_grinding_bits,
                     "ligerito_target_bits": security.ligerito_target_bits,
+                    "ligerito": common::ligerito_report(prepared.ligerito_configuration().unwrap(), security.ood),
                 },
                 "recursion": {"max_depth": 0, "instance_count": 1},
                 "repetition": {"count": 1},
@@ -384,26 +385,25 @@ impl TraceWriter {
                 "f2z_quad": env_setting("F2Z_QUAD", "default:off"),
             },
         });
-        serde_json::to_writer(&mut self.output, &run).expect("write SHA trace run");
-        writeln!(self.output).expect("terminate SHA trace run");
+        self.output.write(&run).expect("write SHA trace run");
 
         let by_order = intervals
             .iter()
-            .map(|interval| (interval.order, interval))
+            .map(|interval| (interval.id, interval))
             .collect::<HashMap<_, _>>();
         let mut totals = HashMap::<(Option<u64>, &'static str), usize>::new();
         for interval in intervals {
             *totals
-                .entry((interval.parent_order, interval.label))
+                .entry((interval.parent, interval.label()))
                 .or_default() += 1;
         }
         let mut seen = HashMap::<(Option<u64>, &'static str), usize>::new();
         for interval in intervals {
-            let key = (interval.parent_order, interval.label);
+            let key = (interval.parent, interval.label());
             let occurrence_index = seen.entry(key).or_default();
             let occurrence_count = totals[&key];
             let descriptor = describe_span(interval, &by_order);
-            let coordinate = if interval.label.starts_with("spartan:round_grinding_") {
+            let coordinate = if interval.label().starts_with("spartan:round_grinding_") {
                 json!({
                     "round_index": *occurrence_index,
                     "round_count": occurrence_count,
@@ -433,8 +433,8 @@ impl TraceWriter {
                 "schema": "zkperf.trace/v1",
                 "record": "span",
                 "run_id": run_id,
-                "span_id": span_id(interval.order),
-                "parent_span_id": interval.parent_order.map(span_id),
+                "span_id": span_id(interval.id),
+                "parent_span_id": interval.parent.map(span_id),
                 "operation": descriptor.operation,
                 "name": descriptor.name,
                 "primary_phase": descriptor.primary_phase,
@@ -446,8 +446,7 @@ impl TraceWriter {
                 "coordinate": coordinate,
                 "attributes": attributes,
             });
-            serde_json::to_writer(&mut self.output, &span).expect("write SHA trace span");
-            writeln!(self.output).expect("terminate SHA trace span");
+            self.output.write(&span).expect("write SHA trace span");
         }
         self.output.flush().expect("flush SHA trace JSONL");
     }
@@ -465,21 +464,18 @@ struct SpanDescriptor {
     math_latex: Vec<&'static str>,
 }
 
-fn describe_span(
-    interval: &ProfileInterval,
-    by_order: &HashMap<u64, &ProfileInterval>,
-) -> SpanDescriptor {
+fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> SpanDescriptor {
     let mut labels = Vec::new();
     let mut cursor = Some(interval);
     while let Some(current) = cursor {
-        labels.push(current.label);
+        labels.push(current.label());
         cursor = current
-            .parent_order
+            .parent
             .and_then(|order| by_order.get(&order).copied());
     }
     let under = |label: &str| labels.iter().any(|candidate| *candidate == label);
     let has_fragment = |fragment: &str| labels.iter().any(|label| label.contains(fragment));
-    let root = interval.parent_order.is_none();
+    let root = interval.parent.is_none();
     let verifying = under("sha256-trace:verification");
     let witness = under("sha256-trace:witness_generation");
     let committing = under("sha256-trace:commit");
@@ -550,8 +546,8 @@ fn describe_span(
         }
     }
 
-    let (name, short_name) = span_names(interval.label);
-    let scope_kind = match interval.label {
+    let (name, short_name) = span_names(interval.label());
+    let scope_kind = match interval.label() {
         "sha256-trace:verified_trial" => "scope",
         "sha256-trace:end_to_end_prove"
         | "sha256-trace:witness_generation"
@@ -574,7 +570,7 @@ fn describe_span(
         "spartan:round_grinding_prove" | "spartan:round_grinding_verify" => "round",
         _ => "procedure",
     };
-    let scope_tag = match interval.label {
+    let scope_tag = match interval.label() {
         "sha256-trace:verified_trial" => Some("end-to-end"),
         "sha256-trace:end_to_end_prove" => Some("proving"),
         "sha256-trace:witness_generation" => Some("witness-generation"),
@@ -587,7 +583,7 @@ fn describe_span(
         _ => None,
     };
     let primary_sequence = matches!(
-        interval.label,
+        interval.label(),
         "sha256-trace:witness_generation"
             | "sha256-trace:statement_materialization"
             | "sha256-trace:commit"
@@ -595,7 +591,7 @@ fn describe_span(
             | "sha256-trace:verification"
     );
     SpanDescriptor {
-        operation: operation_name(interval.label),
+        operation: operation_name(interval.label()),
         name,
         short_name,
         primary_phase,
@@ -603,7 +599,7 @@ fn describe_span(
         scope_kind,
         scope_tag,
         primary_sequence,
-        math_latex: span_math(interval.label),
+        math_latex: span_math(interval.label()),
     }
 }
 
@@ -793,74 +789,115 @@ fn make_inputs(compressions: usize, seed: u64) -> Vec<Sha256CompressionInput> {
         .collect()
 }
 
-fn parse_exponent_list(value: &str, variable: &str) -> Vec<usize> {
-    let exponents = value
-        .split([',', ' '])
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            part.parse::<usize>()
-                .unwrap_or_else(|_| panic!("{variable} contains non-integer exponents"))
-        })
-        .collect::<Vec<_>>();
-    assert!(!exponents.is_empty(), "{variable} must not be empty");
-    exponents
+#[derive(clap::Parser)]
+pub(crate) struct Env {
+    #[arg(long, env = "F2Z_SHA_PRODUCT_TS", value_parser = common::cli::list::<usize>
+        .try_map(|values| {
+            if !cfg!(feature = "bench-internals") || values.iter().all(|t| (7..=28).contains(t)) {
+                Ok(values)
+            } else {
+                Err("expected product t in 7..=28")
+            }
+        }))]
+    #[cfg_attr(feature = "bench-internals", arg(conflicts_with = "assignment_rows"))]
+    product_ts: Option<common::cli::List<usize>>,
+    #[arg(long, env = "F2Z_SHA_MNUMROWS_LOG2S", value_parser = common::cli::list::<usize>
+        .try_map(|values| {
+            if values.iter().all(|n| (18..=30).contains(n)) { Ok(values) } else { Err("expected row exponents in 18..=30") }
+        }))]
+    assignment_rows: Option<common::cli::List<usize>>,
+    #[arg(long, env = "F2Z_SHA_INNER_PREFIX_VARS", default_value_t = SHA256_DEFAULT_INNER_PREFIX_VARS,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(..=SHA256_INNER_PREFIX_MAX_VARS as u64))]
+    inner_prefix_vars: usize,
+    #[arg(long, env = "F2Z_SHA_OPENING_T", value_parser = |value: &str| value.trim().parse::<usize>())]
+    opening_t: Option<usize>,
+    #[arg(long, env = "F2Z_SHA_OPENING_LAYOUT")]
+    opening_layout: Option<String>,
+    #[arg(long, env = "F2Z_SHA_TRACE_PATH")]
+    trace_path: Option<PathBuf>,
+    #[arg(long, env = "F2Z_SHA_RESULT_PATH")]
+    pub(crate) result_path: Option<PathBuf>,
+    #[arg(long, env = "F2Z_SHA_GIT_REV")]
+    git_rev: Option<String>,
+    #[arg(long, env = "F2Z_SHA_CPU")]
+    cpu: Option<String>,
+    #[arg(long, env = "F2Z_SHA_BUILD_PROFILE", default_value = "bench")]
+    build_profile: String,
+    #[arg(skip)]
+    reps: usize,
+    #[arg(skip)]
+    root_seed: u64,
+    #[arg(skip)]
+    shapes: Vec<BenchShape>,
+    #[arg(skip)]
+    selected: Option<common::SecurityProfile>,
+    #[arg(skip)]
+    pub(crate) default_product_sweep: bool,
 }
 
-fn shapes() -> Vec<BenchShape> {
-    #[cfg(feature = "bench-internals")]
-    if let Ok(value) = std::env::var("F2Z_SHA_PRODUCT_TS") {
+impl Env {
+    pub(crate) fn from_environment(product_preset: bool) -> Self {
+        let mut env: Self = common::cli::environment();
+        env.default_product_sweep = product_preset && env.product_ts.is_none();
+        if env.default_product_sweep {
+            env.product_ts = Some((7..=27).collect());
+        }
+        #[cfg(feature = "bench-internals")]
         assert!(
-            std::env::var_os("F2Z_BENCH_SHAPES").is_none()
-                && std::env::var_os("F2Z_SHA_LOG2S").is_none()
-                && std::env::var_os("F2Z_SHA_MNUMROWS_LOG2S").is_none(),
+            env.product_ts.is_none() || env.assignment_rows.is_none(),
             "F2Z_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
         );
-        return parse_exponent_list(&value, "F2Z_SHA_PRODUCT_TS")
-            .into_iter()
-            .map(|t| {
-                assert!((7..=28).contains(&t), "product t must be in 7..=28");
-                BenchShape::ProductLayout(t)
-            })
-            .collect();
-    }
-
-    if let Ok(value) = std::env::var("F2Z_SHA_MNUMROWS_LOG2S") {
-        assert!(
-            std::env::var_os("F2Z_BENCH_SHAPES").is_none()
-                && std::env::var_os("F2Z_SHA_LOG2S").is_none(),
-            "F2Z_SHA_MNUMROWS_LOG2S cannot be combined with compression-count shape variables"
-        );
-        return parse_exponent_list(&value, "F2Z_SHA_MNUMROWS_LOG2S")
-            .into_iter()
-            .map(|exponent| {
+        env.reps = if product_preset && std::env::var_os("F2Z_BENCH_REPS").is_none() {
+            // The product entrypoint historically supplies canonical reps=21,
+            // including the normal conflict check against its legacy alias.
+            if let Some(alias) = common::cli::env::<String>("F2Z_SHA_REPS") {
+                if alias != "21" {
+                    clap::Error::raw(
+                        clap::error::ErrorKind::ArgumentConflict,
+                        "F2Z_BENCH_REPS=21 and deprecated alias F2Z_SHA_REPS disagree",
+                    )
+                    .exit();
+                }
+            }
+            21
+        } else {
+            common::reps(Some("F2Z_SHA_REPS"), 3)
+        };
+        env.root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
+        env.selected = common::security_profile(PrimePolicy::SingleDerived);
+        let compressions = common::shape_values(Some("F2Z_SHA_LOG2S"), clap::builder::RangedU64ValueParser::<usize>::new()
+            .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64));
+        env.shapes = match (&env.product_ts, &env.assignment_rows) {
+            #[cfg(feature = "bench-internals")]
+            (Some(values), None) => {
                 assert!(
-                    (18..=30).contains(&exponent),
-                    "SHA-256 MnumRows exponents must be in 18..=30"
+                    compressions.is_none(),
+                    "F2Z_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
                 );
-                BenchShape::AssignmentRows(exponent)
-            })
-            .collect();
+                values
+                    .iter()
+                    .copied()
+                    .map(BenchShape::ProductLayout)
+                    .collect()
+            }
+            (_, Some(values)) => {
+                assert!(
+                    compressions.is_none(),
+                    "F2Z_SHA_MNUMROWS_LOG2S cannot be combined with compression-count shape variables"
+                );
+                values
+                    .iter()
+                    .copied()
+                    .map(BenchShape::AssignmentRows)
+                    .collect()
+            }
+            _ => {
+                let values = compressions.unwrap_or_else(|| (7..=16).collect());
+                values.into_iter().map(BenchShape::Compressions).collect()
+            }
+        };
+        env
     }
-
-    let shapes = common::shapes(Some("F2Z_SHA_LOG2S")).unwrap_or_else(|| {
-        "7 8 9 10 11 12 13 14 15 16"
-            .split(' ')
-            .map(str::to_owned)
-            .collect()
-    });
-    shapes
-        .iter()
-        .map(|part| {
-            let exponent = part
-                .parse::<usize>()
-                .expect("F2Z_BENCH_SHAPES contains integer exponents");
-            assert!(
-                (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-                "SHA-256 runtime-prime protocol supports exponents 4 through 16"
-            );
-            BenchShape::Compressions(exponent)
-        })
-        .collect()
 }
 
 fn fmt_ms(milliseconds: f64) -> String {
@@ -886,23 +923,22 @@ fn run_once(
     inner_prefix_vars: usize,
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
-) -> (RepTiming, Vec<ProfileInterval>) {
-    let _ = f2z::utils::prof::take_totals();
-    let _ = f2z::utils::prof::take_intervals();
+) -> (RepTiming, Vec<Interval>) {
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start SHA trial");
     #[cfg(feature = "bench-peak-memory")]
     common::peak_memory::reset_peak();
-    let verified_trial_scope = f2z::utils::prof::scope("sha256-trace:verified_trial");
+    let verified_trial_scope = tracing::info_span!("sha256-trace:verified_trial").entered();
 
     // Witness synthesis and public-statement materialization are excluded
     // from the prover boundary (docs/bench-schema.md).
-    let started = Instant::now();
+    let witness_scope = tracing::info_span!("sha256-trace:witness_and_statement").entered();
     let witness = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:witness_generation");
+        let _scope = tracing::info_span!("sha256-trace:witness_generation").entered();
         generate_sha256_compression_witnesses(prepared, inputs)
             .expect("SHA witness synthesis succeeds")
     };
     let statements = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:statement_materialization");
+        let _scope = tracing::info_span!("sha256-trace:statement_materialization").entered();
         let statements = inputs
             .iter()
             .zip(witness.outputs())
@@ -911,23 +947,19 @@ fn run_once(
         black_box(&statements);
         statements
     };
-    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
-    let _ = f2z::utils::prof::take_totals();
+    drop(witness_scope);
 
     // End-to-end prove: Step 1 commitment plus the runtime-prime proof.
-    let prover_scope = f2z::utils::prof::scope("sha256-trace:end_to_end_prove");
-    let prove_started = Instant::now();
-    let started = Instant::now();
+    let prover_scope = tracing::info_span!("sha256-trace:end_to_end_prove").entered();
     let hint = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:commit");
+        let _scope = tracing::info_span!("sha256-trace:commit").entered();
         commit_sha256_compression_witness_with_config(prepared, &witness, pc)
             .expect("SHA source commitment succeeds")
     };
-    let commit_ms = started.elapsed().as_secs_f64() * 1e3;
 
     let mut prover_transcript = Blake3Transcript::new();
     let proof = {
-        let _scope = f2z::utils::prof::scope("sha256-trace:proof");
+        let _scope = tracing::info_span!("sha256-trace:proof").entered();
         prove_sha256_compressions_with_prefix_vars_and_config(
             &mut prover_transcript,
             prepared,
@@ -947,19 +979,16 @@ fn run_once(
         );
     }
     drop(prover_scope);
-    let prove_ms = prove_started.elapsed().as_secs_f64() * 1e3;
     // Capture before verifier allocations and proof serialization. This
     // includes the live input/setup baseline and witness-generation peak.
     #[cfg(feature = "bench-peak-memory")]
     let peak_heap_bytes = Some(common::peak_memory::peak_bytes());
     #[cfg(not(feature = "bench-peak-memory"))]
     let peak_heap_bytes = None;
-    let prove_phases = f2z::utils::prof::take_totals();
 
     let mut verifier_transcript = Blake3Transcript::new();
-    let started = Instant::now();
     {
-        let _scope = f2z::utils::prof::scope("sha256-trace:verification");
+        let _scope = tracing::info_span!("sha256-trace:verification").entered();
         verify_sha256_compressions_with_config(
             &mut verifier_transcript,
             prepared,
@@ -970,10 +999,14 @@ fn run_once(
         )
         .expect("SHA proof verifies");
     }
-    let verify_ms = started.elapsed().as_secs_f64() * 1e3;
     drop(verified_trial_scope);
-    let verify_phases = f2z::utils::prof::take_totals();
-    let intervals = f2z::utils::prof::take_intervals();
+    let intervals = recording.intervals().expect("query SHA trial");
+    let witness_ms = common::span_ms(&intervals, "sha256-trace:witness_and_statement");
+    let commit_ms = common::span_ms(&intervals, "sha256-trace:commit");
+    let prove_ms = common::span_ms(&intervals, "sha256-trace:end_to_end_prove");
+    let verify_ms = common::span_ms(&intervals, "sha256-trace:verification");
+    let prove_phases = f2z::observability::phase_totals(&intervals, "sha256-trace:end_to_end_prove").unwrap();
+    let verify_phases = f2z::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
     black_box(&proof);
 
     let f2z_bytes = proof.f2z().to_bytes().len();
@@ -1020,7 +1053,8 @@ fn bench_shape<P: IopSecurityProfile>(
             BenchShape::ProductLayout(_) => 0x7072_6f64_7563_745f,
         };
 
-    let setup_started = Instant::now();
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("sha256_compressions:setup_started").entered();
     let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
         Err(
@@ -1037,7 +1071,25 @@ fn bench_shape<P: IopSecurityProfile>(
         Err(error) => panic!("prepare failed: {error}"),
     };
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
-    let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+    let setup_ms = {
+        drop(setup_started);
+        f2z::observability::duration(
+            &setup_started_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "sha256_compressions:setup_started",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
+    println!(
+        "LIGERITO_CONFIG {}",
+        common::ligerito_report(
+            prepared.ligerito_configuration().unwrap(),
+            prepared.security().ood
+        )
+    );
     let compressions = prepared.instances();
     let live_source_cells = 1 + SHA256_F_INSTANCE_BITS * compressions;
     let live_assignment_cells = 1 + SHA256_H_INSTANCE_BITS * compressions;
@@ -1096,8 +1148,8 @@ fn bench_shape<P: IopSecurityProfile>(
         };
         println!(
             "  product opening: (t,s)=({},{}) | layout={} | q={modulus}",
-            product.t,
-            product.s,
+            product.row_vars,
+            product.col_vars,
             prepared.product_layout_name().unwrap_or("none"),
         );
     }
@@ -1128,7 +1180,7 @@ fn bench_shape<P: IopSecurityProfile>(
         };
         println!(
             "  opening layout: {kind} | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-            opening.t, opening.s, warm.forests, opening.s
+            opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
         );
     }
     black_box(warm);
@@ -1163,10 +1215,10 @@ fn bench_shape<P: IopSecurityProfile>(
             sample + 1,
             prepared
                 .product_assignment_params()
-                .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+                .map_or_else(|| "na".to_owned(), |params| params.row_vars.to_string()),
             prepared
                 .product_assignment_params()
-                .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
+                .map_or_else(|| "na".to_owned(), |params| params.col_vars.to_string()),
             timing.witness_ms,
             timing.commit_ms,
             timing.prove_ms,
@@ -1206,6 +1258,10 @@ fn bench_shape<P: IopSecurityProfile>(
         bench: "sha256",
         shape: shape.slug(),
         extra: vec![
+            common::ligerito_identity(
+                prepared.ligerito_configuration().unwrap(),
+                prepared.security().ood,
+            ),
             ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("mnum_rows".into(), assignment_cells.to_string()),
@@ -1224,13 +1280,13 @@ fn bench_shape<P: IopSecurityProfile>(
                 "product_t".into(),
                 prepared
                     .product_assignment_params()
-                    .map_or_else(|| "na".to_owned(), |params| params.t.to_string()),
+                    .map_or_else(|| "na".to_owned(), |params| params.row_vars.to_string()),
             ),
             (
                 "product_s".into(),
                 prepared
                     .product_assignment_params()
-                    .map_or_else(|| "na".to_owned(), |params| params.s.to_string()),
+                    .map_or_else(|| "na".to_owned(), |params| params.col_vars.to_string()),
             ),
             (
                 "product_layout".into(),
@@ -1260,55 +1316,54 @@ fn bench_shape<P: IopSecurityProfile>(
 }
 
 pub(crate) fn main() {
+    common::cli::EnvironmentCli::parse();
+    run(Env::from_environment(false));
+}
+
+pub(crate) fn run(env: Env) {
+    let reps = env.reps;
+    let root_seed = env.root_seed;
+    let inner_prefix_vars = env.inner_prefix_vars;
+    let selected = env.selected;
+    let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
+    let layout = env
+        .opening_t
+        .map_or(Sha256OpeningLayout::Default, |row_vars| {
+            let choice = env.opening_layout.as_deref().unwrap_or("inner");
+            let choice = common::cli::value(
+                "F2Z_SHA_OPENING_LAYOUT",
+                choice,
+                clap::builder::PossibleValuesParser::new(["inner", "product"]),
+            );
+            if choice == "product" {
+                Sha256OpeningLayout::ProductTransposed { row_vars }
+            } else {
+                Sha256OpeningLayout::InnerSumcheck { row_vars }
+            }
+        });
+    f2z::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
-    let mut trace_writer = TraceWriter::from_env(threads);
-    let mut result_writer = std::env::var_os("F2Z_SHA_RESULT_PATH").map(|path| {
-        let path = Path::new(&path);
+    let mut trace_writer = TraceWriter::new(&env, threads);
+    let mut result_writer = env.result_path.as_deref().map(|path| {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            fs::create_dir_all(parent).expect("create SHA result directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create SHA result directory");
         }
-        BufWriter::new(File::create(path).expect("create SHA result output"))
+        BenchmarkOutput::new("")
+            .buffered(path, FileMode::Replace)
+            .expect("create SHA result output")
     });
-    let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
-    let root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
-    let inner_prefix_vars = std::env::var("F2Z_SHA_INNER_PREFIX_VARS").map_or(
-        SHA256_DEFAULT_INNER_PREFIX_VARS,
-        |value| {
-            value
-                .parse::<usize>()
-                .expect("F2Z_SHA_INNER_PREFIX_VARS must be an integer in 0..=4")
-        },
-    );
-    assert!(
-        inner_prefix_vars <= SHA256_INNER_PREFIX_MAX_VARS,
-        "F2Z_SHA_INNER_PREFIX_VARS must be in 0..={SHA256_INNER_PREFIX_MAX_VARS}"
-    );
-
-    let layout = std::env::var("F2Z_SHA_OPENING_T").map_or(Sha256OpeningLayout::Default, |value| {
-        let row_vars = value
-            .trim()
-            .parse::<usize>()
-            .expect("F2Z_SHA_OPENING_T must be an integer: the F2Z row variables of the opening");
-        match std::env::var("F2Z_SHA_OPENING_LAYOUT").as_deref() {
-            Ok("product") => Sha256OpeningLayout::ProductTransposed { row_vars },
-            Ok("inner") | Err(_) => Sha256OpeningLayout::InnerSumcheck { row_vars },
-            Ok(other) => panic!("F2Z_SHA_OPENING_LAYOUT must be `inner` or `product`, got {other}"),
-        }
-    });
-
-    let selected = common::security_profile(PrimePolicy::SingleDerived);
-    let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
-
     println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual F2Z");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
         "repetitions: {reps}; warmups: 1; inner prefix K={inner_prefix_vars}; root seed: {root_seed:#018x}"
     );
-    if std::env::var_os("F2Z_SHA_PRODUCT_TS").is_some() {
+    if env.product_ts.is_some() {
         println!("security profile: sha-fixed98-lambda100 (fixed prime; product sweep)");
     } else {
         println!(
@@ -1325,11 +1380,11 @@ pub(crate) fn main() {
         ),
         Sha256OpeningLayout::Default => {}
     }
-    if let Some(path) = std::env::var_os("F2Z_SHA_TRACE_PATH") {
-        println!("canonical interval trace: {}", Path::new(&path).display());
+    if let Some(path) = &env.trace_path {
+        println!("canonical interval trace: {}", path.display());
     }
 
-    for shape in shapes() {
+    for shape in env.shapes {
         flock_core::scratch::clear();
         common::with_profile!(
             profile,
@@ -1346,4 +1401,139 @@ pub(crate) fn main() {
         );
     }
     flock_core::scratch::clear();
+}
+
+#[cfg(all(test, feature = "bench-internals"))]
+mod cli_preset_tests {
+    use super::*;
+
+    #[test]
+    fn configuration_probe() {
+        let Ok(mode) = std::env::var("F2Z_PRESET_TEST_MODE") else {
+            return;
+        };
+        let before = [
+            std::env::var_os("F2Z_BENCH_REPS"),
+            std::env::var_os("F2Z_SHA_PRODUCT_TS"),
+        ];
+        let config = Env::from_environment(mode == "product");
+        assert_eq!(
+            before,
+            [
+                std::env::var_os("F2Z_BENCH_REPS"),
+                std::env::var_os("F2Z_SHA_PRODUCT_TS")
+            ]
+        );
+        println!(
+            "PRESET_CONFIG {}",
+            json!({"reps":config.reps,"default":config.default_product_sweep,
+            "shapes":config.shapes.iter().map(|s| (s.mode(), s.exponent())).collect::<Vec<_>>()})
+        );
+    }
+
+    fn child(mode: &str, settings: &[(&str, &str)]) -> std::process::Output {
+        let test = concat!(module_path!(), "::configuration_probe");
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
+            .env_clear()
+            .env("F2Z_PRESET_TEST_MODE", mode)
+            .envs(settings.iter().copied())
+            .output()
+            .unwrap()
+    }
+
+    fn config(mode: &str, settings: &[(&str, &str)]) -> Value {
+        let out = child(mode, settings);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_str(
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .find_map(|s| s.strip_prefix("PRESET_CONFIG "))
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn product_defaults_overrides_and_legacy_repetitions() {
+        let default = config("product", &[]);
+        assert_eq!(default["reps"], 21);
+        assert_eq!(default["default"], true);
+        assert_eq!(
+            default["shapes"],
+            json!((7..=27).map(|t| ("product-ts", t)).collect::<Vec<_>>())
+        );
+        assert_eq!(config("product", &[("F2Z_SHA_REPS", "21")]), default);
+        let explicit = config(
+            "product",
+            &[
+                ("F2Z_SHA_PRODUCT_TS", "7, 28"),
+                ("F2Z_BENCH_REPS", "3"),
+                ("F2Z_SHA_REPS", "3"),
+            ],
+        );
+        assert_eq!(
+            explicit,
+            json!({"reps":3,"default":false,"shapes":[["product-ts",7],["product-ts",28]]})
+        );
+        for alias in ["3", "021"] {
+            let output = child("product", &[("F2Z_SHA_REPS", alias)]);
+            assert_eq!(output.status.code(), Some(2));
+            assert!(String::from_utf8_lossy(&output.stderr).contains("disagree"));
+        }
+        assert_eq!(
+            child("product", &[("F2Z_BENCH_REPS", "3"), ("F2Z_SHA_REPS", "4")])
+                .status
+                .code(),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn compression_assignment_and_product_shapes_keep_distinct_domains() {
+        let ordinary = config("ordinary", &[]);
+        assert_eq!(ordinary["reps"], 3);
+        assert_eq!(ordinary["default"], false);
+        assert_eq!(
+            ordinary["shapes"],
+            json!((7..=16).map(|n| ("compressions", n)).collect::<Vec<_>>())
+        );
+        assert_eq!(
+            config("ordinary", &[("F2Z_SHA_LOG2S", "4 16")])["shapes"],
+            json!([["compressions", 4], ["compressions", 16]])
+        );
+        assert_eq!(
+            config("ordinary", &[("F2Z_SHA_MNUMROWS_LOG2S", "18 30")])["shapes"],
+            json!([["mnumrows", 18], ["mnumrows", 30]])
+        );
+        for (mode, settings) in [
+            ("ordinary", vec![("F2Z_BENCH_SHAPES", "3")]),
+            ("ordinary", vec![("F2Z_SHA_MNUMROWS_LOG2S", "17")]),
+            ("ordinary", vec![("F2Z_SHA_MNUMROWS_LOG2S", "31")]),
+            ("product", vec![("F2Z_SHA_PRODUCT_TS", "6")]),
+            ("product", vec![("F2Z_SHA_PRODUCT_TS", "29")]),
+            ("product", vec![("F2Z_BENCH_SHAPES", "14")]),
+            ("product", vec![("F2Z_SHA_MNUMROWS_LOG2S", "24")]),
+            (
+                "ordinary",
+                vec![
+                    ("F2Z_SHA_PRODUCT_TS", "13"),
+                    ("F2Z_SHA_MNUMROWS_LOG2S", "24"),
+                ],
+            ),
+            (
+                "ordinary",
+                vec![("F2Z_BENCH_SHAPES", "14"), ("F2Z_SHA_MNUMROWS_LOG2S", "24")],
+            ),
+        ] {
+            assert!(
+                !child(mode, &settings).status.success(),
+                "accepted {mode}: {settings:?}"
+            );
+        }
+    }
 }

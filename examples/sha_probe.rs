@@ -1,15 +1,14 @@
-//! Full `utils::prof` scope tree of ONE SHA-256 batch prove (the product
+//! Full Perfetto scope tree of ONE SHA-256 batch prove (the product
 //! layout the `sha256_compressions` bench measures) at a chosen exponent:
 //! a step-5.3 microscope for the virtual ring-switch batching kernels. One
 //! excluded warm-up prove, then `PROBE_REPS` profiled proves, each dumped
 //! separately. Same inputs, thread pool, and configs as the bench.
 //!
 //! ```text
-//! OBLONG_PROFILE=1 PROBE_EXP=14 RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --example sha_probe --features unchecked
+//! PROBE_EXP=14 RUSTFLAGS="-C target-cpu=native" \
+//!   cargo run --release --example sha_probe --features unchecked,span-metrics
 //! ```
 
-use std::time::Instant;
 
 use f2z::{
     f2map::VirtualMap,
@@ -51,6 +50,7 @@ fn make_inputs(compressions: usize, seed: u64) -> Vec<Sha256CompressionInput> {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let exponent: usize = std::env::var("PROBE_EXP")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -61,7 +61,7 @@ fn main() {
         .unwrap_or(2);
     let verify = std::env::var("PROBE_VERIFY").map_or(true, |v| v != "0");
     let _ = flock_core::init_perf_thread_pool();
-    f2z::utils::prof::force_enable();
+
 
     let prepared = prepare_sha256_compression_batch(exponent).expect("valid SHA relation");
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
@@ -80,6 +80,7 @@ fn main() {
 
     let shape_seed = 0x46325a5f53484132u64 ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     for rep in 0..=reps {
+        let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
         let seed = shape_seed ^ ((rep + 1) as u64).wrapping_mul(0xd6e8_feb8_6659_fd93);
         let inputs = make_inputs(compressions, seed);
         let witness = generate_sha256_compression_witnesses(&prepared, &inputs)
@@ -89,14 +90,17 @@ fn main() {
             .zip(witness.outputs())
             .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
             .collect::<Vec<_>>();
-        let _ = f2z::utils::prof::take_totals();
-        let started = Instant::now();
-        let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
-            .expect("SHA source commitment succeeds");
-        let commit_ms = started.elapsed().as_secs_f64() * 1e3;
+
+        let (hint, started) = f2z::observability::measure(
+            tracing::info_span!("sha_probe:hint"),
+            || commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
+            .expect("SHA source commitment succeeds"),
+        ).expect("measure completed operation");
+        let commit_ms = started.as_secs_f64() * 1e3;
         let mut transcript = Blake3Transcript::new();
-        let started = Instant::now();
-        let proof = prove_sha256_compressions_with_prefix_vars_and_config(
+        let (proof, started) = f2z::observability::measure(
+            tracing::info_span!("sha_probe:proof"),
+            || prove_sha256_compressions_with_prefix_vars_and_config(
             &mut transcript,
             &prepared,
             &statements,
@@ -105,8 +109,9 @@ fn main() {
             SHA256_DEFAULT_INNER_PREFIX_VARS,
             &pc,
         )
-        .expect("SHA proof succeeds");
-        let prove_ms = started.elapsed().as_secs_f64() * 1e3;
+        .expect("SHA proof succeeds"),
+        ).expect("measure completed operation");
+        let prove_ms = started.as_secs_f64() * 1e3;
         let label = if rep == 0 { "warmup".to_owned() } else { format!("rep {rep}") };
         let f2z_bytes = proof.f2z().to_bytes();
         println!(
@@ -115,14 +120,15 @@ fn main() {
             f2z_bytes.len(),
             blake3::hash(&f2z_bytes).to_hex(),
         );
-        f2z::utils::prof::dump_and_reset(&format!("sha 2^{exponent} {label}"));
+        f2z::observability::write_profile(std::io::stderr().lock(), &format!("sha 2^{exponent} {label}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
         if verify && rep == reps {
             let mut vt = Blake3Transcript::new();
-            let started = Instant::now();
+            let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let started = tracing::info_span!("sha_probe:started").entered();
             verify_sha256_compressions_with_config(&mut vt, &prepared, &statements, &hint.commitment, &proof, &vc)
                 .expect("SHA proof verifies");
-            println!("verify {:.2} ms", started.elapsed().as_secs_f64() * 1e3);
-            let _ = f2z::utils::prof::take_totals();
+            println!("verify {:.2} ms", { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3);
+
         }
     }
 }

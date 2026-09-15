@@ -2,14 +2,13 @@
 //! pipeline), for hot-path diagnosis:
 //!
 //! ```text
-//! OBLONG_PROFILE=1 RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --features unchecked --example cm_probe -- [log2_gates]
+//! RUSTFLAGS="-C target-cpu=native" \
+//!   cargo run --release --features unchecked,span-metrics --example cm_probe -- [log2_gates]
 //! ```
 //!
-//! Prints `utils::prof`'s scope tree (stderr) once for the prove and once
+//! Prints Perfetto's scope tree (stderr) once for the prove and once
 //! for the verify, plus wall-clock totals and the proof size.
 
-use std::time::Instant;
 
 use f2z::piop::spartan::{
     CmAndWitness, SpartanF2zField, commit_cm_and_witness, prepare_cm_and_relation,
@@ -25,6 +24,7 @@ fn splitmix(x: u64) -> u64 {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let _ = flock_core::init_perf_thread_pool();
     let log2_gates: usize = std::env::args()
         .nth(1)
@@ -39,36 +39,41 @@ fn main() {
     })
     .unwrap();
     let layout = *witness.layout();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &config).unwrap();
+    let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let hint = commit_cm_and_witness(&layout, witness.f_bit_rows()).unwrap();
 
     // Warm-up (excluded), also the correctness check.
+    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture warmup");
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
     let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).unwrap();
     let mut vt = Blake3Transcript::new();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).unwrap();
-    f2z::utils::prof::dump_and_reset("cm_probe");
+    f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe warmup", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
     drop(proof);
 
+    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture prove");
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let started = Instant::now();
+    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("cm_probe:started").entered();
     let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).unwrap();
     eprintln!(
         "== PROVE 2^{log2_gates} gates: {:.2} ms ==",
-        started.elapsed().as_secs_f64() * 1e3
+        { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3
     );
-    f2z::utils::prof::dump_and_reset("cm_probe");
+    f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe prove", &profile.intervals().expect("prover intervals"), None).expect("write profile");
 
+    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture verify");
     let mut vt = Blake3Transcript::new();
-    let started = Instant::now();
+    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("cm_probe:started").entered();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).unwrap();
     eprintln!(
         "== VERIFY: {:.2} ms ==",
-        started.elapsed().as_secs_f64() * 1e3
+        { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3
     );
-    f2z::utils::prof::dump_and_reset("cm_probe");
+    f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe verify", &profile.intervals().expect("verifier intervals"), None).expect("write profile");
 
     eprintln!("proof: virtual F2Z {} B", proof.f2z().to_bytes().len());
     let digest = blake3::hash(&proof.f2z().to_bytes());

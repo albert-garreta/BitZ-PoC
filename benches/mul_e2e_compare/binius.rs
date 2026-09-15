@@ -1,7 +1,8 @@
-use super::{BABY_P, Corpus, Timing, TraceCapture, Workload, captured};
 #[cfg(test)]
 #[allow(unused_imports)]
 use super::edge_corpus;
+use super::trace_capture::TrialScopes;
+use super::{Corpus, Timing, Workload, captured};
 use binius_circuits::bignum::{self, BigUint};
 use binius_core::{constraint_system::ValueVec, word::Word};
 use binius_frontend::{Circuit, CircuitBuilder, Wire};
@@ -12,10 +13,11 @@ use binius_verifier::{
     config::StdChallenger,
     transcript::{ProverTranscript, VerifierTranscript},
 };
+use f2z::observability::Recording;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-enum Wires {
+pub(super) enum Wires {
     /// One 64-bit-or-narrower gate: operands, output, auxiliary value.
     Narrow {
         a: Wire,
@@ -56,32 +58,30 @@ impl Context {
     }
     pub(super) fn config(&self) -> Value {
         let piop = match self.corpus.workload {
-            Workload::U32 | Workload::BabyBear => "Binius64 native integer multiplication and bit constraints",
+            Workload::U32 => {
+                "Binius64 native multiplication with 32-bit inputs and low-32-bit result"
+            }
             Workload::U64 => "Binius64 native 64 x 64 -> 128 integer multiplication",
-            Workload::U128 => "Binius64 bignum 128 x 128 -> 256 multiplication (four native imul limb products with carry chains)",
+            Workload::U128 => {
+                "Binius64 bignum 128 x 128 -> 256 multiplication (four native imul limb products with carry chains)"
+            }
         };
-        json!({"piop":piop,"pcs":"ring switching/BaseFold","fri_query_target_bits":100,"log_inv_rate":log_inv_rate(),"fri_queries":self.verifier.fri_params().n_test_queries()})
+        let cs = self.circuit.constraint_system();
+        json!({"piop":piop,"pcs":"ring switching/BaseFold","fri_query_target_bits":100,
+            "security_scope":"fri-query-phase", "soundness_regime":"unique-decoding",
+            "log_inv_rate":self.verifier.fri_params().rs_code().log_inv_rate(),
+            "fri_queries":self.verifier.fri_params().n_test_queries(),
+            "word_constraints":{"and":cs.n_and_constraints(),"imul":cs.n_imul_constraints(),
+                "zero":cs.n_zero_constraints(),"bmul":cs.n_bmul_constraints()}})
     }
-    pub(super) fn run(&self, capture: &TraceCapture) -> Timing {
-        capture.begin();
-        let start = capture.now_ns();
-        let witness = self.populate(false).expect("Binius witness evaluation");
-        let wend = capture.now_ns();
-        let mut transcript = ProverTranscript::new(StdChallenger::default());
-        self.prover
-            .prove(&witness, &mut transcript)
-            .expect("Binius full proof");
-        let bytes = transcript.finalize();
-        let ready = capture.now_ns();
-        let vstart = capture.now_ns();
-        let mut vt = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
-        self.verifier
-            .verify(witness.public(), &mut vt)
-            .expect("Binius full verification");
-        vt.finalize().expect("consume full Binius proof");
-        let end = capture.now_ns();
-        let raw = capture.finish();
-        let mut t = Timing::new(start, wend, ready, vstart, end, bytes.len());
+    pub(super) fn run(&self) -> Timing {
+        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let proof_bytes = self.prove_and_verify();
+        let raw = recording.intervals().expect("query Perfetto trial");
+        let trial = TrialScopes::from_spans(&raw, "benchmark");
+        let wend = trial.witness.end_ns;
+        let ready = trial.witness_to_proof.end_ns;
+        let mut t = Timing::from_trial(&trial, proof_bytes);
         let pack = captured(&raw, "prepare_witness", wend, ready);
         t.add(
             "witness_packing",
@@ -96,6 +96,53 @@ impl Context {
         t.add("opening", "opening-proof", ring.start_ns, ready);
         t
     }
+
+    pub(super) fn prove_and_verify(&self) -> usize {
+        let trial = tracing::info_span!(
+            "Verified trial",
+            component = "benchmark.verified-trial",
+            scope_kind = "scope",
+            tag_end_to_end = true
+        )
+        .entered();
+        let proving = tracing::info_span!(
+            "Witness to proof",
+            component = "benchmark.witness-to-proof",
+            scope_kind = "scope"
+        )
+        .entered();
+        let witness_scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            scope_kind = "phase",
+            tag_witness_generation = true
+        )
+        .entered();
+        let witness = self.populate(false).expect("Binius witness evaluation");
+        drop(witness_scope);
+        let mut transcript = ProverTranscript::new(StdChallenger::default());
+        self.prover
+            .prove(&witness, &mut transcript)
+            .expect("Binius full proof");
+        let bytes = transcript.finalize();
+        drop(proving);
+        let verification = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            scope_kind = "phase",
+            tag_verification = true
+        )
+        .entered();
+        let mut vt = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
+        self.verifier
+            .verify(witness.inout(), &mut vt)
+            .expect("Binius full verification");
+        vt.finalize().expect("consume full Binius proof");
+        drop(verification);
+        drop(trial);
+        let proof_bytes = bytes.len();
+        proof_bytes
+    }
 }
 
 #[cfg(test)]
@@ -103,17 +150,72 @@ impl Context {
 mod tests {
     use super::*;
     #[test]
-    fn wrong_product_is_rejected() {
-        for workload in [
+    fn u32_mod32_constraints_and_bounds() {
+        let corpus = Corpus::from_inputs(
             Workload::U32,
-            Workload::BabyBear,
-            Workload::U64,
-            Workload::U128,
-        ] {
+            vec![
+                (0, 0),
+                (0, u64::from(u32::MAX)),
+                (1, u64::from(u32::MAX)),
+                (u64::from(u32::MAX), u64::from(u32::MAX)),
+                (1 << 31, 2),
+            ],
+        );
+        let (circuit, wires) = compile(&corpus);
+        let cs = circuit.constraint_system();
+        assert_eq!(cs.n_imul_constraints(), corpus.len());
+        // Current Binius emits one masked-product AND and linear range/equality
+        // checks per row; validate bounds below independently of these cost counts.
+        assert_eq!(cs.n_and_constraints(), corpus.len());
+        assert_eq!(cs.n_zero_constraints(), 3 * corpus.len());
+        assert_eq!(cs.n_bmul_constraints(), 0);
+        let valid = populate(&corpus, &circuit, &wires, false).unwrap();
+        cs.verify(valid.value_vec()).unwrap();
+        let Wires::Narrow { a, b, c, .. } = wires[0] else {
+            unreachable!()
+        };
+        // At 0*0=0, raising either operand to 2^32 still satisfies the
+        // multiplication. Only the input bound can reject these witnesses.
+        for (wire, value) in [(a, 1 << 32), (b, 1 << 32), (c, 1 << 32), (c, 1)] {
+            let mut tampered = populate(&corpus, &circuit, &wires, false).unwrap();
+            tampered[wire] = Word(value);
+            assert!(cs.verify(tampered.value_vec()).is_err());
+        }
+        let Wires::Narrow { c, .. } = wires[3] else {
+            unreachable!()
+        };
+        assert_eq!(valid[c].0, 1, "max*max wraps to one");
+    }
+
+    #[test]
+    fn real_mod32_proof_rejects_tampered_transcript() {
+        let corpus = Corpus::from_inputs(
+            Workload::U32,
+            (0..32).map(|i| (u64::from(u32::MAX) - i, i)).collect(),
+        );
+        let context = Context::setup(Arc::new(corpus));
+        let witness = context.populate(false).unwrap();
+        let mut transcript = ProverTranscript::new(StdChallenger::default());
+        context.prover.prove(&witness, &mut transcript).unwrap();
+        let mut bytes = transcript.finalize();
+        let mut valid = VerifierTranscript::new(StdChallenger::default(), bytes.clone());
+        context
+            .verifier
+            .verify(witness.inout(), &mut valid)
+            .unwrap();
+        valid.finalize().unwrap();
+        bytes[0] ^= 1;
+        let mut bad = VerifierTranscript::new(StdChallenger::default(), bytes);
+        assert!(context.verifier.verify(witness.inout(), &mut bad).is_err());
+    }
+
+    #[test]
+    fn wrong_product_is_rejected() {
+        for workload in [Workload::U32, Workload::U64, Workload::U128] {
             let c = Context::setup(Arc::new(edge_corpus(workload)));
             // Population computes wires; acceptance is checked by the constraint verifier.
             let valid = c.populate(false).unwrap();
-            binius_core::verify::verify_constraints(c.circuit.constraint_system(), &valid).unwrap();
+            c.circuit.constraint_system().verify(&valid).unwrap();
             assert!(c.populate(true).is_err());
         }
     }
@@ -125,14 +227,13 @@ mod tests {
 /// larger encoding.
 fn log_inv_rate() -> usize {
     std::env::var("F2Z_BINIUS_LOG_INV_RATE")
-        .ok()
-        .map(|v| v.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be an integer"))
+        .map(|value| value.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be a usize"))
         .unwrap_or(1)
 }
 
-fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
+pub(super) fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
     let builder = CircuitBuilder::new();
-    let p = builder.add_constant_64(BABY_P);
+    let mask = builder.add_constant_64(u64::from(u32::MAX));
     let wires = (0..corpus.len())
         .map(|i| {
             let b = builder.subcircuit(format!("multiply[{i}]"));
@@ -166,36 +267,21 @@ fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
             }
             b.assert_zero("a is u32", b.shr(a, 32));
             b.assert_zero("b is u32", b.shr(rhs, 32));
-            b.assert_zero("product high word", hi);
-            let q = match corpus.workload {
-                Workload::U32 => {
-                    b.assert_eq("full u64 product", lo, c);
-                    None
-                }
-                Workload::U64 | Workload::U128 => unreachable!(),
-                Workload::BabyBear => {
-                    b.assert_true("a canonical", b.icmp_ult(a, p));
-                    b.assert_true("b canonical", b.icmp_ult(rhs, p));
-                    b.assert_true("c canonical", b.icmp_ult(c, p));
-                    let q = b.add_witness();
-                    b.assert_true("quotient bounded", b.icmp_ult(q, p));
-                    let (qh, ql) = b.imul(q, p);
-                    b.assert_zero("quotient product high", qh);
-                    let (reconstructed, carry) = b.iadd(ql, c);
-                    // iadd's carry wire contains every carry bit; only its MSB is overflow.
-                    b.assert_zero("no reconstruction overflow", b.shr(carry, 63));
-                    b.assert_eq("a*b = p*q+c", lo, reconstructed);
-                    Some(q)
-                }
-            };
-            Wires::Narrow { a, b: rhs, c, q }
+            let masked = b.band(lo, mask);
+            b.assert_eq("product modulo 2^32", masked, c);
+            Wires::Narrow {
+                a,
+                b: rhs,
+                c,
+                q: None,
+            }
         })
         .collect();
     let circuit = builder.build();
     (circuit, wires)
 }
 
-fn populate<'a>(
+pub(super) fn populate<'a>(
     corpus: &Corpus,
     circuit: &'a Circuit,
     wires: &[Wires],
@@ -206,7 +292,13 @@ fn populate<'a>(
     match &corpus.operands {
         super::Operands::Narrow(inputs) => {
             for (i, (w, &(a, b))) in wires.iter().zip(inputs).enumerate() {
-                let Wires::Narrow { a: wa, b: wb, c: wc, q: wq } = w else {
+                let Wires::Narrow {
+                    a: wa,
+                    b: wb,
+                    c: wc,
+                    q: wq,
+                } = w
+                else {
                     unreachable!("narrow corpus with wide wires")
                 };
                 let [_, _, c, q] = corpus.workload.native_row(a, b);
@@ -220,7 +312,12 @@ fn populate<'a>(
         }
         super::Operands::Wide(inputs) => {
             for (i, (w, &(x, y))) in wires.iter().zip(inputs).enumerate() {
-                let Wires::Wide { x: wx, y: wy, z: wz } = w else {
+                let Wires::Wide {
+                    x: wx,
+                    y: wy,
+                    z: wz,
+                } = w
+                else {
                     unreachable!("wide corpus with narrow wires")
                 };
                 let [_, _, lo, hi] = corpus.workload.wide_row(x, y);
@@ -245,15 +342,16 @@ fn limbs(value: u128) -> [u64; 2] {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let (circuit, wires) = compile(corpus);
-    let started = std::time::Instant::now();
-    let filler = populate(corpus, &circuit, &wires, false).expect("Binius materialization");
-    let generation_ms = started.elapsed().as_secs_f64() * 1e3;
+    let (filler, started) = f2z::observability::measure(
+        tracing::info_span!("mul_e2e_compare/binius:filler"),
+        || populate(corpus, &circuit, &wires, false).expect("Binius materialization"),
+    ).expect("measure completed operation");
+    let generation_ms = started.as_secs_f64() * 1e3;
     if corpus.workload.is_wide() {
         let read = |limbs: &[Wire]| {
-            limbs
-                .iter()
-                .rev()
-                .fold(0_u128, |acc, &limb| (acc << 64) | u128::from(filler[limb].0))
+            limbs.iter().rev().fold(0_u128, |acc, &limb| {
+                (acc << 64) | u128::from(filler[limb].0)
+            })
         };
         let rows = wires
             .iter()
@@ -261,7 +359,12 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
                 let Wires::Wide { x, y, z } = w else {
                     unreachable!("wide corpus with narrow wires")
                 };
-                [read(&x.limbs), read(&y.limbs), read(&z.limbs[..2]), read(&z.limbs[2..])]
+                [
+                    read(&x.limbs),
+                    read(&y.limbs),
+                    read(&z.limbs[..2]),
+                    read(&z.limbs[2..]),
+                ]
             })
             .collect();
         return super::WitnessAudit::check_wide(corpus, rows, generation_ms, "Binius wire values");

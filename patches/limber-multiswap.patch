@@ -1,0 +1,1102 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 4a66301..2f01c12 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -815,6 +815,7 @@ dependencies = [
+  "halo2curves",
+  "hex",
+  "itertools 0.14.0",
++ "libc",
+  "num-bigint 0.4.6",
+  "num-integer",
+  "num-traits",
+diff --git a/Cargo.toml b/Cargo.toml
+index aa87c47..8939910 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -52,6 +52,7 @@ halo2curves = { version = "0.9.0", features = ["std", "bits", "derive_serde"] }
+ getrandom = { version = "0.2.0", default-features = false, features = ["js"] }
+ 
+ [dev-dependencies]
++libc = "0.2"
+ rand = "0.8.4"
+ criterion = "0.5"
+ hex = "0.4.3"
+diff --git a/benches/multiswap_modp.rs b/benches/multiswap_modp.rs
+index d7de8b3..64d0192 100644
+--- a/benches/multiswap_modp.rs
++++ b/benches/multiswap_modp.rs
+@@ -48,7 +48,7 @@ use limber::{
+   imod_spartan_modp::IntModSpartanModpSNARK,
+   provider::{
+     T256DynPrimeEngine,
+-    pcs::integer_modpcs::{DEFAULT_K, IntEvalParams},
++    pcs::integer_modpcs::{DEFAULT_K, IntEvalParams, LAMBDA_BOUND2},
+   },
+ };
+ use num_bigint::BigUint;
+@@ -477,6 +477,8 @@ struct WitnessStats {
+ 
+ #[derive(Clone, Debug)]
+ struct PaperMetadata {
++  batch_count: usize,
++  comparison_digest: [u8; 32],
+   statement_digest: [u8; 32],
+   assignment_digest: [u8; 32],
+   live_rows: usize,
+@@ -772,6 +774,51 @@ fn multiswap_shape_and_witness_impl<MM: limber::traits::mod_engine::ModEngine>(
+   debug_assert_eq!(col, d.num_real_cols());
+ 
+   mods.resize(num_cons, BigUint::from(2u32));
++  let batch_count = env_usize("MATCHED_BATCH_COUNT", 1);
++  assert!(
++    batch_count.is_power_of_two() && batch_count <= 16 && (batch_count == 1 || d.k == 0),
++    "invalid paper batch"
++  );
++  let (num_cons, num_vars) = if batch_count == 1 {
++    (num_cons, num_vars)
++  } else {
++    let live_rows = d.num_real_rows();
++    let live_cols = d.num_real_cols();
++    let target_rows = (batch_count * live_rows).next_power_of_two();
++    let target_cols = (batch_count * live_cols).next_power_of_two();
++    let expand = |entries: &[(usize, usize, BigUint)]| {
++      (0..batch_count)
++        .flat_map(|copy| {
++          entries.iter().map(move |(r, c, v)| {
++            (
++              r + copy * live_rows,
++              if *c == num_vars {
++                target_cols
++              } else {
++                c + copy * live_cols
++              },
++              v.clone(),
++            )
++          })
++        })
++        .collect::<Vec<_>>()
++    };
++    a_entries = expand(&a_entries);
++    b_entries = expand(&b_entries);
++    c_entries = expand(&c_entries);
++    let mut target_mods = vec![BigUint::from(2u8); target_rows];
++    let mut target_w = vec![BigUint::zero(); target_cols];
++    let mut target_q = vec![BigUint::zero(); target_rows];
++    for copy in 0..batch_count {
++      target_mods[copy * live_rows..(copy + 1) * live_rows].clone_from_slice(&mods[..live_rows]);
++      target_q[copy * live_rows..(copy + 1) * live_rows].clone_from_slice(&q[..live_rows]);
++      target_w[copy * live_cols..(copy + 1) * live_cols].clone_from_slice(&w[..live_cols]);
++    }
++    mods = target_mods;
++    w = target_w;
++    q = target_q;
++    (target_rows, target_cols)
++  };
+   let shape = IntModR1CSShapeModp::<MM>::new(
+     num_cons, num_vars, num_io, a_entries, b_entries, c_entries, mods,
+   )
+@@ -780,13 +827,19 @@ fn multiswap_shape_and_witness_impl<MM: limber::traits::mod_engine::ModEngine>(
+ 
+   let metadata = collect_metadata.then(|| {
+     let (a_entries, b_entries, c_entries, mods) = shape.benchmark_constraint_parts();
++    let statement_digest = paper_statement_digest(d, num_cons, num_vars, a_entries, b_entries, c_entries, mods);
++    let mut h = blake3::Hasher::new();
++    h.update(b"f2z-limber/multiswap-statement/v2");
++    h.update(&statement_digest);
++    for v in [batch_count, 0, 2048, d.num_real_rows()*batch_count, d.num_real_cols()*batch_count] {
++      h.update(&(v as u64).to_le_bytes());
++    }
++    h.update(b"public:matrices,moduli;private:witness,quotients;unsigned;constant:one;padding:zero-witness,zero-quotients,modulus-two");
+     PaperMetadata {
+-      statement_digest: paper_statement_digest(
+-        d, num_cons, num_vars, a_entries, b_entries, c_entries, mods,
+-      ),
++      batch_count, comparison_digest: *h.finalize().as_bytes(), statement_digest,
+       assignment_digest: f2z_assignment_digest(&w, &q, num_vars.max(num_cons)),
+-      live_rows: d.num_real_rows(),
+-      live_cols: d.num_real_cols(),
++      live_rows: d.num_real_rows() * batch_count,
++      live_cols: d.num_real_cols() * batch_count,
+       a_nnz: a_entries.len(),
+       b_nnz: b_entries.len(),
+       c_nnz: c_entries.len(),
+@@ -1024,8 +1077,9 @@ impl MatchedTraceWriter {
+     assert_eq!(roots[0].label, "matched:verified_trial");
+     let threads = rayon::current_num_threads();
+     let trial_fragment = trial.fragment();
++    let batch_count = metadata.batch_count;
+     let run_id = format!(
+-      "multiswap-{}-k{multiswap_k}-{backend}-{threads}t-{}-{trial_fragment}",
++      "multiswap-{}-k{multiswap_k}-b{batch_count}-{backend}-{threads}t-{}-{trial_fragment}",
+       self.campaign_id,
+       std::process::id(),
+     );
+@@ -1046,7 +1100,7 @@ impl MatchedTraceWriter {
+       "record": "run",
+       "run_id": run_id,
+       "series_id": format!(
+-        "{}-k{multiswap_k}-{implementation}-{threads}t-{}",
++        "{}-k{multiswap_k}-b{batch_count}-{implementation}-{threads}t-{}",
+         self.campaign_id, self.git_rev
+       ),
+       "root_span_id": span_id(roots[0].order),
+@@ -1088,6 +1142,8 @@ impl MatchedTraceWriter {
+           ),
+           "workload_k": multiswap_k,
+           "limber_k": multiswap_k,
++          "batch_count": metadata.batch_count, "public_input_count": 0, "public_inputs": [],
++          "statement_contract": statement_contract(metadata),
+           "semantic_scope": "real RSA exponentiation chains; hash/Poseidon portions are cost-modeled",
+           "live_rows": metadata.live_rows,
+           "live_cols": metadata.live_cols,
+@@ -1130,20 +1186,15 @@ impl MatchedTraceWriter {
+           "numlimb": params.numlimb,
+           "numlimb_var": params.numlimb_var,
+         },
+-        "security": {
+-          "runtime_fingerprint_prime_bits": 128,
+-          "runtime_prime_policy": "verifier-sampled from Fiat-Shamir after W/Q commitments",
+-          "transcript_hash": "Keccak-256",
+-          "hiding_randomness": if backend == "hyrax" {
+-            "private thread_rng blinders"
+-          } else {
+-            "non-hiding Brakedown commitment"
+-          },
+-        },
++        "security": security_metadata(backend, params, assignment_capacity.ilog2() as usize),
+         "repetition": {"count": 1},
+         "setup_ns_excluded": setup_ns.to_string(),
+       },
+       "artifacts": {
++        "proof_bytes": artifacts.commitment_bytes + artifacts.opening_argument_bytes + artifacts.dynamic_sumcheck_bytes_estimate,
++        "proof_size_kind": "serialized commitment/opening plus analytical sumcheck estimate",
++        "peak_rss_bytes": peak_rss_bytes(),
++        "memory_boundary": "process high-water RSS including setup and warmups; compiler excluded",
+         "commitment_bytes": artifacts.commitment_bytes,
+         "opening_argument_bytes": artifacts.opening_argument_bytes,
+         "dynamic_sumcheck_bytes_estimate": artifacts.dynamic_sumcheck_bytes_estimate,
+@@ -1326,9 +1377,7 @@ fn describe_matched_span(
+         vec!["proving", "constraint-proof"],
+         true,
+       ),
+-      "imod_modp_sample_p" => {
+-        projection_descriptor("sample_prime", "Sample fingerprint prime")
+-      }
++      "imod_modp_sample_p" => projection_descriptor("sample_prime", "Sample fingerprint prime"),
+       "imod_modp_reduce" => projection_descriptor("reduce", "Reduce relation modulo p"),
+       "imod_modp_spmv" => projection_descriptor("spmv", "Sparse matrix products"),
+       "imod_modp_outer_sumcheck" => piop_descriptor("outer_sumcheck", "Outer sumcheck"),
+@@ -1410,9 +1459,7 @@ fn matched_math(label: &str) -> Vec<&'static str> {
+     "imod_modp_wq_open" => {
+       vec!["\\sum_i\\lambda^i C(z_i)=\\sum_i\\lambda^i v_i"]
+     }
+-    "rc_logup_gkr" => vec![
+-      "\\sum_b\\sum_i(r+w_{b,i})^{-1}=\\sum_{j=0}^{2^{16}-1}m_j(r+j)^{-1}",
+-    ],
++    "rc_logup_gkr" => vec!["\\sum_b\\sum_i(r+w_{b,i})^{-1}=\\sum_{j=0}^{2^{16}-1}m_j(r+j)^{-1}"],
+     _ => Vec::new(),
+   }
+ }
+@@ -1505,12 +1552,32 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+   let (template_shape, template_w, template_q, expected_metadata) =
+     multiswap_shape_and_witness_with_metadata::<E>(dims);
+   if multiswap_k == 0 {
+-    assert_eq!(expected_metadata.live_rows, 6209);
+-    assert_eq!(expected_metadata.live_cols, 6204);
++    assert_eq!(
++      expected_metadata.live_rows,
++      6209 * expected_metadata.batch_count
++    );
++    assert_eq!(
++      expected_metadata.live_cols,
++      6204 * expected_metadata.batch_count
++    );
+   }
+   let log_n = (template_shape.num_vars().max(template_shape.num_cons()) as u64).ilog2() as usize;
+-  let params = IntEvalParams::derive(2048, LOG_T, int_k, log_n)
++  let (_, integer_target) = matched_security_targets();
++  let params = IntEvalParams::derive_with_target(2048, LOG_T, int_k, log_n, integer_target)
+     .expect("matched IntEval params satisfy bounds");
++  // Reject an unreachable comparison target before setup or any proof work.
++  let security = security_metadata(backend, &params, log_n);
++  if std::env::var("MATCHED_CHECK_ONLY").as_deref() == Ok("1") {
++    println!(
++      "MATCHED_PREFLIGHT {}",
++      json!({
++        "statement_contract": statement_contract(&expected_metadata),
++        "assignment_digest_blake3": hex::encode(expected_metadata.assignment_digest),
++        "security": security,
++      })
++    );
++    return;
++  }
+   let setup_start = Instant::now();
+   let (pk, vk) = setup(template_shape.clone(), params.clone()).expect("matched setup");
+   let setup_ns = u64::try_from(setup_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+@@ -1541,10 +1608,11 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+   let mut writer = MatchedTraceWriter::from_env();
+   limber::bench_trace::set_enabled(true);
+   for trial in trials {
+-    let (metadata, instance, proof);
++    let (metadata, instance, proof, trial_witness, trial_shape);
+     {
+       let _root = limber::bench_trace::scope("matched:verified_trial");
+       let (shape, w, q) = multiswap_shape_and_witness::<E>(dims);
++
+       // Total prover is commit + Spartan/PCS prove, matching the F2Z headline
+       // boundary. The nested commitment interval remains independently usable.
+       let prover = limber::bench_trace::scope("matched:prover");
+@@ -1564,10 +1632,34 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+       }
+       instance = trial_instance;
+       proof = trial_proof;
++      trial_witness = witness;
++      trial_shape = shape;
+     }
+     // Canonical statement/assignment provenance was computed and checked by
+     // the untimed template preflight. Reusing it here keeps hashing/statistics
+     // out of every measured trial.
++    let (trial_w, trial_q) = trial_witness.benchmark_assignment();
++    let (a, b, c, m) = trial_shape.benchmark_constraint_parts();
++    assert_eq!(
++      paper_statement_digest(
++        dims,
++        trial_shape.num_cons(),
++        trial_shape.num_vars(),
++        a,
++        b,
++        c,
++        m
++      ),
++      expected_metadata.statement_digest
++    );
++    assert_eq!(
++      f2z_assignment_digest(
++        trial_w,
++        trial_q,
++        trial_shape.num_vars().max(trial_shape.num_cons())
++      ),
++      expected_metadata.assignment_digest
++    );
+     metadata = expected_metadata.clone();
+     let intervals = limber::bench_trace::take_intervals();
+     // Serialization and reporting are deliberately outside the root timing
+@@ -1582,6 +1674,11 @@ fn run_matched_campaign_for<E, Setup, LogupCounts>(
+       .expect("matched opening argument serialization")
+       .len();
+     let (active_logup_blocks, total_logup_blocks) = logup_counts(&proof);
++    // A block has at most 2^16 slots; shifted tops add at most as many.
++    assert!(
++      2 * (total_logup_blocks as u128) * (1u128 << 16) <= range_slot_bound(&params, log_n),
++      "range-check size exceeds security accounting cap"
++    );
+     let outer_rounds = template_shape.num_cons().ilog2() as usize;
+     let inner_rounds = (2 * template_shape.num_vars()).ilog2() as usize;
+     // The dynamic-prime proof is not Serialize yet.  This is the same
+@@ -2007,3 +2104,100 @@ fn multiswap_modp_benches(c: &mut Criterion) {
+ 
+ criterion_group!(benches, multiswap_modp_benches);
+ criterion_main!(benches);
++
++fn statement_contract(metadata: &PaperMetadata) -> serde_json::Value {
++  json!({
++    "domain": "f2z-limber/multiswap-statement/v2", "digest_blake3": hex::encode(metadata.comparison_digest),
++    "batch_count": metadata.batch_count, "public_input_count": 0, "public_inputs": [],
++    "value_bits": 2048, "integer_domain": "unsigned",
++    "public_roles": ["matrices", "moduli"], "private_roles": ["witness", "quotients"],
++    "constant": 1, "padding": "zero-witness,zero-quotients,modulus-two",
++    "live_rows": metadata.live_rows, "live_columns": metadata.live_cols,
++    "padded_rows": metadata.live_rows.next_power_of_two(), "padded_columns": metadata.live_cols.next_power_of_two(),
++  })
++}
++
++fn matched_security_targets() -> (usize, usize) {
++  let target = env_usize("MATCHED_SECURITY_BITS", 114);
++  assert!(matches!(target, 112 | 114), "matched comparison target must be 112 or 114");
++  // Preserve Limber's native CRT target for the 114-bit comparison. The
++  // 112-bit setting remains available solely for historical reproduction.
++  let expected_integer_target = if target == 114 { 128 } else { 112 };
++  let integer_target = env_usize("MATCHED_INTEGER_SECURITY_BITS", expected_integer_target);
++  assert_eq!(integer_target, expected_integer_target, "matched integer target differs from comparison policy");
++  (target, integer_target)
++}
++
++fn security_metadata(backend: &str, params: &IntEvalParams, log_n: usize) -> serde_json::Value {
++  let (target, integer_target) = matched_security_targets();
++  assert_eq!(params.security_bits, integer_target, "matched IntEval target differs from actual parameters");
++  let fingerprint_bits = log2_prime_count(128) - ((8210u32 / 127) as f64).log2();
++  let mut terms = vec![
++    json!({"name": "fingerprint", "bits": fingerprint_bits}),
++    json!({"name": "spartan-round", "bits": 127.0 - 3f64.log2()}),
++    json!({"name": "spartan-batching", "bits": 127.0 - ((log_n+1) as f64).log2()}),
++    json!({"name": "integer-crt", "bits": params.prime_security_bits(log_n)}),
++    json!({"name": "integer-challenges", "bits": (params.log_q-1) as f64 - ((params.s*(log_n+params.numlimb_var)).max(1) as f64).log2()}),
++  ];
++  let bd_bits = env_usize("BDLAMBDA", 114);
++  terms.push(json!({"name": "commitment-opening", "bits": if backend == "brakedown" { bd_bits as f64 } else { 128.0 }}));
++  // Conservative public cap on all chunk and shifted-top lookup entries.
++  // Checked against the actual range-check bitmap for every measured proof.
++  // The rational identity's numerator degree is <= slots + table size;
++  // GKR's two-variable prefix has total degree <=6.
++  let slots = range_slot_bound(params, log_n);
++  terms.push(json!({"name": "range-lookup", "bits": (params.log_q-1) as f64 - ((slots + (1u128<<16)) as f64).log2()}));
++  terms.push(json!({"name": "range-gkr-round", "bits": (params.log_q-1) as f64 - 6f64.log2()}));
++  terms.push(
++    json!({"name": "range-batching", "bits": (params.log_q-1) as f64 - (slots as f64).log2()}),
++  );
++  let achieved = terms
++    .iter()
++    .map(|t| t["bits"].as_f64().unwrap())
++    .fold(f64::INFINITY, f64::min);
++  assert!(achieved >= target as f64, "matched security target unreachable");
++  json!({
++    "model": "per-check-round-minimum/v1", "profile": format!("limber{}", target),
++    "target_bits": target, "achieved_bits": achieved, "terms": terms,
++    "fingerprint_prime_bits": 128, "fingerprint_min": (BigUint::from(1u8)<<127usize).to_string(),
++    "fingerprint_max": ((BigUint::from(1u8)<<128usize)-BigUint::from(1u8)).to_string(),
++    "runtime_prime_policy": "verifier-sampled from Fiat-Shamir after W/Q commitments",
++    "transcript_hash": "Keccak-256", "integer_target_bits": params.security_bits,
++    "integer_challenge_target_bits": LAMBDA_BOUND2,
++    "challenge_bits": 128, "brakedown_target_bits": if backend == "brakedown" { Some(bd_bits) } else { None },
++    "key_format_version": params.format_version,
++    "brakedown_configuration": if backend == "brakedown" { Some(limber::provider::pcs::brakedown_configuration()) } else { None },
++    "log_q": params.log_q, "log_p": params.log_p, "small_primes": params.s,
++    "log_t": params.log_t, "log_t_f": params.log_t_f, "int_k": params.k,
++    "numlimb_var": params.numlimb_var, "range_slot_bound": slots.to_string(),
++  })
++}
++
++fn log2_prime_count(bits: u32) -> f64 {
++  let hi = (bits as f64) * std::f64::consts::LN_2;
++  let lo = ((bits - 1) as f64) * std::f64::consts::LN_2;
++  (bits as f64) + (1.0 / hi - 1.25506 / (2.0 * lo)).log2()
++}
++
++fn peak_rss_bytes() -> u64 {
++  let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
++  assert_eq!(
++    unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) },
++    0
++  );
++  let rss = unsafe { usage.assume_init() }.ru_maxrss as u64;
++  if cfg!(target_os = "macos") {
++    rss
++  } else {
++    rss * 1024
++  }
++}
++
++fn range_slot_bound(params: &IntEvalParams, log_n: usize) -> u128 {
++  // Two source polynomials, <=16 chunks per q-side value, and at most
++  // four partial-evaluation value families per prime/coordinate. Deliberately
++  // ignore shrinking tables, then double for power-of-two and shifted-top padding.
++  4 * (1u128 << (log_n + params.numlimb_var))
++    * 16
++    * (1 + 4 * params.s as u128 * (log_n + params.numlimb_var + 1) as u128)
++}
+diff --git a/src/imod_r1cs_modp/mod.rs b/src/imod_r1cs_modp/mod.rs
+index 1af7304..5b0a148 100644
+--- a/src/imod_r1cs_modp/mod.rs
++++ b/src/imod_r1cs_modp/mod.rs
+@@ -15,11 +15,10 @@
+ //! Invariants: `num_vars`, `num_cons` are powers of two,
+ //! `num_vars ≥ 1 + num_io`, and `mods.len() == num_cons`.
+ 
+-use crate::traits::mod_engine::SmallValueBlock;
+ use crate::{
+   errors::SpartanError,
+   start_span,
+-  traits::mod_engine::{ModEngine, ModPCSEngineTrait},
++  traits::mod_engine::{ModEngine, ModPCSEngineTrait, SmallValueBlock},
+ };
+ use num_bigint::BigUint;
+ use num_traits::Zero;
+@@ -430,6 +429,11 @@ impl<M: ModEngine> IntModR1CSInstanceModp<M> {
+ }
+ 
+ impl<M: ModEngine> IntModR1CSWitnessModp<M> {
++  /// Read-only integer assignment for untimed benchmark provenance checks.
++  pub fn benchmark_assignment(&self) -> (&[BigUint], &[BigUint]) {
++    (&self.w, &self.q)
++  }
++
+   /// Commit to integer `(w, q)` and return the witness/instance pair.
+   pub fn new(
+     shape: &IntModR1CSShapeModp<M>,
+diff --git a/src/imod_spartan_modp.rs b/src/imod_spartan_modp.rs
+index 93e5574..5a269bd 100644
+--- a/src/imod_spartan_modp.rs
++++ b/src/imod_spartan_modp.rs
+@@ -229,7 +229,7 @@ impl IntModSpartanModpSNARK<crate::provider::T256DynPrimeEngine> {
+     SpartanError,
+   > {
+     let (ck, vk_ee) = shape.commitment_key_with_params(params)?;
+-    Ok(Self::assemble_keys(shape, ck, vk_ee))
++    Self::assemble_keys(shape, ck, vk_ee)
+   }
+ }
+ 
+@@ -279,7 +279,7 @@ impl IntModSpartanModpSNARK<crate::provider::T256DynPrimeBdEngine> {
+     // (the original polynomial length `n`).
+     let ck = crate::provider::pcs::integer_modpcs::BdModCommitmentKey::new(params.clone(), n)?;
+     let vk = crate::provider::pcs::integer_modpcs::BdModVerifierKey::new(params);
+-    Ok(Self::assemble_keys(shape, ck, vk))
++    Self::assemble_keys(shape, ck, vk)
+   }
+ }
+ 
+@@ -309,7 +309,7 @@ impl IntModSpartanModpSNARK<crate::provider::M127DynPrimeBdEngine> {
+     // (the original polynomial length `n`).
+     let ck = crate::provider::pcs::integer_modpcs::BdModCommitmentKey::new(params.clone(), n)?;
+     let vk = crate::provider::pcs::integer_modpcs::BdModVerifierKey::new(params);
+-    Ok(Self::assemble_keys(shape, ck, vk))
++    Self::assemble_keys(shape, ck, vk)
+   }
+ }
+ 
+@@ -376,7 +376,7 @@ where
+     SpartanError,
+   > {
+     let (ck, vk_ee) = shape.commitment_key();
+-    Ok(Self::assemble_keys(shape, ck, vk_ee))
++    Self::assemble_keys(shape, ck, vk_ee)
+   }
+ 
+   /// Shared tail of `setup` / `setup_with_params`: precompute the
+@@ -387,13 +387,16 @@ where
+     shape: IntModR1CSShapeModp<M>,
+     ck: ModCK<M>,
+     vk_ee: ModVK<M>,
+-  ) -> (
+-    IntModSpartanModpProverKey<M>,
+-    IntModSpartanModpVerifierKey<M>,
+-  ) {
++  ) -> Result<
++    (
++      IntModSpartanModpProverKey<M>,
++      IntModSpartanModpVerifierKey<M>,
++    ),
++    SpartanError,
++  > {
+     <ModPCS<M> as ModPCSEngineTrait<M>>::precompute_ck(&ck);
+ 
+-    let digest = shape.digest();
++    let digest = Self::key_digest(&shape, &vk_ee)?;
+     let vk = IntModSpartanModpVerifierKey {
+       vk_ee,
+       shape: shape.clone(),
+@@ -404,7 +407,20 @@ where
+       shape,
+       vk_digest: digest,
+     };
+-    (pk, vk)
++    Ok((pk, vk))
++  }
++
++  fn key_digest(
++    shape: &IntModR1CSShapeModp<M>,
++    vk_ee: &ModVK<M>,
++  ) -> Result<[u8; 32], SpartanError> {
++    let mut h = blake3::Hasher::new();
++    h.update(b"limber/imod-spartan-modp/key/v2");
++    h.update(&shape.digest());
++    let encoded = to_canonical_bytes(vk_ee)?;
++    h.update(&(encoded.len() as u64).to_le_bytes());
++    h.update(&encoded);
++    Ok(*h.finalize().as_bytes())
+   }
+ 
+   /// Prove satisfaction of the IntMod-R1CS instance.
+@@ -653,6 +669,11 @@ where
+     U: &IntModR1CSInstanceModp<M>,
+   ) -> Result<(), SpartanError> {
+     let (_verify_span, verify_t) = start_span!("imod_spartan_modp_verify");
++    if Self::key_digest(&vk.shape, &vk.vk_ee)? != vk.digest {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "verifier key configuration digest mismatch".into(),
++      });
++    }
+ 
+     // 1. Bootstrap transcript identically to prove().
+     let mut transcript =
+@@ -987,6 +1008,54 @@ mod tests {
+     (shape, w, q_vec)
+   }
+ 
++  #[test]
++  fn matched_112_hyrax_proof_rejects_another_security_key() {
++    use crate::provider::pcs::integer_modpcs::IntEvalParams;
++    type E = crate::provider::T256DynPrimeEngine;
++    let (source, w, q) = build_toy(3, 5, 1, 14, 1);
++    let (a, b, c, mods) = source.benchmark_constraint_parts();
++    let shape =
++      IntModR1CSShapeModp::<E>::new(2, 4, 0, a.to_vec(), b.to_vec(), c.to_vec(), mods.to_vec())
++        .unwrap();
++    let params = IntEvalParams::derive_with_target(32, 16, 7, 2, 112).unwrap();
++    let (pk, vk) =
++      IntModSpartanModpSNARK::<E>::setup_with_params(shape.clone(), params.clone()).unwrap();
++    let (witness, instance) =
++      IntModR1CSWitnessModp::<E>::new(&shape, pk.ck(), w, q, vec![]).unwrap();
++    let proof = IntModSpartanModpSNARK::<E>::prove(&pk, &instance, &witness).unwrap();
++    proof.verify(&vk, &instance).unwrap();
++    let higher = IntEvalParams::derive_with_target(32, 16, 7, 2, 114).unwrap();
++    let (_, vk_other) = IntModSpartanModpSNARK::<E>::setup_with_params(shape, higher).unwrap();
++    assert_ne!(vk.digest, vk_other.digest);
++    assert!(proof.verify(&vk_other, &instance).is_err());
++    let mut bad = vk.clone();
++    bad.digest[0] ^= 1;
++    assert!(proof.verify(&bad, &instance).is_err());
++  }
++
++  #[test]
++  fn matched_112_brakedown_proof_rejects_another_security_key() {
++    use crate::provider::pcs::integer_modpcs::IntEvalParams;
++    type E = crate::provider::T256DynPrimeBdEngine;
++    let (source, w, q) = build_toy(3, 5, 1, 14, 1);
++    let (a, b, c, mods) = source.benchmark_constraint_parts();
++    let shape =
++      IntModR1CSShapeModp::<E>::new(2, 4, 0, a.to_vec(), b.to_vec(), c.to_vec(), mods.to_vec())
++        .unwrap();
++    let params = IntEvalParams::derive_with_target(32, 16, 7, 2, 112).unwrap();
++    let (pk, vk) = IntModSpartanModpSNARK::<E>::setup_with_params(shape.clone(), params).unwrap();
++    let (witness, instance) =
++      IntModR1CSWitnessModp::<E>::new(&shape, pk.ck(), w, q, vec![]).unwrap();
++    let proof = IntModSpartanModpSNARK::<E>::prove(&pk, &instance, &witness).unwrap();
++    proof.verify(&vk, &instance).unwrap();
++    let higher = IntEvalParams::derive_with_target(32, 16, 7, 2, 114).unwrap();
++    let (_, other) = IntModSpartanModpSNARK::<E>::setup_with_params(shape, higher).unwrap();
++    assert!(proof.verify(&other, &instance).is_err());
++    let mut bad = vk.clone();
++    bad.vk_ee.backend_config[0] += 1;
++    assert!(proof.verify(&bad, &instance).is_err());
++  }
++
+   /// End-to-end: 3 · 5 ≡ 1 (mod 14) under a transcript-sampled prime `p`
+   /// that is *not* the curve scalar prime. Validates the dual-field
+   /// driver flow against the trivial Mod-PCS stub.
+diff --git a/src/provider/pcs/commit_backend.rs b/src/provider/pcs/commit_backend.rs
+index 5f06021..597cf46 100644
+--- a/src/provider/pcs/commit_backend.rs
++++ b/src/provider/pcs/commit_backend.rs
+@@ -29,12 +29,13 @@ use crate::{
+     brakedown_commit_plain, brakedown_open_direct, brakedown_open_group, brakedown_verify_direct,
+     brakedown_verify_group,
+   },
+-  traits::PrimeFieldExt,
+-  traits::transcript::ByteTranscript,
++  traits::{PrimeFieldExt, transcript::ByteTranscript},
+ };
+ use serde::{Serialize, de::DeserializeOwned};
+-use std::collections::HashMap;
+-use std::sync::{Mutex, OnceLock};
++use std::{
++  collections::HashMap,
++  sync::{Mutex, OnceLock},
++};
+ 
+ /// Security level for Brakedown layouts (column-open count derivation).
+ /// Aligned with the honest system floor: the 2^-114 fingerprint
+@@ -48,9 +49,30 @@ const BD_LAMBDA_DEFAULT: usize = 114;
+ fn bd_lambda() -> usize {
+   std::env::var("BDLAMBDA")
+     .ok()
+-    .and_then(|v| v.parse::<usize>().ok())
++    .map(|v| v.parse::<usize>().expect("invalid BDLAMBDA"))
+     .unwrap_or(BD_LAMBDA_DEFAULT)
+ }
++/// All runtime Brakedown knobs affecting the committed code or opening.
++pub(crate) fn bd_configuration() -> [usize; 4] {
++  let read = |name: &str, default| {
++    std::env::var(name)
++      .map(|v| v.parse::<usize>().expect("invalid Brakedown parameter"))
++      .unwrap_or(default)
++  };
++  let cfg = [
++    bd_lambda(),
++    read("BDSPEC", 4),
++    read("BDROWLEN", 1 << 15),
++    bd_direct_max(),
++  ];
++  assert!(
++    (64..=128).contains(&cfg[0])
++      && cfg[1] < crate::provider::pcs::brakedown::SPECS.len()
++      && cfg[2].is_power_of_two(),
++    "invalid Brakedown configuration"
++  );
++  cfg
++}
+ /// Public seed for the deterministic expander-code matrices; both prover
+ /// and verifier derive identical layouts from (length, spec, seed).
+ const BD_SEED: &[u8] = b"imod-modpcs-brakedown-v1";
+@@ -91,44 +113,22 @@ pub(crate) fn bd_params<F: crate::traits::PrimeFieldExt>(n: usize) -> &'static B
+   use std::any::{Any, TypeId};
+   // One cache across all field instantiations, keyed by (field, length);
+   // generic statics are unavailable, so entries go through `dyn Any`.
+-  static CACHE: OnceLock<Mutex<HashMap<(TypeId, usize), &'static (dyn Any + Send + Sync)>>> =
+-    OnceLock::new();
++  static CACHE: OnceLock<
++    Mutex<HashMap<(TypeId, usize, [usize; 4]), &'static (dyn Any + Send + Sync)>>,
++  > = OnceLock::new();
+   let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+   let mut guard = cache.lock().expect("bd params cache poisoned");
+-  let key = (TypeId::of::<F>(), n);
++  let config = bd_configuration();
++  let key = (TypeId::of::<F>(), n, config);
+   if let Some(p) = guard.get(&key) {
+     return p.downcast_ref::<BrakedownParams<F>>().expect("cache type");
+   }
+   // BDSPEC=<0..5> overrides the code spec (benching knob; prover and
+   // verifier share the process, so layouts agree).
+-  let spec = std::env::var("BDSPEC")
+-    .ok()
+-    .and_then(|v| v.parse::<usize>().ok())
+-    .map(|i| crate::provider::pcs::brakedown::SPECS[i])
+-    // Default for the Mod-PCS backend: spec4 — with the delayed-
+-    // reduction encoder the prover margin comfortably absorbs the
+-    // denser code (~+35 ms for -0.7 MB proof vs spec3; spec5 buys only
+-    // -0.15 MB more for another ~+80 ms).
+-    .unwrap_or(crate::provider::pcs::brakedown::SPECS[4]);
+-  // Uniform row length across all lengths (BDROWLEN override, benching
+-  // knob). Trees sharing (row_len, spec, seed) share the code, so the
+-  // batch opening combines every tree's proximity/evaluation rows into
+-  // ONE global pair — the per-tree layout optimum is worse than a
+-  // shared-row global layout once rows are amortized across trees. The
+-  // default 2^15 sits at the global optimum L* ≈ √(t·Σn/2) for the
+-  // MultiSwap-scale target set and beat 2^16 in a measured sweep on
+-  // proof size, prover, AND verify.
+-  let row_len = std::env::var("BDROWLEN")
+-    .ok()
+-    .and_then(|v| v.parse::<usize>().ok())
+-    .unwrap_or(1 << 15)
+-    .min(n);
++  let spec = crate::provider::pcs::brakedown::SPECS[config[1]];
++  let row_len = config[2].min(n);
+   let params: &'static BrakedownParams<F> = Box::leak(Box::new(BrakedownParams::new_with_row_len(
+-    n,
+-    spec,
+-    bd_lambda(),
+-    BD_SEED,
+-    row_len,
++    n, spec, config[0], BD_SEED, row_len,
+   )));
+   guard.insert(key, params as &'static (dyn Any + Send + Sync));
+   params
+diff --git a/src/provider/pcs/integer_modpcs.rs b/src/provider/pcs/integer_modpcs.rs
+index f9ff8ce..03b7ddf 100644
+--- a/src/provider/pcs/integer_modpcs.rs
++++ b/src/provider/pcs/integer_modpcs.rs
+@@ -15,14 +15,16 @@
+ //! `s` independent primes implies the integer evaluation is correct
+ //! with high probability.
+ 
+-use crate::provider::pcs::commit_backend::{BdBackend, CommitBackend, OpenTarget};
+ use crate::{
+   errors::SpartanError,
+   polys::eq::EqPolynomial,
+   provider::{
+     T256DynPrimeEngine, T256HyraxEngine,
+     keccak::Keccak256Transcript,
+-    pcs::hyrax_pc::{HyraxBlind, HyraxPCS},
++    pcs::{
++      commit_backend::{BdBackend, CommitBackend, OpenTarget},
++      hyrax_pc::{HyraxBlind, HyraxPCS},
++    },
+     pt256::t256,
+   },
+   start_span,
+@@ -71,6 +73,10 @@ type Hyrax = HyraxPCS<T256HyraxEngine>;
+ /// from §4.4 — Final Eval, Partial Eval Norm, Soundness 1, Soundness 2.
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+ pub struct IntEvalParams {
++  /// Serialized parameter format; old keys must be regenerated.
++  pub format_version: u32,
++  /// Requested prime-divisibility security, independent of challenge width.
++  pub security_bits: usize,
+   /// Bit-width of the q-side field's characteristic these parameters
+   /// were derived for. `LOG_Q` (=256, t256) via the plain
+   /// constructors; other fields use [`IntEvalParams::derive_for_q`].
+@@ -98,6 +104,8 @@ pub struct IntEvalParams {
+ 
+ /// Security parameter (bits). The protocol targets `2^{-λ}` soundness.
+ pub const LAMBDA: usize = 128;
++/// Width of the outer challenge, used in integer magnitude bounds.
++pub const CHALLENGE_BITS: usize = 128;
+ 
+ /// Accepted challenge-soundness target (bits) for Soundness Bound 2
+ /// (`s·n/|F| ≤ 2^-target`). Deliberately below `LAMBDA`: the system's
+@@ -136,6 +144,34 @@ impl IntEvalParams {
+     k: usize,
+     num_vars: usize,
+   ) -> Result<Self, SpartanError> {
++    Self::derive_for_q_with_target(log_q, log_t_f, log_t, k, num_vars, LAMBDA)
++  }
++
++  /// Derive explicit per-check security without changing the challenge width.
++  pub fn derive_with_target(
++    log_t_f: usize,
++    log_t: usize,
++    k: usize,
++    num_vars: usize,
++    security_bits: usize,
++  ) -> Result<Self, SpartanError> {
++    Self::derive_for_q_with_target(LOG_Q, log_t_f, log_t, k, num_vars, security_bits)
++  }
++
++  /// Field-width and security-target aware parameter derivation.
++  pub fn derive_for_q_with_target(
++    log_q: usize,
++    log_t_f: usize,
++    log_t: usize,
++    k: usize,
++    num_vars: usize,
++    security_bits: usize,
++  ) -> Result<Self, SpartanError> {
++    if !(64..=128).contains(&security_bits) {
++      return Err(params_overflow(
++        "unsupported security target (expected 64..=128)",
++      ));
++    }
+     if k == 0 {
+       return Err(SpartanError::InvalidInputLength {
+         reason: "IntEvalParams::derive: k must be positive".to_string(),
+@@ -172,9 +208,9 @@ impl IntEvalParams {
+     }
+ 
+     // Smallest s satisfying the prime-divisibility soundness bound
+-    //   (log_P(y) / (π(P) − π(P/2)))^s ≤ 2^{−λ},
+-    // where log2(y) = n + λ·n + log_t bounds the integer difference between a
+-    // false and the true partial evaluation, and log_P(y) upper-bounds how
++    //   (log_{P/2}(y) / (π(P) − π(P/2)))^s ≤ 2^{−security_bits},
++    // where log2(y) = n + CHALLENGE_BITS·n + log_t bounds the integer difference between a
++    // false and the true partial evaluation, and log_{P/2}(y) upper-bounds how
+     // many primes ≥ P/2 can divide it. `bits_per_prime` is the soundness each
+     // random small prime in (P/2, P] contributes; the prime count π(P)−π(P/2)
+     // is lower-bounded (Dusart/Rosser–Schoenfeld) so s stays sound. Replaces
+@@ -188,10 +224,12 @@ impl IntEvalParams {
+         ),
+       });
+     }
+-    let s = (LAMBDA as f64 / bits_per_prime).ceil() as usize;
++    let s = (security_bits as f64 / bits_per_prime).ceil() as usize;
+ 
+     let nl = nl_pre;
+     let p = Self {
++      format_version: 2,
++      security_bits,
+       log_q,
+       k,
+       log_p,
+@@ -205,6 +243,11 @@ impl IntEvalParams {
+     Ok(p)
+   }
+ 
++  /// Conservative bits supplied by the sampled small primes at this shape.
++  pub fn prime_security_bits(&self, num_vars: usize) -> f64 {
++    self.s as f64 * soundness_bits_per_prime(self.log_p, num_vars + self.numlimb_var, self.log_t)
++  }
++
+   /// No-limb-split convenience: derive params with `log T = log T_f`
+   /// (single-limb regime).
+   pub fn derive_no_limb_split(
+@@ -228,6 +271,8 @@ impl IntEvalParams {
+   ) -> Result<Self, SpartanError> {
+     let nl = checked_numlimb(log_t_f, log_t)?;
+     let p = Self {
++      format_version: 2,
++      security_bits: LAMBDA,
+       log_q: LOG_Q,
+       k,
+       log_p,
+@@ -248,6 +293,11 @@ impl IntEvalParams {
+   /// `num_vars + numlimb_var` variables, and that's what enters the
+   /// soundness bounds.
+   pub fn validate(&self, num_vars: usize) -> Result<(), SpartanError> {
++    if self.format_version != 2 || !(64..=128).contains(&self.security_bits) {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "unsupported IntEval parameter version or security target".into(),
++      });
++    }
+     // `k = 0` would divide by zero in the iteration-layer formulas and
+     // makes no protocol sense (zero variables consumed per iteration).
+     if self.k == 0 {
+@@ -333,12 +383,12 @@ impl IntEvalParams {
+     // Soundness Bound 1 (prime divisibility): (log_P(y) / (π(P) − π(P/2)))^s ≤ 2^{−λ}
+     //   <=>  s · bits_per_prime ≥ λ,  bits_per_prime = log2(π(P)−π(P/2)) − log2(log_P y).
+     let bits_per_prime = soundness_bits_per_prime(self.log_p, num_vars_total, self.log_t);
+-    if bits_per_prime <= 0.0 || (self.s as f64) * bits_per_prime < LAMBDA as f64 {
++    if bits_per_prime <= 0.0 || (self.s as f64) * bits_per_prime < self.security_bits as f64 {
+       return Err(SpartanError::InvalidInputLength {
+         reason: format!(
+           "IntEval Soundness Bound 1 violated: s·bits_per_prime = {:.2} < λ = {}",
+           (self.s as f64) * bits_per_prime,
+-          LAMBDA
++          self.security_bits
+         ),
+       });
+     }
+@@ -576,9 +626,9 @@ fn log2_primes_in_top_half(log_p: usize) -> f64 {
+ 
+ /// Soundness (in bits) each random small prime `p ∈ (P/2, P]`, `P = 2^log_p`,
+ /// contributes to the IntEval CRT fingerprint:
+-///   `log2(π(P) − π(P/2)) − log2(log_P(y))`,
+-/// with `log2(y) = n + λ·n + log_t` the bound on the integer difference between
+-/// a false and the true partial evaluation, and `log_P(y)` an upper bound on
++///   `log2(π(P) − π(P/2)) − log2(log_{P/2}(y))`,
++/// with `log2(y) = n + CHALLENGE_BITS·n + log_t` the bound on the integer difference between
++/// a false and the true partial evaluation, and `log_{P/2}(y)` an upper bound on
+ /// how many primes `≥ P/2` can divide it. `n` is the limb-split polynomial's
+ /// variable count. A larger value ⇒ fewer primes `s` needed. Primes below
+ /// `2^5` are too sparse for the bounds, so they return a rejecting value.
+@@ -586,8 +636,8 @@ fn soundness_bits_per_prime(log_p: usize, n: usize, log_t: usize) -> f64 {
+   if log_p < 5 {
+     return -1.0;
+   }
+-  let log2_y = (n as f64) * (1.0 + LAMBDA as f64) + (log_t as f64);
+-  let log_p_y = (log2_y / (log_p as f64)).max(1.0);
++  let log2_y = (n as f64) * (1.0 + CHALLENGE_BITS as f64) + (log_t as f64);
++  let log_p_y = (log2_y / ((log_p - 1) as f64)).max(1.0);
+   log2_primes_in_top_half(log_p) - log_p_y.log2()
+ }
+ 
+@@ -2395,6 +2445,7 @@ pub struct IntegerModPCSBd<SE = T256HyraxEngine>(core::marker::PhantomData<SE>);
+ /// code matrices derive from a public seed).
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+ pub struct BdModCommitmentKey {
++  pub(crate) backend_config: [usize; 4],
+   pub(crate) params: IntEvalParams,
+   /// Maximum committable polynomial length the key was validated for.
+   pub(crate) max_n: usize,
+@@ -2403,6 +2454,7 @@ pub struct BdModCommitmentKey {
+ /// Verifier key: same content as the commitment key.
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+ pub struct BdModVerifierKey {
++  pub(crate) backend_config: [usize; 4],
+   pub(crate) params: IntEvalParams,
+ }
+ 
+@@ -2426,14 +2478,21 @@ impl BdModCommitmentKey {
+   /// [`validate_key_capacity`]).
+   pub fn new(params: IntEvalParams, max_n: usize) -> Result<Self, SpartanError> {
+     validate_key_capacity(&params, max_n)?;
+-    Ok(Self { params, max_n })
++    Ok(Self {
++      params,
++      max_n,
++      backend_config: super::commit_backend::bd_configuration(),
++    })
+   }
+ }
+ 
+ impl BdModVerifierKey {
+   /// Key from explicit IntEval params.
+   pub fn new(params: IntEvalParams) -> Self {
+-    Self { params }
++    Self {
++      params,
++      backend_config: super::commit_backend::bd_configuration(),
++    }
+   }
+ }
+ 
+@@ -2476,7 +2535,7 @@ where
+       // trait call.
+       BdModCommitmentKey::new(params.clone(), n)
+         .expect("library-derived default parameters must validate at this capacity"),
+-      BdModVerifierKey { params },
++      BdModVerifierKey::new(params),
+     )
+   }
+ 
+@@ -2497,6 +2556,11 @@ where
+     v: &[BigUint],
+     _r: &Self::Blind,
+   ) -> Result<Self::Commitment, SpartanError> {
++    if ck.backend_config != super::commit_backend::bd_configuration() {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "Brakedown configuration differs from key".into(),
++      });
++    }
+     // Identical chunk layout to the Hyrax Mod-PCS (the protocol's
+     // committed-chunk representation), committed with Brakedown.
+     //
+@@ -2545,6 +2609,11 @@ where
+     eval: &BigUint,
+   ) -> Result<Self::EvaluationArgument, SpartanError> {
+     let (_prove_span, prove_t) = start_span!("integer_modpcs_bd_prove");
++    if ck.backend_config != super::commit_backend::bd_configuration() {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "Brakedown configuration differs from key".into(),
++      });
++    }
+     let mut st =
+       prove_one_poly::<BdBackend<SE>, ME>(&ck.params, &(), transcript, poly, point, eval)?;
+     let (range_check, combined_open, _) = finish_batch_open::<BdBackend<SE>, ME>(
+@@ -2593,6 +2662,11 @@ where
+     blocks: &[&[SmallValueBlock]],
+   ) -> Result<Self::BatchEvaluationArgument, SpartanError> {
+     let (_prove_span, prove_t) = start_span!("integer_modpcs_bd_prove_batch");
++    if ck.backend_config != super::commit_backend::bd_configuration() {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "Brakedown configuration differs from key".into(),
++      });
++    }
+     let n = polys.len();
+     if n == 0 || comms.len() != n || blinds.len() != n || points.len() != n || evals.len() != n {
+       return Err(SpartanError::InternalError {
+@@ -2655,6 +2729,11 @@ where
+     arg: &Self::EvaluationArgument,
+   ) -> Result<(), SpartanError> {
+     let (_verify_span, verify_t) = start_span!("integer_modpcs_bd_verify");
++    if vk.backend_config != super::commit_backend::bd_configuration() {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "Brakedown configuration differs from key".into(),
++      });
++    }
+     let mut v = verify_one_poly::<BdBackend<SE>, ME>(
+       &vk.params,
+       transcript,
+@@ -2705,6 +2784,11 @@ where
+     blocks: &[&[SmallValueBlock]],
+   ) -> Result<(), SpartanError> {
+     let (_verify_span, verify_t) = start_span!("integer_modpcs_bd_verify_batch");
++    if vk.backend_config != super::commit_backend::bd_configuration() {
++      return Err(SpartanError::InvalidInputLength {
++        reason: "Brakedown configuration differs from key".into(),
++      });
++    }
+     let n = arg.per_poly.len();
+     if comms.len() != n || points.len() != n || evals.len() != n {
+       return Err(SpartanError::InvalidSumcheckProof);
+@@ -5575,9 +5659,10 @@ fn absorb_bigint<T: ByteTranscript>(transcript: &mut T, x: &BigInt) {
+ #[cfg(test)]
+ mod tests {
+   use super::*;
+-  use crate::dyn_prime::DynPrime;
+-  use crate::traits::mod_engine::SumcheckField;
+-  use crate::traits::transcript::TranscriptEngineTrait;
++  use crate::{
++    dyn_prime::DynPrime,
++    traits::{mod_engine::SumcheckField, transcript::TranscriptEngineTrait},
++  };
+ 
+   type ME = T256DynPrimeEngine;
+   type MP = IntegerModPCS;
+@@ -5933,8 +6018,10 @@ mod tests {
+   #[test]
+   #[ignore = "measurement; run with --release --ignored --nocapture"]
+   fn segmented_open_real_layout_measurement() {
+-    use crate::multiswap::poseidon::PoseidonParams;
+-    use crate::multiswap::statement::{Config, build};
++    use crate::multiswap::{
++      poseidon::PoseidonParams,
++      statement::{Config, build},
++    };
+     use std::time::Instant;
+ 
+     let dp = crypto_bigint::modular::FixedMontyParams::<2>::new(
+@@ -6561,6 +6648,8 @@ mod tests {
+   #[test]
+   fn validate_rejects_bad_numlimb() {
+     let bad = IntEvalParams {
++      format_version: 2,
++      security_bits: LAMBDA,
+       log_q: LOG_Q,
+       k: 7,
+       log_p: 27,
+@@ -6891,6 +6980,8 @@ mod tests {
+ 
+     // Bad params: zero `s` makes soundness_1 fail trivially.
+     let bad = IntEvalParams {
++      format_version: 2,
++      security_bits: LAMBDA,
+       log_q: LOG_Q,
+       k: 7,
+       log_p: 20,
+@@ -7410,3 +7501,69 @@ mod tests {
+     let _ = <IntegerModPCS as ModPCSEngineTrait<ME>>::blind(&ck, 17);
+   }
+ }
++
++#[cfg(test)]
++mod matched_security_tests {
++  use super::*;
++
++  #[test]
++  fn native_128_target_validates_all_114_comparison_batches() {
++    assert_eq!(LAMBDA_BOUND2, 117);
++    assert_eq!(CHALLENGE_BITS, 128);
++    for log_n in 13..=17 {
++      for k in [9, 11] {
++        let p = IntEvalParams::derive_with_target(2048, 64, k, log_n, 128).unwrap();
++        p.validate(log_n).unwrap();
++        assert_eq!(p.security_bits, LAMBDA);
++        assert!(p.prime_security_bits(log_n) >= 128.0);
++        let native = IntEvalParams::derive(2048, 64, k, log_n).unwrap();
++        assert_eq!(bincode::serialize(&p).unwrap(), bincode::serialize(&native).unwrap());
++        let mut fewer = p;
++        fewer.s -= 1;
++        assert!(fewer.validate(log_n).is_err());
++      }
++    }
++  }
++
++  #[test]
++  fn target_112_derives_and_validates_all_reference_batches() {
++    for log_n in 13..=17 {
++      for k in [9, 11] {
++        let p = IntEvalParams::derive_with_target(2048, 64, k, log_n, 112).unwrap();
++        p.validate(log_n).unwrap();
++        assert!(p.prime_security_bits(log_n) >= 112.0);
++        let mut fewer = p.clone();
++        fewer.s -= 1;
++        assert!(fewer.validate(log_n).is_err());
++        let legacy = IntEvalParams::derive(2048, 64, k, log_n).unwrap();
++        assert_eq!(legacy.security_bits, 128);
++        assert_eq!(
++          (p.log_p, p.log_t, p.log_t_f),
++          (legacy.log_p, legacy.log_t, legacy.log_t_f)
++        );
++        assert!(p.s <= legacy.s);
++        if log_n == 13 {
++          assert_eq!(p.s, if k == 9 { 14 } else { 27 });
++        }
++      }
++    }
++  }
++
++  #[test]
++  fn prime_count_is_conservative_and_uses_lower_interval_endpoint() {
++    for bits in 5..=16 {
++      let hi = 1usize << bits;
++      let is_prime = |n: usize| n >= 2 && (2..).take_while(|d| d * d <= n).all(|d| n % d != 0);
++      let actual = ((hi / 2 + 1)..=hi).filter(|n| is_prime(*n)).count();
++      assert!(log2_primes_in_top_half(bits).exp2() <= actual as f64);
++      let log_y = 18.0 * (1.0 + 128.0) + 64.0;
++      let conservative = log2_primes_in_top_half(bits) - (log_y / (bits - 1) as f64).log2();
++      assert!((soundness_bits_per_prime(bits, 18, 64) - conservative).abs() < 1e-9);
++    }
++    assert!(IntEvalParams::derive_with_target(2048, 64, 9, 13, 0).is_err());
++    assert!(IntEvalParams::derive_with_target(2048, 64, 9, 13, 129).is_err());
++    let mut p = IntEvalParams::derive_with_target(2048, 64, 9, 13, 112).unwrap();
++    p.format_version = 1;
++    assert!(p.validate(13).is_err());
++  }
++}
+diff --git a/src/provider/pcs/mod.rs b/src/provider/pcs/mod.rs
+index 7d4d2cf..fc7b1e3 100644
+--- a/src/provider/pcs/mod.rs
++++ b/src/provider/pcs/mod.rs
+@@ -18,6 +18,12 @@ pub mod integer_modpcs;
+ 
+ pub use integer_modpcs::f_chunk_len;
+ 
++/// Active Brakedown settings bound into Mod-PCS keys: target, spec, row length,
++/// and direct-opening threshold. Exposed for benchmark provenance.
++pub fn brakedown_configuration() -> [usize; 4] {
++  commit_backend::bd_configuration()
++}
++
+ /// Pre-build the deterministic Brakedown layout for a given polynomial
+ /// length (public code matrices; conceptually setup work). Returns the
+ /// column-open count for informational use.

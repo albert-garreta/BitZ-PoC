@@ -1,6 +1,6 @@
 //! Compact terminal output for the shared-witness PCS comparisons.
 
-use f2z::utils::prof::ProfileInterval;
+use f2z::observability::Interval;
 
 /// Explain the console's timing boundaries once before the size sweep.
 pub fn print_timing_definitions() {
@@ -34,21 +34,21 @@ pub fn print_timing_definitions() {
 /// Print outer phase durations after the verified trial has finished.
 pub fn print_trial(
     trial: &str,
-    intervals: &[ProfileInterval],
+    intervals: &[Interval],
     proof_bytes: usize,
     wire_bytes: usize,
 ) {
     let phase = |label| {
         intervals
             .iter()
-            .find(|interval| interval.label == label)
+            .find(|interval| interval.label() == label)
             .expect("PCS trial records its outer commit and opening phases")
     };
     let commit = phase("pcs-compare:commit");
     let opening = phase("pcs-compare:opening");
     // These outer phases are sequential; child spans must not be added again.
     assert!(commit.end_ns <= opening.start_ns);
-    let milliseconds = |interval: &ProfileInterval| {
+    let milliseconds = |interval: &Interval| {
         std::time::Duration::from_nanos(interval.end_ns - interval.start_ns).as_secs_f64() * 1e3
     };
     let commitment_generation_ms = milliseconds(commit);

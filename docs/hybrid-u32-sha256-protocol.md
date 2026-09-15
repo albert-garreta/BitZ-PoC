@@ -26,6 +26,11 @@ flowchart TD
     MC --> SC
     HC --> SC
 
+    R0["Johnson Round 0 (out-of-domain sample)<br/>Prover sends y = Ṽ(ζ⃗) for the virtual witness V<br/>before any other challenge; PoW before ζ"]
+    CM -.-> R0
+    CH -.-> R0
+    R0 -.->|"η_ood · eq(·, ζ⃗) joins the opening basis"| PC
+
     SC["Shared sumcheck<br/>Batch both claims with fresh randomness<br/>Use virtual witness V containing f and g"]
     EV["One remaining bit-MLE claim<br/>Ṽ(r) = ν"]
     RS["Ring switching<br/>128 partial evaluations + fresh batching challenges"]
@@ -33,7 +38,8 @@ flowchart TD
     LIG["One Ligerito continuation<br/>Authenticate initial queries against BOTH original roots"]
     OK["Verifier accepts<br/>Both workloads are proved"]
 
-    SC --> EV --> RS --> PC --> LIG --> OK
+    PAD["Fresh padding check after ring-switch messages<br/>Batch the zero-support claim into the final opening"]
+    SC --> EV --> RS --> PAD --> PC --> LIG --> OK
     CM -.->|"Authenticate multiplication rows"| LIG
     CH -.->|"Authenticate SHA rows"| LIG
 
@@ -42,12 +48,14 @@ flowchart TD
     classDef accepted fill:#dff2df,stroke:#398439,color:#222;
 
     class CM,CH commitment;
-    class SC,EV,RS,PC,LIG shared;
+    class R0,SC,EV,RS,PC,LIG shared;
     class OK accepted;
 ```
 
 - **Two original Merkle roots remain:** the virtual witness does not require a third initial tree.
 - **One shared transcript:** both roots are bound before the proof challenges.
+- **Round 0 comes first:** the shared opener defaults to the Johnson (list-decoding) regime, which the paper's theorem covers only with the out-of-domain sample. Right after the statement the prover sends `y = Ṽ(ζ⃗)`, `ζ⃗ = (ζ, ζ², ζ⁴, …)`, of the virtual packed witness, pinning it to one element of the level-0 list before the first Spartan, GKR or SHA challenge. The claim is folded into the final opening through one extra batching draw.
+- **Matched UDR is optional:** `--profile udrg:3:4` selects the same commitment geometry and omits outer and recursive OOD claims. The padding check applies in both regimes.
 - **SHA chaining is enforced:** every compression’s output feeds the next compression’s input state.
 - **Target:** 100-bit security for the complete composition, non-ZK.
 
@@ -77,7 +85,11 @@ RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 \
 
 The output files are the proof, `<proof>.statement.bin` (the public statement), and `<proof>.statement.txt` (a readable copy). Verification requires the first two files; it does not use the original operands or message blocks.
 
-The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/v2` and `BZSH` proof encoding version 2. Version-1 proof files are rejected; regenerate saved proofs with the current executable.
+The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5` and `BZSH` proof encoding version 5. Older versions are rejected. Version 5 binds the logical/physical source dimensions and mapping version, uses literal `initial_k=4`, and authenticates zero padding in both decoding regimes. It supports Johnson `custom:1:4` (rate 1/2) by default and matched UDR `udrg:1:4`.
+
+For logical packed-source logs `l0,l1`, let `L=max(l0,l1)`, `P=L-3`, `p_b=max(l_b,P)`, and `k_b=p_b-P`. Source `b` is padded to `2^p_b` words; physical index `i` maps to `((i >> k_b) << 4) + (b << 3) + (i mod 2^k_b)`. This forms sixteen virtual lanes. After ring-switch messages, a fresh challenge batches a zero-valued claim outside the logical supports into the authenticated opening using three equality bases.
+
+`--profile` overrides `F2Z_LIG_PROFILE` and affects only Ligerito. Verifying a UDR proof requires the same `--profile udrg:3:4` selection. Metadata is printed as `LIGERITO_CONFIG <JSON>` on stderr and saved as `<proof>.ligerito.json`; it includes the resolved configuration, fingerprint, target, OOD accounting and protocol identity.
 
 The agreed full workload is the default:
 
@@ -119,29 +131,30 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
   cargo bench --bench hybrid_u32_sha256 --features hybrid -- --sweep
 ```
 
-`--sweep` defaults to hybrid mode and three iterations per size. It runs each size/backend in a separate process using the same executable and inherited thread settings, so peak RSS does not carry over between shapes. Every iteration proves and verifies. Three iterations provide a first-use sample and two warm samples; setup is measured separately.
+`--sweep` defaults to hybrid mode, one discarded warmup and five measured iterations per size. It runs each size/backend in a separate process using the same executable and inherited thread settings, so peak RSS does not carry over between shapes. Every iteration proves and verifies. Every case reuses one setup; the warmup is excluded from sample rows and setup is reported separately.
 
 To select custom pairs and compare all three backends:
 
 ```bash
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
   cargo bench --bench hybrid_u32_sha256 --features hybrid -- \
-  --sweep --shapes 15:7,16:8 --mode all --iterations 3
+  --sweep --shapes 15:7,16:8 --mode all --iterations 5
 ```
 
-Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 15–20 and SHA logs 1–16. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
+Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 9–22 and SHA logs 1–16 (the hybrid prepares only the multiplication prefix — Spartan PIOP and F2Z GKR forest — and discharges its claim through the shared opener, so it is not held to the standalone u32 API's 2^15 floor; `separate` mode still is). Equal operation counts, `--shapes 9:9,10:10,...,14:14`, give SHA-dominated workloads: the packed SHA witness is 256x the multiplication witness, and 2^15 compressions already need about 25 GB. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
 
 The sweep prints readable progress and sample results to stdout. Each sample identifies its backend and multiplication/SHA sizes, labels prover and verifier time, and reports proof size, peak RSS and successful verification. Hybrid samples also show witness/commitment time, PIOP time broken down by multiplication/Spartan and SHA, and IOP time broken down by multiplication F2Z/GKR, joint sumcheck and the shared opening. Setup is reported once per workload and excluded from prover time; peak RSS includes setup and is cumulative within that workload's process. The sweep creates a fresh `sweep-<timestamp>-<pid>/` under `benches/results/hybrid-u32-sha256/` containing:
 
 - `summary.csv`: all verified samples, with `multiplication_relation=u32_mod_2_32`, mode, operation counts, log sizes and timings. Exact proof sizes and separate-mode payload estimates use distinct columns; unavailable metrics are blank. Read this file for machine-readable output; stdout displays the labelled results.
 - `<mode>-m<MUL_LOG>-s<SHA_LOG>.csv` and `.log`: original samples and setup/stage diagnostics for each process.
+- `<mode>-m<MUL_LOG>-s<SHA_LOG>.ligerito.json`: validated Ligerito identity for hybrid/separate modes, also encoded in the `ligerito_hex` summary column. All-Binius has no Ligerito identity.
 - `run.txt`: executable, multiplication relation, requested shapes, modes, iteration count, thread setting and security target.
 
 The default `benches/results/` directory is ignored by Git. Use `--results-dir DIR` to choose a destination that does not already exist. A failed child stops the sweep, reports its log path and preserves completed results. Sweep code lives in [`benches/hybrid_u32_sha256/sweep.rs`](../benches/hybrid_u32_sha256/sweep.rs). The standalone CLI accepts the same sweep flags.
 
 The hybrid setup log reports `packed_logs=[k, k]` when the two witnesses match. Library callers can check `let logs = prepared.packed_witness_logs(); assert_eq!(logs[0], logs[1]);`. The factor 256 is a property of the pinned SHA gadget and compiler, so check these actual logs again after either changes.
 
-A version-1 smoke sweep on 2026-09-08 successfully generated and verified one hybrid proof at every size in the table and confirmed equal packed logs for all six pairs. Its CSVs and setup logs were saved locally under `benches/results/hybrid-u32-sha256/equal-witness/`; this historical sweep checks the unchanged geometry, but predates the explicit four-limb API and version-2 transcript. It is not a comparative speedup measurement. The built-in sweep creates a fresh directory to preserve those saved measurements.
+A version-1 smoke sweep on 2026-09-08 successfully generated and verified one hybrid proof at every size in the table and confirmed equal packed logs for all six pairs. Its CSVs and setup logs were saved locally under `benches/results/hybrid-u32-sha256/equal-witness/`; this historical sweep checked the old geometry and predates the explicit four-limb API and version-2 transcript. It is not a comparative speedup measurement. The built-in sweep creates a fresh directory to preserve those saved measurements.
 
 ## Library API
 
@@ -175,28 +188,114 @@ prepared.verify(&statement, &decoded)?;
 
 Each block is sixteen words in SHA's standard word order; each word represents four big-endian message bytes. Commitment preparation generates intermediate SHA states and commits both packed witnesses. The public statement is obtained from `committed.statement()`. Setup can be reused across statements of the same shape. Decoding is bounded and requires the public statement to reconstruct the transcript-selected integer field; decoding alone does not accept a proof.
 
+## Prover-side optimizations (2026-09-10)
+
+Four byte-identical prover changes on the F2Z side of the hybrid (proof
+bytes, transcript and verifier unchanged; the 20:12 proof digest and the
+repository's transcript pins are the guards):
+
+1. **Joint sumcheck bit marginals.** The seven packed rounds used to
+   apply two 16-entry byte tables to every packed word in every round
+   (32 lookups per word per round, both sources). Their messages depend on
+   the words only through `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`,
+   so `S` is accumulated once (the ring switch's four-Russians fold, per
+   block range) and every round is a `128·low_blocks`-term dot product. The
+   dense tables are then written in parallel into uninitialised capacity
+   with the first dense message fused in, and each dense fold pass emits
+   the next message. 20:12: 112 ms → 12 ms; 22:14: 408 ms → ~60 ms.
+2. **Proof-of-work grinding.** `blake3::hash` of the short preimage goes
+   through the crate's portable scalar compression on aarch64.
+   `utils::blake3x4` compresses eight nonces per call in NEON lanes (two
+   interleaved four-lane states) for any single-block prefix and returns
+   the smallest hit of a range; the parallel search takes 1024-nonce chunks
+   from a shared counter and stops at the running minimum instead of
+   scanning whole 2^17-nonce waves (which doubled every grind below 17
+   bits). Both F2Z grinders use it: the Ligerito challenger
+   (`ZincChallenger::grind_pow`, 16-byte seed — fold, query and recursive
+   grinds of every F2Z opener, the Binius-with-F2Z-opener mode included)
+   and `piop::spartan::grinding` (32-byte seed — Spartan boundaries, forest
+   rounds, Round 0). 20:12: 50 ms → 14 ms for the 21 grinds of the shared
+   opener; 22:14: 222 ms → ~60 ms.
+3. **Serial passes made parallel or removed.** The virtual packed witness
+   scatter, the multiplication packing and the ring switch's `Gf`
+   conversion copy (`ring_switch_prove` now reads flock's `F128` words in
+   place through `PackedBits`).
+4. **Fine-grained profiler scopes** (`hc:*`, `mo:*`, `js:*`, `op:*`,
+   `lig:grind_pow`) under the runner's phase scopes, and
+   `examples/hybrid_probe.rs` to print the nested tree for one shape
+   (`OBLONG_PROFILE=1 PROBE_SHAPES="20:12" cargo run --release --example
+   hybrid_probe --features hybrid`).
+
+Not touched: the multiplication branch's GKR forest (the largest phase,
+extensively optimized in the standalone program) and the Binius SHA PIOP.
+
+## Prover-side optimizations (2026-09-11, equal operation counts)
+
+Measured with `examples/hybrid_probe.rs` against the new
+`examples/binius_probe.rs` (the all-Binius circuit under Binius64's own
+prover, its `[phase]` tracing spans printed on close) at N = M = 2^14, where
+the SHA branch is 256x the multiplication branch. Byte-identical proofs
+(12:12 and 15:7 checked against the previous binary's).
+
+5. **Binius buffer pool for the SHA reductions.** `ShaRelation` ran
+   `prove_to_evaluation` with `binius_compute::GlobalAllocator`; Binius64's
+   own `Prover` passes a `BufferPool` that recycles the reductions' large,
+   short-lived buffers within and across proofs. The same reductions took
+   264 ms in the hybrid and 232 ms in all-Binius; with a pool held by the
+   relation they take 231 ms. Peak resident memory of the process grows by
+   a few hundred MB (the pool keeps its blocks).
+6. **Joint-sumcheck scratch.** The dense rounds' two virtual-witness tables
+   and the pair they fold into (four 100 MB-class buffers at 2^14) are
+   kept by `PreparedHybrid` (`sumcheck::Scratch`) and recycled, so only the
+   first proof page-faults them. Without this the joint sumcheck drifted
+   from 28 to 34–40 ms once the pool held Binius's buffers; with it, 28 ms.
+7. **Basis written in flock's element type.** `ring_switch_prove_with`
+   takes a conversion closure, so the hybrid gets the 2^m-element basis as
+   `F128` directly instead of a second 128 MB `collect` pass.
+8. **Zero blocks skipped in the ring-switch fold.** `sv_fold_mfr` skips an
+   8-word block whose words are all zero before building its subset-sum
+   tables; at N = M the virtual witness is half zero lanes (ring switch
+   34 → 28 ms).
+
+Tried and dropped: overlapping the two commitments with `rayon::join`
+(59.6 vs 61.3 ms), jemalloc as the global allocator (every streaming pass
+slower on this machine: 14:14 560 vs 512 ms), and a wider proof-of-work
+kernel (the two-group NEON kernel already occupies the register file).
+Not touched: the proof-of-work volume (a security parameter: 106-bit
+opener component in the Johnson regime at rate 1/2) and the virtual lane
+layout (7 of 16 lanes are zero at unbalanced shapes).
+
 ## Implementation boundaries
 
 - `src/hybrid/mod.rs`: prepared relation, committed witness, prover and verifier APIs.
 - `src/piop/spartan/u32_mul.rs`: explicit four-limb modular rows and their fixed reconstruction into the existing exact-product PIOP assignment.
 - `src/hybrid/mod32_binius.rs`: four range-checked Binius limbs and the exact multiplication/reconstruction constraint used by the all-Binius comparison.
 - `src/piop/spartan/f2z/hybrid.rs`: Spartan and the exponent GKR, stopped at a binary inner product; bounded integer read-off is checked by the verifier.
-- `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state.
+- `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state; the Binius IOP prover runs on a `BufferPool` owned by the relation.
 - `src/hybrid/channel.rs`: Binius messages and challenges on the same BLAKE3 transcript as the integer branch.
-- `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds use linear byte tables over packed bits, without a field element per original bit. Subsequent rounds allocate tables over the virtual packed domain.
-- `src/hybrid/opening.rs`: ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked.
+- `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds bind the bit index inside a packed word; their messages are linear functionals of per-block **bit marginals** `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`, accumulated once per source with the method-of-four-Russians fold (no field element per original bit, no per-round scan of the packed words). Subsequent rounds fold tables over the virtual packed domain, recycled from the prepared circuit's scratch across proofs; each fold pass also emits the next round's message.
+- `src/hybrid/opening.rs`: Round 0 (the out-of-domain sample, on the audited primitives of `src/ligerito_flock.rs`), ring switching, virtual lane layout, and one Ligerito continuation. Every original row slice and every zero-padding lane is checked. The opener's proof-of-work grinds (fold-challenge, query and Round-0 nonces) scan nonces with the four-lane NEON BLAKE3 kernel of `src/utils/blake3x4.rs` under a dynamic smallest-nonce search, which returns the serial scan's nonce.
 - `src/hybrid/codec.rs`: versioned proof encoding with canonical integer residues, bounded counts and no trailing bytes.
 - `src/hybrid/security.rs`: composition error budget and explicit parameter rejection below the target.
 
-The two minimal dependency forks live under `vendor/binius64` and `vendor/flock-mod`; their `VENDORED.md` files record upstream revisions. Binius exposes its pre-ring-switch witness evaluation; Flock exposes application-supplied initial authentication. Their ordinary opening APIs retain their original backends.
+Binius is pinned to the consolidated Git fork, shared with the SHA+ECDSA worker;
+there is no local Binius patch. Its prefix API checks public inputs and wiring
+before returning the private bit-MLE claim authenticated by the shared opening.
+Flock remains under `vendor/flock-mod` and exposes application-supplied initial
+authentication. See [Binius consolidation](binius64-consolidation.md).
+
+The current hybrid wire encoding and transcript are version 5. Regenerate proof
+artifacts and setup after the combined Binius and Johnson/early-OOD update;
+version-4 and earlier proofs are rejected. Historical benchmark results below
+retain their original versions.
 
 ## Security target and scope
 
-The experiment is non-ZK. It targets at least 100 bits for the composition, with a union of the integer-prefix, GKR, binary PIOP, batching, ring-switch and Ligerito error terms. Integer-prefix parameters use the 108-bit component profile, and Ligerito uses a newly derived 112-bit UDR configuration for the **virtual geometry**, rather than reusing a standalone schedule. Both roots, counts, final SHA state, protocol version and Ligerito configuration are bound before the first challenge.
+The experiment is non-ZK. Its modeled composition gate requires at least 100 bits, including Round-0, integer-prefix, GKR, binary PIOP, batching, padding, ring-switch and Ligerito error terms. The integer component retains its 108-bit budget. The shared Ligerito opener has a 106-bit target and rate 1/8 with `initial_k=4` in both regimes. Separate mode uses a 112-bit F2Z opener; separate/all-Binius native Binius configurations remain unchanged.
 
-The four-limb interpretation preserves the original integer defect bound: both `x * y` and `z + 2^32 * w` fit in 64 bits. The hybrid witness geometry and composition security bounds are unchanged.
+Johnson's outer OOD uses `IopSecurityParams::adopt_ood_round`, including the existing 24-bit grinding cap. Native Ligerito fold/query grinding is reported separately. The fresh padding check contributes `(L+2)/2^128` to the modeled error budget. Roots, dimensions, final SHA state, mapping/protocol version and resolved configuration are bound before OOD and the PIOP challenges. UDR omits the OOD claims and retains the padding check.
 
-`prepared.security()` reports the algebraic/IOP error accounting, including its component terms. This accounting uses the pinned implementations' soundness analyses and grinding model; BLAKE3 Fiat–Shamir and 256-bit Merkle hashing remain cryptographic assumptions. It is not an unconditional Fiat–Shamir theorem or an independent cryptographic audit. The small integration-test shape reports about 102.8 algebraic bits. The full shape's bound is computed and checked at setup.
+`prepared.security()` reports component terms and the modeled composition bound. Raw statistical error and economic grinding are distinct; grinding does not reduce the raw statistical error. BLAKE3 Fiat–Shamir and Merkle hashing remain cryptographic assumptions. The four-limb interpretation preserves the integer defect bound because both `x*y` and `z + 2^32*w` fit in 64 bits. See the [coverage matrix](ligerito-coverage.md) for supported shapes and current validation.
 
 ## Compare performance
 
@@ -205,7 +304,7 @@ The benchmark entry point is `benches/hybrid_u32_sha256.rs`. Run a small matched
 ```bash
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
   cargo bench --bench hybrid_u32_sha256 --features hybrid -- \
-  --mode hybrid --mul-log 15 --sha-log 7 --iterations 3
+  --mode hybrid --mul-log 15 --sha-log 7 --iterations 5
 ```
 
 It accepts the same flags as the standalone runner. Use `--sweep` as described above to automate multiple sizes and save results. For a single run, save stdout as CSV and stderr as its corresponding setup/stage log under a fresh directory in `benches/results/hybrid-u32-sha256/`.
@@ -213,14 +312,17 @@ It accepts the same flags as the standalone runner. Use `--sweep` as described a
 Run modes in separate processes with the same thread count, build and inputs:
 
 ```bash
-RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode hybrid --iterations 3
-RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode separate --iterations 3
-RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode all-binius --iterations 3
+RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode hybrid --iterations 5
+RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode separate --iterations 5
+RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode all-binius --iterations 5
+RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode binius-ligerito --iterations 5
 ```
+
+The `binius-ligerito` mode proves the all-Binius circuit (the same four-limb multiplication gadget and SHA chain) with Binius64's PIOP prefix and the F2Z opener (`src/binius_ligerito/`): every oracle the PIOP commits — the witness and the IntMul reduction's logup* pushforward — is a rate-1/8 codeword under BLAKE3, pinned by Round 0 right after its root is bound, and opened by ring switching plus a Johnson-regime Ligerito continuation with fold and query grinding. Its setup line reports the whole-protocol union bound (`algebraic_security_bits`, gated at 100) and the opener's solved component target; the rate is fixed at 1/8 and `F2Z_HYBRID_BINIUS_*` do not apply to it.
 
 All modes generate the same deterministic operands and chained SHA blocks and use BLAKE3 Merkle hashing. Each mode generates its four-limb multiplication rows within the timed iteration. Hybrid and separate modes compile the supplied limbs through `p = z + 2^32 * w` into the integer PIOP. The separate mode uses the same integer component profile plus Binius SHA. The all-Binius mode allocates four witness wires, range-checks each to 32 bits, and checks the exact multiplication against `z XOR (w << 32)`; the disjoint limbs make this equal to `z + 2^32 * w`. It proves the same SHA chain. Binius FRI uses 112 bits, rather than its default 96-bit configuration, to leave composition slack.
 
-CSV reports setup time, total prover time including witness generation and initial commitments, verification, proof bytes and process peak RSS. Hybrid also separates witness/commit time from continuation time. Setup is excluded from total prover time and explicitly reported. Run processes separately for memory comparisons: peak RSS includes setup and is cumulative across iterations. The separate mode's proof size is labeled as a payload estimate because the existing standalone u32 API has no enclosing wire codec. First-iteration and warm-iteration times should be reported separately. The historical version-1 measurements below do **not** show a hybrid performance advantage; rerun the comparison to measure the current four-limb all-Binius circuit.
+CSV reports setup time, total prover time including witness generation and initial commitments, verification, proof bytes and process peak RSS. Hybrid also separates witness/commit time from continuation time. Setup is excluded from total prover time and explicitly reported. Run processes separately for memory comparisons: peak RSS includes setup and is cumulative across iterations. The separate mode's proof size is labeled as a payload estimate because the existing standalone u32 API has no enclosing wire codec. The first in-process proof is a discarded warmup; only subsequent proofs produce sample rows. The historical version-1 measurements below do **not** show a hybrid performance advantage; rerun the comparison to measure the current four-limb all-Binius circuit.
 
 Hybrid phase timings are measured on every sample without additional flags:
 
@@ -229,7 +331,7 @@ Hybrid phase timings are measured on every sample without additional flags:
 - `piop_ms`: the sum of those two constraint reductions.
 - `mul_opening_ms`: prepare the multiplication F2Z claim, fold bounded sums, and run GKR to obtain its binary claim.
 - `joint_sumcheck_ms`: combine the two binary claims through the shared bit sumcheck.
-- `shared_opening_ms`: virtual witness assembly, ring switching, and Ligerito with authentication against both roots.
+- `shared_opening_ms`: Round 0 (virtual witness assembly, grinding, and the out-of-domain evaluation), ring switching, and Ligerito with authentication against both roots. `ood_round_ms` reports the Round-0 part on its own; it is included in `shared_opening_ms`, not added to it again.
 - `iop_ms`: the sum of `mul_opening_ms`, `joint_sumcheck_ms`, and `shared_opening_ms`. This counts F2Z/GKR as opening work, consistent with the existing standalone F2Z benchmarks. Initial commitments are counted in `witness_commit_ms` instead.
 
 These are prover wall-clock times, including parallel work, and exclude setup and verification. `continuation_ms` encloses PIOP and IOP plus transcript initialization and logging overhead; `total_prover_ms` additionally includes witness generation, initial commitments and proof encoding. Nested profiling regions are not added again. The separate and all-Binius modes currently report total prover time; their phase columns in `summary.csv` are blank. Historical result files are unchanged and do not contain these new timing columns.
@@ -241,7 +343,7 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=4 \
   cargo test --release --lib --features hybrid hybrid::
 ```
 
-Tests cover the SHA known-answer vector, field-representation agreement, chained proof round trips, serialization, and rejection of changed roots, output states, integer sums, opening values, padding and trailing data. Modular tests check overflow boundaries, commit independently supplied limbs, and reject false relations after changing each of `x`, `y`, `z`, or `w`. Binius tests additionally check compiled constraints against out-of-range values in every limb, and verify a standalone proof of the modular gadget. A dense reference sumcheck checks the streamed rounds in both source-lane orders and the equal-size case. All eight hybrid tests, eleven integer-witness tests, and the existing standalone deterministic multiplication roundtrip passed after this change.
+Tests cover the SHA known-answer vector, field-representation agreement, chained proof round trips, serialization, and rejection of changed roots, output states, integer sums, opening values, padding and trailing data, plus the Round-0 value and nonce and the deeper levels' out-of-domain values and fold-grinding nonces. Modular tests check overflow boundaries, commit independently supplied limbs, and reject false relations after changing each of `x`, `y`, `z`, or `w`. Binius tests additionally check compiled constraints against out-of-range values in every limb, and verify a standalone proof of the modular gadget. A dense reference sumcheck checks the streamed rounds in both source-lane orders and the equal-size case. Current checks include both-regime balanced proof/codec roundtrips and malicious nonzero padding that is re-encoded and recommitted. See the [validation record](ligerito-coverage.md) for this pass; performance measurements remain deferred.
 
 Before the explicit mod-2^32 API change, the built-in sweep was validated with all six default shapes and three verified samples each, plus two custom shapes across all three backends. The historical summaries are local benchmark artifacts and are not tracked in Git. Checks also covered malformed/out-of-range/duplicate shapes, conflicting flags, existing-output-directory preservation, and terminating a child after the first shape completed: the sweep returned failure, retained the completed summary row and identified the failed child's log. These saved runs do not validate the new four-limb all-Binius circuit or version-2 proof encoding.
 
@@ -283,7 +385,7 @@ CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
   cargo build --release --features hybrid --bin hybrid-u32-sha256
 
 RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 \
-  --mode hybrid --mul-log 15 --sha-log 11 --iterations 3
+  --mode hybrid --mul-log 15 --sha-log 11 --iterations 5
 ```
 
 Repeat the last command with `--mode separate` and `--mode all-binius`. Omit both size flags for the full shape. The local integration build cache remains under `target/hybrid-build`. Local benchmark measurements live under the Git-ignored `benches/results/hybrid-u32-sha256/`; write future measurements into fresh subdirectories to preserve the recorded results.

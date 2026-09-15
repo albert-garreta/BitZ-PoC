@@ -178,7 +178,7 @@ pub fn tap_canonical_ops(taps: &[TapOp]) -> Vec<TapOp> {
 pub(crate) fn assert_tap_layout(layout: &ShaF2Layout) {
     assert_eq!(layout.p.word_bits, 1, "tap claims assume the W=1 SHA layout");
     assert!(
-        layout.x_fold_extra < layout.p.s,
+        layout.x_fold_extra < layout.p.col_vars,
         "x_fold_extra must leave a clear variable"
     );
     assert!(
@@ -195,7 +195,7 @@ pub(crate) fn assert_tap_layout(layout: &ShaF2Layout) {
 
 /// Validate a column-free op against the layout.
 pub(crate) fn assert_tap_op(layout: &ShaF2Layout, op: &TapUniOp) {
-    let s = layout.p.s;
+    let s = layout.p.col_vars;
     assert!(
         op.grp_log2 <= s,
         "tap group width g = {} must fit inside the clear axis (s = {s})",
@@ -290,7 +290,7 @@ pub fn extract_virtual_tap_rows(
     let tw = layout.tw;
     let lc = layout.log_cols;
     let bv = layout.bit_vars;
-    let s = layout.p.s;
+    let s = layout.p.col_vars;
     let delta = layout.x_fold_extra;
     let n_lo = 1usize << s;
     let run = 1usize << tw;
@@ -458,7 +458,7 @@ pub(crate) fn tap_support_tables(
     let one = Gf::one();
     let tw = layout.tw;
     let bv = layout.bit_vars;
-    let s = layout.p.s;
+    let s = layout.p.col_vars;
     let t_x = tw + bv;
     let g = tap.grp_log2;
     let n_g = 1usize << g;
@@ -560,10 +560,10 @@ pub(crate) fn tap_closure_desc(
     let tw = layout.tw;
     let lc = layout.log_cols;
     let bv = layout.bit_vars;
-    let s = layout.p.s;
+    let s = layout.p.col_vars;
     let t_x = tw + bv;
     let g = tap.grp_log2;
-    let mut out = Vec::with_capacity(layout.p.t + s - 7);
+    let mut out = Vec::with_capacity(layout.p.row_vars + s - 7);
     // Row_hi continuation: the word chain when off > 0, plain otherwise.
     for (k, &h) in pt_x.iter().enumerate().take(tw).skip(7) {
         if tap.off > 0 {
@@ -615,7 +615,7 @@ pub(crate) fn tap_closure_desc(
             out.push(TapCoord::Plain(h));
         }
     }
-    debug_assert_eq!(out.len(), layout.p.t + s - 7);
+    debug_assert_eq!(out.len(), layout.p.row_vars + s - 7);
     out
 }
 
@@ -759,14 +759,18 @@ pub(crate) fn residual_b_evals_tap(
 mod tests {
     use super::*;
     use crate::ligerito::mle_eval;
-    use crate::pcs::IntEvalParams;
+    use crate::pcs::IntegerMatrixLayout;
 
     /// W=1 tap test layout, `tw = 6` (pack cut at the column bit): 2
     /// UAIR bit-columns over 2^14 trace rows; committed t = 7, s = 8
     /// (n = 15); x tensor t' = 6, s = 8. Group width g = 3 (8-bit words).
     fn tap_layout_tw6() -> ShaF2Layout {
         ShaF2Layout {
-            p: IntEvalParams { t: 7, s: 8, word_bits: 1 },
+            p: IntegerMatrixLayout {
+                row_vars: 7,
+                col_vars: 8,
+                word_bits: 1,
+            },
             num_cols: 2,
             log_cols: 1,
             bit_vars: 0,
@@ -780,7 +784,11 @@ mod tests {
     /// 2^16 trace rows, s = 7; g = 5 (32-bit words), off < 2^{s−g} = 4.
     fn tap_layout_tw9() -> ShaF2Layout {
         ShaF2Layout {
-            p: IntEvalParams { t: 10, s: 7, word_bits: 1 },
+            p: IntegerMatrixLayout {
+                row_vars: 10,
+                col_vars: 7,
+                word_bits: 1,
+            },
             num_cols: 2,
             log_cols: 1,
             bit_vars: 0,
@@ -794,7 +802,11 @@ mod tests {
     /// entry-axis grouping: bit_vars = 3, tw = 6, s = 7, g = 3.
     fn tap_layout_bv3() -> ShaF2Layout {
         ShaF2Layout {
-            p: IntEvalParams { t: 10, s: 7, word_bits: 1 },
+            p: IntegerMatrixLayout {
+                row_vars: 10,
+                col_vars: 7,
+                word_bits: 1,
+            },
             num_cols: 2,
             log_cols: 1,
             bit_vars: 3,
@@ -811,8 +823,8 @@ mod tests {
     }
 
     fn test_rows(layout: &ShaF2Layout, seed: u64) -> Vec<Vec<u64>> {
-        let words = (1usize << layout.p.t).div_ceil(64).max(1);
-        (0..1usize << layout.p.s)
+        let words = (1usize << layout.p.row_vars).div_ceil(64).max(1);
+        (0..1usize << layout.p.col_vars)
             .map(|c| {
                 (0..words)
                     .map(|w| {
@@ -842,7 +854,7 @@ mod tests {
         let tw = layout.tw;
         let lc = layout.log_cols;
         let bv = layout.bit_vars;
-        let s = layout.p.s;
+        let s = layout.p.col_vars;
         let nv = layout.num_vars;
         let words = (1usize << (bv + tw)).div_ceil(64).max(1);
         let mut out = vec![vec![0u64; words]; 1usize << s];
@@ -1003,7 +1015,7 @@ mod tests {
             let g = grp_of(&layout);
             let tw = layout.tw;
             let bv = layout.bit_vars;
-            let s = layout.p.s;
+            let s = layout.p.col_vars;
             let t_x = tw + bv;
             let n_x = t_x + s;
             let n_g = 1usize << g;
@@ -1079,9 +1091,9 @@ mod tests {
             let g = grp_of(&layout);
             let tw = layout.tw;
             let bv = layout.bit_vars;
-            let s = layout.p.s;
+            let s = layout.p.col_vars;
             let t_x = tw + bv;
-            let n = layout.p.t + s;
+            let n = layout.p.row_vars + s;
             let m_p = n - 7;
             let n_x = t_x + s;
             let pt = test_point(n_x, 0xC0FFEE ^ (tw as u64));

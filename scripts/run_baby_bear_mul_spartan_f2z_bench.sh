@@ -91,6 +91,9 @@ for feature in "${requested_features[@]}"; do
     validated_features+=("$feature")
 done
 FEATURES="${validated_features[*]}"
+if [[ " $FEATURES " != *" span-metrics "* ]]; then
+    FEATURES="$FEATURES span-metrics"
+fi
 
 read -r -a requested_strategies <<< "$STRATEGIES"
 if (( ${#requested_strategies[@]} == 0 )); then

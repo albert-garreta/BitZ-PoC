@@ -6,6 +6,8 @@ description = "F2Z: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^
 repository = "https://github.com/NethermindEth/f2z"
 
 [dependencies]
+clap = { version = "4", features = ["derive", "env", "string"], optional = true }
+anyhow = "1"
 crypto-primitives = { path = "vendor/crypto-primitives", features = ["std", "crypto_bigint", "rand"] }
 crypto-bigint = "=0.7.5"
 crypto-primes = "=0.7.2"
@@ -28,6 +30,7 @@ flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "e
 # The host proof stream carries flock's serde `LigeritoProof` as a
 # length-prefixed bincode blob (bincode 1.3, matching flock's own pin).
 bincode = "1.3"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 serde = { version = "1", features = ["derive"] }
 # Backend-independent SHA-256/F2Z circuit synthesis, copied into this
 # workspace so fresh checkouts do not require a sibling repository.
@@ -41,6 +44,7 @@ p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49
 p3-commit = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-dft = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-field = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-fri = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-goldilocks = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-matrix = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-merkle-tree = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
@@ -49,6 +53,7 @@ p3-multilinear-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = 
 p3-sha256-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-sumcheck = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-symmetric = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
+p3-uni-stark = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-whir = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
@@ -59,46 +64,52 @@ bellpepper = { version = "0.4.1", optional = true }
 bellpepper-core = { version = "0.4.0", optional = true }
 ff = { version = "0.13.1", features = ["derive", "bits"], optional = true }
 limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0", default-features = false, optional = true }
-spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "3b94130453838550a1086ee75c5d280f5c25df3d", default-features = false, features = ["sha256-ecdsa"], optional = true }
+spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "d3e686ebc4554cabfbe6282ef3c91baba00f755f", default-features = false, features = ["sha256-ecdsa"], optional = true }
 
 # Optional Binius64 stack for the PCS and native SHA-256 comparisons.
 # Pin every crate to the same commit from the fork's f2z-benching branch.
-binius-compute = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-circuits = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-core = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-field = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-frontend = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-hash = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-iop = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-iop-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-ip = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-ip-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-math = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-transcript = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-binius-utils = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", features = ["rayon"], optional = true }
-binius-verifier = { git = "https://github.com/wu-s-john/binius64.git", rev = "2b27daea4a893fab930259cc7ad59d0a37c2ef95", optional = true }
-tracing = { version = "0.1.38", optional = true }
+binius-compute = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-circuits = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-core = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-field = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-frontend = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-hash = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-iop = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-iop-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-ip = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-ip-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-math = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-transcript = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-utils = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
+tracing = "0.1.38"
 tracing-subscriber = { version = "0.3.18", optional = true }
+perfetto-sdk = { version = "1.1.1", optional = true }
+tracing-perfetto-sdk = { version = "1.0.0", optional = true }
+csv = { version = "1.4", optional = true }
 
 [dev-dependencies]
+clap = { version = "4", features = ["derive", "env", "string"] }
+csv = "1.4"
 libc = "0.2"
-serde_json = "1"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
+tempfile = "3"
 
 [[bench]]
 name = "sha256_ecdsa"
 harness = false
-required-features = ["ecdsa"]
+required-features = ["span-metrics", "ecdsa"]
 
 [[bench]]
 name = "sha256_ecdsa_compare"
 harness = false
-required-features = ["sha256-ecdsa-compare"]
+required-features = ["span-metrics", "sha256-ecdsa-compare"]
 
 [[bench]]
 name = "pcs"
+required-features = ["span-metrics"]
 harness = false
 # Plain-main bench (no criterion): commit/prove/verify timings, serialized
 # proof size + codec round-trip, and peak heap per phase. Shapes via
@@ -106,6 +117,7 @@ harness = false
 
 [[bench]]
 name = "field"
+required-features = ["span-metrics"]
 harness = false
 # GF(2^128)-GHASH vs GF(2^127)-b127 head-to-head on the prover's hot
 # patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
@@ -113,6 +125,7 @@ harness = false
 
 [[bench]]
 name = "cm_and"
+required-features = ["span-metrics"]
 harness = false
 # CM-AND relation (paper \Relation_CM): batched 32-bit x AND y = z via ONE
 # linear constraint per gate, with w = x XOR y as an F2-VIRTUAL block -
@@ -121,6 +134,7 @@ harness = false
 
 [[bench]]
 name = "u32_mul"
+required-features = ["span-metrics"]
 harness = false
 # Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
 # assignment claim discharged against the compact F2 witness by F2Z. The
@@ -131,6 +145,7 @@ harness = false
 
 [[bench]]
 name = "baby_bear_mul"
+required-features = ["span-metrics"]
 harness = false
 # Independent BabyBear multiplications (a*b = c + p*k) through the PAPER
 # path (transcript-sampled Step-2 prime), TWO rows per shape on one
@@ -142,35 +157,37 @@ harness = false
 [[bench]]
 name = "baby_bear_pcs_compare"
 harness = false
-required-features = ["bench-internals", "plonky3-whir-bench", "binius64-bench"]
+required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
 
 [[bench]]
 name = "u32_pcs_compare"
 harness = false
-required-features = ["bench-internals", "plonky3-whir-bench", "binius64-bench"]
+required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
 
 [[bench]]
 name = "u32_mul_inner_policy"
 harness = false
-required-features = ["bench-internals"]
+required-features = ["span-metrics", "bench-internals"]
 # Controlled PIOP-only sweep with a fixed delayed-Barrett outer sumcheck.
 # It varies native witness folding and field coefficient accumulation only.
 
 [[bench]]
 name = "eq_tables"
 harness = false
-required-features = ["bench-internals"]
+required-features = ["span-metrics", "bench-internals"]
 # Controlled legacy-versus-current equality-table builder benchmark.
 # Widths 8, 12, and 16; alternating median samples and explicit PR 1 gates.
 
 [[bench]]
 name = "u32_mul_outer_skip"
+required-features = ["span-metrics"]
 harness = false
 # Controlled PIOP-only comparison of the standard outer sumcheck against
 # known-zero univariate prefix skips K=1,2,3,4 (the canonical adapter uses K=3).
 
 [[bench]]
 name = "multiswap"
+required-features = ["span-metrics"]
 harness = false
 # Limber's wired MultiSwap Mod-R1CS (6209 rows, k=0) through Spartan over a
 # transcript-sampled 113-bit prime + the runtime-prime F2Z bit opening.
@@ -181,6 +198,7 @@ harness = false
 
 [[bench]]
 name = "lambda_sweep"
+required-features = ["span-metrics"]
 harness = false
 # One SHA-256 witness proved under Lambda100 / Sha128ReferenceSchedule /
 # Lambda128 (compile-time profiles) in the unified schema - the
@@ -190,6 +208,7 @@ harness = false
 
 [[bench]]
 name = "sha256_compressions"
+required-features = ["span-metrics"]
 harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
 # virtual F2Z path. Unified output schema (docs/bench-schema.md). Exponents
@@ -198,6 +217,7 @@ harness = false
 
 [[bench]]
 name = "sha256_chain"
+required-features = ["span-metrics"]
 harness = false
 # CHAINED SHA-256 compressions (the Merkle–Damgård chain over 2^k blocks,
 # intermediate chaining values as witness) through the same linear PIOP +
@@ -208,16 +228,16 @@ harness = false
 [[bench]]
 name = "sha256_e2e_compare"
 harness = false
-required-features = ["bench-internals", "native-sha256-compare"]
+required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
 # Claim-equivalent fixed-IV native SHA-256 comparison across F2Z, full
-# Plonky3 SHA AIR/WHIR, Binius64, Spartan/Hyrax, and integer-mod Limber.
-# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 10..16), one warmup and
+# Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
+# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
 # 21 measured verified samples by default.
 
 [[bench]]
 name = "hybrid_u32_sha256"
 harness = false
-required-features = ["hybrid"]
+required-features = ["span-metrics", "hybrid"]
 # Shared-opening hybrid, separate BitZ + Binius, and all-Binius comparison.
 # Chained SHA-256 plus x*y = z + 2^32*w with four u32 limbs.
 # Counts and repetitions via --mul-log, --sha-log, and --iterations.
@@ -225,29 +245,96 @@ required-features = ["hybrid"]
 [[bench]]
 name = "mul_e2e_compare"
 harness = false
-required-features = ["bench-internals", "native-mul-compare"]
+required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
 
 [[bench]]
 name = "mul_witness_compare"
 harness = false
-required-features = ["bench-internals", "native-mul-compare"]
+required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
 
 [[test]]
 name = "native_mul_compare"
 path = "tests/native_mul_compare.rs"
 required-features = ["bench-internals", "native-mul-compare"]
 
+[[test]]
+name = "benchmark_reporting"
+path = "tests/benchmark_reporting.rs"
+required-features = ["bench-internals", "native-mul-compare", "sha256-ecdsa-compare", "hybrid"]
+
+[[test]]
+name = "benchmark_perfetto"
+required-features = ["bench-perfetto"]
+
+[[test]]
+name = "native_sha256_compare"
+path = "tests/native_sha256_compare.rs"
+required-features = ["bench-internals", "native-sha256-compare"]
+
 [[bench]]
 name = "sha256_product_layout"
 harness = false
-required-features = ["bench-internals"]
+required-features = ["span-metrics", "bench-internals"]
 # Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
 # t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
 # F2Z_SHA_PRODUCT_TS.
 
+[[example]]
+name = "binius_probe"
+required-features = ["span-metrics", "hybrid"]
+
+[[example]]
+name = "hybrid_probe"
+required-features = ["span-metrics", "hybrid"]
+
+
+[[example]]
+name = "grind_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "reference_measure"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "cm_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "u64_mul_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "taps_ab"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "quad_ab"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "rlc_ab"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "spartan_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "sha_probe"
+required-features = ["span-metrics"]
+
+[[example]]
+name = "prof_probe"
+required-features = ["span-metrics"]
+
 [features]
 default = ["parallel"]
-hybrid = ["binius64-bench"]
+# Numeric span metrics require the native trace processor at runtime.
+span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing-subscriber", "dep:csv"]
+# Additionally save per-trial diagnostic artifacts through BenchmarkOutput.
+bench-perfetto = ["span-metrics"]
+hybrid = ["span-metrics", "binius64-bench", "dep:csv", "dep:clap"]
 parallel = ["dep:rayon"]
 unchecked = []
 # Benchmark-only allocator instrumentation. The latency binary deliberately
@@ -257,7 +344,7 @@ bench-peak-memory = []
 bench-internals = []
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
-sha256-ecdsa-compare = ["ecdsa", "parallel", "dep:spartan2"]
+sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]
 # Enables the Plonky3 BabyBear/Goldilocks WHIR stack for the controlled PCS
 # comparison without adding it to normal library or benchmark builds.
 plonky3-whir-bench = [
@@ -282,14 +369,34 @@ plonky3-sha256-bench = [
     "dep:p3-sha256-air",
     "dep:p3-util",
 ]
+# Univariate Goldilocks STARK + FRI for independent wrapping u32 multiplication.
+plonky3-fri-bench = [
+    "dep:p3-air",
+    "dep:p3-challenger",
+    "dep:p3-commit",
+    "dep:p3-dft",
+    "dep:p3-field",
+    "dep:p3-fri",
+    "dep:p3-goldilocks",
+    "dep:p3-matrix",
+    "dep:p3-merkle-tree",
+    "dep:p3-symmetric",
+    "dep:p3-uni-stark",
+    "dep:postcard",
+]
 native-mul-compare = [
+    "span-metrics",
+    "plonky3-fri-bench",
     "plonky3-whir-bench",
     "dep:p3-air",
     "dep:p3-multi-stark",
     "binius64-bench",
+    # Limber's own wrapping-multiplication rows, proved in process through
+    # its Brakedown Mod-PCS engine (benches/mul_e2e_compare/limber.rs).
     "dep:limber",
 ]
 native-sha256-compare = [
+    "span-metrics",
     "plonky3-sha256-bench",
     "binius64-bench",
     "dep:bellpepper",
@@ -321,7 +428,6 @@ binius64-bench = [
     "dep:binius-transcript",
     "dep:binius-utils",
     "dep:binius-verifier",
-    "dep:tracing",
     "dep:tracing-subscriber",
 ]
 
@@ -341,10 +447,6 @@ halo2curves = { git = "https://github.com/privacy-ethereum/halo2curves.git", rev
 [patch."https://github.com/albert-garreta/flock-mod.git"]
 flock-core = { path = "vendor/flock-mod/crates/flock-core" }
 
-[patch."https://github.com/wu-s-john/binius64.git"]
-binius-prover = { path = "vendor/binius64/crates/prover" }
-binius-verifier = { path = "vendor/binius64/crates/verifier" }
-
 # Release-equivalent benchmark codegen with profiler-readable DWARF. Keeping
 # symbols in the built-in bench profile lets xctrace resolve Rust hot paths.
 [profile.bench]
@@ -361,6 +463,21 @@ inherits = "release"
 debug = 2
 
 [[bin]]
+name = "f2z"
+path = "src/bin/f2z.rs"
+required-features = ["span-metrics"]
+
+[[bin]]
 name = "hybrid-u32-sha256"
 path = "src/bin/hybrid_u32_sha256.rs"
-required-features = ["hybrid"]
+required-features = ["span-metrics", "hybrid"]
+
+[[test]]
+name = "binius_integer_pcs"
+path = "tests/binius_integer_pcs.rs"
+required-features = ["bench-internals", "binius64-bench"]
+
+[[bench]]
+name = "ligerito_bounds"
+harness = false
+required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]

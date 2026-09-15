@@ -24,6 +24,8 @@ pub trait ConstCoeffBitWidth {
 
 #[derive(Clone, Debug, PartialEq, Error)]
 pub enum EvaluationError {
+    #[error("Invalid multilinear evaluation-table shape")]
+    InvalidShape,
     #[error("Wrong number of points provided for evaluation: expected {expected}, got {actual}")]
     WrongPointWidth { expected: usize, actual: usize },
     #[error("Evaluation failed due to overflow")]

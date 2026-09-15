@@ -18,10 +18,10 @@ NATIVE_RUSTFLAGS="${RUSTFLAGS:--Ctarget-cpu=native}"
 
 case "$WHIR_DEGREE" in
     4)
-        BENCH_FEATURES="bench-internals,plonky3-whir-bench,plonky3-whir-degree4-bench"
+        BENCH_FEATURES="span-metrics,bench-internals,plonky3-whir-bench,plonky3-whir-degree4-bench"
         ;;
     5)
-        BENCH_FEATURES="bench-internals,plonky3-whir-bench"
+        BENCH_FEATURES="span-metrics,bench-internals,plonky3-whir-bench"
         ;;
     *)
         echo "F2Z_PCS_COMPARE_WHIR_DEGREE must be 4 or 5" >&2

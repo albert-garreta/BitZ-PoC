@@ -30,10 +30,17 @@
 //! validator-gated Ligerito security configs ([`sha_lig_configs`]); the
 //! `RsOpenConfig::num_queries` knob does not apply on this backend.
 
+use anyhow::Context;
 use crypto_bigint::U128;
 use crypto_primes::{Flavor, is_prime};
 use flock_core::challenger::Challenger;
 pub(crate) mod atomic;
+#[cfg(test)]
+mod coverage;
+mod configuration;
+pub use configuration::{LigeritoSelection, ResolvedLigerito};
+mod ood;
+pub use ood::{ProverOod, VerifierOod, bind_prover_ood, bind_verifier_ood};
 
 use flock_core::field::F128;
 use flock_core::merkle::HashKind;
@@ -61,7 +68,9 @@ use crate::ligerito::{
     verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
-use crate::pcs::{IntEvalParams, ModQWeightChunks, ModQWeightSource, ShaF2Layout, final_eval_ring};
+use crate::pcs::{
+    IntegerMatrixLayout, ModQWeightChunks, ModQWeightSource, ShaF2Layout, final_eval_ring,
+};
 use crate::taps::TapOp;
 use crate::utils::{cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter};
 
@@ -139,57 +148,28 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
     }
 
     fn grind_pow(&mut self, bits: u32) -> u64 {
+        let _g = tracing::info_span!("lig:grind_pow").entered();
         let seed = self.pow_seed();
         // Parallel smallest-nonce search (prover-side only; the verifier
-        // checks whatever nonce arrives): scan fixed waves of the nonce
-        // space and take each wave's MINIMUM hit — the first wave with a
-        // hit yields exactly the serial scan's nonce, so the transcript
-        // stays byte-identical. The expected serial cost is 2^bits hashes
-        // (~6.5 ms at 16 bits); waves parallelize it ~#cores. Below ~2^11
-        // expected hashes the fork-join overhead outweighs the win — stay
-        // serial there.
+        // checks whatever nonce arrives): every pool thread takes chunks of
+        // the nonce space in order and the running minimum hit ends the
+        // scan — exactly the serial scan's nonce, so the transcript stays
+        // byte-identical. The expected serial cost is 2^bits compressions
+        // (four-lane NEON kernel). Below ~2^12 expected attempts the
+        // thread broadcast outweighs the win — stay serial there.
         #[cfg(feature = "parallel")]
         let nonce = if bits == 0 {
             0
-        } else if bits >= 11 {
-            use rayon::prelude::*;
-            const CHUNK_LOG: u64 = 12;
-            const CHUNKS: usize = 32; // wave = 32 · 4096 = 2^17 nonces
-            let mut base = 0u64;
-            loop {
-                let hit = (0..CHUNKS)
-                    .into_par_iter()
-                    .filter_map(|c| {
-                        // First hit in the chunk = the chunk's minimum.
-                        let start = base + ((c as u64) << CHUNK_LOG);
-                        (start..start + (1 << CHUNK_LOG)).find(|&n| pow_ok(&seed, n, bits))
-                    })
-                    .min();
-                if let Some(n) = hit {
-                    break n;
-                }
-                base += (CHUNKS as u64) << CHUNK_LOG;
-            }
+        } else if bits >= 12 {
+            crate::utils::blake3x4::smallest_pow_nonce(&seed, bits).expect("a nonce below 2^64")
         } else {
-            let mut nonce = 0u64;
-            loop {
-                if pow_ok(&seed, nonce, bits) {
-                    break nonce;
-                }
-                nonce = nonce.wrapping_add(1);
-            }
+            first_pow_nonce(&seed, 0, u64::MAX, bits).expect("a nonce below 2^64")
         };
         #[cfg(not(feature = "parallel"))]
         let nonce = if bits == 0 {
             0
         } else {
-            let mut nonce = 0u64;
-            loop {
-                if pow_ok(&seed, nonce, bits) {
-                    break nonce;
-                }
-                nonce = nonce.wrapping_add(1);
-            }
+            first_pow_nonce(&seed, 0, u64::MAX, bits).expect("a nonce below 2^64")
         };
         self.0.absorb_slice(&nonce.to_le_bytes());
         nonce
@@ -226,26 +206,10 @@ impl<T: Transcript + Send> ZincChallenger<'_, T> {
     }
 }
 
-/// `blake3(seed || nonce)` has at least `bits` leading zero bits.
-fn pow_ok(seed: &[u8; 16], nonce: u64, bits: u32) -> bool {
-    let mut buf = [0u8; 24];
-    buf[..16].copy_from_slice(seed);
-    buf[16..].copy_from_slice(&nonce.to_le_bytes());
-    let hash = blake3::hash(&buf);
-    leading_zero_bits(hash.as_bytes()) >= bits
-}
-
-fn leading_zero_bits(bytes: &[u8]) -> u32 {
-    let mut acc = 0u32;
-    for &b in bytes {
-        if b == 0 {
-            acc = acc.wrapping_add(8);
-        } else {
-            return acc.wrapping_add(b.leading_zeros());
-        }
-    }
-    acc
-}
+/// `blake3(seed || nonce)` has at least `bits` leading zero bits; the
+/// prover scans nonces four at a time ([`first_pow_nonce`]), the verifier
+/// checks the one it receives.
+use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 
 // ---------------------------------------------------------------------
 // Commit
@@ -293,7 +257,7 @@ impl core::fmt::Debug for FlockCommitHint {
 /// Merkle).
 #[allow(clippy::arithmetic_side_effects)]
 fn commit_rs_flock_from_rows(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     packed_cols: Vec<Vec<u64>>,
     log_inv_rate: usize,
@@ -303,7 +267,7 @@ fn commit_rs_flock_from_rows(
     let t_w = row_bit_vars(p);
     assert!(t_w >= LOG_PACKING, "packing needs t + log2(W) >= 7");
     let hi_count = 1usize << (t_w - LOG_PACKING);
-    let mut p_msg = Vec::with_capacity(hi_count << p.s);
+    let mut p_msg = Vec::with_capacity(hi_count << p.col_vars);
     for row in rows.iter().take(p.cols()) {
         for i_hi in 0..hi_count {
             p_msg.push(F128 {
@@ -339,7 +303,7 @@ fn commit_rs_flock_from_rows(
 /// `(log_inv_rate, log_batch)` shape, starting from the flat `u128` cell
 /// tensor.
 pub fn commit_rs_flock_with(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     data: &[u128],
     log_inv_rate: usize,
     log_batch: usize,
@@ -363,7 +327,7 @@ pub fn commit_rs_flock_with(
 /// harnesses/hosts that can produce bits directly: peak stays at the
 /// packed scale (`2^n/8` bytes per store) instead of 16 B per cell.
 pub fn commit_rs_ligerito_rows(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> FlockCommitHint {
@@ -383,7 +347,7 @@ pub fn commit_rs_ligerito_rows(
 /// are rebuilt by 64×64 bit-transposes; the `u128` cell tensor never
 /// exists. Shape from the Ligerito prover config.
 pub fn commit_rs_ligerito_packed(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     packed_cols: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> FlockCommitHint {
@@ -399,7 +363,7 @@ pub fn commit_rs_ligerito_packed(
 }
 
 /// Baseline Ligerito configuration used by the fixed-modulus adapters.
-pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+pub fn historical_sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
     let m = m_p + LOG_PACKING;
     if m < 22 {
         return lig_configs(
@@ -416,17 +380,16 @@ pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
 }
 
-/// Round-0 parameters matching [`sha_lig_configs`] at that config's own
-/// round-by-round target: `Some` for the Johnson-regime production configs
-/// (`m ≥ 22`), `None` for the ad-hoc test configs below.
+/// Production fixed-modulus default; unsupported shapes are errors.
+pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
+    let resolved = LigeritoSelection::JOHNSON.resolve(m_p, 100)?;
+    Ok((resolved.prover().clone(), resolved.verifier().clone()))
+}
+
+/// Round-0 parameters matching the checked production configuration.
 pub fn sha_lig_ood_params(m_p: usize) -> Option<OodRoundParams> {
-    let m = m_p.checked_add(LOG_PACKING)?;
-    if m < 22 || ligerito::embedded_security_config(m, ligerito::LigeritoProfile::Slim).is_none() {
-        return None;
-    }
-    let cfg = custom_johnson_config(m, 1, 4);
-    let target = u32::try_from(cfg.target_security_bits).ok()?;
-    ood_round_params(&cfg, m_p, target)
+    let resolved = LigeritoSelection::JOHNSON.resolve(m_p, 100).expect("unsupported production Ligerito shape");
+    ood_round_params(resolved.security(), m_p, 100)
 }
 
 /// Builds a validator-gated UDR Ligerito configuration at an explicit
@@ -483,7 +446,11 @@ pub fn validated_udr_lig_configs_with(
 /// [`commit_rs_flock_with`] at the shape in `cfg` (the BaseFold backend's
 /// entry point; the Ligerito path derives its shape from the level config —
 /// see [`lig_configs`] + [`commit_rs_ligerito`]).
-pub fn commit_rs_flock(p: &IntEvalParams, data: &[u128], cfg: &RsOpenConfig) -> FlockCommitHint {
+pub fn commit_rs_flock(
+    p: &IntegerMatrixLayout,
+    data: &[u128],
+    cfg: &RsOpenConfig,
+) -> FlockCommitHint {
     commit_rs_flock_with(p, data, cfg.log_inv_rate, cfg.log_batch)
 }
 
@@ -603,11 +570,18 @@ pub fn custom_johnson_config(m: usize, r0: usize, k0: usize) -> LigeritoSecurity
 /// configs are unchanged by this.
 #[allow(clippy::arithmetic_side_effects, clippy::missing_panics_doc)]
 pub fn custom_johnson_config_bits(
+    m: usize, r0: usize, k0: usize, target_bits: Option<usize>,
+) -> LigeritoSecurityConfig {
+    try_custom_johnson_config_bits(m, r0, k0, target_bits)
+        .expect("custom config passes flock's validator")
+}
+
+fn try_custom_johnson_config_bits(
     m: usize,
     r0: usize,
     k0: usize,
     target_bits: Option<usize>,
-) -> LigeritoSecurityConfig {
+) -> Result<LigeritoSecurityConfig, String> {
     // Embedded production tables start at m=22. Only scalar/default fields
     // are borrowed from the template (header strings, `eta`, grinding
     // convention, target); `m`, `log_n`, every level shape, and the final
@@ -616,14 +590,14 @@ pub fn custom_johnson_config_bits(
     // template's own `m`/`log_n` are re-assigned to themselves (no change).
     let template_m = m.max(22);
     let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={template_m}"));
-    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
+        .ok_or_else(|| format!("no embedded slim template for m={template_m}"))?;
+    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim)?;
     let log_n = m
         .checked_sub(LOG_PACKING)
-        .expect("custom Johnson witness has at least LOG_PACKING variables");
+        .ok_or("custom Johnson witness has fewer than LOG_PACKING variables")?;
     cfg.m = m;
     cfg.log_n = log_n;
-    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    if k0 == 0 || k0 >= log_n { return Err("custom initial_k out of range".into()); }
     if let Some(bits) = target_bits {
         cfg.target_security_bits = bits;
     }
@@ -644,7 +618,7 @@ pub fn custom_johnson_config_bits(
     cfg.levels = shapes
         .iter()
         .enumerate()
-        .map(|(i, &(mc, il, kr, r))| {
+        .map(|(i, &(mc, il, kr, r))| -> Result<_, String> {
             let mut lv = tmpl.clone();
             if let Some(bits) = target_bits {
                 lv.target_security_bits = bits;
@@ -662,7 +636,18 @@ pub fn custom_johnson_config_bits(
                     lv.queries = q;
                     lv.paper_predicted_bits().1 + 1e-3 >= need_q
                 })
-                .expect("query search converges");
+                .ok_or("Johnson query search did not converge")?;
+            // Every query is a distinct codeword position, so a level must be
+            // at least as wide as its query count (flock's prover asserts this
+            // at proving time; fail here, at configuration time, instead).
+            let positions = 1usize << (mc + r);
+            if lv.queries > positions {
+                return Err(format!(
+                    "custom Johnson level {i} is too thin: {} queries over {positions} positions \
+                     (log_msg_cols {mc}, log_inv_rate {r}); use a larger m or a smaller initial_k",
+                    lv.queries
+                ));
+            }
             let (pg, qb) = lv.paper_predicted_bits();
             lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
             lv.expected_eps_pg_bits = pg;
@@ -690,12 +675,11 @@ pub fn custom_johnson_config_bits(
                     lv.ood_samples += 1;
                 }
             }
-            lv
+            Ok(lv)
         })
-        .collect();
-    cfg.validate()
-        .expect("custom config passes flock's validator");
-    cfg
+        .collect::<Result<_, _>>()?;
+    cfg.validate()?;
+    Ok(cfg)
 }
 
 /// Queries-only security: a **UDR-regime** config at the
@@ -760,27 +744,34 @@ pub fn custom_udr_grind_config_bits(
 
 #[allow(clippy::arithmetic_side_effects)]
 fn udr_config_impl(
+    m: usize, r0: usize, k0: usize, target_bits: Option<usize>, fold_grind: bool,
+) -> LigeritoSecurityConfig {
+    try_udr_config_impl(m, r0, k0, target_bits, fold_grind)
+        .expect("custom UDR config passes flock's validator")
+}
+
+fn try_udr_config_impl(
     m: usize,
     r0: usize,
     k0: usize,
     target_bits: Option<usize>,
     fold_grind: bool,
-) -> LigeritoSecurityConfig {
+) -> Result<LigeritoSecurityConfig, String> {
     // Embedded production tables start at m=22.  Only scalar/default fields
     // are borrowed from the template: `m`, `log_n`, every level shape, the
     // target, and the final block are rebuilt below, so the m=22 template is
     // also a sound seed for the paper's m=20 and m=21 SHA endpoints.
     let template_m = m.max(22);
     let slim = ligerito::embedded_security_config(template_m, ligerito::LigeritoProfile::Slim)
-        .unwrap_or_else(|| panic!("no embedded slim template for m={template_m}"));
-    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim).expect("slim template validates");
+        .ok_or_else(|| format!("no embedded slim template for m={template_m}"))?;
+    let mut cfg = LigeritoSecurityConfig::from_toml_str(slim)?;
     let log_n = m
         .checked_sub(LOG_PACKING)
-        .expect("custom UDR witness has at least LOG_PACKING variables");
+        .ok_or("custom UDR witness has fewer than LOG_PACKING variables")?;
     cfg.m = m;
     cfg.log_n = log_n;
     cfg.analysis_version = "udr_maximal_radius_with_fold_grinding".into();
-    assert!(k0 >= 1 && k0 < log_n, "custom initial_k out of range");
+    if k0 == 0 || k0 >= log_n { return Err("custom initial_k out of range".into()); }
     if let Some(bits) = target_bits {
         cfg.target_security_bits = bits;
     }
@@ -803,7 +794,7 @@ fn udr_config_impl(
     cfg.final_block.yr_log_n = n_run;
     cfg.levels = shapes
         .iter()
-        .map(|&(mc, il, kr, r)| {
+        .map(|&(mc, il, kr, r)| -> Result<_, String> {
             let mut lv = tmpl.clone();
             if let Some(bits) = target_bits {
                 lv.target_security_bits = bits;
@@ -827,7 +818,7 @@ fn udr_config_impl(
                     lv.queries = q;
                     lv.paper_predicted_bits().1 + 1e-3 >= need_q
                 })
-                .expect("query search converges");
+                .ok_or("UDR query search did not converge")?;
             let (pg, qb) = lv.paper_predicted_bits();
             // udrg only: recover the pg shortfall with per-fold PoW
             // (cheap here — pg is 112–119, so the grind is 9–16 bits).
@@ -837,18 +828,17 @@ fn udr_config_impl(
             }
             lv.expected_eps_pg_bits = pg;
             lv.expected_eps_query_bits = qb;
-            lv
+            Ok(lv)
         })
-        .collect();
-    cfg.validate()
-        .expect("custom UDR config passes flock's validator");
-    cfg
+        .collect::<Result<_, _>>()?;
+    cfg.validate()?;
+    Ok(cfg)
 }
 
 /// Commit at the shape the Ligerito config dictates
 /// (`log_inv_rate = log_inv_rates[0]`, `log_batch = initial_k`).
 pub fn commit_rs_ligerito(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     data: &[u128],
     pc: &LigProverConfig,
 ) -> FlockCommitHint {
@@ -925,91 +915,121 @@ pub(crate) fn validate_ligerito_commitment(
     commitment: &Commitment,
     config: &impl LigeritoStatementConfig,
 ) -> Result<(), FlockRsError> {
+    check_ligerito_commitment(commitment, config).map_err(|_| FlockRsError::CommitmentConfig)
+}
+
+fn check_ligerito_commitment(
+    commitment: &Commitment,
+    config: &impl LigeritoStatementConfig,
+) -> anyhow::Result<()> {
+    validate_ligerito_config_shape(config)?;
     let recursive_levels = config.recursive_steps();
-    let Some(levels) = recursive_levels.checked_add(1) else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
     let log_inv_rates = config.log_inv_rates();
     let recursive_log_msg_cols = config.recursive_log_msg_cols();
     let recursive_ks = config.recursive_ks();
     let queries = config.queries();
-    let grinding_bits = config.grinding_bits();
-    let fold_grinding_bits = config.fold_grinding_bits();
-    let ood_samples = config.ood_samples();
-    if recursive_levels == 0
-        || log_inv_rates.len() != levels
-        || recursive_log_msg_cols.len() != recursive_levels
-        || recursive_ks.len() != recursive_levels
-        || queries.len() != levels
-        || grinding_bits.len() != levels
-        || fold_grinding_bits.len() != levels
-        || ood_samples.len() != levels
-        || log_inv_rates.iter().any(|&rate| rate == 0)
-        || queries.iter().any(|&query_count| query_count == 0)
-        || ood_samples[0] != 0
-    {
-        return Err(FlockRsError::CommitmentConfig);
-    }
-    let Some(&log_inv_rate) = log_inv_rates.first() else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
+    let log_inv_rate = log_inv_rates
+        .first()
+        .copied()
+        .context("missing initial inverse rate")?;
     let initial_log_msg_cols = config.initial_log_msg_cols();
     let initial_log_num_interleaved = config.initial_log_num_interleaved();
     let initial_k = config.initial_k();
-    let Some(log_message_len) = initial_log_msg_cols.checked_add(initial_log_num_interleaved)
-    else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    let Some(expected_m) = log_message_len.checked_add(LOG_PACKING) else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    if expected_m >= usize::BITS as usize {
-        return Err(FlockRsError::CommitmentConfig);
-    }
-    let Some(initial_block_log) = initial_log_msg_cols.checked_add(log_inv_rate) else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    let Some(initial_block_len) = u32::try_from(initial_block_log)
+    let expected_m = initial_log_msg_cols
+        .checked_add(initial_log_num_interleaved)
+        .and_then(|len| len.checked_add(LOG_PACKING))
+        .context("message dimension overflow")?;
+    anyhow::ensure!(
+        expected_m < usize::BITS as usize,
+        "message dimension exceeds usize"
+    );
+    let initial_block_log = initial_log_msg_cols
+        .checked_add(log_inv_rate)
+        .context("initial block dimension overflow")?;
+    let initial_block_len = u32::try_from(initial_block_log)
         .ok()
         .and_then(|log| 1usize.checked_shl(log))
-    else {
-        return Err(FlockRsError::CommitmentConfig);
-    };
-    if queries[0] > initial_block_len {
-        return Err(FlockRsError::CommitmentConfig);
-    }
+        .context("initial block length overflow")?;
+    anyhow::ensure!(
+        queries[0] <= initial_block_len,
+        "initial queries exceed block length"
+    );
     let mut remaining = initial_log_msg_cols;
     for i in 0..recursive_levels {
         let k = recursive_ks[i];
-        if k == 0 || k > remaining {
-            return Err(FlockRsError::CommitmentConfig);
-        }
+        anyhow::ensure!(
+            k > 0 && k <= remaining,
+            "invalid fold dimension at level {i}"
+        );
         remaining -= k;
-        if recursive_log_msg_cols[i] != remaining {
-            return Err(FlockRsError::CommitmentConfig);
-        }
-        let Some(block_log) = remaining.checked_add(log_inv_rates[i + 1]) else {
-            return Err(FlockRsError::CommitmentConfig);
-        };
-        let Some(block_len) = u32::try_from(block_log)
+        anyhow::ensure!(
+            recursive_log_msg_cols[i] == remaining,
+            "message dimension mismatch at level {i}"
+        );
+        let block_log = remaining
+            .checked_add(log_inv_rates[i + 1])
+            .context("recursive block dimension overflow")?;
+        let block_len = u32::try_from(block_log)
             .ok()
             .and_then(|log| 1usize.checked_shl(log))
-        else {
-            return Err(FlockRsError::CommitmentConfig);
-        };
-        if queries[i + 1] > block_len {
-            return Err(FlockRsError::CommitmentConfig);
-        }
+            .context("recursive block length overflow")?;
+        anyhow::ensure!(
+            queries[i + 1] <= block_len,
+            "queries exceed block length at level {}",
+            i + 1
+        );
     }
     let params = &commitment.params;
-    if params.m != expected_m
-        || params.log_inv_rate != log_inv_rate
-        || params.log_batch_size != initial_k
-        || initial_log_num_interleaved != initial_k
-        || params.merkle_hash != config.merkle_hash()
-    {
-        return Err(FlockRsError::CommitmentConfig);
-    }
+    anyhow::ensure!(
+        params.m == expected_m
+            && params.log_inv_rate == log_inv_rate
+            && params.log_batch_size == initial_k
+            && initial_log_num_interleaved == initial_k
+            && params.merkle_hash == config.merkle_hash(),
+        "commitment metadata does not match Ligerito config"
+    );
+    Ok(())
+}
+
+/// Validate per-level array lengths and required values before indexing them.
+fn validate_ligerito_config_shape(config: &impl LigeritoStatementConfig) -> anyhow::Result<()> {
+    let recursive_levels = config.recursive_steps();
+    let levels = recursive_levels
+        .checked_add(1)
+        .context("recursive level count overflow")?;
+    let invalid_lengths = [
+        config.log_inv_rates().len(),
+        config.queries().len(),
+        config.grinding_bits().len(),
+        config.fold_grinding_bits().len(),
+        config.ood_samples().len(),
+    ]
+    .into_iter()
+    .any(|len| len != levels);
+    let invalid_recursive_lengths = [
+        config.recursive_log_msg_cols().len(),
+        config.recursive_ks().len(),
+    ]
+    .into_iter()
+    .any(|len| len != recursive_levels);
+
+    anyhow::ensure!(recursive_levels > 0, "missing recursive levels");
+    anyhow::ensure!(
+        !invalid_lengths && !invalid_recursive_lengths,
+        "invalid per-level array lengths"
+    );
+    anyhow::ensure!(
+        !config.log_inv_rates().contains(&0),
+        "inverse rates must be nonzero"
+    );
+    anyhow::ensure!(
+        !config.queries().contains(&0),
+        "query counts must be nonzero"
+    );
+    anyhow::ensure!(
+        config.ood_samples().first() == Some(&0),
+        "initial OOD sample count must be zero"
+    );
     Ok(())
 }
 
@@ -1026,22 +1046,28 @@ struct IntEvalGeometry {
     row_bit_vars: usize,
 }
 
-fn checked_int_eval_geometry(p: &IntEvalParams) -> Result<IntEvalGeometry, FlockRsError> {
+fn checked_int_eval_geometry(p: &IntegerMatrixLayout) -> Result<IntEvalGeometry, FlockRsError> {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
     if !p.word_bits.is_power_of_two() || p.word_bits > u128::BITS as usize {
         return Err(shape());
     }
     let log_word_bits = p.word_bits.trailing_zeros() as usize;
-    let Some(row_bit_vars) = p.t.checked_add(log_word_bits) else {
+    let Some(row_bit_vars) = p.row_vars.checked_add(log_word_bits) else {
         return Err(shape());
     };
     if row_bit_vars >= usize::BITS as usize {
         return Err(shape());
     }
-    let Some(rows) = u32::try_from(p.t).ok().and_then(|t| 1usize.checked_shl(t)) else {
+    let Some(rows) = u32::try_from(p.row_vars)
+        .ok()
+        .and_then(|t| 1usize.checked_shl(t))
+    else {
         return Err(shape());
     };
-    let Some(cols) = u32::try_from(p.s).ok().and_then(|s| 1usize.checked_shl(s)) else {
+    let Some(cols) = u32::try_from(p.col_vars)
+        .ok()
+        .and_then(|s| 1usize.checked_shl(s))
+    else {
         return Err(shape());
     };
     Ok(IntEvalGeometry {
@@ -1053,7 +1079,7 @@ fn checked_int_eval_geometry(p: &IntEvalParams) -> Result<IntEvalGeometry, Flock
 
 fn validate_int_eval_geometry(
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     extra_commitment_vars: usize,
 ) -> Result<IntEvalGeometry, FlockRsError> {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
@@ -1063,7 +1089,7 @@ fn validate_int_eval_geometry(
     }
     let Some(expected_m) = geometry
         .row_bit_vars
-        .checked_add(p.s)
+        .checked_add(p.col_vars)
         .and_then(|m| m.checked_add(extra_commitment_vars))
     else {
         return Err(shape());
@@ -1084,7 +1110,7 @@ fn weights_fit_q_bits(weights: &[u128], q_bits: usize) -> bool {
 }
 
 fn checked_mod_q_geometry(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> Result<(IntEvalGeometry, usize, usize), FlockRsError> {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
@@ -1092,7 +1118,7 @@ fn checked_mod_q_geometry(
     if q_weight_bound(q_bits).is_none() {
         return Err(shape());
     }
-    let Some(tw) = p.t.checked_add(p.word_bits) else {
+    let Some(tw) = p.row_vars.checked_add(p.word_bits) else {
         return Err(shape());
     };
     if tw > 126 {
@@ -1103,7 +1129,7 @@ fn checked_mod_q_geometry(
 }
 
 fn checked_mod_q_weight_source_geometry<S>(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     source: &S,
     q_bits: usize,
 ) -> Result<(IntEvalGeometry, usize, usize), FlockRsError>
@@ -1124,7 +1150,7 @@ where
 }
 
 fn checked_mod_q_weight_chunks_geometry(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &ModQWeightChunks,
     q_bits: usize,
 ) -> Result<(IntEvalGeometry, usize, usize), FlockRsError> {
@@ -1135,11 +1161,11 @@ fn checked_mod_q_weight_chunks_geometry(
 fn checked_virtual_xor_geometry(
     commitment: &Commitment,
     layout: &ShaF2Layout,
-) -> Result<(IntEvalGeometry, IntEvalParams, IntEvalGeometry), FlockRsError> {
+) -> Result<(IntEvalGeometry, IntegerMatrixLayout, IntEvalGeometry), FlockRsError> {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
     let base = validate_int_eval_geometry(commitment, &layout.p, 0)?;
     if layout.p.word_bits != 1
-        || layout.x_fold_extra >= layout.p.s
+        || layout.x_fold_extra >= layout.p.col_vars
         || layout.bit_vars > u128::BITS.ilog2() as usize
         || layout.num_cols == 0
     {
@@ -1152,7 +1178,7 @@ fn checked_virtual_xor_geometry(
     else {
         return Err(shape());
     };
-    let Some(expected_num_vars) = layout.tw.checked_add(layout.p.s) else {
+    let Some(expected_num_vars) = layout.tw.checked_add(layout.p.col_vars) else {
         return Err(shape());
     };
     let expected_log_cols = if layout.num_cols <= 1 {
@@ -1169,7 +1195,7 @@ fn checked_virtual_xor_geometry(
     let Some(x_base_t) = layout.bit_vars.checked_add(layout.tw) else {
         return Err(shape());
     };
-    if expected_t != layout.p.t
+    if expected_t != layout.p.row_vars
         || expected_num_vars != layout.num_vars
         || expected_log_cols != layout.log_cols
         || layout.num_cols > padded_cols
@@ -1180,9 +1206,9 @@ fn checked_virtual_xor_geometry(
     let Some(x_t) = x_base_t.checked_add(layout.x_fold_extra) else {
         return Err(shape());
     };
-    let p_x = IntEvalParams {
-        t: x_t,
-        s: layout.p.s - layout.x_fold_extra,
+    let p_x = IntegerMatrixLayout {
+        row_vars: x_t,
+        col_vars: layout.p.col_vars - layout.x_fold_extra,
         word_bits: 1,
     };
     let x = checked_int_eval_geometry(&p_x)?;
@@ -1209,7 +1235,7 @@ fn validate_single_proof_shape(
 fn checked_mod_q_shape(
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> Result<(IntEvalGeometry, usize, usize), FlockRsError> {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
@@ -1253,7 +1279,7 @@ const U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u64-mo
 const U128_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u128-mod-q-opening/v1";
 const BABY_BEAR_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] =
     b"f2z/spartan-baby-bear-f2z/mod-q-opening/v2";
-const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/v1";
+const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/early-ood/v2";
 #[allow(dead_code)]
 const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
 #[allow(dead_code)]
@@ -1263,7 +1289,7 @@ const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-on
 /// opening. The enum is crate-private so callers cannot supply arbitrary
 /// transcript-domain bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ModQOpeningKind {
+pub enum ModQOpeningKind {
     U32Mul,
     BabyBearMul,
     U64Mul,
@@ -1411,9 +1437,9 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
         self.byte(0x06, merkle_hash_code(commitment.params.merkle_hash));
     }
 
-    fn int_eval_params(&mut self, p: &IntEvalParams) {
-        self.usize(0x20, p.t);
-        self.usize(0x21, p.s);
+    fn int_eval_params(&mut self, p: &IntegerMatrixLayout) {
+        self.usize(0x20, p.row_vars);
+        self.usize(0x21, p.col_vars);
         self.usize(0x22, p.word_bits);
     }
 
@@ -1562,7 +1588,7 @@ fn absorb_rs_open_statement(
 fn absorb_rs_eval_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[u128],
     alpha: Gf,
     config: &impl LigeritoStatementConfig,
@@ -1579,7 +1605,7 @@ fn absorb_rs_eval_statement(
 fn absorb_rs_eval_batch_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[Vec<u128>],
     alpha: Gf,
     config: &impl LigeritoStatementConfig,
@@ -1596,7 +1622,7 @@ fn absorb_rs_eval_batch_statement(
 fn absorb_mod_q_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
@@ -1619,7 +1645,7 @@ pub(crate) fn absorb_mod_q_weight_chunks_statement(
     transcript: &mut impl Transcript,
     opening_kind: ModQOpeningKind,
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     statement_digest: &[u8; 32],
     q_bits: usize,
     alpha: Gf,
@@ -1648,7 +1674,7 @@ const STANDALONE_MOD_Q_CLAIM_DOMAIN: &[u8] = b"f2z/ligerito-flock/standalone-mod
 pub fn absorb_standalone_mod_q_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     alpha: Gf,
     q_bits: usize,
     ood: Option<OodRoundParams>,
@@ -1673,7 +1699,7 @@ pub fn absorb_standalone_mod_q_claim(transcript: &mut impl Transcript, q: u128, 
 fn absorb_ext_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     weight_coords: &[Vec<u128>],
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
@@ -1712,8 +1738,9 @@ pub fn prove_rs_open_ligerito(
     pc: &LigProverConfig,
 ) -> LigOpenProof {
     let r_hi = &point[LOG_PACKING..];
-    let p_msg_gf: Vec<Gf> = hint.p_msg.iter().map(|&f| f128_to_gf(f)).collect();
-    let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &p_msg_gf, r_hi);
+    // The ring switch reads flock's packed words in place (bit-compatible
+    // with `Gf`): no 2^{m_p}-element conversion copy.
+    let (ring, b_tbl, beta0) = ring_switch_prove(transcript, &hint.p_msg, r_hi);
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
@@ -1791,7 +1818,7 @@ pub struct IntEvalRsLigProof {
 pub fn prove_rs_ligerito(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[u128],
     alpha: Gf,
     pc: &LigProverConfig,
@@ -1819,7 +1846,7 @@ pub fn verify_rs_ligerito<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[u128],
     col_weights: &[R],
     g_r: R,
@@ -1871,7 +1898,7 @@ pub struct FlockBatchCommitHint {
 /// `ℓ·2^{m_p}`), at the shape the Ligerito config dictates.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn commit_rs_ligerito_batch(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     datas: &[Vec<u128>],
     pc: &LigProverConfig,
 ) -> FlockBatchCommitHint {
@@ -1945,7 +1972,7 @@ fn big_r_hi(point: &[Gf], ell: usize, log_l: usize) -> Vec<Gf> {
 pub fn prove_rs_ligerito_batch(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockBatchCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[Vec<u128>],
     alpha: Gf,
     pc: &LigProverConfig,
@@ -2049,7 +2076,7 @@ pub fn verify_rs_ligerito_batch<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigBatchProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights: &[Vec<u128>],
     col_weights: &[Vec<R>],
     g_r: &[R],
@@ -2528,10 +2555,10 @@ fn absorb_ood_round_header(transcript: &mut impl Transcript, packed_vars: usize,
 /// The prover's view of the round: the point (kept, the eq table is
 /// rebuilt scaled by `η_ood` at batching time), the value, and the
 /// messages that go on the wire.
-struct OodProverClaim {
-    point: Vec<Gf>,
-    y: Gf,
-    round: OodRound,
+pub(crate) struct OodProverClaim {
+    pub(crate) point: Vec<Gf>,
+    pub(crate) y: Gf,
+    pub(crate) round: OodRound,
 }
 
 /// Round 0 on the prover side: bind the parameters, grind, draw `ζ`,
@@ -2541,8 +2568,19 @@ fn prove_ood_round(
     hint: &FlockCommitHint,
     params: OodRoundParams,
 ) -> OodProverClaim {
-    let _g = crate::utils::prof::scope("mc:ood");
-    let vars = packed_message_vars(&hint.p_msg);
+    prove_ood_round_packed(transcript, &hint.p_msg, params)
+}
+
+/// [`prove_ood_round`] on an explicit packed message (the message the
+/// final Ligerito opening is run on — for a virtual concatenation of
+/// several commitments, the virtual packed witness itself).
+pub(crate) fn prove_ood_round_packed(
+    transcript: &mut (impl Transcript + Send),
+    p_msg: &[F128],
+    params: OodRoundParams,
+) -> OodProverClaim {
+    let _g = tracing::info_span!("mc:ood").entered();
+    let vars = packed_message_vars(p_msg);
     absorb_ood_round_header(transcript, vars, params);
     let nonce = if params.grinding_bits == 0 {
         None
@@ -2558,7 +2596,7 @@ fn prove_ood_round(
     };
     let zeta: Gf = transcript.get_field_challenge(&());
     let point = ood_point(zeta, vars);
-    let y = ood_eval(&hint.p_msg, &point);
+    let y = ood_eval(p_msg, &point);
     crate::ligerito::absorb_ood_value(transcript, y);
     OodProverClaim {
         point,
@@ -2568,14 +2606,14 @@ fn prove_ood_round(
 }
 
 /// The verifier's view of the round: the point and the claimed value.
-struct OodVerifierClaim {
-    point: Vec<Gf>,
-    y: Gf,
+pub(crate) struct OodVerifierClaim {
+    pub(crate) point: Vec<Gf>,
+    pub(crate) y: Gf,
 }
 
 /// Round 0 on the verifier side: the same frame and draw, the proof's
 /// nonce checked, the prover's `y` absorbed.
-fn verify_ood_round(
+pub(crate) fn verify_ood_round(
     transcript: &mut (impl Transcript + Send),
     packed_vars: usize,
     params: OodRoundParams,
@@ -2606,7 +2644,7 @@ fn verify_ood_round(
 /// being precomputed, its contribution to that message (the message is
 /// bilinear in `(f, b)`, so the OOD term adds on).
 #[allow(clippy::arithmetic_side_effects)]
-fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Option<&mut (Gf, Gf)>) {
+pub(crate) fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Option<&mut (Gf, Gf)>) {
     use crate::utils::wide_mul::WideMulAcc;
     let vars = point.len();
     assert_eq!(b.len(), 1usize << vars, "basis length must match the OOD point");
@@ -2664,7 +2702,7 @@ fn add_ood_basis(b: &mut [F128], f: &[F128], point: &[Gf], eta: Gf, round0: Opti
 /// The OOD basis term after Ligerito bound the low `ris.len()` variables:
 /// `η·eq(ris, point[..k])·eq(·, point[k..])` over every boolean tail.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_residual_evals(ris: &[F128], remaining_vars: usize, point: &[Gf], eta: Gf) -> Vec<Gf> {
+pub(crate) fn ood_residual_evals(ris: &[F128], remaining_vars: usize, point: &[Gf], eta: Gf) -> Vec<Gf> {
     let bound = ris.len();
     assert_eq!(bound + remaining_vars, point.len(), "prefix + tail must cover the OOD point");
     let one = Gf::one();
@@ -2772,7 +2810,7 @@ impl ModQLigProverReduction for EqProverReduction {
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
         let mut rings = Vec::with_capacity(points.len());
         let mut eq_his = Vec::with_capacity(points.len());
-        let _g_r = crate::utils::prof::scope("mq:rings");
+        let _g_r = tracing::info_span!("mq:rings").entered();
         for pt in points {
             let eq_hi =
                 crate::poly::utils::build_eq_x_r_vec(&pt[LOG_PACKING..], &()).expect("r_hi");
@@ -2789,7 +2827,7 @@ impl ModQLigProverReduction for EqProverReduction {
         let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
         let grinding_nonces = grinder.finish();
 
-        let _g_b = crate::utils::prof::scope("mq:bcomb");
+        let _g_b = tracing::info_span!("mq:bcomb").entered();
         let mut basis = vec![F128::ZERO; 1usize << self.packed_vars];
         let mut precomputed_round0 = if rs_fast() {
             Some(fill_phi_basis_round0(
@@ -2813,7 +2851,7 @@ impl ModQLigProverReduction for EqProverReduction {
             target += *eta * beta;
         }
         if let (Some(claim), Some(eta)) = (ood, eta_ood) {
-            let _g_o = crate::utils::prof::scope("mq:ood_basis");
+            let _g_o = tracing::info_span!("mq:ood_basis").entered();
             add_ood_basis(
                 &mut basis,
                 &hint.p_msg,
@@ -2844,7 +2882,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
     precomputed_round0: Option<(Gf, Gf)>,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> LigeritoProof {
-    let _g_l = crate::utils::prof::scope("mq:lig");
+    let _g_l = tracing::info_span!("mq:lig").entered();
     if let Some(security) = security {
         let mut challenger = atomic::AtomicChallenger::new(transcript, security);
         let proof = match precomputed_round0 {
@@ -2907,14 +2945,14 @@ fn prove_prepared_mod_q_ligerito_with_security(
 fn prove_mod_q_lig_core<S, R>(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    relation_params: &IntEvalParams,
+    relation_params: &IntegerMatrixLayout,
     relation_rows: &[Vec<u64>],
     relation_packed_cols: Option<&[Vec<u64>]>,
     chunks: &S,
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     reduction: R,
 ) -> ModQLigCoreProof<R::Proof>
 where
@@ -2940,14 +2978,14 @@ where
 fn prove_mod_q_lig_core_with_security<S, R>(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    relation_params: &IntEvalParams,
+    relation_params: &IntegerMatrixLayout,
     relation_rows: &[Vec<u64>],
     relation_packed_cols: Option<&[Vec<u64>]>,
     chunks: &S,
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     reduction: R,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> ModQLigCoreProof<R::Proof>
@@ -2958,7 +2996,7 @@ where
     let lch = chunks.chunk_count();
     // Round 0 precedes every forest message: it binds the committed
     // message's list element before any further challenge.
-    let ood_claim = ood.map(|params| prove_ood_round(transcript, hint, params));
+    let ood_claim = ood.into().claim(transcript, hint);
     let mut grinder: ProverGrindingTranscript<_, ForestRoundGrinding> =
         ProverGrindingTranscript::new(transcript, forest_grinding_bits);
     let mut mfs = Vec::with_capacity(lch);
@@ -3009,7 +3047,7 @@ where
 fn prove_mod_q_lig_after_statement<S, R>(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    relation_params: &IntEvalParams,
+    relation_params: &IntegerMatrixLayout,
     relation_rows: &[Vec<u64>],
     relation_packed_cols: Option<&[Vec<u64>]>,
     chunks: &S,
@@ -3017,7 +3055,7 @@ fn prove_mod_q_lig_after_statement<S, R>(
     pc: &LigProverConfig,
     _bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     reduction: R,
 ) -> ModQLigCoreProof<R::Proof>
 where
@@ -3060,7 +3098,7 @@ fn into_direct_mod_q_proof(core: ModQLigCoreProof<Vec<RingSwitchProof>>) -> IntE
 pub fn prove_mle_eval_mod_q_ligerito(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
@@ -3079,11 +3117,11 @@ pub fn prove_mle_eval_mod_q_ligerito(
 pub fn prove_mle_eval_mod_q_ligerito_with_ood(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQProof {
     let geometry = validate_int_eval_geometry(&hint.commitment, p, 0)
@@ -3091,7 +3129,7 @@ pub fn prove_mle_eval_mod_q_ligerito_with_ood(
     checked_mod_q_geometry(p, q_bits).expect("valid mod-q geometry");
     assert_eq!(row_weights_q.len(), geometry.rows, "row-weight length");
     let chunks = {
-        let _g = crate::utils::prof::scope("mq:chunking");
+        let _g = tracing::info_span!("mq:chunking").entered();
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits")
     };
@@ -3111,13 +3149,13 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_with_weight_chunks(
     transcript: &mut (impl Transcript + Send),
     opening_kind: ModQOpeningKind,
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &ModQWeightChunks,
     statement_digest: &[u8; 32],
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     validate_ligerito_commitment(&hint.commitment, pc)?;
@@ -3168,13 +3206,13 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_with_weight_chunks(
 fn prove_mle_eval_mod_q_ligerito_after_statement<S>(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &S,
     alpha: Gf,
     pc: &LigProverConfig,
     bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
 ) -> IntEvalRsLigModQProof
 where
     S: ModQWeightSource + ?Sized,
@@ -3208,12 +3246,12 @@ where
 fn prove_mle_eval_mod_q_ligerito_raw<S>(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &S,
     alpha: Gf,
     pc: &LigProverConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
 ) -> IntEvalRsLigModQProof
 where
     S: ModQWeightSource + ?Sized,
@@ -3256,7 +3294,7 @@ impl PaddedChunkFolds {
 
 fn verify_mod_q_lig_preflight<S, C>(
     proof: ModQLigProofView<'_>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &S,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -3283,7 +3321,7 @@ where
 
     let range_shift = chunks
         .chunk_width()
-        .checked_add(p.t)
+        .checked_add(p.row_vars)
         .and_then(|shift| shift.checked_add(p.word_bits))
         .ok_or_else(shape)?;
     let shift = u32::try_from(range_shift).map_err(|_| shape())?;
@@ -3500,7 +3538,7 @@ pub fn verify_mle_eval_mod_q_ligerito<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights_q: &[u128],
     col_weights: &[R],
     alpha: Gf,
@@ -3536,14 +3574,14 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights_q: &[u128],
     col_weights_q: &[u128],
     alpha: Gf,
     claimed_q: u128,
     q: u128,
     q_bits: usize,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     validate_runtime_q(q, q_bits, row_weights_q)?;
@@ -3556,7 +3594,7 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     let chunks = {
-        let _g = crate::utils::prof::scope("mv:chunking");
+        let _g = tracing::info_span!("mv:chunking").entered();
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
     };
@@ -3595,13 +3633,13 @@ pub fn verify_mle_eval_mod_q_ligerito_with_ood<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     row_weights_q: &[u128],
     col_weights: &[R],
     alpha: Gf,
     claimed: R,
     q_bits: usize,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -3613,7 +3651,7 @@ where
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
     let chunks = {
-        let _g = crate::utils::prof::scope("mv:chunking");
+        let _g = tracing::info_span!("mv:chunking").entered();
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
     };
@@ -3653,7 +3691,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
     opening_kind: ModQOpeningKind,
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &ModQWeightChunks,
     col_weights_q: &[u128],
     statement_digest: &[u8; 32],
@@ -3662,7 +3700,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     validate_runtime_q_source(q, q_bits, chunks)?;
@@ -3734,7 +3772,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks<R>(
     opening_kind: ModQOpeningKind,
     commitment: &Commitment,
     proof: &IntEvalRsLigModQProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &ModQWeightChunks,
     col_weights: &[R],
     statement_digest: &[u8; 32],
@@ -3742,7 +3780,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_with_weight_chunks<R>(
     claimed: R,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -3808,12 +3846,12 @@ fn verify_mod_q_lig_core<S, R, C>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: ModQLigProofView<'_>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &S,
     alpha: Gf,
     vc: &LigVerifierConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -3842,12 +3880,12 @@ fn verify_mod_q_lig_core_with_security<S, R, C>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: ModQLigProofView<'_>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &S,
     alpha: Gf,
     vc: &LigVerifierConfig,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
@@ -3861,20 +3899,13 @@ where
     let lch = chunks.chunk_count();
     reduction.validate_shape(lch)?;
     let folds = {
-        let _g = crate::utils::prof::scope("mv:readoff");
+        let _g = tracing::info_span!("mv:readoff").entered();
         verify_mod_q_lig_preflight(proof, p, chunks, read_off)?
     };
 
     // Round 0 precedes every forest challenge (its presence must match
     // the parameters exactly: the round is part of the protocol version).
-    let ood_claim = match (ood, proof.ood) {
-        (Some(params), Some(round)) => {
-            let _g = crate::utils::prof::scope("mv:ood");
-            Some(verify_ood_round(transcript, reduction.packed_vars(), params, round)?)
-        }
-        (None, None) => None,
-        _ => return Err(FlockRsError::OodRound),
-    };
+    let ood_claim = ood.into().claim(transcript, reduction.packed_vars(), proof.ood)?;
 
     let mut grinder: VerifierGrindingTranscript<_, ForestRoundGrinding> =
         VerifierGrindingTranscript::new(transcript, forest_grinding_bits, proof.grinding_nonces);
@@ -3900,11 +3931,11 @@ where
     }
 
     let prepared = {
-        let _g = crate::utils::prof::scope("mv:rswitch");
+        let _g = tracing::info_span!("mv:rswitch").entered();
         reduction.prepare(grinder, &points, &mus, ood_claim.as_ref())?
     };
     {
-        let _g = crate::utils::prof::scope("mv:lig");
+        let _g = tracing::info_span!("mv:lig").entered();
         verify_prepared_mod_q_ligerito_with_security(
             transcript, commitment, proof.lig, vc, prepared, security,
         )?;
@@ -3917,13 +3948,13 @@ fn verify_mod_q_lig_after_statement<S, R, C>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: ModQLigProofView<'_>,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     chunks: &S,
     alpha: Gf,
     vc: &LigVerifierConfig,
     _bound_statement: BoundModQStatement,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     reduction: R,
     read_off: C,
 ) -> Result<PaddedChunkFolds, FlockRsError>
@@ -3982,8 +4013,8 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     q_bits: usize,
@@ -3997,8 +4028,8 @@ where
         transcript,
         hint_f,
         h_rows,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         row_weights_q,
         q_bits,
@@ -4014,8 +4045,8 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     col_weights: &[R],
@@ -4032,8 +4063,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         row_weights_q,
         col_weights,
@@ -4051,7 +4082,7 @@ where
 pub fn prove_mle_eval_ext_ligerito(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     weight_coords: &[Vec<u128>],
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
@@ -4077,7 +4108,7 @@ pub fn verify_mle_eval_ext_ligerito<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigExtProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     weight_coords: &[Vec<u128>],
     col_weights: &[R],
     basis: &[R],
@@ -4146,12 +4177,12 @@ fn absorb_ext_step1_folds(transcript: &mut impl Transcript, mus: &[Vec<u128>]) {
 pub fn prove_mle_eval_ext_ligerito_with_ood(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     weight_coords: &[Vec<u128>],
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
     alpha: Gf,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigExtProof {
     use crate::ext_proj::{projected_row_weights, sample_proj_point, sample_proj_prime};
@@ -4181,13 +4212,14 @@ pub fn prove_mle_eval_ext_ligerito_with_ood(
         alpha,
         pc,
     );
+    let ood = ood.into().bind(transcript, hint);
     let c_w = mod_q_chunk_width(p);
     let l1 = mod_q_num_chunks(p, q_bits);
 
     // Step 1: the exact integer folds of every coordinate's chunked lift —
     // all `e·L₁` weight sets in ONE pass over the committed bit rows.
     let mus: Vec<Vec<u128>> = {
-        let _g = crate::utils::prof::scope("ext:step1_folds");
+        let _g = tracing::info_span!("ext:step1_folds").entered();
         let chunked: Vec<Vec<u128>> = weight_coords
             .iter()
             .flat_map(|wc| chunk_row_weights(wc, c_w, l1))
@@ -4232,7 +4264,7 @@ pub fn verify_mle_eval_ext_ligerito_with_ood<R>(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     proof: &IntEvalRsLigExtProof,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     weight_coords: &[Vec<u128>],
     col_weights: &[R],
     basis: &[R],
@@ -4240,7 +4272,7 @@ pub fn verify_mle_eval_ext_ligerito_with_ood<R>(
     claimed: R,
     q_bits: usize,
     proj: &crate::ext_proj::ExtProjParams,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -4287,7 +4319,7 @@ where
             return Err(FlockRsError::ExtShape);
         }
         let w_l = c_w.min(q_bits.wrapping_sub(c_w.wrapping_mul(k % l1)));
-        let bound = 1u128 << w_l.wrapping_add(p.t).wrapping_add(p.word_bits);
+        let bound = 1u128 << w_l.wrapping_add(p.row_vars).wrapping_add(p.word_bits);
         for (c, &x) in m.iter().enumerate() {
             if x >= bound {
                 return Err(FlockRsError::ExtChunkRange {
@@ -4311,6 +4343,7 @@ where
         alpha,
         vc,
     );
+    let ood = ood.into().bind(transcript, packed_vars(p), proof.base.ood.as_ref())?;
     absorb_ext_step1_folds(transcript, &mus);
 
     // Step 3: the same transcript sampling and projection as the prover.
@@ -4345,7 +4378,7 @@ where
     // (`2^{c_w·l}` for the lhs, the fused `α'^d·2^{c_w·l}` for the rhs)
     // are prepared ONCE as Montgomery factors, so each fold costs one
     // Montgomery multiplication (plain×monty) and a modular add.
-    let _g_checks = crate::utils::prof::scope("ext:checks");
+    let _g_checks = tracing::info_span!("ext:checks").entered();
     let zq = ProjArith::new(q_proj);
     let l2 = mod_q_num_chunks(p, proj.prime_bits);
     let chunk_base = zq.reduce(1u128 << c_w);
@@ -4597,7 +4630,7 @@ pub(crate) fn embed_xor_index(layout: &ShaF2Layout, idx_x: usize, i_col: usize) 
     let row_hi = idx_x & ((1usize << tw) - 1);
     let j = (idx_x >> tw) & ((1usize << layout.bit_vars) - 1);
     let c = idx_x >> t_x;
-    row_hi | (i_col << tw) | (j << (tw + layout.log_cols)) | (c << layout.p.t)
+    row_hi | (i_col << tw) | (j << (tw + layout.log_cols)) | (c << layout.p.row_vars)
 }
 
 /// The committed-matrix residual point for x-claim exit point `pt_x`
@@ -4633,8 +4666,8 @@ fn xor_support_prefix(layout: &ShaF2Layout) -> usize {
 /// `ê(pt)` — an external term's bit-MLE at the x residual point, from its
 /// x-layout bit rows (eq tables over the folded and clear coordinates).
 #[allow(clippy::arithmetic_side_effects)]
-fn external_residual(p_x: &IntEvalParams, e_rows: &[Vec<u64>], pt: &[Gf]) -> Gf {
-    let (bx, c_part) = pt.split_at(p_x.t);
+fn external_residual(p_x: &IntegerMatrixLayout, e_rows: &[Vec<u64>], pt: &[Gf]) -> Gf {
+    let (bx, c_part) = pt.split_at(p_x.row_vars);
     let eq_bx = crate::poly::utils::build_eq_x_r_vec(bx, &()).expect("t' >= 1");
     let eq_c = crate::poly::utils::build_eq_x_r_vec(c_part, &()).expect("s >= 1");
     let mut acc = Gf::zero();
@@ -4763,7 +4796,7 @@ fn prove_mod_q_lig_xor_impl(
     });
 
     // Main chunks — identical to `prove_mle_eval_mod_q_ligerito`.
-    let _g_main = crate::utils::prof::scope("mq:main_chunks");
+    let _g_main = tracing::info_span!("mq:main_chunks").entered();
     let mut mfs = Vec::with_capacity(lch);
     let mut us = Vec::with_capacity(lch);
     let mut presums = Vec::with_capacity(lch);
@@ -4810,7 +4843,7 @@ fn prove_mod_q_lig_xor_impl(
         assert!(
             row_bit_vars(&p_x) >= 6,
             "x-claim pre-sumcheck needs t' ≥ 6 (whole-word rows); got t'={}",
-            p_x.t
+            p_x.row_vars
         );
         (mod_q_chunk_width(&p_x), mod_q_num_chunks(&p_x, q_bits))
     };
@@ -4826,7 +4859,7 @@ fn prove_mod_q_lig_xor_impl(
     let mut x_points: Vec<Vec<Gf>> = Vec::with_capacity(lch_x);
     if !active.is_empty() {
         let x_rows_all: Vec<Vec<Vec<u64>>> = {
-            let _g = crate::utils::prof::scope("vx:extract");
+            let _g = tracing::info_span!("vx:extract").entered();
             active
                 .iter()
                 .map(|&j| {
@@ -4847,7 +4880,7 @@ fn prove_mod_q_lig_xor_impl(
             .map(|&j| chunk_row_weights(xors[j].row_weights_q, c_w_x, lch_x))
             .collect();
         let rows_refs: Vec<&[Vec<u64>]> = x_rows_all.iter().map(|r| &r[..]).collect();
-        let _g_vx = crate::utils::prof::scope("vx:common");
+        let _g_vx = tracing::info_span!("vx:common").entered();
         for l in 0..lch_x {
             let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
             let (mf, us_per_claim, presum, pt) =
@@ -4874,7 +4907,7 @@ fn prove_mod_q_lig_xor_impl(
 
     // Ring-switch messages. Main chunks: dense in-pack marginals of the
     // packed message, as before.
-    let _g_rm = crate::utils::prof::scope("mq:rings_main");
+    let _g_rm = tracing::info_span!("mq:rings_main").entered();
     let mut rings = Vec::new();
     let mut eq_his = Vec::with_capacity(lch);
     for pt in &points {
@@ -4891,7 +4924,7 @@ fn prove_mod_q_lig_xor_impl(
     // entries; the non-boolean eq table is shared across k, and the k walks
     // run in parallel). Columns sharing their in-pack coordinates share
     // `eq_lo`, so their marginals SUM into one ring message per bucket.
-    let _g_rx = crate::utils::prof::scope("vx:rings");
+    let _g_rx = tracing::info_span!("vx:rings").entered();
     let p0 = xor_support_prefix(layout);
     // One eq table per chunk — the batched claims SHARE their exit point.
     let xor_eq_ns: Vec<Vec<Gf>> = x_points
@@ -4942,11 +4975,11 @@ fn prove_mod_q_lig_xor_impl(
     // Combined basis + target over the flat ring list.
     let m_p = packed_vars(p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
-    let _g_bm = crate::utils::prof::scope("mq:bcomb_main");
+    let _g_bm = tracing::info_span!("mq:bcomb_main").entered();
     fill_phi_basis(&mut b_comb, &eq_his, &etas[..lch], &eq_r2);
     drop(_g_bm);
     let mut target = Gf::zero();
-    let _g_bx = crate::utils::prof::scope("vx:bcomb");
+    let _g_bx = tracing::info_span!("vx:bcomb").entered();
     // Φ images of the per-chunk eq tables, shared across the claims.
     let phi_ns_all: Vec<Vec<Gf>> = xor_eq_ns
         .iter()
@@ -4980,7 +5013,7 @@ fn prove_mod_q_lig_xor_impl(
         target += etas[i] * beta;
     }
 
-    let _g_lig = crate::utils::prof::scope("mq:lig");
+    let _g_lig = tracing::info_span!("mq:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -5165,7 +5198,7 @@ where
     }
 
     // Main chunks: range checks + merged-common verify, as before.
-    let range_shift = c_w.wrapping_add(p.t).wrapping_add(p.word_bits);
+    let range_shift = c_w.wrapping_add(p.row_vars).wrapping_add(p.word_bits);
     let bound = 1u128 << range_shift;
     let mut points = Vec::with_capacity(lch);
     let mut mus = Vec::with_capacity(lch);
@@ -5202,7 +5235,7 @@ where
             .iter()
             .map(|&j| chunk_row_weights(xors[j].row_weights_q, c_w_x, lch_x))
             .collect();
-        let range_shift_x = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
+        let range_shift_x = c_w_x.wrapping_add(p_x.row_vars).wrapping_add(p_x.word_bits);
         let bound_x = 1u128 << range_shift_x;
         for l in 0..lch_x {
             for &j in &active {
@@ -5473,8 +5506,8 @@ fn absorb_tap_statement(
     bytes.push(0x42u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -5511,9 +5544,9 @@ fn absorb_tap_statement(
 /// shape checks.
 fn tap_shape_ok(layout: &ShaF2Layout, t: &TapOp) -> bool {
     t.col < layout.num_cols
-        && t.grp_log2 <= layout.p.s
+        && t.grp_log2 <= layout.p.col_vars
         && (!(t.bit_amt > 0 || t.bit_dropout) || t.bit_amt < (1usize << t.grp_log2))
-        && t.off < (1usize << (layout.p.s - t.grp_log2))
+        && t.off < (1usize << (layout.p.col_vars - t.grp_log2))
 }
 
 // ---------------------------------------------------------------------
@@ -5575,8 +5608,8 @@ fn absorb_tap_collapse_statement(
     bytes.push(0x44u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -5689,7 +5722,7 @@ fn tap_collapse_col_weights(
 ) -> [Vec<u128>; 2] {
     let delta = layout.x_fold_extra;
     debug_assert!(collapse_op_delta_ok(layout, op));
-    let s = layout.p.s - delta;
+    let s = layout.p.col_vars - delta;
     let (g, amt) = if delta <= op.grp_log2 {
         (op.grp_log2 - delta, op.bit_amt >> delta)
     } else {
@@ -5834,7 +5867,7 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_collapse(
         recombine_read_off, virtual_xor_params, xor_canonical_cols,
     };
     if layout.p.word_bits != 1
-        || layout.x_fold_extra >= layout.p.s
+        || layout.x_fold_extra >= layout.p.col_vars
         || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
         || layout.tw + layout.log_cols < 7
     {
@@ -5978,8 +6011,8 @@ fn absorb_tap_composed_statement(
     bytes.push(0x45u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -6133,7 +6166,7 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_composed(
     };
     use crate::taps::tap_canonical_ops;
     if layout.p.word_bits != 1
-        || layout.x_fold_extra >= layout.p.s
+        || layout.x_fold_extra >= layout.p.col_vars
         || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
         || layout.tw + layout.log_cols < 7
     {
@@ -6284,8 +6317,8 @@ fn absorb_tap_multiweight_statement(
     bytes.push(0x46u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -6422,7 +6455,7 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_multiweight(
         recombine_read_off, virtual_xor_params, xor_canonical_cols,
     };
     if layout.p.word_bits != 1
-        || layout.x_fold_extra >= layout.p.s
+        || layout.x_fold_extra >= layout.p.col_vars
         || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
         || layout.tw + layout.log_cols < 7
     {
@@ -6720,14 +6753,14 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         claims.iter().map(|_| Vec::with_capacity(lch_x)).collect();
     for blk in &blocks {
         let x_rows_blk: Vec<Vec<Vec<u64>>> = {
-            let _g = crate::utils::prof::scope("tap:extract");
+            let _g = tracing::info_span!("tap:extract").entered();
             claims[blk.clone()]
                 .iter()
                 .map(|cl| extract_virtual_tap_rows(layout, &hint.rows, cl.taps))
                 .collect()
         };
         let rows_refs: Vec<&[Vec<u64>]> = x_rows_blk.iter().map(|r| &r[..]).collect();
-        let _g = crate::utils::prof::scope("tap:common");
+        let _g = tracing::info_span!("tap:common").entered();
         for l in 0..lch_x {
             let w_refs: Vec<&[u128]> = x_chunks_all[blk.clone()]
                 .iter()
@@ -6746,7 +6779,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     }
 
     // Rings: per (claim, chunk, bucket) the summed member walks.
-    let _g_r = crate::utils::prof::scope("tap:rings");
+    let _g_r = tracing::info_span!("tap:rings").entered();
     let mut rings = Vec::new();
     // Per (claim, chunk): the plan + each member's support tables
     // (built once here, reused by the basis-fill phase).
@@ -6799,7 +6832,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let m_p = packed_vars(&layout.p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     {
-        let _g = crate::utils::prof::scope("tap:bcomb");
+        let _g = tracing::info_span!("tap:bcomb").entered();
         let mut ring_idx = 0usize;
         for (n, cl) in claims.iter().enumerate() {
             for l in 0..lch_x {
@@ -6831,7 +6864,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
         target += etas[i] * beta;
     }
 
-    let _g_lig = crate::utils::prof::scope("tap:lig");
+    let _g_lig = tracing::info_span!("tap:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -6873,7 +6906,7 @@ where
     use crate::taps::{residual_b_evals_tap, tap_closure_desc};
     let p = &layout.p;
     if p.word_bits != 1
-        || layout.x_fold_extra >= p.s
+        || layout.x_fold_extra >= p.col_vars
         || (layout.x_fold_extra > 0 && layout.bit_vars.wrapping_add(layout.tw) < 6)
         || layout.tw + layout.log_cols < 7
     {
@@ -6915,7 +6948,7 @@ where
         .iter()
         .map(|cl| chunk_row_weights(cl.row_weights_q, c_w_x, lch_x))
         .collect();
-    let range_shift_x = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
+    let range_shift_x = c_w_x.wrapping_add(p_x.row_vars).wrapping_add(p_x.word_bits);
     let bound_x = 1u128 << range_shift_x;
     for l in 0..lch_x {
         for us in proof.tap_us.iter() {
@@ -7165,8 +7198,8 @@ fn absorb_tap_family_statement(
     bytes.push(0x43u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -7349,7 +7382,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                 .collect();
             let forms: Vec<usize> = cl.claims.iter().map(|c| c.form).collect();
             let w_refs: Vec<&[u128]> = cl.claims.iter().map(|c| c.row_weights_q).collect();
-            let _g = crate::utils::prof::scope("tapf:casew");
+            let _g = tracing::info_span!("tapf:casew").entered();
             let case_w = rlc_case_weights(&w_refs, &gammas, &forms, cl.streams.len());
             rlc_chunk_case_weights(&case_w, c_w_x, lch_x)
         })
@@ -7357,7 +7390,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
 
     // Stream rows per cluster.
     let x_rows_all: Vec<Vec<Vec<Vec<u64>>>> = {
-        let _g = crate::utils::prof::scope("tapf:extract");
+        let _g = tracing::info_span!("tapf:extract").entered();
         clusters
             .iter()
             .map(|cl| {
@@ -7389,20 +7422,20 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         let mut points = Vec::with_capacity(lch_x);
         let mut actives = Vec::with_capacity(lch_x);
         for chunk in &case_chunks_all[ci] {
-            let _g = crate::utils::prof::scope("tapf:chunk");
+            let _g = tracing::info_span!("tapf:chunk").entered();
             let case_pow = {
-                let _g = crate::utils::prof::scope("tapf:pows");
+                let _g = tracing::info_span!("tapf:pows").entered();
                 rlc_case_pow_table(chunk, alpha)
             };
             let (leaves, u) = {
-                let _g = crate::utils::prof::scope("tapf:leaves");
+                let _g = tracing::info_span!("tapf:leaves").entered();
                 rlc_leaves_and_folds(&p_x, x_rows, chunk, &case_pow)
             };
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("tapf:forest");
-                prove_merged_forest(transcript, &leaves, t_x, p_x.s)
+                let _g = tracing::info_span!("tapf:forest").entered();
+                prove_merged_forest(transcript, &leaves, t_x, p_x.col_vars)
             };
-            let _g_ps = crate::utils::prof::scope("tapf:presum");
+            let _g_ps = tracing::info_span!("tapf:presum").entered();
             let (z_bj, z_c) = z.split_at(t_x);
             let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
             let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
@@ -7481,9 +7514,9 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         let (d1, omegas, d2, omegas2) = if shape.l1_pairs.is_empty() {
             (None, Vec::new(), None, Vec::new())
         } else {
-            let _g = crate::utils::prof::scope("tapf:discharge");
+            let _g = tracing::info_span!("tapf:discharge").entered();
             let etas_dis: Vec<Gf> = transcript.get_field_challenges(shape.l1_pairs.len(), &());
-            let _g_t = crate::utils::prof::scope("tapf:dis_tbls");
+            let _g_t = tracing::info_span!("tapf:dis_tbls").entered();
             let side_not_rows = |sd: RlcSide| -> Vec<Vec<u64>> {
                 match sd {
                     RlcSide::Col(fi) => rlc_not_rows(&x_rows[fi]),
@@ -7518,7 +7551,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                 })
                 .collect();
             drop(_g_t);
-            let _g_r = crate::utils::prof::scope("tapf:dis_run");
+            let _g_r = tracing::info_span!("tapf:dis_run").entered();
             let (d1, rho, vals) = rlc_prove_eqf_level(transcript, &p_x, t_x, &specs);
             let omegas: Vec<Gf> = shape
                 .side_list
@@ -7615,7 +7648,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     }
 
     // (5) Twisted rings over all surfaces, per (stream, class).
-    let _g_r = crate::utils::prof::scope("tapf:rings");
+    let _g_r = tracing::info_span!("tapf:rings").entered();
     let mut ring_walks: Vec<(TapOp, usize, crate::taps::TapClass)> = Vec::new();
     for (si, surf) in surfaces.iter().enumerate() {
         for &fi in &surf.streams {
@@ -7646,7 +7679,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     let m_p = packed_vars(&layout.p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     {
-        let _g = crate::utils::prof::scope("tapf:bcomb");
+        let _g = tracing::info_span!("tapf:bcomb").entered();
         for (i, (tap, si, cls)) in ring_walks.iter().enumerate() {
             let phi_tables = crate::ligerito::phi_byte_tables(&eq_r2, etas[i]);
             let sup = tap_support_tables(layout, tap, &surfaces[*si].point, *cls);
@@ -7662,7 +7695,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
             .fold(Gf::zero(), |a, (su, e)| a + *su * *e);
         target += etas[i] * beta;
     }
-    let _g_l = crate::utils::prof::scope("tapf:lig");
+    let _g_l = tracing::info_span!("tapf:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -7749,7 +7782,7 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
     // ring surfaces (checked after all clusters, in surface order).
     let one = Gf::one();
     let comb = FixedBasePow::new(alpha, 128, 8);
-    let range_shift = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
+    let range_shift = c_w_x.wrapping_add(p_x.row_vars).wrapping_add(p_x.word_bits);
     let bound = 1u128 << range_shift;
     struct VSurface {
         ci: usize,
@@ -7772,8 +7805,9 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
                 }
             }
             let roots: Vec<Gf> = side.us[l].iter().map(|&u| comb.pow(u)).collect();
-            let (z, e_d) = verify_merged_forest(transcript, &roots, &side.mfs[l], t_x, p_x.s)
-                .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
+            let (z, e_d) =
+                verify_merged_forest(transcript, &roots, &side.mfs[l], t_x, p_x.col_vars)
+                    .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
             // Statement-side channel structure first: it pins the presum's
             // expected group count and degrees (all cascade groups are
             // degree 2).
@@ -7890,8 +7924,15 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
                     (side.omegas[side_pos(a)], side.omegas[side_pos(b)])
                 })
                 .collect();
-            let rho =
-                rlc_verify_eqf_level(transcript, t_x, p_x.s, d, &specs, &claimed, &side_vals)?;
+            let rho = rlc_verify_eqf_level(
+                transcript,
+                t_x,
+                p_x.col_vars,
+                d,
+                &specs,
+                &claimed,
+                &side_vals,
+            )?;
             crate::ligerito::absorb_rlc_omegas(transcript, &side.omegas);
             surfaces.push(VSurface {
                 ci,
@@ -7940,7 +7981,7 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
                 let rho2 = rlc_verify_eqf_level(
                     transcript,
                     t_x,
-                    p_x.s,
+                    p_x.col_vars,
                     d2,
                     &specs2,
                     &claimed2,
@@ -8229,8 +8270,8 @@ fn absorb_rlc_family_statement(
     bytes.push(0x40u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -8319,8 +8360,8 @@ fn absorb_rlc_shared_point_statement(
     bytes.push(0x41u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -8415,7 +8456,7 @@ fn rlc_not_rows(rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
 #[allow(clippy::type_complexity)]
 fn rlc_prove_eqf_level(
     transcript: &mut (impl Transcript + Send),
-    p_x: &IntEvalParams,
+    p_x: &IntegerMatrixLayout,
     t_x: usize,
     specs: &[RlcEqfSpec<'_>],
 ) -> (RlcDischargeEqf, Vec<Gf>, Vec<(Gf, Gf)>) {
@@ -8561,7 +8602,7 @@ fn rlc_verify_eqf_level(
 /// (16 B per position) — the reference / j ≥ 3 fallback path.
 #[allow(clippy::arithmetic_side_effects)]
 fn rlc_leaves_and_folds(
-    p_x: &IntEvalParams,
+    p_x: &IntegerMatrixLayout,
     x_rows: &[Vec<Vec<u64>>],
     case_w: &[Vec<u128>],
     case_pow: &[Vec<Gf>],
@@ -8583,7 +8624,7 @@ fn rlc_leaves_and_folds(
             (leaf_col, u)
         })
         .collect();
-    let mut leaves = Vec::with_capacity(rows << p_x.s);
+    let mut leaves = Vec::with_capacity(rows << p_x.col_vars);
     let mut us = Vec::with_capacity(p_x.cols());
     for (leaf_col, u) in per_col {
         leaves.extend_from_slice(&leaf_col);
@@ -8595,7 +8636,11 @@ fn rlc_leaves_and_folds(
 /// The per-column case-weight folds alone (`u_c = Σ_b W_b^{(l)}(m(b,c))`)
 /// — the lazy forest paths compute the folds without materialising leaves.
 #[allow(clippy::arithmetic_side_effects)]
-fn rlc_folds(p_x: &IntEvalParams, x_rows: &[Vec<Vec<u64>>], case_w: &[Vec<u128>]) -> Vec<u128> {
+fn rlc_folds(
+    p_x: &IntegerMatrixLayout,
+    x_rows: &[Vec<Vec<u64>>],
+    case_w: &[Vec<u128>],
+) -> Vec<u128> {
     let rows = p_x.rows();
     cfg_into_iter!(0..p_x.cols())
         .map(|c| {
@@ -8713,7 +8758,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family(
 
     // Case weights + chunking (c_w over the x geometry).
     let case_chunks = {
-        let _g = crate::utils::prof::scope("rlc:casew");
+        let _g = tracing::info_span!("rlc:casew").entered();
         let case_w = rlc_case_weights(&w_refs, &gammas, &forms, j);
         rlc_chunk_case_weights(
             &case_w,
@@ -8817,7 +8862,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
 
     // Rank-1 case weights + chunking.
     let case_chunks = {
-        let _g = crate::utils::prof::scope("rlc:casew");
+        let _g = tracing::info_span!("rlc:casew").entered();
         let case_w =
             rlc_case_weights_shared_point(row_weights_q, &rlc_gamma_cases(&gammas, &forms, j));
         rlc_chunk_case_weights(
@@ -8896,7 +8941,7 @@ fn prove_rlc_family_front(
 
     // Family-column x rows + the 2^j − 1 monomial (AND) row sets, built once.
     let x_rows: Vec<Vec<Vec<u64>>> = {
-        let _g = crate::utils::prof::scope("rlc:extract");
+        let _g = tracing::info_span!("rlc:extract").entered();
         family_cols
             .iter()
             .map(|&i| {
@@ -8943,18 +8988,18 @@ fn prove_rlc_family_front(
         None
     };
     for chunk in case_chunks {
-        let _g = crate::utils::prof::scope("rlc:chunk");
+        let _g = tracing::info_span!("rlc:chunk").entered();
         let case_pow = {
-            let _g = crate::utils::prof::scope("rlc:pows");
+            let _g = tracing::info_span!("rlc:pows").entered();
             rlc_case_pow_table(chunk, alpha)
         };
         let (u, mf, z, e_d) = if lazy && j == 2 {
             let u = {
-                let _g = crate::utils::prof::scope("rlc:folds");
+                let _g = tracing::info_span!("rlc:folds").entered();
                 rlc_folds(&p_x, &x_rows, chunk)
             };
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 crate::merged_forest::prove_merged_forest_lazy_rlc2(
                     transcript, &p_x, &x_rows[0], &x_rows[1], &case_pow,
                 )
@@ -8962,12 +9007,12 @@ fn prove_rlc_family_front(
             (u, mf, z, e_d)
         } else if lazy && j >= 3 && j34_lazy {
             let u = {
-                let _g = crate::utils::prof::scope("rlc:folds");
+                let _g = tracing::info_span!("rlc:folds").entered();
                 rlc_folds(&p_x, &x_rows, chunk)
             };
             let row_refs: Vec<&[Vec<u64>]> = x_rows.iter().map(|r| &r[..]).collect();
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 crate::merged_forest::prove_merged_forest_lazy_rlc_general(
                     transcript, &p_x, &row_refs, &case_pow,
                 )
@@ -8975,12 +9020,12 @@ fn prove_rlc_family_front(
             (u, mf, z, e_d)
         } else if let Some(packed) = &packed_x1 {
             let u = {
-                let _g = crate::utils::prof::scope("rlc:folds");
+                let _g = tracing::info_span!("rlc:folds").entered();
                 rlc_folds(&p_x, &x_rows, chunk)
             };
             let pow2: Vec<Vec<Gf>> = case_pow.iter().map(|r| vec![r[1]]).collect();
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
+                let _g = tracing::info_span!("rlc:forest").entered();
                 // Derived x-channels, not the witness layout — no column
                 // elision here (the tail is not generally zero).
                 let live = p_x.cols();
@@ -8991,17 +9036,17 @@ fn prove_rlc_family_front(
             (u, mf, z, e_d)
         } else {
             let (leaves, u) = {
-                let _g = crate::utils::prof::scope("rlc:leaves");
+                let _g = tracing::info_span!("rlc:leaves").entered();
                 rlc_leaves_and_folds(&p_x, &x_rows, chunk, &case_pow)
             };
             let (_roots, mf, z, e_d) = {
-                let _g = crate::utils::prof::scope("rlc:forest");
-                prove_merged_forest(transcript, &leaves, t_x, p_x.s)
+                let _g = tracing::info_span!("rlc:forest").entered();
+                prove_merged_forest(transcript, &leaves, t_x, p_x.col_vars)
             };
             (u, mf, z, e_d)
         };
 
-        let _g_ps = crate::utils::prof::scope("rlc:presum");
+        let _g_ps = tracing::info_span!("rlc:presum").entered();
         let (z_bj, z_c) = z.split_at(t_x);
         let eq_zbj = build_eq_x_r_vec(z_bj, &()).expect("t' >= 1");
         let eq_zc = build_eq_x_r_vec(z_c, &()).expect("s >= 1");
@@ -9078,9 +9123,9 @@ fn prove_rlc_family_front(
     let dis = if l1_pairs.is_empty() {
         None
     } else {
-        let _g = crate::utils::prof::scope("rlc:discharge");
+        let _g = tracing::info_span!("rlc:discharge").entered();
         let etas_dis: Vec<Gf> = transcript.get_field_challenges(l1_pairs.len(), &());
-        let _g_t = crate::utils::prof::scope("rlc:dis_tbls");
+        let _g_t = tracing::info_span!("rlc:dis_tbls").entered();
         // Canonical side list (columns ascending, then AND masks) and the
         // complemented bit rows per distinct side.
         let side_list: Vec<RlcSide> = {
@@ -9121,7 +9166,7 @@ fn prove_rlc_family_front(
             })
             .collect();
         drop(_g_t);
-        let _g_r = crate::utils::prof::scope("rlc:dis_run");
+        let _g_r = tracing::info_span!("rlc:dis_run").entered();
         let (d1, rho, vals) = rlc_prove_eqf_level(transcript, &p_x, t_x, &specs);
         // One ω per distinct side (first-occurrence value).
         let omegas: Vec<Gf> = side_list
@@ -9236,7 +9281,7 @@ fn prove_rlc_family_front(
     // chunk's exit; then the level-1 COLUMN sides at ρ; then the level-2
     // committed exits at ρ'. (AND sides never ring — level 2 discharges
     // them.)
-    let _g_r = crate::utils::prof::scope("rlc:rings");
+    let _g_r = tracing::info_span!("rlc:rings").entered();
     let mut ring_specs: Vec<(&[Gf], Vec<usize>)> = Vec::with_capacity(lch_x + 2);
     for (l, pt) in points.iter().enumerate() {
         let cols: Vec<usize> = (0..j)
@@ -9334,7 +9379,7 @@ fn prove_rlc_families_closure(
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
     let etas: Vec<Gf> = transcript.get_field_challenges(n_rings, &());
 
-    let _g_b = crate::utils::prof::scope("rlc:bcomb");
+    let _g_b = tracing::info_span!("rlc:bcomb").entered();
     let m_p = packed_vars(p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     let mut ring_idx = 0usize;
@@ -9369,7 +9414,7 @@ fn prove_rlc_families_closure(
     }
     drop(_g_b);
 
-    let _g_l = crate::utils::prof::scope("rlc:lig");
+    let _g_l = tracing::info_span!("rlc:lig").entered();
     ligerito::recursive_prover_with_basis(
         pc,
         par_clone_f128(&hint.p_msg),
@@ -9670,7 +9715,7 @@ fn verify_rlc_family_front(
         return Err(FlockRsError::Common(IntEvalRsError::ChallengeNotGenerator));
     }
     // Per-chunk range bound 2^{c_w+t'+W} (= 2^127 by construction).
-    let range_shift = c_w_x.wrapping_add(p_x.t).wrapping_add(p_x.word_bits);
+    let range_shift = c_w_x.wrapping_add(p_x.row_vars).wrapping_add(p_x.word_bits);
     let bound = 1u128 << range_shift;
 
     // (3) Per chunk: forest against the recomputed roots + presum; extract
@@ -9688,17 +9733,17 @@ fn verify_rlc_family_front(
             }
         }
         let roots: Vec<Gf> = {
-            let _g = crate::utils::prof::scope("rlcv:roots");
+            let _g = tracing::info_span!("rlcv:roots").entered();
             part.us[l].iter().map(|&u| comb.pow(u)).collect()
         };
-        let (z, e_d) = verify_merged_forest(transcript, &roots, &part.mfs[l], t_x, p_x.s)
+        let (z, e_d) = verify_merged_forest(transcript, &roots, &part.mfs[l], t_x, p_x.col_vars)
             .map_err(|_| FlockRsError::Common(IntEvalRsError::Forest))?;
         // The O(2^j·2^{t'}) step first — statement-side: case powers → τ_S →
         // the ACTIVE channels (zero channels are elided on both sides). The
         // active set pins the presum's expected group count and degrees
         // (all cascade groups are degree 2).
         let case_pow = {
-            let _g = crate::utils::prof::scope("rlcv:pows");
+            let _g = tracing::info_span!("rlcv:pows").entered();
             rlc_case_pow_table(chunk_w, alpha)
         };
         let taus = rlc_tau_tables(&case_pow);
@@ -9851,7 +9896,15 @@ fn verify_rlc_family_front(
                 (part.omegas[side_pos(a)], part.omegas[side_pos(b)])
             })
             .collect();
-        rho = rlc_verify_eqf_level(transcript, t_x, p_x.s, d, &specs, &claimed, &side_vals)?;
+        rho = rlc_verify_eqf_level(
+            transcript,
+            t_x,
+            p_x.col_vars,
+            d,
+            &specs,
+            &claimed,
+            &side_vals,
+        )?;
         crate::ligerito::absorb_rlc_omegas(transcript, &part.omegas);
         if !and_masks.is_empty() {
             let etas2: Vec<Gf> = transcript.get_field_challenges(and_masks.len(), &());
@@ -9880,8 +9933,15 @@ fn verify_rlc_family_front(
                     (part.omegas2[fi_pos(a)], part.omegas2[fi_pos(b)])
                 })
                 .collect();
-            rho2 =
-                rlc_verify_eqf_level(transcript, t_x, p_x.s, d2, &specs2, &claimed2, &side_vals2)?;
+            rho2 = rlc_verify_eqf_level(
+                transcript,
+                t_x,
+                p_x.col_vars,
+                d2,
+                &specs2,
+                &claimed2,
+                &side_vals2,
+            )?;
             crate::ligerito::absorb_rlc_omegas(transcript, &part.omegas2);
         }
     }
@@ -10040,8 +10100,8 @@ fn absorb_rlc_families_statement(
     bytes.push(0x47u8);
     bytes.extend_from_slice(root);
     for v in [
-        layout.p.t,
-        layout.p.s,
+        layout.p.row_vars,
+        layout.p.col_vars,
         layout.p.word_bits,
         layout.num_cols,
         layout.log_cols,
@@ -10132,7 +10192,7 @@ pub fn prove_mle_eval_mod_q_ligerito_rlc_families_shared_point(
     for (cols, forms, _cs) in &canon {
         let gammas: Vec<u128> = (0..forms.len()).map(|_| fq_challenge(transcript)).collect();
         let case_chunks = {
-            let _g = crate::utils::prof::scope("rlc:casew");
+            let _g = tracing::info_span!("rlc:casew").entered();
             let case_w = rlc_case_weights_shared_point(
                 row_weights_q,
                 &rlc_gamma_cases(&gammas, forms, cols.len()),
@@ -10600,6 +10660,7 @@ impl IntEvalRsLigModQProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
+        w.bytes(b"F2ZM0002");
         let lch = self.mfs.len();
         w.len(lch);
         for l in 0..lch {
@@ -10631,6 +10692,7 @@ impl IntEvalRsLigModQProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::Reader;
         let mut r = Reader::new(bytes);
+        if r.take(8)? != b"F2ZM0002" { return Err(crate::proof_codec::CodecError::NonCanonical); }
         let lch = r.len()?;
         let mut mfs = Vec::with_capacity(lch.min(64));
         let mut us = Vec::with_capacity(lch.min(64));
@@ -10756,6 +10818,7 @@ impl IntEvalRsLigExtProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
+        w.bytes(b"F2ZE0002");
         w.len(self.mus.len());
         for m in &self.mus {
             let n = transmitted_us_len(m);
@@ -10785,6 +10848,7 @@ impl IntEvalRsLigExtProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
         let mut r = Reader::new(bytes);
+        if r.take(8)? != b"F2ZE0002" { return Err(crate::proof_codec::CodecError::NonCanonical); }
         let n_mus = r.len()?;
         let mut mus = Vec::with_capacity(n_mus.min(r.remaining() / 8));
         for _ in 0..n_mus {
@@ -10815,6 +10879,7 @@ impl IntEvalRsLigExtProof {
         let n_bytes = r.len()?;
         let base_bytes = r.take(n_bytes)?;
         let base = IntEvalRsLigModQProof::from_bytes(base_bytes)?;
+        if r.remaining() != 0 { return Err(CodecError::NonCanonical); }
         Ok(IntEvalRsLigExtProof { mus, base })
     }
 }
@@ -10835,7 +10900,7 @@ impl IntEvalRsLigExtProof {
 //   1. Synthesis supplies `h`'s bit rows alongside `f`; the prover runs
 //      the ORDINARY per-chunk machinery on `h` — integer chunk folds `us`, merged
 //      product forests, de-black-boxing pre-sumchecks
-//      ([`prove_int_eval_merged_common`]) — with `p_h` geometry. Nothing
+//      ([`prove_int_eval_merged_common`]) — with `h_layout` geometry. Nothing
 //      here touches the oracle: the verifier recomputes the roots from
 //      the sent `us` and is left with per-chunk residual claims
 //      `ĥ(pt_l) = μ_l` about the (uncommitted) derived bit-MLE.
@@ -10923,7 +10988,7 @@ pub enum VirtualReductionProof {
 }
 
 /// End-to-end proof of a mod-q claim on the derived vector `h = M·f`:
-/// per-chunk forests/folds/pre-sumchecks on `h` (`p_h` geometry), then
+/// per-chunk forests/folds/pre-sumchecks on `h` (`h_layout` geometry), then
 /// one of the two commitment bridges ([`VirtualReductionProof`]) and the ONE Ligerito
 /// call on `f`'s commitment.
 #[derive(Clone)]
@@ -11016,12 +11081,12 @@ where
         });
 
         let weights = {
-            let _g = crate::utils::prof::scope("mqv:vwprep");
+            let _g = tracing::info_span!("mqv:vwprep").entered();
             VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         let a_prime = {
-            let _g = crate::utils::prof::scope("mqv:vaprime");
+            let _g = tracing::info_span!("mqv:vaprime").entered();
             virtual_a_prime(
                 self.map,
                 &weights,
@@ -11081,12 +11146,18 @@ where
 /// equal), so `h`'s bit rows ARE `f`'s and every per-chunk claim is a
 /// claim on `f`'s own flat bit-MLE. Deterministic in the statement —
 /// prover and verifier need no coordination.
-pub fn virtual_id_fast_eligible<M>(map: &M, p_h: &IntEvalParams, p_f: &IntEvalParams) -> bool
+pub fn virtual_id_fast_eligible<M>(
+    map: &M,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
+) -> bool
 where
     M: crate::f2map::VirtualMap,
 {
     use crate::f2map::cell_row_bits;
-    map.is_identity() && cell_row_bits(p_h) == cell_row_bits(p_f) && p_h.s == p_f.s
+    map.is_identity()
+        && cell_row_bits(h_layout) == cell_row_bits(f_layout)
+        && h_layout.col_vars == f_layout.col_vars
 }
 
 /// The identity fast-path switch (default ON; `F2Z_VIRT_ID_FAST=0`
@@ -11114,8 +11185,8 @@ fn virt_id_fast() -> bool {
 fn absorb_virtual_statement<M, S>(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights: &S,
     q: u128,
@@ -11136,12 +11207,12 @@ where
         commitment.params.m,
         commitment.params.log_inv_rate,
         commitment.params.log_batch_size,
-        p_h.t,
-        p_h.s,
-        p_h.word_bits,
-        p_f.t,
-        p_f.s,
-        p_f.word_bits,
+        h_layout.row_vars,
+        h_layout.col_vars,
+        h_layout.word_bits,
+        f_layout.row_vars,
+        f_layout.col_vars,
+        f_layout.word_bits,
         q_bits,
         row_weights.row_count(),
     ] {
@@ -11299,10 +11370,11 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
         .collect();
     let points = [point];
     let etas = [Gf::from_words([73, 13])];
-    let weights = VirtColumnWeights::new(map, &points, &etas, prepared.assignment_params().t);
+    let weights =
+        VirtColumnWeights::new(map, &points, &etas, prepared.assignment_params().row_vars);
     let generic = VirtColumnWeights::Generic {
         map,
-        coeffs: VirtRowCoeffs::new(&points, &etas, prepared.assignment_params().t),
+        coeffs: VirtRowCoeffs::new(&points, &etas, prepared.assignment_params().row_vars),
     };
     let mut actual = [Gf::zero(); 128];
     let mut expected = actual;
@@ -12278,18 +12350,18 @@ where
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
         let weights = {
-            let _g = crate::utils::prof::scope("mqv:wprep");
+            let _g = tracing::info_span!("mqv:wprep").entered();
             VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         debug_assert_eq!(hint.p_msg.len(), 1usize << self.source_packed_vars);
         let planes = {
-            let _g = crate::utils::prof::scope("mqv:planes");
+            let _g = tracing::info_span!("mqv:planes").entered();
             weights.packed_source_planes()
         };
 
         let hs = {
-            let _g = crate::utils::prof::scope("mqv:hs");
+            let _g = tracing::info_span!("mqv:hs").entered();
             match &planes {
                 Some(planes) => {
                     let mut hs = planes.hs_fold(&hint.p_msg);
@@ -12310,7 +12382,7 @@ where
             .zip(hs.iter())
             .fold(Gf::zero(), |acc, (&r, &h)| acc + r * h);
         let (mut basis, mut precomputed_round0): (Vec<F128>, Option<(Gf, Gf)>) = {
-            let _g = crate::utils::prof::scope("mqv:aprime");
+            let _g = tracing::info_span!("mqv:aprime").entered();
             match &planes {
                 Some(planes) => {
                     let (mut basis, mut round0) = planes.a_prime(&rho, &hint.p_msg);
@@ -12327,7 +12399,7 @@ where
             }
         };
         if let (Some(claim), Some(eta)) = (ood, eta_ood) {
-            let _g = crate::utils::prof::scope("mqv:ood_basis");
+            let _g = tracing::info_span!("mqv:ood_basis").entered();
             add_ood_basis(
                 &mut basis,
                 &hint.p_msg,
@@ -12350,7 +12422,7 @@ where
 
 /// Prove `Σ_c w'_c·(Σ_b rw[b]·h_{b,c}) = y ∈ 𝔽_q` for the derived vector
 /// `h = M·f`, against the commitment to `f` (`hint_f`). Same claim shape
-/// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `p_h` geometry —
+/// as [`prove_mle_eval_mod_q_ligerito`], with `h` in `h_layout` geometry —
 /// `row_weights_q[b] ∈ [0, 2^q_bits)` over `h`'s `2^{t_h}` rows. The
 /// correctly shaped `h_rows` are supplied by synthesis; proving never
 /// computes a forward `M f` product.
@@ -12365,26 +12437,26 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     q_bits: usize,
     alpha: Gf,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
     M: crate::f2map::VirtualMap,
 {
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
     prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
         transcript,
         hint_f,
         h_rows,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         &chunks,
         crate::pcs::FQ_MOD,
@@ -12407,30 +12479,30 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
     M: crate::f2map::VirtualMap,
 {
     validate_runtime_q(q, q_bits, row_weights_q)?;
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
     Ok(
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
             transcript,
             hint_f,
             h_rows,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             &chunks,
             q,
@@ -12453,29 +12525,29 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &ModQWeightChunks,
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
     M: crate::f2map::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
-    checked_mod_q_weight_chunks_geometry(p_h, chunks, q_bits)?;
+    checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
     Ok(
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
             transcript,
             hint_f,
             h_rows,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             chunks,
             q,
@@ -12499,15 +12571,15 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<M
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     source: &S,
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
@@ -12515,14 +12587,14 @@ where
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
-    checked_mod_q_weight_source_geometry(p_h, source, q_bits)?;
+    checked_mod_q_weight_source_geometry(h_layout, source, q_bits)?;
     Ok(
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus(
             transcript,
             hint_f,
             h_rows,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             source,
             q,
@@ -12541,15 +12613,15 @@ fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus<M, S>(
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
@@ -12560,8 +12632,8 @@ where
         transcript,
         hint_f,
         h_rows,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         chunks,
         q,
@@ -12581,15 +12653,15 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modul
     transcript: &mut (impl Transcript + Send),
     hint_f: &FlockCommitHint,
     h_rows: &[Vec<u64>],
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
     security: Option<&mut atomic::AtomicSecurity<'_>>,
 ) -> IntEvalRsLigVirtProof
@@ -12597,32 +12669,32 @@ where
     M: crate::f2map::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
-    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(p_h, chunks, q_bits)
-        .expect("p_h, q_bits, and chunks must define valid mod-q geometry");
-    let f_geometry = validate_int_eval_geometry(&hint_f.commitment, p_f, 0)
-        .expect("commitment geometry must match p_f");
+    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)
+        .expect("h_layout, q_bits, and chunks must define valid mod-q geometry");
+    let f_geometry = validate_int_eval_geometry(&hint_f.commitment, f_layout, 0)
+        .expect("commitment geometry must match f_layout");
     assert!(
         h_geometry.row_bit_vars >= LOG_PACKING,
         "h rows must contain at least one 128-bit pack"
     );
     let h_cells = h_geometry
         .rows
-        .checked_mul(p_h.word_bits)
+        .checked_mul(h_layout.word_bits)
         .and_then(|count| count.checked_mul(h_geometry.cols))
-        .expect("p_h cell count must fit usize");
+        .expect("h_layout cell count must fit usize");
     let f_cells = f_geometry
         .rows
-        .checked_mul(p_f.word_bits)
+        .checked_mul(f_layout.word_bits)
         .and_then(|count| count.checked_mul(f_geometry.cols))
-        .expect("p_f cell count must fit usize");
+        .expect("f_layout cell count must fit usize");
     let h_words_per_row = h_geometry
         .rows
-        .checked_mul(p_h.word_bits)
+        .checked_mul(h_layout.word_bits)
         .expect("h row width must fit usize")
         / u64::BITS as usize;
     let t_wh = h_geometry.row_bit_vars;
-    assert_eq!(map.rows(), h_cells, "map rows must match p_h cells");
-    assert_eq!(map.cols(), f_cells, "map cols must match p_f cells");
+    assert_eq!(map.rows(), h_cells, "map rows must match h_layout cells");
+    assert_eq!(map.cols(), f_cells, "map cols must match f_layout cells");
     assert_eq!(h_rows.len(), h_geometry.cols, "h_rows column count");
     assert!(
         h_rows.iter().all(|row| row.len() == h_words_per_row),
@@ -12632,12 +12704,12 @@ where
         .expect("commitment metadata must match the Ligerito config");
 
     let _bound_statement = {
-        let _g = crate::utils::prof::scope("mqv:stmt");
+        let _g = tracing::info_span!("mqv:stmt").entered();
         absorb_virtual_statement(
             transcript,
             &hint_f.commitment,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             chunks,
             q,
@@ -12649,14 +12721,14 @@ where
     // Identity fast path: `h = f` (same cells, same row layout), so the
     // whole derived-vector machinery — packing `h`, the `h_i` fold, and the
     // `a′` build — is skipped and the BASE opening runs on `f`'s own
-    // rows under `p_h`'s claim shape (the flat bit-MLE is
+    // rows under `h_layout`'s claim shape (the flat bit-MLE is
     // layout-agnostic, and the layouts coincide here anyway).
-    if virtual_id_fast_eligible(map, p_h, p_f) && virt_id_fast() {
-        let _g = crate::utils::prof::scope("mqv:idfast");
+    if virtual_id_fast_eligible(map, h_layout, f_layout) && virt_id_fast() {
+        let _g = tracing::info_span!("mqv:idfast").entered();
         let core = prove_mod_q_lig_core_with_security(
             transcript,
             hint_f,
-            p_h,
+            h_layout,
             &hint_f.rows,
             Some(&hint_f.packed_cols),
             chunks,
@@ -12665,7 +12737,7 @@ where
             forest_grinding_bits,
             ood,
             EqProverReduction {
-                packed_vars: packed_vars(p_f),
+                packed_vars: packed_vars(f_layout),
             },
             security,
         );
@@ -12685,13 +12757,13 @@ where
     // The common prefix operates on synthesized `h`; the selected reduction
     // alone knows about `M`, and the common suffix opens committed `f`.
     let h_packed = {
-        let _g = crate::utils::prof::scope("mqv:pack");
-        crate::ligerito::pack_columns_from_rows(p_h, h_rows)
+        let _g = tracing::info_span!("mqv:pack").entered();
+        crate::ligerito::pack_columns_from_rows(h_layout, h_rows)
     };
     let core = prove_mod_q_lig_core_with_security(
         transcript,
         hint_f,
-        p_h,
+        h_layout,
         h_rows,
         Some(&h_packed),
         chunks,
@@ -12702,7 +12774,7 @@ where
         AdjointBatchProverReduction {
             map,
             derived_row_bits: t_wh,
-            source_packed_vars: packed_vars(p_f),
+            source_packed_vars: packed_vars(f_layout),
         },
         security,
     );
@@ -12728,29 +12800,29 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_with_ood<R, M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     col_weights: &[R],
     alpha: Gf,
     claimed: R,
     q_bits: usize,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
     M: crate::f2map::VirtualMap,
 {
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off(
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         &chunks,
         crate::pcs::FQ_MOD,
@@ -12760,7 +12832,7 @@ where
         ood,
         vc,
         col_weights.len(),
-        |v, c_w, lch| crate::pcs::recombine_read_off(p_h, v, 0, col_weights, c_w, lch) == claimed,
+        |v, c_w, lch| crate::pcs::recombine_read_off(h_layout, v, 0, col_weights, c_w, lch) == claimed,
     )
 }
 
@@ -12775,8 +12847,8 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     row_weights_q: &[u128],
     col_weights_q: &[u128],
@@ -12785,7 +12857,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -12795,15 +12867,15 @@ where
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let chunks = ModQWeightChunks::from_dense(p_h, row_weights_q, q_bits)
+    let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
     let arithmetic = crate::ext_proj::ProjArith::new(q);
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off(
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         &chunks,
         q,
@@ -12814,7 +12886,8 @@ where
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
-            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+            recombine_read_off_runtime(h_layout, v, col_weights_q, c_w, lch, &arithmetic)
+                == claimed_q
         },
     )
 }
@@ -12829,8 +12902,8 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &ModQWeightChunks,
     col_weights_q: &[u128],
@@ -12839,14 +12912,14 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
     M: crate::f2map::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
-    checked_mod_q_weight_chunks_geometry(p_h, chunks, q_bits)?;
+    checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -12855,8 +12928,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         chunks,
         q,
@@ -12867,7 +12940,8 @@ where
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
-            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+            recombine_read_off_runtime(h_layout, v, col_weights_q, c_w, lch, &arithmetic)
+                == claimed_q
         },
     )
 }
@@ -12882,8 +12956,8 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     source: &S,
     col_weights_q: &[u128],
@@ -12892,7 +12966,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     q: u128,
     q_bits: usize,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
@@ -12900,7 +12974,7 @@ where
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
-    checked_mod_q_weight_source_geometry(p_h, source, q_bits)?;
+    checked_mod_q_weight_source_geometry(h_layout, source, q_bits)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
@@ -12909,8 +12983,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         source,
         q,
@@ -12921,7 +12995,8 @@ where
         vc,
         col_weights_q.len(),
         |v, c_w, lch| {
-            recombine_read_off_runtime(p_h, v, col_weights_q, c_w, lch, &arithmetic) == claimed_q
+            recombine_read_off_runtime(h_layout, v, col_weights_q, c_w, lch, &arithmetic)
+                == claimed_q
         },
     )
 }
@@ -12932,15 +13007,15 @@ fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off<M, S, 
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
     col_weight_count: usize,
     read_off_accepts: C,
@@ -12954,8 +13029,8 @@ where
         transcript,
         commitment_f,
         proof,
-        p_h,
-        p_f,
+        h_layout,
+        f_layout,
         map,
         chunks,
         q,
@@ -12978,15 +13053,15 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read
     transcript: &mut (impl Transcript + Send),
     commitment_f: &Commitment,
     proof: &IntEvalRsLigVirtProof,
-    p_h: &IntEvalParams,
-    p_f: &IntEvalParams,
+    h_layout: &IntegerMatrixLayout,
+    f_layout: &IntegerMatrixLayout,
     map: &M,
     chunks: &S,
     q: u128,
     q_bits: usize,
     alpha: Gf,
     forest_grinding_bits: u32,
-    ood: Option<OodRoundParams>,
+    ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
     col_weight_count: usize,
     read_off_accepts: C,
@@ -12998,16 +13073,16 @@ where
     C: Fn(&[u128], usize, usize) -> bool,
 {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
-    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(p_h, chunks, q_bits)?;
-    let f_geometry = validate_int_eval_geometry(commitment_f, p_f, 0)?;
+    let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)?;
+    let f_geometry = validate_int_eval_geometry(commitment_f, f_layout, 0)?;
     let h_cells = h_geometry
         .rows
-        .checked_mul(p_h.word_bits)
+        .checked_mul(h_layout.word_bits)
         .and_then(|count| count.checked_mul(h_geometry.cols))
         .ok_or_else(shape)?;
     let f_cells = f_geometry
         .rows
-        .checked_mul(p_f.word_bits)
+        .checked_mul(f_layout.word_bits)
         .and_then(|count| count.checked_mul(f_geometry.cols))
         .ok_or_else(shape)?;
     let t_wh = h_geometry.row_bit_vars;
@@ -13021,12 +13096,12 @@ where
     validate_ligerito_commitment(commitment_f, vc)?;
 
     let _bound_statement = {
-        let _g = crate::utils::prof::scope("mqv:stmt");
+        let _g = tracing::info_span!("mqv:stmt").entered();
         absorb_virtual_statement(
             transcript,
             commitment_f,
-            p_h,
-            p_f,
+            h_layout,
+            f_layout,
             map,
             chunks,
             q,
@@ -13039,12 +13114,12 @@ where
     // only after the statement-derived identity/layout gate succeeds.
     let reduction = match &proof.reduction {
         VirtualReductionProof::Eq { rings } => {
-            if !virtual_id_fast_eligible(map, p_h, p_f) {
+            if !virtual_id_fast_eligible(map, h_layout, f_layout) {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
             }
             VirtualVerifierReduction::Eq(EqVerifierReduction {
                 rings,
-                packed_vars: packed_vars(p_f),
+                packed_vars: packed_vars(f_layout),
             })
         }
         VirtualReductionProof::AdjointBatch { hs } => {
@@ -13052,7 +13127,7 @@ where
                 map,
                 hs: hs.as_ref(),
                 derived_row_bits: t_wh,
-                source_packed_vars: packed_vars(p_f),
+                source_packed_vars: packed_vars(f_layout),
             })
         }
     };
@@ -13060,7 +13135,7 @@ where
         transcript,
         commitment_f,
         proof.into(),
-        p_h,
+        h_layout,
         chunks,
         alpha,
         vc,
@@ -13118,7 +13193,7 @@ fn validate_runtime_modulus(q: u128, q_bits: usize) -> Result<(), FlockRsError> 
 
 #[allow(clippy::arithmetic_side_effects)]
 fn recombine_read_off_runtime(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     values: &[u128],
     col_weights_q: &[u128],
     chunk_width: usize,
@@ -13131,7 +13206,7 @@ fn recombine_read_off_runtime(
         let mut column_value = 0_u128;
         let mut place = 1_u128;
         for chunk in 0..chunk_count {
-            let index = (chunk << p.s) + column;
+            let index = (chunk << p.col_vars) + column;
             column_value = arithmetic.add(column_value, arithmetic.mul(place, values[index]));
             place = arithmetic.mul(place, chunk_base);
         }
@@ -13157,6 +13232,7 @@ impl IntEvalRsLigVirtProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
+        w.bytes(b"F2ZV0002");
         let lch = self.mfs.len();
         w.len(lch);
         for l in 0..lch {
@@ -13192,6 +13268,7 @@ impl IntEvalRsLigVirtProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
         let mut r = Reader::new(bytes);
+        if r.take(8)? != b"F2ZV0002" { return Err(crate::proof_codec::CodecError::NonCanonical); }
         let lch = r.len()?;
         let mut mfs = Vec::with_capacity(lch.min(64));
         let mut us = Vec::with_capacity(lch.min(64));
@@ -13379,9 +13456,9 @@ mod tests {
         };
 
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let p = IntEvalParams {
-            t: 4,
-            s: 6,
+        let p = IntegerMatrixLayout {
+            row_vars: 4,
+            col_vars: 6,
             word_bits: 32,
         };
         let (pc, vc) = lig_configs(
@@ -14049,19 +14126,19 @@ mod tests {
             sparse_matrix::SparseMatrix,
         };
 
-        let p_f = IntEvalParams {
-            t: 8,
-            s: 2,
+        let f_layout = IntegerMatrixLayout {
+            row_vars: 8,
+            col_vars: 2,
             word_bits: 1,
         }; // 2^10 cells, 8 packs
-        let p_h = IntEvalParams {
-            t: 7,
-            s: 3,
+        let h_layout = IntegerMatrixLayout {
+            row_vars: 7,
+            col_vars: 3,
             word_bits: 1,
         }; // 2^10 derived cells
-        let n_f = cell_count(&p_f);
-        let n_h = cell_count(&p_h);
-        let t_wh = cell_row_bits(&p_h);
+        let n_f = cell_count(&f_layout);
+        let n_h = cell_count(&h_layout);
+        let t_wh = cell_row_bits(&h_layout);
         let lists: Vec<Vec<usize>> = (0..n_h)
             .map(|i| {
                 if i % 5 == 4 {
@@ -14087,7 +14164,7 @@ mod tests {
 
         let points: Vec<Vec<Gf>> = (0..2)
             .map(|l| {
-                (0..t_wh + p_h.s)
+                (0..t_wh + h_layout.col_vars)
                     .map(|k| sample(0x9000 + (l * 64 + k) as u64))
                     .collect()
             })
@@ -14182,9 +14259,9 @@ mod tests {
         let alpha = smallest_generator();
         let q_bits = 100usize;
         for (t, s_vars, w) in [(10usize, 5usize, 1usize), (4, 8, 32)] {
-            let p = IntEvalParams {
-                t,
-                s: s_vars,
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s_vars,
                 word_bits: w,
             };
             let m_p = packed_vars(&p);
@@ -14490,9 +14567,9 @@ mod tests {
         use crate::pcs::{FQ_BITS, FQ_MOD, Fq};
 
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let p = IntEvalParams {
-            t: 7,
-            s: 5,
+        let p = IntegerMatrixLayout {
+            row_vars: 7,
+            col_vars: 5,
             word_bits: 8,
         };
         let (pc, vc) = lig_configs(
@@ -14748,9 +14825,9 @@ mod tests {
         let ext_deg = 2usize;
         let proj = ExtProjParams::default();
         for (t, s_vars, w) in [(10usize, 5usize, 1usize), (4, 8, 32), (6, 6, 64)] {
-            let p = IntEvalParams {
-                t,
-                s: s_vars,
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s_vars,
                 word_bits: w,
             };
             let m_p = packed_vars(&p);
@@ -15000,9 +15077,9 @@ mod tests {
         }
         let alpha = smallest_generator();
         let q_bits = 100usize;
-        let p = IntEvalParams {
-            t: 10,
-            s: 5,
+        let p = IntegerMatrixLayout {
+            row_vars: 10,
+            col_vars: 5,
             word_bits: 1,
         };
         let m_p = packed_vars(&p);
@@ -15064,7 +15141,7 @@ mod tests {
         // Only the low two forest-layer flag bits are defined. Accepting a
         // high bit would give the same proof object multiple byte encodings.
         let mut high_flag = bytes.clone();
-        let flag_offset = 2 * core::mem::size_of::<u64>();
+        let flag_offset = 8 + 2 * core::mem::size_of::<u64>();
         high_flag[flag_offset] |= 0x04;
         assert!(matches!(
             IntEvalRsLigModQProof::from_bytes(&high_flag),
@@ -15107,9 +15184,9 @@ mod tests {
     fn mod_q_ligerito_padded_witness_trims_us() {
         use crate::pcs::{FQ_BITS, Fq};
         let alpha = smallest_generator();
-        let p = IntEvalParams {
-            t: 10,
-            s: 5,
+        let p = IntegerMatrixLayout {
+            row_vars: 10,
+            col_vars: 5,
             word_bits: 1,
         };
         let m_p = packed_vars(&p);
@@ -15246,9 +15323,9 @@ mod tests {
     /// is t' = 7, s = 6 (n' = 13).
     fn rlc_test_layout() -> ShaF2Layout {
         ShaF2Layout {
-            p: IntEvalParams {
-                t: 9,
-                s: 6,
+            p: IntegerMatrixLayout {
+                row_vars: 9,
+                col_vars: 6,
                 word_bits: 1,
             },
             num_cols: 4,
@@ -15282,7 +15359,7 @@ mod tests {
     }
 
     /// Pseudorandom `[0, q)` row-weight vector over the x tensor.
-    fn rlc_test_row_weights(p_x: &IntEvalParams, seed: u128) -> Vec<u128> {
+    fn rlc_test_row_weights(p_x: &IntegerMatrixLayout, seed: u128) -> Vec<u128> {
         (0..p_x.rows())
             .map(|b| {
                 (b as u128)
@@ -15325,7 +15402,7 @@ mod tests {
     }
 
     /// Shared clear-axis weights for the tests.
-    fn rlc_test_col_weights(p_x: &IntEvalParams) -> Vec<Fq> {
+    fn rlc_test_col_weights(p_x: &IntegerMatrixLayout) -> Vec<Fq> {
         (0..p_x.cols())
             .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
             .collect()
@@ -15393,7 +15470,7 @@ mod tests {
 
         let mut t1 = Blake3Transcript::new();
         let (roots_e, _mf_e, z_e, ed_e) =
-            crate::merged_forest::prove_merged_forest(&mut t1, &leaves, t_x, p_x.s);
+            crate::merged_forest::prove_merged_forest(&mut t1, &leaves, t_x, p_x.col_vars);
         let mut t2 = Blake3Transcript::new();
         let (roots_l, _mf_l, z_l, ed_l) = crate::merged_forest::prove_merged_forest_lazy_rlc2(
             &mut t2, &p_x, &x_rows[0], &x_rows[1], &case_pow,
@@ -15442,7 +15519,7 @@ mod tests {
 
         let mut t1 = Blake3Transcript::new();
         let (roots_e, _mf_e, z_e, ed_e) =
-            crate::merged_forest::prove_merged_forest(&mut t1, &leaves, t_x, p_x.s);
+            crate::merged_forest::prove_merged_forest(&mut t1, &leaves, t_x, p_x.col_vars);
         let mut t2 = Blake3Transcript::new();
         let row_refs: Vec<&[Vec<u64>]> = x_rows.iter().map(|r| &r[..]).collect();
         let (roots_l, _mf_l, z_l, ed_l) =
@@ -16795,9 +16872,9 @@ mod tests {
     /// width g = 3 (8-bit words along the entry axis).
     fn tap_test_layout_tw6() -> ShaF2Layout {
         ShaF2Layout {
-            p: IntEvalParams {
-                t: 7,
-                s: 8,
+            p: IntegerMatrixLayout {
+                row_vars: 7,
+                col_vars: 8,
                 word_bits: 1,
             },
             num_cols: 2,
@@ -16814,9 +16891,9 @@ mod tests {
     /// off < 2^{s−g} = 4).
     fn tap_test_layout_tw9() -> ShaF2Layout {
         ShaF2Layout {
-            p: IntEvalParams {
-                t: 10,
-                s: 7,
+            p: IntegerMatrixLayout {
+                row_vars: 10,
+                col_vars: 7,
                 word_bits: 1,
             },
             num_cols: 2,
@@ -17207,7 +17284,7 @@ mod tests {
         colw: &[Fq],
     ) -> u128 {
         let x_rows = extract_virtual_tap_rows(layout, rows, source);
-        let s = layout.p.s;
+        let s = layout.p.col_vars;
         let tw = layout.tw;
         let bv = layout.bit_vars;
         let delta = layout.x_fold_extra;
@@ -17485,7 +17562,7 @@ mod tests {
             );
             assert_eq!(
                 proof.tap_us[0][0].len(),
-                1usize << (layout.p.s - delta),
+                1usize << (layout.p.col_vars - delta),
                 "fold vectors shrink 2^δ×"
             );
             let vclaims: Vec<TapVerifyClaim<'_, Fq>> = taps_all
@@ -17563,7 +17640,7 @@ mod tests {
             &mut pt, &hint, &layout, &rw, &colw, &claims, alpha, &pc,
         );
         assert_eq!(proof.tap_us.len(), 2, "one source, both branches");
-        assert_eq!(proof.tap_us[0][0].len(), 1usize << (layout.p.s - 2));
+        assert_eq!(proof.tap_us[0][0].len(), 1usize << (layout.p.col_vars - 2));
         let mut vt = Blake3Transcript::new();
         verify_mle_eval_mod_q_ligerito_tap_composed(
             &mut vt,
@@ -18341,7 +18418,7 @@ mod ood_round_tests {
     use super::*;
     use crate::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
     use crate::ligerito::bind_low;
-    use crate::pcs::{IntEvalParams, mod_q_chunk_width, smallest_generator};
+    use crate::pcs::{IntegerMatrixLayout, mod_q_chunk_width, smallest_generator};
     use crate::transcript::Blake3Transcript;
 
     struct Xorshift(u64);
@@ -18423,7 +18500,7 @@ mod ood_round_tests {
         // without grinding at m = 22; below the template boundary the ad-hoc
         // config runs without the round.
         assert_eq!(sha_lig_ood_params(15), Some(OodRoundParams { grinding_bits: 0 }));
-        assert_eq!(sha_lig_ood_params(10), None);
+        assert!(sha_lig_configs(10).is_err());
     }
 
     /// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
@@ -18445,7 +18522,13 @@ mod ood_round_tests {
 
     /// The claimed `Σ_c w_c Σ_b rw_b · cell(b, c)` mod `q` from the committed
     /// bit rows (row `c`: bit `(b << log₂W) | j` = bit `j` of cell `(b, c)`).
-    fn claim_from_rows(p: &IntEvalParams, rows: &[Vec<u64>], rw: &[u128], cw: &[u128], arith: &ProjArith) -> u128 {
+    fn claim_from_rows(
+        p: &IntegerMatrixLayout,
+        rows: &[Vec<u64>],
+        rw: &[u128],
+        cw: &[u128],
+        arith: &ProjArith,
+    ) -> u128 {
         let log_w = p.word_bits.trailing_zeros() as usize;
         let pow2: Vec<u128> = (0..p.word_bits).map(|j| arith.reduce(1u128 << j)).collect();
         let mut y = 0u128;
@@ -18472,7 +18555,11 @@ mod ood_round_tests {
     /// requested Round-0 parameters.
     fn standalone_roundtrip(t: usize, s: usize, w: usize, ood: Option<OodRoundParams>) {
         let alpha = smallest_generator();
-        let p = IntEvalParams { t, s, word_bits: w };
+        let p = IntegerMatrixLayout {
+            row_vars: t,
+            col_vars: s,
+            word_bits: w,
+        };
         let q_bits = mod_q_chunk_width(&p).min(113);
         let (pc, vc) = lig_configs(
             packed_vars(&p),
@@ -18496,8 +18583,12 @@ mod ood_round_tests {
             };
             let q = sample_proj_prime(transcript, &proj);
             let arith = ProjArith::new(q);
-            let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
-            let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+            let r1: Vec<u128> = (0..p.row_vars)
+                .map(|_| sample_proj_point(transcript, q))
+                .collect();
+            let r2: Vec<u128> = (0..p.col_vars)
+                .map(|_| sample_proj_point(transcript, q))
+                .collect();
             (q, eq_table_mod_q(&arith, &r1), eq_table_mod_q(&arith, &r2))
         };
         let (q, rw, cw) = {
@@ -18591,7 +18682,11 @@ mod ood_round_tests {
     #[test]
     fn trailer_carries_forest_nonces_and_the_round_together() {
         let alpha = smallest_generator();
-        let p = IntEvalParams { t: 10, s: 5, word_bits: 1 };
+        let p = IntegerMatrixLayout {
+            row_vars: 10,
+            col_vars: 5,
+            word_bits: 1,
+        };
         let q_bits = 100usize;
         let (pc, _vc) = lig_configs(
             packed_vars(&p),

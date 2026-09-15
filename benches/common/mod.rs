@@ -11,22 +11,45 @@
 //!   grinding, PIOP, bitification, Step 5.0, the F2Z opening).
 //! - Witness generation and one-time public preprocessing are excluded and
 //!   reported separately (`witness_ms`, `setup_ms`).
-//! - Per-step splits come from the crate's umbrella profiler scopes
+//! - Per-step splits come from the crate's umbrella tracing spans
 //!   (`step2:*` … `step5:*`); a signed residual makes each split sum to its
 //!   total exactly.
 //! - Steps that do not run in a path print `na`, never `0.00`.
 
 #![allow(dead_code)] // each bench uses a subset of the harness
 
+pub mod cli;
+pub mod environment;
+
+/// Serialize native SDK sessions in tests and explicitly supply their subscriber.
+#[cfg(all(test, feature = "span-metrics"))]
+pub fn test_tracing() -> (
+    tracing::subscriber::DefaultGuard,
+    std::sync::MutexGuard<'static, ()>,
+) {
+    use tracing_subscriber::prelude::*;
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let lock = LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(f2z::observability::layer()),
+    );
+    (subscriber, lock)
+}
 pub mod mul_witness;
+pub mod output;
+pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
+#[cfg(feature = "span-metrics")]
+pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
+#[cfg(any(feature = "native-mul-compare", feature = "plonky3-sha256-bench"))]
+pub mod whir_tuning;
 
-use std::time::Instant;
 
+use clap::ValueEnum;
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
     Sha128ReferenceSchedule,
@@ -34,21 +57,37 @@ use f2z::piop::spartan::{
 
 /// Revision from the Cargo-generated lockfile embedded in this benchmark.
 /// Report the dependency used at build time, without requiring sibling clones.
-pub fn locked_git_revision(package: &str) -> &'static str {
+///
+/// A dependency redirected by `[patch]` to an in-tree `vendor/` copy has no
+/// lockfile source. Its vendored tree carries local changes, so reporting a
+/// bare upstream revision for it would be wrong; instead this reports the
+/// revision its still-Git-pinned siblings share, marked `+patched`.
+pub fn locked_git_revision(package: &str) -> String {
+    let lock = include_str!("../../Cargo.lock");
+    let git_revision = |entry: &str| {
+        entry
+            .lines()
+            .find_map(|line| line.strip_prefix("source = \"git+"))
+            .and_then(|source| source.strip_suffix('"'))
+            .and_then(|source| source.rsplit_once('#'))
+            .map(|(_, commit)| commit.to_owned())
+    };
     let name = format!("name = \"{package}\"");
-    let entry = include_str!("../../Cargo.lock")
+    let entry = lock
         .split("[[package]]")
         .find(|entry| entry.lines().any(|line| line == name))
         .unwrap_or_else(|| panic!("missing locked dependency {package}"));
-    let source = entry
-        .lines()
-        .find_map(|line| line.strip_prefix("source = \"git+"))
-        .and_then(|source| source.strip_suffix('"'))
-        .unwrap_or_else(|| panic!("dependency {package} is not locked to Git"));
-    source
-        .rsplit_once('#')
-        .expect("locked Git source has a commit")
-        .1
+    if let Some(revision) = git_revision(entry) {
+        return revision;
+    }
+    let family = format!("name = \"{}-", package.split('-').next().unwrap_or(package));
+    lock.split("[[package]]")
+        .filter(|entry| entry.lines().any(|line| line.starts_with(&family)))
+        .find_map(git_revision)
+        .map_or_else(
+            || "patched".to_owned(),
+            |revision| format!("{revision}+patched"),
+        )
 }
 
 // ---------------------------------------------------------------------
@@ -140,6 +179,9 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_PAR_CHUNK",
     // Controlled BabyBear terminal-claim PCS comparison trace.
     "F2Z_BINIUS_LOG_INV_RATE",
+    // u64 native-mul comparison: lower the F2Z row side by k (see
+    // benches/mul_e2e_compare/f2z.rs::u64_split_shift).
+    "F2Z_U64_SPLIT_SHIFT",
     "F2Z_PCS_COMPARE_BACKENDS",
     "F2Z_PCS_COMPARE_BUILD_PROFILE",
     "F2Z_PCS_COMPARE_CAMPAIGN_ID",
@@ -152,6 +194,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_WHIR_FOLDING",
     "F2Z_WHIR_LOG_INV_RATE",
     "F2Z_WHIR_MAX_POW_BITS",
+    "F2Z_WHIR_CONFIG",
+    "F2Z_WHIR_TUNING_REPS",
     "F2Z_QUAD",
     "F2Z_QUAD_KERNEL",
     "F2Z_RLC_EAGER",
@@ -248,42 +292,25 @@ fn env_with_alias(canonical: &str, alias: Option<&str>) -> Option<String> {
 
 /// Measured repetitions (one extra untimed warm-up is always run).
 pub fn reps(alias: Option<&str>, default: usize) -> usize {
-    let value = env_with_alias("F2Z_BENCH_REPS", alias)
-        .map(|value| {
-            value
-                .parse::<usize>()
-                .unwrap_or_else(|_| panic!("F2Z_BENCH_REPS must be a positive integer"))
-        })
-        .unwrap_or(default);
-    assert!(value > 0, "F2Z_BENCH_REPS must be positive");
-    value
+    env_with_alias("F2Z_BENCH_REPS", alias).map_or(default, |value| {
+        cli::value("F2Z_BENCH_REPS", &value, cli::positive)
+    })
 }
 
 /// Bench-specific shape list (meaning documented per bench).
-pub fn shapes(alias: Option<&str>) -> Option<Vec<String>> {
-    env_with_alias("F2Z_BENCH_SHAPES", alias).map(|value| {
-        let shapes: Vec<String> = value
-            .split([',', ' '])
-            .filter(|part| !part.is_empty())
-            .map(str::to_owned)
-            .collect();
-        assert!(!shapes.is_empty(), "F2Z_BENCH_SHAPES must not be empty");
-        shapes
-    })
+pub fn shape_values<T, P>(alias: Option<&str>, parser: P) -> Option<Vec<T>>
+where
+    T: Clone + Send + Sync + 'static,
+    P: clap::builder::TypedValueParser<Value = T>,
+{
+    env_with_alias("F2Z_BENCH_SHAPES", alias)
+        .map(|value| cli::values("F2Z_BENCH_SHAPES", &value, parser))
 }
 
 /// Root seed (decimal or 0x-hex).
 pub fn seed(alias: Option<&str>, default: u64) -> u64 {
     env_with_alias("F2Z_BENCH_SEED", alias).map_or(default, |value| {
-        let parsed = if let Some(hex) = value
-            .strip_prefix("0x")
-            .or_else(|| value.strip_prefix("0X"))
-        {
-            u64::from_str_radix(hex, 16).ok()
-        } else {
-            value.parse().ok()
-        };
-        parsed.unwrap_or_else(|| panic!("F2Z_BENCH_SEED must be a decimal or 0x-hex u64"))
+        cli::value("F2Z_BENCH_SEED", &value, cli::seed)
     })
 }
 
@@ -295,24 +322,20 @@ pub fn seed(alias: Option<&str>, default: u64) -> u64 {
 /// policy types of `src/piop/spartan/profile.rs`, chosen at runtime by
 /// `F2Z_BENCH_LAMBDA` and dispatched to the monomorphized bench body by
 /// [`with_profile!`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 pub enum SecurityProfile {
+    #[value(name = "100", alias = "lambda100")]
     Lambda100,
+    #[value(name = "128", alias = "lambda128")]
     Lambda128,
+    #[value(name = "112", alias = "limber112")]
     Limber112,
+    #[value(name = "114", alias = "limber114")]
     Limber114,
     Sha128ReferenceSchedule,
 }
 
 impl SecurityProfile {
-    pub const ALL: [Self; 5] = [
-        Self::Lambda100,
-        Self::Lambda128,
-        Self::Limber112,
-        Self::Limber114,
-        Self::Sha128ReferenceSchedule,
-    ];
-
     /// The profile's `NAME` (the `profile=` RESULT key).
     pub const fn name(self) -> &'static str {
         match self {
@@ -349,28 +372,14 @@ impl SecurityProfile {
 
     /// The shortest `F2Z_BENCH_LAMBDA` spelling of the profile: the target
     /// bits where that is unambiguous, the full name otherwise.
-    pub const fn knob_value(self) -> &'static str {
-        match self {
-            Self::Lambda100 => "100",
-            Self::Lambda128 => "128",
-            Self::Limber112 => "112",
-            Self::Limber114 => "114",
-            Self::Sha128ReferenceSchedule => Sha128ReferenceSchedule::NAME,
-        }
+    pub fn knob_value(self) -> String {
+        self.to_possible_value().expect("selectable profile").get_name().to_owned()
     }
 
-    /// `100` / `128` / `114` or a profile name, case-insensitively.
-    fn parse(value: &str) -> Option<Self> {
-        let value = value.trim().to_ascii_lowercase();
-        Self::ALL
-            .into_iter()
-            .find(|profile| value == profile.knob_value() || value == profile.name())
-    }
-
-    fn admissible(policy: Option<PrimePolicy>) -> String {
-        Self::ALL
+    fn admissible(policy: PrimePolicy) -> String {
+        Self::value_variants()
             .iter()
-            .filter(|profile| policy.is_none_or(|policy| profile.prime_policy() == policy))
+            .filter(|profile| profile.prime_policy() == policy)
             .map(|profile| {
                 if profile.knob_value() == profile.name() {
                     profile.name().to_owned()
@@ -399,14 +408,9 @@ const fn describe_policy(policy: PrimePolicy) -> &'static str {
 /// names no profile aborts too (a typo can never silently do nothing).
 pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
     let value = std::env::var("F2Z_BENCH_LAMBDA").ok()?;
-    let Some(profile) = SecurityProfile::parse(&value) else {
-        eprintln!("error: F2Z_BENCH_LAMBDA={value:?} names no security profile");
-        eprintln!(
-            "       admissible values: {}",
-            SecurityProfile::admissible(None)
-        );
-        std::process::exit(2);
-    };
+    let profile = cli::value("F2Z_BENCH_LAMBDA", &value, |value: &str| {
+        SecurityProfile::from_str(value.trim(), true)
+    });
     if profile.prime_policy() != policy {
         eprintln!(
             "error: F2Z_BENCH_LAMBDA={value} selects {}, a {} profile, but this bench's \
@@ -417,7 +421,7 @@ pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
         );
         eprintln!(
             "       admissible here: {}",
-            SecurityProfile::admissible(Some(policy))
+            SecurityProfile::admissible(policy)
         );
         std::process::exit(2);
     }
@@ -472,13 +476,9 @@ macro_rules! with_profile {
 #[allow(unused_imports)]
 pub(crate) use with_profile;
 
-/// Shared bench startup: force the phase profiler on (the step split must
-/// always be populated), validate the environment, and size the perf pool.
-/// Call first in `main`, before any thread is spawned or any profiler scope
-/// opens. Returns the rayon thread count.
+/// Validate the benchmark environment and size the performance thread pool.
+/// Subscriber installation belongs to the executable. Returns the thread count.
 pub fn init() -> usize {
-    // SAFETY: called before any other thread can read the environment.
-    unsafe { std::env::set_var("OBLONG_PROFILE", "1") };
     enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     #[cfg(feature = "parallel")]
@@ -563,11 +563,11 @@ const S5_OPENER: &[&str] = &[
     "mqv:vlig",
 ];
 
-fn label_sum_ms(phases: &[(&'static str, f64)], labels: &[&str]) -> Option<f64> {
+fn label_sum_ms(phases: &[(String, f64)], labels: &[&str]) -> Option<f64> {
     let mut sum = 0.0;
     let mut seen = false;
     for (label, seconds) in phases {
-        if labels.contains(label) {
+        if labels.contains(&label.as_str()) {
             sum += seconds * 1e3;
             seen = true;
         }
@@ -575,7 +575,7 @@ fn label_sum_ms(phases: &[(&'static str, f64)], labels: &[&str]) -> Option<f64> 
     seen.then_some(sum)
 }
 
-fn label_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
+fn label_ms(phases: &[(String, f64)], label: &str) -> Option<f64> {
     label_sum_ms(phases, &[label])
 }
 
@@ -601,7 +601,7 @@ impl StepSamples {
     /// Records one prover rep: the end-to-end wall time, the bench-timed
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
-    pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(&'static str, f64)]) {
+    pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
         self.record_scopes(
@@ -617,7 +617,7 @@ impl StepSamples {
     }
 
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
-    pub fn record_verify(&mut self, total_ms: f64, phases: &[(&'static str, f64)]) {
+    pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
         self.total.push(total_ms);
         self.commit.push(None);
         self.record_scopes(
@@ -632,7 +632,7 @@ impl StepSamples {
         );
     }
 
-    fn record_scopes(&mut self, phases: &[(&'static str, f64)], steps: [&str; 5]) {
+    fn record_scopes(&mut self, phases: &[(String, f64)], steps: [&str; 5]) {
         self.project.push(label_ms(phases, steps[0]));
         self.piop.push(label_ms(phases, steps[1]));
         self.bitify.push(label_ms(phases, steps[2]));
@@ -828,8 +828,13 @@ impl BenchReport {
     }
 
     fn result_line_with_commitment(&self, commitment_bytes: usize) -> String {
+        let schema = if self.extra.iter().any(|(key, _)| key == "ligerito_hex") {
+            "f2z/2"
+        } else {
+            "f2z/1"
+        };
         let mut line = format!(
-            "RESULT schema=f2z/1 bench={} shape={}",
+            "RESULT schema={schema} bench={} shape={}",
             self.bench, self.shape
         );
         for (key, value) in &self.extra {
@@ -912,6 +917,48 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
 }
 
 /// Milliseconds elapsed since `start`.
-pub fn elapsed_ms(start: Instant) -> f64 {
-    start.elapsed().as_secs_f64() * 1e3
+/// Milliseconds from a completed, uniquely named Perfetto operation.
+#[cfg(feature = "span-metrics")]
+pub fn span_ms(intervals: &[f2z::observability::Interval], label: &str) -> f64 {
+    f2z::observability::duration(intervals, label)
+        .unwrap_or_else(|error| panic!("invalid benchmark measurement: {error}"))
+        .as_secs_f64() * 1e3
+}
+
+/// Only F2Z callers consult this selector. Competing PCS configurations do not.
+pub fn ligerito_selection(target: usize) -> f2z::ligerito_flock::LigeritoSelection {
+    ligerito_selection_or(
+        target,
+        f2z::ligerito_flock::LigeritoSelection::for_target(target),
+    )
+}
+
+pub fn ligerito_selection_or(
+    target: usize,
+    default: f2z::ligerito_flock::LigeritoSelection,
+) -> f2z::ligerito_flock::LigeritoSelection {
+    match std::env::var("F2Z_LIG_PROFILE") {
+        Ok(request) => f2z::ligerito_flock::LigeritoSelection::parse(&request, target)
+            .expect("invalid F2Z_LIG_PROFILE"),
+        Err(std::env::VarError::NotPresent) => default,
+        Err(error) => panic!("invalid F2Z_LIG_PROFILE: {error}"),
+    }
+}
+
+pub fn ligerito_report(
+    resolved: &f2z::ligerito_flock::ResolvedLigerito,
+    ood: Option<f2z::ligerito_flock::OodRoundParams>,
+) -> serde_json::Value {
+    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| resolved.selection().name());
+    resolved.report(&request, ood)
+}
+
+pub fn ligerito_identity(
+    resolved: &f2z::ligerito_flock::ResolvedLigerito,
+    ood: Option<f2z::ligerito_flock::OodRoundParams>,
+) -> (String, String) {
+    (
+        "ligerito_hex".into(),
+        f2z::ligerito_flock::ResolvedLigerito::encode_report(&ligerito_report(resolved, ood)),
+    )
 }

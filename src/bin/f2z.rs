@@ -21,8 +21,8 @@
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
-//! - `--profile P` — Ligerito config: `custom:3:4` (default; validator-gated
-//!   Johnson geometry at rate 1/8, initial_k 4) | `slim` (rate 1/4) | `slim3`
+//! - `--profile P` — Ligerito config: `custom:1:4` (default; validator-gated
+//!   Johnson geometry at rate 1/2, initial_k 4) | `slim` (rate 1/4) | `slim3`
 //!   (rate 1/8) | `fast` (rate 1/2) | `secure`
 //!   (the embedded profiles) | any `custom:<log_inv_rate>:<initial_k>[:<bits>]`
 //!   (validator-gated Johnson geometry; optional `bits` = round-by-round
@@ -88,7 +88,7 @@
 //!   reclaims the previous shape's memory and the fanless chip cools — the
 //!   n ≥ 29 rows (3–7 GB peaks) swing ±30 % on a busy 16 GB box otherwise.
 //!   Example (the paper's raw-performance table):
-//!   `f2z --sweep 20-30 --threads 8 --reps 5 --profile custom:3:4`
+//!   `f2z --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4`
 //! - `--mul <e>` — run the u32 × u32 → u64 INTEGER-MULTIPLICATION SNARK
 //!   (`piop::spartan`: one R1CS row per multiplication over ℤ, a
 //!   transcript-sampled Step-2 prime, the native Spartan PIOP with the K=3
@@ -96,7 +96,7 @@
 //!   bits per multiplication) for `2^e` multiplications, `e ≥ 15`, at the
 //!   `--lambda 100|128` profile (default 100 = `Lambda100`; `--word-bits
 //!   1|8` picks the F2Z cell width). `--profile custom:<r>:<k>` (default
-//!   `custom:3:4`, the raw-performance table's opener) selects the Johnson
+//!   `custom:1:4`, the raw-performance table's opener) selects the Johnson
 //!   Ligerito geometry at the profile's target; `--profile udr` selects the
 //!   relation's own default (flock's validated UDR at rate 1/2 — what
 //!   `benches/u32_mul.rs` and the transcript pins run). Same witness seed
@@ -116,10 +116,10 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, riding the in-crate `utils::prof` scaffold (row names carry
-//! the raw scope labels, so they line up with `OBLONG_PROFILE=1` dumps and
-//! `examples/prof_probe.rs`). The always-on scopes cost ~µs per prove, far
-//! inside the run-to-run band. `--family`/`--taps` keep the plain output.
+//! timed reps, querying completed Perfetto intervals (row names carry
+//! the same labels as `examples/prof_probe.rs`). Build with `span-metrics`
+//! and set `PERFETTO_TRACE_PROCESSOR` to the native trace processor.
+//! `--family`/`--taps` keep the plain output.
 //!
 //! Under the breakdown it prints the PAPER buckets of the prover — grand
 //! products (`mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`: the integer
@@ -143,12 +143,11 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Instant;
 
-use f2z::ligerito::{LOG_PACKING, packed_vars};
+use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    LigConfig, commit_rs_ligerito_rows, custom_johnson_config_bits, custom_udr_config_bits,
-    custom_udr_grind_config_bits, lig_configs, mle_eval_mod_q_lig_size_breakdown,
+    commit_rs_ligerito_rows,
+    mle_eval_mod_q_lig_size_breakdown,
 };
 use f2z::ligerito_flock::FlockCommitHint;
 use f2z::ligerito_flock::{
@@ -157,7 +156,7 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito_runtime,
 };
 use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
-use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::piop::spartan::f2z::U32MulLigerito;
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulF2zWidth,
@@ -165,7 +164,7 @@ use f2z::piop::spartan::{
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-use flock_core::pcs::ligerito::{LigeritoProfile, LigeritoSecurityConfig, embedded_security_config};
+use flock_core::pcs::ligerito::{LigeritoSecurityConfig};
 
 // Peak-heap tracker (wraps System) — the live-heap high-water, the same
 // notion as `benches/pcs.rs` / flock's benches, so numbers compare.
@@ -231,7 +230,7 @@ fn peak_mb() -> f64 {
 /// forest runs once) — exactly the width rule of the Spartan security
 /// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
 /// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
-fn standalone_q_bits(p: &IntEvalParams) -> usize {
+fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
     mod_q_chunk_width(p).min(113)
 }
 
@@ -254,14 +253,18 @@ struct StandaloneInstance {
 /// prover's precomputed instance must match (asserted by the caller).
 fn sample_standalone_instance(
     transcript: &mut Blake3Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> StandaloneInstance {
-    let _g = f2z::utils::prof::scope("mq:sample_instance");
+    let _g = tracing::info_span!("mq:sample_instance").entered();
     let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits));
     let arith = ProjArith::new(q);
-    let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
-    let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+    let r1: Vec<u128> = (0..p.row_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
+    let r2: Vec<u128> = (0..p.col_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
     StandaloneInstance {
         q,
         row_weights_q: eq_table_mod_q(&arith, &r1),
@@ -294,11 +297,11 @@ fn median(mut v: Vec<f64>) -> f64 {
 /// Per-step wall-clock samples across reps, keyed by prof scope label
 /// (milliseconds, rep-aligned — a label absent from a rep reads as 0).
 #[derive(Default)]
-struct StepTable(Vec<(&'static str, Vec<f64>)>);
+struct StepTable(Vec<(String, Vec<f64>)>);
 
 impl StepTable {
-    /// Fold one rep's drained `prof::take_totals()` (label, seconds) in.
-    fn absorb(&mut self, rep: usize, totals: Vec<(&'static str, f64)>) {
+    /// Fold one rep's drained completed Perfetto intervals (label, seconds) in.
+    fn absorb(&mut self, rep: usize, totals: Vec<(String, f64)>) {
         for (label, secs) in totals {
             let idx = match self.0.iter().position(|(l, _)| *l == label) {
                 Some(i) => i,
@@ -463,7 +466,7 @@ fn print_steps(
 fn usage() -> ! {
     eprintln!(
         "usage: f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:3:4)] [--word-bits W] \
+         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] [--word-bits W] \
          [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
        f2z --sweep <lo>-<hi>|<n,n,…> [--threads N] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--latex <path>]\n\
@@ -526,13 +529,14 @@ struct Opts {
 
 fn parse_args() -> Opts {
     let mut pos: Vec<usize> = Vec::new();
+    let mut profile_explicit = std::env::var_os("F2Z_LIG_PROFILE").is_some();
     let mut o = Opts {
         n: 0,
         t: None,
         s: None,
         threads: None,
         reps: 3,
-        profile: "custom:3:4".to_string(),
+        profile: std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:1:4".into()),
         word_bits: 1,
         family: None,
         taps: None,
@@ -559,6 +563,7 @@ fn parse_args() -> Opts {
                 o.reps = args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| usage());
             }
             "--profile" => {
+                profile_explicit = true;
                 o.profile = args.next().unwrap_or_else(|| usage());
             }
             "--word-bits" | "-w" => {
@@ -623,6 +628,9 @@ fn parse_args() -> Opts {
                 }
             },
         }
+    }
+    if !profile_explicit && o.lambda != 100 && (o.mul.is_some() || o.mul_sweep.is_some()) {
+        o.profile = f2z::ligerito_flock::LigeritoSelection::for_target(o.lambda as usize).name();
     }
     let modes = usize::from(o.sweep.is_some())
         + usize::from(o.mul.is_some())
@@ -710,9 +718,6 @@ struct LigSecurity {
     ood: Option<OodRoundParams>,
 }
 
-const ADHOC_SECURITY: LigSecurity =
-    LigSecurity { target_bits: None, achieved_bits: None, l0_binding_bits: None, ood: None };
-
 fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
     let mut min = f64::INFINITY;
     for lv in &cfg.levels {
@@ -776,7 +781,7 @@ fn parse_rk_bits(rest: &str) -> (usize, usize, Option<usize>) {
 /// families (`custom`/`udr`/`udrg`) need `m = m_p + 7 ≥ 20` (m = 20, 21 are
 /// seeded from flock's m = 22 template — see `custom_johnson_config_bits`
 /// / `custom_udr_config_bits`), the embedded profiles `m ≥ 22`; below that
-/// everything falls back to the ad-hoc test config (UNAUDITED).
+/// unsupported requests are rejected without an ad-hoc fallback.
 fn resolve_configs(
     m_p: usize,
     profile: &str,
@@ -787,100 +792,20 @@ fn resolve_configs(
     ),
     String,
     LigSecurity,
+    f2z::ligerito_flock::ResolvedLigerito,
 ) {
-    let m = m_p + LOG_PACKING;
-    let adhoc = || {
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        (pair, "adhoc".to_string(), ADHOC_SECURITY)
+    let target = if profile == "secure" { 128 } else {
+        profile.split(':').nth(3).map(|n| n.parse::<usize>().unwrap_or_else(|_| usage())).unwrap_or(100)
     };
-    if let Some(rest) = profile.strip_prefix("udrg:") {
-        // UDR + fold-grinding: pg shortfall recovered by cheap per-fold
-        // PoW; targets up to 128 validate. `udrg:1:4:128` = 128-bit config.
-        let (r0, k0, bits) = parse_rk_bits(rest);
-        if m < 20 {
-            return adhoc();
-        }
-        let cfg = with_blake3(custom_udr_grind_config_bits(m, r0, k0, bits));
-        let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
-        let tag = match bits {
-            Some(b) => format!("udrg-k{k0}-{b}b"),
-            None => format!("udrg-k{k0}"),
-        };
-        return (pair, tag, lig_security(&cfg));
-    }
-    if let Some(rest) = profile.strip_prefix("udr:") {
-        // Queries-only UDR geometry — zero grinding, zero OOD; see
-        // `custom_udr_config_bits`. Ceiling ≈ 115 bits at n=22, ≈109 at
-        // n=28 (L0 UDR fold error); above it validate() rejects.
-        let (r0, k0, bits) = parse_rk_bits(rest);
-        if m < 20 {
-            return adhoc();
-        }
-        let cfg = with_blake3(custom_udr_config_bits(m, r0, k0, bits));
-        let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
-        let tag = match bits {
-            Some(b) => format!("udr-k{k0}-{b}b"),
-            None => format!("udr-k{k0}"),
-        };
-        return (pair, tag, lig_security(&cfg));
-    }
-    if let Some(rest) = profile.strip_prefix("custom:") {
-        // Optional round-by-round security target: custom:<r>:<k>:<bits>
-        // (e.g. custom:3:4:128). Absent → the slim template's 100.
-        let (r0, k0, bits) = parse_rk_bits(rest);
-        if m < 20 {
-            return adhoc();
-        }
-        let cfg = with_blake3(custom_johnson_config_bits(m, r0, k0, bits));
-        let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-        let tag = match bits {
-            Some(b) => format!("custom-k{k0}-{b}b"),
-            None => format!("custom-k{k0}"),
-        };
-        return (pair, tag, lig_security(&cfg));
-    }
-    if m < 22 {
-        return adhoc();
-    }
-    let (cfg, tag): (LigConfig, &str) = match profile {
-        "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-        "slim" => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-        "slim3" => (
-            LigConfig::CustomJohnson {
-                log_inv_rate: 3,
-                initial_k: 4,
-            },
-            "slim3",
-        ),
-        "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-        other => {
-            eprintln!("unknown profile: {other}");
-            usage()
-        }
-    };
-    let sec = match cfg {
-        LigConfig::Embedded(pr) => embedded_security_config(m, pr)
-            .and_then(|toml| LigeritoSecurityConfig::from_toml_str(toml).ok())
-            .map_or(ADHOC_SECURITY, |c| lig_security(&c)),
-        LigConfig::CustomJohnson { log_inv_rate, initial_k } => {
-            lig_security(&custom_johnson_config_bits(m, log_inv_rate, initial_k, None))
-        }
-        LigConfig::Adhoc { .. } => ADHOC_SECURITY,
-    };
-    (lig_configs(m_p, cfg).expect("lig cfg"), tag.to_string(), sec)
-}
+    let resolved = f2z::ligerito_flock::LigeritoSelection::parse(profile, target)
+        .and_then(|selection| selection.resolve(m_p, target)).unwrap_or_else(|error| { eprintln!("{error}"); exit(2) });
+    let sec = lig_security(resolved.security());
+    ((resolved.prover().clone(), resolved.verifier().clone()), resolved.selection().name(), sec, resolved)
 
-/// Blake3 Merkle trees for the validator-gated configs (flock's slim
-/// template says sha256; every Spartan path in the crate uses Blake3, so the
-/// paper tables agree). Re-validated after the change.
-fn with_blake3(mut cfg: LigeritoSecurityConfig) -> LigeritoSecurityConfig {
-    cfg.hash = "blake3".into();
-    cfg.validate().expect("config with Blake3 Merkle hash validates");
-    cfg
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let o = parse_args();
 
     // Paper-table modes: the parent only orchestrates child processes.
@@ -935,7 +860,7 @@ fn main() {
     // breakdown: turn the prof scaffold on before its first scope fires.
     // The timed medians then carry the ~µs/prove scope overhead — orders
     // below the run-to-run band.
-    f2z::utils::prof::force_enable();
+
 
     let (t, s) = match (o.t, o.s) {
         (Some(t), Some(s)) => (t, s),
@@ -956,11 +881,15 @@ fn main() {
         exit(2);
     }
 
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+        word_bits: w,
+    };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let ((pc, vc), lig_tag, lig_sec) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
     // Round 0 (the out-of-domain sample) runs exactly when the opener sits
     // beyond unique decoding; its grinding tops the theorem's bound up to
     // the opener's own round-by-round target.
@@ -1035,6 +964,8 @@ fn main() {
     let instance = {
         let mut st = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        resolved.bind(&mut st);
+        let _ = f2z::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
         sample_standalone_instance(&mut st, &p, q_bits)
     };
     let q = instance.q;
@@ -1061,6 +992,8 @@ fn main() {
     let prove_once = |hint: &FlockCommitHint| {
         let mut pt = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        resolved.bind(&mut pt);
+        let bound_ood = f2z::ligerito_flock::bind_prover_ood(&mut pt, &hint, ood);
         let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
         assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
         absorb_standalone_mod_q_claim(&mut pt, q, y);
@@ -1071,13 +1004,15 @@ fn main() {
             &sampled.row_weights_q,
             q_bits,
             alpha_of(),
-            ood,
+            bound_ood,
             &pc,
         )
     };
     let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
         let mut vt = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha_of(), q_bits, ood, &vc);
+        resolved.bind(&mut vt);
+        let bound_ood = f2z::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref()).expect("Round 0");
         let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
         absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
         verify_mle_eval_mod_q_ligerito_runtime(
@@ -1091,7 +1026,7 @@ fn main() {
             y,
             sampled.q,
             q_bits,
-            ood,
+            bound_ood,
             &vc,
         )
     };
@@ -1099,9 +1034,11 @@ fn main() {
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {
         let rows_i = if i + 1 == o.reps { std::mem::take(&mut rows) } else { rows.clone() };
-        let t0 = Instant::now();
-        let h = commit_rs_ligerito_rows(&p, rows_i, &pc);
-        commit_ms_v.push(t0.elapsed().as_secs_f64() * 1e3);
+        let (h, t0) = f2z::observability::measure(
+            tracing::info_span!("f2z:h"),
+            || commit_rs_ligerito_rows(&p, rows_i, &pc),
+        ).expect("measure completed operation");
+        commit_ms_v.push(t0.as_secs_f64() * 1e3);
         black_box(&h);
     }
     set_heap_tracking(true);
@@ -1117,14 +1054,14 @@ fn main() {
         let pr = prove_once(&hint);
         black_box(&pr);
     }
-    let _ = f2z::utils::prof::take_totals(); // drop the warm-up records
+
     reset_peak();
     {
         let pr = prove_once(&hint);
         black_box(&pr);
     }
     let prove_peak = peak_mb();
-    let _ = f2z::utils::prof::take_totals(); // drop the peak-probe records
+
     set_heap_tracking(false);
     let mut prove_ms = Vec::new();
     let mut verify_ms = Vec::new();
@@ -1132,15 +1069,19 @@ fn main() {
     let mut verify_steps = StepTable::default();
     let mut last_proof = None;
     for rep in 0..o.reps {
-        let t1 = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CLI trial");
+        let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
-        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
-        prove_steps.absorb(rep, f2z::utils::prof::take_totals());
+        drop(proving);
 
-        let t2 = Instant::now();
+        let verification = tracing::info_span!("cli:verification").entered();
         verify_once(&proof).expect("proof verifies");
-        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
-        verify_steps.absorb(rep, f2z::utils::prof::take_totals());
+        drop(verification);
+        let intervals = recording.intervals().expect("query CLI trial");
+        prove_ms.push(f2z::observability::duration(&intervals, "cli:proving").unwrap().as_secs_f64() * 1e3);
+        verify_ms.push(f2z::observability::duration(&intervals, "cli:verification").unwrap().as_secs_f64() * 1e3);
+        prove_steps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:proving").unwrap());
+        verify_steps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:verification").unwrap());
         last_proof = Some(proof);
     }
 
@@ -1181,6 +1122,7 @@ fn main() {
     );
     println!("security: {}", lig_sec.describe());
     let result = CliResult {
+        ligerito: resolved.report(&o.profile, ood),
         n: o.n,
         t,
         s,
@@ -1240,6 +1182,7 @@ const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
 /// `prove_residual_ms = prove_ms − (gp + rs + lig)` (signed).
 #[derive(Clone, Debug)]
 struct CliResult {
+    ligerito: serde_json::Value,
     n: usize,
     t: usize,
     s: usize,
@@ -1285,12 +1228,13 @@ fn na_f64(v: Option<f64>) -> String {
 impl CliResult {
     fn to_line(&self) -> String {
         format!(
-            "RESULT schema={RESULT_SCHEMA} n={} t={} s={} W={} m_p={} chunks={} lig={} lig_hash={} \
+            "RESULT schema={RESULT_SCHEMA} ligerito_hex={} n={} t={} s={} W={} m_p={} chunks={} lig={} lig_hash={} \
              lig_target_bits={} lig_achieved_bits={} lig_l0_bits={} q_lo_log2={} q_bits={} \
              ood_bits={} threads={} reps={} \
              commit_ms={:.3} commit_peak_mb={:.2} prove_ms={:.3} prove_gp_ms={:.3} \
              prove_rs_ms={:.3} prove_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} \
              verify_ms={:.3} proof_bytes={} proof_nonlig_bytes={} proof_lig_bytes={}",
+            f2z::ligerito_flock::ResolvedLigerito::encode_report(&self.ligerito),
             self.n,
             self.t,
             self.s,
@@ -1346,7 +1290,10 @@ impl CliResult {
             let v = raw(k)?;
             if v == "na" { Ok(None) } else { v.parse().map(Some).map_err(|e| format!("{k}: {e}")) }
         };
+        let ligerito: serde_json::Value = f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
+        f2z::ligerito_flock::ResolvedLigerito::validate_report(&ligerito)?;
         Ok(CliResult {
+            ligerito,
             n: int("n")?,
             t: int("t")?,
             s: int("s")?,
@@ -1708,7 +1655,7 @@ fn write_latex_table(
     let _ = writeln!(out, "%   after one warm-up prove; every timed proof is verified; commit = median of {reps} commits; the table's prover");
     let _ = writeln!(out, "%   Total = commit_ms + prove_ms (the Commit column sits inside the prover group).");
     let _ = writeln!(out, "% Include with \\input{{raw-performance-table}} (relative to paper/).");
-    let _ = writeln!(out, "% Prover buckets (utils::prof scope labels): grand products = {};", PAPER_GP_LABELS.join(" "));
+    let _ = writeln!(out, "% Prover buckets (tracing span labels): grand products = {};", PAPER_GP_LABELS.join(" "));
     let _ = writeln!(out, "%   ring switch incl. its sumcheck = {}; Ligerito = {}.", PAPER_RS_LABELS.join(" "), PAPER_LIG_LABELS.join(" "));
     let _ = writeln!(out, "%   Bucket medians need not sum to the total median; the signed residual (transcript glue) is prove_residual_ms below.");
     let _ = writeln!(out, "% Proof split: non-Ligerito = integer folds + GKR messages + sumcheck messages + ring-switch message (+ host-codec framing);");
@@ -1775,7 +1722,11 @@ fn family_layout(n: usize) -> f2z::pcs::ShaF2Layout {
     let s = n - log_cols - t_x;
     let tw = t_x - bit_vars;
     f2z::pcs::ShaF2Layout {
-        p: IntEvalParams { t: bit_vars + log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: bit_vars + log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars,
@@ -1820,7 +1771,11 @@ fn run_family(o: &Opts, fam: &str) {
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag, _lig_sec) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
+    if _lig_sec.ood.is_some() {
+        eprintln!("This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim.");
+        exit(2);
+    }
     let family_cols: Vec<usize> = (0..j).collect();
 
     let threads_eff: usize = {
@@ -1837,8 +1792,8 @@ fn run_family(o: &Opts, fam: &str) {
         "f2z --family {fam}: n={} (t'={}, s={}, j={j}, k={k}) | lig={lig_tag}@r1/{}k{} | \
          threads={threads_eff} | int guards: {}",
         o.n,
-        p_x.t,
-        p_x.s,
+        p_x.row_vars,
+        p_x.col_vars,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
@@ -1858,9 +1813,11 @@ fn run_family(o: &Opts, fam: &str) {
         })
         .collect();
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let (hint, t0) = f2z::observability::measure(
+        tracing::info_span!("f2z:hint"),
+        || commit_rs_ligerito_rows(&p, rows, &pc),
+    ).expect("measure completed operation");
+    let commit_ms = t0.as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
     // Statement: per-claim row weights (distinct row points) for the
@@ -1938,11 +1895,14 @@ fn run_family(o: &Opts, fam: &str) {
     let mut last = None;
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
-        let t1 = Instant::now();
-        let proof = prove_once(&mut pt);
-        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        let (proof, t1) = f2z::observability::measure(
+            tracing::info_span!("f2z:proof"),
+            || prove_once(&mut pt),
+        ).expect("measure completed operation");
+        prove_ms.push(t1.as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
-        let t2 = Instant::now();
+        let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t2 = tracing::info_span!("f2z:t2").entered();
         if shared {
             verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                 &mut vt, &hint.commitment, &proof, &layout, &family_cols, &rws[0], &sh_claims,
@@ -1956,7 +1916,7 @@ fn run_family(o: &Opts, fam: &str) {
             )
             .expect("family proof verifies");
         }
-        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "f2z:t2").expect("query completed operation") }.as_secs_f64() * 1e3);
         last = Some(proof);
     }
     reset_peak();
@@ -1990,7 +1950,11 @@ fn taps_layout(n: usize, delta: usize, log_cols: usize) -> f2z::pcs::ShaF2Layout
     let tw = ((n - log_cols) / 2).max(6);
     let s = n - log_cols - tw;
     f2z::pcs::ShaF2Layout {
-        p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars: 0,
@@ -2053,14 +2017,18 @@ fn run_taps(o: &Opts, mode: &str) {
         eprintln!("--taps-delta must be ≤ g = {grp}");
         exit(2);
     }
-    if layout.p.s < grp + 2 {
+    if layout.p.col_vars < grp + 2 {
         eprintln!("--taps needs s ≥ g + 2 (n too small for 2^{grp}-bit words)");
         exit(2);
     }
     let p = layout.p;
     let p_x = virtual_xor_params(&layout);
     let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag, _lig_sec) = resolve_configs(m_p, &o.profile);
+    let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
+    if _lig_sec.ood.is_some() {
+        eprintln!("This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim.");
+        exit(2);
+    }
 
     // The instance's tap lists (identities, two 3-tap rotation
     // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
@@ -2139,7 +2107,7 @@ fn run_taps(o: &Opts, mode: &str) {
     let sched_rounds = o
         .taps_rounds
         .unwrap_or(48)
-        .min((1usize << (layout.p.s - grp)) - sched_max_src_off);
+        .min((1usize << (layout.p.col_vars - grp)) - sched_max_src_off);
     let k_desc = match mode {
         "collapse" => "13 single-tap claims".to_string(),
         "rotxor" => "8 op(xor-set) claims".to_string(),
@@ -2152,8 +2120,8 @@ fn run_taps(o: &Opts, mode: &str) {
         "f2z --taps {mode}: n={} (t'={}, s={}, g={grp}, {k_desc}, one shared point) | \
          lig={lig_tag}@r1/{}k{} | threads={threads_eff} | int guards: {}",
         o.n,
-        p_x.t,
-        p_x.s,
+        p_x.row_vars,
+        p_x.col_vars,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         if f2z::utils::CHECKED { "CHECKED (build with --features unchecked)" } else { "unchecked" },
@@ -2172,9 +2140,11 @@ fn run_taps(o: &Opts, mode: &str) {
         })
         .collect();
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let (hint, t0) = f2z::observability::measure(
+        tracing::info_span!("f2z:hint"),
+        || commit_rs_ligerito_rows(&p, rows, &pc),
+    ).expect("measure completed operation");
+    let commit_ms = t0.as_secs_f64() * 1e3;
     println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
 
     // ONE shared evaluation point for every claim.
@@ -2401,13 +2371,16 @@ fn run_taps(o: &Opts, mode: &str) {
     let mut last = None;
     for _ in 0..o.reps {
         let mut pt = Blake3Transcript::new();
-        let t1 = Instant::now();
-        let proof = prove_once(&mut pt);
-        prove_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        let (proof, t1) = f2z::observability::measure(
+            tracing::info_span!("f2z:proof"),
+            || prove_once(&mut pt),
+        ).expect("measure completed operation");
+        prove_ms.push(t1.as_secs_f64() * 1e3);
         let mut vt = Blake3Transcript::new();
-        let t2 = Instant::now();
+        let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t2 = tracing::info_span!("f2z:t2").entered();
         verify_once(&mut vt, &proof);
-        verify_ms.push(t2.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "f2z:t2").expect("query completed operation") }.as_secs_f64() * 1e3);
         last = Some(proof);
     }
     reset_peak();
@@ -2494,6 +2467,7 @@ const MUL_VERIFY_TOP_LABELS: &[&str] = &[
 /// `reps`), excluded from `prove_ms`; `setup_ms` the one-time preparation.
 #[derive(Clone, Debug)]
 struct MulResult {
+    ligerito: serde_json::Value,
     e: usize,
     multiplications: usize,
     n: usize,
@@ -2535,12 +2509,12 @@ struct MulResult {
     proof_open_lig_bytes: usize,
 }
 
-const MUL_RESULT_SCHEMA: &str = "f2z-cli-mul/1";
+const MUL_RESULT_SCHEMA: &str = "f2z-cli-mul/2";
 
 impl MulResult {
     fn to_line(&self) -> String {
         format!(
-            "RESULT schema={MUL_RESULT_SCHEMA} e={} multiplications={} n={} t={} s={} W={} chunks={} \
+            "RESULT schema={MUL_RESULT_SCHEMA} ligerito_hex={} e={} multiplications={} n={} t={} s={} W={} chunks={} \
              profile={} lambda={} lambda_achieved={:.2} lambda_bind={} lig_target_bits={} \
              q_lo_log2={} q_bits={} lig_log_inv_rate={} lig_initial_k={} lig_regime={} lig_hash={} \
              threads={} reps={} \
@@ -2549,6 +2523,7 @@ impl MulResult {
              s5_lig_ms={:.3} prove_residual_ms={:.3} prove_peak_mb={:.2} verify_ms={:.3} \
              proof_bytes={} proof_piop_bytes={} proof_open_bytes={} proof_open_nonlig_bytes={} \
              proof_open_lig_bytes={}",
+            f2z::ligerito_flock::ResolvedLigerito::encode_report(&self.ligerito),
             self.e,
             self.multiplications,
             self.n,
@@ -2607,7 +2582,10 @@ impl MulResult {
         let int = |k: &str| -> Result<usize, String> {
             raw(k)?.parse::<usize>().map_err(|e| format!("{k}: {e}"))
         };
+        let ligerito: serde_json::Value = f2z::ligerito_flock::ResolvedLigerito::decode_report(raw("ligerito_hex")?)?;
+        f2z::ligerito_flock::ResolvedLigerito::validate_report(&ligerito)?;
         Ok(MulResult {
+            ligerito,
             e: int("e")?,
             multiplications: int("multiplications")?,
             n: int("n")?,
@@ -2653,24 +2631,26 @@ impl MulResult {
 
 /// One end-to-end prove of the multiplication SNARK: bit-pack + F2Z commit
 /// (Step 1, timed separately) followed by the combined Spartan + F2Z proof.
-/// Returns `(proof, hint, prove_ms_end_to_end, commit_ms)`.
+/// Timings are queried by the caller; memory passes use the same proof body.
 fn mul_prove_e2e(
     relation: &PreparedU32MulRelation,
     witness: &U32MulWitness,
-) -> (U32MulProof, FlockCommitHint, f64, f64) {
-    let t_all = Instant::now();
+) -> (U32MulProof, FlockCommitHint) {
+    let proving = tracing::info_span!("cli:mul.proving").entered();
+    let commit = tracing::info_span!("cli:mul.commit").entered();
     let rows = witness.f2z_bit_rows();
     let hint = commit_u32_mul_witness(relation, rows).unwrap_or_else(|err| {
         eprintln!("F2Z commitment failed: {err}");
         exit(1)
     });
-    let commit_ms = t_all.elapsed().as_secs_f64() * 1e3;
+    drop(commit);
     let mut tr = Blake3Transcript::new();
     let proof = prove_u32_mul(&mut tr, relation, witness, &hint).unwrap_or_else(|err| {
         eprintln!("combined prove failed: {err}");
         exit(1)
     });
-    (proof, hint, t_all.elapsed().as_secs_f64() * 1e3, commit_ms)
+    drop(proving);
+    (proof, hint)
 }
 
 /// `--mul <e>`: dispatch on the compile-time security profile.
@@ -2698,8 +2678,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
             exit(2);
         }
     };
-    f2z::utils::prof::force_enable();
-    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1e3;
+
     let multiplications = 1usize << e;
     let shape_seed = MUL_ROOT_SEED ^ (e as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let mut rng = StdRng::seed_from_u64(shape_seed);
@@ -2727,9 +2706,11 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut witness_ms_v = Vec::with_capacity(o.reps);
     let mut witness = None;
     for _ in 0..o.reps.max(1) {
-        let t0 = Instant::now();
+        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0 = tracing::info_span!("f2z:t0").entered();
         let w = gen_witness();
-        witness_ms_v.push(ms(t0));
+        drop(t0);
+        witness_ms_v.push(f2z::observability::duration(&t0_recording.intervals().expect("witness capture"), "f2z:t0").expect("witness duration").as_secs_f64() * 1e3);
         witness = Some(w);
     }
     let witness = witness.expect("reps ≥ 1");
@@ -2741,39 +2722,22 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // The Ligerito opener: the raw-performance table's Johnson geometry by
     // default (so the two paper tables share one opener), or the relation's
     // own validated-UDR default (`udr`, what the bench and the pins run).
-    let lig = match o.profile.as_str() {
-        "udr" => U32MulLigerito::ValidatedUdr,
-        p if p.starts_with("custom:") => {
-            let (r0, k0, bits) = parse_rk_bits(&p["custom:".len()..]);
-            if bits.is_some() {
-                eprintln!("--mul: the Ligerito target comes from --lambda; drop the :<bits> suffix");
-                exit(2);
-            }
-            U32MulLigerito::CustomJohnson { log_inv_rate: r0, initial_k: k0 }
-        }
-        other => {
-            eprintln!(
-                "--mul supports --profile custom:<log_inv_rate>:<initial_k> (default custom:3:4) \
-                 or udr (the relation's validated-UDR default, rate 1/2); got {other}"
-            );
-            exit(2);
-        }
-    };
-    let (lig_regime, lig_tag) = match lig {
-        U32MulLigerito::ValidatedUdr => ("udr", "udr-k4-validated".to_string()),
-        U32MulLigerito::CustomJohnson { log_inv_rate, initial_k } => {
-            ("johnson", format!("custom-r{log_inv_rate}-k{initial_k}"))
-        }
-    };
+    let lig = U32MulLigerito::parse(&o.profile, P::LIGERITO_TARGET_BITS).unwrap_or_else(|error| {
+        eprintln!("{error}"); exit(2)
+    });
+    let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
-    let t0 = Instant::now();
+    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0 = tracing::info_span!("f2z:t0").entered();
     let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, lig)
         .unwrap_or_else(|err| {
             eprintln!("relation preparation failed at profile {}: {err}", P::NAME);
             exit(1)
         });
-    let setup_ms = ms(t0);
+    drop(t0);
+    let setup_ms = f2z::observability::duration(&t0_recording.intervals().expect("setup capture"), "f2z:t0").expect("setup duration").as_secs_f64() * 1e3;
+    let lig_regime = if relation.security().ood.is_some() { "johnson" } else { "udr" };
     let sec = relation.security();
     let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
     let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
@@ -2792,9 +2756,9 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         "f2z --mul: 2^{e} = {multiplications} u32×u32→u64 multiplications | F2Z n={} (t={}, s={}, W={}, \
          chunks={chunks}) | profile={} λ={} | lig={lig_tag} | q ∈ [2^{q_lo_log2}, 2^{q_bits}) sampled \
          after the commit | threads={threads_eff} | int guards: {}",
-        params.t + params.s,
-        params.t,
-        params.s,
+        params.row_vars + params.col_vars,
+        params.row_vars,
+        params.col_vars,
         params.word_bits,
         sec.profile_name,
         sec.lambda,
@@ -2810,7 +2774,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // check — then the tracked peak probe (excluded), then the timed reps
     // with heap tracking OFF (see `PeakAlloc`).
     {
-        let (proof, hint, _, _) = mul_prove_e2e(&relation, &witness);
+        let (proof, hint) = mul_prove_e2e(&relation, &witness);
         let mut vt = Blake3Transcript::new();
         verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
             eprintln!("warm-up verification failed: {err}");
@@ -2818,15 +2782,15 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         });
         black_box(&proof);
     }
-    let _ = f2z::utils::prof::take_totals();
+
     reset_peak();
     {
-        let (peak_proof, peak_hint, _, _) = mul_prove_e2e(&relation, &witness);
+        let (peak_proof, peak_hint) = mul_prove_e2e(&relation, &witness);
         black_box(&peak_proof);
         black_box(&peak_hint);
     }
     let peak = peak_mb();
-    let _ = f2z::utils::prof::take_totals();
+
     set_heap_tracking(false);
 
     let mut commit_ms_v = Vec::with_capacity(o.reps);
@@ -2836,17 +2800,22 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut vsteps = StepTable::default();
     let mut last: Option<(U32MulProof, usize, usize, String)> = None;
     for rep in 0..o.reps {
-        let (proof, hint, prove_ms, commit_ms) = mul_prove_e2e(&relation, &witness);
-        psteps.absorb(rep, f2z::utils::prof::take_totals());
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let (proof, hint) = mul_prove_e2e(&relation, &witness);
 
         let mut vt = Blake3Transcript::new();
-        let t1 = Instant::now();
+        let verification = tracing::info_span!("cli:mul.verification").entered();
         verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
             eprintln!("verification failed: {err}");
             exit(1)
         });
-        verify_ms_v.push(ms(t1));
-        vsteps.absorb(rep, f2z::utils::prof::take_totals());
+        drop(verification);
+        let intervals = recording.intervals().expect("query CLI mul trial");
+        let prove_ms = f2z::observability::duration(&intervals, "cli:mul.proving").unwrap().as_secs_f64() * 1e3;
+        let commit_ms = f2z::observability::duration(&intervals, "cli:mul.commit").unwrap().as_secs_f64() * 1e3;
+        verify_ms_v.push(f2z::observability::duration(&intervals, "cli:mul.verification").unwrap().as_secs_f64() * 1e3);
+        psteps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:mul.proving").unwrap());
+        vsteps.absorb(rep, f2z::observability::phase_totals(&intervals, "cli:mul.verification").unwrap());
 
         commit_ms_v.push(commit_ms);
         prove_ms_v.push(prove_ms);
@@ -2923,11 +2892,12 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         lig_initial_k,
     );
     let r = MulResult {
+        ligerito: relation.ligerito_configuration().report(&o.profile, sec.ood),
         e,
         multiplications,
-        n: params.t + params.s,
-        t: params.t,
-        s: params.s,
+        n: params.row_vars + params.col_vars,
+        t: params.row_vars,
+        s: params.col_vars,
         w: params.word_bits,
         chunks,
         profile: sec.profile_name.to_string(),

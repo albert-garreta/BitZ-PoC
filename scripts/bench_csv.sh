@@ -1,4 +1,6 @@
 #!/bin/bash
+# Historical human-output CSV helper (no production identity validation).
+# Use the versioned RESULT/LIGERITO_CONFIG output for new production tables.
 # Run the f2z PCS bench suite (benches/pcs.rs) one shape per process — the
 # measurement protocol — and write one CSV row per (profile, shape).
 #
@@ -9,7 +11,7 @@
 #   -o        output CSV (default bench_results/f2z-<timestamp>.csv)
 #   -p        comma-separated profile list for F2Z_LIG_PROFILE
 #             (default: "" = the bench default; e.g. "fast,slim,slim3,custom:4:4")
-#   -s        space-separated t:s:W shapes (default: the reference n=16..28 list)
+#   -s        space-separated t:s:W shapes (default: the validated n=20..28 list)
 #   -r        timing reps per shape (default 3)
 #   -j        RAYON_NUM_THREADS (default: all cores; 1 = single-threaded)
 #   -g        cooldown seconds between shapes (default 20; use 45-90 for big shapes)
@@ -29,7 +31,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 OUT=""
 PROFILES=""
-SHAPES="10:6:1 12:6:1 13:7:1 14:8:1 15:9:1 16:10:1 17:11:1"
+SHAPES="13:7:1 14:8:1 15:9:1 16:10:1 17:11:1"
 REPS=3
 THREADS=""
 GAP=20
@@ -58,7 +60,7 @@ export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
 [ -n "$THREADS" ] && export RAYON_NUM_THREADS="$THREADS"
 
 # Build once up front so per-shape runs are measurement-only.
-cargo bench --bench pcs --features unchecked --no-run >/dev/null 2>&1 || {
+cargo bench --bench pcs --features unchecked,span-metrics --no-run >/dev/null 2>&1 || {
   echo "build failed" >&2; exit 1; }
 
 echo "timestamp,profile_arg,lig_geometry,n,t,s,W,chunks,threads,reps,commit_ms,commit_peak_mb,forest_ms,open_ms,prove_ms,prove_peak_mb,verify_ms,proof_bytes,forest_side_kib,s_v_kib,lig_kib,serialize_us,deserialize_us" > "$OUT"
@@ -76,7 +78,7 @@ for prof in "${PROFS[@]}"; do
     echo ">> profile=$plabel shape=$s ${sched:+sched=l8}" >&2
     out=$(env ${penv:+F2Z_LIG_PROFILE="$penv"} ${sched:+F2_FOREST_SCHEDULE=l8} \
       F2Z_BENCH_SHAPES="$s" F2Z_BENCH_REPS="$REPS" \
-      cargo bench --bench pcs --features unchecked 2>/dev/null)
+      cargo bench --bench pcs --features unchecked,span-metrics 2>/dev/null)
     echo "$out" | awk -v ts="$(date '+%Y-%m-%dT%H:%M:%S')" -v prof="$plabel" \
         -v threads="$threads_label" -v reps="$REPS" '
       function num(x) { gsub(/[^0-9.]/, "", x); return x }

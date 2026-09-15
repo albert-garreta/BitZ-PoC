@@ -420,7 +420,7 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         }
 
         // ---- Round 1 ---------------------------------------------------
-        let _g_r1 = crate::utils::prof::scope("mds:round1");
+        let _g_r1 = tracing::info_span!("mds:round1").entered();
         let mut round_1_msgs: Vec<SumcheckProverMsg<F>> = Vec::with_capacity(num_groups);
         for ((state, comb_fn), fp_slot) in prover_states
             .iter_mut()
@@ -464,7 +464,7 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         drop(_g_r1);
 
         // ---- Rounds 2..num_vars ---------------------------------------
-        let _g_rest = crate::utils::prof::scope("mds:rounds");
+        let _g_rest = tracing::info_span!("mds:rounds").entered();
         for _ in 1..num_vars {
             // Parallel: each group computes its round polynomial independently
             let round_msgs: Vec<SumcheckProverMsg<F>> = cfg_iter_mut!(prover_states)

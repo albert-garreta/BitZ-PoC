@@ -1,14 +1,28 @@
-# Unified benchmark output schema (`schema=f2z/1`)
+# Unified benchmark output schemas
+
+Production Ligerito records use `schema=f2z/2` and require `ligerito_hex`,
+the hexadecimal encoding of the complete `LIGERITO_CONFIG` JSON identity.
+This keeps spaces inside JSON strings safe in key=value records. The
+unchanged MultiSwap/historical stream retains `f2z/1`; do not combine it
+with new production records. See [the coverage matrix](ligerito-coverage.md).
+`f2z-cli/2` and `f2z-cli-mul/2` also require `ligerito_hex`.
+SHA+ECDSA uses nested metadata in `f2z/sha256-ecdsa/v2`.
+
+Early Round-0 work is included once in end-to-end proving/verification.
+The existing common phase schema places it in the residual because it is
+outside the Step-2 through Step-5 scopes. Detailed profiling exposes
+`step0:ood_prove`, `step0:ood_verify` and `mc:ood`; do not add these nested
+scopes to an already inclusive total.
+
 
 One accounting model, one printer, one machine-readable line across the
 protocol benches. The shared implementation lives in `benches/common/mod.rs`;
-the per-step umbrella profiler scopes (`step2:*` … `step5:*`) live in the
+the per-step umbrella tracing spans (`step2:*` … `step5:*`) live in the
 crate's protocol prove/verify functions.
 
-**Status: v1, provisional.** The key names below feed the paper's Experiments
+**Historical v1 field taxonomy (retained in v2).** The key names below feed the paper's Experiments
 tables (`paper/main.tex` §Experiments, `paper/multiswap-table.tex`), so they
-are versioned: any rename bumps `schema=` and this file. They have not yet
-received explicit user sign-off — settle them before wiring tables to them.
+are versioned: any rename bumps `schema=` and this file. Version-2 production imports additionally validate the Ligerito identity.
 
 ## Timing semantics
 
@@ -52,7 +66,7 @@ only the commitment) and `verify_residual_ms`.
 
 `step2:project_prove|verify`, `step3:piop_prove|verify`,
 `step4:bitify_prove|verify`, `step5_0:reduce_prove|verify`,
-`step5:open_prove|verify` — thread-local `crate::utils::prof` scopes wrapped
+`step5:open_prove|verify` — ordinary `tracing` spans wrapped
 around the existing finer-grained labels, which are unchanged (they keep the
 SHA trace writer and older tooling working). The harness sums only the
 umbrella labels for the step totals and uses a shared label table for detail.
@@ -64,7 +78,7 @@ no free text. Common keys in fixed order; bench-specific keys sit between
 `shape=` and `lambda=`.
 
 ```
-RESULT schema=f2z/1 bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
+RESULT schema=f2z/2 ligerito_hex=<hex-json> bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
   [bench-specific keys]
   lambda=<bits|na> lambda_achieved=<bits|na> lambda_bind=<term|na>
   threads=<n> reps=<n> warmups=1 seed=<0x…|na>
@@ -113,6 +127,13 @@ unmeasured memory cannot be mistaken for zero usage.
 
 ## Environment variables
 
+Benchmark entrypoints use clap for argument and configuration parsing. Run
+`cargo bench --bench <name> --features <required-features> -- --help` to inspect
+an executable's existing CLI. Settings documented only as environment variables
+remain environment-only; there are no corresponding implicit command-line flags.
+Malformed values fail before benchmark work instead of silently using defaults.
+Existing positional arguments, option names, defaults, and alias rules are retained.
+
 Canonical names (aliases are honored with a deprecation warning; setting both
 an alias and the canonical name to different values is an error):
 
@@ -130,11 +151,15 @@ an alias and the canonical name to different values is an error):
 so a typo'd knob can never silently do nothing. The registry lives in
 `benches/common/mod.rs` (`KNOWN_F2Z_ENV`); add new knobs there.
 
-Protocol benches force `OBLONG_PROFILE=1` at startup so the step split is
-always populated (scope overhead is µs-class; the medians carry it). The
-`pcs` bench keeps profiling opt-in — its opener phases are µs-scale, so the
-headline timings stay scope-free and its forest/opener detail keys are `na`
-unless `OBLONG_PROFILE=1` is set.
+Timing-enabled executables require `--features span-metrics` (native comparison
+features include it) and a native `trace_processor_shell`, either on `PATH` or
+selected by `PERFETTO_TRACE_PROCESSOR`. Their single subscriber records ordinary
+`tracing` spans through the Perfetto SDK. No `OBLONG_PROFILE*` switch is needed.
+The shared Rust query interface supplies completed intervals to metrics, tuning,
+and CLI summaries. See [span metrics](span-metrics.md) for capture boundaries,
+memory semantics, and validation commands. Instrumentation overhead is included
+inside spans; do not compare these timings with older uninstrumented series as
+if their measurement configurations were identical.
 
 ## Which benches adopt what
 
@@ -181,7 +206,7 @@ unless `OBLONG_PROFILE=1` is set.
   `proof_nonlig_bytes + proof_lig_bytes = proof_bytes` (host-codec framing
   counts as non-Ligerito). Renaming any key bumps the schema tag.
   The CLI's `--mul <e>` mode (the u32 × u32 → u64 SNARK, same witnesses as
-  the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/1`, parsed by
+  the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/2`, parsed by
   `--mul-sweep` into `paper/u32-mul-table.tex`. Keys: `e multiplications n
   t s W chunks profile lambda lambda_achieved lambda_bind lig_target_bits
   q_lo_log2 q_bits lig_log_inv_rate lig_initial_k lig_regime lig_hash threads

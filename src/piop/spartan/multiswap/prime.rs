@@ -58,8 +58,8 @@ use crate::{
 
 use super::super::SpartanF2zField;
 
-const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/fingerprint-prime/v2";
-const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/reduction-prime/v2";
+pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/fingerprint-prime/v2";
+pub(crate) const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/reduction-prime/v2";
 
 /// Draw attempts before concluding the transcript is adversarial: a random
 /// 128-bit odd integer is prime with probability about `2/(127 ln 2)`.

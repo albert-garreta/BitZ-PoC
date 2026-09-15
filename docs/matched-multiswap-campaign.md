@@ -1,8 +1,8 @@
-# Matched 112-bit F2Z / Limber MultiSwap campaign
+# Matched 114-bit F2Z / Limber MultiSwap campaign
 
 The campaign compares F2Z/Ligerito, Limber-Hyrax, and Limber-Brakedown on
 identical copies of the RSA-2048 paper fixture. Every reported modeled check
-must reach **at least 112 bits** under `per-check-round-minimum/v1` accounting.
+must reach **at least 114 bits** under `per-check-round-minimum/v1` accounting.
 This is a minimum over the modeled checks and rounds, not a new combined
 whole-proof soundness theorem or an RSA key-strength claim.
 
@@ -46,19 +46,24 @@ batch sweep.
 
 | Component | Matched setting |
 |---|---|
-| F2Z profile | `F2Z_BENCH_LAMBDA=112`, profile `limber112` |
-| F2Z reduction | Derived per shape; eight grinding bits for every selected batch |
-| F2Z Ligerito opening | Validated UDR configuration derived at target 112 |
-| Limber integer commitment | `MATCHED_SECURITY_BITS=112` |
+| F2Z profile | `F2Z_BENCH_LAMBDA=114`, profile `limber114` |
+| F2Z reduction | Derived per shape; ten grinding bits for every selected batch |
+| F2Z Ligerito opening | Validated UDR configuration derived at target 114 |
+| Comparison target | `MATCHED_SECURITY_BITS=114` |
+| Limber integer commitment | `MATCHED_INTEGER_SECURITY_BITS=128` (native CRT target) |
+| Limber integer challenge bound target | Native `LAMBDA_BOUND2=117` |
 | Limber integer challenge width | Still 128 bits |
-| Brakedown opening | `BDLAMBDA=112`, spec 4, row length 32768, direct threshold 65536 |
+| Brakedown opening | `BDLAMBDA=114`, spec 4, row length 32768, direct threshold 65536 |
 | Shared fingerprint | Uniform 128-bit prime sampling; roughly 114-bit conservative bound |
 
 Limber's CRT divisor accounting uses the **minimum** sampled-prime size,
-`log_p - 1`, before deriving `ceil(target / bits_per_prime)` repetitions.
-The challenge width in the integer magnitude bound stays 128 even when the
-security target is 112. Existing default targets and stronger fixed bounds
-are retained. Limber's IntEval key format is version 2; its SNARK transcript
+`log_p - 1`, before deriving `ceil(integer_target / bits_per_prime)`
+repetitions. The 114-bit comparison preserves the native 128-bit CRT target,
+128-bit challenge width, and 117-bit challenge bound target. The fingerprint
+bound is the limiting modeled check for Hyrax; Brakedown targets 114 bits.
+An explicit `--security-bits 112` retains the earlier integer and opening
+targets for historical reproduction; existing results keep their original labels.
+Limber's IntEval key format is version 2; its SNARK transcript
 binds the public shape and actual serialized verifier-key configuration.
 Brakedown keys also bind the runtime code/opening settings.
 
@@ -85,13 +90,15 @@ repository so reproducing the comparison does not depend on a temporary
 working directory:
 
 ```sh
-python3 scripts/prepare_matched_limber.py /tmp/limber-matched112
+python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
 ```
 
 An existing local clone can be supplied with `--source PATH`. The helper
 refuses existing destinations, checks out the exact base on
-`codex/multiswap-112`, checks/applies the patch, and creates a local commit.
-It prints the resulting revision and patch SHA-256. Nothing is pushed.
+`codex/multiswap-matched`, checks/applies the patch, and creates a local commit.
+The current patch is `patches/limber-multiswap.patch`; recreate checkouts made
+with the older patch before running the 114-bit campaign. It prints the resulting
+revision and patch SHA-256. Nothing is pushed.
 
 ## Preview and run
 
@@ -105,7 +112,7 @@ Preview without compiling, running proofs, or writing campaign artifacts:
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py --dry-run \
-  --limber-root /tmp/limber-matched112 --all-threads 16
+  --limber-root /tmp/limber-matched114 --all-threads 16
 ```
 
 Canonical execution requires the external `zk-proof-profiler` validator. It
@@ -120,8 +127,8 @@ validation as pending, so this does not complete the canonical acceptance gate:
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py --draft \
-  --limber-root /tmp/limber-matched112 \
-  --security-bits 112 --batch-counts 1,2,4,8,16 \
+  --limber-root /tmp/limber-matched114 \
+  --security-bits 114 --batch-counts 1,2,4,8,16 \
   --all-threads 16 --warmups 1 --samples 10
 ```
 
@@ -130,9 +137,9 @@ use `--draft --batch-counts 1 --samples 1`; that runs six configurations.
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py \
-  --limber-root /tmp/limber-matched112 \
+  --limber-root /tmp/limber-matched114 \
   --profiler /path/to/zk-proof-profiler/scripts/zk_trace.py \
-  --security-bits 112 --batch-counts 1,2,4,8,16 \
+  --security-bits 114 --batch-counts 1,2,4,8,16 \
   --all-threads 16 --warmups 1 --samples 10
 ```
 
@@ -211,9 +218,11 @@ cargo test --release --lib piop::spartan::multiswap:: -- --test-threads=1
 cargo test --release --test transcript_pins multiswap -- --test-threads=1
 ```
 
-The committed `scripts/fixtures/multiswap112-preflight.json` contains parameter
+The committed `scripts/fixtures/multiswap114-preflight.json` contains parameter
 and statement snapshots for all 15 backend/batch pairs, not performance
-measurements. Tests cover batch report rendering, prime-count accounting,
+measurements. The earlier `multiswap112-preflight.json` is retained to test
+historical reproduction and rejection of 112-bit traces in a 114-bit campaign.
+Tests cover batch report rendering, prime-count accounting,
 missing metadata, altered statements, failed proofs, incompatible parameters,
 measurement boundaries, and inherited configuration overrides. Full proof
 smoke runs use one measured sample per configuration and must be labeled as

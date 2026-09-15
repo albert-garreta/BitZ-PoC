@@ -15,7 +15,8 @@
 //! `ratio` is theirs over ours: above 1 means this crate is faster.
 
 use std::hint::black_box;
-use std::time::Instant;
+#[path = "../../../src/observability.rs"]
+mod observability;
 
 use binius_field::arithmetic_traits::{InvertOrZero, Square};
 use binius_field::{BinaryField128bGhash as Ghash, Field, WideMul};
@@ -72,9 +73,9 @@ fn from_binius(a: Ghash) -> F128 {
 
 /// One measurement of `f`, in nanoseconds per operation.
 fn time(ops: usize, f: impl Fn()) -> f64 {
-    let start = Instant::now();
-    f();
-    start.elapsed().as_secs_f64() * 1e9 / ops as f64
+    let (_, duration) = observability::measure(tracing::info_span!("field:operations", ops), f)
+        .expect("measure field operations");
+    duration.as_secs_f64() * 1e9 / ops as f64
 }
 
 struct Cmp {
@@ -243,6 +244,7 @@ fn binius_pows(base: Ghash, exps: &[u128]) {
 }
 
 fn main() {
+    observability::install().expect("install Perfetto subscriber");
     let reps = reps();
     let xs = operands(N, 0x243f_6a88_85a3_08d3);
     let ys = operands(N, 0x1319_8a2e_0370_7344);

@@ -3,7 +3,7 @@
 use super::{Error, HybridProof, PreparedHybrid, Statement, mul, opening, sumcheck};
 use crate::{
     ligerito::RingSwitchProof,
-    ligerito_flock::{f128_to_gf, gf_to_f128},
+    ligerito_flock::{OodRound, f128_to_gf, gf_to_f128},
     merged_forest::{MergedForestProof, MergedLayer},
     piop::spartan::{
         SpartanField,
@@ -19,7 +19,7 @@ use bincode::Options;
 use crypto_primitives::{FromWithConfig, PrimeField};
 use flock_core::field::F128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x02\0\0\0";
+const MAGIC: &[u8; 8] = b"BZSH\x05\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
@@ -112,9 +112,18 @@ fn read_f(r: &mut Reader<'_>) -> Result<F128, CodecError> {
 
 impl HybridProof {
     /// Canonical wire representation, including both initial Merkle multiproofs.
+    /// Round 0 comes first, in transcript order: its value and (when the
+    /// round grinds) its nonce precede the multiplication prefix, whose
+    /// transcript-derived prime depends on them.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut w = Writer::new();
         w.bytes(MAGIC);
+        w.len(usize::from(self.opening.ood.is_some()));
+        if let Some(ood) = &self.opening.ood {
+            w.gf(&ood.y);
+            w.len(usize::from(ood.nonce.is_some()));
+            if let Some(nonce) = ood.nonce { w.bytes(&nonce.to_le_bytes()); }
+        }
         let p = &self.multiplication;
         w.bytes(&p.initial_nonce.to_le_bytes());
         w.bytes(&p.terminal_nonce.to_le_bytes());
@@ -199,6 +208,14 @@ impl PreparedHybrid {
         if r.take(8)? != MAGIC {
             return Err(CodecError::NonCanonical.into());
         }
+        let has_ood = count(&mut r, 1)? == 1;
+        if has_ood != self.ood.is_some() { return Err(CodecError::NonCanonical.into()); }
+        let ood = if has_ood {
+            let y = r.gf()?;
+            let has_nonce = count(&mut r, 1)? == 1;
+            if has_nonce != self.ood.is_some_and(|params| params.grinding_bits > 0) { return Err(CodecError::NonCanonical.into()); }
+            Some(OodRound { y, nonce: if has_nonce { Some(u64::from_le_bytes(r.take(8)?.try_into().expect("eight bytes"))) } else { None } })
+        } else { None };
         let initial_nonce = u64::from_le_bytes(r.take(8)?.try_into().expect("eight bytes"));
         let terminal_nonce = u64::from_le_bytes(r.take(8)?.try_into().expect("eight bytes"));
         let n = count(&mut r, 256)?;
@@ -209,6 +226,9 @@ impl PreparedHybrid {
             ));
         }
         let (mut t, digest) = self.transcript(statement)?;
+        // Replay Round 0: the prime below is derived from the transcript
+        // state after it.
+        opening::verify_ood(&mut t, &self.geometry, self.ood, ood.as_ref())?;
         let (q, cfg) = mul::decoding_config(&mut t, &self.multiplication, &digest, initial_nonce)?;
         let skip_vars = count(&mut r, 3)? as u8;
         if skip_vars != 3 {
@@ -305,6 +325,7 @@ impl PreparedHybrid {
             sha,
             joint,
             opening: opening::Proof {
+                ood,
                 ring: RingSwitchProof { s_v },
                 ligerito,
                 paths,

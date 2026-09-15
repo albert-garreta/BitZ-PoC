@@ -1,3 +1,4 @@
+//! Historical kernel experiment; no production security claim.
 //! Structured-taps A/B (EXPERIMENTAL, docs/rlc-structured-taps-phase0.md;
 //! corrected semantics: 32-bit words along the ENTRY axis of W=1
 //! bit-vectors, g = 5): the j = 2, k = 6 ROT/SHIFT/word-offset instance
@@ -57,7 +58,7 @@
 //!
 //! ```text
 //! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-//!   cargo run --release --example taps_ab --features unchecked
+//!   cargo run --release --example taps_ab --features unchecked,span-metrics
 //! ```
 
 use f2z::ligerito::packed_vars;
@@ -67,14 +68,15 @@ use f2z::ligerito_flock::{
     mle_eval_mod_q_lig_tap_size_breakdown, mle_eval_mod_q_lig_xor_proof_size_bytes,
     prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_collapse,
     prove_mle_eval_mod_q_ligerito_tap_composed, prove_mle_eval_mod_q_ligerito_tap_family,
-    sha_lig_configs, verify_mle_eval_mod_q_ligerito_tap_claims,
+    historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito_tap_claims,
     verify_mle_eval_mod_q_ligerito_tap_collapse, verify_mle_eval_mod_q_ligerito_tap_composed,
     verify_mle_eval_mod_q_ligerito_tap_family,
 };
-use f2z::pcs::{FQ_BITS, FQ_MOD, Fq, IntEvalParams, ShaF2Layout, smallest_generator, virtual_xor_params};
+use f2z::pcs::{
+    FQ_BITS, FQ_MOD, Fq, IntegerMatrixLayout, ShaF2Layout, smallest_generator, virtual_xor_params,
+};
 use f2z::taps::{TapOp, extract_virtual_tap_rows};
 use f2z::transcript::Blake3Transcript;
-use std::time::Instant;
 
 /// The instance word-group width (log2 bits per entry-axis word):
 /// 32-bit words by default; `F2Z_TAPS_GRP=6` runs the SAME instances on
@@ -105,7 +107,11 @@ fn taps_layout(n: usize, log_cols: usize) -> ShaF2Layout {
     let delta: usize = std::env::var("F2Z_TAPS_DELTA").map_or(0, |v| v.parse().unwrap());
     assert!(delta <= GRP(), "F2Z_TAPS_DELTA must be ≤ g = {}", GRP());
     ShaF2Layout {
-        p: IntEvalParams { t: log_cols + tw, s, word_bits: 1 },
+        p: IntegerMatrixLayout {
+            row_vars: log_cols + tw,
+            col_vars: s,
+            word_bits: 1,
+        },
         num_cols: 1 << log_cols,
         log_cols,
         bit_vars: 0,
@@ -164,6 +170,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
     let ns: Vec<usize> = std::env::var("F2Z_AB_N")
         .map(|v| v.split_whitespace().map(|x| x.parse().unwrap()).collect())
@@ -177,7 +184,7 @@ fn main() {
         let p = &layout.p;
         let p_x = virtual_xor_params(&layout);
         let m_p = packed_vars(p);
-        let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
+        let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
 
         let words = p.rows().div_ceil(64);
         let rows: Vec<Vec<u64>> = (0..p.cols())
@@ -204,10 +211,10 @@ fn main() {
             let mut layout = taps_layout(n, 3);
             layout.x_fold_extra = std::env::var("F2Z_AB_OPEN_DELTA")
                 .map_or(4, |v| v.parse().unwrap())
-                .min(layout.p.s - 1);
+                .min(layout.p.col_vars - 1);
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -266,15 +273,18 @@ fn main() {
             };
             let (mut t_all, mut t_one) = (Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_k(8));
-                t_all.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_all.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_k(1));
-                t_one.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_one.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let proof8 = prove_k(8);
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_collapse(
@@ -283,7 +293,7 @@ fn main() {
                 )
                 .expect("open8 verifies");
             }
-            let v8 = t0.elapsed().as_secs_f64() * 1e3;
+            let v8 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let (m8, m1) = (median(t_all), median(t_one));
             println!(
                 "n={n} OPEN8 δ{} (8 identity openings, one 0x44 sub-proof, {} bodies): \
@@ -320,13 +330,13 @@ fn main() {
             let fd: usize =
                 std::env::var("F2Z_AB_FAM_DELTA").map_or(4, |v| v.parse().unwrap());
             let mut layout = taps_layout(n, 3);
-            layout.x_fold_extra = od.min(layout.p.s - 1);
+            layout.x_fold_extra = od.min(layout.p.col_vars - 1);
             let mut layout_fam = taps_layout(n, 3);
-            layout_fam.x_fold_extra = fd.min(layout_fam.p.s - 1);
+            layout_fam.x_fold_extra = fd.min(layout_fam.p.col_vars - 1);
             let mut layout_f4 = taps_layout(n, 3);
             layout_f4.x_fold_extra = 0;
             let p = &layout.p;
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -511,21 +521,26 @@ fn main() {
             let (mut t_vx, mut t_f6, mut t_f4, mut t_f6m) =
                 (Vec::new(), Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_vx8());
-                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_vx.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_f6());
-                t_f6.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_f6.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_f4());
-                t_f4.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_f4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_f6m());
-                t_f6m.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_f6m.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let pv = prove_vx8();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_collapse(
@@ -533,9 +548,10 @@ fn main() {
                 )
                 .expect("b3open vx8 verifies");
             }
-            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let v_vx = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let pf6 = prove_f6();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
@@ -556,9 +572,10 @@ fn main() {
                 )
                 .expect("b3open fam6/ac verifies");
             }
-            let v_f6 = t0.elapsed().as_secs_f64() * 1e3;
+            let v_f6 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let pf4 = prove_f4();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
@@ -573,9 +590,10 @@ fn main() {
                 )
                 .expect("b3open fam4/2 verifies");
             }
-            let v_f4 = t0.elapsed().as_secs_f64() * 1e3;
+            let v_f4 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let pf6m = prove_f6m();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_rlc_families_shared_point(
@@ -584,7 +602,7 @@ fn main() {
                 )
                 .expect("b3open fam6m verifies");
             }
-            let v_f6m = t0.elapsed().as_secs_f64() * 1e3;
+            let v_f6m = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let fam_sz = f2z::ligerito_flock::mle_eval_mod_q_lig_rlc_family_proof_size_bytes;
             let sz_vx = mle_eval_mod_q_lig_xor_proof_size_bytes(&pv);
             let sz_f6 = fam_sz(&pf6.0)
@@ -640,11 +658,11 @@ fn main() {
             // layer (envelope-free) and the plain layer keeps δ = 4 —
             // the δ2 alternative measured slower AND fatter (the plain
             // fold vectors quadruple).
-            layout_plain.x_fold_extra = 4.min(taps_layout(n, 3).p.s - 1);
+            layout_plain.x_fold_extra = 4.min(taps_layout(n, 3).p.col_vars - 1);
             let mut layout_pl_naive = taps_layout(n, 3);
-            layout_pl_naive.x_fold_extra = 4.min(layout.p.s - 1);
+            layout_pl_naive.x_fold_extra = 4.min(layout.p.col_vars - 1);
             let p = &layout.p;
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             // Semantic generation: random a, a', c, c' and top words;
             // d, b run the BACKWARD recurrence d[j] = ROT24(d[j+1]) ⊕
             // ROT24(a'[j+1]) ⊕ ROT8(a[j]) (resp. ROT19/ROT7), so
@@ -687,9 +705,9 @@ fn main() {
             // Pack per-column words into committed clear rows: trace
             // p = (k ≪ g)|j of column col lands in row p & (2^s − 1),
             // bit (col ≪ tw) | (p ≫ s).
-            let s_bits = p.s;
+            let s_bits = p.col_vars;
             let tw = layout.tw;
-            let row_words = (1usize << p.t).div_ceil(64);
+            let row_words = (1usize << p.row_vars).div_ceil(64);
             let pack = |cols: &[&[u64]]| -> Vec<Vec<u64>> {
                 let mut rows = vec![vec![0u64; row_words]; 1usize << s_bits];
                 for (col, wds) in cols.iter().enumerate() {
@@ -1020,21 +1038,26 @@ fn main() {
             let (mut t_opt, mut t_nv, mut t_f6, mut t_f4) =
                 (Vec::new(), Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_opt());
-                t_opt.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_opt.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_nv());
-                t_nv.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_nv.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_fam(false));
-                t_f6.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_f6.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_fam(true));
-                t_f4.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_f4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let (opt_plain, opt_mx) = prove_opt();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_collapse(
@@ -1049,9 +1072,10 @@ fn main() {
                 )
                 .expect("b3fam opt mixed verifies");
             }
-            let v_opt = t0.elapsed().as_secs_f64() * 1e3;
+            let v_opt = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let (nv_plain, nv_mx) = prove_nv();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_collapse(
@@ -1066,7 +1090,7 @@ fn main() {
                 )
                 .expect("b3fam naive mixed verifies");
             }
-            let v_nv = t0.elapsed().as_secs_f64() * 1e3;
+            let v_nv = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             // Verify + size the family arms once.
             let verify_fam = |j3: bool,
                               pr: &(
@@ -1120,13 +1144,15 @@ fn main() {
                 .expect("b3fam fam mixed verifies");
             };
             let pf6 = prove_fam(false);
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             verify_fam(false, &pf6);
-            let v_f6 = t0.elapsed().as_secs_f64() * 1e3;
+            let v_f6 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let pf4 = prove_fam(true);
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             verify_fam(true, &pf4);
-            let v_f4 = t0.elapsed().as_secs_f64() * 1e3;
+            let v_f4 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let size_tap = |pr: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(pr);
                 b.total() + lig
@@ -1204,7 +1230,7 @@ fn main() {
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
             let p_x0 = virtual_xor_params(&layout_plain);
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -1390,15 +1416,18 @@ fn main() {
             };
             let (mut t_b3, mut t_vx) = (Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_b3());
-                t_b3.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_b3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_vx());
-                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_vx.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let (proof_plain, proof_mixed) = prove_b3();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_multiweight(
@@ -1413,9 +1442,10 @@ fn main() {
                 )
                 .expect("blake3 mixed layer verifies");
             }
-            let v_b3 = t0.elapsed().as_secs_f64() * 1e3;
+            let v_b3 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let proof_vx = prove_vx();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -1424,7 +1454,7 @@ fn main() {
                 )
                 .expect("blake3 vx13 verifies");
             }
-            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let v_vx = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
                 b.total() + lig
@@ -1472,7 +1502,7 @@ fn main() {
             // offset (its envelope is strictly narrower).
             let max_src_off = src.iter().map(|t| t.off).max().unwrap_or(0);
             assert!(
-                rounds + max_src_off <= 1usize << (layout.p.s - GRP()),
+                rounds + max_src_off <= 1usize << (layout.p.col_vars - GRP()),
                 "folded-baseline offsets out of range for this shape"
             );
             let rw: Vec<u128> = (0..p_x.rows())
@@ -1577,20 +1607,24 @@ fn main() {
             };
             let (mut t_cmp, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_cmp());
-                t_cmp.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_cmp.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 if run_vx {
-                    let t0 = Instant::now();
+                    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let t0 = tracing::info_span!("taps_ab:t0").entered();
                     drop(prove_vx());
-                    t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
+                    t_vx.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 }
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_ind());
-                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_ind.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let proof_cmp = prove_cmp();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_composed(
@@ -1599,7 +1633,7 @@ fn main() {
                 )
                 .expect("composed schedule verifies");
             }
-            let v_cmp = t0.elapsed().as_secs_f64() * 1e3;
+            let v_cmp = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
                 b.total() + lig
@@ -1608,7 +1642,8 @@ fn main() {
             let (m_cmp, m_ind) = (median(t_cmp), median(t_ind));
             let vx_txt = if run_vx {
                 let proof_vx = prove_vx();
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 {
                     let mut vt = Blake3Transcript::new();
                     verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -1617,7 +1652,7 @@ fn main() {
                     )
                     .expect("vx schedule verifies");
                 }
-                let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+                let v_vx = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
                 let m_vx = median(t_vx);
                 format!(
                     "vx{rounds} {m_vx:.1} ms ({:.1}x of cmp, {:.0} KB, verify {v_vx:.1} ms)",
@@ -1648,7 +1683,7 @@ fn main() {
             let layout = taps_layout(n, 2);
             let p = &layout.p;
             let p_x = virtual_xor_params(&layout);
-            let (pc, vc) = sha_lig_configs(packed_vars(p)).expect("lig cfg");
+            let (pc, vc) = historical_sha_lig_configs(packed_vars(p)).expect("lig cfg");
             let words = p.rows().div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -1772,15 +1807,18 @@ fn main() {
                 let (mut t_tap4, mut t_fam2, mut t_fam4) =
                     (Vec::new(), Vec::new(), Vec::new());
                 for _ in 0..reps {
-                    let t0 = Instant::now();
+                    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let t0 = tracing::info_span!("taps_ab:t0").entered();
                     drop(prove_k(0..4));
-                    t_tap4.push(t0.elapsed().as_secs_f64() * 1e3);
-                    let t0 = Instant::now();
+                    t_tap4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let t0 = tracing::info_span!("taps_ab:t0").entered();
                     drop(prove_fam2());
-                    t_fam2.push(t0.elapsed().as_secs_f64() * 1e3);
-                    let t0 = Instant::now();
+                    t_fam2.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let t0 = tracing::info_span!("taps_ab:t0").entered();
                     drop(prove_fam4());
-                    t_fam4.push(t0.elapsed().as_secs_f64() * 1e3);
+                    t_fam4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
                 }
                 let (p1, p2) = prove_fam2();
                 {
@@ -1819,18 +1857,22 @@ fn main() {
             }
             let (mut t_single, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_k(0..1));
-                t_single.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_single.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_k(0..tclaims.len()));
-                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_vx.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_ind());
-                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_ind.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let proof_vx = prove_k(0..tclaims.len());
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -1839,7 +1881,7 @@ fn main() {
                 )
                 .expect("cols4 vx verifies");
             }
-            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let v_vx = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             {
                 let mut vt = Blake3Transcript::new();
                 let proof_s = prove_k(0..1);
@@ -1858,16 +1900,17 @@ fn main() {
                 "n={n} COLS4 (t'={}, s={}, 4 cols: 4 identities + 2 mixed pairs): single \
                  {m_s:.1} ms | vx6 {m_vx:.1} ms ({:.2}x of single, {:.0} KB, verify \
                  {v_vx:.1} ms) | ind6 {m_ind:.1} ms ({:.2}x of vx6)",
-                p_x.t,
-                p_x.s,
+                p_x.row_vars,
+                p_x.col_vars,
                 m_vx / m_s,
                 size_tap(&proof_vx) as f64 / 1e3,
                 m_ind / m_vx,
             );
             if profile {
+                let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
                 let pr = prove_k(0..tclaims.len());
                 drop(pr);
-                f2z::utils::prof::dump_and_reset(&format!("cols4 vx6 n={n}"));
+                f2z::observability::write_profile(std::io::stderr().lock(), &format!("cols4 vx6 n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
             }
             continue;
         }
@@ -1993,18 +2036,22 @@ fn main() {
             };
             let (mut t_clp, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_clp());
-                t_clp.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_clp.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_vx());
-                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_vx.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_ind());
-                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_ind.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let proof_clp = prove_clp();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_collapse(
@@ -2013,9 +2060,10 @@ fn main() {
                 )
                 .expect("mix6 collapse verifies");
             }
-            let v_clp = t0.elapsed().as_secs_f64() * 1e3;
+            let v_clp = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let proof_vx = prove_vx();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -2024,7 +2072,7 @@ fn main() {
                 )
                 .expect("mix6 vx verifies");
             }
-            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let v_vx = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let size_tap = |p: &f2z::ligerito_flock::IntEvalRsLigModQTapProof| {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(p);
                 b.total() + lig
@@ -2140,18 +2188,22 @@ fn main() {
             };
             let (mut t_clp, mut t_vx, mut t_ind) = (Vec::new(), Vec::new(), Vec::new());
             for _ in 0..reps {
-                let t0 = Instant::now();
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_clp());
-                t_clp.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_clp.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_vx13());
-                t_vx.push(t0.elapsed().as_secs_f64() * 1e3);
-                let t0 = Instant::now();
+                t_vx.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0 = tracing::info_span!("taps_ab:t0").entered();
                 drop(prove_ind13());
-                t_ind.push(t0.elapsed().as_secs_f64() * 1e3);
+                t_ind.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
             }
             let proof_clp = prove_clp();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_collapse(
@@ -2160,9 +2212,10 @@ fn main() {
                 )
                 .expect("collapse verifies");
             }
-            let v_clp = t0.elapsed().as_secs_f64() * 1e3;
+            let v_clp = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let proof_vx = prove_vx13();
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             {
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -2171,7 +2224,7 @@ fn main() {
                 )
                 .expect("vx13 verifies");
             }
-            let v_vx = t0.elapsed().as_secs_f64() * 1e3;
+            let v_vx = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
             let sz_clp = mle_eval_mod_q_lig_xor_proof_size_bytes(&proof_clp);
             let sz_vx = {
                 let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(&proof_vx);
@@ -2298,23 +2351,31 @@ fn main() {
         let (mut t_single, mut t_tapf, mut t_vx6, mut t_ind6) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for _ in 0..reps {
-            let t0 = Instant::now();
-            let pr = prove_single();
-            t_single.push(t0.elapsed().as_secs_f64() * 1e3);
+            let (pr, t0) = f2z::observability::measure(
+                tracing::info_span!("taps_ab:pr"),
+                || prove_single(),
+            ).expect("measure completed operation");
+            t_single.push(t0.as_secs_f64() * 1e3);
             drop(pr);
             if !no_family {
-                let t0 = Instant::now();
-                let pr = prove_tapf();
-                t_tapf.push(t0.elapsed().as_secs_f64() * 1e3);
+                let (pr, t0) = f2z::observability::measure(
+                    tracing::info_span!("taps_ab:pr"),
+                    || prove_tapf(),
+                ).expect("measure completed operation");
+                t_tapf.push(t0.as_secs_f64() * 1e3);
                 drop(pr);
             }
-            let t0 = Instant::now();
-            let pr = prove_vx6();
-            t_vx6.push(t0.elapsed().as_secs_f64() * 1e3);
+            let (pr, t0) = f2z::observability::measure(
+                tracing::info_span!("taps_ab:pr"),
+                || prove_vx6(),
+            ).expect("measure completed operation");
+            t_vx6.push(t0.as_secs_f64() * 1e3);
             drop(pr);
-            let t0 = Instant::now();
-            let pr = prove_ind6();
-            t_ind6.push(t0.elapsed().as_secs_f64() * 1e3);
+            let (pr, t0) = f2z::observability::measure(
+                tracing::info_span!("taps_ab:pr"),
+                || prove_ind6(),
+            ).expect("measure completed operation");
+            t_ind6.push(t0.as_secs_f64() * 1e3);
             drop(pr);
         }
 
@@ -2332,15 +2393,17 @@ fn main() {
             .expect("single verifies");
         }
         let v_tapf = proof_tapf.as_ref().map(|pr| {
-            let t0 = Instant::now();
+            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0 = tracing::info_span!("taps_ab:t0").entered();
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_family(
                 &mut vt, &hint.commitment, pr, &layout, &clusters, &colw, alpha, &vc,
             )
             .expect("tapf verifies");
-            t0.elapsed().as_secs_f64() * 1e3
+            { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3
         });
-        let t0 = Instant::now();
+        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0 = tracing::info_span!("taps_ab:t0").entered();
         {
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -2349,7 +2412,7 @@ fn main() {
             )
             .expect("vx6 verifies");
         }
-        let v_vx6 = t0.elapsed().as_secs_f64() * 1e3;
+        let v_vx6 = { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "taps_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3;
         for (i, pr) in proofs_ind.iter().enumerate() {
             let mut vt = Blake3Transcript::new();
             verify_mle_eval_mod_q_ligerito_tap_claims(
@@ -2378,8 +2441,8 @@ fn main() {
         println!(
             "n={n} (t'={}, s={}, tw={}): single {m_single:.1} ms | {tapf_txt} | \
              vx6 {m_vx6:.1} ({:.2}x) | ind6 {m_ind6:.1} ({:.2}x)",
-            p_x.t,
-            p_x.s,
+            p_x.row_vars,
+            p_x.col_vars,
             layout.tw,
             m_vx6 / m_single,
             m_ind6 / m_single,
@@ -2407,13 +2470,15 @@ fn main() {
 
         if profile {
             if !no_family {
+                let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
                 let pr = prove_tapf();
                 drop(pr);
-                f2z::utils::prof::dump_and_reset(&format!("tapf n={n}"));
+                f2z::observability::write_profile(std::io::stderr().lock(), &format!("tapf n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
             }
+            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_vx6();
             drop(pr);
-            f2z::utils::prof::dump_and_reset(&format!("vx6 n={n}"));
+            f2z::observability::write_profile(std::io::stderr().lock(), &format!("vx6 n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
         }
     }
 }

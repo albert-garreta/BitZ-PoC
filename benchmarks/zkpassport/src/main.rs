@@ -2,17 +2,23 @@
 #![recursion_limit = "256"]
 #[path = "../../../benches/support/sha256_ecdsa_fixture.rs"]
 mod fixture;
+#[path = "../../../src/observability.rs"]
+mod observability;
+#[path = "../../../benches/common/output.rs"]
+mod output;
 use barretenberg_rs::generated_types::ProofSystemSettings;
 use bincode::Options;
 use fixture::{Result, SignedFixture};
 use noir_rs::{
+    FieldElement,
     barretenberg::{api, srs},
-    circuit, execute, witness, FieldElement,
+    circuit, execute, witness,
 };
-use noirc_abi::{input_parser::InputValue, Abi, InputMap};
+use noirc_abi::{Abi, InputMap, input_parser::InputValue};
+use output::{BenchmarkOutput, FileMode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{collections::BTreeMap, fs, path::PathBuf, time::Instant};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 const NOIR_RS_REV: &str = "8e516b2ffb126b5cd779d2b22e596c2e1de4e251";
 
@@ -55,7 +61,9 @@ impl Args {
                 continue;
             }
             if flag == "--help" {
-                println!("zkpassport-bench --artifact FILE --fixture FILE --srs-cache DIR --revision SHA --r EXP --c 0 --threads N --reps N --seed N [--self-test] [--prepare-only] [--offline]");
+                println!(
+                    "zkpassport-bench --artifact FILE --fixture FILE --srs-cache DIR --revision SHA --r EXP --c 0 --threads N --reps N --seed N [--self-test] [--prepare-only] [--offline]"
+                );
                 std::process::exit(0);
             }
             if ![
@@ -112,10 +120,6 @@ impl Args {
         }
         Ok(out)
     }
-}
-
-fn ms(start: Instant) -> f64 {
-    start.elapsed().as_secs_f64() * 1000.
 }
 
 fn encode(
@@ -223,9 +227,13 @@ fn verify(
 fn main() -> Result<()> {
     let args = Args::parse()?;
     // Barretenberg caches this on first use; set it before any FFI call.
-    std::env::set_var("HARDWARE_CONCURRENCY", args.threads.to_string());
-    std::env::set_var("RAYON_NUM_THREADS", args.threads.to_string());
-    std::env::set_var("NOIR_SERIALIZATION_FORMAT", "msgpack-compact");
+    // No worker threads or subscriber have been started yet.
+    unsafe {
+        std::env::set_var("HARDWARE_CONCURRENCY", args.threads.to_string());
+        std::env::set_var("RAYON_NUM_THREADS", args.threads.to_string());
+        std::env::set_var("NOIR_SERIALIZATION_FORMAT", "msgpack-compact");
+    }
+    observability::install()?;
     let fixture = SignedFixture::read(&args.fixture)?;
     if fixture.log_compressions != args.exponent || fixture.seed != args.seed {
         return Err("fixture configuration mismatch".into());
@@ -234,35 +242,45 @@ fn main() -> Result<()> {
     let artifact: Artifact = serde_json::from_slice(&artifact_bytes)?;
     check_abi(&artifact.abi, args.exponent)?;
     let artifact_id = blake3::hash(&artifact_bytes).to_hex().to_string();
-    let start = Instant::now();
+    let recording = observability::Recording::start(Vec::new())?;
+    let start = tracing::info_span!("worker:setup").entered();
     let (_, acir) = circuit::decode_circuit(&artifact.bytecode)?;
     let mut settings = api::settings_ultra_honk_poseidon2();
     settings.disable_zk = true;
     let stats = api::circuit_stats(&acir, &settings)?;
-    fs::create_dir_all(&args.srs_cache)?;
+    let cache_output = BenchmarkOutput::new("");
+    BenchmarkOutput::new(&args.srs_cache).create_dir_all()?;
     let srs_path = args
         .srs_cache
         .join(format!("bn254-{}.local", stats.num_gates_dyadic));
-    let mut srs_download_ms = 0.;
+    let downloaded = !srs_path.exists();
     if !srs_path.exists() {
         if args.offline {
             return Err(
                 format!("SRS cache missing in offline mode: {}", srs_path.display()).into(),
             );
         }
-        let download = Instant::now();
+        let download = tracing::info_span!("worker:srs_download").entered();
         let data = srs::get_srs(stats.num_gates_dyadic, None);
         let temporary = srs_path.with_extension("tmp");
-        fs::write(&temporary, bincode::serialize(&data)?)?;
-        fs::rename(temporary, &srs_path)?;
-        srs_download_ms = ms(download);
+        cache_output.write_bytes(&temporary, &bincode::serialize(&data)?, FileMode::Replace)?;
+        cache_output.rename(temporary, &srs_path)?;
+        drop(download);
     }
     srs::setup_srs(
         stats.num_gates_dyadic,
         Some(srs_path.to_str().ok_or("non-UTF8 SRS path")?),
     )?;
     let vk = api::circuit_compute_vk(&acir, &settings)?.bytes;
-    let setup_ms = ms(start) - srs_download_ms;
+    drop(start);
+    let intervals = recording.intervals()?;
+    let srs_download_ms = if downloaded {
+        observability::duration(&intervals, "worker:srs_download")?.as_secs_f64() * 1000.
+    } else {
+        0.0
+    };
+    let setup_ms = observability::duration(&intervals, "worker:setup")?.as_secs_f64() * 1000.
+        - srs_download_ms;
     if args.prepare_only {
         println!(
             "{}",
@@ -272,14 +290,15 @@ fn main() -> Result<()> {
         return Ok(());
     }
     for trial in 0..=args.reps {
-        let start = Instant::now();
+        let recording = observability::Recording::start(Vec::new())?;
+        let start = tracing::info_span!("worker:witness", trial, warmup = trial == 0).entered();
         let solved = execute::execute(&artifact.bytecode, encode(&artifact.abi, &fixture)?)?;
         let witness_bytes = witness::serialize_witness(solved)?;
-        let witness_ms = ms(start);
-        let start = Instant::now();
+        drop(start);
+        let start = tracing::info_span!("worker:prove").entered();
         let proof = api::circuit_prove(&acir, &witness_bytes, &vk, &settings)?;
-        let prove_ms = ms(start);
-        let start = Instant::now();
+        drop(start);
+        let start = tracing::info_span!("worker:codec").entered();
         let object_bytes: usize = proof.proof.iter().map(Vec::len).sum();
         if proof.public_inputs != public_inputs(&fixture) {
             return Err("prover returned different public inputs".into());
@@ -300,10 +319,17 @@ fn main() -> Result<()> {
             .with_limit(encoded.len() as u64)
             .reject_trailing_bytes()
             .deserialize(&encoded)?;
-        let codec_ms = ms(start);
-        let start = Instant::now();
+        drop(start);
+        let start = tracing::info_span!("worker:verification").entered();
         verify(&vk, &settings, &fixture, decoded)?;
-        let verify_ms = ms(start);
+        drop(start);
+        let intervals = recording.intervals()?;
+        let millis =
+            |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
+        let witness_ms = millis("worker:witness")?;
+        let prove_ms = millis("worker:prove")?;
+        let codec_ms = millis("worker:codec")?;
+        let verify_ms = millis("worker:verification")?;
         if trial == 0 && args.self_test {
             for mutation in 0..6 {
                 let mut bad = fixture.clone();

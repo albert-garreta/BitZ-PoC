@@ -1,7 +1,7 @@
 % MultiSwap comparison table (Limber's Table 1 workload).
 % Standalone snippet: \input{multiswap-table} where the table should appear.
 %
-% Measurements: 2026-09-08, this machine (Apple M4, 16 GB), single-threaded
+% Measurements: 2026-09-09, this machine (Apple M5, 24 GB), single-threaded
 % (RAYON_NUM_THREADS=1), RUSTFLAGS="-C target-cpu=native", medians of five
 % runs (Limber-Hyrax: Criterion, 10 samples), 1 and 8 rayon threads (Zinc+:
 % feature `parallel`).  Prover time includes the
@@ -18,10 +18,10 @@
     Scheme & Commitment & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
      &  & 1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
     \midrule
-    \ftwoz \ (this work)             & binary field, hash  & \textbf{273}  & \textbf{105} & \textbf{9.9} & \textbf{12.0} & 269 \\
-    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 2052          & 563          & 18.2         & 12.7 & 1272 \\
-    Limber \cite{limber} (Brakedown) & hash                & 1175          & 559          & 44.2         & 43.3 & 5769 \\
-    Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1206          & 390          & 37.1         & 20.5 & \textbf{175} \\
+    \ftwoz \ (this work)             & binary field, hash  & \textbf{243}  & \textbf{97} & \textbf{9.0} & \textbf{11.7} & 269 \\
+    Zinc+ \cite{zincplus}$^{\ast}$   & integer code, hash  & 1973          & 569          & 18.2         & 12.5 & 1272 \\
+    Limber \cite{limber} (Brakedown) & hash                & 1063          & 542          & 39.6         & 40.0 & 5769 \\
+    Limber \cite{limber} (Hyrax)     & Tom-256, DL         & 1116          & 368          & 34.1         & 20.3 & \textbf{175} \\
     \midrule
     Arkworks/Garuda$^{\dagger}$      & BLS12-381, pairing  & 231000        & --           & 25           & --   & 7.2 \\
     MultiSwap-xJsnark$^{\dagger}$    & BLS12-381, pairing  & 88500         & --           & 2            & --   & 0.2 \\
@@ -33,7 +33,7 @@
   $352$-bit exponents modulo a $2048$-bit RSA modulus), plus a Poseidon-based
   hash-to-prime evaluation.  The four upper rows prove the same integer
   Mod-R1CS statement of $6209$ rows, taken from Limber's repository
-  \cite{limber}, and were measured on the same machine (Apple M4, 16GB) with
+  \cite{limber}, and were measured on the same machine (Apple M5, 24GB) with
   one and with eight threads, as medians of five runs; prover time includes
   the commitment and excludes witness generation (below $0.15$\,s in every
   row).  All four target $114$ bits of security; the \ftwoz\ and Zinc+ rows
@@ -46,8 +46,8 @@
   %
   $^{\ast}$ Zinc+ commits the $2048$-bit values as $16$-bit limbs and
   range-checks every limb (its earlier, unwired mock circuit without range
-  checks proves in $831$/$236$\,ms at $100$ bits); its proof compresses to
-  $847$KB with \texttt{zstd}, the other proofs are reported uncompressed.
+  checks proves in $781$/$236$\,ms at $100$ bits); its proof compresses to
+  $841$KiB with \texttt{zstd}, the other proofs are reported uncompressed.
   %
   $^{\dagger}$ Quoted from \cite{limber}; single-threaded on an M4 Pro, 24GB,
   and not reproduced here.
@@ -59,8 +59,7 @@
 % Zinc+ fat-cell mock row (main-beta 878fbd8, FOLD=1 WIDE16=1 NVARS=11,
 % 100 bits, no range checks, transcript-drawn 128-bit prime) — the shape
 % Limber's Table 1 row was reconstructed with; kept here for reference only:
-%   Zinc+ \cite{zincplus} (mock) & integer code, hash & 831 & 236 & 58.0 & 24.6 & 1415 \\
-%   (zstd: 808 KiB)
+%   Zinc+ \cite{zincplus} (mock) & integer code, hash & 781 & 236 & 54.0 & 23.5 & 1415 \\
 %
 % Row for the intro summary table (\cref{t:intro_table_experiments}):
 %   Poseidon hash + RSA \cite{limber} & 257\,ms / 9.8\,ms / 338\,KB

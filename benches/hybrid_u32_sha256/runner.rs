@@ -8,33 +8,68 @@ use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
 use f2z::{
-    hybrid::{CompositionProfile, Parameters, PreparedHybrid, chaining_value},
+    binius_ligerito::Prepared as BiniusLigerito,
+    hybrid::{
+        CompositionProfile, LIGERITO_COMPONENT_BITS, Parameters, PreparedHybrid, chaining_value,
+    },
     piop::spartan::{
         f2z::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
         u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
     },
     transcript::Blake3Transcript,
-    utils::prof,
+    observability::{self, Interval, Recording},
 };
-use std::{error::Error, time::Instant};
+use std::error::Error;
 
+#[path = "../common/cli.rs"]
+mod cli;
+#[path = "../common/output.rs"]
+mod output;
+#[path = "report.rs"]
+mod report;
 #[path = "sweep.rs"]
 mod sweep;
+use output::{BenchmarkOutput, FileMode, JsonStyle};
+use report::{HybridRow, NativeRow};
 
 type Challenger = HasherChallenger<blake3::Hasher>;
 type AnyError = Box<dyn Error>;
+
+fn select_ligerito(
+    cli: Option<&str>,
+    target: usize,
+) -> Result<f2z::ligerito_flock::LigeritoSelection, AnyError> {
+    match cli {
+        Some(request) => Ok(f2z::ligerito_flock::LigeritoSelection::parse(
+            request, target,
+        )?),
+        None => Ok(f2z::ligerito_flock::LigeritoSelection::JOHNSON),
+    }
+}
+
+/// How the native Binius64 circuit is proved: Binius64's own ring switch +
+/// BaseFold/FRI, or its PIOP prefix with every oracle committed and opened by
+/// the F2Z opener (rate 1/2, Johnson regime, grinding, Round 0; whole-protocol
+/// union bound gated at 100 bits).
+enum NativeBackend {
+    Binius {
+        prover: Prover<OptimalPackedB128, Blake3HashSuite>,
+        verifier: Verifier<Blake3HashSuite>,
+        config: BiniusConfig,
+    },
+    Ligerito(BiniusLigerito),
+}
 
 struct Native {
     circuit: Circuit,
     blocks: Vec<[Wire; 16]>,
     output: [Wire; 8],
     multiplications: Vec<[Wire; 4]>,
-    prover: Prover<OptimalPackedB128, Blake3HashSuite>,
-    verifier: Verifier<Blake3HashSuite>,
+    backend: NativeBackend,
 }
 
 impl Native {
-    fn new(multiplications: usize, compressions: usize) -> Result<Self, AnyError> {
+    fn new(multiplications: usize, compressions: usize, ligerito: bool, binius: Option<BiniusConfig>) -> Result<Self, AnyError> {
         let builder = CircuitBuilder::new();
         let multiplications = (0..multiplications)
             .map(|_| f2z::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
@@ -56,21 +91,26 @@ impl Native {
             );
         }
         let circuit = builder.build();
-        // 112 bits for the FRI component leaves slack for the binary PIOPs
-        // and the second proof in the separate mode. No default 96-bit preset.
-        let verifier = Verifier::<Blake3HashSuite>::setup_with_security_bits(
-            circuit.constraint_system().clone(),
-            1,
-            112,
-        )?;
-        let prover = Prover::setup(verifier.clone())?;
+        let backend = if ligerito {
+            NativeBackend::Ligerito(BiniusLigerito::new(circuit.constraint_system())?)
+        } else {
+            // 112 bits for the FRI component leaves slack for the binary PIOPs
+            // and the second proof in the separate mode. No default 96-bit preset.
+            let config = binius.expect("Binius configuration");
+            let verifier = Verifier::<Blake3HashSuite>::setup_with_security_bits(
+                circuit.constraint_system().clone(),
+                config.log_inv_rate,
+                config.security_bits,
+            )?;
+            let prover = Prover::setup(verifier.clone())?;
+            NativeBackend::Binius { prover, verifier, config }
+        };
         Ok(Self {
             circuit,
             blocks,
             output,
             multiplications,
-            prover,
-            verifier,
+            backend,
         })
     }
     fn populate(
@@ -99,22 +139,93 @@ impl Native {
         Ok(filler.into_value_vec())
     }
     fn prove(&self, witness: &ValueVec) -> Result<Vec<u8>, AnyError> {
-        let mut t = ProverTranscript::new(Challenger::default());
-        self.prover.prove(witness, &mut t)?;
-        Ok(t.finalize())
+        match &self.backend {
+            NativeBackend::Binius { prover, .. } => {
+                let mut t = ProverTranscript::new(Challenger::default());
+                prover.prove(witness, &mut t)?;
+                Ok(t.finalize())
+            }
+            NativeBackend::Ligerito(prepared) => {
+                let proof = prepared.prove(witness)?;
+                Ok(proof.to_bytes())
+            }
+        }
     }
     fn verify(&self, witness: &ValueVec, bytes: Vec<u8>) -> Result<(), AnyError> {
-        let mut t = VerifierTranscript::new(Challenger::default(), bytes);
-        self.verifier.verify(witness.public(), &mut t)?;
-        t.finalize()?;
-        Ok(())
+        match &self.backend {
+            NativeBackend::Binius { verifier, .. } => {
+                let mut t = VerifierTranscript::new(Challenger::default(), bytes);
+                verifier.verify(witness.inout(), &mut t)?;
+                t.finalize()?;
+                Ok(())
+            }
+            NativeBackend::Ligerito(prepared) => {
+                let decoded = prepared.proof_from_bytes(&bytes)?;
+                prepared.verify(witness.inout(), &decoded)?;
+                Ok(())
+            }
+        }
+    }
+    fn setup_line(&self) -> String {
+        match &self.backend {
+            NativeBackend::Binius { config, .. } => format!(
+                "binius_fri_component_bits={} binius_log_inv_rate={}",
+                config.security_bits,
+                config.log_inv_rate
+            ),
+            NativeBackend::Ligerito(prepared) => {
+                let security = prepared.security();
+                let witness = prepared.opener(0);
+                // Per oracle, per level: (fold-challenge grinding bits, query
+                // grinding bits, queries) — the proof-of-work the opener pays.
+                let ladders: Vec<String> = (0..prepared.oracle_specs().len())
+                    .map(|i| {
+                        let levels: Vec<String> = prepared
+                            .opener(i)
+                            .config()
+                            .levels
+                            .iter()
+                            .map(|l| {
+                                format!(
+                                    "(k={},fold_grind={},query_grind={},queries={})",
+                                    l.k_recursive, l.fold_grinding_bits, l.grinding_bits, l.queries
+                                )
+                            })
+                            .collect();
+                        format!("oracle{i}[{}]", levels.join(","))
+                    })
+                    .collect();
+                format!(
+                    "ligerito_component_bits={} algebraic_security_bits={:.3} level0_queries={} level0_fold_grinding_bits={} ood_grinding_bits={} log_inv_rate={} oracle_logs={:?} binding_term={} ladders={}",
+                    prepared.component_bits(),
+                    security.algebraic_bits,
+                    witness.level0_queries(),
+                    witness.level0_fold_grinding_bits(),
+                    witness.ood_grinding_bits(),
+                    f2z::binary_pcs::LOG_INV_RATE,
+                    prepared
+                        .oracle_specs()
+                        .iter()
+                        .map(|s| s.log_msg_len)
+                        .collect::<Vec<_>>(),
+                    security
+                        .binding_term()
+                        .map(|t| format!("{}:{:.2}", t.name, -t.error_bound.log2()))
+                        .unwrap_or_default(),
+                    ladders.join(" ")
+                )
+            }
+        }
     }
 }
 
-fn millis(start: Instant) -> f64 {
-    start.elapsed().as_secs_f64() * 1000.0
+fn millis(intervals: &[Interval], label: &str) -> f64 {
+    observability::duration(intervals, label).expect("required hybrid interval").as_secs_f64() * 1000.0
 }
 fn peak_kib() -> u64 {
+    // Linux only: this target is also built as a [[bin]], which does not get
+    // dev-dependencies, so no libc/getrusage path is available here. On other
+    // platforms the sweep's per-case child processes are sampled externally.
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
@@ -126,96 +237,71 @@ fn peak_kib() -> u64 {
         .unwrap_or(0)
 }
 
+#[derive(clap::Parser)]
+#[command(args_override_self = true, name = "hybrid-u32-sha256", about = "Non-ZK SHA chain and multiplication benchmark (100-bit composition target)", after_help = "Set RAYON_NUM_THREADS to control threads. Single runs default to 2^20 products and 2^16 compressions. Sweeps default to equal packed witnesses (15:7 through 20:12). Results directories must not already exist.")]
+struct Args {
+    #[command(flatten)]
+    cargo: cli::CargoArgs,
+    #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
+    mode: String,
+    #[arg(long, env = "F2Z_LIG_PROFILE")]
+    profile: Option<String>,
+    #[arg(long, value_parser = clap::value_parser!(u32).range(9..=22))]
+    mul_log: Option<u32>,
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=16))]
+    sha_log: Option<u32>,
+    /// Measured iterations after one warmup.
+    #[arg(long, default_value = "5", value_parser = cli::positive)]
+    iterations: usize,
+    #[arg(long, conflicts_with_all = ["mul_log", "sha_log", "output", "verify"])]
+    sweep: bool,
+    #[arg(long, requires = "sweep", value_parser = |value: &str| sweep::parse_shapes(value).map_err(|error| error.to_string()))]
+    shapes: Option<cli::List<sweep::Shape>>,
+    #[arg(long, requires = "sweep")]
+    results_dir: Option<std::path::PathBuf>,
+    #[arg(long, conflicts_with = "verify")]
+    output: Option<String>,
+    #[arg(long)]
+    verify: Option<String>,
+}
+
+#[derive(clap::Parser, Clone, Copy)]
+struct BiniusConfig {
+    #[arg(long, env = "F2Z_HYBRID_BINIUS_LOG_INV_RATE", default_value = "1")]
+    log_inv_rate: usize,
+    #[arg(long, env = "F2Z_HYBRID_BINIUS_SECURITY_BITS", default_value = "112")]
+    security_bits: usize,
+}
+
 pub fn run() -> Result<(), AnyError> {
+    let Args { mode, profile, mul_log, sha_log, iterations, sweep, shapes, results_dir, output, verify: verify_file, .. } = <Args as clap::Parser>::parse();
+    if (output.is_some() || verify_file.is_some()) && mode != "hybrid" {
+        return Err("--output and --verify require --mode hybrid".into());
+    }
+    if sweep {
+        return sweep::run(shapes.unwrap_or_else(sweep::equal_witness_shapes), &mode, iterations, results_dir, profile.as_deref());
+    }
     let mut parameters = Parameters::default();
-    let mut mode = String::from("hybrid");
-    let mut output = None;
-    let mut verify_file = None;
-    let mut iterations = None;
-    let mut sweep_requested = false;
-    let mut shapes = None;
-    let mut results_dir = None;
-    let mut single_shape_requested = false;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        // Cargo appends this flag even for benchmarks with harness = false.
-        if arg == "--bench" {
-            continue;
-        }
-        if arg == "--sweep" {
-            sweep_requested = true;
-            continue;
-        }
-        if arg == "--help" {
-            println!(
-                "hybrid-u32-sha256 [--mode hybrid|separate|all-binius] [--mul-log 15..20] [--sha-log 1..16] [--iterations N] [--output PROOF]\nhybrid-u32-sha256 --verify PROOF\nhybrid-u32-sha256 --sweep [--shapes MUL_LOG:SHA_LOG,...] [--mode hybrid|separate|all-binius|all] [--iterations N] [--results-dir DIR]\nSingle-run defaults: 2^20 products, 2^16 chained compressions, 1 iteration.\nSweep defaults: equal packed witnesses (15:7,16:8,17:9,18:10,19:11,20:12), hybrid mode, 3 iterations.\nSweeps save per-run CSV/logs and summary.csv in a new directory under benches/results/hybrid-u32-sha256/. --results-dir must not already exist.\nNon-ZK, 100-bit composition target. Set RAYON_NUM_THREADS to control threads. --output is for single hybrid proofs."
-            );
-            return Ok(());
-        }
-        let value = args.next().ok_or("missing flag value")?;
-        match arg.as_str() {
-            "--mode" => mode = value,
-            "--mul-log" => {
-                single_shape_requested = true;
-                let log: u32 = value.parse()?;
-                if !(15..=20).contains(&log) {
-                    return Err("--mul-log must be 15..20".into());
-                }
-                parameters.multiplications = 1 << log;
-            }
-            "--sha-log" => {
-                single_shape_requested = true;
-                let log: u32 = value.parse()?;
-                if !(1..=16).contains(&log) {
-                    return Err("--sha-log must be 1..16".into());
-                }
-                parameters.sha_compressions = 1 << log;
-            }
-            "--iterations" => {
-                let count: usize = value.parse()?;
-                if count == 0 {
-                    return Err("iterations must be positive".into());
-                }
-                iterations = Some(count);
-            }
-            "--shapes" => shapes = Some(sweep::parse_shapes(&value)?),
-            "--results-dir" => results_dir = Some(std::path::PathBuf::from(value)),
-            "--output" => output = Some(value),
-            "--verify" => verify_file = Some(value),
-            _ => return Err(format!("unknown flag {arg}").into()),
-        }
-    }
-    if sweep_requested {
-        if single_shape_requested || output.is_some() || verify_file.is_some() {
-            return Err("--sweep cannot use --mul-log, --sha-log, --output or --verify; select pairs with --shapes MUL_LOG:SHA_LOG,...".into());
-        }
-        return sweep::run(
-            shapes.unwrap_or_else(sweep::equal_witness_shapes),
-            &mode,
-            iterations.unwrap_or(3),
-            results_dir,
-        );
-    }
-    if shapes.is_some() || results_dir.is_some() {
-        return Err("--shapes and --results-dir require --sweep".into());
-    }
-    let iterations = iterations.unwrap_or(1);
-    if !["hybrid", "separate", "all-binius"].contains(&mode.as_str()) {
-        return Err("invalid --mode".into());
-    }
-    if output.is_some() && mode != "hybrid" {
-        return Err("--output requires --mode hybrid".into());
-    }
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_target(false)
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    if let Some(log) = mul_log { parameters.multiplications = 1 << log; }
+    if let Some(log) = sha_log { parameters.sha_compressions = 1 << log; }
+    let binius = if mode == "separate" || mode == "all-binius" {
+        Some(cli::environment::<BiniusConfig>())
+    } else { None };
+    let ligerito = match mode.as_str() {
+        "hybrid" => select_ligerito(profile.as_deref(), 106)?,
+        "separate" => select_ligerito(profile.as_deref(), 112)?,
+        _ => f2z::ligerito_flock::LigeritoSelection::JOHNSON,
+    };
+    use tracing_subscriber::prelude::*;
+    tracing_subscriber::registry()
+        .with(observability::layer())
+        .with(tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_target(false)
+            .with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+        .try_init()?;
     if let Some(path) = verify_file {
         use bincode::Options;
-        if mode != "hybrid" || output.is_some() {
-            return Err("--verify requires hybrid mode without --output".into());
-        }
         if std::fs::metadata(&path)?.len() > 64 << 20 {
             return Err("proof exceeds 64 MiB limit".into());
         }
@@ -229,7 +315,10 @@ pub fn run() -> Result<(), AnyError> {
             .with_limit(1024)
             .reject_trailing_bytes()
             .deserialize(&statement_bytes)?;
-        let prepared = PreparedHybrid::new(statement.parameters)?;
+        let prepared = PreparedHybrid::new_with_ligerito(
+            statement.parameters,
+            ligerito,
+        )?;
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
         println!(
@@ -250,36 +339,78 @@ pub fn run() -> Result<(), AnyError> {
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()
     );
-    let setup = Instant::now();
+    let setup_recording = Recording::start(Vec::new())?;
+    let setup = tracing::info_span!("benchmark:setup").entered();
     if mode == "hybrid" {
-        prof::force_enable();
-        let prepared = PreparedHybrid::new(parameters)?;
-        let setup_ms = millis(setup);
+
+        let prepared = PreparedHybrid::new_with_ligerito(
+            parameters,
+            ligerito,
+        )?;
+        let request = profile
+            .clone()
+            .unwrap_or_else(|| "custom:1:4".into());
+        let report = prepared
+            .ligerito_configuration()
+            .report(&request, prepared.ood_round());
+        eprintln!("LIGERITO_CONFIG {report}");
+        if let Some(path) = &output {
+            BenchmarkOutput::new("").write_json(
+                format!("{path}.ligerito.json"),
+                &report,
+                FileMode::Replace,
+                JsonStyle::Pretty,
+            )?;
+        }
+        drop(setup);
+        let setup_ms = millis(&setup_recording.intervals()?, "benchmark:setup");
+        let binding = prepared
+            .security()
+            .binding_term()
+            .map(|term| format!("{}:{:.2}", term.name, -term.error_bound.log2()))
+            .unwrap_or_default();
         eprintln!(
-            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3}",
+            "setup_ms={setup_ms:.3} packed_logs={:?} algebraic_security_bits={:.3} ligerito_component_bits={LIGERITO_COMPONENT_BITS} ood_grinding_bits={} binding_term={binding}",
             prepared.packed_witness_logs(),
-            prepared.security().algebraic_bits
+            prepared.security().algebraic_bits,
+            prepared.ood_round().map_or(0, |p| p.grinding_bits)
         );
-        println!(
-            "mode,iteration,setup_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms"
-        );
-        for iteration in 0..iterations {
-            // Discard setup and the preceding verifier's profiling records.
-            let _ = prof::take_totals();
-            let start = Instant::now();
+        let mut csv = output::csv_writer(std::io::stdout().lock());
+        csv.write_record(HybridRow::HEADER)?;
+        csv.flush()?;
+        for iteration in 0..=iterations {
+            let recording = Recording::start(Vec::new())?;
+            let start = tracing::info_span!("benchmark:proving").entered();
+            let witness_commit = tracing::info_span!("benchmark:witness_commit").entered();
+            let witness = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
+            // Hybrid fuses assignment synthesis into commit_mod32, so this is
+            // the native row construction only; witness_commit_ms below is
+            // that plus the commitment.
+            drop(witness);
             let committed = prepared.commit_mod32(&rows, &blocks)?;
-            let witness_commit_ms = millis(start);
-            let continuation = Instant::now();
+            drop(witness_commit);
+            let continuation = tracing::info_span!("benchmark:continuation").entered();
             let proof = prepared.prove(&committed)?;
-            let continuation_ms = millis(continuation);
+            drop(continuation);
+            drop(start);
             let bytes = proof.to_bytes();
-            let total_ms = millis(start);
-            let phases = prof::take_totals();
-            let phase_ms = |name| -> Result<f64, AnyError> {
+            let verify = tracing::info_span!("benchmark:verification").entered();
+            let decoded = prepared.proof_from_bytes(committed.statement(), &bytes)?;
+            prepared.verify(committed.statement(), &decoded)?;
+            drop(verify);
+            let peak_rss_kib = peak_kib(); // Snapshot before trace extraction/processing.
+            let intervals = recording.intervals()?;
+            let witness_ms = millis(&intervals, "benchmark:witness");
+            let witness_commit_ms = millis(&intervals, "benchmark:witness_commit");
+            let continuation_ms = millis(&intervals, "benchmark:continuation");
+            let total_ms = millis(&intervals, "benchmark:proving");
+            let verify_ms = millis(&intervals, "benchmark:verification");
+            let phases = observability::phase_totals(&intervals, "benchmark:proving")?;
+            let phase_ms = |name: &str| -> Result<f64, AnyError> {
                 phases
                     .iter()
                     .find(|(label, _)| *label == name)
@@ -292,65 +423,107 @@ pub fn run() -> Result<(), AnyError> {
             let sha_piop_ms = phase_ms("hybrid:sha_piop")?;
             let mul_opening_ms = phase_ms("hybrid:mul_opening")?;
             let joint_sumcheck_ms = phase_ms("hybrid:joint_sumcheck")?;
-            let shared_opening_ms = phase_ms("hybrid:opening_iop")?;
+            // Round 0 (the out-of-domain sample, run right after the
+            // statement) is part of the shared opening protocol; it is
+            // reported on its own and counted in shared_opening_ms.
+            let ood_round_ms = phase_ms("hybrid:ood_round")?;
+            let shared_opening_ms = phase_ms("hybrid:opening_iop")? + ood_round_ms;
             let piop_ms = mul_piop_ms + sha_piop_ms;
             let iop_ms = mul_opening_ms + joint_sumcheck_ms + shared_opening_ms;
-            let verify = Instant::now();
-            let decoded = prepared.proof_from_bytes(committed.statement(), &bytes)?;
-            prepared.verify(committed.statement(), &decoded)?;
-            let verify_ms = millis(verify);
-            println!(
-                "hybrid,{iteration},{setup_ms:.3},{witness_commit_ms:.3},{continuation_ms:.3},{total_ms:.3},{verify_ms:.3},{},{},{piop_ms:.3},{iop_ms:.3},{mul_piop_ms:.3},{sha_piop_ms:.3},{mul_opening_ms:.3},{joint_sumcheck_ms:.3},{shared_opening_ms:.3}",
-                bytes.len(),
-                peak_kib()
-            );
+            if iteration == 0 {
+                continue;
+            }
+            csv.serialize(HybridRow {
+                mode: "hybrid",
+                iteration: iteration - 1,
+                setup_ms,
+                witness_ms,
+                witness_commit_ms,
+                continuation_ms,
+                total_prover_ms: total_ms,
+                verify_ms,
+                proof_bytes: bytes.len(),
+                peak_rss_kib,
+                piop_ms,
+                iop_ms,
+                mul_piop_ms,
+                sha_piop_ms,
+                mul_opening_ms,
+                joint_sumcheck_ms,
+                shared_opening_ms,
+                ood_round_ms,
+            })?;
+            csv.flush()?;
             if let Some(path) = &output {
-                std::fs::write(path, &bytes)?;
-                std::fs::write(
+                let artifacts = BenchmarkOutput::new("");
+                artifacts.write_bytes(path, &bytes, FileMode::Replace)?;
+                artifacts.write_bytes(
                     format!("{path}.statement.bin"),
-                    bincode::serialize(committed.statement())?,
+                    &bincode::serialize(committed.statement())?,
+                    FileMode::Replace,
                 )?;
                 let statement = format!(
-                    "protocol=hybrid-u32-mod32-sha256-v2\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
+                    "protocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nparameters={:?}\nroots={:02x?}\nfinal_sha_state={:08x?}\n",
                     committed.statement().parameters,
                     committed.statement().roots,
                     committed.statement().final_sha_state
                 );
-                std::fs::write(format!("{path}.statement.txt"), statement)?;
+                artifacts.write_text(
+                    format!("{path}.statement.txt"),
+                    &statement,
+                    FileMode::Replace,
+                )?;
             }
         }
     } else {
         let native = Native::new(
-            if mode == "all-binius" {
-                inputs.len()
-            } else {
-                0
-            },
+            if mode == "separate" { 0 } else { inputs.len() },
             blocks.len(),
+            mode == "binius-ligerito",
+            binius,
         )?;
         let separate = if mode == "separate" {
-            Some(PreparedU32MulRelation::new_with_profile::<
+            Some(PreparedU32MulRelation::new_with_profile_and_ligerito::<
                 CompositionProfile,
-            >(U32MulLayout::new(inputs.len())?)?)
+            >(
+                U32MulLayout::new(inputs.len())?,
+                ligerito,
+            )?)
         } else {
             None
         };
-        let setup_ms = millis(setup);
-        eprintln!("setup_ms={setup_ms:.3} binius_fri_component_bits=112");
-        let size_column = if mode == "separate" {
-            "proof_payload_bytes_estimate"
-        } else {
-            "proof_bytes"
-        };
-        println!("mode,iteration,setup_ms,total_prover_ms,verify_ms,{size_column},peak_rss_kib");
-        for iteration in 0..iterations {
-            let start = Instant::now();
+        if let Some(p) = &separate {
+            let request = profile
+                .clone()
+                    .unwrap_or_else(|| "custom:1:4".into());
+            eprintln!(
+                "LIGERITO_CONFIG {}",
+                p.ligerito_configuration()
+                    .report(&request, p.security().ood)
+            );
+        }
+        drop(setup);
+        let setup_ms = millis(&setup_recording.intervals()?, "benchmark:setup");
+        if let NativeBackend::Ligerito(prepared) = &native.backend {
+            let identity = report::BiniusLigeritoIdentity::new(prepared)?;
+            eprintln!("LIGERITO_CONFIG {}", serde_json::to_string(&identity)?);
+        }
+        eprintln!("setup_ms={setup_ms:.3} {}", native.setup_line());
+        let mut csv = output::csv_writer(std::io::stdout().lock());
+        csv.write_record(NativeRow::header(&mode))?;
+        csv.flush()?;
+        for iteration in 0..=iterations {
+            let recording = Recording::start(Vec::new())?;
+            let start = tracing::info_span!("benchmark:proving").entered();
+            let witness_scope = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
                 .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
-            let witness =
-                native.populate(if mode == "all-binius" { &rows } else { &[] }, &blocks)?;
+            let witness = native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
+            // Native witness generation: row construction plus the circuit's
+            // own witness filling, before any proving work.
+            drop(witness_scope);
             let bytes = native.prove(&witness)?;
             let mul = if let Some(relation) = &separate {
                 let witness = U32MulWitness::from_mod32_rows(&rows)?;
@@ -360,18 +533,21 @@ pub fn run() -> Result<(), AnyError> {
             } else {
                 None
             };
-            let total_ms = millis(start);
+            drop(start);
             // The standalone u32 API has no enclosing wire codec. Its size
             // here is the exact F2Z wire section plus raw Spartan/nonces;
             // report this as a payload estimate rather than invent framing.
             let mut proof_bytes = bytes.len();
-            if let Some((_, proof)) = &mul {
+            if let Some((hint, proof)) = &mul {
                 let relation = separate.as_ref().expect("separate mode");
-                proof_bytes += proof.f2z().to_bytes().len()
+                proof_bytes += hint.commitment.root.len()
+                    + proof.f2z().to_bytes().len()
                     + proof.spartan_payload_elements() * 16
-                    + proof.grinding_nonce_count(relation.security()) * 8;
+                    + (proof.grinding_nonce_count(relation.security())
+                        - proof.f2z().grinding_nonces.len())
+                        * 8;
             }
-            let verify = Instant::now();
+            let verify = tracing::info_span!("benchmark:verification").entered();
             native.verify(&witness, bytes)?;
             if let Some((hint, proof)) = &mul {
                 verify_u32_mul(
@@ -381,11 +557,26 @@ pub fn run() -> Result<(), AnyError> {
                     proof,
                 )?;
             }
-            println!(
-                "{mode},{iteration},{setup_ms:.3},{total_ms:.3},{:.3},{proof_bytes},{}",
-                millis(verify),
-                peak_kib()
-            );
+            drop(verify);
+            let peak_rss_kib = peak_kib();
+            let intervals = recording.intervals()?;
+            let witness_ms = millis(&intervals, "benchmark:witness");
+            let total_ms = millis(&intervals, "benchmark:proving");
+            let verify_ms = millis(&intervals, "benchmark:verification");
+            if iteration == 0 {
+                continue;
+            }
+            csv.serialize(NativeRow {
+                mode: &mode,
+                iteration: iteration - 1,
+                setup_ms,
+                witness_ms,
+                total_prover_ms: total_ms,
+                verify_ms,
+                proof_bytes,
+                peak_rss_kib,
+            })?;
+            csv.flush()?;
         }
         if mode == "separate" {
             eprintln!(
@@ -394,4 +585,75 @@ pub fn run() -> Result<(), AnyError> {
         }
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{Args, BiniusConfig};
+    use clap::{CommandFactory, FromArgMatches, Parser, error::ErrorKind};
+
+    fn parse(args: &[&str]) -> Result<Args, clap::Error> {
+        let matches = Args::command().mut_args(|arg| arg.env(None::<&str>))
+            .try_get_matches_from(std::iter::once("hybrid").chain(args.iter().copied()))?;
+        Args::from_arg_matches(&matches)
+    }
+
+    #[test]
+    fn defaults_and_script_forms() {
+        Args::command().debug_assert();
+        BiniusConfig::command().debug_assert();
+        let defaults = parse(&[]).unwrap();
+        assert_eq!((defaults.mode.as_str(), defaults.iterations), ("hybrid", 5));
+        assert!(defaults.profile.is_none() && defaults.mul_log.is_none() && defaults.sha_log.is_none());
+        let sweep = parse(&["--sweep", "--mode", "all", "--shapes", "15:7,16:8",
+            "--iterations", "3", "--results-dir", "campaign", "--bench"]).unwrap();
+        assert!(sweep.sweep);
+        assert_eq!((sweep.mode.as_str(), sweep.iterations), ("all", 3));
+        assert_eq!(sweep.shapes.unwrap(), super::sweep::parse_shapes("15:7,16:8").unwrap());
+        assert_eq!(sweep.results_dir.as_deref(), Some(std::path::Path::new("campaign")));
+        assert_eq!(parse(&["--verify", "proof"]).unwrap().verify.as_deref(), Some("proof"));
+        let single = parse(&["--mul-log", "9", "--sha-log", "1", "--mul-log", "22",
+            "--sha-log", "16", "--iterations", "1", "--iterations", "2"]).unwrap();
+        assert_eq!((single.mul_log, single.sha_log, single.iterations), (Some(22), Some(16), 2));
+    }
+
+    #[test]
+    fn rejects_invalid_values_and_conflicting_options() {
+        for args in [
+            &["--iterations", "0"][..], &["--mul-log", "8"], &["--mul-log", "23"],
+            &["--sha-log", "0"], &["--sha-log", "17"], &["--mode", "unknown"],
+            &["--iterations"], &["--unknown"], &["--shapes", "15:7"], &["--mode", "all"],
+            &["--sweep", "--shapes", "8:7"], &["--sweep", "--shapes", "15:7,15:7"],
+            &["--results-dir", "campaign"], &["--output", "proof", "--verify", "proof"],
+            &["--sweep", "--mul-log", "15"], &["--sweep", "--sha-log", "7"],
+            &["--sweep", "--output", "proof"], &["--sweep", "--verify", "proof"],
+        ] {
+            assert!(parse(args).is_err(), "accepted {args:?}");
+        }
+        assert_eq!(parse(&["--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn profile_environment_probe() {
+        let Ok(mode) = std::env::var("F2Z_CLI_PROFILE_PROBE") else { return };
+        let argv = if mode == "override" { vec!["hybrid", "--profile", "custom:1:4"] }
+            else { vec!["hybrid"] };
+        let args = Args::try_parse_from(argv).unwrap();
+        println!("CLI_PROFILE {}", args.profile.as_deref().unwrap());
+    }
+
+    #[test]
+    fn profile_environment_fallback_and_cli_override() {
+        let test = concat!(module_path!(), "::profile_environment_probe");
+        let test = test.split_once("::").unwrap().1;
+        for (mode, expected) in [("fallback", "udrg:1:4"), ("override", "custom:1:4")] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test, "--nocapture"]).env_clear()
+                .env("F2Z_CLI_PROFILE_PROBE", mode).env("F2Z_LIG_PROFILE", "udrg:1:4")
+                .output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains(&format!("CLI_PROFILE {expected}")));
+        }
+    }
 }

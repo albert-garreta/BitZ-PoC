@@ -1,19 +1,19 @@
+//! Historical kernel experiment; no production security claim.
 //! Reference measurement for the F2Z ring-switch + Ligerito opener: prove /
 //! verify wall-clock and serialized proof size at a few `n = t + s` shapes.
 //!
 //! Run with:
 //! ```text
-//! RUSTFLAGS="-C target-cpu=native" cargo run --release --example reference_measure
+//! RUSTFLAGS="-C target-cpu=native" cargo run --release --features span-metrics --example reference_measure
 //! ```
 
-use std::time::Instant;
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, sha_lig_configs,
+    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
-use f2z::pcs::{IntEvalParams, mod_q_num_chunks, smallest_generator};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 
 /// `𝔽_q`, `q = 2^100 − 15`.
 const Q: u128 = (1u128 << 100) - 15;
@@ -57,11 +57,15 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let alpha = smallest_generator();
     let q_bits = 100usize;
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+        word_bits: w,
+    };
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
     // The library's audited config boundary (embedded FAST at m ≥ 22).
-    let (pc, vc) = sha_lig_configs(m_p).expect("lig cfg");
+    let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
 
     // Instance generated straight into the per-column bit rows — the
     // u128 cell tensor never exists (the memory-honest commit path).
@@ -123,15 +127,18 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let mut bytes = 0usize;
     for _ in 0..reps {
         let mut pt = f2z::transcript::Blake3Transcript::new();
-        let t0 = Instant::now();
-        let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
-        prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+        let (proof, t0) = f2z::observability::measure(
+            tracing::info_span!("reference_measure:proof"),
+            || prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc),
+        ).expect("measure completed operation");
+        prove_ms.push(t0.as_secs_f64() * 1e3);
 
         let ser = proof.to_bytes();
         bytes = ser.len();
 
         let mut vt = f2z::transcript::Blake3Transcript::new();
-        let t1 = Instant::now();
+        let t1_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t1 = tracing::info_span!("reference_measure:t1").entered();
         verify_mle_eval_mod_q_ligerito(
             &mut vt,
             &hint.commitment,
@@ -145,7 +152,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
             &vc,
         )
         .expect("verify");
-        verify_ms.push(t1.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t1); f2z::observability::duration(&t1_recording.intervals().expect("complete operation capture"), "reference_measure:t1").expect("query completed operation") }.as_secs_f64() * 1e3);
     }
 
     let n = t + s;
@@ -160,6 +167,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
 }
 
 fn main() {
+    f2z::observability::install().expect("install Perfetto subscriber");
     println!("F2Z ring-switch + Ligerito opener — reference measurement (median of 5)\n");
     measure(10, 6, 1, 5); // n=16 headline
     measure(12, 6, 1, 5); // n=18

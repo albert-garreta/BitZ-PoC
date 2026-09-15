@@ -53,6 +53,11 @@
 //! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
+pub mod binary_pcs;
+#[cfg(feature = "span-metrics")]
+pub mod observability;
+#[cfg(feature = "binius64-bench")]
+pub mod binius_ligerito;
 pub mod dual_basis;
 pub mod ext_proj;
 #[cfg(feature = "hybrid")]
@@ -116,7 +121,7 @@ pub use ligerito_flock::{
     TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
     verify_mle_eval_mod_q_ligerito_tap_collapse,
 };
-pub use pcs::IntEvalParams;
+pub use pcs::IntegerMatrixLayout;
 pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
 pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
 pub use poly::univariate::binary_b127::BinaryFieldB127;

@@ -27,7 +27,6 @@
 mod common;
 
 use std::hint::black_box;
-use std::time::Instant;
 
 use f2z::poly::univariate::binary_b127::BinaryFieldB127;
 use f2z::poly::univariate::binary_gf128::BinaryFieldGF128;
@@ -140,12 +139,14 @@ fn time_pair_ns_per_op<RG, RB>(
     let mut gs = Vec::with_capacity(reps);
     let mut bs = Vec::with_capacity(reps);
     for _ in 0..reps {
-        let t0 = Instant::now();
+        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0 = tracing::info_span!("field:t0").entered();
         black_box(g_body());
-        gs.push(t0.elapsed().as_secs_f64() * 1e9 / ops as f64);
-        let t1 = Instant::now();
+        gs.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "field:t0").expect("query completed operation") }.as_secs_f64() * 1e9 / ops as f64);
+        let t1_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t1 = tracing::info_span!("field:t1").entered();
         black_box(b_body());
-        bs.push(t1.elapsed().as_secs_f64() * 1e9 / ops as f64);
+        bs.push({ drop(t1); f2z::observability::duration(&t1_recording.intervals().expect("complete operation capture"), "field:t1").expect("query completed operation") }.as_secs_f64() * 1e9 / ops as f64);
     }
     (median(gs), median(bs))
 }
@@ -482,9 +483,10 @@ fn run_b127_pfold(reps: usize) {
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let reps = common::reps(None, 5);
     common::enforce_known_env();
-    let reps: usize =
-        std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+    f2z::observability::install().expect("install Perfetto subscriber");
 
     println!("F2Z field bench — GF(2^128) GHASH vs GF(2^127) b127, median of {reps} reps.");
     println!("(alternating reps per pattern: both fields share each thermal window)");

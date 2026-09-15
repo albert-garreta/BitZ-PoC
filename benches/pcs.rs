@@ -24,8 +24,8 @@
 //!   `F2Z_COL_ELIDE=0` to measure the same instance un-elided. The
 //!   printed `proof-fnv` is identical either way (byte-identity pin).
 //! - `F2Z_LIG_PROFILE`: Ligerito profile at `m = m_p + 7 ≥ 22` —
-//!   `custom:3:4` (DEFAULT; validator-gated Johnson geometry at base RS
-//!   rate 1/8, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
+//!   `custom:1:4` (DEFAULT; validator-gated Johnson geometry at base RS
+//!   rate 1/2, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
 //!   grinding at the same 100-bit target, the proof-size profile), `fast`
 //!   (base RS rate 1/2), `secure` (120-bit UDR), or any
 //!   `custom:<log_inv_rate>:<initial_k>[:<bits>]` — the optional `bits`
@@ -34,9 +34,9 @@
 //!   re-solved and flock-validator-gated), or
 //!   `udr:<log_inv_rate>:<initial_k>[:<bits>]` — queries-ONLY security
 //!   (UDR regime, zero grinding of either kind, zero OOD; ceiling ≈115
-//!   bits at n=22 / ≈109 at n=28 from the L0 UDR fold error). Below
-//!   m = 22 every profile falls back to the ad-hoc rate-1/4 config
-//!   (unaudited, test-only).
+//!   bits at n=22 / ≈109 at n=28 from the L0 UDR fold error).
+//!   `udrg:3:4` uses matched UDR with fold grinding. Unsupported shapes
+//!   are rejected; production requests never fall back to ad-hoc settings.
 //! - `F2Z_BENCH_EXT`: also run the extension-field arm against the same
 //!   commitment — `1`/`gl2` = Goldilocks² (e=2), `bb4` = BabyBear⁴
 //!   (X⁴ − 11, the Plonky3 challenge field; e=4), `kb5` = a KoalaBear
@@ -50,168 +50,59 @@
 //! medians, expect ±5–15 % run-to-run.
 
 mod common;
+use clap::builder::TypedValueParser;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
 
 use f2z::ext_proj::{ExtProjParams, ProjArith, sample_proj_point, sample_proj_prime};
-use f2z::ligerito::{LOG_PACKING, packed_vars};
+use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    LigConfig, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    commit_rs_ligerito_rows, lig_configs, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
+    OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
+    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_ood,
     verify_mle_eval_mod_q_ligerito_runtime,
 };
-use f2z::pcs::{IntEvalParams, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
-use f2z::ligerito_flock::{
-    custom_johnson_config, custom_johnson_config_bits, custom_udr_config_bits,
-    custom_udr_grind_config_bits,
-};
+use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use flock_core::pcs::ligerito::{
-    LigeritoProfile, LigeritoSecurityConfig, ProverConfig as LigPc, VerifierConfig as LigVc,
-    embedded_security_config,
+    ProverConfig as LigPc, VerifierConfig as LigVc,
 };
 
-/// The bench's Ligerito config source: the audited embedded profile chosen
-/// by `F2Z_LIG_PROFILE` at `m = m_p + 7 ≥ 22`, the ad-hoc rate-1/4 config
-/// below — the same boundary as `sha_lig_configs`, which this generalizes.
-/// The tag prints the PROFILE NAME only; the shape header appends the base
-/// RS rate read off the RESOLVED config (`pc.log_inv_rates[0]`), so the
-/// label tracks upstream profile regenerations (flock's slim moved from
-/// base rate 1/4 to the Johnson rate 1/8 mid-development) instead of lying.
-/// `custom:<log_inv_rate>:<initial_k>` builds a Johnson config at that
-/// geometry via [`custom_johnson_config`] (flock-validator-gated).
-fn bench_lig_configs(m_p: usize) -> ((LigPc, LigVc), String, Option<OodRoundParams>) {
-    // Round 0 (the paper's out-of-domain sample) at the config's own
-    // round-by-round target: executed in the Johnson regime, skipped at
-    // unique decoding. Ad-hoc configs carry no security claim (skipped).
-    let ood_of = |cfg: &LigeritoSecurityConfig| -> Option<OodRoundParams> {
-        u32::try_from(cfg.target_security_bits)
-            .ok()
-            .and_then(|target| ood_round_params(cfg, cfg.log_n, target))
+#[derive(clap::Parser)]
+struct Env {
+    // n=30/32 stay outside the default sweep for runtime, not memory.
+    // At n>=26, measure one shape per process for quotable timings.
+    #[arg(long, env = "F2Z_BENCH_SHAPES", default_value = "13:7:1 14:8:1 16:10:1 17:11:1 7:8:32", value_parser = parse_shapes)]
+    shapes: common::cli::List<(usize, usize, usize)>,
+    #[arg(long, env = "F2Z_BENCH_FILL", default_value_t = 1.0,
+        value_parser = str::parse::<f64>.try_map(|fill| {
+            if fill > 0.0 && fill <= 1.0 { Ok(fill) } else { Err("expected a fraction in (0, 1]") }
+        }))]
+    fill: f64,
+    #[arg(long, env = "F2Z_BENCH_EXT", value_parser = ["1", "gl2", "bb4", "kb5"])]
+    extension: Option<String>,
+    #[arg(long, env = "F2Z_LIG_PROFILE", default_value = "custom:1:4")]
+    ligerito: String,
+}
+
+fn parse_shapes(value: &str) -> Result<Vec<(usize, usize, usize)>, String> {
+    common::cli::list::<String>(value)?.into_iter().map(|shape| {
+        let parts = shape.split(':').map(str::parse::<usize>)
+            .collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+        let [t, s, w]: [usize; 3] = parts.try_into().map_err(|_| "expected t:s:W triple".to_owned())?;
+        Ok((t, s, w))
+    }).collect()
+}
+
+/// Resolve the explicitly requested Ligerito policy, or Johnson+OOD by default.
+fn bench_lig_configs(m_p: usize, request: &str) -> ((LigPc, LigVc), String, Option<OodRoundParams>, f2z::ligerito_flock::ResolvedLigerito) {
+    let target = if request == "secure" { 128 } else {
+        request.split(':').nth(3).map(|n| n.parse::<usize>().expect("invalid Ligerito target")).unwrap_or(100)
     };
-    let prof =
-        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "custom:3:4".to_string());
-    // Queries-only UDR geometry: udr:<log_inv_rate>:<initial_k>[:<bits>] —
-    // zero grinding (either kind), zero OOD; the target is paid entirely in
-    // queries. Ceiling = the L0 UDR fold error (≈115 bits at n=22, ≈109 at
-    // n=28); above it flock's validator rejects with the shortfall.
-    // UDR + fold-grinding: udrg:<log_inv_rate>:<initial_k>[:<bits>] — the
-    // pg shortfall is recovered by cheap per-fold PoW (9–16 bits at our
-    // shapes), so targets up to 128 validate; queries still pay the full
-    // target. `udrg:1:4:128` = the 128-bit configuration.
-    if let Some(rest) = prof.strip_prefix("udrg:") {
-        let mut it = rest.split(':');
-        let r0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udrg:<log_inv_rate>:<initial_k>[:<bits>]");
-        let k0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udrg:<log_inv_rate>:<initial_k>[:<bits>]");
-        let bits: Option<usize> =
-            it.next().map(|x| x.parse().expect("udrg:<log_inv_rate>:<initial_k>:<bits>"));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_udr_grind_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("udrg config pair");
-            let tag = match bits {
-                Some(b) => format!("udrg-k{k0}-{b}b"),
-                None => format!("udrg-k{k0}"),
-            };
-            return (pair, tag, ood_of(&cfg));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string(), None);
-    }
-    if let Some(rest) = prof.strip_prefix("udr:") {
-        let mut it = rest.split(':');
-        let r0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udr:<log_inv_rate>:<initial_k>[:<bits>]");
-        let k0: usize = it
-            .next()
-            .and_then(|x| x.parse().ok())
-            .expect("udr:<log_inv_rate>:<initial_k>[:<bits>]");
-        let bits: Option<usize> =
-            it.next().map(|x| x.parse().expect("udr:<log_inv_rate>:<initial_k>:<bits>"));
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_udr_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("udr config pair");
-            let tag = match bits {
-                Some(b) => format!("udr-k{k0}-{b}b"),
-                None => format!("udr-k{k0}"),
-            };
-            return (pair, tag, ood_of(&cfg));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string(), None);
-    }
-    if let Some(rest) = prof.strip_prefix("custom:") {
-        let mut it = rest.split(':');
-        let r0: usize =
-            it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
-        let k0: usize =
-            it.next().and_then(|x| x.parse().ok()).expect("custom:<log_inv_rate>:<initial_k>");
-        // Optional round-by-round security target: custom:<r>:<k>:<bits>
-        // (e.g. custom:3:4:128). Absent → the slim template's 100.
-        let bits: Option<usize> =
-            it.next().map(|x| x.parse().expect("custom:<log_inv_rate>:<initial_k>:<bits>"));
-        // `custom_johnson_config` needs an embedded template (m = 22..=35);
-        // below that, fall back to the ad-hoc config — the same boundary as
-        // `sha_lig_configs`, so a `custom:*` sweep mirrors the library default.
-        if m_p + LOG_PACKING >= 22 {
-            let cfg = custom_johnson_config_bits(m_p + LOG_PACKING, r0, k0, bits);
-            let pair = cfg.to_prover_verifier_configs().expect("custom config pair");
-            let tag = match bits {
-                Some(b) => format!("custom-k{k0}-{b}b"),
-                None => format!("custom-k{k0}"),
-            };
-            return (pair, tag, ood_of(&cfg));
-        }
-        let pair = lig_configs(m_p, LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 })
-            .expect("adhoc cfg");
-        return (pair, "adhoc".to_string(), None);
-    }
-    let (lig_cfg, tag): (LigConfig, &str) = if prof == "r8" {
-        // Base RS rate 1/8 via the ad-hoc UDR generator, at the embedded
-        // profiles' interleaving (initial_k = 6). UNAUDITED perf probe (UDR
-        // query counts, no grinding/OOD; ~121 L0 queries vs the Johnson
-        // analysis' 60 at the same rate).
-        (LigConfig::Adhoc { log_batch: 6, log_inv_rate: 3 }, "adhoc-udr")
-    } else if m_p + LOG_PACKING >= 22 {
-        match prof.as_str() {
-            "fast" => (LigConfig::Embedded(LigeritoProfile::Fast), "fast"),
-            "slim3" => (
-                LigConfig::CustomJohnson {
-                    log_inv_rate: 3,
-                    initial_k: 4,
-                },
-                "slim3",
-            ),
-            "secure" => (LigConfig::Embedded(LigeritoProfile::Secure), "secure"),
-            // unrecognized → slim (unset never lands here: the env default
-            // is "custom:3:4", handled by the custom branch above)
-            _ => (LigConfig::Embedded(LigeritoProfile::Slim), "slim"),
-        }
-    } else {
-        (LigConfig::Adhoc { log_batch: 2, log_inv_rate: 2 }, "adhoc")
-    };
-    let m = m_p + LOG_PACKING;
-    let ood = match lig_cfg {
-        LigConfig::Embedded(profile) => embedded_security_config(m, profile)
-            .and_then(|toml| LigeritoSecurityConfig::from_toml_str(toml).ok())
-            .and_then(|cfg| ood_of(&cfg)),
-        LigConfig::CustomJohnson { log_inv_rate, initial_k } => {
-            ood_of(&custom_johnson_config(m, log_inv_rate, initial_k))
-        }
-        LigConfig::Adhoc { .. } => None,
-    };
-    (lig_configs(m_p, lig_cfg).expect("lig cfg"), tag.to_string(), ood)
+    let resolved = f2z::ligerito_flock::LigeritoSelection::parse(request, target)
+        .and_then(|selection| selection.resolve(m_p, target)).expect("unsupported Ligerito configuration");
+    let ood = resolved.round0(target as u32).expect("Round-0 security preflight");
+    ((resolved.prover().clone(), resolved.verifier().clone()), resolved.selection().name(), ood, resolved)
 }
 
 // Peak-heap tracker (wraps System): high-water mark of currently outstanding
@@ -262,7 +153,7 @@ fn live_mb() -> f64 {
 /// `b = min(113, 127 − t − W)` — the paper's Strategy-1 field policy capped
 /// by the one-chunk exponent-fold width (the same rule as the Spartan
 /// security profile's derived interval); the evaluation point follows.
-fn standalone_q_bits(p: &IntEvalParams) -> usize {
+fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
     mod_q_chunk_width(p).min(113)
 }
 
@@ -275,15 +166,19 @@ struct StandaloneInstance {
 
 fn sample_standalone_instance(
     transcript: &mut f2z::transcript::Blake3Transcript,
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> StandaloneInstance {
-    let _g = f2z::utils::prof::scope("mq:sample_instance");
+    let _g = tracing::info_span!("mq:sample_instance").entered();
     let proj = ExtProjParams { prime_bits: q_bits, ..ExtProjParams::default() };
     let q = sample_proj_prime(transcript, &proj);
     let arith = ProjArith::new(q);
-    let r1: Vec<u128> = (0..p.t).map(|_| sample_proj_point(transcript, q)).collect();
-    let r2: Vec<u128> = (0..p.s).map(|_| sample_proj_point(transcript, q)).collect();
+    let r1: Vec<u128> = (0..p.row_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
+    let r2: Vec<u128> = (0..p.col_vars)
+        .map(|_| sample_proj_point(transcript, q))
+        .collect();
     StandaloneInstance {
         q,
         row_weights_q: eq_table_mod_q(&arith, &r1),
@@ -313,27 +208,29 @@ fn median(mut v: Vec<f64>) -> f64 {
     v[v.len() / 2]
 }
 
-fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
+fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     let alpha = smallest_generator();
-    let p = IntEvalParams { t, s, word_bits: w };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+        word_bits: w,
+    };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    // The library's boundary, generalized by F2Z_LIG_PROFILE: the embedded
-    // profiles / validator-gated custom Johnson geometries at
-    // m = m_p + 7 ≥ 22, ad-hoc only below. Hardcoding the tiny ad-hoc
-    // config at big shapes is catastrophic (n=28 commit measured 292 s
-    // ad-hoc vs the embedded profile's sub-second).
-    let setup_started = Instant::now();
-    let ((pc, vc), lig_tag, ood) = bench_lig_configs(m_p);
-    let setup_ms = setup_started.elapsed().as_secs_f64() * 1e3;
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("pcs:setup_started").entered();
+    let ((pc, vc), lig_tag, ood, resolved) = bench_lig_configs(m_p, &env.ligerito);
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(&resolved, ood));
+    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "pcs:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
     // Deterministic non-degenerate instance, generated STRAIGHT INTO the
     // per-column bit rows (`repack_leaf_bits` layout: bit `(b<<log₂W)|j`
     // of row `c` = bit `j` of cell `(b,c)`) — the `u128` cell tensor
     // (16 B per cell; 17 GB at n=30) never exists, mirroring the
     // upstream packed-transpose commit restructure.
-    let witness_started = Instant::now();
+    let witness_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let witness_started = tracing::info_span!("pcs:witness_started").entered();
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
     let cell = |b: usize, c: usize| -> u128 {
         (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
@@ -345,11 +242,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // padding of a witness with N = fill·2^n cells (the column axis is
     // the high-order index, so a zero-padded witness ends in whole zero
     // columns). `y` below is derived from SET BITS, so it stays correct.
-    let fill: f64 = std::env::var("F2Z_BENCH_FILL")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1.0);
-    assert!(fill > 0.0 && fill <= 1.0, "F2Z_BENCH_FILL must be in (0, 1]");
+    let fill = env.fill;
     let live = (((p.cols() as f64) * fill).ceil() as usize).clamp(1, p.cols());
     let rows: Vec<Vec<u64>> = (0..p.cols())
         .map(|c| {
@@ -369,7 +262,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             wv
         })
         .collect();
-    let witness_ms = witness_started.elapsed().as_secs_f64() * 1e3;
+    let witness_ms = { drop(witness_started); f2z::observability::duration(&witness_started_recording.intervals().expect("complete operation capture"), "pcs:witness_started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
     let n = t + s;
     println!(
@@ -383,9 +276,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
 
     // Commit: timed + its own peak window (the commitment/hint stays live).
     reset_peak();
-    let t0 = Instant::now();
-    let hint = commit_rs_ligerito_rows(&p, rows, &pc);
-    let commit_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let (hint, t0) = f2z::observability::measure(
+        tracing::info_span!("pcs:hint"),
+        || commit_rs_ligerito_rows(&p, rows, &pc),
+    ).expect("measure completed operation");
+    let commit_ms = t0.as_secs_f64() * 1e3;
     println!(
         "  commit:  {commit_ms:8.2} ms   peak {:8.2} MB   live-after {:6.2} MB",
         peak_mb(),
@@ -398,6 +293,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let instance = {
         let mut st = f2z::transcript::Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        resolved.bind(&mut st);
+        let _ = f2z::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
         sample_standalone_instance(&mut st, &p, q_bits)
     };
     let q = instance.q;
@@ -434,6 +331,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let prove_once = |hint: &f2z::ligerito_flock::FlockCommitHint| {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        resolved.bind(&mut pt);
+        let bound_ood = f2z::ligerito_flock::bind_prover_ood(&mut pt, hint, ood);
         let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
         assert_eq!(sampled.q, q, "the transcript-sampled prime must be reproducible");
         absorb_standalone_mod_q_claim(&mut pt, q, y);
@@ -444,13 +343,15 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             &sampled.row_weights_q,
             q_bits,
             alpha,
-            ood,
+            bound_ood,
             &pc,
         )
     };
     let verify_once = |proof: &f2z::ligerito_flock::IntEvalRsLigModQProof| {
         let mut vt = f2z::transcript::Blake3Transcript::new();
         absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
+        resolved.bind(&mut vt);
+        let bound_ood = f2z::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref()).expect("Round 0");
         let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
         absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
         verify_mle_eval_mod_q_ligerito_runtime(
@@ -464,7 +365,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             y,
             sampled.q,
             q_bits,
-            ood,
+            bound_ood,
             &vc,
         )
     };
@@ -483,13 +384,17 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let mut bytes = 0usize;
     let mut proof_fnv = 0u64;
     for _ in 0..reps {
-        let t0 = Instant::now();
-        let proof = prove_once(&hint);
-        prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+        let (proof, t0) = f2z::observability::measure(
+            tracing::info_span!("pcs:proof"),
+            || prove_once(&hint),
+        ).expect("measure completed operation");
+        prove_ms.push(t0.as_secs_f64() * 1e3);
 
-        let t1 = Instant::now();
-        let ser = proof.to_bytes();
-        ser_us.push(t1.elapsed().as_secs_f64() * 1e6);
+        let (ser, t1) = f2z::observability::measure(
+            tracing::info_span!("pcs:ser"),
+            || proof.to_bytes(),
+        ).expect("measure completed operation");
+        ser_us.push(t1.as_secs_f64() * 1e6);
         bytes = ser.len();
         // FNV-1a over the serialized proof: the byte-identity pin for
         // `F2Z_COL_ELIDE=0` vs `=1` at the same shape and fill.
@@ -497,35 +402,37 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
             (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
         });
 
-        let t2 = Instant::now();
-        let de = f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&ser).expect("codec");
-        de_us.push(t2.elapsed().as_secs_f64() * 1e6);
+        let (de, t2) = f2z::observability::measure(
+            tracing::info_span!("pcs:de"),
+            || f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&ser).expect("codec"),
+        ).expect("measure completed operation");
+        de_us.push(t2.as_secs_f64() * 1e6);
         black_box(&de);
 
-        let t3 = Instant::now();
+        let t3_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t3 = tracing::info_span!("pcs:t3").entered();
         verify_once(&proof).expect("verify");
-        verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t3); f2z::observability::duration(&t3_recording.intervals().expect("complete operation capture"), "pcs:t3").expect("query completed operation") }.as_secs_f64() * 1e3);
     }
 
     // Peak + phase split over one prove (heap high-water; the commit hint
-    // is live below it). Phase times ride the in-crate prof scaffold and
-    // appear only under `OBLONG_PROFILE=1` (the timed medians above then
-    // carry ~µs-scale scope overhead — enable it for breakdown runs, not
-    // for headline timing); the proof-size split is always available.
+    // is live below it). Phase times come from completed Perfetto intervals;
+    // trace extraction and querying happen after the heap snapshot.
     // Release flock's cross-prove scratch pool first: the reported prove
     // peak is the production single-prove shape (pool cold), not the
     // reps-warmed pool stacked under the forest. The timed medians above
     // deliberately keep the warm pool — that IS the steady-state timing.
     f2z::ligerito_flock::flock_scratch_clear();
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS phase probe");
     reset_peak();
-    let _ = f2z::utils::prof::take_totals(); // drain the timed reps' records
+
     let split_proof = {
         let proof = prove_once(&hint);
         black_box(&proof);
         proof
     };
     let prove_peak = peak_mb();
-    let phases = f2z::utils::prof::take_totals();
+    let phases = f2z::observability::totals(&recording.intervals().expect("query PCS phase probe"));
 
     let prove_median = median(prove_ms);
     let verify_median = median(verify_ms);
@@ -533,7 +440,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     let mut forest_split = None;
     if !phases.is_empty() {
         let phase_ms = |labels: &[&str]| -> f64 {
-            phases.iter().filter(|(l, _)| labels.contains(l)).map(|(_, s)| s).sum::<f64>() * 1e3
+            phases.iter().filter(|(l, _)| labels.contains(&l.as_str())).map(|(_, s)| s).sum::<f64>() * 1e3
         };
         let forest_ms = phase_ms(&[
             "mc:pack",
@@ -573,7 +480,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // Unified RESULT line (docs/bench-schema.md). PCS-only: the whole
     // measured prove is Steps 5.1–5.3, so steps 2/3/4/5.0 are `na` and the
     // end-to-end prover is commit + open. The forest/opener detail is
-    // populated only under OBLONG_PROFILE=1 (one profiled prove).
+    // populated from one profiled prove.
     let na = common::StepMedians {
         total: 0.0,
         commit: None,
@@ -593,6 +500,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
         bench: "pcs",
         shape: format!("{t}:{s}:{w}"),
         extra: vec![
+            common::ligerito_identity(&resolved, ood),
             ("n".into(), n.to_string()),
             ("chunks".into(), lch.to_string()),
             ("lig".into(), lig_tag.clone()),
@@ -629,12 +537,12 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize) {
     // extension surcharge in the same process/thermal window.
     // `1`/`gl2` = Goldilocks² (e=2, q_bits=64); `bb4` = BabyBear⁴
     // (X⁴ = 11, the Plonky3 challenge field; e=4, q_bits=31). ──
-    match std::env::var("F2Z_BENCH_EXT").as_deref() {
-        Ok("1") | Ok("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, ood, &pc, &vc),
-        Ok("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, ood, &pc, &vc),
-        Ok("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, ood, &pc, &vc),
-        Ok(other) => panic!("F2Z_BENCH_EXT: unknown arm {other:?} (use 1|gl2|bb4|kb5)"),
-        Err(_) => {}
+    match env.extension.as_deref() {
+        Some("1") | Some("gl2") => bench_ext_arm::<Fp2>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Some("bb4") => bench_ext_arm::<BbFp4>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Some("kb5") => bench_ext_arm::<KbFp5>(&p, &hint, alpha, reps, ood, &pc, &vc),
+        Some(_) => unreachable!("clap validates the extension"),
+        None => {}
     }
 }
 
@@ -804,7 +712,7 @@ impl BenchExtField for KbFp5 {
 /// the base arm: prove/verify medians, ext phase scopes on one profiled
 /// prove AND one profiled verify, proof size + codec times.
 fn bench_ext_arm<K: BenchExtField>(
-    p: &IntEvalParams,
+    p: &IntegerMatrixLayout,
     hint: &f2z::ligerito_flock::FlockCommitHint,
     alpha: f2z::BinaryFieldGF128,
     reps: usize,
@@ -890,24 +798,30 @@ fn bench_ext_arm<K: BenchExtField>(
     let mut bytes = 0usize;
     for _ in 0..reps {
         let mut pt = f2z::transcript::Blake3Transcript::new();
-        let t0 = Instant::now();
-        let proof =
-            prove_mle_eval_ext_ligerito_with_ood(
+        let (proof, t0) = f2z::observability::measure(
+            tracing::info_span!("pcs:proof"),
+            || prove_mle_eval_ext_ligerito_with_ood(
                 &mut pt, hint, p, &coords, q_bits, &proj, alpha, ood, pc,
-            );
-        prove_ms.push(t0.elapsed().as_secs_f64() * 1e3);
+            ),
+        ).expect("measure completed operation");
+        prove_ms.push(t0.as_secs_f64() * 1e3);
 
-        let t1 = Instant::now();
-        let ser = proof.to_bytes();
-        ser_us.push(t1.elapsed().as_secs_f64() * 1e6);
+        let (ser, t1) = f2z::observability::measure(
+            tracing::info_span!("pcs:ser"),
+            || proof.to_bytes(),
+        ).expect("measure completed operation");
+        ser_us.push(t1.as_secs_f64() * 1e6);
         bytes = ser.len();
-        let t2 = Instant::now();
-        let de = f2z::ligerito_flock::IntEvalRsLigExtProof::from_bytes(&ser).expect("codec");
-        de_us.push(t2.elapsed().as_secs_f64() * 1e6);
+        let (de, t2) = f2z::observability::measure(
+            tracing::info_span!("pcs:de"),
+            || f2z::ligerito_flock::IntEvalRsLigExtProof::from_bytes(&ser).expect("codec"),
+        ).expect("measure completed operation");
+        de_us.push(t2.as_secs_f64() * 1e6);
         black_box(&de);
 
         let mut vt = f2z::transcript::Blake3Transcript::new();
-        let t3 = Instant::now();
+        let t3_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t3 = tracing::info_span!("pcs:t3").entered();
         verify_mle_eval_ext_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
@@ -924,12 +838,12 @@ fn bench_ext_arm<K: BenchExtField>(
             vc,
         )
         .expect("ext verify");
-        verify_ms.push(t3.elapsed().as_secs_f64() * 1e3);
+        verify_ms.push({ drop(t3); f2z::observability::duration(&t3_recording.intervals().expect("complete operation capture"), "pcs:t3").expect("query completed operation") }.as_secs_f64() * 1e3);
     }
 
-    // Ext phase scopes over one profiled prove + one profiled verify
-    // (OBLONG_PROFILE=1 to populate).
-    let _ = f2z::utils::prof::take_totals();
+    // Ext phase scopes over one profiled prove + one profiled verify.
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start ext phase probe");
+
     let proof = {
         let mut pt = f2z::transcript::Blake3Transcript::new();
         let proof =
@@ -939,7 +853,8 @@ fn bench_ext_arm<K: BenchExtField>(
         black_box(&proof);
         proof
     };
-    let prove_phases = f2z::utils::prof::take_totals();
+    let prove_phases = f2z::observability::totals(&recording.intervals().expect("query ext prove probe"));
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start ext verify probe");
     {
         let mut vt = f2z::transcript::Blake3Transcript::new();
         verify_mle_eval_ext_ligerito_with_ood(
@@ -959,8 +874,8 @@ fn bench_ext_arm<K: BenchExtField>(
         )
         .expect("ext verify (profiled)");
     }
-    let verify_phases = f2z::utils::prof::take_totals();
-    let pick = |phases: &[(&'static str, f64)], label: &str| -> f64 {
+    let verify_phases = f2z::observability::totals(&recording.intervals().expect("query ext verify probe"));
+    let pick = |phases: &[(String, f64)], label: &str| -> f64 {
         phases.iter().filter(|(l, _)| *l == label).map(|(_, s)| s).sum::<f64>() * 1e3
     };
 
@@ -992,6 +907,10 @@ fn bench_ext_arm<K: BenchExtField>(
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let env: Env = common::cli::environment();
+    let reps = common::reps(None, 5);
+    f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     if std::env::var_os("F2Z_BENCH_LAMBDA").is_some() {
         common::warn(
@@ -1003,43 +922,7 @@ fn main() {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON GF(2^128) pipeline is active)");
 
-    let reps: usize = std::env::var("F2Z_BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
-    // Default sweep: the reference W=1 shapes (t ≈ 0.6n, s small — the
-    // proof-size-friendly split) + the 2-chunk W=32 regime, through
-    // n = 28. The instance is generated straight into bit rows and
-    // committed via `commit_rs_ligerito_rows` — no u128 cell tensor —
-    // so peaks are the packed/forest scale (measured, M4: n=26 prove
-    // peak 330 MB · n=28 1.28 GB · n=30 4.99 GB). n = 30/32 stay OUT
-    // of the default sweep for time, not memory (n=30 proves ~15 s on
-    // a 16 GB box, memory-pressure-shaded); run them per process:
-    //   F2Z_BENCH_SHAPES="18:12:1"                        # n = 30, ~5 GB
-    //   F2_FOREST_SCHEDULE=l8 F2Z_BENCH_SHAPES="19:13:1"  # n = 32, ~12 GB class
-    // At n ≥ 26 run one shape per process for quotable numbers.
-    let default_shapes: Vec<(usize, usize, usize)> = vec![
-        (10, 6, 1),
-        (12, 6, 1),
-        (13, 7, 1),
-        (14, 8, 1),
-        (16, 10, 1), // n = 26
-        (17, 11, 1), // n = 28
-        (4, 8, 32),
-    ];
-    let shapes: Vec<(usize, usize, usize)> = match std::env::var("F2Z_BENCH_SHAPES") {
-        Ok(v) => v
-            .split([',', ' '])
-            .filter(|x| !x.is_empty())
-            .map(|trip| {
-                let ps: Vec<usize> = trip
-                    .split(':')
-                    .map(|x| x.parse().expect("F2Z_BENCH_SHAPES: t:s:W triples"))
-                    .collect();
-                assert_eq!(ps.len(), 3, "F2Z_BENCH_SHAPES: t:s:W triples");
-                (ps[0], ps[1], ps[2])
-            })
-            .collect(),
-        Err(_) => default_shapes,
-    };
-    for &(t, s, w) in &shapes {
-        bench_shape(t, s, w, reps);
+    for &(t, s, w) in &env.shapes {
+        bench_shape(t, s, w, reps, &env);
     }
 }

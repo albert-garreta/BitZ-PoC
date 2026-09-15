@@ -13,14 +13,14 @@
 //! ```
 
 mod common;
+use clap::builder::TypedValueParser;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
 
 use f2z::piop::spartan::{
-    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CmAndWitness, SpartanF2zField, commit_cm_and_witness,
+    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CmAndWitness, SpartanF2zField,
     prepare_cm_and_relation, project_cm_and_witness, prove_cm_and_f2z, spartan_f2z_field_config,
     verify_cm_and_f2z,
 };
@@ -82,33 +82,22 @@ fn median(mut samples: Vec<f64>) -> f64 {
     samples[samples.len() / 2]
 }
 
-fn phase_ms(phases: &[(&'static str, f64)], label: &str) -> Option<f64> {
+fn phase_ms(phases: &[(String, f64)], label: &str) -> Option<f64> {
     phases
         .iter()
         .find(|(phase, _)| *phase == label)
         .map(|(_, seconds)| seconds * 1e3)
 }
 
-fn env_usize(name: &str, default: usize) -> usize {
-    std::env::var(name)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(default)
-}
-
-fn exponents() -> Vec<usize> {
-    match std::env::var("F2Z_CM_EXPONENTS") {
-        Ok(value) => value
-            .split([',', ' '])
-            .filter(|part| !part.is_empty())
-            .map(|part| {
-                let exponent: usize = part.parse().expect("F2Z_CM_EXPONENTS contains integers");
-                assert!(exponent >= 15, "the combined proof requires at least 2^15 gate slots");
-                exponent
-            })
-            .collect(),
-        Err(_) => vec![15, 16],
-    }
+#[derive(clap::Parser)]
+struct Env {
+    #[arg(long, env = "F2Z_CM_EXPONENTS", default_value = "15 16",
+        value_parser = common::cli::list::<usize>.try_map(|values| {
+            if values.iter().all(|&n| n >= 15) { Ok(values) } else { Err("expected exponents >=15") }
+        }))]
+    exponents: common::cli::List<usize>,
+    #[arg(long, env = "F2Z_CM_SEED", default_value_t = 0x0043_4d5f_414e_4400)]
+    seed: u64,
 }
 
 fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
@@ -117,24 +106,33 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let mut rng = StdRng::seed_from_u64(shape_seed);
     let field_config = spartan_f2z_field_config();
 
-    let started = Instant::now();
-    let witness =
-        CmAndWitness::from_fn(gates, |_| (rng.random::<u32>(), rng.random::<u32>())).unwrap();
-    let witness_ms = started.elapsed().as_secs_f64() * 1e3;
+    let (witness, started) = f2z::observability::measure(
+        tracing::info_span!("cm_and:witness"),
+        || CmAndWitness::from_fn(gates, |_| (rng.random::<u32>(), rng.random::<u32>())).unwrap(),
+    ).expect("measure completed operation");
+    let witness_ms = started.as_secs_f64() * 1e3;
     let layout = *witness.layout();
 
-    let started = Instant::now();
-    let relation = prepare_cm_and_relation::<SpartanF2zField>(layout, &field_config)
+    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("cm_and:started").entered();
+    let relation = prepare_cm_and_relation(layout, &field_config)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
         .expect("valid CM-AND relation");
-    let relation_ms = started.elapsed().as_secs_f64() * 1e3;
+    let resolved = relation.ligerito_configuration().unwrap();
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(resolved, resolved.round0(100).unwrap()));
+    let relation_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_and:started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
-    let started = Instant::now();
-    let bit_rows = witness.f_bit_rows();
-    let bit_rows_ms = started.elapsed().as_secs_f64() * 1e3;
+    let (bit_rows, started) = f2z::observability::measure(
+        tracing::info_span!("cm_and:bit_rows"),
+        || witness.f_bit_rows(),
+    ).expect("measure completed operation");
+    let bit_rows_ms = started.as_secs_f64() * 1e3;
 
-    let started = Instant::now();
-    let hint = commit_cm_and_witness(&layout, bit_rows).expect("F2Z commitment succeeds");
-    let commit_ms = started.elapsed().as_secs_f64() * 1e3;
+    let (hint, started) = f2z::observability::measure(
+        tracing::info_span!("cm_and:hint"),
+        || f2z::piop::spartan::cm::commit_cm_and_witness_with_config(&layout, bit_rows, relation.ligerito_configuration().unwrap().prover()).expect("F2Z commitment succeeds"),
+    ).expect("measure completed operation");
+    let commit_ms = started.as_secs_f64() * 1e3;
 
     // Excluded warm-up; also the first end-to-end correctness check.
     let warm = project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).unwrap();
@@ -143,7 +141,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let mut vt = Blake3Transcript::new();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &warm_proof).expect("warm-up verify");
     drop(warm_proof);
-    let _ = f2z::utils::prof::take_totals();
+
 
     let mut prove_ms = Vec::with_capacity(reps);
     let mut verify_ms = Vec::with_capacity(reps);
@@ -153,10 +151,13 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     for _ in 0..reps {
         let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).unwrap();
         let mut pt = Blake3Transcript::new();
-        let started = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CM prover");
+        let proving = tracing::info_span!("benchmark:proving").entered();
         let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).expect("prove");
-        prove_ms.push(started.elapsed().as_secs_f64() * 1e3);
-        let phases = f2z::utils::prof::take_totals();
+        drop(proving);
+        let intervals = recording.intervals().expect("query CM prover");
+        prove_ms.push(common::span_ms(&intervals, "benchmark:proving"));
+        let phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
         if let (Some(a), Some(b), Some(c)) = (
             phase_ms(&phases, "cm-f2z:spartan_prove"),
             phase_ms(&phases, "cm-f2z:bitify_prover"),
@@ -166,10 +167,13 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
         }
 
         let mut vt = Blake3Transcript::new();
-        let started = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CM verifier");
+        let verification = tracing::info_span!("benchmark:verification").entered();
         verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).expect("verify");
-        verify_ms.push(started.elapsed().as_secs_f64() * 1e3);
-        let phases = f2z::utils::prof::take_totals();
+        drop(verification);
+        let intervals = recording.intervals().expect("query CM verifier");
+        verify_ms.push(common::span_ms(&intervals, "benchmark:verification"));
+        let phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
         if let (Some(a), Some(b), Some(c)) = (
             phase_ms(&phases, "cm-f2z:spartan_verify"),
             phase_ms(&phases, "cm-f2z:bitify_verifier"),
@@ -183,15 +187,16 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 
     let last_proof = last_proof.expect("at least one repetition");
     let f2z_bytes = last_proof.f2z().to_bytes().len();
-    let spartan_elements = 4 * last_proof.spartan().outer.sumcheck.round_polynomials.len()
+    let spartan = last_proof.spartan().plain().expect("CM-AND runs the plain kernel");
+    let spartan_elements = 4 * spartan.outer.sumcheck.round_polynomials.len()
         + 3
-        + 3 * last_proof.spartan().inner.round_polynomials.len();
+        + 3 * spartan.inner.round_polynomials.len();
     drop(last_proof);
 
     // One extra proof for the peak-heap measurement.
     let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).unwrap();
     drop(witness);
-    let _ = f2z::utils::prof::take_totals();
+
     let live_before = live_mib();
     reset_peak();
     let mut pt = Blake3Transcript::new();
@@ -200,7 +205,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let peak = peak_mib();
     let mut vt = Blake3Transcript::new();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &peak_proof).expect("peak verify");
-    let _ = f2z::utils::prof::take_totals();
+
 
     let prove_median = median(prove_ms);
     let verify_median = median(verify_ms);
@@ -272,21 +277,21 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
 }
 
 fn main() {
+    common::cli::EnvironmentCli::parse();
+    let Env { exponents, seed } = common::cli::environment();
+    let reps = common::reps(None, 5);
+
+
+    f2z::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
-    let reps = env_usize("F2Z_BENCH_REPS", 5);
-    assert!(reps > 0, "F2Z_BENCH_REPS must be positive");
-    let seed = std::env::var("F2Z_CM_SEED")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(0x0043_4d5f_414e_4400);
 
     println!("CM-AND: Spartan (A=B=0) + virtual F2Z opening (w = x XOR y derived, not committed)");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {}", rayon::current_num_threads());
     println!("repetitions: {reps}; root seed: {seed:#018x}");
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         bench_exponent(exponent, reps, seed);
     }

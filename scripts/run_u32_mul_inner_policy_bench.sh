@@ -10,7 +10,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 EXPONENTS="${F2Z_BENCH_SHAPES:-15 16 17 18 19 20 21 22 23}"
 REPETITIONS="${F2Z_BENCH_REPS:-5}"
-FEATURES="${F2Z_BENCH_FEATURES:-unchecked,bench-internals}"
+FEATURES="${F2Z_BENCH_FEATURES:-unchecked,bench-internals},span-metrics"
 THREADS="${RAYON_NUM_THREADS:-10}"
 ROOT_SEED="${F2Z_BENCH_SEED:-0x5533326d756c0064}"
 # This runner-only knob must not leak into the benchmark binary.

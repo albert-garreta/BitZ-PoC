@@ -10,15 +10,20 @@
 //! ```
 //!
 //! The nonce is absorbed into the transcript as canonical little-endian bytes
-//! before the next Fiat--Shamir challenge is drawn.  The parallel prover scans
-//! fixed, ordered waves and returns the minimum hit in the first successful
-//! wave, so enabling `parallel` does not change the proof or transcript.
+//! before the next Fiat--Shamir challenge is drawn.  The prover scans nonces
+//! with the eight-lane NEON BLAKE3 kernel of [`crate::utils::blake3x4`]; the
+//! parallel search returns the smallest hit of the whole scanned prefix of
+//! the nonce space, so enabling `parallel` does not change the proof or
+//! transcript.
 
 use core::marker::PhantomData;
 
 use thiserror::Error;
 
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcript};
+#[cfg(feature = "parallel")]
+use crate::utils::blake3x4::smallest_pow_nonce;
+use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 
 /// Transcript frame for every Spartan grinding boundary.
 const GRINDING_TRANSCRIPT_DOMAIN: &[u8] = b"f2z/spartan/fiat-shamir-grinding/v1";
@@ -131,12 +136,57 @@ where
     D: GrindingDomain,
     T: Transcript,
 {
-    validate_boundary::<D>(bits)?;
+    derive_grinding_seed_in_domain(transcript, D::DOMAIN, round.index, bits)
+}
+
+/// [`derive_grinding_seed`] for a domain chosen at runtime: the same bytes
+/// as the typed boundary with `D::DOMAIN == domain`.
+pub fn derive_grinding_seed_in_domain<T: Transcript>(
+    transcript: &mut T,
+    domain: &[u8],
+    index: u64,
+    bits: u32,
+) -> Result<GrindingSeed, GrindingError> {
+    validate_difficulty(bits)?;
+    if domain.is_empty() {
+        return Err(GrindingError::EmptyDomain);
+    }
     transcript.absorb_slice(GRINDING_TRANSCRIPT_DOMAIN);
-    transcript.absorb_slice(D::DOMAIN);
-    transcript.absorb_slice(&round.index.to_le_bytes());
+    transcript.absorb_slice(domain);
+    transcript.absorb_slice(&index.to_le_bytes());
     transcript.absorb_slice(&bits.to_le_bytes());
     Ok(transcript.get_challenge())
+}
+
+/// [`grind_and_absorb`] for a domain chosen at runtime.
+pub fn grind_and_absorb_in_domain<T: Transcript>(
+    transcript: &mut T,
+    domain: &[u8],
+    index: u64,
+    bits: u32,
+) -> Result<u64, GrindingError> {
+    let seed = derive_grinding_seed_in_domain(transcript, domain, index, bits)?;
+    let nonce = find_grinding_nonce(&seed, bits)?;
+    absorb_grinding_nonce(transcript, nonce);
+    Ok(nonce)
+}
+
+/// [`verify_and_absorb`] for a domain chosen at runtime.
+pub fn verify_and_absorb_in_domain<T: Transcript>(
+    transcript: &mut T,
+    domain: &[u8],
+    index: u64,
+    bits: u32,
+    nonce: u64,
+) -> Result<(), GrindingError> {
+    let seed = derive_grinding_seed_in_domain(transcript, domain, index, bits)?;
+    let valid = grinding_nonce_is_valid_unchecked(&seed, nonce, bits);
+    absorb_grinding_nonce(transcript, nonce);
+    if valid {
+        Ok(())
+    } else {
+        Err(GrindingError::InvalidNonce { nonce, bits })
+    }
 }
 
 /// Finds the smallest valid nonce and absorbs its canonical encoding.
@@ -191,8 +241,8 @@ pub fn find_grinding_nonce(seed: &GrindingSeed, bits: u32) -> Result<u64, Grindi
 
     #[cfg(feature = "parallel")]
     {
-        // Below this point rayon's fork/join cost exceeds the expected search.
-        const PARALLEL_SEARCH_MIN_BITS: u32 = 11;
+        // Below this point the pool broadcast exceeds the expected search.
+        const PARALLEL_SEARCH_MIN_BITS: u32 = 12;
         if bits >= PARALLEL_SEARCH_MIN_BITS {
             return find_grinding_nonce_parallel(seed, bits);
         }
@@ -211,14 +261,6 @@ pub fn grinding_nonce_is_valid(
     Ok(grinding_nonce_is_valid_unchecked(seed, nonce, bits))
 }
 
-fn validate_boundary<D: GrindingDomain>(bits: u32) -> Result<(), GrindingError> {
-    validate_difficulty(bits)?;
-    if D::DOMAIN.is_empty() {
-        return Err(GrindingError::EmptyDomain);
-    }
-    Ok(())
-}
-
 fn validate_difficulty(bits: u32) -> Result<(), GrindingError> {
     if !(1..=MAX_GRINDING_BITS).contains(&bits) {
         return Err(GrindingError::InvalidDifficulty { bits });
@@ -231,79 +273,19 @@ fn absorb_grinding_nonce(transcript: &mut impl Transcript, nonce: u64) {
     transcript.absorb_slice(&nonce.to_le_bytes());
 }
 
-#[allow(clippy::arithmetic_side_effects)]
 fn find_grinding_nonce_sequential(seed: &GrindingSeed, bits: u32) -> Result<u64, GrindingError> {
-    find_first_valid_nonce(seed, bits, 0, u64::MAX).ok_or(GrindingError::NonceSpaceExhausted)
+    first_pow_nonce(seed.as_bytes(), 0, u64::MAX, bits)
+        .or_else(|| pow_ok(seed.as_bytes(), u64::MAX, bits).then_some(u64::MAX))
+        .ok_or(GrindingError::NonceSpaceExhausted)
 }
 
 #[cfg(feature = "parallel")]
-#[allow(clippy::arithmetic_side_effects)]
 fn find_grinding_nonce_parallel(seed: &GrindingSeed, bits: u32) -> Result<u64, GrindingError> {
-    use rayon::prelude::*;
-
-    // Each wave has 32 independently scanned 2^12-nonce chunks.  Taking the
-    // minimum hit from the first successful wave is exactly a serial scan.
-    const CHUNK_SIZE: u64 = 1 << 12;
-    const CHUNKS_PER_WAVE: usize = 32;
-    const WAVE_SIZE: u64 = CHUNK_SIZE * CHUNKS_PER_WAVE as u64;
-
-    let mut wave_start = 0_u64;
-    loop {
-        let wave_end = wave_start.saturating_add(WAVE_SIZE - 1);
-        let wave_len = wave_end - wave_start + 1;
-        let chunk_count = usize::try_from(wave_len.div_ceil(CHUNK_SIZE))
-            .expect("a fixed grinding wave has at most 32 chunks");
-        let hit = (0..chunk_count)
-            .into_par_iter()
-            .filter_map(|chunk| {
-                let chunk_start = wave_start + chunk as u64 * CHUNK_SIZE;
-                let chunk_end = chunk_start.saturating_add(CHUNK_SIZE - 1).min(wave_end);
-                find_first_valid_nonce(seed, bits, chunk_start, chunk_end)
-            })
-            .min();
-        if let Some(nonce) = hit {
-            return Ok(nonce);
-        }
-        if wave_end == u64::MAX {
-            return Err(GrindingError::NonceSpaceExhausted);
-        }
-        wave_start = wave_end + 1;
-    }
-}
-
-#[allow(clippy::arithmetic_side_effects)]
-fn find_first_valid_nonce(seed: &GrindingSeed, bits: u32, start: u64, end: u64) -> Option<u64> {
-    let mut nonce = start;
-    loop {
-        if grinding_nonce_is_valid_unchecked(seed, nonce, bits) {
-            return Some(nonce);
-        }
-        if nonce == end {
-            return None;
-        }
-        nonce += 1;
-    }
+    smallest_pow_nonce(seed.as_bytes(), bits).ok_or(GrindingError::NonceSpaceExhausted)
 }
 
 fn grinding_nonce_is_valid_unchecked(seed: &GrindingSeed, nonce: u64, bits: u32) -> bool {
-    let mut preimage = [0_u8; 40];
-    preimage[..32].copy_from_slice(seed.as_bytes());
-    preimage[32..].copy_from_slice(&nonce.to_le_bytes());
-    let digest = blake3::hash(&preimage);
-    leading_zero_bits(digest.as_bytes()) >= bits
-}
-
-#[allow(clippy::arithmetic_side_effects)]
-fn leading_zero_bits(bytes: &[u8]) -> u32 {
-    let mut count = 0_u32;
-    for &byte in bytes {
-        if byte == 0 {
-            count += u8::BITS;
-        } else {
-            return count + byte.leading_zeros();
-        }
-    }
-    count
+    pow_ok(seed.as_bytes(), nonce, bits)
 }
 
 // ---------------------------------------------------------------------
@@ -337,6 +319,7 @@ impl GrindingDomain for ForestRoundGrinding {
 pub struct ProverGrindingTranscript<'a, T, D = ForestRoundGrinding> {
     inner: &'a mut T,
     bits: u32,
+    domain: &'static [u8],
     next_index: u64,
     nonces: Vec<u64>,
     _domain: PhantomData<fn() -> D>,
@@ -345,9 +328,18 @@ pub struct ProverGrindingTranscript<'a, T, D = ForestRoundGrinding> {
 impl<'a, T: Transcript, D: GrindingDomain> ProverGrindingTranscript<'a, T, D> {
     /// Wraps `inner` at `bits` difficulty per drawn challenge.
     pub fn new(inner: &'a mut T, bits: u32) -> Self {
+        Self::new_in_domain(inner, bits, D::DOMAIN)
+    }
+}
+
+impl<'a, T: Transcript, D> ProverGrindingTranscript<'a, T, D> {
+    /// Wraps `inner` at `bits` difficulty per drawn challenge, grinding in
+    /// a domain chosen at runtime (the type parameter is then nominal).
+    pub fn new_in_domain(inner: &'a mut T, bits: u32, domain: &'static [u8]) -> Self {
         Self {
             inner,
             bits,
+            domain,
             next_index: 0,
             nonces: Vec::new(),
             _domain: PhantomData,
@@ -360,12 +352,12 @@ impl<'a, T: Transcript, D: GrindingDomain> ProverGrindingTranscript<'a, T, D> {
     }
 }
 
-impl<T: Transcript, D: GrindingDomain> Transcript for ProverGrindingTranscript<'_, T, D> {
+impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
-            let round = GrindingRound::<D>::new(self.next_index);
+            let index = self.next_index;
             self.next_index = self.next_index.wrapping_add(1);
-            let nonce = grind_and_absorb(self.inner, round, self.bits)
+            let nonce = grind_and_absorb_in_domain(self.inner, self.domain, index, self.bits)
                 .expect("per-round grinding difficulty is validated by the profile");
             self.nonces.push(nonce);
         }
@@ -393,6 +385,7 @@ impl<T: Transcript, D: GrindingDomain> Transcript for ProverGrindingTranscript<'
 pub struct VerifierGrindingTranscript<'a, 'n, T, D = ForestRoundGrinding> {
     inner: &'a mut T,
     bits: u32,
+    domain: &'static [u8],
     next_index: u64,
     nonces: &'n [u64],
     consumed: usize,
@@ -403,9 +396,23 @@ pub struct VerifierGrindingTranscript<'a, 'n, T, D = ForestRoundGrinding> {
 impl<'a, 'n, T: Transcript, D: GrindingDomain> VerifierGrindingTranscript<'a, 'n, T, D> {
     /// Wraps `inner`, checking `nonces` at `bits` difficulty per draw.
     pub fn new(inner: &'a mut T, bits: u32, nonces: &'n [u64]) -> Self {
+        Self::new_in_domain(inner, bits, nonces, D::DOMAIN)
+    }
+}
+
+impl<'a, 'n, T: Transcript, D> VerifierGrindingTranscript<'a, 'n, T, D> {
+    /// Wraps `inner`, checking `nonces` at `bits` difficulty per draw in a
+    /// domain chosen at runtime.
+    pub fn new_in_domain(
+        inner: &'a mut T,
+        bits: u32,
+        nonces: &'n [u64],
+        domain: &'static [u8],
+    ) -> Self {
         Self {
             inner,
             bits,
+            domain,
             next_index: 0,
             nonces,
             consumed: 0,
@@ -431,16 +438,18 @@ impl<'a, 'n, T: Transcript, D: GrindingDomain> VerifierGrindingTranscript<'a, 'n
     }
 }
 
-impl<T: Transcript, D: GrindingDomain> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
+impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
-            let round = GrindingRound::<D>::new(self.next_index);
+            let index = self.next_index;
             self.next_index = self.next_index.wrapping_add(1);
             // A missing nonce absorbs a canonical zero so the transcript
             // stays deterministic; `finish` reports the failure.
             let nonce = self.nonces.get(self.consumed).copied().unwrap_or(0);
             self.consumed = self.consumed.saturating_add(1);
-            if let Err(error) = verify_and_absorb(self.inner, round, self.bits, nonce) {
+            if let Err(error) =
+                verify_and_absorb_in_domain(self.inner, self.domain, index, self.bits, nonce)
+            {
                 self.failure.get_or_insert(error);
             }
         }

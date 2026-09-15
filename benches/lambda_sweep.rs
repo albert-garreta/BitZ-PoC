@@ -24,7 +24,6 @@
 mod common;
 
 use std::hint::black_box;
-use std::time::Instant;
 
 use f2z::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, PrimePolicy, SHA256_MAX_LOG_COMPRESSIONS,
@@ -63,11 +62,14 @@ fn sweep_profile<P: IopSecurityProfile>(
     seed: u64,
 ) {
     let compressions = 1usize << exponent;
-    let setup_started = Instant::now();
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("lambda_sweep:setup_started").entered();
     let prepared = prepare_sha256_compression_batch_with_profile::<P>(exponent)
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
         .expect("profile instantiates at this shape");
     let (pc, vc) = sha256_compression_configs(&prepared).expect("Ligerito configs");
-    let setup_ms = common::elapsed_ms(setup_started);
+    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "lambda_sweep:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().expect("validated Ligerito"), prepared.security().ood));
     let security = prepared.security().clone();
 
     println!();
@@ -100,7 +102,8 @@ fn sweep_profile<P: IopSecurityProfile>(
         );
     }
 
-    let witness_started = Instant::now();
+    let witness_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let witness_started = tracing::info_span!("lambda_sweep:witness_started").entered();
     let witness = generate_sha256_compression_witnesses(&prepared, inputs).expect("witness");
     let statements: Vec<_> = inputs
         .iter()
@@ -108,18 +111,18 @@ fn sweep_profile<P: IopSecurityProfile>(
         .zip(witness.outputs().iter().copied())
         .map(|(input, output)| Sha256CompressionStatement::new(input, output))
         .collect();
-    let witness_ms = common::elapsed_ms(witness_started);
+    let witness_ms = { drop(witness_started); f2z::observability::duration(&witness_started_recording.intervals().expect("complete operation capture"), "lambda_sweep:witness_started").expect("query completed operation") }.as_secs_f64() * 1e3;
 
     let mut prover = common::StepSamples::default();
     let mut verifier = common::StepSamples::default();
     let mut last = None;
     for rep in 0..reps + 1 {
-        let _ = f2z::utils::prof::take_totals();
-        let prove_started = Instant::now();
-        let commit_started = Instant::now();
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start security-profile trial");
+        let proving = tracing::info_span!("benchmark:proving").entered();
+        let commit = tracing::info_span!("benchmark:commit").entered();
         let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
             .expect("commit");
-        let commit_ms = common::elapsed_ms(commit_started);
+        drop(commit);
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_sha256_compressions_with_config(
             &mut prover_transcript,
@@ -130,10 +133,9 @@ fn sweep_profile<P: IopSecurityProfile>(
             &pc,
         )
         .expect("prove");
-        let prove_ms = common::elapsed_ms(prove_started);
-        let prove_phases = f2z::utils::prof::take_totals();
+        drop(proving);
 
-        let verify_started = Instant::now();
+        let verification = tracing::info_span!("benchmark:verification").entered();
         let mut verifier_transcript = Blake3Transcript::new();
         verify_sha256_compressions_with_config(
             &mut verifier_transcript,
@@ -144,8 +146,13 @@ fn sweep_profile<P: IopSecurityProfile>(
             &vc,
         )
         .expect("verify");
-        let verify_ms = common::elapsed_ms(verify_started);
-        let verify_phases = f2z::utils::prof::take_totals();
+        drop(verification);
+        let intervals = recording.intervals().expect("query security-profile trial");
+        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+        let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+        let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
 
         black_box(&proof);
         if rep == 0 {
@@ -173,6 +180,7 @@ fn sweep_profile<P: IopSecurityProfile>(
         bench: "sha256",
         shape: format!("2p{exponent}"),
         extra: vec![
+            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
             ("profile".into(), P::NAME.into()),
             ("compressions".into(), compressions.to_string()),
             (
@@ -199,20 +207,18 @@ fn sweep_profile<P: IopSecurityProfile>(
 }
 
 fn main() {
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 3);
     let seed = common::seed(None, 0x4632_5a5f_5357_4550);
-    let exponent = common::shapes(None).map_or(12, |shapes| {
+    let exponent = common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new()
+        .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64)).map_or(12, |shapes| {
         assert_eq!(shapes.len(), 1, "the λ sweep takes one exponent per run");
-        let exponent: usize = shapes[0].parse().expect("integer exponent");
-        assert!(
-            (SHA256_MIN_LOG_COMPRESSIONS..=SHA256_MAX_LOG_COMPRESSIONS).contains(&exponent),
-            "SHA-256 runtime-prime protocol supports exponents 4 through 16"
-        );
-        exponent
+        shapes[0]
     });
-    let inputs = make_inputs(1usize << exponent, seed);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
+    let inputs = make_inputs(1usize << exponent, seed);
 
     match selected {
         None => {

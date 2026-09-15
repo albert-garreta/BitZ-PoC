@@ -16,28 +16,17 @@ mod sha256_compressions;
 use sha256_compressions::common;
 
 fn main() {
-    let default_sweep = std::env::var_os("F2Z_SHA_PRODUCT_TS").is_none();
-    if default_sweep {
-        // SAFETY: this is the first action, before the harness starts threads.
-        unsafe {
-            std::env::set_var(
-                "F2Z_SHA_PRODUCT_TS",
-                "7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27",
-            )
-        };
-    }
-    if std::env::var_os("F2Z_BENCH_REPS").is_none() {
-        // SAFETY: this is the first action, before the harness starts threads.
-        unsafe { std::env::set_var("F2Z_BENCH_REPS", "21") };
-    }
-    sha256_compressions::main();
+    common::cli::EnvironmentCli::parse();
+    let env = sha256_compressions::Env::from_environment(true);
+    let default_sweep = env.default_product_sweep;
+    let result_path = env.result_path.clone();
+    sha256_compressions::run(env);
 
-    if default_sweep && let Some(path) = std::env::var_os("F2Z_SHA_RESULT_PATH") {
+    if default_sweep && let Some(path) = result_path {
         use std::io::Write;
 
-        let mut output = std::fs::OpenOptions::new()
-            .append(true)
-            .open(path)
+        let mut output = common::output::BenchmarkOutput::new("")
+            .file(path, common::output::FileMode::AppendExisting)
             .expect("reopen SHA result output");
         for t in 1..=6 {
             writeln!(
@@ -52,5 +41,6 @@ fn main() {
             "STATUS product_t=28 product_s=1 compressions=16384 status=skipped reason=projected_peak_exceeds_60_gib projected_peak_bytes=75150743216 peak_cap_bytes=64424509440"
         )
         .expect("write memory-skipped SHA split");
+        output.flush().expect("flush SHA split status");
     }
 }

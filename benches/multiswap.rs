@@ -37,16 +37,11 @@
 
 #![recursion_limit = "512"]
 
-mod common;
+pub(crate) mod common;
+use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 use std::{
-    collections::HashMap,
-    fs::{self, File, OpenOptions},
-    hint::black_box,
-    io::{BufWriter, Write},
-    path::Path,
-    process::Command,
-    time::Instant,
+    collections::HashMap, fs::File, hint::black_box, io::BufWriter, process::Command,
 };
 
 use f2z::piop::spartan::multiswap::{
@@ -56,7 +51,7 @@ use f2z::piop::spartan::multiswap::{
 };
 use f2z::piop::spartan::{IopSecurityProfile, PrimePolicy};
 use f2z::transcript::Blake3Transcript;
-use f2z::utils::prof::ProfileInterval;
+use f2z::observability::Interval;
 use num_bigint::BigUint;
 use serde_json::{Value, json};
 
@@ -186,17 +181,33 @@ struct RepTiming {
     commit_ms: f64,
     prove_ms: f64,
     verify_ms: f64,
-    prove_phases: Vec<(&'static str, f64)>,
-    verify_phases: Vec<(&'static str, f64)>,
-    intervals: Vec<ProfileInterval>,
-    measurements_ns: Value,
+    prove_phases: Vec<(String, f64)>,
+    verify_phases: Vec<(String, f64)>,
+    intervals: Vec<Interval>,
+    measurements_ns: MeasurementsNs,
     witness_stats: WitnessStats,
     commitment_bytes: usize,
     peak_rss_bytes: u64,
 }
 
+#[derive(clap::Parser)]
+struct Env {
+    #[arg(long, env = "F2Z_MULTISWAP_BATCH_COUNT", default_value_t = 1)]
+    batch_count: usize,
+    #[arg(long, env = "F2Z_MULTISWAP_CHECK_ONLY", default_value = "0")]
+    check_only: String,
+    #[arg(long, env = "F2Z_MULTISWAP_TRACE_PATH")]
+    trace_path: Option<std::path::PathBuf>,
+    #[arg(long, env = "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST", value_parser = normalized_digest)]
+    expected_constraint_digest: Option<String>,
+}
+
+fn normalized_digest(value: &str) -> Result<String, std::convert::Infallible> {
+    Ok(value.strip_prefix("0x").unwrap_or(value).to_ascii_lowercase())
+}
+
 struct TraceWriter {
-    output: BufWriter<File>,
+    output: JsonlWriter<BufWriter<File>>,
     campaign_id: String,
     git_rev: String,
     git_dirty: bool,
@@ -208,26 +219,19 @@ struct TraceWriter {
 }
 
 impl TraceWriter {
-    fn from_env(threads: usize, setup_ns: u64) -> Option<Self> {
-        let path = std::env::var_os("F2Z_MULTISWAP_TRACE_PATH")?;
-        assert!(
-            std::env::var_os("OBLONG_PROFILE_INTERVALS").is_some(),
-            "F2Z_MULTISWAP_TRACE_PATH requires OBLONG_PROFILE_INTERVALS=1"
-        );
-        let path = Path::new(&path);
+    fn new(env: &Env, threads: usize, setup_ns: u64) -> Option<Self> {
+        let path = env.trace_path.as_deref()?;
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            fs::create_dir_all(parent).expect("create MultiSwap trace directory");
+            BenchmarkOutput::new(parent)
+                .create_dir_all()
+                .expect("create MultiSwap trace directory");
         }
-        let output = BufWriter::new(
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-                .expect("create new MultiSwap trace JSONL without overwriting"),
-        );
+        let output = BenchmarkOutput::new("")
+            .jsonl(path, FileMode::CreateNew)
+            .expect("create new MultiSwap trace JSONL without overwriting");
         let campaign_id = std::env::var("F2Z_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
         let git_rev = std::env::var("F2Z_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
@@ -246,16 +250,9 @@ impl TraceWriter {
                 "Apple Silicon",
             )
         });
-        let build_profile =
-            std::env::var("F2Z_MULTISWAP_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
-        let expected_constraint_digest = std::env::var("F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST")
-            .ok()
-            .map(|value| {
-                value
-                    .strip_prefix("0x")
-                    .unwrap_or(&value)
-                    .to_ascii_lowercase()
-            });
+        let build_profile = std::env::var("F2Z_MULTISWAP_BUILD_PROFILE")
+            .unwrap_or_else(|_| "bench".to_owned());
+        let expected_constraint_digest = env.expected_constraint_digest.clone();
         Some(Self {
             output,
             campaign_id,
@@ -283,14 +280,14 @@ impl TraceWriter {
         let roots = timing
             .intervals
             .iter()
-            .filter(|interval| interval.parent_order.is_none())
+            .filter(|interval| interval.parent.is_none())
             .collect::<Vec<_>>();
         assert_eq!(
             roots.len(),
             1,
             "a traced MultiSwap run has exactly one root"
         );
-        assert_eq!(roots[0].label, "multiswap-trace:verified_trial");
+        assert_eq!(roots[0].label(), "multiswap-trace:verified_trial");
         for label in [
             "multiswap-trace:witness_generation",
             "multiswap-trace:end_to_end_prove",
@@ -306,7 +303,7 @@ impl TraceWriter {
                 timing
                     .intervals
                     .iter()
-                    .filter(|interval| interval.label == label)
+                    .filter(|interval| interval.label() == label)
                     .count(),
                 1,
                 "complete MultiSwap trace must contain exactly one {label} interval"
@@ -347,7 +344,7 @@ impl TraceWriter {
             "{}-f2z-k{k}-b{batch_count}-{}-{}t-{}",
             self.campaign_id, self.git_rev, self.threads, self.build_profile
         );
-        let root_span_id = span_id(roots[0].order);
+        let root_span_id = span_id(roots[0].id);
         let thread_policy = if self.threads == 1 {
             "single Rayon worker"
         } else {
@@ -374,7 +371,7 @@ impl TraceWriter {
                 "id": format!("mono-process-{}-{run_id}", std::process::id()),
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "std::time::Instant",
+                "source": "Perfetto SDK",
             },
             "status": "ok",
             "trace_complete": true,
@@ -417,7 +414,7 @@ impl TraceWriter {
                     "assignment_block_count": 4,
                     "assignment_block_capacity": prepared.layout().capacity(),
                     "committed_integer_block_count": 2,
-                    "committed_bits": 1usize << (prepared.params().t + prepared.params().s),
+                    "committed_bits": 1usize << (prepared.params().row_vars + prepared.params().col_vars),
                     "witness_stats": timing.witness_stats.json(),
                 },
                 "security": security_metadata(prepared),
@@ -457,23 +454,22 @@ impl TraceWriter {
                 "f2z_spartan_reduction": env_setting("F2Z_SPARTAN_REDUCTION", "default:delayed-barrett"),
             },
         });
-        serde_json::to_writer(&mut self.output, &run).expect("write MultiSwap trace run");
-        writeln!(self.output).expect("terminate MultiSwap trace run");
+        self.output.write(&run).expect("write MultiSwap trace run");
 
         let by_order = timing
             .intervals
             .iter()
-            .map(|interval| (interval.order, interval))
+            .map(|interval| (interval.id, interval))
             .collect::<HashMap<_, _>>();
         let mut totals = HashMap::<(Option<u64>, &'static str), usize>::new();
         for interval in &timing.intervals {
             *totals
-                .entry((interval.parent_order, interval.label))
+                .entry((interval.parent, interval.label()))
                 .or_default() += 1;
         }
         let mut seen = HashMap::<(Option<u64>, &'static str), usize>::new();
         for interval in &timing.intervals {
-            let key = (interval.parent_order, interval.label);
+            let key = (interval.parent, interval.label());
             let occurrence_index = seen.entry(key).or_default();
             let occurrence_count = totals[&key];
             let descriptor = describe_span(interval, &by_order);
@@ -503,8 +499,8 @@ impl TraceWriter {
                 "schema": "zkperf.trace/v1",
                 "record": "span",
                 "run_id": run_id,
-                "span_id": span_id(interval.order),
-                "parent_span_id": interval.parent_order.map(span_id),
+                "span_id": span_id(interval.id),
+                "parent_span_id": interval.parent.map(span_id),
                 "operation": descriptor.operation,
                 "name": descriptor.name,
                 "primary_phase": descriptor.primary_phase,
@@ -516,8 +512,9 @@ impl TraceWriter {
                 "coordinate": coordinate,
                 "attributes": attributes,
             });
-            serde_json::to_writer(&mut self.output, &span).expect("write MultiSwap trace span");
-            writeln!(self.output).expect("terminate MultiSwap trace span");
+            self.output
+                .write(&span)
+                .expect("write MultiSwap trace span");
         }
         self.output.flush().expect("flush MultiSwap trace JSONL");
     }
@@ -536,19 +533,19 @@ struct SpanDescriptor {
 }
 
 fn describe_span(
-    interval: &ProfileInterval,
-    by_order: &HashMap<u64, &ProfileInterval>,
+    interval: &Interval,
+    by_order: &HashMap<u64, &Interval>,
 ) -> SpanDescriptor {
     let mut labels = Vec::new();
     let mut cursor = Some(interval);
     while let Some(current) = cursor {
-        labels.push(current.label);
+        labels.push(current.label());
         cursor = current
-            .parent_order
+            .parent
             .and_then(|order| by_order.get(&order).copied());
     }
     let under = |label: &str| labels.iter().any(|candidate| *candidate == label);
-    let root = interval.parent_order.is_none();
+    let root = interval.parent.is_none();
     let verifying = under("multiswap-trace:verification");
     let witness = under("multiswap-trace:witness_generation");
     let committing = under("multiswap-trace:commit");
@@ -559,14 +556,14 @@ fn describe_span(
         || under("step5_0:reduce_prove")
         || under("step5_0:reduce_verify");
     let opening = under("step5:open_prove") || under("step5:open_verify");
-    let sumcheck = interval.label.contains("sumcheck")
-        || interval.label.contains("presum_run")
+    let sumcheck = interval.label().contains("sumcheck")
+        || interval.label().contains("presum_run")
         || under("spartan:outer_sumcheck")
         || under("spartan:inner_sumcheck");
     let fri = opening
-        && (interval.label.contains("forest")
-            || interval.label.contains("fold_v")
-            || interval.label.contains(":lig"));
+        && (interval.label().contains("forest")
+            || interval.label().contains("fold_v")
+            || interval.label().contains(":lig"));
 
     let primary_phase = if root {
         "end-to-end"
@@ -616,8 +613,8 @@ fn describe_span(
         push_tag(&mut phase_tags, "fri");
     }
 
-    let (name, short_name) = span_names(interval.label);
-    let scope_kind = match interval.label {
+    let (name, short_name) = span_names(interval.label());
+    let scope_kind = match interval.label() {
         "multiswap-trace:verified_trial" => "scope",
         "multiswap-trace:witness_generation"
         | "multiswap-trace:end_to_end_prove"
@@ -631,10 +628,10 @@ fn describe_span(
         | "step4:bitify_prove"
         | "step5_0:reduce_prove"
         | "step5:open_prove" => "phase",
-        _ if interval.label.contains("round") => "round",
+        _ if interval.label().contains("round") => "round",
         _ => "procedure",
     };
-    let scope_tag = match interval.label {
+    let scope_tag = match interval.label() {
         "multiswap-trace:verified_trial" => Some("end-to-end"),
         "multiswap-trace:witness_generation" => Some("witness-generation"),
         "multiswap-trace:end_to_end_prove" => Some("proving"),
@@ -645,7 +642,7 @@ fn describe_span(
         _ => None,
     };
     let primary_sequence = matches!(
-        interval.label,
+        interval.label(),
         "multiswap-trace:witness_generation"
             | "multiswap-trace:commit"
             | "step2:project_prove"
@@ -656,7 +653,7 @@ fn describe_span(
             | "multiswap-trace:verification"
     );
     SpanDescriptor {
-        operation: operation_name(interval.label),
+        operation: operation_name(interval.label()),
         name,
         short_name,
         primary_phase,
@@ -664,7 +661,7 @@ fn describe_span(
         scope_kind,
         scope_tag,
         primary_sequence,
-        math_latex: span_math(interval.label),
+        math_latex: span_math(interval.label()),
     }
 }
 
@@ -829,14 +826,14 @@ fn hex_bytes(bytes: [u8; 32]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn duration_for(intervals: &[ProfileInterval], label: &str) -> u64 {
+fn duration_for(intervals: &[Interval], label: &str) -> u64 {
     maybe_duration_for(intervals, label).unwrap_or(0)
 }
 
-fn maybe_duration_for(intervals: &[ProfileInterval], label: &str) -> Option<u64> {
+fn maybe_duration_for(intervals: &[Interval], label: &str) -> Option<u64> {
     let matching = intervals
         .iter()
-        .filter(|interval| interval.label == label)
+        .filter(|interval| interval.label() == label)
         .collect::<Vec<_>>();
     (!matching.is_empty()).then(|| {
         matching
@@ -846,14 +843,23 @@ fn maybe_duration_for(intervals: &[ProfileInterval], label: &str) -> Option<u64>
     })
 }
 
-fn insert_ns(values: &mut serde_json::Map<String, Value>, name: &str, value: u64) {
-    values.insert(name.to_owned(), json!(value.to_string()));
+type MeasurementsNs = std::collections::BTreeMap<&'static str, Nanoseconds>;
+
+struct Nanoseconds(u64);
+impl serde::Serialize for Nanoseconds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.0)
+    }
+}
+
+fn insert_ns(values: &mut MeasurementsNs, name: &'static str, value: u64) {
+    values.insert(name, Nanoseconds(value));
 }
 
 fn insert_optional_ns(
-    values: &mut serde_json::Map<String, Value>,
-    intervals: &[ProfileInterval],
-    name: &str,
+    values: &mut MeasurementsNs,
+    intervals: &[Interval],
+    name: &'static str,
     label: &str,
 ) {
     if let Some(value) = maybe_duration_for(intervals, label) {
@@ -861,9 +867,9 @@ fn insert_optional_ns(
     }
 }
 
-fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> Value {
+fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
     if intervals.is_empty() {
-        return json!({"setup": setup_ns.to_string()});
+        return [("setup", Nanoseconds(setup_ns))].into();
     }
     let witness = duration_for(intervals, "multiswap-trace:witness_generation");
     let commit = duration_for(intervals, "multiswap-trace:commit");
@@ -875,7 +881,7 @@ fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> Value {
     let prover = duration_for(intervals, "multiswap-trace:end_to_end_prove");
     let verification = duration_for(intervals, "multiswap-trace:verification");
     let verified_trial = duration_for(intervals, "multiswap-trace:verified_trial");
-    let mut values = serde_json::Map::new();
+    let mut values = MeasurementsNs::new();
     insert_ns(&mut values, "setup", setup_ns);
     insert_ns(&mut values, "witness_generation", witness);
     insert_ns(
@@ -935,7 +941,7 @@ fn measurements(intervals: &[ProfileInterval], setup_ns: u64) -> Value {
             general_ring_switch.saturating_add(direct_ring_switch),
         );
     }
-    Value::Object(values)
+    values
 }
 
 fn proof_sizes(proof: &MultiswapProof) -> (usize, usize) {
@@ -952,50 +958,42 @@ fn run_once(
     vc: &flock_core::pcs::ligerito::VerifierConfig,
     setup_ns: u64,
 ) -> (RepTiming, MultiswapProof) {
-    let _ = f2z::utils::prof::take_totals();
-    let _ = f2z::utils::prof::take_intervals();
-    let root_scope = f2z::utils::prof::scope("multiswap-trace:verified_trial");
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
+    let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
 
-    let witness_started = Instant::now();
-    let witness_scope = f2z::utils::prof::scope("multiswap-trace:witness_generation");
+    let witness_scope = tracing::info_span!("multiswap-trace:witness_generation").entered();
     let circuit = {
-        let _scope = f2z::utils::prof::scope("multiswap-trace:circuit_synthesis");
+        let _scope = tracing::info_span!("multiswap-trace:circuit_synthesis").entered();
         MultiswapCircuit::build_batch(dims, batch_count).expect("build circuit")
     };
     let assignment = {
-        let _scope = f2z::utils::prof::scope("multiswap-trace:assignment_materialization");
+        let _scope = tracing::info_span!("multiswap-trace:assignment_materialization").entered();
         MultiswapAssignment::new(&circuit).expect("build assignment")
     };
     drop(witness_scope);
-    let witness_ms = common::elapsed_ms(witness_started);
 
-    let prove_started = Instant::now();
-    let prover_scope = f2z::utils::prof::scope("multiswap-trace:end_to_end_prove");
-    let commit_started = Instant::now();
-    let commit_scope = f2z::utils::prof::scope("multiswap-trace:commit");
+    let prover_scope = tracing::info_span!("multiswap-trace:end_to_end_prove").entered();
+    let commit_scope = tracing::info_span!("multiswap-trace:commit").entered();
     let rows = {
-        let _scope = f2z::utils::prof::scope("multiswap-trace:source_packing");
+        let _scope = tracing::info_span!("multiswap-trace:source_packing").entered();
         assignment.f2z_bit_rows()
     };
     let hint = {
-        let _scope = f2z::utils::prof::scope("multiswap-trace:pcs_commitment");
+        let _scope = tracing::info_span!("multiswap-trace:pcs_commitment").entered();
         commit_multiswap_witness(prepared.params(), rows, pc).expect("commit")
     };
     drop(commit_scope);
-    let commit_ms = common::elapsed_ms(commit_started);
 
     let mut prover_transcript = Blake3Transcript::new();
     let proof = {
-        let _scope = f2z::utils::prof::scope("multiswap-trace:proof");
+        let _scope = tracing::info_span!("multiswap-trace:proof").entered();
         prove_multiswap_mod_r1cs(&mut prover_transcript, prepared, &assignment, &hint, pc)
             .expect("prove")
     };
     drop(prover_scope);
-    let prove_ms = common::elapsed_ms(prove_started);
 
-    let verify_started = Instant::now();
     {
-        let _scope = f2z::utils::prof::scope("multiswap-trace:verification");
+        let _scope = tracing::info_span!("multiswap-trace:verification").entered();
         let mut verifier_transcript = Blake3Transcript::new();
         verify_multiswap_mod_r1cs(
             &mut verifier_transcript,
@@ -1006,14 +1004,17 @@ fn run_once(
         )
         .expect("verify");
     }
-    let verify_ms = common::elapsed_ms(verify_started);
     drop(root_scope);
     // Provenance scans are deliberately outside all reported timing
     // boundaries; they validate the trial but are not protocol work.
     assert_eq!(prepared.statement_digest(), &circuit.statement_digest());
     let witness_stats = WitnessStats::collect(&circuit, &assignment);
-    let totals = f2z::utils::prof::take_totals();
-    let intervals = f2z::utils::prof::take_intervals();
+    let intervals = recording.intervals().expect("query Multiswap trial");
+    let totals = f2z::observability::totals(&intervals);
+    let witness_ms = common::span_ms(&intervals, "multiswap-trace:witness_generation");
+    let commit_ms = common::span_ms(&intervals, "multiswap-trace:commit");
+    let prove_ms = common::span_ms(&intervals, "multiswap-trace:end_to_end_prove");
+    let verify_ms = common::span_ms(&intervals, "multiswap-trace:verification");
     let measurements_ns = measurements(&intervals, setup_ns);
     black_box(&proof);
 
@@ -1042,19 +1043,19 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
+    let env: Env = common::cli::environment();
     let reps = common::reps(Some("F2Z_MULTISWAP_REPS"), 5);
-    let k = common::shapes(None).map_or(0, |shapes| {
+    let k = common::shape_values(None, str::parse::<usize>).map_or(0, |shapes| {
         assert_eq!(shapes.len(), 1, "the MultiSwap bench takes one k shape");
         shapes[0]
-            .parse::<usize>()
-            .expect("F2Z_BENCH_SHAPES must be the Limber k parameter")
     });
-    let batch_count = std::env::var("F2Z_MULTISWAP_BATCH_COUNT")
-        .map(|s| s.parse::<usize>().expect("invalid batch count"))
-        .unwrap_or(1);
+    let batch_count = env.batch_count;
     let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
     let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
+
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     // Bootstrap the canonical relation outside measured trials. Each trial
     // repeats synthesis and assignment materialization within its witness timer.
@@ -1068,25 +1069,22 @@ fn main() {
     let bootstrap_stats = WitnessStats::collect(&circuit, &bootstrap_assignment);
 
     // One-time public preprocessing is excluded from every traced boundary.
-    let setup_started = Instant::now();
+    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started = tracing::info_span!("multiswap:setup_started").entered();
     let prepared = common::with_profile!(profile, prepare(&circuit));
     let (pc, vc) = prepared.ligerito_configs();
-    let setup_elapsed = setup_started.elapsed();
+    let setup_elapsed = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "multiswap:setup_started").expect("query completed operation") };
     let setup_ns = u64::try_from(setup_elapsed.as_nanos()).unwrap_or(u64::MAX);
     let setup_ms = setup_elapsed.as_secs_f64() * 1e3;
 
     let constraint_digest = hex_bytes(circuit.statement_digest());
-    if let Ok(expected) = std::env::var("F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST") {
-        let expected = expected
-            .strip_prefix("0x")
-            .unwrap_or(&expected)
-            .to_ascii_lowercase();
+    if let Some(expected) = &env.expected_constraint_digest {
         assert_eq!(
-            expected, constraint_digest,
+            expected, &constraint_digest,
             "canonical constraint digest mismatch"
         );
     }
-    if std::env::var("F2Z_MULTISWAP_CHECK_ONLY").as_deref() == Ok("1") {
+    if env.check_only == "1" {
         println!(
             "MATCHED_PREFLIGHT {}",
             json!({
@@ -1097,7 +1095,7 @@ fn main() {
         );
         return;
     }
-    let mut trace_writer = TraceWriter::from_env(threads, setup_ns);
+    let mut trace_writer = TraceWriter::new(&env, threads, setup_ns);
 
     let p = *prepared.params();
     let layout = *prepared.layout();
@@ -1114,12 +1112,12 @@ fn main() {
         "  committed bits: 2^{} ({} B) = 2 blocks x 2^{} gates x {} bits | \
          f2z t={} s={} W={} | fingerprint Q in [2^127, 2^128), step5.0 q' in [2^112, 2^113) | \
          threads={threads} reps={reps}",
-        p.t + p.s,
-        (1usize << (p.t + p.s)) / 8,
+        p.row_vars + p.col_vars,
+        (1usize << (p.row_vars + p.col_vars)) / 8,
         layout.gate_vars(),
         MULTISWAP_VALUE_BITS,
-        p.t,
-        p.s,
+        p.row_vars,
+        p.col_vars,
         p.word_bits,
     );
     println!(
@@ -1186,7 +1184,10 @@ fn main() {
             ("profile".into(), prepared.security().profile_name.into()),
             ("batch_count".into(), batch_count.to_string()),
             ("rows".into(), circuit.live_rows().to_string()),
-            ("committed_bits".into(), (1usize << (p.t + p.s)).to_string()),
+            (
+                "committed_bits".into(),
+                (1usize << (p.row_vars + p.col_vars)).to_string(),
+            ),
             ("constraint_digest".into(), constraint_digest),
         ],
         lambda: Some(prepared.security().lambda),
@@ -1255,5 +1256,21 @@ fn peak_rss_bytes() -> u64 {
         rss
     } else {
         rss * 1024
+    }
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use super::*;
+    #[test]
+    fn sparse_nanoseconds_are_exact_decimal_strings() {
+        assert_eq!(
+            serde_json::to_string(&measurements(&[], u64::MAX)).unwrap(),
+            r#"{"setup":"18446744073709551615"}"#
+        );
+        let mut values = MeasurementsNs::new();
+        insert_ns(&mut values, "setup", 0);
+        insert_optional_ns(&mut values, &[], "missing", "no interval");
+        assert_eq!(serde_json::to_string(&values).unwrap(), r#"{"setup":"0"}"#);
     }
 }

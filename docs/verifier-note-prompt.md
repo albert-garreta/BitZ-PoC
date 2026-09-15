@@ -32,7 +32,7 @@ committed matrix opens to v at pt" — one definition, no mechanism.
 recombination) `y ∈ F_q`. The verifier note walks the same chain in
 verification order, one section per link:
 
-1. **Statement and proof object.** `IntEvalParams` (t, s, W), the claim
+1. **Statement and proof object.** `IntegerMatrixLayout` (t, s, W), the claim
    `MLE[INT(D)](r) = y ∈ F_q`, the chunk decomposition (`c_w = 127 − t − W`,
    `L = ⌈q_bits/c_w⌉`), and every field of `IntEvalRsLigModQProof` with its
    role. Include the serialization contract (`src/proof_codec.rs`:

@@ -32,7 +32,6 @@
 mod common;
 
 use std::hint::black_box;
-use std::time::Instant;
 
 #[cfg(feature = "bench-peak-memory")]
 use std::{
@@ -123,97 +122,47 @@ fn peak_mib() -> f64 {
     unreachable!("memory pass requires the bench-peak-memory feature")
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BenchmarkPass {
-    Latency,
-    Memory,
-    Both,
-}
+use common::cli::BenchmarkPass;
 
-impl BenchmarkPass {
-    fn from_env() -> Self {
-        match std::env::var("F2Z_BENCH_PASS").as_deref() {
-            Ok("latency") => Self::Latency,
-            Ok("memory") => Self::Memory,
-            Ok("both") => Self::Both,
-            Err(_) => Self::Latency,
-            Ok(value) => panic!("unsupported F2Z_BENCH_PASS={value}; use latency, memory, or both"),
-        }
-    }
 
-    const fn measures_latency(self) -> bool {
-        matches!(self, Self::Latency | Self::Both)
-    }
-
-    const fn measures_memory(self) -> bool {
-        matches!(self, Self::Memory | Self::Both)
-    }
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Latency => "latency",
-            Self::Memory => "memory",
-            Self::Both => "both",
-        }
-    }
-}
-
-fn env_usize(name: &str, default: usize) -> usize {
-    match std::env::var(name) {
-        Ok(value) => value
-            .parse()
-            .unwrap_or_else(|_| panic!("{name} must be a positive decimal integer")),
-        Err(_) => default,
-    }
-}
 
 fn f2z_width() -> U32MulF2zWidth {
-    match env_usize("F2Z_MUL_WORD_BITS", U32MulF2zWidth::W1.word_bits()) {
-        1 => U32MulF2zWidth::W1,
-        8 => U32MulF2zWidth::W8,
-        value => panic!("F2Z_MUL_WORD_BITS must be 1 or 8; got {value}"),
-    }
+    common::cli::value(
+        "F2Z_MUL_WORD_BITS",
+        std::env::var_os("F2Z_MUL_WORD_BITS").unwrap_or_else(|| "1".into()),
+        |value: &str| match value.parse::<usize>() {
+            Ok(1) => Ok(U32MulF2zWidth::W1),
+            Ok(8) => Ok(U32MulF2zWidth::W8),
+            _ => Err("expected 1 or 8"),
+        },
+    )
 }
 
 const PROTOCOL_LABEL: &str = "skip-k3";
 const STRATEGY_LABEL: &str = "delayed-barrett";
 
 fn exponents() -> Vec<usize> {
-    common::shapes(None).map_or_else(
-        || (15..=25).collect(),
-        |shapes| {
-            shapes
-                .iter()
-                .map(|part| {
-                    let exponent: usize = part.parse().expect("F2Z_BENCH_SHAPES contains integers");
-                    assert!(
-                        exponent >= 15,
-                        "the combined proof requires at least 2^15 gate slots"
-                    );
-                    exponent
-                })
-                .collect()
-        },
-    )
+    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
+        .unwrap_or_else(|| (15..=25).collect())
 }
 
 /// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
 fn prove_e2e(
     relation: &PreparedU32MulRelation,
     witness: &U32MulWitness,
-) -> (U32MulProof, FlockCommitHint, f64, f64) {
-    let prove_started = Instant::now();
-    let commit_started = Instant::now();
+) -> (U32MulProof, FlockCommitHint) {
+    let proving = tracing::info_span!("benchmark:proving").entered();
+    let commit = tracing::info_span!("benchmark:commit").entered();
     let bit_rows = witness.f2z_bit_rows();
     let commitment_hint =
         commit_u32_mul_witness(relation, bit_rows).expect("F2Z commitment succeeds");
-    let commit_ms = common::elapsed_ms(commit_started);
+    drop(commit);
 
     let mut prover_transcript = Blake3Transcript::new();
     let proof = prove_u32_mul(&mut prover_transcript, relation, witness, &commitment_hint)
         .expect("combined proving succeeds");
-    let prove_ms = common::elapsed_ms(prove_started);
-    (proof, commitment_hint, prove_ms, commit_ms)
+    drop(proving);
+    (proof, commitment_hint)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -233,19 +182,22 @@ fn bench_exponent<P: IopSecurityProfile>(
     let mut rng = StdRng::seed_from_u64(shape_seed);
 
     // Witness generation (excluded from prove).
-    let started = Instant::now();
-    let witness = U32MulWitness::from_fn_with_f2z_width(multiplications, f2z_width, |_| {
+    let (witness, started) = f2z::observability::measure(
+        tracing::info_span!("u32_mul:witness"),
+        || U32MulWitness::from_fn_with_f2z_width(multiplications, f2z_width, |_| {
         (rng.random::<u32>(), rng.random::<u32>())
     })
-    .expect("valid u32 multiplication witness");
-    let witness_ms = common::elapsed_ms(started);
+    .expect("valid u32 multiplication witness"),
+    ).expect("measure completed operation");
+    let witness_ms = started.as_secs_f64() * 1e3;
     let layout = *witness.layout();
     let params = layout.f2z_params();
 
     // One-time public preprocessing (excluded from prove): q-independent
     // exact matrices plus the instantiated runtime-prime security profile.
-    let started = Instant::now();
-    let relation = match PreparedU32MulRelation::new_with_profile::<P>(layout) {
+    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("u32_mul:started").entered();
+    let relation = match PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
         Ok(relation) => relation,
         Err(error @ (SpartanF2zError::Profile(_) | SpartanF2zError::UnsupportedProfile)) => {
             println!();
@@ -257,13 +209,14 @@ fn bench_exponent<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
-    let setup_ms = common::elapsed_ms(started);
+    let setup_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "u32_mul:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+    println!("LIGERITO_CONFIG {}", common::ligerito_report(relation.ligerito_configuration(), relation.security().ood));
     let profile_name = relation.security().profile_name;
     let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
     let f2z_chunks = mod_q_num_chunks(&params, q_bits);
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
-    let (warm_proof, warm_hint, _, _) = prove_e2e(&relation, &witness);
+    let (warm_proof, warm_hint) = prove_e2e(&relation, &witness);
     let mut verifier_transcript = Blake3Transcript::new();
     verify_u32_mul(
         &mut verifier_transcript,
@@ -277,7 +230,6 @@ fn bench_exponent<P: IopSecurityProfile>(
     let ligerito_hash = warm_hint.commitment.params.merkle_hash;
     drop(warm_proof);
     drop(warm_hint);
-    let _ = f2z::utils::prof::take_totals();
 
     let mut latency = None;
     if pass.measures_latency() {
@@ -285,12 +237,12 @@ fn bench_exponent<P: IopSecurityProfile>(
         let mut verifier = common::StepSamples::default();
         let mut last_proof = None;
         for sample_index in 0..reps {
-            let _ = f2z::utils::prof::take_totals();
-            let (proof, commitment_hint, prove_ms, commit_ms) = prove_e2e(&relation, &witness);
-            let prove_phases = f2z::utils::prof::take_totals();
+
+            let recording = f2z::observability::Recording::start(Vec::new()).expect("start u32 trial");
+            let (proof, commitment_hint) = prove_e2e(&relation, &witness);
 
             let mut verifier_transcript = Blake3Transcript::new();
-            let started = Instant::now();
+            let verification = tracing::info_span!("benchmark:verification").entered();
             verify_u32_mul(
                 &mut verifier_transcript,
                 &relation,
@@ -298,14 +250,19 @@ fn bench_exponent<P: IopSecurityProfile>(
                 &proof,
             )
             .expect("combined verification succeeds");
-            let verify_ms = common::elapsed_ms(started);
-            let verify_phases = f2z::utils::prof::take_totals();
+            drop(verification);
+            let intervals = recording.intervals().expect("query u32 trial");
+            let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+            let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+            let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+            let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+            let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
 
             println!(
                 "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
                 params.word_bits,
-                params.t,
-                params.s,
+                params.row_vars,
+                params.col_vars,
                 sample_index + 1,
             );
             prover.record_prove(prove_ms, commit_ms, &prove_phases);
@@ -322,13 +279,13 @@ fn bench_exponent<P: IopSecurityProfile>(
     if pass.measures_memory() {
         // This proof runs only in the explicit memory pass used by the runner.
         // `both` retains the old direct `cargo bench` behavior for convenience.
-        let _ = f2z::utils::prof::take_totals();
+
         let live_before_prove = live_mib();
         reset_peak();
-        let (peak_proof, peak_hint, _, _) = prove_e2e(&relation, &witness);
+        let (peak_proof, peak_hint) = prove_e2e(&relation, &witness);
         black_box(&peak_proof);
         let peak = peak_mib();
-        let _ = f2z::utils::prof::take_totals();
+
         let mut verifier_transcript = Blake3Transcript::new();
         verify_u32_mul(
             &mut verifier_transcript,
@@ -337,10 +294,10 @@ fn bench_exponent<P: IopSecurityProfile>(
             &peak_proof,
         )
         .expect("peak-memory proof verifies");
-        let _ = f2z::utils::prof::take_totals();
+
         println!(
             "  MEMORY pass=memory profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
-            params.word_bits, params.t, params.s,
+            params.word_bits, params.row_vars, params.col_vars,
         );
         memory_metrics = Some((live_before_prove, peak));
     }
@@ -355,16 +312,16 @@ fn bench_exponent<P: IopSecurityProfile>(
     println!(
         "  benchmark: pass={} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} t={} s={} chunks={f2z_chunks}",
         pass.as_str(),
-        params.t,
-        params.s,
+        params.row_vars,
+        params.col_vars,
     );
     println!(
         "  R1CS: rows={} cols={} nnz={}  |  F2Z: t={} s={} W={} chunks={} bits={} ({:.2} MiB)",
         multiplications,
         4 * layout.capacity(),
         3 * multiplications,
-        params.t,
-        params.s,
+        params.row_vars,
+        params.col_vars,
         params.word_bits,
         f2z_chunks,
         128usize * layout.capacity(),
@@ -382,6 +339,7 @@ fn bench_exponent<P: IopSecurityProfile>(
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
             extra: vec![
+            common::ligerito_identity(relation.ligerito_configuration(), relation.security().ood),
                 ("profile".into(), profile_name.into()),
                 ("pass".into(), pass.as_str().into()),
                 ("multiplications".into(), multiplications.to_string()),
@@ -390,8 +348,8 @@ fn bench_exponent<P: IopSecurityProfile>(
                 ("strategy".into(), STRATEGY_LABEL.into()),
                 ("word_bits".into(), params.word_bits.to_string()),
                 ("projection_bits".into(), q_bits.to_string()),
-                ("f2z_t".into(), params.t.to_string()),
-                ("f2z_s".into(), params.s.to_string()),
+                ("f2z_t".into(), params.row_vars.to_string()),
+                ("f2z_s".into(), params.col_vars.to_string()),
                 ("f2z_chunks".into(), f2z_chunks.to_string()),
                 ("exponent".into(), exponent.to_string()),
                 ("order".into(), order.to_string()),
@@ -423,19 +381,19 @@ fn bench_exponent<P: IopSecurityProfile>(
 }
 
 fn main() {
-    let threads = common::init();
+    common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
     let pass = BenchmarkPass::from_env();
-    assert!(
-        !pass.measures_memory() || cfg!(feature = "bench-peak-memory"),
-        "F2Z_BENCH_PASS=memory|both requires --features bench-peak-memory"
-    );
     let f2z_width = f2z_width();
-    let order = env_usize("F2Z_BENCH_ORDER", 1);
-    assert!(order > 0, "F2Z_BENCH_ORDER must be positive");
+    let order = common::cli::env::<std::num::NonZeroUsize>("F2Z_BENCH_ORDER")
+        .map_or(1, std::num::NonZeroUsize::get);
     let seed = common::seed(None, 0x5533_326d_756c_0064);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
+
+    let exponents = exponents();
+    f2z::observability::install().expect("install Perfetto subscriber");
+    let threads = common::init();
 
     println!("u32 × u32 → u64: Spartan PIOP + F2Z assignment opening");
     #[cfg(feature = "parallel")]
@@ -453,7 +411,7 @@ fn main() {
         common::profile_banner(selected, common::SecurityProfile::Lambda100)
     );
 
-    for exponent in exponents() {
+    for exponent in exponents {
         flock_core::scratch::clear();
         common::with_profile!(
             profile,

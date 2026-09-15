@@ -10,8 +10,8 @@ pub fn add_u32_mul_mod32(builder: &CircuitBuilder) -> [Wire; 4] {
         builder.assert_zero(name, builder.shr(word, 32));
     }
     let [x, y, z, w] = words;
-    let (hi, lo) = builder.imul(x, y);
-    builder.assert_zero("u32_product_high", hi);
+    // Range-constrained u32 operands have a product below 2^64.
+    let (_, lo) = builder.imul(x, y);
     // The range constraints make these two bit ranges disjoint, so XOR here
     // reconstructs the integer z + 2^32 * w without introducing carry bits.
     let product = builder.bxor(z, builder.shl(w, 32));
@@ -22,7 +22,7 @@ pub fn add_u32_mul_mod32(builder: &CircuitBuilder) -> [Wire; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use binius_core::{constraint_system::ValueVec, verify::verify_constraints, word::Word};
+    use binius_core::{constraint_system::ValueVec, word::Word};
     use binius_frontend::Circuit;
     use binius_hash::Blake3HashSuite;
     use binius_prover::{OptimalPackedB128, Prover};
@@ -60,7 +60,7 @@ mod tests {
         for row in valid {
             let (witness, populated) = populate(&circuit, &wires, row);
             assert!(populated, "valid row {row:?}");
-            verify_constraints(cs, &witness).unwrap();
+            cs.verify(&witness).unwrap();
         }
 
         let invalid = [
@@ -75,7 +75,7 @@ mod tests {
             let (witness, populated) = populate(&circuit, &wires, row);
             assert!(!populated, "invalid row {row:?}");
             assert!(
-                verify_constraints(cs, &witness).is_err(),
+                cs.verify(&witness).is_err(),
                 "compiled constraints accepted invalid row {row:?}"
             );
         }
@@ -111,7 +111,7 @@ mod tests {
         let mut transcript = ProverTranscript::new(Challenger::default());
         prover.prove(&witness, &mut transcript).unwrap();
         let mut transcript = VerifierTranscript::new(Challenger::default(), transcript.finalize());
-        verifier.verify(witness.public(), &mut transcript).unwrap();
+        verifier.verify(witness.inout(), &mut transcript).unwrap();
         transcript.finalize().unwrap();
     }
 }

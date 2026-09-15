@@ -1,12 +1,14 @@
-//! Full Plonky3 SHA-256 AIR with a WHIR multilinear commitment.
+//! Full Plonky3 SHA-256 AIR with WHIR RS commitments and prescribed openings.
 
 use std::{
     borrow::{Borrow, Cow},
     hint::black_box,
-    time::Instant,
 };
 
-use crate::common::plonky3::baby_bear as stack;
+use super::common;
+use super::common::plonky3::baby_bear as stack;
+use super::common::whir_tuning;
+use super::trace_capture::TrialScopes;
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_challenger::{CanObserve, CanSample};
 use p3_field::{PrimeCharacteristicRing, PrimeField32, extension::BinomialExtensionField};
@@ -20,37 +22,20 @@ use p3_sha256_air::{
 };
 use p3_sumcheck::layout::{Layout, SuffixProver, Table, Witness};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
-use p3_whir::{DomainSeparator, FoldingFactor, ProtocolParameters, SecurityAssumption};
+use p3_whir::DomainSeparator;
+pub use whir_tuning::Params;
 
 use super::{
-    CapturedSpan, CompressionCase, Corpus, SHA256_IV, SemanticSpan, TraceCapture, TrialMetrics,
-    humanize, operation,
+    CapturedSpan, CompressionCase, Corpus, SHA256_IV, SemanticSpan, TrialMetrics, humanize,
+    operation,
 };
 
 type F = stack::Val;
 type Challenger = stack::Challenger;
 type Mmcs = stack::Mmcs;
 
-pub const SECURITY_BITS: usize = 100;
 const PUBLIC_WORDS: usize = 16 + 8;
 const PUBLIC_COLUMNS: usize = 2 * PUBLIC_WORDS;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Params {
-    pub extension_degree: usize,
-    pub folding: usize,
-    pub starting_log_inv_rate: usize,
-    pub max_pow_bits: usize,
-}
-
-impl Params {
-    pub fn label(self) -> String {
-        format!(
-            "d{}-fold{}-rate{}-pow{}",
-            self.extension_degree, self.folding, self.starting_log_inv_rate, self.max_pow_bits
-        )
-    }
-}
 
 /// The complete upstream SHA AIR plus 48 public periodic columns. The main
 /// trace remains exactly `NUM_SHA256_COLS` columns; this is deliberately not
@@ -180,7 +165,7 @@ fn assert_trace_outputs(trace: &RowMajorMatrix<F>, cases: &[CompressionCase]) {
 }
 
 macro_rules! degree_backend {
-    ($module:ident, $degree:literal, $assumption:expr) => {
+    ($module:ident, $degree:literal) => {
         mod $module {
             use super::*;
             use p3_multi_stark::config::MultiStarkConfig;
@@ -228,6 +213,7 @@ macro_rules! degree_backend {
                 vk: p3_multi_stark::VerifyingKey<Config>,
                 corpus: Corpus,
                 pub setup_ms: f64,
+                pub security: serde_json::Value,
             }
 
             fn challenger(config: &Config, air: &PublicSha256Air) -> Challenger {
@@ -259,31 +245,26 @@ macro_rules! degree_backend {
 
             impl Context {
                 pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
-                    let started = Instant::now();
+                    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let started = tracing::info_span!("sha256_e2e_compare/plonky3:started").entered();
                     let stacked_num_variables =
                         log2_ceil_usize(corpus.cases.len() * NUM_SHA256_COLS);
-                    let folding_factor = FoldingFactor::Constant(params.folding);
-                    let protocol = ProtocolParameters {
-                        security_level: SECURITY_BITS,
-                        pow_bits: params.max_pow_bits,
-                        round_log_inv_rates: Vec::new(),
-                        folding_factor,
-                        soundness_type: $assumption,
-                        starting_log_inv_rate: params.starting_log_inv_rate,
-                    };
+                    let air = PublicSha256Air::new(corpus);
+                    let (protocol, security) =
+                        whir_tuning::select_protocol::<F, EF, stack::Challenger>(
+                            stacked_num_variables,
+                            whir_tuning::air_shape::<F, EF, _>(
+                                &air,
+                                log2_strict_usize(corpus.cases.len()),
+                            ),
+                            params,
+                        )?;
                     let pcs = stack::pcs::<EF>(stacked_num_variables, protocol)
                         .map_err(|error| error.to_string())?;
-                    if pcs.config.security_level < SECURITY_BITS {
-                        return Err(format!(
-                            "WHIR analyzer returned {} bits",
-                            pcs.config.security_level
-                        ));
-                    }
                     let config = Config {
                         pcs,
                         folding: params.folding,
                     };
-                    let air = PublicSha256Air::new(corpus);
                     assert_eq!(air.width(), NUM_SHA256_COLS);
                     let (pk, vk) = setup(&config, &[&air], &mut challenger(&config, &air));
                     Ok(Self {
@@ -292,19 +273,38 @@ macro_rules! degree_backend {
                         pk,
                         vk,
                         corpus: corpus.clone(),
-                        setup_ms: started.elapsed().as_secs_f64() * 1e3,
+                        setup_ms: { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/plonky3:started").expect("query completed operation") }.as_secs_f64() * 1e3,
+                        security,
                     })
                 }
 
-                pub fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>) {
-                    capture.begin();
-                    let root_start = capture.now_ns();
-                    let witness_start = root_start;
+                pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
+                    let recording = common::perfetto::Recording::start(Vec::new())
+                        .expect("start Perfetto trial");
+                    let trial = tracing::info_span!(
+                        "Verified trial",
+                        component = "benchmark.verified-trial",
+                        scope_kind = "scope",
+                        tag_end_to_end = true
+                    )
+                    .entered();
+                    let proving = tracing::info_span!(
+                        "Witness to proof",
+                        component = "benchmark.witness-to-proof",
+                        scope_kind = "scope"
+                    )
+                    .entered();
+                    let witness_scope = tracing::info_span!(
+                        "Witness generation",
+                        component = "benchmark.witness-evaluation",
+                        scope_kind = "phase",
+                        tag_witness_generation = true
+                    )
+                    .entered();
                     let trace = generate_trace_rows::<F>(trace_inputs(&self.corpus), 0);
                     assert_trace_outputs(&trace, &self.corpus.cases);
                     let witness_table = Table::new(trace.transpose());
-                    let witness_end = capture.now_ns();
-                    let online_start = witness_end;
+                    drop(witness_scope);
                     let proof: MultiStarkProof<Config> = prove(
                         &self.config,
                         ProverInstances::new(vec![ProverInstance::new(
@@ -316,11 +316,17 @@ macro_rules! degree_backend {
                         0,
                         &mut challenger(&self.config, &self.air),
                     );
-                    let online_end = capture.now_ns();
+                    drop(proving);
                     let proof_bytes = postcard::to_allocvec(&proof)
                         .expect("serialize complete Plonky3 proof")
                         .len();
-                    let verify_start = capture.now_ns();
+                    let verification = tracing::info_span!(
+                        "Verification",
+                        component = "benchmark.verification",
+                        scope_kind = "phase",
+                        tag_verification = true
+                    )
+                    .entered();
                     verify(
                         &self.config,
                         VerifierInstances::new(vec![VerifierInstance::new(
@@ -334,19 +340,11 @@ macro_rules! degree_backend {
                         &mut challenger(&self.config, &self.air),
                     )
                     .expect("Plonky3 full SHA AIR proof verifies");
-                    let verify_end = capture.now_ns();
-                    let raw = capture.finish();
+                    drop(verification);
+                    drop(trial);
+                    let raw = recording.intervals().expect("query Perfetto trial");
                     black_box(&proof);
-                    let spans = semantic_spans(
-                        &raw,
-                        root_start,
-                        witness_start,
-                        witness_end,
-                        online_start,
-                        online_end,
-                        verify_start,
-                        verify_end,
-                    );
+                    let spans = semantic_spans(&raw);
                     (TrialMetrics::from_spans(&spans, proof_bytes), spans)
                 }
 
@@ -455,8 +453,8 @@ macro_rules! degree_backend {
     };
 }
 
-degree_backend!(degree4, 4, SecurityAssumption::UniqueDecoding);
-degree_backend!(degree5, 5, SecurityAssumption::JohnsonBound);
+degree_backend!(degree4, 4);
+degree_backend!(degree5, 5);
 
 pub enum Context {
     Degree4(degree4::Context),
@@ -464,6 +462,12 @@ pub enum Context {
 }
 
 impl Context {
+    pub fn security(&self) -> serde_json::Value {
+        match self {
+            Self::Degree4(c) => c.security.clone(),
+            Self::Degree5(c) => c.security.clone(),
+        }
+    }
     pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
         match params.extension_degree {
             4 => degree4::Context::setup(corpus, params).map(Self::Degree4),
@@ -479,42 +483,68 @@ impl Context {
         }
     }
 
-    pub fn run(&self, capture: &TraceCapture) -> (TrialMetrics, Vec<SemanticSpan>) {
+    pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
         match self {
-            Self::Degree4(context) => context.run(capture),
-            Self::Degree5(context) => context.run(capture),
+            Self::Degree4(context) => context.run(),
+            Self::Degree5(context) => context.run(),
         }
     }
 }
 
 pub fn tamper_self_test() {
     let corpus = Corpus::new(128, 0x5033_5348_415f_5445);
+    let mut tested = 0;
     for extension_degree in [4, 5] {
         let params = Params {
             extension_degree,
             folding: 4,
             starting_log_inv_rate: 1,
             max_pow_bits: 12,
+            max_round_log_inv_rate: Some(4),
         };
-        match Context::setup(&corpus, params).expect("Plonky3 self-test configuration is eligible")
-        {
+        let Ok(context) = Context::setup(&corpus, params) else {
+            continue;
+        };
+        tested += 1;
+        match context {
             Context::Degree4(context) => context.tamper_self_test(),
             Context::Degree5(context) => context.tamper_self_test(),
         }
     }
+    assert!(
+        tested > 0,
+        "at least one Johnson-bound configuration must run proof rejection tests"
+    );
 }
 
-#[allow(clippy::too_many_arguments)]
-fn semantic_spans(
-    raw: &[CapturedSpan],
-    root_start: u64,
-    witness_start: u64,
-    witness_end: u64,
-    online_start: u64,
-    online_end: u64,
-    verify_start: u64,
-    verify_end: u64,
-) -> Vec<SemanticSpan> {
+#[cfg(test)]
+pub(super) fn security_schedule_self_test() {
+    type EF = BinomialExtensionField<F, 5>;
+    for exponent in 7..=16 {
+        let corpus = Corpus::new(1 << exponent, 0x5033_5348_415f_5445);
+        let air = PublicSha256Air::new(&corpus);
+        let shape = whir_tuning::air_shape::<F, EF, _>(&air, exponent);
+        let num_variables = log2_ceil_usize(corpus.cases.len() * NUM_SHA256_COLS);
+        let eligible = Params::candidates(&[5]).into_iter().find_map(|params| {
+            whir_tuning::select_protocol::<F, EF, Challenger>(num_variables, shape, params).ok()
+        });
+        let (_, report) =
+            eligible.unwrap_or_else(|| panic!("no eligible SHA schedule at 2^{exponent}"));
+        assert!(report["achieved_bits"].as_f64().unwrap() >= 100.0);
+    }
+}
+
+fn semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
+    let trial = TrialScopes::from_spans(raw, "benchmark");
+    let root_start = trial.verified.start_ns;
+    let root_end = trial.verified.end_ns;
+    let witness_to_proof_start = trial.witness_to_proof.start_ns;
+    let witness_start = trial.witness.start_ns;
+    let witness_end = trial.witness.end_ns;
+    let verify_start = trial.verification.start_ns;
+    let verify_end = trial.verification.end_ns;
+    let online_start = trial.witness.end_ns;
+    let online_end = trial.witness_to_proof.end_ns;
     let encode = raw
         .iter()
         .filter(|span| {
@@ -550,8 +580,20 @@ fn semantic_spans(
             "end-to-end",
             vec!["end-to-end"],
             root_start,
-            verify_end,
+            root_end,
             Some("end-to-end"),
+            false,
+        ),
+        span(
+            "p3-serialization",
+            Some("p3-root"),
+            "plonky3.serialization",
+            "Serialize complete WHIR proof",
+            "serialization",
+            vec!["serialization"],
+            online_end,
+            verify_start,
+            Some("serialization"),
             false,
         ),
         span(
@@ -561,7 +603,7 @@ fn semantic_spans(
             "Plonky3 trace generation through proof readiness",
             "proving",
             vec!["proving"],
-            witness_start,
+            witness_to_proof_start,
             online_end,
             None,
             false,
@@ -585,7 +627,7 @@ fn semantic_spans(
             "Plonky3 online prover",
             "proving",
             vec!["proving"],
-            encode.start_ns,
+            online_start,
             online_end,
             Some("proving"),
             false,
