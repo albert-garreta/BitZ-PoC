@@ -105,23 +105,15 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-<<<<<<< HEAD
 \section{Introduction}\label{s:intro}
-=======
-\section{Introduction}
-
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 
 
 
 
-<<<<<<< HEAD
+\albertimportant{More emphasis on public x witness vs witnes x witness as novelty, and what are the known techniques?}
 
 
-
-=======
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 A Succinct Non-interactive Argument of Knowledge (SNARK) for a relation $\Relation$ is a non-interactive protocol that enables a prover to convince a verifier that, for a given public input $\inp$, they know a witness $\wit$ such that $(\inp,\wit)\in \Relation$, and where communication and verifier runtime are sublinear (i.e.\ the scheme is succinct).
 
 In the vast majority of scenarios, $\Relation$ is defined over one (or more) algebraic object $R$, usually a finite field, and $(\inp,\wit)\in \Relation$ if and only if $(\inp,\wit)$ consists of elements that satisfy some polynomial equations, called  constraints. The choice of $R$ has a crucial impact on the design and end-to-end performance of the proof system, for two reasons: 
@@ -131,20 +123,12 @@ In the vast majority of scenarios, $\Relation$ is defined over one (or more) alg
 \textbf{(Non-)Nativity of the computation.} Usually the computations one wants to prove are not native to $R$, so one has to perform a more or less complex emulation of the computation into polynomial equations over $R$. This can affect the size of the input-witness pair $\inp,\wit$ significantly \cite{??}. Additionally, the emulation step can be  technically involved and prone to  security errors \cite{??}.  
 \item
 \label{i:field:performance}
-<<<<<<< HEAD
 \textbf{Proof system efficiency.} The efficiency and design of the prover and verifier algorithms are affected by the choice of $R$: for example, modern CPUs are more performant for operations in certain small fields (e.g.\ M31 \cite{cryptoeprint:2023/824,CircleSTARKs}, Babybear \cite{risczero}, Goldilocks \cite{plonky2:repo}) than in arbitrary fields, especially if these are larger. Importantly, another class of fields where CPUs operate exceptionally fast are \emph{binary fields}, i.e.\ fields of order a power of two.
-=======
-\textbf{Proof system efficiency.} The prover and verifier algorithms efficiency and design is affected by the choice of $R$: for example, modern CPUs are more performant for operations in certain small fields (e.g.\ M31 \cite{cryptoeprint:2023/824,CircleSTARKs}, Babybear \cite{risc0:whitepaper}, Goldilocks \cite{plonky2:repo}) than in arbitrary fields, especially if these are larger. Importantly, another class of fields where CPUs operate exceptionally fast are \emph{binary fields}, i.e.\ fields of order a power of two.
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 %
 \end{enumerate}
 \noindent Recently, two independent lines of research have received increased attention:
 \begin{itemize}[leftmargin=*]
-<<<<<<< HEAD
     \item Designing proof systems for relations expressed over  the ring of integers $R=\ZZ$, and over other rings that are not fields \cite{zaratan,zinc,zincplus,qaren,limber,rinnochio,soria2022doubly,baum2022moz,new_rings_work_one,new_rings_work_two}. The motivation behind this is to address \cref{i:arithmetization} above: in many practical scenarios, the computation to be proved is most succinctly and easily expressed over such rings, see \cite{zinc,zincplus,limber} \albert{more refs?}. 
-=======
-    \item Designing proof systems for relations expressed over  the ring of integers $R=\ZZ$, and over other rings that are not fields \cite{zaratan,zinc,zincplus,qaren,limber,more}. The motivation behind this is to address Item \ref{i:arithmetization} above: in many practical scenarios, the computation to be proved is most succinctly and easily expressed over such rings, see \cref{r:non_prime_characteristics} \albert{more refs?}. 
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
     \item Designing proof systems for $R=\comfield$ a binary field, for example \cite{stark,cryptoeprint:2022/1542,binius2,hashcaster:repo,flock}. The reason for this is twofold: first, some computations like classic hashes (SHA-256, Blake, etc.) are easier to express over  $\comfield$ than over other structures such as prime fields (however, these hash functions remain relatively un-native to  $\comfield$ due to the hardness of emulating operations modulo $2^{32}$ or $2^{64}$). Second, binary fields are highly performant on modern CPU's, and further enable using a boon of protocol techniques that further benefit perfomance, most importantly \textit{packed} polynomial commitment schemes \cite{binius,binius2}. 
     %and sumcheck optimizations \cite{yuval,more?}.
 \end{itemize}
@@ -161,25 +145,16 @@ In the vast majority of scenarios, $\Relation$ is defined over one (or more) alg
  
 
 
-<<<<<<< HEAD
 We implement \ftwoz\ and use it, among others (see below), to build a SNARK for proving R1CS constraints over the integers, following the fingerprinting paradigm from Campanelli and Hall-Andersen \cite{zaratan}. Concretely, we commit to witnesses over the integers (setting $S=\ZZ$); then the verifier samples a random prime $q$; then the R1CS is projected to $\FF_q$ through the morphism $\pi_q$ consisting in reduction modulo $q$; then a PIOP is run on the resulting R1CS, yielding a linear claim (an MLE claim) on the projected witness $\pi_q(\bff)$ of the form $\langle \pi_q(\bff), \vv\rangle = \mu$; finally, this claim is proved with \ftwoz. The commitment is made before $q$ is sampled, which is required for the soundness of the fingerprinting technique. The PIOP may output its claim over a field extension of $\FF_q$, which \ftwoz\ can prove (\cref{s:to_general_rings}). An example end-to-end SNARK is described in \cref{s:to_snark}. 
 
 We also build a SNARK that can prove constraints simultaneously over the integers and binary fields, and which uses \ftwoz\ as PCS. This SNARK also supports \emph{virtualization} of $\FF_2$ addition (XOR) between integer witness.  We discuss this further in \cref{s:intro_hybrid_proofs}.  We emphasize that \ftwoz\ can also be used to prove more exotic constraints, such as lattice-type operations, see \cref{s:to_general_bitz}. Overall, our \ftwoz\-based SNARKs support highly expressible constraints that allow to  arithmetize many computations of interest  with little technical complexity, and with small circuits. 
 
 The table below shows highlight benchmark results of our end-to-end proving system, which uses \ftwoz as PCS. We compare against the most performant prior SNARKs we could find for each task at hand. Perhaps surprisingly, in our experiments we find that, when proving integer constraints, Binius64 \cite{binius64}, a proof system fully native to binary fields, greatly outperforms other schemes that are specifically designed for the task. 
-=======
-We implement \ftwoz\ and use it, among others (see below), to build a SNARK for proving R1CS constraints over the integers, following the fingerprinting paradigm from Campanelli and Hall-Andersen \cite{zaratan}. Concretely, we commit to witnesses over the integers (setting $S=\ZZ$); then the verifier samples a random prime $q$; then the R1CS is projected to $\FF_q$ through the morphism $\pi_q$ consisting in reduction modulo $q$; then a PIOP is run on the resulting R1CS, yielding a linear claim (an MLE claim) on the projected witness $\pi_q(\bff)$ of the form $\langle \pi_q(\bff), \vv\rangle = \mu$; finally, this claim is proved with \ftwoz.  
-
-We also build a SNARK that can prove constraints simultaneously over the integers and binary fields, and which uses \ftwoz\ as PCS. We discuss this further in \cref{s:intro_hybrid_proofs}.  We emphasize that \ftwoz\ can also be used to prove more exotic constraints, such as lattice-type operations, see \cref{?}. 
-
-The table below shows highlight benchmark results of our end-to-end proving system, which uses \ftwoz, as PCS. We compare against the most performance prior SNARKs we could find for each task at hand. Perhaps surprisingly, in our experiments we find that, when proving integer constraints, Binius64 \cite{binius64}, a proof system fully native to binary fields, greatly outperforms other schemes that are specifically designed for the task. 
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arithmetized over the integers as the constraint $x\cdot y = z + 2^n\cdot w $ with $w$ being a new witness element. We discuss proving SHA-256 below.
 
  \begin{table}[H]
      \centering
-<<<<<<< HEAD
      \small
      \setlength{\tabcolsep}{4.5pt}
      \begin{tabular}{@{}ll rrrr@{}}
@@ -206,28 +181,6 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
      \caption{ \albertimportant{Todo} Performance of \ftwoz \ on  different  computations that are costly to arithmetize and prove with standard proof systems. 
      For each such computation, we also benchmark the performance of prior state of the art protocols. 
      All experiments were run on a MacBook Air M5 24\,GB, multi-threaded, targeting $100$ bits of security (Binius64 is at 96 bits). See \cref{s:experiments} for details on these and more experiments.\\
-=======
-     \begin{tabular}{l|c|c|c|c|c}
-         Computation &  \ftwoz & Binius64 \cite{binius64} & Limber \cite{limber} & Zinc+ \cite{zincplus} & Plonky3 \cite{?} \\
-         \toprule
-        $2^{17}$ mult.\ modulo $2^{32}$ & & \albert{Binius,Limber,Zinc+} \\
-                \hline
-        $2^{17}$ mult.\ 64 bit & & \\
-                \hline
-        $2^{17}$ mult.\ 128 bit& &\\
-                \hline
-                $2^{21}$ mult.\ 64 bit & & \\
-                  \hline
-       MultiSwap \cite{limber} & & \albert{Limber}\\   
-        \hline $4$KB SHA hash + ECDSA & &\\
-         \hline
-       $500$KB SHA hash + $2^{**}$ mult.\ mod $2^{32}$  & &  \\
-       \bottomrule
-       \end{tabular}
-     \caption{ \albertimportant{Include memory}. Performance of \ftwoz \ on  different  computations that are costly to arithmetize and prove with standard proof systems. 
-     For each such computation, we also benchmark the performance of prior state of the art protocols. 
-     All experiments were run on a MacBook Air M5 24\,GB, multi-threaded, targetting $100$ bits of security (Binius64 is at 96 bits). See \cref{s:experiments} for details on these and more experiments.\\
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
      We mostly display $2^{17}$ multiplications because this is roughly the amount where Binius64 achieves its highest throughput. For different amounts, \ftwoz\ outperforms by a wider margin. For larger sizes Binius64 runs out of memory, as showcased in the $2^{21}$ multiplications row.
     }     \label{tab:intro_table}
  \end{table}
@@ -238,20 +191,13 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
 \noindent \ftwoz\ presents the following properties:
  \begin{enumerate}[leftmargin=*]
      \item  \textbf{Pay-per-bit and algebraic independence.} Its performance  depends essentially exclusively on the bit-size of the witness $\bff$. In particular, the choice of ring $S$ (and $R$ and $\psi$ if it applies) has a tiny impact on its performance. 
-<<<<<<< HEAD
      \item \textbf{Composability and universality.} Because of its flexibility in its choice of rings, and because of the point above, \ftwoz\  can be used as a PCS in essentially any proof system. This includes standard proof systems based on finite fields, or more exotic ones working over different rings, e.g.\ the integers \cite{zaratan,limber,zinc,zincplus,qaren}, polynomial rings \cite{zincplus}, lattices \cite{?}, etc.
      
      For example, a proof system using a PCS that is not plausibly post-quantum secure, could replace its PCS with \ftwoz \ (which is plausibly post-quantum secure), regardless of the proof system's underlying field. As mentioned above, the underlying rings barely affect \ftwoz's performance. %\albertimportant{Remove?} %Further, a proof system over a large  field  can lift its constraints to $\ZZ$ (or to $\ZZ[X]$) and project them onto a random prime field of $\approx\lambda$ bits before running its PIOP, so that the PIOP runs over a small field and the \ftwoz\ opening pays only for the bit-size of the lifted witness entries, which can be much smaller than $\log|R|$ (\cref{r:to_reducing_ring}). % [AI-drafted sentence (Claude Opus 5), 2026-09-11] \albertimportant{would be nice to give example numbers of doing this}
-=======
-     \item \textbf{Composability and universality.} Because of its flexibility in its choice of rings, and because of the point above, \ftwoz\  can be used as a PCS in essentially any proof system. This include standard prood systems based on finite fields, or more exotic ones working over different rings, e.g.\ the integers \cite{zaratan,limber,zinc,zincplus,qaren}, polynomial rings \cite{zincplus}, lattices \cite{?}, etc.
-     
-     For example, a proof system using a PCS that is not plausibly post-quantum secure, could replace its PCS with \ftwoz \ (which is post-quantum secure), regardless of the proof system's underlying field. As mentioned above, the underlying rings barely affect \ftwoz's performance. \albertimportant{would be nice to give example numbers of doing this}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
      \item \textbf{``Free'' range checks.} \ftwoz\ provides range checks ``for free''. For example, when  committing  to integer witnesses, \ftwoz\ exposes a bit-size parameter $B$. Then, \ftwoz\ can be used to commit to integers of that bit-size, and it automatically guarantees that a malicious prover cannot commit to larger integers. This allows to omit many range checks that a standard proof system would need to enforce.
 \end{enumerate}
 
 
-<<<<<<< HEAD
 
 \subsection{\ftwoz\ in a nutshell}\label{s:intro_nutshell}
 
@@ -264,50 +210,22 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
          \item \textbf{Proof in the exponent of $\comfield$.} Now take a generator $g$ of the multiplicative subgroup $\comfield^*$, and prove that $g^{\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle} = g^{\mu'}$ in $\comfield$. Concretely, we have
          \begin{equation}\label{e:intro}
          g^{\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle} = \prod_{i} \left((g^{\pi_q^{-1}(\uu_i)} -1) \cdot \bitstext(\bff)_i + 1 \right) = g^{\mu'} \qquad \text{in } \comfield,
-=======
-\subsection{\ftwoz\ in a nutshell}
-
- \ftwoz \ proves the aforementioned claim $\langle \psi(\bff), \vv \rangle = \mu$ over $R$ as follows. Assume first that $R$ is a finite prime field $\FF_q$. We explain the general case later.  We  describe first an initial, mostly insufficient, attempt.
- \medskip
-     \begin{enumerate}[leftmargin=*,nosep]
-         \item  \textbf{Bitification.} First, it transforms the  claim into a claim of the form  $\langle \psi(\bitstext(\bff)), \uu \rangle = \mu$ over $R$, for some $\uu$, and where $\bitstext(\bff)$ denotes a vector  with entries in $\{0,1\}\subseteq \ZZ$\footnote{$\psi(\bitstext(\bff))$ is the natural interpretation of integer bits as the $0$ or $1$ element of $R$.}. Intuiviely, $\bitstext(\bff)$ is simply the result of  bit-decomposition the entries of $\bff$ in a natural way. \albertimportant{explain $\uu$ better}
-         \item \textbf{Commitment.} The prover commits to $\bitstext(\bff)$ over a binary field $\comfield$ (by looking at integers bits as elements from $\FF_2$), using a packed commitment scheme such as WHIR \cite{whir} over $\comfield$, with the ring-switch techniques from \cite{binius,binius2}. \albertimportant{Power of packing should be emphasized more}
-         \item \textbf{Lift to integers.} Assuming $\FF$ is a prime field of size $q$ and $\psi:\ZZ\to \FF$ is reduction modulo $q$, the prover computes and sends $\mu'\in \ZZ$ such that $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$ in $\ZZ$.
-         \item \textbf{Proof in the exponent of $\comfield$.} Now take a generator $g$ of the multiplicative subgroup $\comfield^*$, and prove that $g^{\langle \psi^{-1}(\uu), \bitstext(\bff)\rangle} = g^{\mu'}$ in $\comfield$. Concretely, we have
-         \begin{equation}\label{e:intro}
-         g^{\langle \psi^{-1}(\uu), \bitstext(\bff)\rangle} = \prod_{i} \left((g^{\psi^{-1}(\uu_i)} -1) \cdot \bitstext(\bff)_i + 1 \right) = g^{\mu'},
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
          \end{equation}
          which is a polynomial expression over $\comfield$ on the vector $\bitstext(\bff)$ that we committed over $\comfield$. 
          
-<<<<<<< HEAD
          This is a standard setting where there is no ``wrong-field'' arithmetic, hence in principle one can use any proof system over $\comfield$ to prove \eqref{e:intro}.
 
      \end{enumerate}  
 
      \begin{remark}Proving constraints ``in the exponent''  is a well-known idea that goes back at least to \cite{binius64,lev}. One of our main contributions is 1) in what context this technique is used, namely inside the PCS to prove MLE evaluation claims (or inner product claims) of the witness, as opposed to proving the initial arithmetized computation, see \cref{r:comparison_grand_product_binius_lev} for more details;  2) the optimizations we design for such a specific ``proof in the exponent'' setting, see \cref{s:to_low_entropy_gkr,s:gkr_low_entropy}; and 3) extending it so it can be used to prove constraints over arbitrary rings, and not just, say, integers or \emph{prime} fields with small  values (to avoid overflowing the multiplicative order of $g$).\end{remark}
-=======
-         This is a standard situation where there is no ``wrong-field'' arithmetic, hence in principle one can use any proof system over $\comfield$ to prove \eqref{e:intro}.
-
-     \end{enumerate}  
-
-     \begin{remark}Proving constraints ``in the exponent''  is a well-known idea that goes back at least to \cite{binius64}. One of our main contributions is 1) in what context this technique is used, namely inside the PCS to prove MLE evaluation claims (or inner product claims) of the witness, as opposed to prove the initial arithmetized computation, see \cref{?} for more details;  2) the optimizations we design for such a specific ``proof in the exponent'' setting, see \cref{?}; and 3) extending it so it can be used to prove constraints over arbitrary rings, and not just, say, integers or \emph{prime} fields with small  values (to avoid overflowing the multiplicative order of $g$).\end{remark}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
      
 \noindent There are several issues with the attempt above:
 \medskip
 \begin{itemize}[leftmargin=*,nosep]
-<<<<<<< HEAD
     \item \textbf{How to lift from general rings?} First, $R$ may not be a prime field, in which case there is no natural lift to integers in Step 3; rather, there is a lift to integer polynomials $\ZZ[X_1, \ldots, X_k]$. 
     \item \textbf{How to lift large values?} Second, even if $R=\FF_q$ is a prime field,  $q=|\FF|$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$  ``in the exponent of $g$'' is unsound. 
     \item \textbf{Expensive grand product.} Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\bitstext(\bff)|$ grand product of, essentially, arbitrary factors from $\comfield$ (typically $\approx$128 bit elements).  Grand products can be expensive, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and others from \cite{flock,sumcheck_opt_1,sumcheck_opt_2}.
     \item \textbf{Non-succinct verifier.} Fourth, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_i$ (and another on $\bitstext(\bff)$, which is proved with any PCS over $\comfield$). If the verifier checks the claim itself, then it pays a linear cost. If otherwise the prover has to prove this claim, then it is essentially back to square one.
-=======
-    \item \textbf{How to lift from general rings?} First, $R$ may not be a prime field, in which case there is no natural lift to integers in Step 2; rather, there is a lift to integer polynomials $\ZZ[X]$. 
-    \item \textbf{How to lift large values?} Second, even if $R=\FF_q$ is a prime field,  $q=|\FF|$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$  ``in the exponent of $g$'' is unsound. 
-    \item \textbf{Expensive grand product.} Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\bitstext(\bff)|$ grand product of, essentially, arbitrary factors from $\comfield$ (typically $\approx$128 bit elements).  Grand products can be expensive, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and others from \cite{flock,sumcheck_opt_1,sumcheck_opt_2}.
-    \item \textbf{Non-succinct verifier.} Four, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\psi^{-1}(\uu)_i})_i$ (and another on $\bitstext(\ww)$, which is proved with any PCS over $\comfield$). If the verifier checks the claim itself, then it pays a linear cost. If otherwise the prover has to prove this claim, then it is essentially back to square one.
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 \end{itemize}
 
 
@@ -318,7 +236,6 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
 
 \bigskip
 
-<<<<<<< HEAD
 
 \noindent \textbf{Issues 1 and 2:} These are solved by lifting the inner product claim to $\ZZ[X_1, \ldots, X_k]$ (after observing that all finitely generated rings are a projection of a ring such as $\ZZ[X_1, \ldots, X_k]$), and then projecting the resulting claim to a new claim over a random prime field. Then we proceed as in Steps 3 and 4 with this new claim over $\FF_{q'}$. 
 
@@ -339,59 +256,16 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
 There are $|\bitstext(\bff)|$ factors in total, but only $\approx \sqrt{|\bitstext(\bff)|}$ different values these factors can take. 
 
 We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (of a few MB for $|\uu^{(1)}|=2^{16}$, see \cref{tab:gkr_tables}) which are used during the most expensive sumcheck rounds of the GKR protocol. Concretely, the last sumcheck (the most expensive one) uses several lookup tables to compute the first three messages of the prover; the second last sumcheck does the same for the first two prover messages (with two tables); and the third last sumcheck does the same for the first prover message (with one table).
-=======
-\noindent We solve these issues as follows: 
-
-\paragraph{Issues 1 and 2: lift to $\ZZ[X_1, \ldots, X_k]$ and project to a random prime field, then lift again.} If, say, $\FF$ is a proper extension, at Step 2 we lift to a claim $\langle\bitstext(\bff), \picanon^{-1}(\uu), \rangle = \mu' \in \ZZ[X]$ over $\ZZ[X]$,  where $\picanon:\ZZ[X] \to \FF$ is a canonical projection of $\ZZ[X]$ onto $\FF$. Then the verifier sends a random prime $q'$ of $\approx |\comfield^*|/|\bitstext(\ww)|$ size (small enough to avoid the issue of overflowing in the exponent), and a random element $\alpha\in \FF_{q'}$; then the previous claim is replaced by  $\langle \pi_{q',\alpha}\circ \picanon^{-1}(\uu), \pi_{q',\alpha}(\bitstext(\bff))\rangle = \pi_{q',\alpha}(\mu') \in \FF_{q'}$ where $\pi_{q',\alpha}(f(X)) = \pi_{q'}(f)(\alpha)\in \FF_{q'}$. Now we re-enter Step 2 with this new claim.
-
-If $\FF$ is too large of a prime field, we follow a similar approach as above: once we have the integer claim $\langle \pi_q^{-1}(\uu), \bitstext(\wit)\rangle = \mu'$, the verifier samples a random ``small'' prime $q'$, reduce the claim modulo $q'$, and then re-enter Step 2 with this new claim.
-
-In general, if $R$ is a  ring $R$ with generators $1, \gamma_1, \ldots, \gamma_k$, we define a canonical ring homomorphism  $$\picanon: \ZZ[X_1, \ldots, X_k] \to R$$ as $\picanon(X_i) = \gamma_i$ and $\picanon(1)$ is the element $1$ of $1$. Then we follow the same approach as above, but this time the verifier samples a  morphism $\pirand:\ZZ[X_1, \ldots, X_k] \to \FF_{q'}$ for a random prime $q'$.
-\bigskip 
-
-\noindent \emph{\underline{128 bits of security using $\FF_{2^{128}}$, arbitrary rings $R$, and arbitrary sizes of the entries of $\vv$.}} We manage to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having essentially no limitation on the size of the ring $R$ we start with.
-
-\paragraph{Issues 3 and 4: batched low entropy grand products} We split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\bff)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\bff)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\bff)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\bff)|}$ sized factors (this is typically the case since $\vv$ is usually an ``eq'' vector), and then, assuming the notation of Step 3 above, we aim to prove  in the exponent $\langle \psi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$ in $\ZZ$  for all $j\in [|\uu^{(2)}|]$, such that $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\bff)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. We  set up a grand product for each of these claims, obtaining 
-  \begin{equation}\label{e:intro_2}
-         g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} = \prod_{i} (g^{\psi^{-1}(\uu_i^{(1)})} -1) \cdot \bitstext(\bff)_{ij} + 1 = g^{\mu_j'} \qquad \text{for all } j.
-         \end{equation}
-There are $|\bitstext(\bff)|$ factors in total, but only $\approx \sqrt{|\bitstext(\bff)|}$ different values these factors can take. 
-
-We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (of a few hundred KB, or 1-2 MB at most) which are used during the most expensive sumcheck rounds of the GKR protocol. Concretely, the last sumcheck (the most expensive one), uses several lookup tables to compute the first three messages of the prover; the second last sumcheck does the same for the first two prover messages (with two tables); and the third last sumcheck does the same for the first prover message (with one table).
 
 \bigskip
 
-\noindent \emph{\underline{The key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while keeping them in cache, where table reads are cheaper than field multiplications. 
-
-This is enabled by the  decomposition of the initial claim into the subclainms $\langle \psi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$. This decomposition is possible because we only seek to prove witness MLE evaluations (or inner products) in the exponent. Other proof systems using the proof in the exponent technique, e.g.\ \cite{binius64}, aim to prove entire constraints in the exponent. Ultimately, this means one has to prove products of the form $y\cdot x$ in the exponent, for $x,y$ two witness elements, while we only prove products $a\cdot x$, for $a$ a  value coming from a public vector admitting a square-root sized tensor decomposition. See \cref{?} for more details. \albertimportant{Discuss Binius approach and the frobenius trick? And their limited usage of lookup tables?}
-
-\bigskip
-
-\noindent \emph{\underline{Issue 4.}} The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\bff^{(1)})_i})_i$ (and $\bitstext(\bff)$, which are dealt with the PCS over $\comfield$). This is an $O(\sqrt{|\bitstext(\bff)|})$ vector, and the verifier can check this claim by itself cheaply.
-
-\subsubsection{Using \ftwoz\ to prove constraints with hybrid arithmetics}\label{s:intro_hybrid_proofs}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
-
-\bigskip
-
-<<<<<<< HEAD
 \noindent \emph{\underline{The key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while keeping them in cache, where table reads are cheaper than field multiplications. 
 
 This is enabled by the  decomposition of the initial claim into the subclaims $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$. This decomposition is possible because we only seek to prove witness MLE evaluations (or inner products) in the exponent. The reason we only need this this is that we arithmetize over a variety of rings and run a PIOP over those rings, which reduced the intiial constraints to a \emph{linear} claim on the witness, which we then prove ``in the exponent''. 
 
 Other proof systems using the ``proof in the exponent'' technique, e.g.\ \cite{binius64}, aim to prove entire constraints in the exponent. Ultimately, this means one has to prove products of the form $y\cdot x$ in the exponent, for $x,y$ two witness elements, while we only prove products $a\cdot x$, for $a$ a  value coming from a public vector admitting a square-root sized tensor decomposition. See \cref{r:comparison_grand_product_binius_lev} for more details. 
-=======
-In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1CS constraints over integers and binary fields. We explain how next. We stress again that one can use \ftwoz\ to build all sort of proof systems for all sorts of constraints. Nothing forces  to use R1CS-like constraints and integers and binary fields. 
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
- \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps from \cref{?}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ and vector $\bfg$ with entries in $\comfield$. Then, we could instead of committing to $\bitstext(\bff)$ in step 1, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
- %
- $$
-\langle \bfg, M^{\mathsf{T}}\uu'\rangle = \eta \quad \text{ in } \comfield,
- $$
- where $\mathsf{T}$ denotes transposition. This is a linear claim on $\bfg$, the vector we committed to. We can prove this claim with a standard PCS over $\comfield$ such as \cite{whir} \albertimportant{comment about verifier succinctness}. 
 
-<<<<<<< HEAD
 
 
 \bigskip
@@ -415,10 +289,6 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 
  
  This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
-=======
- 
- This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \comfield^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 %
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ & \qquad\qquad \defeq \left\{ \begin{aligned}
@@ -430,44 +300,8 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 \end{align*}
 %
 A particularly interesting subclass of this relation is that obtained by setting $A=B=\mathbf{0}$, in which case the resulting relation, which we call the \emph{$\mathsf{CM}$ relation}, degenerates to linear constraints over $\ZZ$ and over $\FF_2$, i.e.\ a ``dually linear'' constraint. 
-<<<<<<< HEAD
 
 In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  We remark that despite this small arithmetization, when it comes to proving many classic hash compressions, we observe that binary field native proof systems such as Flock \cite{flock} and Binius64 \cite{binius64} perform better. Because of this, in \cref{s:hybrid_snark} we propose a proof system that can handle simultaneously constraints over integers (or other rings) and binary fields, and which uses \ftwoz\ as its PCS.
-=======
-
-In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. We arithmetize SHA-256 as an instance of the CM relation, with $4.4$ smaller witnesses than Binius64 \cite{binius64} \albertimportant{add Flock?}, see \cref{tab:sha_arithmetization}. 
-
-
-
-\begin{table}[H]
-    \centering
-    \begin{tabular}{l|c}
-        SHA-256 arithmetization type & Witness bit-size per compression  \\ 
-        \toprule
-        $\mathsf{CM}$ & $7144$ bits \\
-        \hline
-        R1CS over $\comfield$ &  $31744$ bits
-    \end{tabular}
-    \caption{Witness bit-size per SHA-256 compression as per two different arithmetizations. The $\mathsf{CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf{CM}$ relation (see \eqref{e:CM_rel}) using the methods from \cref{e:CM_rel,r:CM_is_NP_complete}, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean} \albertimportant{Change this to avoid deanonymization in the EC submission}. The last row displays the witness bit-size in the  arithmetization from Binius64 \cite{binius64}, which is an R1CS constraint over a binary field. }
-    \label{tab:sha_arithmetization}
-\end{table}
-
-
-\albertimportant{Discuss costs. Say proving SHA this way does not scale. Transition to next paragraph}
-
-\paragraph{Fully hybrid constraints over $\ZZ$ and $\comfield$.} \albertimportant{Edit needed}
-
-
-
-
-Ultimately, for a proof system that requires proving a very large number of SHA (or similar) compressions, together with other type of arithmetic operations, e.g.\ integer or modulo $2^n$, we recommend using a hybrid arithmetization and for constraints over $\ZZ$ and binary fields (in the style of Zinc+ \cref{zincplus}), with a witness $(\bff_\ZZ, \bff_{2})$ split into a part $\bff_\ZZ$ that is used in the integer constraints, and another part $\bff_{2}$ used in the binary field constraints. Then the overall constraint is proved as:  \begin{enumerate}[leftmargin=*]
-        \item  Run a PIOP that is composed of a PIOP for integer constraints (as in \cref{?}) and a PIOP for binary field constraints (such as Binius64). This results in two MLE claims, one for (a projection of) $\ff_\ZZ$ over a finite field, and another for $\bff_2$ over a binary field.
-        \item Use \ftwoz\ to reduce the resulting MLE evaluation claim for (a projection of) $\bff_\ZZ$ to an MLE evaluation claim over a binary field;
-        \item Use WHIR or another PCS over binary fields to prove the above claim, together with (in a batched manner) the MLE evaluation claim for $\bff_2$.
-    \end{enumerate}
-
-
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 
 
@@ -532,11 +366,6 @@ At the time of writing, two further works push the performance envelope of binar
 
 \subsection{Acknowledgements}
 
-<<<<<<< HEAD
-=======
-We thank the engineering teams at World Foundation, Nethermind, and Ivy Research for their contributions towards implementing \ftwoz, concretely we thank Alexander Abdugafarov, Xander van der Goot, and Sina \albert{Last name?}.
-We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful and helpful discussions.  
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 
 This work was supported by the World Foundation. 
@@ -549,7 +378,6 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 \paragraph{Usage and non-usage of AI.} 
 
-<<<<<<< HEAD
 \bigskip
 
 \noindent \emph{Ideation:} \albertimportant{Revisit.} The only conceptual content of this work influenced by AI is around the optimizations of our batched grand product. In preliminary phases of this work, we extensively used AI to look for optimizations for it. The concept of low entropy and the use of lookup tables in it were distilled by us from a long interactive optimization process.
@@ -566,28 +394,6 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 \section{Technical overview}\label{s:tech_overview}
 
    
-=======
-\section{Technical overview}
-
-   
-
-    \albertimportant{It should be very clear throughout the paper: The PIOP machinery is for the most part Zinc+'s or Zaratan. The dual field PCS primitive is novel; its instantiation is pretty much novel (though ideas can be traced back to \cite{binius64,lev}), and its enabling optimizations are novel. The PCS in binary fields is completely known. }
-
-
-
-
- \albertimportant{discuss somewhere (technical overview) the succinctness/non-succinctness of verifier}
-
-
-\albertimportant{List of reasons why the tensor decomposition is important: 1) low entropy grand product; 2) succinct verifier (otherwise it would need to compute an MLE for $g^{\bm{\gamma}}$ of fill witness dimension); 3) achieving 128 bits of soundness while using $\FF_{2^{128}}$ and largeish witness sizes: the tensor split allows us to only put inner products with sqrt(witness dimension) many terms (there's other things that contribute to achieving 128 bits of soundness, like ROund 2 of \cref{c:core_iop}). }
-
-
-\albertimportant{This is an important point. It should be highlighted more (this is a quote from the GKR section).   ''Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.''}
-
-
-    
-\subsection{A simple version of \ftwoz}\label{s:to_simple_bitz}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 
 
@@ -1434,11 +1240,7 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
   \small
   \setlength{\tabcolsep}{5pt}
   \caption{Cost of finding a $64$-bit nonce such that $\text{BLAKE3}(\mathsf{msg}, \mathsf{nonce})$ has at least $\alpha$ leading zero
-<<<<<<< HEAD
     bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded ($10$ threads) \albertimportant{Or 8?} on a MacBook Air M5 24\,GB. \albert{As implemented in Flock?}}
-=======
-    bits, with $\mathsf{msg}$ of $256$ bits. Single and multi-threaded ($10$ threads) on a MacBook Air M5 24\,GB; means and medians over $400$ random $\mathsf{msg}$. \albert{As implemented in Flock?}}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
   \label{tab:grinding-cost}
       \begin{tabular}{@{}l rrrrrrrr@{}}
     \toprule
@@ -1714,7 +1516,7 @@ We assume without further comment that it is efficient to compute  values $\pica
 
 
 
-\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,Ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} for more details.   
+\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is the WHIR/Ligerito protocol \cite{whir,Ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims (since the ring switch of \cite{flock} does not support arbitrary inner product claims). We set the proximity parameter  to the Johnson bound when targeting $100$ bits of security, and to the unique decoding radius for $128$ bits of security, see \cref{s:instantiation} \albertimportant{revisit} for more details.   
 \item 
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define 
 \begin{equation}\label{e:ring_theta_params}
@@ -2357,11 +2159,7 @@ We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an 
         \hline
         $\cC$ & Reed-Solomon code over $\comfield$ of rate $1/2$ or $1/8$\\
         \hline
-<<<<<<< HEAD
         Proximity parameter $\delta$ & Close to the Johnson bound\footnote{Except when targeting $>100$ bits of security, in which case we use the unique decoding radius}\\
-=======
-        Proximity parameter $\delta$ & Close to the Johnson bound\footnote{Except when targetting $>100$ bits of security, in which case we use the unique decoding radius}\\
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
         \hline
         $L$ & The standard bitification matrix (\cref{e:canonical_bitification_matrix})\\ 
          \hline
@@ -2374,7 +2172,7 @@ We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an 
     \label{tab:instantiation_params}
 \end{table}
 
-We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{s:experiments} we provide experimental results for $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
+We next provide example  instantiations of \cref{c:core_iop,c:LinModFieldBin} so as to achieve  $\lambda=128$ bits of \albertimportant{say rbr knowledge soundness} security, while keeping the protocols as efficient as possible, with the main challenge being to use $\comfield$ of size $2^{128}$ for efficiency purpose. We remark that in \cref{s:experiments} we provide experimental results for $100$ bits of security.   Achieving $\lambda=100$ bits of security is relatively straightforward and we do not discuss it. We use a careful selection of parameters in combination with grinding. In \cref{r:beyond_gridning} we discuss other instantiations and techniques that do not require grinding.
 
 The contents of this section should be taken as examples of how to instantiate \cref{c:core_iop,c:LinModFieldBin}, not as strict rules. Other configurations may be perfectly plausible and practical. 
 
@@ -2438,11 +2236,7 @@ We now discuss how to make the errors $\kappa_{\mathsf{OOD}}, \kappa_0, (\ksred_
 \noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_snark}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
-<<<<<<< HEAD
 \paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $0.8-1.8$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
-=======
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18-19$ bits of grinding during each round of the PIOP (which adds $0.8-1.8$ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$ or $\ZZ[X]$ \albert{do we mention $\ZZ[X]$? Why not mention other rings here? Again, wait for the TO}, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}. 
 
@@ -2509,11 +2303,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 11.9 \\
     128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 98.1 \\
     128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 25.9 \\
-<<<<<<< HEAD
     128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.3}$ & 24 & 54.9 \\
-=======
-    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.2}$ & 24 & 54.9 \\
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
     \midrule
     128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 1.8 \\
     128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 11.9 \\
@@ -3119,8 +2909,6 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 \section{Experiments} \label{s:experiments}
 
-\albertimportant{All mentions of \ftwoz\ (in the tables) should be of \ftwoz-SNARK}
-
 
 \begin{comment}
 
@@ -3171,11 +2959,11 @@ for some $\rr^{(2)} \in \KK^{\log \codedim}$  and some $\mu\in \KK$. In other wo
 
 \albertimportant{Reproduction with BENCH\_INSTRUCTIONS.ms}
 
-We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end roof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}. 
+We implement the \ftwoz\ PCS (\cref{c:core_iop,c:LinModFieldBin}) following the guideline in \cref{s:instantiation}. We then implement an end-to-end proof system, called \ftwoz-SNARK, for integer R1CS constraints as described in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}. 
 
 
 
-Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness (meaning that the largest round-by-round knowledge soundness of the protocols is at most $2^{-100}$), except in  \cref{s:multiswap}, where we target 114 bits. We omit 128 bits of security in our experiments because many of the scheme implementations  we compare against cannot be configured at such level of soundness.
+Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness (meaning that the largest round-by-round knowledge soundness of the protocols is at most $2^{-100}$), except in  \cref{s:multiswap}, where we target 114 bits. We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level \albertimportant{review}.
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius.
 
@@ -3199,13 +2987,6 @@ We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the
 Additionally, AI was used to prepare the benchmarks in other repositories, and underwent revision by us. It was also used to run the benchmarks and organize the results into the  tables in this section.
 
 
-<<<<<<< HEAD
-=======
-
-Concretely, our \ftwoz\ is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/8$ (unless stated otherwise). As  backend of \ftwoz \ we use the Ligerito implementation from \cite{flock} with folding arity $4$. When targeting $100$ bits of security, we sample primes in the range $[2^{b-1}, 2^b-1]$ with $b=$ \albertimportant{fill in}. 
-
-\paragraph{Future work: lattice-type computations} Since the \ftwoz \ PCS can prove MLE evaluations over arbitrary finitely generated rings, it can be combined with,  for example, the arithmetization and PIOP from Zinc+ \cite{zincplus} so as to prove  lattice operations (e.g.\ Falcon signature verification). Implementing and benchmarking this is left as future work.
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 
 \subsection{Raw performance of the \ftwoz \ PCS for the core LinBitsRings relation}
 
@@ -3259,19 +3040,12 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 \begin{table}[H]
   \centering
-<<<<<<< HEAD
   \begin{tabular}{@{}llrrrrr@{}}
-=======
-  \small
-  \setlength{\tabcolsep}{4.5pt}
-    \begin{tabular}{@{}rlrrrrr@{}}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
     \toprule
     Scheme &  \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof \\
     \cmidrule(lr){3-4} \cmidrule(lr){5-6}
       & 1 thr & 10 thr & 1 thr & 10 thr & (KB) \\
     \midrule
-<<<<<<< HEAD
     \ftwoz-SNARK                     & \textbf{241}  & \textbf{91} & \textbf{8.8} & \textbf{11.0} & 269 \\
     Zinc+                & 1906          & 527          & 16.4         & 12.5 & 1272 \\
     Limber (Brakedown)                   & 1056          & 529          & 38.9         & 37.5 & 5769 \\
@@ -3282,179 +3056,6 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     \bottomrule
   \end{tabular}
   \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M5 $24$GB. ``Thr'' stands for ``threads''.  The first four schemes achieve $114$ bits of round-by-round knowledge soundness. 
-=======
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.05} & \textbf{21.2} & 2.80 & \textbf{118} & \textbf{0.059} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 0.61 & 30.9 & 1.68 & 324 & 0.280 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 0.61 & 34.2 & \textbf{1.52} & 243 & 0.284 \\
-      & Plonky3~\cite{plonky} (WHIR) & 2.53 & 1230 & 3.91 & 195 & 0.499 \\
-      & Limber~\cite{limber} (Hyrax) & 0.42 & 159 & 16.1 & 126 & 0.219 \\
-    \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.09} & \textbf{29.1} & 2.55 & \textbf{138} & \textbf{0.107} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 1.23 & 46.4 & 1.90 & 355 & 0.543 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 1.24 & 53.2 & \textbf{1.73} & 259 & 0.557 \\
-      & Plonky3~\cite{plonky} (WHIR) & 5.27 & 2689 & 4.48 & 216 & 0.997 \\
-      & Limber~\cite{limber} (Hyrax) & 0.85 & 247 & 25.2 & 145 & 0.422 \\
-    \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.17} & \textbf{44.8} & 3.26 & \textbf{150} & \textbf{0.155} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 2.48 & 81.5 & 2.58 & 388 & 0.919 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 2.49 & 91.5 & \textbf{2.49} & 283 & 0.997 \\
-      & Plonky3~\cite{plonky} (WHIR) & 10.3 & 5513 & 4.71 & 227 & 1.89 \\
-      & Limber~\cite{limber} (Hyrax) & 1.70 & 421 & 48.9 & 204 & 0.811 \\
-    \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.40} & \textbf{74.6} & 3.64 & \textbf{168} & \textbf{0.288} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 4.85 & 145 & 3.84 & 432 & 1.81 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 4.85 & 170 & \textbf{3.47} & 306 & 1.97 \\
-      & Plonky3~\cite{plonky} (WHIR) & 20.9 & 11141 & 4.94 & 238 & 3.76 \\
-      & Limber~\cite{limber} (Hyrax) & 3.46 & 742 & 71.5 & 293 & 1.59 \\
-    \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.80} & \textbf{127} & \textbf{4.01} & \textbf{188} & \textbf{0.514} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 10.2 & 281 & 9.74 & 472 & 3.67 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 9.92 & 323 & 9.24 & 330 & 3.93 \\
-      & Plonky3~\cite{plonky} (WHIR) & 39.4 & 22715 & 5.27 & 249 & 5.80 \\
-      & Limber~\cite{limber} (Hyrax) & 7.30 & 1533 & 141 & 430 & 3.17 \\
-    \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.53} & \textbf{248} & \textbf{4.83} & \textbf{211} & \textbf{1.00} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 21.8 & 561 & 17.9 & 519 & 7.34 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 20.4 & 630 & 17.1 & 355 & 7.83 \\
-      & Plonky3~\cite{plonky} (WHIR) & 116 & 59221 & 8.11 & 270 & 9.17 \\
-      & Limber~\cite{limber} (Hyrax) & 14.5 & 3015 & 260 & 738 & 6.30 \\
-    \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & \textbf{3.39} & \textbf{455} & \textbf{6.36} & \textbf{227} & \textbf{1.88} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
-      & Limber~\cite{limber} (Hyrax) & 38.6 & 7312 & 983 & 1289 & 8.25 \\
-    \addlinespace
-    $2^{22}$ & \ftwoz\ (this work) & \textbf{6.70} & \textbf{921} & \textbf{6.49} & \textbf{262} & \textbf{3.69} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-      & Plonky3~\cite{plonky} (WHIR) & -- & -- & -- & -- & -- \\
-      & Limber~\cite{limber} (Hyrax) & 203 & 21540 & 5499 & 2385 & 12.3 \\
-    \bottomrule
-  \end{tabular}
-  \caption{\albertimportant{We should do FRI Plonky3} Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$ bit nonnegative integers $x$ and $y$. 100 bits of security (Binius64 is at 96 bits). Ran on a MacBook Air M5, 24\,GB, $8$ threads.}
-  \label{tab:native-mul}
-\end{table}
-
-\albert{64 bits?}
-%Concretely we prove the relation $$\PIMSAT(\ZZ_{\leq 64}, \pp, \bot) = \left\{ \inp=\bot, \\right\}$$  We compare against Plonky3 \cite{?}, Binius64 \cite{?}
-
-%\input{sha256-f2}
-
-
-
-\begin{table}[H]
-  \centering
-  \small
-  \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{@{}rlrrrrr@{}}
-    \toprule
-    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
-    \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.04} & \textbf{30.9} & 3.31 & \textbf{137} & \textbf{0.085} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 0.44 & 31.9 & 1.35 & 324 & 0.224 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 0.44 & 35.0 & \textbf{1.21} & 242 & 0.241 \\
-    \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.07} & \textbf{46.0} & 3.57 & \textbf{151} & \textbf{0.144} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 0.89 & 47.6 & 1.56 & 355 & 0.429 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 0.88 & 53.9 & \textbf{1.39} & 259 & 0.476 \\
-    \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{81.3} & 9.28 & \textbf{164} & \textbf{0.257} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 1.80 & 82.2 & 2.06 & 387 & 0.839 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 1.79 & 95.3 & \textbf{1.90} & 283 & 0.914 \\
-    \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.30} & \textbf{138} & 9.05 & \textbf{188} & \textbf{0.479} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 3.50 & 148 & 2.89 & 431 & 1.65 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 3.51 & 171 & \textbf{2.79} & 305 & 1.81 \\
-    \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{0.54} & \textbf{252} & 12.0 & \textbf{202} & \textbf{0.902} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 7.01 & 281 & 7.89 & 472 & 3.17 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 7.25 & 328 & 7.73 & 330 & 3.41 \\
-    \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{1.15} & \textbf{481} & 13.4 & \textbf{223} & \textbf{1.75} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 14.0 & 548 & 13.8 & 518 & 6.34 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 13.9 & 634 & 13.1 & 355 & 6.82 \\
-    \bottomrule
-  \end{tabular}
-  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$) and Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
-  \label{tab:native-mul-u64}
-\end{table}
-
-\begin{table}[H]
-  \centering
-  \small
-  \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{@{}rlrrrrr@{}}
-    \toprule
-    $N$ & Scheme & Witgen (ms) & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
-    \midrule
-    $2^{15}$ & \ftwoz\ (this work) & \textbf{0.08} & \textbf{50.5} & 3.94 & \textbf{151} & \textbf{0.146} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 1.70 & 88.1 & 3.71 & 388 & 1.02 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 1.73 & 99.3 & \textbf{3.56} & 283 & 1.09 \\
-      & Limber~\cite{limber} (Hyrax) & 0.95 & 381 & 32.1 & 204 & 0.552 \\
-    \addlinespace
-    $2^{16}$ & \ftwoz\ (this work) & \textbf{0.15} & \textbf{75.9} & \textbf{4.48} & \textbf{164} & \textbf{0.247} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 3.36 & 159 & 5.31 & 432 & 1.94 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 3.39 & 182 & 5.21 & 306 & 2.09 \\
-      & Limber~\cite{limber} (Hyrax) & 2.05 & 709 & 41.4 & 293 & 1.05 \\
-    \addlinespace
-    $2^{17}$ & \ftwoz\ (this work) & \textbf{0.30} & \textbf{138} & \textbf{5.55} & \textbf{186} & \textbf{0.466} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 7.03 & 309 & 12.4 & 472 & 3.93 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 7.13 & 351 & 12.6 & 331 & 4.19 \\
-      & Limber~\cite{limber} (Hyrax) & 3.87 & 1265 & 70.7 & 430 & 2.09 \\
-    \addlinespace
-    $2^{18}$ & \ftwoz\ (this work) & \textbf{0.59} & \textbf{290} & \textbf{7.49} & \textbf{202} & \textbf{0.850} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & 15.1 & 615 & 22.9 & 519 & 7.91 \\
-      & Binius64~\cite{binius64}, rate $1/8$ & 14.6 & 702 & 22.3 & 356 & 8.40 \\
-      & Limber~\cite{limber} (Hyrax) & 7.77 & 2472 & 121 & 738 & 4.14 \\
-    \addlinespace
-    $2^{19}$ & \ftwoz\ (this work) & \textbf{1.08} & \textbf{581} & \textbf{9.46} & \textbf{218} & \textbf{1.61} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-      & Limber~\cite{limber} (Hyrax) & 15.2 & 5428 & 216 & 1289 & 8.21 \\
-    \addlinespace
-    $2^{20}$ & \ftwoz\ (this work) & \textbf{2.33} & \textbf{1220} & \textbf{10.5} & \textbf{248} & \textbf{3.14} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-      & Limber~\cite{limber} (Hyrax) & 55.4 & 13062 & 662 & 2385 & 8.60 \\
-    \addlinespace
-    $2^{21}$ & \ftwoz\ (this work) & \textbf{4.65} & \textbf{2768} & \textbf{15.4} & \textbf{263} & \textbf{6.13} \\
-      & Binius64~\cite{binius64}, rate $1/2$ & -- & -- & -- & -- & -- \\
-      & Binius64~\cite{binius64}, rate $1/8$ & -- & -- & -- & -- & -- \\
-      & Limber~\cite{limber} (Hyrax) & 100 & 31616 & 2625 & 4640 & 14.4 \\
-    \bottomrule
-  \end{tabular}
-  \caption{Native end-to-end proofs of $N$ multiplications $x \cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): \ftwoz\ (Spartan over a transcript-sampled prime with the \ftwoz\ opening, $\lambda = 100$), Binius64 (native multiplication, ring switching and BaseFold at rate $1/2$ with $241$ queries and rate $1/8$ with $121$ queries for $100$ bits), and Limber (integer-mod Spartan over a random small prime with the IntEval/Hyrax opening, native Limber parameters; one modular row $x \cdot y \equiv z_{\mathrm{lo}} \bmod 2^{128}$ per multiplication, its quotient the high half, so the IntEval limb bound is the operand range check). \emph{Witgen} is the native witness generation; \emph{prover} is the complete prover call after witness generation, commitment included; \emph{verifier} is the complete verification; \emph{peak mem.} is the high-water resident set of a separate child process proving and verifying once ($1$\,GB $= 2^{30}$ bytes). Binius64 at rate $1/2$ was not run at $2^{19}$, $2^{20}$, $2^{21}$. Binius64 at rate $1/8$ was not run at $2^{19}$, $2^{20}$, $2^{21}$. Apple M5, 24\,GB, $8$ threads; medians of 5 runs after one warm-up.}
-  \label{tab:native-mul-u128}
-\end{table}
-
-\albertimportant{Comment somewhere about why Binius  runs out of memory}
-
-\subsection{RSA accumulation and Poseidon hashing}
-
-We compare Limber \cite{limber}, Zinc+\cite{zincplus} and our \ftwoz-SNARK \ on proving the same circuit as in the Limber paper. This consists in verifying four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation  (see Section 7.1 of \cite{limber}). We take the corresponding R1CS constraint over the integers  from the Limber repository. See \cref{s:related_work} for further details on Limber, Zinc+, etc. 
-
-We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber states in the paper that it achieves $128$ bits of security, but its fingerprint step only achieves $114$ bits of security in the implementation, because the random prime sampled to perform the fingerprint is of $128$ bits, and no other measures (like, say, grinding) are taken. \albertimportant{Double check and let the authors know.}} For the \ftwoz\ opening we use Ligerito in the unique-decoding regime (as opposed to the other benchmarks where we use the Johnson bound) at rate $1/8$ with fold arity $4$ \albertimportant{mention this elsewhere}, with grinding to achieve $114$ bits of security.
-
-\begin{table}[H]
-  \centering
-   \begin{tabular}{@{}llrrrrr@{}}
-    \toprule
-    Scheme  & \multicolumn{2}{c}{Prove (ms)} & \multicolumn{2}{c}{Verify (ms)} & Proof \\
-     &   1 thr & 8 thr & 1 thr & 8 thr & (KB) \\
-    \midrule
-    \ftwoz \ (this work)               & \textbf{243}  & \textbf{97} & \textbf{9.0} & \textbf{11.7} & 269 \\
-    Zinc+ \cite{zincplus}$^{\ast}$     & 1973          & 569          & 18.2         & 12.5 & 1272 \\
-    Limber \cite{limber} (Brakedown)            & 1063          & 542          & 39.6         & 40.0 & 5769 \\
-    Limber \cite{limber} (Hyrax)            & 1116          & 368          & 34.1         & 20.3 & \textbf{175} \\
-    \midrule
-    Arkworks/Garuda$^{\dagger}$       & 231000        & --           & 25           & --   & 7.2 \\
-    MultiSwap-xJsnark$^{\dagger}$     & 88500         & --           & 2            & --   & 0.2 \\
-    \bottomrule
-  \end{tabular}
-  \caption{Proving one MultiSwap \cite{multiswap} computation (four  exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation).  The first four schemes prove the same R1CS constraint over the integers, taken from \cite{limber}, and were run on a MacBook Air M5 $24$GB on one and 8 threads (thr).  The two lower rows are a verbatim quote from
-  \cite[Table 1]{limber}. The first four schemes achieve $114$ bits of security 
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
   Zinc$+$ proof compresses to
   $847$KB with \texttt{zstd}.
   %
@@ -3491,7 +3092,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     Message & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-<<<<<<< HEAD
     960\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.95} & 62.2 & 36.3 & 3.94 & 3.96 & 117 & 1.31 \\
     $2^{4}$ compressions & \ftwoz-SNARK, rate $1/8$ & 2.96 & \textbf{60.6} & \textbf{36.0} & \textbf{3.80} & \textbf{3.89} & \textbf{75} & 1.31 \\
      & Binius (UDR), rate $1/2$ & 9.61 & 146 & 56.0 & 11.0 & 5.78 & 362 & \textbf{0.845} \\
@@ -3523,17 +3123,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
   \end{tabular}
    \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions. Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-f2z-opt}
-=======
-    \ftwoz-SNARK  (this work)             &  &  &  \\
-    Zinc+ \cite{zincplus}    &            &          &  \\
-    Binius64  &            &        &  \\
-    ?            &           &           &  \\
-\bottomrule  
-\end{tabular}
-  \caption{Proving a SHA-256 hash of a $4$KB message ($64$ compressions) followed by ECDSA signature verification. Ran on a MacBook Air M5 $24$GB multithreaded, configured at $100$ and $128$ bits of security.  
-  }
-  \label{t:multiswap}
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
 \end{table}
 
 
@@ -3542,7 +3131,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
 
 We prove simulataneously a large chain of SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. In this experiment, contrary to the previous one, SHA-256 is arithmetized over a binary field, using the R1CS constraint from Binius64 \cite{binius64}. The modular multiplications are arithmetized as an R1CS constrain over the integers, where each modular multiplication  $x\cdot y = z \mod 2^{32}$ is expressed as an integer constraint of the form $x\cdot y = z + 2^{32}\cdot u$, where $u$ is a new integer witness.  
 
-<<<<<<< HEAD
 This is an artificial circuit. For example, the mod $2^{32}$ integers are not related in any manner to the SHA-256 compressions. We see it as a proxy of computations that require many bit operations and integer/modular multiplications, e.g.\ RISC-V derived computations. The cost of ``gluing'' witness elements between one type of computation and another, both in \ftwoz-SNARK and Binius64, is essentially non-existent, because  both schemes commit to all the bits of witness elements separately, and these can be interpreted as  integers or binary field elements freely.
 
 Our end-to-end \ftwoz-SNARK is an hybrid construction combining a the PIOP over $\ZZ$ from \cref{s:to_snark}, together with the Binius64 PIOP over binary fields. The PCS opening proofs are eventually batched together, both of them being over binary fields.   To arithmetize modular multiplication in Binius64 we use a gadget in the repository built for that purpose \albertimportant{double check}.
@@ -3604,39 +3192,6 @@ Our end-to-end \ftwoz-SNARK is an hybrid construction combining a the PIOP over 
   \label{tab:hybrid-sha256-mul}
 \end{table}
 
-=======
-
-Our end-to-end \ftwoz-SNARK is built as described in \cref{?}. We compare our results with Binius64. To arithmetize modular multiplication in Binius64 we use a gadget in the repository built for that purpose \albertimportant{double check}.
->>>>>>> 1392f85837278858edd1f3382d230aabf87783c7
-
-
-\begin{table}[H]
-  \centering
-  \small
-  \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{@{}rrlrrrr@{}}
-    \toprule
-    $N$ & $M$ & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\ (GB) \\
-    \midrule
-    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK & 42.9 & 4.18 & \textbf{179} & \textbf{0.151} \\
-      &  & Binius~\cite{binius64}, rate $1/8$ & \textbf{39.1} & \textbf{3.06} & 243 & 0.415 \\
-    \addlinespace
-    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK & \textbf{92.2} & 6.04 & \textbf{219} & \textbf{0.689} \\
-      &  & Binius~\cite{binius64}, rate $1/8$ & 109 & \textbf{5.26} & 284 & 1.62 \\
-    \addlinespace
-    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK & \textbf{312} & \textbf{10.7} & \textbf{272} & \textbf{2.44} \\
-      &  & Binius~\cite{binius64}, rate $1/8$ & 386 & 15.4 & 331 & 5.97 \\
-    \addlinespace
-    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK & \textbf{470} & \textbf{16.3} & \textbf{305} & \textbf{5.45} \\
-      &  & Binius~\cite{binius64}, rate $1/8$ & 768 & 28.3 & 356 & 12.4 \\
-    \addlinespace
-    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK & \textbf{966} & \textbf{27.6} & \textbf{330} & \textbf{10.9} \\
-      &  & Binius~\cite{binius64}, rate $1/8$ & 4262$^{\dagger}$ & 378$^{\dagger}$ & 384 & 13.8$^{\dagger}$ \\
-    \bottomrule
-  \end{tabular}
-  \caption{\albertimportant{To edit} End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches). \ftwoz\ proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito at rate $1/2$ with the out-of-domain Round~0); its whole-protocol union bound is gated at $\lambda = 100$ and evaluates to $101.1$--$101.5$ bits at these sizes. Binius64 proves the same SHA-256 chain and a native four-limb multiplication gadget in one proof with ring switching and FRI at rate $1/8$ and a $100$-bit query-phase target ($121$ queries); Binius64 computes no whole-protocol bound. \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes). $^{\dagger}$Binius64 paged at $N = 2^{21}$ ($16{,}732$ swap-outs), so that row's timings are inflated; the proof size is unaffected. Apple M5, 24\,GB, $8$ threads; medians of $11$ verified runs.}
-  \label{tab:hybrid-sha256-mul}
-\end{table}
 
 %\subsubsection{Comparison with Hyrax}
 
