@@ -176,10 +176,12 @@ impl Sums {
     }
 }
 
-/// One group of the first just-in-time dense round: `tab[i]` and `pat[i]`
-/// (transposed) give the values of corner `i ∈ (E_lo, E_hi, O_lo, O_hi)`
-/// at each position (`tab[i][pat[i][m]]`); accumulates the Gruen sums with
-/// the transposed weights `eq_t` (64 entries).
+/// One group of the first just-in-time dense round, slot by slot: `tab[i]`
+/// and `pat[i]` (transposed) give the values of corner `i ∈ (E_lo, E_hi,
+/// O_lo, O_hi)` at each position (`tab[i][pat[i][m]]`); accumulates the
+/// Gruen sums with the transposed weights `eq_t` (64 entries). The prover
+/// runs the bucketed form ([`jit_bucket_group`]); this is its reference.
+#[allow(dead_code)]
 pub(crate) fn jit_sums_group(
     tab: [&[Gf]; 4],
     pat: &[[u8; 64]; 4],
@@ -191,6 +193,60 @@ pub(crate) fn jit_sums_group(
     neon::jit_sums_group(tab, pat, eq_t, send_one, &mut sums.0);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
     generic::jit_sums_group(tab, pat, eq_t, send_one, &mut sums.0);
+}
+
+/// The per-task scratch of the bucketed first table round: three
+/// 256-entry tables of unreduced accumulators, keyed by an E pattern —
+/// `end` (the endpoint corner's), `inf_lo` and `inf_hi` (E_lo's and
+/// E_hi's, both fed `eq·ΔO`).
+pub(crate) struct SumBuckets(SumBucketsInner);
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+type SumBucketsInner = neon::SumBuckets;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+type SumBucketsInner = generic::SumBuckets;
+
+impl SumBuckets {
+    pub(crate) fn new() -> Self {
+        Self(SumBucketsInner::new())
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+/// One group of the first just-in-time dense round, bucketed: with
+/// `pat[i]` the transposed patterns of the corners `(E_lo, E_hi, O_lo,
+/// O_hi)` and `tab_o` the two O tables, folds each column's `eq·O_end`
+/// into `end[pat_E_end]` and `eq·(O_hi − O_lo)` into `inf_lo[pat_E_lo]`
+/// and `inf_hi[pat_E_hi]`, unreduced — one carryless product per term
+/// instead of two multiplies. [`jit_bucket_finish`] contracts the buckets
+/// with the E tables.
+pub(crate) fn jit_bucket_group(
+    tab_o: [&[Gf]; 2],
+    pat: &[[u8; 64]; 4],
+    eq_t: &[Gf],
+    send_one: bool,
+    bk: &mut SumBuckets,
+) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::jit_bucket_group(tab_o, pat, eq_t, send_one, &mut bk.0);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::jit_bucket_group(tab_o, pat, eq_t, send_one, &mut bk.0);
+}
+
+/// `Σ_a T_E_end[a]·end[a]` and `Σ_a T_E_lo[a]·inf_lo[a] + Σ_a T_E_hi[a]·inf_hi[a]`,
+/// each bucket reduced once — the row's `(Σ end, Σ inf)`.
+pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBuckets) -> (Gf, Gf) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        neon::jit_bucket_finish(tab_e, send_one, &bk.0)
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    {
+        generic::jit_bucket_finish(tab_e, send_one, &bk.0)
+    }
 }
 
 /// One group of the second just-in-time dense round: corner
@@ -404,6 +460,7 @@ pub(crate) mod generic {
         sums.finish()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn jit_sums_group(
         tab: [&[Gf]; 4],
         pat: &[[u8; 64]; 4],
@@ -419,6 +476,69 @@ pub(crate) mod generic {
             let r1 = tab[3][pat[3][m] as usize];
             sums.slot(eq_t[m], l0, l1, r0, r1, send_one);
         }
+    }
+
+    pub(crate) struct SumBuckets {
+        end: Vec<Wide>,
+        inf_lo: Vec<Wide>,
+        inf_hi: Vec<Wide>,
+    }
+
+    impl SumBuckets {
+        pub(crate) fn new() -> Self {
+            let zero = Gf::zero();
+            let fresh = || vec![<Gf as WideMulAcc>::wide_zero(&zero); 256];
+            Self {
+                end: fresh(),
+                inf_lo: fresh(),
+                inf_hi: fresh(),
+            }
+        }
+
+        pub(crate) fn clear(&mut self) {
+            let zero = <Gf as WideMulAcc>::wide_zero(&Gf::zero());
+            for b in [&mut self.end, &mut self.inf_lo, &mut self.inf_hi] {
+                b.fill(zero.clone());
+            }
+        }
+    }
+
+    pub(crate) fn jit_bucket_group(
+        tab_o: [&[Gf]; 2],
+        pat: &[[u8; 64]; 4],
+        eq_t: &[Gf],
+        send_one: bool,
+        bk: &mut SumBuckets,
+    ) {
+        assert_eq!(eq_t.len(), 64);
+        for m in 0..64 {
+            let (a_lo, a_hi) = (pat[0][m] as usize, pat[1][m] as usize);
+            let o_lo = tab_o[0][pat[2][m] as usize];
+            let o_hi = tab_o[1][pat[3][m] as usize];
+            let w = eq_t[m];
+            let (a_end, o_end) = if send_one { (a_hi, o_hi) } else { (a_lo, o_lo) };
+            <Gf as WideMulAcc>::wide_add_assign(&mut bk.end[a_end], &<Gf as WideMulAcc>::mul_wide(&w, &o_end));
+            let d = <Gf as WideMulAcc>::mul_wide(&w, &(o_hi - o_lo));
+            <Gf as WideMulAcc>::wide_add_assign(&mut bk.inf_lo[a_lo], &d);
+            <Gf as WideMulAcc>::wide_add_assign(&mut bk.inf_hi[a_hi], &d);
+        }
+    }
+
+    pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBuckets) -> (Gf, Gf) {
+        let zero = Gf::zero();
+        let contract = |t: &[Gf], b: &[Wide]| -> Wide {
+            let mut acc = <Gf as WideMulAcc>::wide_zero(&zero);
+            for a in 0..256 {
+                let v = <Gf as WideMulAcc>::from_wide(b[a].clone());
+                <Gf as WideMulAcc>::wide_add_assign(&mut acc, &<Gf as WideMulAcc>::mul_wide(&t[a], &v));
+            }
+            acc
+        };
+        let t_end = if send_one { tab_e[1] } else { tab_e[0] };
+        let end = contract(t_end, &bk.end);
+        let mut inf = contract(tab_e[0], &bk.inf_lo);
+        <Gf as WideMulAcc>::wide_add_assign(&mut inf, &contract(tab_e[1], &bk.inf_hi));
+        (<Gf as WideMulAcc>::from_wide(end), <Gf as WideMulAcc>::from_wide(inf))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -782,6 +902,7 @@ pub(crate) mod neon {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn jit_sums_group(
         tab: [&[Gf]; 4],
         pat: &[[u8; 64]; 4],
@@ -815,6 +936,96 @@ pub(crate) mod neon {
             }
             acc_add(&mut sums.end, eb);
             acc_add(&mut sums.inf, ib);
+        }
+    }
+
+    /// Three 256-entry tables of unreduced `(lo, hi)` accumulators, flat
+    /// `[u64; 4]` words: `end`, then `inf_lo`, then `inf_hi`.
+    pub(crate) struct SumBuckets {
+        data: Vec<[u64; 4]>,
+    }
+
+    impl SumBuckets {
+        pub(crate) fn new() -> Self {
+            Self {
+                data: vec![[0u64; 4]; 3 * 256],
+            }
+        }
+
+        pub(crate) fn clear(&mut self) {
+            self.data.fill([0u64; 4]);
+        }
+    }
+
+    /// `bucket[idx] ^= (lo, hi)` on the flat word array.
+    #[inline(always)]
+    unsafe fn bucket_xor(base: *mut u64, idx: usize, lo: uint64x2_t, hi: uint64x2_t) {
+        // SAFETY: the caller keeps `idx` below the table's 256 entries.
+        unsafe {
+            let p = base.add(4 * idx);
+            vst1q_u64(p, veorq_u64(vld1q_u64(p), lo));
+            vst1q_u64(p.add(2), veorq_u64(vld1q_u64(p.add(2)), hi));
+        }
+    }
+
+    pub(crate) fn jit_bucket_group(
+        tab_o: [&[Gf]; 2],
+        pat: &[[u8; 64]; 4],
+        eq_t: &[Gf],
+        send_one: bool,
+        bk: &mut SumBuckets,
+    ) {
+        assert_eq!(eq_t.len(), 64);
+        assert!(tab_o[0].len() >= 256 && tab_o[1].len() >= 256);
+        assert_eq!(bk.data.len(), 3 * 256);
+        // SAFETY: as `neon::pmull_lo`; every byte index lands inside a
+        // 256-entry table and positions are below 64.
+        unsafe {
+            let base = bk.data.as_mut_ptr().cast::<u64>();
+            let end = base;
+            let inf_lo = base.add(4 * 256);
+            let inf_hi = base.add(8 * 256);
+            for m in 0..64 {
+                let (a_lo, a_hi) = (pat[0][m] as usize, pat[1][m] as usize);
+                let o_lo = ld(tab_o[0].get_unchecked(pat[2][m] as usize));
+                let o_hi = ld(tab_o[1].get_unchecked(pat[3][m] as usize));
+                let w = ld(eq_t.get_unchecked(m));
+                let (a_end, o_end) = if send_one { (a_hi, o_hi) } else { (a_lo, o_lo) };
+                let (pl, ph) = clmul_256(w, o_end);
+                bucket_xor(end, a_end, pl, ph);
+                let (dl, dh) = clmul_256(w, veorq_u64(o_hi, o_lo));
+                bucket_xor(inf_lo, a_lo, dl, dh);
+                bucket_xor(inf_hi, a_hi, dl, dh);
+            }
+        }
+    }
+
+    pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBuckets) -> (Gf, Gf) {
+        assert!(tab_e[0].len() >= 256 && tab_e[1].len() >= 256);
+        assert_eq!(bk.data.len(), 3 * 256);
+        // SAFETY: as `neon::pmull_lo`; indices below 256.
+        unsafe {
+            let contract = |t: &[Gf], table: &[[u64; 4]]| -> Acc {
+                let mut acc_a = acc_zero();
+                let mut acc_b = acc_zero();
+                let mut a = 0usize;
+                while a < 256 {
+                    let e0 = table.get_unchecked(a);
+                    let v0 = reduce_256(vld1q_u64(e0.as_ptr()), vld1q_u64(e0.as_ptr().add(2)));
+                    acc_add(&mut acc_a, clmul_256(ld(t.get_unchecked(a)), v0));
+                    let e1 = table.get_unchecked(a + 1);
+                    let v1 = reduce_256(vld1q_u64(e1.as_ptr()), vld1q_u64(e1.as_ptr().add(2)));
+                    acc_add(&mut acc_b, clmul_256(ld(t.get_unchecked(a + 1)), v1));
+                    a += 2;
+                }
+                acc_add(&mut acc_a, acc_b);
+                acc_a
+            };
+            let t_end = if send_one { tab_e[1] } else { tab_e[0] };
+            let end = contract(t_end, &bk.data[..256]);
+            let mut inf = contract(tab_e[0], &bk.data[256..512]);
+            acc_add(&mut inf, contract(tab_e[1], &bk.data[512..768]));
+            (to_elt(end), to_elt(inf))
         }
     }
 
@@ -1050,6 +1261,37 @@ mod tests {
                 generic::contract(&t_e, &t_o, &bucket),
                 "contract {entries}"
             );
+        }
+    }
+
+    #[test]
+    fn bucketed_first_round_matches_the_plain_slots() {
+        let tabs: Vec<Vec<Gf>> = (0..4).map(|i| elements(256, 80 + i)).collect();
+        let mut state = 0x0123_4567_89ab_cdefu64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for send_one in [false, true] {
+            let mut want = Sums::zero();
+            let mut bk = SumBuckets::new();
+            bk.clear();
+            for g in 0..5 {
+                let mut pats = [[0u8; 64]; 4];
+                for p in pats.iter_mut() {
+                    for e in p.iter_mut() {
+                        *e = (next() >> 23) as u8;
+                    }
+                }
+                let eq = elements(64, 90 + g);
+                let tab4: [&[Gf]; 4] = std::array::from_fn(|i| &tabs[i][..]);
+                jit_sums_group(tab4, &pats, &eq, send_one, &mut want);
+                jit_bucket_group([&tabs[2][..], &tabs[3][..]], &pats, &eq, send_one, &mut bk);
+            }
+            let got = jit_bucket_finish([&tabs[0][..], &tabs[1][..]], send_one, &bk);
+            assert_eq!(got, want.finish(), "send_one {send_one}");
         }
     }
 

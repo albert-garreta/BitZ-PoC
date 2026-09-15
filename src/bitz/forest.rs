@@ -434,29 +434,38 @@ impl<'a> Forest<'a> {
         let rows = 1usize << (low_bits - 1);
         debug_assert_eq!(eq_y.len(), rows);
         let eq_t = transposed_eq(eq_c);
-        let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..rows, 1)
-            .map(|y1| {
-                let mut sums = kernels::Sums::zero();
-                let mut words = [0u64; 8];
-                let mut pats = [[0u8; 64]; 4];
-                let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
+        let row = |y1: usize, bk: &mut kernels::SumBuckets| {
+            bk.clear();
+            let mut words = [0u64; 8];
+            let mut pats = [[0u8; 64]; 4];
+            let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
+                let (p, b1) = (corner >> 1, corner & 1);
+                tables.at((p << low_bits) | (b1 << (low_bits - 1)) | y1)
+            });
+            for g in 0..groups {
+                for corner in 0..4 {
                     let (p, b1) = (corner >> 1, corner & 1);
-                    tables.at((p << low_bits) | (b1 << (low_bits - 1)) | y1)
-                });
-                for g in 0..groups {
-                    for corner in 0..4 {
-                        let (p, b1) = (corner >> 1, corner & 1);
-                        let y = y1 | (b1 << (low_bits - 1));
-                        self.corner_words(ell, k, p, y, g, &mut words);
-                        pats[corner] = transposed_patterns(&mut words);
-                    }
-                    kernels::jit_sums_group(tab, &pats, &eq_t[g << 6..(g + 1) << 6], send_one, &mut sums);
+                    let y = y1 | (b1 << (low_bits - 1));
+                    self.corner_words(ell, k, p, y, g, &mut words);
+                    pats[corner] = transposed_patterns(&mut words);
                 }
-                let (end, inf) = sums.finish();
-                let w = eq_y[y1];
-                (end * w, inf * w)
-            })
+                kernels::jit_bucket_group([tab[2], tab[3]], &pats, &eq_t[g << 6..(g + 1) << 6], send_one, bk);
+            }
+            let (end, inf) = kernels::jit_bucket_finish([tab[0], tab[1]], send_one, bk);
+            let w = eq_y[y1];
+            (end * w, inf * w)
+        };
+        #[cfg(feature = "parallel")]
+        let partials: Vec<(Gf, Gf)> = (0..rows)
+            .into_par_iter()
+            .with_min_len(1)
+            .map_init(kernels::SumBuckets::new, |bk, y1| row(y1, bk))
             .collect();
+        #[cfg(not(feature = "parallel"))]
+        let partials: Vec<(Gf, Gf)> = {
+            let mut bk = kernels::SumBuckets::new();
+            (0..rows).map(|y1| row(y1, &mut bk)).collect()
+        };
         partials
             .into_iter()
             .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
