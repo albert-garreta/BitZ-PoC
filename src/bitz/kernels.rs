@@ -281,6 +281,15 @@ pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut 
     generic::jit_product_group(tab, pat, out);
 }
 
+/// `out[i] = a[i] · b[i]` over `out.len()` entries — one row of a product
+/// level from the two rows below it.
+pub(crate) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::product_into(a, b, out);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::product_into(a, b, out);
+}
+
 /// `bucket[idx[m]] += eq_t[m]` over a transposed block — the bit rounds'
 /// one addition per term. `bucket` must hold 256 entries so every byte
 /// index is in bounds; `eq_t` has 64 entries.
@@ -581,6 +590,14 @@ pub(crate) mod generic {
             if c < width {
                 out[c].write(tab[0][pat[0][m] as usize] * tab[1][pat[1][m] as usize]);
             }
+        }
+    }
+
+    pub(crate) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
+        let n = out.len();
+        assert!(a.len() >= n && b.len() >= n);
+        for i in 0..n {
+            out[i].write(a[i] * b[i]);
         }
     }
 
@@ -1101,6 +1118,29 @@ pub(crate) mod neon {
         }
     }
 
+    pub(crate) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
+        let n = out.len();
+        assert!(a.len() >= n && b.len() >= n);
+        // SAFETY: as `neon::pmull_lo`; every index is below `n`, bounded
+        // by the assertion and `out`'s length.
+        unsafe {
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let mut i = 0usize;
+            while i + 2 <= n {
+                let p0 = mul_red(ld(a.get_unchecked(i)), ld(b.get_unchecked(i)), g, z);
+                let p1 = mul_red(ld(a.get_unchecked(i + 1)), ld(b.get_unchecked(i + 1)), g, z);
+                st_uninit(out.get_unchecked_mut(i), p0);
+                st_uninit(out.get_unchecked_mut(i + 1), p1);
+                i += 2;
+            }
+            if i < n {
+                let p = mul_red(ld(a.get_unchecked(i)), ld(b.get_unchecked(i)), g, z);
+                st_uninit(out.get_unchecked_mut(i), p);
+            }
+        }
+    }
+
     pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
         assert_eq!(eq_t.len(), 64);
         assert!(bucket.len() >= 256);
@@ -1353,6 +1393,18 @@ mod tests {
             jit_product_group(tab2, &pat2, &mut got);
             generic::jit_product_group(tab2, &pat2, &mut want);
             assert_eq!(init(&[got]), init(&[want]), "product n {n}");
+        }
+    }
+
+    #[test]
+    fn product_into_matches_the_field_multiply() {
+        for n in [0usize, 1, 2, 3, 7, 64, 65, 200] {
+            let a = elements(n, 101);
+            let b = elements(n, 102);
+            let mut got = vec![MaybeUninit::new(Gf::zero()); n];
+            product_into(&a, &b, &mut got);
+            let want: Vec<Gf> = a.iter().zip(&b).map(|(&x, &y)| x * y).collect();
+            assert_eq!(init(&[got])[0], want, "n {n}");
         }
     }
 }

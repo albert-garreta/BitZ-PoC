@@ -34,6 +34,10 @@ use crate::{cfg_chunks_mut, cfg_into_iter};
 /// this level's own rounds read its tables; the levels above are
 /// materialised.
 const MATERIALISED_LEVEL: usize = 3;
+/// How many levels above [`MATERIALISED_LEVEL`]` + 1` the build pass emits
+/// from the rows it just wrote, while they are still in cache; the levels
+/// above those are products of the level below, read back from memory.
+const FUSED_UPPER_LEVELS: usize = 3;
 const PARALLEL_MIN_LANES: usize = 1 << 12;
 
 /// The per-position value tables of one level after some folds, flat:
@@ -85,43 +89,37 @@ impl<'a> Forest<'a> {
     pub(crate) fn prove(&self, ps: &mut ProverState, zeta: &[Gf]) -> (Vec<Gf>, Gf) {
         let t = self.t;
         let started = std::time::Instant::now();
+        // The materialised path for tiny `t`: level 3 in full, the levels
+        // above it by products.
         let mut levels: Vec<Option<Vec<Gf>>> = (0..t).map(|_| None).collect();
-        // One arena, `2^{t−4+s}` entries: level 4 is built in it (as
-        // pairwise products of level 3's table values) and proved in
-        // place, then every table-driven level below writes its
-        // once-folded halves into it.
+        // One arena of `2^{t−4+s}` entries, touched once: it first holds
+        // levels 5..t−1 (built from level-4 rows that live only in cache),
+        // is rebuilt as level 4 once those are proved, and then takes every
+        // table-driven level's once-folded halves. Nothing larger than the
+        // level-3 tables is allocated after it, so the prover's peak is the
+        // arena plus those tables. (Writing level 4 in the same pass into
+        // a second buffer instead saves the 6.3 ms rebuild less the 2.6 ms
+        // of writes it skips — 1.2 % of the prove with a warm allocator —
+        // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
+        // n = 32.)
         let mut arena: Vec<Gf> = Vec::new();
         let tables3 = if self.jit() {
             let tables = self.fold_table(MATERIALISED_LEVEL, 0, &[]);
+            super::trace("    L3 value tables", started);
+            let started = std::time::Instant::now();
             arena = Vec::with_capacity(1usize << (t - MATERIALISED_LEVEL - 1 + self.s));
-            self.product_level_into(&tables, &mut arena);
+            let fused = (t - MATERIALISED_LEVEL - 2).min(FUSED_UPPER_LEVELS);
+            self.upper_levels_into(&tables, &mut arena, fused);
+            super::trace(&format!("    levels {}..{} build", MATERIALISED_LEVEL + 2, t - 1), started);
             Some(tables)
         } else {
+            levels[MATERIALISED_LEVEL] = Some(self.materialise_level(MATERIALISED_LEVEL));
+            for ell in MATERIALISED_LEVEL..t - 1 {
+                let next = level_up(levels[ell].as_deref().expect("built"));
+                levels[ell + 1] = Some(next);
+            }
             None
         };
-        let bottom = if self.jit() {
-            if MATERIALISED_LEVEL + 2 < t {
-                Some((MATERIALISED_LEVEL + 2, level_up(&arena)))
-            } else {
-                None
-            }
-        } else {
-            Some((MATERIALISED_LEVEL, self.materialise_level(MATERIALISED_LEVEL)))
-        };
-        if let Some((first, mut current)) = bottom {
-            for ell in first..t {
-                let next = if ell + 1 < t {
-                    Some(level_up(&current))
-                } else {
-                    None
-                };
-                levels[ell] = Some(current);
-                match next {
-                    Some(n) => current = n,
-                    None => break,
-                }
-            }
-        }
         super::trace("  levels ≥4", started);
 
         let mut point: Vec<Gf> = zeta.to_owned();
@@ -130,28 +128,48 @@ impl<'a> Forest<'a> {
         let mut claim = Gf::zero();
         for ell in (0..t).rev() {
             let started = std::time::Instant::now();
-            (point, claim) = match levels[ell].take() {
-                Some(mut wnext) => {
-                    let mid = wnext.len() / 2;
-                    let (l, r) = wnext.split_at_mut(mid);
-                    prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
-                }
-                None if self.jit() && ell == MATERIALISED_LEVEL + 1 => {
-                    let mid = arena.len() / 2;
-                    let (l, r) = arena.split_at_mut(mid);
-                    prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
-                }
-                None if self.jit() => {
-                    let tables = if ell == MATERIALISED_LEVEL { tables3.as_ref() } else { None };
-                    self.prove_jit_level(ps, ell, point, tables, &mut arena)
-                }
-                None => self.prove_bit_level(ps, ell, point),
+            (point, claim) = if let Some(mut wnext) = levels[ell].take() {
+                let mid = wnext.len() / 2;
+                let (l, r) = wnext.split_at_mut(mid);
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+            } else if ell >= MATERIALISED_LEVEL + 2 {
+                let region = &mut arena[self.upper_region(ell)];
+                let mid = region.len() / 2;
+                let (l, r) = region.split_at_mut(mid);
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+            } else if ell == MATERIALISED_LEVEL + 1 {
+                // Level 4 rebuilt in place of the proved upper levels. (Its
+                // first round fused into the rebuild was measured slower:
+                // the rebuild is compute-bound, so the round's slots no
+                // longer hide behind a memory stream.)
+                let rebuilt = std::time::Instant::now();
+                arena.clear();
+                self.product_level_into(tables3.as_ref().expect("jit"), &mut arena);
+                super::trace("    L4 rebuild", rebuilt);
+                let mid = arena.len() / 2;
+                let (l, r) = arena.split_at_mut(mid);
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+            } else if self.jit() {
+                let tables = if ell == MATERIALISED_LEVEL { tables3.as_ref() } else { None };
+                self.prove_jit_level(ps, ell, point, tables, &mut arena)
+            } else {
+                self.prove_bit_level(ps, ell, point)
             };
             super::trace(&format!("  level {ell}"), started);
         }
         let mut point = Vec::from(point);
         point.reverse();
         (point, claim)
+    }
+
+    /// Where level `ell ≥ 5` lives in the arena while the upper levels are
+    /// proved: level 5 first, each level after the one below it.
+    fn upper_region(&self, ell: usize) -> std::ops::Range<usize> {
+        let t = self.t;
+        debug_assert!(ell >= MATERIALISED_LEVEL + 2 && ell < t);
+        let cols = 1usize << self.s;
+        let offset = ((1usize << (t - MATERIALISED_LEVEL - 1)) - (1usize << (t - ell + 1))) * cols;
+        offset..offset + ((1usize << (t - ell)) * cols)
     }
 
     /// The `k = 3 − ℓ` bit rounds of level `ℓ`; returns the challenges, the
@@ -414,6 +432,85 @@ impl<'a> Forest<'a> {
         });
         // SAFETY: every slot of every row chunk was written by the kernel.
         unsafe { out.set_len(len) };
+    }
+
+    /// Levels 5..t−1 into the (empty, pre-sized) `arena`, each at its
+    /// [`Forest::upper_region`]: the first `fused` of them from level-4
+    /// rows computed 64 columns at a time into a task-local buffer and never
+    /// stored — a task owns level 4's rows `y0 + b·2^{t−4−fused}` for every
+    /// `b`, the whole subtree above row `y0` of level `4 + fused`, so every
+    /// product it emits reads rows it computed itself — and the levels
+    /// above those as products of the level below. Level 4 itself is
+    /// rebuilt into the arena when its turn comes
+    /// ([`Forest::product_level_into`]).
+    fn upper_levels_into(&self, tables: &Tables, arena: &mut Vec<Gf>, fused: usize) {
+        let t = self.t;
+        let ell = MATERIALISED_LEVEL;
+        let cols = 1usize << self.s;
+        let groups = cols.div_ceil(64);
+        let rows = 1usize << (t - ell - 1);
+        let total = self.upper_region(t - 1).end;
+        assert!(arena.is_empty() && arena.capacity() >= total);
+        assert!(fused >= 1 && fused + ell + 2 <= t, "level {} does not exist", ell + 1 + fused);
+        let spare = &mut arena.spare_capacity_mut()[..total];
+        // Rows of level `4 + fused` = tasks; level `4 + i` has `sub ≪ (fused − i)`.
+        let sub = rows >> fused;
+        let above: Vec<RowsPtr> = (1..=fused)
+            .map(|i| RowsPtr::new(&mut spare[self.upper_region(ell + 1 + i)], cols))
+            .collect();
+        cfg_into_iter!(0..sub, 1).for_each(|y0| {
+            let mut words = [0u64; 8];
+            let mut pats = [[0u8; 64]; 2];
+            let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
+            for g in 0..groups {
+                let base_c = g << 6;
+                let width = 64.min(cols - base_c);
+                let range = base_c..base_c + width;
+                for (b, row) in l4.iter_mut().enumerate().take(1 << fused) {
+                    let y = y0 + b * sub;
+                    let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
+                    for p in 0..2 {
+                        self.corner_words(ell, 0, p, y, g, &mut words);
+                        pats[p] = transposed_patterns(&mut words);
+                    }
+                    kernels::jit_product_group(tab, &pats, &mut row[..width]);
+                }
+                for i in 1..=fused {
+                    let half = 1usize << (fused - i);
+                    for bp in 0..half {
+                        let y = y0 + bp * sub;
+                        // SAFETY: the level-4 segments were written just
+                        // above (their first `width` slots); rows `y` and
+                        // `y + half·sub` of level `3 + i > 4` were written by
+                        // this task in this group's iteration; row `y` of
+                        // level `4 + i` belongs to it alone.
+                        unsafe {
+                            let (a, b): (&[Gf], &[Gf]) = if i == 1 {
+                                (init_prefix(&l4[bp], width), init_prefix(&l4[bp + half], width))
+                            } else {
+                                let below = &above[i - 2];
+                                (&below.row_init(y)[range.clone()], &below.row_init(y + half * sub)[range.clone()])
+                            };
+                            let o = &mut above[i - 1].row(y)[range.clone()];
+                            kernels::product_into(a, b, o);
+                        }
+                    }
+                }
+            }
+        });
+        // The levels above `4 + fused`, each the products of the one below.
+        for lower in ell + 1 + fused..t - 1 {
+            let (below, rest) = spare.split_at_mut(self.upper_region(lower + 1).start);
+            let below = &below[self.upper_region(lower)];
+            // SAFETY: level `lower` was fully written (by the pass or the
+            // previous iteration) and `MaybeUninit<Gf>` has `Gf`'s layout.
+            let below = unsafe { std::slice::from_raw_parts(below.as_ptr().cast::<Gf>(), below.len()) };
+            let len = self.upper_region(lower + 1).len();
+            level_up_into(below, &mut rest[..len]);
+        }
+        // SAFETY: the tasks partition the rows of levels 5..4+fused and the
+        // loop above writes every level after them in full.
+        unsafe { arena.set_len(total) };
     }
 
     /// Round `k + 1` of level `ell` through its `k`-fold tables: the sums
@@ -759,10 +856,86 @@ impl Buckets {
 /// One level up: `out[i] = lower[i] · lower[i + half]`.
 fn level_up(lower: &[Gf]) -> Vec<Gf> {
     let half = lower.len() / 2;
+    let mut out: Vec<Gf> = Vec::with_capacity(half);
+    level_up_into(lower, &mut out.spare_capacity_mut()[..half]);
+    // SAFETY: `level_up_into` writes every one of the `half` slots.
+    unsafe { out.set_len(half) };
+    out
+}
+
+/// [`level_up`] into pre-sized slots.
+fn level_up_into(lower: &[Gf], out: &mut [MaybeUninit<Gf>]) {
+    let half = lower.len() / 2;
+    assert_eq!(out.len(), half);
     let (l, r) = lower.split_at(half);
-    cfg_into_iter!(0..half, PARALLEL_MIN_LANES)
-        .map(|i| l[i] * r[i])
-        .collect()
+    cfg_chunks_mut!(out, PARALLEL_MIN_LANES)
+        .enumerate()
+        .for_each(|(i, chunk)| {
+            let start = i * PARALLEL_MIN_LANES;
+            kernels::product_into(&l[start..start + chunk.len()], &r[start..start + chunk.len()], chunk);
+        });
+}
+
+/// The first `len` slots of `buf` as values.
+///
+/// # Safety
+/// Those slots must have been written.
+#[inline]
+unsafe fn init_prefix(buf: &[MaybeUninit<Gf>; 64], len: usize) -> &[Gf] {
+    debug_assert!(len <= 64);
+    // SAFETY: in bounds; `MaybeUninit<Gf>` has `Gf`'s layout and the prefix
+    // is initialised per the contract.
+    unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<Gf>(), len) }
+}
+
+/// Row access into an uninitialised level for tasks that own disjoint
+/// rows: `row(y)` is row `y`'s slots, `row_init(y)` the same row once
+/// written.
+#[derive(Clone, Copy)]
+struct RowsPtr {
+    ptr: *mut MaybeUninit<Gf>,
+    rows: usize,
+    cols: usize,
+}
+
+// SAFETY: the pointer is only dereferenced through the `unsafe` accessors,
+// whose callers keep the rows they touch disjoint across tasks.
+unsafe impl Send for RowsPtr {}
+unsafe impl Sync for RowsPtr {}
+
+impl RowsPtr {
+    fn new(slots: &mut [MaybeUninit<Gf>], cols: usize) -> Self {
+        debug_assert_eq!(slots.len() % cols, 0);
+        Self {
+            ptr: slots.as_mut_ptr(),
+            rows: slots.len() / cols,
+            cols,
+        }
+    }
+
+    /// Row `y`'s slots.
+    ///
+    /// # Safety
+    /// No other live reference to row `y` may exist while this one does.
+    #[inline]
+    unsafe fn row<'b>(&self, y: usize) -> &'b mut [MaybeUninit<Gf>] {
+        assert!(y < self.rows);
+        // SAFETY: in bounds by the assertion; exclusivity is the caller's.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.add(y * self.cols), self.cols) }
+    }
+
+    /// Row `y` as initialised values.
+    ///
+    /// # Safety
+    /// Every slot of row `y` must have been written, and no `&mut` to the
+    /// row may be live.
+    #[inline]
+    unsafe fn row_init<'b>(&self, y: usize) -> &'b [Gf] {
+        assert!(y < self.rows);
+        // SAFETY: in bounds by the assertion; `MaybeUninit<Gf>` has `Gf`'s
+        // layout and the row is initialised per the contract.
+        unsafe { std::slice::from_raw_parts(self.ptr.add(y * self.cols).cast::<Gf>(), self.cols) }
+    }
 }
 
 /// Transposes the eight 8×8 bit blocks of `w` in place, one per byte lane:

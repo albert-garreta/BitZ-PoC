@@ -202,11 +202,36 @@ impl BitZVerifier {
     }
 }
 
-/// Phase timing to stderr when `BITZ_TRACE` is set (diagnostic only).
+/// Phase timing to stderr when `BITZ_TRACE` is set (diagnostic only), with
+/// the minor page faults taken since the previous trace line: fresh pages
+/// cost ≈ 0.5 µs each (≈ 30 ms per GB) on this platform and do not
+/// parallelise, so the count says how much of a phase is first touch.
 pub(crate) fn trace(label: &str, started: std::time::Instant) {
     if std::env::var_os("BITZ_TRACE").is_some() {
-        eprintln!("bitz: {label:<18} {:>9.1?}", started.elapsed());
+        let elapsed = started.elapsed();
+        let faults = minor_faults();
+        let previous = LAST_FAULTS.swap(faults, std::sync::atomic::Ordering::Relaxed);
+        let delta = faults.saturating_sub(previous);
+        eprintln!(
+            "bitz: {label:<24} {elapsed:>9.1?}  {:>6.1} MB faulted",
+            delta as f64 * 16.0 / 1024.0
+        );
     }
+}
+
+static LAST_FAULTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The process's minor page faults so far (16 KB pages on this platform).
+fn minor_faults() -> u64 {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+    // SAFETY: `getrusage` fills the struct for the calling process.
+    let ok = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+    if ok != 0 {
+        return 0;
+    }
+    // SAFETY: filled by the call above.
+    let usage = unsafe { usage.assume_init() };
+    usage.ru_minflt as u64
 }
 
 /// `eq(r, z)` for one coordinate pair, the way their `poly::eq::eq_eval`
@@ -215,3 +240,4 @@ pub(crate) fn eq_factor(r: Gf, z: Gf) -> Gf {
     let one = Gf::one();
     r * z + (one - r) * (one - z)
 }
+
