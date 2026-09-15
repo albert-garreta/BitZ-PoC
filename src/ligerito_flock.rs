@@ -11357,11 +11357,58 @@ impl VirtRowCoeffs {
     #[inline]
     fn coeff(&self, r: usize) -> Gf {
         let (c, b) = (r >> self.t_wh, r & self.h_mask);
-        let mut acc = Gf::zero();
+        // Polynomial reduction is linear over F2. XOR the degree-at-most-254
+        // products first; their sum fits the same width for any chunk count.
+        let mut acc = field::Gf128Product::zero();
         for (l, zc) in self.scaled_zc.iter().enumerate() {
-            acc += self.eq_rs[l][b] * zc[c];
+            acc ^= self.eq_rs[l][b].mul_unreduced(zc[c]);
         }
-        acc
+        acc.reduce()
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn virtual_row_coefficients_match_direct_equality_weights() {
+    use crate::poly::utils::build_eq_x_r_vec;
+
+    const BITS: usize = 10;
+    for count in [0usize, 1, 2, 7] {
+        let points: Vec<Vec<_>> = (0..count)
+            .map(|point| {
+                (0..BITS)
+                    .map(|bit| {
+                        Gf::from_polynomial_words([
+                            17 + (point * BITS + bit) as u64,
+                            29 + point as u64,
+                        ])
+                    })
+                    .collect()
+            })
+            .collect();
+        let etas: Vec<_> = (0..count)
+            .map(|point| Gf::from_polynomial_words([73 + point as u64, 13]))
+            .collect();
+        // Build full equality tables independently of the factored row/column
+        // representation, using ordinary reduced field products throughout.
+        let full: Vec<_> = points
+            .iter()
+            .map(|point| build_eq_x_r_vec(point, &()).unwrap())
+            .collect();
+        for row_bits in [1, 4, BITS] {
+            let actual = VirtRowCoeffs::new(&points, &etas, row_bits);
+            for row in 0..1usize << BITS {
+                let expected = full
+                    .iter()
+                    .zip(&etas)
+                    .fold(Gf::zero(), |sum, (table, &eta)| sum + eta * table[row]);
+                assert_eq!(
+                    actual.coeff(row),
+                    expected,
+                    "chunks {count}, split {row_bits}, row {row}"
+                );
+            }
+        }
     }
 }
 
