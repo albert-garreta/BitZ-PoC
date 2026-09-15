@@ -10,6 +10,9 @@ num-traits = "0.2"
 spongefish = { version = "0.7.4", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 
+[target.'cfg(target_pointer_width = "64")'.dependencies]
+crypto-bigint = { version = "=0.7.5", default-features = false }
+
 [features]
 spongefish = ["dep:spongefish"]
 serde = ["dep:serde"]

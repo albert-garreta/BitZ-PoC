@@ -35,6 +35,10 @@ pub const VERIFY_DIGEST_R1CS_ROWS: usize = 7_061;
 /// Signed width used by witness-oriented backends for P-256 intermediates.
 /// The widest values are products of 262-bit affine-formula operands.
 pub const P256_Z_LIMBS: usize = 9;
+// Hint operands are nonnegative representatives below bound * modulus. The
+// public bound is a u64 and both moduli are 256-bit, so five limbs suffice.
+// Stored circuit integers and the constraint/transcript widths remain nine.
+const HINT_LIMBS: usize = 5;
 
 const WIDTH: usize = 256;
 const WORD_LIMBS: usize = 4;
@@ -410,11 +414,11 @@ fn lazy_mul<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>, y: Rep<
     let y_eval = y.value.capture();
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
-        let a = evaluated_uint::<9>(
+        let a = evaluated_uint::<HINT_LIMBS>(
             x_eval.evaluate_words(context),
             "lazy multiplication operand",
         )?;
-        let b = evaluated_uint::<9>(
+        let b = evaluated_uint::<HINT_LIMBS>(
             y_eval.evaluate_words(context),
             "lazy multiplication operand",
         )?;
@@ -445,10 +449,10 @@ fn lazy_mul_sub_to_elem<CS: Circuit>(
     let divisor = modulus.divisor();
     let hint_bias = bias;
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
-        let x = evaluated_uint::<9>(x_eval.evaluate_words(context), "affine factor")?;
-        let y = evaluated_uint::<9>(y_eval.evaluate_words(context), "affine factor")?;
+        let x = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "affine factor")?;
+        let y = evaluated_uint::<HINT_LIMBS>(y_eval.evaluate_words(context), "affine factor")?;
         let target =
-            evaluated_uint::<9>(target_eval.evaluate_words(context), "affine product target")?;
+            evaluated_uint::<HINT_LIMBS>(target_eval.evaluate_words(context), "affine product target")?;
         let shifted = shifted_dividend(multiply_wide(x, y), hint_bias, target)?;
         let (quotient, remainder) = divisor.div_rem_ct(&shifted);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
@@ -476,11 +480,11 @@ fn lazy_divide<CS: Circuit>(
     let divisor = modulus.divisor();
     let hint_bias = bias;
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
-        let a = evaluated_uint::<9>(
+        let a = evaluated_uint::<HINT_LIMBS>(
             denominator_eval.evaluate_words(context),
             "division denominator",
         )?;
-        let b = evaluated_uint::<9>(numerator_eval.evaluate_words(context), "division numerator")?;
+        let b = evaluated_uint::<HINT_LIMBS>(numerator_eval.evaluate_words(context), "division numerator")?;
         let (_, denominator) = divisor.div_rem_ct(&a);
         let inverse = modular_inverse_u256(denominator, modulus)
             .ok_or_else(|| HintError::new("zero or noninvertible division denominator"))?;
@@ -509,7 +513,7 @@ fn lazy_reduce<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -> E
     let x_eval = x.value.capture();
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
-        let value = evaluated_uint::<9>(x_eval.evaluate_words(context), "lazy reduction operand")?;
+        let value = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "lazy reduction operand")?;
         let (quotient, remainder) = divisor.div_rem_ct(&value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
@@ -529,7 +533,7 @@ fn lazy_reduce_scalar<CS: Circuit>(
     let x_eval = x.value.capture();
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 521, 9, _>(move |context| {
-        let value = evaluated_uint::<9>(x_eval.evaluate_words(context), "lazy reduction operand")?;
+        let value = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "lazy reduction operand")?;
         let (quotient, remainder) = divisor.div_rem_ct(&value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
@@ -562,9 +566,9 @@ fn lazy_assert_mul_eq<CS: Circuit>(
     let divisor = modulus.divisor();
     let hint_bias = bias;
     let bits = circuit.hint::<P256_Z_LIMBS, 265, 5, _>(move |context| {
-        let x = evaluated_uint::<9>(x_eval.evaluate_words(context), "relation factor")?;
-        let y = evaluated_uint::<9>(y_eval.evaluate_words(context), "relation factor")?;
-        let target = evaluated_uint::<9>(
+        let x = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "relation factor")?;
+        let y = evaluated_uint::<HINT_LIMBS>(y_eval.evaluate_words(context), "relation factor")?;
+        let target = evaluated_uint::<HINT_LIMBS>(
             target_eval.evaluate_words(context),
             "modular relation target",
         )?;
@@ -586,7 +590,7 @@ fn relaxed_reduce_small<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Lc<C
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 258, 5, _>(move |context| {
         let value =
-            evaluated_uint::<9>(x_eval.evaluate_words(context), "relaxed modular dividend")?;
+            evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "relaxed modular dividend")?;
         let (quotient, remainder) = divisor.div_rem_ct(&value);
         Ok(packed_wide_remainder_quotient(remainder, quotient))
     });
@@ -609,11 +613,11 @@ fn relaxed_mul<CS: Circuit>(
     let y_eval = y.value.value.capture();
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 514, 9, _>(move |context| {
-        let a = evaluated_uint::<9>(
+        let a = evaluated_uint::<HINT_LIMBS>(
             x_eval.evaluate_words(context),
             "relaxed multiplication factor",
         )?;
-        let b = evaluated_uint::<9>(
+        let b = evaluated_uint::<HINT_LIMBS>(
             y_eval.evaluate_words(context),
             "relaxed multiplication factor",
         )?;
@@ -696,16 +700,16 @@ fn evaluated_uint<const L: usize>(words: &[u64], description: &str) -> HintResul
     })))
 }
 
-/// Both operands have the circuit's declared nine-limb capacity. The exact
-/// product fills eighteen limbs; no input-dependent multiplication bounds.
-fn multiply_wide(left: Uint<9>, right: Uint<9>) -> Uint<18> {
+/// Fixed public representative capacity, independent of witness magnitudes.
+/// Multiplying two 320-bit bounds requires ten limbs.
+fn multiply_wide(left: Uint<HINT_LIMBS>, right: Uint<HINT_LIMBS>) -> Uint<10> {
     *IntegerOps
         .mul_wide(&left, &right)
-        .checked_resize_ct::<18>()
+        .checked_resize_ct::<10>()
         .value()
 }
 
-fn shifted_dividend(product: Uint<18>, bias: Uint<9>, target: Uint<9>) -> HintResult<Uint<18>> {
+fn shifted_dividend(product: Uint<10>, bias: Uint<HINT_LIMBS>, target: Uint<HINT_LIMBS>) -> HintResult<Uint<10>> {
     let sum = product.checked_add_ct(&bias.zero_extend());
     let difference = sum.value().checked_sub_ct(&target.zero_extend());
     if !(sum.validity() & difference.validity()).declassify() {
@@ -725,11 +729,11 @@ fn uint256_biguint(value: Uint<4>) -> BigUint {
     )
 }
 
-fn modulus_multiple(modulus: Modulus, factor: usize) -> Uint<9> {
+fn modulus_multiple(modulus: Modulus, factor: usize) -> Uint<HINT_LIMBS> {
     let factor = u64::try_from(factor).expect("P-256 representative bound exceeds u64");
     *IntegerOps
         .mul_wide(&modulus.words(), &Uint::<1>::from_u64(factor))
-        .checked_resize_ct::<9>()
+        .checked_resize_ct::<HINT_LIMBS>()
         .value()
 }
 
@@ -795,7 +799,7 @@ fn lazy_zero_test<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -
     let x_eval = x.value.capture();
     let divisor = modulus.divisor();
     let bits = circuit.hint::<P256_Z_LIMBS, 257, 5, _>(move |context| {
-        let a = evaluated_uint::<9>(x_eval.evaluate_words(context), "zero-test operand")?;
+        let a = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "zero-test operand")?;
         let (_, value) = divisor.div_rem_ct(&a);
         let is_zero = value.ct_is_zero().declassify();
         let inverse = *modulus.inverse().inverse_ct(&value).value();
@@ -820,8 +824,8 @@ fn lazy_zero_test<CS: Circuit>(circuit: &mut CS, modulus: Modulus, x: Rep<CS>) -
     let x_eval = x.value.capture();
     let divisor = modulus.divisor();
     let q_bits = circuit.hint::<P256_Z_LIMBS, 9, 1, _>(move |context| {
-        let z = evaluated_uint::<9>(z_eval.evaluate_words(context), "zero-test flag")?;
-        let x = evaluated_uint::<9>(x_eval.evaluate_words(context), "zero-test quotient operand")?;
+        let z = evaluated_uint::<HINT_LIMBS>(z_eval.evaluate_words(context), "zero-test flag")?;
+        let x = evaluated_uint::<HINT_LIMBS>(x_eval.evaluate_words(context), "zero-test quotient operand")?;
         let product = multiply_wide(z, x);
         let (quotient, remainder) = divisor.div_rem_ct(&product);
         debug_assert!(remainder.ct_is_zero().declassify());

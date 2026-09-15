@@ -52,7 +52,11 @@ fn caller_owned_operations_allocate_nothing() {
     let binary_projection = PreparedGf128Projection::new(Gf128::new(3, 7), 32);
     let binary_input = [u64::MAX; 17];
     let mut binary_output = [Gf128::ZERO; 17];
+    let signed_projection = PreparedSignedProjection::new(field.clone(), 9);
+    let signed_inputs = [Z::<9>::MIN; 17];
     COUNT.with(|count| count.set(Some(0)));
+    signed_projection.project_into(&signed_inputs, &mut out);
+    std::hint::black_box(signed_projection.project(signed_inputs[0].as_words()));
     binary_projection.project_into::<32>(&binary_input, &mut binary_output);
     std::hint::black_box(&binary_output);
     field.batch_mul_into(&weights, &weights, &mut out);

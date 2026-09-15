@@ -146,10 +146,37 @@ impl<const L: usize> Barrett<L> {
             }
             return remainder;
         }
-        let k = self.limbs;
+        // Full-width small divisors are common in P-256 hints. Pass their
+        // type-level width through the kernel so the limb loops specialize;
+        // padded divisors retain their prepared public significant width.
+        if self.limbs == L && L <= 4 {
+            self.divide_into_limbs(input, modulus, quotient_word, L)
+        } else {
+            self.divide_into_limbs(input, modulus, quotient_word, self.limbs)
+        }
+    }
+
+    #[inline(always)]
+    fn divide_into_limbs(
+        &self,
+        input: &(impl Words + ?Sized),
+        modulus: &Uint<L>,
+        mut quotient_word: impl FnMut(usize, u64),
+        k: usize,
+    ) -> Uint<L> {
         let mut remainder = Uint::ZERO;
         for block in (0..input.len().div_ceil(k)).rev() {
             let offset = block * k;
+            let available = input.len() - offset;
+            if available < k {
+                // The public leading partial block is below B^(k-1) <= m.
+                // It is already a remainder, and its quotient words are zero.
+                for i in 0..available {
+                    remainder.0[i] = input.word(offset + i);
+                    quotient_word(offset + i, 0);
+                }
+                continue;
+            }
             let mut value = UintProduct::<L, L>::ZERO;
             for i in 0..k {
                 value.set_word(
@@ -162,7 +189,7 @@ impl<const L: usize> Barrett<L> {
                 );
                 value.set_word(k + i, remainder.0[i]);
             }
-            let (quotient, rem) = self.divide_block(&value, modulus);
+            let (quotient, rem) = self.divide_block(&value, modulus, k);
             remainder = rem;
             for i in 0..k.min(input.len() - offset) {
                 quotient_word(offset + i, quotient.0[i]);
@@ -173,8 +200,8 @@ impl<const L: usize> Barrett<L> {
 
     /// Divide x < m B^k, hence the quotient fits k limbs. Barrett's estimate
     /// is at most two below the exact quotient; execute both corrections.
-    fn divide_block(&self, x: &UintProduct<L, L>, modulus: &Uint<L>) -> (Uint<L>, Uint<L>) {
-        let k = self.limbs;
+    #[inline(always)]
+    fn divide_block(&self, x: &UintProduct<L, L>, modulus: &Uint<L>, k: usize) -> (Uint<L>, Uint<L>) {
         let mut product = Scratch::<L>::zero();
         for i in 0..=k {
             let a = if i < k + 1 && k - 1 + i < 2 * k {
