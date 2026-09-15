@@ -7,27 +7,48 @@
 //! a per-position table with `2^{2^ℓ}` entries. Folding the sumcheck's first
 //! `k` rounds into such a table keeps that shape (`2^{2^{ℓ+k}}` entries), so
 //! levels with `ℓ + k ≤ 3` run their first `k` rounds straight off the
-//! packed bits through 256-entry tables, and only levels `ℓ ≥ 3` are ever
-//! materialised (level 3 from its own 256-entry tables, the rest by
-//! products). The round sums are the same field sums their dense pass
+//! packed bits through 256-entry tables ([`Forest::bit_round`]), their next
+//! two rounds through table lookups ([`Forest::jit_round_sums`],
+//! [`Forest::jit_fold_round`] — the second writes the once-folded halves
+//! into one arena shared by all these levels), and only then hand a
+//! materialised table to the dense rounds. Level 3 is never materialised
+//! either: its dense rounds start the same way, and level 4 is built as
+//! pairwise products of its table values; the levels above are products of
+//! the level below. The round sums are the same field sums their dense pass
 //! computes, so every message is byte-identical.
 
 use std::collections::VecDeque;
+use std::mem::MaybeUninit;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use super::eq_factor;
-use super::gkr::{Point, eq_table, prove_layer_tensor};
+use super::gkr::{Point, eq_table, prove_dense_rounds, prove_layer_tensor};
+use super::kernels;
 use super::transcript::ProverState;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::utils::wide_mul::WideMulAcc;
 use crate::{cfg_chunks_mut, cfg_into_iter};
 
 /// Levels below this run `MATERIALISED_LEVEL − ℓ` rounds off the bits;
-/// this level and above are materialised.
+/// this level's own rounds read its tables; the levels above are
+/// materialised.
 const MATERIALISED_LEVEL: usize = 3;
 const PARALLEL_MIN_LANES: usize = 1 << 12;
+
+/// The per-position value tables of one level after some folds, flat:
+/// position `q` owns `data[q·len..(q+1)·len]`.
+pub(crate) struct Tables {
+    data: Vec<Gf>,
+    len: usize,
+}
+
+impl Tables {
+    fn at(&self, q: usize) -> &[Gf] {
+        &self.data[q * self.len..(q + 1) * self.len]
+    }
+}
 
 pub(crate) struct Forest<'a> {
     /// `log2` rows (the paper's `t`).
@@ -54,16 +75,32 @@ impl<'a> Forest<'a> {
         }
     }
 
+    /// Whether the table-driven levels have two in-tree rounds left after
+    /// their bit rounds (`t − 4 ≥ 2`); below that they are materialised.
+    fn jit(&self) -> bool {
+        self.t >= MATERIALISED_LEVEL + 3
+    }
+
     /// Their `gpgkr_prove` over this tree: from the claim at `zeta` on the
     /// roots down to the leaf point and the claimed leaf value.
     pub(crate) fn prove(&self, ps: &mut ProverState, zeta: &[Gf]) -> (Vec<Gf>, Gf) {
-        // Materialise levels MATERIALISED_LEVEL..t−1, bottom-up.
+        let t = self.t;
         let started = std::time::Instant::now();
-        let mut levels: Vec<Option<Vec<Gf>>> = (0..self.t).map(|_| None).collect();
-        if MATERIALISED_LEVEL < self.t {
-            let mut current = self.materialise_level(MATERIALISED_LEVEL);
-            for ell in MATERIALISED_LEVEL..self.t {
-                let next = if ell + 1 < self.t {
+        let mut levels: Vec<Option<Vec<Gf>>> = (0..t).map(|_| None).collect();
+        let tables3 = if self.jit() {
+            Some(self.fold_table(MATERIALISED_LEVEL, 0, &[]))
+        } else {
+            None
+        };
+        let bottom = match &tables3 {
+            // Level 4 straight from level 3's tables.
+            Some(tables) if MATERIALISED_LEVEL + 1 < t => Some((MATERIALISED_LEVEL + 1, self.product_level(tables))),
+            Some(_) => None,
+            None => Some((MATERIALISED_LEVEL, self.materialise_level(MATERIALISED_LEVEL))),
+        };
+        if let Some((first, mut current)) = bottom {
+            for ell in first..t {
+                let next = if ell + 1 < t {
                     Some(level_up(&current))
                 } else {
                     None
@@ -75,19 +112,32 @@ impl<'a> Forest<'a> {
                 }
             }
         }
+        super::trace("  levels ≥4", started);
 
-        super::trace("  levels ≥3", started);
+        // One arena for the once-folded halves of every table-driven
+        // level: `2 · 2^{t−4−1+s}` entries, first touched by the first
+        // level that fills it.
+        let mut arena: Vec<Gf> = Vec::with_capacity(if self.jit() {
+            1usize << (t - MATERIALISED_LEVEL - 1 + self.s)
+        } else {
+            0
+        });
+
         let mut point: Vec<Gf> = zeta.to_owned();
         point.reverse();
         let mut point: Point = VecDeque::from(point);
         let mut claim = Gf::zero();
-        for ell in (0..self.t).rev() {
+        for ell in (0..t).rev() {
             let started = std::time::Instant::now();
             (point, claim) = match levels[ell].take() {
                 Some(mut wnext) => {
                     let mid = wnext.len() / 2;
                     let (l, r) = wnext.split_at_mut(mid);
                     prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+                }
+                None if self.jit() => {
+                    let tables = if ell == MATERIALISED_LEVEL { tables3.as_ref() } else { None };
+                    self.prove_jit_level(ps, ell, point, tables, &mut arena)
                 }
                 None => self.prove_bit_level(ps, ell, point),
             };
@@ -98,11 +148,16 @@ impl<'a> Forest<'a> {
         (point, claim)
     }
 
-    /// One level below the materialised ones: `k` rounds off the bits, then
-    /// the folded halves are materialised and the dense rounds continue.
-    fn prove_bit_level(&self, ps: &mut ProverState, ell: usize, point: Point) -> (Point, Gf) {
-        let k = (MATERIALISED_LEVEL - ell).min(self.t - ell - 1);
-        let external: Vec<Gf> = point.iter().rev().copied().collect();
+    /// The `k = 3 − ℓ` bit rounds of level `ℓ`; returns the challenges, the
+    /// accumulated eq factor and the next point so far.
+    fn bit_rounds(
+        &self,
+        ps: &mut ProverState,
+        ell: usize,
+        k: usize,
+        point: &Point,
+        external: &[Gf],
+    ) -> (Vec<Gf>, Gf, VecDeque<Gf>) {
         let mut factor = Gf::one();
         let mut next_point = VecDeque::with_capacity(point.len() + 1);
         let mut challenges: Vec<Gf> = Vec::with_capacity(k);
@@ -110,7 +165,7 @@ impl<'a> Forest<'a> {
             let started = std::time::Instant::now();
             let z = point[j - 1];
             let send_one = z == Gf::zero();
-            let (sum_endpoint, sum_inf) = self.bit_round(ell, j, &challenges, &external, send_one);
+            let (sum_endpoint, sum_inf) = self.bit_round(ell, j, &challenges, external, send_one);
             super::trace(&format!("    L{ell} bit round {j}"), started);
             ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
             let r: Gf = ps.verifier_message();
@@ -118,15 +173,105 @@ impl<'a> Forest<'a> {
             challenges.push(r);
             factor = factor * eq_factor(r, z);
         }
+        (challenges, factor, next_point)
+    }
+
+    /// A level at or below [`MATERIALISED_LEVEL`]: `k` rounds off the bits,
+    /// two rounds through the `k`-fold tables (the second writing the
+    /// once-folded halves into `arena`), then the dense rounds on the arena.
+    fn prove_jit_level(
+        &self,
+        ps: &mut ProverState,
+        ell: usize,
+        point: Point,
+        tables: Option<&Tables>,
+        arena: &mut Vec<Gf>,
+    ) -> (Point, Gf) {
+        let t = self.t;
+        let s = self.s;
+        let k = MATERIALISED_LEVEL - ell;
+        let external: Vec<Gf> = point.iter().rev().copied().collect();
+        let (challenges, mut factor, mut next_point) = self.bit_rounds(ps, ell, k, &point, &external);
+        let low_bits = t - ell - 1 - k;
+        debug_assert!(low_bits >= 2);
+
         let started = std::time::Instant::now();
-        let mut folded = self.materialise_folded(ell, k, &challenges);
-        super::trace(&format!("    L{ell} materialise"), started);
-        let half = folded.len() / 2;
-        let (l, r) = folded.split_at_mut(half);
+        let owned;
+        let tables = match tables {
+            Some(tables) if k == 0 => tables,
+            _ => {
+                owned = self.fold_table(ell, k, &challenges);
+                &owned
+            }
+        };
+        let eq_c = eq_table(&external[..s]);
+        super::trace(&format!("    L{ell} tables"), started);
+
+        // Round k + 1 off the tables.
         let started = std::time::Instant::now();
-        let out = prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s);
+        let z = point[k];
+        let send_one = z == Gf::zero();
+        let eq_y = eq_table(&external[s..s + low_bits - 1]);
+        let (sum_endpoint, sum_inf) = self.jit_round_sums(tables, ell, k, &eq_c, &eq_y, send_one);
+        super::trace(&format!("    L{ell} jit round"), started);
+        ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
+        let r1: Gf = ps.verifier_message();
+        next_point.push_back(r1);
+        factor = factor * eq_factor(r1, z);
+
+        // Round k + 2 off the tables, `r1` folded in registers, the folded
+        // halves written to the arena.
+        let started = std::time::Instant::now();
+        let z = point[k + 1];
+        let send_one = z == Gf::zero();
+        let eq_y = eq_table(&external[s..s + low_bits - 2]);
+        let (sum_endpoint, sum_inf) =
+            self.jit_fold_round(tables, ell, k, r1, &eq_c, &eq_y, send_one, arena);
+        super::trace(&format!("    L{ell} jit fold"), started);
+        ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
+        let r2: Gf = ps.verifier_message();
+        next_point.push_back(r2);
+        factor = factor * eq_factor(r2, z);
+
+        let started = std::time::Instant::now();
+        let half = arena.len() / 2;
+        let (l, r) = arena.split_at_mut(half);
+        let out = prove_dense_rounds(ps, point, l, r, k + 2, Some(r2), factor, next_point, s);
         super::trace(&format!("    L{ell} dense tail"), started);
         out
+    }
+
+    /// The pre-arena path for tiny `t`: `k` rounds off the bits, then the
+    /// folded halves are materialised and the dense rounds continue.
+    fn prove_bit_level(&self, ps: &mut ProverState, ell: usize, point: Point) -> (Point, Gf) {
+        let k = (MATERIALISED_LEVEL - ell).min(self.t - ell - 1);
+        let external: Vec<Gf> = point.iter().rev().copied().collect();
+        let (challenges, factor, next_point) = self.bit_rounds(ps, ell, k, &point, &external);
+        let mut folded = self.materialise_folded(ell, k, &challenges);
+        let half = folded.len() / 2;
+        let (l, r) = folded.split_at_mut(half);
+        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s)
+    }
+
+    /// The row of corner `(p, y)` of level `ell` after `kk` folds, pattern
+    /// bit `(v, u)`.
+    #[inline]
+    fn corner_row(&self, ell: usize, kk: usize, p: usize, y: usize, v: usize, u: usize) -> usize {
+        let t = self.t;
+        let low_bits = t - ell - 1 - kk;
+        y | (v << low_bits) | (p << (t - ell - 1)) | (u << (t - ell))
+    }
+
+    /// The `2^{ell+kk}` words of column group `g` at corner `(p, y)`, in
+    /// pattern-bit order.
+    #[inline]
+    fn corner_words(&self, ell: usize, kk: usize, p: usize, y: usize, g: usize, words: &mut [u64; 8]) {
+        let col = &self.packed_cols[g];
+        for v in 0..(1usize << kk) {
+            for u in 0..(1usize << ell) {
+                words[(v << ell) | u] = col[self.corner_row(ell, kk, p, y, v, u)];
+            }
+        }
     }
 
     /// The per-position value tables of level `ell` after `kk` folds with
@@ -134,48 +279,54 @@ impl<'a> Forest<'a> {
     /// the `t − ell − 1 − kk` unbound in-tree bits), entry index = the
     /// `2^{ell+kk}`-bit pattern of the column's bits at rows
     /// `y | v ≪ (t−ell−1−kk) | p ≪ (t−ell−1) | u ≪ (t−ell)`, bit `v·2^ell + u`.
-    fn fold_table(&self, ell: usize, kk: usize, r: &[Gf]) -> Vec<Vec<Gf>> {
+    fn fold_table(&self, ell: usize, kk: usize, r: &[Gf]) -> Tables {
         let t = self.t;
         let low_bits = t - ell - 1 - kk;
         let positions = 1usize << (t - ell - kk);
         let sub_entries = 1usize << (1usize << ell);
+        let len = 1usize << (1usize << (ell + kk));
         let eq_v: Vec<Gf> = if kk == 0 {
             vec![Gf::one()]
         } else {
             let reversed: Vec<Gf> = r[..kk].iter().rev().copied().collect();
             eq_table(&reversed)
         };
-        cfg_into_iter!(0..positions, 8)
-            .map(|q| {
-                let p = q >> low_bits;
-                let y = q & ((1usize << low_bits) - 1);
-                let mut table: Vec<Gf> = Vec::new();
-                for v in 0..(1usize << kk) {
-                    let base = y | (v << low_bits) | (p << (t - ell - 1));
-                    // W_v[sub] = eq_v[v] · Π_{u ∈ sub} A(base + u·2^{t−ell}).
-                    let mut w = vec![Gf::zero(); sub_entries];
-                    w[0] = eq_v[v];
-                    for u in 0..(1usize << ell) {
-                        let a = self.images[base | (u << (t - ell))];
-                        let lim = 1usize << u;
-                        for sub in 0..lim {
-                            w[sub | lim] = w[sub] * a;
-                        }
-                    }
-                    if v == 0 {
-                        table = w;
-                    } else {
-                        // Outer sum: new[x | sub ≪ (v·2^ell)] = table[x] + w[sub].
-                        let mut next = Vec::with_capacity(table.len() * sub_entries);
-                        for &ws in &w {
-                            next.extend(table.iter().map(|&x| x + ws));
-                        }
-                        table = next;
+        let mut data: Vec<Gf> = Vec::with_capacity(positions * len);
+        let spare = &mut data.spare_capacity_mut()[..positions * len];
+        cfg_chunks_mut!(spare, len).enumerate().for_each(|(q, out)| {
+            let p = q >> low_bits;
+            let y = q & ((1usize << low_bits) - 1);
+            let mut table: Vec<Gf> = Vec::new();
+            for v in 0..(1usize << kk) {
+                let base = y | (v << low_bits) | (p << (t - ell - 1));
+                // W_v[sub] = eq_v[v] · Π_{u ∈ sub} A(base + u·2^{t−ell}).
+                let mut w = vec![Gf::zero(); sub_entries];
+                w[0] = eq_v[v];
+                for u in 0..(1usize << ell) {
+                    let a = self.images[base | (u << (t - ell))];
+                    let lim = 1usize << u;
+                    for sub in 0..lim {
+                        w[sub | lim] = w[sub] * a;
                     }
                 }
-                table
-            })
-            .collect()
+                if v == 0 {
+                    table = w;
+                } else {
+                    // Outer sum: new[x | sub ≪ (v·2^ell)] = table[x] + w[sub].
+                    let mut next = Vec::with_capacity(table.len() * sub_entries);
+                    for &ws in &w {
+                        next.extend(table.iter().map(|&x| x + ws));
+                    }
+                    table = next;
+                }
+            }
+            for (slot, value) in out.iter_mut().zip(table) {
+                slot.write(value);
+            }
+        });
+        // SAFETY: every one of the `positions · len` slots was written above.
+        unsafe { data.set_len(positions * len) };
+        Tables { data, len }
     }
 
     /// Level `ell` in full: index `y·2^s + c`.
@@ -184,16 +335,13 @@ impl<'a> Forest<'a> {
         let nb = 1usize << ell;
         let cols = 1usize << self.s;
         let groups = cols.div_ceil(64);
-        let t = self.t;
-        let mut out = vec![Gf::zero(); (1usize << (t - ell)) << self.s];
+        let mut out = vec![Gf::zero(); (1usize << (self.t - ell)) << self.s];
         cfg_chunks_mut!(out, cols).enumerate().for_each(|(y, chunk)| {
-            let table = &tables[y];
+            let table = tables.at(y);
             let mut words = [0u64; 8];
             let mut pats = [0u8; 64];
             for g in 0..groups {
-                for u in 0..nb {
-                    words[u] = self.packed_cols[g][y | (u << (t - ell))];
-                }
+                self.corner_words(ell, 0, 0, y, g, &mut words);
                 patterns(&words[..nb], &mut pats);
                 let base_c = g << 6;
                 for j0 in 0..64.min(cols - base_c) {
@@ -215,18 +363,13 @@ impl<'a> Forest<'a> {
         let groups = cols.div_ceil(64);
         let mut out = vec![Gf::zero(); (1usize << (t - ell - k)) << self.s];
         cfg_chunks_mut!(out, cols).enumerate().for_each(|(q, chunk)| {
-            let table = &tables[q];
+            let table = tables.at(q);
             let p = q >> low_bits;
             let y = q & ((1usize << low_bits) - 1);
             let mut words = [0u64; 8];
             let mut pats = [0u8; 64];
             for g in 0..groups {
-                for v in 0..(1usize << k) {
-                    for u in 0..(1usize << ell) {
-                        let row = y | (v << low_bits) | (p << (t - ell - 1)) | (u << (t - ell));
-                        words[(v << ell) | u] = self.packed_cols[g][row];
-                    }
-                }
+                self.corner_words(ell, k, p, y, g, &mut words);
                 patterns(&words[..nb], &mut pats);
                 let base_c = g << 6;
                 for j0 in 0..64.min(cols - base_c) {
@@ -235,6 +378,190 @@ impl<'a> Forest<'a> {
             }
         });
         out
+    }
+
+    /// Level [`MATERIALISED_LEVEL`]` + 1` as pairwise products of level 3's
+    /// table values: entry `(y, c)` is `T[(0, y)][pat] · T[(1, y)][pat]`.
+    fn product_level(&self, tables: &Tables) -> Vec<Gf> {
+        let t = self.t;
+        let ell = MATERIALISED_LEVEL;
+        let cols = 1usize << self.s;
+        let groups = cols.div_ceil(64);
+        let rows = 1usize << (t - ell - 1);
+        let len = rows * cols;
+        let mut out: Vec<Gf> = Vec::with_capacity(len);
+        let spare = &mut out.spare_capacity_mut()[..len];
+        cfg_chunks_mut!(spare, cols).enumerate().for_each(|(y, chunk)| {
+            let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
+            let mut words = [[0u64; 8]; 2];
+            let mut pats = [[0u8; 64]; 2];
+            for g in 0..groups {
+                for b in 0..2 {
+                    self.corner_words(ell, 0, b, y, g, &mut words[b]);
+                    patterns(&words[b], &mut pats[b]);
+                }
+                let base_c = g << 6;
+                let width = 64.min(cols - base_c);
+                kernels::jit_product_group(tab, &pats, &mut chunk[base_c..base_c + width]);
+            }
+        });
+        // SAFETY: every slot of every row chunk was written by the kernel.
+        unsafe { out.set_len(len) };
+        out
+    }
+
+    /// Round `k + 1` of level `ell` through its `k`-fold tables: the sums
+    /// over `(y1, c)` of the corners `(p, b1, y1)`, `b1` the bit bound this
+    /// round, weighted `eq_y[y1]·eq_c[c]`.
+    fn jit_round_sums(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+    ) -> (Gf, Gf) {
+        let low_bits = self.t - ell - 1 - k;
+        let cols = 1usize << self.s;
+        let groups = cols.div_ceil(64);
+        let rows = 1usize << (low_bits - 1);
+        debug_assert_eq!(eq_y.len(), rows);
+        let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..rows, 1)
+            .map(|y1| {
+                let mut sums = kernels::Sums::zero();
+                let mut words = [[0u64; 8]; 4];
+                let mut pats = [[0u8; 64]; 4];
+                let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
+                    let (p, b1) = (corner >> 1, corner & 1);
+                    tables.at((p << low_bits) | (b1 << (low_bits - 1)) | y1)
+                });
+                for g in 0..groups {
+                    for corner in 0..4 {
+                        let (p, b1) = (corner >> 1, corner & 1);
+                        let y = y1 | (b1 << (low_bits - 1));
+                        self.corner_words(ell, k, p, y, g, &mut words[corner]);
+                        patterns(&words[corner], &mut pats[corner]);
+                    }
+                    let base_c = g << 6;
+                    let width = 64.min(cols - base_c);
+                    kernels::jit_sums_group(tab, &pats, &eq_c[base_c..base_c + width], send_one, &mut sums);
+                }
+                let (end, inf) = sums.finish();
+                let w = eq_y[y1];
+                (end * w, inf * w)
+            })
+            .collect();
+        partials
+            .into_iter()
+            .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+    }
+
+    /// Round `k + 2` of level `ell` through its `k`-fold tables with the
+    /// previous challenge `rho` folded on the fly: writes the once-folded
+    /// halves (`E'` then `O'`, each `2^{low_bits−1}` rows of `2^s`) into
+    /// `arena` and returns this round's sums over the corners `(b2, y2)`.
+    #[allow(clippy::too_many_arguments)]
+    fn jit_fold_round(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        rho: Gf,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+        arena: &mut Vec<Gf>,
+    ) -> (Gf, Gf) {
+        let low_bits = self.t - ell - 1 - k;
+        let cols = 1usize << self.s;
+        let rows = 1usize << (low_bits - 2);
+        let half = 2 * rows * cols;
+        let len = 2 * half;
+        debug_assert_eq!(eq_y.len(), rows);
+        assert!(arena.capacity() >= len, "arena too small");
+        if arena.len() != len {
+            // First fill: through the spare capacity, no memset.
+            arena.clear();
+            let spare = &mut arena.spare_capacity_mut()[..len];
+            let sums = self.jit_fold_into(tables, ell, k, rho, eq_c, eq_y, send_one, spare);
+            // SAFETY: `jit_fold_into` writes every slot of both halves.
+            unsafe { arena.set_len(len) };
+            sums
+        } else {
+            let slots = &mut arena[..len];
+            // SAFETY: `MaybeUninit<Gf>` has `Gf`'s layout and only
+            // initialised values are ever written through the view.
+            let view = unsafe {
+                std::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<MaybeUninit<Gf>>(), len)
+            };
+            self.jit_fold_into(tables, ell, k, rho, eq_c, eq_y, send_one, view)
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn jit_fold_into(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        rho: Gf,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+        out: &mut [MaybeUninit<Gf>],
+    ) -> (Gf, Gf) {
+        let low_bits = self.t - ell - 1 - k;
+        let cols = 1usize << self.s;
+        let groups = cols.div_ceil(64);
+        let rows = 1usize << (low_bits - 2);
+        let half = out.len() / 2;
+        let (e_half, o_half) = out.split_at_mut(half);
+        let (e_lo, e_hi) = e_half.split_at_mut(half / 2);
+        let (o_lo, o_hi) = o_half.split_at_mut(half / 2);
+        let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(e_lo, cols)
+            .zip(cfg_chunks_mut!(e_hi, cols))
+            .zip(cfg_chunks_mut!(o_lo, cols))
+            .zip(cfg_chunks_mut!(o_hi, cols))
+            .enumerate()
+            .map(|(y2, (((el, eh), ol), oh))| {
+                debug_assert!(y2 < rows);
+                let mut sums = kernels::Sums::zero();
+                let mut words = [[0u64; 8]; 8];
+                let mut pats = [[0u8; 64]; 8];
+                let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
+                    let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
+                    tables.at((p << low_bits) | (b1 << (low_bits - 1)) | (b2 << (low_bits - 2)) | y2)
+                });
+                for g in 0..groups {
+                    for corner in 0..8 {
+                        let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
+                        let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
+                        self.corner_words(ell, k, p, y, g, &mut words[corner]);
+                        patterns(&words[corner], &mut pats[corner]);
+                    }
+                    let base_c = g << 6;
+                    let width = 64.min(cols - base_c);
+                    let range = base_c..base_c + width;
+                    kernels::jit_fold_group(
+                        tab,
+                        &pats,
+                        &rho,
+                        &eq_c[range.clone()],
+                        send_one,
+                        [&mut el[range.clone()], &mut eh[range.clone()]],
+                        [&mut ol[range.clone()], &mut oh[range]],
+                        &mut sums,
+                    );
+                }
+                let (end, inf) = sums.finish();
+                let w = eq_y[y2];
+                (end * w, inf * w)
+            })
+            .collect();
+        partials
+            .into_iter()
+            .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
     }
 
     /// Round `j` (1-based, `j ≤ k`) of level `ell`'s sumcheck off the bits:
@@ -321,15 +648,7 @@ impl<'a> Forest<'a> {
                         let p = corner >> 1;
                         let bit = corner & 1;
                         let y_prev = y | (bit << y_bits);
-                        for v in 0..(1usize << kk) {
-                            for u in 0..(1usize << ell) {
-                                let row = y_prev
-                                    | (v << low_bits)
-                                    | (p << (t - ell - 1))
-                                    | (u << (t - ell));
-                                words[corner][(v << ell) | u] = self.packed_cols[g][row];
-                            }
-                        }
+                        self.corner_words(ell, kk, p, y_prev, g, &mut words[corner]);
                     }
                     let eq_g = &eq_c[base_c..base_c + width];
                     if nb == 1 {
@@ -386,8 +705,8 @@ impl<'a> Forest<'a> {
                         b_hh[pe_hi * entries + po_hi] += value;
                     }
                 }
-                let (t_e_lo, t_e_hi) = (&tables[qs[0]], &tables[qs[1]]);
-                let (t_o_lo, t_o_hi) = (&tables[qs[2]], &tables[qs[3]]);
+                let (t_e_lo, t_e_hi) = (tables.at(qs[0]), tables.at(qs[1]));
+                let (t_o_lo, t_o_hi) = (tables.at(qs[2]), tables.at(qs[3]));
                 let ll = contract(t_e_lo, t_o_lo, &b_ll);
                 let hh = contract(t_e_hi, t_o_hi, &b_hh);
                 let end = if send_one { hh } else { ll };

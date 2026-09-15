@@ -34,6 +34,7 @@ pub mod codec;
 pub mod fold;
 pub mod forest;
 pub mod gkr;
+pub(crate) mod kernels;
 pub mod params;
 pub mod pcs;
 pub mod reduce;

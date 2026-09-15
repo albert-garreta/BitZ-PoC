@@ -14,11 +14,11 @@ use std::collections::VecDeque;
 use rayon::prelude::*;
 
 use super::eq_factor;
+use super::kernels;
 use super::transcript::{ProverState, VerifierState};
+use crate::cfg_into_iter;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
-use crate::utils::wide_mul::WideMulAcc;
-use crate::{cfg_chunks, cfg_chunks_mut, cfg_into_iter};
 
 /// Work-splitting granularity for the per-round passes (their
 /// `PARALLEL_MIN_LANES`).
@@ -113,9 +113,31 @@ pub(crate) fn prove_layer_from(
 pub(crate) fn prove_layer_tensor(
     ps: &mut ProverState,
     point: Point,
+    mle_l: &mut [Gf],
+    mle_r: &mut [Gf],
+    skip: usize,
+    factor: Gf,
+    next_point: VecDeque<Gf>,
+    s: usize,
+) -> (Point, Gf) {
+    prove_dense_rounds(ps, point, mle_l, mle_r, skip, None, factor, next_point, s)
+}
+
+/// The dense rounds from round `first` on, each round's fold deferred into
+/// the next round's pass ([`kernels::fused_fold_round`]): the previous
+/// round's challenge sits in `pending` until the next pass folds it in
+/// registers while accumulating that round's sums, so every table is swept
+/// once per round instead of twice. With a fold pending at entry the halves
+/// hold `2^{total − first + 1}` entries each (the unfolded table), else
+/// `2^{total − first}`. The folded tables occupy the prefixes.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_dense_rounds(
+    ps: &mut ProverState,
+    point: Point,
     mut mle_l: &mut [Gf],
     mut mle_r: &mut [Gf],
-    skip: usize,
+    first: usize,
+    mut pending: Option<Gf>,
     mut factor: Gf,
     mut next_point: VecDeque<Gf>,
     s: usize,
@@ -124,37 +146,65 @@ pub(crate) fn prove_layer_tensor(
     // bound, in little-endian (external) order: the external prefix.
     let external: Vec<Gf> = point.iter().rev().copied().collect();
     let total = point.len();
-    debug_assert_eq!(mle_l.len(), 1usize << (total - skip));
+    debug_assert_eq!(
+        mle_l.len(),
+        1usize << (total - first + usize::from(pending.is_some()))
+    );
     let eq_c = if s > 0 && total > s { eq_table(&external[..s]) } else { Vec::new() };
+    let one = [Gf::one()];
 
-    for (round, z) in point.into_iter().enumerate().skip(skip) {
+    for (round, z) in point.into_iter().enumerate().skip(first) {
         let remaining = total - 1 - round;
-        let h = mle_l.len() / 2;
-        let (lo_l, hi_l) = mle_l.split_at_mut(h);
-        let (lo_r, hi_r) = mle_r.split_at_mut(h);
+        let h = 1usize << remaining;
 
         // At z = 0 the incoming claim determines the value at zero, so send
         // the value at one. Otherwise send the value at zero as usual.
         let send_one = z == Gf::zero();
-        let (sum_endpoint, sum_inf) = if s > 0 && remaining >= s {
-            let eq_y = eq_table(&external[s..remaining]);
-            round_sums_tensor(lo_l, lo_r, hi_l, hi_r, &eq_c, &eq_y, send_one)
+        let (eq_flat, eq_y);
+        let weights = if s > 0 && remaining >= s {
+            eq_y = eq_table(&external[s..remaining]);
+            kernels::Weights { eq_c: &eq_c, eq_y: &eq_y }
         } else {
-            let eq = eq_table(&external[..remaining]);
-            debug_assert_eq!(eq.len(), h);
-            round_sums(lo_l, lo_r, hi_l, hi_r, &eq, send_one)
+            eq_flat = eq_table(&external[..remaining]);
+            kernels::Weights { eq_c: &eq_flat, eq_y: &one }
+        };
+
+        let (sum_endpoint, sum_inf) = match pending.take() {
+            Some(rho) => {
+                debug_assert_eq!(mle_l.len(), 4 * h);
+                let (q01_l, q23_l) = mle_l.split_at_mut(2 * h);
+                let (q0_l, q1_l) = q01_l.split_at_mut(h);
+                let (q2_l, q3_l) = q23_l.split_at(h);
+                let (q01_r, q23_r) = mle_r.split_at_mut(2 * h);
+                let (q0_r, q1_r) = q01_r.split_at_mut(h);
+                let (q2_r, q3_r) = q23_r.split_at(h);
+                kernels::fused_fold_round(
+                    q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, weights, send_one,
+                )
+            }
+            None => {
+                debug_assert_eq!(mle_l.len(), 2 * h);
+                let (lo_l, hi_l) = mle_l.split_at(h);
+                let (lo_r, hi_r) = mle_r.split_at(h);
+                kernels::round_sums(lo_l, hi_l, lo_r, hi_r, weights, send_one)
+            }
         };
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
 
         let r: Gf = ps.verifier_message();
         next_point.push_back(r);
-
-        fold_halves(lo_l, lo_r, hi_l, hi_r, r);
-        mle_l = &mut mle_l[..h];
-        mle_r = &mut mle_r[..h];
+        pending = Some(r);
+        // The folded table (once `r` is applied) has `h` entries per half;
+        // until then the unfolded `2h` stay.
+        mle_l = &mut mle_l[..2 * h];
+        mle_r = &mut mle_r[..2 * h];
         factor = factor * eq_factor(r, z);
     }
 
+    if let Some(rho) = pending {
+        mle_l[0] = mle_l[0] + rho * (mle_l[1] - mle_l[0]);
+        mle_r[0] = mle_r[0] + rho * (mle_r[1] - mle_r[0]);
+    }
     ps.prover_message(&[mle_l[0], mle_r[0]]);
     let r: Gf = ps.verifier_message();
     next_point.push_front(r);
@@ -169,121 +219,6 @@ pub(crate) fn eq_table(point: &[Gf]) -> Vec<Gf> {
         return vec![Gf::one()];
     }
     build_eq_x_r_vec(point, &()).expect("non-empty point")
-}
-
-/// `Σ eq·l_end·r_end` and `Σ eq·(l_hi − l_lo)(r_hi − r_lo)` over the
-/// pairs, chunked in parallel with delayed reduction: the products are
-/// accumulated unreduced and reduced once per chunk — exact, so the
-/// values are the ones a reduced-per-term sum gives.
-fn round_sums(
-    lo_l: &[Gf],
-    lo_r: &[Gf],
-    hi_l: &[Gf],
-    hi_r: &[Gf],
-    eq: &[Gf],
-    send_one: bool,
-) -> (Gf, Gf) {
-    let h = lo_l.len();
-    let chunks = h.div_ceil(PARALLEL_MIN_LANES).max(1);
-    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..chunks)
-        .map(|chunk| {
-            let start = chunk * PARALLEL_MIN_LANES;
-            let end = (start + PARALLEL_MIN_LANES).min(h);
-            let zero = Gf::zero();
-            let mut acc_end = <Gf as WideMulAcc>::wide_zero(&zero);
-            let mut acc_inf = <Gf as WideMulAcc>::wide_zero(&zero);
-            for i in start..end {
-                let (d_l, d_r) = (hi_l[i] - lo_l[i], hi_r[i] - lo_r[i]);
-                let (l_end, r_end) = if send_one {
-                    (hi_l[i], hi_r[i])
-                } else {
-                    (lo_l[i], lo_r[i])
-                };
-                let e_l = eq[i] * l_end;
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut acc_end,
-                    &<Gf as WideMulAcc>::mul_wide(&e_l, &r_end),
-                );
-                let e_d = eq[i] * d_l;
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut acc_inf,
-                    &<Gf as WideMulAcc>::mul_wide(&e_d, &d_r),
-                );
-            }
-            (
-                <Gf as WideMulAcc>::from_wide(acc_end),
-                <Gf as WideMulAcc>::from_wide(acc_inf),
-            )
-        })
-        .collect();
-    partials
-        .into_iter()
-        .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
-}
-
-/// [`round_sums`] with the weight `eq_y[y]·eq_c[c]` over rows of `eq_c.len()`
-/// entries: each row's sums are accumulated unreduced against `eq_c`, then
-/// reduced and scaled by `eq_y[y]` once.
-fn round_sums_tensor(
-    lo_l: &[Gf],
-    lo_r: &[Gf],
-    hi_l: &[Gf],
-    hi_r: &[Gf],
-    eq_c: &[Gf],
-    eq_y: &[Gf],
-    send_one: bool,
-) -> (Gf, Gf) {
-    let width = eq_c.len();
-    debug_assert_eq!(lo_l.len(), width * eq_y.len());
-    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..eq_y.len(), 1)
-        .map(|y| {
-            let base = y * width;
-            let zero = Gf::zero();
-            let mut acc_end = <Gf as WideMulAcc>::wide_zero(&zero);
-            let mut acc_inf = <Gf as WideMulAcc>::wide_zero(&zero);
-            for c in 0..width {
-                let i = base + c;
-                let (d_l, d_r) = (hi_l[i] - lo_l[i], hi_r[i] - lo_r[i]);
-                let (l_end, r_end) = if send_one {
-                    (hi_l[i], hi_r[i])
-                } else {
-                    (lo_l[i], lo_r[i])
-                };
-                let e_l = eq_c[c] * l_end;
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut acc_end,
-                    &<Gf as WideMulAcc>::mul_wide(&e_l, &r_end),
-                );
-                let e_d = eq_c[c] * d_l;
-                <Gf as WideMulAcc>::wide_add_assign(
-                    &mut acc_inf,
-                    &<Gf as WideMulAcc>::mul_wide(&e_d, &d_r),
-                );
-            }
-            let w = eq_y[y];
-            (
-                <Gf as WideMulAcc>::from_wide(acc_end) * w,
-                <Gf as WideMulAcc>::from_wide(acc_inf) * w,
-            )
-        })
-        .collect();
-    partials
-        .into_iter()
-        .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
-}
-
-/// `lo += r · (hi − lo)` on both halves, chunked in parallel.
-fn fold_halves(lo_l: &mut [Gf], lo_r: &mut [Gf], hi_l: &[Gf], hi_r: &[Gf], r: Gf) {
-    cfg_chunks_mut!(lo_l, PARALLEL_MIN_LANES)
-        .zip(cfg_chunks_mut!(lo_r, PARALLEL_MIN_LANES))
-        .zip(cfg_chunks!(hi_l, PARALLEL_MIN_LANES))
-        .zip(cfg_chunks!(hi_r, PARALLEL_MIN_LANES))
-        .for_each(|(((ll, lr), hl), hr)| {
-            for i in 0..ll.len() {
-                ll[i] += r * (hl[i] - ll[i]);
-                lr[i] += r * (hr[i] - lr[i]);
-            }
-        });
 }
 
 /// Replays `rounds` layers from `claim` at `point`; `None` on any failed
