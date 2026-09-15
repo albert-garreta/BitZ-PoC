@@ -171,9 +171,9 @@ In the vast majority of scenarios, $\Relation$ is defined over one (or more) alg
 
  In this work we bring the  two aforementioned lines of research together. Concretely, we  present \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) that can commit to a witness vector $\bff \in S^\codedim$ over an arbitrary finitely generated ring $S$. For example, $S$ can be any finite field $\FF$, the ring of integers $\ZZ$, a cyclotomic ring (for lattice-based cryptography), the integers modulo $2^{32}$, etc.
 
- \ftwoz \ can then prove linear constraints on $\bff$, such as Multilinear Extension (MLE) evaluation claims, over $S$, of the form $$\langle \bff, \vv\rangle = \mu \quad \text{in } S$$ for some public $\vv\in S^\codedim, \mu\in S$.
- More generally, given another finitely generated ring $R$ and a ring homomorphism $\psi: S\to R$, \ftwoz\ can prove claims of the form $$\langle \psi(\bff), \vv\rangle = \mu \quad \text{in } R$$ for public $\vv\in R^{\codedim}, \mu\in R$. For example, $S$ could be the ring of integers, $R$ could be a prime field $\FF_q$, and $\psi$ could be reduction modulo $q$. 
- \bigskip
+ \ftwoz \ can then prove linear constraints on $\bff$, such as Multilinear Extension (MLE) evaluation claims, over $S$, of the form \iflncs  $\langle \bff, \vv\rangle = \mu$ in $S$ \else$$\langle \bff, \vv\rangle = \mu \quad \text{in } S$$\fi for some public $\vv\in S^\codedim, \mu\in S$.
+ More generally, given another finitely generated ring $R$ and a ring homomorphism $\psi: S\to R$, \ftwoz\ can prove claims of the form \iflncs $\langle \psi(\bff), \vv\rangle = \mu$ in $R$ \else $$\langle \psi(\bff), \vv\rangle = \mu \quad \text{in } R$$\fi for public $\vv\in R^{\codedim}, \mu\in R$. For example, $S$ could be the ring of integers, $R$ could be a prime field $\FF_q$, and $\psi$ could be reduction modulo $q$. 
+ \iflncs\else\bigskip\fi
  
 
 
@@ -323,15 +323,17 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 
  \paragraph{Virtual $\FF_2$-linear transforms, NP-complete dually linear relations, and one arithmetization of SHA-256} At the end of the steps of \cref{s:to_simple_bitz}, we have a standard linear claim on $\bitstext(\bff)$ in $\comfield$, say \begin{equation}\label{e:intro_comfield_linear}\langle \bitstext(\bff), \uu'\rangle = \eta \quad \text{ in } \comfield.\end{equation} Say we would like to add an extra constraint, over $\comfield$, on $\bitstext(\bff)$ of the form $\bitstext(\bff) = M \cdot \bfg$ for some matrix $M$ and vector $\bfg$ with entries in $\FF_2$. Then, we could instead of committing to $\bitstext(\bff)$ in Step 1 of \cref{s:to_simple_bitz}, commit to $\bfg$. The claim  \eqref{e:intro_comfield_linear} becomes
  %
- $$
+ \iflncs$
+\langle \bfg, M^{\mathsf{T}}\cdot \uu'\rangle = \eta$ in $\comfield$, \else$$
 \langle \bfg, M^{\mathsf{T}}\cdot \uu'\rangle = \eta \quad \text{ in } \comfield,
- $$
+ $$\fi
  where $\mathsf{T}$ denotes transposition. This is a linear claim on $\bfg$, the vector we committed to. We can prove this claim with a standard PCS over $\comfield$ such as \cite{whir}. 
  
+ \iflncs \else
  To keep the verifier succinct, we need to ensure that $M^{\mathsf{T}}\cdot \uu'$ admits a succinct representation. In our applications, the vector $\uu'$ admits such (see Step 2 in \cref{s:to_simple_bitz}), and so one needs to ensure $M$ carries some succinct structure, such as for example a tensor decomposition, so that $M^{\mathsf{T}}\cdot \uu'$ does not become a dense vector \albert{review paragraph}.  
-
+\fi
  
- This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
+ This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$. \iflncs In \cref{?} we consider the relation consisting of linear constraints over $\ZZ$ on $\bff$, with $\bff$ being such virtual $\FF_2$-linear combination of $\bfg\in \FF_2^{\codedim'}$. We show the relation is NP-complete, and use it to arithmetize SHA-256 in our implementation of \ftwoz-SNARK. \else For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
 %
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ & \qquad\qquad \defeq \left\{ \begin{aligned}
@@ -345,7 +347,7 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 A particularly interesting subclass of this relation is that obtained by setting $A=B=\mathbf{0}$, in which case the resulting relation, which we call the \emph{$\mathsf{CM}$ relation}, degenerates to linear constraints over $\ZZ$ and over $\FF_2$, i.e.\ a ``dually linear'' constraint. 
 
 In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  We remark that despite this small arithmetization, when it comes to proving many classic hash compressions, we observe that binary field native proof systems such as Flock \cite{flock} and Binius64 \cite{binius64} perform better. Because of this, in \cref{s:hybrid_snark} we propose a proof system that can handle simultaneously constraints over integers (or other rings) and binary fields, and which uses \ftwoz\ as its PCS.
-
+\fi
 
 
 \begin{lncstable}{TabShaArith}
@@ -515,9 +517,10 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
          $\mu_j=\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$  in $\ZZ$, for all $j\in [\codedim_2]$.  
          Then the verifier checks that $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ for all $j\in [\codedim_2]$, and that 
          %
-         $$
+         \iflncs$
+        \sum_{j\in [\codedim_2]} \pi(\mu_j) \cdot \uu_j^{(2)} = \mu$ in $\FF_q$, \else$$
         \sum_{j\in [\codedim_2]} \pi(\mu_j) \cdot \uu_j^{(2)} = \mu \qquad \text{in  } \FF_q,
-         $$
+         $$\fi
          and \eqref{e:intro_eq_2} is replaced by the  claim that the prover knows a vector of bits $\bitstext(\bff)$ such that \begin{equation}\label{e:intro_eq_3}\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j \ \text{in  } \ZZ, \text{ for all } j\in [\codedim_2], \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
         \end{equation} 
         where $\pi^{-1}$ is the canonical representation of elements from $\FF_q$ as integers in the range $\range{0}{q-1}$.
@@ -765,7 +768,12 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
     We design novel (to our knowledge \albert{check}) prover optimizations for the GKR grand product (without altering the protocol itself), see \cref{s:gkr_low_entropy} for details. Namely, we exploit the following property, which is enabled, again, by the tensor split of $\uu=\uu^{(1)} \otimes \uu^{(2)}$ and splitting the original claim into a batch of $\codedim_2$ claims:
     \medskip
 
-    \begin{quote}\emph{\textbf{Low entropy grand products:}} There are at most $\codedim_1=O(\sqrt{\codedim})$ values that $L_{r_1}(\bb,\cc)$ can take on the hypercube of size $\codedim_1\cdot \codedim_2 = \codedim$. \end{quote}
+    \iflncs
+    \medskip
+    \noindent \emph{\textbf{Low entropy grand products:}} There are at most $\codedim_1=O(\sqrt{\codedim})$ values that $L_{r_1}(\bb,\cc)$ can take on the hypercube of size $\codedim_1\cdot \codedim_2 = \codedim$.
+    \medskip
+    \else\begin{quote}\emph{\textbf{Low entropy grand products:}} There are at most $\codedim_1=O(\sqrt{\codedim})$ values that $L_{r_1}(\bb,\cc)$ can take on the hypercube of size $\codedim_1\cdot \codedim_2 = \codedim$. \end{quote}
+    \fi
 
      
 
@@ -862,9 +870,10 @@ for some $\zz\in \comfield^{\codedim}$ and $c\in \comfield$. This is a standard 
 
 Now, say that we know that $\bitstext(\ww)$ is a linear transformation of a vector $\bff\in  \FF_2^{\codedim'} \subseteq  \comfield^{\codedim'}$, so that
 %
-$$
+\iflncs$
+\bitstext(\ww) = M \cdot \bff$ in $\comfield$, \else$$
 \bitstext(\ww) = M \cdot \bff \qquad \text{ in } \comfield,
-$$
+$$\fi
 for some matrix $M\in \FF_2^{\codedim\times \codedim'}$.
 Then 
 %
@@ -1905,9 +1914,11 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
 %
     Then \cref{c:core_iop} is a perfectly complete $(1+t_\red+t_\iopp)$-round IOP for $\LinBitsDual$ with round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \bot)$, with errors $$ \kappa_0, (\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]},$$ where  %\albertimportant{Make sure the Instantiation section accounts for the OOD term}
     %
-        $$
+     \iflncs $
     \kappa_0 = \theta(\cP,\cM,\codedim)
-    $$
+    $ \else   $$
+    \kappa_0 = \theta(\cP,\cM,\codedim)
+    $$\fi
     is the quantity defined in \eqref{e:theta_def}. In particular, if the sets $\cM_q$ are as in \cref{l:examples_morphisms}, then one can take
     $$
     \kappa_0 = \frac{2\cdot D}{q_{\min}} + \frac{\log\left(2\cdot T\cdot \codedim\cdot N_R^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
@@ -3131,6 +3142,8 @@ Moreover, as we mentioned, we run \ftwoz\ with proximity paramter up to the John
 We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the purpose of proving a large amount of hashes (besides offering a simpler arithmetization via the $\mathsf{CM}$ relation from \cref{e:CM_rel}). Indeed if seeking raw performance, Flock or Binius64 is, as of now, better suited for that task.
 
 
+\end{lncsmove}
+\begin{lncsmove}{ExpAI}
 \paragraph{Usage of AI} Following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping an audited  verifier implementation. \albertimportant{If we mimic transcripts, say so}
  We are currently developing a parallel implementation  using conventional methods.  \albertimportant{Revisit depending on where this ends by submission}
 
