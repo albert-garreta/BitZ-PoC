@@ -1,4 +1,6 @@
-use super::super::univariate::{PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec};
+use super::super::univariate::{
+    PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec,
+};
 // Exact native-u32 arithmetic for the univariate-prefix outer-sumcheck skip.
 //
 // The native R1CS product tables keep `Az` and `Bz` as exact `u32` values and

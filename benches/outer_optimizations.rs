@@ -9,7 +9,7 @@ use f2z::{
     sumcheck::{UngrindedRoundBoundary, outer::*},
     transcript::Blake3Transcript,
 };
-use field::{BatchMulAcc, FoldPairs, Fp, FpCtx, IntegerEmbedding, Reduce, RingOps, Uint, WideMul};
+use field::{Fp, FpCtx, IntegerEmbedding, RingOps, Uint, WideMul};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Instant};
 fn words(name: &str, default: &str) -> Vec<String> {
@@ -35,16 +35,7 @@ fn bench_inputs<A, C>(
 ) where
     A: Copy + Send + Sync,
     C: Copy + Send + Sync,
-    FpCtx<2>: WideMul<Fp<2>, A>
-        + WideMul<Fp<2>, C>
-        + FoldPairs<A, Fp<2>>
-        + FoldPairs<C, Fp<2>>
-        + BatchMulAcc<Fp<2>, A>
-        + BatchMulAcc<Fp<2>, C>
-        + Reduce<<FpCtx<2> as WideMul<Fp<2>, A>>::Product, Output = Fp<2>>
-        + Reduce<<FpCtx<2> as WideMul<Fp<2>, C>>::Product, Output = Fp<2>>
-        + Reduce<<FpCtx<2> as BatchMulAcc<Fp<2>, A>>::Accumulator, Output = Fp<2>>
-        + Reduce<<FpCtx<2> as BatchMulAcc<Fp<2>, C>>::Accumulator, Output = Fp<2>>,
+    FpCtx<2>: OuterArithmetic<A, C>,
 {
     let n = a.len().ilog2() as usize;
     let tau: Vec<_> = (0..n)
@@ -63,39 +54,49 @@ fn bench_inputs<A, C>(
             let before = metrics(true);
             let start = Instant::now();
             let (out, prefix) = if let Some(prepared) = &prepared {
-                let out = prove_outer_zerocheck_with_skip_from_slices(
+                let out = f2z::sumcheck::outer::prove_outer_zerocheck_with_skip(
                     field,
                     &mut transcript,
                     prepared,
                     &tau[k..],
-                    a,
-                    b,
-                    c,
+                    f2z::sumcheck::outer::OuterSlices {
+                        ax: a,
+                        bx: b,
+                        cx: c,
+                    },
+                    None,
                     &mut UngrindedRoundBoundary,
                 )
                 .unwrap();
                 (out.tail, Some(out.prefix))
             } else {
                 let out = if protocol == "ordinary" {
-                    prove_outer_sumcheck_from_slices(
+                    f2z::sumcheck::outer::prove_outer_sumcheck(
                         field,
                         &mut transcript,
-                        field.zero(),
+                        f2z::sumcheck::outer::OuterClaim::Sum(field.zero()),
                         &tau,
-                        a,
-                        b,
-                        c,
+                        f2z::sumcheck::outer::OuterSlices {
+                            ax: a,
+                            bx: b,
+                            cx: c,
+                        },
+                        None,
                         &mut UngrindedRoundBoundary,
                     )
                     .unwrap()
                 } else {
-                    prove_outer_zerocheck_from_slices(
+                    f2z::sumcheck::outer::prove_outer_sumcheck(
                         field,
                         &mut transcript,
+                        f2z::sumcheck::outer::OuterClaim::RowwiseZero,
                         &tau,
-                        a,
-                        b,
-                        c,
+                        f2z::sumcheck::outer::OuterSlices {
+                            ax: a,
+                            bx: b,
+                            cx: c,
+                        },
+                        None,
                         &mut UngrindedRoundBoundary,
                     )
                     .unwrap()

@@ -122,6 +122,19 @@ fn check<A: Copy, C: Copy, const M: usize, const LANES: usize, const STEPS: usiz
     }
 }
 fn width<const M: usize, const LANES: usize, const STEPS: usize>() {
+    let wide: [Uint<64>; M] = core::array::from_fn(|i| {
+        Uint::from_words(core::array::from_fn(|j| {
+            [u64::MAX, 0, 1, 1 << 63][(i + j) % 4]
+        }))
+    });
+    check::<_, _, M, LANES, STEPS>(
+        wide,
+        core::array::from_fn(|i| wide[(i * 3 + 1) % M]),
+        wide,
+        signed,
+        signed,
+        signed,
+    );
     let a32 = core::array::from_fn(|i| {
         [
             u32::MAX,
@@ -196,6 +209,16 @@ fn width<const M: usize, const LANES: usize, const STEPS: usize>() {
         }))
     });
     check::<_, _, M, LANES, STEPS>(za9, za9, za9, signed, signed, signed);
+    let za5 = core::array::from_fn(|i| {
+        Z::<5>::from_twos_complement_words(core::array::from_fn(|j| {
+            if j == 4 {
+                [0, 1 << 63, u64::MAX, u64::MAX >> 1][i % 4]
+            } else {
+                u64::MAX
+            }
+        }))
+    });
+    check::<_, _, M, LANES, STEPS>(za5, za5, za9, signed, signed, signed);
 }
 #[test]
 fn all_prefix_widths_match_independent_bigint_interpolation_and_reduction() {

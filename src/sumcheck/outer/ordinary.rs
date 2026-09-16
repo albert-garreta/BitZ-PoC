@@ -5,7 +5,6 @@ use crate::piop::spartan::SpartanField;
 #[cfg(test)]
 use crate::piop::spartan::absorb_field_elements;
 #[cfg(test)]
-use crate::piop::spartan::grinding::GrindingDomain;
 use crate::piop::spartan::sumcheck::R1csProductMles;
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::sumcheck::arithmetic::*;
@@ -15,169 +14,6 @@ use field::Fp;
 use field::RingOps;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-/// Proves the equality-weighted cubic outer sumcheck.
-///
-/// The prover factors the public current-coordinate equality polynomial out of
-/// its hot loop, but reconstructs and absorbs the original four cubic
-/// coefficients. This is an arithmetic optimization only: proof shape and
-/// transcript bytes are unchanged.
-#[cfg(test)]
-pub(crate) fn prove_field_for_test<F>(
-    transcript: &mut impl Transcript,
-    initial_claim: F,
-    tau: &[F],
-    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
-    products: R1csProductMles<F>,
-    field_cfg: &F::Config,
-) -> Result<OuterSumcheckOutput<F>, SumcheckError>
-where
-    F: SpartanField,
-{
-    let reducer = field_cfg.clone();
-    prove_field_with_factors(
-        transcript,
-        initial_claim,
-        tau,
-        (eq_low, eq_high),
-        products,
-        field_cfg,
-        &reducer,
-    )
-}
-
-pub(crate) fn prove_field_with_factors<F, R>(
-    transcript: &mut impl Transcript,
-    initial_claim: F,
-    tau: &[F],
-    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
-    products: R1csProductMles<F>,
-    field_cfg: &F::Config,
-    reducer: &R,
-) -> Result<OuterSumcheckOutput<F>, SumcheckError>
-where
-    F: SpartanField,
-    R: SumcheckProductReducer<F>,
-{
-    let mut round_boundary = UngrindedRoundBoundary;
-    prove_field_with_boundary(
-        transcript,
-        initial_claim,
-        tau,
-        (eq_low, eq_high),
-        products,
-        field_cfg,
-        reducer,
-        &mut round_boundary,
-    )
-}
-
-/// Proves the cubic outer sumcheck with one PoW nonce between every absorbed
-/// round polynomial and its following Fiat--Shamir challenge.
-///
-/// Returned nonces are in round order, so `nonces[i]` is adjacent to
-/// `proof.sumcheck.round_polynomials[i]`. `D` supplies a typed,
-/// protocol-specific grinding domain and `grinding_bits` is fixed for all
-/// rounds. The ordinary [`prove_field_with_factors`] path remains
-/// ungrinded and transcript-compatible with existing proofs.
-#[allow(dead_code)]
-#[cfg(test)]
-pub(crate) fn prove_field_grinded_for_test<D, F, R>(
-    transcript: &mut impl Transcript,
-    initial_claim: F,
-    tau: &[F],
-    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
-    products: R1csProductMles<F>,
-    field_cfg: &F::Config,
-    reducer: &R,
-    grinding_bits: u32,
-) -> Result<(OuterSumcheckOutput<F>, Vec<u64>), SumcheckError>
-where
-    D: GrindingDomain,
-    F: SpartanField,
-    R: SumcheckProductReducer<F>,
-{
-    let mut round_boundary = ProverGrindingRoundBoundary::<D>::with_round_offset(grinding_bits, 0);
-    let output = prove_field_with_boundary(
-        transcript,
-        initial_claim,
-        tau,
-        (eq_low, eq_high),
-        products,
-        field_cfg,
-        reducer,
-        &mut round_boundary,
-    )?;
-    debug_assert_eq!(
-        round_boundary.nonces.len(),
-        if grinding_bits == 0 {
-            0
-        } else {
-            output.proof.sumcheck.round_polynomials.len()
-        }
-    );
-    Ok((output, round_boundary.nonces))
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_field_with_boundary<F, R, P>(
-    transcript: &mut impl Transcript,
-    initial_claim: F,
-    tau: &[F],
-    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
-    products: R1csProductMles<F>,
-    field_cfg: &F::Config,
-    reducer: &R,
-    round_boundary: &mut P,
-) -> Result<OuterSumcheckOutput<F>, SumcheckError>
-where
-    F: SpartanField,
-    R: SumcheckProductReducer<F>,
-    P: RoundBoundaryPolicy,
-{
-    let num_vars = products.az.num_vars;
-    if !has_dense_shape(&products.az)
-        || !has_dense_shape(&products.bz)
-        || !has_dense_shape(&products.cz)
-        || products.bz.num_vars != num_vars
-        || products.cz.num_vars != num_vars
-    {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    if tau.len() != num_vars {
-        return Err(SumcheckError::InvalidEqualityDimensions);
-    }
-    if !has_dense_shape(&eq_low)
-        || !has_dense_shape(&eq_high)
-        || eq_low
-            .num_vars
-            .checked_add(eq_high.num_vars)
-            .is_none_or(|eq_vars| eq_vars != num_vars)
-    {
-        return Err(SumcheckError::InvalidEqualityDimensions);
-    }
-    round_boundary.validate(num_vars)?;
-
-    let factors = EqualityFactors::new(eq_low.evaluations, eq_high.evaluations, field_cfg);
-    let rows = super::inputs::SliceRows {
-        ax: &products.az.evaluations,
-        bx: &products.bz.evaluations,
-        cx: &products.cz.evaluations,
-    };
-    // Compatibility argument: arithmetic capabilities now belong to the field.
-    let _ = reducer;
-    super::api::prove_from_rows(
-        field_cfg,
-        transcript,
-        initial_claim,
-        tau,
-        &rows,
-        false,
-        factors,
-        round_boundary,
-    )
-    .map(Into::into)
-}
-
 /// Independent direct-cubic field-table oracle under the requested boundary policy.
 #[cfg(test)]
 pub(crate) fn prove_field_with_boundary_reference<F, R, P>(
@@ -796,6 +632,7 @@ pub(crate) enum FactoredEndpoint {
     Zero,
     One,
     /// Rowwise zero residual: accumulate only the quadratic leading coefficient.
+    #[cfg(test)]
     KnownZero,
 }
 
@@ -870,6 +707,7 @@ where
             (endpoint_evaluation, cofactor_one)
         }
         FactoredEndpoint::One => (*current_claim, endpoint_evaluation),
+        #[cfg(test)]
         FactoredEndpoint::KnownZero => (field_config.zero(), field_config.zero()),
     };
 
@@ -909,6 +747,7 @@ pub(crate) fn accumulate_eq_factored_cofactor_evaluations<F, R>(
             (field_config).sub(&(field_config).mul(az_zero, bz_zero), cz_zero)
         }
         FactoredEndpoint::One => (field_config).sub(&(field_config).mul(az_one, bz_one), cz_one),
+        #[cfg(test)]
         FactoredEndpoint::KnownZero => field_config.zero(),
     };
     reducer.multiply_accumulate(&mut accumulators[0], weight, &endpoint_residual);
@@ -1554,14 +1393,27 @@ where
     ))
 }
 
-pub(super) struct EqualityFactors<E> {
+/// Two-level equality tables and their reusable folding scratch.
+/// Tables supplied by a caller must encode the challenge point in the same
+/// coordinate order as the proof; only their dimensions can be validated here.
+pub struct EqualityFactors<E> {
     low: Vec<E>,
     high: Vec<E>,
     scratch_low: Vec<E>,
     scratch_high: Vec<E>,
 }
 impl<E: SpartanField> EqualityFactors<E> {
-    pub(super) fn new(low: Vec<E>, high: Vec<E>, field: &E::Config) -> Self {
+    /// Validates dense-table metadata before taking ownership of their values.
+    pub fn from_mles(
+        (low, high): (DenseMultilinearExtension<E>, DenseMultilinearExtension<E>),
+        field: &E::Config,
+    ) -> Result<Self, SumcheckError> {
+        if !has_dense_shape(&low) || !has_dense_shape(&high) {
+            return Err(SumcheckError::InvalidEqualityDimensions);
+        }
+        Ok(Self::new(low.evaluations, high.evaluations, field))
+    }
+    pub fn new(low: Vec<E>, high: Vec<E>, field: &E::Config) -> Self {
         Self {
             scratch_low: vec![field.zero(); low.len() / 2],
             scratch_high: vec![field.zero(); high.len() / 2],

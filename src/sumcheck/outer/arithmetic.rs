@@ -5,17 +5,22 @@ use super::engine::RoundState;
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::*;
 use crate::piop::spartan::sumcheck::R1csProductMles;
+#[cfg(test)]
 use crate::sumcheck::SumcheckError;
 use crate::sumcheck::outer::ordinary::*;
+#[cfg(test)]
 use crate::sumcheck::{boundary::*, proof::*};
+#[cfg(test)]
 use crate::transcript::traits::Transcript;
 #[cfg(test)]
 use crate::utils::delayed_reduction::EncodedMac;
+#[cfg(test)]
 use field::RingOps;
 
 #[cfg(all(test, feature = "parallel"))]
 use rayon::prelude::*;
 mod native;
+#[cfg(test)]
 pub(crate) use native::NativeInput;
 pub use native::NativeWideProducts;
 #[cfg(test)]
@@ -98,14 +103,15 @@ impl<'a> NativeProducts<'a> {
 }
 
 /// Owned raw `Az`, `Bz`, `Cz` tables.
+#[cfg(test)]
 pub struct RawProducts {
     pub az: Vec<Raw>,
     pub bz: Vec<Raw>,
     pub cz: Vec<Raw>,
 }
 
+#[cfg(test)]
 impl RawProducts {
-    #[cfg(test)]
     pub(crate) fn zeros(len: usize) -> Self {
         Self {
             az: vec![0; len],
@@ -128,14 +134,12 @@ impl RawProducts {
         self.az.len()
     }
 
-    #[cfg(test)]
     fn truncate(&mut self, len: usize) {
         self.az.truncate(len);
         self.bz.truncate(len);
         self.cz.truncate(len);
     }
 
-    #[cfg(test)]
     fn swap(&mut self, other: &mut Self) {
         std::mem::swap(&mut self.az, &mut other.az);
         std::mem::swap(&mut self.bz, &mut other.bz);
@@ -893,9 +897,10 @@ fn encoded_scalars<'a>(
 }
 
 /// Proves the cubic outer sumcheck from field-valued raw product tables: the
-/// raw twin of `prove_field_with_factors` with the delayed-Barrett
+/// encoded storage test driver with the delayed-Barrett
 /// reducer. `eq_low`/`eq_high` are the full equality factors of `tau`.
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn prove_encoded<T: Transcript>(
     transcript: &mut T,
     ctx: &field::FpCtx<2>,
@@ -922,9 +927,10 @@ pub(crate) fn prove_encoded<T: Transcript>(
 
 /// [`prove_encoded`] under an explicit message/challenge round
 /// boundary policy: the raw twin of
-/// `prove_field_grinded_for_test`, transcript-identical to it
+/// the ordinary generic engine, transcript-identical to it
 /// under the same policy.
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn prepare_encoded<T: Transcript, P: RoundBoundaryPolicy>(
     transcript: &mut T,
     ctx: &field::FpCtx<2>,
@@ -937,23 +943,26 @@ fn prepare_encoded<T: Transcript, P: RoundBoundaryPolicy>(
     round_boundary: &mut P,
     known_zero: bool,
 ) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    super::api::prove_from_rows(
+    super::prove_outer_sumcheck(
         ctx,
         transcript,
-        initial_claim,
+        if known_zero {
+            super::OuterClaim::RowwiseZero
+        } else {
+            super::OuterClaim::Sum(initial_claim)
+        },
         tau,
         &native::ResidueRows {
             field: ctx,
             products: &products,
         },
-        known_zero,
-        factors_from_raw(ctx, eq_low, eq_high),
+        Some(factors_from_raw(ctx, eq_low, eq_high)),
         round_boundary,
     )
     .map(Into::into)
 }
 
-pub(super) fn factors_from_raw(
+pub(crate) fn factors_from_raw(
     ctx: &field::FpCtx<2>,
     low: Vec<Raw>,
     high: Vec<Raw>,
@@ -1031,34 +1040,6 @@ pub(super) fn prepare_encoded_reference<T: Transcript, P: RoundBoundaryPolicy>(
         round_boundary,
     )?;
     finish_encoded(transcript, ctx, state, &products)
-}
-
-/// Proves the outer sumcheck whose first round runs on exact native `u64`
-/// products: the raw twin of `prove_u32_first_round`.
-/// `Az`/`Bz` must already be validated 32-bit wide.
-#[allow(clippy::too_many_arguments)]
-#[cfg(test)]
-pub(crate) fn prove_native<'a, T: Transcript>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    initial_claim: Field,
-    tau: &[Field],
-    eq_low: Vec<Raw>,
-    eq_high: Vec<Raw>,
-    products: impl Into<NativeInput<'a>>,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    native::dispatch(
-        transcript,
-        ctx,
-        reducer,
-        initial_claim,
-        tau,
-        eq_low,
-        eq_high,
-        products.into(),
-        false,
-    )
 }
 
 #[cfg(test)]
@@ -1158,6 +1139,7 @@ fn prove_native_prefix<T: Transcript>(
 // ---------------------------------------------------------------------------
 
 /// F2Z's validated R1CS relation promises rowwise zero residuals.
+#[cfg(test)]
 pub(crate) fn prove_encoded_zerocheck(
     transcript: &mut impl Transcript,
     field: &field::FpCtx<2>,
@@ -1177,26 +1159,6 @@ pub(crate) fn prove_encoded_zerocheck(
         high,
         products,
         boundary,
-        true,
-    )
-}
-pub(crate) fn prove_native_zerocheck<'a>(
-    transcript: &mut impl Transcript,
-    field: &field::FpCtx<2>,
-    tau: &[Field],
-    low: Vec<Raw>,
-    high: Vec<Raw>,
-    products: impl Into<NativeInput<'a>>,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    native::dispatch(
-        transcript,
-        field,
-        field,
-        field.zero(),
-        tau,
-        low,
-        high,
-        products.into(),
         true,
     )
 }

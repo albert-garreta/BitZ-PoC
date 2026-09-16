@@ -1,11 +1,5 @@
 //! Owned and borrowed inputs for equality-weighted outer sumchecks.
-use super::{
-    OuterArithmetic,
-    engine::RoundState,
-    inputs::{OuterRows, SliceRows},
-    ordinary::*,
-    traversal::*,
-};
+use super::{OuterArithmetic, engine::RoundState, inputs::OuterRows, ordinary::*, traversal::*};
 use crate::piop::spartan::{SpartanField, matrix::make_equality_factors};
 use crate::sumcheck::arithmetic::SumcheckProductReducer;
 use crate::sumcheck::{
@@ -70,161 +64,49 @@ pub(super) fn validate_shape(a: usize, b: usize, c: usize) -> Result<usize, Sumc
     }
     Ok(a.ilog2() as usize)
 }
-/// Proves claim = Σₓ eq(tau,x) (A(x)B(x)−C(x)). A zero claim is allowed
-/// without assuming that the residual vanishes at each row.
-pub fn prove_outer_sumcheck<F, AB, C>(
-    field: &F,
-    transcript: &mut impl Transcript,
-    initial_claim: <F as RingOps>::Elem,
-    tau: &[<F as RingOps>::Elem],
-    inputs: OuterInputs<AB, C>,
-    boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
-where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
-    <F as RingOps>::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
-{
-    let prepared = prepare_first(
-        field,
-        transcript,
-        initial_claim,
-        tau,
-        &SliceRows {
-            ax: &inputs.ax,
-            bx: &inputs.bx,
-            cx: &inputs.cx,
-        },
-        false,
-        boundary,
-        None,
-    )?;
-    drop(inputs); // Native tables need not coexist with all subsequent fold scratch.
-    finish_first(field, transcript, tau, prepared, boundary)
+/// The relation used to construct the first ordinary message.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OuterClaim<E> {
+    /// The equality-weighted sum of A·B−C; zero does not imply rowwise equality.
+    Sum(E),
+    /// A(x)B(x)=C(x) at every Boolean row. Enables the zerocheck first round.
+    RowwiseZero,
 }
 
-/// Proves claim = Σₓ eq(tau,x) (A(x)B(x)−C(x)). A zero claim is allowed
-/// without assuming that the residual vanishes at each row.
-pub fn prove_outer_sumcheck_from_slices<F, AB, C>(
+/// Proves the equality-weighted outer relation directly from row storage.
+///
+/// Owned inputs are released after the first challenge fold. Borrow with `&rows`
+/// to keep caller-owned storage. Supplied equality factors must be fresh tables
+/// for `tau` in little-endian coordinate order; `None` prepares them here.
+/// Arithmetic capabilities and thread-safe row access are resolved statically.
+pub fn prove_outer_sumcheck<F, I: OuterRows>(
     field: &F,
     transcript: &mut impl Transcript,
-    initial_claim: <F as RingOps>::Elem,
-    tau: &[<F as RingOps>::Elem],
-    ax: &[AB],
-    bx: &[AB],
-    cx: &[C],
-    boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
-where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
-    <F as RingOps>::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
-{
-    let prepared = prepare_first(
-        field,
-        transcript,
-        initial_claim,
-        tau,
-        &SliceRows { ax, bx, cx },
-        false,
-        boundary,
-        None,
-    )?;
-    finish_first(field, transcript, tau, prepared, boundary)
-}
-
-/// Proves a rowwise zero relation, using H(X)=h₂X(X−1) in the first round.
-/// This requires A(x)B(x)=C(x) at every Boolean row, not merely a zero weighted sum.
-pub fn prove_outer_zerocheck<F, AB, C>(
-    field: &F,
-    transcript: &mut impl Transcript,
-    tau: &[<F as RingOps>::Elem],
-    inputs: OuterInputs<AB, C>,
-    boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
-where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
-    <F as RingOps>::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
-{
-    let prepared = prepare_first(
-        field,
-        transcript,
-        field.zero(),
-        tau,
-        &SliceRows {
-            ax: &inputs.ax,
-            bx: &inputs.bx,
-            cx: &inputs.cx,
-        },
-        true,
-        boundary,
-        None,
-    )?;
-    drop(inputs); // Native tables need not coexist with all subsequent fold scratch.
-    finish_first(field, transcript, tau, prepared, boundary)
-}
-
-/// Proves a rowwise zero relation, using H(X)=h₂X(X−1) in the first round.
-/// This requires A(x)B(x)=C(x) at every Boolean row, not merely a zero weighted sum.
-pub fn prove_outer_zerocheck_from_slices<F, AB, C>(
-    field: &F,
-    transcript: &mut impl Transcript,
-    tau: &[<F as RingOps>::Elem],
-    ax: &[AB],
-    bx: &[AB],
-    cx: &[C],
-    boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
-where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
-    <F as RingOps>::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
-{
-    let prepared = prepare_first(
-        field,
-        transcript,
-        field.zero(),
-        tau,
-        &SliceRows { ax, bx, cx },
-        true,
-        boundary,
-        None,
-    )?;
-    finish_first(field, transcript, tau, prepared, boundary)
-}
-
-/// Production storage adapters enter the same protocol and arithmetic traversal.
-/// Factors must be fresh equality tables for `tau` in the same coordinate order.
-/// A known-zero relation requires a zero initial claim and A(x)B(x)=C(x) at every row.
-pub(super) fn prove_from_rows<F, I: OuterRows>(
-    field: &F,
-    transcript: &mut impl Transcript,
-    claim: F::Elem,
+    claim: OuterClaim<F::Elem>,
     tau: &[F::Elem],
-    rows: &I,
-    known_zero: bool,
-    factors: EqualityFactors<F::Elem>,
+    rows: I,
+    factors: Option<EqualityFactors<F::Elem>>,
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<F::Elem>, SumcheckError>
 where
     F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<F::Elem>,
     F::Elem: SpartanField<Config = F>,
 {
+    let (initial_claim, known_zero) = match claim {
+        OuterClaim::Sum(value) => (value, false),
+        OuterClaim::RowwiseZero => (field.zero(), true),
+    };
     let prepared = prepare_first(
         field,
         transcript,
-        claim,
+        initial_claim,
         tau,
-        rows,
+        &rows,
         known_zero,
         boundary,
-        Some(factors),
+        factors,
     )?;
+    drop(rows); // Release owned integers before continuing on field folds.
     finish_first(field, transcript, tau, prepared, boundary)
 }
 
@@ -281,8 +163,8 @@ where
 {
     #[cfg(feature = "bench-internals")]
     let setup = super::measure::Phase::start(0);
-    let (a, b, c) = rows.dimensions();
-    let n = validate_shape(a, b, c)?;
+    let n = rows.validate()?;
+    let a = rows.dimensions().0;
     if tau.len() != n {
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
@@ -335,7 +217,9 @@ where
             field.accumulate::<false>(&mut acc[1], weights, index, leading);
             if !known_zero {
                 let (a, b, i) = match endpoint {
-                    FactoredEndpoint::Zero | FactoredEndpoint::KnownZero => (a0, b0, i),
+                    FactoredEndpoint::Zero => (a0, b0, i),
+                    #[cfg(test)]
+                    FactoredEndpoint::KnownZero => (a0, b0, i),
                     FactoredEndpoint::One => (a1, b1, i + 1),
                 };
                 let residual = field.residual(field.product(a, b), field.lift_c(rows.c(i)));

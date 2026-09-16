@@ -469,7 +469,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
     row - row_base
 }
 
-fn public_coefficient_product(words: &[u64], value: &Uint<32>) -> Uint<65> {
+pub(super) fn public_coefficient_product(words: &[u64], value: &Uint<32>) -> Uint<65> {
     fn product<const L: usize>(words: &[u64], value: &Uint<32>) -> Uint<65> {
         let coefficient =
             Uint::<L>::from_words(words.try_into().expect("declared coefficient width"));

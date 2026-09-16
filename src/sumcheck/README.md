@@ -19,38 +19,41 @@ let inputs = OuterInputs {
     cx: vec![10u128, 21],
 };
 // tau is sampled by the containing protocol before calling this function.
-let output = prove_outer_zerocheck(
-    &field, &mut transcript, &tau, inputs, &mut UngrindedRoundBoundary,
+let output = prove_outer_sumcheck(
+    &field, &mut transcript, OuterClaim::RowwiseZero, &tau, inputs, None,
+    &mut UngrindedRoundBoundary,
 )?;
 // output.proof: SumcheckProof<field::Fp<2>, 4>
 // output.point, output.final_claim, output.evaluations.{ax,bx,cx}
 ```
 
-- `prove_outer_sumcheck(field, transcript, initial_claim, tau, inputs, boundary)`
-  proves `claim = sum_x eq(tau,x) (A(x)B(x)-C(x))`. A zero claim does **not**
-  imply that individual row residuals vanish.
-- `prove_outer_zerocheck(field, transcript, tau, inputs, boundary)` assumes
-  `A(x)B(x)=C(x)` at every Boolean row. Its first round accumulates only the
-  quadratic leading coefficient, using `H(X)=h2*X*(X-1)`, then enters the
-  ordinary continuation.
+- `prove_outer_sumcheck(field, transcript, claim, tau, rows, factors, boundary)`
+  proves the ordinary equality-weighted relation. `OuterClaim::Sum(value)` allows
+  arbitrary claims, including zero with nonzero individual residuals.
+  `OuterClaim::RowwiseZero` promises `A(x)B(x)=C(x)` at every Boolean row and
+  enables the first-round zerocheck optimization.
 - `prepare_univariate_skip(field, k)` prepares field-specific interpolation
-  weights for `1 <= k <= 4`. `prove_outer_zerocheck_with_skip(field, transcript,
-  prepared, tau_tail, inputs, boundary)` proves a known-zero univariate prefix
-  and an ordinary Boolean tail. `k == log2(rows)` produces an empty tail.
-- All three provers have `_from_slices` counterparts with `ax`, `bx`, and `cx`
-  slices instead of an owned `OuterInputs`.
-- `verify_outer_sumcheck` checks the ordinary proof and terminal evaluations;
-  it also verifies zero-first-round proofs. `verify_outer_zerocheck_with_skip`
-  additionally checks the prefix and returns its univariate challenge.
+  constants for `1 <= k <= 4`. `prove_outer_zerocheck_with_skip(field, transcript,
+  prepared, tau_tail, rows, factors, boundary)` proves a rowwise-zero prefix
+  and an ordinary tail. `k == log2(rows)` produces an empty tail.
+- Both provers take any `OuterRows`: `OuterInputs<AB,C>` owns three vectors,
+  `OuterSlices<AB,C>` borrows three slices, and split-product/circuit storage
+  implements indexed row access. Pass `&rows` to retain owned storage; otherwise
+  it is dropped immediately after the first mixed fold. No `_from_slices`,
+  native/field forwarding functions, or runtime width-dispatch enum is needed.
+- `factors: None` prepares equality tables inside the prover. `Some(factors)`
+  reuses fresh tables for the same challenge point and coordinate order.
+  `EqualityFactors::from_mles` checks dense-table metadata;
+  `EqualityFactors::new` accepts vectors. Provers check domain lengths, but the
+  caller must ensure the supplied values encode the requested equality point.
+- `verify_outer_sumcheck` checks ordinary proofs in either claim mode;
+  `verify_outer_zerocheck_with_skip` also checks the prefix.
 
-The public input container is `OuterInputs<AB, C = AB>` with three vectors. A/B
-share their type; C can be wider. There is no `OuterSource`, `OuterInputRefs`,
-`OuterInputReaders`, or `OuterKernels` interface. The provider's associated
-`Elem` is the folded representation. It uses the existing `SpartanField`
-contract for transcript encoding and challenge sampling, and `vendor/field`
-contracts for exact products, reduction, batch MACs, and pair folding. Current
-Spartan providers are runtime prime contexts `FpCtx<L>`; adding another provider
-requires its transcript/encoding implementation as well as arithmetic.
+A/B share their arithmetic type; C can be wider. `OuterArithmetic<AB,C>` and
+`OuterRows` provide static arithmetic and storage capabilities. The provider's
+associated `Elem` is the folded representation. The existing `SpartanField`
+contract supplies transcript encoding and challenge sampling; `vendor/field`
+supplies exact products, reductions, accumulators, and prepared folds.
 
 `OuterOutput<E>` contains the proof, challenge point, final claim, and
 `OuterEvaluations<E> { ax, bx, cx }`. `SkippedOuterOutput<E>` contains an
@@ -65,14 +68,12 @@ ordinary transcript. Prefixes retain absolute round numbering. The equality
 scale is multiplied forward and is never divided out, including when it is zero.
 Terminal consistency is checked in release builds for every input representation.
 
-Arithmetic adapters preserve the optimized two-level equality accumulation,
-parallel block sizes, reusable fold scratch, and fused fold/next-message passes.
-Native u32, split u64/u128, and split u128/u256 input kernels remain specialized.
-Private width dispatch is performed once before those kernels; private closures
-read split limbs and public zero padding without constructing a C table.
-The general mixed-input API projects only at the consuming operation and writes
-field elements at the first fold. It is a generic fallback; it is not a claim
-that every operand combination matches the tuned production kernel's speed.
+The generic engine preserves two-level equality accumulation, parallel block
+sizes, reusable fold scratch, and fused fold/next-message passes. Arithmetic is
+selected by the row types at compile time. Split products and public zero padding
+are read on demand without constructing a C table. Integer residuals stay exact
+through initial coefficient accumulation; challenge folding produces smaller
+field tables. Arithmetic differences live in `OuterArithmetic` implementations.
 
 Univariate prefix folding uses **Lagrange** weights. `FoldPairs::fold_prefix_into`
 in `vendor/field` instead implements Boolean folding with already-known
@@ -100,14 +101,14 @@ src/sumcheck/
   arithmetic.rs      exact accumulator and fold helpers shared with inner kernels
   outer/
     mod.rs
-    api.rs           owned/slice ordinary and zerocheck entrypoints
+    api.rs           direct ordinary prover with explicit claim mode
     engine.rs        shared round state and terminal check
     ordinary.rs      field arithmetic, two-level equality, fused continuation
-    arithmetic.rs    encoded two-limb kernels and continuation adapter
-    arithmetic/native.rs   split-limb first-round kernels, private width dispatch
+    arithmetic.rs    native storage and test-only encoded arithmetic
+    arithmetic/native.rs   split-product row storage and test-only legacy kernels
     univariate_api.rs      prepared mixed-input prefix API
     univariate.rs          interpolation, prefix proof, existing composition types
-    native_skip.rs         tuned u32 prefix kernels and production prefix wrapper
+    native_skip.rs         test-only independent native skip reference
     tests.rs
 ```
 

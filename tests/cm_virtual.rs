@@ -96,6 +96,53 @@ fn cm_and_virtual_roundtrips() {
 }
 
 #[test]
+fn cm_and_small_explicit_domains_roundtrip_and_reject_false_witnesses() {
+    let config = f2z::piop::spartan::spartan_f2z_field_config();
+    for gates in [1, 2, 127, 128, 129, 256] {
+        for invalid in [false, true] {
+            let witness = CmAndWitness::from_gate_values(gates, |i| {
+                let r = splitmix(0xC0_5A11 ^ i as u64);
+                let (x, y) = (r as u32, (r >> 32) as u32);
+                let z = (x & y) ^ u32::from(invalid && i == 0);
+                (x, y, z, x ^ y)
+            })
+            .unwrap();
+            let layout = *witness.layout();
+            let relation = prepare_cm_and_relation(layout, &config).unwrap();
+            let (pc, vc) = adhoc_configs(&layout);
+            let hint =
+                commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
+            let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
+            let outcome = catch_unwind(AssertUnwindSafe(|| {
+                prove_cm_and_f2z_with_config(
+                    &mut Blake3Transcript::new(),
+                    &relation,
+                    projected,
+                    &hint,
+                    &pc,
+                )
+            }))
+            .ok()
+            .and_then(Result::ok)
+            .map(|proof| {
+                verify_cm_and_f2z_with_config(
+                    &mut Blake3Transcript::new(),
+                    &relation,
+                    &hint.commitment,
+                    &proof,
+                    &vc,
+                )
+            });
+            assert_eq!(
+                matches!(outcome, Some(Ok(()))),
+                !invalid,
+                "CM-AND domain {gates}, invalid={invalid}: {outcome:?}",
+            );
+        }
+    }
+}
+
+#[test]
 fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
     let fx = honest_fixture(PRODUCTION_GATES, 0xC0DE_C0DE);
     let bytes = fx.proof.f2z().to_bytes();

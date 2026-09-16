@@ -25,7 +25,7 @@ pub struct PreparedWordWeights<const L: usize, const N: usize> {
 
 impl<const L: usize, const N: usize> PreparedWordWeights<L, N> {
     fn new(field: &FpCtx<L>, coefficients: &[Fp<L>]) -> Self {
-        assert!(N > 0 && N <= 32, "unsupported public operand width");
+        assert!(N > 0 && N <= 256, "unsupported public operand width");
         let p = field.params();
         let radix = field.from_integer(&Uint::<2>::from_words([0, 1]));
         let positive: Vec<_> = coefficients
@@ -49,7 +49,7 @@ impl<const L: usize, const N: usize> PreparedWordWeights<L, N> {
     }
 
     /// Prepare equality weights for bounded exact signed accumulation.
-    /// Each accumulator may receive at most 2^32 operands, with N <= 32.
+    /// Each accumulator may receive at most 2^32 operands, with N <= 256.
     /// Widths and the term bound must come from public input dimensions.
     pub fn signed(field: &FpCtx<L>, coefficients: &[Fp<L>]) -> Self {
         Self::new(field, coefficients)
@@ -113,9 +113,9 @@ fn finish_words<const L: usize>(
     p: &PrimeParameters<L>,
     accumulator: UintAccumulator<L, 1>,
 ) -> Fp<L> {
-    // At most 2^32 operands of at most 32 words, each <2^64,
-    // plus one radix correction <p: 32*(2^64-1)+1 < 2^69.
-    // For L>=2, S < p*2^101 < p*R. Weights have scale R^2;
+    // At most 2^32 operands of at most 256 words, each <2^64,
+    // plus one radix correction <p: 256*(2^64-1)+1 < 2^72.
+    // For L>=2, S < p*2^104 < p*R. Weights have scale R^2;
     // one REDC returns the required Montgomery scale R.
     let value = if L >= 2 {
         p.redc(UintProduct {
@@ -139,24 +139,34 @@ fn finish_words<const L: usize>(
 pub struct PreparedFixedWordWeights<'a, const L: usize, const N: usize, const TERMS: usize> {
     params: &'a PrimeParameters<L>,
     positive: [[Uint<L>; N]; TERMS],
-    negative: [[Uint<L>; N]; TERMS],
+    // For N<=2: negated weights. For wider operands: -weight*2^(64*N)
+    // in slot zero, allowing one signed correction per operand.
+    corrections: [[Uint<L>; N]; TERMS],
 }
 impl<'a, const L: usize, const N: usize, const TERMS: usize>
     PreparedFixedWordWeights<'a, L, N, TERMS>
 {
     fn new(field: &'a FpCtx<L>, coefficients: [Fp<L>; TERMS]) -> Self {
         assert!(
-            TERMS <= 16 && N > 0 && N <= 32,
+            TERMS <= 16 && N > 0 && N <= 256,
             "unsupported public fold dimensions"
         );
         let p = field.params();
         let radix = field.from_integer(&Uint::<2>::from_words([0, 1]));
         let positive = coefficients.map(|c| limb_weights(p, &radix.words, &c));
-        let negative = positive.map(|w| w.map(|v| p.neg(&v)));
+        let corrections = positive.map(|w| {
+            if N > 2 {
+                let mut correction = [Uint::ZERO; N];
+                correction[0] = p.neg(&p.mul(&w[N - 1], &radix.words));
+                correction
+            } else {
+                w.map(|v| p.neg(&v))
+            }
+        });
         Self {
             params: p,
             positive,
-            negative,
+            corrections,
         }
     }
     #[inline(always)]
@@ -178,11 +188,28 @@ impl<'a, const L: usize, const N: usize, const TERMS: usize>
         let mut acc = UintAccumulator::<L, 1>::ZERO;
         for i in 0..TERMS {
             let value = read(i);
-            let magnitude = value.unsigned_abs();
             let sign = value.is_negative_ct();
-            for j in 0..N {
-                let w = Uint::ct_select(&self.positive[i][j], &self.negative[i][j], sign);
-                acc.mac(&w, &Uint::from_words([magnitude.as_words()[j]]));
+            if N > 2 {
+                // The unsigned word representation is value + sign*2^(64*N).
+                // Keep its limb products intact and correct the radix once.
+                for j in 0..N {
+                    acc.mac(
+                        &self.positive[i][j],
+                        &Uint::from_words([value.as_words()[j]]),
+                    );
+                }
+                let correction = Uint::ct_select(&Uint::ZERO, &self.corrections[i][0], sign);
+                acc.merge_assign(&UintAccumulator {
+                    low: *correction.as_words(),
+                    high: [0],
+                    head: 0,
+                });
+            } else {
+                let magnitude = value.unsigned_abs();
+                for j in 0..N {
+                    let w = Uint::ct_select(&self.positive[i][j], &self.corrections[i][j], sign);
+                    acc.mac(&w, &Uint::from_words([magnitude.as_words()[j]]));
+                }
             }
         }
         finish_words(self.params, acc)

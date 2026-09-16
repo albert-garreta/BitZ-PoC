@@ -1,11 +1,14 @@
 mod capability;
 mod inputs;
+pub use inputs::{OuterRows, OuterSlices};
+pub use ordinary::EqualityFactors;
 #[cfg(feature = "bench-internals")]
 pub(crate) mod measure;
 pub use capability::OuterArithmetic;
 mod api;
 pub(crate) mod arithmetic;
 mod engine;
+#[cfg(test)]
 pub(crate) mod native_skip;
 pub(crate) mod ordinary;
 mod traversal;

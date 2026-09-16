@@ -1,8 +1,12 @@
 //! Composition of Spartan's outer and inner sumchecks.
-use crate::sumcheck::outer::arithmetic::{
-    NativeInput, NativeProducts, RawProducts, prove_encoded_zerocheck, prove_native_zerocheck,
+use crate::sumcheck::{
+    UngrindedRoundBoundary,
+    outer::{
+        self, EqualityFactors, OuterArithmetic, OuterClaim, OuterRows,
+        arithmetic::{NativeProducts, factors_from_raw},
+    },
+    proof::OuterSumcheckOutput,
 };
-use crate::sumcheck::outer::ordinary::prove_field_with_factors;
 
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
@@ -31,7 +35,7 @@ use super::{
         OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
         prove_inner_sumcheck_with_reducer,
     },
-    univariate_skip::{UnivariateSkipSpartanPiopProof, prove_field_skip_with_factors},
+    univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
 /// Domain separator for the native Spartan PIOP transcript.
@@ -247,42 +251,9 @@ pub fn prove_spartan_piop_u32_native_with_univariate_skip(
     )
 }
 
-/// [`prove_spartan_piop_u32_native_with_univariate_skip`] on borrowed tables:
-/// the exact products and the relation's logical assignment (the leading
-/// `column_count` entries of the padded column domain, the rest implicitly
-/// zero) are read in place, so no padded copy of the witness is made.
-pub(crate) fn prove_spartan_piop_u32_native_with_univariate_skip_borrowed(
-    transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<Fp<2>, bool>,
-    assignment_oracle_binding: &[u8; 32],
-    products: NativeProducts<'_>,
-    assignment: &[u64],
-    skip_vars: usize,
-) -> Result<
-    (
-        UnivariateSkipSpartanPiopProof<Fp<2>>,
-        ScaledMleEvaluationClaim<Fp<2>>,
-    ),
-    SpartanError,
-> {
-    validate_native_u32_prover_slices(matrices, products, assignment)?;
-    let domain = 1usize << matrices.num_column_vars();
-    prove_spartan_piop_raw_native_u64_with_skip_core(
-        transcript,
-        matrices,
-        assignment_oracle_binding,
-        products,
-        RawWitness::native_borrowed(assignment, domain),
-        skip_vars,
-    )
-}
-
-/// The delayed-Barrett native-u64 prover on borrowed tables (see
-/// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for the
-/// table conventions).
-/// [`prove_spartan_piop_u32_native_with_univariate_skip_borrowed`] for any
-/// raw-Montgomery coefficient type: the exact `u64` products and the
-/// borrowed native assignment under the known-zero univariate prefix skip.
+/// Native-u64 prefix skip over borrowed exact product and assignment tables.
+/// Assignment entries beyond the logical column count are implicitly zero,
+/// so proving does not allocate a padded witness copy.
 pub(crate) fn prove_spartan_piop_native_u64_with_univariate_skip_borrowed<C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<Fp<2>, C>,
@@ -326,7 +297,7 @@ where
 {
     validate_native_u32_prover_slices(matrices, products, assignment)?;
     let domain = 1usize << matrices.num_column_vars();
-    prove_spartan_piop_raw_native_u64_core(
+    prove_spartan_piop_raw_products_raw_witness(
         transcript,
         matrices,
         assignment_oracle_binding,
@@ -337,21 +308,22 @@ where
 
 /// The raw-table Spartan prover for relations whose assignment holds exact
 /// `u64` values but whose per-row products do not fit `u64` (the u64
-/// multiplication relation): the outer sumcheck runs on caller-converted raw
-/// product residues and the inner sumcheck on the borrowed native
-/// assignment, so no field-valued table is ever materialized. Statement,
+/// multiplication relation): the outer sumcheck consumes borrowed integer
+/// products and the inner sumcheck consumes the native assignment. The first
+/// outer fold materializes only half-sized field tables. Statement,
 /// transcript, and proof are identical to [`prove_spartan_piop_field`]
 /// under delayed Barrett reduction on the projected tables.
-pub(crate) fn prove_spartan_piop_raw_products_native_assignment<'a, C>(
+pub(crate) fn prove_spartan_piop_raw_products_native_assignment<C, I: OuterRows>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: impl Into<NativeInput<'a>>,
+    products: I,
     assignment: &[u64],
     constant_prefix: Option<NativeConstantPrefix>,
 ) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
     C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
+    field::FpCtx<2>: OuterArithmetic<I::AB, I::C>,
 {
     let domain = 1usize << matrices.num_column_vars();
     let column_count = matrices.matrices().column_count();
@@ -374,26 +346,25 @@ where
     )
 }
 
-/// The raw-table Spartan prover on caller-built raw product residues and a
-/// caller-built inner-sumcheck witness (native `u64` values or raw
-/// residues). The witness table must span the padded column domain; for
+/// Shared Spartan composition for borrowed exact integer products and a
+/// caller-built inner-sumcheck witness (native integers or field residues). The witness table must span the padded column domain; for
 /// raw residues the caller guarantees canonical entries and the constant
 /// one at index zero. Statement, transcript, and proof are identical to
 /// [`prove_spartan_piop_field`] under
 /// delayed Barrett reduction on the projected tables.
-pub(crate) fn prove_spartan_piop_raw_products_raw_witness<'a, C>(
+pub(crate) fn prove_spartan_piop_raw_products_raw_witness<C, I: OuterRows>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: impl Into<NativeInput<'a>>,
+    products: I,
     witness: RawWitness<'_>,
 ) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
     C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
+    field::FpCtx<2>: OuterArithmetic<I::AB, I::C>,
 {
-    let products = products.into();
     let rows = 1usize << matrices.num_row_vars();
-    if products.len() != rows {
+    if products.validate()? != matrices.num_row_vars() || products.dimensions().0 != rows {
         return Err(SpartanError::InvalidProductDimensions);
     }
     absorb_statement(transcript, matrices, assignment_oracle_binding);
@@ -410,7 +381,16 @@ where
     };
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
-        prove_native_zerocheck(transcript, &ctx, &tau, eq_low, eq_high, products)?
+        outer::prove_outer_sumcheck(
+            &ctx,
+            transcript,
+            OuterClaim::RowwiseZero,
+            &tau,
+            products,
+            Some(factors_from_raw(&ctx, eq_low, eq_high)),
+            &mut UngrindedRoundBoundary,
+        )
+        .map(OuterSumcheckOutput::from)?
     };
 
     let rho = squeeze_field(transcript, field_config)?;
@@ -422,7 +402,6 @@ where
         &field_config,
     );
     let inner = {
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         inner_sumcheck_raw(
             transcript,
             &ctx,
@@ -468,7 +447,7 @@ where
 {
     validate_native_u32_prover_inputs(matrices, &products, &assignment)?;
     let domain = assignment.evaluations.len();
-    prove_spartan_piop_raw_native_u64_core(
+    prove_spartan_piop_raw_products_raw_witness(
         transcript,
         matrices,
         assignment_oracle_binding,
@@ -506,15 +485,17 @@ where
     };
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
-        prove_field_with_factors(
-            transcript,
-            F::zero_with_cfg(field_config),
-            &tau,
-            equality_factors,
-            products,
+        let factors = EqualityFactors::from_mles(equality_factors, field_config)?;
+        outer::prove_outer_sumcheck(
             field_config,
-            reducer,
-        )?
+            transcript,
+            OuterClaim::Sum(F::zero_with_cfg(field_config)),
+            &tau,
+            products,
+            Some(factors),
+            &mut UngrindedRoundBoundary,
+        )
+        .map(OuterSumcheckOutput::from)?
     };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
@@ -587,15 +568,18 @@ where
     let equality_factors = make_equality_factors(&tau_tail, field_config)?;
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_univariate_skip").entered();
-        prove_field_skip_with_factors(
-            transcript,
-            usize::from(skip_vars),
-            &tau_tail,
-            equality_factors,
-            products,
+        let factors = EqualityFactors::from_mles(equality_factors, field_config)?;
+        let prepared = outer::prepare_univariate_skip(field_config, skip_vars)?;
+        outer::prove_outer_zerocheck_with_skip(
             field_config,
-            reducer,
-        )?
+            transcript,
+            &prepared,
+            &tau_tail,
+            products,
+            Some(factors),
+            &mut UngrindedRoundBoundary,
+        )
+        .map(outer::univariate::UnivariateSkipOuterSumcheckOutput::from)?
     };
 
     // The reused cubic tail absorbed [Az(r), Bz(r), Cz(r)] before returning.
@@ -665,21 +649,21 @@ where
         .collect::<Result<Vec<_>, _>>()?;
     let (eq_low, eq_high) = {
         let _g = tracing::info_span!("sp:eq").entered();
-        make_equality_factors_raw(&ctx, &tau)
+        make_equality_factors(&tau, field_config)?
     };
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
-        let raw_products = RawProducts::from_field(&ctx, &products);
-        drop(products);
-        prove_encoded_zerocheck(
+        let factors = EqualityFactors::from_mles((eq_low, eq_high), field_config)?;
+        outer::prove_outer_sumcheck(
+            field_config,
             transcript,
-            &ctx,
+            OuterClaim::Sum(field_config.zero()),
             &tau,
-            eq_low,
-            eq_high,
-            raw_products,
-            &mut crate::sumcheck::UngrindedRoundBoundary,
-        )?
+            products,
+            Some(factors),
+            &mut UngrindedRoundBoundary,
+        )
+        .map(OuterSumcheckOutput::from)?
     };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
@@ -705,65 +689,6 @@ where
             witness,
         )?
     };
-
-    let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
-    );
-    let proof = SpartanPiopProof {
-        outer: outer.proof,
-        inner: inner.sumcheck.proof,
-    };
-    Ok((proof, claim))
-}
-
-/// The raw-table native-u64 Spartan prover: identical statement, transcript,
-/// and proof to the field-valued Spartan prover.
-/// Inputs must already have passed [`validate_native_u32_prover_inputs`] or
-/// [`validate_native_u32_prover_slices`].
-fn prove_spartan_piop_raw_native_u64_core<C>(
-    transcript: &mut impl Transcript,
-    matrices: &PreparedConstraintMatrices<Fp<2>, C>,
-    assignment_oracle_binding: &[u8; 32],
-    products: NativeProducts<'_>,
-    witness: RawWitness<'_>,
-) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
-where
-    C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
-{
-    absorb_statement(transcript, matrices, assignment_oracle_binding);
-
-    let field_config = matrices.config();
-    let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
-    let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
-        .collect::<Result<Vec<_>, _>>()?;
-    let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
-    let outer = {
-        let _scope = tracing::info_span!("spartan:outer_sumcheck").entered();
-        prove_native_zerocheck(transcript, &ctx, &tau, eq_low, eq_high, products)?
-    };
-
-    let rho = squeeze_field(transcript, field_config)?;
-    let inner_initial_claim = batched_product_claim(
-        &outer.proof.az_mle_claim,
-        &outer.proof.bz_mle_claim,
-        &outer.proof.cz_mle_claim,
-        &rho,
-        &field_config,
-    );
-    let inner = inner_sumcheck_raw(
-        transcript,
-        &ctx,
-        &reducer,
-        matrices,
-        inner_initial_claim,
-        RowFunctional::Point(&outer.eval_points),
-        ctx.raw(&rho),
-        witness,
-    )?;
 
     let claim = ScaledMleEvaluationClaim::new(
         inner.sumcheck.eval_points.into_boxed_slice(),
@@ -813,9 +738,17 @@ where
 
     let outer = {
         let _scope = tracing::info_span!("spartan:outer_univariate_skip").entered();
-        crate::sumcheck::outer::native_skip::prove_native_skip(
-            transcript, &ctx, skip_vars, &tau_tail, eq_low, eq_high, products,
-        )?
+        let prepared = outer::prepare_univariate_skip(&ctx, skip_vars)?;
+        outer::prove_outer_zerocheck_with_skip(
+            &ctx,
+            transcript,
+            &prepared,
+            &tau_tail,
+            products,
+            Some(factors_from_raw(&ctx, eq_low, eq_high)),
+            &mut UngrindedRoundBoundary,
+        )
+        .map(outer::univariate::UnivariateSkipOuterSumcheckOutput::from)?
     };
     let (outer_proof, row_binding) = (outer.proof, outer.row_binding);
 
@@ -1192,6 +1125,7 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 fn project_native_mle(
     mle: DenseMultilinearExtension<u64>,
     field_config: &field::FpCtx<2>,
@@ -1206,6 +1140,7 @@ fn project_native_mle(
     }
 }
 
+#[cfg(test)]
 fn project_native_products(
     products: R1csProductMles<u64>,
     field_config: &field::FpCtx<2>,

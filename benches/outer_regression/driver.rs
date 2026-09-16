@@ -1,14 +1,13 @@
 //! Same inputs, timing boundary and verification on both sides of the refactor.
 //! Only adapter.rs differs between the historical and current builds.
 use super::{
-    OuterSumcheckProof, R1csProductMles, SpartanField,
+    OuterSumcheckProof, SpartanField,
     raw_monty::{NativeProducts, NativeWideProducts},
     univariate_skip::UnivariateSkipOuterSumcheckProof,
 };
-use crate::{poly::mle::DenseMultilinearExtension, transcript::Blake3Transcript};
+use crate::transcript::Blake3Transcript;
 use field::{Fp, FpCtx, IntegerEmbedding, RingOps, Uint, WideMul};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-use rayon::prelude::*;
 use std::{hint::black_box, time::Instant};
 mod adapter;
 type Elem = Fp<2>;
@@ -106,39 +105,35 @@ impl Inputs {
     }
     fn fixture_digest(&self) -> String {
         let mut hash = blake3::Hasher::new();
-        let mut row = |a: u128,b: u128,c: [u64;4]| {
-            hash.update(&a.to_le_bytes()); hash.update(&b.to_le_bytes());
-            for word in c { hash.update(&word.to_le_bytes()); }
+        let mut row = |a: u128, b: u128, c: [u64; 4]| {
+            hash.update(&a.to_le_bytes());
+            hash.update(&b.to_le_bytes());
+            for word in c {
+                hash.update(&word.to_le_bytes());
+            }
         };
         match self {
-            Self::U32{a,b,c,..} => for i in 0..a.len() { row(a[i] as u128,b[i] as u128,[c[i],0,0,0]); },
-            Self::U64{a,b,c,..} => for i in 0..a.len() { row(a[i] as u128,b[i] as u128,[c[i] as u64,(c[i]>>64) as u64,0,0]); },
-            Self::U128{a,b,c,..} => for i in 0..a.len() { row(a[i],b[i],*c[i].as_words()); },
+            Self::U32 { a, b, c, .. } => {
+                for i in 0..a.len() {
+                    row(a[i] as u128, b[i] as u128, [c[i], 0, 0, 0]);
+                }
+            }
+            Self::U64 { a, b, c, .. } => {
+                for i in 0..a.len() {
+                    row(
+                        a[i] as u128,
+                        b[i] as u128,
+                        [c[i] as u64, (c[i] >> 64) as u64, 0, 0],
+                    );
+                }
+            }
+            Self::U128 { a, b, c, .. } => {
+                for i in 0..a.len() {
+                    row(a[i], b[i], *c[i].as_words());
+                }
+            }
         }
         hash.finalize().to_hex().to_string()
-    }
-
-    // The field-based skip entrypoint consumes owned projected tables. Include
-    // this required work in the timer on BOTH versions; no fixture clones.
-    fn project(&self, f: &Field, n: usize) -> R1csProductMles<Elem> {
-        let mle = |v| DenseMultilinearExtension {
-            num_vars: n,
-            evaluations: v,
-        };
-        macro_rules! project {
-            ($a:expr,$b:expr,$c:expr) => {
-                R1csProductMles {
-                    az: mle($a.par_iter().map(|v| f.from_integer(v)).collect()),
-                    bz: mle($b.par_iter().map(|v| f.from_integer(v)).collect()),
-                    cz: mle($c.par_iter().map(|v| f.from_integer(v)).collect()),
-                }
-            };
-        }
-        match self {
-            Self::U32 { a, b, c, .. } => project!(a, b, c),
-            Self::U64 { a, b, c, .. } => project!(a, b, c),
-            Self::U128 { a, b, c, .. } => project!(a, b, c),
-        }
     }
 }
 
@@ -192,6 +187,10 @@ fn words(name: &str, default: &str) -> Vec<String> {
 }
 
 pub fn run() {
+    #[cfg(feature = "parallel")]
+    let threads = rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    let threads = 1;
     let reps = std::env::var("OUTER_REPS").map_or(5, |s| s.parse().unwrap());
     let field = Fp::<2>::make_cfg(&Uint::from((1u128 << 100) - 15)).unwrap();
     let variants = words("OUTER_VARIANTS", "production");
@@ -247,7 +246,7 @@ pub fn run() {
                         black_box(&proof);
                         println!(
                             "OUTER_SAMPLE {}",
-                            serde_json::json!({"revision":adapter::REVISION,"variant":variant,"bits":bits,"rows":1usize<<n,"protocol":protocol,"threads":rayon::current_num_threads(),"sample":sample,"warmup":sample==0,"ns":ns.to_string(),"proof_digest":fingerprint,"fixture_digest":fixture_digest,"verified":true,"phase_ns":adapter::take_measurements()})
+                            serde_json::json!({"revision":adapter::REVISION,"variant":variant,"bits":bits,"rows":1usize<<n,"protocol":protocol,"threads":threads,"sample":sample,"warmup":sample==0,"ns":ns.to_string(),"proof_digest":fingerprint,"fixture_digest":fixture_digest,"verified":true,"phase_ns":adapter::take_measurements()})
                         );
                     }
                 }

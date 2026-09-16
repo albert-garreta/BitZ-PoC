@@ -339,8 +339,18 @@ fn build_local() -> Result<LocalRelation> {
             bound = candidate;
         }
     }
+    // The assignment is Boolean, so the public coefficient 1-norm bounds
+    // every row operand, including malformed witnesses. Retaining this check
+    // lets the borrowed outer rows use five signed limbs for A/B without
+    // inspecting their private magnitudes or allocating narrowed tables.
+    let outer_ab_limit = Uint::<10>::from_words([0, 0, 0, 0, 1 << 63, 0, 0, 0, 0, 0]);
     for i in 0..a.rows() {
-        let product = IntegerOps.mul_wide(&norm(&a, i), &norm(&b, i));
+        let a_norm = norm(&a, i);
+        let b_norm = norm(&b, i);
+        if !(a_norm.ct_lt(&outer_ab_limit) & b_norm.ct_lt(&outer_ab_limit)).declassify() {
+            return Err(error("P-256 A/B row bound exceeds five signed limbs"));
+        }
+        let product = IntegerOps.mul_wide(&a_norm, &b_norm);
         let candidate = product
             .checked_resize_ct::<21>()
             .value()

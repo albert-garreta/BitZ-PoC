@@ -441,9 +441,14 @@ pub enum PiopWitness<'w> {
         products: super::raw_monty::NativeWideProducts<'w, u128>,
         witness: RawWitness<'w>,
     },
-    /// Prepared product residues with a borrowed declared-width assignment.
-    PreparedProducts {
-        products: super::raw_monty::RawProducts,
+    /// Signed exact row operands and a borrowed native assignment.
+    SignedProducts {
+        products: crate::sumcheck::outer::OuterInputs<field::Z<2>, field::Z<4>>,
+        assignment: &'w [u64],
+    },
+    /// Exact 4096-bit row operands with a borrowed declared-width assignment.
+    IntegerProducts {
+        products: crate::sumcheck::outer::OuterInputs<field::Uint<64>>,
         witness: RawWitness<'w>,
     },
     /// Field-valued tables for the delayed reduction kernel.
@@ -2011,9 +2016,21 @@ where
             )?;
             (SpartanProof::Plain(proof), claim)
         }
-        (Kernel::Plain, PiopWitness::PreparedProducts { products, witness }) => {
+        (
+            Kernel::Plain,
+            PiopWitness::SignedProducts {
+                products,
+                assignment,
+            },
+        ) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_native_assignment(
+                transcript, matrices, binding, products, assignment, None,
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::IntegerProducts { products, witness }) => {
             let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
-                transcript, matrices, binding, &products, witness,
+                transcript, matrices, binding, products, witness,
             )?;
             (SpartanProof::Plain(proof), claim)
         }
