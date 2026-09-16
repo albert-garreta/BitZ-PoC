@@ -463,6 +463,8 @@ struct BitLayer<'a> {
     flat: Option<FlatDense<Gf>>,
 }
 
+// Keep schedule-specific leaf construction specialized at its original call sites.
+#[inline(always)]
 fn leaf_bit_layer<'a>(
     bits: Vec<(&'a [u64], &'a [u64])>,
     depth: usize,

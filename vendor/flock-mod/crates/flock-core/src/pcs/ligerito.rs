@@ -3001,7 +3001,10 @@ impl<'a> SumcheckProver<'a> {
         b1: Vec<Gf128>,
         h1: Gf128,
     ) -> (Self, SumcheckMessage) {
-        Self::new_inner(f.into(), b1, h1, None)
+        let mut inst = Self::initial_state(f.into(), b1, h1);
+        let msg = round_msg_lsb(&inst.f, &inst.combined_basis);
+        inst.transcript.push(msg);
+        (inst, msg)
     }
 
     /// Like [`Self::new`] but skips the initial `round_msg_lsb` pass over
@@ -3015,27 +3018,21 @@ impl<'a> SumcheckProver<'a> {
         h1: Gf128,
         first_msg: SumcheckMessage,
     ) -> (Self, SumcheckMessage) {
-        Self::new_inner(f.into(), b1, h1, Some(first_msg))
+        let mut inst = Self::initial_state(f.into(), b1, h1);
+        inst.transcript.push(first_msg);
+        (inst, first_msg)
     }
 
-    fn new_inner(
-        f: Cow<'a, [Gf128]>,
-        b1: Vec<Gf128>,
-        h1: Gf128,
-        first_msg: Option<SumcheckMessage>,
-    ) -> (Self, SumcheckMessage) {
+    fn initial_state(f: Cow<'a, [Gf128]>, b1: Vec<Gf128>, h1: Gf128) -> Self {
         assert_eq!(f.len(), b1.len());
-        let mut inst = Self {
+        Self {
             f,
             combined_basis: b1,
             t_r: h1,
             transcript: Vec::new(),
             pending_glue: None,
             pending_fold: None,
-        };
-        let msg = first_msg.unwrap_or_else(|| round_msg_lsb(&inst.f, &inst.combined_basis));
-        inst.transcript.push(msg);
-        (inst, msg)
+        }
     }
 
     pub fn fold(&mut self, r: Gf128) -> SumcheckMessage {
