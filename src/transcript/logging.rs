@@ -645,17 +645,28 @@ pub fn render_text_with_annotations<'a>(
                     e.spans
                         .iter()
                         .filter(|s| s.name != "transcript_operation")
-                        .map(|s| format!("{} {}", s.name, serde_json::json!(s.fields)))
+                        .map(|s| if s.fields.is_empty() {
+                            s.name.clone()
+                        } else {
+                            format!("{} {}", s.name, serde_json::json!(s.fields))
+                        })
                         .collect::<Vec<_>>()
                         .join(" > ")
                 )?;
-                writeln!(writer, "{:?} {}", e.operation, e.purpose)?;
-                serde_json::to_writer_pretty(&mut writer, &e.value)?;
+                let operation = match e.operation {
+                    Operation::Absorb => "ABSORB",
+                    Operation::Squeeze => "SQUEEZE",
+                };
+                writeln!(writer, "{operation} {}", e.purpose)?;
+                render_value(&mut writer, &e.value, 2)?;
                 if let Some((label, value)) = annotate(&e) {
                     writeln!(writer, "\n{label}")?;
                     serde_json::to_writer_pretty(&mut writer, value)?;
                 }
-                writeln!(writer, "\ndraws: {}\n", e.draw_count)?;
+                if e.operation == Operation::Squeeze {
+                    writeln!(writer, "  draws: {}", e.draw_count)?;
+                }
+                writeln!(writer)?;
             }
             Event::Legacy(e) => writeln!(
                 writer,
@@ -666,6 +677,56 @@ pub fn render_text_with_annotations<'a>(
     }
     writer.flush()?;
     output.as_ref().canonicalize()
+}
+
+/// Render full values as indented fields; only scalar arrays stay on one line.
+fn render_value(
+    writer: &mut impl Write,
+    value: &serde_json::Value,
+    indent: usize,
+) -> io::Result<()> {
+    match value {
+        serde_json::Value::Object(fields) if !fields.is_empty() => {
+            for (name, value) in fields {
+                write!(writer, "{:indent$}{name}:", "")?;
+                render_field(writer, value, indent)?;
+            }
+        }
+        serde_json::Value::Array(values)
+            if values.iter().any(|v| v.is_object() || v.is_array()) =>
+        {
+            for value in values {
+                write!(writer, "{:indent$}-", "")?;
+                render_field(writer, value, indent)?;
+            }
+        }
+        _ => {
+            write!(writer, "{:indent$}", "")?;
+            serde_json::to_writer(&mut *writer, value).map_err(io::Error::other)?;
+            writeln!(writer)?;
+        }
+    }
+    Ok(())
+}
+
+fn render_field(
+    writer: &mut impl Write,
+    value: &serde_json::Value,
+    indent: usize,
+) -> io::Result<()> {
+    let structured = match value {
+        serde_json::Value::Object(fields) => !fields.is_empty(),
+        serde_json::Value::Array(values) => values.iter().any(|v| v.is_object() || v.is_array()),
+        _ => false,
+    };
+    if structured {
+        writeln!(writer)?;
+        render_value(writer, value, indent + 2)
+    } else {
+        write!(writer, " ")?;
+        serde_json::to_writer(&mut *writer, value).map_err(io::Error::other)?;
+        writeln!(writer)
+    }
 }
 
 #[cfg(test)]

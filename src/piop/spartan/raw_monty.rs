@@ -44,7 +44,6 @@ use crate::{
 };
 
 use super::{
-    absorb_field_elements,
     baby_bear_mul::{BABY_BEAR_MODULUS, BabyBearMulCoefficient},
     u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
     matrix::{
@@ -1394,7 +1393,7 @@ fn finish_outer<T: Transcript>(
     } else {
         debug_assert_eq!(current_claim, expected);
     }
-    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => super::absorb_outer_terminal_evaluations(
         transcript,
         &[
             az_mle_claim.clone(),

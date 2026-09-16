@@ -150,7 +150,11 @@ fn absorb_gf_slice(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
     }
     transcript.absorb(&crate::transcript::messages::DescribedFrame {
         bytes: &bytes, kind: "opening.field_vector",
-        value: || serde_json::json!({"wire_tag": tag, "values": vals.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()}),
+        value: || if tag == 0x20 {
+            crate::transcript::messages::gf128_vector_value(vals, "evaluations_hex")
+        } else {
+            serde_json::json!({"wire_tag": tag, "values": vals.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()})
+        },
     });
 }
 

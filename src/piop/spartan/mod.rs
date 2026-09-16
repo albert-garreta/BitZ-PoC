@@ -13,6 +13,7 @@ pub mod cm;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa_sha256;
 pub mod f2z;
+pub mod u32_plain;
 pub mod grinding;
 pub mod matrix;
 pub mod multiswap;
@@ -351,6 +352,12 @@ where
 {
     let _context = crate::transcript_context!("spartan.field_elements", elements = values.len());
     transcript.absorb(&transcript_messages::SpartanFieldElements(values));
+}
+
+pub(crate) fn absorb_outer_terminal_evaluations<F: SpartanField>(
+    transcript: &mut impl Transcript, values: &[F],
+) {
+    transcript.absorb(&transcript_messages::OuterTerminalEvaluations(values));
 }
 
 /// Absorbs one typed, self-delimiting Spartan transcript message.

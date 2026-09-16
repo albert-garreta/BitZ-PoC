@@ -207,8 +207,10 @@ fn u32_mul_2p15_logged_proof_matches_existing_pins() {
     // These checks catch missing call-site scopes, even when byte replay passes.
     let mut meanings = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
     let mut commitment_payloads = 0;
+    let mut byte_events = 0;
     for event in read_events(&path).unwrap() {
         let event = event.unwrap();
+        byte_events += 1;
         let role = event
             .spans
             .iter()
@@ -238,8 +240,65 @@ fn u32_mul_2p15_logged_proof_matches_existing_pins() {
             .or_default()
             .extend(purposes.into_iter().map(str::to_owned));
     }
+    assert_eq!(byte_events, 16_568);
     assert_eq!(commitment_payloads, 2);
+    let mut logical_counts = BTreeMap::new();
+    for event in f2z::transcript::logging::read_events(&path).unwrap() {
+        let f2z::transcript::logging::Event::Logical(record) = event.unwrap() else {
+            panic!("expected logical operation");
+        };
+        *logical_counts
+            .entry((record.role.clone(), record.purpose.clone()))
+            .or_insert(0) += 1;
+        match record.purpose.as_str() {
+            "opening.statement" => {
+                assert_eq!(record.wire.len(), 139);
+                assert_eq!(
+                    record.value["commitment"]["root_hex"],
+                    f2z::transcript::logging::Hex(&hint.commitment.root).to_string()
+                );
+                assert_eq!(record.value["layout"]["row_variables"], 15);
+                assert_eq!(record.value["layout"]["column_variables"], 7);
+            }
+            "spartan.statement" => {
+                assert_eq!(record.wire.len(), 15);
+                assert_eq!(record.value["skip_variables"], 3);
+            }
+            "gkr.product_tree_roots" => {
+                assert_eq!(record.value["roots_hex"].as_array().unwrap().len(), 128)
+            }
+            "ring_switch.evaluation_vector" => assert_eq!(
+                record.value["evaluations_hex"].as_array().unwrap().len(),
+                128
+            ),
+            "spartan.univariate_skip_polynomial" => {
+                assert_eq!(record.value["evaluations"].as_array().unwrap().len(), 6);
+                assert_eq!(record.value["leading_coefficient"]["degree"], 14);
+            }
+            _ => {}
+        }
+    }
     for role in ["prover", "verifier"] {
+        for purpose in [
+            "opening.statement",
+            "spartan.statement",
+            "opening.ood_parameters",
+            "projection_prime.parameters",
+        ] {
+            assert_eq!(logical_counts[&(role.to_owned(), purpose.to_owned())], 1);
+        }
+        assert_eq!(
+            logical_counts[&(role.to_owned(), "sumcheck.header".to_owned())],
+            30
+        );
+        for child in [
+            "statement.commitment_root",
+            "statement.modulus_bit_length",
+            "sumcheck.variable_count",
+            "sumcheck.degree_bound",
+        ] {
+            assert!(!logical_counts.contains_key(&(role.to_owned(), child.to_owned())));
+        }
         for purpose in [
             "statement.assignment_binding_digest",
             "statement.commitment_root",
@@ -348,19 +407,18 @@ fn logical_records_preserve_values_and_reader_round_trips() {
     // capture or losing the actual absorbed value above the description.
     let capture_before = std::fs::read(&path).unwrap();
     let annotation = serde_json::json!({"meaning": "round polynomial", "round": 3});
-    let annotated = logging::render_text_with_annotations(
-        &path,
-        dir.path().join("annotated.txt"),
-        |event| {
+    let annotated =
+        logging::render_text_with_annotations(&path, dir.path().join("annotated.txt"), |event| {
             (event.purpose == events[0].purpose && event.value == events[0].value)
                 .then_some(("Underlying object:", &annotation))
-        },
-    )
-    .unwrap();
+        })
+        .unwrap();
     let annotated = std::fs::read_to_string(annotated).unwrap();
     assert_eq!(annotated.matches("Underlying object:").count(), 1);
     assert!(annotated.contains(&serde_json::to_string_pretty(&annotation).unwrap()));
-    assert!(annotated.contains(&serde_json::to_string_pretty(&events[0].value).unwrap()));
+    for coefficient in events[0].value["coefficients_hex"].as_array().unwrap() {
+        assert!(annotated.contains(coefficient.as_str().unwrap()));
+    }
     assert_eq!(std::fs::read(&path).unwrap(), capture_before);
     let legacy = dir.path().join("legacy.jsonl");
     let lines: Vec<_> = events

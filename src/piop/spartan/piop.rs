@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 
 use super::{
-    SpartanField, absorb_spartan_message,
+    SpartanField,
     matrix::{
         MleClaimError, PreparedConstraintMatrices, ProductRowFunctional, ScaledMleEvaluationClaim,
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
@@ -1479,18 +1479,13 @@ fn absorb_statement<F, C>(
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    absorb_spartan_message(transcript, b"protocol", SPARTAN_PIOP_DOMAIN);
-    absorb_spartan_message(
-        transcript,
-        b"field-modulus",
-        matrices.field_modulus_encoding(),
-    );
-    absorb_spartan_message(transcript, b"matrix-statement", matrices.digest());
-    absorb_spartan_message(
-        transcript,
-        SPARTAN_ASSIGNMENT_ORACLE_DOMAIN,
-        assignment_oracle_binding,
-    );
+    crate::transcript_context!("spartan.statement" => transcript.absorb(&super::transcript_messages::SpartanStatement {
+        protocol: SPARTAN_PIOP_DOMAIN,
+        modulus: matrices.field_modulus_encoding(),
+        matrix_digest: matrices.digest(),
+        assignment_binding: assignment_oracle_binding,
+        skip_variables: None,
+    }));
 }
 
 fn validate_univariate_skip_variables(
@@ -1518,19 +1513,13 @@ fn absorb_univariate_skip_statement<F, C>(
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    absorb_spartan_message(transcript, b"protocol", SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN);
-    absorb_spartan_message(
-        transcript,
-        b"field-modulus",
-        matrices.field_modulus_encoding(),
-    );
-    absorb_spartan_message(transcript, b"matrix-statement", matrices.digest());
-    absorb_spartan_message(
-        transcript,
-        SPARTAN_ASSIGNMENT_ORACLE_DOMAIN,
-        assignment_oracle_binding,
-    );
-    absorb_spartan_message(transcript, b"univariate-skip-vars", &[skip_vars]);
+    crate::transcript_context!("spartan.statement" => transcript.absorb(&super::transcript_messages::SpartanStatement {
+        protocol: SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
+        modulus: matrices.field_modulus_encoding(),
+        matrix_digest: matrices.digest(),
+        assignment_binding: assignment_oracle_binding,
+        skip_variables: Some(skip_vars),
+    }));
 }
 
 fn validate_prover_inputs<F, C>(

@@ -234,50 +234,8 @@ impl RelationSpec for U32MulLayout {
         security: &IopSecurityParams,
         ligerito: &LigProverConfig,
     ) -> Result<[u8; 32], ProtocolError> {
-        let p = self.f2z_params();
-        let mut hasher = BindingHasher::new();
-        hasher.bytes(U32_MUL_BINDING_DOMAIN).bytes(&commitment.root);
-        hasher.commitment_params(&commitment.params)?;
-        hasher.prefixed(security.profile_name.as_bytes())?;
-        hasher.u32(security.lambda)?;
-        hasher
-            .u128_le(security.projection_min)
-            .u128_le(security.projection_max)
-            .byte(u8::from(security.projection_full_width));
-        hasher.u32(security.initial_grinding_bits)?;
-        hasher.u32(security.piop_round_grinding_bits)?;
-        hasher.u32(security.terminal_grinding_bits)?;
-        match security.reduction {
-            Some(reduction) => {
-                hasher.byte(1).u128_le(reduction.min).u128_le(reduction.max);
-                hasher.u32(reduction.grinding_bits)?;
-            }
-            None => {
-                hasher.byte(0);
-            }
-        }
-        hasher.u32(security.forest_round_grinding_bits)?;
-        hasher.u32(security.ring_switch_grinding_bits)?;
-        if let Some(ood) = security.ood {
-            // Present only when Round 0 runs, so Round-0-less statements keep
-            // their digest.
-            hasher.byte(1);
-            hasher.u32(ood.grinding_bits)?;
-        }
-        hasher.usize(security.ligerito_target_bits)?;
-        hasher.ligerito_config(ligerito)?;
-        hasher.usizes(&[
-            self.multiplications(),
-            self.capacity(),
-            self.assignment_len(),
-            U32MulLayout::gate_vars(self),
-            p.row_vars,
-            p.col_vars,
-            p.word_bits,
-            U32_MUL_UNIVARIATE_SKIP_VARS,
-            U32_MUL_UNIVARIATE_SKIP_DEGREE as usize,
-        ])?;
-        Ok(hasher.finalize())
+        u32_assignment_binding(self, commitment, security, ligerito, U32_MUL_BINDING_DOMAIN,
+            U32_MUL_UNIVARIATE_SKIP_VARS, U32_MUL_UNIVARIATE_SKIP_DEGREE as usize)
     }
 
     fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {
@@ -950,3 +908,59 @@ mod tests {
 
 #[cfg(feature = "hybrid")]
 pub(crate) mod hybrid;
+
+/// Shared encoding; each U32 kernel supplies its own domain and degree.
+pub(super) fn u32_assignment_binding(
+    layout: &U32MulLayout,
+    commitment: &Commitment,
+    security: &IopSecurityParams,
+    ligerito: &LigProverConfig,
+    domain: &[u8],
+    skipped_variables: usize,
+    maximum_degree: usize,
+) -> Result<[u8; 32], ProtocolError> {
+        let p = layout.f2z_params();
+        let mut hasher = BindingHasher::new();
+        hasher.bytes(domain).bytes(&commitment.root);
+        hasher.commitment_params(&commitment.params)?;
+        hasher.prefixed(security.profile_name.as_bytes())?;
+        hasher.u32(security.lambda)?;
+        hasher
+            .u128_le(security.projection_min)
+            .u128_le(security.projection_max)
+            .byte(u8::from(security.projection_full_width));
+        hasher.u32(security.initial_grinding_bits)?;
+        hasher.u32(security.piop_round_grinding_bits)?;
+        hasher.u32(security.terminal_grinding_bits)?;
+        match security.reduction {
+            Some(reduction) => {
+                hasher.byte(1).u128_le(reduction.min).u128_le(reduction.max);
+                hasher.u32(reduction.grinding_bits)?;
+            }
+            None => {
+                hasher.byte(0);
+            }
+        }
+        hasher.u32(security.forest_round_grinding_bits)?;
+        hasher.u32(security.ring_switch_grinding_bits)?;
+        if let Some(ood) = security.ood {
+            // Present only when Round 0 runs, so Round-0-less statements keep
+            // their digest.
+            hasher.byte(1);
+            hasher.u32(ood.grinding_bits)?;
+        }
+        hasher.usize(security.ligerito_target_bits)?;
+        hasher.ligerito_config(ligerito)?;
+        hasher.usizes(&[
+            layout.multiplications(),
+            layout.capacity(),
+            layout.assignment_len(),
+            layout.gate_vars(),
+            p.row_vars,
+            p.col_vars,
+            p.word_bits,
+            skipped_variables,
+            maximum_degree,
+        ])?;
+        Ok(hasher.finalize())
+}

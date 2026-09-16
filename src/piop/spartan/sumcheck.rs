@@ -22,7 +22,7 @@ use crypto_primitives::{FromWithConfig, PrimeField, crypto_bigint_monty::MontyFi
 use num_traits::Zero;
 
 use super::{
-    SpartanField, absorb_field_elements,
+    SpartanField,
     grinding::{
         GrindingDomain, GrindingError, GrindingRound, MAX_GRINDING_BITS, grind_and_absorb,
         verify_and_absorb,
@@ -923,7 +923,7 @@ where
             round_boundary,
         )?;
 
-        crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(transcript, &terminal_evaluations));
+        crate::transcript_context!("spartan.outer_terminal_evaluations" => super::absorb_outer_terminal_evaluations(transcript, &terminal_evaluations));
 
         let eq = eq_eval(tau, &eval_points, field_cfg)?;
         let residual = sub(
@@ -1237,7 +1237,7 @@ where
         bz_mle_claim.clone(),
         cz_mle_claim.clone(),
     ];
-    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(transcript, &terminal_evaluations));
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => super::absorb_outer_terminal_evaluations(transcript, &terminal_evaluations));
 
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -1333,7 +1333,7 @@ where
     let az_mle_claim = products.az[0].clone();
     let bz_mle_claim = products.bz[0].clone();
     let cz_mle_claim = products.cz[0].clone();
-    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => super::absorb_outer_terminal_evaluations(
         transcript,
         &[
             az_mle_claim.clone(),
@@ -1428,7 +1428,7 @@ where
                 &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
             )
         );
-        crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
+        crate::transcript_context!("spartan.outer_terminal_evaluations" => super::absorb_outer_terminal_evaluations(
             transcript,
             &[
                 az_mle_claim.clone(),
@@ -1621,7 +1621,7 @@ where
         )
     );
 
-    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => super::absorb_outer_terminal_evaluations(
         transcript,
         &[
             az_mle_claim.clone(),
@@ -4112,7 +4112,7 @@ mod tests {
         // Reconstruct the first boundary seed and choose a nonce that is
         // definitely invalid rather than relying on `valid_nonce + 1`.
         let mut seed_transcript = Blake3Transcript::new();
-        absorb_field_elements(
+        crate::piop::spartan::absorb_field_elements(
             &mut seed_transcript,
             &output.proof.sumcheck.round_polynomials[0],
         );

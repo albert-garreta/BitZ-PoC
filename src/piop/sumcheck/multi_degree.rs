@@ -395,10 +395,10 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
 
         let num_groups = groups.len();
         let mut buf = vec![0; F::Inner::NUM_BYTES];
-        let nvars_field = F::from_with_cfg(num_vars as u64, config);
-        let ngroups_field = F::from_with_cfg(num_groups as u64, config);
-        crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&nvars_field, &mut buf));
-        crate::transcript_context!("sumcheck.group_count" => transcript.absorb_random_field(&ngroups_field, &mut buf));
+        let degrees: Vec<_> = groups.iter().map(|group| group.degree).collect();
+        crate::transcript_context!("sumcheck.header" => transcript.absorb(
+            &super::transcript_messages::SumcheckHeader::<F>::grouped(num_vars, &degrees, config)
+        ));
 
         let mut group_messages: Vec<Vec<SumcheckProverMsg<F>>> = (0..num_groups)
             .map(|_| Vec::with_capacity(num_vars))
@@ -410,8 +410,6 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         let mut fast_paths: Vec<Option<Box<dyn Round1FastPath<F>>>> =
             Vec::with_capacity(num_groups);
         for group in groups {
-            let degree_field = F::from_with_cfg(group.degree as u64, config);
-            crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&degree_field, &mut buf));
             let mut state = SumcheckProverState::new(group.poly, num_vars, group.degree);
             state.round_evaluator = group.round_evaluator;
             prover_states.push(state);
@@ -570,16 +568,13 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         let num_groups = expected_degrees.len();
 
         let mut buf = vec![0; F::Inner::NUM_BYTES];
-        let nvars_field = F::from_with_cfg(num_vars as u64, config);
-        let ngroups_field = F::from_with_cfg(num_groups as u64, config);
-        crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&nvars_field, &mut buf));
-        crate::transcript_context!("sumcheck.group_count" => transcript.absorb_random_field(&ngroups_field, &mut buf));
+        crate::transcript_context!("sumcheck.header" => transcript.absorb(
+            &super::transcript_messages::SumcheckHeader::<F>::grouped(num_vars, expected_degrees, config)
+        ));
 
         let mut verifier_states: Vec<VerifierState<F>> = (0..num_groups)
             .map(|j| {
                 let degree = expected_degrees[j];
-                let degree_field = F::from_with_cfg(degree as u64, config);
-                crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&degree_field, &mut buf));
 
                 VerifierState::new(num_vars, degree, config)
             })

@@ -316,8 +316,10 @@ Every relation below runs the one protocol runner in
 
 The [U32 transcript example](docs/u32-mul-transcript.md) saves an explicit public
 statement and streamed logical absorb/squeeze records with decoded values, full
-current span context, and exact nested bytes for replay. It also saves a readable
-`transcript.txt` companion.
+current span context, and exact nested bytes for replay. Statements, parameter
+sets, and sumcheck headers each occupy one logical record, retaining their
+original internal frames. It also saves a readable `transcript.txt` companion
+with named, nested fields.
 
 Pick the security parameter with `F2Z_BENCH_LAMBDA`. Unless noted otherwise,
 the benches below honour it. The fixed-prime `(t,s)` sweep uses its own

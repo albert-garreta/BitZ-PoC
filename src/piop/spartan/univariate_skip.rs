@@ -10,7 +10,7 @@
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 
 use super::{
-    SpartanField, absorb_field_elements,
+    SpartanField,
     matrix::{PrefixUnivariateRowFactors, make_equality_factors},
     squeeze_field,
     sumcheck::{
@@ -408,7 +408,18 @@ where
         let mut message = Vec::with_capacity(self.finite_q_evaluations.len() + 1);
         message.extend_from_slice(&self.finite_q_evaluations);
         message.push(self.q_at_infinity.clone());
-        crate::transcript_context!("spartan.univariate_skip_polynomial" => absorb_field_elements(transcript, &message));
+        let points: &[i32] = match self.skip_vars {
+            1 => &K1_EXTERIOR_NODES,
+            2 => &K2_EXTERIOR_NODES,
+            3 => &K3_EXTERIOR_NODES,
+            4 => &K4_EXTERIOR_NODES,
+            _ => unreachable!("validated skip layout"),
+        };
+        crate::transcript_context!("spartan.univariate_skip_polynomial" => transcript.absorb(
+            &super::transcript_messages::SkipPolynomialMessage {
+                skip_variables: self.skip_vars, points, values: &message,
+            }
+        ));
         let z = crate::transcript_context!("spartan.univariate_skip_challenge" => squeeze_field(transcript, field_cfg));
         let q_at_z = {
             let _scope = tracing::info_span!("spartan:univariate_skip_reconstruct").entered();

@@ -2,12 +2,13 @@
 //! The verifier receives a prepared relation, commitment (root + parameters),
 //! and U32MulProof. The fixture recipe is diagnostic metadata, not a public input.
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use f2z::{
     piop::spartan::{
         Lambda100, PreparedU32MulRelation, U32_MUL_UNIVARIATE_SKIP_DEGREE,
-        U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness,
-        protocol::f2z_generator, prove_u32_mul, verify_u32_mul,
+        U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulWitness,
+        protocol::{self, PreparedRelation, RelationSpec, f2z_generator},
+        u32_plain::PlainU32Relation,
     },
     transcript::{
         Blake3Transcript,
@@ -22,8 +23,22 @@ use std::{
     process::Command,
 };
 
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+enum Variant {
+    JohnsonSkip,
+    PlainUdr,
+}
+
 #[derive(Parser)]
 struct Args {
+    /// Stop after ordinary Spartan; no commitment-opening messages.
+    #[arg(long)]
+    through_spartan: bool,
+    /// Optional deterministic operand fixture: edges or an integer seed.
+    #[arg(long, default_value = "canonical")]
+    fixture: String,
+    #[arg(long, value_enum, default_value_t = Variant::JohnsonSkip)]
+    variant: Variant,
     /// Fresh artifact directory (must not already exist).
     #[arg(long)]
     out: Option<PathBuf>,
@@ -33,6 +48,35 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if args.through_spartan && args.variant != Variant::PlainUdr {
+        return Err("--through-spartan requires --variant plain-udr".into());
+    }
+    if !args.through_spartan && args.fixture != "canonical" {
+        return Err("noncanonical fixtures require --through-spartan".into());
+    }
+    let fixture = operand_fixture(&args.fixture)?;
+    let witness =
+        U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| fixture[i])?;
+    match args.variant {
+        Variant::JohnsonSkip => {
+            let prepared =
+                PreparedU32MulRelation::new_with_profile::<Lambda100>(*witness.layout())?;
+            run(args, witness, prepared)
+        }
+        Variant::PlainUdr => {
+            let prepared = PlainU32Relation::prepare(*witness.layout())?;
+            run(args, witness, prepared)
+        }
+    }
+}
+
+fn run<S: RelationSpec<Witness = U32MulWitness>>(
+    args: Args,
+    witness: U32MulWitness,
+    prepared: PreparedRelation<S>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let plain = args.variant == Variant::PlainUdr;
+    let profile = if plain { "udrg:1:4" } else { "johnson" };
     let source = json!({
         "revision": git(&["rev-parse", "HEAD"] )?,
         "dirty": !git(&["status", "--porcelain"] )?.is_empty(),
@@ -63,17 +107,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .entered();
 
-    let witness = U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| {
-        let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
-        let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
-        (x, y)
-    })?;
-    let prepared = PreparedU32MulRelation::new_with_profile::<Lambda100>(*witness.layout())?;
     let hint = {
         let _span = tracing::info_span!("commitment").entered();
-        commit_u32_mul_witness(&prepared, witness.f2z_bit_rows())?
+        protocol::commit(&prepared, witness.f2z_bit_rows())?
     };
-    let layout = prepared.layout();
+    let layout = witness.layout();
     let params = prepared.params();
     let security = prepared.security();
     let ligerito = prepared.ligerito_configuration();
@@ -98,7 +136,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "configuration": {
             "packing": "W1", "transcript": "BLAKE3", "initial_transcript": "fresh, empty",
-            "piop_skip_vars": U32_MUL_UNIVARIATE_SKIP_VARS, "piop_skip_degree": U32_MUL_UNIVARIATE_SKIP_DEGREE,
+            "variant": if plain { "plain-udr" } else { "johnson-skip" },
+            "piop_skip_vars": if plain { 0 } else { U32_MUL_UNIVARIATE_SKIP_VARS },
+            "piop_skip_degree": if plain { 0 } else { U32_MUL_UNIVARIATE_SKIP_DEGREE },
+            "piop_degree_bound": if plain { 3 } else { U32_MUL_UNIVARIATE_SKIP_DEGREE },
             "generator_words": f2z_generator().words(),
             "security": {
                 "profile_name": security.profile_name, "lambda": security.lambda,
@@ -114,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "ood": security.ood.map(|p| json!({"grinding_bits":p.grinding_bits})),
                 "accounting": {"target": security.accounting.target, "terms": terms},
             },
-            "ligerito": ligerito.report("johnson", security.ood),
+            "ligerito": ligerito.report(profile, security.ood),
             "resolved_ligerito_parameters": {
                 "log_inv_rates": resolved.log_inv_rates, "recursive_steps": resolved.recursive_steps,
                 "initial_log_msg_cols": resolved.initial_log_msg_cols,
@@ -133,22 +174,86 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     save_json(&out.join("statement.json"), &statement)?;
     println!("Public statement: 32,768 rows; x*y = z + 2^32*w; 0 <= x,y,z,w < 2^32.");
-    println!("Configuration: W1, Lambda100, Johnson Ligerito rate 1/2, initial k=4.");
+    println!("Configuration: W1, Lambda100, {profile}, initial rate 1/2, initial k=4.");
     println!(
         "Public instance: commitment root {} and parameters {}",
         Hex(&hint.commitment.root),
         serde_json::to_string(&hint.commitment.params)?
     );
 
+    if args.through_spartan {
+        use f2z::piop::spartan::SpartanField;
+        let mut prover = trial.wrap("prover", Blake3Transcript::new());
+        let proved = protocol::prove_bound_piop(&mut prover, &prepared, &witness, &hint)?;
+        let mut verifier = trial.wrap("verifier", Blake3Transcript::new());
+        let verified = protocol::verify_bound_piop(
+            &mut verifier,
+            &prepared,
+            &hint.commitment,
+            &proved.messages,
+        )?;
+        if proved.terminal_claim != verified.terminal_claim {
+            return Err("Spartan claims differ".into());
+        }
+        let encode = |v: &f2z::piop::spartan::SpartanF2zField| {
+            let bytes: [u8; 16] = v
+                .canonical_element_encoding()
+                .try_into()
+                .expect("128-bit field");
+            format!("0x{:032x}", u128::from_le_bytes(bytes))
+        };
+        let claim = json!({"point":proved.terminal_claim.point().iter().map(encode).collect::<Vec<_>>(),
+            "scale":encode(proved.terminal_claim.scale()),"value":encode(proved.terminal_claim.value())});
+        let digests = json!({"prover":Hex(&prover.state_digest()).to_string(),"verifier":Hex(&verifier.state_digest()).to_string()});
+        drop(prover);
+        drop(verifier);
+        drop(root);
+        let path = trial.finish()?;
+        if let Some(path) = path.as_ref() {
+            let mut counts = [0usize; 2];
+            for event in f2z::transcript::logging::read_events(path)? {
+                let f2z::transcript::logging::Event::Logical(event) = event? else {
+                    return Err("expected logical capture".into());
+                };
+                let role = match event.role.as_str() {
+                    "prover" => 0,
+                    "verifier" => 1,
+                    _ => return Err("unknown role".into()),
+                };
+                counts[role] += 1;
+            }
+            if counts != [88, 88] {
+                return Err(format!("unexpected Spartan event counts: {counts:?}").into());
+            }
+        }
+        save_json(
+            &out.join("run.json"),
+            &json!({
+                "schema":"f2z.spartan-prefix-run/v1","boundary":"end-spartan","complete":true,
+                "source":source,"fixture":args.fixture,"events_per_role":88,
+                "root_hex":statement["public_instance"]["root_hex"],
+                "assignment_binding_hex":statement["assignment_binding_hex"],
+                "policy_digest_hex":statement["configuration"]["ligerito"]["configuration_fingerprint"],
+                "matrix_digest_hex":Hex(&proved.matrices_digest).to_string(),
+                "prime_hex":format!("0x{:032x}",proved.prime.q),
+                "terminal_claims":{"prover":claim,"verifier":claim},
+                "final_transcript_digests":digests,"verification":{"prefix":true,"opening":false},
+                "fiat_shamir_transcript_logs":args.fiat_shamir_transcript_logs
+            }),
+        )?;
+        println!("Spartan prefix complete: {}", out.display());
+        return Ok(());
+    }
+
     let mut prover = trial.wrap("prover", Blake3Transcript::new());
     let proof = {
         let _span = tracing::info_span!("prove").entered();
-        prove_u32_mul(&mut prover, &prepared, &witness, &hint)?
+        protocol::prove(&mut prover, &prepared, &witness, &hint)?
     };
     let mut verifier = trial.wrap("verifier", Blake3Transcript::new());
     let verified = {
         let _span = tracing::info_span!("verify").entered();
-        verify_u32_mul(&mut verifier, &prepared, &hint.commitment, &proof)
+        protocol::verify(&mut verifier, &prepared, &hint.commitment, &proof)
     };
     let prover_digest = Hex(&prover.state_digest()).to_string();
     let verifier_digest = Hex(&verifier.state_digest()).to_string();
@@ -229,4 +334,37 @@ fn git(args: &[&str]) -> std::io::Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn operand_fixture(name: &str) -> Result<Vec<(u32, u32)>, Box<dyn std::error::Error>> {
+    let mut state = if matches!(name, "canonical" | "edges") {
+        0
+    } else {
+        name.parse::<u64>()?
+    };
+    Ok((0..1usize << 15)
+        .map(|i| match name {
+            "canonical" => (
+                (i as u32).wrapping_mul(0x9e3779b9) | 1,
+                (i as u32).wrapping_mul(0x85ebca6b) | 1,
+            ),
+            "edges" => [
+                (0, 0),
+                (0, u32::MAX),
+                (1, u32::MAX),
+                (u32::MAX, u32::MAX),
+                (1 << 31, 1 << 31),
+            ][i % 5],
+            _ => {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let x = (state >> 32) as u32;
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (x, (state >> 32) as u32)
+            }
+        })
+        .collect())
 }

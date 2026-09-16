@@ -63,6 +63,18 @@ binary_field!(
     "GF(2^127)"
 );
 
+pub(crate) fn gf128_vector_value(
+    values: &[crate::poly::univariate::binary_gf128::BinaryFieldGF128],
+    name: &str,
+) -> Value {
+    let mut value = json!({"field": "GF(2^128)", "basis": "polynomial"});
+    value[name] = values
+        .iter()
+        .map(|v| transcribed_value(v.inner())["value_hex"].clone())
+        .collect();
+    value
+}
+
 pub struct FramedBytes<'a>(pub &'a [u8]);
 impl Absorbable for FramedBytes<'_> {
     fn kind(&self) -> &'static str {

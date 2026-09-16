@@ -101,7 +101,11 @@ fn absorb_gfs(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
     }
     transcript.absorb(&crate::transcript::messages::DescribedFrame {
         bytes: &bytes, kind: "gkr.field_vector",
-        value: || serde_json::json!({"wire_tag": tag, "values": vals.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()}),
+        value: || if tag == 0x30 {
+            crate::transcript::messages::gf128_vector_value(vals, "roots_hex")
+        } else {
+            serde_json::json!({"wire_tag": tag, "values": vals.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()})
+        },
     });
 }
 

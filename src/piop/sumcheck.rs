@@ -4,6 +4,7 @@ pub mod prover;
 pub mod quad;
 // pub mod utils;
 pub mod verifier;
+pub mod transcript_messages;
 
 use self::verifier::Subclaim;
 use crate::piop::sumcheck::{
@@ -177,11 +178,9 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
         }
 
         let mut buf = vec![0; F::Inner::NUM_BYTES];
-        let nvars_field = F::from_with_cfg(nvars as u64, config);
-        let degree_field = F::from_with_cfg(degree as u64, config);
-
-        transcript.absorb_random_field(&nvars_field, &mut buf);
-        transcript.absorb_random_field(&degree_field, &mut buf);
+        crate::transcript_context!("sumcheck.header" => transcript.absorb(
+            &transcript_messages::SumcheckHeader::<F>::single(nvars, degree, config)
+        ));
 
         let mut prover_state = ProverState::new(mles, nvars, degree);
         let mut verifier_msg = None;
@@ -281,14 +280,9 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
 
         let mut buf = vec![0; F::Inner::NUM_BYTES];
 
-        let (nvars_field, degree_field): (F, F) = {
-            (
-                F::from_with_cfg(num_vars as u64, config),
-                F::from_with_cfg(degree as u64, config),
-            )
-        };
-        transcript.absorb_random_field(&nvars_field, &mut buf);
-        transcript.absorb_random_field(&degree_field, &mut buf);
+        crate::transcript_context!("sumcheck.header" => transcript.absorb(
+            &transcript_messages::SumcheckHeader::<F>::single(num_vars, degree, config)
+        ));
 
         if proof.messages.len() != num_vars {
             return Err(SumCheckError::InvalidProofLength {

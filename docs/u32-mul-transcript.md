@@ -87,6 +87,17 @@ jq -c 'select(.role == "prover" and (.purpose | startswith("sumcheck.round_"))) 
   /tmp/f2z-u32-transcript/transcript.jsonl
 ```
 
+Select the complete public statements, or a single header, by their stable purpose:
+
+```bash
+jq -c 'select(.role == "prover" and
+  (.purpose == "spartan.statement" or .purpose == "opening.statement")) |
+  {sequence, purpose, context, value}' /tmp/f2z-u32-transcript/transcript.jsonl
+
+jq -c 'select(.purpose == "sumcheck.header") | {role, context, value}' \
+  /tmp/f2z-u32-transcript/transcript.jsonl
+```
+
 For byte replay, use `read_byte_events(path)`. It expands logical records into
 exact ordered byte events and also reads older raw captures. Start a fresh
 BLAKE3 hasher per role, apply every `absorb`, and check every `squeeze` against
@@ -101,6 +112,32 @@ These files recover the transcript state; they do not serialize the proof.
 emit byte slices but cannot access a transcript or sample a challenge.
 `transcript.absorb(&object)` calls `absorb_frame` once, resulting in one row.
 Existing typed helpers use borrowed adapters with their original encodings.
+Composite objects delegate to those encoders, retaining every internal frame
+and byte-update boundary without adding an outer frame. Their chunks appear
+only inside the parent record's `wire` array. Diagnostic values are constructed
+only when logging is enabled. The logical envelope remains schema version 1;
+sequence numbers count the consolidated operations.
+
+| Purpose | Decoded object |
+| --- | --- |
+| `opening.ood_parameters` | Domain, packed variables, grinding bits |
+| `projection_prime.parameters` | Domain, minimum and maximum prime; sampling and accepted-prime absorption remain separate |
+| `spartan.statement` | Protocol, modulus, matrix digest, assignment binding, optional skip variables |
+| `opening.statement` | Domains, commitment and parameters, complete resolved Ligerito configuration, layout, opening-claim digest, modulus bit length, generator |
+| `sumcheck.header` | Integer variable count and degree bound; grouped headers include group count and ordered degree bounds |
+
+The human view prints each operation as its full caller context, uppercase
+`ABSORB` or `SQUEEZE`, then indented named fields. Scalar arrays occupy one line;
+arrays of objects use indented entries. Every squeeze includes its draw count.
+The JSONL equivalent is one physical line, even for a large opening statement.
+Encoding-specific context stays attached to the nested wire events.
+
+Product-tree roots use one `field` and `basis` followed by `roots_hex`;
+ring-switch vectors use `evaluations_hex`. Both arrays retain every value.
+Skip-polynomial messages identify their ordered `{point, value_hex}` evaluations
+and the leading coefficient's degree and value, using the selected skip layout.
+Outer terminal evaluations name the three values `az_hex`, `bz_hex`, `cz_hex`.
+
 `SpartanRoundPolynomial` displays canonical monomial coefficients,
 constant-first. A whole proof is processed round by round:
 
@@ -146,3 +183,44 @@ is true. Disabled capture produces neither transcript artifact.
 
 Review these outputs before attempting `f2z-benchmark` parity. This repository
 is authoritative, and `src/bitz/` remains removed.
+
+# Ordinary Spartan prefix export
+
+The `bitz-parity-logging-transcript-wrapper` worktree can export a complete
+ordinary Spartan transcript without running the assignment-opening protocol:
+
+```sh
+RUSTFLAGS='-C target-cpu=native' cargo run --release --locked \
+  --example u32_mul_transcript -- \
+  --variant plain-udr --through-spartan --fixture canonical \
+  --out /tmp/spartan-reference
+```
+
+The output contains `statement.json`, `transcript.jsonl`, and `run.json`. Both
+prover and verifier execute independently from fresh BLAKE3 states. Each role
+contributes exactly 88 logical events, ending at inner round 16's challenge.
+`run.json` records the public digests, runtime prime, pending assignment claims,
+and both final transcript state digests. The manifest is written after capture
+completion. Prefix verification does not discharge the commitment opening.
+
+Use `--fixture edges` for U32 boundary operands, or `--fixture 42` (any unsigned
+64-bit seed) for deterministic random operands. These fixture options are
+available in Spartan-only mode. The default full-proof example remains the
+canonical witness. Logging can be disabled with
+`--fiat-shamir-transcript-logs false`; such runs cannot be used for comparison.
+
+The independent benchmark implementation is in the
+`codex/spartan-transcript-parity` benchmark worktree. From that worktree:
+
+```sh
+RUSTFLAGS='-C target-cpu=native' cargo run --release --locked \
+  -p tests --example u32_mul_transcript -- \
+  --reference /tmp/spartan-reference --out /tmp/spartan-benchmark \
+  --fixture canonical
+```
+
+The reference log and run metadata are read for comparison only after the
+benchmark derives its own commitment, prime, challenges, round polynomials and
+terminal assignment claim. Matching requires all logical values and wire chunks,
+including rejection draws and feedback, both terminal claims, and independent
+replay of every squeeze. Full-proof captures or truncated prefixes are rejected.

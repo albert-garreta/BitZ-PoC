@@ -2095,8 +2095,9 @@ where
     let k = q.len();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror the prover.
-    crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf));
-    crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf));
+    crate::transcript_context!("sumcheck.header" => transcript.absorb(
+        &super::transcript_messages::SumcheckHeader::<F>::single(k, 3, field_cfg)
+    ));
     if proof.messages.len() != k {
         return Err(SumCheckError::InvalidProofLength { expected: k, got: proof.messages.len() });
     }
@@ -2311,8 +2312,9 @@ where
     let _g = tracing::info_span!("eqf:rounds").entered();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror `prove_as_subprotocol`.
-    crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf));
-    crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf));
+    crate::transcript_context!("sumcheck.header" => transcript.absorb(
+        &super::transcript_messages::SumcheckHeader::<F>::single(k, 3, field_cfg)
+    ));
 
     // A zero-variable sumcheck is the direct evaluation of the singleton
     // Boolean cube. This case occurs when an integer commitment has exactly

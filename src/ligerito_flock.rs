@@ -38,6 +38,7 @@ pub(crate) mod grinding;
 #[cfg(test)]
 mod coverage;
 mod configuration;
+mod transcript_messages;
 pub use configuration::{LigeritoSelection, ResolvedLigerito};
 mod ood;
 pub use ood::{ProverOod, VerifierOod, bind_prover_ood, bind_verifier_ood};
@@ -1388,6 +1389,44 @@ impl BoundModQStatement {
     }
 }
 
+fn statement_field_context(tag: u8, kind: u8, count: usize) -> tracing::span::EnteredSpan {
+    let purpose = match tag {
+        0x01 => "statement.commitment_root",
+        0x02 => "statement.commitment_variables",
+        0x03 => "statement.commitment_log_inverse_rate",
+        0x04 => "statement.commitment_log_batch_size",
+        0x05 => "statement.commitment_profile",
+        0x06 => "statement.commitment_merkle_hash",
+        0x08 => "statement.ligerito_log_inverse_rates",
+        0x09 => "statement.ligerito_recursive_steps",
+        0x0a => "statement.ligerito_initial_log_message_columns",
+        0x0b => "statement.ligerito_initial_log_interleaving",
+        0x0c => "statement.ligerito_initial_fold_count",
+        0x0d => "statement.ligerito_recursive_log_message_columns",
+        0x0e => "statement.ligerito_recursive_fold_counts",
+        0x0f => "statement.ligerito_query_counts",
+        0x10 => "statement.ligerito_query_grinding_bits",
+        0x11 => "statement.ligerito_fold_grinding_bits",
+        0x12 => "statement.ligerito_ood_sample_counts",
+        0x13 => "statement.ligerito_merkle_hash",
+        0x20 => "statement.row_variables",
+        0x21 => "statement.column_variables",
+        0x22 => "statement.word_bits",
+        0x23 => "statement.sha_columns",
+        0x24 => "statement.sha_log_columns",
+        0x25 => "statement.sha_bit_variables",
+        0x26 => "statement.sha_variables",
+        0x27 => "statement.sha_folded_trace_variables",
+        0x28 => "statement.sha_extra_fold_variables",
+        // The remaining tags are local to the opening's statement domain;
+        // their semantic name is supplied by the enclosing caller scope.
+        _ => "statement.field",
+    };
+    let context = crate::transcript_context!(purpose, wire_tag = tag, field_type = kind,
+        elements = count, part = tracing::field::Empty);
+    context
+}
+
 impl<'a, T: Transcript> StatementFrame<'a, T> {
     fn new(transcript: &'a mut T, domain: &[u8]) -> Self {
         let _context = crate::transcript_context!("statement.domain_separator", domain = tracing::field::display(String::from_utf8_lossy(domain)));
@@ -1395,48 +1434,9 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
         transcript.absorb_slice(domain);
         Self { transcript }
     }
-
-    fn field_context(&self, tag: u8, kind: u8, count: usize) -> tracing::span::EnteredSpan {
-        let purpose = match tag {
-            0x01 => "statement.commitment_root",
-            0x02 => "statement.commitment_variables",
-            0x03 => "statement.commitment_log_inverse_rate",
-            0x04 => "statement.commitment_log_batch_size",
-            0x05 => "statement.commitment_profile",
-            0x06 => "statement.commitment_merkle_hash",
-            0x08 => "statement.ligerito_log_inverse_rates",
-            0x09 => "statement.ligerito_recursive_steps",
-            0x0a => "statement.ligerito_initial_log_message_columns",
-            0x0b => "statement.ligerito_initial_log_interleaving",
-            0x0c => "statement.ligerito_initial_fold_count",
-            0x0d => "statement.ligerito_recursive_log_message_columns",
-            0x0e => "statement.ligerito_recursive_fold_counts",
-            0x0f => "statement.ligerito_query_counts",
-            0x10 => "statement.ligerito_query_grinding_bits",
-            0x11 => "statement.ligerito_fold_grinding_bits",
-            0x12 => "statement.ligerito_ood_sample_counts",
-            0x13 => "statement.ligerito_merkle_hash",
-            0x20 => "statement.row_variables",
-            0x21 => "statement.column_variables",
-            0x22 => "statement.word_bits",
-            0x23 => "statement.sha_columns",
-            0x24 => "statement.sha_log_columns",
-            0x25 => "statement.sha_bit_variables",
-            0x26 => "statement.sha_variables",
-            0x27 => "statement.sha_folded_trace_variables",
-            0x28 => "statement.sha_extra_fold_variables",
-            // The remaining tags are local to the opening's statement domain;
-            // their semantic name is supplied by the enclosing caller scope.
-            _ => "statement.field",
-        };
-        let context = crate::transcript_context!(purpose, wire_tag = tag, field_type = kind,
-            elements = count, part = tracing::field::Empty);
-        context
-    }
-
     fn field<E, V>(&mut self, tag: u8, kind: u8, count: usize, encode: E, value: V)
     where E: Fn(&mut dyn FnMut(&[u8])), V: Fn() -> serde_json::Value {
-        let _context = self.field_context(tag, kind, count);
+        let _context = statement_field_context(tag, kind, count);
         self.transcript.absorb(&StatementField { tag, kind, count, encode, value });
     }
     fn bytes(&mut self, tag: u8, values: &[u8]) {
@@ -1690,13 +1690,11 @@ pub(crate) fn absorb_mod_q_weight_chunks_statement(
     alpha: Gf,
     config: &impl LigeritoStatementConfig,
 ) -> BoundModQStatement {
-    let mut frame = StatementFrame::new(transcript, opening_kind.statement_domain());
-    frame.commitment(commitment);
-    frame.ligerito_config(config);
-    frame.int_eval_params(p);
-    crate::transcript_context!("statement.opening_claim_digest" => frame.bytes(0x30, statement_digest));
-    crate::transcript_context!("statement.modulus_bit_length" => frame.usize(0x31, q_bits));
-    crate::transcript_context!("statement.generator" => frame.gf128(0x32, alpha));
+    crate::transcript_context!("opening.statement" => transcript.absorb(
+        &transcript_messages::OpeningStatement {
+            opening_kind, commitment, layout: p, statement_digest, q_bits, generator: alpha, config,
+        }
+    ));
     BoundModQStatement::new()
 }
 
@@ -2586,10 +2584,9 @@ fn ood_eval(p_msg: &[F128], point: &[Gf]) -> Gf {
 }
 
 fn absorb_ood_round_header(transcript: &mut impl Transcript, packed_vars: usize, params: OodRoundParams) {
-    let _context = crate::transcript_context!("opening.ood_parameters");
-    transcript.absorb_slice(OOD_ROUND_DOMAIN);
-    transcript.absorb_slice(&(packed_vars as u64).to_le_bytes());
-    transcript.absorb_slice(&params.grinding_bits.to_le_bytes());
+    crate::transcript_context!("opening.ood_parameters" => transcript.absorb(
+        &transcript_messages::OodParameters { packed_variables: packed_vars, grinding_bits: params.grinding_bits }
+    ));
 }
 
 /// The prover's view of the round: the point (kept, the eq table is

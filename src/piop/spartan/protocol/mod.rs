@@ -1697,6 +1697,35 @@ pub struct VerifiedPrefix {
     pub table: BlockTable,
 }
 
+/// Runs the bound Spartan prefix for a relation without a pre-Spartan OOD round.
+/// The returned assignment claim still requires a commitment opening.
+pub fn prove_bound_piop<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T, prepared: &PreparedRelation<S>, witness: &S::Witness,
+    hint: &FlockCommitHint,
+) -> Result<ProvedPrefix, ProtocolError> {
+    if prepared.prefix.spec.schedule().ood_round {
+        return Err(ProtocolError::relation(std::io::Error::other("prefix capture requires no OOD round")));
+    }
+    validate_bit_rows(&prepared.params(), hint.rows())?;
+    validate_commitment(&prepared.params(), &hint.commitment, prepared.opener.prover()?)?;
+    let (binding, _) = bind_prover_statement(transcript, &prepared.prefix, &prepared.opener, hint)?;
+    prove_piop(transcript, &prepared.prefix, witness, &binding, ProveOptions::default())
+}
+
+/// Verifier twin of [`prove_bound_piop`]. This returns a pending assignment claim,
+/// not a verified commitment opening.
+pub fn verify_bound_piop<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T, prepared: &PreparedRelation<S>, commitment: &Commitment,
+    messages: &SpartanPrefixProof,
+) -> Result<VerifiedPrefix, ProtocolError> {
+    if prepared.prefix.spec.schedule().ood_round {
+        return Err(ProtocolError::relation(std::io::Error::other("prefix capture requires no OOD round")));
+    }
+    validate_commitment(&prepared.params(), commitment, prepared.opener.prover()?)?;
+    let (binding, _) = bind_verifier_statement(transcript, &prepared.prefix, &prepared.opener, commitment, None)?;
+    verify_piop(transcript, &prepared.prefix, &binding, messages)
+}
+
 /// Steps 2–4 of the protocol after the statement has been bound: the initial
 /// grinding boundary, the Step-2 prime draw and relation projection, the
 /// Spartan PIOP under per-draw grinding, bitification and the terminal
@@ -2069,9 +2098,9 @@ pub fn sample_mod_q(
     min: u128,
     max: u128,
 ) -> Result<RuntimePrime, ProtocolError> {
-    absorb_spartan_message(transcript, b"prime-domain", domain);
-    absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
-    absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
+    crate::transcript_context!("projection_prime.parameters" => transcript.absorb(
+        &super::transcript_messages::PrimeSamplingParameters { domain, min, max }
+    ));
     let q = sample_prime_in_interval(transcript, min, max)?;
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
     runtime_field(q)
@@ -2092,9 +2121,9 @@ pub fn sample_full_width_prime(
     max: u128,
 ) -> Result<RuntimePrime, ProtocolError> {
     const ATTEMPTS: usize = 64 * 128;
-    absorb_spartan_message(transcript, b"prime-domain", domain);
-    absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
-    absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
+    crate::transcript_context!("projection_prime.parameters" => transcript.absorb(
+        &super::transcript_messages::PrimeSamplingParameters { domain, min, max }
+    ));
     let mut q = None;
     for _ in 0..ATTEMPTS {
         let draw: BinaryFieldGF128 = transcript.get_field_challenge(&());
