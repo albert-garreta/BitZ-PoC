@@ -132,6 +132,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_BENCH_ORDER",
     "F2Z_BENCH_PASS",
     "F2Z_BENCH_QUIET",
+    "F2Z_BENCH_PHASE_SAMPLES",
     "F2Z_BENCH_REPS",
     "F2Z_BENCH_SEED",
     "F2Z_BENCH_SHAPES",
@@ -608,6 +609,10 @@ impl StepSamples {
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
     pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
+        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"prove", "total_ms":total_ms,
+                "commit_ms":commit_ms, "phases_seconds":phases}));
+        }
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
         self.record_scopes(
@@ -624,6 +629,10 @@ impl StepSamples {
 
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
     pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
+        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"verify", "total_ms":total_ms,
+                "phases_seconds":phases}));
+        }
         self.total.push(total_ms);
         self.commit.push(None);
         self.record_scopes(

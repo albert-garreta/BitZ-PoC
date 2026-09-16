@@ -8509,9 +8509,9 @@ fn rlc_prove_eqf_level(
     let mut groups_a: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(specs.len() * cols);
     for (si, (pt, eta, na, nb)) in specs.iter().enumerate() {
         for c in 0..cols {
-            let (lbits, rbits) = (na[c].clone(), nb[c].clone());
+            let (lbits, rbits) = (na[c].as_slice(), nb[c].as_slice());
             groups_a.push(EqInnerGroupMixed {
-                q: pt[..t_x].to_vec(),
+                q: (&pt[..t_x]).into(),
                 scale: *eta * eq_tops[si][c],
                 bufs: if deep {
                     GroupBufs::Leaf3Bits {
@@ -8553,7 +8553,7 @@ fn rlc_prove_eqf_level(
     let mut groups_b: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(specs.len());
     for ((pt, eta, ..), (fa, fb)) in specs.iter().zip(f_pairs) {
         groups_b.push(EqInnerGroupMixed {
-            q: pt[t_x..].to_vec(),
+            q: (&pt[t_x..]).into(),
             scale: *eta,
             bufs: GroupBufs::Dense(vec![(fa, fb)]),
         });
@@ -13842,6 +13842,18 @@ mod tests {
     /// 2-chunk (W=32) regimes, with a local 𝔽_q (q = 2^100 − 15).
     #[test]
     fn mle_eval_mod_q_ligerito_roundtrips() {
+        // This test changes process-wide protocol dispatch settings. A mutex
+        // cannot protect other tests that simply read those settings.
+        const CHILD: &str = "F2Z_QUAD_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "ligerito_flock::tests::mle_eval_mod_q_ligerito_roundtrips"])
+                .env(CHILD, "1")
+                .status()
+                .unwrap();
+            assert!(status.success(), "isolated quad test failed");
+            return;
+        }
         use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks};
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         const Q: u128 = (1u128 << 100) - 15;

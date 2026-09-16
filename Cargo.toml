@@ -324,6 +324,10 @@ required-features = ["span-metrics", "parallel"]
 name = "prof_probe"
 required-features = ["span-metrics"]
 
+[[example]]
+name = "gkr_capture"
+required-features = ["span-metrics", "parallel", "ecdsa"]
+
 [features]
 default = ["parallel"]
 # Numeric span metrics require the native trace processor at runtime.

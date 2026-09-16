@@ -1488,7 +1488,7 @@ pub(crate) fn prove_int_eval_merged_common(
     MultiDegreeSumcheckProof<Gf>,
     Vec<Gf>,
 ) {
-    use crate::merged_forest::prove_merged_forest_lazy;
+    use crate::merged_forest::prove_merged_forest_lazy_from_rows;
     use crate::pcs::chunk_pow2_table;
     let t_w = row_bit_vars(p);
     let owned;
@@ -1507,7 +1507,13 @@ pub(crate) fn prove_int_eval_merged_common(
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
         if crate::merged_forest::quad_active(p) {
-            crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
+            crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
+                transcript,
+                p,
+                Some(rows),
+                packed_cols,
+                &pow2,
+            )
         } else {
             // A zero-padded witness ends in all-zero columns; those trees
             // are constant 1 and never get built (byte-identical proof).
@@ -1515,7 +1521,7 @@ pub(crate) fn prove_int_eval_merged_common(
                 let _g = tracing::info_span!("mc:live_cols").entered();
                 crate::merged_forest::live_cols(p, rows)
             };
-            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2, live)
+            prove_merged_forest_lazy_from_rows(transcript, p, rows, packed_cols, &pow2, live)
         }
     };
     drop(pow2);

@@ -80,7 +80,7 @@ pub struct EqInnerGroup<F> {
 }
 
 /// Buffer payload of one group in the mixed-entry driver.
-pub enum GroupBufs<F> {
+pub enum GroupBufs<'a, F> {
     /// Materialised `(L, R)` pair vectors — the general case.
     Dense(Vec<(Vec<F>, Vec<F>)>),
     /// Single-pair Dense group whose `(L, R)` live in the driver's shared
@@ -101,8 +101,8 @@ pub enum GroupBufs<F> {
     /// `ρ·τ`-style tables. The leaf values themselves are never built.
     /// Bits are packed 64 per `u64`, position `i` at word `i/64`, bit `i%64`.
     LeafBits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected product layer** (char-2 forests, single pair, one
@@ -120,8 +120,8 @@ pub enum GroupBufs<F> {
     /// built — combined with generating the NEXT level down from bits,
     /// the whole level `d−1` is skipped.
     Pair2Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, TWO bit-driven rounds** (char-2 forests,
@@ -142,8 +142,8 @@ pub enum GroupBufs<F> {
     /// the groups of a set (`O(2^k)` per set, amortised over the trees);
     /// every step is an exact char-2 identity, byte-identical to `Dense`.
     Leaf2Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, THREE bit-driven rounds** (`k ≥ 4`):
@@ -158,8 +158,8 @@ pub enum GroupBufs<F> {
     /// pay). Dense buffers materialise only at round 3's fold
     /// (`2^{k−3}`/side — the leaf-round set drops to L/8).
     Leaf3Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, FOUR bit-driven rounds** (`k ≥ 5` — probe
@@ -176,8 +176,8 @@ pub enum GroupBufs<F> {
     /// buffers materialise only at round 4's fold (`2^{k−4}`/side — the
     /// leaf residue halves again vs [`Leaf3Bits`](GroupBufs::Leaf3Bits)).
     Leaf4Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected product layer, TWO bit-driven rounds** (`k ≥ 3`):
@@ -188,8 +188,8 @@ pub enum GroupBufs<F> {
     /// O-side at bit offset `2^k`); round 2 reads values inline and its
     /// fold materialises `Dense` (`2^{k−2}`/side).
     Pair3Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected 4-leaf-product layer** (`k ≥ 2`, one level ABOVE
@@ -202,8 +202,8 @@ pub enum GroupBufs<F> {
     /// values inline; its fold materialises `Dense` (`2^{k−1}`/side) —
     /// the layer's stored/JIT input level is never needed.
     T4Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
 }
@@ -239,10 +239,10 @@ impl<F> PreRound<F> {
 }
 
 /// One group of the mixed-entry driver ([`prove_eq_inner_sumcheck_mixed`]).
-pub struct EqInnerGroupMixed<F> {
-    pub q: Vec<F>,
+pub struct EqInnerGroupMixed<'a, F: Clone> {
+    pub q: std::borrow::Cow<'a, [F]>,
     pub scale: F,
-    pub bufs: GroupBufs<F>,
+    pub bufs: GroupBufs<'a, F>,
 }
 
 /// Shared flat storage for all-[`GroupBufs::Flat`] single-pair groups:
@@ -876,7 +876,7 @@ where
 
 #[allow(clippy::arithmetic_side_effects)]
 fn leaf_round1_tiled<F>(
-    bufs: &[GroupBufs<F>],
+    bufs: &[GroupBufs<'_, F>],
     leaf_tables: &[LeafTables<F>],
     half: usize,
     zero: &F,
@@ -921,7 +921,7 @@ where
                 lbits,
                 rbits,
                 tau_set,
-            } if *tau_set == 0 => Some((lbits.as_slice(), rbits.as_slice())),
+            } if *tau_set == 0 => Some((*lbits, *rbits)),
             _ => None,
         })
         .collect();
@@ -2129,7 +2129,7 @@ where
     let mixed = groups
         .into_iter()
         .map(|g| EqInnerGroupMixed {
-            q: g.q,
+            q: g.q.into(),
             scale: g.scale,
             bufs: GroupBufs::Dense(g.pairs),
         })
@@ -2153,7 +2153,7 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2186,7 +2186,7 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed_gruen<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2300,7 +2300,39 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    pre_round1: Option<PreRound<F>>,
+    flat: Option<FlatDense<F>>,
+    gruen: bool,
+    field_cfg: &F::Config,
+) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
+    prove_eq_inner_sumcheck_mixed_prepared(
+        transcript,
+        groups,
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        pre_round1,
+        flat,
+        gruen,
+        field_cfg,
+        None,
+    )
+}
+
+/// Internal forest entry with suffixes constructed for this layer's shared point.
+pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
+    transcript: &mut impl Transcript,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2308,6 +2340,7 @@ pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     flat: Option<FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
+    prepared_suffix: Option<SuffixTensorArena<F>>,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
     F: InnerTransparentField + WideMulAcc + Send + Sync,
@@ -2508,7 +2541,11 @@ where
     }
     let suffix: Vec<SuffixTensorArena<F>> = {
         let _g = tracing::info_span!("eqf:suffix").entered();
-        if shared_q {
+        if let Some(arena) = prepared_suffix {
+            assert!(shared_q, "prepared suffixes require a shared point");
+            assert_eq!(arena.len(), k, "prepared suffix dimension");
+            vec![arena]
+        } else if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
         } else {
             cfg_iter!(groups)
@@ -2525,9 +2562,9 @@ where
     // per-group `q` vectors move instead of cloning (2^s clones per layer
     // otherwise; byte-identical).
     let num_groups = groups.len();
-    let mut qs: Vec<Vec<F>> = Vec::with_capacity(num_groups);
+    let mut qs: Vec<std::borrow::Cow<'_, [F]>> = Vec::with_capacity(num_groups);
     let mut scales: Vec<F> = Vec::with_capacity(num_groups);
-    let mut bufs: Vec<GroupBufs<F>> = Vec::with_capacity(num_groups);
+    let mut bufs: Vec<GroupBufs<'_, F>> = Vec::with_capacity(num_groups);
     for g in groups {
         qs.push(g.q);
         scales.push(g.scale);
@@ -2670,7 +2707,7 @@ where
         // skipped multiply saves — and was removed.) Parallel **across
         // groups**, with a minimum batch so tiny late-round bodies amortise
         // the rayon dispatch.
-        let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F) {
+        let compute_h = |t: usize, bufs: &[GroupBufs<'_, F>]| -> (F, F, F) {
             let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
             match &bufs[t] {
                 GroupBufs::Flat => {
@@ -3177,7 +3214,7 @@ where
                     )
                 })
             } else {
-                let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
+                let pass = |t: usize, gb: &mut GroupBufs<'_, F>| -> [F; 9] {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("double-fold requires all-Dense single-pair groups")
@@ -3228,7 +3265,7 @@ where
                     )
                 })
             } else {
-                let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                let pass = |t: usize, gb: &mut GroupBufs<'_, F>| -> (F, F, F) {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("deferred folds require all-Dense single-pair groups")
@@ -3293,7 +3330,7 @@ where
                     )
                 })
             } else {
-                let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                let fused = |t: usize, gb: &mut GroupBufs<'_, F>| -> (F, F, F) {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("fused rounds require all-Dense single-pair groups")
@@ -3573,7 +3610,7 @@ where
             let mat_grid_now = mat_grid_enabled() && eqf_double() && j + 2 < k;
             // Fold every group's L,R at ρ. Parallel **across groups**; the
             // per-vector fold is sequential (the groups are the big dimension).
-            let fold_group = |gb: &mut GroupBufs<F>| -> Option<[F; 9]> {
+            let fold_group = |gb: &mut GroupBufs<'_, F>| -> Option<[F; 9]> {
                 match gb {
                     GroupBufs::Flat => {
                         unreachable!("Flat groups fold through the driver's flat fold branch")
@@ -3969,12 +4006,12 @@ where
                                     lbits,
                                     rbits,
                                     tau_set: 0,
-                                } if j == 2 => Some((lbits.as_slice(), rbits.as_slice())),
+                                } if j == 2 => Some((*lbits, *rbits)),
                                 GroupBufs::Leaf3Bits {
                                     lbits,
                                     rbits,
                                     tau_set: 0,
-                                } if j == 3 => Some((lbits.as_slice(), rbits.as_slice())),
+                                } if j == 3 => Some((*lbits, *rbits)),
                                 _ => None,
                             })
                             .collect()
@@ -4405,10 +4442,10 @@ mod tests {
                     (scale, pairs)
                 })
                 .collect();
-            let groups: Vec<EqInnerGroupMixed<Gf>> = dense
+            let groups: Vec<EqInnerGroupMixed<'_, Gf>> = dense
                 .iter()
                 .map(|(scale, pairs)| EqInnerGroupMixed {
-                    q: q.clone(),
+                    q: q.clone().into(),
                     scale: *scale,
                     bufs: GroupBufs::Dense(pairs.clone()),
                 })

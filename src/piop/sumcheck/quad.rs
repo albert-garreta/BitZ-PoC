@@ -410,10 +410,10 @@ pub fn prove_quad_eq_sumcheck(
 /// One tree's inputs to the bottom quad layer: the midpoint-split
 /// committed bit halves — the same per-tree arrays the arity-2 cascades
 /// read (`lbits[i]` selects leaf `i`, `rbits[i]` leaf `i + 2^{d−1}`).
-pub struct QuadBitGroup {
+pub struct QuadBitGroup<'a> {
     pub scale: Gf,
-    pub lbits: Vec<u64>,
-    pub rbits: Vec<u64>,
+    pub lbits: &'a [u64],
+    pub rbits: &'a [u64],
 }
 
 /// The tree-shared tables of the bottom layer: `te`/`to` (round 1's
@@ -909,9 +909,15 @@ mod tests {
 
             let mut groups_ref = Vec::new();
             let mut groups_bot = Vec::new();
-            for t in 0..ngroups {
-                let lbits = mkbits(0xD000 + 97 * t as u64);
-                let rbits = mkbits(0xE000 + 131 * t as u64);
+            let bits: Vec<_> = (0..ngroups)
+                .map(|t| {
+                    (
+                        mkbits(0xD000 + 97 * t as u64),
+                        mkbits(0xE000 + 131 * t as u64),
+                    )
+                })
+                .collect();
+            for (t, (lbits, rbits)) in bits.iter().enumerate() {
                 let scale = sample(0xF000 + t as u64);
                 let quarter = |bits: &[u64], tau: &[Gf], base: usize| -> Vec<Gf> {
                     (0..q1b)

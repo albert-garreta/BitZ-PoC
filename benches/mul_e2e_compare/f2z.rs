@@ -138,6 +138,9 @@ impl Context {
         super::common::print_regression_phases(&::f2z::observability::totals(
             raw.iter().filter(|s| s.end_ns <= trial.verification.start_ns),
         ));
+        for span in raw.iter().filter(|s| s.label() == "mc:forest") {
+            timing.add("gkr", "gkr", span.start_ns, span.end_ns);
+        }
         timing
     }
 
