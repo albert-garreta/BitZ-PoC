@@ -283,6 +283,9 @@ impl RelationSpec for U64MulLayout {
         Ok(PiopWitness::NativeU64 {
             products,
             assignment: witness.assignment(),
+            constant_prefix: Some(super::raw_monty::NativeConstantPrefix::new(
+                witness.layout().capacity(),
+            )),
         })
     }
 }

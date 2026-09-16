@@ -19,9 +19,9 @@ use super::{
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
     raw_monty::{
-        NativeOuterInput, NativeProducts, RawMontyCoefficient, RawProducts, RawWitness,
-        RowFunctional, inner_sumcheck_raw, make_equality_factors_raw, prove_outer_field_raw,
-        prove_outer_native_raw,
+        NativeConstantPrefix, NativeOuterInput, NativeProducts, RawMontyCoefficient, RawProducts,
+        RawWitness, RowFunctional, inner_sumcheck_raw, make_equality_factors_raw,
+        prove_outer_field_raw, prove_outer_native_raw,
     },
     squeeze_field,
     sumcheck::{
@@ -293,6 +293,7 @@ pub(crate) fn prove_spartan_piop_native_u64_with_univariate_skip_borrowed<C>(
     products: NativeProducts<'_>,
     assignment: &[u64],
     skip_vars: usize,
+    constant_prefix: Option<NativeConstantPrefix>,
 ) -> Result<
     (
         UnivariateSkipSpartanPiopProof<Fp<2>>,
@@ -310,7 +311,7 @@ where
         matrices,
         assignment_oracle_binding,
         products,
-        RawWitness::native_borrowed(assignment, domain),
+        RawWitness::native_borrowed_with_constant_prefix(assignment, domain, constant_prefix),
         skip_vars,
     )
 }
@@ -321,6 +322,7 @@ pub(crate) fn prove_spartan_piop_native_u64_borrowed<C>(
     assignment_oracle_binding: &[u8; 32],
     products: NativeProducts<'_>,
     assignment: &[u64],
+    constant_prefix: Option<NativeConstantPrefix>,
 ) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
     C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
@@ -332,7 +334,7 @@ where
         matrices,
         assignment_oracle_binding,
         products,
-        RawWitness::native_borrowed(assignment, domain),
+        RawWitness::native_borrowed_with_constant_prefix(assignment, domain, constant_prefix),
     )
 }
 
@@ -349,6 +351,7 @@ pub(crate) fn prove_spartan_piop_raw_products_native_assignment<C, P: NativeOute
     assignment_oracle_binding: &[u8; 32],
     products: P,
     assignment: &[u64],
+    constant_prefix: Option<NativeConstantPrefix>,
 ) -> Result<(SpartanPiopProof<Fp<2>>, ScaledMleEvaluationClaim<Fp<2>>), SpartanError>
 where
     C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
@@ -370,7 +373,7 @@ where
         matrices,
         assignment_oracle_binding,
         products,
-        RawWitness::native_borrowed(assignment, domain),
+        RawWitness::native_borrowed_with_constant_prefix(assignment, domain, constant_prefix),
     )
 }
 

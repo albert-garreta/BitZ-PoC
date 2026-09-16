@@ -194,7 +194,7 @@ impl RawFieldStorage for field::FpCtx<2> {
                 .as_words(),
         )
     }
-    #[inline]
+    #[inline(always)]
     fn interpolate(&self, at_zero: Raw, at_one: Raw, point: Raw) -> Raw {
         self.add_raw(at_zero, self.mul_raw(point, self.sub_raw(at_one, at_zero)))
     }
@@ -1441,6 +1441,21 @@ pub(crate) fn prove_outer_native_raw<T: Transcript, P: NativeOuterInput>(
 // Inner sumcheck
 // ---------------------------------------------------------------------------
 
+/// Constructor-owned declaration of a leading `[1, 0, ...]` assignment block.
+/// Only typed relation adapters may attach this structure to native values.
+/// This is trusted prover metadata, not validation: the accompanying assignment
+/// must satisfy the declared prefix. Reusing it for other values can produce
+/// an invalid proof; it does not alter the verifier's checks.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeConstantPrefix(usize);
+
+impl NativeConstantPrefix {
+    pub(crate) fn new(block_len: usize) -> Self {
+        assert!(block_len.is_power_of_two());
+        Self(block_len)
+    }
+}
+
 /// The assignment table entering the inner sumcheck.
 pub enum RawWitness<'a> {
     /// Exact native values (the u32 and BabyBear relations): the first round
@@ -1451,6 +1466,7 @@ pub enum RawWitness<'a> {
     Native {
         values: Cow<'a, [u64]>,
         domain: usize,
+        constant_prefix: Option<NativeConstantPrefix>,
     },
     /// Borrowed declared-width x/y/u256 product segments.
     Wide(NativeU128Witness<'a>),
@@ -1468,16 +1484,27 @@ impl<'a> RawWitness<'a> {
         Self::Native {
             values: Cow::Owned(values),
             domain,
+            constant_prefix: None,
         }
     }
 
     /// The leading `values` of a `domain`-length native table (the rest is
     /// zero).
     pub(crate) fn native_borrowed(values: &'a [u64], domain: usize) -> Self {
+        Self::native_borrowed_with_constant_prefix(values, domain, None)
+    }
+
+    pub(crate) fn native_borrowed_with_constant_prefix(
+        values: &'a [u64],
+        domain: usize,
+        constant_prefix: Option<NativeConstantPrefix>,
+    ) -> Self {
         debug_assert!(values.len() <= domain);
+        assert!(constant_prefix.is_none_or(|prefix| prefix.0 <= values.len()));
         Self::Native {
             values: Cow::Borrowed(values),
             domain,
+            constant_prefix,
         }
     }
 
@@ -1495,9 +1522,17 @@ impl<'a> RawWitness<'a> {
     /// caller could not lend the whole table).
     fn materialize(self) -> Self {
         match self {
-            Self::Native { mut values, domain } if values.len() < domain => {
+            Self::Native {
+                mut values,
+                domain,
+                constant_prefix,
+            } if values.len() < domain => {
                 values.to_mut().resize(domain, 0);
-                Self::Native { values, domain }
+                Self::Native {
+                    values,
+                    domain,
+                    constant_prefix,
+                }
             }
             other => other,
         }
@@ -1709,7 +1744,7 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
     if !len.is_power_of_two() || witness.len() != len || live > len {
         return Err(SumcheckError::InvalidProductDimensions);
     }
-    if let RawWitness::Native { values, domain } = &witness
+    if let RawWitness::Native { values, domain, .. } = &witness
         && values.len() > *domain
     {
         return Err(SumcheckError::InvalidProductDimensions);
@@ -1882,10 +1917,11 @@ pub(crate) fn prove_inner_raw<T: Transcript>(
         }
         RawWitness::Field(values) => {
             let mut out = vec![shared_raw(ctx, 0); next_len];
-            let coefficients = folded::fold_round::<field::Fp<2>, true>(
+            let coefficients = folded::fold_round::<field::Fp<2>, true, _>(
                 ctx,
                 &matrix[..2 * written],
-                |i| shared_raw(ctx, values[i]),
+                &values[..2 * written],
+                |value| shared_raw(ctx, value),
                 &mut matrix_next[..written],
                 &mut out[..written],
                 challenge_raw,
@@ -1983,10 +2019,11 @@ fn inner_dense_rounds<T: Transcript, W: FoldedValue>(
             );
         } else {
             let written = 2 * next_live.div_ceil(2);
-            let coefficients = folded::fold_round::<W, true>(
+            let coefficients = folded::fold_round::<W, true, _>(
                 ctx,
                 &matrix[..2 * written],
-                |i| witness[i],
+                &witness[..2 * written],
+                |value| value,
                 &mut matrix_scratch[..written],
                 &mut witness_scratch[..written],
                 challenge_raw,
@@ -2300,11 +2337,16 @@ fn prove_inner_structured_typed<T: Transcript, W: FoldedValue>(
     // A borrowed native table must cover every live entry in whole blocks;
     // otherwise pad it (the generated relations lend block-aligned tables).
     let witness = match witness {
-        RawWitness::Native { values, domain }
-            if values.len() < live || !values.len().is_multiple_of(block_len) =>
-        {
-            RawWitness::Native { values, domain }.materialize()
+        RawWitness::Native {
+            values,
+            domain,
+            constant_prefix,
+        } if values.len() < live || !values.len().is_multiple_of(block_len) => RawWitness::Native {
+            values,
+            domain,
+            constant_prefix,
         }
+        .materialize(),
         other => other,
     };
     let zero = Field::zero_with_cfg(&cfg);
@@ -2319,8 +2361,16 @@ fn prove_inner_structured_typed<T: Transcript, W: FoldedValue>(
         let start = block * block_len;
         let end = start + block_len;
         match &witness {
-            RawWitness::Native { values, .. } => {
-                BlockValues::Native(values.get(start..end).unwrap_or(&[]))
+            RawWitness::Native {
+                values,
+                constant_prefix,
+                ..
+            } => {
+                if block == 0 && constant_prefix.is_some_and(|prefix| prefix.0 == block_len) {
+                    BlockValues::ConstantOne
+                } else {
+                    BlockValues::Native(values.get(start..end).unwrap_or(&[]))
+                }
             }
             RawWitness::Field(values) => BlockValues::Field(&values[start..end]),
             RawWitness::Wide(values) => {
@@ -2443,10 +2493,11 @@ fn prove_inner_structured_typed<T: Transcript, W: FoldedValue>(
             } else {
                 let scratch = &mut scratches[index];
                 scratch.truncate(next_len);
-                let partial = folded::fold_round::<W, false>(
+                let partial = folded::fold_round::<W, false, _>(
                     ctx,
                     &wz[..written],
-                    |i| tables[index][i],
+                    &tables[index][..2 * written],
+                    |value| value,
                     &mut [],
                     &mut scratch[..written],
                     challenge_raw,
@@ -3684,6 +3735,95 @@ mod tests {
                         assert_eq!(
                             actual, expected,
                             "kind={kind} block_log={block_log} blocks_log={blocks_log} trial={trial} rows={rows} live={live}"
+                        );
+                        assert_eq!(
+                            next_challenge(&mut structured_transcript, &cfg),
+                            next_challenge(&mut dense_transcript, &cfg)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn declared_constant_prefix_matches_dense_and_preserves_generic_blocks() {
+        let mut rng = StdRng::seed_from_u64(0xc057_a17);
+        for modulus in MODULI {
+            let cfg = config(modulus);
+            let ctx = field_context(&cfg);
+            for (block_len, blocks, logical_blocks) in [(8, 4, 4), (64, 8, 5)] {
+                let domain = block_len * blocks;
+                let live = logical_blocks * block_len - 3;
+                let rows = block_len - 4;
+                for constant_is_scaled in [false, true] {
+                    for declaration in [None, Some(block_len), Some(block_len / 2)] {
+                        let mut native: Vec<u64> = (0..live).map(|_| rng.random()).collect();
+                        native[0] = 1;
+                        let prefix = declaration.unwrap_or(1);
+                        native[1..prefix].fill(0);
+                        // The generic and width-mismatch cases contain a real
+                        // nonzero value after the declared constant prefix.
+                        if prefix < block_len {
+                            native[prefix] = 7;
+                        }
+                        let weights: Vec<_> = (0..block_len)
+                            .map(|_| ctx.raw(&random_field(&mut rng, &cfg)))
+                            .collect();
+                        let scales: Vec<_> = (0..blocks)
+                            .map(|block| {
+                                (block < logical_blocks && (block != 0 || constant_is_scaled))
+                                    .then(|| ctx.raw(&random_field(&mut rng, &cfg)))
+                            })
+                            .collect();
+                        let mut matrix = vec![0; domain];
+                        for (block, scale) in scales.iter().enumerate() {
+                            if let Some(scale) = scale {
+                                for row in 0..rows {
+                                    matrix[block * block_len + row] =
+                                        ctx.mul_raw(*scale, weights[row]);
+                                }
+                            }
+                        }
+                        let claim = matrix.iter().zip(&native).fold(0, |sum, (&m, &w)| {
+                            ctx.add_raw(sum, ctx.mul_raw(m, ctx.native_residue(w)))
+                        });
+                        let claim = crate::utils::delayed_reduction::element(&cfg, claim);
+                        let mut dense_transcript = Blake3Transcript::new();
+                        let expected = prove_inner_raw(
+                            &mut dense_transcript,
+                            &ctx,
+                            &ctx,
+                            claim.clone(),
+                            matrix,
+                            RawWitness::native_borrowed(&native, domain),
+                            live,
+                        )
+                        .unwrap();
+                        let mut structured_transcript = Blake3Transcript::new();
+                        let actual = prove_inner_structured_raw(
+                            &mut structured_transcript,
+                            &ctx,
+                            &ctx,
+                            claim,
+                            &weights,
+                            &BlockScales {
+                                block_len,
+                                rows,
+                                scales,
+                            },
+                            RawWitness::native_borrowed_with_constant_prefix(
+                                &native,
+                                domain,
+                                declaration.map(NativeConstantPrefix::new),
+                            ),
+                            live,
+                            domain.ilog2() as usize,
+                        )
+                        .unwrap();
+                        assert_eq!(
+                            actual, expected,
+                            "block_len={block_len} declaration={declaration:?}"
                         );
                         assert_eq!(
                             next_challenge(&mut structured_transcript, &cfg),

@@ -93,10 +93,11 @@ impl FoldedValue for Fp<2> {
         let BlockValues::Field(values) = block else {
             unreachable!("field source dispatch")
         };
-        fold_round::<Self, false>(
+        fold_round::<Self, false, _>(
             ctx,
             weights,
-            |i| shared_raw(ctx, values[i]),
+            &values[..2 * out.len()],
+            |value| shared_raw(ctx, value),
             &mut [],
             out,
             challenge,
@@ -117,46 +118,64 @@ pub(super) fn reduce<W: FoldedValue>(ctx: &field::FpCtx<2>, a: [W::Acc; 2]) -> [
     a.map(|a| W::reduce(ctx, a))
 }
 
-pub(super) fn fold_round<W: FoldedValue, const FOLD_WEIGHTS: bool>(
+pub(super) fn fold_round<W: FoldedValue, const FOLD_WEIGHTS: bool, I: Copy + Sync>(
     ctx: &field::FpCtx<2>,
     weights: &[Raw],
-    read: impl Fn(usize) -> W + Sync,
+    input: &[I],
+    read: impl Fn(I) -> W + Sync,
     matrix_out: &mut [Raw],
     out: &mut [W],
     challenge: Raw,
 ) -> [Raw; 2] {
     assert_eq!(out.len() % 2, 0);
+    assert_eq!(input.len(), 2 * out.len());
     assert_eq!(weights.len(), out.len() * if FOLD_WEIGHTS { 2 } else { 1 });
     assert_eq!(matrix_out.len(), if FOLD_WEIGHTS { out.len() } else { 0 });
-    let block = |start: usize, mout: &mut [Raw], out: &mut [W]| {
+    let block = |weights: &[Raw], input: &[I], mout: &mut [Raw], out: &mut [W]| {
+        let weight_stride = if FOLD_WEIGHTS { 4 } else { 2 };
         let mut acc = pair::<W>();
-        for (pair, z) in out.chunks_exact_mut(2).enumerate() {
-            let mut m = [0; 2];
-            for j in 0..2 {
-                let i = start + 2 * pair + j;
-                z[j] = W::from_encoding(
-                    ctx,
-                    ctx.interpolate(
-                        read(2 * i).encoding(),
-                        read(2 * i + 1).encoding(),
-                        challenge,
-                    ),
-                );
-                m[j] = if FOLD_WEIGHTS {
-                    ctx.interpolate(weights[2 * i], weights[2 * i + 1], challenge)
-                } else {
-                    weights[i]
-                };
-                if FOLD_WEIGHTS {
-                    mout[2 * pair + j] = m[j];
-                }
+        for (pair, ((weights, values), z)) in weights
+            .chunks_exact(weight_stride)
+            .zip(input.chunks_exact(4))
+            .zip(out.chunks_exact_mut(2))
+            .enumerate()
+        {
+            let z0 = W::from_encoding(
+                ctx,
+                ctx.interpolate(
+                    read(values[0]).encoding(),
+                    read(values[1]).encoding(),
+                    challenge,
+                ),
+            );
+            let z1 = W::from_encoding(
+                ctx,
+                ctx.interpolate(
+                    read(values[2]).encoding(),
+                    read(values[3]).encoding(),
+                    challenge,
+                ),
+            );
+            z[0] = z0;
+            z[1] = z1;
+            let m = if FOLD_WEIGHTS {
+                [
+                    ctx.interpolate(weights[0], weights[1], challenge),
+                    ctx.interpolate(weights[2], weights[3], challenge),
+                ]
+            } else {
+                [weights[0], weights[1]]
+            };
+            if FOLD_WEIGHTS {
+                mout[2 * pair] = m[0];
+                mout[2 * pair + 1] = m[1];
             }
-            W::accumulate(ctx, &mut acc[0], m[0], z[0]);
+            W::accumulate(ctx, &mut acc[0], m[0], z0);
             W::accumulate(
                 ctx,
                 &mut acc[1],
                 ctx.sub_raw(m[1], m[0]),
-                W::from_encoding(ctx, ctx.sub_raw(z[1].encoding(), z[0].encoding())),
+                W::from_encoding(ctx, ctx.sub_raw(z1.encoding(), z0.encoding())),
             );
         }
         acc
@@ -164,21 +183,28 @@ pub(super) fn fold_round<W: FoldedValue, const FOLD_WEIGHTS: bool>(
     #[cfg(feature = "parallel")]
     if parallel(out.len() / 2) {
         let acc = if FOLD_WEIGHTS {
-            matrix_out
-                .par_chunks_mut(FOLD_BLOCK)
-                .zip(out.par_chunks_mut(FOLD_BLOCK))
-                .enumerate()
-                .map(|(i, (m, z))| block(i * FOLD_BLOCK, m, z))
+            (
+                weights.par_chunks(2 * FOLD_BLOCK),
+                input.par_chunks(2 * FOLD_BLOCK),
+                matrix_out.par_chunks_mut(FOLD_BLOCK),
+                out.par_chunks_mut(FOLD_BLOCK),
+            )
+                .into_par_iter()
+                .map(|(w, values, m, z)| block(w, values, m, z))
                 .reduce(pair::<W>, merge::<W>)
         } else {
-            out.par_chunks_mut(FOLD_BLOCK)
-                .enumerate()
-                .map(|(i, z)| block(i * FOLD_BLOCK, &mut [], z))
+            (
+                weights.par_chunks(FOLD_BLOCK),
+                input.par_chunks(2 * FOLD_BLOCK),
+                out.par_chunks_mut(FOLD_BLOCK),
+            )
+                .into_par_iter()
+                .map(|(w, values, z)| block(w, values, &mut [], z))
                 .reduce(pair::<W>, merge::<W>)
         };
         return reduce::<W>(ctx, acc);
     }
-    reduce::<W>(ctx, block(0, matrix_out, out))
+    reduce::<W>(ctx, block(weights, input, matrix_out, out))
 }
 
 pub(super) enum FoldedWitness {

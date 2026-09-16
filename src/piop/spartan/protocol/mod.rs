@@ -426,11 +426,15 @@ pub enum PiopWitness<'w> {
         bz: Cow<'w, [u64]>,
         cz: Cow<'w, [u64]>,
         assignment: &'w [u64],
+        /// Public constant block established by a typed witness constructor.
+        constant_prefix: Option<super::raw_monty::NativeConstantPrefix>,
     },
     /// Borrowed u64 operands, split products, and native assignment.
     NativeU64 {
         products: super::raw_monty::NativeWideProducts<'w, u64>,
         assignment: &'w [u64],
+        /// Public constant block established by a typed witness constructor.
+        constant_prefix: Option<super::raw_monty::NativeConstantPrefix>,
     },
     /// Borrowed u128 operands, split products, and segmented assignment.
     NativeU128 {
@@ -1938,6 +1942,7 @@ where
                 bz,
                 cz,
                 assignment,
+                constant_prefix,
             },
         ) => {
             let products = NativeProducts {
@@ -1946,7 +1951,13 @@ where
                 cz: &cz,
             };
             let (proof, claim) = prove_spartan_piop_native_u64_with_univariate_skip_borrowed(
-                transcript, matrices, binding, products, assignment, skip_vars,
+                transcript,
+                matrices,
+                binding,
+                products,
+                assignment,
+                skip_vars,
+                constant_prefix,
             )?;
             (SpartanProof::UnivariateSkip(proof), claim)
         }
@@ -1958,6 +1969,7 @@ where
                 bz,
                 cz,
                 assignment,
+                constant_prefix,
             },
         ) => {
             let products = NativeProducts {
@@ -1966,7 +1978,12 @@ where
                 cz: &cz,
             };
             let (proof, claim) = prove_spartan_piop_native_u64_borrowed(
-                transcript, matrices, binding, products, assignment,
+                transcript,
+                matrices,
+                binding,
+                products,
+                assignment,
+                constant_prefix,
             )?;
             (SpartanProof::Plain(proof), claim)
         }
@@ -1975,10 +1992,16 @@ where
             PiopWitness::NativeU64 {
                 products,
                 assignment,
+                constant_prefix,
             },
         ) => {
             let (proof, claim) = prove_spartan_piop_raw_products_native_assignment(
-                transcript, matrices, binding, products, assignment,
+                transcript,
+                matrices,
+                binding,
+                products,
+                assignment,
+                constant_prefix,
             )?;
             (SpartanProof::Plain(proof), claim)
         }

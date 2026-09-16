@@ -156,6 +156,41 @@ pub(super) fn wide_coefficients<const N: usize>(
     block(0, weights).map(|a| raw_shared(field::Reduce::reduce(f, a)))
 }
 
+/// Precompute the contribution of each public limb position to a first fold.
+/// With at most 32 limbs per input, the unreduced sum is below
+/// `64 * (q - 1) * (2^64 - 1) < q * 2^128`, so one REDC yields a canonical
+/// plain residue. All declared limbs are processed, including zero limbs.
+struct PreparedLimbFold<const N: usize> {
+    weights: [[Fp<2>; N]; 2],
+}
+
+impl<const N: usize> PreparedLimbFold<N> {
+    fn new(ctx: &field::FpCtx<2>, coefficients: [Fp<2>; 2]) -> Self {
+        assert!(N <= 32, "native fold exceeds the declared limb bound");
+        let radix = shared_raw(ctx, ctx.native_residue_u128(1u128 << 64));
+        let weights = coefficients.map(|coefficient| {
+            let mut weight = coefficient;
+            core::array::from_fn(|_| {
+                let current = weight;
+                weight = ctx.mul(&weight, &radix);
+                current
+            })
+        });
+        Self { weights }
+    }
+
+    #[inline(always)]
+    fn fold(&self, ctx: &field::FpCtx<2>, left: &Uint<N>, right: &Uint<N>) -> Uint<2> {
+        let mut accumulator = FpLinearAcc::<2, 1>::zero();
+        for (weights, value) in self.weights.iter().zip([left, right]) {
+            for (weight, &word) in weights.iter().zip(value.as_words()) {
+                accumulator.accumulate(weight, &Uint::from_u64(word));
+            }
+        }
+        Uint::from_words(raw_to_words(ctx.redc_linear(&accumulator)))
+    }
+}
+
 // FOLD_WEIGHTS is selected once by the dense/structured caller. Both forms
 // read each borrowed integer once, write canonical folds, and accumulate the
 // next message in the same traversal.
@@ -173,6 +208,7 @@ pub(super) fn wide_fold<const N: usize, const FOLD_WEIGHTS: bool>(
     let f = ctx;
     let challenge = shared_raw(f, challenge);
     let coefficients = [f.sub(&f.one(), &challenge), challenge];
+    let prepared_fold = PreparedLimbFold::<N>::new(ctx, coefficients);
     let zero = || [FpLinearAcc::<2, 2>::zero(); 2];
     let merge = |mut a: [FpLinearAcc<2, 2>; 2], b: [FpLinearAcc<2, 2>; 2]| {
         for i in 0..2 {
@@ -186,7 +222,7 @@ pub(super) fn wide_fold<const N: usize, const FOLD_WEIGHTS: bool>(
             let mut m = [0; 2];
             for j in 0..2 {
                 let i = start + 2 * pair + j;
-                z[j] = f.weighted_pair_to_integer(&coefficients, &[read(2 * i), read(2 * i + 1)]);
+                z[j] = prepared_fold.fold(ctx, &read(2 * i), &read(2 * i + 1));
                 m[j] = if FOLD_WEIGHTS {
                     ctx.interpolate(weights[2 * i], weights[2 * i + 1], raw_shared(challenge))
                 } else {
@@ -372,6 +408,63 @@ mod tests {
     use crate::transcript::Blake3Transcript;
 
     use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+    #[test]
+    fn prepared_limb_fold_matches_independent_bigint() {
+        use num_bigint::BigUint;
+        use num_traits::ToPrimitive;
+
+        fn check<const N: usize>() {
+            let mut rng = StdRng::seed_from_u64(0x6c69_6d62_666f_6c64 + N as u64);
+            for q in [(1u128 << 65) - 49, (1u128 << 100) - 15, u128::MAX - 158] {
+                let cfg = Field::make_cfg(&Uint::from_words(raw_to_words(q))).unwrap();
+                let ctx = field_context(&cfg);
+                let modulus = BigUint::from(q);
+                for case in 0..20 {
+                    let challenge = match case {
+                        0 => 0,
+                        1 => 1,
+                        2 => q - 1,
+                        _ => rng.random::<u128>() % q,
+                    };
+                    let left = Uint::<N>::from_words(core::array::from_fn(|_| match case {
+                        0 | 2 => u64::MAX,
+                        1 => 0,
+                        _ => rng.random(),
+                    }));
+                    let right = Uint::<N>::from_words(core::array::from_fn(|_| match case {
+                        0 => 0,
+                        1 | 2 => u64::MAX,
+                        _ => rng.random(),
+                    }));
+                    let c = shared_raw(&ctx, ctx.native_residue_u128(challenge));
+                    let prepared = PreparedLimbFold::new(&ctx, [ctx.sub(&ctx.one(), &c), c]);
+                    let integer = |value: &Uint<N>| {
+                        BigUint::from_bytes_le(
+                            &value
+                                .as_words()
+                                .iter()
+                                .flat_map(|v| v.to_le_bytes())
+                                .collect::<Vec<_>>(),
+                        )
+                    };
+                    let c = BigUint::from(challenge);
+                    let expected = ((&modulus + BigUint::from(1u8) - &c) * integer(&left)
+                        + c * integer(&right))
+                        % &modulus;
+                    assert_eq!(
+                        u128::from(prepared.fold(&ctx, &left, &right)),
+                        expected.to_u128().unwrap(),
+                        "N={N} q={q} case={case}"
+                    );
+                }
+            }
+        }
+        check::<1>();
+        check::<2>();
+        check::<4>();
+        check::<32>();
+    }
 
     #[test]
     fn limb_witness_matches_projected_dense_and_structured_rounds() {
