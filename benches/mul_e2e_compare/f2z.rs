@@ -1,4 +1,9 @@
 use super::{Corpus, Timing, Workload};
+#[cfg(feature = "bitz-parity")]
+use f2z::piop::spartan::protocol::{
+    OpeningProof, PreparedRelationPrefix, ProveOptions, RelationSpec,
+    bitz_opener::{self, BitzLigerito, BitzOpener},
+};
 use f2z::{
     piop::spartan::{
         Lambda100, PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation,
@@ -12,6 +17,92 @@ use f2z::{
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
+
+/// `F2Z_PCS=bitz`: discharge the bitified claim through BitZ's scheme
+/// (`protocol::bitz_opener`) instead of the crate's opener; then
+/// `F2Z_LIG_PROFILE` names the BitZ ladder (`fast` = as shipped, default;
+/// `udr:<r>:<k>`, `custom:<r>:<k>`).
+fn bitz_requested() -> bool {
+    match std::env::var("F2Z_PCS").as_deref() {
+        Ok("bitz") => true,
+        Ok("f2z") | Err(_) => false,
+        Ok(other) => panic!("F2Z_PCS must be f2z or bitz (got {other})"),
+    }
+}
+
+/// A relation prepared for the BitZ opener: the prime-independent prefix
+/// and the opener under its ladder.
+#[cfg(feature = "bitz-parity")]
+struct Bitz<S: RelationSpec> {
+    prefix: PreparedRelationPrefix<S>,
+    opener: BitzOpener,
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<S: RelationSpec> Bitz<S> {
+    fn new(spec: S) -> Self {
+        let ladder = match std::env::var("F2Z_LIG_PROFILE") {
+            Ok(request) => BitzLigerito::parse(&request, 100).expect("invalid F2Z_LIG_PROFILE for BitZ"),
+            Err(_) => BitzLigerito::Fast,
+        };
+        let prefix = PreparedRelationPrefix::new::<Lambda100>(spec).expect("BitZ relation prefix");
+        let opener = BitzOpener::new(prefix.params(), ladder, 100).expect("BitZ opener");
+        Self { prefix, opener }
+    }
+
+    /// Commit, prove and verify inside the bench's spans; the serialized
+    /// proof size (root, Spartan payload, boundary nonces, the BitZ
+    /// opening's narg string and hints).
+    fn prove_and_verify(&self, witness: &S::Witness, rows: Vec<Vec<u64>>, online: tracing::span::EnteredSpan, total: tracing::span::EnteredSpan, root: tracing::span::EnteredSpan) -> usize {
+        let hint = {
+            let _s = tracing::info_span!("native-mul:commit").entered();
+            self.opener.commit(rows).expect("BitZ commitment")
+        };
+        let proof = bitz_opener::prove(
+            &mut Blake3Transcript::new(),
+            &self.prefix,
+            &self.opener,
+            witness,
+            &hint,
+            ProveOptions::default(),
+        )
+        .expect("BitZ full proof");
+        drop(online);
+        drop(total);
+        {
+            let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
+            bitz_opener::verify(&mut Blake3Transcript::new(), &self.prefix, &self.opener, &hint.commitment, &proof)
+                .expect("BitZ full verification");
+        }
+        drop(root);
+        let bytes = hint.commitment.root.len()
+            + proof.spartan_payload_elements() * 16
+            + proof.grinding_nonce_count(self.prefix.security()) * 8
+            + proof.f2z().to_bytes().len();
+        std::hint::black_box(proof);
+        bytes
+    }
+
+    fn config(&self, config: &mut Value) {
+        let security = self.prefix.security();
+        let params = self.prefix.params();
+        let (bits, binding) = self.opener.opening_bits();
+        config["pcs"] = json!("BitZ/Ligerito");
+        config["bitz_ladder"] = json!(self.opener.ligerito().name());
+        config["bitz_opening_bits"] = json!(bits);
+        config["bitz_opening_binding"] = json!(binding);
+        config["modeled_min_bits"] = json!(security.accounting.achieved_bits().min(bits));
+        config["geometry"] = json!({"t":params.row_vars, "s":params.col_vars, "word_bits":params.word_bits});
+        config["ligerito"] = json!({
+            "resolved_profile": format!("bitz-{}", self.opener.ligerito().name()),
+            "regime": if self.opener.security().levels.first().is_some_and(|l| l.eta.is_some()) { "johnson" } else { "udr" },
+            "target_bits": self.opener.security().target_security_bits,
+            "configuration_fingerprint": self.opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "outer_ood": false,
+            "configuration": self.opener.security(),
+        });
+    }
+}
 
 /// `F2Z_U64_SPLIT_SHIFT=k`: lower the u64 F2Z row side by `k` variables
 /// below the layout's default split (raise the column side by `k`). An
@@ -27,6 +118,12 @@ enum Relation {
     U32(PreparedU32MulRelation),
     U64(PreparedU64MulRelation),
     U128(PreparedU128MulRelation),
+    #[cfg(feature = "bitz-parity")]
+    U32Bitz(Bitz<U32MulLayout>),
+    #[cfg(feature = "bitz-parity")]
+    U64Bitz(Bitz<U64MulLayout>),
+    #[cfg(feature = "bitz-parity")]
+    U128Bitz(Bitz<U128MulLayout>),
 }
 pub(super) struct Context {
     corpus: Arc<Corpus>,
@@ -37,6 +134,21 @@ impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         let n = corpus.len();
         let split_shift = if corpus.workload == Workload::U64 { u64_split_shift() } else { 0 };
+        if bitz_requested() {
+            #[cfg(feature = "bitz-parity")]
+            {
+                let relation = match corpus.workload {
+                    Workload::U32 => Relation::U32Bitz(Bitz::new(U32MulLayout::new(n).unwrap())),
+                    Workload::U64 => Relation::U64Bitz(Bitz::new(
+                        U64MulLayout::new(n).unwrap().with_split_shift(split_shift).unwrap(),
+                    )),
+                    Workload::U128 => Relation::U128Bitz(Bitz::new(U128MulLayout::new(n).unwrap())),
+                };
+                return Self { corpus, relation, split_shift };
+            }
+            #[cfg(not(feature = "bitz-parity"))]
+            panic!("F2Z_PCS=bitz needs the bitz-parity feature");
+        }
         let relation = match corpus.workload {
             Workload::U32 => {
                 let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(
@@ -113,6 +225,15 @@ impl Context {
                 config["ligerito"] =
                     super::common::ligerito_report(p.ligerito_configuration(), p.security().ood)
             }
+            #[cfg(feature = "bitz-parity")]
+            Relation::U32Bitz(b) => b.config(&mut config),
+            #[cfg(feature = "bitz-parity")]
+            Relation::U64Bitz(b) => {
+                b.config(&mut config);
+                config["u64_split_shift"] = json!(self.split_shift);
+            }
+            #[cfg(feature = "bitz-parity")]
+            Relation::U128Bitz(b) => b.config(&mut config),
             _ => {}
         }
         config
@@ -220,6 +341,38 @@ impl Context {
                 let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
                 bytes
+            }
+            #[cfg(feature = "bitz-parity")]
+            Relation::U32Bitz(bitz) => {
+                let witness = {
+                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
+                    U32MulWitness::from_inputs(&self.corpus.narrow_inputs()).expect("u32 witness")
+                };
+                let online = tracing::info_span!("native-mul:online").entered();
+                let rows = witness.f2z_bit_rows();
+                bitz.prove_and_verify(&witness, rows, online, total, root)
+            }
+            #[cfg(feature = "bitz-parity")]
+            Relation::U64Bitz(bitz) => {
+                let witness = {
+                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
+                    U64MulWitness::from_inputs(self.corpus.inputs())
+                        .and_then(|w| w.with_split_shift(self.split_shift))
+                        .expect("u64 witness")
+                };
+                let online = tracing::info_span!("native-mul:online").entered();
+                let rows = witness.f2z_bit_rows();
+                bitz.prove_and_verify(&witness, rows, online, total, root)
+            }
+            #[cfg(feature = "bitz-parity")]
+            Relation::U128Bitz(bitz) => {
+                let witness = {
+                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
+                    U128MulWitness::from_inputs(self.corpus.wide_inputs()).expect("u128 witness")
+                };
+                let online = tracing::info_span!("native-mul:online").entered();
+                let rows = witness.f2z_bit_rows();
+                bitz.prove_and_verify(&witness, rows, online, total, root)
             }
             Relation::U128(relation) => {
                 let witness = {

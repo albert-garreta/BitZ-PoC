@@ -23,7 +23,7 @@ TOOLCHAIN = "1.98.1"
 DEFAULT_SEED = 0x5533325043530064
 BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 10}
 CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDSPEC",
-             "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_LIG_PROFILE",
+             "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_LIG_PROFILE", "F2Z_PCS",
              "F2Z_U64_SPLIT_SHIFT", "F2Z_MUL_MEMORY_ONLY", "F2Z_BINIUS_LIGERITO_ACCOUNTING")
 LIGERITO_ACCOUNTING = {"union": "union-bound", "rbr": "round-by-round"}
 MEMORY_BOUNDARY = "fresh process: corpus generation, public setup, witness generation, commitment, proving, verification, and proof-size accounting; one verified proof, no warmup"
@@ -66,9 +66,13 @@ def configuration(env):
     # The F2Z opener profile is a campaign-wide choice, recorded like the
     # Binius rate: the paper carries one row per rate, so an ambient value
     # must never decide which one a run measured.
+    f2z_pcs = env.get("F2Z_PCS", "f2z")
+    if f2z_pcs not in ("f2z", "bitz"):
+        raise ValueError("F2Z_PCS must be f2z or bitz")
     f2z_profile = env.get("F2Z_LIG_PROFILE")
-    if f2z_profile is not None and not any(f2z_profile.startswith(p) for p in ("custom:", "udr:", "udrg:")):
-        raise ValueError("F2Z_LIG_PROFILE must name an explicit profile such as custom:1:4 or custom:3:4")
+    if f2z_profile is not None and not (any(f2z_profile.startswith(p) for p in ("custom:", "udr:", "udrg:"))
+                                        or (f2z_pcs == "bitz" and f2z_profile in ("fast", "udr"))):
+        raise ValueError("F2Z_LIG_PROFILE must name an explicit profile such as custom:1:4 or custom:3:4 (or fast/udr under F2Z_PCS=bitz)")
     # The u64 F2Z split shift is likewise campaign-wide and recorded: it moves
     # the row/column split of the u64 layout (t down, s up by the shift).
     shift_text = env.get("F2Z_U64_SPLIT_SHIFT")
@@ -103,7 +107,7 @@ def configuration(env):
         output = ROOT / output
     return dict(workloads=workloads, backends=backends, exponents=exponents, reps=reps,
                 threads=threads, seed=seed, seed_explicit="F2Z_BENCH_SEED" in env, memory=memory == "1",
-                binius_rate=binius_rate, f2z_profile=f2z_profile, u64_split_shift=u64_split_shift,
+                binius_rate=binius_rate, f2z_profile=f2z_profile, f2z_pcs=f2z_pcs, u64_split_shift=u64_split_shift,
                 ligerito_accounting=accounting, limber_bd_lambda=limber_bd_lambda,
                 output=output.resolve())
 
@@ -132,6 +136,8 @@ def campaign_environment(environment, config):
         env["F2Z_BINIUS_LOG_INV_RATE"] = str(config["binius_rate"])
     if config["f2z_profile"] is not None:
         env["F2Z_LIG_PROFILE"] = config["f2z_profile"]
+    if config.get("f2z_pcs", "f2z") == "bitz":
+        env["F2Z_PCS"] = "bitz"
     if config.get("u64_split_shift") is not None:
         env["F2Z_U64_SPLIT_SHIFT"] = str(config["u64_split_shift"])
     if config.get("ligerito_accounting") is not None:
@@ -346,8 +352,11 @@ def run_native(config, job, environment, machine):
     env = campaign_environment(environment, config)
     env.update(F2Z_MUL_COMPARE_WORKLOADS=" ".join(job["workloads"]),
                F2Z_MUL_COMPARE_BACKENDS=" ".join(job["backends"]), F2Z_MUL_COMPARE_OUTPUT_DIR=str(directory))
+    features = "bench-internals,native-mul-compare"
+    if config.get("f2z_pcs", "f2z") == "bitz":
+        features += ",bitz-parity"
     command = ["cargo", f"+{TOOLCHAIN}", "bench", "--bench", "mul_e2e_compare",
-               "--features", "bench-internals,native-mul-compare"]
+               "--features", features]
     run_logged(command, ROOT, env, directory / "cargo-bench.log")
     source = provenance(ROOT, machine, "bench", config["threads"]) | {"command": command}
     rows = [json.loads(line) for line in (directory / "samples.jsonl").read_text().splitlines()]
