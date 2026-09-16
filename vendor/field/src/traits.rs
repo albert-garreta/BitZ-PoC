@@ -8,6 +8,10 @@ use crate::{
 pub trait RingOps {
     type Elem: Copy + Send + Sync + CtEq + CtSelect;
     fn zero(&self) -> Self::Elem;
+    /// Allocate initialized additive identities. Providers with a zero bit
+    /// representation can request zeroed allocation without a serial fill.
+    fn zero_vec(&self, len: usize) -> Vec<Self::Elem> { vec![self.zero(); len] }
+
     fn one(&self) -> Self::Elem;
     fn add(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem;
     fn sub(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem;
@@ -44,6 +48,7 @@ impl<C: RingOps + ?Sized> RingOps for &C {
     fn zero(&self) -> Self::Elem {
         (**self).zero()
     }
+    fn zero_vec(&self, len: usize) -> Vec<Self::Elem> { (**self).zero_vec(len) }
     fn one(&self) -> Self::Elem {
         (**self).one()
     }
@@ -105,6 +110,22 @@ pub trait MergeAccumulator: Sized {
 pub trait Reduce<Input> {
     type Output;
     fn reduce(&self, input: Input) -> Self::Output;
+}
+
+/// A reusable linear combination of at most sixteen declared-width operands.
+/// Preparation depends only on the public coefficients and field context.
+/// Implementations must process every declared operand limb, including zeroes.
+pub trait PreparedLinearCombination<Src>: FieldOps {
+    type Prepared<'a, const TERMS: usize>: Send + Sync where Self: 'a;
+    fn prepare_linear_combination<const TERMS: usize>(
+        &self, coefficients: [Self::Elem; TERMS],
+    ) -> Self::Prepared<'_, TERMS>;
+    /// The preparation borrows its field context, so evaluation cannot use a
+    /// different modulus. `read` runs once per coefficient, in ascending order.
+    fn linear_combination<const TERMS: usize>(
+        prepared: &Self::Prepared<'_, TERMS>,
+        read: impl FnMut(usize) -> Src,
+    ) -> Self::Elem;
 }
 
 pub trait BatchFieldOps: FieldOps {

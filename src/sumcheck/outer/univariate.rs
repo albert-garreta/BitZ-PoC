@@ -7,6 +7,7 @@
 //! point.  The remaining row variables are then handled by the existing cubic
 //! outer sumcheck without changing its proof or transcript format.
 
+#[cfg(test)]
 use super::ordinary::prove_field_with_factors;
 use crate::piop::spartan::SpartanField as _;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
@@ -144,16 +145,13 @@ pub(crate) struct UnivariateSkipReductionOutput<F> {
     pub q_at_z: F,
 }
 
+#[cfg(test)]
 mod sealed {
     pub trait Sealed {}
 }
 
-/// Compile-time arithmetic layout for one supported prefix width.
-///
-/// Native-u32 kernels use signed interpolation sums for `A` and `B`, and a
-/// wider signed type for `C` and the residual.  The field-generic kernel below
-/// shares the same marker family while performing its arithmetic directly in
-/// `F`.
+/// Arithmetic layout for the independent native-u32 prefix reference.
+#[cfg(test)]
 pub(crate) trait PrefixSkipSpec: sealed::Sealed {
     const SKIP_VARS: usize;
     const BLOCK_LEN: usize;
@@ -162,6 +160,7 @@ pub(crate) trait PrefixSkipSpec: sealed::Sealed {
     type Residual;
 }
 
+#[cfg(test)]
 macro_rules! define_prefix_skip_spec {
     ($name:ident, $skip_vars:literal, $block_len:literal) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -179,9 +178,13 @@ macro_rules! define_prefix_skip_spec {
     };
 }
 
+#[cfg(test)]
 define_prefix_skip_spec!(PrefixSkipK1, 1, 2);
+#[cfg(test)]
 define_prefix_skip_spec!(PrefixSkipK2, 2, 4);
+#[cfg(test)]
 define_prefix_skip_spec!(PrefixSkipK3, 3, 8);
+#[cfg(test)]
 define_prefix_skip_spec!(PrefixSkipK4, 4, 16);
 
 const K1_EXTERIOR_NODES: [i32; 0] = [];
@@ -189,14 +192,22 @@ const K2_EXTERIOR_NODES: [i32; 2] = [-1, 4];
 const K3_EXTERIOR_NODES: [i32; 6] = [-1, 8, -2, 9, -3, 10];
 const K4_EXTERIOR_NODES: [i32; 14] = [-1, 16, -2, 17, -3, 18, -4, 19, -5, 20, -6, 21, -7, 22];
 
+#[cfg(test)]
 const K1_FINITE_LAGRANGE: [[i128; 2]; 0] = exterior_lagrange_coefficients(K1_EXTERIOR_NODES);
+#[cfg(test)]
 const K2_FINITE_LAGRANGE: [[i128; 4]; 2] = exterior_lagrange_coefficients(K2_EXTERIOR_NODES);
+#[cfg(test)]
 const K3_FINITE_LAGRANGE: [[i128; 8]; 6] = exterior_lagrange_coefficients(K3_EXTERIOR_NODES);
+#[cfg(test)]
 const K4_FINITE_LAGRANGE: [[i128; 16]; 14] = exterior_lagrange_coefficients(K4_EXTERIOR_NODES);
 
+#[cfg(test)]
 const K1_TOP_DIFFERENCE: [i128; 2] = top_difference_coefficients();
+#[cfg(test)]
 const K2_TOP_DIFFERENCE: [i128; 4] = top_difference_coefficients();
+#[cfg(test)]
 const K3_TOP_DIFFERENCE: [i128; 8] = top_difference_coefficients();
+#[cfg(test)]
 const K4_TOP_DIFFERENCE: [i128; 16] = top_difference_coefficients();
 
 const K1_VANISHING_AT_EXTERIOR: [i128; 0] = vanishing_at_nodes::<2, 0>(K1_EXTERIOR_NODES);
@@ -215,6 +226,7 @@ const K4_EXTERIOR_INTERPOLATION_DENOMINATORS: [i128; 14] =
 
 /// Computes the field-generic skip message in transcript order: all finite
 /// exterior coordinates, followed by `Q(infinity)`.
+#[cfg(test)]
 pub(crate) fn field_message<F>(
     skip_vars: usize,
     equality_factors: (&DenseMultilinearExtension<F>, &DenseMultilinearExtension<F>),
@@ -262,6 +274,7 @@ where
 
 /// Folds the first `K` little-endian variables of `Az`, `Bz`, and `Cz` at
 /// `z`, leaving field-valued tables over the suffix variables.
+#[cfg(test)]
 pub(crate) fn fold_field_lagrange<F>(
     products: R1csProductMles<F>,
     skip_vars: usize,
@@ -320,6 +333,51 @@ where
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
     validate_equality_factors((&equality_factors.0, &equality_factors.1), tau_tail.len())?;
+    let prepared = super::prepare_univariate_skip(field_cfg, skip_vars as u8)?;
+    let rows = super::inputs::SliceRows {
+        ax: &products.az.evaluations,
+        bx: &products.bz.evaluations,
+        cx: &products.cz.evaluations,
+    };
+    let factors = super::ordinary::EqualityFactors::new(
+        equality_factors.0.evaluations,
+        equality_factors.1.evaluations,
+        field_cfg,
+    );
+    // Compatibility argument: arithmetic capabilities now belong to the field.
+    let _ = reducer;
+    super::univariate_api::prove_skip_from_rows(
+        field_cfg,
+        transcript,
+        &prepared,
+        tau_tail,
+        &rows,
+        Some(factors),
+        &mut crate::sumcheck::UngrindedRoundBoundary,
+    )
+    .map(Into::into)
+}
+
+/// Independent projected-field prefix reference.
+#[cfg(test)]
+pub(crate) fn prove_field_skip_with_factors_reference<F, R>(
+    transcript: &mut impl Transcript,
+    skip_vars: usize,
+    tau_tail: &[F],
+    equality_factors: (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
+    products: R1csProductMles<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+) -> Result<UnivariateSkipOuterSumcheckOutput<F>, SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    validate_products_for_skip(skip_vars, &products)?;
+    if tau_tail.len() != products.az.num_vars - skip_vars {
+        return Err(SumcheckError::InvalidEqualityDimensions);
+    }
+    validate_equality_factors((&equality_factors.0, &equality_factors.1), tau_tail.len())?;
 
     let message = {
         let _scope = tracing::info_span!("spartan:univariate_skip_message").entered();
@@ -338,7 +396,7 @@ where
     };
     let tail = {
         let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
-        prove_field_with_factors(
+        super::ordinary::prove_field_with_boundary_reference(
             transcript,
             reduction.q_at_z,
             tau_tail,
@@ -346,6 +404,7 @@ where
             folded,
             field_cfg,
             reducer,
+            &mut crate::sumcheck::UngrindedRoundBoundary,
         )?
     };
 
@@ -535,6 +594,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn field_message_for_layout<F, const BLOCK_LEN: usize, const FINITE_COUNT: usize>(
     equality_factors: (&DenseMultilinearExtension<F>, &DenseMultilinearExtension<F>),
     products: &R1csProductMles<F>,
@@ -732,6 +792,7 @@ fn skip_message_len(skip_vars: usize) -> Option<usize> {
         .then(|| (1usize << skip_vars) - 1)
 }
 
+#[cfg(test)]
 fn equality_weight<F>(
     equality_factors: (&DenseMultilinearExtension<F>, &DenseMultilinearExtension<F>),
     suffix: usize,
@@ -798,6 +859,7 @@ where
         .collect()
 }
 
+#[cfg(test)]
 fn inner_product<F>(weights: &[F], values: &[F], zero: &F, field_config: &F::Config) -> F
 where
     F: SpartanField,
@@ -855,6 +917,7 @@ where
     result
 }
 
+#[cfg(test)]
 const fn exterior_lagrange_coefficients<const BLOCK_LEN: usize, const FINITE_COUNT: usize>(
     nodes: [i32; FINITE_COUNT],
 ) -> [[i128; BLOCK_LEN]; FINITE_COUNT] {
@@ -881,6 +944,7 @@ const fn exterior_lagrange_coefficients<const BLOCK_LEN: usize, const FINITE_COU
     result
 }
 
+#[cfg(test)]
 const fn top_difference_coefficients<const BLOCK_LEN: usize>() -> [i128; BLOCK_LEN] {
     let degree = BLOCK_LEN - 1;
     let mut result = [0_i128; BLOCK_LEN];
@@ -1147,6 +1211,22 @@ mod tests {
                 &reducer,
             )
             .unwrap();
+            let mut reference_transcript = Blake3Transcript::new();
+            let reference = prove_field_skip_with_factors_reference(
+                &mut reference_transcript,
+                skip_vars,
+                &tau_tail,
+                equality_factors.clone(),
+                products.clone(),
+                &field_cfg,
+                &reducer,
+            )
+            .unwrap();
+            assert_eq!(output, reference);
+            assert_eq!(
+                prover_transcript.state_digest(),
+                reference_transcript.state_digest()
+            );
             let direct_reduction = direct_skip
                 .verify_reduction(&mut direct_tail_transcript, &field_cfg)
                 .unwrap();
@@ -1261,39 +1341,4 @@ mod tests {
             _ => &[],
         }
     }
-}
-
-pub(super) fn prepared_weights<E: SpartanField>(
-    k: usize,
-    field: &E::Config,
-) -> Result<(Vec<Vec<E>>, Vec<E>), SumcheckError> {
-    fn convert<E: SpartanField, const M: usize, const N: usize>(
-        finite: &[[i128; M]; N],
-        top: &[i128; M],
-        field: &E::Config,
-    ) -> (Vec<Vec<E>>, Vec<E>) {
-        let finite = finite
-            .iter()
-            .map(|w| w.iter().map(|&x| field_from_signed(x, field)).collect())
-            .collect();
-        let scale = *field::FieldOps::inverse_ct(
-            field,
-            &(1..M).fold(field.one(), |acc, i| {
-                field.mul(&acc, &field_from_usize(i, field))
-            }),
-        )
-        .value();
-        let top = top
-            .iter()
-            .map(|&x| field.mul(&scale, &field_from_signed(x, field)))
-            .collect();
-        (finite, top)
-    }
-    Ok(match k {
-        1 => convert(&K1_FINITE_LAGRANGE, &K1_TOP_DIFFERENCE, field),
-        2 => convert(&K2_FINITE_LAGRANGE, &K2_TOP_DIFFERENCE, field),
-        3 => convert(&K3_FINITE_LAGRANGE, &K3_TOP_DIFFERENCE, field),
-        4 => convert(&K4_FINITE_LAGRANGE, &K4_TOP_DIFFERENCE, field),
-        _ => return Err(SumcheckError::InvalidProductDimensions),
-    })
 }

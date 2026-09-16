@@ -14,6 +14,12 @@ where
 {
     type Accumulator: Send;
 
+    type PreparedReduction<'a>: Send + Sync where Self: 'a;
+    fn prepare_reduction(&self, max_terms: usize, config: &F::Config) -> Self::PreparedReduction<'_>;
+    fn reduce_prepared(&self, accumulator: Self::Accumulator, prepared: &Self::PreparedReduction<'_>, config: &F::Config) -> Result<F, SumcheckError> {
+        let _ = prepared;
+        self.reduce(accumulator, config)
+    }
     fn accumulator_zero(&self) -> Self::Accumulator;
     fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F);
     fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
@@ -22,6 +28,17 @@ where
         accumulator: Self::Accumulator,
         config: &F::Config,
     ) -> Result<F, SumcheckError>;
+    /// The caller bounds every MAC contributing to this exact accumulator,
+    /// including merged workers, using public dimensions only.
+    fn reduce_bounded(
+        &self,
+        accumulator: Self::Accumulator,
+        max_terms: usize,
+        config: &F::Config,
+    ) -> Result<F, SumcheckError> {
+        let _ = max_terms;
+        self.reduce(accumulator, config)
+    }
 }
 
 /// Native-linear accumulation policy used only at the u32 prover's first
@@ -46,6 +63,14 @@ pub(crate) trait SumcheckLinearReducer: Sync {
 
 impl<const L: usize> SumcheckProductReducer<Fp<L>> for field::FpCtx<L> {
     type Accumulator = field::FpProductAcc<L>;
+    type PreparedReduction<'a> = field::PreparedProductReduction<'a, L>;
+    fn prepare_reduction(&self, max_terms: usize, _: &Self) -> Self::PreparedReduction<'_> {
+        self.prepare_product_reduction(max_terms)
+    }
+    #[inline(always)]
+    fn reduce_prepared(&self, acc: Self::Accumulator, prepared: &Self::PreparedReduction<'_>, _: &Self) -> Result<Fp<L>, SumcheckError> {
+        Ok(prepared.reduce(acc))
+    }
     #[inline]
     fn accumulator_zero(&self) -> Self::Accumulator {
         Self::Accumulator::default()
@@ -61,6 +86,15 @@ impl<const L: usize> SumcheckProductReducer<Fp<L>> for field::FpCtx<L> {
     #[inline]
     fn reduce(&self, acc: Self::Accumulator, _field: &Self) -> Result<Fp<L>, SumcheckError> {
         Ok(field::Reduce::reduce(self, acc))
+    }
+    #[inline]
+    fn reduce_bounded(
+        &self,
+        acc: Self::Accumulator,
+        max_terms: usize,
+        _field: &Self,
+    ) -> Result<Fp<L>, SumcheckError> {
+        Ok(self.reduce_product_with_public_bound(acc, max_terms))
     }
 }
 
@@ -129,6 +163,9 @@ impl BigUintSumcheckOracle {
 #[cfg(test)]
 impl SumcheckProductReducer<Fp<2>> for BigUintSumcheckOracle {
     type Accumulator = num_bigint::BigUint;
+    type PreparedReduction<'a> = ();
+    fn prepare_reduction(&self, _: usize, _: &field::FpCtx<2>) {}
+
     fn accumulator_zero(&self) -> Self::Accumulator {
         num_bigint::BigUint::from(0u8)
     }
@@ -196,6 +233,31 @@ where
 {
     let [c0, c2] = accumulators;
     Ok([reducer.reduce(c0, config)?, reducer.reduce(c2, config)?])
+}
+
+#[inline(always)]
+pub(crate) fn reduce_two_prepared<F: SpartanField, R: SumcheckProductReducer<F>>(
+    [a, b]: [R::Accumulator; 2], reducer: &R, prepared: &R::PreparedReduction<'_>, config: &F::Config,
+) -> Result<[F; 2], SumcheckError> {
+    Ok([reducer.reduce_prepared(a, prepared, config)?, reducer.reduce_prepared(b, prepared, config)?])
+}
+
+#[inline]
+pub(crate) fn reduce_two_accumulators_bounded<F, R>(
+    accumulators: [R::Accumulator; 2],
+    reducer: &R,
+    max_terms: usize,
+    config: &F::Config,
+) -> Result<[F; 2], SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+{
+    let [a, b] = accumulators;
+    Ok([
+        reducer.reduce_bounded(a, max_terms, config)?,
+        reducer.reduce_bounded(b, max_terms, config)?,
+    ])
 }
 
 pub(crate) fn sum_product_accumulators<F, R, const COEFFS: usize>(
@@ -382,6 +444,16 @@ pub(crate) fn should_parallelize(work_items: usize) -> bool {
     work_items >= PARALLEL_SUMCHECK_THRESHOLD && rayon::current_num_threads() > 1
 }
 
+/// Fused outer folds perform six interpolations per output pair. Smaller
+/// public tails still justify four independent 512-pair blocks.
+#[cfg(feature = "parallel")]
+pub(crate) fn parallel_outer_fold(pairs: usize) -> bool {
+    pairs >= 2048 && rayon::current_num_threads() > 1
+}
+pub(crate) fn outer_fold_grain(pairs: usize) -> usize {
+    if pairs < 8192 { 512 } else { 1024 }
+}
+
 #[inline]
 pub(crate) fn interpolate_pair<F>(zero: &F, one: &F, challenge: &F, field_config: &F::Config) -> F
 where
@@ -422,7 +494,7 @@ pub(crate) fn has_dense_shape<F>(mle: &DenseMultilinearExtension<F>) -> bool {
     mle.num_vars < usize::BITS as usize && mle.evaluations.len() == 1usize << mle.num_vars
 }
 
-#[inline]
+#[inline(always)]
 pub(crate) fn fold_two_pairs<F>(values: &[F], challenge: &F, field_config: &F::Config) -> [F; 2]
 where
     F: SpartanField,

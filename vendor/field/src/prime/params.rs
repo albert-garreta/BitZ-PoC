@@ -122,9 +122,21 @@ impl<const L: usize> PrimeParameters<L> {
     }
     #[inline]
     pub fn sub(&self, a: &Uint<L>, b: &Uint<L>) -> Uint<L> {
+        if L == 2 {
+            let lhs = a.0[0] as u128 | ((a.0[1] as u128) << 64);
+            let rhs = b.0[0] as u128 | ((b.0[1] as u128) << 64);
+            let modulus = self.modulus.0[0] as u128 | ((self.modulus.0[1] as u128) << 64);
+            let (difference, borrow) = lhs.overflowing_sub(rhs);
+            let mask = 0u128.wrapping_sub(borrow as u128);
+            let result = difference.wrapping_add(modulus & mask);
+            return Uint(core::array::from_fn(|i| (result >> (64 * i)) as u64));
+        }
         let (difference, borrow) = a.sbb(b);
-        let corrected = difference.adc(&self.modulus).0;
-        Uint::ct_select(&difference, &corrected, CtMask::from_lsb(borrow))
+        // Mask only the correction, rather than selecting two full results.
+        // The discarded carry cancels the wrapping subtraction's borrow.
+        let mask = CtMask::from_lsb(borrow).word();
+        let correction = Uint(core::array::from_fn(|i| self.modulus.0[i] & mask));
+        difference.adc(&correction).0
     }
     #[inline]
     pub fn neg(&self, a: &Uint<L>) -> Uint<L> {

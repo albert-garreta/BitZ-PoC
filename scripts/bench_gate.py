@@ -32,6 +32,14 @@ ABORTED = 86
 
 
 def idle_percent() -> float:
+    if sys.platform.startswith("linux"):
+        def counters():
+            values = list(map(int, Path("/proc/stat").read_text().splitlines()[0].split()[1:9]))
+            return sum(values), values[3] + values[4]
+        total0, idle0 = counters()
+        time.sleep(1)
+        total1, idle1 = counters()
+        return 100.0 * (idle1 - idle0) / max(1, total1 - total0)
     if sys.platform != "darwin":
         raise SystemExit("bench_gate.py knows only the macOS idle probe")
     out = subprocess.run(["top", "-l", "2", "-n", "0", "-s", "1"],
@@ -44,6 +52,10 @@ def idle_percent() -> float:
 
 
 def swap_used_gb() -> float:
+    if sys.platform.startswith("linux"):
+        values = {line.split(":", 1)[0]: int(line.split()[1])
+                  for line in Path("/proc/meminfo").read_text().splitlines()}
+        return (values["SwapTotal"] - values["SwapFree"]) / (1024 * 1024)
     out = subprocess.run(["sysctl", "-n", "vm.swapusage"],
                          capture_output=True, text=True, check=True).stdout
     match = re.search(r"used = ([\d.]+)([MG])", out)

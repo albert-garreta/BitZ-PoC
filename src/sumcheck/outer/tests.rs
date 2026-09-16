@@ -12,6 +12,140 @@ use field::{Fp, FpCtx, IntegerEmbedding, RingOps, Uint, Z};
 fn field() -> FpCtx<2> {
     Fp::<2>::make_cfg(&Uint::from((1u128 << 100) - 15)).unwrap()
 }
+
+#[test]
+fn prepared_mixed_folds_and_signed_buckets_match_bigint() {
+    use field::{PreparedLinearCombination, PreparedWordWeights, UintAccumulator};
+    use num_bigint::{BigInt, BigUint, Sign};
+    fn check<const L: usize, const N: usize>(p: Uint<L>) {
+        let f = field::create_prime_field(p);
+        let bytes = |words: &[u64]| {
+            words
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let modulus = BigInt::from_bytes_le(Sign::Plus, &bytes(p.as_words()));
+        let values: [Z<N>; 16] = core::array::from_fn(|i| {
+            Z::from_twos_complement_words(core::array::from_fn(|j| match i % 4 {
+                0 => u64::MAX,
+                1 => {
+                    if j == N - 1 {
+                        1u64 << 63
+                    } else {
+                        0
+                    }
+                }
+                2 => {
+                    if j == N - 1 {
+                        u64::MAX >> 1
+                    } else {
+                        u64::MAX
+                    }
+                }
+                _ => (i as u64)
+                    .wrapping_mul(0x9e3779b97f4a7c15)
+                    .rotate_left(j as u32),
+            }))
+        });
+        let coefficients: Vec<_> = (0..16).map(|i| f.from_integer(&(u128::MAX - i))).collect();
+        let expected = |count: usize| {
+            let total: BigInt = (0..count)
+                .map(|i| {
+                    let c = BigInt::from_bytes_le(
+                        Sign::Plus,
+                        &bytes(f.to_integer(&coefficients[i % 16]).as_words()),
+                    );
+                    let v = BigInt::from_signed_bytes_le(&bytes(values[i % 16].as_words()));
+                    c * v
+                })
+                .sum();
+            ((total % &modulus + &modulus) % &modulus)
+                .to_biguint()
+                .unwrap()
+        };
+        macro_rules! check_fold {
+            ($count:literal) => {{
+                let prepared =
+                    <FpCtx<L> as PreparedLinearCombination<Z<N>>>::prepare_linear_combination(
+                        &f,
+                        core::array::from_fn::<_, $count, _>(|i| coefficients[i]),
+                    );
+                let actual = <FpCtx<L> as PreparedLinearCombination<Z<N>>>::linear_combination(
+                    &prepared,
+                    |i| values[i],
+                );
+                assert_eq!(
+                    BigUint::from_bytes_le(&bytes(f.to_integer(&actual).as_words())),
+                    expected($count)
+                );
+            }};
+        }
+        check_fold!(1);
+        check_fold!(2);
+        check_fold!(8);
+        check_fold!(16);
+        let prepared = PreparedWordWeights::<L, N>::signed(&f, &coefficients);
+        let mut acc = UintAccumulator::ZERO;
+        for i in 0..257 {
+            prepared.accumulate_signed::<N>(&mut acc, i % 16, values[i % 16]);
+        }
+        let actual = prepared.finish(&f, acc);
+        assert_eq!(
+            BigUint::from_bytes_le(&bytes(f.to_integer(&actual).as_words())),
+            expected(257)
+        );
+    }
+    check::<1, 1>(Uint::from_words([(1u64 << 61) - 1]));
+    check::<1, 4>(Uint::from_words([(1u64 << 61) - 1]));
+    for p in [(1u128 << 100) - 15, (1u128 << 127) - 1, u128::MAX - 158] {
+        check::<2, 1>(Uint::from(p));
+        check::<2, 2>(Uint::from(p));
+        check::<2, 4>(Uint::from(p));
+        check::<2, 9>(Uint::from(p));
+        check::<2, 32>(Uint::from(p));
+    }
+}
+
+#[test]
+fn signed_bucket_public_width_preserves_unsigned_top_bit() {
+    use field::{PreparedWordWeights, UintAccumulator};
+    use num_bigint::BigInt;
+    let f = field();
+    let coefficients = [f.zero(), f.one(), f.from_integer(&123456789u64)];
+    let prepared = PreparedWordWeights::<2, 5>::signed(&f, &coefficients);
+    let modulus = BigInt::from((1u128 << 100) - 15);
+    let mut acc = UintAccumulator::ZERO;
+    let mut expected = BigInt::from(0);
+    for words in [[0; 4], [u64::MAX; 4], [0, 0, 0, 1u64 << 63], [1, 0, 0, 0]] {
+        let positive = Z::from_twos_complement_words([words[0], words[1], words[2], words[3], 0]);
+        for value in [positive, -positive] {
+            for (index, coefficient) in coefficients.iter().enumerate() {
+                prepared.accumulate_signed::<4>(&mut acc, index, value);
+                let bytes: Vec<_> = value
+                    .as_words()
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect();
+                expected += BigInt::from_signed_bytes_le(&bytes)
+                    * BigInt::from(u128::from(f.to_integer(coefficient)));
+            }
+        }
+        // Leave an uncancelled term, including values with bit 255 set.
+        prepared.accumulate_signed::<4>(&mut acc, 2, positive);
+        let bytes: Vec<_> = positive
+            .as_words()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        expected += BigInt::from_signed_bytes_le(&bytes) * BigInt::from(123456789u64);
+    }
+    let expected = (expected % &modulus + &modulus) % &modulus;
+    assert_eq!(
+        BigInt::from(u128::from(f.to_integer(&prepared.finish(&f, acc)))),
+        expected
+    );
+}
 fn fe(f: &FpCtx<2>, v: u64) -> Fp<2> {
     f.from_integer(&v)
 }
@@ -175,6 +309,20 @@ fn skip_all_widths_matches_preserved_native_kernel() {
                 bz: &b,
                 cz: &c,
             };
+            let mut reference_transcript = Blake3Transcript::new();
+            let reference = native_skip::prove_native_skip_reference(
+                &mut reference_transcript,
+                &f,
+                k,
+                &tau,
+                lo.clone(),
+                hi.clone(),
+                native,
+            )
+            .unwrap();
+            let actual: univariate::UnivariateSkipOuterSumcheckOutput<_> = got.clone().into();
+            assert_eq!(actual, reference);
+            assert_eq!(prover.state_digest(), reference_transcript.state_digest());
             let message =
                 native_skip::encoded_native_message(&f, usize::from(k), &lo, &hi, native, &f, &f)
                     .unwrap();
@@ -188,7 +336,7 @@ fn skip_all_widths_matches_preserved_native_kernel() {
             let folded =
                 native_skip::fold_encoded_lagrange(usize::from(k), native, &reduction.z, &f)
                     .unwrap();
-            let tail = arithmetic::prove_encoded(
+            let tail = arithmetic::prepare_encoded_reference(
                 &mut expected_transcript,
                 &f,
                 &f,
@@ -197,6 +345,8 @@ fn skip_all_widths_matches_preserved_native_kernel() {
                 lo,
                 hi,
                 folded,
+                &mut UngrindedRoundBoundary,
+                false,
             )
             .unwrap();
             assert_eq!(got.tail, tail.into());
@@ -297,6 +447,17 @@ fn invalid_shape_and_singleton_claim_rejected() {
     );
     assert!(prepare_univariate_skip(&f, 0).is_err());
     assert!(prepare_univariate_skip(&f, 5).is_err());
+    assert_eq!(
+        prove_outer_sumcheck_direct_reference(
+            &mut Blake3Transcript::new(),
+            f.one(),
+            &[],
+            tables(&f, &[1], &[1], &[1]),
+            &f,
+        )
+        .unwrap_err(),
+        SumcheckError::InvalidTerminalClaim,
+    );
 }
 struct ZeroChallenges;
 impl Transcript for ZeroChallenges {
@@ -399,7 +560,7 @@ fn encoded_zero_prefix_preserves_grinding_rounds_and_transcript() {
     let eq = crate::piop::spartan::matrix::make_equality_factors(&tau, &f).unwrap();
     let mut reference = Blake3Transcript::new();
     let mut reference_boundary = ProverGrindingRoundBoundary::<Domain>::with_round_offset(3, 0);
-    let expected = ordinary::prove_field_with_boundary(
+    let expected = ordinary::prove_field_with_boundary_reference(
         &mut reference,
         f.zero(),
         &tau,
@@ -515,5 +676,280 @@ fn parallel_first_fold_matches_serial_and_allows_concurrent_proofs() {
             assert_eq!(left, expected);
             assert_eq!(right, expected);
         }
+    }
+}
+
+#[test]
+fn unsigned_preparation_can_be_reused_for_signed_values() {
+    use field::PreparedLinearCombination;
+    let f = field();
+    let p =
+        <FpCtx<2> as PreparedLinearCombination<Uint<1>>>::prepare_linear_combination(&f, [f.one()]);
+    let v = <FpCtx<2> as PreparedLinearCombination<Z<1>>>::linear_combination(&p, |_| Z::ONE);
+    assert_eq!(v, f.one());
+}
+
+#[test]
+fn zero_vectors_are_initialized_field_identities() {
+    let f = field();
+    for size in [0, 1, 17, 4096] {
+        let mut v = f.zero_vec(size);
+        assert_eq!(v, vec![f.zero(); size]);
+        for x in &mut v {
+            *x = f.add(x, &f.one());
+        }
+        assert!(v.iter().all(|x| *x == f.one()));
+        assert_eq!((&f).zero_vec(size), vec![f.zero(); size]);
+    }
+}
+
+#[test]
+fn bounded_product_reduction_matches_biguint_across_fast_path_boundary() {
+    use field::FpProductAcc;
+    use num_bigint::BigUint;
+    for p in [(1u128 << 100) - 15, (1u128 << 127) - 1, u128::MAX - 158] {
+        let f = FpCtx::from_prime_u128(p);
+        let a = f.from_integer(&(p - 1));
+        let b = f.from_integer(&(p - 2));
+        let expected_product = BigUint::from(p - 1) * BigUint::from(p - 2);
+        assert_eq!(
+            f.reduce_product_with_public_bound(FpProductAcc::default(), 0),
+            f.zero()
+        );
+        let mut accumulator = FpProductAcc::default();
+        accumulator.accumulate(&a, &b);
+        // Exact merges cross m*p <= R without allocating enormous tables.
+        for power in 0..=29 {
+            let terms = 1usize << power;
+            let expected = (&expected_product * BigUint::from(terms)) % BigUint::from(p);
+            let result = f.reduce_product_with_public_bound(accumulator, terms);
+            assert_eq!(BigUint::from(u128::from(f.to_integer(&result))), expected);
+            let loose = f.reduce_product_with_public_bound(accumulator, terms + 1);
+            assert_eq!(loose, result);
+            accumulator += accumulator;
+        }
+        let mut accumulator = FpProductAcc::default();
+        for terms in 1..=7 {
+            accumulator.accumulate(&a, &b);
+            let result = f.reduce_product_with_public_bound(accumulator, terms);
+            let expected = (&expected_product * BigUint::from(terms)) % BigUint::from(p);
+            assert_eq!(BigUint::from(u128::from(f.to_integer(&result))), expected);
+        }
+    }
+}
+
+#[test]
+fn production_adapters_match_retained_ordinary_arithmetic() {
+    use crate::piop::spartan::raw_monty::make_equality_factors_raw;
+    use arithmetic::{NativeInput, NativeProducts, NativeWideProducts};
+    use field::WideMul;
+    let f = field();
+    for n in 0..=5 {
+        let rows = 1usize << n;
+        let live = if n == 0 { 1 } else { rows - 1 };
+        let tau: Vec<_> = (0..n).map(|i| fe(&f, [0, 1, 7][i % 3])).collect();
+        for known_zero in [false, true] {
+            let a32: Vec<u64> = (0..rows).map(|i| u64::from(u32::MAX) - i as u64).collect();
+            let b32 = a32.clone();
+            let mut c32: Vec<_> = a32.iter().zip(&b32).map(|(a, b)| a * b).collect();
+            let a64: Vec<_> = (0..live).map(|i| u64::MAX - i as u64).collect();
+            let b64 = a64.clone();
+            let full64: Vec<_> = a64.iter().map(|a| *a as u128 * *a as u128).collect();
+            let mut lo64: Vec<_> = full64.iter().map(|c| *c as u64).collect();
+            let hi64: Vec<_> = full64.iter().map(|c| (c >> 64) as u64).collect();
+            let a128: Vec<_> = (0..live).map(|i| u128::MAX - i as u128).collect();
+            let b128 = a128.clone();
+            let full128: Vec<_> = a128
+                .iter()
+                .map(|a| field::IntegerOps.mul_wide(&Uint::<2>::from(*a), &Uint::<2>::from(*a)))
+                .collect();
+            let mut lo128: Vec<_> = full128
+                .iter()
+                .map(|c| u128::from(Uint::from_words(*c.as_parts().0)))
+                .collect();
+            let hi128: Vec<_> = full128
+                .iter()
+                .map(|c| u128::from(Uint::from_words(*c.as_parts().1)))
+                .collect();
+            let claim = if known_zero {
+                f.zero()
+            } else {
+                c32[0] -= 1;
+                lo64[0] -= 1;
+                lo128[0] -= 1;
+                eq_table(&tau, &f).unwrap()[0]
+            };
+            for input in [
+                NativeInput::U32(NativeProducts {
+                    az: &a32,
+                    bz: &b32,
+                    cz: &c32,
+                }),
+                NativeInput::U64(NativeWideProducts::new(&a64, &b64, &lo64, &hi64, rows)),
+                NativeInput::U128(NativeWideProducts::new(&a128, &b128, &lo128, &hi128, rows)),
+            ] {
+                let (low, high) = make_equality_factors_raw(&f, &tau);
+                let mut expected_t = Blake3Transcript::new();
+                let expected = arithmetic::prove_native_reference(
+                    &mut expected_t,
+                    &f,
+                    &f,
+                    claim,
+                    &tau,
+                    low.clone(),
+                    high.clone(),
+                    input,
+                    known_zero,
+                )
+                .unwrap();
+                let mut actual_t = Blake3Transcript::new();
+                let actual = if known_zero {
+                    arithmetic::prove_native_zerocheck(&mut actual_t, &f, &tau, low, high, input)
+                } else {
+                    arithmetic::prove_native(&mut actual_t, &f, &f, claim, &tau, low, high, input)
+                }
+                .unwrap();
+                assert_eq!(actual, expected);
+                assert_eq!(actual_t.state_digest(), expected_t.state_digest());
+            }
+        }
+    }
+}
+
+#[test]
+fn skip_zero_one_coordinates_vanishing_scale_and_grinding() {
+    use crate::sumcheck::boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary};
+    struct Domain;
+    impl crate::piop::spartan::grinding::GrindingDomain for Domain {
+        const DOMAIN: &'static [u8] = b"generic-skip-boundary-test/v1";
+    }
+    let f = field();
+    for k in 1..=4u8 {
+        let a: Vec<u64> = (0..1usize << (k + 2))
+            .map(|i| u64::MAX - i as u64)
+            .collect();
+        let b: Vec<u64> = a.iter().map(|v| v.rotate_left(23)).collect();
+        let c: Vec<u128> = a
+            .iter()
+            .zip(&b)
+            .map(|(a, b)| *a as u128 * *b as u128)
+            .collect();
+        let tau = [f.one(), f.zero()];
+        let prepared = prepare_univariate_skip(&f, k).unwrap();
+        let out = prove_outer_zerocheck_with_skip_from_slices(
+            &f,
+            &mut ZeroChallenges,
+            &prepared,
+            &tau,
+            &a,
+            &b,
+            &c,
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        assert_eq!(out.prefix_challenge, f.zero());
+        assert_eq!(out.tail.final_claim, f.zero());
+        verify_outer_zerocheck_with_skip(
+            &f,
+            &mut ZeroChallenges,
+            &prepared,
+            &tau,
+            &out.prefix,
+            &out.tail.proof,
+            out.tail.evaluations,
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        let mut prover = Blake3Transcript::new();
+        let mut boundary = ProverGrindingRoundBoundary::<Domain>::with_round_offset(3, 0);
+        let out = prove_outer_zerocheck_with_skip_from_slices(
+            &f,
+            &mut prover,
+            &prepared,
+            &tau,
+            &a,
+            &b,
+            &c,
+            &mut boundary,
+        )
+        .unwrap();
+        let nonces = boundary.into_nonces();
+        assert_eq!(nonces.len(), tau.len());
+        let mut verifier = Blake3Transcript::new();
+        let mut boundary = VerifierGrindingRoundBoundary::<Domain>::new(3, &nonces);
+        verify_outer_zerocheck_with_skip(
+            &f,
+            &mut verifier,
+            &prepared,
+            &tau,
+            &out.prefix,
+            &out.tail.proof,
+            out.tail.evaluations,
+            &mut boundary,
+        )
+        .unwrap();
+        assert_eq!(prover.state_digest(), verifier.state_digest());
+    }
+}
+
+#[cfg(feature = "parallel")]
+#[test]
+fn skip_all_k_serial_parallel_proofs_and_transcripts_match() {
+    let serial = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+    let parallel = rayon::ThreadPoolBuilder::new()
+        .num_threads(10)
+        .build()
+        .unwrap();
+    let f = field();
+    for k in 1..=4u8 {
+        // Both message buckets and fused prefix folding cross their cutoffs.
+        let n = usize::from(k) + 12;
+        let a: Vec<u128> = (0..1usize << n).map(|i| u128::MAX - i as u128).collect();
+        let b: Vec<_> = a.iter().map(|v| v.rotate_left(29)).collect();
+        let c: Vec<Uint<4>> = a
+            .iter()
+            .zip(&b)
+            .map(|(a, b)| {
+                use field::WideMul;
+                *field::IntegerOps
+                    .mul_wide(&Uint::<2>::from(*a), &Uint::<2>::from(*b))
+                    .checked_resize_ct()
+                    .value()
+            })
+            .collect();
+        let tau: Vec<_> = (0..12).map(|i| fe(&f, [0, 1, 7][i % 3])).collect();
+        let prepared = prepare_univariate_skip(&f, k).unwrap();
+        let prove = || {
+            let mut prover = Blake3Transcript::new();
+            let out = prove_outer_zerocheck_with_skip_from_slices(
+                &f,
+                &mut prover,
+                &prepared,
+                &tau,
+                &a,
+                &b,
+                &c,
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap();
+            let mut verifier = Blake3Transcript::new();
+            verify_outer_zerocheck_with_skip(
+                &f,
+                &mut verifier,
+                &prepared,
+                &tau,
+                &out.prefix,
+                &out.tail.proof,
+                out.tail.evaluations,
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap();
+            assert_eq!(prover.state_digest(), verifier.state_digest());
+            (out, prover.state_digest())
+        };
+        assert_eq!(serial.install(prove), parallel.install(prove));
     }
 }

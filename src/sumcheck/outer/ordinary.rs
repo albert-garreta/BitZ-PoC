@@ -158,17 +158,73 @@ where
     round_boundary.validate(num_vars)?;
 
     let factors = EqualityFactors::new(eq_low.evaluations, eq_high.evaluations, field_cfg);
-    let products = R1csProductTableBuffers::from_mles(products);
-    let state = RoundState::new(initial_claim, tau.len(), field_cfg);
-    continue_field(
-        transcript,
+    let rows = super::inputs::SliceRows {
+        ax: &products.az.evaluations,
+        bx: &products.bz.evaluations,
+        cx: &products.cz.evaluations,
+    };
+    // Compatibility argument: arithmetic capabilities now belong to the field.
+    let _ = reducer;
+    super::api::prove_from_rows(
         field_cfg,
-        reducer,
+        transcript,
+        initial_claim,
         tau,
+        &rows,
+        false,
         factors,
+        round_boundary,
+    )
+    .map(Into::into)
+}
+
+/// Independent direct-cubic field-table oracle under the requested boundary policy.
+#[cfg(test)]
+pub(crate) fn prove_field_with_boundary_reference<F, R, P>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    tau: &[F],
+    (eq_low, eq_high): (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
+    products: R1csProductMles<F>,
+    field_cfg: &F::Config,
+    reducer: &R,
+    round_boundary: &mut P,
+) -> Result<OuterSumcheckOutput<F>, SumcheckError>
+where
+    F: SpartanField,
+    R: SumcheckProductReducer<F>,
+    P: RoundBoundaryPolicy,
+{
+    let num_vars = products.az.num_vars;
+    if !has_dense_shape(&products.az)
+        || !has_dense_shape(&products.bz)
+        || !has_dense_shape(&products.cz)
+        || products.bz.num_vars != num_vars
+        || products.cz.num_vars != num_vars
+    {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    if tau.len() != num_vars {
+        return Err(SumcheckError::InvalidEqualityDimensions);
+    }
+    if !has_dense_shape(&eq_low)
+        || !has_dense_shape(&eq_high)
+        || eq_low
+            .num_vars
+            .checked_add(eq_high.num_vars)
+            .is_none_or(|eq_vars| eq_vars != num_vars)
+    {
+        return Err(SumcheckError::InvalidEqualityDimensions);
+    }
+    round_boundary.validate(num_vars)?;
+
+    let _ = reducer;
+    prove_outer_sumcheck_direct_reference_with_boundary(
+        transcript,
+        initial_claim,
+        tau,
         products,
-        state,
-        None,
+        field_cfg,
         round_boundary,
     )
 }
@@ -177,15 +233,35 @@ where
 /// intentionally scalar and materializes the full equality table so it cannot
 /// accidentally share the optimized factor-stripping arithmetic.
 #[cfg(test)]
-pub(crate) fn prove_outer_sumcheck_direct_reference<F>(
+pub(crate) fn prove_outer_sumcheck_direct_reference<F: SpartanField>(
     transcript: &mut impl Transcript,
     initial_claim: F,
     tau: &[F],
     products: R1csProductMles<F>,
     field_cfg: &F::Config,
+) -> Result<OuterSumcheckOutput<F>, SumcheckError> {
+    prove_outer_sumcheck_direct_reference_with_boundary(
+        transcript,
+        initial_claim,
+        tau,
+        products,
+        field_cfg,
+        &mut UngrindedRoundBoundary,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn prove_outer_sumcheck_direct_reference_with_boundary<F, P>(
+    transcript: &mut impl Transcript,
+    initial_claim: F,
+    tau: &[F],
+    products: R1csProductMles<F>,
+    field_cfg: &F::Config,
+    round_boundary: &mut P,
 ) -> Result<OuterSumcheckOutput<F>, SumcheckError>
 where
     F: SpartanField,
+    P: RoundBoundaryPolicy,
 {
     let num_vars = products.az.num_vars;
     if !has_dense_shape(&products.az)
@@ -200,6 +276,7 @@ where
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
 
+    round_boundary.validate(num_vars)?;
     let zero = F::zero_with_cfg(field_cfg);
     let one = F::one_with_cfg(field_cfg);
     let two = (field_cfg).add(&one, &one);
@@ -255,7 +332,7 @@ where
 
         let coefficients_without_linear =
             interpolation.coefficients_without_linear(&current_claim, evaluations, &field_cfg);
-        let challenge = recover_full_round_polynomial_and_sample_next_challenge(
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
             transcript,
             &mut current_claim,
             &coefficients_without_linear,
@@ -263,6 +340,7 @@ where
             &mut eval_points,
             &zero,
             field_cfg,
+            round_boundary,
         )?;
 
         let next_len = products.len() / 2;
@@ -277,6 +355,13 @@ where
     let az_mle_claim = products.az[0].clone();
     let bz_mle_claim = products.bz[0].clone();
     let cz_mle_claim = products.cz[0].clone();
+    let terminal = field_cfg.mul(
+        &equality[0],
+        &field_cfg.sub(&field_cfg.mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
+    );
+    if current_claim != terminal {
+        return Err(SumcheckError::InvalidTerminalClaim);
+    }
     absorb_field_elements(
         transcript,
         &[
@@ -411,6 +496,7 @@ pub(crate) struct R1csProductTableBuffers<F> {
 }
 
 impl<F: Copy> R1csProductTableBuffers<F> {
+    #[cfg(test)]
     fn from_mles(products: R1csProductMles<F>) -> Self {
         Self {
             az: products.az.evaluations,
@@ -419,11 +505,24 @@ impl<F: Copy> R1csProductTableBuffers<F> {
         }
     }
 
+    #[inline(always)]
+    #[cfg(test)]
     pub(super) fn filled(len: usize, value: &F) -> Self {
         Self {
             az: vec![*value; len],
             bz: vec![*value; len],
             cz: vec![*value; len],
+        }
+    }
+
+    pub(super) fn zeroed(len: usize, field: &F::Config) -> Self
+    where
+        F: SpartanField,
+    {
+        Self {
+            az: field.zero_vec(len),
+            bz: field.zero_vec(len),
+            cz: field.zero_vec(len),
         }
     }
 
@@ -787,7 +886,7 @@ where
     [c0, c2, c3]
 }
 
-#[inline]
+#[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn accumulate_eq_factored_cofactor_evaluations<F, R>(
     accumulators: &mut [R::Accumulator; 2],
@@ -902,6 +1001,13 @@ where
         Self { low: None, high }
     }
 
+    pub(super) fn buckets(&self, one: &'a [F; 1]) -> (&'a [F], &'a [F]) {
+        match self.low {
+            Some(low) => (low, self.high),
+            None => (self.high, one),
+        }
+    }
+
     /// Returns the suffix equality weight after stripping the active
     /// coordinate. Bound-coordinate equality factors are tracked separately.
     #[inline]
@@ -957,35 +1063,36 @@ where
         low_pair_count * equality_weights.high.len()
     );
 
-    let accumulate_high_bucket =
-        |mut outer: [R::Accumulator; 2], high_index: usize| -> Result<_, SumcheckError> {
-            let mut inner = std::array::from_fn(|_| reducer.accumulator_zero());
-            let product_pair_start = high_index * low_pair_count;
+    let accumulate_high_bucket = |mut outer: [R::Accumulator; 2],
+                                  high_index: usize|
+     -> Result<_, SumcheckError> {
+        let mut inner = std::array::from_fn(|_| reducer.accumulator_zero());
+        let product_pair_start = high_index * low_pair_count;
 
-            for (low_pair_index, weight) in low_weights.iter().enumerate() {
-                let product_index = 2 * (product_pair_start + low_pair_index);
-                accumulate_eq_factored_cofactor_evaluations(
-                    &mut inner,
-                    weight,
-                    endpoint,
-                    &products.az[product_index],
-                    &products.az[product_index + 1],
-                    &products.bz[product_index],
-                    &products.bz[product_index + 1],
-                    &products.cz[product_index],
-                    &products.cz[product_index + 1],
-                    reducer,
-                    &field_config,
-                );
-            }
+        for (low_pair_index, weight) in low_weights.iter().enumerate() {
+            let product_index = 2 * (product_pair_start + low_pair_index);
+            accumulate_eq_factored_cofactor_evaluations(
+                &mut inner,
+                weight,
+                endpoint,
+                &products.az[product_index],
+                &products.az[product_index + 1],
+                &products.bz[product_index],
+                &products.bz[product_index + 1],
+                &products.cz[product_index],
+                &products.cz[product_index + 1],
+                reducer,
+                &field_config,
+            );
+        }
 
-            let inner = reduce_two_accumulators(inner, reducer, &field_config)?;
-            let high_weight = &equality_weights.high[high_index];
-            for (outer, inner) in outer.iter_mut().zip(&inner) {
-                reducer.multiply_accumulate(outer, high_weight, inner);
-            }
-            Ok(outer)
-        };
+        let inner = reduce_two_accumulators_bounded(inner, reducer, low_pair_count, &field_config)?;
+        let high_weight = &equality_weights.high[high_index];
+        for (outer, inner) in outer.iter_mut().zip(&inner) {
+            reducer.multiply_accumulate(outer, high_weight, inner);
+        }
+        Ok(outer)
+    };
 
     #[cfg(feature = "parallel")]
     if should_parallelize(products.len() / 2) {
@@ -999,14 +1106,24 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| Ok(merge_accumulators(left, right, reducer)),
             )?;
-        return reduce_two_accumulators(accumulators, reducer, &field_config);
+        return reduce_two_accumulators_bounded(
+            accumulators,
+            reducer,
+            equality_weights.high.len(),
+            &field_config,
+        );
     }
 
     let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
     for high_index in 0..equality_weights.high.len() {
         accumulators = accumulate_high_bucket(accumulators, high_index)?;
     }
-    reduce_two_accumulators(accumulators, reducer, &field_config)
+    reduce_two_accumulators_bounded(
+        accumulators,
+        reducer,
+        equality_weights.high.len(),
+        &field_config,
+    )
 }
 
 /// Computes `[c0, c2, c3]` from one endpoint and the leading coefficient of
@@ -1062,7 +1179,7 @@ where
             },
             reducer,
         );
-        reduce_two_accumulators(accumulators, reducer, &field_config)?
+        reduce_two_accumulators_bounded(accumulators, reducer, pair_count, &field_config)?
     };
     Ok(reconstruct_eq_factored_cubic_without_linear(
         current_claim,
@@ -1076,7 +1193,7 @@ where
     ))
 }
 
-#[inline]
+#[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fold_product_chunk<F>(
     az: &[F],
@@ -1168,6 +1285,7 @@ where
         .low_weights()
         .expect("two-level accumulation requires stripped low weights");
     let low_pair_count = low_weights.len();
+    let inner_reduction = reducer.prepare_reduction(low_pair_count, field_config);
     debug_assert_eq!(
         output.len() / 2,
         low_pair_count * equality_weights.high.len()
@@ -1213,7 +1331,7 @@ where
             );
         }
 
-        let inner = reduce_two_accumulators(inner, reducer, &field_config)?;
+        let inner = reduce_two_prepared(inner, reducer, &inner_reduction, field_config)?;
         let high_weight = &equality_weights.high[high_index];
         for (outer, inner) in outer.iter_mut().zip(&inner) {
             reducer.multiply_accumulate(outer, high_weight, inner);
@@ -1222,7 +1340,8 @@ where
     };
 
     #[cfg(feature = "parallel")]
-    if should_parallelize(output.len() / 2) {
+    if parallel_outer_fold(output.len() / 2) {
+        let min_buckets = outer_fold_grain(output.len() / 2).div_ceil(low_pair_count);
         let accumulators = (
             input.az.par_chunks_exact(input_values_per_high),
             input.bz.par_chunks_exact(input_values_per_high),
@@ -1232,6 +1351,7 @@ where
             output.cz.par_chunks_exact_mut(output_values_per_high),
         )
             .into_par_iter()
+            .with_min_len(min_buckets)
             .enumerate()
             .try_fold(
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
@@ -1245,7 +1365,12 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| Ok(merge_accumulators(left, right, reducer)),
             )?;
-        return reduce_two_accumulators(accumulators, reducer, &field_config);
+        return reduce_two_accumulators_bounded(
+            accumulators,
+            reducer,
+            equality_weights.high.len(),
+            &field_config,
+        );
     }
 
     let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
@@ -1263,7 +1388,12 @@ where
             &mut output.cz[output_start..output_start + output_values_per_high],
         )?;
     }
-    reduce_two_accumulators(accumulators, reducer, &field_config)
+    reduce_two_accumulators_bounded(
+        accumulators,
+        reducer,
+        equality_weights.high.len(),
+        &field_config,
+    )
 }
 
 /// Folds all product tables and accumulates the next round polynomial.
@@ -1381,7 +1511,8 @@ where
                 || std::array::from_fn(|_| reducer.accumulator_zero()),
                 |left, right| merge_accumulators(left, right, reducer),
             );
-        let evaluations = reduce_two_accumulators(accumulators, reducer, &field_config)?;
+        let evaluations =
+            reduce_two_accumulators_bounded(accumulators, reducer, chunk_count, &field_config)?;
         return Ok(reconstruct_eq_factored_cubic_without_linear(
             current_claim,
             tau,
@@ -1409,7 +1540,8 @@ where
             &mut output.cz[output_start..output_start + 2],
         );
     }
-    let evaluations = reduce_two_accumulators(accumulators, reducer, &field_config)?;
+    let evaluations =
+        reduce_two_accumulators_bounded(accumulators, reducer, chunk_count, &field_config)?;
     Ok(reconstruct_eq_factored_cubic_without_linear(
         current_claim,
         tau,
@@ -1437,6 +1569,11 @@ impl<E: SpartanField> EqualityFactors<E> {
             high,
         }
     }
+    pub(super) fn matches_rows(&self, rows: usize) -> bool {
+        self.low.len().is_power_of_two()
+            && self.high.len().is_power_of_two()
+            && self.low.len().checked_mul(self.high.len()) == Some(rows)
+    }
     pub(super) fn strip(&mut self, field: &E::Config) {
         let (active, scratch) = if self.low.len() > 1 {
             (&mut self.low, &mut self.scratch_low)
@@ -1456,8 +1593,26 @@ impl<E: SpartanField> EqualityFactors<E> {
     }
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn continue_field<E: SpartanField, R: SumcheckProductReducer<E>>(
+    transcript: &mut impl Transcript,
+    field: &E::Config,
+    reducer: &R,
+    tau: &[E],
+    factors: EqualityFactors<E>,
+    products: R1csProductTableBuffers<E>,
+    state: RoundState<E>,
+    pending: Option<[E; 3]>,
+    boundary: &mut impl RoundBoundaryPolicy,
+) -> Result<OuterSumcheckOutput<E>, SumcheckError> {
+    continue_field_with_inverses(
+        transcript, field, reducer, tau, factors, products, state, pending, None, boundary,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn continue_field_with_inverses<E: SpartanField, R: SumcheckProductReducer<E>>(
     transcript: &mut impl Transcript,
     field: &E::Config,
     reducer: &R,
@@ -1466,10 +1621,11 @@ pub(super) fn continue_field<E: SpartanField, R: SumcheckProductReducer<E>>(
     mut products: R1csProductTableBuffers<E>,
     mut state: RoundState<E>,
     pending: Option<[E; 3]>,
+    precomputed_inverses: Option<Vec<E>>,
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterSumcheckOutput<E>, SumcheckError> {
     if products.len() > 1 {
-        let inverses = batch_invert_nonzero(tau, field);
+        let inverses = precomputed_inverses.unwrap_or_else(|| batch_invert_nonzero(tau, field));
         let round = state.point.len();
         let coefficients = if let Some(pending) = pending {
             pending
@@ -1487,7 +1643,7 @@ pub(super) fn continue_field<E: SpartanField, R: SumcheckProductReducer<E>>(
                 field,
             )?
         };
-        let mut scratch = R1csProductTableBuffers::filled(products.len() / 2, &field.zero());
+        let mut scratch = R1csProductTableBuffers::zeroed(products.len() / 2, field);
         state.continue_with(
             field,
             transcript,

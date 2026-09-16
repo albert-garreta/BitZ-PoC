@@ -77,6 +77,68 @@ fn native_checked_arithmetic_matches_rust() {
     }
 }
 
+fn check_carry_chains<const L: usize>() {
+    let mut rng = Rng(0x51bb00);
+    let modulus = BigUint::from(1u32) << (64 * L);
+    let mut values = vec![Uint::<L>::ZERO, Uint::ONE, Uint::MAX];
+    for i in 0..L {
+        // Borrow propagation across every possible number of zero limbs.
+        let mut words = [0; L];
+        words[i] = 1;
+        values.push(Uint::from_words(words));
+        words[i] = 1 << 63;
+        values.push(Uint::from_words(words));
+    }
+    for _ in 0..32 {
+        values.push(rng.uint());
+    }
+    let signed_min = -(BigInt::from(1u32) << (64 * L - 1));
+    let signed_max = -&signed_min - 1;
+    for a in &values {
+        for b in &values {
+            let (aa, bb) = (big(a.as_words()), big(b.as_words()));
+            let sum = &aa + &bb;
+            let checked = a.checked_add_ct(b);
+            assert_eq!(checked.validity().declassify(), sum < modulus);
+            assert_eq!(big(checked.value().as_words()), &sum % &modulus);
+            let expected = (&aa + &modulus - &bb) % &modulus;
+            assert_eq!(big(a.wrapping_sub(b).as_words()), expected);
+            let checked = a.checked_sub_ct(b);
+            assert_eq!(checked.validity().declassify(), aa >= bb);
+            assert_eq!(big(checked.value().as_words()), expected);
+
+            let (sa, sb) = (
+                Z::from_twos_complement_words(*a.as_words()),
+                Z::from_twos_complement_words(*b.as_words()),
+            );
+            let difference = signed(a.as_words()) - signed(b.as_words());
+            let sum = signed(a.as_words()) + signed(b.as_words());
+            let checked_sum = sa.checked_add_ct(&sb);
+            assert_eq!(
+                checked_sum.validity().declassify(),
+                sum >= signed_min && sum <= signed_max
+            );
+            assert_eq!(big(checked_sum.value().as_words()), (&aa + &bb) % &modulus);
+            let checked = sa.checked_sub_ct(&sb);
+            assert_eq!(
+                checked.validity().declassify(),
+                difference >= signed_min && difference <= signed_max
+            );
+            assert_eq!(big(checked.value().as_words()), expected);
+        }
+    }
+}
+
+#[test]
+fn multiword_carry_chains_match_bigint() {
+    check_carry_chains::<1>();
+    check_carry_chains::<2>();
+    check_carry_chains::<3>();
+    check_carry_chains::<5>();
+    check_carry_chains::<9>();
+    check_carry_chains::<20>();
+}
+
 fn check_products<const A: usize, const B: usize>() {
     let mut rng = Rng(0x981671);
     let mut lhs = vec![Uint::<A>::MAX];
@@ -347,4 +409,34 @@ fn static_context_layout_native_widths_and_mapped_order() {
     let empty: &[StaticFp<P17, 2>] = &[];
     let empty_acc: StaticFpProductAcc<P17, 2> = field.batch_mul_acc(empty, empty);
     assert_eq!(field.reduce(empty_acc), field.zero());
+}
+
+fn check_wrapping_signed_product<const A: usize, const B: usize, const OUT: usize>() {
+    let mut rng = Rng(0x758192);
+    let mut left = vec![Z::<A>::ZERO, Z::ONE, Z::MIN, Z::MAX, -Z::ONE];
+    let mut right = vec![Z::<B>::ZERO, Z::ONE, Z::MIN, Z::MAX, -Z::ONE];
+    for _ in 0..32 {
+        left.push(Z::from_twos_complement_words(*rng.uint().as_words()));
+        right.push(Z::from_twos_complement_words(*rng.uint().as_words()));
+    }
+    let modulus = BigInt::from(1u8) << (64 * OUT);
+    for a in &left {
+        for b in &right {
+            let product = signed(a.as_words()) * signed(b.as_words());
+            let expected = ((product % &modulus) + &modulus) % &modulus;
+            let actual = IntegerOps.wrapping_signed_product::<A, B, OUT>(a, b);
+            assert_eq!(BigInt::from(big(actual.as_words())), expected);
+        }
+    }
+}
+#[test]
+fn wrapping_signed_products_match_bigint() {
+    check_wrapping_signed_product::<1, 1, 1>();
+    check_wrapping_signed_product::<1, 1, 2>();
+    check_wrapping_signed_product::<2, 3, 1>();
+    check_wrapping_signed_product::<2, 3, 3>();
+    check_wrapping_signed_product::<3, 2, 4>();
+    check_wrapping_signed_product::<2, 2, 3>();
+    check_wrapping_signed_product::<3, 3, 5>();
+    check_wrapping_signed_product::<10, 10, 20>();
 }

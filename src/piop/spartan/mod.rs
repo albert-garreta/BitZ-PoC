@@ -19,14 +19,14 @@ pub mod grinding;
 pub mod matrix;
 pub mod multiswap;
 pub mod opening_mode;
-pub mod piop;
-pub mod profile;
-pub mod protocol;
-pub(crate) mod raw_monty;
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 #[path = "../../../benches/outer_regression/driver.rs"]
 pub mod outer_regression;
+pub mod piop;
+pub mod profile;
+pub mod protocol;
+pub(crate) mod raw_monty;
 pub mod sha256;
 pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;
@@ -36,6 +36,7 @@ pub mod u128_mul;
 pub mod u32_mul;
 pub mod u64_f2z;
 pub mod u64_mul;
+#[cfg(test)]
 pub(crate) use crate::sumcheck::outer::native_skip as univariate_skip_native;
 pub use crate::sumcheck::outer::univariate as univariate_skip;
 
@@ -204,6 +205,7 @@ pub trait SpartanField:
 {
     type Inner: Clone + core::fmt::Debug + Eq + Send + Sync;
     type Config: sumcheck::SumcheckProductReducer<Self>
+        + crate::sumcheck::outer::OuterArithmetic<Self, Self>
         + field::BatchFieldOps<Elem = Self>
         + field::CanonicalCodec<Self>
         + field::IntegerEmbedding<u64>

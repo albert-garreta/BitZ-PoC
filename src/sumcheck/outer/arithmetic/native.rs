@@ -1,9 +1,13 @@
 //! Borrowed native operands and split products. Width dispatch occurs before
 //! any hot loop; integer projection is fused with the first outer MAC/fold.
 use super::*;
+#[cfg(test)]
 use crate::piop::spartan::raw_monty::RawFieldStorage;
+#[cfg(test)]
 use crate::utils::delayed_reduction::EncodedMac;
-use field::{CtMask, CtOrd, CtSelect, Fp, FpLinearAcc, MergeAccumulator, RingOps, Uint, WideMul};
+use field::Uint;
+#[cfg(test)]
+use field::{CtMask, CtOrd, CtSelect, Fp, FpLinearAcc, MergeAccumulator, RingOps, WideMul};
 
 #[derive(Clone, Copy)]
 pub struct NativeWideProducts<'a, T> {
@@ -76,7 +80,137 @@ impl<'a> From<NativeWideProducts<'a, u128>> for NativeInput<'a> {
     }
 }
 
+impl super::super::inputs::OuterRows for NativeProducts<'_> {
+    type AB = u32;
+    type C = u64;
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (self.az.len(), self.bz.len(), self.cz.len())
+    }
+    // The enclosing native relation establishes the public 32-bit width bound.
+    #[inline(always)]
+    fn a(&self, i: usize) -> u32 {
+        self.az[i] as u32
+    }
+    #[inline(always)]
+    fn b(&self, i: usize) -> u32 {
+        self.bz[i] as u32
+    }
+    #[inline(always)]
+    fn c(&self, i: usize) -> u64 {
+        self.cz[i]
+    }
+}
+impl super::super::inputs::OuterRows for NativeWideProducts<'_, u64> {
+    type AB = u64;
+    type C = u128;
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (self.rows, self.rows, self.rows)
+    }
+    #[inline(always)]
+    fn a(&self, i: usize) -> u64 {
+        self.az.get(i).copied().unwrap_or(0)
+    }
+    #[inline(always)]
+    fn b(&self, i: usize) -> u64 {
+        self.bz.get(i).copied().unwrap_or(0)
+    }
+    #[inline(always)]
+    fn c(&self, i: usize) -> u128 {
+        self.cz_lo.get(i).copied().unwrap_or(0) as u128
+            | ((self.cz_hi.get(i).copied().unwrap_or(0) as u128) << 64)
+    }
+}
+impl super::super::inputs::OuterRows for NativeWideProducts<'_, u128> {
+    type AB = u128;
+    type C = Uint<4>;
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (self.rows, self.rows, self.rows)
+    }
+    #[inline(always)]
+    fn a(&self, i: usize) -> u128 {
+        self.az.get(i).copied().unwrap_or(0)
+    }
+    #[inline(always)]
+    fn b(&self, i: usize) -> u128 {
+        self.bz.get(i).copied().unwrap_or(0)
+    }
+    #[inline(always)]
+    fn c(&self, i: usize) -> Uint<4> {
+        let lo = self.cz_lo.get(i).copied().unwrap_or(0);
+        let hi = self.cz_hi.get(i).copied().unwrap_or(0);
+        Uint::from_words([lo as u64, (lo >> 64) as u64, hi as u64, (hi >> 64) as u64])
+    }
+}
+
+pub(super) struct ResidueRows<'a> {
+    pub field: &'a field::FpCtx<2>,
+    pub products: &'a RawProducts,
+}
+impl super::super::inputs::OuterRows for ResidueRows<'_> {
+    type AB = Field;
+    type C = Field;
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (
+            self.products.az.len(),
+            self.products.bz.len(),
+            self.products.cz.len(),
+        )
+    }
+    #[inline(always)]
+    fn a(&self, i: usize) -> Field {
+        shared_raw(self.field, self.products.az[i])
+    }
+    #[inline(always)]
+    fn b(&self, i: usize) -> Field {
+        shared_raw(self.field, self.products.bz[i])
+    }
+    #[inline(always)]
+    fn c(&self, i: usize) -> Field {
+        shared_raw(self.field, self.products.cz[i])
+    }
+}
+
 pub(super) fn dispatch<T: Transcript>(
+    transcript: &mut T,
+    ctx: &field::FpCtx<2>,
+    _reducer: &field::FpCtx<2>,
+    claim: Field,
+    tau: &[Field],
+    low: Vec<Raw>,
+    high: Vec<Raw>,
+    input: NativeInput<'_>,
+    known_zero: bool,
+) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
+    let factors = factors_from_raw(ctx, low, high);
+    macro_rules! prove {
+        ($rows:expr) => {
+            super::super::api::prove_from_rows(
+                ctx,
+                transcript,
+                claim,
+                tau,
+                &$rows,
+                known_zero,
+                factors,
+                &mut UngrindedRoundBoundary,
+            )
+            .map(Into::into)
+        };
+    }
+    match input {
+        NativeInput::U32(rows) => prove!(rows),
+        NativeInput::U64(rows) => prove!(rows),
+        NativeInput::U128(rows) => prove!(rows),
+        NativeInput::Residues(products) => prove!(ResidueRows {
+            field: ctx,
+            products
+        }),
+    }
+}
+
+/// Independent retained arithmetic reference for differential tests.
+#[cfg(test)]
+pub(crate) fn legacy_dispatch<T: Transcript>(
     transcript: &mut T,
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -215,6 +349,7 @@ pub(super) fn dispatch<T: Transcript>(
     }
 }
 
+#[cfg(test)]
 fn magnitude<const N: usize>(a: Uint<N>, b: Uint<N>) -> (Uint<N>, CtMask) {
     let negative = a.ct_lt(&b);
     let difference = a.wrapping_sub(&b);
@@ -224,6 +359,7 @@ fn magnitude<const N: usize>(a: Uint<N>, b: Uint<N>) -> (Uint<N>, CtMask) {
     )
 }
 
+#[cfg(test)]
 macro_rules! wide_source {
     ($native:ty, $a:literal, $p:literal, $operand:expr, $product:expr) => {
         impl NativeWideProducts<'_, $native> {
@@ -290,6 +426,7 @@ macro_rules! wide_source {
         }
     };
 }
+#[cfg(test)]
 wide_source!(
     u64,
     1,
@@ -297,6 +434,7 @@ wide_source!(
     |v: u64| Uint::<1>::from_words([v]),
     |lo: u64, hi: u64| Uint::<2>::from_words([lo, hi])
 );
+#[cfg(test)]
 wide_source!(
     u128,
     2,
@@ -310,6 +448,7 @@ wide_source!(
     ])
 );
 
+#[cfg(test)]
 fn wide_round0<const N: usize>(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -381,6 +520,7 @@ fn wide_round0<const N: usize>(
     reduce(block(0, count, None))
 }
 
+#[cfg(test)]
 fn wide_fold(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
