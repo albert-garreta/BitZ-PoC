@@ -463,6 +463,46 @@ struct BitLayer<'a> {
     flat: Option<FlatDense<Gf>>,
 }
 
+fn leaf_bit_layer<'a>(
+    bits: Vec<(&'a [u64], &'a [u64])>,
+    depth: usize,
+    leaf_tau: &(Vec<Gf>, Vec<Gf>),
+) -> BitLayer<'a> {
+    let deep = depth >= 5 && forest_lut3();
+    let deep4 = depth >= 6 && forest_lut4();
+    BitLayer {
+        bufs: bits
+            .into_iter()
+            .map(|(lbits, rbits)| {
+                if deep4 {
+                    GroupBufs::Leaf4Bits {
+                        lbits,
+                        rbits,
+                        tau_set: 0,
+                    }
+                } else if deep {
+                    GroupBufs::Leaf3Bits {
+                        lbits,
+                        rbits,
+                        tau_set: 0,
+                    }
+                } else {
+                    GroupBufs::Leaf2Bits {
+                        lbits,
+                        rbits,
+                        tau_set: 0,
+                    }
+                }
+            })
+            .collect(),
+        tau_sets: vec![leaf_tau.clone()],
+        pair_tau_sets: Vec::new(),
+        t4_sets: Vec::new(),
+        round1: None,
+        flat: None,
+    }
+}
+
 /// Fuse the JIT layers' round-1 message into their generation pass
 /// (default ON; `F2Z_JIT_R1=0` opts out — diagnostic / A-B measurement).
 /// Byte-identical proofs either way. Read once per prove call.
@@ -1502,41 +1542,11 @@ fn prove_merged_forest_lazy_impl(
                         flat: None,
                     })
                 } else if ell == depth - 1 {
-                    let deep = depth >= 5 && forest_lut3();
-                    let deep4 = depth >= 6 && forest_lut4();
-                    Some(BitLayer {
-                        bufs: col_bits
-                            .take()
-                            .expect("leaf bits consumed once")
-                            .into_iter()
-                            .map(|(lbits, rbits)| {
-                                if deep4 {
-                                    GroupBufs::Leaf4Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: 0,
-                                    }
-                                } else if deep {
-                                    GroupBufs::Leaf3Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: 0,
-                                    }
-                                } else {
-                                    GroupBufs::Leaf2Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: 0,
-                                    }
-                                }
-                            })
-                            .collect(),
-                        tau_sets: vec![leaf_tau.clone()],
-                        pair_tau_sets: Vec::new(),
-                        t4_sets: Vec::new(),
-                        round1: None,
-                        flat: None,
-                    })
+                    Some(leaf_bit_layer(
+                        col_bits.take().expect("leaf bits consumed once"),
+                        depth,
+                        &leaf_tau,
+                    ))
                 } else {
                     None
                 }
@@ -1761,41 +1771,11 @@ fn prove_merged_forest_lazy_impl(
                     // Two bit-driven rounds (k = d−1 = 3): dense buffers only
                     // after round 2. Under `F2Z_LUT3` (depth ≥ 5, so k ≥ 4)
                     // three rounds (Leaf3Bits): the leaf residue halves.
-                    let deep = depth >= 5 && forest_lut3();
-                    let deep4 = depth >= 6 && forest_lut4();
-                    Some(BitLayer {
-                        bufs: col_bits
-                            .take()
-                            .expect("leaf bits consumed once")
-                            .into_iter()
-                            .map(|(lbits, rbits)| {
-                                if deep4 {
-                                    GroupBufs::Leaf4Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: 0,
-                                    }
-                                } else if deep {
-                                    GroupBufs::Leaf3Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: 0,
-                                    }
-                                } else {
-                                    GroupBufs::Leaf2Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: 0,
-                                    }
-                                }
-                            })
-                            .collect(),
-                        tau_sets: vec![leaf_tau.clone()],
-                        pair_tau_sets: Vec::new(),
-                        t4_sets: Vec::new(),
-                        round1: None,
-                        flat: None,
-                    })
+                    Some(leaf_bit_layer(
+                        col_bits.take().expect("leaf bits consumed once"),
+                        depth,
+                        &leaf_tau,
+                    ))
                 } else {
                     None
                 }
