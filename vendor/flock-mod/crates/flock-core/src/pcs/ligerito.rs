@@ -3001,19 +3001,7 @@ impl<'a> SumcheckProver<'a> {
         b1: Vec<Gf128>,
         h1: Gf128,
     ) -> (Self, SumcheckMessage) {
-        let f = f.into();
-        assert_eq!(f.len(), b1.len());
-        let mut inst = Self {
-            f,
-            combined_basis: b1,
-            t_r: h1,
-            transcript: Vec::new(),
-            pending_glue: None,
-            pending_fold: None,
-        };
-        let msg = round_msg_lsb(&inst.f, &inst.combined_basis);
-        inst.transcript.push(msg);
-        (inst, msg)
+        Self::new_inner(f.into(), b1, h1, None)
     }
 
     /// Like [`Self::new`] but skips the initial `round_msg_lsb` pass over
@@ -3027,7 +3015,15 @@ impl<'a> SumcheckProver<'a> {
         h1: Gf128,
         first_msg: SumcheckMessage,
     ) -> (Self, SumcheckMessage) {
-        let f = f.into();
+        Self::new_inner(f.into(), b1, h1, Some(first_msg))
+    }
+
+    fn new_inner(
+        f: Cow<'a, [Gf128]>,
+        b1: Vec<Gf128>,
+        h1: Gf128,
+        first_msg: Option<SumcheckMessage>,
+    ) -> (Self, SumcheckMessage) {
         assert_eq!(f.len(), b1.len());
         let mut inst = Self {
             f,
@@ -3037,8 +3033,9 @@ impl<'a> SumcheckProver<'a> {
             pending_glue: None,
             pending_fold: None,
         };
-        inst.transcript.push(first_msg);
-        (inst, first_msg)
+        let msg = first_msg.unwrap_or_else(|| round_msg_lsb(&inst.f, &inst.combined_basis));
+        inst.transcript.push(msg);
+        (inst, msg)
     }
 
     pub fn fold(&mut self, r: Gf128) -> SumcheckMessage {
@@ -3049,8 +3046,7 @@ impl<'a> SumcheckProver<'a> {
         let (nf, nb, msg) = fold_and_msg_lsb(&self.f, &self.combined_basis, r);
         // Recycle the outgoing buffers (the round-0 pair is the 2^(m-7)
         // packed witness + b_combined) instead of munmap-ing them.
-        self.replace_folded(nf);
-        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+        self.replace_folded(nf, nb);
         self.transcript.push(msg);
         msg
     }
@@ -3061,8 +3057,7 @@ impl<'a> SumcheckProver<'a> {
     pub fn fold1_lookahead(&mut self, r: Gf128) -> (SumcheckMessage, FoldLookahead) {
         debug_assert!(self.pending_fold.is_none(), "fold1 with pending lookahead");
         let (nf, nb, msg, la) = fold1_lookahead_lsb(&self.f, &self.combined_basis, r);
-        self.replace_folded(nf);
-        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+        self.replace_folded(nf, nb);
         self.transcript.push(msg);
         (msg, la)
     }
@@ -3088,8 +3083,7 @@ impl<'a> SumcheckProver<'a> {
             .take()
             .expect("fold2_lookahead without pending challenge");
         let (nf, nb, msg, la) = fold2_lookahead_lsb(&self.f, &self.combined_basis, r_a, r);
-        self.replace_folded(nf);
-        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+        self.replace_folded(nf, nb);
         self.transcript.push(msg);
         (msg, la)
     }
@@ -3099,8 +3093,7 @@ impl<'a> SumcheckProver<'a> {
     pub fn drain_pending_fold(&mut self) {
         if let Some(r) = self.pending_fold.take() {
             let (nf, nb) = fold_pair_no_msg(&self.f, &self.combined_basis, r);
-            self.replace_folded(nf);
-            crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+            self.replace_folded(nf, nb);
         }
     }
 
@@ -3173,10 +3166,11 @@ impl<'a> SumcheckProver<'a> {
         &self.transcript
     }
 
-    fn replace_folded(&mut self, folded: Vec<Gf128>) {
+    fn replace_folded(&mut self, folded: Vec<Gf128>, basis: Vec<Gf128>) {
         if let Cow::Owned(previous) = std::mem::replace(&mut self.f, Cow::Owned(folded)) {
             crate::scratch::give_f128(previous);
         }
+        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, basis));
     }
 
     /// Transfer the final polynomial and messages into the proof. The
