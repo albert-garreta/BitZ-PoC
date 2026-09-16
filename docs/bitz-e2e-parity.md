@@ -7,6 +7,9 @@ the PCS opening) re-implemented in `src/bitz/` over this crate's field and
 engines, **producing the same bytes as their `tooling/cli` end-to-end
 prover at every size the e2e runs** — 1, 8, 64 and 608 blocks, across
 seeds — with their verifier accepting our proofs and ours accepting theirs.
+The same holds for the **sampled-prime scheme** (the prime drawn from the
+transcript per proof, their branch `bitz-k4-prime` composed end to end on
+`bitz-e2e-k4-prime`): see "The sampled prime" below.
 The feasibility analysis that preceded it is
 `docs/bitz-piop-parity-feasibility.md`; the PCS half and its conventions are
 `docs/bitz-parity-continue-prompt.md`.
@@ -21,6 +24,11 @@ The feasibility analysis that preceded it is
   - `src/bitz/fq.rs` — their `Fq<2^100−15>` verbatim: schoolbook `mul_wide`,
     Barrett `reduce_wide`, 16-byte LE wire form, the rejection-sampled `u128`
     squeeze (`squeeze_fq` on both transcript halves). No inversions anywhere.
+    The modulus is read at runtime (their `Fq<RUNTIME>`): `Q` until
+    `set_modulus(prime)` installs a sampled one (`modulus()`, `ModulusError`,
+    their 13-base Miller–Rabin `is_probable_prime` verbatim); process-wide.
+  - `src/bitz/transcript.rs` — `squeeze_prime(bits)` on both halves (their
+    rule: masked squeeze, top and low bits set, first probable prime).
   - `src/bitz/spartan/{poly,matrix,sumcheck,piop}.rs` — the little-endian eq
     table; the R1CS matrices lowered from the vendored circuit crate with the
     constraint digest streamed (`M` hashed, not kept), the 2^16-column chunk
@@ -29,6 +37,11 @@ The feasibility analysis that preceded it is
     provers with fused fold-and-next passes and `c1` reconstruction, the
     Boolean round-0 kernels, the reusable verifier; the composition and the
     canonical out-of-band bytes `spartan.bin` (`to_bytes`/`from_bytes`).
+    For the sampled prime: `PreparedIntegerMatrices` (the coefficients kept
+    as integers — `IntegerCoefficient::{PowerOfTwo, Small, Big}` — with
+    their integer digest, `lower()` under the installed modulus into the
+    flat `SparseMatrix` in parallel), `prove/verify_spartan_piop_absorbed`
+    (the digest already absorbed) and `prove/verify_spartan_piop_sampled`.
   - `src/bitz/map.rs` — the map digest (blake3 over the CSC arrays) and the
     `M^T` transpose (XOR gathers), through the `csc()` accessor added to the
     vendored `crates/circuit/src/matrix_transpose.rs`.
@@ -38,13 +51,18 @@ The feasibility analysis that preceded it is
     `BitZVerifier::verify_virtual`.
   - `src/bitz/e2e.rs` — their `Prepared` (new/witness/commit/prove/verify,
     `bind`), `opening_claim`, `shape_for`, `generator`; `Proof { root,
-    spartan, terminal, opening }`.
+    spartan, terminal, opening }`. Their `PreparedSampled` (`SESSION_SAMPLED`,
+    `prime_bits` in 64..=100, `prime_for(root)`, `params()` under the
+    installed modulus, `SampledWitness`, `SampledProof { root, prime, spartan,
+    terminal, opening }`).
   - `src/bitz/statements.rs` — their d6b637e SHA-256 statements on the
     vendored trait, `Sha256Statement::seeded` (SplitMix64) and
     `from_public_bytes`.
   - `examples/bitz_spartan_parity.rs` (stage A harness),
-    `examples/bitz_e2e_parity.rs` (the e2e harness, `--sweep`),
-    `examples/bitz_e2e_bench.rs` (the raw-metrics bench, `RESULT` line),
+    `examples/bitz_e2e_parity.rs` (the e2e harness, `--sweep`; dumps with
+    `kind=e2e-sampled` go through `PreparedSampled`, `--sweep --sampled`),
+    `examples/bitz_e2e_bench.rs` (the raw-metrics bench, `RESULT` line,
+    `--sampled`),
     `examples/bitz_lin_probe.rs` (the single-column opening),
     `examples/bitz_circuit_probe.rs` (the digest guard).
 - **f2z-benchmark, branch `bitz-e2e-k4`** (`~/f2z-benchmark`, local,
@@ -53,6 +71,16 @@ The feasibility analysis that preceded it is
   `dump_spartan` + the shared `examples/common/sha256.rs`, `ec33847`
   `dump_e2e` + `verify_e2e`. Their code untouched; their tests green
   (bitz-cli 4, circuit 48, common 43, spartan 23, tests 26).
+- **f2z-benchmark, branch `bitz-e2e-k4-prime`** (worktree
+  `~/f2z-benchmark-prime`, local, unpushed): the merge `71f1b4f` of
+  `bitz-e2e-k4` with `bitz-k4-prime` (`0049646`, the sampled prime with a
+  minimal diff: `Fq<RUNTIME>`, `squeeze_prime`, `PreparedIntegerMatrices`,
+  `prove/verify_spartan_piop_sampled`), then `45f84a6`: `PreparedSampled`
+  in `tooling/cli/src/end_to_end.rs` (the composition: bind, squeeze the
+  prime, install, absorb `BitZParams<RUNTIME>`, lower, Spartan, opening),
+  its round-trip/tamper test, `dump_e2e --sampled` (`kind=e2e-sampled`,
+  `prime_bits`, `prime`, the integer digest as `constraint_digest`) and
+  `verify_e2e --sampled`. bitz-cli tests: 2 + 3 green.
 
 ## How to run (the loop that guards every change)
 
@@ -82,11 +110,23 @@ $E/dump_spartan abc $SCRATCH/sp_abc; $O/bitz_spartan_parity $SCRATCH/sp_abc
 $O/bitz_e2e_bench sha256-chain 608 --reps 5
 # their canonical timings for the same statement
 /usr/bin/time -l $E/e2e_probe sha256-chain 608 7 --bench-only
+
+# the sampled prime: their prime worktree (its own target dir), --sampled everywhere
+cd ~/f2z-benchmark-prime && git checkout bitz-e2e-k4-prime
+CARGO_TARGET_DIR=$HOME/f2z-benchmark-prime/target RUSTFLAGS="-C target-cpu=native" \
+  cargo build --release -p bitz-cli --examples
+P=$HOME/f2z-benchmark-prime/target/release/examples
+$P/dump_e2e sha256-chain 8 7 $SCRATCH/e2ep_ch8 --sampled   # prints the prime
+BITZ_REPEAT=3 $O/bitz_e2e_parity $SCRATCH/e2ep_ch8          # kind=e2e-sampled → PreparedSampled
+$P/verify_e2e $SCRATCH/e2ep_ch8 ours. --sampled
+$O/bitz_e2e_parity --sweep $P $SCRATCH/sweep_p sha256-chain 1,8,64,608 3 --sampled
+$O/bitz_e2e_bench sha256-chain 608 --sampled --reps 3
 ```
 
 Acceptance for every change: the sweep passes (root, `spartan.bin`, the
 claim on `h`, narg, hints IDENTICAL; ours→theirs, ours→ours and theirs→ours
-accept) at 1, 8, 64 and 608 blocks; the unit tests pass.
+accept) at 1, 8, 64 and 608 blocks, fixed and `--sampled`; the unit tests
+pass. (`sha256-compression` is one block only; sweep it at `1`.)
 
 ## What is pinned (2026-09-16)
 
@@ -102,6 +142,14 @@ accept) at 1, 8, 64 and 608 blocks; the unit tests pass.
 - The single-column opening alone (`dump_lin` / `bitz_lin_probe`, 2^22 bits,
   `Shape::new(22, 0)`): identical, and the root under the single-row commit
   equals theirs under the (14, 8) commit.
+- The sampled prime (`dump_e2e --sampled` / `bitz_e2e_parity`): seed 7 at 1
+  block (prime 885573671305466740332365494013), 8 (1031328402746909102491161449767)
+  and 608 (1258275306762215810449910764789), then the sweep — chain 1 × 3,
+  8 × 3, 64 × 3, 608 × 3 (seed base 1789555292157467000) and compression
+  1 × 2 (base 1789555387581027000): the integer digest, the map digest, the
+  shapes, the root, the derived prime, `spartan.bin`, `claim_h`, narg and
+  hints IDENTICAL, all three verifier directions accept — **17/17**. Fixed
+  path re-checked identical alongside.
 
 ## The numbers (M5, 10 threads, seed 7; theirs = `benchmark::run` clean run, ours = `bitz_e2e_bench` medians)
 
@@ -134,6 +182,39 @@ same 52–54 ms absorb + the sumcheck replay + Ligerito). Theirs: 276 ms,
 linear in the circuit by design; ours is the same asymptotics with smaller
 constants.
 
+## The sampled prime (M5, 10 threads, seed 7; theirs = `dump_e2e --sampled` on `bitz-e2e-k4-prime`, ours = `bitz_e2e_bench --sampled` medians of warm repeats, cold = the first proof after the witness)
+
+The 100-bit prime is drawn after the root is bound, so it differs per
+statement (608 blocks, seed 7: 1258275306762215810449910764789). What the
+sampled scheme adds per proof is the lowering of the integer matrices under
+that prime (and, on the prover, the products and the assignment), which the
+fixed scheme does once at setup; everything after it is the same
+computation.
+
+| blocks | their prove sampled / fixed | their verify sampled / fixed | our prove sampled (cold) / fixed (cold) | our verify sampled / fixed | narg | hints | Spartan out of band |
+|---|---|---|---|---|---|---|---|
+| 1 | 157 / 131 | 70 / 70 | 98 / 95 | 65 / 64 | 15,396 B | 103,100 B | 1,680 B |
+| 8 | 174 / 143 | 77 / 75 | 104 (123) / 99 (118) | 67 / 66 | 15,396 | 102,748 | 2,064 |
+| 608 | **1,102** / 544 | **598** / 271 | **308** (332) / 232 (263) | **178** / 118 | 20,708 | 102,236 | 2,832 |
+
+(Same-run pairs; the fixed path's 608-block prove measured 213–232 ms across
+runs today, the Spartan passes swinging ±10 % with the box. Hints differ
+from the fixed path's by the PoW nonces the different transcript draws.)
+
+Our 608-block sampled prover, warm, 308 ms: lowering 70 (lower 52 —
+33.7 M residues by table lookup into the kept buffer, 800 MB written;
+products 13; assignment 4, parallel), Spartan 106 (outer 10, bind+batch 38,
+inner 58 — the same as the fixed path's in the same run), GKR 37, transpose
+13, opening 80. Verifier 178 = the fixed path's 118 + the 52 ms lowering
+(+ a little for `evaluate_batched` over the fresh residues). Sampling the
+prime is ≈ 1 ms (34 candidates through their 13-base Miller–Rabin).
+
+Their sampled path is 2× their fixed one on both sides (their
+`lower::<RUNTIME>()` per proof plus the runtime modulus in every operation;
+their code is theirs to tune). Levers left on ours: flatten the integer
+matrices too (the lowering reads scattered per-row vectors), and the
+fixed-path levers.
+
 ## What stage D found (all byte-identical, all kept unless noted)
 
 - The single-column commit of `f` skips the column-lane packing (`Pcs::commit`
@@ -146,6 +227,10 @@ constants.
   `[c0, c2]` and the round-0 fold select instead of multiply
   (`inner_coefficients_boolean`, `fold_inner_and_next_boolean`; the general
   kernels are kept and a test pins equal bytes): inner 59 → 46 ms.
+- The field's reductions are branchless (`conditional_subtract`, a masked
+  subtraction after Barrett's estimate and in `add`/`sub`/`neg`): inner
+  sumcheck 54 → 47 ms at 608 blocks on the fixed path, a little more under
+  a generic prime where the estimate is short more often.
 - Tried and dropped: `keccak`'s `asm` feature (the ARMv8 SHA3 permutation
   behind spongefish's SHAKE128) — no change to the 52–54 ms absorb (the
   portable permutation already runs at ≈ 130 ns; the absorb is a per-side
@@ -181,3 +266,25 @@ the transpose's 64 MB first touch (a reused buffer across repeats).
   might not.
 - The 608-block `dump_e2e` takes ≈ 18 s and 9 GB (two `Prepared` setups: by
   `Prepared` and by hand, asserted equal); one size per process.
+- **The modulus is process-wide** (ours and theirs): one sampled-prime proof
+  or verification at a time; `Fq` values made under one prime mean nothing
+  under another; decode a sampled proof's residues (`spartan.bin`, the
+  terminal claim) only after `set_modulus(prime_for(root))` — the harness
+  does, and resets `Q` afterwards. `PreparedSampled::params()` exists only
+  after the install (the 48-byte `BitZParams` frame carries the prime, so it
+  is absorbed after the squeeze). A `meta.txt` with `kind=e2e-sampled` has
+  `q = prime` and `constraint_digest` = the integer digest (domain
+  `bitz/spartan/integer-constraint-matrices/v1`), not the residue digest.
+- **Fresh allocations fault under the kernel's map lock and every parallel
+  pass after them runs slower.** The first sampled-prime `prove` lowered
+  33.7 M residues into fresh per-row vectors, built products and assignment
+  fresh, and its Spartan passes ran at half the fixed path's speed
+  (`bind_and_batch` 30 → 58 ms at 608 blocks, 10 threads) — not the values
+  (the prime forced to `2^100 − 15` timed the same), not the layout (flat
+  made no difference), and at one thread the gap was 20 %. `SparseMatrix` is
+  now flat (one entry buffer + row starts), the row starts and the column
+  chunk index are built once from the integer matrices (prime-independent,
+  shared through an `Arc`), and `PreparedSampled` keeps the lowered, product
+  and assignment buffers between proofs (`LoweredScratch`, `lower_into`,
+  `products_into`, `assignment_into`): the Spartan phases then time the same
+  as the fixed path's, and the sampled path pays only the lowering.

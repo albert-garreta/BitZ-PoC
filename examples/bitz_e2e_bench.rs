@@ -9,7 +9,7 @@
 //! [--reps R]`
 use std::time::{Duration, Instant};
 
-use f2z::bitz::e2e::Prepared;
+use f2z::bitz::e2e::{Prepared, PreparedSampled};
 use f2z::bitz::statements::{Sha256Circuit, Sha256Statement};
 use f2z::bitz::{record_phases, take_phases};
 
@@ -41,9 +41,14 @@ fn main() {
     let blocks: usize = args[1].parse().expect("blocks");
     let mut seed = 7u64;
     let mut reps = 5usize;
+    let mut sampled = false;
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
+            "--sampled" => {
+                sampled = true;
+                i += 1;
+            }
             "--seed" => {
                 seed = args[i + 1].parse().expect("--seed");
                 i += 2;
@@ -59,10 +64,13 @@ fn main() {
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
     let threads = 1;
-    println!("bitz_e2e_bench circuit={} blocks={blocks} seed={seed} reps={reps} threads={threads}", circuit.name());
+    println!("bitz_e2e_bench circuit={} blocks={blocks} seed={seed} reps={reps} threads={threads} sampled={sampled}", circuit.name());
 
     let statement = Sha256Statement::seeded(circuit, blocks, seed);
     let inputs = statement.input();
+    if sampled {
+        return bench_sampled(statement, &inputs, reps, seed, threads);
+    }
     let started = Instant::now();
     let prepared = Prepared::new(statement).expect("prepared");
     let setup = started.elapsed();
@@ -95,6 +103,7 @@ fn main() {
     let mut verify_times = Vec::with_capacity(reps);
     let mut phase_times: Vec<(String, Vec<Duration>)> = Vec::new();
     let mut sizes = (0usize, 0usize, 0usize);
+    let mut cold = Duration::ZERO;
     for rep in 0..=reps {
         record_phases(true);
         let started = Instant::now();
@@ -104,6 +113,7 @@ fn main() {
         record_phases(false);
         assert_eq!(proof.root, root);
         if rep == 0 {
+            cold = elapsed;
             continue;
         }
         prove_times.push(elapsed);
@@ -124,7 +134,7 @@ fn main() {
     }
     let prove = median(&prove_times);
     let verify = median(&verify_times);
-    println!("commit: median {:.2} ms; prove: median {:.1} ms (min {:.1}); phases:", ms(commit), ms(prove), ms(*prove_times.iter().min().expect("reps")));
+    println!("commit: median {:.2} ms; prove: median {:.1} ms (min {:.1}, first/cold {:.1}); phases:", ms(commit), ms(prove), ms(*prove_times.iter().min().expect("reps")), ms(cold));
     for (label, v) in &phase_times {
         println!("  {label:<24} {:>8.2} ms", ms(median(v)));
     }
@@ -148,6 +158,109 @@ fn main() {
         ms(witness_time),
         ms(commit),
         ms(prove),
+        ms(phase("spartan")),
+        ms(phase("fold+images")),
+        ms(phase("gkr")),
+        ms(phase("transpose")),
+        ms(phase("opening (all)")),
+        ms(verify),
+        sizes.0,
+        sizes.1,
+        sizes.2
+    );
+}
+
+/// The sampled-prime scheme, the same measurements.
+fn bench_sampled(statement: Sha256Statement, inputs: &[bool], reps: usize, seed: u64, threads: usize) {
+    let circuit = statement.circuit;
+    let blocks = statement.blocks.len();
+    let started = Instant::now();
+    let prepared = PreparedSampled::new(statement, 100).expect("prepared");
+    let setup = started.elapsed();
+    let started = Instant::now();
+    let witness = prepared.witness(inputs).expect("witness");
+    let witness_time = started.elapsed();
+    println!(
+        "setup {:.1} ms (claim shape ({},{}), committed ({},{})); witness {:.1} ms",
+        ms(setup),
+        prepared.claim_shape().log_rows(),
+        prepared.claim_shape().log_columns(),
+        prepared.committed_shape().log_rows(),
+        prepared.committed_shape().log_columns(),
+        ms(witness_time)
+    );
+    let mut commit_times = Vec::with_capacity(reps);
+    let mut committed = None;
+    for _ in 0..reps {
+        let started = Instant::now();
+        let (root, hint) = prepared.commit(&witness).expect("commit");
+        commit_times.push(started.elapsed());
+        committed = Some((root, hint));
+    }
+    let (root, hint) = committed.expect("committed");
+    let commit = median(&commit_times);
+    let mut prove_times = Vec::with_capacity(reps);
+    let mut verify_times = Vec::with_capacity(reps);
+    let mut phase_times: Vec<(String, Vec<Duration>)> = Vec::new();
+    let mut sizes = (0usize, 0usize, 0usize);
+    let mut prime = 0u128;
+    let mut cold = Duration::ZERO;
+    for rep in 0..=reps {
+        record_phases(true);
+        let started = Instant::now();
+        let proof = prepared.prove(&witness, &hint).expect("prove");
+        let elapsed = started.elapsed();
+        let phases = take_phases();
+        record_phases(false);
+        assert_eq!(proof.root, root);
+        prime = proof.prime;
+        if rep == 0 {
+            cold = elapsed;
+            continue;
+        }
+        prove_times.push(elapsed);
+        for (label, d) in phases {
+            match phase_times.iter_mut().find(|(l, _)| *l == label) {
+                Some((_, v)) => v.push(d),
+                None => phase_times.push((label, vec![d])),
+            }
+        }
+        let started = Instant::now();
+        prepared.verify(&proof).expect("verify");
+        verify_times.push(started.elapsed());
+        sizes = (
+            proof.opening.narg_string.len(),
+            proof.opening.hints.len(),
+            proof.spartan.to_bytes(&proof.terminal).len(),
+        );
+    }
+    let prove = median(&prove_times);
+    let verify = median(&verify_times);
+    println!("prime {prime} ({} bits); commit: median {:.2} ms; prove: median {:.1} ms (min {:.1}, first/cold {:.1}); phases:", 128 - prime.leading_zeros(), ms(commit), ms(prove), ms(*prove_times.iter().min().expect("reps")), ms(cold));
+    for (label, v) in &phase_times {
+        println!("  {label:<24} {:>8.2} ms", ms(median(v)));
+    }
+    let phase = |label: &str| -> Duration {
+        phase_times.iter().find(|(l, _)| l == label).map_or(Duration::ZERO, |(_, v)| median(v))
+    };
+    let rss = peak_rss_bytes();
+    println!(
+        "verify: median {:.2} ms; proof: narg {} B + hints {} B + spartan {} B (out of band) = {} B; peak rss {:.2} GB",
+        ms(verify),
+        sizes.0,
+        sizes.1,
+        sizes.2,
+        sizes.0 + sizes.1 + sizes.2,
+        rss as f64 / 1e9
+    );
+    println!(
+        "RESULT schema=bitz-e2e-bench/1 sampled=1 circuit={} blocks={blocks} seed={seed} threads={threads} reps={reps} setup_ms={:.3} witness_ms={:.3} commit_ms={:.3} prove_ms={:.3} lowering_ms={:.3} spartan_ms={:.3} fold_ms={:.3} gkr_ms={:.3} transpose_ms={:.3} opening_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} spartan_bytes={} peak_rss_bytes={rss}",
+        circuit.name(),
+        ms(setup),
+        ms(witness_time),
+        ms(commit),
+        ms(prove),
+        ms(phase("lowering")),
         ms(phase("spartan")),
         ms(phase("fold+images")),
         ms(phase("gkr")),

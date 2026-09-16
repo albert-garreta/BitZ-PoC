@@ -76,7 +76,7 @@ impl<const COEFFS: usize> SumcheckProof<COEFFS> {
 }
 
 /// Dense Boolean-row tables for `Az`, `Bz` and `Cz` (their `R1csProductMles`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Products {
     pub az: Vec<Fq>,
     pub bz: Vec<Fq>,

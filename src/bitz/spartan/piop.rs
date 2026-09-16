@@ -7,9 +7,11 @@
 //! sumcheck; absorb `[Ah(r_x), Bh(r_x), Ch(r_x)]`; squeeze `rho`; the inner
 //! sumcheck.
 
-use super::super::fq::Fq;
+use circuit::witgen::PackedWitness;
+
+use super::super::fq::{Fq, set_modulus};
 use super::super::transcript::{ProverState, VerifierState};
-use super::matrix::{MatrixError, PreparedConstraintMatrices};
+use super::matrix::{MatrixError, PreparedConstraintMatrices, PreparedIntegerMatrices};
 use super::poly::eq_table;
 use super::sumcheck::{
     OuterSumcheckProof, Products, SumcheckError, SumcheckProof, mle_evaluate,
@@ -49,6 +51,8 @@ pub enum SpartanError {
     InvalidAssignmentDimensions,
     /// `spartan.bin` is not one canonical proof of the stated dimensions.
     Codec,
+    /// The sampled prime was refused by the field.
+    InvalidModulus,
 }
 
 impl From<MatrixError> for SpartanError {
@@ -81,6 +85,27 @@ pub fn prove_spartan_piop(
     }
 
     transcript.public_message(matrices.digest());
+    prove_spartan_piop_absorbed(transcript, matrices, products, assignment)
+}
+
+/// Their `prove_spartan_piop_absorbed`: the reduction once the statement
+/// digest is in the transcript (the sampled-prime path absorbs it before
+/// drawing the prime).
+pub fn prove_spartan_piop_absorbed(
+    transcript: &mut ProverState,
+    matrices: &PreparedConstraintMatrices,
+    products: &Products,
+    assignment: &[Fq],
+) -> Result<(SpartanPiopProof, ScaledMleEvaluationClaim), SpartanError> {
+    let num_row_vars = matrices.num_row_vars();
+    let num_column_vars = matrices.num_column_vars();
+    let rows = 1usize << num_row_vars;
+    if products.az.len() != rows || products.bz.len() != rows || products.cz.len() != rows {
+        return Err(SpartanError::InvalidProductDimensions);
+    }
+    if assignment.len() != 1usize << num_column_vars {
+        return Err(SpartanError::InvalidAssignmentDimensions);
+    }
     let tau: Vec<Fq> = (0..num_row_vars).map(|_| transcript.squeeze_fq()).collect();
     let started = std::time::Instant::now();
     let outer = prove_outer_sumcheck(transcript, Fq::ZERO, eq_table(&tau), products)?;
@@ -118,9 +143,18 @@ pub fn verify_spartan_proof(
     matrices: &PreparedConstraintMatrices,
     proof: &SpartanPiopProof,
 ) -> Result<ScaledMleEvaluationClaim, SpartanError> {
+    transcript.public_message(matrices.digest());
+    verify_spartan_proof_absorbed(transcript, matrices, proof)
+}
+
+/// Their `verify_spartan_proof_absorbed`.
+pub fn verify_spartan_proof_absorbed(
+    transcript: &mut VerifierState<'_>,
+    matrices: &PreparedConstraintMatrices,
+    proof: &SpartanPiopProof,
+) -> Result<ScaledMleEvaluationClaim, SpartanError> {
     let num_row_vars = matrices.num_row_vars();
     let num_column_vars = matrices.num_column_vars();
-    transcript.public_message(matrices.digest());
     let tau: Vec<Fq> = (0..num_row_vars).map(|_| transcript.squeeze_fq()).collect();
     let outer = proof.outer.verify(transcript, Fq::ZERO, &tau)?;
 
@@ -139,6 +173,42 @@ pub fn verify_spartan_proof(
         scale,
         value: final_claim,
     })
+}
+
+/// Their `prove_spartan_piop_sampled`: absorb the integer digest, squeeze a
+/// `prime_bits`-bit probable prime, install it, lower the matrices and the
+/// witness under it, run the reduction. The prime is returned, not
+/// transmitted; the verifier derives it from the same transcript.
+pub fn prove_spartan_piop_sampled(
+    transcript: &mut ProverState,
+    matrices: &PreparedIntegerMatrices,
+    assignment: &PackedWitness,
+    prime_bits: u32,
+) -> Result<(SpartanPiopProof, ScaledMleEvaluationClaim, u128), SpartanError> {
+    transcript.public_message(matrices.digest());
+    let prime = transcript.squeeze_prime(prime_bits);
+    set_modulus(prime).map_err(|_| SpartanError::InvalidModulus)?;
+    let lowered = matrices.lower()?;
+    let products = lowered.products(assignment)?;
+    let assignment = lowered.assignment(assignment)?;
+    let (proof, claim) = prove_spartan_piop_absorbed(transcript, &lowered, &products, &assignment)?;
+    Ok((proof, claim, prime))
+}
+
+/// Their `verify_spartan_proof_sampled`: the proof's residues must have
+/// been made, or decoded, under the prime this derives.
+pub fn verify_spartan_proof_sampled(
+    transcript: &mut VerifierState<'_>,
+    matrices: &PreparedIntegerMatrices,
+    proof: &SpartanPiopProof,
+    prime_bits: u32,
+) -> Result<(ScaledMleEvaluationClaim, u128), SpartanError> {
+    transcript.public_message(matrices.digest());
+    let prime = transcript.squeeze_prime(prime_bits);
+    set_modulus(prime).map_err(|_| SpartanError::InvalidModulus)?;
+    let lowered = matrices.lower()?;
+    let claim = verify_spartan_proof_absorbed(transcript, &lowered, proof)?;
+    Ok((claim, prime))
 }
 
 impl SpartanPiopProof {
@@ -261,7 +331,6 @@ mod tests {
     fn multiply(matrix: &SparseMatrix, assignment: &[Fq]) -> Vec<Fq> {
         matrix
             .rows()
-            .iter()
             .map(|row| {
                 row.iter()
                     .fold(Fq::ZERO, |sum, &(column, coefficient)| sum + coefficient * assignment[column])

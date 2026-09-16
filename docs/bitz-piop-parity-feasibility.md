@@ -8,7 +8,10 @@ run below). Our side: `~/f2z-pcs` branch `bitz-parity` at `f00c454` (code tip
 
 > **Outcome (2026-09-16, later the same day):** the port is done on branch
 > `bitz-e2e-parity` — byte-identical at 1, 8, 64 and 608 blocks across
-> seeds, both verifiers both ways; see `docs/bitz-e2e-parity.md`.
+> seeds, both verifiers both ways; see `docs/bitz-e2e-parity.md`. The
+> sampled-prime scheme (their `bitz-k4-prime` composed end to end on
+> `bitz-e2e-k4-prime`, our `PreparedSampled`) is byte-identical at the same
+> sizes; same document, "The sampled prime".
 
 **Verdict: feasible, and cheaper than the PCS port was.** Every question the
 prompt raised has an answer with evidence, and the three that could have

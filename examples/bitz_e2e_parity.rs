@@ -9,7 +9,8 @@
 //! prints the phase timings.
 //!
 //! `bitz_e2e_parity --sweep <their-examples-dir> <scratch-dir> <circuit>
-//! <blocks-list> <seeds> [--keep]` — for every block count in the comma list
+//! <blocks-list> <seeds> [--keep] [--sampled]` (`--sampled`: their
+//! `dump_e2e --sampled` and `verify_e2e --sampled`, our `PreparedSampled`) — for every block count in the comma list
 //! and every seed (a comma list, or a count drawn from a printed base;
 //! `BITZ_SWEEP_BASE` reproduces a draw): their `dump_e2e`, the in-process
 //! check above, their `verify_e2e` on our files. One line per case, a
@@ -19,8 +20,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use f2z::bitz::e2e::{Prepared, Proof, opening_claim};
-use f2z::bitz::fq::Q;
+use f2z::bitz::e2e::{Prepared, PreparedSampled, Proof, SampledProof, opening_claim};
+use f2z::bitz::fq::{Q, modulus, set_modulus};
 use f2z::bitz::spartan::{ScaledMleEvaluationClaim, SpartanPiopProof};
 use f2z::bitz::statements::{Sha256Circuit, Sha256Statement, splitmix64};
 use f2z::bitz::transcript::Proof as TranscriptProof;
@@ -111,6 +112,9 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
         .filter_map(|l| l.split_once('='))
         .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
         .collect();
+    if meta.get("kind").map(String::as_str) == Some("e2e-sampled") {
+        return check_sampled(dir, &meta, verbose);
+    }
     let field = |k: &str| meta.get(k).cloned().ok_or_else(|| format!("meta.txt lacks {k}"));
     let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| format!("{name}: {e}"));
     let circuit = Sha256Circuit::parse(&field("circuit")?).ok_or("unknown circuit")?;
@@ -122,6 +126,9 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
     let q: u128 = field("q")?.parse().map_err(|e| format!("q: {e}"))?;
     if q != Q {
         return Err(format!("modulus {q} is not this crate's Q"));
+    }
+    if modulus() != Q {
+        set_modulus(Q).map_err(|e| format!("{e:?}"))?;
     }
 
     let started = Instant::now();
@@ -264,6 +271,155 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
     })
 }
 
+/// The sampled-prime kind: their `dump_e2e --sampled` through our
+/// `PreparedSampled`; the prime is derived, compared with the dump's, and
+/// installed before their proof is decoded.
+fn check_sampled(dir: &Path, meta: &HashMap<String, String>, verbose: bool) -> Result<Report, String> {
+    let field = |k: &str| meta.get(k).cloned().ok_or_else(|| format!("meta.txt lacks {k}"));
+    let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| format!("{name}: {e}"));
+    let circuit = Sha256Circuit::parse(&field("circuit")?).ok_or("unknown circuit")?;
+    let blocks: usize = field("blocks")?.parse().map_err(|e| format!("blocks: {e}"))?;
+    let prime_bits: u32 = field("prime_bits")?.parse().map_err(|e| format!("prime_bits: {e}"))?;
+    let their_prime: u128 = field("prime")?.parse().map_err(|e| format!("prime: {e}"))?;
+    let public = read("public.bin")?;
+    let statement =
+        Sha256Statement::from_public_bytes(circuit, &public).ok_or("public.bin does not parse")?;
+    assert_eq!(statement.blocks.len(), blocks);
+
+    let started = Instant::now();
+    let prepared = PreparedSampled::new(statement.clone(), prime_bits).map_err(|e| format!("PreparedSampled::new: {e:?}"))?;
+    let setup = started.elapsed();
+    let mut ok = true;
+    let mut check_meta = |what: &str, ours: String, key: &str| {
+        let theirs = meta.get(key).cloned().unwrap_or_default();
+        let same = ours == theirs;
+        ok &= same;
+        if verbose || !same {
+            println!("{what}: {}", if same { "MATCH".to_string() } else { format!("MISMATCH (ours {ours}, theirs {theirs})") });
+        }
+    };
+    check_meta("integer constraint digest", hex(prepared.matrices().digest()), "constraint_digest");
+    check_meta("map digest", hex(prepared.map_digest()), "map_digest");
+    check_meta("claim shape t", prepared.claim_shape().log_rows().to_string(), "claim_t");
+    check_meta("claim shape s", prepared.claim_shape().log_columns().to_string(), "claim_s");
+    check_meta("committed shape t", prepared.committed_shape().log_rows().to_string(), "committed_t");
+    check_meta("committed shape s", prepared.committed_shape().log_columns().to_string(), "committed_s");
+    if !ok {
+        return Err("the derived statement differs from the dump's".to_string());
+    }
+    let inputs = statement.input();
+    let witness = prepared.witness(&inputs).map_err(|e| format!("witness: {e:?}"))?;
+    let (root, hint) = prepared.commit(&witness).map_err(|e| format!("commit: {e:?}"))?;
+    let their_root = unhex(&field("root")?);
+    let root_match = root.0[..] == their_root[..];
+    let derived_prime = prepared.prime_for(&root);
+    if verbose {
+        println!("root: ours {} theirs {} {}", hex(&root.0), hex(&their_root), if root_match { "MATCH" } else { "MISMATCH" });
+        println!(
+            "prime: derived {derived_prime} ({} bits) theirs {their_prime} {}",
+            128 - derived_prime.leading_zeros(),
+            if derived_prime == their_prime { "MATCH" } else { "MISMATCH" }
+        );
+    }
+    if derived_prime != their_prime {
+        return Err(format!("the derived prime {derived_prime} is not the dump's {their_prime}"));
+    }
+
+    let theirs = TranscriptProof {
+        narg_string: read("narg.bin")?,
+        hints: read("hints.bin")?,
+    };
+    let their_spartan = read("spartan.bin")?;
+    let their_claim_h = read("claim_h.bin")?;
+
+    let repeats: usize = std::env::var("BITZ_REPEAT")
+        .ok()
+        .and_then(|r| r.parse().ok())
+        .filter(|&r| r >= 1 && verbose)
+        .unwrap_or(1);
+    let mut times = Vec::with_capacity(repeats);
+    let mut ours: Option<SampledProof> = None;
+    for _ in 0..repeats {
+        let started = Instant::now();
+        let proof = prepared.prove(&witness, &hint).map_err(|e| format!("our prover: {e:?}"))?;
+        times.push(started.elapsed());
+        if let Some(previous) = &ours {
+            if previous != &proof {
+                return Err("our prover is not deterministic across repeats".to_string());
+            }
+        }
+        ours = Some(proof);
+    }
+    let ours = ours.expect("at least one prove");
+    times.sort();
+    if verbose {
+        if repeats > 1 {
+            println!("our prove: min {:.1?} median {:.1?} over {repeats} repeats (identical proofs)", times[0], times[times.len() / 2]);
+        } else {
+            println!("our prove: {:.1?} (setup {:.1?})", times[0], setup);
+        }
+    }
+    if ours.prime != their_prime {
+        return Err("our prover's prime is not the dump's".to_string());
+    }
+    // The modulus is the prime now; the params and the claim are under it.
+    let params = prepared.params().map_err(|e| format!("{e:?}"))?;
+    let ours_spartan = ours.spartan.to_bytes(&ours.terminal);
+    let ours_claim_h = claim_bytes(&opening_claim(&params, &ours.terminal).map_err(|e| format!("{e:?}"))?);
+    let spartan = first_mismatch(&ours_spartan, &their_spartan);
+    let claim_h = first_mismatch(&ours_claim_h, &their_claim_h);
+    let narg = first_mismatch(&ours.opening.narg_string, &theirs.narg_string);
+    let hints = first_mismatch(&ours.opening.hints, &theirs.hints);
+    if verbose {
+        println!("spartan.bin: ours {} B theirs {} B {}", ours_spartan.len(), their_spartan.len(), describe(spartan));
+        println!("claim_h.bin: {}", describe(claim_h));
+        println!("narg:  ours {} B theirs {} B {}", ours.opening.narg_string.len(), theirs.narg_string.len(), describe(narg));
+        println!("hints: ours {} B theirs {} B {}", ours.opening.hints.len(), theirs.hints.len(), describe(hints));
+    }
+
+    // Their proof through our verifier: decoded under the derived prime.
+    let nr = prepared.matrices().num_row_vars();
+    let nc = prepared.matrices().num_column_vars();
+    set_modulus(derived_prime).map_err(|e| format!("{e:?}"))?;
+    let (their_piop, their_terminal) =
+        SpartanPiopProof::from_bytes(&their_spartan, nr, nc).map_err(|e| format!("their spartan.bin: {e:?}"))?;
+    let their_proof = SampledProof {
+        root: Root(their_root.clone().try_into().map_err(|_| "root length")?),
+        prime: their_prime,
+        spartan: their_piop,
+        terminal: their_terminal,
+        opening: theirs,
+    };
+    let started = Instant::now();
+    let on_theirs = prepared.verify(&their_proof);
+    let verify = started.elapsed();
+    let on_ours = prepared.verify(&ours);
+    if verbose {
+        println!("our verifier on THEIR proof: {on_theirs:?} ({verify:.1?})");
+        println!("our verifier on OUR proof:   {on_ours:?}");
+    }
+    std::fs::write(dir.join("ours.spartan.bin"), &ours_spartan).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("ours.narg.bin"), &ours.opening.narg_string).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("ours.hints.bin"), &ours.opening.hints).map_err(|e| e.to_string())?;
+    let their_lens = (their_proof.opening.narg_string.len(), their_proof.opening.hints.len());
+    set_modulus(Q).map_err(|e| format!("{e:?}"))?;
+    Ok(Report {
+        blocks,
+        root_match,
+        spartan,
+        claim_h,
+        narg,
+        hints,
+        narg_len: (ours.opening.narg_string.len(), their_lens.0),
+        hints_len: (ours.opening.hints.len(), their_lens.1),
+        ours_on_theirs: on_theirs.is_ok(),
+        ours_on_ours: on_ours.is_ok(),
+        setup,
+        prove: times[0],
+        verify,
+    })
+}
+
 fn theirs_len(_ours: &[u8], theirs: &Proof) -> (usize, usize) {
     (theirs.opening.narg_string.len(), theirs.opening.hints.len())
 }
@@ -280,7 +436,7 @@ fn meta_value(stdout: &str, key: &str) -> String {
         .to_string()
 }
 
-fn sweep(their: &Path, scratch: &Path, circuit: &str, blocks_list: &[u64], seeds_arg: &str, keep: bool) -> bool {
+fn sweep(their: &Path, scratch: &Path, circuit: &str, blocks_list: &[u64], seeds_arg: &str, keep: bool, sampled: bool) -> bool {
     let dump = their.join("dump_e2e");
     let verify = their.join("verify_e2e");
     let seeds: Vec<u64> = if seeds_arg.contains(',') || blocks_list.len() * seeds_arg.len() == 0 {
@@ -306,13 +462,14 @@ fn sweep(their: &Path, scratch: &Path, circuit: &str, blocks_list: &[u64], seeds
     for &blocks in blocks_list {
         for &seed in &seeds {
             cases += 1;
-            let dir = scratch.join(format!("e2e_{circuit}_{blocks}_seed{seed}"));
+            let dir = scratch.join(format!("e2e{}_{circuit}_{blocks}_seed{seed}", if sampled { "p" } else { "" }));
             let started = Instant::now();
-            let output = Command::new(&dump)
-                .args([circuit, &blocks.to_string(), &seed.to_string()])
-                .arg(&dir)
-                .output()
-                .expect("run their dump_e2e");
+            let mut command = Command::new(&dump);
+            command.args([circuit, &blocks.to_string(), &seed.to_string()]).arg(&dir);
+            if sampled {
+                command.arg("--sampled");
+            }
+            let output = command.output().expect("run their dump_e2e");
             let their_dump = started.elapsed();
             if !output.status.success() {
                 println!("blocks {blocks} seed {seed}: their dump_e2e FAILED: {}", String::from_utf8_lossy(&output.stderr));
@@ -330,7 +487,12 @@ fn sweep(their: &Path, scratch: &Path, circuit: &str, blocks_list: &[u64], seeds
                     continue;
                 }
             };
-            let their_verdict = Command::new(&verify).arg(&dir).arg("ours.").output().expect("run their verify_e2e");
+            let mut command = Command::new(&verify);
+            command.arg(&dir).arg("ours.");
+            if sampled {
+                command.arg("--sampled");
+            }
+            let their_verdict = command.output().expect("run their verify_e2e");
             let theirs_on_ours = their_verdict.status.success();
             let passed = report.passed() && theirs_on_ours;
             all_ok &= passed;
@@ -367,9 +529,10 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("--sweep") {
         let keep = args.iter().any(|a| a == "--keep");
-        let positional: Vec<&String> = args[1..].iter().filter(|a| *a != "--keep").collect();
+        let sampled = args.iter().any(|a| a == "--sampled");
+        let positional: Vec<&String> = args[1..].iter().filter(|a| *a != "--keep" && *a != "--sampled").collect();
         if positional.len() != 5 {
-            eprintln!("usage: bitz_e2e_parity --sweep <their-examples-dir> <scratch-dir> <circuit> <blocks-list> <seeds> [--keep]");
+            eprintln!("usage: bitz_e2e_parity --sweep <their-examples-dir> <scratch-dir> <circuit> <blocks-list> <seeds> [--keep] [--sampled]");
             std::process::exit(2);
         }
         let ok = sweep(
@@ -379,6 +542,7 @@ fn main() {
             &parse_list(positional[3]),
             positional[4],
             keep,
+            sampled,
         );
         std::process::exit(if ok { 0 } else { 1 });
     }

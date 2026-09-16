@@ -71,7 +71,7 @@ fn main() {
     // claim.bin: u64 count, count x 16 B, u64 count, count x 16 B, 16 B target.
     let cb = std::fs::read(dir.join("claim.bin")).expect("claim.bin");
     let mut at = 0usize;
-    let mut take_u64 = |at: &mut usize| {
+    let take_u64 = |at: &mut usize| {
         let v = u64::from_le_bytes(cb[*at..*at + 8].try_into().unwrap());
         *at += 8;
         v as usize

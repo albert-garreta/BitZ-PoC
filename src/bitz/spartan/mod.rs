@@ -8,10 +8,14 @@ pub mod piop;
 pub mod poly;
 pub mod sumcheck;
 
-pub use matrix::{MatrixError, PreparedConstraintMatrices, SparseMatrix, residue};
+pub use matrix::{
+    IntegerCoefficient, MatrixError, PreparedConstraintMatrices, LoweredScratch, PreparedIntegerMatrices,
+    SparseMatrix, residue,
+};
 pub use piop::{
     ScaledMleEvaluationClaim, SpartanError, SpartanPiopProof, prove_spartan_piop,
-    verify_spartan_proof,
+    prove_spartan_piop_absorbed, prove_spartan_piop_sampled, verify_spartan_proof,
+    verify_spartan_proof_absorbed, verify_spartan_proof_sampled,
 };
 pub use poly::{eq_eval, eq_table};
 pub use sumcheck::{

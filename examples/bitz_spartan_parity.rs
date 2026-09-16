@@ -9,7 +9,6 @@
 //! The session and instance are byte strings on their side (`b"..."`), so
 //! they enter the domain separator raw; a `&str` would be length-prefixed.
 use std::collections::HashMap;
-use std::path::Path;
 use std::time::Instant;
 
 use circuit::Circuit;

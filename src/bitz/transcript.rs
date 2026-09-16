@@ -117,6 +117,36 @@ impl<const MAX_LEN: usize> NargDeserialize for ProverMessageBytes<MAX_LEN> {
     }
 }
 
+/// Their `prime_from_squeezes`: a `bits`-bit probable prime from successive
+/// `u128` squeezes — each candidate is the squeeze masked to `bits` bits
+/// with its top and low bits set, the first one passing
+/// [`super::fq::is_probable_prime`] is taken. Both sides squeeze the same
+/// stream, so both land on the same prime.
+pub fn prime_from_squeezes(mut next_u128: impl FnMut() -> u128, bits: u32) -> u128 {
+    assert!((2..=126).contains(&bits), "a prime of 2 to 126 bits");
+    let mask = (1u128 << bits) - 1;
+    loop {
+        let candidate = (next_u128() & mask) | (1u128 << (bits - 1)) | 1;
+        if super::fq::is_probable_prime(candidate) {
+            return candidate;
+        }
+    }
+}
+
+impl ProverState {
+    /// Their `squeeze_prime`.
+    pub fn squeeze_prime(&mut self, bits: u32) -> u128 {
+        prime_from_squeezes(|| self.verifier_message::<u128>(), bits)
+    }
+}
+
+impl VerifierState<'_> {
+    /// Their `squeeze_prime`.
+    pub fn squeeze_prime(&mut self, bits: u32) -> u128 {
+        prime_from_squeezes(|| self.verifier_message::<u128>(), bits)
+    }
+}
+
 impl PublicTranscript for ProverState {
     fn public_message<T: Encoding<[u8]> + ?Sized>(&mut self, message: &T) {
         self.inner.public_message(message);
