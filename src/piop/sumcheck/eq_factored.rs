@@ -2095,8 +2095,8 @@ where
     let k = q.len();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror the prover.
-    transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
-    transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
+    crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf));
+    crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf));
     if proof.messages.len() != k {
         return Err(SumCheckError::InvalidProofLength { expected: k, got: proof.messages.len() });
     }
@@ -2110,15 +2110,15 @@ where
     let mut expected = proof.claimed_sum.clone();
     let mut point: Vec<F> = Vec::with_capacity(k);
     for (i, msg) in proof.messages.iter().enumerate() {
+        let _round_context = crate::transcript_context!("forest.sumcheck_round", round = i);
         let tail = &msg.0.tail_evaluations;
         if tail.len() != 2 {
             // A Generic-format (or otherwise malformed) round message must
             // not decode under this verifier.
             return Err(SumCheckError::MaxDegreeExceeded);
         }
-        transcript.absorb_random_field_slice(tail, &mut buf);
-        let rho: F = transcript.get_field_challenge(field_cfg);
-        transcript.absorb_random_field(&rho, &mut buf);
+        crate::transcript_context!("sumcheck.round_polynomial", round = i, encoding = "tail_evaluations" => transcript.absorb_random_field_slice(tail, &mut buf));
+        let rho: F = crate::transcript_context!("sumcheck.round_challenge" => transcript.get_field_challenge_and_absorb(field_cfg, &mut buf));
         let (c1, c2) = (tail[0].clone(), tail[1].clone());
         let qi = &q[i];
         let c0 = expected - &(qi.clone() * &(c1.clone() + &c2));
@@ -2311,8 +2311,8 @@ where
     let _g = tracing::info_span!("eqf:rounds").entered();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror `prove_as_subprotocol`.
-    transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
-    transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
+    crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf));
+    crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf));
 
     // A zero-variable sumcheck is the direct evaluation of the singleton
     // Boolean cube. This case occurs when an integer commitment has exactly
@@ -2380,6 +2380,7 @@ where
     let mut grid_rho: Option<F> = None;
 
     for j in 1..=k {
+        let _round_context = crate::transcript_context!("forest.sumcheck_round", round = j - 1);
         // Buffers at round j have 2^{k−j+1} entries (leaf-bit groups define
         // theirs implicitly at the same size).
         let half = 1usize << (k - j);
@@ -3153,11 +3154,10 @@ where
             }
             vec![m.1, m.2, m.3]
         };
-        transcript.absorb_random_field_slice(&tail, &mut buf);
+        crate::transcript_context!("sumcheck.round_polynomial", round = j - 1, encoding = "tail_evaluations" => transcript.absorb_random_field_slice(&tail, &mut buf));
         messages.push(ProverMsg(NatEvaluatedPolyWithoutConstant::new(tail)));
 
-        let rho: F = transcript.get_field_challenge(field_cfg);
-        transcript.absorb_random_field(&rho, &mut buf);
+        let rho: F = crate::transcript_context!("sumcheck.round_challenge" => transcript.get_field_challenge_and_absorb(field_cfg, &mut buf));
         // A grid produced this round is spent by the next one, at ρ_j.
         if grid.is_some() {
             grid_rho = Some(rho.clone());

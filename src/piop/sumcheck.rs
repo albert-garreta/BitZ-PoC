@@ -191,8 +191,7 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
             let prover_msg = prover_state.prove_round(&verifier_msg, &comb_fn, config);
             transcript.absorb_random_field_slice(&prover_msg.0.tail_evaluations, &mut buf);
             prover_msgs.push(prover_msg);
-            let next_verifier_msg = transcript.get_field_challenge(config);
-            transcript.absorb_random_field(&next_verifier_msg, &mut buf);
+            let next_verifier_msg = transcript.get_field_challenge_and_absorb(config, &mut buf);
 
             verifier_msg = Some(next_verifier_msg);
         }
@@ -272,6 +271,7 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
         config: &F::Config,
     ) -> Result<Subclaim<F>, SumCheckError<F>>
     where
+        F: crate::transcript::messages::TranscriptField,
         F::Inner: ConstTranscribable,
         F::Modulus: ConstTranscribable,
     {
@@ -302,8 +302,8 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
         for i in 0..num_vars {
             let prover_msg = &proof.messages[i];
             transcript.absorb_random_field_slice(&prover_msg.0.tail_evaluations, &mut buf);
-            let verifier_msg = verifier_state.verify_round(prover_msg, transcript);
-            transcript.absorb_random_field(&verifier_msg, &mut buf);
+            let verifier_msg = transcript.get_field_challenge_and_absorb(config, &mut buf);
+            verifier_state.verify_round_with_challenge(prover_msg, verifier_msg);
         }
 
         verifier_state.check_and_generate_subclaim(proof.claimed_sum.clone())

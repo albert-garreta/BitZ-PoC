@@ -72,6 +72,10 @@ class RunnerTests(unittest.TestCase):
         cfg = config(); cfg["memory"] = True
         row = FIXTURE | dict(peak_rss_bytes=123456, boundary=runner.MEMORY_BOUNDARY)
         runner.summarize_case(samples(), row, cfg, "limber", "u32-mod32",15,SOURCE)
+        logged = samples()
+        for sample in logged:
+            sample["config"]["fiat_shamir_transcript_logs"] = True
+        runner.summarize_case(logged, row, cfg, "limber", "u32-mod32", 15, SOURCE)
         for change in (dict(proof_verified=False),dict(corpus_digest="b"*64),dict(boundary="includes cargo"),dict(peak_rss_bytes=0)):
             with self.assertRaises(ValueError):
                 runner.summarize_case(samples(),row|change,cfg,"limber","u32-mod32",15,SOURCE)
@@ -192,7 +196,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(calls),1)
             call=calls[0]
             self.assertEqual(call["args"],["+"+runner.TOOLCHAIN,"bench","--bench","mul_e2e_compare",
-                                           "--features","bench-internals,native-mul-compare"])
+                                           "--features","bench-internals,native-mul-compare", "--",
+                                           "--fiat-shamir-transcript-logs=true"])
             self.assertEqual(Path(call["cwd"]).resolve(),runner.ROOT.resolve())
             self.assertEqual(call["backends"],"limber")
             self.assertEqual(call["flags"],"-C target-cpu=native"); self.assertEqual(call["threads"],"8"); self.assertIsNone(call["encoded"])
@@ -200,10 +205,14 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(summary["samples"],2);self.assertEqual(summary["multiplications"],32768)
             self.assertEqual(summary["peak_rss_bytes"],123456)
             self.assertEqual(json.loads((output/"campaign.json").read_text())["status"],"complete")
+            self.assertTrue(json.loads((output/"campaign.json").read_text())["fiat_shamir_transcript_logs"])
             failed=root/"failed";env.update(FAIL_CARGO="1",F2Z_MUL_COMPARE_OUTPUT_DIR=str(failed))
-            run=subprocess.run(command,env=env,capture_output=True,text=True)
+            run=subprocess.run(command + ["--fiat-shamir-transcript-logs=false"],env=env,capture_output=True,text=True)
             self.assertNotEqual(run.returncode,0)
             self.assertEqual(json.loads((failed/"campaign.json").read_text())["status"],"failed")
+            self.assertFalse(json.loads((failed/"campaign.json").read_text())["fiat_shamir_transcript_logs"])
+            self.assertEqual(json.loads(commands.read_text().splitlines()[-1])["args"][-1],
+                             "--fiat-shamir-transcript-logs=false")
 
 
 if __name__ == "__main__": unittest.main()

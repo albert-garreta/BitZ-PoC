@@ -493,6 +493,9 @@ impl CompareEnv {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
+    /// Stream F2Z Fiat–Shamir bytes for each warmup and measured trial.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    fiat_shamir_transcript_logs: bool,
     #[arg(long, hide = true, num_args = 5, value_names = ["BACKEND", "WORKLOAD", "EXPONENT", "SEED", "PARAMS"])]
     measure_memory: Option<Vec<String>>,
 }
@@ -513,7 +516,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let CompareEnv { workloads, backends, output, reps, seed } = config;
     let measure_memory = common::cli::environment::<MemoryEnv>().enabled == "1";
     let threads = common::init();
-    f2z::observability::install()?;
+    let transcript_logs = f2z::transcript::logging::TranscriptLogs::new(args.fiat_shamir_transcript_logs);
+    {
+        use tracing_subscriber::prelude::*;
+        tracing::subscriber::set_global_default(tracing_subscriber::registry()
+            .with(f2z::observability::layer()).with(transcript_logs.layer()))?;
+    }
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
@@ -622,6 +630,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ).expect("measure completed operation");
                 let setup_ms = started.as_secs_f64() * 1e3;
                 let mut config = context.config();
+                if backend == "f2z" {
+                    config["fiat_shamir_transcript_logs"] = json!(args.fiat_shamir_transcript_logs);
+                }
                 config["proof_size_encoding"] = json!(match backend {
                     "f2z" =>
                         "commitment root + fixed-width PIOP payload/nonces + canonical F2Z opening",
@@ -635,12 +646,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 let mut measured = vec![];
                 for trial in 0..=reps {
+                    let transcript = if backend == "f2z" {
+                        Some(transcript_logs.begin_trial(out.join(format!(
+                            "{}-{backend}-{n}-trial-{trial}.transcript.jsonl", workload.slug()
+                        )))?)
+                    } else { None };
                     #[cfg(feature = "bench-perfetto")]
                     let recording = common::perfetto::Recording::start(output.buffered(
                         format!("{}-{backend}-{n}-trial-{trial}.pftrace", workload.slug()),
                         FileMode::CreateNew,
                     )?)?;
-                    #[cfg(feature = "bench-perfetto")]
                     let trial_span = tracing::info_span!(
                         "benchmark_trial",
                         component = "native_mul.trial",
@@ -651,10 +666,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         warmup = trial == 0,
                     )
                     .entered();
-                    let timing = context.run();
+                    let timing = match (&context, &transcript) {
+                        (Context::F2z(context), Some(trial)) => context.run_with_transcript_log(trial),
+                        _ => context.run(),
+                    };
+                    drop(trial_span);
+                    let transcript_path = transcript.map(|trial| trial.finish()).transpose()?.flatten();
+                    if let Some(path) = &transcript_path {
+                        let text_path = f2z::transcript::logging::render_text(path, path.with_extension("txt"))?;
+                        eprintln!("Fiat–Shamir transcript: {}\nReadable transcript: {}", path.display(), text_path.display());
+                    }
                     #[cfg(feature = "bench-perfetto")]
                     {
-                        drop(trial_span);
                         recording.finish()?;
                     }
                     timing.validate();
@@ -666,6 +689,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "schema":"zkperf.trace/v1", "record":"run", "run_id":run,"series_id":series,"root_span_id":"0",
                             "benchmark":{"suite":"native-mul","name":"mul_e2e_compare","algorithm":workload.algorithm(),"label":format!("{} 2^{n} {backend}",workload.slug()),"implementation":backend,"git_rev":rev,"git_dirty":dirty,"build_profile":"bench"},
                             "trial":trial_json,"status":"ok","trace_complete":true,
+                            "fiat_shamir_transcript_log":transcript_path,
                             "clock":{"id":run,"kind":"monotonic","unit":"ns","source":"Perfetto SDK"},
                             "environment":environment,
                             "parameters":{"input":{"multiplications":1usize<<n,"log_multiplications":n,"witness_digest_blake3":corpus.digest,"seed":shape_seed},"security":config,"setup_ms":setup_ms,"primary_metric":"witness_to_proof_ms","boundary":"start native witness generation through complete PCS proof; verification, serialization, and reusable setup reported separately"},
@@ -700,6 +724,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         trial: trial_json,
                         setup_ms,
                         config: &config,
+                        fiat_shamir_transcript_log: transcript_path.as_deref(),
                         measurement_policy: MEASUREMENT_POLICY,
                         proof_verified: true,
                         metrics: &metrics,

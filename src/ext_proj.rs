@@ -192,7 +192,8 @@ fn transcript_uniform_below_exact(
     // accepted with probability > 3/4. This cap is unreachable for an honest
     // random-oracle transcript but keeps the API total for adversarial test
     // transcript implementations.
-    for _ in 0..256 {
+    for retry in 0..256 {
+        let _retry = crate::transcript_context!("uniform_rejection_sample", retry = retry);
         let draw = transcript_u128(transcript);
         if draw >= rejection_threshold {
             return Ok(draw % upper_bound);
@@ -235,7 +236,8 @@ fn transcript_candidate_is_prime(
     };
     let mr = MillerRabin::new(odd_candidate);
     let base_count = candidate - 3; // bases [2, candidate - 2]
-    for _ in 0..TRANSCRIPT_PRIME_MR_ROUNDS {
+    for round in 0..TRANSCRIPT_PRIME_MR_ROUNDS {
+        let _round = crate::transcript_context!("projection_prime.miller_rabin_base", round = round);
         let base = 2 + transcript_uniform_below_exact(transcript, base_count)?;
         if !mr.test(&U128::from_u128(base)).is_probably_prime() {
             return Ok(false);
@@ -264,6 +266,7 @@ pub fn sample_prime_in_interval(
     min_inclusive: u128,
     max_inclusive: u128,
 ) -> Result<u128, PrimeSamplingError> {
+    let logical = crate::transcript::logging::LogicalScope::new(transcript.logging_enabled(), "squeeze", "projection_prime");
     let _g = tracing::info_span!("ext:sample_interval_prime").entered();
     if min_inclusive > max_inclusive {
         return Err(PrimeSamplingError::InvalidInterval {
@@ -307,10 +310,13 @@ pub fn sample_prime_in_interval(
     } else {
         64 * candidate_bits
     };
-    for _ in 0..max_attempts {
-        let candidate_index = transcript_uniform_below_exact(transcript, odd_candidate_count)?;
+    for attempt in 0..max_attempts {
+        let _attempt = crate::transcript_context!("projection_prime.attempt", attempt = attempt);
+        let candidate_index = crate::transcript_context!("projection_prime.candidate" => transcript_uniform_below_exact(transcript, odd_candidate_count))?;
         let candidate = first_odd + 2 * candidate_index;
         if transcript_candidate_is_prime(transcript, candidate)? {
+            logical.finish(|| serde_json::json!({"value_hex": format!("0x{candidate:032x}"),
+                "min_hex": format!("0x{min_inclusive:x}"), "max_hex": format!("0x{max_inclusive:x}"), "attempts": attempt + 1}));
             return Ok(candidate);
         }
     }
@@ -339,6 +345,7 @@ pub fn sample_prime_in_interval(
 /// the Fiat–Shamir transcript gains only `queries · 4^{-mr_rounds}`.
 #[allow(clippy::arithmetic_side_effects)] // candidate/base arithmetic bounded by 2^prime_bits < 2^121
 pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams) -> u128 {
+    let operation = crate::transcript::logging::LogicalScope::new(transcript.logging_enabled(), "squeeze", "projection_prime");
     let _g = tracing::info_span!("ext:sample_prime").entered();
     proj.validate();
     let bits = proj.prime_bits;
@@ -368,6 +375,7 @@ pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams)
             }
         }
         if !composite {
+            operation.finish(|| serde_json::json!({"value_hex": format!("0x{cand:032x}")}));
             return cand;
         }
     }
@@ -377,7 +385,10 @@ pub fn sample_proj_prime(transcript: &mut impl Transcript, proj: &ExtProjParams)
 /// Sample the Step-3 evaluation point `α' ∈ F_{q'}` from the transcript
 /// (256-bit reduction — see [`transcript_uniform_mod`]).
 pub fn sample_proj_point(transcript: &mut impl Transcript, q_proj: u128) -> u128 {
-    transcript_uniform_mod(transcript, q_proj)
+    let operation = crate::transcript::logging::LogicalScope::new(transcript.logging_enabled(), "squeeze", "projection_point");
+    let value = transcript_uniform_mod(transcript, q_proj);
+    operation.finish(|| serde_json::json!({"field": "prime", "modulus_hex": format!("0x{q_proj:x}"), "value_hex": format!("0x{value:032x}")}));
+    value
 }
 
 /// The low 128 bits of a `U128` as a `u128`.

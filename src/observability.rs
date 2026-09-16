@@ -41,9 +41,16 @@ fn init() {
 }
 
 /// Compose with the application's existing subscriber; never install a second one.
-pub fn layer() -> tracing_perfetto_sdk::PerfettoLayer {
+pub fn layer<S>() -> impl tracing_subscriber::Layer<S>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    use tracing_subscriber::Layer;
     init();
     tracing_perfetto_sdk::PerfettoLayer::new()
+        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+            metadata.target() != crate::transcript::logging::TARGET
+        }))
 }
 
 #[must_use = "close all spans, then call finish to flush and save the trace"]

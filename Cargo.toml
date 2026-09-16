@@ -84,16 +84,12 @@ binius-transcript = { git = "https://github.com/wu-s-john/binius64", rev = "bc73
 binius-utils = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 tracing = "0.1.38"
-tracing-subscriber = { version = "0.3.18", optional = true }
+tracing-subscriber = { version = "0.3.18", features = ["json"] }
 perfetto-sdk = { version = "1.1.1", optional = true }
 tracing-perfetto-sdk = { version = "1.0.0", optional = true }
 csv = { version = "1.4", optional = true }
 
 libc = "0.2" # getrusage: peak resident set of CLI sweep children
-# BitZ transcript parity (branch bitz-parity): the Fiat–Shamir sponge the
-# f2z-benchmark (BitZ) implementation drives, so the parity prover can emit
-# its exact narg string and challenge sequence.
-spongefish = { version = "0.7.4", optional = true }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive", "env", "string"] }
@@ -336,14 +332,10 @@ required-features = ["span-metrics", "parallel"]
 name = "prof_probe"
 required-features = ["span-metrics"]
 
-[[example]]
-name = "bitz_parity"
-required-features = ["bitz-parity"]
-
 [features]
 default = ["parallel"]
 # Numeric span metrics require the native trace processor at runtime.
-span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing-subscriber", "dep:csv"]
+span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:csv"]
 # Additionally save per-trial diagnostic artifacts through BenchmarkOutput.
 bench-perfetto = ["span-metrics"]
 hybrid = ["span-metrics", "binius64-bench", "dep:csv", "dep:clap"]
@@ -354,8 +346,6 @@ unchecked = []
 bench-peak-memory = []
 # Exposes narrowly scoped policy controls used by controlled benchmark binaries.
 bench-internals = []
-# Byte-for-byte transcript parity with the BitZ (f2z-benchmark) implementation.
-bitz-parity = ["dep:spongefish"]
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
 sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]
@@ -442,7 +432,6 @@ binius64-bench = [
     "dep:binius-transcript",
     "dep:binius-utils",
     "dep:binius-verifier",
-    "dep:tracing-subscriber",
 ]
 
 # Match the upstream zinc-plus release profile — without fat LTO +

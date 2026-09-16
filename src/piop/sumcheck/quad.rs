@@ -219,8 +219,7 @@ fn quad_round_close(
     transcript.absorb_random_field_slice(&tail, buf);
     messages.push(ProverMsg(NatEvaluatedPolyWithoutConstant::new(tail)));
 
-    let rho: Gf = transcript.get_field_challenge(&());
-    transcript.absorb_random_field(&rho, buf);
+    let rho: Gf = transcript.get_field_challenge_and_absorb(&(), buf);
 
     for a in a_scalars.iter_mut() {
         let e = e0 * (one + rho) + *qj * rho;

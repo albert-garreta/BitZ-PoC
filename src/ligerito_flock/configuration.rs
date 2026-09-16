@@ -222,6 +222,7 @@ impl ResolvedLigerito {
     /// Version the enclosing transcript and bind the actual resolved policy
     /// before any OOD, projection or PIOP challenge.
     pub fn bind(&self, transcript: &mut impl Transcript) {
+        let _context = crate::transcript_context!("statement.ligerito_policy_digest");
         transcript.absorb_slice(b"f2z/ligerito-policy/early-ood/v1");
         transcript.absorb_slice(&self.digest);
     }

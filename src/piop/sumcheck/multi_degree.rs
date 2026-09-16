@@ -397,8 +397,8 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         let mut buf = vec![0; F::Inner::NUM_BYTES];
         let nvars_field = F::from_with_cfg(num_vars as u64, config);
         let ngroups_field = F::from_with_cfg(num_groups as u64, config);
-        transcript.absorb_random_field(&nvars_field, &mut buf);
-        transcript.absorb_random_field(&ngroups_field, &mut buf);
+        crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&nvars_field, &mut buf));
+        crate::transcript_context!("sumcheck.group_count" => transcript.absorb_random_field(&ngroups_field, &mut buf));
 
         let mut group_messages: Vec<Vec<SumcheckProverMsg<F>>> = (0..num_groups)
             .map(|_| Vec::with_capacity(num_vars))
@@ -411,7 +411,7 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
             Vec::with_capacity(num_groups);
         for group in groups {
             let degree_field = F::from_with_cfg(group.degree as u64, config);
-            transcript.absorb_random_field(&degree_field, &mut buf);
+            crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&degree_field, &mut buf));
             let mut state = SumcheckProverState::new(group.poly, num_vars, group.degree);
             state.round_evaluator = group.round_evaluator;
             prover_states.push(state);
@@ -442,14 +442,14 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
             };
             round_1_msgs.push(msg);
         }
-        for msg in &round_1_msgs {
+        for (group, msg) in round_1_msgs.iter().enumerate() {
+            let _context = crate::transcript_context!("sumcheck.round_polynomial", round = 0, group = group);
             transcript.absorb_random_field_slice(&msg.0.tail_evaluations, &mut buf);
         }
         for (j, msg) in round_1_msgs.into_iter().enumerate() {
             group_messages[j].push(msg);
         }
-        let r_1: F = transcript.get_field_challenge(config);
-        transcript.absorb_random_field(&r_1, &mut buf);
+        let r_1: F = crate::transcript_context!("sumcheck.round_challenge", round = 0 => transcript.get_field_challenge_and_absorb(config, &mut buf));
         let mut verifier_msg = Some(r_1.clone());
 
         // For fast-path groups, materialize the round-1-folded MLEs and
@@ -465,7 +465,8 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
 
         // ---- Rounds 2..num_vars ---------------------------------------
         let _g_rest = tracing::info_span!("mds:rounds").entered();
-        for _ in 1..num_vars {
+        for round in 1..num_vars {
+            let _context = crate::transcript_context!("opening.presumcheck_round", round = round);
             // Parallel: each group computes its round polynomial independently
             let round_msgs: Vec<SumcheckProverMsg<F>> = cfg_iter_mut!(prover_states)
                 .zip(cfg_iter!(comb_fns))
@@ -473,7 +474,8 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
                 .collect();
 
             // Sequential: absorb in deterministic order, sample one shared challenge
-            for msg in &round_msgs {
+            for (group, msg) in round_msgs.iter().enumerate() {
+                let _context = crate::transcript_context!("sumcheck.round_polynomial", group = group);
                 transcript.absorb_random_field_slice(&msg.0.tail_evaluations, &mut buf);
             }
 
@@ -481,8 +483,7 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
                 group_messages[j].push(msg);
             }
 
-            let next_verifier_msg = transcript.get_field_challenge(config);
-            transcript.absorb_random_field(&next_verifier_msg, &mut buf);
+            let next_verifier_msg = crate::transcript_context!("sumcheck.round_challenge" => transcript.get_field_challenge_and_absorb(config, &mut buf));
 
             verifier_msg = Some(next_verifier_msg);
         }
@@ -571,26 +572,26 @@ impl<F: FromPrimitiveWithConfig> MultiDegreeSumcheck<F> {
         let mut buf = vec![0; F::Inner::NUM_BYTES];
         let nvars_field = F::from_with_cfg(num_vars as u64, config);
         let ngroups_field = F::from_with_cfg(num_groups as u64, config);
-        transcript.absorb_random_field(&nvars_field, &mut buf);
-        transcript.absorb_random_field(&ngroups_field, &mut buf);
+        crate::transcript_context!("sumcheck.variable_count" => transcript.absorb_random_field(&nvars_field, &mut buf));
+        crate::transcript_context!("sumcheck.group_count" => transcript.absorb_random_field(&ngroups_field, &mut buf));
 
         let mut verifier_states: Vec<VerifierState<F>> = (0..num_groups)
             .map(|j| {
                 let degree = expected_degrees[j];
                 let degree_field = F::from_with_cfg(degree as u64, config);
-                transcript.absorb_random_field(&degree_field, &mut buf);
+                crate::transcript_context!("sumcheck.degree_bound" => transcript.absorb_random_field(&degree_field, &mut buf));
 
                 VerifierState::new(num_vars, degree, config)
             })
             .collect();
 
         for i in 0..num_vars {
-            proof.group_messages.iter().for_each(|msg| {
-                transcript.absorb_random_field_slice(&msg[i].0.tail_evaluations, &mut buf)
+            let _round = crate::transcript_context!("opening.presumcheck_round", round = i);
+            proof.group_messages.iter().enumerate().for_each(|(group, msg)| {
+                crate::transcript_context!("sumcheck.round_polynomial", round = i, group = group => transcript.absorb_random_field_slice(&msg[i].0.tail_evaluations, &mut buf))
             });
 
-            let shared_challenge: F = transcript.get_field_challenge(config);
-            transcript.absorb_random_field(&shared_challenge, &mut buf);
+            let shared_challenge: F = crate::transcript_context!("sumcheck.round_challenge", round = i => transcript.get_field_challenge_and_absorb(config, &mut buf));
 
             verifier_states
                 .iter_mut()

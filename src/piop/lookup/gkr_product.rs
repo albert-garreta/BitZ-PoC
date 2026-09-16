@@ -177,16 +177,27 @@ where
 #[allow(clippy::arithmetic_side_effects)] // index math over a freshly-sized buffer
 pub(crate) fn absorb_field_slice<F>(transcript: &mut impl Transcript, xs: &[F])
 where
-    F: PrimeField,
+    F: crate::transcript::messages::TranscriptField,
     F::Inner: ConstTranscribable,
 {
-    let nb = F::Inner::NUM_BYTES;
-    let mut buf = vec![0u8; xs.len() * nb];
-    for (i, x) in xs.iter().enumerate() {
-        x.inner().write_transcription_bytes_exact(&mut buf[i * nb..(i + 1) * nb]);
+    transcript.absorb(&BatchedForestValues(xs));
+}
+
+struct BatchedForestValues<'a, F>(&'a [F]);
+impl<F: crate::transcript::messages::TranscriptField> crate::transcript::messages::Absorbable for BatchedForestValues<'_, F>
+where F::Inner: ConstTranscribable {
+    fn kind(&self) -> &'static str { "gkr.field_vector" }
+    fn visit_chunks(&self, emit: &mut dyn FnMut(&[u8])) {
+        let nb = F::Inner::NUM_BYTES;
+        let mut buf = vec![0; self.0.len() * nb];
+        for (i, x) in self.0.iter().enumerate() {
+            x.inner().write_transcription_bytes_exact(&mut buf[i * nb..(i + 1) * nb]);
+        }
+        emit(&[0x09]); emit(&buf);
     }
-    transcript.absorb_inner(&[0x9]); // domain tag: batched field-element slice
-    transcript.absorb_inner(&buf);
+    fn log_value(&self) -> serde_json::Value {
+        serde_json::json!({"values": self.0.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()})
+    }
 }
 
 /// Proof for a **forest** of product trees with their layer sumchecks

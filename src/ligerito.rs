@@ -131,6 +131,16 @@ fn mul_by_x(a: Gf) -> Gf {
 /// `absorb_slice`; little-endian words, matching the repo's byte layout).
 #[allow(clippy::arithmetic_side_effects)]
 fn absorb_gf_slice(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
+    let purpose = match tag {
+        0x20 => "ring_switch.evaluation_vector",
+        0x37 => "opening.external_residuals",
+        0x38 => "opening.rlc_closing_evaluations",
+        0x39 => "opening.rlc_entry_sums",
+        0x48 => "ring_switch.h_vector",
+        0x50 => "opening.ood_evaluation",
+        _ => "opening.field_vector",
+    };
+    let _context = crate::transcript_context!(purpose, wire_tag = tag, elements = vals.len());
     let mut bytes = Vec::with_capacity(vals.len() * 16 + 1);
     bytes.push(tag);
     for v in vals {
@@ -138,7 +148,10 @@ fn absorb_gf_slice(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
         bytes.extend_from_slice(&w[0].to_le_bytes());
         bytes.extend_from_slice(&w[1].to_le_bytes());
     }
-    transcript.absorb_slice(&bytes);
+    transcript.absorb(&crate::transcript::messages::DescribedFrame {
+        bytes: &bytes, kind: "opening.field_vector",
+        value: || serde_json::json!({"wire_tag": tag, "values": vals.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()}),
+    });
 }
 
 /// Absorb a virtual-XOR claim's external residuals (domain tag 0x37).

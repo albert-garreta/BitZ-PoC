@@ -1394,14 +1394,14 @@ fn finish_outer<T: Transcript>(
     } else {
         debug_assert_eq!(current_claim, expected);
     }
-    absorb_field_elements(
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
         transcript,
         &[
             az_mle_claim.clone(),
             bz_mle_claim.clone(),
             cz_mle_claim.clone(),
         ],
-    );
+    ));
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
             sumcheck: SumcheckProof { round_polynomials },
@@ -2975,7 +2975,7 @@ where
             };
             (weights, block_scales_raw(ctx, layout, rho, num_column_vars))
         };
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        let _scope = tracing::info_span!("spartan:inner_sumcheck", stage = "spartan.inner").entered();
         return prove_inner_structured_raw(
             transcript,
             ctx,
@@ -2999,7 +2999,7 @@ where
             }
         }
     };
-    let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+    let _scope = tracing::info_span!("spartan:inner_sumcheck", stage = "spartan.inner").entered();
     prove_inner_raw(
         transcript,
         ctx,

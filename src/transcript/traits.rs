@@ -1,15 +1,19 @@
+use super::{
+    logging::LogicalScope,
+    messages::{Absorbable, FramedBytes, LegacyFieldValues, TranscriptField},
+};
 //
 // Transcribable and Transcript
 //
 
+use crate::utils::primality::PrimalityTest;
+use crate::utils::{add, from_ref::FromRef, mul};
 use crypto_bigint::{BitOps, BoxedUint, Word};
 use crypto_primitives::{
     ConstIntSemiring, PrimeField, WORD_FACTOR, boolean::Boolean, crypto_bigint_int::Int,
     crypto_bigint_uint::Uint,
 };
 use itertools::Itertools;
-use crate::utils::primality::PrimalityTest;
-use crate::utils::{add, from_ref::FromRef, mul};
 
 /// Common trait for both `Transcribable` and `ConstTranscribable` to avoid code
 /// duplication in their implementations.
@@ -327,17 +331,58 @@ macro_rules! delegate_const_transcribable {
 }
 
 pub trait Transcript {
+    /// Fresh identity for a logical operation, preserving its caller's spans.
+    fn operation_span(&self, _method: &'static str) -> tracing::Span {
+        tracing::Span::none()
+    }
+
+    /// Whether this instance captures diagnostic logical operations.
+    fn logging_enabled(&self) -> bool {
+        false
+    }
+
+    fn absorb<A: Absorbable + ?Sized>(&mut self, object: &A) {
+        self.absorb_frame(object);
+    }
+
+    /// One logical record, regardless of how many encoding chunks are emitted.
+    fn absorb_frame<A: Absorbable + ?Sized>(&mut self, object: &A) {
+        let _identity = self.operation_span("absorb_frame").entered();
+        let scope = LogicalScope::new(self.logging_enabled(), "absorb", object.kind());
+        object.visit_chunks(&mut |bytes| self.absorb_inner(bytes));
+        scope.finish(|| object.log_value());
+    }
+
     /// Generates a pseudorandom transcribable value as a challenge based on the
     /// current transcript state, updating it.
     fn get_challenge<T: ConstTranscribable>(&mut self) -> T;
 
-    fn get_field_challenge<F: PrimeField>(&mut self, cfg: &F::Config) -> F
+    fn get_field_challenge<F: TranscriptField>(&mut self, cfg: &F::Config) -> F
     where
         F::Inner: ConstTranscribable,
     {
+        let scope = LogicalScope::new(self.logging_enabled(), "squeeze", "field_challenge");
         let random_inner = self.get_challenge();
+        let value = F::new_with_cfg(random_inner, cfg);
+        scope.finish(|| value.log_value());
+        value
+    }
 
-        F::new_with_cfg(random_inner, cfg)
+    /// Existing legacy sampler including its accepted-value feedback.
+    fn get_field_challenge_and_absorb<F: TranscriptField>(
+        &mut self,
+        cfg: &F::Config,
+        buf: &mut [u8],
+    ) -> F
+    where
+        F::Inner: ConstTranscribable,
+        F::Modulus: Transcribable,
+    {
+        let scope = LogicalScope::new(self.logging_enabled(), "squeeze", "field_challenge");
+        let value: F = self.get_field_challenge(cfg);
+        self.absorb_random_field(&value, buf);
+        scope.finish(|| value.log_value());
+        value
     }
 
     /// Generates a pseudorandom transcribable values as challenges based on the
@@ -346,11 +391,14 @@ pub trait Transcript {
     //             to call in a batch because each call allocates its own buffer.
     //             It might make sense to make a separate `get_challenge_with_buf`
     //             alternative to `get_challenge`.
-    fn get_field_challenges<F: PrimeField>(&mut self, n: usize, cfg: &F::Config) -> Vec<F>
+    fn get_field_challenges<F: TranscriptField>(&mut self, n: usize, cfg: &F::Config) -> Vec<F>
     where
         F::Inner: ConstTranscribable,
     {
-        (0..n).map(|_| self.get_field_challenge(cfg)).collect()
+        (0..n).map(|coordinate| {
+            let _coordinate = tracing::trace_span!(target: "f2z::transcript", "transcript_coordinate", coordinate).entered();
+            self.get_field_challenge(cfg)
+        }).collect()
     }
 
     /// Generates a pseudorandom transcribable values as challenges based on the
@@ -380,9 +428,7 @@ pub trait Transcript {
 
     /// Absorbs a byte slice into the transcript.
     fn absorb_slice(&mut self, buf: &[u8]) {
-        self.absorb_inner(&[0x6]);
-        self.absorb_inner(buf);
-        self.absorb_inner(&[0x7]);
+        self.absorb(&FramedBytes(buf));
     }
 
     /// Absorbs a field element into the transcript.
@@ -392,24 +438,12 @@ pub trait Transcript {
     // have the same byte length
     fn absorb_random_field<F>(&mut self, v: &F, buf: &mut [u8])
     where
-        F: PrimeField,
+        F: TranscriptField,
         F::Inner: Transcribable,
         F::Modulus: Transcribable,
     {
-        debug_assert_eq!(F::Inner::LENGTH_NUM_BYTES, F::Modulus::LENGTH_NUM_BYTES);
-        debug_assert_eq!(
-            F::Inner::get_num_bytes(v.inner()),
-            F::Modulus::get_num_bytes(&v.modulus())
-        );
-        self.absorb_inner(&[0x3]);
-        v.modulus().write_transcription_bytes_exact(buf);
-        self.absorb_inner(buf);
-        self.absorb_inner(&[0x5]);
-
-        self.absorb_inner(&[0x1]);
-        v.inner().write_transcription_bytes_exact(buf);
-        self.absorb_inner(buf);
-        self.absorb_inner(&[0x3])
+        let _ = buf; // Kept for source compatibility with existing callers.
+        self.absorb(&LegacyFieldValues(std::slice::from_ref(v)));
     }
 
     /// Absorbs a slice of field element into the transcript.
@@ -417,11 +451,12 @@ pub trait Transcript {
     /// absorb_into_transcript.
     fn absorb_random_field_slice<F>(&mut self, v: &[F], buf: &mut [u8])
     where
-        F: PrimeField,
+        F: TranscriptField,
         F::Inner: Transcribable,
         F::Modulus: Transcribable,
     {
-        v.iter().for_each(|x| self.absorb_random_field(x, buf));
+        let _ = buf;
+        self.absorb(&LegacyFieldValues(v));
     }
 }
 

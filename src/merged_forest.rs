@@ -85,6 +85,13 @@ pub enum MergedForestError {
 
 #[allow(clippy::arithmetic_side_effects)]
 fn absorb_gfs(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
+    let purpose = match tag {
+        0x30 => "gkr.product_tree_roots",
+        0x32 => "gkr.closing_child_pair",
+        0x33 => "gkr.closing_child_quad",
+        _ => "gkr.field_vector",
+    };
+    let _context = crate::transcript_context!(purpose, wire_tag = tag, elements = vals.len());
     let mut bytes = Vec::with_capacity(vals.len() * 16 + 1);
     bytes.push(tag);
     for v in vals {
@@ -92,7 +99,10 @@ fn absorb_gfs(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
         bytes.extend_from_slice(&w[0].to_le_bytes());
         bytes.extend_from_slice(&w[1].to_le_bytes());
     }
-    transcript.absorb_slice(&bytes);
+    transcript.absorb(&crate::transcript::messages::DescribedFrame {
+        bytes: &bytes, kind: "gkr.field_vector",
+        value: || serde_json::json!({"wire_tag": tag, "values": vals.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()}),
+    });
 }
 
 /// Evaluate the multilinear with table `tbl` (bit k ↔ point[k]) at `point`.
@@ -875,7 +885,7 @@ fn drive_grouped(
     let has_const = live < num_trees;
     let one = Gf::one();
     absorb_gfs(transcript, 0x30, &roots);
-    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let zeta: Vec<Gf> = crate::transcript_context!("gkr.tree_batching_point" => transcript.get_field_challenges(s, &()));
     let mut claim = mle_at(&roots, &zeta);
 
     let mut z_x: Vec<Gf> = Vec::new();
@@ -884,6 +894,7 @@ fn drive_grouped(
     // Layer ℓ uses level ℓ+1 = levels[ℓ] unless bit-driven; consumed via
     // mem::take per slot (front-first order).
     for ell in 0..depth {
+        let _layer = crate::transcript_context!("gkr.layer", layer = ell);
         // Phase A: bind the ℓ in-tree variables (ℓ ≥ 1).
         let (sc_x, r_x, e_vec, o_vec) = if ell == 0 {
             let (mut e, mut o) = match &mut levels {
@@ -1028,7 +1039,7 @@ fn drive_grouped(
         drop(_g);
 
         absorb_gfs(transcript, 0x32, &[pair.0, pair.1]);
-        let mu: Gf = transcript.get_field_challenge(&());
+        let mu: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu" => transcript.get_field_challenge(&()));
         claim = pair.0 + mu * (pair.0 + pair.1);
         let mut nx = r_x;
         nx.push(mu);
@@ -1981,7 +1992,7 @@ fn run_arity2_layer(
     drop(_g);
 
     absorb_gfs(transcript, 0x32, &[pair.0, pair.1]);
-    let mu: Gf = transcript.get_field_challenge(&());
+    let mu: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu" => transcript.get_field_challenge(&()));
     *claim = pair.0 + mu * (pair.0 + pair.1);
     let mut nx = r_x;
     nx.push(mu);
@@ -2077,7 +2088,7 @@ pub fn prove_merged_forest_lazy_quad(
 
     // ---- drive ----
     absorb_gfs(transcript, 0x30, &roots);
-    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let zeta: Vec<Gf> = crate::transcript_context!("gkr.tree_batching_point" => transcript.get_field_challenges(s, &()));
     let mut claim = mle_at(&roots, &zeta);
     let mut z_x: Vec<Gf> = Vec::new();
     let mut z_c: Vec<Gf> = zeta;
@@ -2165,8 +2176,8 @@ pub fn prove_merged_forest_lazy_quad(
         drop(_g);
 
         absorb_gfs(transcript, 0x33, &quad);
-        let mu_a: Gf = transcript.get_field_challenge(&());
-        let mu_b: Gf = transcript.get_field_challenge(&());
+        let mu_a: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu_a" => transcript.get_field_challenge(&()));
+        let mu_b: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu_b" => transcript.get_field_challenge(&()));
         claim = quad_interp(quad, mu_a, mu_b);
         let mut nx = r_x;
         nx.push(mu_a);
@@ -2324,8 +2335,8 @@ pub fn prove_merged_forest_lazy_quad(
         drop(_g);
 
         absorb_gfs(transcript, 0x33, &quad);
-        let mu_a: Gf = transcript.get_field_challenge(&());
-        let mu_b: Gf = transcript.get_field_challenge(&());
+        let mu_a: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu_a" => transcript.get_field_challenge(&()));
+        let mu_b: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu_b" => transcript.get_field_challenge(&()));
         claim = quad_interp(quad, mu_a, mu_b);
         let mut nx = r_x;
         nx.push(mu_a);
@@ -2444,12 +2455,13 @@ pub fn verify_merged_forest_quad(
     }
     let one = Gf::one();
     absorb_gfs(transcript, 0x30, roots);
-    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let zeta: Vec<Gf> = crate::transcript_context!("gkr.tree_batching_point" => transcript.get_field_challenges(s, &()));
     let mut claim = mle_at(roots, &zeta);
     let mut z_x: Vec<Gf> = Vec::new();
     let mut z_c: Vec<Gf> = zeta;
 
     for (li, (layer, kind)) in proof.layers.iter().zip(&kinds).enumerate() {
+        let _layer = crate::transcript_context!("gkr.layer", layer = li);
         match kind {
             LKind::Quad(ell) => {
                 let ell = *ell;
@@ -2491,8 +2503,8 @@ pub fn verify_merged_forest_quad(
                 }
 
                 absorb_gfs(transcript, 0x33, &quad);
-                let mu_a: Gf = transcript.get_field_challenge(&());
-                let mu_b: Gf = transcript.get_field_challenge(&());
+                let mu_a: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu_a" => transcript.get_field_challenge(&()));
+                let mu_b: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu_b" => transcript.get_field_challenge(&()));
                 claim = quad_interp(quad, mu_a, mu_b);
                 let mut nx = r_x;
                 nx.push(mu_a);
@@ -2524,7 +2536,7 @@ pub fn verify_merged_forest_quad(
                     return Err(MergedForestError::LayerClaim { layer: li });
                 }
                 absorb_gfs(transcript, 0x32, &[p_, q_]);
-                let mu: Gf = transcript.get_field_challenge(&());
+                let mu: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu" => transcript.get_field_challenge(&()));
                 claim = p_ + mu * (p_ + q_);
                 let mut nx = sub.point;
                 nx.push(mu);
@@ -3347,12 +3359,13 @@ pub fn verify_merged_forest(
     }
     let one = Gf::one();
     absorb_gfs(transcript, 0x30, roots);
-    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let zeta: Vec<Gf> = crate::transcript_context!("gkr.tree_batching_point" => transcript.get_field_challenges(s, &()));
     let mut claim = mle_at(roots, &zeta);
 
     let mut z_x: Vec<Gf> = Vec::new();
     let mut z_c: Vec<Gf> = zeta;
     for (ell, layer) in proof.layers.iter().enumerate() {
+        let _layer = crate::transcript_context!("gkr.layer", layer = ell);
         // Arity-2 layers never carry a closing quad — reject it here so a
         // stream with a smuggled `pair2` (codec flag bit 2) cannot decode
         // to an accepted proof it would otherwise silently ignore.
@@ -3395,7 +3408,7 @@ pub fn verify_merged_forest(
         }
 
         absorb_gfs(transcript, 0x32, &[p_, q_]);
-        let mu: Gf = transcript.get_field_challenge(&());
+        let mu: Gf = crate::transcript_context!("gkr.child_line_challenge", coordinate = "mu" => transcript.get_field_challenge(&()));
         claim = p_ + mu * (p_ + q_);
         let mut nx = r_x;
         nx.push(mu);

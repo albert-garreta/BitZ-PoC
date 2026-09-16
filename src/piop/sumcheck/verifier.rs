@@ -65,6 +65,7 @@ impl<F: FromPrimitiveWithConfig> VerifierState<F> {
     /// [`Self::verify_round_with_challenge`]. Returns the sampled challenge.
     pub fn verify_round(&mut self, prover_msg: &ProverMsg<F>, transcript: &mut impl Transcript) -> F
     where
+        F: crate::transcript::messages::TranscriptField,
         F::Inner: ConstTranscribable,
     {
         let challenge: F = transcript.get_field_challenge(&self.config);

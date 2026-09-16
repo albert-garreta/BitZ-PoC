@@ -7,7 +7,7 @@ use f2z::{
         f2z::U32MulLigerito, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
         verify_u64_mul, verify_u128_mul,
     },
-    transcript::Blake3Transcript,
+    transcript::{Blake3Transcript, logging::{TranscriptLogs, Trial}},
     observability::Recording,
 };
 use serde_json::{Value, json};
@@ -118,8 +118,14 @@ impl Context {
         config
     }
     pub(super) fn run(&self) -> Timing {
+        let logs = TranscriptLogs::new(false);
+        let trial = logs.begin_trial("").expect("disabled capture");
+        self.run_with_transcript_log(&trial)
+    }
+
+    pub(super) fn run_with_transcript_log(&self, trial: &Trial<'_>) -> Timing {
         let recording = Recording::start(Vec::new()).expect("start F2Z trial");
-        let proof_bytes = self.prove_and_verify();
+        let proof_bytes = self.prove_and_verify_with_transcript_log(trial);
         let raw = recording.intervals().expect("query F2Z trial");
         let trial = super::trace_capture::TrialScopes::from_spans(&raw, "benchmark");
         let mut timing = Timing::from_trial(&trial, proof_bytes);
@@ -139,6 +145,12 @@ impl Context {
     }
 
     pub(super) fn prove_and_verify(&self) -> usize {
+        let logs = TranscriptLogs::new(false);
+        let trial = logs.begin_trial("").expect("disabled capture");
+        self.prove_and_verify_with_transcript_log(&trial)
+    }
+
+    fn prove_and_verify_with_transcript_log(&self, trial: &Trial<'_>) -> usize {
         let root = tracing::info_span!("Verified trial", component = "benchmark.verified-trial", tag_end_to_end = true).entered();
         let total = tracing::info_span!("Witness to proof", component = "benchmark.witness-to-proof").entered();
         // Serialized proof size: the commitment root, the Spartan payload as
@@ -162,14 +174,14 @@ impl Context {
                     commit_u32_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u32 commitment")
                 };
-                let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                let proof = prove_u32_mul(&mut trial.wrap("prover", Blake3Transcript::new()), relation, &witness, &hint)
                     .expect("u32 full proof");
                 drop(online);
                 drop(total);
                 {
                     let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
                     verify_u32_mul(
-                        &mut Blake3Transcript::new(),
+                        &mut trial.wrap("verifier", Blake3Transcript::new()),
                         relation,
                         &hint.commitment,
                         &proof,
@@ -202,14 +214,14 @@ impl Context {
                     commit_u64_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u64 commitment")
                 };
-                let proof = prove_u64_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                let proof = prove_u64_mul(&mut trial.wrap("prover", Blake3Transcript::new()), relation, &witness, &hint)
                     .expect("u64 full proof");
                 drop(online);
                 drop(total);
                 {
                     let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
                     verify_u64_mul(
-                        &mut Blake3Transcript::new(),
+                        &mut trial.wrap("verifier", Blake3Transcript::new()),
                         relation,
                         &hint.commitment,
                         &proof,
@@ -236,14 +248,14 @@ impl Context {
                     commit_u128_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u128 commitment")
                 };
-                let proof = prove_u128_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                let proof = prove_u128_mul(&mut trial.wrap("prover", Blake3Transcript::new()), relation, &witness, &hint)
                     .expect("u128 full proof");
                 drop(online);
                 drop(total);
                 {
                     let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
                     verify_u128_mul(
-                        &mut Blake3Transcript::new(),
+                        &mut trial.wrap("verifier", Blake3Transcript::new()),
                         relation,
                         &hint.commitment,
                         &proof,

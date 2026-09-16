@@ -116,26 +116,50 @@ fn gf_slice_to_f128(v: &[Gf]) -> Vec<F128> {
 /// from `get_field_challenge::<Gf>`.
 pub struct ZincChallenger<'a, T: Transcript + Send>(pub &'a mut T);
 
+enum LigeritoFieldEncoding { Packed, IndividuallyFramed }
+struct LigeritoFieldValues<'a> {
+    values: &'a [F128],
+    encoding: LigeritoFieldEncoding,
+}
+impl crate::transcript::messages::Absorbable for LigeritoFieldValues<'_> {
+    fn kind(&self) -> &'static str { "ligerito.field_values" }
+    fn visit_chunks(&self, emit: &mut dyn FnMut(&[u8])) {
+        use crate::transcript::messages::FramedBytes;
+        let bytes = |v: &F128| {
+            let mut bytes = [0; 16];
+            bytes[..8].copy_from_slice(&v.lo.to_le_bytes());
+            bytes[8..].copy_from_slice(&v.hi.to_le_bytes());
+            bytes
+        };
+        match self.encoding {
+            LigeritoFieldEncoding::Packed => {
+                let mut frame = Vec::with_capacity(self.values.len() * 16);
+                for value in self.values { frame.extend_from_slice(&bytes(value)); }
+                FramedBytes(&frame).visit_chunks(emit);
+            },
+            LigeritoFieldEncoding::IndividuallyFramed => {
+                for value in self.values { FramedBytes(&bytes(value)).visit_chunks(emit); }
+            },
+        }
+    }
+    fn log_value(&self) -> serde_json::Value {
+        serde_json::json!({"field": "GF(2^128)", "values_hex": self.values.iter().map(|v| format!("0x{:016x}{:016x}", v.hi, v.lo)).collect::<Vec<_>>()})
+    }
+}
+
 impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
     fn observe_label(&mut self, label: &[u8]) {
-        self.0.absorb_slice(label);
+        crate::transcript_context!("ligerito.domain_separator", domain = tracing::field::display(String::from_utf8_lossy(label)) => self.0.absorb_slice(label));
     }
 
     fn observe_f128(&mut self, value: F128) {
-        let mut bytes = [0u8; 16];
-        bytes[..8].copy_from_slice(&value.lo.to_le_bytes());
-        bytes[8..].copy_from_slice(&value.hi.to_le_bytes());
-        self.0.absorb_slice(&bytes);
+        self.0.absorb(&LigeritoFieldValues { values: &[value], encoding: LigeritoFieldEncoding::IndividuallyFramed });
     }
-
-    #[allow(clippy::arithmetic_side_effects)]
     fn observe_f128_slice(&mut self, values: &[F128]) {
-        let mut bytes = Vec::with_capacity(values.len() * 16);
-        for v in values {
-            bytes.extend_from_slice(&v.lo.to_le_bytes());
-            bytes.extend_from_slice(&v.hi.to_le_bytes());
-        }
-        self.0.absorb_slice(&bytes);
+        self.0.absorb(&LigeritoFieldValues { values, encoding: LigeritoFieldEncoding::Packed });
+    }
+    fn observe_f128_sequence(&mut self, values: &[F128]) {
+        self.0.absorb(&LigeritoFieldValues { values, encoding: LigeritoFieldEncoding::IndividuallyFramed });
     }
 
     fn observe_bytes(&mut self, bytes: &[u8]) {
@@ -171,7 +195,7 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
         } else {
             first_pow_nonce(&seed, 0, u64::MAX, bits).expect("a nonce below 2^64")
         };
-        self.0.absorb_slice(&nonce.to_le_bytes());
+        crate::transcript_context!("grinding.nonce", difficulty_bits = bits => self.0.absorb_slice(&nonce.to_le_bytes()));
         nonce
     }
 
@@ -188,7 +212,7 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
         };
         // Absorb regardless, keeping the transcript in lockstep with the
         // prover; an honest verifier rejects on `false` anyway.
-        self.0.absorb_slice(&nonce.to_le_bytes());
+        crate::transcript_context!("grinding.nonce", difficulty_bits = bits => self.0.absorb_slice(&nonce.to_le_bytes()));
         ok
     }
 }
@@ -197,6 +221,7 @@ impl<T: Transcript + Send> ZincChallenger<'_, T> {
     /// PoW seed: one squeezed field element binds the grind to the current
     /// transcript state (prover and verifier squeeze identically).
     fn pow_seed(&mut self) -> [u8; 16] {
+        let _context = crate::transcript_context!("grinding.seed_challenge");
         let g: Gf = self.0.get_field_challenge(&());
         let w = g.words();
         let mut seed = [0u8; 16];
@@ -239,22 +264,6 @@ impl FlockCommitHint {
     /// computations in tests/benches.
     pub fn rows(&self) -> &[Vec<u64>] {
         &self.rows
-    }
-
-    /// The flock prover data (codeword + Merkle tree) behind the commitment.
-    pub fn flock_prover_data(&self) -> &ProverData {
-        &self.prover_data
-    }
-
-    /// The packed message in flock representation, `2^{m_p}` elements.
-    pub fn packed_message(&self) -> &[F128] {
-        &self.p_msg
-    }
-
-    /// The 64-column-lane packing of the same bits (`packed_cols[g][b]` =
-    /// bit `b` of columns `64g..64g+63`), built once at commit.
-    pub fn packed_cols(&self) -> &[Vec<u64>] {
-        &self.packed_cols
     }
 }
 
@@ -1340,6 +1349,24 @@ const FIELD_XOR_CLAIMS: u8 = 7;
 /// `absorb_inner` avoids materializing a second copy of large row-weight
 /// tables while remaining byte-for-byte equivalent to one contiguous
 /// `absorb_slice` call.
+struct StatementField<E, V> {
+    tag: u8,
+    kind: u8,
+    count: usize,
+    encode: E,
+    value: V,
+}
+impl<E, V> crate::transcript::messages::Absorbable for StatementField<E, V>
+where E: Fn(&mut dyn FnMut(&[u8])), V: Fn() -> serde_json::Value {
+    fn kind(&self) -> &'static str { "statement.field" }
+    fn visit_chunks(&self, emit: &mut dyn FnMut(&[u8])) {
+        emit(&[0x06]); emit(&[self.tag, self.kind]);
+        emit(&(self.count as u64).to_le_bytes());
+        (self.encode)(emit); emit(&[0x07]);
+    }
+    fn log_value(&self) -> serde_json::Value { (self.value)() }
+}
+
 struct StatementFrame<'a, T: Transcript> {
     transcript: &'a mut T,
 }
@@ -1363,85 +1390,86 @@ impl BoundModQStatement {
 
 impl<'a, T: Transcript> StatementFrame<'a, T> {
     fn new(transcript: &'a mut T, domain: &[u8]) -> Self {
+        let _context = crate::transcript_context!("statement.domain_separator", domain = tracing::field::display(String::from_utf8_lossy(domain)));
         transcript.absorb_slice(STATEMENT_FRAME_DOMAIN);
         transcript.absorb_slice(domain);
         Self { transcript }
     }
 
-    fn begin_field(&mut self, tag: u8, kind: u8, count: usize) {
-        self.transcript.absorb_inner(&[0x6]);
-        self.transcript.absorb_inner(&[tag, kind]);
-        self.transcript.absorb_inner(&(count as u64).to_le_bytes());
+    fn field_context(&self, tag: u8, kind: u8, count: usize) -> tracing::span::EnteredSpan {
+        let purpose = match tag {
+            0x01 => "statement.commitment_root",
+            0x02 => "statement.commitment_variables",
+            0x03 => "statement.commitment_log_inverse_rate",
+            0x04 => "statement.commitment_log_batch_size",
+            0x05 => "statement.commitment_profile",
+            0x06 => "statement.commitment_merkle_hash",
+            0x08 => "statement.ligerito_log_inverse_rates",
+            0x09 => "statement.ligerito_recursive_steps",
+            0x0a => "statement.ligerito_initial_log_message_columns",
+            0x0b => "statement.ligerito_initial_log_interleaving",
+            0x0c => "statement.ligerito_initial_fold_count",
+            0x0d => "statement.ligerito_recursive_log_message_columns",
+            0x0e => "statement.ligerito_recursive_fold_counts",
+            0x0f => "statement.ligerito_query_counts",
+            0x10 => "statement.ligerito_query_grinding_bits",
+            0x11 => "statement.ligerito_fold_grinding_bits",
+            0x12 => "statement.ligerito_ood_sample_counts",
+            0x13 => "statement.ligerito_merkle_hash",
+            0x20 => "statement.row_variables",
+            0x21 => "statement.column_variables",
+            0x22 => "statement.word_bits",
+            0x23 => "statement.sha_columns",
+            0x24 => "statement.sha_log_columns",
+            0x25 => "statement.sha_bit_variables",
+            0x26 => "statement.sha_variables",
+            0x27 => "statement.sha_folded_trace_variables",
+            0x28 => "statement.sha_extra_fold_variables",
+            // The remaining tags are local to the opening's statement domain;
+            // their semantic name is supplied by the enclosing caller scope.
+            _ => "statement.field",
+        };
+        let context = crate::transcript_context!(purpose, wire_tag = tag, field_type = kind,
+            elements = count, part = tracing::field::Empty);
+        context
     }
 
-    fn end_field(&mut self) {
-        self.transcript.absorb_inner(&[0x7]);
+    fn field<E, V>(&mut self, tag: u8, kind: u8, count: usize, encode: E, value: V)
+    where E: Fn(&mut dyn FnMut(&[u8])), V: Fn() -> serde_json::Value {
+        let _context = self.field_context(tag, kind, count);
+        self.transcript.absorb(&StatementField { tag, kind, count, encode, value });
     }
-
     fn bytes(&mut self, tag: u8, values: &[u8]) {
-        self.begin_field(tag, FIELD_BYTES, values.len());
-        self.transcript.absorb_inner(values);
-        self.end_field();
+        self.field(tag, FIELD_BYTES, values.len(), |emit| emit(values),
+            || serde_json::json!({"bytes_hex": crate::transcript::logging::Hex(values).to_string()}));
     }
-
     fn byte(&mut self, tag: u8, value: u8) {
-        self.begin_field(tag, FIELD_U8, 1);
-        self.transcript.absorb_inner(&[value]);
-        self.end_field();
+        self.field(tag, FIELD_U8, 1, |emit| emit(&[value]), || serde_json::json!({"value": value}));
     }
-
     fn usize(&mut self, tag: u8, value: usize) {
-        self.begin_field(tag, FIELD_U64, 1);
-        self.transcript.absorb_inner(&(value as u64).to_le_bytes());
-        self.end_field();
+        self.field(tag, FIELD_U64, 1, |emit| emit(&(value as u64).to_le_bytes()), || serde_json::json!({"value": value}));
     }
-
     fn usizes(&mut self, tag: u8, values: &[usize]) {
-        self.begin_field(tag, FIELD_U64, values.len());
-        for &value in values {
-            self.transcript.absorb_inner(&(value as u64).to_le_bytes());
-        }
-        self.end_field();
+        self.field(tag, FIELD_U64, values.len(), |emit| { for &value in values { emit(&(value as u64).to_le_bytes()); } },
+            || serde_json::json!({"values": values}));
     }
-
     #[allow(dead_code)]
     fn u128s(&mut self, tag: u8, values: &[u128]) {
-        self.begin_field(tag, FIELD_U128, values.len());
-        for &value in values {
-            self.transcript.absorb_inner(&value.to_le_bytes());
-        }
-        self.end_field();
+        self.field(tag, FIELD_U128, values.len(), |emit| { for value in values { emit(&value.to_le_bytes()); } },
+            || serde_json::json!({"values_hex": values.iter().map(|v| format!("0x{v:032x}")).collect::<Vec<_>>()}));
     }
-
     fn gf128(&mut self, tag: u8, value: Gf) {
-        self.begin_field(tag, FIELD_GF128, 1);
-        for word in value.words() {
-            self.transcript.absorb_inner(&word.to_le_bytes());
-        }
-        self.end_field();
+        self.field(tag, FIELD_GF128, 1, |emit| { for word in value.words() { emit(&word.to_le_bytes()); } },
+            || crate::transcript::messages::TranscriptField::log_value(&value));
     }
-
     #[allow(dead_code)]
     fn gf128s(&mut self, tag: u8, values: &[Gf]) {
-        self.begin_field(tag, FIELD_GF128, values.len());
-        for value in values {
-            for word in value.words() {
-                self.transcript.absorb_inner(&word.to_le_bytes());
-            }
-        }
-        self.end_field();
+        self.field(tag, FIELD_GF128, values.len(), |emit| { for value in values { for word in value.words() { emit(&word.to_le_bytes()); } } },
+            || serde_json::json!({"values": values.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()}));
     }
-
     fn u128_rows(&mut self, tag: u8, rows: &[Vec<u128>]) {
-        self.begin_field(tag, FIELD_U128_ROWS, rows.len());
-        for row in rows {
-            self.transcript
-                .absorb_inner(&(row.len() as u64).to_le_bytes());
-            for &value in row {
-                self.transcript.absorb_inner(&value.to_le_bytes());
-            }
-        }
-        self.end_field();
+        self.field(tag, FIELD_U128_ROWS, rows.len(), |emit| { for row in rows { emit(&(row.len() as u64).to_le_bytes()); for value in row { emit(&value.to_le_bytes()); } } },
+            || serde_json::json!({"rows_hex": rows.iter().map(|row| row.iter().map(|v| format!("0x{v:032x}")).collect::<Vec<_>>()).collect::<Vec<_>>()}));
     }
 
     fn commitment(&mut self, commitment: &Commitment) {
@@ -1487,24 +1515,19 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
 
     #[allow(dead_code)]
     fn xor_claims<C: XorStatementClaim>(&mut self, tag: u8, claims: &[C]) {
-        self.begin_field(tag, FIELD_XOR_CLAIMS, claims.len());
-        for claim in claims {
-            self.transcript
-                .absorb_inner(&(claim.cols().len() as u64).to_le_bytes());
-            for &col in claim.cols() {
-                self.transcript.absorb_inner(&(col as u64).to_le_bytes());
+        self.field(tag, FIELD_XOR_CLAIMS, claims.len(), |emit| {
+            for claim in claims {
+                emit(&(claim.cols().len() as u64).to_le_bytes());
+                for &col in claim.cols() { emit(&(col as u64).to_le_bytes()); }
+                emit(&claim.constant().to_le_bytes());
+                emit(&[u8::from(claim.has_external())]);
+                emit(&(claim.row_weights_q().len() as u64).to_le_bytes());
+                for weight in claim.row_weights_q() { emit(&weight.to_le_bytes()); }
             }
-            self.transcript
-                .absorb_inner(&claim.constant().to_le_bytes());
-            self.transcript
-                .absorb_inner(&[u8::from(claim.has_external())]);
-            self.transcript
-                .absorb_inner(&(claim.row_weights_q().len() as u64).to_le_bytes());
-            for &weight in claim.row_weights_q() {
-                self.transcript.absorb_inner(&weight.to_le_bytes());
-            }
-        }
-        self.end_field();
+        }, || serde_json::json!({"claims": claims.iter().map(|c| serde_json::json!({
+            "columns": c.cols(), "constant_hex": format!("0x{:032x}", c.constant()),
+            "has_external": c.has_external(), "row_weights_hex": c.row_weights_q().iter().map(|v| format!("0x{v:032x}")).collect::<Vec<_>>()
+        })).collect::<Vec<_>>()}));
     }
 }
 
@@ -1597,7 +1620,7 @@ fn absorb_rs_open_statement(
     let mut frame = StatementFrame::new(transcript, RS_OPEN_STATEMENT_DOMAIN);
     frame.commitment(commitment);
     frame.ligerito_config(config);
-    frame.gf128s(0x30, point);
+    crate::transcript_context!("statement.opening_point" => frame.gf128s(0x30, point));
 }
 
 #[allow(dead_code)]
@@ -1613,8 +1636,8 @@ fn absorb_rs_eval_statement(
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
-    frame.u128s(0x30, row_weights);
-    frame.gf128(0x31, alpha);
+    crate::transcript_context!("statement.row_weights" => frame.u128s(0x30, row_weights));
+    crate::transcript_context!("statement.generator" => frame.gf128(0x31, alpha));
 }
 
 #[allow(dead_code)]
@@ -1630,8 +1653,8 @@ fn absorb_rs_eval_batch_statement(
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
-    frame.u128_rows(0x30, row_weights);
-    frame.gf128(0x31, alpha);
+    crate::transcript_context!("statement.row_weights" => frame.u128_rows(0x30, row_weights));
+    crate::transcript_context!("statement.generator" => frame.gf128(0x31, alpha));
 }
 
 #[allow(dead_code)]
@@ -1648,9 +1671,9 @@ fn absorb_mod_q_statement(
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
-    frame.u128s(0x30, row_weights_q);
-    frame.usize(0x31, q_bits);
-    frame.gf128(0x32, alpha);
+    crate::transcript_context!("statement.row_weights_mod_q" => frame.u128s(0x30, row_weights_q));
+    crate::transcript_context!("statement.modulus_bit_length" => frame.usize(0x31, q_bits));
+    crate::transcript_context!("statement.generator" => frame.gf128(0x32, alpha));
     BoundModQStatement::new()
 }
 
@@ -1671,9 +1694,9 @@ pub(crate) fn absorb_mod_q_weight_chunks_statement(
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
-    frame.bytes(0x30, statement_digest);
-    frame.usize(0x31, q_bits);
-    frame.gf128(0x32, alpha);
+    crate::transcript_context!("statement.opening_claim_digest" => frame.bytes(0x30, statement_digest));
+    crate::transcript_context!("statement.modulus_bit_length" => frame.usize(0x31, q_bits));
+    crate::transcript_context!("statement.generator" => frame.gf128(0x32, alpha));
     BoundModQStatement::new()
 }
 
@@ -1700,16 +1723,16 @@ pub fn absorb_standalone_mod_q_statement(
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
-    frame.gf128(0x30, alpha);
-    frame.usize(0x31, q_bits);
-    frame.usize(0x32, ood.map_or(0, |round| 1usize.wrapping_add(round.grinding_bits as usize)));
+    crate::transcript_context!("statement.generator" => frame.gf128(0x30, alpha));
+    crate::transcript_context!("statement.modulus_bit_length" => frame.usize(0x31, q_bits));
+    crate::transcript_context!("statement.ood_policy" => frame.usize(0x32, ood.map_or(0, |round| 1usize.wrapping_add(round.grinding_bits as usize))));
 }
 
 /// Bind the transcript-sampled prime and the claimed value of a standalone
 /// opening (see [`absorb_standalone_mod_q_statement`]).
 pub fn absorb_standalone_mod_q_claim(transcript: &mut impl Transcript, q: u128, claimed_q: u128) {
     let mut frame = StatementFrame::new(transcript, STANDALONE_MOD_Q_CLAIM_DOMAIN);
-    frame.u128s(0x30, &[q, claimed_q]);
+    crate::transcript_context!("statement.prime_and_claimed_evaluation" => frame.u128s(0x30, &[q, claimed_q]));
 }
 
 fn absorb_ext_statement(
@@ -1726,11 +1749,11 @@ fn absorb_ext_statement(
     frame.commitment(commitment);
     frame.ligerito_config(config);
     frame.int_eval_params(p);
-    frame.u128_rows(0x30, weight_coords);
-    frame.usize(0x31, q_bits);
-    frame.usize(0x32, proj.prime_bits);
-    frame.usize(0x33, proj.mr_rounds);
-    frame.gf128(0x34, alpha);
+    crate::transcript_context!("statement.extension_weight_coordinates" => frame.u128_rows(0x30, weight_coords));
+    crate::transcript_context!("statement.modulus_bit_length" => frame.usize(0x31, q_bits));
+    crate::transcript_context!("statement.projection_prime_bits" => frame.usize(0x32, proj.prime_bits));
+    crate::transcript_context!("statement.projection_primality_rounds" => frame.usize(0x33, proj.mr_rounds));
+    crate::transcript_context!("statement.generator" => frame.gf128(0x34, alpha));
     BoundModQStatement::new()
 }
 
@@ -2028,9 +2051,9 @@ pub fn prove_rs_ligerito_batch(
         rings.push(RingSwitchProof { s_v: s });
         eq_his.push(eq_hi);
     }
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(l, &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(l, &()));
 
     // Combined basis (slice-supported) + combined target.
     let mut b_comb = vec![F128::ZERO; l << m_p];
@@ -2150,9 +2173,9 @@ where
         }
         crate::ligerito::absorb_sv(transcript, &ring.s_v);
     }
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(l, &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(l, &()));
 
     let mut target = Gf::zero();
     for ell in 0..l {
@@ -2563,6 +2586,7 @@ fn ood_eval(p_msg: &[F128], point: &[Gf]) -> Gf {
 }
 
 fn absorb_ood_round_header(transcript: &mut impl Transcript, packed_vars: usize, params: OodRoundParams) {
+    let _context = crate::transcript_context!("opening.ood_parameters");
     transcript.absorb_slice(OOD_ROUND_DOMAIN);
     transcript.absorb_slice(&(packed_vars as u64).to_le_bytes());
     transcript.absorb_slice(&params.grinding_bits.to_le_bytes());
@@ -2610,7 +2634,7 @@ pub(crate) fn prove_ood_round_packed(
             .expect("Round-0 grinding difficulty is validated by the profile"),
         )
     };
-    let zeta: Gf = transcript.get_field_challenge(&());
+    let zeta: Gf = crate::transcript_context!("opening.ood_point_challenge" => transcript.get_field_challenge(&()));
     let point = ood_point(zeta, vars);
     let y = ood_eval(p_msg, &point);
     crate::ligerito::absorb_ood_value(transcript, y);
@@ -2647,7 +2671,7 @@ pub(crate) fn verify_ood_round(
         )
         .map_err(|_| FlockRsError::OodRound)?,
     }
-    let zeta: Gf = transcript.get_field_challenge(&());
+    let zeta: Gf = crate::transcript_context!("opening.ood_point_challenge" => transcript.get_field_challenge(&()));
     crate::ligerito::absorb_ood_value(transcript, round.y);
     Ok(OodVerifierClaim {
         point: ood_point(zeta, packed_vars),
@@ -2837,10 +2861,10 @@ impl ModQLigProverReduction for EqProverReduction {
         }
         drop(_g_r);
 
-        let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
+        let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => grinder.get_field_challenges(LOG_PACKING, &()));
         let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-        let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
-        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
+        let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => grinder.get_field_challenges(points.len(), &()));
+        let eta_ood: Option<Gf> = ood.map(|_| crate::transcript_context!("opening.ood_batching_challenge" => grinder.get_field_challenge(&())));
         let grinding_nonces = grinder.finish();
 
         let _g_b = tracing::info_span!("mq:bcomb").entered();
@@ -3463,10 +3487,10 @@ impl ModQLigVerifierReduction for EqVerifierReduction<'_> {
             }
             crate::ligerito::absorb_sv(&mut grinder, &ring.s_v);
         }
-        let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
+        let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => grinder.get_field_challenges(LOG_PACKING, &()));
         let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-        let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
-        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
+        let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => grinder.get_field_challenges(points.len(), &()));
+        let eta_ood: Option<Gf> = ood.map(|_| crate::transcript_context!("opening.ood_batching_challenge" => grinder.get_field_challenge(&())));
         grinder.finish().map_err(|_| FlockRsError::ForestGrinding)?;
 
         let mut target = Gf::zero();
@@ -4984,9 +5008,9 @@ fn prove_mod_q_lig_xor_impl(
     }
     drop(_g_rx);
 
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(rings.len(), &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(rings.len(), &()));
 
     // Combined basis + target over the flat ring list.
     let m_p = packed_vars(p);
@@ -5357,9 +5381,9 @@ where
         }
     }
 
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(proof.rings.len(), &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(proof.rings.len(), &()));
 
     let mut target = Gf::zero();
     for (i, ring) in proof.rings.iter().enumerate() {
@@ -6840,9 +6864,9 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     }
     drop(_g_r);
 
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(rings.len(), &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(rings.len(), &()));
 
     // Combined basis + target.
     let m_p = packed_vars(&layout.p);
@@ -7048,9 +7072,9 @@ where
         }
     }
 
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(proof.rings.len(), &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(proof.rings.len(), &()));
 
     let mut target = Gf::zero();
     for (i, ring) in proof.rings.iter().enumerate() {
@@ -7689,9 +7713,9 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     drop(_g_r);
 
     // (6) r″ + ring η's → combined basis + target → ONE Ligerito call.
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(rings.len(), &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(rings.len(), &()));
     let m_p = packed_vars(&layout.p);
     let mut b_comb = vec![F128::ZERO; 1usize << m_p];
     {
@@ -8052,9 +8076,9 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
     }
 
     // (6) r″ + ring η's → target → succinct closure → Ligerito.
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
-    let etas: Vec<Gf> = transcript.get_field_challenges(proof.rings.len(), &());
+    let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => transcript.get_field_challenges(proof.rings.len(), &()));
     let mut target = Gf::zero();
     for (i, ring) in proof.rings.iter().enumerate() {
         let s_u = crate::ligerito::transpose_bits_128(&ring.s_v);
@@ -9391,7 +9415,7 @@ fn prove_rlc_families_closure(
     let p0 = xor_support_prefix(layout);
     let n_rings: usize = parts.iter().map(|(pt, _)| pt.rings.len()).sum();
     // (6) r″ + ring η's → combined basis + target → ONE Ligerito call.
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
     let etas: Vec<Gf> = transcript.get_field_challenges(n_rings, &());
 
@@ -10042,7 +10066,7 @@ fn verify_rlc_families_closure(
 ) -> Result<(), FlockRsError> {
     use crate::poly::utils::build_eq_x_r_vec;
     let n_rings: usize = parts.iter().map(|(r, _)| r.len()).sum();
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => transcript.get_field_challenges(LOG_PACKING, &()));
     let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
     let etas: Vec<Gf> = transcript.get_field_challenges(n_rings, &());
     let mut target = Gf::zero();
@@ -11069,7 +11093,7 @@ where
         mus: &[Gf],
         ood: Option<&OodVerifierClaim>,
     ) -> Result<PreparedLigeritoClaim, FlockRsError> {
-        let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
+        let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => grinder.get_field_challenges(points.len(), &()));
         let combined_mu = etas
             .iter()
             .zip(mus)
@@ -11083,8 +11107,8 @@ where
         }
         crate::ligerito::absorb_hs(&mut grinder, self.hs);
 
-        let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
-        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
+        let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => grinder.get_field_challenges(LOG_PACKING, &()));
+        let eta_ood: Option<Gf> = ood.map(|_| crate::transcript_context!("opening.ood_batching_challenge" => grinder.get_field_challenge(&())));
         grinder.finish().map_err(|_| FlockRsError::ForestGrinding)?;
         let rho = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
         let mut target = rho
@@ -12366,7 +12390,7 @@ where
         hint: &FlockCommitHint,
         ood: Option<&OodProverClaim>,
     ) -> PreparedProverLigeritoClaim<Self::Proof> {
-        let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
+        let etas: Vec<Gf> = crate::transcript_context!("opening.claim_batching_challenges" => grinder.get_field_challenges(points.len(), &()));
         let weights = {
             let _g = tracing::info_span!("mqv:wprep").entered();
             VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
@@ -12391,8 +12415,8 @@ where
         };
         crate::ligerito::absorb_hs(&mut grinder, hs.as_ref());
 
-        let r2: Vec<Gf> = grinder.get_field_challenges(LOG_PACKING, &());
-        let eta_ood: Option<Gf> = ood.map(|_| grinder.get_field_challenge(&()));
+        let r2: Vec<Gf> = crate::transcript_context!("ring_switch.evaluation_point" => grinder.get_field_challenges(LOG_PACKING, &()));
+        let eta_ood: Option<Gf> = ood.map(|_| crate::transcript_context!("opening.ood_batching_challenge" => grinder.get_field_challenge(&())));
         let grinding_nonces = grinder.finish();
         let rho = crate::poly::utils::build_eq_x_r_vec(&r2, &()).expect("r2");
         let mut target = rho

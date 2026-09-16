@@ -331,7 +331,7 @@ where
         fold_field_prefix(products, skip_vars, &reduction.z, field_cfg)?
     };
     let tail = {
-        let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
+        let _scope = tracing::info_span!("spartan:univariate_skip_tail", stage = "spartan.outer_tail").entered();
         prove_outer_sumcheck_with_reducer(
             transcript,
             reduction.q_at_z,
@@ -408,8 +408,8 @@ where
         let mut message = Vec::with_capacity(self.finite_q_evaluations.len() + 1);
         message.extend_from_slice(&self.finite_q_evaluations);
         message.push(self.q_at_infinity.clone());
-        absorb_field_elements(transcript, &message);
-        let z = squeeze_field(transcript, field_cfg);
+        crate::transcript_context!("spartan.univariate_skip_polynomial" => absorb_field_elements(transcript, &message));
+        let z = crate::transcript_context!("spartan.univariate_skip_challenge" => squeeze_field(transcript, field_cfg));
         let q_at_z = {
             let _scope = tracing::info_span!("spartan:univariate_skip_reconstruct").entered();
             self.reconstruct_at(&z, field_cfg)?

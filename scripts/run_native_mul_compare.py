@@ -320,8 +320,9 @@ def summarize_case(samples, memory, config, backend, workload, exponent, source)
             raise ValueError("missing or incompatible isolated memory result")
         finite_number(memory.get("peak_rss_bytes"), "peak_rss_bytes", positive=True)
         finite_number(memory.get("proof_bytes", memory.get("metrics", {}).get("proof_bytes")), "memory proof_bytes", positive=True)
-        timed_config = {key: value for key, value in first["config"].items() if key != "proof_size_encoding"}
-        memory_config = {key: value for key, value in memory.get("config", {}).items() if key != "proof_size_encoding"}
+        diagnostic_keys = ("proof_size_encoding", "fiat_shamir_transcript_logs")
+        timed_config = {key: value for key, value in first["config"].items() if key not in diagnostic_keys}
+        memory_config = {key: value for key, value in memory.get("config", {}).items() if key not in diagnostic_keys}
         if memory_config != timed_config:
             raise ValueError("memory proof configuration differs from the timed proof")
     metrics = {name: statistics.median(row["metrics"][name] for row in samples[1:]) for name in CORE_METRICS}
@@ -347,7 +348,8 @@ def run_native(config, job, environment, machine):
     env.update(F2Z_MUL_COMPARE_WORKLOADS=" ".join(job["workloads"]),
                F2Z_MUL_COMPARE_BACKENDS=" ".join(job["backends"]), F2Z_MUL_COMPARE_OUTPUT_DIR=str(directory))
     command = ["cargo", f"+{TOOLCHAIN}", "bench", "--bench", "mul_e2e_compare",
-               "--features", "bench-internals,native-mul-compare"]
+               "--features", "bench-internals,native-mul-compare", "--",
+               f"--fiat-shamir-transcript-logs={str(config.get('fiat_shamir_transcript_logs', True)).lower()}"]
     run_logged(command, ROOT, env, directory / "cargo-bench.log")
     source = provenance(ROOT, machine, "bench", config["threads"]) | {"command": command}
     rows = [json.loads(line) for line in (directory / "samples.jsonl").read_text().splitlines()]
@@ -397,10 +399,12 @@ def export(config, summaries, samples):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--fiat-shamir-transcript-logs", choices=("true", "false"), default="true")
     args = parser.parse_args()
     manifest = None
     try:
         config = configuration(os.environ)
+        config["fiat_shamir_transcript_logs"] = args.fiat_shamir_transcript_logs == "true"
         planned = jobs(config)
         manifest = dict(schema="native-mul-campaign/v2", status="planned", workloads=config["workloads"],
                         backends=config["backends"], exponents=config["exponents"], repetitions=config["reps"],
@@ -409,7 +413,8 @@ def main():
                         f2z_ligerito_profile=config["f2z_profile"],
                         u64_split_shift=config.get("u64_split_shift"),
                         binius_ligerito_accounting=config.get("ligerito_accounting"),
-                        limber_bd_lambda=config["limber_bd_lambda"])
+                        limber_bd_lambda=config["limber_bd_lambda"],
+                        fiat_shamir_transcript_logs=config["fiat_shamir_transcript_logs"])
         if args.dry_run:
             print(json.dumps(manifest, indent=2))
             return 0

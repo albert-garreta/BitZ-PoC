@@ -49,6 +49,13 @@ pub trait Challenger: Send {
         }
     }
 
+    /// Observe one logical vector using the exact sequence of individual
+    /// observations. Unlike `observe_f128_slice`, implementations must retain
+    /// each element's existing framing.
+    fn observe_f128_sequence(&mut self, values: &[F128]) {
+        for value in values { self.observe_f128(*value); }
+    }
+
     /// Absorb arbitrary bytes (e.g. a Merkle root or a statement digest).
     fn observe_bytes(&mut self, _bytes: &[u8]) {
         // default no-op — RandomChallenger inherits this.
@@ -59,7 +66,10 @@ pub trait Challenger: Send {
 
     /// Produce `n` F128 challenges, in order.
     fn sample_f128_vec(&mut self, n: usize) -> Vec<F128> {
-        (0..n).map(|_| self.sample_f128()).collect()
+        (0..n).map(|coordinate| {
+            let _coordinate = tracing::trace_span!(target: "f2z::transcript", "transcript_coordinate", coordinate).entered();
+            self.sample_f128()
+        }).collect()
     }
 
     /// Prover-side PoW grinding: snapshot the current transcript state,

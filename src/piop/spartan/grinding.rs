@@ -151,11 +151,12 @@ pub fn derive_grinding_seed_in_domain<T: Transcript>(
     if domain.is_empty() {
         return Err(GrindingError::EmptyDomain);
     }
+    let _context = crate::transcript_context!("grinding.parameters", domain = tracing::field::display(String::from_utf8_lossy(domain)), index = index, difficulty_bits = bits);
     transcript.absorb_slice(GRINDING_TRANSCRIPT_DOMAIN);
     transcript.absorb_slice(domain);
     transcript.absorb_slice(&index.to_le_bytes());
     transcript.absorb_slice(&bits.to_le_bytes());
-    Ok(transcript.get_challenge())
+    Ok(crate::transcript_context!("grinding.seed_challenge" => transcript.get_challenge()))
 }
 
 /// [`grind_and_absorb`] for a domain chosen at runtime.
@@ -269,6 +270,7 @@ fn validate_difficulty(bits: u32) -> Result<(), GrindingError> {
 }
 
 fn absorb_grinding_nonce(transcript: &mut impl Transcript, nonce: u64) {
+    let _context = crate::transcript_context!("grinding.nonce");
     transcript.absorb_slice(GRINDING_NONCE_DOMAIN);
     transcript.absorb_slice(&nonce.to_le_bytes());
 }
@@ -354,6 +356,7 @@ impl<'a, T: Transcript, D> ProverGrindingTranscript<'a, T, D> {
 
 impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
+        let operation = crate::transcript::logging::LogicalScope::new(self.logging_enabled(), "squeeze", "challenge.raw");
         if self.bits > 0 {
             let index = self.next_index;
             self.next_index = self.next_index.wrapping_add(1);
@@ -361,7 +364,9 @@ impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
                 .expect("per-round grinding difficulty is validated by the profile");
             self.nonces.push(nonce);
         }
-        self.inner.get_challenge()
+        let value: C = self.inner.get_challenge();
+        operation.finish(|| crate::transcript::messages::transcribed_value(&value));
+        value
     }
 
     fn get_prime<R, P>(&mut self) -> R
@@ -371,6 +376,9 @@ impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
     {
         self.inner.get_prime::<R, P>()
     }
+
+    fn operation_span(&self, method: &'static str) -> tracing::Span { self.inner.operation_span(method) }
+    fn logging_enabled(&self) -> bool { self.inner.logging_enabled() }
 
     fn absorb_inner(&mut self, v: &[u8]) {
         self.inner.absorb_inner(v);
@@ -440,6 +448,7 @@ impl<'a, 'n, T: Transcript, D> VerifierGrindingTranscript<'a, 'n, T, D> {
 
 impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
+        let operation = crate::transcript::logging::LogicalScope::new(self.logging_enabled(), "squeeze", "challenge.raw");
         if self.bits > 0 {
             let index = self.next_index;
             self.next_index = self.next_index.wrapping_add(1);
@@ -453,7 +462,9 @@ impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
                 self.failure.get_or_insert(error);
             }
         }
-        self.inner.get_challenge()
+        let value: C = self.inner.get_challenge();
+        operation.finish(|| crate::transcript::messages::transcribed_value(&value));
+        value
     }
 
     fn get_prime<R, P>(&mut self) -> R
@@ -463,6 +474,9 @@ impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
     {
         self.inner.get_prime::<R, P>()
     }
+
+    fn operation_span(&self, method: &'static str) -> tracing::Span { self.inner.operation_span(method) }
+    fn logging_enabled(&self) -> bool { self.inner.logging_enabled() }
 
     fn absorb_inner(&mut self, v: &[u8]) {
         self.inner.absorb_inner(v);

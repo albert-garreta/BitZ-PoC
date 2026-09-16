@@ -963,13 +963,16 @@ const FQ_R128: u128 = 15u128 << 28;
 /// ≤ `q/2^256` ≈ 2^-156 from uniform — the plain 128-bit draw would be
 /// ~2^-28-biased at the 100-bit `q`).
 pub fn fq_challenge(transcript: &mut impl Transcript) -> u128 {
+    let operation = crate::transcript::logging::LogicalScope::new(transcript.logging_enabled(), "squeeze", "field_challenge");
     let to_u128 = |g: Gf| -> u128 {
         let w = g.words();
         u128::from(w[0]) | (u128::from(w[1]) << 64)
     };
     let lo: Gf = transcript.get_field_challenge(&());
     let hi: Gf = transcript.get_field_challenge(&());
-    fq_add(to_u128(lo) % FQ_MOD, fq_mul(to_u128(hi), FQ_R128))
+    let value = fq_add(to_u128(lo) % FQ_MOD, fq_mul(to_u128(hi), FQ_R128));
+    operation.finish(|| serde_json::json!({"field": "prime", "modulus_hex": format!("0x{FQ_MOD:x}"), "value_hex": format!("0x{value:032x}")}));
+    value
 }
 
 /// The RLC case-weight table: per row position `b` and case `m ∈ {0,1}^j`,
@@ -2044,5 +2047,8 @@ where
             }
         }
     }
-    transcript.absorb_slice(&buf);
+    transcript.absorb(&crate::transcript::messages::DescribedFrame {
+        bytes: &buf, kind: "polynomial_vector",
+        value: || serde_json::json!({"basis": "monomial", "coefficient_order": "constant_first", "polynomials": polys.iter().map(|p| p.coeffs.iter().map(crate::transcript::messages::TranscriptField::log_value).collect::<Vec<_>>()).collect::<Vec<_>>()}),
+    });
 }

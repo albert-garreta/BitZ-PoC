@@ -1,9 +1,12 @@
+pub mod logging;
+pub mod messages;
 pub mod traits;
+pub use messages::Absorbable;
 
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcript};
-use crypto_primitives::{ConstIntSemiring, PrimeField};
-use crate::utils::primality::PrimalityTest;
 use crate::utils::add;
+use crate::utils::primality::PrimalityTest;
+use crypto_primitives::{ConstIntSemiring, PrimeField};
 
 /// A cryptographic transcript implementation using the BLAKE3 hash
 /// function. Used for Fiat-Shamir transformations in zero-knowledge proof
@@ -44,12 +47,23 @@ impl Blake3Transcript {
     #[allow(clippy::arithmetic_side_effects)]
     fn fill_with_random_bytes(&mut self, buf: &mut [u8]) {
         self.hasher.finalize_xof().fill(buf);
+        logging::record_bytes("squeeze", "random_bytes", buf);
     }
 
     fn gen_random<R: ConstTranscribable>(&mut self, buf: &mut [u8]) -> R {
         self.fill_with_random_bytes(buf);
-        self.absorb_inner(buf);
+        self.absorb_bytes(buf, "prime_candidate_feedback");
         R::read_transcription_bytes_exact(buf)
+    }
+
+    fn absorb_bytes(&mut self, bytes: &[u8], part: &'static str) {
+        const RAYON_THRESHOLD: usize = 256 * 1024;
+        if bytes.len() >= RAYON_THRESHOLD {
+            self.hasher.update_rayon(bytes);
+        } else {
+            self.hasher.update(bytes);
+        }
+        logging::record_bytes("absorb", part, bytes);
     }
 }
 
@@ -57,9 +71,9 @@ impl Transcript for Blake3Transcript {
     fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
         let mut buf = vec![0u8; T::NUM_BYTES];
         self.fill_with_random_bytes(&mut buf);
-        self.hasher.update(&[0x12]);
-        self.hasher.update(&buf);
-        self.hasher.update(&[0x34]);
+        self.absorb_bytes(&[0x12], "challenge_frame_start");
+        self.absorb_bytes(&buf, "challenge_feedback");
+        self.absorb_bytes(&[0x34], "challenge_frame_end");
         T::read_transcription_bytes_exact(&buf)
     }
 
@@ -89,12 +103,7 @@ impl Transcript for Blake3Transcript {
         // per-round transcript writes) still take the cheap path —
         // `update_rayon` has a one-shot rayon scope setup that
         // dominates for inputs under a few hundred KB.
-        const RAYON_THRESHOLD: usize = 256 * 1024;
-        if v.len() >= RAYON_THRESHOLD {
-            self.hasher.update_rayon(v);
-        } else {
-            self.hasher.update(v);
-        }
+        self.absorb_bytes(v, "input");
     }
 }
 

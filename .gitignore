@@ -15,7 +15,8 @@ Perfruns/
 flock-zkperf-traces
 
 output/
-docs/
+docs/*
+!docs/u32-mul-transcript.md
 .history/*
 benchmark-results/
 tmp/

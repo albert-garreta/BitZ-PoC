@@ -529,6 +529,20 @@ pub(super) trait RoundBoundaryPolicy {
     ) -> Result<(), SumcheckError>;
 }
 
+fn round_challenge<F: SpartanField>(
+    transcript: &mut impl Transcript,
+    boundary: &mut impl RoundBoundaryPolicy,
+    round: usize,
+    config: &F::Config,
+) -> Result<F, SumcheckError> {
+    let _context = crate::transcript_context!("sumcheck.round_challenge");
+    let operation = crate::transcript::logging::LogicalScope::new(transcript.logging_enabled(), "squeeze", "sumcheck.round_challenge");
+    boundary.after_round(transcript, round)?;
+    let value: F = squeeze_field(transcript, config);
+    operation.finish(|| crate::transcript::messages::TranscriptField::log_value(&value));
+    Ok(value)
+}
+
 /// Existing sumcheck transcript behavior: no bytes between message and
 /// challenge.
 pub(super) struct UngrindedRoundBoundary;
@@ -753,7 +767,8 @@ where
         let mut eval_points = Vec::with_capacity(expected_rounds);
 
         for (round, coefficients) in self.round_polynomials.iter().enumerate() {
-            absorb_field_elements(transcript, coefficients);
+            let _round = crate::transcript_context!("spartan.sumcheck_round", round = round, degree = COEFFS - 1);
+            crate::transcript_context!("sumcheck.round_polynomial" => transcript.absorb(&super::transcript_messages::SpartanRoundPolynomial(coefficients)));
 
             let at_zero = coefficients[0].clone();
             let at_one = coefficients
@@ -767,8 +782,7 @@ where
                 return Err(SumcheckError::InvalidRoundClaim { round });
             }
 
-            round_boundary.after_round(transcript, round)?;
-            let challenge = squeeze_field(transcript, field_cfg);
+            let challenge = round_challenge(transcript, round_boundary, round, field_cfg)?;
             current_claim = evaluate_polynomial(coefficients, &challenge, &zero);
             eval_points.push(challenge);
         }
@@ -909,7 +923,7 @@ where
             round_boundary,
         )?;
 
-        absorb_field_elements(transcript, &terminal_evaluations);
+        crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(transcript, &terminal_evaluations));
 
         let eq = eq_eval(tau, &eval_points, field_cfg)?;
         let residual = sub(
@@ -1223,7 +1237,7 @@ where
         bz_mle_claim.clone(),
         cz_mle_claim.clone(),
     ];
-    absorb_field_elements(transcript, &terminal_evaluations);
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(transcript, &terminal_evaluations));
 
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -1319,14 +1333,14 @@ where
     let az_mle_claim = products.az[0].clone();
     let bz_mle_claim = products.bz[0].clone();
     let cz_mle_claim = products.cz[0].clone();
-    absorb_field_elements(
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
         transcript,
         &[
             az_mle_claim.clone(),
             bz_mle_claim.clone(),
             cz_mle_claim.clone(),
         ],
-    );
+    ));
 
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -1414,14 +1428,14 @@ where
                 &sub(&mul(&az_mle_claim, &bz_mle_claim), &cz_mle_claim),
             )
         );
-        absorb_field_elements(
+        crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
             transcript,
             &[
                 az_mle_claim.clone(),
                 bz_mle_claim.clone(),
                 cz_mle_claim.clone(),
             ],
-        );
+        ));
         return Ok(OuterSumcheckOutput {
             proof: OuterSumcheckProof {
                 sumcheck: SumcheckProof { round_polynomials },
@@ -1607,14 +1621,14 @@ where
         )
     );
 
-    absorb_field_elements(
+    crate::transcript_context!("spartan.outer_terminal_evaluations" => absorb_field_elements(
         transcript,
         &[
             az_mle_claim.clone(),
             bz_mle_claim.clone(),
             cz_mle_claim.clone(),
         ],
-    );
+    ));
 
     Ok(OuterSumcheckOutput {
         proof: OuterSumcheckProof {
@@ -3086,9 +3100,9 @@ where
         });
     debug_assert_eq!(*current_claim, add(&coefficients[0], &at_one));
 
-    absorb_field_elements(transcript, &coefficients);
-    round_boundary.after_round(transcript, round_polynomials.len())?;
-    let challenge = squeeze_field(transcript, field_cfg);
+    let _round = crate::transcript_context!("spartan.sumcheck_round", round = round_polynomials.len(), degree = COEFFS - 1);
+    crate::transcript_context!("sumcheck.round_polynomial" => transcript.absorb(&super::transcript_messages::SpartanRoundPolynomial(&coefficients)));
+    let challenge = round_challenge(transcript, round_boundary, round_polynomials.len(), field_cfg)?;
     *current_claim = evaluate_polynomial(&coefficients, &challenge, zero);
     round_polynomials.push(coefficients);
     eval_points.push(challenge.clone());

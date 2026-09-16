@@ -886,7 +886,8 @@ fn bind_prover_statement<T: Transcript + Send, S: RelationSpec>(
     let spec = &prefix.spec;
     let schedule = spec.schedule();
     let binding = assignment_binding(prefix, opener, &hint.commitment)?;
-    absorb_spartan_message(transcript, spec.domains().statement_tag, &binding);
+    crate::transcript_context!("statement.assignment_binding_digest", binds = "commitment_root,commitment_parameters,relation,configuration" =>
+        absorb_spartan_message(transcript, spec.domains().statement_tag, &binding));
     if schedule.policy_bind {
         if let Some(resolved) = opener.resolved() {
             resolved.bind(transcript);
@@ -910,7 +911,8 @@ fn bind_verifier_statement<T: Transcript + Send, S: RelationSpec>(
     let spec = &prefix.spec;
     let schedule = spec.schedule();
     let binding = assignment_binding(prefix, opener, commitment)?;
-    absorb_spartan_message(transcript, spec.domains().statement_tag, &binding);
+    crate::transcript_context!("statement.assignment_binding_digest", binds = "commitment_root,commitment_parameters,relation,configuration" =>
+        absorb_spartan_message(transcript, spec.domains().statement_tag, &binding));
     if schedule.policy_bind {
         if let Some(resolved) = opener.resolved() {
             resolved.bind(transcript);

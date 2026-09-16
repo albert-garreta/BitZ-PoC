@@ -506,7 +506,7 @@ where
     let ctx = RawMontyCtx::new(field_config);
     let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
     let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = {
         let _g = tracing::info_span!("sp:eq").entered();
@@ -526,7 +526,7 @@ where
         )?
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
@@ -534,7 +534,7 @@ where
         &rho,
     );
     let inner = {
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        let _scope = tracing::info_span!("spartan:inner_sumcheck", stage = "spartan.inner").entered();
         inner_sumcheck_raw(
             transcript,
             &ctx,
@@ -825,7 +825,7 @@ where
 
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<MontyField<2>>>();
     let equality_factors = make_equality_factors(&tau, field_config)?;
     let outer = {
@@ -841,7 +841,7 @@ where
         )?
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
@@ -853,7 +853,7 @@ where
         matrices.bind_and_batch(&outer.eval_points, &rho)?
     };
     let inner = {
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        let _scope = tracing::info_span!("spartan:inner_sumcheck", stage = "spartan.inner").entered();
         prove_inner(
             transcript,
             inner_initial_claim,
@@ -896,7 +896,7 @@ where
 
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<F>>();
     let equality_factors = {
         let _g = tracing::info_span!("sp:eq").entered();
@@ -916,7 +916,7 @@ where
     };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
@@ -928,7 +928,7 @@ where
         matrices.bind_and_batch(&outer.eval_points, &rho)?
     };
     let inner = {
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        let _scope = tracing::info_span!("spartan:inner_sumcheck", stage = "spartan.inner").entered();
         prove_inner_sumcheck_with_reducer(
             transcript,
             inner_initial_claim,
@@ -979,7 +979,7 @@ where
     let field_config = matrices.config();
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<F>>();
     let equality_factors = make_equality_factors(&tau_tail, field_config)?;
     let outer = {
@@ -996,7 +996,7 @@ where
     };
 
     // The reused cubic tail absorbed [Az(r), Bz(r), Cz(r)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.proof.tail.az_mle_claim,
         &outer.proof.tail.bz_mle_claim,
@@ -1011,7 +1011,7 @@ where
         matrices.bind_and_batch_with_prefix_univariate_factors(&row_factors, &rho)?
     };
     let inner = {
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        let _scope = tracing::info_span!("spartan:inner_sumcheck", stage = "spartan.inner").entered();
         prove_inner_sumcheck_with_reducer(
             transcript,
             inner_initial_claim,
@@ -1063,7 +1063,7 @@ where
     let ctx = RawMontyCtx::new(field_config);
     let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
     let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = {
         let _g = tracing::info_span!("sp:eq").entered();
@@ -1086,7 +1086,7 @@ where
     };
 
     // The outer prover absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
@@ -1146,7 +1146,7 @@ where
     let ctx = RawMontyCtx::new(field_config);
     let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
     let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
     let outer = {
@@ -1163,7 +1163,7 @@ where
         )?
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.proof.az_mle_claim,
         &outer.proof.bz_mle_claim,
@@ -1223,7 +1223,7 @@ where
     let reducer = OptimizedMonty128Reducer::new(field_config).map_err(SumcheckError::from)?;
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<MontyField<2>>>();
     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau_tail);
 
@@ -1247,7 +1247,7 @@ where
             fold_u32_native_prefix_raw(usize::from(skip_vars), products, &reduction.z, &ctx)?
         };
         let tail = {
-            let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
+            let _scope = tracing::info_span!("spartan:univariate_skip_tail", stage = "spartan.outer_tail").entered();
             prove_outer_field_raw(
                 transcript,
                 &ctx,
@@ -1273,7 +1273,7 @@ where
         )
     };
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer_proof.tail.az_mle_claim,
         &outer_proof.tail.bz_mle_claim,
@@ -1323,7 +1323,7 @@ where
 
     let field_config = matrices.config();
     let tau = (0..matrices.num_row_vars())
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<F>>();
     let outer = proof.outer.verify(
         transcript,
@@ -1333,7 +1333,7 @@ where
     )?;
 
     // The outer verifier absorbed [Az(r_x), Bz(r_x), Cz(r_x)] before returning.
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.az_mle_claim,
         &outer.bz_mle_claim,
@@ -1378,13 +1378,13 @@ where
     let field_config = matrices.config();
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
-        .map(|_| squeeze_field(transcript, field_config))
+        .map(|coordinate| crate::transcript_context!("spartan.zerocheck_equality_challenge", coordinate = coordinate => squeeze_field(transcript, field_config)))
         .collect::<Vec<F>>();
     let outer = proof
         .outer
         .verify(transcript, &tau_tail, matrices.num_row_vars(), field_config)?;
 
-    let rho = squeeze_field(transcript, field_config);
+    let rho = crate::transcript_context!("spartan.matrix_batching_challenge" => squeeze_field(transcript, field_config));
     let inner_initial_claim = batched_product_claim(
         &outer.az_mle_claim,
         &outer.bz_mle_claim,

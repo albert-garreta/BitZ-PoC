@@ -87,6 +87,7 @@ pub(super) struct Sample<'a> {
     pub trial: Trial,
     pub setup_ms: f64,
     pub config: &'a Value,
+    pub fiat_shamir_transcript_log: Option<&'a std::path::Path>,
     pub measurement_policy: &'static str,
     pub proof_verified: bool,
     pub metrics: &'a Metrics,
@@ -264,6 +265,7 @@ mod reporting_tests {
         };
         let config = json!({"opaque":true});
         let sample = Sample {
+            fiat_shamir_transcript_log: None,
             schema: "native-mul-sample/v2",
             workload: "u32",
             backend: "f2z",

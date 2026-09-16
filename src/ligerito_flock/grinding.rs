@@ -160,6 +160,7 @@ impl<'a, 'b, T: Transcript + Send> GrindingChallenger<'a, 'b, T> {
             self.valid = false;
             return 0;
         };
+        let _context = crate::transcript_context!("grinding.block_header", block = block.label.as_str(), block_index = self.next, difficulty_bits = block.bits);
         self.valid &= block.native_bits == native;
         // This protocol domain separator stays fixed across Rust type renames.
         self.inner.observe_label(b"f2z/flock/atomic/v1");
@@ -175,7 +176,8 @@ impl<'a, 'b, T: Transcript + Send> GrindingChallenger<'a, 'b, T> {
         // The pinned prover omits alpha and beta for the final verifier-only check.
         // Consume that suffix so callers can safely continue the transcript.
         if matches!(self.security.nonces, GrindingNonces::Prove(_)) {
-            for _ in 0..self.security.plan.final_verifier_draws {
+            for coordinate in 0..self.security.plan.final_verifier_draws {
+                let _context = crate::transcript_context!("ligerito.final_verifier_challenge_suffix", coordinate = coordinate);
                 self.inner.sample_f128();
             }
         }

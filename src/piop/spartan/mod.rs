@@ -33,6 +33,8 @@ pub mod u64_mul;
 pub mod univariate_skip;
 pub(crate) mod univariate_skip_native;
 
+pub mod transcript_messages;
+
 pub use baby_bear_f2z::{
     BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearSpartanF2zError,
     PreparedBabyBearMulRelation, baby_bear_mul_instance_facts,
@@ -204,7 +206,7 @@ pub enum SpartanFieldError {
 ///
 /// Rejection sampling is permitted.  Every rejected draw must still advance
 /// the transcript, so prover and verifier consume the identical stream.
-pub trait SpartanField: PrimeField {
+pub trait SpartanField: PrimeField + crate::transcript::messages::TranscriptField {
     /// Checks that `field_cfg` defines a prime field with adequate soundness.
     ///
     /// [`PreparedConstraintMatrices::new`](matrix::PreparedConstraintMatrices::new)
@@ -347,26 +349,14 @@ where
     F: SpartanField,
     T: Transcript,
 {
-    let mut payload = Vec::new();
-    extend_frame_len(&mut payload, values.len());
-    for value in values {
-        let encoding = value.canonical_element_encoding();
-        extend_frame_len(&mut payload, encoding.len());
-        payload.extend_from_slice(&encoding);
-    }
-    absorb_spartan_message(transcript, FIELD_ELEMENTS_TAG, &payload);
+    let _context = crate::transcript_context!("spartan.field_elements", elements = values.len());
+    transcript.absorb(&transcript_messages::SpartanFieldElements(values));
 }
 
 /// Absorbs one typed, self-delimiting Spartan transcript message.
 pub(crate) fn absorb_spartan_message(transcript: &mut impl Transcript, tag: &[u8], payload: &[u8]) {
-    let mut frame =
-        Vec::with_capacity(SPARTAN_TRANSCRIPT_FRAME_DOMAIN.len() + tag.len() + payload.len() + 16);
-    frame.extend_from_slice(SPARTAN_TRANSCRIPT_FRAME_DOMAIN);
-    extend_frame_len(&mut frame, tag.len());
-    frame.extend_from_slice(tag);
-    extend_frame_len(&mut frame, payload.len());
-    frame.extend_from_slice(payload);
-    transcript.absorb_slice(&frame);
+    let _context = crate::transcript_context!("spartan.message", message_tag = tracing::field::display(String::from_utf8_lossy(tag)));
+    transcript.absorb(&transcript_messages::SpartanMessage { tag, payload });
 }
 
 fn extend_frame_len(frame: &mut Vec<u8>, len: usize) {
@@ -385,8 +375,13 @@ where
     F: SpartanField,
     T: Transcript,
 {
+    let scope = crate::transcript::logging::LogicalScope::new(transcript.logging_enabled(), "squeeze", "field_challenge");
     let challenge = F::sample_uniform(transcript, field_cfg);
-    absorb_field_elements(transcript, slice::from_ref(&challenge));
+    crate::transcript_context!("challenge.accepted_field_element" =>
+        absorb_field_elements(transcript, slice::from_ref(&challenge)));
+    scope.finish(|| serde_json::json!({"field": "prime",
+        "modulus_hex": crate::transcript::messages::numeric_hex(&F::canonical_modulus_encoding(field_cfg)),
+        "value_hex": crate::transcript::messages::numeric_hex(&challenge.canonical_element_encoding())}));
     challenge
 }
 

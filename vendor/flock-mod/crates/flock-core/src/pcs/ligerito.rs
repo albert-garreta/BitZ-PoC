@@ -3151,6 +3151,19 @@ impl SumcheckProver {
 // Prover / Verifier — stubs
 // ===================================================================
 
+// Diagnostic metadata only: these labels never enter the Fiat–Shamir state.
+macro_rules! transcript_context {
+    ($purpose:expr $(, $field:ident = $value:expr)* => $body:expr) => {{
+        let _context = transcript_context!($purpose $(, $field = $value)*);
+        $body
+    }};
+    ($purpose:expr $(, $field:ident = $value:expr)* $(,)?) => {
+        tracing::trace_span!(target: "f2z::transcript", "transcript_context",
+            purpose = $purpose, $($field = $value,)*
+        ).entered()
+    };
+}
+
 /// Sample `count` distinct positions in `[0, block_len)` via the challenger.
 /// Asserts `count <= block_len` — otherwise no number of samples could satisfy
 /// the distinctness requirement (would infinite-loop).
@@ -3166,7 +3179,7 @@ fn sample_distinct_queries<Ch: Challenger>(
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(count);
     while out.len() < count {
-        let v = challenger.sample_f128();
+        let v = transcript_context!("ligerito.query_position_candidate", accepted_queries = out.len(), block_len = block_len => challenger.sample_f128());
         let q = (v.lo as usize) % block_len;
         if seen.insert(q) {
             out.push(q);
@@ -3223,9 +3236,9 @@ pub fn recursive_prover<Ch: Challenger>(
     );
     assert!(r >= 1, "recursive_steps must be ≥ 1");
 
-    challenger.observe_label(b"flock-ligerito-v0");
-    challenger.observe_f128(claimed_value);
-    challenger.observe_f128_slice(eval_point);
+    transcript_context!("ligerito.domain_separator" => challenger.observe_label(b"flock-ligerito-v0"));
+    transcript_context!("ligerito.opening_claim" => challenger.observe_f128(claimed_value));
+    transcript_context!("ligerito.opening_point" => challenger.observe_f128_slice(eval_point));
 
     // ---- Initial commit (wtns_0) ----
     let log_inv_rate_0 = config.log_inv_rates[0];
@@ -3313,9 +3326,9 @@ pub fn recursive_prover_with_l0<Ch: Challenger>(
         "external L0 tree wrong size"
     );
 
-    challenger.observe_label(b"flock-ligerito-v0");
-    challenger.observe_f128(claimed_value);
-    challenger.observe_f128_slice(eval_point);
+    transcript_context!("ligerito.domain_separator" => challenger.observe_label(b"flock-ligerito-v0"));
+    transcript_context!("ligerito.opening_claim" => challenger.observe_f128(claimed_value));
+    transcript_context!("ligerito.opening_point" => challenger.observe_f128_slice(eval_point));
 
     let wtns_0 = LigeroWitness {
         mat: l0_codeword,
@@ -3501,12 +3514,12 @@ where
 
     let t_total = std::time::Instant::now();
 
-    challenger.observe_label(b"flock-ligerito-basis-v0");
-    challenger.observe_f128(target);
+    transcript_context!("ligerito.domain_separator" => challenger.observe_label(b"flock-ligerito-basis-v0"));
+    transcript_context!("ligerito.opening_claim" => challenger.observe_f128(target));
 
     let l0_block_len = block_len_0;
     let l0_num_interleaved = num_interleaved_0;
-    challenger.observe_bytes(&initial_root);
+    transcript_context!("ligerito.commitment_root", commitment = "initial" => challenger.observe_bytes(&initial_root));
 
     // L0 takes no explicit OOD samples: it is bound by the opening's own
     // evaluation claim (`target` at the post-commit random point behind
@@ -3528,8 +3541,7 @@ where
         Some(msg) => SumcheckProver::new_with_first_msg(packed_witness, b_initial, target, msg),
         None => SumcheckProver::new(packed_witness, b_initial, target),
     };
-    challenger.observe_f128(start_msg.u_0);
-    challenger.observe_f128(start_msg.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "initial", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[start_msg.u_0, start_msg.u_2]));
 
     // Lane folds with two-rounds-per-pass lookahead: pass rounds alternate
     // with O(1) "skip" rounds whose message is evaluated from quadratic
@@ -3557,6 +3569,7 @@ where
         None
     };
     for j in 0..initial_k {
+        let _round = transcript_context!("ligerito.fold_round", level = 0, round = j);
         // Fold-challenge grinding: the L0 proximity-gap bad event lives on
         // each of these lane-fold challenges, so each one is individually
         // PoW-guarded (a cheating prover re-rolls a fold challenge by
@@ -3570,7 +3583,7 @@ where
         if bits > 0 {
             fold_grinding_nonces.push(challenger.grind_pow(bits));
         }
-        let r = challenger.sample_f128();
+        let r = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
         let msg = if !use_lookahead {
             sc_prover.fold(r)
         } else if let Some(la) = lookahead.take() {
@@ -3587,8 +3600,7 @@ where
             lookahead = Some(la);
             msg
         };
-        challenger.observe_f128(msg.u_0);
-        challenger.observe_f128(msg.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
         r_lane_fold.push(r);
     }
     // Even initial_k ends on a skip round — materialize the deferred fold.
@@ -3617,7 +3629,7 @@ where
     if trace {
         t_commits += _t.elapsed();
     }
-    challenger.observe_bytes(&wtns_1.root());
+    transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&wtns_1.root()));
 
     // OOD binding for the L1 commit: each sample evaluates f1's multilinear
     // extension at a random transcript point z ∈ F^{n1}, sends the claimed
@@ -3627,17 +3639,16 @@ where
     {
         let _t = std::time::Instant::now();
         for _ in 0..ood_count(1) {
-            let z = challenger.sample_f128_vec(n1);
+            let z = transcript_context!("ligerito.ood_point" => challenger.sample_f128_vec(n1));
             // Build eq(z, ·) once and fuse the MLE eval `y = f̂1(z)` into the
             // introduce round message (single pass over f1 + eq_z), instead of
             // a separate `mle_eval_inline` fold.
             let eq_z = build_eq_table(&z);
             let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
-            challenger.observe_f128(y);
+            transcript_context!("ligerito.ood_evaluation" => challenger.observe_f128(y));
             ood_values.push(y);
-            challenger.observe_f128(intro.u_0);
-            challenger.observe_f128(intro.u_2);
-            let beta = challenger.sample_f128();
+            transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro.u_0, intro.u_2]));
+            let beta = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
             sc_prover.glue(beta);
         }
         if trace {
@@ -3656,7 +3667,7 @@ where
     // Open L0; lane-fold weights = r_lane_fold.
     let num_queries_0 = config.queries[0];
     let queries_0 = sample_distinct_queries(challenger, l0_block_len, num_queries_0);
-    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let alpha_0 = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_0)));
     let _t = std::time::Instant::now();
     let initial_proof = open_initial(l0_block_len, l0_num_interleaved, &queries_0);
     assert_eq!(initial_proof.opened_rows.len(), queries_0.len());
@@ -3687,9 +3698,8 @@ where
     // Introduce + glue basis_0.
     let _t = std::time::Instant::now();
     let intro_msg_0 = sc_prover.introduce_new(basis_0_induced, enforced_sum_0);
-    challenger.observe_f128(intro_msg_0.u_0);
-    challenger.observe_f128(intro_msg_0.u_2);
-    let beta_0 = challenger.sample_f128();
+    transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_0.u_0, intro_msg_0.u_2]));
+    let beta_0 = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
     sc_prover.glue(beta_0);
     if trace {
         t_intro_glue += _t.elapsed();
@@ -3701,10 +3711,12 @@ where
     let mut recursive_proofs: Vec<RecursiveProof> = Vec::new();
 
     for i in 0..r {
+        let _level = transcript_context!("ligerito.recursion_level", level = i + 1);
         let k_i = config.recursive_ks[i];
         let mut level_rs = Vec::with_capacity(k_i);
         let _t = std::time::Instant::now();
         for j in 0..k_i {
+            let _round = transcript_context!("ligerito.fold_round", round = j);
             // These folds fold level i+1's commitment — fold-challenge
             // grinding guards its proximity-gap term. Tapered per round:
             // round j needs (fold_bits − j) bits (see L0 loop).
@@ -3712,10 +3724,9 @@ where
             if bits > 0 {
                 fold_grinding_nonces.push(challenger.grind_pow(bits));
             }
-            let ri = challenger.sample_f128();
+            let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
             let msg = sc_prover.fold(ri);
-            challenger.observe_f128(msg.u_0);
-            challenger.observe_f128(msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
             level_rs.push(ri);
         }
         if trace {
@@ -3724,9 +3735,7 @@ where
 
         if i == r - 1 {
             let yr = sc_prover.f().to_vec();
-            for v in &yr {
-                challenger.observe_f128(*v);
-            }
+            transcript_context!("ligerito.final_polynomial", representation = "multilinear_evaluations" => challenger.observe_f128_sequence(&yr));
             // PoW grinding for the last level before sampling its queries.
             let nonce_last = challenger.grind_pow(config.grinding_bits[i + 1] as u32);
             grinding_nonces.push(nonce_last);
@@ -3815,21 +3824,20 @@ where
             t_commits += _t.elapsed();
         }
         let root_next = wtns_next.root();
-        challenger.observe_bytes(&root_next);
+        transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_next));
         recursive_roots.push(root_next);
 
         // OOD binding for the L_{i+2} commit (same as the L1 block above).
         {
             let _t = std::time::Instant::now();
             for _ in 0..ood_count(i + 2) {
-                let z = challenger.sample_f128_vec(n_next);
+                let z = transcript_context!("ligerito.ood_point" => challenger.sample_f128_vec(n_next));
                 let eq_z = build_eq_table(&z);
                 let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
-                challenger.observe_f128(y);
+                transcript_context!("ligerito.ood_evaluation" => challenger.observe_f128(y));
                 ood_values.push(y);
-                challenger.observe_f128(intro.u_0);
-                challenger.observe_f128(intro.u_2);
-                let beta = challenger.sample_f128();
+                transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro.u_0, intro.u_2]));
+                let beta = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
                 sc_prover.glue(beta);
             }
             if trace {
@@ -3842,7 +3850,7 @@ where
         grinding_nonces.push(nonce_i);
         let num_queries_i = config.queries[i + 1];
         let queries_i = sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_i);
-        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let alpha_i = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_i)));
         let _t = std::time::Instant::now();
         let opened_rows_i: Vec<Vec<F128>> = queries_i
             .iter()
@@ -3874,9 +3882,8 @@ where
 
         let _t = std::time::Instant::now();
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
-        challenger.observe_f128(intro_msg_i.u_0);
-        challenger.observe_f128(intro_msg_i.u_2);
-        let beta_i = challenger.sample_f128();
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_i.u_0, intro_msg_i.u_2]));
+        let beta_i = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         sc_prover.glue(beta_i);
         if trace {
             t_intro_glue += _t.elapsed();
@@ -3961,9 +3968,9 @@ where
         return false;
     }
 
-    challenger.observe_label(b"flock-ligerito-basis-v0");
-    challenger.observe_f128(target);
-    challenger.observe_bytes(&proof.initial_root);
+    transcript_context!("ligerito.domain_separator" => challenger.observe_label(b"flock-ligerito-basis-v0"));
+    transcript_context!("ligerito.opening_claim" => challenger.observe_f128(target));
+    transcript_context!("ligerito.commitment_root", commitment = "initial" => challenger.observe_bytes(&proof.initial_root));
 
     let log_inv_rate_0 = config.log_inv_rates[0];
     let log_msg_cols_0 = log_n - initial_k;
@@ -3977,8 +3984,7 @@ where
     }
     let start_msg = proof.sumcheck_transcript[tx_idx];
     tx_idx += 1;
-    challenger.observe_f128(start_msg.u_0);
-    challenger.observe_f128(start_msg.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "initial", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[start_msg.u_0, start_msg.u_2]));
     let mut running_quad = RoundQuad::from_msg(start_msg, t_r);
 
     let fold_bits =
@@ -4000,6 +4006,7 @@ where
 
     let mut r_lane_fold = Vec::with_capacity(initial_k);
     for j in 0..initial_k {
+        let _round = transcript_context!("ligerito.fold_round", level = 0, round = j);
         // Fold-challenge PoW mirror (L0's lane folds), tapered per round to
         // (fold_bits − j) — see the prover's L0 loop.
         let bits = fold_bits(0).saturating_sub(j as u32);
@@ -4012,7 +4019,7 @@ where
             }
             fold_nonce_idx += 1;
         }
-        let ri = challenger.sample_f128();
+        let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
         r_lane_fold.push(ri);
         t_r = running_quad.eval(ri);
         if tx_idx >= proof.sumcheck_transcript.len() {
@@ -4020,8 +4027,7 @@ where
         }
         let msg = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(msg.u_0);
-        challenger.observe_f128(msg.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
         running_quad = RoundQuad::from_msg(msg, t_r);
     }
 
@@ -4029,28 +4035,27 @@ where
         return false;
     }
     let root_1 = proof.recursive_roots[0];
-    challenger.observe_bytes(&root_1);
+    transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_1));
 
     // OOD binding mirror for the L1 commit: sample z, read the claimed
     // evaluation from the proof, and glue the claim into the running
     // sumcheck exactly like the prover.
     for _ in 0..ood_count(1) {
-        let z = challenger.sample_f128_vec(log_n - initial_k);
+        let z = transcript_context!("ligerito.ood_point" => challenger.sample_f128_vec(log_n - initial_k));
         if ood_idx >= proof.ood_values.len() {
             return false;
         }
         let y = proof.ood_values[ood_idx];
         ood_idx += 1;
-        challenger.observe_f128(y);
+        transcript_context!("ligerito.ood_evaluation" => challenger.observe_f128(y));
         if tx_idx >= proof.sumcheck_transcript.len() {
             return false;
         }
         let intro_msg = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(intro_msg.u_0);
-        challenger.observe_f128(intro_msg.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg.u_0, intro_msg.u_2]));
         let intro_quad = RoundQuad::from_msg(intro_msg, y);
-        let beta = challenger.sample_f128();
+        let beta = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
         t_r += beta * y;
         ood_ctxs.push(OodCtx {
@@ -4081,7 +4086,7 @@ where
     if trace {
         t_sample_q += _t.elapsed();
     }
-    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let alpha_0 = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_0)));
     let _t = std::time::Instant::now();
     if proof.initial_proof.opened_rows.len() != queries_0.len()
         || proof.initial_proof.opened_rows.iter().any(|row| row.len() != num_interleaved_0)
@@ -4113,10 +4118,9 @@ where
     }
     let intro_msg_0 = proof.sumcheck_transcript[tx_idx];
     tx_idx += 1;
-    challenger.observe_f128(intro_msg_0.u_0);
-    challenger.observe_f128(intro_msg_0.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_0.u_0, intro_msg_0.u_2]));
     let intro_quad_0 = RoundQuad::from_msg(intro_msg_0, enforced_sum_0);
-    let beta_0 = challenger.sample_f128();
+    let beta_0 = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
     running_quad = RoundQuad::fold(&running_quad, &intro_quad_0, beta_0);
     t_r += beta_0 * enforced_sum_0;
 
@@ -4146,12 +4150,14 @@ where
     let mut n_current = n1;
 
     for i in 0..r {
+        let _level = transcript_context!("ligerito.recursion_level", level = i + 1);
         let k_i = config.recursive_ks[i];
         if n_current < k_i {
             return false;
         }
         let mut level_rs = Vec::with_capacity(k_i);
         for j in 0..k_i {
+            let _round = transcript_context!("ligerito.fold_round", round = j);
             // Fold-challenge PoW mirror (level i+1's folds), tapered per round
             // to (fold_bits − j) — see the prover's L0 loop.
             let bits = fold_bits(i + 1).saturating_sub(j as u32);
@@ -4164,7 +4170,7 @@ where
                 }
                 fold_nonce_idx += 1;
             }
-            let ri = challenger.sample_f128();
+            let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
             ris.push(ri);
             level_rs.push(ri);
             t_r = running_quad.eval(ri);
@@ -4173,8 +4179,7 @@ where
             }
             let msg = proof.sumcheck_transcript[tx_idx];
             tx_idx += 1;
-            challenger.observe_f128(msg.u_0);
-            challenger.observe_f128(msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
             running_quad = RoundQuad::from_msg(msg, t_r);
         }
         n_current -= k_i;
@@ -4192,9 +4197,7 @@ where
             if yr.len() != 1 << n_current {
                 return false;
             }
-            for v in yr {
-                challenger.observe_f128(*v);
-            }
+            transcript_context!("ligerito.final_polynomial", representation = "multilinear_evaluations" => challenger.observe_f128_sequence(&yr));
             // PoW grinding check for last level's query phase.
             if nonce_idx >= proof.grinding_nonces.len() {
                 return false;
@@ -4217,7 +4220,7 @@ where
             // after `yr` was observed (top of this branch) and the queries are
             // fixed — so a forged `yr` cannot be adapted to it. Mirrors `alpha_i`
             // at every non-final level (see ~line 3377).
-            let alpha_last = challenger.sample_f128_vec(ceil_log2(num_queries_last));
+            let alpha_last = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_last)));
             if trace {
                 t_sample_q += _t.elapsed();
             }
@@ -4256,7 +4259,7 @@ where
                 &queries_last,
                 &alpha_last,
             );
-            let beta_last = challenger.sample_f128();
+            let beta_last = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
             t_r += beta_last * enforced_sum_last;
             level_ctxs.push(LevelCtx {
                 log_msg_cols: n_current,
@@ -4375,26 +4378,25 @@ where
         }
         let root_next = proof.recursive_roots[next_root_idx];
         next_root_idx += 1;
-        challenger.observe_bytes(&root_next);
+        transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_next));
 
         // OOD binding mirror for the L_{i+2} commit.
         for _ in 0..ood_count(i + 2) {
-            let z = challenger.sample_f128_vec(n_current);
+            let z = transcript_context!("ligerito.ood_point" => challenger.sample_f128_vec(n_current));
             if ood_idx >= proof.ood_values.len() {
                 return false;
             }
             let y = proof.ood_values[ood_idx];
             ood_idx += 1;
-            challenger.observe_f128(y);
+            transcript_context!("ligerito.ood_evaluation" => challenger.observe_f128(y));
             if tx_idx >= proof.sumcheck_transcript.len() {
                 return false;
             }
             let intro_msg = proof.sumcheck_transcript[tx_idx];
             tx_idx += 1;
-            challenger.observe_f128(intro_msg.u_0);
-            challenger.observe_f128(intro_msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg.u_0, intro_msg.u_2]));
             let intro_quad = RoundQuad::from_msg(intro_msg, y);
-            let beta = challenger.sample_f128();
+            let beta = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
             running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
             t_r += beta * y;
             ood_ctxs.push(OodCtx {
@@ -4424,7 +4426,7 @@ where
         if trace {
             t_sample_q += _t.elapsed();
         }
-        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let alpha_i = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_i)));
         if recursive_proof_idx >= proof.recursive_proofs.len() {
             return false;
         }
@@ -4458,10 +4460,9 @@ where
         }
         let intro_msg_i = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(intro_msg_i.u_0);
-        challenger.observe_f128(intro_msg_i.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_i.u_0, intro_msg_i.u_2]));
         let intro_quad_i = RoundQuad::from_msg(intro_msg_i, enforced_sum_i);
-        let beta_i = challenger.sample_f128();
+        let beta_i = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad_i, beta_i);
         t_r += beta_i * enforced_sum_i;
         level_ctxs.push(LevelCtx {
@@ -4511,9 +4512,9 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
         return false;
     }
 
-    challenger.observe_label(b"flock-ligerito-basis-v0");
-    challenger.observe_f128(target);
-    challenger.observe_bytes(&proof.initial_root);
+    transcript_context!("ligerito.domain_separator" => challenger.observe_label(b"flock-ligerito-basis-v0"));
+    transcript_context!("ligerito.opening_claim" => challenger.observe_f128(target));
+    transcript_context!("ligerito.commitment_root", commitment = "initial" => challenger.observe_bytes(&proof.initial_root));
 
     let log_inv_rate_0 = config.log_inv_rates[0];
     let log_msg_cols_0 = log_n - initial_k;
@@ -4528,8 +4529,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
     }
     let start_msg = proof.sumcheck_transcript[tx_idx];
     tx_idx += 1;
-    challenger.observe_f128(start_msg.u_0);
-    challenger.observe_f128(start_msg.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "initial", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[start_msg.u_0, start_msg.u_2]));
     let mut running_quad = RoundQuad::from_msg(start_msg, t_r);
 
     let fold_bits =
@@ -4546,6 +4546,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
 
     let mut r_lane_fold = Vec::with_capacity(initial_k);
     for j in 0..initial_k {
+        let _round = transcript_context!("ligerito.fold_round", level = 0, round = j);
         // Fold-challenge PoW mirror (L0's lane folds), tapered per round to
         // (fold_bits − j) — see the prover's L0 loop.
         let bits = fold_bits(0).saturating_sub(j as u32);
@@ -4558,7 +4559,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
             }
             fold_nonce_idx += 1;
         }
-        let ri = challenger.sample_f128();
+        let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
         r_lane_fold.push(ri);
         t_r = running_quad.eval(ri);
         if tx_idx >= proof.sumcheck_transcript.len() {
@@ -4566,8 +4567,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
         }
         let msg = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(msg.u_0);
-        challenger.observe_f128(msg.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
         running_quad = RoundQuad::from_msg(msg, t_r);
     }
 
@@ -4576,26 +4576,25 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
         return false;
     }
     let root_1 = proof.recursive_roots[0];
-    challenger.observe_bytes(&root_1);
+    transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_1));
 
     // OOD binding mirror for the L1 commit.
     for _ in 0..ood_count(1) {
-        let z = challenger.sample_f128_vec(log_n - initial_k);
+        let z = transcript_context!("ligerito.ood_point" => challenger.sample_f128_vec(log_n - initial_k));
         if ood_idx >= proof.ood_values.len() {
             return false;
         }
         let y = proof.ood_values[ood_idx];
         ood_idx += 1;
-        challenger.observe_f128(y);
+        transcript_context!("ligerito.ood_evaluation" => challenger.observe_f128(y));
         if tx_idx >= proof.sumcheck_transcript.len() {
             return false;
         }
         let intro_msg = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(intro_msg.u_0);
-        challenger.observe_f128(intro_msg.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg.u_0, intro_msg.u_2]));
         let intro_quad = RoundQuad::from_msg(intro_msg, y);
-        let beta = challenger.sample_f128();
+        let beta = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
         t_r += beta * y;
         ood_bases.push((build_eq_table(&z), initial_k, beta));
@@ -4617,7 +4616,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
 
     let num_queries_0 = config.queries[0];
     let queries_0 = sample_distinct_queries(challenger, block_len_0, num_queries_0);
-    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let alpha_0 = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_0)));
     if !verify_level_opens(
         &proof.initial_root,
         block_len_0,
@@ -4648,10 +4647,9 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
     }
     let intro_msg_0 = proof.sumcheck_transcript[tx_idx];
     tx_idx += 1;
-    challenger.observe_f128(intro_msg_0.u_0);
-    challenger.observe_f128(intro_msg_0.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_0.u_0, intro_msg_0.u_2]));
     let intro_quad_0 = RoundQuad::from_msg(intro_msg_0, enforced_sum_0);
-    let beta_0 = challenger.sample_f128();
+    let beta_0 = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
     running_quad = RoundQuad::fold(&running_quad, &intro_quad_0, beta_0);
     t_r += beta_0 * enforced_sum_0;
 
@@ -4672,12 +4670,14 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
     let mut n_current = n1;
 
     for i in 0..r {
+        let _level = transcript_context!("ligerito.recursion_level", level = i + 1);
         let k_i = config.recursive_ks[i];
         if n_current < k_i {
             return false;
         }
         let mut level_rs = Vec::with_capacity(k_i);
         for j in 0..k_i {
+            let _round = transcript_context!("ligerito.fold_round", round = j);
             // Fold-challenge PoW mirror (level i+1's folds), tapered per round
             // to (fold_bits − j) — see the prover's L0 loop.
             let bits = fold_bits(i + 1).saturating_sub(j as u32);
@@ -4690,7 +4690,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
                 }
                 fold_nonce_idx += 1;
             }
-            let ri = challenger.sample_f128();
+            let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
             ris.push(ri);
             level_rs.push(ri);
             t_r = running_quad.eval(ri);
@@ -4699,8 +4699,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
             }
             let msg = proof.sumcheck_transcript[tx_idx];
             tx_idx += 1;
-            challenger.observe_f128(msg.u_0);
-            challenger.observe_f128(msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
             running_quad = RoundQuad::from_msg(msg, t_r);
         }
         n_current -= k_i;
@@ -4718,9 +4717,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
             if yr.len() != 1 << n_current {
                 return false;
             }
-            for v in yr {
-                challenger.observe_f128(*v);
-            }
+            transcript_context!("ligerito.final_polynomial", representation = "multilinear_evaluations" => challenger.observe_f128_sequence(&yr));
             // PoW grinding check for last level (dense verifier).
             if nonce_idx >= proof.grinding_nonces.len() {
                 return false;
@@ -4742,7 +4739,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
             // queries are fixed. Same position as the succinct verifier
             // (recursive_verifier_with_basis_succinct), which verifies the same
             // proof, so both stay in lockstep.
-            let alpha_last = challenger.sample_f128_vec(ceil_log2(num_queries_last));
+            let alpha_last = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_last)));
             if !verify_level_opens(
                 &prev_root,
                 prev_block_len,
@@ -4769,7 +4766,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
                 &queries_last,
                 &alpha_last,
             );
-            let beta_last = challenger.sample_f128();
+            let beta_last = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
             t_r += beta_last * enforced_sum_last;
             basis_polys.push(basis_last_induced);
             basis_ris_starts.push(ris.len());
@@ -4816,26 +4813,25 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
         }
         let root_next = proof.recursive_roots[next_root_idx];
         next_root_idx += 1;
-        challenger.observe_bytes(&root_next);
+        transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_next));
 
         // OOD binding mirror for the L_{i+2} commit.
         for _ in 0..ood_count(i + 2) {
-            let z = challenger.sample_f128_vec(n_current);
+            let z = transcript_context!("ligerito.ood_point" => challenger.sample_f128_vec(n_current));
             if ood_idx >= proof.ood_values.len() {
                 return false;
             }
             let y = proof.ood_values[ood_idx];
             ood_idx += 1;
-            challenger.observe_f128(y);
+            transcript_context!("ligerito.ood_evaluation" => challenger.observe_f128(y));
             if tx_idx >= proof.sumcheck_transcript.len() {
                 return false;
             }
             let intro_msg = proof.sumcheck_transcript[tx_idx];
             tx_idx += 1;
-            challenger.observe_f128(intro_msg.u_0);
-            challenger.observe_f128(intro_msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg.u_0, intro_msg.u_2]));
             let intro_quad = RoundQuad::from_msg(intro_msg, y);
-            let beta = challenger.sample_f128();
+            let beta = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
             running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
             t_r += beta * y;
             ood_bases.push((build_eq_table(&z), ris.len(), beta));
@@ -4857,7 +4853,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
         let prev_num_interleaved = 1usize << prev_log_num_interleaved;
         let num_queries_i = config.queries[i + 1];
         let queries_i = sample_distinct_queries(challenger, prev_block_len, num_queries_i);
-        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let alpha_i = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_i)));
         if recursive_proof_idx >= proof.recursive_proofs.len() {
             return false;
         }
@@ -4890,10 +4886,9 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
         }
         let intro_msg_i = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(intro_msg_i.u_0);
-        challenger.observe_f128(intro_msg_i.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_i.u_0, intro_msg_i.u_2]));
         let intro_quad_i = RoundQuad::from_msg(intro_msg_i, enforced_sum_i);
-        let beta_i = challenger.sample_f128();
+        let beta_i = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad_i, beta_i);
         t_r += beta_i * enforced_sum_i;
         basis_polys.push(basis_i_induced);
@@ -4946,7 +4941,7 @@ fn recursive_prover_inner<Ch: Challenger>(
     let log_inv_rate_0 = config.log_inv_rates[0];
 
     let initial_root = wtns_0.root();
-    challenger.observe_bytes(&initial_root);
+    transcript_context!("ligerito.commitment_root", commitment = "initial" => challenger.observe_bytes(&initial_root));
 
     // ---- Partial-eval at z[0..initial_k] and commit f¹ (wtns_1) ----
     let v_challenges_0 = eval_point[..initial_k].to_vec();
@@ -4969,12 +4964,12 @@ fn recursive_prover_inner<Ch: Challenger>(
     let t_l1 = t.elapsed();
     t_commits += t_l1;
     tlog!("  [ligerito]   L1 commit: {:.2?}", t_l1);
-    challenger.observe_bytes(&wtns_1.root());
+    transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&wtns_1.root()));
 
     // ---- Queries + open wtns_0 ----
     let num_queries_0 = udr_queries(log_inv_rate_0);
     let queries_0 = sample_distinct_queries(challenger, wtns_0.block_len, num_queries_0);
-    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let alpha_0 = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_0)));
     let t = std::time::Instant::now();
     let opened_rows_0: Vec<Vec<F128>> = queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
     let merkle_proof_0 = merkle_multi_proof_for(&wtns_0.tree, wtns_0.block_len, &queries_0);
@@ -5003,14 +4998,12 @@ fn recursive_prover_inner<Ch: Challenger>(
     let t = std::time::Instant::now();
     let (mut sc_prover, start_msg) = SumcheckProver::new(f1, eq_z_residual, claimed_value);
     t_sumcheck += t.elapsed();
-    challenger.observe_f128(start_msg.u_0);
-    challenger.observe_f128(start_msg.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "initial", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[start_msg.u_0, start_msg.u_2]));
 
     // ---- Introduce induced basis + glue ----
     let intro_msg_0 = sc_prover.introduce_new(basis_0_induced, enforced_sum_0);
-    challenger.observe_f128(intro_msg_0.u_0);
-    challenger.observe_f128(intro_msg_0.u_2);
-    let beta_0 = challenger.sample_f128();
+    transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_0.u_0, intro_msg_0.u_2]));
+    let beta_0 = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
     sc_prover.glue(beta_0);
 
     // ---- Recursive levels ----
@@ -5019,14 +5012,14 @@ fn recursive_prover_inner<Ch: Challenger>(
     let mut recursive_proofs: Vec<RecursiveProof> = Vec::new();
 
     for i in 0..r {
+        let _level = transcript_context!("ligerito.recursion_level", level = i + 1);
         let k_i = config.recursive_ks[i];
         let mut level_rs = Vec::with_capacity(k_i);
         let t = std::time::Instant::now();
         for _ in 0..k_i {
-            let ri = challenger.sample_f128();
+            let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
             let msg = sc_prover.fold(ri);
-            challenger.observe_f128(msg.u_0);
-            challenger.observe_f128(msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
             level_rs.push(ri);
         }
         t_sumcheck += t.elapsed();
@@ -5042,9 +5035,7 @@ fn recursive_prover_inner<Ch: Challenger>(
             );
             // Last iter: send residual yr + open wtns_prev.
             let yr = sc_prover.f().to_vec();
-            for v in &yr {
-                challenger.observe_f128(*v);
-            }
+            transcript_context!("ligerito.final_polynomial", representation = "multilinear_evaluations" => challenger.observe_f128_sequence(&yr));
             // wtns_prev's rate (= log_inv_rates[i+1] for wtns_{i+1}).
             let num_queries_last = udr_queries(config.log_inv_rates[i + 1]);
             let queries_last =
@@ -5098,13 +5089,13 @@ fn recursive_prover_inner<Ch: Challenger>(
         t_commits += t_li;
         tlog!("  [ligerito]   L{} commit: {:.2?}", i + 2, t_li);
         let root_next = wtns_next.root();
-        challenger.observe_bytes(&root_next);
+        transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_next));
         recursive_roots.push(root_next);
 
         // Open wtns_prev. wtns_prev = wtns_{i+1} uses log_inv_rates[i+1].
         let num_queries_i = udr_queries(config.log_inv_rates[i + 1]);
         let queries_i = sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_i);
-        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let alpha_i = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_i)));
         let t = std::time::Instant::now();
         let opened_rows_i: Vec<Vec<F128>> = queries_i
             .iter()
@@ -5131,9 +5122,8 @@ fn recursive_prover_inner<Ch: Challenger>(
 
         // Introduce + glue.
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
-        challenger.observe_f128(intro_msg_i.u_0);
-        challenger.observe_f128(intro_msg_i.u_2);
-        let beta_i = challenger.sample_f128();
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_i.u_0, intro_msg_i.u_2]));
+        let beta_i = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         sc_prover.glue(beta_i);
 
         wtns_prev = wtns_next;
@@ -5194,17 +5184,17 @@ pub fn recursive_verifier<Ch: Challenger>(
         return false;
     }
 
-    challenger.observe_label(b"flock-ligerito-v0");
-    challenger.observe_f128(claimed_value);
-    challenger.observe_f128_slice(eval_point);
+    transcript_context!("ligerito.domain_separator" => challenger.observe_label(b"flock-ligerito-v0"));
+    transcript_context!("ligerito.opening_claim" => challenger.observe_f128(claimed_value));
+    transcript_context!("ligerito.opening_point" => challenger.observe_f128_slice(eval_point));
 
     // ---- Roots ----
-    challenger.observe_bytes(&proof.initial_root);
+    transcript_context!("ligerito.commitment_root", commitment = "initial" => challenger.observe_bytes(&proof.initial_root));
     if proof.recursive_roots.len() != r {
         return false;
     }
     let root_1 = proof.recursive_roots[0];
-    challenger.observe_bytes(&root_1);
+    transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_1));
 
     // ---- Open wtns_0 + α₀ ----
     let log_inv_rate_0 = config.log_inv_rates[0];
@@ -5213,7 +5203,7 @@ pub fn recursive_verifier<Ch: Challenger>(
     let num_interleaved_0 = 1usize << initial_k;
     let num_queries_0 = udr_queries(log_inv_rate_0);
     let queries_0 = sample_distinct_queries(challenger, block_len_0, num_queries_0);
-    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let alpha_0 = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_0)));
 
     if !verify_level_opens(
         &proof.initial_root,
@@ -5257,8 +5247,7 @@ pub fn recursive_verifier<Ch: Challenger>(
     }
     let start_msg = proof.sumcheck_transcript[tx_idx];
     tx_idx += 1;
-    challenger.observe_f128(start_msg.u_0);
-    challenger.observe_f128(start_msg.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "initial", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[start_msg.u_0, start_msg.u_2]));
     let mut running_quad = RoundQuad::from_msg(start_msg, t_r);
 
     // ---- Intro basis_0 + glue β₀ ----
@@ -5267,10 +5256,9 @@ pub fn recursive_verifier<Ch: Challenger>(
     }
     let intro_msg_0 = proof.sumcheck_transcript[tx_idx];
     tx_idx += 1;
-    challenger.observe_f128(intro_msg_0.u_0);
-    challenger.observe_f128(intro_msg_0.u_2);
+    transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_0.u_0, intro_msg_0.u_2]));
     let intro_quad_0 = RoundQuad::from_msg(intro_msg_0, enforced_sum_0);
-    let beta_0 = challenger.sample_f128();
+    let beta_0 = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
     running_quad = RoundQuad::fold(&running_quad, &intro_quad_0, beta_0);
     t_r += beta_0 * enforced_sum_0;
     basis_polys.push(basis_0_induced);
@@ -5287,13 +5275,14 @@ pub fn recursive_verifier<Ch: Challenger>(
     let mut n_current = n1;
 
     for i in 0..r {
+        let _level = transcript_context!("ligerito.recursion_level", level = i + 1);
         let k_i = config.recursive_ks[i];
         if n_current < k_i {
             return false;
         }
         let mut level_rs = Vec::with_capacity(k_i);
         for _ in 0..k_i {
-            let ri = challenger.sample_f128();
+            let ri = transcript_context!("ligerito.fold_challenge" => challenger.sample_f128());
             ris.push(ri);
             level_rs.push(ri);
             t_r = running_quad.eval(ri);
@@ -5302,8 +5291,7 @@ pub fn recursive_verifier<Ch: Challenger>(
             }
             let msg = proof.sumcheck_transcript[tx_idx];
             tx_idx += 1;
-            challenger.observe_f128(msg.u_0);
-            challenger.observe_f128(msg.u_2);
+            transcript_context!("ligerito.sumcheck_polynomial", message = "folded", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[msg.u_0, msg.u_2]));
             running_quad = RoundQuad::from_msg(msg, t_r);
         }
         n_current -= k_i;
@@ -5317,16 +5305,14 @@ pub fn recursive_verifier<Ch: Challenger>(
             if yr.len() != 1 << n_current {
                 return false;
             }
-            for v in yr {
-                challenger.observe_f128(*v);
-            }
+            transcript_context!("ligerito.final_polynomial", representation = "multilinear_evaluations" => challenger.observe_f128_sequence(&yr));
             let prev_block_len = 1usize << (prev_log_msg_cols + prev_log_inv_rate);
             let prev_num_interleaved = 1usize << prev_log_num_interleaved;
             let num_queries_last = udr_queries(prev_log_inv_rate);
             let queries_last =
                 sample_distinct_queries(challenger, prev_block_len, num_queries_last);
             // Final-level basis-induction challenge (after yr + queries fixed).
-            let alpha_last = challenger.sample_f128_vec(ceil_log2(num_queries_last));
+            let alpha_last = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_last)));
             if !verify_level_opens(
                 &prev_root,
                 prev_block_len,
@@ -5351,7 +5337,7 @@ pub fn recursive_verifier<Ch: Challenger>(
                 &queries_last,
                 &alpha_last,
             );
-            let beta_last = challenger.sample_f128();
+            let beta_last = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
             t_r += beta_last * enforced_sum_last;
             basis_polys.push(basis_last_induced);
             basis_ris_starts.push(ris.len());
@@ -5391,13 +5377,13 @@ pub fn recursive_verifier<Ch: Challenger>(
         }
         let root_next = proof.recursive_roots[next_root_idx];
         next_root_idx += 1;
-        challenger.observe_bytes(&root_next);
+        transcript_context!("ligerito.commitment_root", commitment = "folded" => challenger.observe_bytes(&root_next));
 
         let prev_block_len = 1usize << (prev_log_msg_cols + prev_log_inv_rate);
         let prev_num_interleaved = 1usize << prev_log_num_interleaved;
         let num_queries_i = udr_queries(prev_log_inv_rate);
         let queries_i = sample_distinct_queries(challenger, prev_block_len, num_queries_i);
-        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let alpha_i = transcript_context!("ligerito.query_batching_point" => challenger.sample_f128_vec(ceil_log2(num_queries_i)));
 
         if recursive_proof_idx >= proof.recursive_proofs.len() {
             return false;
@@ -5432,10 +5418,9 @@ pub fn recursive_verifier<Ch: Challenger>(
         }
         let intro_msg_i = proof.sumcheck_transcript[tx_idx];
         tx_idx += 1;
-        challenger.observe_f128(intro_msg_i.u_0);
-        challenger.observe_f128(intro_msg_i.u_2);
+        transcript_context!("ligerito.sumcheck_polynomial", message = "introduce", evaluation_points = "0,2" => challenger.observe_f128_sequence(&[intro_msg_i.u_0, intro_msg_i.u_2]));
         let intro_quad_i = RoundQuad::from_msg(intro_msg_i, enforced_sum_i);
-        let beta_i = challenger.sample_f128();
+        let beta_i = transcript_context!("ligerito.claim_batching_challenge" => challenger.sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad_i, beta_i);
         t_r += beta_i * enforced_sum_i;
         basis_polys.push(basis_i_induced);
