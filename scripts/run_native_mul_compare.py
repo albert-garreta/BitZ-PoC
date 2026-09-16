@@ -23,6 +23,7 @@ TOOLCHAIN = "1.98.1"
 DEFAULT_SEED = 0x5533325043530064
 BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 10}
 CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDSPEC",
+             "F2Z_BENCH_LOCK", "F2Z_LIMBER_BDLAMBDA",
              "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_LIG_PROFILE",
              "F2Z_U64_SPLIT_SHIFT", "F2Z_MUL_MEMORY_ONLY", "F2Z_BINIUS_LIGERITO_ACCOUNTING")
 LIGERITO_ACCOUNTING = {"union": "union-bound", "rbr": "round-by-round"}
