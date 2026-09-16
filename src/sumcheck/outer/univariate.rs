@@ -7,19 +7,19 @@
 //! point.  The remaining row variables are then handled by the existing cubic
 //! outer sumcheck without changing its proof or transcript format.
 
+use super::ordinary::prove_field_with_factors;
 use crate::piop::spartan::SpartanField as _;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 use field::RingOps;
 #[cfg(test)]
 use field::{Fp, Uint};
 
-use super::{
+use crate::piop::spartan::{
     SpartanField, absorb_field_elements,
     matrix::{PrefixUnivariateRowFactors, make_equality_factors},
     squeeze_field,
     sumcheck::{
         OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
-        prove_outer_sumcheck_with_reducer,
     },
 };
 
@@ -92,7 +92,7 @@ where
 
     /// The prefix factor `(L_s(z))_{s < 2^K}` of this row functional, for
     /// the verifier's succinct matrix binding
-    /// ([`super::matrix::ProductRowFunctional`]); the tail factor is
+    /// ([`crate::piop::spartan::matrix::ProductRowFunctional`]); the tail factor is
     /// `eq(tail_point, ·)` on the remaining `num_row_vars - K` variables.
     pub(crate) fn prefix_weights(
         &self,
@@ -215,7 +215,7 @@ const K4_EXTERIOR_INTERPOLATION_DENOMINATORS: [i128; 14] =
 
 /// Computes the field-generic skip message in transcript order: all finite
 /// exterior coordinates, followed by `Q(infinity)`.
-pub(crate) fn compute_field_skip_message<F>(
+pub(crate) fn field_message<F>(
     skip_vars: usize,
     equality_factors: (&DenseMultilinearExtension<F>, &DenseMultilinearExtension<F>),
     products: &R1csProductMles<F>,
@@ -228,28 +228,28 @@ where
     validate_equality_factors(equality_factors, products.az.num_vars - skip_vars)?;
 
     match skip_vars {
-        1 => compute_field_skip_message_for_layout(
+        1 => field_message_for_layout(
             equality_factors,
             products,
             field_cfg,
             &K1_FINITE_LAGRANGE,
             &K1_TOP_DIFFERENCE,
         ),
-        2 => compute_field_skip_message_for_layout(
+        2 => field_message_for_layout(
             equality_factors,
             products,
             field_cfg,
             &K2_FINITE_LAGRANGE,
             &K2_TOP_DIFFERENCE,
         ),
-        3 => compute_field_skip_message_for_layout(
+        3 => field_message_for_layout(
             equality_factors,
             products,
             field_cfg,
             &K3_FINITE_LAGRANGE,
             &K3_TOP_DIFFERENCE,
         ),
-        4 => compute_field_skip_message_for_layout(
+        4 => field_message_for_layout(
             equality_factors,
             products,
             field_cfg,
@@ -262,7 +262,7 @@ where
 
 /// Folds the first `K` little-endian variables of `Az`, `Bz`, and `Cz` at
 /// `z`, leaving field-valued tables over the suffix variables.
-pub(crate) fn fold_field_prefix<F>(
+pub(crate) fn fold_field_lagrange<F>(
     products: R1csProductMles<F>,
     skip_vars: usize,
     z: &F,
@@ -281,7 +281,7 @@ where
     let fold_table = |evaluations: &[F]| {
         let mut folded = Vec::with_capacity(tail_len);
         for block in evaluations.chunks_exact(block_len) {
-            let mut value = zero.clone();
+            let mut value = zero;
             for (weight, evaluation) in weights.iter().zip(block) {
                 value = field_cfg.add(&(value), &(&(field_cfg).mul(weight, evaluation)));
             }
@@ -302,7 +302,7 @@ where
 
 /// Runs the field-generic known-zero prefix reduction and then delegates the
 /// suffix to the existing cubic outer-sumcheck prover.
-pub(crate) fn prove_univariate_skip_outer_sumcheck_with_reducer<F, R>(
+pub(crate) fn prove_field_skip_with_factors<F, R>(
     transcript: &mut impl Transcript,
     skip_vars: usize,
     tau_tail: &[F],
@@ -323,7 +323,7 @@ where
 
     let message = {
         let _scope = tracing::info_span!("spartan:univariate_skip_message").entered();
-        compute_field_skip_message(
+        field_message(
             skip_vars,
             (&equality_factors.0, &equality_factors.1),
             &products,
@@ -334,11 +334,11 @@ where
     let reduction = skip.verify_reduction(transcript, field_cfg)?;
     let folded = {
         let _scope = tracing::info_span!("spartan:univariate_skip_prefix_fold").entered();
-        fold_field_prefix(products, skip_vars, &reduction.z, field_cfg)?
+        fold_field_lagrange(products, skip_vars, &reduction.z, field_cfg)?
     };
     let tail = {
         let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
-        prove_outer_sumcheck_with_reducer(
+        prove_field_with_factors(
             transcript,
             reduction.q_at_z,
             tau_tail,
@@ -349,13 +349,14 @@ where
         )?
     };
 
+    let skip_vars = skip.skip_vars;
     Ok(UnivariateSkipOuterSumcheckOutput {
         proof: UnivariateSkipOuterSumcheckProof {
-            skip: skip.clone(),
+            skip,
             tail: tail.proof,
         },
         row_binding: PrefixUnivariateRowBinding {
-            skip_vars: skip.skip_vars,
+            skip_vars,
             z: reduction.z,
             tail_point: tail.eval_points,
         },
@@ -413,7 +414,7 @@ where
 
         let mut message = Vec::with_capacity(self.finite_q_evaluations.len() + 1);
         message.extend_from_slice(&self.finite_q_evaluations);
-        message.push(self.q_at_infinity.clone());
+        message.push(self.q_at_infinity);
         absorb_field_elements(transcript, &message, &field_cfg);
         let z = squeeze_field(transcript, field_cfg)?;
         let q_at_z = {
@@ -509,9 +510,9 @@ where
         }
         validate_field_elements(
             &[
-                self.tail.az_mle_claim.clone(),
-                self.tail.bz_mle_claim.clone(),
-                self.tail.cz_mle_claim.clone(),
+                self.tail.az_mle_claim,
+                self.tail.bz_mle_claim,
+                self.tail.cz_mle_claim,
             ],
             field_cfg,
         )?;
@@ -534,7 +535,7 @@ where
     }
 }
 
-fn compute_field_skip_message_for_layout<F, const BLOCK_LEN: usize, const FINITE_COUNT: usize>(
+fn field_message_for_layout<F, const BLOCK_LEN: usize, const FINITE_COUNT: usize>(
     equality_factors: (&DenseMultilinearExtension<F>, &DenseMultilinearExtension<F>),
     products: &R1csProductMles<F>,
     field_cfg: &F::Config,
@@ -555,7 +556,7 @@ where
         })
         .collect::<Vec<_>>();
 
-    let mut factorial = one.clone();
+    let mut factorial = one;
     for factor in 2..BLOCK_LEN {
         factorial = field_cfg.mul(&(factorial), &(&field_from_usize(factor, field_cfg)));
     }
@@ -571,7 +572,7 @@ where
         .collect::<Vec<_>>();
 
     let suffix_count = products.az.evaluations.len() / BLOCK_LEN;
-    let mut message = vec![zero.clone(); FINITE_COUNT + 1];
+    let mut message = vec![zero; FINITE_COUNT + 1];
     for suffix in 0..suffix_count {
         let equality = equality_weight(equality_factors, suffix, &field_cfg);
         let start = suffix * BLOCK_LEN;
@@ -618,14 +619,14 @@ where
         .map(|node| (field_cfg).sub(z, &field_from_signed(i128::from(*node), field_cfg)))
         .collect::<Vec<_>>();
     let mut prefix_products = Vec::with_capacity(FINITE_COUNT + 1);
-    prefix_products.push(one.clone());
+    prefix_products.push(one);
     for difference in &exterior_differences {
         prefix_products.push((field_cfg).mul(
             prefix_products.last().expect("prefix starts with one"),
             difference,
         ));
     }
-    let mut suffix_products = vec![one.clone(); FINITE_COUNT + 1];
+    let mut suffix_products = vec![one; FINITE_COUNT + 1];
     for index in (0..FINITE_COUNT).rev() {
         suffix_products[index] =
             (field_cfg).mul(&exterior_differences[index], &suffix_products[index + 1]);
@@ -748,7 +749,7 @@ where
     )
 }
 
-fn lagrange_weights_at<F>(point: &F, block_len: usize, field_cfg: &F::Config) -> Vec<F>
+pub(super) fn lagrange_weights_at<F>(point: &F, block_len: usize, field_cfg: &F::Config) -> Vec<F>
 where
     F: SpartanField,
 {
@@ -757,21 +758,21 @@ where
         .map(|node| (field_cfg).sub(point, &field_from_usize(node, field_cfg)))
         .collect::<Vec<_>>();
     let mut prefix = Vec::with_capacity(block_len + 1);
-    prefix.push(one.clone());
+    prefix.push(one);
     for difference in &differences {
         prefix.push((field_cfg).mul(prefix.last().expect("prefix starts with one"), difference));
     }
-    let mut suffix = vec![one.clone(); block_len + 1];
+    let mut suffix = vec![one; block_len + 1];
     for index in (0..block_len).rev() {
         suffix[index] = (field_cfg).mul(&differences[index], &suffix[index + 1]);
     }
 
     let degree = block_len - 1;
-    let mut factorial = one.clone();
+    let mut factorial = one;
     for factor in 2..=degree {
         factorial = field_cfg.mul(&(factorial), &(&field_from_usize(factor, field_cfg)));
     }
-    let mut inverse_factorials = vec![one.clone(); block_len];
+    let mut inverse_factorials = vec![one; block_len];
     inverse_factorials[degree] = *field::FieldOps::inverse_ct(field_cfg, &factorial).value();
     for index in (1..=degree).rev() {
         inverse_factorials[index - 1] = (field_cfg).mul(
@@ -804,7 +805,7 @@ where
     weights
         .iter()
         .zip(values)
-        .fold(zero.clone(), |mut result, (weight, value)| {
+        .fold(*zero, |mut result, (weight, value)| {
             result = field_config.add(&(result), &(&(field_config).mul(weight, value)));
             result
         })
@@ -997,7 +998,7 @@ mod tests {
         let block_len = 1usize << skip_vars;
         let weights = lagrange_weights_at(point, block_len, field_cfg);
         let zero = Fp::<2>::zero_with_cfg(field_cfg);
-        let mut result = zero.clone();
+        let mut result = zero;
         for suffix in 0..products.az.evaluations.len() / block_len {
             let start = suffix * block_len;
             let a = inner_product(
@@ -1047,7 +1048,7 @@ mod tests {
             let products = valid_products(num_vars, &field_cfg);
             let tau_tail = [field(9, &field_cfg), field(13, &field_cfg)];
             let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-            let message = compute_field_skip_message(
+            let message = field_message(
                 skip_vars,
                 (&equality_factors.0, &equality_factors.1),
                 &products,
@@ -1089,7 +1090,7 @@ mod tests {
             let products = valid_products(num_vars, &field_cfg);
             let tau_tail = [field(17, &field_cfg)];
             let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-            let message = compute_field_skip_message(
+            let message = field_message(
                 skip_vars,
                 (&equality_factors.0, &equality_factors.1),
                 &products,
@@ -1102,7 +1103,7 @@ mod tests {
             for (index, value) in changed_c.cz.evaluations.iter_mut().enumerate() {
                 *value = field_cfg.add(&(*value), &(&field((index as u64 + 1) * 19, &field_cfg)));
             }
-            let changed_message = compute_field_skip_message(
+            let changed_message = field_message(
                 skip_vars,
                 (&equality_factors.0, &equality_factors.1),
                 &changed_c,
@@ -1126,7 +1127,7 @@ mod tests {
             let mut verifier_transcript = prover_transcript.clone();
             let mut direct_tail_transcript = prover_transcript.clone();
 
-            let direct_message = compute_field_skip_message(
+            let direct_message = field_message(
                 skip_vars,
                 (&equality_factors.0, &equality_factors.1),
                 &products,
@@ -1136,7 +1137,7 @@ mod tests {
             let direct_skip =
                 UnivariateSkipProof::from_ordered_message(skip_vars, direct_message).unwrap();
 
-            let output = prove_univariate_skip_outer_sumcheck_with_reducer(
+            let output = prove_field_skip_with_factors(
                 &mut prover_transcript,
                 skip_vars,
                 &tau_tail,
@@ -1150,8 +1151,8 @@ mod tests {
                 .verify_reduction(&mut direct_tail_transcript, &field_cfg)
                 .unwrap();
             let direct_folded =
-                fold_field_prefix(products, skip_vars, &direct_reduction.z, &field_cfg).unwrap();
-            let direct_tail = prove_outer_sumcheck_with_reducer(
+                fold_field_lagrange(products, skip_vars, &direct_reduction.z, &field_cfg).unwrap();
+            let direct_tail = prove_field_with_factors(
                 &mut direct_tail_transcript,
                 direct_reduction.q_at_z,
                 &tau_tail,
@@ -1199,7 +1200,7 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let mut verifier_transcript = prover_transcript.clone();
 
-        let output = prove_univariate_skip_outer_sumcheck_with_reducer(
+        let output = prove_field_skip_with_factors(
             &mut prover_transcript,
             skip_vars,
             &[],
@@ -1226,7 +1227,7 @@ mod tests {
         let tau_tail = [field(23, &field_cfg)];
         let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
         let reducer = field_cfg.clone();
-        let output = prove_univariate_skip_outer_sumcheck_with_reducer(
+        let output = prove_field_skip_with_factors(
             &mut Blake3Transcript::new(),
             skip_vars,
             &tau_tail,
@@ -1260,4 +1261,39 @@ mod tests {
             _ => &[],
         }
     }
+}
+
+pub(super) fn prepared_weights<E: SpartanField>(
+    k: usize,
+    field: &E::Config,
+) -> Result<(Vec<Vec<E>>, Vec<E>), SumcheckError> {
+    fn convert<E: SpartanField, const M: usize, const N: usize>(
+        finite: &[[i128; M]; N],
+        top: &[i128; M],
+        field: &E::Config,
+    ) -> (Vec<Vec<E>>, Vec<E>) {
+        let finite = finite
+            .iter()
+            .map(|w| w.iter().map(|&x| field_from_signed(x, field)).collect())
+            .collect();
+        let scale = *field::FieldOps::inverse_ct(
+            field,
+            &(1..M).fold(field.one(), |acc, i| {
+                field.mul(&acc, &field_from_usize(i, field))
+            }),
+        )
+        .value();
+        let top = top
+            .iter()
+            .map(|&x| field.mul(&scale, &field_from_signed(x, field)))
+            .collect();
+        (finite, top)
+    }
+    Ok(match k {
+        1 => convert(&K1_FINITE_LAGRANGE, &K1_TOP_DIFFERENCE, field),
+        2 => convert(&K2_FINITE_LAGRANGE, &K2_TOP_DIFFERENCE, field),
+        3 => convert(&K3_FINITE_LAGRANGE, &K3_TOP_DIFFERENCE, field),
+        4 => convert(&K4_FINITE_LAGRANGE, &K4_TOP_DIFFERENCE, field),
+        _ => return Err(SumcheckError::InvalidProductDimensions),
+    })
 }

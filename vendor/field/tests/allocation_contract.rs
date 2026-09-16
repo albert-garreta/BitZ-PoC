@@ -71,8 +71,8 @@ fn caller_owned_operations_allocate_nothing() {
         incremental.accumulate(weight, value);
     }
     std::hint::black_box(field.reduce(incremental));
-    field.fold_pairs_into(&input, 0, &mut out, &claim);
-    field.fold_pairs_into(&input, 0, &mut plain, &claim);
+    field.fold_pairs_into(&input, &mut out, &claim);
+    field.fold_pairs_into(&input, &mut plain, &claim);
     std::hint::black_box(field.from_integer(&UintRef::new(&words)));
     std::hint::black_box(field.from_integer(&ZRef::from_twos_complement_words(&words)));
     std::hint::black_box(field.eqf_single_pair_round(&round_left, &round_right, &weights, 17));

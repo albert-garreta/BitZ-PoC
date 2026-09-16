@@ -36,101 +36,182 @@ impl<'a, T> NativeWideProducts<'a, T> {
     }
 }
 
-pub(crate) trait NativeOuterInput: Copy + Sync {
-    fn len(&self) -> usize;
-    fn valid_shape(&self) -> bool;
-    fn singleton(&self, ctx: &field::FpCtx<2>) -> [Raw; 3];
-    fn round0(
-        &self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        weights: RawEqWeights<'_>,
-        endpoint: FactoredEndpoint,
-    ) -> [Raw; 2];
-    fn fold(
-        &self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        out: &mut RawProducts,
-        challenge: Raw,
-        weights: Option<(RawEqWeights<'_>, FactoredEndpoint)>,
-    ) -> [Raw; 2];
+/// Internal width dispatch. It is matched once before the first kernel;
+/// the public outer API accepts owned tables or three slices.
+#[derive(Clone, Copy)]
+pub(crate) enum NativeInput<'a> {
+    U32(NativeProducts<'a>),
+    Residues(&'a RawProducts),
+    U64(NativeWideProducts<'a, u64>),
+    U128(NativeWideProducts<'a, u128>),
 }
-impl NativeOuterInput for NativeProducts<'_> {
-    fn len(&self) -> usize {
-        self.az.len()
+impl NativeInput<'_> {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::U32(p) => p.len(),
+            Self::Residues(p) => p.len(),
+            Self::U64(p) => p.rows,
+            Self::U128(p) => p.rows,
+        }
     }
-    fn valid_shape(&self) -> bool {
-        self.az.len() == self.bz.len() && self.az.len() == self.cz.len()
+}
+impl<'a> From<NativeProducts<'a>> for NativeInput<'a> {
+    fn from(p: NativeProducts<'a>) -> Self {
+        Self::U32(p)
     }
-    fn singleton(&self, ctx: &field::FpCtx<2>) -> [Raw; 3] {
-        [
-            ctx.native_residue(self.az[0]),
-            ctx.native_residue(self.bz[0]),
-            ctx.native_residue(self.cz[0]),
-        ]
+}
+impl<'a> From<&'a RawProducts> for NativeInput<'a> {
+    fn from(p: &'a RawProducts) -> Self {
+        Self::Residues(p)
     }
-    fn round0(
-        &self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        weights: RawEqWeights<'_>,
-        endpoint: FactoredEndpoint,
-    ) -> [Raw; 2] {
-        native_cofactor_evaluations_raw(ctx, reducer, *self, weights, endpoint)
+}
+impl<'a> From<NativeWideProducts<'a, u64>> for NativeInput<'a> {
+    fn from(p: NativeWideProducts<'a, u64>) -> Self {
+        Self::U64(p)
     }
-    fn fold(
-        &self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        out: &mut RawProducts,
-        challenge: Raw,
-        weights: Option<(RawEqWeights<'_>, FactoredEndpoint)>,
-    ) -> [Raw; 2] {
-        fold_native_products_and_cofactor_evaluations_raw(
-            ctx, reducer, *self, out, challenge, weights,
-        )
+}
+impl<'a> From<NativeWideProducts<'a, u128>> for NativeInput<'a> {
+    fn from(p: NativeWideProducts<'a, u128>) -> Self {
+        Self::U128(p)
     }
 }
 
-// A prepared product table can share the outer driver with native inputs.
-// Its first fold still fuses the next cofactor evaluation.
-impl NativeOuterInput for &RawProducts {
-    fn len(&self) -> usize {
-        self.az.len()
-    }
-    fn valid_shape(&self) -> bool {
-        self.az.len() == self.bz.len() && self.az.len() == self.cz.len()
-    }
-    fn singleton(&self, _: &field::FpCtx<2>) -> [Raw; 3] {
-        [self.az[0], self.bz[0], self.cz[0]]
-    }
-    fn round0(
-        &self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        weights: RawEqWeights<'_>,
-        endpoint: FactoredEndpoint,
-    ) -> [Raw; 2] {
-        cofactor_evaluations_raw(ctx, reducer, self, weights, endpoint)
-    }
-    fn fold(
-        &self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        out: &mut RawProducts,
-        challenge: Raw,
-        weights: Option<(RawEqWeights<'_>, FactoredEndpoint)>,
-    ) -> [Raw; 2] {
-        match weights {
-            Some((weights, endpoint)) => fold_products_and_cofactor_evaluations_raw(
-                ctx, reducer, self, out, challenge, weights, endpoint,
-            ),
-            None => {
-                fold_products_raw(ctx, self, out, challenge);
-                [0; 2]
+pub(super) fn dispatch<T: Transcript>(
+    transcript: &mut T,
+    ctx: &field::FpCtx<2>,
+    reducer: &field::FpCtx<2>,
+    claim: Field,
+    tau: &[Field],
+    low: Vec<Raw>,
+    high: Vec<Raw>,
+    input: NativeInput<'_>,
+    known_zero: bool,
+) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
+    match input {
+        NativeInput::U32(p) => {
+            if p.az.len() != p.bz.len() || p.az.len() != p.cz.len() {
+                return Err(SumcheckError::InvalidProductDimensions);
             }
+            prove_native_prefix(
+                transcript,
+                ctx,
+                reducer,
+                claim,
+                tau,
+                low,
+                high,
+                p.len(),
+                known_zero,
+                || {
+                    [
+                        ctx.native_residue(p.az[0]),
+                        ctx.native_residue(p.bz[0]),
+                        ctx.native_residue(p.cz[0]),
+                    ]
+                },
+                |weights, endpoint| {
+                    native_cofactor_evaluations_raw(ctx, reducer, p, weights, endpoint)
+                },
+                |out, r, weights| {
+                    fold_native_products_and_cofactor_evaluations_raw(
+                        ctx, reducer, p, out, r, weights,
+                    )
+                },
+            )
         }
+        NativeInput::Residues(p) => {
+            if p.az.len() != p.bz.len() || p.az.len() != p.cz.len() {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            prove_native_prefix(
+                transcript,
+                ctx,
+                reducer,
+                claim,
+                tau,
+                low,
+                high,
+                p.len(),
+                known_zero,
+                || [p.az[0], p.bz[0], p.cz[0]],
+                |weights, endpoint| cofactor_evaluations_raw(ctx, reducer, p, weights, endpoint),
+                |out, r, weights| match weights {
+                    Some((w, e)) => {
+                        fold_products_and_cofactor_evaluations_raw(ctx, reducer, p, out, r, w, e)
+                    }
+                    None => {
+                        fold_products_raw(ctx, p, out, r);
+                        [0; 2]
+                    }
+                },
+            )
+        }
+        NativeInput::U64(p) => prove_native_prefix(
+            transcript,
+            ctx,
+            reducer,
+            claim,
+            tau,
+            low,
+            high,
+            p.rows,
+            known_zero,
+            || p.folded(ctx, &[ctx.one(), ctx.zero()], 0),
+            |weights, endpoint| {
+                wide_round0(
+                    ctx,
+                    reducer,
+                    p.rows,
+                    |i, e| p.cofactor(i, e),
+                    weights,
+                    endpoint,
+                )
+            },
+            |out, r, weights| {
+                wide_fold(
+                    ctx,
+                    reducer,
+                    p.rows,
+                    |c, i| p.folded(ctx, c, i),
+                    out,
+                    r,
+                    weights,
+                )
+            },
+        ),
+        NativeInput::U128(p) => prove_native_prefix(
+            transcript,
+            ctx,
+            reducer,
+            claim,
+            tau,
+            low,
+            high,
+            p.rows,
+            known_zero,
+            || p.folded(ctx, &[ctx.one(), ctx.zero()], 0),
+            |weights, endpoint| {
+                wide_round0(
+                    ctx,
+                    reducer,
+                    p.rows,
+                    |i, e| p.cofactor(i, e),
+                    weights,
+                    endpoint,
+                )
+            },
+            |out, r, weights| {
+                wide_fold(
+                    ctx,
+                    reducer,
+                    p.rows,
+                    |c, i| p.folded(ctx, c, i),
+                    out,
+                    r,
+                    weights,
+                )
+            },
+        ),
     }
 }
 
@@ -143,17 +224,9 @@ fn magnitude<const N: usize>(a: Uint<N>, b: Uint<N>) -> (Uint<N>, CtMask) {
     )
 }
 
-trait WideSource<const N: usize>: Copy + Sync {
-    fn len(self) -> usize;
-    fn cofactor(self, pair: usize, endpoint: FactoredEndpoint) -> [(Uint<N>, CtMask); 2];
-    fn folded(self, field: &field::FpCtx<2>, coefficients: &[Fp<2>; 2], index: usize) -> [Raw; 3];
-}
 macro_rules! wide_source {
     ($native:ty, $a:literal, $p:literal, $operand:expr, $product:expr) => {
-        impl WideSource<$p> for NativeWideProducts<'_, $native> {
-            fn len(self) -> usize {
-                self.rows
-            }
+        impl NativeWideProducts<'_, $native> {
             #[inline]
             fn cofactor(self, pair: usize, endpoint: FactoredEndpoint) -> [(Uint<$p>, CtMask); 2] {
                 let read =
@@ -161,19 +234,23 @@ macro_rules! wide_source {
                 let [a0, a1] = [read(self.az, 2 * pair), read(self.az, 2 * pair + 1)];
                 let [b0, b1] = [read(self.bz, 2 * pair), read(self.bz, 2 * pair + 1)];
                 let e = match endpoint {
-                    FactoredEndpoint::Zero => 0,
+                    FactoredEndpoint::Zero | FactoredEndpoint::KnownZero => 0,
                     FactoredEndpoint::One => 1,
                 };
-                let (a, b) = if e == 0 { (a0, b0) } else { (a1, b1) };
-                let c = ($product)(
-                    self.cz_lo.get(2 * pair + e).copied().unwrap_or(0),
-                    self.cz_hi.get(2 * pair + e).copied().unwrap_or(0),
-                );
-                let ab = *field::IntegerOps
-                    .mul_wide(&a, &b)
-                    .checked_resize_ct::<$p>()
-                    .value();
-                let residual = magnitude(ab, c);
+                let residual = if endpoint == FactoredEndpoint::KnownZero {
+                    (Uint::ZERO, CtMask::FALSE)
+                } else {
+                    let (a, b) = if e == 0 { (a0, b0) } else { (a1, b1) };
+                    let c = ($product)(
+                        self.cz_lo.get(2 * pair + e).copied().unwrap_or(0),
+                        self.cz_hi.get(2 * pair + e).copied().unwrap_or(0),
+                    );
+                    let ab = *field::IntegerOps
+                        .mul_wide(&a, &b)
+                        .checked_resize_ct::<$p>()
+                        .value();
+                    magnitude(ab, c)
+                };
                 let (da, na) = magnitude(a1, a0);
                 let (db, nb) = magnitude(b1, b0);
                 let infinity = *field::IntegerOps
@@ -211,37 +288,6 @@ macro_rules! wide_source {
                 ]
             }
         }
-        impl NativeOuterInput for NativeWideProducts<'_, $native> {
-            fn len(&self) -> usize {
-                self.rows
-            }
-            fn valid_shape(&self) -> bool {
-                true
-            } // constructor validated all public shapes
-            fn singleton(&self, ctx: &field::FpCtx<2>) -> [Raw; 3] {
-                let f = ctx;
-                self.folded(f, &[f.one(), f.zero()], 0)
-            }
-            fn round0(
-                &self,
-                ctx: &field::FpCtx<2>,
-                reducer: &field::FpCtx<2>,
-                weights: RawEqWeights<'_>,
-                endpoint: FactoredEndpoint,
-            ) -> [Raw; 2] {
-                wide_round0::<$p, _>(ctx, reducer, *self, weights, endpoint)
-            }
-            fn fold(
-                &self,
-                ctx: &field::FpCtx<2>,
-                reducer: &field::FpCtx<2>,
-                out: &mut RawProducts,
-                challenge: Raw,
-                weights: Option<(RawEqWeights<'_>, FactoredEndpoint)>,
-            ) -> [Raw; 2] {
-                wide_fold::<$p, _>(ctx, reducer, *self, out, challenge, weights)
-            }
-        }
     };
 }
 wide_source!(
@@ -264,15 +310,16 @@ wide_source!(
     ])
 );
 
-fn wide_round0<const N: usize, P: WideSource<N>>(
+fn wide_round0<const N: usize>(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
-    products: P,
+    len: usize,
+    cofactor: impl Fn(usize, FactoredEndpoint) -> [(Uint<N>, CtMask); 2] + Sync,
     weights: RawEqWeights<'_>,
     endpoint: FactoredEndpoint,
 ) -> [Raw; 2] {
     let f = ctx;
-    let count = products.len() / 2;
+    let count = len / 2;
     assert_eq!(count, weights.pair_count());
     let zero = || [FpLinearAcc::<2, N>::zero(); 2];
     let merge = |mut a: [FpLinearAcc<2, N>; 2], b: [FpLinearAcc<2, N>; 2]| {
@@ -289,7 +336,7 @@ fn wide_round0<const N: usize, P: WideSource<N>>(
                 low.map_or_else(|| weights.pair_weight(ctx, i), |v| v[i - start]),
             );
             let neg = f.neg(&w);
-            for (a, (value, negative)) in acc.iter_mut().zip(products.cofactor(i, endpoint)) {
+            for (a, (value, negative)) in acc.iter_mut().zip(cofactor(i, endpoint)) {
                 a.accumulate(&Fp::ct_select(&w, &neg, negative), &value);
             }
         }
@@ -334,21 +381,22 @@ fn wide_round0<const N: usize, P: WideSource<N>>(
     reduce(block(0, count, None))
 }
 
-fn wide_fold<const N: usize, P: WideSource<N>>(
+fn wide_fold(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
-    products: P,
+    len: usize,
+    folded: impl Fn(&[Fp<2>; 2], usize) -> [Raw; 3] + Sync,
     out: &mut RawProducts,
     challenge: Raw,
     weights: Option<(RawEqWeights<'_>, FactoredEndpoint)>,
 ) -> [Raw; 2] {
-    assert_eq!(products.len(), 2 * out.len());
+    assert_eq!(len, 2 * out.len());
     let f = ctx;
     let challenge = shared_raw(f, challenge);
     let coefficients = [f.sub(&f.one(), &challenge), challenge];
     let Some((weights, endpoint)) = weights else {
         assert_eq!(out.len(), 1);
-        let [a, b, c] = products.folded(f, &coefficients, 0);
+        let [a, b, c] = folded(&coefficients, 0);
         out.az[0] = a;
         out.bz[0] = b;
         out.cz[0] = c;
@@ -365,8 +413,8 @@ fn wide_fold<const N: usize, P: WideSource<N>>(
                 let pair = base + j;
                 let i = 4 * (start + pair);
                 let o = 2 * pair;
-                let [a0, b0, c0] = products.folded(f, &coefficients, i);
-                let [a1, b1, c1] = products.folded(f, &coefficients, i + 2);
+                let [a0, b0, c0] = folded(&coefficients, i);
+                let [a1, b1, c1] = folded(&coefficients, i + 2);
                 a[o] = a0;
                 a[o + 1] = a1;
                 b[o] = b0;
@@ -482,7 +530,14 @@ mod tests {
                     for endpoint in [FactoredEndpoint::Zero, FactoredEndpoint::One] {
                         let weights = weights_of(&low, &high);
                         assert_eq!(
-                            native.round0(&ctx, &reducer, weights, endpoint),
+                            wide_round0(
+                                &ctx,
+                                &reducer,
+                                native.rows,
+                                |i, e| native.cofactor(i, e),
+                                weights,
+                                endpoint
+                            ),
                             cofactor_evaluations_raw(&ctx, &reducer, &projected, weights, endpoint)
                         );
                     }
@@ -490,7 +545,15 @@ mod tests {
                     let mut expected = RawProducts::zeros(rows / 2);
                     let mut actual = RawProducts::zeros(rows / 2);
                     if rows == 2 {
-                        native.fold(&ctx, &reducer, &mut actual, challenge, None);
+                        wide_fold(
+                            &ctx,
+                            &reducer,
+                            native.rows,
+                            |c, i| native.folded(&ctx, c, i),
+                            &mut actual,
+                            challenge,
+                            None,
+                        );
                         fold_products_raw(&ctx, &projected, &mut expected, challenge);
                     } else {
                         let tau = &tau[..tau.len() - 1];
@@ -507,9 +570,11 @@ mod tests {
                             weights,
                             FactoredEndpoint::One,
                         );
-                        let got = native.fold(
+                        let got = wide_fold(
                             &ctx,
                             &reducer,
+                            native.rows,
+                            |c, i| native.folded(&ctx, c, i),
                             &mut actual,
                             challenge,
                             Some((weights, FactoredEndpoint::One)),

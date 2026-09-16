@@ -178,16 +178,14 @@ fn folds_preserve_offsets_output_representation_and_in_place_prefix() {
         .map(|p| field.add(&p[0], &field.mul(&r, &field.sub(&p[1], &p[0]))))
         .collect();
     let mut output = vec![field.zero(); 4];
-    field.fold_pairs_into(&native, 0, &mut output, &r);
+    field.fold_pairs_into(&native, &mut output, &r);
     assert_eq!(output, expected);
     let mut plain = vec![Uint::<2>::ZERO; 2];
     let mut visited = Vec::new();
     field.fold_pairs_map_into(
-        native.len(),
-        1,
         |i| {
-            visited.push(i);
-            native[i]
+            visited.push(i + 2);
+            native[i + 2]
         },
         &mut plain,
         &r,
@@ -222,7 +220,7 @@ fn signed_fold_handles_difference_larger_than_signed_width() {
     let challenge = field.from_integer(&7u64);
     let source = [Z::<1>::MIN, Z::<1>::MAX, Z::<1>::MAX, Z::<1>::MIN];
     let mut out = [field.zero(); 2];
-    field.fold_pairs_into(&source, 0, &mut out, &challenge);
+    field.fold_pairs_into(&source, &mut out, &challenge);
     for (pair, actual) in source.chunks_exact(2).zip(out) {
         let a = field.from_integer(&pair[0]);
         let b = field.from_integer(&pair[1]);
@@ -230,5 +228,38 @@ fn signed_fold_handles_difference_larger_than_signed_width() {
             actual,
             field.add(&a, &field.mul(&challenge, &field.sub(&b, &a)))
         );
+    }
+}
+
+#[test]
+fn prefix_fold_matches_sequential_low_bit_folds_and_mapped_reads() {
+    let field = create_prime_field(Uint::<2>::from_words([97, 0]));
+    let src = [2u64, 5, 7, 11, 13, 17, 19, 23];
+    let challenges = [
+        field.from_integer(&3u64),
+        field.from_integer(&9u64),
+        field.from_integer(&12u64),
+    ];
+    for depth in 0..=3 {
+        let mut expected: Vec<_> = src.iter().map(|x| field.from_integer(x)).collect();
+        for r in &challenges[..depth] {
+            let mut next = vec![field.zero(); expected.len() / 2];
+            field.fold_pairs_into(&expected, &mut next, r);
+            expected = next;
+        }
+        let mut actual = vec![field.zero(); 8 >> depth];
+        field.fold_prefix_into(&src, &mut actual, &challenges[..depth]);
+        assert_eq!(actual, expected);
+        let mut visited = Vec::new();
+        field.fold_prefix_map_into(
+            |i| {
+                visited.push(i);
+                src[i]
+            },
+            &mut actual,
+            &challenges[..depth],
+        );
+        assert_eq!(actual, expected);
+        assert_eq!(visited, (0..8).collect::<Vec<_>>());
     }
 }

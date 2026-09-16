@@ -207,7 +207,7 @@ fn signed_and_field_rounds_preserve_extremes_and_read_order() {
             );
             assert_eq!(calls, n);
             let mut expected = vec![field.zero(); n / 2];
-            field.fold_pairs_into(&values, 0, &mut expected, &challenge);
+            field.fold_pairs_into(&values, &mut expected, &challenge);
             assert_eq!(
                 wo,
                 expected

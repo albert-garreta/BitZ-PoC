@@ -127,3 +127,5 @@ pub use poly::univariate::binary_b127::B127;
 pub use poly::univariate::binary_gf128::Gf128;
 pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
 pub use taps::{TapOp, extract_virtual_tap_rows};
+
+pub mod sumcheck;

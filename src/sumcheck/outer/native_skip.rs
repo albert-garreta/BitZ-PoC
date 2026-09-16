@@ -1,12 +1,13 @@
-//! Exact native-u32 arithmetic for the univariate-prefix outer-sumcheck skip.
-//!
-//! The native R1CS product tables keep `Az` and `Bz` as exact `u32` values and
-//! `Cz` as exact `u64` values.  For `K <= 4`, every interpolation of `Az` or
-//! `Bz` at the fixed exterior nodes fits in `i64`, while the interpolated `Cz`
-//! value and residual fit in `i128`.  Residuals are not projected into the
-//! field one at a time: their signed two-limb magnitudes feed the existing
-//! delayed linear accumulator and are reduced only at equality-factor
-//! boundaries.
+use super::univariate::{PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec};
+// Exact native-u32 arithmetic for the univariate-prefix outer-sumcheck skip.
+//
+// The native R1CS product tables keep `Az` and `Bz` as exact `u32` values and
+// `Cz` as exact `u64` values.  For `K <= 4`, every interpolation of `Az` or
+// `Bz` at the fixed exterior nodes fits in `i64`, while the interpolated `Cz`
+// value and residual fit in `i128`.  Residuals are not projected into the
+// field one at a time: their signed two-limb magnitudes feed the existing
+// delayed linear accumulator and are reduced only at equality-factor
+// boundaries.
 
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
@@ -21,10 +22,9 @@ use field::{CtMask, CtSelect};
 
 use crate::poly::mle::DenseMultilinearExtension;
 
-use super::{
+use crate::piop::spartan::{
     raw_monty::{NativeProducts, Raw, RawProducts},
     sumcheck::{R1csProductMles, SumcheckError, SumcheckLinearReducer, SumcheckProductReducer},
-    univariate_skip::{PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec},
 };
 
 type Field = Fp<2>;
@@ -36,9 +36,10 @@ type ProductAccumulator<R> = <R as SumcheckProductReducer<Field>>::Accumulator;
 ///
 /// The complete native Spartan prover validates the same product tables once
 /// at its public boundary and therefore calls
-/// [`compute_u32_native_skip_message_validated`] directly.
+/// [`native_message_validated`] directly.
 #[allow(dead_code)]
-pub(crate) fn compute_u32_native_skip_message<R>(
+#[cfg(test)]
+pub(crate) fn compute_native_message<R>(
     skip_vars: usize,
     equality_factors: &(
         DenseMultilinearExtension<Field>,
@@ -53,13 +54,7 @@ where
 {
     validate_native_inputs_for_skip(skip_vars, products)?;
     validate_equality_factors(equality_factors, products.az.num_vars - skip_vars)?;
-    compute_u32_native_skip_message_validated(
-        skip_vars,
-        equality_factors,
-        products,
-        field_cfg,
-        reducer,
-    )
+    native_message_validated(skip_vars, equality_factors, products, field_cfg, reducer)
 }
 
 /// Computes the native skip message in transcript order:
@@ -70,8 +65,9 @@ where
 /// the ordinary cubic tail after the prefix has been folded. The native PIOP
 /// must have validated product shape and `Az`/`Bz` width before calling this
 /// hot-path entry point. Standalone callers use
-/// [`compute_u32_native_skip_message`].
-pub(crate) fn compute_u32_native_skip_message_validated<R>(
+/// [`native_message`].
+#[cfg(test)]
+pub(crate) fn native_message_validated<R>(
     skip_vars: usize,
     equality_factors: &(
         DenseMultilinearExtension<Field>,
@@ -85,7 +81,7 @@ where
     R: SumcheckLinearReducer + SumcheckProductReducer<Field>,
 {
     match skip_vars {
-        1 => compute_u32_native_skip_message_for::<PrefixSkipK1, 2, 1, R>(
+        1 => native_message_for::<PrefixSkipK1, 2, 1, R>(
             equality_factors,
             products,
             field_cfg,
@@ -93,7 +89,7 @@ where
             &FINITE_LAGRANGE_K1,
             &TOP_DIFFERENCE_K1,
         ),
-        2 => compute_u32_native_skip_message_for::<PrefixSkipK2, 4, 3, R>(
+        2 => native_message_for::<PrefixSkipK2, 4, 3, R>(
             equality_factors,
             products,
             field_cfg,
@@ -101,7 +97,7 @@ where
             &FINITE_LAGRANGE_K2,
             &TOP_DIFFERENCE_K2,
         ),
-        3 => compute_u32_native_skip_message_for::<PrefixSkipK3, 8, 7, R>(
+        3 => native_message_for::<PrefixSkipK3, 8, 7, R>(
             equality_factors,
             products,
             field_cfg,
@@ -109,7 +105,7 @@ where
             &FINITE_LAGRANGE_K3,
             &TOP_DIFFERENCE_K3,
         ),
-        4 => compute_u32_native_skip_message_for::<PrefixSkipK4, 16, 15, R>(
+        4 => native_message_for::<PrefixSkipK4, 16, 15, R>(
             equality_factors,
             products,
             field_cfg,
@@ -124,10 +120,11 @@ where
 /// Checked standalone entry point for native prefix folding.
 ///
 /// The complete native Spartan prover has already validated these tables and
-/// calls [`fold_u32_native_prefix_validated`] to avoid a second full
+/// calls [`fold_native_lagrange_validated`] to avoid a second full
 /// multiplicand scan.
 #[allow(dead_code)]
-pub(crate) fn fold_u32_native_prefix<R>(
+#[cfg(test)]
+pub(crate) fn fold_native_lagrange<R>(
     skip_vars: usize,
     products: R1csProductMles<u64>,
     challenge: &Field,
@@ -138,7 +135,7 @@ where
     R: SumcheckLinearReducer,
 {
     validate_native_inputs_for_skip(skip_vars, &products)?;
-    fold_u32_native_prefix_validated(skip_vars, products, challenge, field_cfg, reducer)
+    fold_native_lagrange_validated(skip_vars, products, challenge, field_cfg, reducer)
 }
 
 /// Folds each contiguous native block `s + M * x` at the skip challenge.
@@ -146,8 +143,9 @@ where
 /// The returned tables have exactly the remaining `n - K` Bit variables
 /// and can be passed directly to the existing field-valued outer sumcheck.
 /// Product shape and native multiplicand width must already be validated; use
-/// [`fold_u32_native_prefix`] outside the complete PIOP path.
-pub(crate) fn fold_u32_native_prefix_validated<R>(
+/// [`fold_native_lagrange`] outside the complete PIOP path.
+#[cfg(test)]
+pub(crate) fn fold_native_lagrange_validated<R>(
     skip_vars: usize,
     products: R1csProductMles<u64>,
     challenge: &Field,
@@ -158,28 +156,28 @@ where
     R: SumcheckLinearReducer,
 {
     match skip_vars {
-        1 => fold_u32_native_prefix_for::<PrefixSkipK1, 2, R>(
+        1 => fold_native_lagrange_for::<PrefixSkipK1, 2, R>(
             products,
             challenge,
             field_cfg,
             reducer,
             &TOP_DIFFERENCE_K1,
         ),
-        2 => fold_u32_native_prefix_for::<PrefixSkipK2, 4, R>(
+        2 => fold_native_lagrange_for::<PrefixSkipK2, 4, R>(
             products,
             challenge,
             field_cfg,
             reducer,
             &TOP_DIFFERENCE_K2,
         ),
-        3 => fold_u32_native_prefix_for::<PrefixSkipK3, 8, R>(
+        3 => fold_native_lagrange_for::<PrefixSkipK3, 8, R>(
             products,
             challenge,
             field_cfg,
             reducer,
             &TOP_DIFFERENCE_K3,
         ),
-        4 => fold_u32_native_prefix_for::<PrefixSkipK4, 16, R>(
+        4 => fold_native_lagrange_for::<PrefixSkipK4, 16, R>(
             products,
             challenge,
             field_cfg,
@@ -190,35 +188,35 @@ where
     }
 }
 
-/// The raw-table twin of [`fold_u32_native_prefix_validated`]: the same
+/// The raw-table twin of [`fold_native_lagrange_validated`]: the same
 /// per-block linear accumulation and reduction, with every folded entry stored
 /// as a canonical residue for the raw outer tail.
-pub(crate) fn fold_u32_native_prefix_raw(
+pub(crate) fn fold_encoded_lagrange(
     skip_vars: usize,
     products: NativeProducts<'_>,
     challenge: &Field,
     ctx: &field::FpCtx<2>,
 ) -> Result<RawProducts, SumcheckError> {
     match skip_vars {
-        1 => fold_u32_native_prefix_raw_for::<PrefixSkipK1, 2>(
+        1 => fold_encoded_lagrange_for::<PrefixSkipK1, 2>(
             products,
             challenge,
             ctx,
             &TOP_DIFFERENCE_K1,
         ),
-        2 => fold_u32_native_prefix_raw_for::<PrefixSkipK2, 4>(
+        2 => fold_encoded_lagrange_for::<PrefixSkipK2, 4>(
             products,
             challenge,
             ctx,
             &TOP_DIFFERENCE_K2,
         ),
-        3 => fold_u32_native_prefix_raw_for::<PrefixSkipK3, 8>(
+        3 => fold_encoded_lagrange_for::<PrefixSkipK3, 8>(
             products,
             challenge,
             ctx,
             &TOP_DIFFERENCE_K3,
         ),
-        4 => fold_u32_native_prefix_raw_for::<PrefixSkipK4, 16>(
+        4 => fold_encoded_lagrange_for::<PrefixSkipK4, 16>(
             products,
             challenge,
             ctx,
@@ -228,7 +226,7 @@ pub(crate) fn fold_u32_native_prefix_raw(
     }
 }
 
-fn fold_u32_native_prefix_raw_for<S, const M: usize>(
+fn fold_encoded_lagrange_for<S, const M: usize>(
     products: NativeProducts<'_>,
     challenge: &Field,
     ctx: &field::FpCtx<2>,
@@ -301,11 +299,11 @@ where
     Ok(output)
 }
 
-/// The raw twin of [`compute_u32_native_skip_message_validated`]: the same
+/// The raw twin of [`native_message_validated`]: the same
 /// per-suffix exact interpolations and two-level `eq_out · Σ eq_in · residual`
 /// accumulation on raw equality weights, in transcript order
 /// `Q(-1), Q(M), Q(-2), Q(M + 1), ..., Q(infinity)`.
-pub(crate) fn compute_u32_native_skip_message_raw(
+pub(crate) fn encoded_native_message(
     cfg: &FieldConfig,
     skip_vars: usize,
     eq_low: &[Raw],
@@ -492,7 +490,8 @@ fn skip_message_raw_for<const M: usize, const LANES: usize>(
     Ok(message)
 }
 
-fn compute_u32_native_skip_message_for<S, const M: usize, const LANES: usize, R>(
+#[cfg(test)]
+fn native_message_for<S, const M: usize, const LANES: usize, R>(
     equality_factors: &(
         DenseMultilinearExtension<Field>,
         DenseMultilinearExtension<Field>,
@@ -597,6 +596,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn accumulate_high_bucket<const M: usize, const LANES: usize, R>(
     outer: &mut [ProductAccumulator<R>; LANES],
     high_index: usize,
@@ -664,7 +664,8 @@ where
     Ok(())
 }
 
-fn fold_u32_native_prefix_for<S, const M: usize, R>(
+#[cfg(test)]
+fn fold_native_lagrange_for<S, const M: usize, R>(
     products: R1csProductMles<u64>,
     challenge: &Field,
     field_cfg: &FieldConfig,
@@ -683,8 +684,8 @@ where
     let R1csProductMles { az, bz, cz } = products;
     let block_count = az.evaluations.len() / M;
     let zero = Field::zero_with_cfg(field_cfg);
-    let mut folded_az = vec![zero.clone(); block_count];
-    let mut folded_bz = vec![zero.clone(); block_count];
+    let mut folded_az = vec![zero; block_count];
+    let mut folded_bz = vec![zero; block_count];
     let mut folded_cz = vec![zero; block_count];
 
     #[cfg(feature = "parallel")]
@@ -752,6 +753,7 @@ where
     })
 }
 
+#[cfg(test)]
 fn fold_native_block<R>(
     az: &[u64],
     bz: &[u64],
@@ -805,7 +807,7 @@ fn base_lagrange_weights<const M: usize>(
 ) -> Vec<Field> {
     let one = Field::one_with_cfg(field_cfg);
     let mut prefix = Vec::with_capacity(M + 1);
-    prefix.push(one.clone());
+    prefix.push(one);
     for point in 0..M {
         let factor = (field_cfg).sub(challenge, &Field::from_with_cfg(point as u64, field_cfg));
         prefix.push((field_cfg).mul(
@@ -814,7 +816,7 @@ fn base_lagrange_weights<const M: usize>(
         ));
     }
 
-    let mut suffix = vec![one.clone(); M + 1];
+    let mut suffix = vec![one; M + 1];
     for point in (0..M).rev() {
         let factor = (field_cfg).sub(challenge, &Field::from_with_cfg(point as u64, field_cfg));
         suffix[point] = (field_cfg).mul(&factor, &suffix[point + 1]);
@@ -836,6 +838,7 @@ fn base_lagrange_weights<const M: usize>(
         .collect()
 }
 
+#[cfg(test)]
 fn validate_native_inputs<const M: usize>(
     products: &R1csProductMles<u64>,
 ) -> Result<(), SumcheckError> {
@@ -867,6 +870,7 @@ fn validate_native_inputs<const M: usize>(
 }
 
 #[allow(dead_code)]
+#[cfg(test)]
 fn validate_native_inputs_for_skip(
     skip_vars: usize,
     products: &R1csProductMles<u64>,
@@ -880,6 +884,7 @@ fn validate_native_inputs_for_skip(
     }
 }
 
+#[cfg(test)]
 fn validate_equality_factors(
     equality_factors: &(
         DenseMultilinearExtension<Field>,
@@ -929,6 +934,7 @@ fn interpolate_u64<const M: usize>(values: &[u64], coefficients: &[i64; M]) -> i
 }
 
 #[inline]
+#[cfg(test)]
 fn accumulate_signed_i128<R>(
     accumulators: &mut [LinearAccumulator<R>; 2],
     weight: &Field,
@@ -961,6 +967,7 @@ fn accumulate_signed_i128<R>(
     );
 }
 
+#[cfg(test)]
 fn linear_limb_accumulators<const LANES: usize, R>(
     reducer: &R,
 ) -> [[LinearAccumulator<R>; 2]; LANES]
@@ -972,6 +979,7 @@ where
     })
 }
 
+#[cfg(test)]
 fn product_accumulators<const LANES: usize, R>(reducer: &R) -> [ProductAccumulator<R>; LANES]
 where
     R: SumcheckProductReducer<Field>,
@@ -980,6 +988,7 @@ where
 }
 
 #[cfg(feature = "parallel")]
+#[cfg(test)]
 fn merge_product_accumulators<const LANES: usize, R>(
     left: &mut [ProductAccumulator<R>; LANES],
     right: [ProductAccumulator<R>; LANES],
@@ -1096,7 +1105,7 @@ mod tests {
     use crate::piop::spartan::{
         make_equality_factors,
         sumcheck::BigUintSumcheckOracle,
-        univariate_skip::{compute_field_skip_message, fold_field_prefix},
+        univariate_skip::{field_message, fold_field_lagrange},
     };
 
     const TEST_MODULUS: u128 = (1_u128 << 100) - 15;
@@ -1162,11 +1171,11 @@ mod tests {
         products.az.evaluations[0] = u64::from(u32::MAX) + 1;
 
         assert_eq!(
-            compute_u32_native_skip_message(1, &equality_factors, &products, &field_cfg, &reducer,),
+            compute_native_message(1, &equality_factors, &products, &field_cfg, &reducer,),
             Err(SumcheckError::NativeMultiplicandOutOfRange)
         );
         assert_eq!(
-            fold_u32_native_prefix(1, products, &challenge, &field_cfg, &reducer),
+            fold_native_lagrange(1, products, &challenge, &field_cfg, &reducer),
             Err(SumcheckError::NativeMultiplicandOutOfRange)
         );
     }
@@ -1185,7 +1194,7 @@ mod tests {
         for skip_vars in 1..=4 {
             let native_products = patterned_native_products(skip_vars + tau_tail.len());
             let field_products = project_products(&native_products, &field_cfg);
-            let native_message = compute_u32_native_skip_message(
+            let native_message = compute_native_message(
                 skip_vars,
                 &equality_factors,
                 &native_products,
@@ -1193,7 +1202,7 @@ mod tests {
                 &reducer,
             )
             .unwrap();
-            let reference_message = compute_u32_native_skip_message(
+            let reference_message = compute_native_message(
                 skip_vars,
                 &equality_factors,
                 &native_products,
@@ -1201,7 +1210,7 @@ mod tests {
                 &reference_reducer,
             )
             .unwrap();
-            let field_message = compute_field_skip_message(
+            let field_message = field_message(
                 skip_vars,
                 (&equality_factors.0, &equality_factors.1),
                 &field_products,
@@ -1217,7 +1226,7 @@ mod tests {
                 "reducer mismatch for K={skip_vars}"
             );
 
-            let native_fold = fold_u32_native_prefix(
+            let native_fold = fold_native_lagrange(
                 skip_vars,
                 native_products.clone(),
                 &challenge,
@@ -1225,7 +1234,7 @@ mod tests {
                 &reducer,
             )
             .unwrap();
-            let reference_fold = fold_u32_native_prefix(
+            let reference_fold = fold_native_lagrange(
                 skip_vars,
                 native_products,
                 &challenge,
@@ -1234,7 +1243,7 @@ mod tests {
             )
             .unwrap();
             let field_fold =
-                fold_field_prefix(field_products, skip_vars, &challenge, &field_cfg).unwrap();
+                fold_field_lagrange(field_products, skip_vars, &challenge, &field_cfg).unwrap();
             assert_eq!(native_fold, field_fold, "fold mismatch for K={skip_vars}");
             assert_eq!(
                 native_fold, reference_fold,
@@ -1337,4 +1346,65 @@ mod tests {
             num_vars,
         }
     }
+}
+
+/// Specialized u32 prefix arithmetic, followed by the shared ordinary engine.
+/// The containing R1CS prover has already established the native width bound.
+pub(crate) fn prove_native_skip(
+    transcript: &mut impl crate::transcript::traits::Transcript,
+    field: &FieldConfig,
+    skip_vars: u8,
+    tau_tail: &[Field],
+    low: Vec<Raw>,
+    high: Vec<Raw>,
+    products: NativeProducts<'_>,
+) -> Result<super::univariate::UnivariateSkipOuterSumcheckOutput<Field>, SumcheckError> {
+    use super::univariate::{
+        PrefixUnivariateRowBinding, UnivariateSkipOuterSumcheckOutput,
+        UnivariateSkipOuterSumcheckProof, UnivariateSkipProof,
+    };
+    let k = usize::from(skip_vars);
+    if !(1..=4).contains(&k)
+        || !products.len().is_power_of_two()
+        || products.len().ilog2() as usize != k + tau_tail.len()
+        || products.bz.len() != products.len()
+        || products.cz.len() != products.len()
+    {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    let message = {
+        let _scope = tracing::info_span!("spartan:univariate_skip_message").entered();
+        encoded_native_message(field, k, &low, &high, products, field, field)?
+    };
+    let skip = UnivariateSkipProof::from_ordered_message(k, message)?;
+    let reduction = skip.verify_reduction(transcript, field)?;
+    let folded = {
+        let _scope = tracing::info_span!("spartan:univariate_skip_prefix_fold").entered();
+        fold_encoded_lagrange(k, products, &reduction.z, field)?
+    };
+    let tail = {
+        let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
+        super::arithmetic::prove_encoded(
+            transcript,
+            field,
+            field,
+            reduction.q_at_z,
+            tau_tail,
+            low,
+            high,
+            folded,
+        )?
+    };
+    Ok(UnivariateSkipOuterSumcheckOutput {
+        proof: UnivariateSkipOuterSumcheckProof {
+            skip,
+            tail: tail.proof,
+        },
+        row_binding: PrefixUnivariateRowBinding {
+            skip_vars,
+            z: reduction.z,
+            tail_point: tail.eval_points,
+        },
+        final_claim: tail.final_claim,
+    })
 }

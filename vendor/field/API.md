@@ -185,16 +185,18 @@ pub trait BatchFieldOps: FieldOps {
     fn batch_invert_or_zero_ct(&self, input: &[Self::Elem]) -> Vec<Self::Elem>;
 }
 pub trait FoldPairs<Src,Dst>: RingOps {
-    fn fold_pairs_into(&self, src: &[Src], pair_offset: usize,
+    fn fold_pairs_into(&self, src: &[Src],
         dst: &mut [Dst], challenge: &Self::Elem);
-    fn fold_pairs_map_into(&self, source_len: usize, pair_offset: usize,
+    fn fold_pairs_map_into(&self,
         read: impl FnMut(usize) -> Src, dst: &mut [Dst], challenge: &Self::Elem);
 }
 ```
 
-The `_into` methods allocate nothing. Batch multiplication's output length equals both inputs; inversion requires output length n and scratch length at least n. Zero entries stay zero. The allocating helpers allocate one output, or output plus scratch respectively. Inputs/output/scratch are distinct safe Rust borrows.
+The pair-fold, batch-multiply, and batch-invert `_into` methods allocate nothing. Batch multiplication's output length equals both inputs; inversion requires output length n and scratch length at least n. Zero entries stay zero. The allocating helpers allocate one output, or output plus scratch respectively. Inputs/output/scratch are distinct safe Rust borrows.
 
-Prime folding writes `(1-r)*src[2j] + r*src[2j+1]`, j=pair_offset+i. Native Bit/u32/u64/u128/Uint<N> are consumed by mixed MAC; Z<N> and Fp input variants are also supported. Dst can be Fp or canonical Uint<L>. Indexed reads visit each selected source once in order and can assemble segmented u128/u256 storage without intermediate vectors. Range arithmetic is checked before the loop.
+Prime folding writes `(1-r)*src[2j] + r*src[2j+1]`, j=i. Native Bit/u32/u64/u128/Uint<N> are consumed by mixed MAC; Z<N> and Fp input variants are also supported. Dst can be Fp or canonical Uint<L>. Indexed reads visit each selected source once in order and can assemble segmented u128/u256 storage without intermediate vectors. The source length must equal twice the output length; mapped folds derive that extent from the output. Range arithmetic is checked before the loop.
+
+`fold_prefix_into(src, dst, challenges)` and `fold_prefix_map_into(read, dst, challenges)` fold already-known Boolean challenges together: `dst[i] = sum_b eq(challenges,b) src[2^k*i+b]`, with challenge zero binding the low bit. The default implementation allocates `2^k` equality weights and uses mixed batch MACs, including for native integer inputs. It reads each source entry once. This is not the Lagrange fold used by a univariate skip.
 
 Prime contexts expose `fold_in_place(&mut [Fp], &challenge, half)` and `fold_plain_in_place(&mut [Uint<L>], &challenge, half)`, writing only the prefix. The latter takes already-canonical values in [0,p); debug assertions check that caller contract. Unlike the generic Uint fold, it avoids re-projecting canonical inputs. For a native width narrower than the field width, canonical-output folding uses one Montgomery reduction under an algebraically established bound.
 
