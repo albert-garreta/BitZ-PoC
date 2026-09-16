@@ -2,7 +2,9 @@
 use super::SumcheckError;
 use crate::piop::spartan::SpartanField;
 use crate::poly::mle::DenseMultilinearExtension;
-use field::{CtMask, CtSelect, Fp, RingOps};
+#[cfg(test)]
+use field::{CtMask, CtSelect};
+use field::{Fp, RingOps};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 /// Protocol accumulation hook for shared delayed products and the independent
@@ -296,11 +298,13 @@ where
 }
 
 #[inline]
+#[cfg(test)]
 pub(crate) fn native_to_field(value: u64, field_cfg: &field::FpCtx<2>) -> Fp<2> {
     Fp::<2>::from_with_cfg(value, field_cfg)
 }
 
 #[inline]
+#[cfg(test)]
 pub(crate) fn native_u32_product(left: u64, right: u64) -> u64 {
     debug_assert!(left <= u64::from(u32::MAX));
     debug_assert!(right <= u64::from(u32::MAX));
@@ -308,6 +312,7 @@ pub(crate) fn native_u32_product(left: u64, right: u64) -> u64 {
     left * right
 }
 
+#[cfg(test)]
 pub(crate) fn sum_linear_accumulators<R, const COEFFS: usize>(
     len: usize,
     contribution: impl Fn(&mut [<R as SumcheckLinearReducer>::Accumulator; COEFFS], usize) + Sync,
@@ -348,6 +353,7 @@ where
 }
 
 #[inline]
+#[cfg(test)]
 pub(crate) fn reduce_two_linear_accumulators<R>(
     accumulators: [<R as SumcheckLinearReducer>::Accumulator; 2],
     reducer: &R,
@@ -364,6 +370,7 @@ where
 }
 
 #[inline]
+#[cfg(test)]
 pub(crate) fn multiply_accumulate_signed_linear<R>(
     accumulator: &mut <R as SumcheckLinearReducer>::Accumulator,
     weight: &Fp<2>,
@@ -387,6 +394,7 @@ pub(crate) fn multiply_accumulate_signed_linear<R>(
     );
 }
 
+#[cfg(test)]
 pub(crate) fn fold_u64_table_to_field<R>(
     input: &[u64],
     output: &mut [Fp<2>],

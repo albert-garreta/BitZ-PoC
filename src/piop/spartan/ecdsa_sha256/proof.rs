@@ -1,4 +1,3 @@
-use crate::sumcheck::outer::arithmetic::prove_encoded_zerocheck;
 use field::{RingOps, Uint};
 
 use flock_core::pcs::{
@@ -31,7 +30,6 @@ use crate::{
         grinding::GrindingDomain,
         matrix::eq_table,
         protocol::{check_boundary, f2z_generator, grind_boundary},
-        raw_monty::make_equality_factors_raw,
         sha256::inner_sumcheck::{
             ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck,
         },
@@ -215,31 +213,22 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).map_err(error)?;
     let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
-        // The raw-residue outer prover of the integer-multiplication relations;
-        // its grinding boundary keeps the transcript of the generic grinded
-        // prover (no bytes at difficulty 0).
         let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
-        let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
-        let products = {
-            let _scope = tracing::info_span!("ecdsa:outer_products").entered();
-            witness.build_outer_raw_products(prepared, &ctx)
-        };
-        let (eq_low, eq_high) = {
-            let _scope = tracing::info_span!("ecdsa:outer_eq").entered();
-            make_equality_factors_raw(&ctx, &outer_eq_challenges)
-        };
+        let rows = witness.outer_integer_rows(prepared);
         let mut round_boundary =
             ProverGrindingRoundBoundary::<OuterGrinding>::with_round_offset(security.outer, 0);
-        let outer = prove_encoded_zerocheck(
-            t,
-            &ctx,
-            &outer_eq_challenges,
-            eq_low,
-            eq_high,
-            products,
-            &mut round_boundary,
-        )
-        .map_err(error)?;
+        let outer: crate::sumcheck::proof::OuterSumcheckOutput<F> =
+            crate::sumcheck::outer::prove_outer_sumcheck(
+                &cfg,
+                t,
+                crate::sumcheck::outer::OuterClaim::RowwiseZero,
+                &outer_eq_challenges,
+                &rows,
+                None,
+                &mut round_boundary,
+            )
+            .map_err(error)?
+            .into();
         (outer, round_boundary.into_nonces())
     };
     let batch_nonce = boundary(t, BATCH_GRINDING_DOMAIN, security.batch, None)?;

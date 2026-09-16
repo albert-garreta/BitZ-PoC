@@ -8,8 +8,7 @@
 //! outer sumcheck without changing its proof or transcript format.
 
 #[cfg(test)]
-use super::ordinary::prove_field_with_factors;
-use crate::piop::spartan::SpartanField as _;
+use crate::sumcheck::arithmetic::SumcheckProductReducer;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 use field::RingOps;
 #[cfg(test)]
@@ -19,9 +18,7 @@ use crate::piop::spartan::{
     SpartanField, absorb_field_elements,
     matrix::{PrefixUnivariateRowFactors, make_equality_factors},
     squeeze_field,
-    sumcheck::{
-        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
-    },
+    sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof},
 };
 
 /// The known-zero univariate message preceding the cubic tail sumcheck.
@@ -109,7 +106,7 @@ where
     }
 
     /// Materializes weights in the matrices' little-endian row order.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn row_weights(
         &self,
         num_row_vars: usize,
@@ -311,51 +308,6 @@ where
         bz: fold_table(&products.bz.evaluations),
         cz: fold_table(&products.cz.evaluations),
     })
-}
-
-/// Runs the field-generic known-zero prefix reduction and then delegates the
-/// suffix to the existing cubic outer-sumcheck prover.
-pub(crate) fn prove_field_skip_with_factors<F, R>(
-    transcript: &mut impl Transcript,
-    skip_vars: usize,
-    tau_tail: &[F],
-    equality_factors: (DenseMultilinearExtension<F>, DenseMultilinearExtension<F>),
-    products: R1csProductMles<F>,
-    field_cfg: &F::Config,
-    reducer: &R,
-) -> Result<UnivariateSkipOuterSumcheckOutput<F>, SumcheckError>
-where
-    F: SpartanField,
-    R: SumcheckProductReducer<F>,
-{
-    validate_products_for_skip(skip_vars, &products)?;
-    if tau_tail.len() != products.az.num_vars - skip_vars {
-        return Err(SumcheckError::InvalidEqualityDimensions);
-    }
-    validate_equality_factors((&equality_factors.0, &equality_factors.1), tau_tail.len())?;
-    let prepared = super::prepare_univariate_skip(field_cfg, skip_vars as u8)?;
-    let rows = super::inputs::SliceRows {
-        ax: &products.az.evaluations,
-        bx: &products.bz.evaluations,
-        cx: &products.cz.evaluations,
-    };
-    let factors = super::ordinary::EqualityFactors::new(
-        equality_factors.0.evaluations,
-        equality_factors.1.evaluations,
-        field_cfg,
-    );
-    // Compatibility argument: arithmetic capabilities now belong to the field.
-    let _ = reducer;
-    super::univariate_api::prove_skip_from_rows(
-        field_cfg,
-        transcript,
-        &prepared,
-        tau_tail,
-        &rows,
-        Some(factors),
-        &mut crate::sumcheck::UngrindedRoundBoundary,
-    )
-    .map(Into::into)
 }
 
 /// Independent projected-field prefix reference.
@@ -1201,15 +1153,28 @@ mod tests {
             let direct_skip =
                 UnivariateSkipProof::from_ordered_message(skip_vars, direct_message).unwrap();
 
-            let output = prove_field_skip_with_factors(
-                &mut prover_transcript,
-                skip_vars,
-                &tau_tail,
+            let output = crate::sumcheck::outer::EqualityFactors::from_mles(
                 equality_factors.clone(),
-                products.clone(),
                 &field_cfg,
-                &reducer,
             )
+            .and_then(|factors| {
+                crate::sumcheck::outer::prepare_univariate_skip(
+                    &field_cfg,
+                    u8::try_from(skip_vars).unwrap_or(0),
+                )
+                .and_then(|prepared| {
+                    crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
+                        &field_cfg,
+                        &mut prover_transcript,
+                        &prepared,
+                        &tau_tail,
+                        products.clone(),
+                        Some(factors),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                })
+            })
+            .map(crate::sumcheck::outer::univariate::UnivariateSkipOuterSumcheckOutput::from)
             .unwrap();
             let mut reference_transcript = Blake3Transcript::new();
             let reference = prove_field_skip_with_factors_reference(
@@ -1232,16 +1197,21 @@ mod tests {
                 .unwrap();
             let direct_folded =
                 fold_field_lagrange(products, skip_vars, &direct_reduction.z, &field_cfg).unwrap();
-            let direct_tail = prove_field_with_factors(
-                &mut direct_tail_transcript,
-                direct_reduction.q_at_z,
-                &tau_tail,
-                equality_factors,
-                direct_folded,
-                &field_cfg,
-                &reducer,
-            )
-            .unwrap();
+            let direct_tail =
+                crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                    .and_then(|factors| {
+                        crate::sumcheck::outer::prove_outer_sumcheck(
+                            &field_cfg,
+                            &mut direct_tail_transcript,
+                            crate::sumcheck::outer::OuterClaim::Sum(direct_reduction.q_at_z),
+                            &tau_tail,
+                            direct_folded,
+                            Some(factors),
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
+                        )
+                    })
+                    .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
+                    .unwrap();
             let verified = output
                 .proof
                 .verify(&mut verifier_transcript, &tau_tail, num_vars, &field_cfg)
@@ -1276,20 +1246,30 @@ mod tests {
         let skip_vars = 3;
         let products = valid_products(skip_vars, &field_cfg);
         let equality_factors = make_equality_factors::<Fp<2>>(&[], &field_cfg).unwrap();
-        let reducer = field_cfg.clone();
         let mut prover_transcript = Blake3Transcript::new();
         let mut verifier_transcript = prover_transcript.clone();
 
-        let output = prove_field_skip_with_factors(
-            &mut prover_transcript,
-            skip_vars,
-            &[],
-            equality_factors,
-            products,
-            &field_cfg,
-            &reducer,
-        )
-        .unwrap();
+        let output =
+            crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                .and_then(|factors| {
+                    crate::sumcheck::outer::prepare_univariate_skip(
+                        &field_cfg,
+                        u8::try_from(skip_vars).unwrap_or(0),
+                    )
+                    .and_then(|prepared| {
+                        crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
+                            &field_cfg,
+                            &mut prover_transcript,
+                            &prepared,
+                            &[],
+                            products,
+                            Some(factors),
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
+                        )
+                    })
+                })
+                .map(crate::sumcheck::outer::univariate::UnivariateSkipOuterSumcheckOutput::from)
+                .unwrap();
         assert!(output.proof.tail.sumcheck.round_polynomials.is_empty());
         output
             .proof
@@ -1306,17 +1286,27 @@ mod tests {
         let products = valid_products(num_vars, &field_cfg);
         let tau_tail = [field(23, &field_cfg)];
         let equality_factors = make_equality_factors(&tau_tail, &field_cfg).unwrap();
-        let reducer = field_cfg.clone();
-        let output = prove_field_skip_with_factors(
-            &mut Blake3Transcript::new(),
-            skip_vars,
-            &tau_tail,
-            equality_factors,
-            products,
-            &field_cfg,
-            &reducer,
-        )
-        .unwrap();
+        let output =
+            crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                .and_then(|factors| {
+                    crate::sumcheck::outer::prepare_univariate_skip(
+                        &field_cfg,
+                        u8::try_from(skip_vars).unwrap_or(0),
+                    )
+                    .and_then(|prepared| {
+                        crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
+                            &field_cfg,
+                            &mut Blake3Transcript::new(),
+                            &prepared,
+                            &tau_tail,
+                            products,
+                            Some(factors),
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
+                        )
+                    })
+                })
+                .map(crate::sumcheck::outer::univariate::UnivariateSkipOuterSumcheckOutput::from)
+                .unwrap();
 
         let mut malformed = output.proof;
         malformed.skip.q_at_infinity = crate::piop::spartan::noncanonical_test_value(&field_cfg);

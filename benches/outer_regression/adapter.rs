@@ -2,7 +2,7 @@
 use super::*;
 use crate::sumcheck::{
     UngrindedRoundBoundary,
-    outer::{self, arithmetic},
+    outer,
 };
 pub(super) const REVISION: &str = "current";
 pub(super) fn prepare(f: &Field, k: usize) -> Option<outer::PreparedUnivariateSkip<Elem>> {
@@ -16,74 +16,63 @@ pub(super) fn production(
     n: usize,
     k: usize,
 ) -> Proof {
-    if k == 0 {
-        let (lo, hi) = super::super::raw_monty::make_equality_factors_raw(f, tau);
-        macro_rules! prove {
-            ($p:expr) => {
+    let (lo, hi) = super::super::raw_monty::make_equality_factors_raw(f, tau);
+    macro_rules! prove {
+        ($rows:expr) => {
+            if k == 0 {
                 Proof::Ordinary(
-                    arithmetic::prove_native_zerocheck(t, f, tau, lo, hi, $p)
+                    crate::sumcheck::outer::prove_outer_sumcheck(
+f,
+t,
+crate::sumcheck::outer::OuterClaim::RowwiseZero,
+tau,
+$rows,
+Some(crate::sumcheck::outer::arithmetic::factors_from_raw(f, lo, hi)),
+&mut crate::sumcheck::UngrindedRoundBoundary,
+).map(crate::sumcheck::proof::OuterSumcheckOutput::from)
                         .unwrap()
                         .proof,
                 )
-            };
-        }
-        match input {
-            Inputs::U32 { a, b, c, .. } => prove!(NativeProducts {
-                az: a,
-                bz: b,
-                cz: c
-            }),
-            Inputs::U64 {
-                a,
-                b,
-                lo: cl,
-                hi: ch,
-                ..
-            } => prove!(NativeWideProducts::new(a, b, cl, ch, 1 << n)),
-            Inputs::U128 {
-                a,
-                b,
-                lo: cl,
-                hi: ch,
-                ..
-            } => prove!(NativeWideProducts::new(a, b, cl, ch, 1 << n)),
-        }
-    } else if let Inputs::U32 { a, b, c, .. } = input {
-        let (lo, hi) = super::super::raw_monty::make_equality_factors_raw(f, tau);
-        Proof::Skip(
-            outer::native_skip::prove_native_skip(
-                t,
-                f,
-                k as u8,
-                tau,
-                lo,
-                hi,
-                NativeProducts {
-                    az: a,
-                    bz: b,
-                    cz: c,
-                },
-            )
-            .unwrap()
-            .proof,
-        )
-    } else {
-        let eq = super::super::matrix::make_equality_factors(tau, f).unwrap();
-        Proof::Skip(
-            outer::univariate::prove_field_skip_with_factors(
-                t,
-                k,
-                tau,
-                eq,
-                input.project(f, n),
-                f,
-                f,
-            )
-            .unwrap()
-            .proof,
-        )
+            } else {
+                Proof::Skip(
+                    crate::sumcheck::outer::prepare_univariate_skip(f, k as u8).and_then(|prepared| crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
+f,
+t,
+&prepared,
+tau,
+$rows,
+Some(crate::sumcheck::outer::arithmetic::factors_from_raw(f, lo, hi)),
+&mut crate::sumcheck::UngrindedRoundBoundary,
+)).map(crate::sumcheck::outer::univariate::UnivariateSkipOuterSumcheckOutput::from)
+                        .unwrap()
+                        .proof,
+                )
+            }
+        };
+    }
+    match input {
+        Inputs::U32 { a, b, c, .. } => prove!(NativeProducts {
+            az: a,
+            bz: b,
+            cz: c
+        }),
+        Inputs::U64 {
+            a,
+            b,
+            lo: cl,
+            hi: ch,
+            ..
+        } => prove!(NativeWideProducts::new(a, b, cl, ch, 1 << n)),
+        Inputs::U128 {
+            a,
+            b,
+            lo: cl,
+            hi: ch,
+            ..
+        } => prove!(NativeWideProducts::new(a, b, cl, ch, 1 << n)),
     }
 }
+
 pub(super) fn generic(
     input: &Inputs,
     f: &Field,
@@ -102,26 +91,33 @@ pub(super) fn generic(
         ($a:expr,$b:expr,$c:expr) => {
             if k == 0 {
                 Proof::Ordinary(wrap(
-                    outer::prove_outer_zerocheck_from_slices(
+                    crate::sumcheck::outer::prove_outer_sumcheck(
                         f,
                         t,
+                        crate::sumcheck::outer::OuterClaim::RowwiseZero,
                         tau,
-                        $a,
-                        $b,
-                        $c,
+                        crate::sumcheck::outer::OuterSlices {
+                            ax: $a,
+                            bx: $b,
+                            cx: $c,
+                        },
+                        None,
                         &mut UngrindedRoundBoundary,
                     )
                     .unwrap(),
                 ))
             } else {
-                let o = outer::prove_outer_zerocheck_with_skip_from_slices(
+                let o = crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
                     f,
                     t,
                     prepared.as_ref().unwrap(),
                     tau,
-                    $a,
-                    $b,
-                    $c,
+                    crate::sumcheck::outer::OuterSlices {
+                        ax: $a,
+                        bx: $b,
+                        cx: $c,
+                    },
+                    None,
                     &mut UngrindedRoundBoundary,
                 )
                 .unwrap();
@@ -144,5 +140,9 @@ pub(super) fn generic(
     }
 }
 
-pub(super) fn reset_measurements() { crate::sumcheck::outer::measure::reset(); }
-pub(super) fn take_measurements() -> Option<[u64;4]> { crate::sumcheck::outer::measure::take() }
+pub(super) fn reset_measurements() {
+    crate::sumcheck::outer::measure::reset();
+}
+pub(super) fn take_measurements() -> Option<[u64; 4]> {
+    crate::sumcheck::outer::measure::take()
+}

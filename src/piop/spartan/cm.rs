@@ -546,9 +546,9 @@ impl RelationSpec for CmAndSpec {
         witness: &'w ProjectedCmAndWitness<SpartanF2zField>,
         _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        Ok(PiopWitness::Field {
-            products: witness.spartan().products().clone(),
-            assignment: witness.spartan().assignment().clone(),
+        Ok(PiopWitness::SignedProducts {
+            products: witness.integer_products(),
+            assignment: &witness.assignment,
         })
     }
 
@@ -706,25 +706,27 @@ pub fn prepare_cm_and_relation(
     Ok(PreparedCmAndRelation { prepared })
 }
 
-/// Field projection of a CM-AND assignment and its (all-linear) R1CS
-/// products: `Az = Bz = 0`; `Cz` is COMPUTED from the values, so a false
-/// witness produces a nonzero residual and a rejecting proof.
+/// Prepared CM-AND assignment. F2Z consumes exact integer row operands;
+/// explicit compatibility access through `spartan()` lazily projects to a field.
+/// `Az = Bz = 0`; `Cz` is computed so a false witness retains its residual.
 #[derive(Clone, Debug)]
-pub struct ProjectedCmAndWitness<F> {
+pub struct ProjectedCmAndWitness<F: SpartanField> {
     layout: CmAndLayout,
-    spartan: EvaluatedSpartanAssignment<F>,
+    assignment: Box<[u64]>,
+    field_config: F::Config,
+    spartan: std::sync::OnceLock<EvaluatedSpartanAssignment<F>>,
     h_rows: Vec<Vec<u64>>,
 }
 
-impl<F> ProjectedCmAndWitness<F> {
+impl<F: SpartanField> ProjectedCmAndWitness<F> {
     /// The shared layout.
     pub const fn layout(&self) -> &CmAndLayout {
         &self.layout
     }
 
-    /// Assignment and evaluated matrix products consumed by Spartan.
-    pub const fn spartan(&self) -> &EvaluatedSpartanAssignment<F> {
-        &self.spartan
+    /// Explicit compatibility projection; the F2Z prover keeps integer operands.
+    pub fn spartan(&self) -> &EvaluatedSpartanAssignment<F> {
+        self.spartan.get_or_init(|| self.materialize_spartan())
     }
 
     /// Packed synthesized rows consumed by the virtual F2Z prover.
@@ -733,12 +735,34 @@ impl<F> ProjectedCmAndWitness<F> {
     }
 
     /// Moves out the layout, Spartan witness bundle, and synthesized rows.
-    pub fn into_parts(self) -> (CmAndLayout, EvaluatedSpartanAssignment<F>, Vec<Vec<u64>>) {
-        (self.layout, self.spartan, self.h_rows)
+    pub fn into_parts(mut self) -> (CmAndLayout, EvaluatedSpartanAssignment<F>, Vec<Vec<u64>>) {
+        let spartan = self
+            .spartan
+            .take()
+            .unwrap_or_else(|| self.materialize_spartan());
+        (self.layout, spartan, self.h_rows)
+    }
+
+    fn integer_products(&self) -> crate::sumcheck::outer::OuterInputs<field::Z<2>, field::Z<4>> {
+        let capacity = self.layout.capacity;
+        let rows = self.layout.gates.next_power_of_two();
+        let mut cx = vec![field::Z::ZERO; rows];
+        for (i, value) in cx.iter_mut().enumerate().take(self.layout.gates) {
+            let x = i128::from(self.assignment[capacity + i]);
+            let y = i128::from(self.assignment[2 * capacity + i]);
+            let z = i128::from(self.assignment[3 * capacity + i]);
+            let w = i128::from(self.assignment[4 * capacity + i]);
+            *value = field::Z::from(x + y - 2 * z - w);
+        }
+        crate::sumcheck::outer::OuterInputs {
+            ax: vec![field::Z::ZERO; rows],
+            bx: vec![field::Z::ZERO; rows],
+            cx,
+        }
     }
 }
 
-/// Projects the integer assignment into a Spartan field.
+/// Prepares the integer assignment; field projection is deferred until `spartan()` is requested.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn project_cm_and_witness<F>(
     witness: &CmAndWitness,
@@ -748,48 +772,52 @@ where
     F: SpartanField,
 {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
-    let field_assignment: Vec<F> = witness
-        .assignment()
-        .iter()
-        .copied()
-        .map(|value| F::from_with_cfg(value, field_config))
-        .collect();
-
-    let live = witness.layout.gates;
-    let zero = F::zero_with_cfg(field_config);
-    let zeros = vec![zero; live];
-    let cz: Vec<F> = (0..live)
-        .map(|i| {
-            // x + y − 2z − w, in the field.
-            let mut acc = field_assignment[witness.layout.capacity + i].clone();
-            acc = field_config.add(
-                &(acc),
-                &(&field_assignment[2 * witness.layout.capacity + i]),
-            );
-            let mut two_z = field_assignment[3 * witness.layout.capacity + i].clone();
-            two_z = field_config.add(
-                &(two_z),
-                &(&field_assignment[3 * witness.layout.capacity + i]),
-            );
-            acc = field_config.sub(&(acc), &(&two_z));
-            acc = field_config.sub(
-                &(acc),
-                &(&field_assignment[4 * witness.layout.capacity + i]),
-            );
-            acc
-        })
-        .collect();
-    let products = build_product_mles(&zeros, &zeros, &cz, live, field_config)?;
-    let assignment = build_assignment_mle(
-        &field_assignment,
-        witness.layout.assignment_len(),
-        field_config,
-    )?;
     Ok(ProjectedCmAndWitness {
         layout: witness.layout,
-        spartan: EvaluatedSpartanAssignment::new(assignment, products),
+        assignment: witness.assignment.clone(),
+        field_config: field_config.clone(),
+        spartan: std::sync::OnceLock::new(),
         h_rows: witness.h_bit_rows(),
     })
+}
+
+impl<F: SpartanField> ProjectedCmAndWitness<F> {
+    fn materialize_spartan(&self) -> EvaluatedSpartanAssignment<F> {
+        let field_config = &self.field_config;
+        let field_assignment: Vec<F> = self
+            .assignment
+            .as_ref()
+            .iter()
+            .copied()
+            .map(|value| F::from_with_cfg(value, field_config))
+            .collect();
+
+        let live = self.layout.gates;
+        let zero = F::zero_with_cfg(field_config);
+        let zeros = vec![zero; live];
+        let cz: Vec<F> = (0..live)
+            .map(|i| {
+                // x + y − 2z − w, in the field.
+                let mut acc = field_assignment[self.layout.capacity + i].clone();
+                acc = field_config.add(&(acc), &(&field_assignment[2 * self.layout.capacity + i]));
+                let mut two_z = field_assignment[3 * self.layout.capacity + i].clone();
+                two_z =
+                    field_config.add(&(two_z), &(&field_assignment[3 * self.layout.capacity + i]));
+                acc = field_config.sub(&(acc), &(&two_z));
+                acc = field_config.sub(&(acc), &(&field_assignment[4 * self.layout.capacity + i]));
+                acc
+            })
+            .collect();
+        let products = build_product_mles(&zeros, &zeros, &cz, live, field_config)
+            .expect("validated CM row dimensions");
+        let assignment = build_assignment_mle(
+            &field_assignment,
+            self.layout.assignment_len(),
+            field_config,
+        )
+        .expect("validated CM assignment dimensions");
+        EvaluatedSpartanAssignment::new(assignment, products)
+    }
 }
 
 fn checked_pow2(exponent: usize) -> Result<usize, CmF2zError> {

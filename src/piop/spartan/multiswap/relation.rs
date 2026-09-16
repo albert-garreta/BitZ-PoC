@@ -23,18 +23,17 @@
 //! `t = 12 + h`, `s`, `W = 1`.  The layout keeps `t <= 13` so a 113-bit
 //! runtime prime needs exactly one mod-q weight chunk.
 
-use super::super::raw_monty::{NativeLimbWitness, RawProducts};
-use crate::piop::spartan::SpartanField as _;
+use super::super::raw_monty::NativeLimbWitness;
 #[cfg(test)]
 use crate::piop::spartan::{R1csProductMles, build_assignment_mle, build_product_mles};
 #[cfg(test)]
 use crate::poly::mle::DenseMultilinearExtension;
+use field::CtOrd;
+#[cfg(test)]
 use field::RingOps;
 
 use circuit::integer_storage::UnsignedIntegerTable;
-use field::{
-    Fp, FpCtx, FpLinearAcc, FpProductAcc, IntegerEmbedding, MergeAccumulator, Reduce, Uint, UintRef,
-};
+use field::{Fp, FpCtx, IntegerEmbedding, Uint, UintRef};
 #[cfg(test)]
 use num_bigint::BigUint;
 #[cfg(test)]
@@ -70,6 +69,9 @@ pub enum MultiswapLayoutError {
     /// The circuit's padded gate domain does not fit the layout.
     #[error("multiswap gate domain is empty or too large")]
     InvalidGateDomain,
+
+    #[error("multiswap public coefficient sum exceeds the 2048-bit row bound")]
+    ProductWidthExceeded,
 
     /// A generated matrix or assignment is malformed.
     #[error(transparent)]
@@ -226,7 +228,32 @@ impl MultiswapIntegerRelation {
             c,
         };
         relation.normalize();
+        relation.validate_product_width()?;
         Ok(relation)
+    }
+
+    /// Bound row products using public coefficients and the declared assignment
+    /// width. Each input is <2^2048 and each coefficient sum is <=2^2048,
+    /// hence every A/B/C row is strictly below 2^4096, independently of values.
+    fn validate_product_width(&self) -> Result<(), MultiswapLayoutError> {
+        let limit = Uint::<33>::ONE.truncating_shl(2048);
+        for matrix in [&self.a, &self.b, &self.c] {
+            let mut sums = vec![Uint::<33>::ZERO; self.live_rows];
+            for &(row, index) in matrix.iter().flatten() {
+                let words = &self.coefficients[index];
+                if words.len() > 32 {
+                    return Err(MultiswapLayoutError::ProductWidthExceeded);
+                }
+                let mut value = [0; 33];
+                value[..words.len()].copy_from_slice(words);
+                // Fewer than 2^64 public entries, each <2^2048, fit 33 limbs.
+                sums[row] = sums[row].wrapping_add(&Uint::from_words(value));
+            }
+            if sums.iter().any(|sum| !sum.ct_le(&limit).declassify()) {
+                return Err(MultiswapLayoutError::ProductWidthExceeded);
+            }
+        }
+        Ok(())
     }
 
     /// The private circuit builder emits each coordinate exactly once. Sort
@@ -384,87 +411,37 @@ impl MultiswapAssignment {
         rows
     }
 
-    /// Prepares each integer residue once for reuse across the three sparse
-    /// matrix applications. Only this temporary residue table is allocated;
-    /// the inner sumcheck continues to borrow the original integers.
-    pub fn products_prepared(
+    /// Exact row operands for the generic outer sumcheck. The relation checks
+    /// the coefficient-sum bound once using public data during preparation.
+    pub fn integer_products(
         &self,
         relation: &MultiswapIntegerRelation,
-        field: &FpCtx<2>,
-    ) -> RawProducts {
-        assert_eq!(self.layout, relation.layout);
-        let residues: Vec<Fp<2>> = (0..self.layout.assignment_len())
-            .map(|i| field.from_integer(&self.value(i)))
-            .collect();
-        let product = |matrix: &Vec<Vec<(usize, usize)>>| {
-            let coefficients: Vec<_> = matrix
-                .iter()
-                .flatten()
-                .map(|(_, value)| public_coefficient(field, &relation.coefficients[*value]))
-                .collect();
-            let mut coefficients = coefficients.into_iter();
-            let mut sums = vec![FpProductAcc::<2>::zero(); relation.live_rows];
-            for (column, entries) in matrix.iter().enumerate() {
-                for (row, _) in entries {
-                    sums[*row].accumulate(
-                        &coefficients
-                            .next()
-                            .expect("one prepared coefficient per entry"),
-                        &residues[column],
-                    );
-                }
-            }
-            finish_products(
-                sums.into_iter().map(|sum| field.reduce(sum)),
-                self.layout.capacity,
-            )
-        };
-        RawProducts {
-            az: product(&relation.a),
-            bz: product(&relation.b),
-            cz: product(&relation.c),
-        }
-    }
-
-    /// Direct field × Uint<32> MAC for comparison with prepared reuse. The
-    /// choice is made by the caller before entering either kernel.
-    pub fn products_fused(
-        &self,
-        relation: &MultiswapIntegerRelation,
-        field: &FpCtx<2>,
-    ) -> RawProducts {
+    ) -> crate::sumcheck::outer::OuterInputs<Uint<64>> {
         assert_eq!(self.layout, relation.layout);
         let product = |matrix: &Vec<Vec<(usize, usize)>>| {
-            let coefficients: Vec<_> = matrix
-                .iter()
-                .flatten()
-                .map(|(_, value)| public_coefficient(field, &relation.coefficients[*value]))
-                .collect();
-            let mut coefficients = coefficients.into_iter();
-            let mut sums = vec![FpLinearAcc::<2, 32>::zero(); relation.live_rows];
+            let mut out = vec![Uint::<64>::ZERO; self.layout.capacity];
             for (column, entries) in matrix.iter().enumerate() {
                 if entries.is_empty() {
                     continue;
-                } // public sparse structure
+                } // Public sparse structure.
                 let value = self.value(column);
-                for (row, _) in entries {
-                    sums[*row].accumulate(
-                        &coefficients
-                            .next()
-                            .expect("one prepared coefficient per entry"),
+                for &(row, coefficient) in entries {
+                    let term = super::circuit::public_coefficient_product(
+                        &relation.coefficients[coefficient],
                         &value,
                     );
+                    let words = core::array::from_fn(|i| term.as_words()[i]);
+                    // All summands are nonnegative; the checked public bound
+                    // covers every partial sum as well as the completed row.
+                    out[row] = out[row].wrapping_add(&Uint::from_words(words));
                 }
             }
-            finish_products(
-                sums.into_iter().map(|sum| field.reduce(sum)),
-                self.layout.capacity,
-            )
+            out
         };
-        RawProducts {
-            az: product(&relation.a),
-            bz: product(&relation.b),
-            cz: product(&relation.c),
+        crate::sumcheck::outer::OuterInputs {
+            ax: product(&relation.a),
+            bx: product(&relation.b),
+            cx: product(&relation.c),
         }
     }
 
@@ -533,18 +510,6 @@ impl MultiswapAssignment {
 fn public_coefficient(field: &FpCtx<2>, value: &[u64]) -> Fp<2> {
     field.from_integer(&UintRef::new(value))
 }
-fn finish_products(values: impl Iterator<Item = Fp<2>>, domain: usize) -> Vec<u128> {
-    let mut out: Vec<_> = values
-        .map(|v| {
-            let w = v.as_montgomery_integer().as_words();
-            w[0] as u128 | ((w[1] as u128) << 64)
-        })
-        .collect();
-    assert!(out.len() <= domain);
-    out.resize(domain, 0);
-    out
-}
-
 /// Canonical `u128` runtime modulus recovered from its field encoding.
 #[cfg(test)]
 fn field_modulus(encoding: Vec<u8>) -> BigUint {
@@ -728,23 +693,69 @@ mod tests {
     }
 
     #[test]
-    fn shared_products_match_projected_oracle_for_both_consumption_paths() {
-        let (_, relation, assignment) = mini();
-        for q in [crate::pcs::FQ_MOD, u128::MAX - 158] {
-            let config = Fp::<2>::make_cfg(&Uint::from(q)).unwrap();
-            let field = FpCtx::from_prime_u128(q);
-            let (_, expected) = assignment.project::<Fp<2>>(&relation, &config).unwrap();
-            let prepared = assignment.products_prepared(&relation, &field);
-            let fused = assignment.products_fused(&relation, &field);
-            for (got, other, want) in [
-                (&prepared.az, &fused.az, &expected.az.evaluations),
-                (&prepared.bz, &fused.bz, &expected.bz.evaluations),
-                (&prepared.cz, &fused.cz, &expected.cz.evaluations),
+    fn exact_product_width_checks_public_coefficient_sum_boundaries() {
+        let (_, mut relation, _) = mini();
+        for matrix in [&mut relation.a, &mut relation.b, &mut relation.c] {
+            matrix.iter_mut().for_each(Vec::clear);
+        }
+        relation.coefficients = UnsignedIntegerTable::default();
+        relation
+            .coefficients
+            .push(Uint::<32>::from_words([u64::MAX; 32]));
+        relation.coefficients.push(Uint::<1>::ONE);
+        // (2^2048 - 1) + 1 reaches the inclusive public bound exactly.
+        relation.a[0].push((0, 0));
+        relation.a[1].push((0, 1));
+        relation.validate_product_width().unwrap();
+
+        relation.a[2].push((0, 1));
+        assert!(matches!(
+            relation.validate_product_width(),
+            Err(MultiswapLayoutError::ProductWidthExceeded)
+        ));
+
+        for column in &mut relation.a {
+            column.clear();
+        }
+        relation.coefficients.push(Uint::<33>::ONE);
+        relation.a[0].push((0, 2));
+        assert!(matches!(
+            relation.validate_product_width(),
+            Err(MultiswapLayoutError::ProductWidthExceeded)
+        ));
+    }
+
+    #[test]
+    fn exact_products_match_bigint_for_valid_and_maximum_assignments() {
+        let (_, relation, mut assignment) = mini();
+        let big = |words: &[u64]| {
+            BigUint::from_bytes_le(
+                &words
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        for maximum in [false, true] {
+            if maximum {
+                assignment.witness.fill(Uint::from_words([u64::MAX; 32]));
+                assignment.quotients.fill(Uint::from_words([u64::MAX; 32]));
+            }
+            let exact = assignment.integer_products(&relation);
+            for (matrix, actual) in [
+                (&relation.a, &exact.ax),
+                (&relation.b, &exact.bx),
+                (&relation.c, &exact.cx),
             ] {
-                assert_eq!(got, other);
-                for (got, want) in got.iter().zip(want) {
-                    let words = want.as_montgomery_integer().as_words();
-                    assert_eq!(*got, words[0] as u128 | ((words[1] as u128) << 64));
+                let mut expected = vec![BigUint::zero(); relation.layout.capacity];
+                for (column, entries) in matrix.iter().enumerate() {
+                    for &(row, coefficient) in entries {
+                        expected[row] += big(&relation.coefficients[coefficient])
+                            * big(assignment.value(column).as_words());
+                    }
+                }
+                for (value, expected) in actual.iter().zip(expected) {
+                    assert_eq!(big(value.as_words()), expected);
                 }
             }
         }

@@ -333,14 +333,10 @@ impl RelationSpec for MultiswapSpec {
     fn piop_witness<'w>(
         &self,
         assignment: &'w MultiswapAssignment,
-        config: &FieldConfig,
+        _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        let field = super::super::raw_monty::field_context(config);
-        // Preserve preparation-once reuse for the wide sparse application.
-        // The alternative fused method is qualified separately by the harness.
-        let products = assignment.products_prepared(&self.relation, &field);
-        Ok(PiopWitness::PreparedProducts {
-            products,
+        Ok(PiopWitness::IntegerProducts {
+            products: assignment.integer_products(&self.relation),
             witness: super::super::raw_monty::RawWitness::Limbs(assignment.native()),
         })
     }

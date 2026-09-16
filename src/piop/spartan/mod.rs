@@ -37,6 +37,7 @@ pub mod u32_mul;
 pub mod u64_f2z;
 pub mod u64_mul;
 #[cfg(test)]
+#[cfg(test)]
 pub(crate) use crate::sumcheck::outer::native_skip as univariate_skip_native;
 pub use crate::sumcheck::outer::univariate as univariate_skip;
 

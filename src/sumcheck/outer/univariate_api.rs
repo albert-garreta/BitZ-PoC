@@ -3,7 +3,7 @@ use super::{
     OuterArithmetic,
     api::*,
     engine::RoundState,
-    inputs::{OuterRows, SliceRows},
+    inputs::OuterRows,
     ordinary::*,
     traversal::{PreparedFold, fold_and_message, integer_buckets},
     univariate::{UnivariateSkipProof, lagrange_weights_at},
@@ -89,73 +89,16 @@ impl<E> From<SkippedOuterOutput<E>> for super::univariate::UnivariateSkipOuterSu
     }
 }
 
-/// Interpolates a rowwise-zero prefix, then proves its remaining Boolean tail.
-/// K=n is supported and produces an empty tail.
-pub fn prove_outer_zerocheck_with_skip<F, AB, C>(
+/// Interpolates a rowwise-zero prefix directly from row storage, then proves
+/// the remaining Boolean tail. K=n is supported and produces an empty tail.
+/// Owned inputs are released after prefix folding. Supplied factors must be
+/// fresh equality tables for `tau_tail`; `None` prepares them here.
+pub fn prove_outer_zerocheck_with_skip<F, I: OuterRows>(
     field: &F,
     transcript: &mut impl Transcript,
     prepared: &PreparedUnivariateSkip<F::Elem>,
     tau_tail: &[F::Elem],
-    inputs: OuterInputs<AB, C>,
-    boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<SkippedOuterOutput<F::Elem>, SumcheckError>
-where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<F::Elem>,
-    F::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
-{
-    let prefix = prepare_prefix(
-        field,
-        transcript,
-        prepared,
-        tau_tail,
-        &SliceRows {
-            ax: &inputs.ax,
-            bx: &inputs.bx,
-            cx: &inputs.cx,
-        },
-        None,
-        boundary,
-    )?;
-    drop(inputs);
-    finish_prefix(field, transcript, tau_tail, prefix, boundary)
-}
-/// Borrowed counterpart of [`prove_outer_zerocheck_with_skip`].
-pub fn prove_outer_zerocheck_with_skip_from_slices<F, AB, C>(
-    field: &F,
-    transcript: &mut impl Transcript,
-    prepared: &PreparedUnivariateSkip<F::Elem>,
-    tau_tail: &[F::Elem],
-    ax: &[AB],
-    bx: &[AB],
-    cx: &[C],
-    boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<SkippedOuterOutput<F::Elem>, SumcheckError>
-where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<F::Elem>,
-    F::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
-{
-    prove_skip_from_rows(
-        field,
-        transcript,
-        prepared,
-        tau_tail,
-        &SliceRows { ax, bx, cx },
-        None,
-        boundary,
-    )
-}
-
-/// Supplied factors must be fresh equality tables of this exact `tau_tail`.
-pub(super) fn prove_skip_from_rows<F, I: OuterRows>(
-    field: &F,
-    transcript: &mut impl Transcript,
-    prepared: &PreparedUnivariateSkip<F::Elem>,
-    tau_tail: &[F::Elem],
-    rows: &I,
+    rows: I,
     factors: Option<EqualityFactors<F::Elem>>,
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<SkippedOuterOutput<F::Elem>, SumcheckError>
@@ -164,8 +107,9 @@ where
     F::Elem: SpartanField<Config = F>,
 {
     let prefix = prepare_prefix(
-        field, transcript, prepared, tau_tail, rows, factors, boundary,
+        field, transcript, prepared, tau_tail, &rows, factors, boundary,
     )?;
+    drop(rows);
     finish_prefix(field, transcript, tau_tail, prefix, boundary)
 }
 struct PreparedPrefix<E> {
@@ -190,6 +134,7 @@ where
 {
     #[cfg(feature = "bench-internals")]
     let _phase = super::measure::Phase::start(3);
+    let _scope = tracing::info_span!("spartan:univariate_skip_tail").entered();
     let tail = continue_field_with_inverses(
         transcript,
         field,
@@ -224,8 +169,8 @@ where
 {
     #[cfg(feature = "bench-internals")]
     let setup = super::measure::Phase::start(0);
-    let (a, b, c) = rows.dimensions();
-    let n = validate_shape(a, b, c)?;
+    let n = rows.validate()?;
+    let a = rows.dimensions().0;
     let k = usize::from(prepared.skip_vars);
     if n < k || tau.len() != n - k {
         return Err(SumcheckError::InvalidEqualityDimensions);
@@ -318,8 +263,34 @@ fn extrapolate_side<T: Copy, const M: usize, const STEPS: usize>(
     running
 }
 
+// Keep K=4 interpolation separate from padded reads. LLVM 22's SCCP pass
+// can spend minutes propagating their ranges through the unrolled difference
+// triangle, including during LTO. Smaller prefixes and one-word operands
+// retain their inlining.
 #[inline(always)]
 pub(super) fn exterior_values<T: Copy, const M: usize, const LANES: usize, const STEPS: usize>(
+    values: [T; M],
+    add: impl Fn(T, T) -> T,
+    sub: impl Fn(T, T) -> T,
+) -> [T; LANES] {
+    if M == 16 && core::mem::size_of::<T>() > core::mem::size_of::<u64>() {
+        exterior_values_large::<T, M, LANES, STEPS>(values, add, sub)
+    } else {
+        exterior_values_inline::<T, M, LANES, STEPS>(values, add, sub)
+    }
+}
+
+#[inline(never)]
+fn exterior_values_large<T: Copy, const M: usize, const LANES: usize, const STEPS: usize>(
+    values: [T; M],
+    add: impl Fn(T, T) -> T,
+    sub: impl Fn(T, T) -> T,
+) -> [T; LANES] {
+    exterior_values_inline::<T, M, LANES, STEPS>(values, add, sub)
+}
+
+#[inline(always)]
+fn exterior_values_inline<T: Copy, const M: usize, const LANES: usize, const STEPS: usize>(
     values: [T; M],
     add: impl Fn(T, T) -> T,
     sub: impl Fn(T, T) -> T,
@@ -355,6 +326,7 @@ where
     debug_assert_eq!(M - 1, LANES);
     #[cfg(feature = "bench-internals")]
     let coefficients_phase = super::measure::Phase::start(1);
+    let message_scope = tracing::info_span!("spartan:univariate_skip_message").entered();
     let mut message = integer_buckets::<F, I::AB, I::C, LANES>(
         field,
         factors.weights(),
@@ -397,11 +369,13 @@ where
         usize::from(prepared.skip_vars),
         message.to_vec(),
     )?;
+    drop(message_scope);
     let reduction = proof.verify_reduction(transcript, field)?;
     #[cfg(feature = "bench-internals")]
     drop(coefficients_phase);
     #[cfg(feature = "bench-internals")]
     let _fold = super::measure::Phase::start(2);
+    let _scope = tracing::info_span!("spartan:univariate_skip_prefix_fold").entered();
     let state = RoundState::new(reduction.q_at_z, tau.len(), field);
     let weights: [F::Elem; M] = lagrange_weights_at(&reduction.z, M, field)
         .try_into()

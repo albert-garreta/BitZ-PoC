@@ -40,46 +40,17 @@ impl<'a, T> NativeWideProducts<'a, T> {
     }
 }
 
-/// Internal width dispatch. It is matched once before the first kernel;
-/// the public outer API accepts owned tables or three slices.
-#[derive(Clone, Copy)]
+/// Input variants used only by the independent legacy arithmetic tests.
+#[cfg(test)]
+#[derive(Clone)]
 pub(crate) enum NativeInput<'a> {
     U32(NativeProducts<'a>),
     Residues(&'a RawProducts),
     U64(NativeWideProducts<'a, u64>),
     U128(NativeWideProducts<'a, u128>),
+    Integers4096(super::super::OuterInputs<Uint<64>>),
+    Signed128(super::super::OuterInputs<field::Z<2>, field::Z<4>>),
 }
-impl NativeInput<'_> {
-    pub(crate) fn len(&self) -> usize {
-        match self {
-            Self::U32(p) => p.len(),
-            Self::Residues(p) => p.len(),
-            Self::U64(p) => p.rows,
-            Self::U128(p) => p.rows,
-        }
-    }
-}
-impl<'a> From<NativeProducts<'a>> for NativeInput<'a> {
-    fn from(p: NativeProducts<'a>) -> Self {
-        Self::U32(p)
-    }
-}
-impl<'a> From<&'a RawProducts> for NativeInput<'a> {
-    fn from(p: &'a RawProducts) -> Self {
-        Self::Residues(p)
-    }
-}
-impl<'a> From<NativeWideProducts<'a, u64>> for NativeInput<'a> {
-    fn from(p: NativeWideProducts<'a, u64>) -> Self {
-        Self::U64(p)
-    }
-}
-impl<'a> From<NativeWideProducts<'a, u128>> for NativeInput<'a> {
-    fn from(p: NativeWideProducts<'a, u128>) -> Self {
-        Self::U128(p)
-    }
-}
-
 impl super::super::inputs::OuterRows for NativeProducts<'_> {
     type AB = u32;
     type C = u64;
@@ -142,10 +113,12 @@ impl super::super::inputs::OuterRows for NativeWideProducts<'_, u128> {
     }
 }
 
+#[cfg(test)]
 pub(super) struct ResidueRows<'a> {
     pub field: &'a field::FpCtx<2>,
     pub products: &'a RawProducts,
 }
+#[cfg(test)]
 impl super::super::inputs::OuterRows for ResidueRows<'_> {
     type AB = Field;
     type C = Field;
@@ -170,44 +143,6 @@ impl super::super::inputs::OuterRows for ResidueRows<'_> {
     }
 }
 
-pub(super) fn dispatch<T: Transcript>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    _reducer: &field::FpCtx<2>,
-    claim: Field,
-    tau: &[Field],
-    low: Vec<Raw>,
-    high: Vec<Raw>,
-    input: NativeInput<'_>,
-    known_zero: bool,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    let factors = factors_from_raw(ctx, low, high);
-    macro_rules! prove {
-        ($rows:expr) => {
-            super::super::api::prove_from_rows(
-                ctx,
-                transcript,
-                claim,
-                tau,
-                &$rows,
-                known_zero,
-                factors,
-                &mut UngrindedRoundBoundary,
-            )
-            .map(Into::into)
-        };
-    }
-    match input {
-        NativeInput::U32(rows) => prove!(rows),
-        NativeInput::U64(rows) => prove!(rows),
-        NativeInput::U128(rows) => prove!(rows),
-        NativeInput::Residues(products) => prove!(ResidueRows {
-            field: ctx,
-            products
-        }),
-    }
-}
-
 /// Independent retained arithmetic reference for differential tests.
 #[cfg(test)]
 pub(crate) fn legacy_dispatch<T: Transcript>(
@@ -222,6 +157,52 @@ pub(crate) fn legacy_dispatch<T: Transcript>(
     known_zero: bool,
 ) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
     match input {
+        NativeInput::Signed128(p) => {
+            use field::IntegerEmbedding;
+            super::prepare_encoded_reference(
+                transcript,
+                ctx,
+                reducer,
+                claim,
+                tau,
+                low,
+                high,
+                RawProducts {
+                    az: p.ax.iter().map(|v| ctx.raw(&ctx.from_integer(v))).collect(),
+                    bz: p.bx.iter().map(|v| ctx.raw(&ctx.from_integer(v))).collect(),
+                    cz: p.cx.iter().map(|v| ctx.raw(&ctx.from_integer(v))).collect(),
+                },
+                &mut UngrindedRoundBoundary,
+                known_zero,
+            )
+        }
+
+        NativeInput::Integers4096(p) => {
+            use field::IntegerEmbedding;
+            let project = |values: &[Uint<64>]| {
+                values
+                    .iter()
+                    .map(|v| ctx.raw(&ctx.from_integer(v)))
+                    .collect()
+            };
+            super::prepare_encoded_reference(
+                transcript,
+                ctx,
+                reducer,
+                claim,
+                tau,
+                low,
+                high,
+                RawProducts {
+                    az: project(&p.ax),
+                    bz: project(&p.bx),
+                    cz: project(&p.cx),
+                },
+                &mut UngrindedRoundBoundary,
+                known_zero,
+            )
+        }
+
         NativeInput::U32(p) => {
             if p.az.len() != p.bz.len() || p.az.len() != p.cz.len() {
                 return Err(SumcheckError::InvalidProductDimensions);

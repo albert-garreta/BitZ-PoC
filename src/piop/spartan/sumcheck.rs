@@ -6,9 +6,9 @@ pub(crate) use crate::sumcheck::outer::ordinary::*;
 pub use crate::sumcheck::proof::OuterSumcheckProof;
 pub use crate::sumcheck::{SumcheckError, SumcheckProof};
 pub(crate) use crate::sumcheck::{boundary::*, proof::*};
+use field::RingOps;
 #[cfg(test)]
-use field::Uint;
-use field::{Fp, RingOps};
+use field::{Fp, Uint};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -16,7 +16,9 @@ use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript
 
 #[cfg(test)]
 use super::grinding::{GrindingError, GrindingRound};
-use super::{SpartanField, absorb_field_elements, grinding::GrindingDomain, squeeze_field};
+use super::{SpartanField, grinding::GrindingDomain};
+#[cfg(test)]
+use super::{absorb_field_elements, squeeze_field};
 
 /// Dense Bit-row MLEs for `Az`, `Bz`, and `Cz`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,6 +224,7 @@ where
 /// Proves the first inner round with the exact native u32 assignment, then
 /// continues with field-valued witness and matrix tables using the fixed
 /// production policy: delayed coefficients and delayed native folding.
+#[cfg(test)]
 pub(crate) fn prove_inner_sumcheck_u32_native_with_reducer<R>(
     transcript: &mut impl Transcript,
     initial_claim: Fp<2>,
@@ -584,6 +587,7 @@ where
     reduce_two_accumulators(accumulators, reducer, &field_config)
 }
 
+#[cfg(test)]
 fn sum_u32_native_inner_coefficients_without_linear<R>(
     batched_matrix: &[Fp<2>],
     witness: &[u64],
@@ -851,15 +855,21 @@ mod tests {
         );
         let mut prover_transcript = Blake3Transcript::new();
 
-        let output = prove_field_for_test(
-            &mut prover_transcript,
-            zero.clone(),
-            &[],
-            equality_factors,
-            products,
-            &field_cfg,
-        )
-        .unwrap();
+        let output =
+            crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                .and_then(|factors| {
+                    crate::sumcheck::outer::prove_outer_sumcheck(
+                        &field_cfg,
+                        &mut prover_transcript,
+                        crate::sumcheck::outer::OuterClaim::Sum(zero.clone()),
+                        &[],
+                        products,
+                        Some(factors),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                })
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
+                .unwrap();
 
         assert!(output.proof.sumcheck.round_polynomials.is_empty());
         assert!(output.eval_points.is_empty());
@@ -897,19 +907,28 @@ mod tests {
         let field_cfg = config();
         let (initial_claim, tau, equality_factors, products) =
             outer_test_instance(NUM_VARS, &field_cfg);
-        let reducer = field_cfg.clone();
         let mut prover_transcript = Blake3Transcript::new();
-        let (output, nonces) = prove_field_grinded_for_test::<TestOuterGrinding, _, _>(
-            &mut prover_transcript,
-            initial_claim.clone(),
-            &tau,
-            equality_factors,
-            products,
-            &field_cfg,
-            &reducer,
-            GRINDING_BITS,
-        )
-        .unwrap();
+        let mut boundary =
+            ProverGrindingRoundBoundary::<TestOuterGrinding>::with_round_offset(GRINDING_BITS, 0);
+        let output: crate::sumcheck::proof::OuterSumcheckOutput<_> =
+            crate::sumcheck::outer::prove_outer_sumcheck(
+                &field_cfg,
+                &mut prover_transcript,
+                crate::sumcheck::outer::OuterClaim::Sum(initial_claim),
+                &tau,
+                products,
+                Some(
+                    crate::sumcheck::outer::EqualityFactors::from_mles(
+                        equality_factors,
+                        &field_cfg,
+                    )
+                    .unwrap(),
+                ),
+                &mut boundary,
+            )
+            .unwrap()
+            .into();
+        let nonces = boundary.into_nonces();
 
         assert_eq!(nonces.len(), NUM_VARS);
         assert_eq!(nonces.len(), output.proof.sumcheck.round_polynomials.len());
@@ -945,15 +964,21 @@ mod tests {
         let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
         let (initial_claim, tau, equality_factors, products) =
             outer_test_instance(NUM_VARS, &field_cfg);
-        let output = prove_field_for_test(
-            &mut Blake3Transcript::new(),
-            initial_claim.clone(),
-            &tau,
-            equality_factors,
-            products,
-            &field_cfg,
-        )
-        .unwrap();
+        let output =
+            crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                .and_then(|factors| {
+                    crate::sumcheck::outer::prove_outer_sumcheck(
+                        &field_cfg,
+                        &mut Blake3Transcript::new(),
+                        crate::sumcheck::outer::OuterClaim::Sum(initial_claim.clone()),
+                        &tau,
+                        products,
+                        Some(factors),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                })
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
+                .unwrap();
 
         let mut foreign_round = output.proof.clone();
         foreign_round.sumcheck.round_polynomials[0][0] =
@@ -992,19 +1017,28 @@ mod tests {
         let field_cfg = config();
         let (initial_claim, tau, equality_factors, products) =
             outer_test_instance(NUM_VARS, &field_cfg);
-        let reducer = field_cfg.clone();
         let mut prover_transcript = Blake3Transcript::new();
-        let (output, nonces) = prove_field_grinded_for_test::<TestOuterGrinding, _, _>(
-            &mut prover_transcript,
-            initial_claim.clone(),
-            &tau,
-            equality_factors,
-            products,
-            &field_cfg,
-            &reducer,
-            GRINDING_BITS,
-        )
-        .unwrap();
+        let mut boundary =
+            ProverGrindingRoundBoundary::<TestOuterGrinding>::with_round_offset(GRINDING_BITS, 0);
+        let output: crate::sumcheck::proof::OuterSumcheckOutput<_> =
+            crate::sumcheck::outer::prove_outer_sumcheck(
+                &field_cfg,
+                &mut prover_transcript,
+                crate::sumcheck::outer::OuterClaim::Sum(initial_claim),
+                &tau,
+                products,
+                Some(
+                    crate::sumcheck::outer::EqualityFactors::from_mles(
+                        equality_factors,
+                        &field_cfg,
+                    )
+                    .unwrap(),
+                ),
+                &mut boundary,
+            )
+            .unwrap()
+            .into();
+        let nonces = boundary.into_nonces();
 
         let mut short_transcript = Blake3Transcript::new();
         let mut untouched_transcript = short_transcript.clone();
@@ -1178,15 +1212,21 @@ mod tests {
                 },
             );
             let mut prover_transcript = Blake3Transcript::new();
-            let output = prove_field_for_test(
-                &mut prover_transcript,
-                initial_claim.clone(),
-                &tau,
-                equality_factors,
-                products.clone(),
-                &field_cfg,
-            )
-            .unwrap();
+            let output =
+                crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                    .and_then(|factors| {
+                        crate::sumcheck::outer::prove_outer_sumcheck(
+                            &field_cfg,
+                            &mut prover_transcript,
+                            crate::sumcheck::outer::OuterClaim::Sum(initial_claim.clone()),
+                            &tau,
+                            products.clone(),
+                            Some(factors),
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
+                        )
+                    })
+                    .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
+                    .unwrap();
 
             assert_eq!(output.proof.sumcheck.round_polynomials.len(), num_vars);
             if let Some(reference_proof) = &reference_proof {
@@ -1217,36 +1257,7 @@ mod tests {
     }
 
     #[test]
-    fn factorized_outer_kernels_match_immediate_proof() {
-        fn prove_with_reducer<R>(
-            initial_claim: &Fp<2>,
-            tau: &[Fp<2>],
-            equality_factors: &(
-                DenseMultilinearExtension<Fp<2>>,
-                DenseMultilinearExtension<Fp<2>>,
-            ),
-            products: &R1csProductMles<Fp<2>>,
-            field_cfg: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
-            reducer: &R,
-        ) -> (OuterSumcheckOutput<Fp<2>>, Fp<2>)
-        where
-            R: SumcheckProductReducer<Fp<2>>,
-        {
-            let mut transcript = Blake3Transcript::new();
-            let output = prove_field_with_factors(
-                &mut transcript,
-                initial_claim.clone(),
-                tau,
-                equality_factors.clone(),
-                products.clone(),
-                field_cfg,
-                reducer,
-            )
-            .unwrap();
-            let continuation = squeeze_field(&mut transcript, field_cfg).unwrap();
-            (output, continuation)
-        }
-
+    fn factorized_outer_matches_direct_cubic_reference() {
         let field_cfg = config();
         let zero = Fp::<2>::zero_with_cfg(&field_cfg);
         let num_vars = 10;
@@ -1303,9 +1314,6 @@ mod tests {
                 field_cfg.add(&(initial_claim), &(&(field_cfg).mul(equality, &residual)));
         }
 
-        let immediate = field_cfg.clone();
-        let optimized = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
-        let reference = BigUintSumcheckOracle::new(&field_cfg).unwrap();
         let mut direct_transcript = Blake3Transcript::new();
         let direct_output = prove_outer_sumcheck_direct_reference(
             &mut direct_transcript,
@@ -1316,39 +1324,27 @@ mod tests {
         )
         .unwrap();
         let direct_continuation = squeeze_field(&mut direct_transcript, &field_cfg).unwrap();
-        let (immediate_output, immediate_continuation) = prove_with_reducer(
-            &initial_claim,
-            &tau,
-            &equality_factors,
-            &products,
-            &field_cfg,
-            &immediate,
-        );
-        let (optimized_output, optimized_continuation) = prove_with_reducer(
-            &initial_claim,
-            &tau,
-            &equality_factors,
-            &products,
-            &field_cfg,
-            &optimized,
-        );
-        let (reference_output, reference_continuation) = prove_with_reducer(
-            &initial_claim,
-            &tau,
-            &equality_factors,
-            &products,
-            &field_cfg,
-            &reference,
-        );
+        let mut transcript = Blake3Transcript::new();
+        let immediate_output: OuterSumcheckOutput<_> =
+            crate::sumcheck::outer::prove_outer_sumcheck(
+                &field_cfg,
+                &mut transcript,
+                crate::sumcheck::outer::OuterClaim::Sum(initial_claim),
+                &tau,
+                products,
+                Some(
+                    crate::sumcheck::outer::EqualityFactors::from_mles(
+                        equality_factors,
+                        &field_cfg,
+                    )
+                    .unwrap(),
+                ),
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap()
+            .into();
+        let immediate_continuation = squeeze_field(&mut transcript, &field_cfg).unwrap();
 
-        assert_eq!(optimized_output.proof, immediate_output.proof);
-        assert_eq!(optimized_output.eval_points, immediate_output.eval_points);
-        assert_eq!(optimized_output.final_claim, immediate_output.final_claim);
-        assert_eq!(optimized_continuation, immediate_continuation);
-        assert_eq!(reference_output.proof, immediate_output.proof);
-        assert_eq!(reference_output.eval_points, immediate_output.eval_points);
-        assert_eq!(reference_output.final_claim, immediate_output.final_claim);
-        assert_eq!(reference_continuation, immediate_continuation);
         assert_eq!(immediate_output.proof, direct_output.proof);
         assert_eq!(immediate_output.eval_points, direct_output.eval_points);
         assert_eq!(immediate_output.final_claim, direct_output.final_claim);
@@ -1458,14 +1454,22 @@ mod tests {
                     },
                 );
                 let mut transcript = Blake3Transcript::new();
-                let output = prove_field_for_test(
-                    &mut transcript,
-                    initial_claim.clone(),
-                    &tau,
+                let output = crate::sumcheck::outer::EqualityFactors::from_mles(
                     equality_factors,
-                    products.clone(),
                     &field_cfg,
                 )
+                .and_then(|factors| {
+                    crate::sumcheck::outer::prove_outer_sumcheck(
+                        &field_cfg,
+                        &mut transcript,
+                        crate::sumcheck::outer::OuterClaim::Sum(initial_claim.clone()),
+                        &tau,
+                        products.clone(),
+                        Some(factors),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                })
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
                 .unwrap();
                 let continuation = squeeze_field::<Fp<2>, _>(&mut transcript, &field_cfg).unwrap();
 
@@ -1737,14 +1741,17 @@ mod tests {
         let mut transcript = Blake3Transcript::new();
 
         assert_eq!(
-            prove_field_for_test(
-                &mut transcript,
-                zero,
-                &[],
-                equality_factors,
-                products,
-                &field_cfg,
-            ),
+            crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                .and_then(|factors| crate::sumcheck::outer::prove_outer_sumcheck(
+                    &field_cfg,
+                    &mut transcript,
+                    crate::sumcheck::outer::OuterClaim::Sum(zero),
+                    &[],
+                    products,
+                    Some(factors),
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                ))
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from),
             Err(SumcheckError::InvalidProductDimensions)
         );
 
@@ -1786,14 +1793,17 @@ mod tests {
         let mut transcript = Blake3Transcript::new();
 
         assert_eq!(
-            prove_field_for_test(
-                &mut transcript,
-                zero,
-                &[],
-                equality_factors,
-                products,
-                &field_cfg,
-            ),
+            crate::sumcheck::outer::EqualityFactors::from_mles(equality_factors, &field_cfg)
+                .and_then(|factors| crate::sumcheck::outer::prove_outer_sumcheck(
+                    &field_cfg,
+                    &mut transcript,
+                    crate::sumcheck::outer::OuterClaim::Sum(zero),
+                    &[],
+                    products,
+                    Some(factors),
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                ))
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from),
             Err(SumcheckError::InvalidEqualityDimensions)
         );
 

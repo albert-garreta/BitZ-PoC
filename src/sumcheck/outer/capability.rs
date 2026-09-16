@@ -173,6 +173,22 @@ integer_arithmetic!(
     |a: Z<3>, b: Z<3>| IntegerOps.wrapping_signed_product::<3, 3, 5>(&a, &b),
     |v| v
 );
+// MultiSwap's public matrix coefficient sums bound every exact row below
+// 2^4096, including malformed assignments within their declared 2048 bits.
+// K<=4 adds at most 31 magnitude bits per operand; 130 signed words cover
+// every product/residual. Ordinary differences need only 128 magnitude words.
+integer_arithmetic!(
+    Uint<64>,
+    Uint<64>,
+    Z<65>,
+    Z<130>,
+    130,
+    128,
+    |v: Uint<64>| Z::from_twos_complement_words(*v.zero_extend::<65>().as_words()),
+    |v: Uint<64>| Z::from_twos_complement_words(*v.zero_extend::<130>().as_words()),
+    |a: Z<65>, b: Z<65>| IntegerOps.wrapping_signed_product::<65, 65, 130>(&a, &b),
+    |v| v
+);
 integer_arithmetic!(
     Z<2>,
     Z<4>,
@@ -183,6 +199,21 @@ integer_arithmetic!(
     |v: Z<2>| v.sign_extend::<3>(),
     |v: Z<4>| v.sign_extend::<5>(),
     |a: Z<3>, b: Z<3>| IntegerOps.wrapping_signed_product::<3, 3, 5>(&a, &b),
+    |v| v
+);
+// Signed five-word operands have magnitude <=2^319. K<=4 adds at most
+// 31 bits: products/residuals fit 701 magnitude bits (eleven signed words),
+// including the widened nine-word C. Ordinary differences need ten words.
+integer_arithmetic!(
+    Z<5>,
+    Z<9>,
+    Z<6>,
+    Z<11>,
+    11,
+    10,
+    |v: Z<5>| v.sign_extend::<6>(),
+    |v: Z<9>| v.sign_extend::<11>(),
+    |a: Z<6>, b: Z<6>| IntegerOps.wrapping_signed_product::<6, 6, 11>(&a, &b),
     |v| v
 );
 integer_arithmetic!(

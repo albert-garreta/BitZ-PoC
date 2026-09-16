@@ -14,6 +14,80 @@ fn field() -> FpCtx<2> {
 }
 
 #[test]
+fn owned_rows_are_released_before_field_continuation() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    struct Rows(OuterInputs<u32, u64>, Arc<AtomicBool>);
+    impl OuterRows for Rows {
+        type AB = u32;
+        type C = u64;
+        fn dimensions(&self) -> (usize, usize, usize) {
+            self.0.dimensions()
+        }
+        fn a(&self, i: usize) -> u32 {
+            self.0.a(i)
+        }
+        fn b(&self, i: usize) -> u32 {
+            self.0.b(i)
+        }
+        fn c(&self, i: usize) -> u64 {
+            self.0.c(i)
+        }
+    }
+    impl Drop for Rows {
+        fn drop(&mut self) {
+            self.1.store(true, Ordering::SeqCst);
+        }
+    }
+    struct Boundary(Arc<AtomicBool>);
+    impl crate::sumcheck::RoundBoundaryPolicy for Boundary {
+        fn after_round<T: Transcript>(
+            &mut self,
+            _: &mut T,
+            round: usize,
+        ) -> Result<(), SumcheckError> {
+            assert_eq!(self.0.load(Ordering::SeqCst), round > 0);
+            Ok(())
+        }
+    }
+    let f = field();
+    let tau = vec![f.one(); 3];
+    let dropped = Arc::new(AtomicBool::new(false));
+    let rows = Rows(
+        OuterInputs {
+            ax: vec![3; 8],
+            bx: vec![5; 8],
+            cx: vec![15; 8],
+        },
+        dropped.clone(),
+    );
+    let (low, high) = crate::piop::spartan::matrix::make_equality_factors(&tau, &f).unwrap();
+    let output = prove_outer_sumcheck(
+        &f,
+        &mut Blake3Transcript::new(),
+        OuterClaim::RowwiseZero,
+        &tau,
+        rows,
+        Some(EqualityFactors::new(low.evaluations, high.evaluations, &f)),
+        &mut Boundary(dropped.clone()),
+    )
+    .unwrap();
+    assert!(dropped.load(Ordering::SeqCst));
+    verify_outer_sumcheck(
+        &f,
+        &mut Blake3Transcript::new(),
+        f.zero(),
+        &tau,
+        &output.proof,
+        output.evaluations,
+        &mut UngrindedRoundBoundary,
+    )
+    .unwrap();
+}
+
+#[test]
 fn prepared_mixed_folds_and_signed_buckets_match_bigint() {
     use field::{PreparedLinearCombination, PreparedWordWeights, UintAccumulator};
     use num_bigint::{BigInt, BigUint, Sign};
@@ -98,12 +172,16 @@ fn prepared_mixed_folds_and_signed_buckets_match_bigint() {
     }
     check::<1, 1>(Uint::from_words([(1u64 << 61) - 1]));
     check::<1, 4>(Uint::from_words([(1u64 << 61) - 1]));
+    check::<1, 256>(Uint::from_words([(1u64 << 61) - 1]));
     for p in [(1u128 << 100) - 15, (1u128 << 127) - 1, u128::MAX - 158] {
         check::<2, 1>(Uint::from(p));
         check::<2, 2>(Uint::from(p));
         check::<2, 4>(Uint::from(p));
         check::<2, 9>(Uint::from(p));
         check::<2, 32>(Uint::from(p));
+        check::<2, 64>(Uint::from(p));
+        check::<2, 130>(Uint::from(p));
+        check::<2, 256>(Uint::from(p));
     }
 }
 
@@ -200,14 +278,17 @@ fn mixed_inputs_match_direct_cubic_and_transcript() {
         let old = prove_outer_sumcheck_direct_reference(&mut reference, claim, &tau, products, &f)
             .unwrap();
         let mut prover = Blake3Transcript::new();
-        let out = prove_outer_sumcheck_from_slices(
+        let out = crate::sumcheck::outer::prove_outer_sumcheck(
             &f,
             &mut prover,
-            claim,
+            crate::sumcheck::outer::OuterClaim::Sum(claim),
             &tau,
-            &a,
-            &b,
-            &c,
+            crate::sumcheck::outer::OuterSlices {
+                ax: &a,
+                bx: &b,
+                cx: &c,
+            },
+            None,
             &mut UngrindedRoundBoundary,
         )
         .unwrap();
@@ -242,25 +323,32 @@ fn zero_prefix_and_owned_field_inputs_match_ordinary() {
             .collect();
         let tau = vec![fe(&f, 7); n];
         let mut ordinary = Blake3Transcript::new();
-        let expected = prove_outer_sumcheck_from_slices(
+        let expected = crate::sumcheck::outer::prove_outer_sumcheck(
             &f,
             &mut ordinary,
-            f.zero(),
+            crate::sumcheck::outer::OuterClaim::Sum(f.zero()),
             &tau,
-            &a,
-            &b,
-            &c,
+            crate::sumcheck::outer::OuterSlices {
+                ax: &a,
+                bx: &b,
+                cx: &c,
+            },
+            None,
             &mut UngrindedRoundBoundary,
         )
         .unwrap();
         let mut zero = Blake3Transcript::new();
-        let got = prove_outer_zerocheck_from_slices(
+        let got = crate::sumcheck::outer::prove_outer_sumcheck(
             &f,
             &mut zero,
+            crate::sumcheck::outer::OuterClaim::RowwiseZero,
             &tau,
-            &a,
-            &b,
-            &c,
+            crate::sumcheck::outer::OuterSlices {
+                ax: &a,
+                bx: &b,
+                cx: &c,
+            },
+            None,
             &mut UngrindedRoundBoundary,
         )
         .unwrap();
@@ -274,8 +362,16 @@ fn zero_prefix_and_owned_field_inputs_match_ordinary() {
         };
         let mut owned = Blake3Transcript::new();
         assert_eq!(
-            prove_outer_zerocheck(&f, &mut owned, &tau, inputs, &mut UngrindedRoundBoundary)
-                .unwrap(),
+            crate::sumcheck::outer::prove_outer_sumcheck(
+                &f,
+                &mut owned,
+                crate::sumcheck::outer::OuterClaim::RowwiseZero,
+                &tau,
+                inputs,
+                None,
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap(),
             expected
         );
         assert_eq!(owned.state_digest(), ordinary.state_digest());
@@ -292,14 +388,17 @@ fn skip_all_widths_matches_preserved_native_kernel() {
             let tau = vec![fe(&f, 7); n - usize::from(k)];
             let prepared = prepare_univariate_skip(&f, k).unwrap();
             let mut prover = Blake3Transcript::new();
-            let got = prove_outer_zerocheck_with_skip_from_slices(
+            let got = crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
                 &f,
                 &mut prover,
                 &prepared,
                 &tau,
-                &a,
-                &b,
-                &c,
+                crate::sumcheck::outer::OuterSlices {
+                    ax: &a,
+                    bx: &b,
+                    cx: &c,
+                },
+                None,
                 &mut UngrindedRoundBoundary,
             )
             .unwrap();
@@ -381,13 +480,17 @@ fn signed_and_four_limb_inputs() {
         Z::from_twos_complement_words([4, 0, 0, 0]),
     ];
     let mut transcript = Blake3Transcript::new();
-    prove_outer_zerocheck_from_slices(
+    crate::sumcheck::outer::prove_outer_sumcheck(
         &f,
         &mut transcript,
+        crate::sumcheck::outer::OuterClaim::RowwiseZero,
         &tau,
-        &a,
-        &a,
-        &c,
+        crate::sumcheck::outer::OuterSlices {
+            ax: &a,
+            bx: &a,
+            cx: &c,
+        },
+        None,
         &mut UngrindedRoundBoundary,
     )
     .unwrap();
@@ -397,13 +500,17 @@ fn signed_and_four_limb_inputs() {
             field::WideMul::mul_wide(&field::IntegerOps, &Uint::<2>::from(a), &Uint::<2>::from(a));
         *p.checked_resize_ct::<4>().value()
     });
-    prove_outer_zerocheck_from_slices(
+    crate::sumcheck::outer::prove_outer_sumcheck(
         &f,
         &mut Blake3Transcript::new(),
+        crate::sumcheck::outer::OuterClaim::RowwiseZero,
         &tau,
-        &a,
-        &a,
-        &c,
+        crate::sumcheck::outer::OuterSlices {
+            ax: &a,
+            bx: &a,
+            cx: &c,
+        },
+        None,
         &mut UngrindedRoundBoundary,
     )
     .unwrap();
@@ -416,15 +523,18 @@ fn invalid_shape_and_singleton_claim_rejected() {
         let before = t.state_digest();
         let input = vec![1u64; len];
         assert_eq!(
-            prove_outer_sumcheck_from_slices(
+            crate::sumcheck::outer::prove_outer_sumcheck(
                 &f,
                 &mut t,
-                f.zero(),
+                crate::sumcheck::outer::OuterClaim::Sum(f.zero()),
                 &[],
-                &input,
-                &input,
-                &input,
-                &mut UngrindedRoundBoundary
+                crate::sumcheck::outer::OuterSlices {
+                    ax: &input,
+                    bx: &input,
+                    cx: &input
+                },
+                None,
+                &mut UngrindedRoundBoundary,
             )
             .unwrap_err(),
             SumcheckError::InvalidProductDimensions
@@ -432,15 +542,18 @@ fn invalid_shape_and_singleton_claim_rejected() {
         assert_eq!(before, t.state_digest());
     }
     assert_eq!(
-        prove_outer_sumcheck_from_slices(
+        crate::sumcheck::outer::prove_outer_sumcheck(
             &f,
             &mut Blake3Transcript::new(),
-            f.zero(),
+            crate::sumcheck::outer::OuterClaim::Sum(f.zero()),
             &[],
-            &[2u64],
-            &[3u64],
-            &[7u64],
-            &mut UngrindedRoundBoundary
+            crate::sumcheck::outer::OuterSlices {
+                ax: &[2u64],
+                bx: &[3u64],
+                cx: &[7u64]
+            },
+            None,
+            &mut UngrindedRoundBoundary,
         )
         .unwrap_err(),
         SumcheckError::InvalidTerminalClaim
@@ -473,13 +586,17 @@ impl Transcript for ZeroChallenges {
 fn vanishing_equality_scale_is_carried_without_division() {
     let f = field();
     let tau = [f.one(), f.zero()];
-    let output = prove_outer_zerocheck_from_slices(
+    let output = crate::sumcheck::outer::prove_outer_sumcheck(
         &f,
         &mut ZeroChallenges,
+        crate::sumcheck::outer::OuterClaim::RowwiseZero,
         &tau,
-        &[2u64, 3, 4, 5],
-        &[3u64, 4, 5, 6],
-        &[6u64, 12, 20, 30],
+        crate::sumcheck::outer::OuterSlices {
+            ax: &[2u64, 3, 4, 5],
+            bx: &[3u64, 4, 5, 6],
+            cx: &[6u64, 12, 20, 30],
+        },
+        None,
         &mut UngrindedRoundBoundary,
     )
     .unwrap();
@@ -504,14 +621,17 @@ fn zero_weighted_claim_does_not_imply_rowwise_zerocheck() {
     let a = [2u64, 3];
     let b = [3u64, 4];
     let c = [6u64, 13];
-    let out = prove_outer_sumcheck_from_slices(
+    let out = crate::sumcheck::outer::prove_outer_sumcheck(
         &f,
         &mut Blake3Transcript::new(),
-        f.zero(),
+        crate::sumcheck::outer::OuterClaim::Sum(f.zero()),
         &tau,
-        &a,
-        &b,
-        &c,
+        crate::sumcheck::outer::OuterSlices {
+            ax: &a,
+            bx: &b,
+            cx: &c,
+        },
+        None,
         &mut UngrindedRoundBoundary,
     )
     .unwrap();
@@ -526,14 +646,18 @@ fn zero_weighted_claim_does_not_imply_rowwise_zerocheck() {
     )
     .unwrap();
     assert_eq!(
-        prove_outer_zerocheck_from_slices(
+        crate::sumcheck::outer::prove_outer_sumcheck(
             &f,
             &mut Blake3Transcript::new(),
+            crate::sumcheck::outer::OuterClaim::RowwiseZero,
             &tau,
-            &a,
-            &b,
-            &c,
-            &mut UngrindedRoundBoundary
+            crate::sumcheck::outer::OuterSlices {
+                ax: &a,
+                bx: &b,
+                cx: &c
+            },
+            None,
+            &mut UngrindedRoundBoundary,
         )
         .unwrap_err(),
         SumcheckError::InvalidTerminalClaim
@@ -635,24 +759,31 @@ fn parallel_first_fold_matches_serial_and_allows_concurrent_proofs() {
             let prove = || {
                 let mut prover = Blake3Transcript::new();
                 let out = if zero {
-                    prove_outer_zerocheck_from_slices(
+                    crate::sumcheck::outer::prove_outer_sumcheck(
                         &f,
                         &mut prover,
+                        crate::sumcheck::outer::OuterClaim::RowwiseZero,
                         &tau,
-                        &a,
-                        &b,
-                        &c,
+                        crate::sumcheck::outer::OuterSlices {
+                            ax: &a,
+                            bx: &b,
+                            cx: &c,
+                        },
+                        None,
                         &mut UngrindedRoundBoundary,
                     )
                 } else {
-                    prove_outer_sumcheck_from_slices(
+                    crate::sumcheck::outer::prove_outer_sumcheck(
                         &f,
                         &mut prover,
-                        f.zero(),
+                        crate::sumcheck::outer::OuterClaim::Sum(f.zero()),
                         &tau,
-                        &a,
-                        &b,
-                        &c,
+                        crate::sumcheck::outer::OuterSlices {
+                            ax: &a,
+                            bx: &b,
+                            cx: &c,
+                        },
+                        None,
                         &mut UngrindedRoundBoundary,
                     )
                 }
@@ -739,7 +870,7 @@ fn bounded_product_reduction_matches_biguint_across_fast_path_boundary() {
 }
 
 #[test]
-fn production_adapters_match_retained_ordinary_arithmetic() {
+fn row_storage_matches_retained_ordinary_arithmetic() {
     use crate::piop::spartan::raw_monty::make_equality_factors_raw;
     use arithmetic::{NativeInput, NativeProducts, NativeWideProducts};
     use field::WideMul;
@@ -779,7 +910,30 @@ fn production_adapters_match_retained_ordinary_arithmetic() {
                 lo128[0] -= 1;
                 eq_table(&tau, &f).unwrap()[0]
             };
+            let a4096: Vec<_> = (0..rows)
+                .map(|i| {
+                    Uint::<64>::from_words(core::array::from_fn(|j| u64::MAX - (i + j) as u64))
+                })
+                .collect();
+            let mut c4096 = a4096.clone();
+            if !known_zero {
+                c4096[0] = c4096[0].wrapping_sub(&Uint::ONE);
+            }
+            let large = OuterInputs {
+                ax: a4096,
+                bx: vec![Uint::<64>::ONE; rows],
+                cx: c4096,
+            };
+            let signed = OuterInputs {
+                ax: vec![Z::<2>::from(-7i128); rows],
+                bx: vec![Z::<2>::ONE; rows],
+                cx: (0..rows)
+                    .map(|i| Z::<4>::from(-7i128 - i128::from(!known_zero && i == 0)))
+                    .collect(),
+            };
             for input in [
+                NativeInput::Integers4096(large.clone()),
+                NativeInput::Signed128(signed.clone()),
                 NativeInput::U32(NativeProducts {
                     az: &a32,
                     bz: &b32,
@@ -798,15 +952,38 @@ fn production_adapters_match_retained_ordinary_arithmetic() {
                     &tau,
                     low.clone(),
                     high.clone(),
-                    input,
+                    input.clone(),
                     known_zero,
                 )
                 .unwrap();
                 let mut actual_t = Blake3Transcript::new();
-                let actual = if known_zero {
-                    arithmetic::prove_native_zerocheck(&mut actual_t, &f, &tau, low, high, input)
+                let mode = if known_zero {
+                    OuterClaim::RowwiseZero
                 } else {
-                    arithmetic::prove_native(&mut actual_t, &f, &f, claim, &tau, low, high, input)
+                    OuterClaim::Sum(claim)
+                };
+                let factors = Some(arithmetic::factors_from_raw(&f, low, high));
+                macro_rules! prove {
+                    ($rows:expr) => {
+                        prove_outer_sumcheck(
+                            &f,
+                            &mut actual_t,
+                            mode,
+                            &tau,
+                            $rows,
+                            factors,
+                            &mut UngrindedRoundBoundary,
+                        )
+                        .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
+                    };
+                }
+                let actual = match input {
+                    NativeInput::Integers4096(rows) => prove!(rows),
+                    NativeInput::Signed128(rows) => prove!(rows),
+                    NativeInput::U32(rows) => prove!(rows),
+                    NativeInput::U64(rows) => prove!(rows),
+                    NativeInput::U128(rows) => prove!(rows),
+                    NativeInput::Residues(_) => unreachable!("not an integer fixture"),
                 }
                 .unwrap();
                 assert_eq!(actual, expected);
@@ -836,14 +1013,17 @@ fn skip_zero_one_coordinates_vanishing_scale_and_grinding() {
             .collect();
         let tau = [f.one(), f.zero()];
         let prepared = prepare_univariate_skip(&f, k).unwrap();
-        let out = prove_outer_zerocheck_with_skip_from_slices(
+        let out = crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
             &f,
             &mut ZeroChallenges,
             &prepared,
             &tau,
-            &a,
-            &b,
-            &c,
+            crate::sumcheck::outer::OuterSlices {
+                ax: &a,
+                bx: &b,
+                cx: &c,
+            },
+            None,
             &mut UngrindedRoundBoundary,
         )
         .unwrap();
@@ -862,14 +1042,17 @@ fn skip_zero_one_coordinates_vanishing_scale_and_grinding() {
         .unwrap();
         let mut prover = Blake3Transcript::new();
         let mut boundary = ProverGrindingRoundBoundary::<Domain>::with_round_offset(3, 0);
-        let out = prove_outer_zerocheck_with_skip_from_slices(
+        let out = crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
             &f,
             &mut prover,
             &prepared,
             &tau,
-            &a,
-            &b,
-            &c,
+            crate::sumcheck::outer::OuterSlices {
+                ax: &a,
+                bx: &b,
+                cx: &c,
+            },
+            None,
             &mut boundary,
         )
         .unwrap();
@@ -924,14 +1107,17 @@ fn skip_all_k_serial_parallel_proofs_and_transcripts_match() {
         let prepared = prepare_univariate_skip(&f, k).unwrap();
         let prove = || {
             let mut prover = Blake3Transcript::new();
-            let out = prove_outer_zerocheck_with_skip_from_slices(
+            let out = crate::sumcheck::outer::prove_outer_zerocheck_with_skip(
                 &f,
                 &mut prover,
                 &prepared,
                 &tau,
-                &a,
-                &b,
-                &c,
+                crate::sumcheck::outer::OuterSlices {
+                    ax: &a,
+                    bx: &b,
+                    cx: &c,
+                },
+                None,
                 &mut UngrindedRoundBoundary,
             )
             .unwrap();
@@ -952,4 +1138,55 @@ fn skip_all_k_serial_parallel_proofs_and_transcripts_match() {
         };
         assert_eq!(serial.install(prove), parallel.install(prove));
     }
+}
+
+#[test]
+fn direct_row_api_rejects_inconsistent_mle_metadata_before_absorption() {
+    let f = field();
+    let mut products = R1csProductMles {
+        az: DenseMultilinearExtension::from_evaluations_vec(2, vec![f.one(); 4], f.zero()),
+        bz: DenseMultilinearExtension::from_evaluations_vec(2, vec![f.one(); 4], f.zero()),
+        cz: DenseMultilinearExtension::from_evaluations_vec(2, vec![f.one(); 4], f.zero()),
+    };
+    // Lengths alone agree, but one MLE declares the wrong number of variables.
+    products.bz.num_vars = 1;
+    let mut t = Blake3Transcript::new();
+    let before = t.state_digest();
+    for claim in [OuterClaim::Sum(f.zero()), OuterClaim::RowwiseZero] {
+        assert_eq!(
+            prove_outer_sumcheck(
+                &f,
+                &mut t,
+                claim,
+                &[f.one(); 2],
+                &products,
+                None,
+                &mut UngrindedRoundBoundary
+            ),
+            Err(SumcheckError::InvalidProductDimensions)
+        );
+        assert_eq!(t.state_digest(), before);
+    }
+    let prepared = prepare_univariate_skip(&f, 1).unwrap();
+    assert_eq!(
+        prove_outer_zerocheck_with_skip(
+            &f,
+            &mut t,
+            &prepared,
+            &[f.one()],
+            &products,
+            None,
+            &mut UngrindedRoundBoundary
+        ),
+        Err(SumcheckError::InvalidProductDimensions)
+    );
+    assert_eq!(t.state_digest(), before);
+    let invalid = DenseMultilinearExtension {
+        num_vars: usize::MAX,
+        evaluations: vec![f.one()],
+    };
+    assert!(matches!(
+        EqualityFactors::from_mles((invalid, DenseMultilinearExtension::zero_vars(f.one())), &f),
+        Err(SumcheckError::InvalidEqualityDimensions)
+    ));
 }

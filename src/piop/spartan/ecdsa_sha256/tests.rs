@@ -104,23 +104,46 @@ fn map_matches_witness(exponent: u8) {
 }
 
 #[test]
-fn outer_raw_products_match_field_products() {
+fn outer_integer_rows_match_independent_field_products() {
     use crate::piop::spartan::f2z::SpartanF2zField as F;
 
     // Any prime above 2^64 exercises the native reduction; the sampled
     // 113-bit primes are covered by the pinned transcript.
     let modulus: u128 = (1u128 << 127) - 1;
     let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
-    let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+    use crate::sumcheck::outer::OuterRows;
+    use field::IntegerEmbedding;
     let (statement, message) = fixture();
     for mode in [OuterMode::Split, OuterMode::AllRows] {
         let prepared = prepare_sha256_ecdsa(3, 100, mode).unwrap();
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
         let field = witness.build_outer_product_mles(&prepared, modulus, &cfg);
-        let raw = witness.build_outer_raw_products(&prepared, &ctx);
-        assert_eq!(raw.az, ctx.raw_vec(&field.az.evaluations), "{mode:?} A");
-        assert_eq!(raw.bz, ctx.raw_vec(&field.bz.evaluations), "{mode:?} B");
-        assert_eq!(raw.cz, ctx.raw_vec(&field.cz.evaluations), "{mode:?} C");
+        let rows = witness.outer_integer_rows(&prepared);
+        assert_eq!(
+            rows.dimensions(),
+            (
+                field.az.evaluations.len(),
+                field.bz.evaluations.len(),
+                field.cz.evaluations.len()
+            )
+        );
+        for i in 0..field.az.evaluations.len() {
+            assert_eq!(
+                cfg.from_integer(&rows.a(i)),
+                field.az.evaluations[i],
+                "{mode:?} A row {i}"
+            );
+            assert_eq!(
+                cfg.from_integer(&rows.b(i)),
+                field.bz.evaluations[i],
+                "{mode:?} B row {i}"
+            );
+            assert_eq!(
+                cfg.from_integer(&rows.c(i)),
+                field.cz.evaluations[i],
+                "{mode:?} C row {i}"
+            );
+        }
     }
 }
 

@@ -1,8 +1,10 @@
 //! Encoded Montgomery storage and native kernels for the Spartan inner prover.
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
 use crate::piop::spartan::SpartanField as _;
+pub use crate::sumcheck::outer::arithmetic::NativeWideProducts;
+#[cfg(test)]
+pub use crate::sumcheck::outer::arithmetic::RawProducts;
 pub(crate) use crate::sumcheck::outer::arithmetic::*;
-pub use crate::sumcheck::outer::arithmetic::{NativeWideProducts, RawProducts};
 use crate::utils::delayed_reduction::EncodedMac;
 #[cfg(test)]
 use field::Uint;
@@ -12,20 +14,19 @@ use std::borrow::Cow;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(test)]
+use super::sumcheck::R1csProductMles;
 use crate::transcript::traits::Transcript;
 
 use super::{
-    absorb_field_elements,
     baby_bear_mul::{BABY_BEAR_MODULUS, BabyBearMulCoefficient},
     matrix::{
         BlockSelectorLayout, PrefixUnivariateRowFactors, PreparedConstraintMatrices,
         SpartanMatrixCoefficient,
     },
     sumcheck::{
-        InnerSumcheckOutput, R1csProductMles, RoundBoundaryPolicy, SumcheckError, SumcheckProof,
-        SumcheckProverOutput, UngrindedRoundBoundary,
+        InnerSumcheckOutput, SumcheckError, SumcheckProof, SumcheckProverOutput,
         recover_full_round_polynomial_and_sample_next_challenge,
-        recover_full_round_polynomial_and_sample_next_challenge_with_boundary,
     },
     u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
 };
@@ -83,8 +84,6 @@ pub trait RawFieldStorage {
     fn raw(&self, value: &Field) -> Raw;
     fn native_residue(&self, value: u64) -> Raw;
     fn native_residue_u128(&self, value: u128) -> Raw;
-    fn two_pow_128_residue(&self) -> Raw;
-    fn native_residue_u256(&self, low: u128, high: u128, two_pow_128: Raw) -> Raw;
     fn raw_vec(&self, values: &[Field]) -> Vec<Raw>;
     fn add_raw(&self, lhs: Raw, rhs: Raw) -> Raw;
     fn sub_raw(&self, lhs: Raw, rhs: Raw) -> Raw;
@@ -112,16 +111,6 @@ impl RawFieldStorage for field::FpCtx<2> {
     #[inline]
     fn native_residue_u128(&self, value: u128) -> Raw {
         raw_shared(field::IntegerEmbedding::from_integer(&self, &value))
-    }
-    #[inline]
-    fn two_pow_128_residue(&self) -> Raw {
-        let half = self.native_residue_u128(1_u128 << 127);
-        self.add_raw(half, half)
-    }
-    #[inline]
-    fn native_residue_u256(&self, low: u128, high: u128, two_pow_128: Raw) -> Raw {
-        let high = self.mul_raw(self.native_residue_u128(high), two_pow_128);
-        self.add_raw(self.native_residue_u128(low), high)
     }
     #[inline]
     fn raw_vec(&self, values: &[Field]) -> Vec<Raw> {
@@ -277,6 +266,7 @@ pub(crate) fn reduce_linear_pair(pair: LinearPair, reducer: &field::FpCtx<2>) ->
 }
 
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn accumulate_signed_raw(
     ctx: &field::FpCtx<2>,
     accumulator: &mut field::FpLinearAcc<2, 1>,
@@ -1823,8 +1813,8 @@ mod tests {
         },
         squeeze_field,
         sumcheck::{
-            prove_field_with_factors, prove_inner_sumcheck_u32_native_with_reducer,
-            prove_inner_sumcheck_with_reducer, prove_u32_first_round,
+            prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
+            prove_u32_first_round,
         },
         u32_mul::{U32MulLayout, u32_mul_constraint_matrices},
         univariate_skip::PrefixUnivariateRowBinding,
@@ -2134,15 +2124,22 @@ mod tests {
                 let claim = outer_claim(&cfg, &tau, &products);
 
                 let mut generic_transcript = Blake3Transcript::new();
-                let expected = prove_field_with_factors(
-                    &mut generic_transcript,
-                    claim.clone(),
-                    &tau,
+                let expected = crate::sumcheck::outer::EqualityFactors::from_mles(
                     make_equality_factors(&tau, &cfg).unwrap(),
-                    products.clone(),
                     &cfg,
-                    &generic_reducer,
                 )
+                .and_then(|factors| {
+                    crate::sumcheck::outer::prove_outer_sumcheck(
+                        &cfg,
+                        &mut generic_transcript,
+                        crate::sumcheck::outer::OuterClaim::Sum(claim.clone()),
+                        &tau,
+                        products.clone(),
+                        Some(factors),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                })
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
                 .unwrap();
 
                 let mut raw_transcript = Blake3Transcript::new();
@@ -2237,16 +2234,16 @@ mod tests {
 
                 let mut raw_transcript = Blake3Transcript::new();
                 let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
-                let actual = prove_native(
-                    &mut raw_transcript,
+                let actual = crate::sumcheck::outer::prove_outer_sumcheck(
                     &ctx,
-                    &reducer,
-                    claim,
+                    &mut raw_transcript,
+                    crate::sumcheck::outer::OuterClaim::Sum(claim),
                     &tau,
-                    eq_low,
-                    eq_high,
                     NativeProducts::from_mles(&products),
+                    Some(factors_from_raw(&ctx, eq_low, eq_high)),
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
                 )
+                .map(crate::sumcheck::proof::OuterSumcheckOutput::from)
                 .unwrap();
                 assert_eq!(actual, expected, "num_vars={num_vars} modulus={modulus:#x}");
                 assert_eq!(

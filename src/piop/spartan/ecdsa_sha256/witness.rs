@@ -3,7 +3,7 @@ use crate::piop::spartan::SpartanField as _;
 #[cfg(test)]
 use crate::piop::spartan::protocol::{FieldConfig as Config, SpartanF2zField as F};
 use circuit::{
-    integer_storage::IntegerTable,
+    integer_storage::IntegerTableView,
     matrix_products::IntegerProducts,
     p256, sha256,
     witgen::{PackedWitness, ProductWitgen, Witgen},
@@ -18,10 +18,7 @@ use super::{
     Result, error,
     relation::{OuterMode, P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
 };
-use crate::{
-    pcs::IntegerMatrixLayout,
-    piop::spartan::raw_monty::{Raw, RawProducts},
-};
+use crate::{pcs::IntegerMatrixLayout, sumcheck::outer::OuterRows};
 
 /// Packed source and virtual assignment, with exact P-256 row operands.
 pub struct Sha256EcdsaWitness {
@@ -32,65 +29,38 @@ pub struct Sha256EcdsaWitness {
 }
 
 impl Sha256EcdsaWitness {
-    /// Raw residue tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`
-    /// over the outer sumcheck's row space: the exact two's-complement row
-    /// products reduced natively (Horner over their words), rows in
-    /// parallel. Residue-for-residue the tables of
-    /// [`Self::build_outer_product_mles`].
-    pub(super) fn build_outer_raw_products(
-        &self,
-        prepared: &PreparedSha256Ecdsa,
-        ctx: &field::FpCtx<2>,
-    ) -> RawProducts {
-        let len = 1usize << prepared.outer_sumcheck_num_vars();
+    /// Borrow exact P-256 rows; SHA and padding rows are structural zeros.
+    pub(super) fn outer_integer_rows<'a>(
+        &'a self,
+        prepared: &'a PreparedSha256Ecdsa,
+    ) -> impl OuterRows<AB = field::Z<5>, C = field::Z<9>> + 'a {
         let products = [
             &self.products.a_mw,
             &self.products.b_mw,
             &self.products.c_mw,
         ];
-        let max_words = products
-            .iter()
-            .map(|values| values.max_limbs())
-            .max()
-            .unwrap_or(0);
-        let field = field::create_prime_field(field::Uint::from_words(*ctx.modulus().as_words()));
-        let projection = field::PreparedSignedProjection::new(field, max_words);
-        // Split mode packs the nonlinear rows at the front; all-row mode
-        // places every local row after the (identically zero) SHA rows.
-        let (offset, rows): (usize, Option<&[usize]>) = match prepared.mode {
-            OuterMode::Split => (0, Some(&prepared.local.nonlinear)),
+        // The P-256 circuit records signed nine-word rows. Check declared
+        // storage widths, never private values, before entering the hot loop.
+        assert!(
+            products
+                .iter()
+                .all(|p| p.max_limbs() <= 9 && p.len() == prepared.local.rows())
+        );
+        let (offset, selection) = match prepared.mode {
+            OuterMode::Split => (0, Some(prepared.local.nonlinear.as_slice())),
             OuterMode::AllRows => (256 * prepared.compressions(), None),
         };
-        let count = rows.map_or(prepared.local.rows(), <[usize]>::len);
-        let convert = |values: &IntegerTable| -> Vec<Raw> {
-            let values = values.view();
-            let residue = |i: usize| {
-                let source = rows.map_or(i, |rows| rows[i]);
-                {
-                    let value = projection.project(&values[source]);
-                    let words = value.as_montgomery_integer().as_words();
-                    Raw::from(words[0]) | (Raw::from(words[1]) << 64)
-                }
-            };
-            let mut table = vec![0 as Raw; len];
-            #[cfg(feature = "parallel")]
-            table[offset..offset + count]
-                .par_iter_mut()
-                .with_min_len(256)
-                .enumerate()
-                .for_each(|(i, slot)| *slot = residue(i));
-            #[cfg(not(feature = "parallel"))]
-            for (i, slot) in table[offset..offset + count].iter_mut().enumerate() {
-                *slot = residue(i);
-            }
-            table
-        };
-        let [az, bz, cz] = products.map(|values| convert(values));
-        RawProducts { az, bz, cz }
+        EcdsaOuterRows {
+            products: products.map(|p| p.view()),
+            selection,
+            offset,
+            count: selection.map_or(prepared.local.rows(), <[usize]>::len),
+            rows: 1 << prepared.outer_sumcheck_num_vars(),
+        }
     }
 
     /// MLE tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`: the
-    /// reference (BigInt) form of [`Self::build_outer_raw_products`].
+    /// independent BigInt projection used only by differential tests.
     #[cfg(test)]
     pub(super) fn build_outer_product_mles(
         &self,
@@ -150,6 +120,51 @@ impl Sha256EcdsaWitness {
     pub(crate) fn h_bit(&self, index: usize, p: &IntegerMatrixLayout) -> u64 {
         let row = index & (p.rows() - 1);
         (self.h_rows[index >> p.row_vars][row / 64] >> (row % 64)) & 1
+    }
+}
+
+struct EcdsaOuterRows<'a> {
+    products: [IntegerTableView<'a>; 3],
+    selection: Option<&'a [usize]>,
+    offset: usize,
+    count: usize,
+    rows: usize,
+}
+impl EcdsaOuterRows<'_> {
+    #[inline]
+    fn read<const N: usize>(&self, table: usize, row: usize) -> field::Z<N> {
+        if row < self.offset || row - self.offset >= self.count {
+            return field::Z::ZERO;
+        }
+        let row = row - self.offset;
+        let source = self.selection.map_or(row, |indices| indices[row]);
+        let words = &self.products[table][source];
+        let sign = 0u64.wrapping_sub(words[words.len() - 1] >> 63);
+        // build_local checks the public A/B row norms fit Z<5>; C retains
+        // its declared nine limbs. Truncation here never depends on values.
+        let mut extended = [sign; N];
+        let count = words.len().min(N);
+        extended[..count].copy_from_slice(&words[..count]);
+        field::Z::from_twos_complement_words(extended)
+    }
+}
+impl OuterRows for EcdsaOuterRows<'_> {
+    type AB = field::Z<5>;
+    type C = field::Z<9>;
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (self.rows, self.rows, self.rows)
+    }
+    #[inline]
+    fn a(&self, row: usize) -> Self::AB {
+        self.read(0, row)
+    }
+    #[inline]
+    fn b(&self, row: usize) -> Self::AB {
+        self.read(1, row)
+    }
+    #[inline]
+    fn c(&self, row: usize) -> Self::C {
+        self.read(2, row)
     }
 }
 

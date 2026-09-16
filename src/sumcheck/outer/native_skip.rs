@@ -1,5 +1,7 @@
-//! Borrowed native-u32 adapter to the generic prefix and ordinary engine.
-use crate::piop::spartan::raw_monty::{NativeProducts, Raw};
+//! Borrowed native integer adapter to the generic prefix and ordinary engine.
+#[cfg(test)]
+use crate::piop::spartan::raw_monty::NativeProducts;
+use crate::piop::spartan::raw_monty::Raw;
 use crate::sumcheck::SumcheckError;
 type Field = field::Fp<2>;
 type FieldConfig = field::FpCtx<2>;
@@ -8,38 +10,6 @@ type FieldConfig = field::FpCtx<2>;
 mod reference;
 #[cfg(test)]
 pub(crate) use reference::*;
-
-/// Native-u32 adapter; the containing R1CS prover establishes the width bound.
-pub(crate) fn prove_native_skip(
-    transcript: &mut impl crate::transcript::traits::Transcript,
-    field: &FieldConfig,
-    skip_vars: u8,
-    tau_tail: &[Field],
-    low: Vec<Raw>,
-    high: Vec<Raw>,
-    products: NativeProducts<'_>,
-) -> Result<super::univariate::UnivariateSkipOuterSumcheckOutput<Field>, SumcheckError> {
-    let k = usize::from(skip_vars);
-    if !(1..=4).contains(&k)
-        || !products.len().is_power_of_two()
-        || products.len().ilog2() as usize != k + tau_tail.len()
-        || products.bz.len() != products.len()
-        || products.cz.len() != products.len()
-    {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    let prepared = super::prepare_univariate_skip(field, skip_vars)?;
-    let out = super::univariate_api::prove_skip_from_rows(
-        field,
-        transcript,
-        &prepared,
-        tau_tail,
-        &products,
-        Some(super::arithmetic::factors_from_raw(field, low, high)),
-        &mut crate::sumcheck::UngrindedRoundBoundary,
-    )?;
-    Ok(out.into())
-}
 
 /// Retained integer interpolation reference for differential tests.
 #[cfg(test)]
