@@ -1010,10 +1010,10 @@ fn drive_grouped<'a>(
                 }
                 gs
             };
-            // Flat-store layers: marker groups only — the shared point
-            // rides on group 0 (ONE clone per layer instead of 2^s), the
-            // scales are the same eq weights, and the store carries every
-            // segment (the const tail included).
+            // Flat-store layers: group 0 borrows the shared point; the
+            // remaining marker groups use empty slices. Scales are the same
+            // eq weights, and the store carries every segment, including
+            // the const tail.
             let mk_groups_flat = |nseg: usize| -> Vec<EqInnerGroupMixed<'_, Gf>> {
                 (0..nseg)
                     .map(|c| EqInnerGroupMixed {

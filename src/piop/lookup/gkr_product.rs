@@ -413,10 +413,10 @@ where
             let groups = {
                 let _g = tracing::info_span!("gkr:groups").entered();
                 // Prefix scales ρ^t (sequential prefix product — `active` muls),
-                // then build the per-tree groups in parallel: each clones its
-                // point and MOVES its layer halves into the fold buffers —
-                // layers are stored pre-split ([`LayerHalves`]), so the handoff
-                // is allocation- and memcpy-free.
+                // then build the per-tree groups in parallel. Each borrows
+                // its point and either moves pre-split dense halves
+                // ([`LayerHalves`]) or borrows callback-owned leaf bits, so
+                // handing off these buffers needs no allocation or memcpy.
                 let mut scales = Vec::with_capacity(active);
                 let mut scale = one.clone();
                 for _ in 0..active {

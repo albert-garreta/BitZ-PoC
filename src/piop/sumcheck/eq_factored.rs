@@ -2558,9 +2558,8 @@ where
             .iter()
             .all(|arena| arena.len() == k && arena.is_empty() == (k == 0))
     );
-    // Destructure once — the groups are consumed here anyway, so the
-    // per-group `q` vectors move instead of cloning (2^s clones per layer
-    // otherwise; byte-identical).
+    // Consume the groups so each equality point keeps its owned or borrowed
+    // storage without cloning.
     let num_groups = groups.len();
     let mut qs: Vec<std::borrow::Cow<'_, [F]>> = Vec::with_capacity(num_groups);
     let mut scales: Vec<F> = Vec::with_capacity(num_groups);
