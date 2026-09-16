@@ -12657,7 +12657,7 @@ where
     let rho_tables = phi_byte_tables(rho, Gf::one());
     let coefficient_tables = {
         let _g = tracing::info_span!("mqv:vrho").entered();
-        RhoTables::new(rho, &rho_tables)
+        RhoTables::new(rho)
     };
     let mut basis = vec![Gf::zero(); n_packs];
     {

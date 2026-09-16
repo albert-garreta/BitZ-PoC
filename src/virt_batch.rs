@@ -282,9 +282,8 @@ pub(crate) struct RhoTables {
 }
 
 impl RhoTables {
-    /// `rho` are the 128 batching weights and `rho_tables` their
-    /// [`phi_byte_tables`] with scale one.
-    pub(crate) fn new(rho: &[Gf], rho_tables: &[Gf]) -> Self {
+    /// Build coefficient tables for the 128 batching weights.
+    pub(crate) fn new(rho: &[Gf]) -> Self {
         debug_assert_eq!(rho.len(), PACK);
         // `C_{u,a} = Σ_b ρ_b·bit_a(X^u·A(e_b)) = Φ_ρ(X^u·A(e_a))`: the pairing
         // `bit_a(g·A(e_b)) = c₀(g·A(e_b)·A(e_a))` is symmetric in `a` and `b`.
@@ -316,7 +315,6 @@ impl RhoTables {
         let c: Vec<[Gf; PACK]> = (0..PACK)
             .map(|u| core::array::from_fn(|a| by_a[a][u]))
             .collect();
-        let _ = rho_tables;
         let flat: Vec<Gf> = c.iter().flat_map(|row| row.iter().copied()).collect();
         let mut t = vec![Gf::zero(); 16 * 256 * PACK];
         cfg_chunks_mut!(t, 256 * PACK)
@@ -722,7 +720,7 @@ impl PackedSourcePlanes {
             "flock messages are even-sized"
         );
         let rho_tables = phi_byte_tables(rho, Gf::one());
-        let coefficient_tables = RhoTables::new(rho, &rho_tables);
+        let coefficient_tables = RhoTables::new(rho);
         let mut out = vec![Gf::zero(); n_packs];
         let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(out, TASK_PACKS)
             .enumerate()
@@ -1372,8 +1370,7 @@ mod tests {
     fn affine_tail_planes_match_cellwise_sum() {
         let cols = dual_basis_cols();
         let rho: Vec<Gf> = (0..PACK).map(|i| sample(0x1_0000 + i as u64)).collect();
-        let rho_tables = phi_byte_tables(&rho, Gf::one());
-        let coefficient_tables = RhoTables::new(&rho, &rho_tables);
+        let coefficient_tables = RhoTables::new(&rho);
         let phi = |x: Gf| -> Gf {
             let w = x.as_words();
             let mut acc = Gf::zero();
@@ -1463,8 +1460,7 @@ mod tests {
     #[test]
     fn affine_tail_lookup_matches_products() {
         let rho: Vec<Gf> = (0..PACK).map(|i| sample(0x5_0000 + i as u64)).collect();
-        let rho_tables = phi_byte_tables(&rho, Gf::one());
-        let coefficient_tables = RhoTables::new(&rho, &rho_tables);
+        let coefficient_tables = RhoTables::new(&rho);
         let mut trial = 0u64;
         for t in [7usize, 9] {
             let rows = 1usize << t;
@@ -1506,8 +1502,7 @@ mod tests {
     #[test]
     fn rho_tables_match_transpose() {
         let rho: Vec<Gf> = (0..PACK).map(|i| sample(0xD000 + i as u64)).collect();
-        let rho_tables = phi_byte_tables(&rho, Gf::one());
-        let tables = RhoTables::new(&rho, &rho_tables);
+        let tables = RhoTables::new(&rho);
         let mut got = vec![Gf::zero(); PACK];
         for t in 0..8u64 {
             let e = sample(0xE000 + t);

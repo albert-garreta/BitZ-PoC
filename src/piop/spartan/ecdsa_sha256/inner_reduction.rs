@@ -264,7 +264,7 @@ impl<'a> ModQCoefficients<'a> {
         cfg: &Config,
     ) -> Result<BatchedMatrixMle> {
         let _scope = tracing::info_span!("ecdsa:coefficient_combine").entered();
-        let weights = self.build_row_weights(relation, claim, cfg)?;
+        let weights = self.build_row_weights(relation, claim);
         let mut tail = self.tape_tail(relation, &weights.matrix_rows)?;
         // The runs describe the tape's output; the public-bit cells are adjusted
         // below, so every run is split around them (the cells become unstructured).
@@ -327,7 +327,7 @@ impl<'a> ModQCoefficients<'a> {
         let ctx = &self.ctx;
         let weights = {
             let _scope = tracing::info_span!("ecdsa:ce_rows").entered();
-            self.build_row_weights(relation, claim, cfg)?
+            self.build_row_weights(relation, claim)
         };
         let (instances, sha) = {
             let _scope = tracing::info_span!("ecdsa:ce_sha_factors").entered();
@@ -438,8 +438,7 @@ impl<'a> ModQCoefficients<'a> {
         &self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        _cfg: &Config,
-    ) -> Result<RowWeights> {
+    ) -> RowWeights {
         let ctx = &self.ctx;
         let linear = RawEqualityWeights::new(ctx, &claim.linear_row_point);
         let outer = RawEqualityWeights::new(ctx, &claim.outer_row_point);
@@ -476,11 +475,11 @@ impl<'a> ModQCoefficients<'a> {
         let public_bits = (0..1024)
             .map(|bit| ctx.mul_raw(linear.at(public_start + 1 + bit), linear_batch))
             .collect();
-        Ok(RowWeights {
+        RowWeights {
             matrix_rows,
             public_bits,
             constant,
-        })
+        }
     }
 
     /// [`Self::build_row_weights`] with the equality weights and the products
@@ -1034,9 +1033,7 @@ mod tests {
             )
             .unwrap();
             let mut coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
-            let weights = coefficients
-                .build_row_weights(&relation, &claim, &cfg)
-                .unwrap();
+            let weights = coefficients.build_row_weights(&relation, &claim);
             let tape = coefficients
                 .tape_tail(&relation, &weights.matrix_rows)
                 .unwrap();
@@ -1163,9 +1160,7 @@ mod tests {
                 .unwrap();
                 let coefficients = ModQCoefficients::from_relation(&relation, modulus, &cfg);
                 let ctx = &coefficients.ctx;
-                let raw = coefficients
-                    .build_row_weights(&relation, &claim, &cfg)
-                    .unwrap();
+                let raw = coefficients.build_row_weights(&relation, &claim);
                 let field = coefficients
                     .build_row_weights_field(&relation, &claim, &cfg)
                     .unwrap();
