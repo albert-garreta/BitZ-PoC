@@ -175,3 +175,16 @@ parity test was added; the ECDSA 128-bit profile proof/extra-nonce test passed;
 the field crate suite and the added multi-round fold test passed.
 `cargo check --lib --features ecdsa,span-metrics` passed. Existing repository
 warnings remain. No x86 or peak-memory result is claimed.
+
+### Generic API parallelism
+
+The generic native-to-field first fold uses disjoint Rayon output chunks above
+the existing parallel cutoff. Transcript operations remain sequential; the skip
+prefix and native production kernels are unchanged. The [optimization report](../../experiments/outer-optimizations-20260915/README.md)
+records latency, allocation, and proof-parity comparisons, including the fusion,
+prefix-parallelism, and scratch-reuse prototypes that were not retained.
+
+The stronger [pre-unification comparison](../../experiments/outer-regression-a3450385/README.md)
+against `a3450385` found substantial regressions when the public generic API
+replaces specialized kernels. The generic-before/after gains above do not qualify
+it as a performance-equivalent replacement for the production paths.

@@ -9,6 +9,8 @@ use crate::sumcheck::{
 };
 use crate::transcript::traits::Transcript;
 use field::{FieldOps, FoldPairs, Reduce, RingOps, WideMul};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// A and B have the same input type; C can hold wider exact products.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -321,9 +323,33 @@ where
     };
     let challenge = state.sample(field, transcript, tau, &coefficients, boundary)?;
     let mut products = R1csProductTableBuffers::filled(ax.len() / 2, &field.zero());
-    field.fold_pairs_into(ax, &mut products.az, &challenge);
-    field.fold_pairs_into(bx, &mut products.bz, &challenge);
-    field.fold_pairs_into(cx, &mut products.cz, &challenge);
+    // Keep native-to-field conversion inside the fold. Each worker owns
+    // disjoint output ranges for all three tables, with one parallel join.
+    let fold = |start: usize, a: &mut [F::Elem], b: &mut [F::Elem], c: &mut [F::Elem]| {
+        let end = start + 2 * a.len();
+        field.fold_pairs_into(&ax[start..end], a, &challenge);
+        field.fold_pairs_into(&bx[start..end], b, &challenge);
+        field.fold_pairs_into(&cx[start..end], c, &challenge);
+    };
+    #[cfg(feature = "parallel")]
+    let parallel = crate::sumcheck::arithmetic::should_parallelize(ax.len() / 4);
+    #[cfg(not(feature = "parallel"))]
+    let parallel = false;
+    #[cfg(feature = "parallel")]
+    if parallel {
+        const OUTPUT_CHUNK: usize = 2048;
+        (
+            products.az.par_chunks_mut(OUTPUT_CHUNK),
+            products.bz.par_chunks_mut(OUTPUT_CHUNK),
+            products.cz.par_chunks_mut(OUTPUT_CHUNK),
+        )
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(i, (a, b, c))| fold(2 * i * OUTPUT_CHUNK, a, b, c));
+    }
+    if !parallel {
+        fold(0, &mut products.az, &mut products.bz, &mut products.cz);
+    }
     Ok((state, factors, products))
 }
 

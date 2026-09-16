@@ -1,0 +1,30 @@
+{
+  "baseline": "a3450385e2a90115add370a3c05e5127db0b3a87",
+  "current_head": "ef7a8935d7275ccbeb8f10b2f8216491f28d9184",
+  "toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "cpu": "Apple M1 Max",
+  "ram_bytes": 68719476736,
+  "profile": "bench; fat LTO; one codegen unit",
+  "features": [
+    "parallel",
+    "bench-internals"
+  ],
+  "field_modulus": "1267650600228229401496703205361",
+  "seed": "0xa3450385 XOR log2(rows) XOR operand_bits",
+  "smoke_matching_cases": 60,
+  "smoke_verified_proofs": 360,
+  "binary_sha256": {
+    "baseline": "7eebc66010c4e8d3642326f88216dbee20e4129e3510531075429a01fbfbc258",
+    "current": "98c020e3d988f9676b33302d5fb3df9f487b9b18ca9f7746642b44fcb58d717f"
+  },
+  "qualification": "Failed: generic regressions; production not uniformly faster; residual production timing warnings documented.",
+  "supplemental_trace": {
+    "runs": 528,
+    "spans": 528,
+    "rows": 131072,
+    "protocols": [
+      "ordinary",
+      "skip-3"
+    ]
+  }
+}

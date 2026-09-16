@@ -1,0 +1,3421 @@
+{
+  "schema": "zkperf.report/v1",
+  "series": [
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u128-ordinary-baseline-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-ordinary-baseline-session1",
+      "measuredN": 21,
+      "medianTotalMs": 2.670792,
+      "medianTotalMsExact": "2.670792",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.595500",
+            "p20": "2.599042",
+            "p30": "2.622500",
+            "p40": "2.666250",
+            "p50": "2.670792",
+            "p60": "2.687041",
+            "p70": "2.709250",
+            "p80": "2.720792",
+            "p90": "2.737625"
+          },
+          "medianMsExact": "2.670792",
+          "medianNs": "2670792",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.595500",
+            "p20": "2.599042",
+            "p30": "2.622500",
+            "p40": "2.666250",
+            "p50": "2.670792",
+            "p60": "2.687041",
+            "p70": "2.709250",
+            "p80": "2.720792",
+            "p90": "2.737625"
+          },
+          "medianMsExact": "2.670792",
+          "medianNs": "2670792",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.595500",
+            "p20": "2.599042",
+            "p30": "2.622500",
+            "p40": "2.666250",
+            "p50": "2.670792",
+            "p60": "2.687041",
+            "p70": "2.709250",
+            "p80": "2.720792",
+            "p90": "2.737625"
+          },
+          "medianMsExact": "2.670792",
+          "medianNs": "2670792",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-ordinary-baseline-session1-2",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.595500",
+          "p20": "2.599042",
+          "p30": "2.622500",
+          "p40": "2.666250",
+          "p50": "2.670792",
+          "p60": "2.687041",
+          "p70": "2.709250",
+          "p80": "2.720792",
+          "p90": "2.737625"
+        },
+        "endMs": 2.670792,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "2.670792",
+        "medianN": 21,
+        "medianNs": "2670792",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "2.670792",
+        "representativeNs": "2670792",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-ordinary-baseline-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u128-ordinary-baseline-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-ordinary-baseline-session2",
+      "measuredN": 21,
+      "medianTotalMs": 2.6195,
+      "medianTotalMsExact": "2.619500",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.581292",
+            "p20": "2.586292",
+            "p30": "2.599000",
+            "p40": "2.605167",
+            "p50": "2.619500",
+            "p60": "2.648000",
+            "p70": "2.668291",
+            "p80": "2.681625",
+            "p90": "2.701916"
+          },
+          "medianMsExact": "2.619500",
+          "medianNs": "2619500",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.581292",
+            "p20": "2.586292",
+            "p30": "2.599000",
+            "p40": "2.605167",
+            "p50": "2.619500",
+            "p60": "2.648000",
+            "p70": "2.668291",
+            "p80": "2.681625",
+            "p90": "2.701916"
+          },
+          "medianMsExact": "2.619500",
+          "medianNs": "2619500",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.581292",
+            "p20": "2.586292",
+            "p30": "2.599000",
+            "p40": "2.605167",
+            "p50": "2.619500",
+            "p60": "2.648000",
+            "p70": "2.668291",
+            "p80": "2.681625",
+            "p90": "2.701916"
+          },
+          "medianMsExact": "2.619500",
+          "medianNs": "2619500",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-ordinary-baseline-session2-8",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.581292",
+          "p20": "2.586292",
+          "p30": "2.599000",
+          "p40": "2.605167",
+          "p50": "2.619500",
+          "p60": "2.648000",
+          "p70": "2.668291",
+          "p80": "2.681625",
+          "p90": "2.701916"
+        },
+        "endMs": 2.6195,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "2.619500",
+        "medianN": 21,
+        "medianNs": "2619500",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "2.619500",
+        "representativeNs": "2619500",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-ordinary-baseline-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u128-ordinary-generic-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-ordinary-generic-session1",
+      "measuredN": 21,
+      "medianTotalMs": 3.219083,
+      "medianTotalMsExact": "3.219083",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "3.154875",
+            "p20": "3.163417",
+            "p30": "3.177458",
+            "p40": "3.207541",
+            "p50": "3.219083",
+            "p60": "3.239833",
+            "p70": "3.274709",
+            "p80": "3.288709",
+            "p90": "3.365292"
+          },
+          "medianMsExact": "3.219083",
+          "medianNs": "3219083",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "3.154875",
+            "p20": "3.163417",
+            "p30": "3.177458",
+            "p40": "3.207541",
+            "p50": "3.219083",
+            "p60": "3.239833",
+            "p70": "3.274709",
+            "p80": "3.288709",
+            "p90": "3.365292"
+          },
+          "medianMsExact": "3.219083",
+          "medianNs": "3219083",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "3.154875",
+            "p20": "3.163417",
+            "p30": "3.177458",
+            "p40": "3.207541",
+            "p50": "3.219083",
+            "p60": "3.239833",
+            "p70": "3.274709",
+            "p80": "3.288709",
+            "p90": "3.365292"
+          },
+          "medianMsExact": "3.219083",
+          "medianNs": "3219083",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-ordinary-generic-session1-1",
+      "root": {
+        "decilesMsExact": {
+          "p10": "3.154875",
+          "p20": "3.163417",
+          "p30": "3.177458",
+          "p40": "3.207541",
+          "p50": "3.219083",
+          "p60": "3.239833",
+          "p70": "3.274709",
+          "p80": "3.288709",
+          "p90": "3.365292"
+        },
+        "endMs": 3.219083,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "3.219083",
+        "medianN": 21,
+        "medianNs": "3219083",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "3.219083",
+        "representativeNs": "3219083",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-ordinary-generic-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u128-ordinary-generic-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-ordinary-generic-session2",
+      "measuredN": 21,
+      "medianTotalMs": 3.228958,
+      "medianTotalMsExact": "3.228958",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "3.129250",
+            "p20": "3.180125",
+            "p30": "3.207167",
+            "p40": "3.213375",
+            "p50": "3.228958",
+            "p60": "3.285542",
+            "p70": "3.294833",
+            "p80": "3.415375",
+            "p90": "3.608000"
+          },
+          "medianMsExact": "3.228958",
+          "medianNs": "3228958",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "3.129250",
+            "p20": "3.180125",
+            "p30": "3.207167",
+            "p40": "3.213375",
+            "p50": "3.228958",
+            "p60": "3.285542",
+            "p70": "3.294833",
+            "p80": "3.415375",
+            "p90": "3.608000"
+          },
+          "medianMsExact": "3.228958",
+          "medianNs": "3228958",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "3.129250",
+            "p20": "3.180125",
+            "p30": "3.207167",
+            "p40": "3.213375",
+            "p50": "3.228958",
+            "p60": "3.285542",
+            "p70": "3.294833",
+            "p80": "3.415375",
+            "p90": "3.608000"
+          },
+          "medianMsExact": "3.228958",
+          "medianNs": "3228958",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-ordinary-generic-session2-11",
+      "root": {
+        "decilesMsExact": {
+          "p10": "3.129250",
+          "p20": "3.180125",
+          "p30": "3.207167",
+          "p40": "3.213375",
+          "p50": "3.228958",
+          "p60": "3.285542",
+          "p70": "3.294833",
+          "p80": "3.415375",
+          "p90": "3.608000"
+        },
+        "endMs": 3.228958,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "3.228958",
+        "medianN": 21,
+        "medianNs": "3228958",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "3.228958",
+        "representativeNs": "3228958",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-ordinary-generic-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u128-skip-3-baseline-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-skip-3-baseline-session1",
+      "measuredN": 21,
+      "medianTotalMs": 25.388,
+      "medianTotalMsExact": "25.388000",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "25.248375",
+            "p20": "25.306167",
+            "p30": "25.313834",
+            "p40": "25.350958",
+            "p50": "25.388000",
+            "p60": "25.395541",
+            "p70": "25.441833",
+            "p80": "25.525459",
+            "p90": "25.599875"
+          },
+          "medianMsExact": "25.388000",
+          "medianNs": "25388000",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "25.248375",
+            "p20": "25.306167",
+            "p30": "25.313834",
+            "p40": "25.350958",
+            "p50": "25.388000",
+            "p60": "25.395541",
+            "p70": "25.441833",
+            "p80": "25.525459",
+            "p90": "25.599875"
+          },
+          "medianMsExact": "25.388000",
+          "medianNs": "25388000",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "25.248375",
+            "p20": "25.306167",
+            "p30": "25.313834",
+            "p40": "25.350958",
+            "p50": "25.388000",
+            "p60": "25.395541",
+            "p70": "25.441833",
+            "p80": "25.525459",
+            "p90": "25.599875"
+          },
+          "medianMsExact": "25.388000",
+          "medianNs": "25388000",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-skip-3-baseline-session1-1",
+      "root": {
+        "decilesMsExact": {
+          "p10": "25.248375",
+          "p20": "25.306167",
+          "p30": "25.313834",
+          "p40": "25.350958",
+          "p50": "25.388000",
+          "p60": "25.395541",
+          "p70": "25.441833",
+          "p80": "25.525459",
+          "p90": "25.599875"
+        },
+        "endMs": 25.388,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "25.388000",
+        "medianN": 21,
+        "medianNs": "25388000",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "25.388000",
+        "representativeNs": "25388000",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-skip-3-baseline-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u128-skip-3-baseline-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-skip-3-baseline-session2",
+      "measuredN": 21,
+      "medianTotalMs": 25.594708,
+      "medianTotalMsExact": "25.594708",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "25.450500",
+            "p20": "25.498000",
+            "p30": "25.537542",
+            "p40": "25.544167",
+            "p50": "25.594708",
+            "p60": "25.697541",
+            "p70": "25.797375",
+            "p80": "25.890833",
+            "p90": "26.045041"
+          },
+          "medianMsExact": "25.594708",
+          "medianNs": "25594708",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "25.450500",
+            "p20": "25.498000",
+            "p30": "25.537542",
+            "p40": "25.544167",
+            "p50": "25.594708",
+            "p60": "25.697541",
+            "p70": "25.797375",
+            "p80": "25.890833",
+            "p90": "26.045041"
+          },
+          "medianMsExact": "25.594708",
+          "medianNs": "25594708",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "25.450500",
+            "p20": "25.498000",
+            "p30": "25.537542",
+            "p40": "25.544167",
+            "p50": "25.594708",
+            "p60": "25.697541",
+            "p70": "25.797375",
+            "p80": "25.890833",
+            "p90": "26.045041"
+          },
+          "medianMsExact": "25.594708",
+          "medianNs": "25594708",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-skip-3-baseline-session2-6",
+      "root": {
+        "decilesMsExact": {
+          "p10": "25.450500",
+          "p20": "25.498000",
+          "p30": "25.537542",
+          "p40": "25.544167",
+          "p50": "25.594708",
+          "p60": "25.697541",
+          "p70": "25.797375",
+          "p80": "25.890833",
+          "p90": "26.045041"
+        },
+        "endMs": 25.594708,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "25.594708",
+        "medianN": 21,
+        "medianNs": "25594708",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "25.594708",
+        "representativeNs": "25594708",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-skip-3-baseline-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u128-skip-3-generic-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-skip-3-generic-session1",
+      "measuredN": 21,
+      "medianTotalMs": 25.739333,
+      "medianTotalMsExact": "25.739333",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "25.635417",
+            "p20": "25.652833",
+            "p30": "25.693917",
+            "p40": "25.710333",
+            "p50": "25.739333",
+            "p60": "25.763250",
+            "p70": "25.836167",
+            "p80": "25.948333",
+            "p90": "25.961834"
+          },
+          "medianMsExact": "25.739333",
+          "medianNs": "25739333",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "25.635417",
+            "p20": "25.652833",
+            "p30": "25.693917",
+            "p40": "25.710333",
+            "p50": "25.739333",
+            "p60": "25.763250",
+            "p70": "25.836167",
+            "p80": "25.948333",
+            "p90": "25.961834"
+          },
+          "medianMsExact": "25.739333",
+          "medianNs": "25739333",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "25.635417",
+            "p20": "25.652833",
+            "p30": "25.693917",
+            "p40": "25.710333",
+            "p50": "25.739333",
+            "p60": "25.763250",
+            "p70": "25.836167",
+            "p80": "25.948333",
+            "p90": "25.961834"
+          },
+          "medianMsExact": "25.739333",
+          "medianNs": "25739333",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-skip-3-generic-session1-1",
+      "root": {
+        "decilesMsExact": {
+          "p10": "25.635417",
+          "p20": "25.652833",
+          "p30": "25.693917",
+          "p40": "25.710333",
+          "p50": "25.739333",
+          "p60": "25.763250",
+          "p70": "25.836167",
+          "p80": "25.948333",
+          "p90": "25.961834"
+        },
+        "endMs": 25.739333,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "25.739333",
+        "medianN": 21,
+        "medianNs": "25739333",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "25.739333",
+        "representativeNs": "25739333",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-skip-3-generic-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u128-skip-3-generic-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u128-skip-3-generic-session2",
+      "measuredN": 21,
+      "medianTotalMs": 25.6885,
+      "medianTotalMsExact": "25.688500",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "25.597917",
+            "p20": "25.656375",
+            "p30": "25.670333",
+            "p40": "25.677083",
+            "p50": "25.688500",
+            "p60": "25.689459",
+            "p70": "25.700334",
+            "p80": "25.712042",
+            "p90": "25.802333"
+          },
+          "medianMsExact": "25.688500",
+          "medianNs": "25688500",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "25.597917",
+            "p20": "25.656375",
+            "p30": "25.670333",
+            "p40": "25.677083",
+            "p50": "25.688500",
+            "p60": "25.689459",
+            "p70": "25.700334",
+            "p80": "25.712042",
+            "p90": "25.802333"
+          },
+          "medianMsExact": "25.688500",
+          "medianNs": "25688500",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "25.597917",
+            "p20": "25.656375",
+            "p30": "25.670333",
+            "p40": "25.677083",
+            "p50": "25.688500",
+            "p60": "25.689459",
+            "p70": "25.700334",
+            "p80": "25.712042",
+            "p90": "25.802333"
+          },
+          "medianMsExact": "25.688500",
+          "medianNs": "25688500",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 128,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u128-skip-3-generic-session2-21",
+      "root": {
+        "decilesMsExact": {
+          "p10": "25.597917",
+          "p20": "25.656375",
+          "p30": "25.670333",
+          "p40": "25.677083",
+          "p50": "25.688500",
+          "p60": "25.689459",
+          "p70": "25.700334",
+          "p80": "25.712042",
+          "p90": "25.802333"
+        },
+        "endMs": 25.6885,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "25.688500",
+        "medianN": 21,
+        "medianNs": "25688500",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "25.688500",
+        "representativeNs": "25688500",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u128-skip-3-generic-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u32-ordinary-baseline-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-ordinary-baseline-session1",
+      "measuredN": 21,
+      "medianTotalMs": 1.73275,
+      "medianTotalMsExact": "1.732750",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "1.668583",
+            "p20": "1.678833",
+            "p30": "1.685917",
+            "p40": "1.709916",
+            "p50": "1.732750",
+            "p60": "1.750416",
+            "p70": "1.756666",
+            "p80": "1.785833",
+            "p90": "1.803834"
+          },
+          "medianMsExact": "1.732750",
+          "medianNs": "1732750",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "1.668583",
+            "p20": "1.678833",
+            "p30": "1.685917",
+            "p40": "1.709916",
+            "p50": "1.732750",
+            "p60": "1.750416",
+            "p70": "1.756666",
+            "p80": "1.785833",
+            "p90": "1.803834"
+          },
+          "medianMsExact": "1.732750",
+          "medianNs": "1732750",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "1.668583",
+            "p20": "1.678833",
+            "p30": "1.685917",
+            "p40": "1.709916",
+            "p50": "1.732750",
+            "p60": "1.750416",
+            "p70": "1.756666",
+            "p80": "1.785833",
+            "p90": "1.803834"
+          },
+          "medianMsExact": "1.732750",
+          "medianNs": "1732750",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-ordinary-baseline-session1-10",
+      "root": {
+        "decilesMsExact": {
+          "p10": "1.668583",
+          "p20": "1.678833",
+          "p30": "1.685917",
+          "p40": "1.709916",
+          "p50": "1.732750",
+          "p60": "1.750416",
+          "p70": "1.756666",
+          "p80": "1.785833",
+          "p90": "1.803834"
+        },
+        "endMs": 1.73275,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "1.732750",
+        "medianN": 21,
+        "medianNs": "1732750",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "1.732750",
+        "representativeNs": "1732750",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-ordinary-baseline-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u32-ordinary-baseline-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-ordinary-baseline-session2",
+      "measuredN": 21,
+      "medianTotalMs": 1.756167,
+      "medianTotalMsExact": "1.756167",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "1.717709",
+            "p20": "1.731208",
+            "p30": "1.743666",
+            "p40": "1.748375",
+            "p50": "1.756167",
+            "p60": "1.762667",
+            "p70": "1.805625",
+            "p80": "1.820625",
+            "p90": "1.852292"
+          },
+          "medianMsExact": "1.756167",
+          "medianNs": "1756167",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "1.717709",
+            "p20": "1.731208",
+            "p30": "1.743666",
+            "p40": "1.748375",
+            "p50": "1.756167",
+            "p60": "1.762667",
+            "p70": "1.805625",
+            "p80": "1.820625",
+            "p90": "1.852292"
+          },
+          "medianMsExact": "1.756167",
+          "medianNs": "1756167",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "1.717709",
+            "p20": "1.731208",
+            "p30": "1.743666",
+            "p40": "1.748375",
+            "p50": "1.756167",
+            "p60": "1.762667",
+            "p70": "1.805625",
+            "p80": "1.820625",
+            "p90": "1.852292"
+          },
+          "medianMsExact": "1.756167",
+          "medianNs": "1756167",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-ordinary-baseline-session2-19",
+      "root": {
+        "decilesMsExact": {
+          "p10": "1.717709",
+          "p20": "1.731208",
+          "p30": "1.743666",
+          "p40": "1.748375",
+          "p50": "1.756167",
+          "p60": "1.762667",
+          "p70": "1.805625",
+          "p80": "1.820625",
+          "p90": "1.852292"
+        },
+        "endMs": 1.756167,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "1.756167",
+        "medianN": 21,
+        "medianNs": "1756167",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "1.756167",
+        "representativeNs": "1756167",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-ordinary-baseline-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u32-ordinary-generic-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-ordinary-generic-session1",
+      "measuredN": 21,
+      "medianTotalMs": 2.48975,
+      "medianTotalMsExact": "2.489750",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.372416",
+            "p20": "2.389958",
+            "p30": "2.422625",
+            "p40": "2.458083",
+            "p50": "2.489750",
+            "p60": "2.537917",
+            "p70": "2.574833",
+            "p80": "2.607250",
+            "p90": "2.673959"
+          },
+          "medianMsExact": "2.489750",
+          "medianNs": "2489750",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.372416",
+            "p20": "2.389958",
+            "p30": "2.422625",
+            "p40": "2.458083",
+            "p50": "2.489750",
+            "p60": "2.537917",
+            "p70": "2.574833",
+            "p80": "2.607250",
+            "p90": "2.673959"
+          },
+          "medianMsExact": "2.489750",
+          "medianNs": "2489750",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.372416",
+            "p20": "2.389958",
+            "p30": "2.422625",
+            "p40": "2.458083",
+            "p50": "2.489750",
+            "p60": "2.537917",
+            "p70": "2.574833",
+            "p80": "2.607250",
+            "p90": "2.673959"
+          },
+          "medianMsExact": "2.489750",
+          "medianNs": "2489750",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-ordinary-generic-session1-11",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.372416",
+          "p20": "2.389958",
+          "p30": "2.422625",
+          "p40": "2.458083",
+          "p50": "2.489750",
+          "p60": "2.537917",
+          "p70": "2.574833",
+          "p80": "2.607250",
+          "p90": "2.673959"
+        },
+        "endMs": 2.48975,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "2.489750",
+        "medianN": 21,
+        "medianNs": "2489750",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "2.489750",
+        "representativeNs": "2489750",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-ordinary-generic-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u32-ordinary-generic-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-ordinary-generic-session2",
+      "measuredN": 21,
+      "medianTotalMs": 2.537834,
+      "medianTotalMsExact": "2.537834",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.454542",
+            "p20": "2.502917",
+            "p30": "2.510333",
+            "p40": "2.531250",
+            "p50": "2.537834",
+            "p60": "2.580250",
+            "p70": "2.606375",
+            "p80": "2.623791",
+            "p90": "2.669458"
+          },
+          "medianMsExact": "2.537834",
+          "medianNs": "2537834",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.454542",
+            "p20": "2.502917",
+            "p30": "2.510333",
+            "p40": "2.531250",
+            "p50": "2.537834",
+            "p60": "2.580250",
+            "p70": "2.606375",
+            "p80": "2.623791",
+            "p90": "2.669458"
+          },
+          "medianMsExact": "2.537834",
+          "medianNs": "2537834",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.454542",
+            "p20": "2.502917",
+            "p30": "2.510333",
+            "p40": "2.531250",
+            "p50": "2.537834",
+            "p60": "2.580250",
+            "p70": "2.606375",
+            "p80": "2.623791",
+            "p90": "2.669458"
+          },
+          "medianMsExact": "2.537834",
+          "medianNs": "2537834",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-ordinary-generic-session2-10",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.454542",
+          "p20": "2.502917",
+          "p30": "2.510333",
+          "p40": "2.531250",
+          "p50": "2.537834",
+          "p60": "2.580250",
+          "p70": "2.606375",
+          "p80": "2.623791",
+          "p90": "2.669458"
+        },
+        "endMs": 2.537834,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "2.537834",
+        "medianN": 21,
+        "medianNs": "2537834",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "2.537834",
+        "representativeNs": "2537834",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-ordinary-generic-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u32-skip-3-baseline-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-skip-3-baseline-session1",
+      "measuredN": 21,
+      "medianTotalMs": 1.067958,
+      "medianTotalMsExact": "1.067958",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "1.030375",
+            "p20": "1.043167",
+            "p30": "1.053041",
+            "p40": "1.062333",
+            "p50": "1.067958",
+            "p60": "1.129041",
+            "p70": "1.185333",
+            "p80": "1.192417",
+            "p90": "1.224208"
+          },
+          "medianMsExact": "1.067958",
+          "medianNs": "1067958",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "1.030375",
+            "p20": "1.043167",
+            "p30": "1.053041",
+            "p40": "1.062333",
+            "p50": "1.067958",
+            "p60": "1.129041",
+            "p70": "1.185333",
+            "p80": "1.192417",
+            "p90": "1.224208"
+          },
+          "medianMsExact": "1.067958",
+          "medianNs": "1067958",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "1.030375",
+            "p20": "1.043167",
+            "p30": "1.053041",
+            "p40": "1.062333",
+            "p50": "1.067958",
+            "p60": "1.129041",
+            "p70": "1.185333",
+            "p80": "1.192417",
+            "p90": "1.224208"
+          },
+          "medianMsExact": "1.067958",
+          "medianNs": "1067958",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-skip-3-baseline-session1-14",
+      "root": {
+        "decilesMsExact": {
+          "p10": "1.030375",
+          "p20": "1.043167",
+          "p30": "1.053041",
+          "p40": "1.062333",
+          "p50": "1.067958",
+          "p60": "1.129041",
+          "p70": "1.185333",
+          "p80": "1.192417",
+          "p90": "1.224208"
+        },
+        "endMs": 1.067958,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "1.067958",
+        "medianN": 21,
+        "medianNs": "1067958",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "1.067958",
+        "representativeNs": "1067958",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-skip-3-baseline-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u32-skip-3-baseline-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-skip-3-baseline-session2",
+      "measuredN": 21,
+      "medianTotalMs": 1.053292,
+      "medianTotalMsExact": "1.053292",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "0.987916",
+            "p20": "0.995875",
+            "p30": "1.019542",
+            "p40": "1.035250",
+            "p50": "1.053292",
+            "p60": "1.092625",
+            "p70": "1.123375",
+            "p80": "1.135708",
+            "p90": "1.171292"
+          },
+          "medianMsExact": "1.053292",
+          "medianNs": "1053292",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "0.987916",
+            "p20": "0.995875",
+            "p30": "1.019542",
+            "p40": "1.035250",
+            "p50": "1.053292",
+            "p60": "1.092625",
+            "p70": "1.123375",
+            "p80": "1.135708",
+            "p90": "1.171292"
+          },
+          "medianMsExact": "1.053292",
+          "medianNs": "1053292",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "0.987916",
+            "p20": "0.995875",
+            "p30": "1.019542",
+            "p40": "1.035250",
+            "p50": "1.053292",
+            "p60": "1.092625",
+            "p70": "1.123375",
+            "p80": "1.135708",
+            "p90": "1.171292"
+          },
+          "medianMsExact": "1.053292",
+          "medianNs": "1053292",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-skip-3-baseline-session2-17",
+      "root": {
+        "decilesMsExact": {
+          "p10": "0.987916",
+          "p20": "0.995875",
+          "p30": "1.019542",
+          "p40": "1.035250",
+          "p50": "1.053292",
+          "p60": "1.092625",
+          "p70": "1.123375",
+          "p80": "1.135708",
+          "p90": "1.171292"
+        },
+        "endMs": 1.053292,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "1.053292",
+        "medianN": 21,
+        "medianNs": "1053292",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "1.053292",
+        "representativeNs": "1053292",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-skip-3-baseline-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u32-skip-3-generic-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-skip-3-generic-session1",
+      "measuredN": 21,
+      "medianTotalMs": 13.030208,
+      "medianTotalMsExact": "13.030208",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "12.990542",
+            "p20": "12.993334",
+            "p30": "13.006583",
+            "p40": "13.025584",
+            "p50": "13.030208",
+            "p60": "13.032208",
+            "p70": "13.036209",
+            "p80": "13.042167",
+            "p90": "13.099708"
+          },
+          "medianMsExact": "13.030208",
+          "medianNs": "13030208",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "12.990542",
+            "p20": "12.993334",
+            "p30": "13.006583",
+            "p40": "13.025584",
+            "p50": "13.030208",
+            "p60": "13.032208",
+            "p70": "13.036209",
+            "p80": "13.042167",
+            "p90": "13.099708"
+          },
+          "medianMsExact": "13.030208",
+          "medianNs": "13030208",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "12.990542",
+            "p20": "12.993334",
+            "p30": "13.006583",
+            "p40": "13.025584",
+            "p50": "13.030208",
+            "p60": "13.032208",
+            "p70": "13.036209",
+            "p80": "13.042167",
+            "p90": "13.099708"
+          },
+          "medianMsExact": "13.030208",
+          "medianNs": "13030208",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-skip-3-generic-session1-6",
+      "root": {
+        "decilesMsExact": {
+          "p10": "12.990542",
+          "p20": "12.993334",
+          "p30": "13.006583",
+          "p40": "13.025584",
+          "p50": "13.030208",
+          "p60": "13.032208",
+          "p70": "13.036209",
+          "p80": "13.042167",
+          "p90": "13.099708"
+        },
+        "endMs": 13.030208,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "13.030208",
+        "medianN": 21,
+        "medianNs": "13030208",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "13.030208",
+        "representativeNs": "13030208",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-skip-3-generic-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u32-skip-3-generic-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u32-skip-3-generic-session2",
+      "measuredN": 21,
+      "medianTotalMs": 13.028458,
+      "medianTotalMsExact": "13.028458",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "12.952000",
+            "p20": "12.959417",
+            "p30": "12.981875",
+            "p40": "13.009458",
+            "p50": "13.028458",
+            "p60": "13.053917",
+            "p70": "13.076875",
+            "p80": "13.153709",
+            "p90": "13.161166"
+          },
+          "medianMsExact": "13.028458",
+          "medianNs": "13028458",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "12.952000",
+            "p20": "12.959417",
+            "p30": "12.981875",
+            "p40": "13.009458",
+            "p50": "13.028458",
+            "p60": "13.053917",
+            "p70": "13.076875",
+            "p80": "13.153709",
+            "p90": "13.161166"
+          },
+          "medianMsExact": "13.028458",
+          "medianNs": "13028458",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "12.952000",
+            "p20": "12.959417",
+            "p30": "12.981875",
+            "p40": "13.009458",
+            "p50": "13.028458",
+            "p60": "13.053917",
+            "p70": "13.076875",
+            "p80": "13.153709",
+            "p90": "13.161166"
+          },
+          "medianMsExact": "13.028458",
+          "medianNs": "13028458",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 32,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u32-skip-3-generic-session2-19",
+      "root": {
+        "decilesMsExact": {
+          "p10": "12.952000",
+          "p20": "12.959417",
+          "p30": "12.981875",
+          "p40": "13.009458",
+          "p50": "13.028458",
+          "p60": "13.053917",
+          "p70": "13.076875",
+          "p80": "13.153709",
+          "p90": "13.161166"
+        },
+        "endMs": 13.028458,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "13.028458",
+        "medianN": 21,
+        "medianNs": "13028458",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "13.028458",
+        "representativeNs": "13028458",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u32-skip-3-generic-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u64-ordinary-baseline-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-ordinary-baseline-session1",
+      "measuredN": 21,
+      "medianTotalMs": 1.871458,
+      "medianTotalMsExact": "1.871458",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "1.820458",
+            "p20": "1.827583",
+            "p30": "1.832625",
+            "p40": "1.847667",
+            "p50": "1.871458",
+            "p60": "1.880667",
+            "p70": "1.904916",
+            "p80": "1.983375",
+            "p90": "1.994334"
+          },
+          "medianMsExact": "1.871458",
+          "medianNs": "1871458",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "1.820458",
+            "p20": "1.827583",
+            "p30": "1.832625",
+            "p40": "1.847667",
+            "p50": "1.871458",
+            "p60": "1.880667",
+            "p70": "1.904916",
+            "p80": "1.983375",
+            "p90": "1.994334"
+          },
+          "medianMsExact": "1.871458",
+          "medianNs": "1871458",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "1.820458",
+            "p20": "1.827583",
+            "p30": "1.832625",
+            "p40": "1.847667",
+            "p50": "1.871458",
+            "p60": "1.880667",
+            "p70": "1.904916",
+            "p80": "1.983375",
+            "p90": "1.994334"
+          },
+          "medianMsExact": "1.871458",
+          "medianNs": "1871458",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-ordinary-baseline-session1-21",
+      "root": {
+        "decilesMsExact": {
+          "p10": "1.820458",
+          "p20": "1.827583",
+          "p30": "1.832625",
+          "p40": "1.847667",
+          "p50": "1.871458",
+          "p60": "1.880667",
+          "p70": "1.904916",
+          "p80": "1.983375",
+          "p90": "1.994334"
+        },
+        "endMs": 1.871458,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "1.871458",
+        "medianN": 21,
+        "medianNs": "1871458",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "1.871458",
+        "representativeNs": "1871458",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-ordinary-baseline-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u64-ordinary-baseline-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-ordinary-baseline-session2",
+      "measuredN": 21,
+      "medianTotalMs": 1.931417,
+      "medianTotalMsExact": "1.931417",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "1.853875",
+            "p20": "1.869625",
+            "p30": "1.906167",
+            "p40": "1.907667",
+            "p50": "1.931417",
+            "p60": "1.943083",
+            "p70": "1.955208",
+            "p80": "1.998625",
+            "p90": "2.040083"
+          },
+          "medianMsExact": "1.931417",
+          "medianNs": "1931417",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "1.853875",
+            "p20": "1.869625",
+            "p30": "1.906167",
+            "p40": "1.907667",
+            "p50": "1.931417",
+            "p60": "1.943083",
+            "p70": "1.955208",
+            "p80": "1.998625",
+            "p90": "2.040083"
+          },
+          "medianMsExact": "1.931417",
+          "medianNs": "1931417",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "1.853875",
+            "p20": "1.869625",
+            "p30": "1.906167",
+            "p40": "1.907667",
+            "p50": "1.931417",
+            "p60": "1.943083",
+            "p70": "1.955208",
+            "p80": "1.998625",
+            "p90": "2.040083"
+          },
+          "medianMsExact": "1.931417",
+          "medianNs": "1931417",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-ordinary-baseline-session2-15",
+      "root": {
+        "decilesMsExact": {
+          "p10": "1.853875",
+          "p20": "1.869625",
+          "p30": "1.906167",
+          "p40": "1.907667",
+          "p50": "1.931417",
+          "p60": "1.943083",
+          "p70": "1.955208",
+          "p80": "1.998625",
+          "p90": "2.040083"
+        },
+        "endMs": 1.931417,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "1.931417",
+        "medianN": 21,
+        "medianNs": "1931417",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "1.931417",
+        "representativeNs": "1931417",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-ordinary-baseline-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u64-ordinary-generic-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-ordinary-generic-session1",
+      "measuredN": 21,
+      "medianTotalMs": 2.47375,
+      "medianTotalMsExact": "2.473750",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.393000",
+            "p20": "2.405583",
+            "p30": "2.441834",
+            "p40": "2.446375",
+            "p50": "2.473750",
+            "p60": "2.486417",
+            "p70": "2.513916",
+            "p80": "2.545167",
+            "p90": "2.623500"
+          },
+          "medianMsExact": "2.473750",
+          "medianNs": "2473750",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.393000",
+            "p20": "2.405583",
+            "p30": "2.441834",
+            "p40": "2.446375",
+            "p50": "2.473750",
+            "p60": "2.486417",
+            "p70": "2.513916",
+            "p80": "2.545167",
+            "p90": "2.623500"
+          },
+          "medianMsExact": "2.473750",
+          "medianNs": "2473750",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.393000",
+            "p20": "2.405583",
+            "p30": "2.441834",
+            "p40": "2.446375",
+            "p50": "2.473750",
+            "p60": "2.486417",
+            "p70": "2.513916",
+            "p80": "2.545167",
+            "p90": "2.623500"
+          },
+          "medianMsExact": "2.473750",
+          "medianNs": "2473750",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-ordinary-generic-session1-19",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.393000",
+          "p20": "2.405583",
+          "p30": "2.441834",
+          "p40": "2.446375",
+          "p50": "2.473750",
+          "p60": "2.486417",
+          "p70": "2.513916",
+          "p80": "2.545167",
+          "p90": "2.623500"
+        },
+        "endMs": 2.47375,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "2.473750",
+        "medianN": 21,
+        "medianNs": "2473750",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "2.473750",
+        "representativeNs": "2473750",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-ordinary-generic-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u64-ordinary-generic-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-ordinary-generic-session2",
+      "measuredN": 21,
+      "medianTotalMs": 2.545167,
+      "medianTotalMsExact": "2.545167",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.401291",
+            "p20": "2.435375",
+            "p30": "2.476416",
+            "p40": "2.517292",
+            "p50": "2.545167",
+            "p60": "2.571875",
+            "p70": "2.602083",
+            "p80": "2.663375",
+            "p90": "2.745083"
+          },
+          "medianMsExact": "2.545167",
+          "medianNs": "2545167",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.401291",
+            "p20": "2.435375",
+            "p30": "2.476416",
+            "p40": "2.517292",
+            "p50": "2.545167",
+            "p60": "2.571875",
+            "p70": "2.602083",
+            "p80": "2.663375",
+            "p90": "2.745083"
+          },
+          "medianMsExact": "2.545167",
+          "medianNs": "2545167",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.401291",
+            "p20": "2.435375",
+            "p30": "2.476416",
+            "p40": "2.517292",
+            "p50": "2.545167",
+            "p60": "2.571875",
+            "p70": "2.602083",
+            "p80": "2.663375",
+            "p90": "2.745083"
+          },
+          "medianMsExact": "2.545167",
+          "medianNs": "2545167",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "ordinary",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-ordinary-generic-session2-17",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.401291",
+          "p20": "2.435375",
+          "p30": "2.476416",
+          "p40": "2.517292",
+          "p50": "2.545167",
+          "p60": "2.571875",
+          "p70": "2.602083",
+          "p80": "2.663375",
+          "p90": "2.745083"
+        },
+        "endMs": 2.545167,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "2.545167",
+        "medianN": 21,
+        "medianNs": "2545167",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "2.545167",
+        "representativeNs": "2545167",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-ordinary-generic-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u64-skip-3-baseline-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-skip-3-baseline-session1",
+      "measuredN": 21,
+      "medianTotalMs": 25.093375,
+      "medianTotalMsExact": "25.093375",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "24.993625",
+            "p20": "25.019167",
+            "p30": "25.045458",
+            "p40": "25.076708",
+            "p50": "25.093375",
+            "p60": "25.114666",
+            "p70": "25.124791",
+            "p80": "25.205625",
+            "p90": "25.299792"
+          },
+          "medianMsExact": "25.093375",
+          "medianNs": "25093375",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "24.993625",
+            "p20": "25.019167",
+            "p30": "25.045458",
+            "p40": "25.076708",
+            "p50": "25.093375",
+            "p60": "25.114666",
+            "p70": "25.124791",
+            "p80": "25.205625",
+            "p90": "25.299792"
+          },
+          "medianMsExact": "25.093375",
+          "medianNs": "25093375",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "24.993625",
+            "p20": "25.019167",
+            "p30": "25.045458",
+            "p40": "25.076708",
+            "p50": "25.093375",
+            "p60": "25.114666",
+            "p70": "25.124791",
+            "p80": "25.205625",
+            "p90": "25.299792"
+          },
+          "medianMsExact": "25.093375",
+          "medianNs": "25093375",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-skip-3-baseline-session1-9",
+      "root": {
+        "decilesMsExact": {
+          "p10": "24.993625",
+          "p20": "25.019167",
+          "p30": "25.045458",
+          "p40": "25.076708",
+          "p50": "25.093375",
+          "p60": "25.114666",
+          "p70": "25.124791",
+          "p80": "25.205625",
+          "p90": "25.299792"
+        },
+        "endMs": 25.093375,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "25.093375",
+        "medianN": 21,
+        "medianNs": "25093375",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "25.093375",
+        "representativeNs": "25093375",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-skip-3-baseline-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "a3450385e2a90115add370a3c05e5127db0b3a87",
+        "implementation": "baseline",
+        "label": "u64-skip-3-baseline-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-skip-3-baseline-session2",
+      "measuredN": 21,
+      "medianTotalMs": 25.336375,
+      "medianTotalMsExact": "25.336375",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "25.166500",
+            "p20": "25.205542",
+            "p30": "25.209208",
+            "p40": "25.284083",
+            "p50": "25.336375",
+            "p60": "25.352583",
+            "p70": "25.387000",
+            "p80": "25.411458",
+            "p90": "25.553875"
+          },
+          "medianMsExact": "25.336375",
+          "medianNs": "25336375",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "25.166500",
+            "p20": "25.205542",
+            "p30": "25.209208",
+            "p40": "25.284083",
+            "p50": "25.336375",
+            "p60": "25.352583",
+            "p70": "25.387000",
+            "p80": "25.411458",
+            "p90": "25.553875"
+          },
+          "medianMsExact": "25.336375",
+          "medianNs": "25336375",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "25.166500",
+            "p20": "25.205542",
+            "p30": "25.209208",
+            "p40": "25.284083",
+            "p50": "25.336375",
+            "p60": "25.352583",
+            "p70": "25.387000",
+            "p80": "25.411458",
+            "p90": "25.553875"
+          },
+          "medianMsExact": "25.336375",
+          "medianNs": "25336375",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-skip-3-baseline-session2-5",
+      "root": {
+        "decilesMsExact": {
+          "p10": "25.166500",
+          "p20": "25.205542",
+          "p30": "25.209208",
+          "p40": "25.284083",
+          "p50": "25.336375",
+          "p60": "25.352583",
+          "p70": "25.387000",
+          "p80": "25.411458",
+          "p90": "25.553875"
+        },
+        "endMs": 25.336375,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "25.336375",
+        "medianN": 21,
+        "medianNs": "25336375",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "25.336375",
+        "representativeNs": "25336375",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-skip-3-baseline-session2",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u64-skip-3-generic-session1",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-skip-3-generic-session1",
+      "measuredN": 21,
+      "medianTotalMs": 14.303167,
+      "medianTotalMsExact": "14.303167",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "14.269333",
+            "p20": "14.278334",
+            "p30": "14.287041",
+            "p40": "14.298250",
+            "p50": "14.303167",
+            "p60": "14.305917",
+            "p70": "14.308167",
+            "p80": "14.311667",
+            "p90": "14.374125"
+          },
+          "medianMsExact": "14.303167",
+          "medianNs": "14303167",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "14.269333",
+            "p20": "14.278334",
+            "p30": "14.287041",
+            "p40": "14.298250",
+            "p50": "14.303167",
+            "p60": "14.305917",
+            "p70": "14.308167",
+            "p80": "14.311667",
+            "p90": "14.374125"
+          },
+          "medianMsExact": "14.303167",
+          "medianNs": "14303167",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "14.269333",
+            "p20": "14.278334",
+            "p30": "14.287041",
+            "p40": "14.298250",
+            "p50": "14.303167",
+            "p60": "14.305917",
+            "p70": "14.308167",
+            "p80": "14.311667",
+            "p90": "14.374125"
+          },
+          "medianMsExact": "14.303167",
+          "medianNs": "14303167",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-skip-3-generic-session1-18",
+      "root": {
+        "decilesMsExact": {
+          "p10": "14.269333",
+          "p20": "14.278334",
+          "p30": "14.287041",
+          "p40": "14.298250",
+          "p50": "14.303167",
+          "p60": "14.305917",
+          "p70": "14.308167",
+          "p80": "14.311667",
+          "p90": "14.374125"
+        },
+        "endMs": 14.303167,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "14.303167",
+        "medianN": 21,
+        "medianNs": "14303167",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "14.303167",
+        "representativeNs": "14303167",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-skip-3-generic-session1",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z multiplication outer sumcheck",
+      "badges": [
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z multiplication outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "current",
+        "implementation": "generic",
+        "label": "u64-skip-3-generic-session2",
+        "name": "outer-regression-a3450385",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z multiplication outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-skip-3-generic-session2",
+      "measuredN": 21,
+      "medianTotalMs": 14.26575,
+      "medianTotalMsExact": "14.265750",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "14.226791",
+            "p20": "14.240625",
+            "p30": "14.253875",
+            "p40": "14.257375",
+            "p50": "14.265750",
+            "p60": "14.301083",
+            "p70": "14.323375",
+            "p80": "14.352292",
+            "p90": "14.397416"
+          },
+          "medianMsExact": "14.265750",
+          "medianNs": "14265750",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "14.226791",
+            "p20": "14.240625",
+            "p30": "14.253875",
+            "p40": "14.257375",
+            "p50": "14.265750",
+            "p60": "14.301083",
+            "p70": "14.323375",
+            "p80": "14.352292",
+            "p90": "14.397416"
+          },
+          "medianMsExact": "14.265750",
+          "medianNs": "14265750",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "14.226791",
+            "p20": "14.240625",
+            "p30": "14.253875",
+            "p40": "14.257375",
+            "p50": "14.265750",
+            "p60": "14.301083",
+            "p70": "14.323375",
+            "p80": "14.352292",
+            "p90": "14.397416"
+          },
+          "medianMsExact": "14.265750",
+          "medianNs": "14265750",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "operand_bits": 64,
+          "protocol": "skip-3",
+          "rows": 131072
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [],
+      "representativeRunId": "u64-skip-3-generic-session2-2",
+      "root": {
+        "decilesMsExact": {
+          "p10": "14.226791",
+          "p20": "14.240625",
+          "p30": "14.253875",
+          "p40": "14.257375",
+          "p50": "14.265750",
+          "p60": "14.301083",
+          "p70": "14.323375",
+          "p80": "14.352292",
+          "p90": "14.397416"
+        },
+        "endMs": 14.26575,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\operatorname{eq}(\\tau,x)(A(x)B(x)-C(x))=0"
+        ],
+        "medianMsExact": "14.265750",
+        "medianN": 21,
+        "medianNs": "14265750",
+        "name": "Outer call including equality setup and required projection",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.complete-call",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "14.265750",
+        "representativeNs": "14265750",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "Outer call including equality setup and required projection",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [],
+      "seriesId": "u64-skip-3-generic-session2",
+      "warmupN": 1
+    }
+  ],
+  "sourceHashes": [
+    {
+      "name": "generic-trace.jsonl",
+      "sha256": "d736fd96c7fa1474e64548eadca48e15a4b2ccd04393258434450b5539fec997"
+    }
+  ],
+  "title": "ZK prover performance",
+  "warnings": []
+}

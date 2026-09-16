@@ -1,0 +1,2301 @@
+{
+  "schema": "zkperf.report/v1",
+  "series": [
+    {
+      "algorithm": "F2Z outer sumcheck",
+      "badges": [
+        {
+          "label": "Rows",
+          "value": "131,072"
+        },
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "ef7a8935d7275ccbeb8f10b2f8216491f28d9184+experimental-patch",
+        "implementation": "baseline",
+        "label": "u64-ordinary-n131072-t10-baseline",
+        "name": "outer-sumcheck",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-ordinary-n131072-t10-baseline",
+      "measuredN": 21,
+      "medianTotalMs": 5.674541,
+      "medianTotalMsExact": "5.674541",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "5.364500",
+            "p20": "5.458959",
+            "p30": "5.488917",
+            "p40": "5.556458",
+            "p50": "5.674541",
+            "p60": "5.691083",
+            "p70": "5.806042",
+            "p80": "5.834208",
+            "p90": "5.922292"
+          },
+          "medianMsExact": "5.674541",
+          "medianNs": "5674541",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "5.364500",
+            "p20": "5.458959",
+            "p30": "5.488917",
+            "p40": "5.556458",
+            "p50": "5.674541",
+            "p60": "5.691083",
+            "p70": "5.806042",
+            "p80": "5.834208",
+            "p90": "5.922292"
+          },
+          "medianMsExact": "5.674541",
+          "medianNs": "5674541",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "5.364500",
+            "p20": "5.458959",
+            "p30": "5.488917",
+            "p40": "5.556458",
+            "p50": "5.674541",
+            "p60": "5.691083",
+            "p70": "5.806042",
+            "p80": "5.834208",
+            "p90": "5.922292"
+          },
+          "medianMsExact": "5.674541",
+          "medianNs": "5674541",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "num_rows": 131072,
+          "protocol": "ordinary",
+          "representation": "u64"
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [
+        {
+          "decilesMsExact": {
+            "p10": "0.896750",
+            "p20": "0.933458",
+            "p30": "0.955542",
+            "p40": "0.968459",
+            "p50": "0.975041",
+            "p60": "0.993083",
+            "p70": "1.018750",
+            "p80": "1.056084",
+            "p90": "1.186791"
+          },
+          "endMs": 0.910458,
+          "id": "phase-sequence:1",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "0.975041",
+          "medianN": 21,
+          "medianNs": "975041",
+          "name": "first message",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.first_message",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "0.898208",
+          "representativeNs": "898208",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "first message",
+          "spanId": "1",
+          "startMs": 0.01225,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "3.078750",
+            "p20": "3.081334",
+            "p30": "3.104916",
+            "p40": "3.133458",
+            "p50": "3.221667",
+            "p60": "3.250542",
+            "p70": "3.258875",
+            "p80": "3.266291",
+            "p90": "3.275833"
+          },
+          "endMs": 4.176791,
+          "id": "phase-sequence:2",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "3.221667",
+          "medianN": 21,
+          "medianNs": "3221667",
+          "name": "first fold",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.first_fold",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "3.266291",
+          "representativeNs": "3266291",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "first fold",
+          "spanId": "2",
+          "startMs": 0.9105,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "1.266625",
+            "p20": "1.299666",
+            "p30": "1.334417",
+            "p40": "1.364917",
+            "p50": "1.417666",
+            "p60": "1.482666",
+            "p70": "1.494125",
+            "p80": "1.544667",
+            "p90": "1.594625"
+          },
+          "endMs": 5.671458,
+          "id": "phase-sequence:3",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "1.417666",
+          "medianN": 21,
+          "medianNs": "1417666",
+          "name": "tail",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.tail",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "1.494125",
+          "representativeNs": "1494125",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "tail",
+          "spanId": "3",
+          "startMs": 4.177333,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        }
+      ],
+      "representativeRunId": "u64-ordinary-n131072-t10-baseline-17",
+      "root": {
+        "decilesMsExact": {
+          "p10": "5.364500",
+          "p20": "5.458959",
+          "p30": "5.488917",
+          "p40": "5.556458",
+          "p50": "5.674541",
+          "p60": "5.691083",
+          "p70": "5.806042",
+          "p80": "5.834208",
+          "p90": "5.922292"
+        },
+        "endMs": 5.674541,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+        ],
+        "medianMsExact": "5.674541",
+        "medianN": 21,
+        "medianNs": "5674541",
+        "name": "outer",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.outer",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "5.674541",
+        "representativeNs": "5674541",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "outer",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "0.896750",
+                "p20": "0.933458",
+                "p30": "0.955542",
+                "p40": "0.968459",
+                "p50": "0.975041",
+                "p60": "0.993083",
+                "p70": "1.018750",
+                "p80": "1.056084",
+                "p90": "1.186791"
+              },
+              "endMs": 0.910458,
+              "id": "proving:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.975041",
+              "medianN": 21,
+              "medianNs": "975041",
+              "name": "first message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.898208",
+              "representativeNs": "898208",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "first message",
+              "spanId": "1",
+              "startMs": 0.01225,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "3.078750",
+                "p20": "3.081334",
+                "p30": "3.104916",
+                "p40": "3.133458",
+                "p50": "3.221667",
+                "p60": "3.250542",
+                "p70": "3.258875",
+                "p80": "3.266291",
+                "p90": "3.275833"
+              },
+              "endMs": 4.176791,
+              "id": "proving:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "3.221667",
+              "medianN": 21,
+              "medianNs": "3221667",
+              "name": "first fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "3.266291",
+              "representativeNs": "3266291",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "first fold",
+              "spanId": "2",
+              "startMs": 0.9105,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "1.266625",
+                "p20": "1.299666",
+                "p30": "1.334417",
+                "p40": "1.364917",
+                "p50": "1.417666",
+                "p60": "1.482666",
+                "p70": "1.494125",
+                "p80": "1.544667",
+                "p90": "1.594625"
+              },
+              "endMs": 5.671458,
+              "id": "proving:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.417666",
+              "medianN": 21,
+              "medianNs": "1417666",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.494125",
+              "representativeNs": "1494125",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 4.177333,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Proving",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "5.364500",
+              "p20": "5.458959",
+              "p30": "5.488917",
+              "p40": "5.556458",
+              "p50": "5.674541",
+              "p60": "5.691083",
+              "p70": "5.806042",
+              "p80": "5.834208",
+              "p90": "5.922292"
+            },
+            "medianMsExact": "5.674541",
+            "medianNs": "5674541",
+            "n": 21
+          },
+          "section": "primary",
+          "tag": "proving"
+        },
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "0.896750",
+                "p20": "0.933458",
+                "p30": "0.955542",
+                "p40": "0.968459",
+                "p50": "0.975041",
+                "p60": "0.993083",
+                "p70": "1.018750",
+                "p80": "1.056084",
+                "p90": "1.186791"
+              },
+              "endMs": 0.910458,
+              "id": "sumcheck:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.975041",
+              "medianN": 21,
+              "medianNs": "975041",
+              "name": "first message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.898208",
+              "representativeNs": "898208",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "first message",
+              "spanId": "1",
+              "startMs": 0.01225,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "3.078750",
+                "p20": "3.081334",
+                "p30": "3.104916",
+                "p40": "3.133458",
+                "p50": "3.221667",
+                "p60": "3.250542",
+                "p70": "3.258875",
+                "p80": "3.266291",
+                "p90": "3.275833"
+              },
+              "endMs": 4.176791,
+              "id": "sumcheck:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "3.221667",
+              "medianN": 21,
+              "medianNs": "3221667",
+              "name": "first fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "3.266291",
+              "representativeNs": "3266291",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "first fold",
+              "spanId": "2",
+              "startMs": 0.9105,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "1.266625",
+                "p20": "1.299666",
+                "p30": "1.334417",
+                "p40": "1.364917",
+                "p50": "1.417666",
+                "p60": "1.482666",
+                "p70": "1.494125",
+                "p80": "1.544667",
+                "p90": "1.594625"
+              },
+              "endMs": 5.671458,
+              "id": "sumcheck:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.417666",
+              "medianN": 21,
+              "medianNs": "1417666",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.494125",
+              "representativeNs": "1494125",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 4.177333,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Sumcheck",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "5.364500",
+              "p20": "5.458959",
+              "p30": "5.488917",
+              "p40": "5.556458",
+              "p50": "5.674541",
+              "p60": "5.691083",
+              "p70": "5.806042",
+              "p80": "5.834208",
+              "p90": "5.922292"
+            },
+            "medianMsExact": "5.674541",
+            "medianNs": "5674541",
+            "n": 21
+          },
+          "section": "overlap",
+          "tag": "sumcheck"
+        }
+      ],
+      "seriesId": "u64-ordinary-n131072-t10-baseline",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z outer sumcheck",
+      "badges": [
+        {
+          "label": "Rows",
+          "value": "131,072"
+        },
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "ef7a8935d7275ccbeb8f10b2f8216491f28d9184+experimental-patch",
+        "implementation": "first-par+prefix",
+        "label": "u64-ordinary-n131072-t10-first-par+prefix",
+        "name": "outer-sumcheck",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-ordinary-n131072-t10-first-par+prefix",
+      "measuredN": 21,
+      "medianTotalMs": 3.054375,
+      "medianTotalMsExact": "3.054375",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.782375",
+            "p20": "2.847583",
+            "p30": "2.871208",
+            "p40": "3.011000",
+            "p50": "3.054375",
+            "p60": "3.114708",
+            "p70": "3.404958",
+            "p80": "3.446917",
+            "p90": "3.447500"
+          },
+          "medianMsExact": "3.054375",
+          "medianNs": "3054375",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.782375",
+            "p20": "2.847583",
+            "p30": "2.871208",
+            "p40": "3.011000",
+            "p50": "3.054375",
+            "p60": "3.114708",
+            "p70": "3.404958",
+            "p80": "3.446917",
+            "p90": "3.447500"
+          },
+          "medianMsExact": "3.054375",
+          "medianNs": "3054375",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.782375",
+            "p20": "2.847583",
+            "p30": "2.871208",
+            "p40": "3.011000",
+            "p50": "3.054375",
+            "p60": "3.114708",
+            "p70": "3.404958",
+            "p80": "3.446917",
+            "p90": "3.447500"
+          },
+          "medianMsExact": "3.054375",
+          "medianNs": "3054375",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "num_rows": 131072,
+          "protocol": "ordinary",
+          "representation": "u64"
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [
+        {
+          "decilesMsExact": {
+            "p10": "0.878958",
+            "p20": "0.918791",
+            "p30": "1.019250",
+            "p40": "1.062708",
+            "p50": "1.099333",
+            "p60": "1.109542",
+            "p70": "1.143166",
+            "p80": "1.178000",
+            "p90": "1.209166"
+          },
+          "endMs": 1.059541,
+          "id": "phase-sequence:1",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "1.099333",
+          "medianN": 21,
+          "medianNs": "1099333",
+          "name": "first message",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.first_message",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "1.050541",
+          "representativeNs": "1050541",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "first message",
+          "spanId": "1",
+          "startMs": 0.009,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "0.554750",
+            "p20": "0.570792",
+            "p30": "0.577416",
+            "p40": "0.601500",
+            "p50": "0.623708",
+            "p60": "0.635042",
+            "p70": "0.659041",
+            "p80": "0.720083",
+            "p90": "0.809541"
+          },
+          "endMs": 1.680208,
+          "id": "phase-sequence:2",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "0.623708",
+          "medianN": 21,
+          "medianNs": "623708",
+          "name": "first fold",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.first_fold",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "0.620667",
+          "representativeNs": "620667",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "first fold",
+          "spanId": "2",
+          "startMs": 1.059541,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "1.210083",
+            "p20": "1.254584",
+            "p30": "1.286250",
+            "p40": "1.310125",
+            "p50": "1.370916",
+            "p60": "1.465208",
+            "p70": "1.528416",
+            "p80": "1.554042",
+            "p90": "1.614750"
+          },
+          "endMs": 3.051541,
+          "id": "phase-sequence:3",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "1.370916",
+          "medianN": 21,
+          "medianNs": "1370916",
+          "name": "tail",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.tail",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "1.370916",
+          "representativeNs": "1370916",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "tail",
+          "spanId": "3",
+          "startMs": 1.680625,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        }
+      ],
+      "representativeRunId": "u64-ordinary-n131072-t10-first-par+prefix-14",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.782375",
+          "p20": "2.847583",
+          "p30": "2.871208",
+          "p40": "3.011000",
+          "p50": "3.054375",
+          "p60": "3.114708",
+          "p70": "3.404958",
+          "p80": "3.446917",
+          "p90": "3.447500"
+        },
+        "endMs": 3.054375,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+        ],
+        "medianMsExact": "3.054375",
+        "medianN": 21,
+        "medianNs": "3054375",
+        "name": "outer",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.outer",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "3.054375",
+        "representativeNs": "3054375",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "outer",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "0.878958",
+                "p20": "0.918791",
+                "p30": "1.019250",
+                "p40": "1.062708",
+                "p50": "1.099333",
+                "p60": "1.109542",
+                "p70": "1.143166",
+                "p80": "1.178000",
+                "p90": "1.209166"
+              },
+              "endMs": 1.059541,
+              "id": "proving:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.099333",
+              "medianN": 21,
+              "medianNs": "1099333",
+              "name": "first message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.050541",
+              "representativeNs": "1050541",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "first message",
+              "spanId": "1",
+              "startMs": 0.009,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.554750",
+                "p20": "0.570792",
+                "p30": "0.577416",
+                "p40": "0.601500",
+                "p50": "0.623708",
+                "p60": "0.635042",
+                "p70": "0.659041",
+                "p80": "0.720083",
+                "p90": "0.809541"
+              },
+              "endMs": 1.680208,
+              "id": "proving:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.623708",
+              "medianN": 21,
+              "medianNs": "623708",
+              "name": "first fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.620667",
+              "representativeNs": "620667",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "first fold",
+              "spanId": "2",
+              "startMs": 1.059541,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "1.210083",
+                "p20": "1.254584",
+                "p30": "1.286250",
+                "p40": "1.310125",
+                "p50": "1.370916",
+                "p60": "1.465208",
+                "p70": "1.528416",
+                "p80": "1.554042",
+                "p90": "1.614750"
+              },
+              "endMs": 3.051541,
+              "id": "proving:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.370916",
+              "medianN": 21,
+              "medianNs": "1370916",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.370916",
+              "representativeNs": "1370916",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 1.680625,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Proving",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "2.782375",
+              "p20": "2.847583",
+              "p30": "2.871208",
+              "p40": "3.011000",
+              "p50": "3.054375",
+              "p60": "3.114708",
+              "p70": "3.404958",
+              "p80": "3.446917",
+              "p90": "3.447500"
+            },
+            "medianMsExact": "3.054375",
+            "medianNs": "3054375",
+            "n": 21
+          },
+          "section": "primary",
+          "tag": "proving"
+        },
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "0.878958",
+                "p20": "0.918791",
+                "p30": "1.019250",
+                "p40": "1.062708",
+                "p50": "1.099333",
+                "p60": "1.109542",
+                "p70": "1.143166",
+                "p80": "1.178000",
+                "p90": "1.209166"
+              },
+              "endMs": 1.059541,
+              "id": "sumcheck:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.099333",
+              "medianN": 21,
+              "medianNs": "1099333",
+              "name": "first message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.050541",
+              "representativeNs": "1050541",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "first message",
+              "spanId": "1",
+              "startMs": 0.009,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.554750",
+                "p20": "0.570792",
+                "p30": "0.577416",
+                "p40": "0.601500",
+                "p50": "0.623708",
+                "p60": "0.635042",
+                "p70": "0.659041",
+                "p80": "0.720083",
+                "p90": "0.809541"
+              },
+              "endMs": 1.680208,
+              "id": "sumcheck:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.623708",
+              "medianN": 21,
+              "medianNs": "623708",
+              "name": "first fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.first_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.620667",
+              "representativeNs": "620667",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "first fold",
+              "spanId": "2",
+              "startMs": 1.059541,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "1.210083",
+                "p20": "1.254584",
+                "p30": "1.286250",
+                "p40": "1.310125",
+                "p50": "1.370916",
+                "p60": "1.465208",
+                "p70": "1.528416",
+                "p80": "1.554042",
+                "p90": "1.614750"
+              },
+              "endMs": 3.051541,
+              "id": "sumcheck:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.370916",
+              "medianN": 21,
+              "medianNs": "1370916",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.370916",
+              "representativeNs": "1370916",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 1.680625,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Sumcheck",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "2.782375",
+              "p20": "2.847583",
+              "p30": "2.871208",
+              "p40": "3.011000",
+              "p50": "3.054375",
+              "p60": "3.114708",
+              "p70": "3.404958",
+              "p80": "3.446917",
+              "p90": "3.447500"
+            },
+            "medianMsExact": "3.054375",
+            "medianNs": "3054375",
+            "n": 21
+          },
+          "section": "overlap",
+          "tag": "sumcheck"
+        }
+      ],
+      "seriesId": "u64-ordinary-n131072-t10-first-par+prefix",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z outer sumcheck",
+      "badges": [
+        {
+          "label": "Rows",
+          "value": "131,072"
+        },
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "ef7a8935d7275ccbeb8f10b2f8216491f28d9184+experimental-patch",
+        "implementation": "baseline",
+        "label": "u64-skip-3-n131072-t10-baseline",
+        "name": "outer-sumcheck",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-skip-3-n131072-t10-baseline",
+      "measuredN": 21,
+      "medianTotalMs": 15.288875,
+      "medianTotalMsExact": "15.288875",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "14.778833",
+            "p20": "14.970041",
+            "p30": "15.096541",
+            "p40": "15.245500",
+            "p50": "15.288875",
+            "p60": "15.306542",
+            "p70": "15.417959",
+            "p80": "15.504125",
+            "p90": "15.551375"
+          },
+          "medianMsExact": "15.288875",
+          "medianNs": "15288875",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "14.778833",
+            "p20": "14.970041",
+            "p30": "15.096541",
+            "p40": "15.245500",
+            "p50": "15.288875",
+            "p60": "15.306542",
+            "p70": "15.417959",
+            "p80": "15.504125",
+            "p90": "15.551375"
+          },
+          "medianMsExact": "15.288875",
+          "medianNs": "15288875",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "14.778833",
+            "p20": "14.970041",
+            "p30": "15.096541",
+            "p40": "15.245500",
+            "p50": "15.288875",
+            "p60": "15.306542",
+            "p70": "15.417959",
+            "p80": "15.504125",
+            "p90": "15.551375"
+          },
+          "medianMsExact": "15.288875",
+          "medianNs": "15288875",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "num_rows": 131072,
+          "protocol": "skip-3",
+          "representation": "u64"
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [
+        {
+          "decilesMsExact": {
+            "p10": "12.632542",
+            "p20": "12.675542",
+            "p30": "12.713708",
+            "p40": "12.884500",
+            "p50": "12.926000",
+            "p60": "13.024000",
+            "p70": "13.044083",
+            "p80": "13.112042",
+            "p90": "13.238375"
+          },
+          "endMs": 12.928792,
+          "id": "phase-sequence:1",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "12.926000",
+          "medianN": 21,
+          "medianNs": "12926000",
+          "name": "prefix message",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.prefix_message",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "12.926000",
+          "representativeNs": "12926000",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "prefix message",
+          "spanId": "1",
+          "startMs": 0.002792,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "1.459542",
+            "p20": "1.462375",
+            "p30": "1.469875",
+            "p40": "1.478083",
+            "p50": "1.509250",
+            "p60": "1.543500",
+            "p70": "1.549375",
+            "p80": "1.553708",
+            "p90": "1.556625"
+          },
+          "endMs": 14.438334,
+          "id": "phase-sequence:2",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "1.509250",
+          "medianN": 21,
+          "medianNs": "1509250",
+          "name": "prefix fold",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.prefix_fold",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "1.509250",
+          "representativeNs": "1509250",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "prefix fold",
+          "spanId": "2",
+          "startMs": 12.929084,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "0.661042",
+            "p20": "0.673375",
+            "p30": "0.734042",
+            "p40": "0.746459",
+            "p50": "0.763667",
+            "p60": "0.811625",
+            "p70": "0.849833",
+            "p80": "0.861625",
+            "p90": "1.120709"
+          },
+          "endMs": 15.286792,
+          "id": "phase-sequence:3",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "0.763667",
+          "medianN": 21,
+          "medianNs": "763667",
+          "name": "tail",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.tail",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "0.846208",
+          "representativeNs": "846208",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "tail",
+          "spanId": "3",
+          "startMs": 14.440584,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        }
+      ],
+      "representativeRunId": "u64-skip-3-n131072-t10-baseline-1",
+      "root": {
+        "decilesMsExact": {
+          "p10": "14.778833",
+          "p20": "14.970041",
+          "p30": "15.096541",
+          "p40": "15.245500",
+          "p50": "15.288875",
+          "p60": "15.306542",
+          "p70": "15.417959",
+          "p80": "15.504125",
+          "p90": "15.551375"
+        },
+        "endMs": 15.288875,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+        ],
+        "medianMsExact": "15.288875",
+        "medianN": 21,
+        "medianNs": "15288875",
+        "name": "outer",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.outer",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "15.288875",
+        "representativeNs": "15288875",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "outer",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "12.632542",
+                "p20": "12.675542",
+                "p30": "12.713708",
+                "p40": "12.884500",
+                "p50": "12.926000",
+                "p60": "13.024000",
+                "p70": "13.044083",
+                "p80": "13.112042",
+                "p90": "13.238375"
+              },
+              "endMs": 12.928792,
+              "id": "proving:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "12.926000",
+              "medianN": 21,
+              "medianNs": "12926000",
+              "name": "prefix message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "12.926000",
+              "representativeNs": "12926000",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "prefix message",
+              "spanId": "1",
+              "startMs": 0.002792,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "1.459542",
+                "p20": "1.462375",
+                "p30": "1.469875",
+                "p40": "1.478083",
+                "p50": "1.509250",
+                "p60": "1.543500",
+                "p70": "1.549375",
+                "p80": "1.553708",
+                "p90": "1.556625"
+              },
+              "endMs": 14.438334,
+              "id": "proving:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.509250",
+              "medianN": 21,
+              "medianNs": "1509250",
+              "name": "prefix fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.509250",
+              "representativeNs": "1509250",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "prefix fold",
+              "spanId": "2",
+              "startMs": 12.929084,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.661042",
+                "p20": "0.673375",
+                "p30": "0.734042",
+                "p40": "0.746459",
+                "p50": "0.763667",
+                "p60": "0.811625",
+                "p70": "0.849833",
+                "p80": "0.861625",
+                "p90": "1.120709"
+              },
+              "endMs": 15.286792,
+              "id": "proving:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.763667",
+              "medianN": 21,
+              "medianNs": "763667",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.846208",
+              "representativeNs": "846208",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 14.440584,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Proving",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "14.778833",
+              "p20": "14.970041",
+              "p30": "15.096541",
+              "p40": "15.245500",
+              "p50": "15.288875",
+              "p60": "15.306542",
+              "p70": "15.417959",
+              "p80": "15.504125",
+              "p90": "15.551375"
+            },
+            "medianMsExact": "15.288875",
+            "medianNs": "15288875",
+            "n": 21
+          },
+          "section": "primary",
+          "tag": "proving"
+        },
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "12.632542",
+                "p20": "12.675542",
+                "p30": "12.713708",
+                "p40": "12.884500",
+                "p50": "12.926000",
+                "p60": "13.024000",
+                "p70": "13.044083",
+                "p80": "13.112042",
+                "p90": "13.238375"
+              },
+              "endMs": 12.928792,
+              "id": "sumcheck:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "12.926000",
+              "medianN": 21,
+              "medianNs": "12926000",
+              "name": "prefix message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "12.926000",
+              "representativeNs": "12926000",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "prefix message",
+              "spanId": "1",
+              "startMs": 0.002792,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "1.459542",
+                "p20": "1.462375",
+                "p30": "1.469875",
+                "p40": "1.478083",
+                "p50": "1.509250",
+                "p60": "1.543500",
+                "p70": "1.549375",
+                "p80": "1.553708",
+                "p90": "1.556625"
+              },
+              "endMs": 14.438334,
+              "id": "sumcheck:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "1.509250",
+              "medianN": 21,
+              "medianNs": "1509250",
+              "name": "prefix fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "1.509250",
+              "representativeNs": "1509250",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "prefix fold",
+              "spanId": "2",
+              "startMs": 12.929084,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.661042",
+                "p20": "0.673375",
+                "p30": "0.734042",
+                "p40": "0.746459",
+                "p50": "0.763667",
+                "p60": "0.811625",
+                "p70": "0.849833",
+                "p80": "0.861625",
+                "p90": "1.120709"
+              },
+              "endMs": 15.286792,
+              "id": "sumcheck:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.763667",
+              "medianN": 21,
+              "medianNs": "763667",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.846208",
+              "representativeNs": "846208",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 14.440584,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Sumcheck",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "14.778833",
+              "p20": "14.970041",
+              "p30": "15.096541",
+              "p40": "15.245500",
+              "p50": "15.288875",
+              "p60": "15.306542",
+              "p70": "15.417959",
+              "p80": "15.504125",
+              "p90": "15.551375"
+            },
+            "medianMsExact": "15.288875",
+            "medianNs": "15288875",
+            "n": 21
+          },
+          "section": "overlap",
+          "tag": "sumcheck"
+        }
+      ],
+      "seriesId": "u64-skip-3-n131072-t10-baseline",
+      "warmupN": 1
+    },
+    {
+      "algorithm": "F2Z outer sumcheck",
+      "badges": [
+        {
+          "label": "Rows",
+          "value": "131,072"
+        },
+        {
+          "label": "Threads",
+          "value": "10"
+        }
+      ],
+      "benchmark": {
+        "algorithm": "F2Z outer sumcheck",
+        "build_profile": "bench",
+        "git_rev": "ef7a8935d7275ccbeb8f10b2f8216491f28d9184+experimental-patch",
+        "implementation": "first-par+prefix",
+        "label": "u64-skip-3-n131072-t10-first-par+prefix",
+        "name": "outer-sumcheck",
+        "suite": "f2z"
+      },
+      "displayTitle": "F2Z outer sumcheck — ZK prover performance",
+      "environment": {
+        "arch": "aarch64",
+        "cpu": "Apple M1 Max",
+        "os": "macOS",
+        "threads": 10
+      },
+      "excludedN": 0,
+      "geometryScale": 1.0,
+      "geometryScaleExact": "1",
+      "label": "u64-skip-3-n131072-t10-first-par+prefix",
+      "measuredN": 21,
+      "medianTotalMs": 3.413209,
+      "medianTotalMsExact": "3.413209",
+      "metrics": {
+        "end-to-end": {
+          "decilesMsExact": {
+            "p10": "2.895667",
+            "p20": "3.025417",
+            "p30": "3.107042",
+            "p40": "3.397291",
+            "p50": "3.413209",
+            "p60": "3.435959",
+            "p70": "3.482000",
+            "p80": "3.726042",
+            "p90": "3.966500"
+          },
+          "medianMsExact": "3.413209",
+          "medianNs": "3413209",
+          "n": 21
+        },
+        "proving": {
+          "decilesMsExact": {
+            "p10": "2.895667",
+            "p20": "3.025417",
+            "p30": "3.107042",
+            "p40": "3.397291",
+            "p50": "3.413209",
+            "p60": "3.435959",
+            "p70": "3.482000",
+            "p80": "3.726042",
+            "p90": "3.966500"
+          },
+          "medianMsExact": "3.413209",
+          "medianNs": "3413209",
+          "n": 21
+        },
+        "sumcheck": {
+          "decilesMsExact": {
+            "p10": "2.895667",
+            "p20": "3.025417",
+            "p30": "3.107042",
+            "p40": "3.397291",
+            "p50": "3.413209",
+            "p60": "3.435959",
+            "p70": "3.482000",
+            "p80": "3.726042",
+            "p90": "3.966500"
+          },
+          "medianMsExact": "3.413209",
+          "medianNs": "3413209",
+          "n": 21
+        }
+      },
+      "parameters": {
+        "input": {
+          "num_rows": 131072,
+          "protocol": "skip-3",
+          "representation": "u64"
+        },
+        "repetition": {
+          "count": 1
+        }
+      },
+      "pcsDerived": false,
+      "primary": [
+        {
+          "decilesMsExact": {
+            "p10": "1.860834",
+            "p20": "1.929292",
+            "p30": "2.102333",
+            "p40": "2.222583",
+            "p50": "2.300833",
+            "p60": "2.336000",
+            "p70": "2.378750",
+            "p80": "2.402708",
+            "p90": "2.410708"
+          },
+          "endMs": 2.304125,
+          "id": "phase-sequence:1",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "2.300833",
+          "medianN": 21,
+          "medianNs": "2300833",
+          "name": "prefix message",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.prefix_message",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "2.300833",
+          "representativeNs": "2300833",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "prefix message",
+          "spanId": "1",
+          "startMs": 0.003292,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "0.287000",
+            "p20": "0.293333",
+            "p30": "0.302000",
+            "p40": "0.337042",
+            "p50": "0.341833",
+            "p60": "0.367083",
+            "p70": "0.418041",
+            "p80": "0.433042",
+            "p90": "0.570541"
+          },
+          "endMs": 2.67125,
+          "id": "phase-sequence:2",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "0.341833",
+          "medianN": 21,
+          "medianNs": "341833",
+          "name": "prefix fold",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.prefix_fold",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "0.367083",
+          "representativeNs": "367083",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "prefix fold",
+          "spanId": "2",
+          "startMs": 2.304167,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        },
+        {
+          "decilesMsExact": {
+            "p10": "0.639250",
+            "p20": "0.660542",
+            "p30": "0.690125",
+            "p40": "0.716000",
+            "p50": "0.728542",
+            "p60": "0.736500",
+            "p70": "0.825542",
+            "p80": "0.876959",
+            "p90": "0.978667"
+          },
+          "endMs": 3.409209,
+          "id": "phase-sequence:3",
+          "mathLatex": [
+            "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+          ],
+          "medianMsExact": "0.728542",
+          "medianN": 21,
+          "medianNs": "728542",
+          "name": "tail",
+          "occurrenceCount": 1,
+          "occurrenceIndex": 0,
+          "operation": "outer.tail",
+          "overlay": false,
+          "primaryPhase": "proving",
+          "recursionDepth": null,
+          "recursionInstanceIndex": null,
+          "representativeMsExact": "0.736500",
+          "representativeNs": "736500",
+          "roundCount": null,
+          "roundIndex": null,
+          "rowTag": "phase-sequence",
+          "scopeKind": "phase",
+          "shortName": "tail",
+          "spanId": "3",
+          "startMs": 2.672709,
+          "tags": [
+            "proving",
+            "sumcheck"
+          ]
+        }
+      ],
+      "representativeRunId": "u64-skip-3-n131072-t10-first-par+prefix-13",
+      "root": {
+        "decilesMsExact": {
+          "p10": "2.895667",
+          "p20": "3.025417",
+          "p30": "3.107042",
+          "p40": "3.397291",
+          "p50": "3.413209",
+          "p60": "3.435959",
+          "p70": "3.482000",
+          "p80": "3.726042",
+          "p90": "3.966500"
+        },
+        "endMs": 3.413209,
+        "id": "end-to-end:outer",
+        "mathLatex": [
+          "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+        ],
+        "medianMsExact": "3.413209",
+        "medianN": 21,
+        "medianNs": "3413209",
+        "name": "outer",
+        "occurrenceCount": 1,
+        "occurrenceIndex": 0,
+        "operation": "outer.outer",
+        "overlay": false,
+        "primaryPhase": "proving",
+        "recursionDepth": null,
+        "recursionInstanceIndex": null,
+        "representativeMsExact": "3.413209",
+        "representativeNs": "3413209",
+        "roundCount": null,
+        "roundIndex": null,
+        "rowTag": "end-to-end",
+        "scopeKind": "scope",
+        "shortName": "outer",
+        "spanId": "outer",
+        "startMs": 0.0,
+        "tags": [
+          "end-to-end",
+          "proving",
+          "sumcheck"
+        ]
+      },
+      "rootBoundary": "declared-root",
+      "rows": [
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "1.860834",
+                "p20": "1.929292",
+                "p30": "2.102333",
+                "p40": "2.222583",
+                "p50": "2.300833",
+                "p60": "2.336000",
+                "p70": "2.378750",
+                "p80": "2.402708",
+                "p90": "2.410708"
+              },
+              "endMs": 2.304125,
+              "id": "proving:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "2.300833",
+              "medianN": 21,
+              "medianNs": "2300833",
+              "name": "prefix message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "2.300833",
+              "representativeNs": "2300833",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "prefix message",
+              "spanId": "1",
+              "startMs": 0.003292,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.287000",
+                "p20": "0.293333",
+                "p30": "0.302000",
+                "p40": "0.337042",
+                "p50": "0.341833",
+                "p60": "0.367083",
+                "p70": "0.418041",
+                "p80": "0.433042",
+                "p90": "0.570541"
+              },
+              "endMs": 2.67125,
+              "id": "proving:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.341833",
+              "medianN": 21,
+              "medianNs": "341833",
+              "name": "prefix fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.367083",
+              "representativeNs": "367083",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "prefix fold",
+              "spanId": "2",
+              "startMs": 2.304167,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.639250",
+                "p20": "0.660542",
+                "p30": "0.690125",
+                "p40": "0.716000",
+                "p50": "0.728542",
+                "p60": "0.736500",
+                "p70": "0.825542",
+                "p80": "0.876959",
+                "p90": "0.978667"
+              },
+              "endMs": 3.409209,
+              "id": "proving:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.728542",
+              "medianN": 21,
+              "medianNs": "728542",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.736500",
+              "representativeNs": "736500",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "proving",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 2.672709,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Proving",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "2.895667",
+              "p20": "3.025417",
+              "p30": "3.107042",
+              "p40": "3.397291",
+              "p50": "3.413209",
+              "p60": "3.435959",
+              "p70": "3.482000",
+              "p80": "3.726042",
+              "p90": "3.966500"
+            },
+            "medianMsExact": "3.413209",
+            "medianNs": "3413209",
+            "n": 21
+          },
+          "section": "primary",
+          "tag": "proving"
+        },
+        {
+          "intervals": [
+            {
+              "decilesMsExact": {
+                "p10": "1.860834",
+                "p20": "1.929292",
+                "p30": "2.102333",
+                "p40": "2.222583",
+                "p50": "2.300833",
+                "p60": "2.336000",
+                "p70": "2.378750",
+                "p80": "2.402708",
+                "p90": "2.410708"
+              },
+              "endMs": 2.304125,
+              "id": "sumcheck:1",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "2.300833",
+              "medianN": 21,
+              "medianNs": "2300833",
+              "name": "prefix message",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_message",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "2.300833",
+              "representativeNs": "2300833",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "prefix message",
+              "spanId": "1",
+              "startMs": 0.003292,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.287000",
+                "p20": "0.293333",
+                "p30": "0.302000",
+                "p40": "0.337042",
+                "p50": "0.341833",
+                "p60": "0.367083",
+                "p70": "0.418041",
+                "p80": "0.433042",
+                "p90": "0.570541"
+              },
+              "endMs": 2.67125,
+              "id": "sumcheck:2",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.341833",
+              "medianN": 21,
+              "medianNs": "341833",
+              "name": "prefix fold",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.prefix_fold",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.367083",
+              "representativeNs": "367083",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "prefix fold",
+              "spanId": "2",
+              "startMs": 2.304167,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            },
+            {
+              "decilesMsExact": {
+                "p10": "0.639250",
+                "p20": "0.660542",
+                "p30": "0.690125",
+                "p40": "0.716000",
+                "p50": "0.728542",
+                "p60": "0.736500",
+                "p70": "0.825542",
+                "p80": "0.876959",
+                "p90": "0.978667"
+              },
+              "endMs": 3.409209,
+              "id": "sumcheck:3",
+              "mathLatex": [
+                "\\sum_x \\mathrm{eq}(\\tau,x)(A(x)B(x)-C(x))"
+              ],
+              "medianMsExact": "0.728542",
+              "medianN": 21,
+              "medianNs": "728542",
+              "name": "tail",
+              "occurrenceCount": 1,
+              "occurrenceIndex": 0,
+              "operation": "outer.tail",
+              "overlay": false,
+              "primaryPhase": "proving",
+              "recursionDepth": null,
+              "recursionInstanceIndex": null,
+              "representativeMsExact": "0.736500",
+              "representativeNs": "736500",
+              "roundCount": null,
+              "roundIndex": null,
+              "rowTag": "sumcheck",
+              "scopeKind": "phase",
+              "shortName": "tail",
+              "spanId": "3",
+              "startMs": 2.672709,
+              "tags": [
+                "proving",
+                "sumcheck"
+              ]
+            }
+          ],
+          "label": "Sumcheck",
+          "metric": {
+            "decilesMsExact": {
+              "p10": "2.895667",
+              "p20": "3.025417",
+              "p30": "3.107042",
+              "p40": "3.397291",
+              "p50": "3.413209",
+              "p60": "3.435959",
+              "p70": "3.482000",
+              "p80": "3.726042",
+              "p90": "3.966500"
+            },
+            "medianMsExact": "3.413209",
+            "medianNs": "3413209",
+            "n": 21
+          },
+          "section": "overlap",
+          "tag": "sumcheck"
+        }
+      ],
+      "seriesId": "u64-skip-3-n131072-t10-first-par+prefix",
+      "warmupN": 1
+    }
+  ],
+  "sourceHashes": [
+    {
+      "name": "trace.jsonl",
+      "sha256": "f33b0a5dfc53eb2967700b93e58a0896fc1795df77b296de8f95645556ca993b"
+    }
+  ],
+  "title": "ZK prover performance",
+  "warnings": []
+}

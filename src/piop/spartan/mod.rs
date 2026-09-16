@@ -23,6 +23,10 @@ pub mod piop;
 pub mod profile;
 pub mod protocol;
 pub(crate) mod raw_monty;
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+#[path = "../../../benches/outer_regression/driver.rs"]
+pub mod outer_regression;
 pub mod sha256;
 pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;

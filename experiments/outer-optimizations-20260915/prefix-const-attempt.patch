@@ -1,0 +1,200 @@
+diff --git a/src/sumcheck/outer/univariate_api.rs b/src/sumcheck/outer/univariate_api.rs
+index f3ebb6eb..897036b6 100644
+--- a/src/sumcheck/outer/univariate_api.rs
++++ b/src/sumcheck/outer/univariate_api.rs
+@@ -10,6 +10,8 @@ use crate::sumcheck::arithmetic::SumcheckProductReducer;
+ use crate::sumcheck::{RoundBoundaryPolicy, SumcheckError, SumcheckProof};
+ use crate::transcript::traits::Transcript;
+ use field::{BatchMulAcc, FieldOps, Reduce, RingOps};
++#[cfg(feature = "parallel")]
++use rayon::prelude::*;
+ 
+ /// Field-specific interpolation weights for 1..=4 little-endian prefix bits.
+ #[derive(Clone, Debug)]
+@@ -64,6 +66,23 @@ pub struct SkippedOuterVerifierOutput<E> {
+     pub prefix_challenge: E,
+     pub tail: OuterVerifierOutput<E>,
+ }
++// Instantiate the serial kernel without Rayon branches so its scalar field
++// operations retain the original code-generation boundary.
++macro_rules! prepare_prefix {
++    ($field:expr, $transcript:expr, $prepared:expr, $tau:expr,
++     $ax:expr, $bx:expr, $cx:expr, $boundary:expr $(,)?) => {{
++        #[cfg(feature = "parallel")]
++        if crate::sumcheck::arithmetic::should_parallelize(
++            $ax.len() >> usize::from($prepared.skip_vars),
++        ) {
++            prepare_prefix::<_, _, _, true>($field, $transcript, $prepared, $tau, $ax, $bx, $cx, $boundary)
++        } else {
++            prepare_prefix::<_, _, _, false>($field, $transcript, $prepared, $tau, $ax, $bx, $cx, $boundary)
++        }
++        #[cfg(not(feature = "parallel"))]
++        prepare_prefix::<_, _, _, false>($field, $transcript, $prepared, $tau, $ax, $bx, $cx, $boundary)
++    }};
++}
+ /// Interpolates the known-zero prefix with Lagrange weights, then proves
+ /// the remaining Boolean rounds. K=n is supported and yields an empty tail.
+ pub fn prove_outer_zerocheck_with_skip<F, AB, C>(
+@@ -87,10 +106,10 @@ where
+             Output = <F as RingOps>::Elem,
+         >,
+     F::Elem: SpartanField<Config = F>,
+-    AB: Copy,
+-    C: Copy,
++    AB: Copy + Send + Sync,
++    C: Copy + Send + Sync,
+ {
+-    let (prefix, z, claim, products, low, high) = prepare_prefix(
++    let (prefix, z, claim, products, low, high) = prepare_prefix!(
+         field, transcript, prepared, tau_tail, &inputs.ax, &inputs.bx, &inputs.cx, boundary,
+     )?;
+     drop(inputs);
+@@ -131,11 +150,11 @@ where
+             Output = <F as RingOps>::Elem,
+         >,
+     F::Elem: SpartanField<Config = F>,
+-    AB: Copy,
+-    C: Copy,
++    AB: Copy + Send + Sync,
++    C: Copy + Send + Sync,
+ {
+     let (prefix, z, claim, products, low, high) =
+-        prepare_prefix(field, transcript, prepared, tau_tail, ax, bx, cx, boundary)?;
++        prepare_prefix!(field, transcript, prepared, tau_tail, ax, bx, cx, boundary)?;
+     let state = RoundState::new(claim, tau_tail.len(), field);
+     let factors = EqualityFactors::new(low, high, field);
+     let tail = continue_field(
+@@ -149,7 +168,7 @@ where
+     })
+ }
+ #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+-fn prepare_prefix<F, AB, C>(
++fn prepare_prefix<F, AB, C, const PARALLEL: bool>(
+     field: &F,
+     transcript: &mut impl Transcript,
+     prepared: &PreparedUnivariateSkip<F::Elem>,
+@@ -182,8 +201,8 @@ where
+             Output = <F as RingOps>::Elem,
+         >,
+     F::Elem: SpartanField<Config = F>,
+-    AB: Copy,
+-    C: Copy,
++    AB: Copy + Send + Sync,
++    C: Copy + Send + Sync,
+ {
+     let n = validate_shape(ax.len(), bx.len(), cx.len())?;
+     let k = usize::from(prepared.skip_vars);
+@@ -203,38 +222,95 @@ where
+     let c = |weights: &[F::Elem], values: &[C]| {
+         Reduce::reduce(field, field.batch_mul_acc(weights, values))
+     };
+-    let mut message = vec![field.zero(); width - 1];
+-    for block in 0..ax.len() / width {
+-        let start = block * width;
++    // Expand the same arithmetic in the serial loop and each task's loop;
++    // this preserves the serial kernel's direct access to its message buffer.
++    macro_rules! accumulate_block {
++        ($message:ident, $block:ident) => {{
++        let start = $block * width;
+         let a = &ax[start..start + width];
+         let b = &bx[start..start + width];
+         let cv = &cx[start..start + width];
+         let eq = field.mul(
+-            &low.evaluations[block % low.evaluations.len()],
+-            &high.evaluations[block / low.evaluations.len()],
++            &low.evaluations[$block % low.evaluations.len()],
++            &high.evaluations[$block / low.evaluations.len()],
+         );
+-        for (sum, w) in message.iter_mut().zip(&prepared.finite) {
++        for (sum, w) in $message.iter_mut().zip(&prepared.finite) {
+             let residual = field.sub(&field.mul(&ab(w, a), &ab(w, b)), &c(w, cv));
+             *sum = field.add(sum, &field.mul(&eq, &residual));
+         }
+         let leading = field.mul(&ab(&prepared.leading, a), &ab(&prepared.leading, b));
+-        message[width - 2] = field.add(&message[width - 2], &field.mul(&eq, &leading));
++        $message[width - 2] = field.add(&$message[width - 2], &field.mul(&eq, &leading));
++            }};
+     }
++    let block_count = ax.len() / width;
++    // Partial messages are private to each task. Only the completed message
++    // enters the transcript, after the parallel reduction has joined.
++    #[cfg(feature = "parallel")]
++    let parallel = PARALLEL;
++    #[cfg(not(feature = "parallel"))]
++    let parallel = false;
++    #[cfg(feature = "parallel")]
++    let message = if parallel {
++        (0..block_count)
++            .into_par_iter()
++            .with_min_len(64)
++            .fold(
++                || vec![field.zero(); width - 1],
++                |mut message, block| {
++                    accumulate_block!(message, block);
++                    message
++                },
++            )
++            .reduce(
++                || vec![field.zero(); width - 1],
++                |mut a, b| {
++                    for (a, b) in a.iter_mut().zip(b) {
++                        *a = field.add(a, &b);
++                    }
++                    a
++                },
++            )
++    } else {
++        {
++            let mut message = vec![field.zero(); width - 1];
++            for block in 0..block_count { accumulate_block!(message, block); }
++            message
++        }
++    };
++    #[cfg(not(feature = "parallel"))]
++    let message = {
++            let mut message = vec![field.zero(); width - 1];
++            for block in 0..block_count { accumulate_block!(message, block); }
++            message
++        };
+     let prefix = UnivariateSkipProof::from_ordered_message(k, message)?;
+     let reduction = prefix.verify_reduction(transcript, field)?;
+     let weights = lagrange_weights_at(&reduction.z, width, field);
+     let mut products = R1csProductTableBuffers::filled(ax.len() / width, &field.zero());
+-    for (block, ((a, b), cv)) in products
+-        .az
+-        .iter_mut()
+-        .zip(&mut products.bz)
+-        .zip(&mut products.cz)
+-        .enumerate()
+-    {
+-        let start = block * width;
+-        *a = ab(&weights, &ax[start..start + width]);
+-        *b = ab(&weights, &bx[start..start + width]);
+-        *cv = c(&weights, &cx[start..start + width]);
++    macro_rules! fold_block {
++        ($block:ident, $a:expr, $b:expr, $cv:expr) => {{
++        let start = $block * width;
++        $a = ab(&weights, &ax[start..start + width]);
++        $b = ab(&weights, &bx[start..start + width]);
++        $cv = c(&weights, &cx[start..start + width]);
++            }};
++    }
++    #[cfg(feature = "parallel")]
++    if parallel {
++        (
++            products.az.par_iter_mut(),
++            products.bz.par_iter_mut(),
++            products.cz.par_iter_mut(),
++        )
++            .into_par_iter()
++            .enumerate()
++            .with_min_len(64)
++            .for_each(|(i, (a, b, c))| fold_block!(i, *a, *b, *c));
++    }
++    if !parallel {
++        for (block, ((a,b),cv)) in products.az.iter_mut().zip(&mut products.bz).zip(&mut products.cz).enumerate() {
++            fold_block!(block, *a, *b, *cv);
++        }
+     }
+     Ok((
+         prefix,

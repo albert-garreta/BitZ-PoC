@@ -1,0 +1,1018 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -481,3 +481,8 @@
+ name = "ligerito_bounds"
+ harness = false
+ required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]
++
++[[bench]]
++name = "outer_optimizations"
++harness = false
++required-features = ["bench-internals", "parallel"]
+--- a/src/sumcheck/outer/api.rs
++++ b/src/sumcheck/outer/api.rs
+@@ -9,6 +9,8 @@
+ };
+ use crate::transcript::traits::Transcript;
+ use field::{FieldOps, FoldPairs, Reduce, RingOps, WideMul};
++#[cfg(feature = "parallel")]
++use rayon::prelude::*;
+ 
+ /// A and B have the same input type; C can hold wider exact products.
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -74,7 +76,7 @@
+     AB: Copy + Send + Sync,
+     C: Copy + Send + Sync,
+ {
+-    let (state, factors, products) = prepare_first(
++    let (state, factors, products, pending) = prepare_first(
+         field,
+         transcript,
+         initial_claim,
+@@ -83,12 +85,10 @@
+         &inputs.bx,
+         &inputs.cx,
+         false,
+-        boundary,
+-    )?;
++        boundary, None,)?;
+     drop(inputs); // Native tables need not coexist with all subsequent fold scratch.
+     Ok(continue_field(
+-        transcript, field, field, tau, factors, products, state, None, boundary,
+-    )?
++        transcript, field, field, tau, factors, products, state, pending, boundary, None,)?
+     .into())
+ }
+ 
+@@ -117,7 +117,7 @@
+     AB: Copy + Send + Sync,
+     C: Copy + Send + Sync,
+ {
+-    let (state, factors, products) = prepare_first(
++    let (state, factors, products, pending) = prepare_first(
+         field,
+         transcript,
+         initial_claim,
+@@ -126,11 +126,9 @@
+         bx,
+         cx,
+         false,
+-        boundary,
+-    )?;
++        boundary, None,)?;
+     Ok(continue_field(
+-        transcript, field, field, tau, factors, products, state, None, boundary,
+-    )?
++        transcript, field, field, tau, factors, products, state, pending, boundary, None,)?
+     .into())
+ }
+ 
+@@ -156,7 +154,7 @@
+     AB: Copy + Send + Sync,
+     C: Copy + Send + Sync,
+ {
+-    let (state, factors, products) = prepare_first(
++    let (state, factors, products, pending) = prepare_first(
+         field,
+         transcript,
+         field.zero(),
+@@ -165,12 +163,10 @@
+         &inputs.bx,
+         &inputs.cx,
+         true,
+-        boundary,
+-    )?;
++        boundary, None,)?;
+     drop(inputs); // Native tables need not coexist with all subsequent fold scratch.
+     Ok(continue_field(
+-        transcript, field, field, tau, factors, products, state, None, boundary,
+-    )?
++        transcript, field, field, tau, factors, products, state, pending, boundary, None,)?
+     .into())
+ }
+ 
+@@ -198,7 +194,7 @@
+     AB: Copy + Send + Sync,
+     C: Copy + Send + Sync,
+ {
+-    let (state, factors, products) = prepare_first(
++    let (state, factors, products, pending) = prepare_first(
+         field,
+         transcript,
+         field.zero(),
+@@ -207,16 +203,14 @@
+         bx,
+         cx,
+         true,
+-        boundary,
+-    )?;
++        boundary, None,)?;
+     Ok(continue_field(
+-        transcript, field, field, tau, factors, products, state, None, boundary,
+-    )?
++        transcript, field, field, tau, factors, products, state, pending, boundary, None,)?
+     .into())
+ }
+ 
+ #[allow(clippy::too_many_arguments)]
+-fn prepare_first<F, AB, C>(
++pub(super) fn prepare_first<F, AB, C>(
+     field: &F,
+     transcript: &mut impl Transcript,
+     initial_claim: <F as RingOps>::Elem,
+@@ -226,11 +220,13 @@
+     cx: &[C],
+     known_zero: bool,
+     boundary: &mut impl RoundBoundaryPolicy,
++    mut workspace: Option<&mut super::scratch::OuterScratch<F::Elem>>,
+ ) -> Result<
+     (
+         RoundState<<F as RingOps>::Elem>,
+         EqualityFactors<<F as RingOps>::Elem>,
+         R1csProductTableBuffers<<F as RingOps>::Elem>,
++        Option<[<F as RingOps>::Elem; 3]>,
+     ),
+     SumcheckError,
+ >
+@@ -254,7 +250,7 @@
+     boundary.validate(n)?;
+     let (low, high) =
+         make_equality_factors(tau, field).map_err(|_| SumcheckError::InvalidEqualityDimensions)?;
+-    let mut factors = EqualityFactors::new(low.evaluations, high.evaluations, field);
++    let mut factors = EqualityFactors::with_workspace(low.evaluations, high.evaluations, field, workspace.as_deref_mut());
+     let mut state = RoundState::new(initial_claim, n, field);
+     // Multiplication by one uses the operand's exact-product/reduction contract.
+     // No field-valued input table is allocated before the first fold.
+@@ -269,8 +265,11 @@
+                 bz: vec![ab(&bx[0])],
+                 cz: vec![c(&cx[0])],
+             },
++            None,
+         ));
+     }
++    #[cfg(feature = "bench-internals")]
++    let trace_first_message = super::experiments::stamp();
+     factors.strip(field);
+     let weights = factors.weights();
+     let endpoint = FactoredEndpoint::for_tau(&tau[0]);
+@@ -319,12 +318,93 @@
+             field,
+         )
+     };
++    #[cfg(feature = "bench-internals")]
++    super::experiments::record("first_message", trace_first_message);
++    #[cfg(feature = "bench-internals")]
++    let trace_first_fold = super::experiments::stamp();
+     let challenge = state.sample(field, transcript, tau, &coefficients, boundary)?;
+-    let mut products = R1csProductTableBuffers::filled(ax.len() / 2, &field.zero());
+-    field.fold_pairs_into(ax, &mut products.az, &challenge);
+-    field.fold_pairs_into(bx, &mut products.bz, &challenge);
+-    field.fold_pairs_into(cx, &mut products.cz, &challenge);
+-    Ok((state, factors, products))
++    let mut products = match workspace {
++        Some(w) => super::scratch::OuterScratch::take(&mut w.large, ax.len()/2, field.zero()),
++        None => R1csProductTableBuffers::filled(ax.len()/2, &field.zero()),
++    };
++    let fused = super::tuning::enabled(1) && n > 1;
++    let register_fused = super::tuning::enabled(32);
++    if fused { factors.strip(field); }
++    let endpoint = FactoredEndpoint::for_tau(&tau[usize::from(n > 1)]);
++    let weights = factors.weights();
++    let low_pairs = weights.low_weights().filter(|w| w.len() >= two_level_min_low_pairs());
++    // A whole equality bucket belongs to one task; task-local exact sums are
++    // reduced before multiplying by the high factor.
++    let block = if fused { low_pairs.map_or(1024, |w| w.len() * 2) } else { 2048 };
++    let fold = |index: usize, a: &mut [F::Elem], b: &mut [F::Elem], c: &mut [F::Elem]| {
++        let start = index * block * 2;
++        let end = start + 2 * a.len();
++        if !fused || !register_fused {
++            field.fold_pairs_into(&ax[start..end], a, &challenge);
++            field.fold_pairs_into(&bx[start..end], b, &challenge);
++            field.fold_pairs_into(&cx[start..end], c, &challenge);
++        }
++        let mut acc = std::array::from_fn(|_| field.accumulator_zero());
++        if fused {
++            for pair in 0..a.len()/2 {
++                if register_fused {
++                    let i = start + 4 * pair;
++                    field.fold_pairs_into(&ax[i..i+4], &mut a[2*pair..2*pair+2], &challenge);
++                    field.fold_pairs_into(&bx[i..i+4], &mut b[2*pair..2*pair+2], &challenge);
++                    field.fold_pairs_into(&cx[i..i+4], &mut c[2*pair..2*pair+2], &challenge);
++                }
++                let weight = low_pairs.map_or_else(
++                    || weights.pair_weight(index * block / 2 + pair, field),
++                    |low| low[pair],
++                );
++                accumulate_eq_factored_cofactor_evaluations(
++                    &mut acc, &weight, endpoint, &a[2*pair], &a[2*pair+1],
++                    &b[2*pair], &b[2*pair+1], &c[2*pair], &c[2*pair+1], field, field,
++                );
++            }
++            if low_pairs.is_some() {
++                let inner = reduce_two_accumulators(acc, field, field)?;
++                acc = std::array::from_fn(|_| field.accumulator_zero());
++                for (acc, value) in acc.iter_mut().zip(inner) {
++                    field.multiply_accumulate(acc, &weights.high[index], &value);
++                }
++            }
++        }
++        Ok::<_, SumcheckError>(acc)
++    };
++    let chunked = fused || super::tuning::enabled(2);
++    let acc = if chunked {
++        #[cfg(feature = "parallel")]
++        let parallel = super::tuning::enabled(2) && super::tuning::parallel(ax.len()/4);
++        #[cfg(not(feature = "parallel"))]
++        let parallel = false;
++        #[cfg(feature = "parallel")]
++        if parallel {
++            (products.az.par_chunks_mut(block), products.bz.par_chunks_mut(block), products.cz.par_chunks_mut(block))
++                .into_par_iter().enumerate()
++                .map(|(i,(a,b,c))| fold(i,a,b,c))
++                .try_reduce(|| std::array::from_fn(|_| field.accumulator_zero()),
++                    |a,b| Ok(crate::sumcheck::arithmetic::merge_accumulators(a,b,field)))?
++        } else {
++            fold_chunks_serial(&mut products, block, fold, field)?
++        }
++        #[cfg(not(feature = "parallel"))]
++        { let _ = parallel; fold_chunks_serial(&mut products, block, fold, field)? }
++    } else {
++        field.fold_pairs_into(ax, &mut products.az, &challenge);
++        field.fold_pairs_into(bx, &mut products.bz, &challenge);
++        field.fold_pairs_into(cx, &mut products.cz, &challenge);
++        std::array::from_fn(|_| field.accumulator_zero())
++    };
++    let pending = if fused {
++        Some(reconstruct_eq_factored_cubic_without_linear(
++            &state.claim, &tau[1], field.inverse_ct(&tau[1]).value(), endpoint,
++            reduce_two_accumulators(acc, field, field)?, &state.equality_scale, &field.one(), field,
++        ))
++    } else { None };
++    #[cfg(feature = "bench-internals")]
++    super::experiments::record("first_fold", trace_first_fold);
++    Ok((state, factors, products, pending))
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -371,3 +451,15 @@
+         evaluations,
+     })
+ }
++
++fn fold_chunks_serial<E: SpartanField, R: SumcheckProductReducer<E>>(
++    out: &mut R1csProductTableBuffers<E>, block: usize,
++    fold: impl Fn(usize, &mut [E], &mut [E], &mut [E]) -> Result<[R::Accumulator;2], SumcheckError>,
++    reducer: &R,
++) -> Result<[R::Accumulator;2], SumcheckError> {
++    let mut total = std::array::from_fn(|_| reducer.accumulator_zero());
++    for (i, ((a,b),c)) in out.az.chunks_mut(block).zip(out.bz.chunks_mut(block)).zip(out.cz.chunks_mut(block)).enumerate() {
++        total = crate::sumcheck::arithmetic::merge_accumulators(total, fold(i,a,b,c)?, reducer);
++    }
++    Ok(total)
++}
+--- a/src/sumcheck/outer/arithmetic.rs
++++ b/src/sumcheck/outer/arithmetic.rs
+@@ -9,6 +9,10 @@
+ use crate::transcript::traits::Transcript;
+ use crate::utils::delayed_reduction::EncodedMac;
+ use field::RingOps;
++#[cfg(feature = "parallel")]
++use super::tuning::parallel;
++fn outer_fold_block() -> usize { let n = super::tuning::chunk(); if n == 0 { 2048 } else { n } }
++
+ 
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+@@ -53,7 +57,7 @@
+     #[inline]
+     fn two_level_low(&self) -> Option<&'a [Raw]> {
+         self.low
+-            .filter(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
++            .filter(|low| low.len() >= two_level_min_low_pairs())
+     }
+ 
+     fn pair_count(&self) -> usize {
+@@ -263,10 +267,10 @@
+     };
+     #[cfg(feature = "parallel")]
+     if parallel(pair_count) {
+-        let blocks = pair_count.div_ceil(FOLD_BLOCK);
++        let blocks = pair_count.div_ceil(outer_fold_block());
+         let total = (0..blocks)
+             .into_par_iter()
+-            .map(|b| block(b * FOLD_BLOCK, ((b + 1) * FOLD_BLOCK).min(pair_count)))
++            .map(|b| block(b * outer_fold_block(), ((b + 1) * outer_fold_block()).min(pair_count)))
+             .reduce(product_pair, merge_product_pair);
+         return reduce_product_pair(total, reducer);
+     }
+@@ -359,10 +363,10 @@
+     };
+     #[cfg(feature = "parallel")]
+     if parallel(pair_count) {
+-        let blocks = pair_count.div_ceil(FOLD_BLOCK);
++        let blocks = pair_count.div_ceil(outer_fold_block());
+         let total = (0..blocks)
+             .into_par_iter()
+-            .map(|b| block(b * FOLD_BLOCK, ((b + 1) * FOLD_BLOCK).min(pair_count)))
++            .map(|b| block(b * outer_fold_block(), ((b + 1) * outer_fold_block()).min(pair_count)))
+             .reduce(linear_pair, merge);
+         return reduce_linear_pair(total, reducer);
+     }
+@@ -516,9 +520,9 @@
+     let block_pairs = match weights.two_level_low() {
+         Some(low) => {
+             let low_pairs = low.len();
+-            (FOLD_BLOCK / 2).div_ceil(low_pairs).max(1) * low_pairs
+-        }
+-        None => FOLD_BLOCK / 2,
++            (outer_fold_block() / 2).div_ceil(low_pairs).max(1) * low_pairs
++        }
++        None => outer_fold_block() / 2,
+     };
+ 
+     #[cfg(feature = "parallel")]
+@@ -681,9 +685,9 @@
+     let block_pairs = match weights.two_level_low() {
+         Some(low) => {
+             let low_pairs = low.len();
+-            (FOLD_BLOCK / 2).div_ceil(low_pairs).max(1) * low_pairs
+-        }
+-        None => FOLD_BLOCK / 2,
++            (outer_fold_block() / 2).div_ceil(low_pairs).max(1) * low_pairs
++        }
++        None => outer_fold_block() / 2,
+     };
+ 
+     #[cfg(feature = "parallel")]
+--- a/src/sumcheck/outer/arithmetic/native.rs
++++ b/src/sumcheck/outer/arithmetic/native.rs
+@@ -372,9 +372,9 @@
+     #[cfg(feature = "parallel")]
+     if parallel(count) {
+         return reduce(
+-            (0..count.div_ceil(FOLD_BLOCK))
++            (0..count.div_ceil(outer_fold_block()))
+                 .into_par_iter()
+-                .map(|b| block(b * FOLD_BLOCK, ((b + 1) * FOLD_BLOCK).min(count), None))
++                .map(|b| block(b * outer_fold_block(), ((b + 1) * outer_fold_block()).min(count), None))
+                 .reduce(zero, merge),
+         );
+     }
+@@ -440,8 +440,8 @@
+     };
+     #[cfg(feature = "parallel")]
+     if parallel(pairs) {
+-        let block = weights.two_level_low().map_or(FOLD_BLOCK / 2, |v| {
+-            (FOLD_BLOCK / 2).div_ceil(v.len()).max(1) * v.len()
++        let block = weights.two_level_low().map_or(outer_fold_block() / 2, |v| {
++            (outer_fold_block() / 2).div_ceil(v.len()).max(1) * v.len()
+         });
+         let total = (
+             out.az.par_chunks_mut(2 * block),
+--- a/src/sumcheck/outer/mod.rs
++++ b/src/sumcheck/outer/mod.rs
+@@ -11,3 +11,10 @@
+ 
+ #[cfg(test)]
+ mod tests;
++
++mod tuning;
++#[cfg(feature = "bench-internals")]
++#[doc(hidden)]
++pub mod experiments;
++
++mod scratch;
+--- a/src/sumcheck/outer/native_skip.rs
++++ b/src/sumcheck/outer/native_skip.rs
+@@ -1005,7 +1005,7 @@
+ #[cfg(feature = "parallel")]
+ #[inline]
+ fn should_parallelize(work_items: usize) -> bool {
+-    work_items >= (1 << 12) && rayon::current_num_threads() > 1
++    super::tuning::parallel(work_items)
+ }
+ 
+ #[inline]
+--- a/src/sumcheck/outer/ordinary.rs
++++ b/src/sumcheck/outer/ordinary.rs
+@@ -1,6 +1,8 @@
+ //! Equality-factored arithmetic and ordinary outer reduction.
+ use super::super::{SumcheckError, boundary::*, proof::*};
+ use super::engine::RoundState;
++#[cfg(feature = "parallel")]
++use super::tuning::parallel as should_parallelize;
+ use crate::piop::spartan::SpartanField;
+ #[cfg(test)]
+ use crate::piop::spartan::absorb_field_elements;
+@@ -169,8 +171,7 @@
+         products,
+         state,
+         None,
+-        round_boundary,
+-    )
++        round_boundary, None,)
+ }
+ 
+ /// Independent direct-cubic oracle for transcript-compatibility tests. This is
+@@ -399,8 +400,7 @@
+         folded,
+         state,
+         None,
+-        &mut UngrindedRoundBoundary,
+-    )
++        &mut UngrindedRoundBoundary, None,)
+ }
+ 
+ /// Owned evaluation tables used by the fused outer-sumcheck kernels.
+@@ -524,7 +524,7 @@
+     // accumulators and field×field outer accumulators.
+     if equality_weights
+         .low_weights()
+-        .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
++        .is_some_and(|low| low.len() >= two_level_min_low_pairs())
+     {
+         let low_weights = equality_weights
+             .low_weights()
+@@ -879,7 +879,7 @@
+ /// Equality weights with the current coordinate stripped.
+ pub(crate) struct StrippedEqualityWeights<'a, F> {
+     low: Option<&'a [F]>,
+-    high: &'a [F],
++    pub(super) high: &'a [F],
+ }
+ 
+ impl<'a, F> StrippedEqualityWeights<'a, F>
+@@ -914,7 +914,7 @@
+     }
+ 
+     #[inline]
+-    fn low_weights(&self) -> Option<&'a [F]> {
++    pub(super) fn low_weights(&self) -> Option<&'a [F]> {
+         self.low
+     }
+ }
+@@ -928,7 +928,7 @@
+ /// removes the N-scaling immediate `eq_out * eq_in` multiplication. Very short
+ /// buckets do not amortize the inner reduction, so their tail rounds retain
+ /// the direct product.
+-pub(crate) const TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS: usize = 8;
++pub(crate) fn two_level_min_low_pairs() -> usize { super::tuning::two_level() }
+ 
+ /// Computes the cofactor endpoint and leading coefficient in two
+ /// delayed-reduction levels.
+@@ -991,6 +991,7 @@
+     if should_parallelize(products.len() / 2) {
+         let accumulators = (0..equality_weights.high.len())
+             .into_par_iter()
++            .with_min_len((super::tuning::chunk() / low_pair_count).max(1))
+             .try_fold(
+                 || std::array::from_fn(|_| reducer.accumulator_zero()),
+                 accumulate_high_bucket,
+@@ -1031,7 +1032,7 @@
+     let endpoint = FactoredEndpoint::for_tau(tau);
+     let evaluations = if equality_weights
+         .low_weights()
+-        .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
++        .is_some_and(|low| low.len() >= two_level_min_low_pairs())
+     {
+         compute_two_level_cofactor_evaluations(
+             products,
+@@ -1233,6 +1234,7 @@
+         )
+             .into_par_iter()
+             .enumerate()
++            .with_min_len((super::tuning::chunk() / low_pair_count).max(1))
+             .try_fold(
+                 || std::array::from_fn(|_| reducer.accumulator_zero()),
+                 |outer, (high_index, (az, bz, cz, az_output, bz_output, cz_output))| {
+@@ -1290,7 +1292,7 @@
+ 
+     if equality_weights
+         .low_weights()
+-        .is_some_and(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
++        .is_some_and(|low| low.len() >= two_level_min_low_pairs())
+     {
+         let evaluations = fold_products_and_compute_next_two_level(
+             input,
+@@ -1362,6 +1364,7 @@
+         )
+             .into_par_iter()
+             .enumerate()
++            .with_min_len(super::tuning::chunk().max(1))
+             .fold(
+                 || std::array::from_fn(|_| reducer.accumulator_zero()),
+                 |accumulators, (chunk, (az, bz, cz, az_output, bz_output, cz_output))| {
+@@ -1437,6 +1440,17 @@
+             high,
+         }
+     }
++    pub(super) fn with_workspace(low: Vec<E>, high: Vec<E>, field: &E::Config, workspace: Option<&mut super::scratch::OuterScratch<E>>) -> Self {
++        match workspace {
++            None => Self::new(low, high, field),
++            Some(w) => {
++                let [mut scratch_low, mut scratch_high] = std::mem::take(&mut w.equality);
++                scratch_low.resize(low.len()/2, field.zero());
++                scratch_high.resize(high.len()/2, field.zero());
++                Self { low, high, scratch_low, scratch_high }
++            }
++        }
++    }
+     pub(super) fn strip(&mut self, field: &E::Config) {
+         let (active, scratch) = if self.low.len() > 1 {
+             (&mut self.low, &mut self.scratch_low)
+@@ -1467,7 +1481,14 @@
+     mut state: RoundState<E>,
+     pending: Option<[E; 3]>,
+     boundary: &mut impl RoundBoundaryPolicy,
++    mut workspace: Option<&mut super::scratch::OuterScratch<E>>,
+ ) -> Result<OuterSumcheckOutput<E>, SumcheckError> {
++    #[cfg(feature = "bench-internals")]
++    let trace_tail = super::experiments::stamp();
++    let mut scratch = match workspace.as_deref_mut() {
++        Some(w) => super::scratch::OuterScratch::take(&mut w.small, products.len()/2, field.zero()),
++        None => R1csProductTableBuffers::filled(products.len()/2, &field.zero()),
++    };
+     if products.len() > 1 {
+         let inverses = batch_invert_nonzero(tau, field);
+         let round = state.point.len();
+@@ -1487,7 +1508,6 @@
+                 field,
+             )?
+         };
+-        let mut scratch = R1csProductTableBuffers::filled(products.len() / 2, &field.zero());
+         state.continue_with(
+             field,
+             transcript,
+@@ -1521,9 +1541,15 @@
+             },
+         )?;
+     }
+-    state.finish(
+-        field,
+-        transcript,
+-        [products.az[0], products.bz[0], products.cz[0]],
+-    )
+-}
++    #[cfg(feature = "bench-internals")]
++    super::experiments::record("tail", trace_tail);
++    let result = state.finish(field, transcript, [products.az[0], products.bz[0], products.cz[0]]);
++    if let Some(w) = workspace {
++        if scratch.az.capacity() > products.az.capacity() { products.swap(&mut scratch); }
++        w.large = Some(products); w.small = Some(scratch);
++        // Either side can hold the larger allocation after ping-pong folding.
++        w.equality = [if factors.low.capacity() > factors.scratch_low.capacity() { factors.low } else { factors.scratch_low },
++                      if factors.high.capacity() > factors.scratch_high.capacity() { factors.high } else { factors.scratch_high }];
++    }
++    result
++}
+--- a/src/sumcheck/outer/univariate_api.rs
++++ b/src/sumcheck/outer/univariate_api.rs
+@@ -10,6 +10,8 @@
+ use crate::sumcheck::{RoundBoundaryPolicy, SumcheckError, SumcheckProof};
+ use crate::transcript::traits::Transcript;
+ use field::{BatchMulAcc, FieldOps, Reduce, RingOps};
++#[cfg(feature = "parallel")]
++use rayon::prelude::*;
+ 
+ /// Field-specific interpolation weights for 1..=4 little-endian prefix bits.
+ #[derive(Clone, Debug)]
+@@ -87,18 +89,16 @@
+             Output = <F as RingOps>::Elem,
+         >,
+     F::Elem: SpartanField<Config = F>,
+-    AB: Copy,
+-    C: Copy,
++    AB: Copy + Send + Sync,
++    C: Copy + Send + Sync,
+ {
+     let (prefix, z, claim, products, low, high) = prepare_prefix(
+-        field, transcript, prepared, tau_tail, &inputs.ax, &inputs.bx, &inputs.cx, boundary,
+-    )?;
++        field, transcript, prepared, tau_tail, &inputs.ax, &inputs.bx, &inputs.cx, boundary, None,)?;
+     drop(inputs);
+     let state = RoundState::new(claim, tau_tail.len(), field);
+     let factors = EqualityFactors::new(low, high, field);
+     let tail = continue_field(
+-        transcript, field, field, tau_tail, factors, products, state, None, boundary,
+-    )?
++        transcript, field, field, tau_tail, factors, products, state, None, boundary, None,)?
+     .into();
+     Ok(SkippedOuterOutput {
+         prefix,
+@@ -131,16 +131,15 @@
+             Output = <F as RingOps>::Elem,
+         >,
+     F::Elem: SpartanField<Config = F>,
+-    AB: Copy,
+-    C: Copy,
++    AB: Copy + Send + Sync,
++    C: Copy + Send + Sync,
+ {
+     let (prefix, z, claim, products, low, high) =
+-        prepare_prefix(field, transcript, prepared, tau_tail, ax, bx, cx, boundary)?;
++        prepare_prefix(field, transcript, prepared, tau_tail, ax, bx, cx, boundary, None,)?;
+     let state = RoundState::new(claim, tau_tail.len(), field);
+     let factors = EqualityFactors::new(low, high, field);
+     let tail = continue_field(
+-        transcript, field, field, tau_tail, factors, products, state, None, boundary,
+-    )?
++        transcript, field, field, tau_tail, factors, products, state, None, boundary, None,)?
+     .into();
+     Ok(SkippedOuterOutput {
+         prefix,
+@@ -149,7 +148,7 @@
+     })
+ }
+ #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+-fn prepare_prefix<F, AB, C>(
++pub(super) fn prepare_prefix<F, AB, C>(
+     field: &F,
+     transcript: &mut impl Transcript,
+     prepared: &PreparedUnivariateSkip<F::Elem>,
+@@ -158,6 +157,7 @@
+     bx: &[AB],
+     cx: &[C],
+     boundary: &mut impl RoundBoundaryPolicy,
++    workspace: Option<&mut super::scratch::OuterScratch<F::Elem>>,
+ ) -> Result<
+     (
+         UnivariateSkipProof<F::Elem>,
+@@ -182,8 +182,8 @@
+             Output = <F as RingOps>::Elem,
+         >,
+     F::Elem: SpartanField<Config = F>,
+-    AB: Copy,
+-    C: Copy,
++    AB: Copy + Send + Sync,
++    C: Copy + Send + Sync,
+ {
+     let n = validate_shape(ax.len(), bx.len(), cx.len())?;
+     let k = usize::from(prepared.skip_vars);
+@@ -203,8 +203,9 @@
+     let c = |weights: &[F::Elem], values: &[C]| {
+         Reduce::reduce(field, field.batch_mul_acc(weights, values))
+     };
+-    let mut message = vec![field.zero(); width - 1];
+-    for block in 0..ax.len() / width {
++    #[cfg(feature = "bench-internals")]
++    let trace_prefix_message = super::experiments::stamp();
++    let accumulate = |mut message: Vec<F::Elem>, block: usize| {
+         let start = block * width;
+         let a = &ax[start..start + width];
+         let b = &bx[start..start + width];
+@@ -219,23 +220,53 @@
+         }
+         let leading = field.mul(&ab(&prepared.leading, a), &ab(&prepared.leading, b));
+         message[width - 2] = field.add(&message[width - 2], &field.mul(&eq, &leading));
+-    }
++        message
++    };
++    let block_count = ax.len()/width;
++    #[cfg(feature = "parallel")]
++    let message = if super::tuning::enabled(4) && super::tuning::parallel(block_count) {
++        (0..block_count).into_par_iter().with_min_len(super::tuning::chunk().max(64))
++            .fold(|| vec![field.zero(); width-1], accumulate)
++            .reduce(|| vec![field.zero(); width-1], |mut a,b| {
++                for (a,b) in a.iter_mut().zip(b) { *a = field.add(a,&b); } a
++            })
++    } else { (0..block_count).fold(vec![field.zero(); width-1], accumulate) };
++    #[cfg(not(feature = "parallel"))]
++    let message = (0..block_count).fold(vec![field.zero(); width-1], accumulate);
++    #[cfg(feature = "bench-internals")]
++    super::experiments::record("prefix_message", trace_prefix_message);
++    #[cfg(feature = "bench-internals")]
++    let trace_prefix_fold = super::experiments::stamp();
+     let prefix = UnivariateSkipProof::from_ordered_message(k, message)?;
+     let reduction = prefix.verify_reduction(transcript, field)?;
+     let weights = lagrange_weights_at(&reduction.z, width, field);
+-    let mut products = R1csProductTableBuffers::filled(ax.len() / width, &field.zero());
+-    for (block, ((a, b), cv)) in products
+-        .az
+-        .iter_mut()
+-        .zip(&mut products.bz)
+-        .zip(&mut products.cz)
+-        .enumerate()
+-    {
++    let mut products = match workspace {
++        Some(w) => super::scratch::OuterScratch::take(&mut w.large, ax.len()/width, field.zero()),
++        None => R1csProductTableBuffers::filled(ax.len()/width, &field.zero()),
++    };
++    let fold = |block: usize, a: &mut F::Elem, b: &mut F::Elem, cv: &mut F::Elem| {
+         let start = block * width;
+         *a = ab(&weights, &ax[start..start + width]);
+         *b = ab(&weights, &bx[start..start + width]);
+         *cv = c(&weights, &cx[start..start + width]);
+-    }
++    };
++    #[cfg(feature = "parallel")]
++    let parallel = super::tuning::enabled(8) && super::tuning::parallel(block_count);
++    #[cfg(not(feature = "parallel"))]
++    let parallel = false;
++    #[cfg(feature = "parallel")]
++    if parallel {
++        (products.az.par_iter_mut(), products.bz.par_iter_mut(), products.cz.par_iter_mut())
++            .into_par_iter().enumerate().with_min_len(super::tuning::chunk().max(64))
++            .for_each(|(i,(a,b,c))| fold(i,a,b,c));
++    }
++    if !parallel {
++        for (i, ((a,b),c)) in products.az.iter_mut().zip(&mut products.bz).zip(&mut products.cz).enumerate() {
++            fold(i,a,b,c);
++        }
++    }
++    #[cfg(feature = "bench-internals")]
++    super::experiments::record("prefix_fold", trace_prefix_fold);
+     Ok((
+         prefix,
+         reduction.z,
+--- /dev/null
++++ b/benches/outer_optimizations.rs
+@@ -0,0 +1,33 @@
++#[cfg(feature = "bench-peak-memory")]
++mod memory {
++    use std::{alloc::{GlobalAlloc,Layout,System}, sync::atomic::{AtomicUsize,Ordering::Relaxed}};
++    pub struct Counting;
++    static LIVE:AtomicUsize=AtomicUsize::new(0);
++    static PEAK:AtomicUsize=AtomicUsize::new(0);
++    static ALLOCS:AtomicUsize=AtomicUsize::new(0);
++    unsafe impl GlobalAlloc for Counting {
++        unsafe fn alloc(&self,l:Layout)->*mut u8 {
++            let p=unsafe{System.alloc(l)};
++            if !p.is_null(){ALLOCS.fetch_add(1,Relaxed);let n=LIVE.fetch_add(l.size(),Relaxed)+l.size();PEAK.fetch_max(n,Relaxed);} p
++        }
++        unsafe fn alloc_zeroed(&self,l:Layout)->*mut u8 {
++            let p=unsafe{System.alloc_zeroed(l)};
++            if !p.is_null(){ALLOCS.fetch_add(1,Relaxed);let n=LIVE.fetch_add(l.size(),Relaxed)+l.size();PEAK.fetch_max(n,Relaxed);} p
++        }
++        unsafe fn dealloc(&self,p:*mut u8,l:Layout){LIVE.fetch_sub(l.size(),Relaxed);unsafe{System.dealloc(p,l)}}
++        unsafe fn realloc(&self,p:*mut u8,l:Layout,n:usize)->*mut u8 {
++            let q=unsafe{System.realloc(p,l,n)};
++            if !q.is_null(){ALLOCS.fetch_add(1,Relaxed);let live=if n>=l.size(){LIVE.fetch_add(n-l.size(),Relaxed)+n-l.size()}else{LIVE.fetch_sub(l.size()-n,Relaxed)-(l.size()-n)};PEAK.fetch_max(live,Relaxed);} q
++        }
++    }
++    pub fn metrics(reset:bool)->[usize;3]{let live=LIVE.load(Relaxed);if reset{PEAK.store(live,Relaxed);}[ALLOCS.load(Relaxed),live,PEAK.load(Relaxed)]}
++}
++#[cfg(feature = "bench-peak-memory")]
++#[global_allocator]
++static ALLOC:memory::Counting=memory::Counting;
++fn main() {
++    #[cfg(feature = "bench-peak-memory")]
++    f2z::sumcheck::outer::experiments::run(memory::metrics);
++    #[cfg(not(feature = "bench-peak-memory"))]
++    f2z::sumcheck::outer::experiments::run(|_|[0;3]);
++}
+--- /dev/null
++++ b/src/sumcheck/outer/experiments.rs
+@@ -0,0 +1,182 @@
++//! Isolated benchmark support. Removed from normal builds by `bench-internals`.
++use super::*;
++use crate::{piop::spartan::SpartanField, sumcheck::{UngrindedRoundBoundary, arithmetic::SumcheckProductReducer}, transcript::Blake3Transcript};
++use field::{Fp, FpCtx, Uint, RingOps, FieldOps, IntegerEmbedding, WideMul, Reduce, FoldPairs, BatchMulAcc};
++use rand::{RngExt, SeedableRng, rngs::StdRng};
++use std::{hint::black_box, sync::atomic::Ordering, time::Instant};
++
++#[derive(Clone, Copy)]
++struct Candidate { flags: usize, cutoff: usize, chunk: usize, two: usize }
++fn candidate(name: &str) -> Candidate {
++    let mut c = Candidate { flags: 0, cutoff: 4096, chunk: 0, two: 8 };
++    for part in name.split('+') {
++        match part {
++            "baseline" => (), "fuse" => c.flags |= 1, "first-par" => c.flags |= 2,
++            "prefix-msg" => c.flags |= 4, "prefix-fold" => c.flags |= 8,
++            "prefix" => c.flags |= 12, "scratch" => c.flags |= 16, "register-fuse" => c.flags |= 33,
++            s if s.starts_with("cutoff-") => c.cutoff = s[7..].parse().unwrap(),
++            s if s.starts_with("chunk-") => c.chunk = s[6..].parse().unwrap(),
++            s if s.starts_with("two-") => c.two = s[4..].parse().unwrap(),
++            _ => panic!("unknown candidate {part}"),
++        }
++    }
++    c
++}
++fn configure(c: Candidate) {
++    tuning::FLAGS.store(c.flags, Ordering::Relaxed);
++    tuning::CUTOFF.store(c.cutoff, Ordering::Relaxed);
++    tuning::CHUNK.store(c.chunk, Ordering::Relaxed);
++    tuning::TWO_LEVEL.store(c.two, Ordering::Relaxed);
++}
++fn words(name: &str, default: &str) -> Vec<String> {
++    std::env::var(name).unwrap_or_else(|_| default.into()).split_whitespace().map(str::to_owned).collect()
++}
++
++// A single driver monomorphizes exactly the same field provider with each
++// native input representation. No benchmark trait is added to the library API.
++fn bench_inputs<A, C>(kind: &str, field: &FpCtx<2>, a: &[A], b: &[A], c: &[C], variants: &[String], protocols: &[String], reps: usize, metrics: fn(bool) -> [usize;3])
++where
++    A: Copy + Send + Sync, C: Copy + Send + Sync,
++    FpCtx<2>: WideMul<Fp<2>,A> + WideMul<Fp<2>,C>
++        + FoldPairs<A,Fp<2>> + FoldPairs<C,Fp<2>>
++        + BatchMulAcc<Fp<2>,A> + BatchMulAcc<Fp<2>,C>
++        + Reduce<<FpCtx<2> as WideMul<Fp<2>,A>>::Product,Output=Fp<2>>
++        + Reduce<<FpCtx<2> as WideMul<Fp<2>,C>>::Product,Output=Fp<2>>
++        + Reduce<<FpCtx<2> as BatchMulAcc<Fp<2>,A>>::Accumulator,Output=Fp<2>>
++        + Reduce<<FpCtx<2> as BatchMulAcc<Fp<2>,C>>::Accumulator,Output=Fp<2>>,
++{
++    let n = a.len().ilog2() as usize;
++    let tau: Vec<_> = (0..n).map(|i| field.from_integer(&(i as u64 + 7))).collect();
++    for protocol in protocols {
++        let k: usize = protocol.strip_prefix("skip-").map_or(0, |s| s.parse().unwrap());
++        if n < k { continue; }
++        let prepared = (k > 0).then(|| prepare_univariate_skip(field,k as u8).unwrap());
++        let invoke = |scratch: &mut super::scratch::OuterScratch<Fp<2>>| {
++            let mut transcript = Blake3Transcript::new();
++            let before = metrics(true);
++            let start = Instant::now();
++            if std::env::var_os("OUTER_TRACE").is_some() { EPOCH.with(|e|e.set(Some(start)));SPANS.with(|s|s.borrow_mut().clear()); }
++            let reuse = tuning::enabled(16);
++            let (out, prefix): (OuterOutput<Fp<2>>, Option<UnivariateSkipProof<Fp<2>>>) = if let Some(prepared) = &prepared {
++                let (prefix, _z, claim, products, low, high) = univariate_api::prepare_prefix(
++                    field, &mut transcript, prepared, &tau[k..], a,b,c,&mut UngrindedRoundBoundary,
++                    reuse.then_some(&mut *scratch)).unwrap();
++                let factors = ordinary::EqualityFactors::with_workspace(low,high,field,reuse.then_some(&mut *scratch));
++                let state = engine::RoundState::new(claim,n-k,field);
++                let out = ordinary::continue_field(&mut transcript,field,field,&tau[k..],factors,products,state,None,
++                    &mut UngrindedRoundBoundary,reuse.then_some(&mut *scratch)).unwrap().into();
++                (out, Some(prefix))
++            } else {
++                let (state,factors,products,pending) = api::prepare_first(field,&mut transcript,field.zero(),&tau,a,b,c,
++                    protocol != "ordinary",&mut UngrindedRoundBoundary,reuse.then_some(&mut *scratch)).unwrap();
++                let out = ordinary::continue_field(&mut transcript,field,field,&tau,factors,products,state,pending,
++                    &mut UngrindedRoundBoundary,reuse.then_some(&mut *scratch)).unwrap().into();
++                (out,None)
++            };
++            let nanos = start.elapsed().as_nanos();
++            let after = metrics(false);
++            let allocation_count = after[0].saturating_sub(before[0]);
++            let peak_delta = after[2].saturating_sub(before[1]);
++            let digest = transcript.state_digest();
++            let mut verifier = Blake3Transcript::new();
++            if let Some(prefix) = &prefix {
++                verify_outer_zerocheck_with_skip(field,&mut verifier,prepared.as_ref().unwrap(),&tau[k..],prefix,&out.proof,out.evaluations,&mut UngrindedRoundBoundary).unwrap();
++            } else {
++                verify_outer_sumcheck(field,&mut verifier,field.zero(),&tau,&out.proof,out.evaluations,&mut UngrindedRoundBoundary).unwrap();
++            }
++            assert_eq!(digest,verifier.state_digest());
++            (nanos, out, prefix, digest, allocation_count, peak_delta)
++        };
++        configure(candidate("baseline"));
++        let (_, reference, prefix, digest, _, _) = invoke(&mut super::scratch::OuterScratch::default());
++        let mut workspaces: Vec<_> = variants.iter().map(|_| super::scratch::OuterScratch::default()).collect();
++        // One excluded warmup per candidate. Rotate the measured ordering.
++        for sample in 0..=reps {
++            for j in 0..variants.len() {
++                let name = &variants[(j+sample)%variants.len()];
++                configure(candidate(name));
++                let workspace = &mut workspaces[(j+sample)%variants.len()];
++                let (ns, out, p, d, allocs, peak) = invoke(workspace);
++                assert_eq!(out,reference,"{kind}/{protocol}/{name}");
++                assert_eq!(p,prefix);
++                assert_eq!(d,digest);
++                black_box(&out);
++                println!("OUTER_SAMPLE {}",serde_json::json!({"candidate":name,"input":kind,"protocol":protocol,"rows":a.len(),"threads":rayon::current_num_threads(),"sample":sample,"warmup":sample==0,"ns":ns.to_string(),"verified":true,"retained_bytes":workspace.bytes(),"allocations":allocs,"peak_delta_bytes":peak,"spans":SPANS.with(|s|s.borrow().clone())}));
++            }
++        }
++    }
++}
++
++pub fn run(metrics: fn(bool) -> [usize;3]) {
++    if std::env::var_os("OUTER_CHECK_WORKSPACE").is_some() { configure(candidate("fuse+first-par+prefix+scratch"));check_workspace();println!("workspace checks passed");return; }
++    let variants = words("OUTER_VARIANTS","baseline fuse first-par fuse+first-par prefix-msg prefix-fold prefix");
++    let protocols = words("OUTER_PROTOCOLS","ordinary zero skip-1 skip-2 skip-3 skip-4");
++    let types = words("OUTER_INPUTS","u32 u64 u128 field");
++    let reps = std::env::var("OUTER_REPS").map_or(5,|v| v.parse().unwrap());
++    let field = Fp::<2>::make_cfg(&Uint::from((1u128<<100)-15)).unwrap();
++    for exponent in words("OUTER_SHAPES","12 15 17 19") {
++        let n: usize = exponent.parse().unwrap();
++        let mut rng = StdRng::seed_from_u64(0x5533_326d_756c_0073 ^ n as u64);
++        let a: Vec<u128> = (0..1usize<<n).map(|_| rng.random()).collect();
++        let b: Vec<u128> = (0..a.len()).map(|_| rng.random()).collect();
++        for kind in &types {
++            match kind.as_str() {
++                "u32" => {
++                    let a:Vec<_>=a.iter().map(|v|*v as u32).collect(); let b:Vec<_>=b.iter().map(|v|*v as u32).collect();
++                    let c:Vec<_>=a.iter().zip(&b).map(|(a,b)|*a as u64 * *b as u64).collect();
++                    bench_inputs(kind,&field,&a,&b,&c,&variants,&protocols,reps,metrics);
++                }
++                "u64" => {
++                    let a:Vec<_>=a.iter().map(|v|*v as u64).collect(); let b:Vec<_>=b.iter().map(|v|*v as u64).collect();
++                    let c:Vec<_>=a.iter().zip(&b).map(|(a,b)|*a as u128 * *b as u128).collect();
++                    bench_inputs(kind,&field,&a,&b,&c,&variants,&protocols,reps,metrics);
++                }
++                "u128" => {
++                    let c:Vec<Uint<4>>=a.iter().zip(&b).map(|(a,b)| *field::IntegerOps.mul_wide(&Uint::<2>::from(*a),&Uint::<2>::from(*b)).checked_resize_ct::<4>().value()).collect();
++                    bench_inputs(kind,&field,&a,&b,&c,&variants,&protocols,reps,metrics);
++                }
++                "field" => {
++                    let a:Vec<_>=a.iter().map(|v|field.from_integer(v)).collect(); let b:Vec<_>=b.iter().map(|v|field.from_integer(v)).collect();
++                    let c:Vec<_>=a.iter().zip(&b).map(|(a,b)|field.mul(a,b)).collect();
++                    bench_inputs(kind,&field,&a,&b,&c,&variants,&protocols,reps,metrics);
++                }
++                _ => panic!("unknown input {kind}"),
++            }
++        }
++    }
++}
++
++thread_local! {
++    static EPOCH: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
++    static SPANS: std::cell::RefCell<Vec<(&'static str,u128,u128)>> = const { std::cell::RefCell::new(Vec::new()) };
++}
++pub(super) fn stamp() -> Option<Instant> { EPOCH.with(|e|e.get().map(|_|Instant::now())) }
++pub(super) fn record(name:&'static str,start:Option<Instant>) {
++    if let Some(start)=start { let end=Instant::now(); EPOCH.with(|epoch| { let epoch=epoch.get().unwrap();SPANS.with(|v|v.borrow_mut().push((name,start.duration_since(epoch).as_nanos(),end.duration_since(epoch).as_nanos()))); }); }
++}
++// Invoked by the private experimental harness, not a public API.
++fn check_workspace() {
++    let check = || {
++        let mut scratch = super::scratch::OuterScratch::default();
++        for modulus in [(1u128 << 100)-15, 97] {
++            let field = Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
++            for n in [0,1,4,14,5,0,14] {
++                let a:Vec<u64>=(0..1usize<<n).map(|i|i as u64+3).collect();
++                let b:Vec<u64>=a.iter().map(|a|a+7).collect();
++                let c:Vec<u128>=a.iter().zip(&b).map(|(a,b)|*a as u128 * *b as u128).collect();
++                let tau:Vec<_>=(0..n).map(|i|field.from_integer(&(i as u64+7))).collect();
++                let mut t=Blake3Transcript::new();
++                let reference=prove_outer_zerocheck_from_slices(&field,&mut t,&tau,&a,&b,&c,&mut UngrindedRoundBoundary).unwrap();
++                let digest=t.state_digest();
++                let mut t=Blake3Transcript::new();
++                let(state,factors,products,pending)=api::prepare_first(&field,&mut t,field.zero(),&tau,&a,&b,&c,true,&mut UngrindedRoundBoundary,Some(&mut scratch)).unwrap();
++                let got:OuterOutput<_>=ordinary::continue_field(&mut t,&field,&field,&tau,factors,products,state,pending,&mut UngrindedRoundBoundary,Some(&mut scratch)).unwrap().into();
++                assert_eq!(got,reference);assert_eq!(digest,t.state_digest());
++                assert!(api::prepare_first(&field,&mut Blake3Transcript::new(),field.zero(),&tau,&a,&[],&c,true,&mut UngrindedRoundBoundary,Some(&mut scratch)).is_err());
++            }
++        }
++    };
++    // Each concurrent proof owns its buffers. Only immutable field data and
++    // benchmark policy are shared; the failed call must not poison reuse.
++    rayon::join(check,check);
++}
+--- /dev/null
++++ b/src/sumcheck/outer/scratch.rs
+@@ -0,0 +1,21 @@
++use super::ordinary::R1csProductTableBuffers;
++/// Private prototype: storage is owned by the caller, never shared globally.
++pub(super) struct OuterScratch<E> {
++    pub large: Option<R1csProductTableBuffers<E>>,
++    pub small: Option<R1csProductTableBuffers<E>>,
++    pub equality: [Vec<E>; 2],
++}
++impl<E> Default for OuterScratch<E> {
++    fn default() -> Self { Self { large: None, small: None, equality: [Vec::new(), Vec::new()] } }
++}
++impl<E: Copy> OuterScratch<E> {
++    pub fn take(slot: &mut Option<R1csProductTableBuffers<E>>, len: usize, zero: E) -> R1csProductTableBuffers<E> {
++        let mut out = slot.take().unwrap_or_else(|| R1csProductTableBuffers::filled(0, &zero));
++        out.az.resize(len, zero); out.bz.resize(len, zero); out.cz.resize(len, zero);
++        out
++    }
++    pub fn bytes(&self) -> usize {
++        let tables = [&self.large, &self.small].into_iter().flatten().map(|p| p.az.capacity()+p.bz.capacity()+p.cz.capacity()).sum::<usize>();
++        (tables + self.equality.iter().map(Vec::capacity).sum::<usize>()) * std::mem::size_of::<E>()
++    }
++}
+--- /dev/null
++++ b/src/sumcheck/outer/tuning.rs
+@@ -0,0 +1,44 @@
++//! Controls for the isolated outer-kernel experiments.
++#[cfg(feature = "bench-internals")]
++use std::sync::atomic::{AtomicUsize, Ordering};
++#[cfg(feature = "bench-internals")]
++pub(super) static FLAGS: AtomicUsize = AtomicUsize::new(0);
++#[cfg(feature = "bench-internals")]
++pub(super) static CUTOFF: AtomicUsize = AtomicUsize::new(4096);
++#[cfg(feature = "bench-internals")]
++pub(super) static CHUNK: AtomicUsize = AtomicUsize::new(0);
++#[cfg(feature = "bench-internals")]
++pub(super) static TWO_LEVEL: AtomicUsize = AtomicUsize::new(8);
++#[inline]
++pub(super) fn enabled(bit: usize) -> bool {
++    #[cfg(feature = "bench-internals")]
++    { return FLAGS.load(Ordering::Relaxed) & bit != 0; }
++    #[cfg(not(feature = "bench-internals"))]
++    { let _ = bit; false }
++}
++#[inline]
++pub(super) fn cutoff() -> usize {
++    #[cfg(feature = "bench-internals")]
++    { return CUTOFF.load(Ordering::Relaxed); }
++    #[cfg(not(feature = "bench-internals"))]
++    { 4096 }
++}
++#[inline]
++pub(super) fn chunk() -> usize {
++    #[cfg(feature = "bench-internals")]
++    { return CHUNK.load(Ordering::Relaxed); }
++    #[cfg(not(feature = "bench-internals"))]
++    { 0 }
++}
++#[inline]
++pub(super) fn two_level() -> usize {
++    #[cfg(feature = "bench-internals")]
++    { return TWO_LEVEL.load(Ordering::Relaxed); }
++    #[cfg(not(feature = "bench-internals"))]
++    { 8 }
++}
++#[cfg(feature = "parallel")]
++#[inline]
++pub(super) fn parallel(items: usize) -> bool {
++    items >= cutoff() && rayon::current_num_threads() > 1
++}

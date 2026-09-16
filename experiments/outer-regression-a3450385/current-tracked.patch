@@ -1,0 +1,180 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index b6ed208b..b3d2018c 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -481,3 +481,13 @@ required-features = ["bench-internals", "binius64-bench"]
+ name = "ligerito_bounds"
+ harness = false
+ required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]
++
++[[bench]]
++name = "outer_optimizations"
++harness = false
++required-features = ["parallel"]
++
++[[bench]]
++name = "outer_regression"
++harness = false
++required-features = ["parallel", "bench-internals"]
+diff --git a/src/piop/spartan/mod.rs b/src/piop/spartan/mod.rs
+index a9490903..aa69c504 100644
+--- a/src/piop/spartan/mod.rs
++++ b/src/piop/spartan/mod.rs
+@@ -23,6 +23,10 @@ pub mod piop;
+ pub mod profile;
+ pub mod protocol;
+ pub(crate) mod raw_monty;
++#[cfg(feature = "bench-internals")]
++#[doc(hidden)]
++#[path = "../../../benches/outer_regression/driver.rs"]
++pub mod outer_regression;
+ pub mod sha256;
+ pub(crate) mod slot_rows;
+ pub(crate) mod spliced_digest;
+diff --git a/src/sumcheck/README.md b/src/sumcheck/README.md
+index 701bd2d9..7fc9937d 100644
+--- a/src/sumcheck/README.md
++++ b/src/sumcheck/README.md
+@@ -175,3 +175,11 @@ parity test was added; the ECDSA 128-bit profile proof/extra-nonce test passed;
+ the field crate suite and the added multi-round fold test passed.
+ `cargo check --lib --features ecdsa,span-metrics` passed. Existing repository
+ warnings remain. No x86 or peak-memory result is claimed.
++
++### Generic API parallelism
++
++The generic native-to-field first fold uses disjoint Rayon output chunks above
++the existing parallel cutoff. Transcript operations remain sequential; the skip
++prefix and native production kernels are unchanged. The [optimization report](../../experiments/outer-optimizations-20260915/README.md)
++records latency, allocation, and proof-parity comparisons, including the fusion,
++prefix-parallelism, and scratch-reuse prototypes that were not retained.
+diff --git a/src/sumcheck/outer/api.rs b/src/sumcheck/outer/api.rs
+index 0704d8c4..84e0db5d 100644
+--- a/src/sumcheck/outer/api.rs
++++ b/src/sumcheck/outer/api.rs
+@@ -9,6 +9,8 @@ use crate::sumcheck::{
+ };
+ use crate::transcript::traits::Transcript;
+ use field::{FieldOps, FoldPairs, Reduce, RingOps, WideMul};
++#[cfg(feature = "parallel")]
++use rayon::prelude::*;
+ 
+ /// A and B have the same input type; C can hold wider exact products.
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -321,9 +323,33 @@ where
+     };
+     let challenge = state.sample(field, transcript, tau, &coefficients, boundary)?;
+     let mut products = R1csProductTableBuffers::filled(ax.len() / 2, &field.zero());
+-    field.fold_pairs_into(ax, &mut products.az, &challenge);
+-    field.fold_pairs_into(bx, &mut products.bz, &challenge);
+-    field.fold_pairs_into(cx, &mut products.cz, &challenge);
++    // Keep native-to-field conversion inside the fold. Each worker owns
++    // disjoint output ranges for all three tables, with one parallel join.
++    let fold = |start: usize, a: &mut [F::Elem], b: &mut [F::Elem], c: &mut [F::Elem]| {
++        let end = start + 2 * a.len();
++        field.fold_pairs_into(&ax[start..end], a, &challenge);
++        field.fold_pairs_into(&bx[start..end], b, &challenge);
++        field.fold_pairs_into(&cx[start..end], c, &challenge);
++    };
++    #[cfg(feature = "parallel")]
++    let parallel = crate::sumcheck::arithmetic::should_parallelize(ax.len() / 4);
++    #[cfg(not(feature = "parallel"))]
++    let parallel = false;
++    #[cfg(feature = "parallel")]
++    if parallel {
++        const OUTPUT_CHUNK: usize = 2048;
++        (
++            products.az.par_chunks_mut(OUTPUT_CHUNK),
++            products.bz.par_chunks_mut(OUTPUT_CHUNK),
++            products.cz.par_chunks_mut(OUTPUT_CHUNK),
++        )
++            .into_par_iter()
++            .enumerate()
++            .for_each(|(i, (a, b, c))| fold(2 * i * OUTPUT_CHUNK, a, b, c));
++    }
++    if !parallel {
++        fold(0, &mut products.az, &mut products.bz, &mut products.cz);
++    }
+     Ok((state, factors, products))
+ }
+ 
+diff --git a/src/sumcheck/outer/tests.rs b/src/sumcheck/outer/tests.rs
+index 5175ad30..374b55f0 100644
+--- a/src/sumcheck/outer/tests.rs
++++ b/src/sumcheck/outer/tests.rs
+@@ -444,3 +444,76 @@ fn encoded_zero_prefix_preserves_grinding_rounds_and_transcript() {
+     .unwrap();
+     assert_eq!(prover.state_digest(), verifier.state_digest());
+ }
++#[cfg(feature = "parallel")]
++#[test]
++fn parallel_first_fold_matches_serial_and_allows_concurrent_proofs() {
++    let serial = rayon::ThreadPoolBuilder::new()
++        .num_threads(1)
++        .build()
++        .unwrap();
++    let parallel = rayon::ThreadPoolBuilder::new()
++        .num_threads(4)
++        .build()
++        .unwrap();
++    let f = field();
++    // Cross the first-fold cutoff; workers share immutable native inputs.
++    for n in [12, 13, 14] {
++        let a: Vec<u64> = (0..1usize << n)
++            .map(|i| (i as u64).wrapping_mul(0x9e3779b97f4a7c15))
++            .collect();
++        let b: Vec<u64> = a.iter().map(|v| v.rotate_left(27)).collect();
++        let c: Vec<u128> = a
++            .iter()
++            .zip(&b)
++            .map(|(a, b)| *a as u128 * *b as u128)
++            .collect();
++        let tau: Vec<_> = (0..n)
++            .map(|i| fe(&f, if i < 2 { i as u64 } else { i as u64 + 7 }))
++            .collect();
++        for zero in [false, true] {
++            let prove = || {
++                let mut prover = Blake3Transcript::new();
++                let out = if zero {
++                    prove_outer_zerocheck_from_slices(
++                        &f,
++                        &mut prover,
++                        &tau,
++                        &a,
++                        &b,
++                        &c,
++                        &mut UngrindedRoundBoundary,
++                    )
++                } else {
++                    prove_outer_sumcheck_from_slices(
++                        &f,
++                        &mut prover,
++                        f.zero(),
++                        &tau,
++                        &a,
++                        &b,
++                        &c,
++                        &mut UngrindedRoundBoundary,
++                    )
++                }
++                .unwrap();
++                let mut verifier = Blake3Transcript::new();
++                verify_outer_sumcheck(
++                    &f,
++                    &mut verifier,
++                    f.zero(),
++                    &tau,
++                    &out.proof,
++                    out.evaluations,
++                    &mut UngrindedRoundBoundary,
++                )
++                .unwrap();
++                assert_eq!(prover.state_digest(), verifier.state_digest());
++                (out, prover.state_digest())
++            };
++            let expected = serial.install(prove);
++            let (left, right) = parallel.install(|| rayon::join(prove, prove));
++            assert_eq!(left, expected);
++            assert_eq!(right, expected);
++        }
++    }
++}

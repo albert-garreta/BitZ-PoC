@@ -481,3 +481,13 @@ required-features = ["bench-internals", "binius64-bench"]
 name = "ligerito_bounds"
 harness = false
 required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]
+
+[[bench]]
+name = "outer_optimizations"
+harness = false
+required-features = ["parallel"]
+
+[[bench]]
+name = "outer_regression"
+harness = false
+required-features = ["parallel", "bench-internals"]
