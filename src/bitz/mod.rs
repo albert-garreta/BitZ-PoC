@@ -24,8 +24,10 @@
 //! - [`sumcheck`]: the dense degree-2 sumcheck to one MLE claim.
 //! - [`pcs`]: step 6, statement binding, ring switch and the Ligerito
 //!   opening through a challenger that frames flock's events their way.
-//! - [`fq`], [`spartan`]: the end-to-end scheme's prime field and their
-//!   Spartan PIOP over the circuit R1CS (branch `bitz-e2e-parity`).
+//! - [`fq`], [`spartan`], [`map`], [`virt`], [`e2e`], [`statements`]: the
+//!   end-to-end scheme (branch `bitz-e2e-parity`) — the prime field, their
+//!   Spartan PIOP over the circuit R1CS, the map `h = M(1 ‖ f)`, the virtual
+//!   fold/reduce/transpose/open, `Prepared` and the SHA-256 statements.
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::cast_possible_truncation,
@@ -33,6 +35,7 @@
 )]
 
 pub mod codec;
+pub mod e2e;
 pub mod fold;
 pub mod forest;
 pub mod fq;
@@ -43,8 +46,10 @@ pub mod params;
 pub mod pcs;
 pub mod reduce;
 pub mod spartan;
+pub mod statements;
 pub mod sumcheck;
 pub mod transcript;
+pub mod virt;
 
 use crate::ligerito_flock::FlockCommitHint;
 use crate::pcs::FixedBasePow;
@@ -74,6 +79,10 @@ pub struct BitZVerifier {
 /// A proof the prover cannot produce.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProveError {
+    /// The setup or PCS bit count differs from the virtual parameters.
+    ParameterMismatch,
+    /// The reduced claim cannot be transposed onto the committed bits.
+    VirtualMap(virt::VirtualMapError),
     /// The bit rows are not the length the shape calls for.
     Witness,
     /// The fold round failed.
@@ -87,6 +96,10 @@ pub enum ProveError {
 /// A proof the verifier rejects.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifyError {
+    /// The setup or PCS bit count differs from the virtual parameters.
+    ParameterMismatch,
+    /// The reduced claim cannot be transposed onto the committed bits.
+    VirtualMap(virt::VirtualMapError),
     /// The fold round failed its own checks.
     Fold(fold::ReceiveError),
     /// The reduction failed.
@@ -146,7 +159,7 @@ impl BitZProver {
             .map_err(ProveError::Fold)?;
         trace("fold+images", started);
         let started = std::time::Instant::now();
-        let query = reduce::gkr_reduce_prove(transcript, &fold, &shape, hint)
+        let query = reduce::gkr_reduce_prove(transcript, &fold, &shape, hint.packed_cols())
             .map_err(ProveError::Reduction)?;
         trace("gkr", started);
 

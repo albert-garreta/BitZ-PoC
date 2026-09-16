@@ -9,7 +9,6 @@ use super::gkr::gpgkr_verify;
 use super::params::{ClaimError, LinearClaimGf, Shape};
 use super::pcs::OpeningQuery;
 use super::transcript::{ProverState, VerifierState};
-use crate::ligerito_flock::FlockCommitHint;
 use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 
@@ -55,12 +54,12 @@ pub(crate) fn gkr_reduce_prove(
     transcript: &mut ProverState,
     fold: &Fold,
     shape: &Shape,
-    hint: &FlockCommitHint,
+    packed_cols: &[Vec<u64>],
 ) -> Result<OpeningQuery, ClaimError> {
     let forest = Forest::new(
         shape.log_rows(),
         shape.log_columns(),
-        hint.packed_cols(),
+        packed_cols,
         &fold.row_images,
     );
     let (point, claim) = forest.prove(transcript, &fold.zeta);
