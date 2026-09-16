@@ -317,6 +317,9 @@ impl RelationSpec for U32MulLayout {
             bz: Cow::Borrowed(&witness.y_values()[..product_len]),
             cz: Cow::Borrowed(&witness.product_values()[..product_len]),
             assignment: witness.assignment(),
+            constant_prefix: Some(super::raw_monty::NativeConstantPrefix::new(
+                witness.layout().capacity(),
+            )),
         })
     }
 }

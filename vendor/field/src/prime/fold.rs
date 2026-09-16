@@ -3,6 +3,7 @@ use crate::integer::product::Words;
 
 /// The native inputs remain integers until they reach their consuming MAC.
 /// `plain` selects the representation needed by the next fold, outside the loop.
+#[inline(always)]
 pub(super) fn fold_unsigned<const L: usize, const N: usize>(
     parameters: &PrimeParameters<L>,
     complement: &Uint<L>,

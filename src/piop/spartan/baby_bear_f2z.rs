@@ -334,6 +334,7 @@ impl RelationSpec for BabyBearMulLayout {
             bz: Cow::Borrowed(&assignment[2 * capacity..2 * capacity + product_len]),
             cz: Cow::Owned(cz),
             assignment,
+            constant_prefix: None,
         })
     }
 }

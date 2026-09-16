@@ -383,6 +383,34 @@ impl U32MulWitness {
     ) -> Result<Self, U32MulError> {
         let layout = U32MulLayout::new_with_f2z_width(multiplications, f2z_width)?;
         let capacity = layout.capacity;
+        // Reused smaller allocations benefit from initializing each slot once.
+        // Keep zeroed allocation for large buffers, where the allocator can
+        // supply demand-zero pages for the constant block and padding.
+        const EXPLICIT_INIT_MAX_WORDS: usize = (16 << 20) / size_of::<u64>();
+        if layout.assignment_len() <= EXPLICIT_INIT_MAX_WORDS {
+            let mut assignment = Box::<[u64]>::new_uninit_slice(layout.assignment_len());
+            let (constant, values) = assignment.split_at_mut(capacity);
+            constant[0].write(1);
+            constant[1..].fill(std::mem::MaybeUninit::new(0));
+            let (xs, values) = values.split_at_mut(capacity);
+            let (ys, products) = values.split_at_mut(capacity);
+            xs[multiplications..].fill(std::mem::MaybeUninit::new(0));
+            ys[multiplications..].fill(std::mem::MaybeUninit::new(0));
+            products[multiplications..].fill(std::mem::MaybeUninit::new(0));
+            for index in 0..multiplications {
+                let (x, y, product) = input(index);
+                xs[index].write(u64::from(x));
+                ys[index].write(u64::from(y));
+                products[index].write(product);
+            }
+            // SAFETY: the validated layout has four blocks of `capacity`
+            // entries, with 0 < multiplications <= capacity. The constant
+            // block, live values, and remaining padding are all initialized
+            // above, covering every entry exactly once. A panicking callback
+            // drops the MaybeUninit allocation without reading its contents.
+            let assignment = unsafe { assignment.assume_init() };
+            return Ok(Self { layout, assignment });
+        }
         let mut assignment = vec![0_u64; layout.assignment_len()];
         assignment[0] = 1;
 
@@ -778,6 +806,39 @@ mod tests {
         assert_eq!(witness.az(), &witness.x_values()[..3]);
         assert_eq!(witness.bz(), &witness.y_values()[..3]);
         assert_eq!(witness.cz(), &witness.product_values()[..3]);
+    }
+
+    #[test]
+    fn witness_initialization_covers_padding_and_allocation_boundary() {
+        for count in [1, 255, 256, 257, 511, 512, 513, 1 << 19, (1 << 19) + 1] {
+            for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+                let mut calls = 0;
+                let witness = U32MulWitness::from_product_fn(count, width, |index| {
+                    assert_eq!(index, calls);
+                    calls += 1;
+                    // Include supplied products that intentionally do not
+                    // equal x*y: construction must preserve their claims.
+                    let x = (index as u32).wrapping_mul(0x9e37_79b9);
+                    let y = !(index as u32);
+                    (x, y, (index as u64).wrapping_mul(u64::MAX - 16))
+                })
+                .unwrap();
+                assert_eq!(calls, count);
+                let capacity = witness.layout().capacity();
+                for (block, values) in witness.assignment().chunks_exact(capacity).enumerate() {
+                    for (index, &value) in values.iter().enumerate() {
+                        let expected = match (block, index < count) {
+                            (0, _) => u64::from(index == 0),
+                            (1, true) => u64::from((index as u32).wrapping_mul(0x9e37_79b9)),
+                            (2, true) => u64::from(!(index as u32)),
+                            (3, true) => (index as u64).wrapping_mul(u64::MAX - 16),
+                            _ => 0,
+                        };
+                        assert_eq!(value, expected, "count={count} block={block} index={index}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
