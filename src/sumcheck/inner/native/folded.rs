@@ -1,7 +1,5 @@
 //! Typed folded witness storage. Its type selects the unique MAC scale.
 use super::*;
-use crate::piop::spartan::raw_monty::RawFieldStorage;
-use field::RingOps;
 use field::{Fp, FpLinearAcc, FpProductAcc, MergeAccumulator, Uint};
 
 pub(super) trait FoldedValue: Copy + Send + Sync {
@@ -105,12 +103,6 @@ impl FoldedValue for Fp<2> {
 pub(super) fn pair<W: FoldedValue>() -> [W::Acc; 2] {
     [W::Acc::zero(); 2]
 }
-pub(super) fn merge<W: FoldedValue>(mut a: [W::Acc; 2], b: [W::Acc; 2]) -> [W::Acc; 2] {
-    for i in 0..2 {
-        a[i].merge_assign(&b[i]);
-    }
-    a
-}
 pub(super) fn reduce<W: FoldedValue>(ctx: &field::FpCtx<2>, a: [W::Acc; 2]) -> [Raw; 2] {
     a.map(|a| W::reduce(ctx, a))
 }
@@ -188,7 +180,7 @@ pub(super) fn fold_round<W: FoldedValue, const FOLD_WEIGHTS: bool, I: Copy + Syn
             )
                 .into_par_iter()
                 .map(|(w, values, m, z)| block(w, values, m, z))
-                .reduce(pair::<W>, merge::<W>)
+                .reduce(pair::<W>, merge_accumulators::<W::Acc, 2>)
         } else {
             (
                 weights.par_chunks(FOLD_BLOCK),
@@ -197,14 +189,9 @@ pub(super) fn fold_round<W: FoldedValue, const FOLD_WEIGHTS: bool, I: Copy + Syn
             )
                 .into_par_iter()
                 .map(|(w, values, z)| block(w, values, &mut [], z))
-                .reduce(pair::<W>, merge::<W>)
+                .reduce(pair::<W>, merge_accumulators::<W::Acc, 2>)
         };
         return reduce::<W>(ctx, acc);
     }
     reduce::<W>(ctx, block(weights, input, matrix_out, out))
-}
-
-pub(super) enum FoldedWitness {
-    Integers(Vec<Uint<2>>),
-    Field(Vec<Fp<2>>),
 }

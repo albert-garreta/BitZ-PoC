@@ -187,3 +187,59 @@ where
     core::mem::swap(&mut tables.values, &mut tables.values_scratch);
     next
 }
+
+pub struct State<T, E> {
+    tables: Tables<T, E>,
+    coefficients: [E; 2],
+    num_vars: usize,
+}
+impl<T: Copy + Send + Sync, E: Copy> State<T, E> {
+    pub(super) fn new<F>(
+        field: &F,
+        values: Vec<T>,
+        weights: Vec<E>,
+    ) -> Result<Self, super::SumcheckError>
+    where
+        F: FieldOps<Elem = E> + BatchMulAcc<E, T> + Reduce<Acc<F, T>, Output = E> + Sync,
+    {
+        if !values.len().is_power_of_two() || values.len() != weights.len() {
+            return Err(super::SumcheckError::InvalidProductDimensions);
+        }
+        let num_vars = values.len().ilog2() as usize;
+        let tables = Tables::new(values, weights);
+        let coefficients = if num_vars == 0 {
+            [field.zero(); 2]
+        } else {
+            first_round(field, &tables)
+        };
+        Ok(Self {
+            tables,
+            coefficients,
+            num_vars,
+        })
+    }
+}
+impl<F, T> super::input::State<F> for State<T, Elem<F>>
+where
+    F: FieldOps
+        + PreparedLinearCombination<T>
+        + BatchMulAcc<Elem<F>, T>
+        + BatchMulAcc<Elem<F>>
+        + Sync,
+    F: Reduce<Acc<F, T>, Output = Elem<F>> + Reduce<Acc<F, Elem<F>>, Output = Elem<F>>,
+    T: Copy + Send + Sync,
+{
+    fn num_vars(&self) -> usize {
+        self.num_vars
+    }
+    fn coefficients(&self, _: &F) -> Result<[Elem<F>; 2], super::SumcheckError> {
+        Ok(self.coefficients)
+    }
+    fn fold(&mut self, field: &F, r: &Elem<F>) -> Result<(), super::SumcheckError> {
+        self.coefficients = fold_round(field, &mut self.tables, r);
+        Ok(())
+    }
+    fn terminal(&self, field: &F) -> Result<[Elem<F>; 2], super::SumcheckError> {
+        Ok(self.tables.terminal(field))
+    }
+}

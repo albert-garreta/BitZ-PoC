@@ -17,6 +17,8 @@
 use crate::piop::spartan::SpartanField as _;
 use crate::poly::mle::FactoredMultilinearExtension;
 #[cfg(test)]
+use crate::sumcheck::arithmetic::SumcheckLinearReducer;
+#[cfg(test)]
 use field::{Fp, Uint};
 use field::{RingOps, Uint as FieldUint};
 use std::collections::{HashMap, hash_map::Entry};
@@ -56,7 +58,7 @@ use super::super::{
             OpeningClaim, frame, prove_linear, verify_linear,
         },
     },
-    sumcheck::{SumcheckError, SumcheckLinearReducer},
+    sumcheck::SumcheckError,
 };
 
 use super::{
@@ -1288,7 +1290,7 @@ pub(super) fn collapse_native_linear_columns(
         let column = relation
             .column(local_column)
             .ok_or(SumcheckError::InvalidProductDimensions)?;
-        let mut accumulator = <field::FpCtx<2> as SumcheckLinearReducer>::accumulator_zero(reducer);
+        let mut accumulator = field::FpLinearAcc::<2, 1>::default();
         for (local_row, coefficient) in column {
             let weight = local_row_weights
                 .get(local_row)
@@ -1300,14 +1302,14 @@ pub(super) fn collapse_native_linear_columns(
             } else {
                 weight
             };
-            <field::FpCtx<2> as SumcheckLinearReducer>::multiply_accumulate(
+            <field::FpCtx<2> as field::BatchMulAcc<SpartanF2zField, u64>>::mul_acc(
                 reducer,
                 &mut accumulator,
                 selected_weight,
                 &coefficient.unsigned_abs(),
             );
         }
-        <field::FpCtx<2> as SumcheckLinearReducer>::reduce(reducer, accumulator, field_config)
+        Ok(field::Reduce::reduce(reducer, accumulator))
     };
 
     #[cfg(feature = "parallel")]

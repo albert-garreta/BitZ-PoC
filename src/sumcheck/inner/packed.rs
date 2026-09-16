@@ -1,4 +1,4 @@
-//! Small-value prefix prover for SHA-256's linear assignment sumcheck.
+//! Packed-bit and small-value prefix arithmetic for the shared inner sumcheck.
 //!
 //! The verifier sees an ordinary degree-two sumcheck. The prefix length is a
 //! prover-only implementation choice: every round still absorbs the same three
@@ -15,15 +15,11 @@ use rayon::prelude::*;
 
 use field::{CtMask, CtSelect};
 
-use crate::transcript::traits::Transcript;
+use crate::piop::spartan::{SpartanField, f2z::SpartanF2zField, grinding::GrindingDomain};
 
-use crate::piop::spartan::{
-    SpartanField, absorb_field_elements,
-    f2z::SpartanF2zField,
-    grinding::{GrindingDomain, GrindingError, GrindingRound, MAX_GRINDING_BITS, grind_and_absorb},
-    squeeze_field,
-    sumcheck::{SumcheckError, SumcheckProof},
-};
+#[cfg(test)]
+use crate::sumcheck::SumcheckProof;
+use crate::sumcheck::{SumcheckError, arithmetic::merge_accumulators};
 
 type Field = SpartanF2zField;
 type FieldConfig = field::FpCtx<2>;
@@ -164,7 +160,10 @@ impl Sha256InnerBitSource for ColumnMajorPackedBits<'_> {
 use crate::poly::mle::FactoredMultilinearExtension;
 
 /// MLE access and specialized prefix folding for the inner prover.
-trait InnerSumcheckMleSource: Sync {
+pub(crate) trait InnerSumcheckMleSource: Sync {
+    fn declared_num_vars(&self) -> Option<usize> {
+        None
+    }
     fn evaluation_at(&self, index: usize) -> Result<Field, SumcheckError>;
 
     fn validate_shape(
@@ -227,6 +226,9 @@ where
 }
 
 impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
+    fn declared_num_vars(&self) -> Option<usize> {
+        Some(self.num_vars())
+    }
     #[inline]
     fn evaluation_at(&self, index: usize) -> Result<Field, SumcheckError> {
         FactoredMultilinearExtension::evaluation_at(self, index)
@@ -285,12 +287,11 @@ impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
 
 mod composite;
-pub(crate) use composite::prove_composite_inner_sumcheck;
-
-/// The small-prefix prover reports the same failures as the ordinary sumcheck.
-pub(crate) type Sha256InnerSumcheckError = SumcheckError;
+mod state;
+pub use state::PackedInput;
 
 /// Prover output for the transcript-identical SHA-256 inner sumcheck.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Sha256InnerSumcheckOutput {
     /// Ordinary degree-two sumcheck proof; `prefix_vars` is intentionally absent.
@@ -307,6 +308,24 @@ pub(crate) struct Sha256InnerSumcheckOutput {
     pub h_evaluation: Field,
 }
 
+#[cfg(test)]
+impl Sha256InnerSumcheckOutput {
+    pub(crate) fn from_inner(
+        out: crate::sumcheck::inner::InnerSumcheckOutput<Field>,
+        round_nonces: Vec<u64>,
+    ) -> Self {
+        let [v_evaluation, h_evaluation] = out.terminal_evaluations;
+        Self {
+            sumcheck_proof: out.proof,
+            round_nonces,
+            eval_points: out.point,
+            final_claim: out.final_claim,
+            v_evaluation,
+            h_evaluation,
+        }
+    }
+}
+
 /// Typed proof-of-work domain for SHA-256 inner-sumcheck rounds.
 pub(crate) enum Sha256InnerGrinding {}
 
@@ -314,282 +333,11 @@ impl GrindingDomain for Sha256InnerGrinding {
     const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/inner/v1";
 }
 
-/// Proves `claim = sum_y V(y) H(y)` with a native-small prefix.
-///
-/// `V` and the Bit `H` table are supplied lazily. A packed `[u64]` is also
-/// a valid `H` source, with table entry `i` at bit `i % 64` of word `i / 64`.
-/// Coordinates and challenges are low-coordinate first. `prefix_vars` is
-/// dispatched to separately monomorphized kernels for `K = 0, ..., 4`.
-///
-/// `live_len` identifies the non-padding prefix of the logical `2^num_vars`
-/// domain. The oracle is never queried outside that prefix, and the compact
-/// tail stores one raw Montgomery residue per live suffix (plus at most one),
-/// then reuses that allocation for interleaved folded `V`/`H` cells. The
-/// omitted suffix is folded as implicit zeros.
-///
-/// The oracle must be deterministic: the prefix pass and the fold pass can
-/// query an entry independently. Every returned element is checked against the
-/// one shared runtime-field configuration before it is used.
-#[allow(clippy::too_many_arguments)]
-#[allow(dead_code)]
-pub(crate) fn prove_sha256_inner_sumcheck<T, V, H>(
-    transcript: &mut T,
-    initial_claim: Field,
-    num_vars: usize,
-    live_len: usize,
-    v_at: &V,
-    h_source: &H,
-    prefix_vars: usize,
-    field_cfg: &FieldConfig,
-    grinding_bits: u32,
-) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
-where
-    T: Transcript,
-    V: Fn(usize) -> Result<Field, SumcheckError> + Sync,
-    H: Sha256InnerBitSource + ?Sized,
-{
-    prove_sha256_inner_sumcheck_with_source(
-        transcript,
-        initial_claim,
-        num_vars,
-        live_len,
-        v_at,
-        h_source,
-        prefix_vars,
-        field_cfg,
-        grinding_bits,
-    )
-}
-
-/// Proves the same ordinary degree-two sumcheck using SHA's factored physical
-/// coefficient layout.
-///
-/// This is transcript-identical to [`prove_sha256_inner_sumcheck`] with a
-/// callback returning `coefficients.evaluation_at(index)`. The specialization is
-/// prover-only: it retains `u` and `d` separately and folds each contiguous
-/// instance run before multiplying by its `u_i` factor.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_sha256_inner_sumcheck_factored<T, H>(
-    transcript: &mut T,
-    initial_claim: Field,
-    num_vars: usize,
-    coefficients: &FactoredMultilinearExtension<'_, Field>,
-    h_source: &H,
-    prefix_vars: usize,
-    field_cfg: &FieldConfig,
-    grinding_bits: u32,
-) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
-where
-    T: Transcript,
-    H: Sha256InnerBitSource + ?Sized,
-{
-    if num_vars != coefficients.num_vars() {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    prove_sha256_inner_sumcheck_with_source(
-        transcript,
-        initial_claim,
-        num_vars,
-        coefficients.live_len(),
-        coefficients,
-        h_source,
-        prefix_vars,
-        field_cfg,
-        grinding_bits,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn prove_sha256_inner_sumcheck_with_source<T, S, H>(
-    transcript: &mut T,
-    initial_claim: Field,
-    num_vars: usize,
-    live_len: usize,
-    coefficients: &S,
-    h_source: &H,
-    prefix_vars: usize,
-    field_cfg: &FieldConfig,
-    grinding_bits: u32,
-) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
-where
-    T: Transcript,
-    S: InnerSumcheckMleSource + ?Sized,
-    H: Sha256InnerBitSource + ?Sized,
-{
-    match prefix_vars {
-        0 => prove_with_prefix::<0, _, _, _>(
-            transcript,
-            initial_claim,
-            num_vars,
-            live_len,
-            coefficients,
-            h_source,
-            field_cfg,
-            grinding_bits,
-        ),
-        1 => prove_with_prefix::<1, _, _, _>(
-            transcript,
-            initial_claim,
-            num_vars,
-            live_len,
-            coefficients,
-            h_source,
-            field_cfg,
-            grinding_bits,
-        ),
-        2 => prove_with_prefix::<2, _, _, _>(
-            transcript,
-            initial_claim,
-            num_vars,
-            live_len,
-            coefficients,
-            h_source,
-            field_cfg,
-            grinding_bits,
-        ),
-        3 => prove_with_prefix::<3, _, _, _>(
-            transcript,
-            initial_claim,
-            num_vars,
-            live_len,
-            coefficients,
-            h_source,
-            field_cfg,
-            grinding_bits,
-        ),
-        4 => prove_with_prefix::<4, _, _, _>(
-            transcript,
-            initial_claim,
-            num_vars,
-            live_len,
-            coefficients,
-            h_source,
-            field_cfg,
-            grinding_bits,
-        ),
-        _ => Err(SumcheckError::InvalidProductDimensions),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn prove_with_prefix<const K: usize, T, S, H>(
-    transcript: &mut T,
-    initial_claim: Field,
-    num_vars: usize,
-    live_len: usize,
-    coefficients: &S,
-    h_source: &H,
-    field_cfg: &FieldConfig,
-    grinding_bits: u32,
-) -> Result<Sha256InnerSumcheckOutput, Sha256InnerSumcheckError>
-where
-    T: Transcript,
-    S: InnerSumcheckMleSource + ?Sized,
-    H: Sha256InnerBitSource + ?Sized,
-{
-    validate_inputs::<K, _>(
-        &initial_claim,
-        num_vars,
-        live_len,
-        h_source,
-        field_cfg,
-        grinding_bits,
-    )?;
-    coefficients.validate_shape(live_len, field_cfg)?;
-
-    let zero = Field::zero_with_cfg(field_cfg);
-    let one = Field::one_with_cfg(field_cfg);
-    let mut current_claim = initial_claim;
-    let mut round_polynomials = Vec::with_capacity(num_vars);
-    let mut eval_points = Vec::with_capacity(num_vars);
-    let mut round_nonces = Vec::with_capacity(if grinding_bits == 0 { 0 } else { num_vars });
-
-    if K > 0 {
-        let accumulators = coefficients
-            .build_prefix_accumulators::<K, _>(num_vars, live_len, h_source, field_cfg, &zero)?;
-        let mut lagrange_coefficients = vec![one.clone()];
-
-        for round in 0..K {
-            let [at_infinity, at_zero] =
-                accumulators.evaluate_round(round, &lagrange_coefficients, field_cfg)?;
-            let coefficients =
-                quadratic_coefficients(&current_claim, &at_zero, &at_infinity, &field_cfg);
-
-            absorb_field_elements(transcript, &coefficients, &field_cfg);
-            if grinding_bits != 0 {
-                let round_index =
-                    u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
-                round_nonces.push(grind_and_absorb::<Sha256InnerGrinding, _>(
-                    transcript,
-                    GrindingRound::new(round_index),
-                    grinding_bits,
-                )?);
-            }
-            let challenge = squeeze_field(transcript, field_cfg)?;
-            current_claim = evaluate_quadratic(&coefficients, &challenge, &zero, &field_cfg);
-            extend_lagrange_coefficients(
-                &mut lagrange_coefficients,
-                &challenge,
-                &one,
-                &zero,
-                &field_cfg,
-            );
-            round_polynomials.push(coefficients);
-            eval_points.push(challenge);
-        }
-    }
-
-    let prefix_v = fold_prefix_v_table::<K, _>(
-        num_vars,
-        live_len,
-        coefficients,
-        &eval_points,
-        field_cfg,
-        &zero,
-        &one,
-    )?;
-    let tail = prove_compact_tail::<K, _, _>(
-        transcript,
-        current_claim,
-        prefix_v,
-        live_len,
-        h_source,
-        &eval_points,
-        num_vars - K,
-        field_cfg,
-        grinding_bits,
-        K,
-    )?;
-
-    round_polynomials.extend(tail.round_polynomials);
-    eval_points.extend(tail.eval_points);
-    round_nonces.extend(tail.round_nonces);
-
-    debug_assert_eq!(round_polynomials.len(), num_vars);
-    debug_assert_eq!(eval_points.len(), num_vars);
-    debug_assert_eq!(
-        round_nonces.len(),
-        if grinding_bits == 0 { 0 } else { num_vars }
-    );
-
-    Ok(Sha256InnerSumcheckOutput {
-        sumcheck_proof: SumcheckProof { round_polynomials },
-        round_nonces,
-        eval_points,
-        final_claim: tail.final_claim,
-        v_evaluation: tail.v_evaluation,
-        h_evaluation: tail.h_evaluation,
-    })
-}
-
 fn validate_inputs<const K: usize, H: Sha256InnerBitSource + ?Sized>(
-    initial_claim: &Field,
     num_vars: usize,
     live_len: usize,
     h_source: &H,
-    field_cfg: &FieldConfig,
-    grinding_bits: u32,
-) -> Result<(), Sha256InnerSumcheckError> {
+) -> Result<(), SumcheckError> {
     if K > SHA256_INNER_PREFIX_MAX_VARS
         || K > num_vars
         || num_vars >= usize::BITS as usize
@@ -602,14 +350,6 @@ fn validate_inputs<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     let table_len = 1usize << num_vars;
     h_source.validate_shape(live_len, table_len)?;
 
-    validate_field_value(initial_claim, field_cfg)?;
-
-    if grinding_bits > MAX_GRINDING_BITS {
-        return Err(GrindingError::InvalidDifficulty {
-            bits: grinding_bits,
-        }
-        .into());
-    }
     Ok(())
 }
 
@@ -642,12 +382,12 @@ struct PrefixBuildState {
 }
 
 impl PrefixBuildState {
-    fn new<const K: usize>(zero: &Field, reducer: &field::FpCtx<2>) -> Self {
+    fn new<const K: usize>(zero: &Field) -> Self {
         let prefix_size = 1usize << K;
         let extension_size = pow3(K);
         Self {
             partial_sums: (0..extension_size)
-                .map(|_| linear_accumulator_zero(reducer))
+                .map(|_| linear_accumulator_zero())
                 .collect(),
             v_values: vec![zero.clone(); prefix_size],
             v_scratch: vec![zero.clone(); extension_size],
@@ -671,15 +411,15 @@ struct FactoredPrefixBuildState {
 }
 
 impl FactoredPrefixBuildState {
-    fn new<const K: usize>(zero: &Field, reducer: &field::FpCtx<2>) -> Self {
+    fn new<const K: usize>(zero: &Field) -> Self {
         let prefix_size = 1usize << K;
         let extension_size = pow3(K);
         Self {
             partial_sums: (0..extension_size)
-                .map(|_| product_accumulator_zero(reducer))
+                .map(|_| product_accumulator_zero())
                 .collect(),
             local_sums: (0..extension_size)
-                .map(|_| linear_accumulator_zero(reducer))
+                .map(|_| linear_accumulator_zero())
                 .collect(),
             d_values: vec![zero.clone(); prefix_size],
             d_scratch: vec![zero.clone(); extension_size],
@@ -714,7 +454,7 @@ where
             (0..coefficients.outer_factor().len())
                 .into_par_iter()
                 .try_fold(
-                    || FactoredPrefixBuildState::new::<K>(zero, _field_cfg),
+                    || FactoredPrefixBuildState::new::<K>(zero),
                     |mut state, instance| -> Result<_, SumcheckError> {
                         accumulate_factored_instance::<K, _>(
                             &mut state,
@@ -729,8 +469,8 @@ where
                     },
                 )
                 .try_reduce(
-                    || FactoredPrefixBuildState::new::<K>(zero, _field_cfg),
-                    |left, right| Ok(merge_factored_prefix_states(left, right, _field_cfg)),
+                    || FactoredPrefixBuildState::new::<K>(zero),
+                    |left, right| Ok(merge_factored_prefix_states(left, right)),
                 )?
         } else {
             accumulate_factored_instances_sequential::<K, _>(
@@ -760,7 +500,7 @@ where
             .into_par_iter()
             .filter(|&suffix| !factored_suffix_is_interior::<K>(coefficients, suffix))
             .try_fold(
-                || PrefixBuildState::new::<K>(zero, _field_cfg),
+                || PrefixBuildState::new::<K>(zero),
                 |mut state, suffix| -> Result<_, SumcheckError> {
                     accumulate_suffix::<K, _, _>(
                         &mut state,
@@ -775,8 +515,8 @@ where
                 },
             )
             .try_reduce(
-                || PrefixBuildState::new::<K>(zero, _field_cfg),
-                |left, right| Ok(merge_prefix_states(left, right, _field_cfg)),
+                || PrefixBuildState::new::<K>(zero),
+                |left, right| Ok(merge_prefix_states(left, right)),
             )?
     } else {
         accumulate_factored_boundaries_sequential::<K, _>(
@@ -827,7 +567,7 @@ fn accumulate_factored_instances_sequential<const K: usize, H>(
 where
     H: Sha256InnerBitSource + ?Sized,
 {
-    let mut state = FactoredPrefixBuildState::new::<K>(zero, reducer);
+    let mut state = FactoredPrefixBuildState::new::<K>(zero);
     for instance in 0..coefficients.outer_factor().len() {
         accumulate_factored_instance::<K, _>(
             &mut state,
@@ -915,7 +655,7 @@ where
     }
 
     for (partial, local) in state.partial_sums.iter_mut().zip(&mut state.local_sums) {
-        let local = core::mem::replace(local, linear_accumulator_zero(reducer));
+        let local = core::mem::replace(local, linear_accumulator_zero());
         let local = linear_reduce(local, &reducer)?;
         product_multiply_accumulate(
             reducer,
@@ -990,7 +730,7 @@ fn accumulate_factored_boundaries_sequential<const K: usize, H>(
 where
     H: Sha256InnerBitSource + ?Sized,
 {
-    let mut state = PrefixBuildState::new::<K>(zero, reducer);
+    let mut state = PrefixBuildState::new::<K>(zero);
     for suffix in 0..suffix_count {
         if factored_suffix_is_interior::<K>(coefficients, suffix) {
             continue;
@@ -1012,15 +752,14 @@ where
 fn merge_factored_prefix_states(
     mut left: FactoredPrefixBuildState,
     right: FactoredPrefixBuildState,
-    reducer: &field::FpCtx<2>,
 ) -> FactoredPrefixBuildState {
     for (left, right) in left.partial_sums.iter_mut().zip(right.partial_sums) {
-        product_merge(reducer, left, right);
+        product_merge(left, right);
     }
     left
 }
 
-struct PrefixAccumulators {
+pub(crate) struct PrefixAccumulators {
     rounds: Vec<Vec<[Field; 2]>>,
 }
 
@@ -1040,8 +779,8 @@ impl PrefixAccumulators {
     ) -> Result<[Field; 2], SumcheckError> {
         let buckets = &self.rounds[round];
         debug_assert_eq!(buckets.len(), coefficients.len());
-        let mut at_infinity = product_accumulator_zero(reducer);
-        let mut at_zero = product_accumulator_zero(reducer);
+        let mut at_infinity = product_accumulator_zero();
+        let mut at_zero = product_accumulator_zero();
         for (coefficient, bucket) in coefficients.iter().zip(buckets) {
             product_multiply_accumulate(reducer, &mut at_infinity, coefficient, &bucket[0]);
             product_multiply_accumulate(reducer, &mut at_zero, coefficient, &bucket[1]);
@@ -1074,7 +813,7 @@ where
         (0..suffix_count)
             .into_par_iter()
             .try_fold(
-                || PrefixBuildState::new::<K>(zero, field_cfg),
+                || PrefixBuildState::new::<K>(zero),
                 |mut state, suffix| -> Result<_, SumcheckError> {
                     accumulate_suffix::<K, _, _>(
                         &mut state,
@@ -1089,8 +828,8 @@ where
                 },
             )
             .try_reduce(
-                || PrefixBuildState::new::<K>(zero, field_cfg),
-                |left, right| Ok(merge_prefix_states(left, right, field_cfg)),
+                || PrefixBuildState::new::<K>(zero),
+                |left, right| Ok(merge_prefix_states(left, right)),
             )?
     } else {
         accumulate_suffixes_sequential::<K, _, _>(
@@ -1133,7 +872,7 @@ where
     S: InnerSumcheckMleSource + ?Sized,
     H: Sha256InnerBitSource + ?Sized,
 {
-    let mut state = PrefixBuildState::new::<K>(zero, field_cfg);
+    let mut state = PrefixBuildState::new::<K>(zero);
     for suffix in 0..suffix_count {
         accumulate_suffix::<K, _, _>(
             &mut state,
@@ -1207,13 +946,9 @@ where
 }
 
 #[cfg(feature = "parallel")]
-fn merge_prefix_states(
-    mut left: PrefixBuildState,
-    right: PrefixBuildState,
-    reducer: &field::FpCtx<2>,
-) -> PrefixBuildState {
+fn merge_prefix_states(mut left: PrefixBuildState, right: PrefixBuildState) -> PrefixBuildState {
     for (left, right) in left.partial_sums.iter_mut().zip(right.partial_sums) {
-        linear_merge(reducer, left, right);
+        linear_merge(left, right);
     }
     left
 }
@@ -1364,7 +1099,7 @@ where
             return Ok(raw_montgomery(&value));
         }
 
-        let mut v_accumulator = product_accumulator_zero(field_cfg);
+        let mut v_accumulator = product_accumulator_zero();
         let active_prefixes = prefix_size.min(live_len - base);
         for (prefix, weight) in weights.iter().take(active_prefixes).enumerate() {
             let index = base | prefix;
@@ -1451,7 +1186,7 @@ fn fold_factored_prefix_v_table<const K: usize>(
         }
         let end = live_len.min(base + prefix_size);
         let mut cursor = base;
-        let mut total = product_accumulator_zero(field_cfg);
+        let mut total = product_accumulator_zero();
 
         if cursor < coefficients.tensor_start() {
             product_multiply_accumulate(
@@ -1468,7 +1203,7 @@ fn fold_factored_prefix_v_table<const K: usize>(
             let instance = offset / block_width;
             let local = offset % block_width;
             let run_len = (block_width - local).min(end - cursor);
-            let mut local_fold = product_accumulator_zero(field_cfg);
+            let mut local_fold = product_accumulator_zero();
             for run_offset in 0..run_len {
                 let prefix = cursor + run_offset - base;
                 product_multiply_accumulate(
@@ -1527,169 +1262,12 @@ fn fold_factored_prefix_v_table<const K: usize>(
     Ok(table)
 }
 
-struct CompactPrefixVTable {
+pub(crate) struct CompactPrefixVTable {
     /// Before the first tail round, one V residue per suffix plus at most one
     /// zero placeholder. Afterwards, interleaved [V, H] cells in the same
     /// allocation.
     values: Vec<RawMontgomery>,
     suffix_count: usize,
-}
-
-struct CompactTailOutput {
-    round_polynomials: Vec<[Field; 3]>,
-    round_nonces: Vec<u64>,
-    eval_points: Vec<Field>,
-    final_claim: Field,
-    v_evaluation: Field,
-    h_evaluation: Field,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn prove_compact_tail<const K: usize, T: Transcript, H: Sha256InnerBitSource + ?Sized>(
-    transcript: &mut T,
-    mut current_claim: Field,
-    mut table: CompactPrefixVTable,
-    live_len: usize,
-    h_source: &H,
-    prefix_challenges: &[Field],
-    num_vars: usize,
-    field_cfg: &FieldConfig,
-    grinding_bits: u32,
-    round_offset: usize,
-) -> Result<CompactTailOutput, SumcheckError> {
-    debug_assert_eq!(prefix_challenges.len(), K);
-    debug_assert!(!table.values.is_empty());
-    debug_assert!(table.suffix_count <= 1usize << num_vars);
-    debug_assert_eq!(table.values.len(), (table.suffix_count + 1) & !1);
-
-    let zero = Field::zero_with_cfg(field_cfg);
-    let one = Field::one_with_cfg(field_cfg);
-    let prefix_weights = equality_weights_lsb(prefix_challenges, &zero, &one, &field_cfg);
-    let mut round_polynomials = Vec::with_capacity(num_vars);
-    let mut eval_points = Vec::with_capacity(num_vars);
-    let mut round_nonces = Vec::with_capacity(if grinding_bits == 0 { 0 } else { num_vars });
-
-    if num_vars == 0 {
-        debug_assert_eq!(table.suffix_count, 1);
-        let v_evaluation = field_from_raw(&table.values[0], field_cfg);
-        let h_evaluation = folded_packed_h::<K, _>(
-            0,
-            live_len,
-            h_source,
-            &prefix_weights,
-            field_cfg,
-            &zero,
-            &one,
-        )?;
-        return Ok(CompactTailOutput {
-            round_polynomials,
-            round_nonces,
-            eval_points,
-            final_claim: current_claim,
-            v_evaluation,
-            h_evaluation,
-        });
-    }
-
-    // H starts as packed bits, not a second dense field table. Stream its K
-    // already-fixed coordinates for the first tail message, then overwrite
-    // each adjacent V pair with the folded interleaved [V, H] cell. All later
-    // rounds use that single allocation.
-    let [at_zero, leading] = sum_first_tail_round::<K, _>(
-        &table,
-        live_len,
-        h_source,
-        &prefix_weights,
-        field_cfg,
-        &zero,
-        &one,
-    )?;
-    let mut next = [[at_zero, leading]];
-    let mut stride = 1usize;
-    super::engine::drive(
-        field_cfg,
-        transcript,
-        num_vars,
-        &mut eval_points,
-        core::slice::from_mut(&mut current_claim),
-        &mut next,
-        &mut [[zero; 3]],
-        |transcript, round, messages| {
-            absorb_field_elements(transcript, &messages[0], field_cfg);
-            if grinding_bits != 0 {
-                round_nonces.push(grind_and_absorb::<Sha256InnerGrinding, _>(
-                    transcript,
-                    GrindingRound::new((round_offset + round) as u64),
-                    grinding_bits,
-                )?);
-            }
-            round_polynomials.push(messages[0]);
-            squeeze_field(transcript, field_cfg)
-        },
-        |round, challenge, next| {
-            if round == 0 {
-                if num_vars > 1 {
-                    next[0] = fold_first_tail_round_and_prepare_next_in_place::<K, _>(
-                        &mut table,
-                        live_len,
-                        h_source,
-                        &prefix_weights,
-                        challenge,
-                        field_cfg,
-                        &zero,
-                        &one,
-                        field_cfg,
-                    )?;
-                } else {
-                    fold_first_tail_round_in_place::<K, _>(
-                        &mut table,
-                        live_len,
-                        h_source,
-                        &prefix_weights,
-                        challenge,
-                        field_cfg,
-                        &zero,
-                        &one,
-                    )?;
-                }
-            } else {
-                if round + 1 < num_vars {
-                    next[0] = fold_interleaved_and_prepare_next_round_in_place(
-                        &mut table.values,
-                        stride,
-                        challenge,
-                        field_cfg,
-                        &zero,
-                    )?;
-                } else {
-                    fold_interleaved_in_place(
-                        &mut table.values,
-                        stride,
-                        challenge,
-                        field_cfg,
-                        &zero,
-                    );
-                }
-                stride *= 2;
-            }
-            Ok(())
-        },
-    )?;
-
-    let v_evaluation = field_from_raw(&table.values[0], field_cfg);
-    let h_evaluation = field_from_raw(&table.values[1], field_cfg);
-    // Do not assert terminal consistency here: malformed witnesses are valid
-    // untrusted prover inputs. The caller compares this final claim with
-    // V(r)·H(r) and returns `InvalidInnerTerminalClaim` without panicking.
-
-    Ok(CompactTailOutput {
-        round_polynomials,
-        round_nonces,
-        eval_points,
-        final_claim: current_claim,
-        v_evaluation,
-        h_evaluation,
-    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1710,7 +1288,7 @@ fn folded_packed_h<const K: usize, H: Sha256InnerBitSource + ?Sized>(
 
     let active_prefixes = (1usize << K).min(live_len - base);
     let word = h_source.bits_at(base, active_prefixes)?;
-    let mut accumulator = linear_accumulator_zero(field_cfg);
+    let mut accumulator = linear_accumulator_zero();
     // Branch-free: the bits are random, so multiplying by 0/1 beats skipping.
     for (prefix, weight) in prefix_weights.iter().take(active_prefixes).enumerate() {
         linear_multiply_accumulate(field_cfg, &mut accumulator, weight, &((word >> prefix) & 1));
@@ -1790,7 +1368,7 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         let accumulators = (0..pair_count)
             .into_par_iter()
             .try_fold(
-                || std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
+                || std::array::from_fn(|_| product_accumulator_zero()),
                 |mut accumulators, pair| -> Result<_, SumcheckError> {
                     accumulate_first_tail_pair::<K, _>(
                         &mut accumulators,
@@ -1807,13 +1385,13 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 },
             )
             .try_reduce(
-                || std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
-                |left, right| Ok(merge_product_accumulators(left, right, field_cfg)),
+                || std::array::from_fn(|_| product_accumulator_zero()),
+                |left, right| Ok(merge_accumulators(left, right)),
             )?;
         return reduce_product_accumulators(accumulators, field_cfg);
     }
 
-    let mut accumulators = std::array::from_fn(|_| product_accumulator_zero(field_cfg));
+    let mut accumulators = std::array::from_fn(|_| product_accumulator_zero());
     for pair in 0..pair_count {
         accumulate_first_tail_pair::<K, _>(
             &mut accumulators,
@@ -2005,20 +1583,20 @@ fn fold_first_tail_round_and_prepare_next_in_place<
             .par_chunks_mut(4)
             .enumerate()
             .try_fold(
-                || std::array::from_fn(|_| product_accumulator_zero(reducer)),
+                || std::array::from_fn(|_| product_accumulator_zero()),
                 |accumulators, (superchunk, values)| {
                     fold_and_accumulate(accumulators, superchunk, values)
                 },
             )
             .try_reduce(
-                || std::array::from_fn(|_| product_accumulator_zero(reducer)),
-                |left, right| Ok(merge_product_accumulators(left, right, reducer)),
+                || std::array::from_fn(|_| product_accumulator_zero()),
+                |left, right| Ok(merge_accumulators(left, right)),
             )?;
         table.suffix_count = table.values.len() / 2;
         return reduce_product_accumulators(accumulators, field_cfg);
     }
 
-    let mut accumulators = std::array::from_fn(|_| product_accumulator_zero(reducer));
+    let mut accumulators = std::array::from_fn(|_| product_accumulator_zero());
     for (superchunk, values) in table.values.chunks_mut(4).enumerate() {
         accumulators = fold_and_accumulate(accumulators, superchunk, values)?;
     }
@@ -2042,7 +1620,7 @@ fn sum_interleaved_round_coefficients(
         let accumulators = values
             .par_chunks(chunk_len)
             .fold(
-                || std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
+                || std::array::from_fn(|_| product_accumulator_zero()),
                 |mut accumulators, values| {
                     accumulate_interleaved_chunk(
                         &mut accumulators,
@@ -2055,14 +1633,14 @@ fn sum_interleaved_round_coefficients(
                 },
             )
             .reduce(
-                || std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
-                |left, right| merge_product_accumulators(left, right, field_cfg),
+                || std::array::from_fn(|_| product_accumulator_zero()),
+                |left, right| merge_accumulators(left, right),
             );
         return reduce_product_accumulators(accumulators, field_cfg);
     }
 
     let accumulators = values.chunks(chunk_len).fold(
-        std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
+        std::array::from_fn(|_| product_accumulator_zero()),
         |mut accumulators, values| {
             accumulate_interleaved_chunk(&mut accumulators, values, stride, field_cfg, &zero);
             accumulators
@@ -2200,18 +1778,18 @@ fn fold_interleaved_and_prepare_next_round_in_place(
         let accumulators = values
             .par_chunks_mut(superchunk_len)
             .fold(
-                || std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
+                || std::array::from_fn(|_| product_accumulator_zero()),
                 fold_and_accumulate,
             )
             .reduce(
-                || std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
-                |left, right| merge_product_accumulators(left, right, field_cfg),
+                || std::array::from_fn(|_| product_accumulator_zero()),
+                |left, right| merge_accumulators(left, right),
             );
         return reduce_product_accumulators(accumulators, field_cfg);
     }
 
     let accumulators = values.chunks_mut(superchunk_len).fold(
-        std::array::from_fn(|_| product_accumulator_zero(field_cfg)),
+        std::array::from_fn(|_| product_accumulator_zero()),
         fold_and_accumulate,
     );
     reduce_product_accumulators(accumulators, field_cfg)
@@ -2245,17 +1823,6 @@ fn field_from_raw(raw: &RawMontgomery, field_cfg: &FieldConfig) -> Field {
 }
 
 #[inline]
-fn merge_product_accumulators(
-    mut left: [ProductAccumulator; 2],
-    right: [ProductAccumulator; 2],
-    reducer: &field::FpCtx<2>,
-) -> [ProductAccumulator; 2] {
-    product_merge(reducer, &mut left[0], right[0]);
-    product_merge(reducer, &mut left[1], right[1]);
-    left
-}
-
-#[inline]
 fn reduce_product_accumulators(
     accumulators: [ProductAccumulator; 2],
     config: &FieldConfig,
@@ -2285,33 +1852,6 @@ fn equality_weights_lsb(
         }
     }
     weights
-}
-
-fn quadratic_coefficients(
-    claim: &Field,
-    at_zero: &Field,
-    leading: &Field,
-    field_config: &crate::piop::spartan::protocol::FieldConfig,
-) -> [Field; 3] {
-    let mut linear = claim.clone();
-    linear = field_config.sub(&(linear), &(at_zero));
-    linear = field_config.sub(&(linear), &(at_zero));
-    linear = field_config.sub(&(linear), &(leading));
-    [at_zero.clone(), linear, leading.clone()]
-}
-
-fn evaluate_quadratic(
-    coefficients: &[Field; 3],
-    point: &Field,
-    zero: &Field,
-    field_config: &crate::piop::spartan::protocol::FieldConfig,
-) -> Field {
-    coefficients
-        .iter()
-        .rev()
-        .fold(zero.clone(), |value, coefficient| {
-            field_config.add(&(field_config.mul(&(value), &(point))), &(coefficient))
-        })
 }
 
 fn extend_lagrange_coefficients(
@@ -2404,7 +1944,7 @@ fn linear_multiply_accumulate_signed(
 }
 
 #[inline]
-fn linear_accumulator_zero(reducer: &field::FpCtx<2>) -> LinearAccumulator {
+fn linear_accumulator_zero() -> LinearAccumulator {
     LinearAccumulator::zero()
 }
 
@@ -2420,11 +1960,7 @@ fn linear_multiply_accumulate(
 
 #[cfg(feature = "parallel")]
 #[inline]
-fn linear_merge(
-    reducer: &field::FpCtx<2>,
-    accumulator: &mut LinearAccumulator,
-    other: LinearAccumulator,
-) {
+fn linear_merge(accumulator: &mut LinearAccumulator, other: LinearAccumulator) {
     accumulator.merge_assign(&other);
 }
 
@@ -2437,7 +1973,7 @@ fn linear_reduce(
 }
 
 #[inline]
-fn product_accumulator_zero(reducer: &field::FpCtx<2>) -> ProductAccumulator {
+fn product_accumulator_zero() -> ProductAccumulator {
     <field::FpCtx<2> as BatchMulAcc<Field>>::Accumulator::zero()
 }
 
@@ -2452,11 +1988,7 @@ fn product_multiply_accumulate(
 }
 
 #[inline]
-fn product_merge(
-    reducer: &field::FpCtx<2>,
-    accumulator: &mut ProductAccumulator,
-    other: ProductAccumulator,
-) {
+fn product_merge(accumulator: &mut ProductAccumulator, other: ProductAccumulator) {
     accumulator.merge_assign(&other);
 }
 
@@ -2570,35 +2102,68 @@ mod tests {
             for grinding_bits in [0, 2] {
                 for prefix_vars in 0..=SHA256_INNER_PREFIX_MAX_VARS.min(num_vars) {
                     let mut callback_transcript = Blake3Transcript::new();
-                    let callback = prove_sha256_inner_sumcheck(
-                        &mut callback_transcript,
-                        initial_claim.clone(),
-                        num_vars,
-                        live_len,
-                        &|index| {
+                    let callback = {
+                        let coefficients = &|index: usize| {
                             source
                                 .evaluation_at(index)
                                 .map_err(|_| SumcheckError::InvalidProductDimensions)
-                        },
-                        &h_words,
-                        prefix_vars,
-                        &field_cfg,
-                        grinding_bits,
-                    )
+                        };
+                        let mut boundary =
+                            crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                                crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                            >::with_round_offset(grinding_bits, 0);
+                        crate::sumcheck::inner::prove_inner_sumcheck(
+                            &field_cfg,
+                            &mut callback_transcript,
+                            initial_claim.clone(),
+                            crate::sumcheck::inner::packed::PackedInput::new(
+                                coefficients,
+                                &h_words,
+                                num_vars,
+                                live_len,
+                                prefix_vars,
+                            ),
+                            (),
+                            &mut boundary,
+                        )
+                        .map(|out| {
+                            crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                                out,
+                                boundary.into_nonces(),
+                            )
+                        })
+                    }
                     .unwrap();
                     let callback_continuation = callback_transcript.get_challenge::<u128>();
 
                     let mut factored_transcript = Blake3Transcript::new();
-                    let factored = prove_sha256_inner_sumcheck_factored(
-                        &mut factored_transcript,
-                        initial_claim.clone(),
-                        num_vars,
-                        &source,
-                        &h_words,
-                        prefix_vars,
-                        &field_cfg,
-                        grinding_bits,
-                    )
+                    let factored = {
+                        let coefficients = &source;
+                        let mut boundary =
+                            crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                                crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                            >::with_round_offset(grinding_bits, 0);
+                        crate::sumcheck::inner::prove_inner_sumcheck(
+                            &field_cfg,
+                            &mut factored_transcript,
+                            initial_claim.clone(),
+                            crate::sumcheck::inner::packed::PackedInput::new(
+                                coefficients,
+                                &h_words,
+                                num_vars,
+                                coefficients.live_len(),
+                                prefix_vars,
+                            ),
+                            (),
+                            &mut boundary,
+                        )
+                        .map(|out| {
+                            crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                                out,
+                                boundary.into_nonces(),
+                            )
+                        })
+                    }
                     .unwrap();
 
                     assert_eq!(factored, callback, "D={block_width}, K={prefix_vars}");
@@ -2662,35 +2227,66 @@ mod tests {
             }
 
             let mut callback_transcript = Blake3Transcript::new();
-            let callback = prove_sha256_inner_sumcheck(
-                &mut callback_transcript,
-                initial_claim.clone(),
-                num_vars,
-                live_len,
-                &|index| {
+            let callback = {
+                let coefficients = &|index: usize| {
                     source
                         .evaluation_at(index)
                         .map_err(|_| SumcheckError::InvalidProductDimensions)
-                },
-                &h_words,
-                PREFIX_VARS,
-                &field_cfg,
-                0,
-            )
+                };
+                let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                    crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                >::with_round_offset(0, 0);
+                crate::sumcheck::inner::prove_inner_sumcheck(
+                    &field_cfg,
+                    &mut callback_transcript,
+                    initial_claim.clone(),
+                    crate::sumcheck::inner::packed::PackedInput::new(
+                        coefficients,
+                        &h_words,
+                        num_vars,
+                        live_len,
+                        PREFIX_VARS,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .map(|out| {
+                    crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                        out,
+                        boundary.into_nonces(),
+                    )
+                })
+            }
             .unwrap();
             let callback_continuation = callback_transcript.get_challenge::<u128>();
 
             let mut factored_transcript = Blake3Transcript::new();
-            let factored = prove_sha256_inner_sumcheck_factored(
-                &mut factored_transcript,
-                initial_claim,
-                num_vars,
-                &source,
-                &h_words,
-                PREFIX_VARS,
-                &field_cfg,
-                0,
-            )
+            let factored = {
+                let coefficients = &source;
+                let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                    crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                >::with_round_offset(0, 0);
+                crate::sumcheck::inner::prove_inner_sumcheck(
+                    &field_cfg,
+                    &mut factored_transcript,
+                    initial_claim,
+                    crate::sumcheck::inner::packed::PackedInput::new(
+                        coefficients,
+                        &h_words,
+                        num_vars,
+                        coefficients.live_len(),
+                        PREFIX_VARS,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .map(|out| {
+                    crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                        out,
+                        boundary.into_nonces(),
+                    )
+                })
+            }
             .unwrap();
 
             assert_eq!(factored, callback);
@@ -2903,17 +2499,32 @@ mod tests {
     ) -> Result<Sha256InnerSumcheckOutput, SumcheckError> {
         let num_vars = v_mle.num_vars;
         let live_len = v_mle.evaluations.len();
-        prove_sha256_inner_sumcheck(
-            transcript,
-            initial_claim,
-            num_vars,
-            live_len,
-            &|index| Ok(v_mle.evaluations[index].clone()),
-            h_words,
-            prefix_vars,
-            field_cfg,
-            grinding_bits,
-        )
+        {
+            let coefficients = &|index: usize| Ok(v_mle.evaluations[index].clone());
+            let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                crate::sumcheck::inner::packed::Sha256InnerGrinding,
+            >::with_round_offset(grinding_bits, 0);
+            crate::sumcheck::inner::prove_inner_sumcheck(
+                field_cfg,
+                transcript,
+                initial_claim,
+                crate::sumcheck::inner::packed::PackedInput::new(
+                    coefficients,
+                    h_words,
+                    num_vars,
+                    live_len,
+                    prefix_vars,
+                ),
+                (),
+                &mut boundary,
+            )
+            .map(|out| {
+                crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                    out,
+                    boundary.into_nonces(),
+                )
+            })
+        }
     }
 
     #[test]
@@ -2979,8 +2590,17 @@ mod tests {
                 );
 
                 let mut verifier_transcript = Blake3Transcript::new();
-                let (eval_points, final_claim) = output.sumcheck_proof.verify_grinded::<crate::sumcheck::inner::packed::Sha256InnerGrinding>(&mut verifier_transcript, initial_claim.clone(), NUM_VARS, &field_cfg, &output.round_nonces, grinding_bits)
-                .unwrap();
+                let (eval_points, final_claim) = output
+                    .sumcheck_proof
+                    .verify_grinded::<crate::sumcheck::inner::packed::Sha256InnerGrinding>(
+                        &mut verifier_transcript,
+                        initial_claim.clone(),
+                        NUM_VARS,
+                        &field_cfg,
+                        &output.round_nonces,
+                        grinding_bits,
+                    )
+                    .unwrap();
                 assert_eq!(eval_points, output.eval_points);
                 assert_eq!(final_claim, output.final_claim);
                 assert_eq!(
@@ -3049,17 +2669,32 @@ mod tests {
                     Ok(v[index].clone())
                 };
                 let mut transcript = Blake3Transcript::new();
-                let output = prove_sha256_inner_sumcheck(
-                    &mut transcript,
-                    initial_claim.clone(),
-                    NUM_VARS,
-                    LIVE_LEN,
-                    &oracle,
-                    h_words,
-                    prefix_vars,
-                    &field_cfg,
-                    0,
-                )
+                let output = {
+                    let coefficients = &oracle;
+                    let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                        crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                    >::with_round_offset(0, 0);
+                    crate::sumcheck::inner::prove_inner_sumcheck(
+                        &field_cfg,
+                        &mut transcript,
+                        initial_claim.clone(),
+                        crate::sumcheck::inner::packed::PackedInput::new(
+                            coefficients,
+                            h_words,
+                            NUM_VARS,
+                            LIVE_LEN,
+                            prefix_vars,
+                        ),
+                        (),
+                        &mut boundary,
+                    )
+                    .map(|out| {
+                        crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                            out,
+                            boundary.into_nonces(),
+                        )
+                    })
+                }
                 .unwrap();
 
                 assert_eq!(largest_query.load(Ordering::Relaxed), LIVE_LEN - 1);
@@ -3126,17 +2761,32 @@ mod tests {
 
         for prefix_vars in 0..=SHA256_INNER_PREFIX_MAX_VARS {
             let mut packed_transcript = Blake3Transcript::new();
-            let packed = prove_sha256_inner_sumcheck(
-                &mut packed_transcript,
-                initial_claim.clone(),
-                NUM_VARS,
-                LIVE_LEN,
-                &|index| Ok(v[index].clone()),
-                &h_words,
-                prefix_vars,
-                &field_cfg,
-                0,
-            )
+            let packed = {
+                let coefficients = &|index: usize| Ok(v[index].clone());
+                let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                    crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                >::with_round_offset(0, 0);
+                crate::sumcheck::inner::prove_inner_sumcheck(
+                    &field_cfg,
+                    &mut packed_transcript,
+                    initial_claim.clone(),
+                    crate::sumcheck::inner::packed::PackedInput::new(
+                        coefficients,
+                        &h_words,
+                        NUM_VARS,
+                        LIVE_LEN,
+                        prefix_vars,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .map(|out| {
+                    crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                        out,
+                        boundary.into_nonces(),
+                    )
+                })
+            }
             .unwrap();
 
             let largest_query = AtomicUsize::new(0);
@@ -3148,17 +2798,32 @@ mod tests {
                 Ok((h_rows[index / ROW_BITS] >> (index % ROW_BITS)) & 1)
             };
             let mut lazy_transcript = Blake3Transcript::new();
-            let lazy = prove_sha256_inner_sumcheck(
-                &mut lazy_transcript,
-                initial_claim.clone(),
-                NUM_VARS,
-                LIVE_LEN,
-                &|index| Ok(v[index].clone()),
-                &row_source,
-                prefix_vars,
-                &field_cfg,
-                0,
-            )
+            let lazy = {
+                let coefficients = &|index: usize| Ok(v[index].clone());
+                let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                    crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                >::with_round_offset(0, 0);
+                crate::sumcheck::inner::prove_inner_sumcheck(
+                    &field_cfg,
+                    &mut lazy_transcript,
+                    initial_claim.clone(),
+                    crate::sumcheck::inner::packed::PackedInput::new(
+                        coefficients,
+                        &row_source,
+                        NUM_VARS,
+                        LIVE_LEN,
+                        prefix_vars,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .map(|out| {
+                    crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                        out,
+                        boundary.into_nonces(),
+                    )
+                })
+            }
             .unwrap();
 
             assert_eq!(largest_query.load(Ordering::Relaxed), LIVE_LEN - 1);
@@ -3171,24 +2836,31 @@ mod tests {
     }
 
     #[test]
-    fn oracle_field_configuration_is_checked_before_the_transcript() {
+    fn noncanonical_callback_is_rejected_before_the_transcript() {
         let field_cfg = spartan_f2z_field_config();
-        let foreign_cfg = Field::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
-        let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let (_, h_words, initial_claim) = fixture(3, &field_cfg);
         let mut transcript = Blake3Transcript::new();
         let mut untouched = transcript.clone();
-        let result = prove_sha256_inner_sumcheck(
-            &mut transcript,
-            initial_claim,
-            3,
-            8,
-            &|_| Ok(crate::piop::spartan::noncanonical_test_value(&field_cfg)),
-            &h_words,
-            2,
-            &field_cfg,
-            0,
-        );
+        let result = {
+            let coefficients = &|_| Ok(crate::piop::spartan::noncanonical_test_value(&field_cfg));
+            let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                crate::sumcheck::inner::packed::Sha256InnerGrinding,
+            >::with_round_offset(0, 0);
+            crate::sumcheck::inner::prove_inner_sumcheck(
+                &field_cfg,
+                &mut transcript,
+                initial_claim,
+                crate::sumcheck::inner::packed::PackedInput::new(coefficients, &h_words, 3, 8, 2),
+                (),
+                &mut boundary,
+            )
+            .map(|out| {
+                crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                    out,
+                    boundary.into_nonces(),
+                )
+            })
+        };
         assert_eq!(result, Err(SumcheckError::NonCanonicalFieldElement));
         assert_eq!(
             transcript.get_challenge::<u128>(),
@@ -3396,17 +3068,32 @@ mod tests {
             let mut invalid_bit_transcript = Blake3Transcript::new();
             let mut untouched_bit = invalid_bit_transcript.clone();
             assert_eq!(
-                prove_sha256_inner_sumcheck(
-                    &mut invalid_bit_transcript,
-                    initial_claim.clone(),
-                    v_mle.num_vars,
-                    v_mle.evaluations.len(),
-                    &|index| Ok(v_mle.evaluations[index].clone()),
-                    &|_| Ok(2),
-                    prefix_vars,
-                    &field_cfg,
-                    0,
-                ),
+                {
+                    let coefficients = &|index: usize| Ok(v_mle.evaluations[index].clone());
+                    let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                        crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                    >::with_round_offset(0, 0);
+                    crate::sumcheck::inner::prove_inner_sumcheck(
+                        &field_cfg,
+                        &mut invalid_bit_transcript,
+                        initial_claim.clone(),
+                        crate::sumcheck::inner::packed::PackedInput::new(
+                            coefficients,
+                            &|_| Ok(2),
+                            v_mle.num_vars,
+                            v_mle.evaluations.len(),
+                            prefix_vars,
+                        ),
+                        (),
+                        &mut boundary,
+                    )
+                    .map(|out| {
+                        crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                            out,
+                            boundary.into_nonces(),
+                        )
+                    })
+                },
                 Err(SumcheckError::InvalidProductDimensions)
             );
             assert_eq!(

@@ -393,7 +393,20 @@ impl PreparedHybrid {
                 .scratch
                 .lock()
                 .map_err(|_| Error::Invalid("joint sumcheck scratch poisoned"))?;
-            sumcheck::prove(&mut t, &self.geometry, sources, [&a, &b], &mut scratch)
+            {
+                let (claim, input) =
+                    sumcheck::inputs(&mut t, &self.geometry, sources, [&a, &b], &mut scratch);
+                let output = crate::sumcheck::inner::prove_inner_sumcheck(
+                    &field::Gf128Ops,
+                    &mut t,
+                    claim,
+                    input,
+                    (),
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .map_err(|_| Error::Invalid("joint sumcheck terminal claim"))?;
+                sumcheck::encode(&mut t, output)
+            }
         };
         drop(sumcheck_scope);
         tracing::info!("ring switching and opening both roots with Ligerito");

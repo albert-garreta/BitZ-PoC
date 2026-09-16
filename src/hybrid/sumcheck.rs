@@ -64,14 +64,14 @@ fn fold(table: &mut Vec<F>, r: F) {
     table.truncate(table.len() / 2);
 }
 
-fn observe(t: &mut Blake3Transcript, values: &[F]) {
+fn observe(t: &mut impl Transcript, values: &[F]) {
     for &v in values {
         t.absorb_slice(&v.lo.to_le_bytes());
         t.absorb_slice(&v.hi.to_le_bytes());
     }
 }
 
-fn sample(t: &mut Blake3Transcript) -> F {
+fn sample(t: &mut impl Transcript) -> F {
     (t.get_field_challenge::<Gf>(&()))
 }
 
@@ -256,9 +256,6 @@ fn packed_round(marginals: &[F], low: &[F], prefix_eq: &[F], round: usize) -> [F
     }))
 }
 
-/// Fold both dense tables by `r` (`out[i] = in[2i] + r·(in[2i] + in[2i+1])`)
-/// and return the next round's message over the folded pairs: one pass
-/// over the tables instead of a fold pass and a message pass.
 /// Working buffers of the dense rounds — the two virtual-witness tables and
 /// the pair they fold into — kept by the prepared circuit across proofs.
 /// They are 100 MB-class at the larger shapes, and a fresh allocation is
@@ -282,6 +279,9 @@ fn take_cleared(buf: &mut Vec<F>, n: usize) -> Vec<F> {
     v
 }
 
+/// Fold both dense tables by `r` (`out[i] = in[2i] + r·(in[2i] + in[2i+1])`)
+/// and return the next round's message over the folded pairs: one pass
+/// over the tables instead of a fold pass and a message pass.
 fn dense_fold(
     witness: &mut Vec<F>,
     weights: &mut Vec<F>,
@@ -351,143 +351,213 @@ fn bind_claims(t: &mut Blake3Transcript, a: &BinaryClaim, b: &BinaryClaim) -> F 
     sample(t)
 }
 
-pub(super) fn prove(
+/// Bind the protocol's random combination; the generic prover owns every round.
+pub(super) fn inputs<'a>(
     t: &mut Blake3Transcript,
-    geometry: &Geometry,
-    sources: [&[F]; 2],
-    claims: [&BinaryClaim; 2],
-    scratch: &mut Scratch,
-) -> (Proof, Vec<Gf>) {
+    geometry: &'a Geometry,
+    sources: [&'a [F]; 2],
+    claims: [&'a BinaryClaim; 2],
+    scratch: &'a mut Scratch,
+) -> (F, Input<'a>) {
     let rho = bind_claims(t, claims[0], claims[1]);
-    let scales = [F::ONE, rho];
-    let mut low = [claims[0].low.clone(), claims[1].low.clone()];
-    let high = [
-        eq_table(&claims[0].high_point),
-        eq_table(&claims[1].high_point),
-    ];
-    let mut value = claims[0].value + rho * claims[1].value;
-    let mut point = Vec::with_capacity(geometry.bit_log());
-    let mut rounds = Vec::with_capacity(geometry.bit_log());
-    let packed_scope = tracing::info_span!("js:packed_rounds").entered();
-    let marginals: [Vec<F>; 2] =
-        std::array::from_fn(|b| bit_marginals(sources[b], &high[b], low[b].len() / 128));
-    for round in 0..7 {
-        let prefix_eq = eq_table(&point);
-        let a = packed_round(&marginals[0], &low[0], &prefix_eq, round);
-        let b = packed_round(&marginals[1], &low[1], &prefix_eq, round);
-        let message = [a[0] + rho * b[0], a[1] + rho * b[1]];
-        observe(t, &message);
-        let r = sample(t);
-        value = evaluate_round(message, value, r);
-        point.push(r);
-        rounds.push(message);
-        for weights in &mut low {
-            fold(weights, r);
-        }
-    }
-    drop(marginals);
-    drop(packed_scope);
-    let tables_scope = tracing::info_span!("js:tables").entered();
-    let bit_eq: [F; 128] = eq_table(&point).try_into().expect("seven coordinates");
-    let bit_table = byte_table(&bit_eq);
-    const MAX_LANES: usize = 16;
-    let lanes = geometry.lanes();
-    assert!(lanes <= MAX_LANES && lanes % 2 == 0, "virtual lane group");
-    let n = 1usize << geometry.packed_log();
-    let logical = [1usize << geometry.logs[0], 1usize << geometry.logs[1]];
-    let nlow = [low[0].len(), low[1].len()];
-    // One lane group per position, written once in parallel into
-    // uninitialised capacity: both branches' lane slices (zero lanes
-    // included), then the first dense round's message over the group's
-    // pairs (the group size is even, so every pair lies inside one group).
-    let mut witness = take_cleared(&mut scratch.witness, n);
-    let mut weights = take_cleared(&mut scratch.weights, n);
-    let mut spare_x = std::mem::take(&mut scratch.spare_x);
-    let mut spare_w = std::mem::take(&mut scratch.spare_w);
-    let mut message = {
-        let sx = &mut witness.spare_capacity_mut()[..n];
-        let sw = &mut weights.spare_capacity_mut()[..n];
-        sum_pairs(
-            cfg_chunks_mut!(sx, lanes)
-                .zip(cfg_chunks_mut!(sw, lanes))
-                .enumerate()
-                .map(|(g, (wg, ww))| {
-                    let mut x = [F::ZERO; MAX_LANES];
-                    let mut w = [F::ZERO; MAX_LANES];
-                    for lane in 0..lanes {
-                        let branch = lane / (lanes / 2);
-                        let l = lane % (lanes / 2);
-                        let k = geometry.lane_logs[branch];
-                        if l < 1 << k {
-                            let index = (g << k) | l;
-                            x[lane] = apply(&bit_table, sources[branch][index]);
-                            if index < logical[branch] {
-                                w[lane] = scales[branch]
-                                    * low[branch][index % nlow[branch]]
-                                    * high[branch][index / nlow[branch]];
-                            }
-                        }
-                        wg[lane].write(x[lane]);
-                        ww[lane].write(w[lane]);
-                    }
-                    let mut u0 = F::ZERO;
-                    let mut u2 = F::ZERO;
-                    for j in 0..lanes / 2 {
-                        u0 += x[2 * j] * w[2 * j];
-                        u2 += (x[2 * j] + x[2 * j + 1]) * (w[2 * j] + w[2 * j + 1]);
-                    }
-                    [u0, u2]
-                }),
-        )
-    };
-    // SAFETY: every group wrote all of its `lanes` slots in both buffers.
-    unsafe {
-        witness.set_len(n);
-        weights.set_len(n);
-    }
-    drop(low);
-    drop(high);
-    drop(tables_scope);
-    let dense_scope = tracing::info_span!("js:dense_rounds").entered();
-    let dense_rounds = witness.len().ilog2() as usize;
-    let mut current_claim = [value];
-    crate::sumcheck::inner::engine::drive(
-        &field::Gf128Ops,
-        t,
-        dense_rounds,
-        &mut point,
-        &mut current_claim,
-        &mut [message],
-        &mut [[F::ZERO; 3]],
-        |t, _, messages| {
-            let message = [messages[0][0], messages[0][2]];
-            observe(t, &message);
-            rounds.push(message);
-            Ok::<_, core::convert::Infallible>(sample(t))
-        },
-        |_, r, next| {
-            next[0] = dense_fold(&mut witness, &mut weights, &mut spare_x, &mut spare_w, *r);
-            Ok(())
+    (
+        claims[0].value + rho * claims[1].value,
+        Input {
+            geometry,
+            sources,
+            claims,
+            scratch,
+            rho,
         },
     )
-    .unwrap();
-    value = current_claim[0];
-    drop(dense_scope);
-    assert_eq!(value, witness[0] * weights[0], "inner terminal claim");
-    observe(t, &witness);
-    let terminal = witness[0];
-    *scratch = Scratch {
-        witness,
-        weights,
-        spare_x,
-        spare_w,
-    };
+}
+
+pub struct Input<'a> {
+    geometry: &'a Geometry,
+    sources: [&'a [F]; 2],
+    claims: [&'a BinaryClaim; 2],
+    scratch: &'a mut Scratch,
+    rho: F,
+}
+pub struct State<'a> {
+    input: Input<'a>,
+    low: [Vec<F>; 2],
+    high: [Vec<F>; 2],
+    marginals: [Vec<F>; 2],
+    point: [F; 7],
+    round: usize,
+    next: [F; 2],
+}
+pub struct CompressedCodec;
+use crate::sumcheck::{SumcheckError, inner::input};
+impl input::Codec<field::Gf128Ops> for CompressedCodec {
+    fn absorb(_: &field::Gf128Ops, t: &mut impl Transcript, message: &[F; 3]) {
+        observe(t, &[message[0], message[2]]);
+    }
+    fn challenge(_: &field::Gf128Ops, t: &mut impl Transcript) -> Result<F, SumcheckError> {
+        Ok(sample(t))
+    }
+}
+impl input::sealed::Input for Input<'_> {}
+impl<'a> input::Input<field::Gf128Ops> for Input<'a> {
+    type Weights = ();
+    type State = State<'a>;
+    type Codec = CompressedCodec;
+    fn prepare(self, _: &field::Gf128Ops, _: ()) -> Result<Self::State, SumcheckError> {
+        let _scope = tracing::info_span!("js:packed_rounds").entered();
+        let low = [self.claims[0].low.clone(), self.claims[1].low.clone()];
+        let high = [
+            eq_table(&self.claims[0].high_point),
+            eq_table(&self.claims[1].high_point),
+        ];
+        let marginals =
+            std::array::from_fn(|b| bit_marginals(self.sources[b], &high[b], low[b].len() / 128));
+        Ok(State {
+            input: self,
+            low,
+            high,
+            marginals,
+            point: [F::ZERO; 7],
+            round: 0,
+            next: [F::ZERO; 2],
+        })
+    }
+}
+impl State<'_> {
+    fn prepare_dense(&mut self) {
+        self.marginals = [Vec::new(), Vec::new()];
+        let geometry = self.input.geometry;
+        let sources = self.input.sources;
+        let scratch = &mut *self.input.scratch;
+        let scales = [F::ONE, self.input.rho];
+        let low = &self.low;
+        let high = &self.high;
+        let tables_scope = tracing::info_span!("js:tables").entered();
+        let bit_eq: [F; 128] = eq_table(&self.point).try_into().expect("seven coordinates");
+        let bit_table = byte_table(&bit_eq);
+        const MAX_LANES: usize = 16;
+        let lanes = geometry.lanes();
+        assert!(lanes <= MAX_LANES && lanes % 2 == 0, "virtual lane group");
+        let n = 1usize << geometry.packed_log();
+        let logical = [1usize << geometry.logs[0], 1usize << geometry.logs[1]];
+        let nlow = [low[0].len(), low[1].len()];
+        // One lane group per position, written once in parallel into
+        // uninitialised capacity: both branches' lane slices (zero lanes
+        // included), then the first dense round's message over the group's
+        // pairs (the group size is even, so every pair lies inside one group).
+        let mut witness = take_cleared(&mut scratch.witness, n);
+        let mut weights = take_cleared(&mut scratch.weights, n);
+        let message = {
+            let sx = &mut witness.spare_capacity_mut()[..n];
+            let sw = &mut weights.spare_capacity_mut()[..n];
+            sum_pairs(
+                cfg_chunks_mut!(sx, lanes)
+                    .zip(cfg_chunks_mut!(sw, lanes))
+                    .enumerate()
+                    .map(|(g, (wg, ww))| {
+                        let mut x = [F::ZERO; MAX_LANES];
+                        let mut w = [F::ZERO; MAX_LANES];
+                        for lane in 0..lanes {
+                            let branch = lane / (lanes / 2);
+                            let l = lane % (lanes / 2);
+                            let k = geometry.lane_logs[branch];
+                            if l < 1 << k {
+                                let index = (g << k) | l;
+                                x[lane] = apply(&bit_table, sources[branch][index]);
+                                if index < logical[branch] {
+                                    w[lane] = scales[branch]
+                                        * low[branch][index % nlow[branch]]
+                                        * high[branch][index / nlow[branch]];
+                                }
+                            }
+                            wg[lane].write(x[lane]);
+                            ww[lane].write(w[lane]);
+                        }
+                        let mut u0 = F::ZERO;
+                        let mut u2 = F::ZERO;
+                        for j in 0..lanes / 2 {
+                            u0 += x[2 * j] * w[2 * j];
+                            u2 += (x[2 * j] + x[2 * j + 1]) * (w[2 * j] + w[2 * j + 1]);
+                        }
+                        [u0, u2]
+                    }),
+            )
+        };
+        // SAFETY: every group wrote all of its `lanes` slots in both buffers.
+        unsafe {
+            witness.set_len(n);
+            weights.set_len(n);
+        }
+        self.low = [Vec::new(), Vec::new()];
+        self.high = [Vec::new(), Vec::new()];
+        drop(tables_scope);
+
+        scratch.witness = witness;
+        scratch.weights = weights;
+        self.next = message;
+    }
+}
+impl input::State<field::Gf128Ops> for State<'_> {
+    fn num_vars(&self) -> usize {
+        self.input.geometry.bit_log()
+    }
+    fn coefficients(&self, _: &field::Gf128Ops) -> Result<[F; 2], SumcheckError> {
+        if self.round >= 7 {
+            return Ok(self.next);
+        }
+        let _scope = tracing::info_span!("js:packed_rounds").entered();
+        let eq = eq_table(&self.point[..self.round]);
+        let a = packed_round(&self.marginals[0], &self.low[0], &eq, self.round);
+        let b = packed_round(&self.marginals[1], &self.low[1], &eq, self.round);
+        Ok([a[0] + self.input.rho * b[0], a[1] + self.input.rho * b[1]])
+    }
+    fn fold(&mut self, _: &field::Gf128Ops, r: &F) -> Result<(), SumcheckError> {
+        if self.round < 7 {
+            self.point[self.round] = *r;
+            for w in &mut self.low {
+                fold(w, *r);
+            }
+            self.round += 1;
+            if self.round == 7 {
+                self.prepare_dense();
+            }
+        } else {
+            let _scope = tracing::info_span!("js:dense_rounds").entered();
+            let s = &mut *self.input.scratch;
+            self.next = dense_fold(
+                &mut s.witness,
+                &mut s.weights,
+                &mut s.spare_x,
+                &mut s.spare_w,
+                *r,
+            );
+            self.round += 1;
+        }
+        Ok(())
+    }
+    fn terminal(&self, _: &field::Gf128Ops) -> Result<[F; 2], SumcheckError> {
+        Ok([self.input.scratch.weights[0], self.input.scratch.witness[0]])
+    }
+}
+
+/// Retain the hybrid proof envelope and bind its terminal witness opening.
+pub(super) fn encode(
+    t: &mut Blake3Transcript,
+    output: crate::sumcheck::inner::InnerSumcheckOutput<F>,
+) -> (Proof, Vec<Gf>) {
+    let value = output.terminal_evaluations[1];
+    observe(t, &[value]);
     (
         Proof {
-            rounds,
-            value: terminal,
+            rounds: output
+                .proof
+                .round_polynomials
+                .into_iter()
+                .map(|[c0, _, c2]| [c0, c2])
+                .collect(),
+            value,
         },
-        point.into_iter().collect(),
+        output.point,
     )
 }
 
@@ -526,6 +596,25 @@ pub(super) fn verify(
 mod tests {
     use super::*;
 
+    fn prove_test(
+        t: &mut Blake3Transcript,
+        geometry: &Geometry,
+        sources: [&[F]; 2],
+        claims: [&BinaryClaim; 2],
+        scratch: &mut Scratch,
+    ) -> (Proof, Vec<Gf>) {
+        let (claim, input) = inputs(t, geometry, sources, claims, scratch);
+        let out = crate::sumcheck::inner::prove_inner_sumcheck(
+            &field::Gf128Ops,
+            t,
+            claim,
+            input,
+            (),
+            &mut crate::sumcheck::UngrindedRoundBoundary,
+        )
+        .unwrap();
+        encode(t, out)
+    }
     #[test]
     fn streamed_rounds_equal_dense_sumcheck_in_both_lane_orders() {
         let mut seed = 0x123456789abcdef0u64;
@@ -566,7 +655,7 @@ mod tests {
                 }
             });
             let mut actual_t = Blake3Transcript::new();
-            let (actual, point) = prove(
+            let (actual, point) = prove_test(
                 &mut actual_t,
                 &geometry,
                 [&packed[0], &packed[1]],

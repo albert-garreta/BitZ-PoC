@@ -182,7 +182,7 @@ fn invalid_shapes_do_not_change_the_transcript_and_singletons_check_the_claim() 
         Err(SumcheckError::InvalidTerminalClaim)
     );
     assert!(
-        prove_batched_inner_sumcheck::<_, u64, 0>(
+        prove_batched_inner_sumcheck::<_, [Vec<u64>; 0]>(
             &f,
             &mut Blake3Transcript::new(),
             &[],
@@ -219,5 +219,133 @@ fn streaming_prepared_reduction_matches_batch_and_worker_merges() {
     assert_eq!(
         Reduce::reduce(&gf, a),
         Reduce::reduce(&gf, gf.batch_mul_acc(&values, &values))
+    );
+}
+
+#[test]
+fn runtime_batches_match_fixed_batches_and_reject_invalid_metadata() {
+    let f = field();
+    let values = [vec![2u64, 3, 5, 7], vec![11, 13, 17, 19]];
+    let weights = [vec![f.one(); 4], vec![f.from_integer(&3u64); 4]];
+    let claims: [_; 2] =
+        core::array::from_fn(|i| Reduce::reduce(&f, f.batch_mul_acc(&weights[i], &values[i])));
+    let mut fixed_t = Blake3Transcript::new();
+    let fixed = prove_batched_inner_sumcheck(
+        &f,
+        &mut fixed_t,
+        &claims,
+        values.clone(),
+        weights.clone(),
+        &mut UngrindedRoundBoundary,
+    )
+    .unwrap();
+    let mut dynamic_t = Blake3Transcript::new();
+    let dynamic = prove_batched_inner_sumcheck(
+        &f,
+        &mut dynamic_t,
+        &claims[..],
+        values.to_vec(),
+        weights.to_vec(),
+        &mut UngrindedRoundBoundary,
+    )
+    .unwrap();
+    assert_eq!(dynamic.proofs, fixed.proofs);
+    assert_eq!(dynamic.point, fixed.point);
+    assert_eq!(dynamic.final_claims, fixed.final_claims);
+    assert_eq!(dynamic.terminal_evaluations, fixed.terminal_evaluations);
+    assert_eq!(
+        squeeze_field::<Fp<2>, _>(&mut fixed_t, &f).unwrap(),
+        squeeze_field::<Fp<2>, _>(&mut dynamic_t, &f).unwrap()
+    );
+
+    for (v, w, claims) in [
+        (
+            values.to_vec(),
+            weights.to_vec(),
+            InitialClaims::Known(&claims[..1]),
+        ),
+        (
+            values.to_vec(),
+            weights[..1].to_vec(),
+            InitialClaims::Known(&claims),
+        ),
+        (
+            vec![vec![2u64; 2], vec![3u64; 4]],
+            vec![vec![f.one(); 2], vec![f.one(); 4]],
+            InitialClaims::Known(&claims),
+        ),
+        (values.to_vec(), weights.to_vec(), InitialClaims::Compute),
+    ] {
+        let mut t = Blake3Transcript::new();
+        assert_eq!(
+            prove_batched_inner_sumcheck(&f, &mut t, claims, v, w, &mut UngrindedRoundBoundary),
+            Err(SumcheckError::InvalidProductDimensions)
+        );
+        assert_eq!(
+            squeeze_field::<Fp<2>, _>(&mut t, &f).unwrap(),
+            squeeze_field::<Fp<2>, _>(&mut Blake3Transcript::new(), &f).unwrap()
+        );
+    }
+}
+
+#[test]
+fn native_dense_and_block_states_share_one_batch() {
+    use native::{BlockScales, NativeWeights, RawFieldStorage, RawWitness};
+    let f = field();
+    let values: Vec<u64> = (1..=16).collect();
+    let common: Vec<_> = (1..=4u64).map(|v| f.from_integer(&v)).collect();
+    let scales = [
+        f.zero(),
+        f.one(),
+        f.from_integer(&3u64),
+        f.from_integer(&9u64),
+    ];
+    let expanded: Vec<_> = scales
+        .iter()
+        .flat_map(|s| common.iter().map(|w| f.mul(s, w)))
+        .collect();
+    let claim = Reduce::reduce(&f, f.batch_mul_acc(&expanded, &values));
+    let mut native_t = Blake3Transcript::new();
+    let native = prove_batched_inner_sumcheck(
+        &f,
+        &mut native_t,
+        &[claim; 2],
+        [
+            RawWitness::native_borrowed(&values, 16),
+            RawWitness::native_borrowed(&values, 16),
+        ],
+        [
+            NativeWeights::Dense {
+                matrix: expanded.iter().map(|v| f.raw(v)).collect(),
+                live: 16,
+            },
+            NativeWeights::Blocks {
+                weights: common.iter().map(|v| f.raw(v)).collect(),
+                scales: BlockScales {
+                    block_len: 4,
+                    rows: 4,
+                    scales: scales.iter().map(|v| Some(f.raw(v))).collect(),
+                },
+                live: 16,
+                num_vars: 4,
+            },
+        ],
+        &mut UngrindedRoundBoundary,
+    )
+    .unwrap();
+    let mut dense_t = Blake3Transcript::new();
+    let dense = prove_batched_inner_sumcheck(
+        &f,
+        &mut dense_t,
+        &[claim; 2],
+        [values.clone(), values],
+        [expanded.clone(), expanded],
+        &mut UngrindedRoundBoundary,
+    )
+    .unwrap();
+    assert_eq!(native, dense);
+    assert_eq!(
+        squeeze_field::<Fp<2>, _>(&mut native_t, &f).unwrap(),
+        squeeze_field::<Fp<2>, _>(&mut dense_t, &f).unwrap()
     );
 }

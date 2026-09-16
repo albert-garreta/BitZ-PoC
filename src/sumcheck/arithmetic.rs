@@ -8,12 +8,8 @@ use field::{CtMask, CtSelect};
 use field::{Fp, RingOps};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-/// Native-linear accumulation policy used only at the u32 prover's first
-/// sumcheck round and native-to-field fold boundary.
-///
-/// A separate trait keeps the Montgomery scale visible: these accumulators
-/// contain `field * u64` terms (`R` scaling), unlike the `field * field`
-/// products (`R^2` scaling) handled by the field library.
+/// Native-linear policy retained for the independent test oracles.
+#[cfg(test)]
 pub(crate) trait SumcheckLinearReducer: Sync {
     type Accumulator: Send;
 
@@ -28,6 +24,7 @@ pub(crate) trait SumcheckLinearReducer: Sync {
     ) -> Result<Fp<2>, SumcheckError>;
 }
 
+#[cfg(test)]
 impl SumcheckLinearReducer for field::FpCtx<2> {
     type Accumulator = field::FpLinearAcc<2, 1>;
 
@@ -167,6 +164,7 @@ pub(crate) fn merge_accumulators<A: MergeAccumulator, const COEFFS: usize>(
 }
 
 #[inline]
+#[cfg(test)]
 pub(crate) fn reduce_two_accumulators<F, R>(
     [a, b]: [<R as BatchMulAcc<F>>::Accumulator; 2],
     field: &R,

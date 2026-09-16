@@ -1,3 +1,7 @@
+use crate::sumcheck::inner::{
+    packed::{PackedInput, Sha256InnerGrinding},
+    prove_inner_sumcheck,
+};
 use field::{RingOps, Uint};
 
 use flock_core::pcs::{
@@ -30,9 +34,7 @@ use crate::{
         grinding::GrindingDomain,
         matrix::eq_table,
         protocol::{check_boundary, f2z_generator, grind_boundary},
-        sha256::inner_sumcheck::{
-            ColumnMajorPackedBits, prove_composite_inner_sumcheck,
-        },
+        sha256::inner_sumcheck::ColumnMajorPackedBits,
         squeeze_field,
         sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
     },
@@ -210,7 +212,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         outer_eq_challenges,
         grinding_nonce: initial_nonce,
     } = derive_initial_challenges(t, prepared, &security, None)?;
-    let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).map_err(error)?;
+    crate::utils::delayed_reduction::prepare_field(&cfg).map_err(error)?;
     let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
     let (outer, outer_nonces) = {
         let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
@@ -246,38 +248,55 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     )?;
     let batched_matrix_mle =
         mod_q_coefficients.build_batched_matrix_mle(prepared, &inner_claim, &cfg)?;
-    let inner = {
+    let (inner, inner_nonces) = {
         let _scope = tracing::info_span!("ecdsa:shared_inner_prove").entered();
-        prove_composite_inner_sumcheck(
-            t,
-            inner_claim.claimed_sum().clone(),
-            prepared.h_layout.row_vars + prepared.h_layout.col_vars,
-            &batched_matrix_mle.as_mle(&cfg)?,
-            &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
-            prefix_vars,
-            &cfg,
-            security.inner,
-        )
+        {
+            let coefficients = &batched_matrix_mle.as_mle(&cfg)?;
+            let mut boundary =
+                ProverGrindingRoundBoundary::<Sha256InnerGrinding>::with_round_offset(
+                    security.inner,
+                    0,
+                );
+            prove_inner_sumcheck(
+                &cfg,
+                t,
+                inner_claim.claimed_sum().clone(),
+                PackedInput::new(
+                    coefficients,
+                    &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
+                    prepared.h_layout.row_vars + prepared.h_layout.col_vars,
+                    coefficients.live_len(),
+                    prefix_vars,
+                ),
+                (),
+                &mut boundary,
+            )
+            .map(|out| (out, boundary.into_nonces()))
+        }
         .map_err(error)?
     };
-    if batched_matrix_mle.evaluate(&inner.eval_points, &cfg)? != inner.v_evaluation {
+    if batched_matrix_mle.evaluate(&inner.point, &cfg)? != inner.terminal_evaluations[0] {
         return Err(error("batched matrix MLE evaluation mismatch"));
     }
-    if cfg.mul(&(inner.v_evaluation.clone()), &(&inner.h_evaluation)) != inner.final_claim {
+    if cfg.mul(
+        &(inner.terminal_evaluations[0].clone()),
+        &(&inner.terminal_evaluations[1]),
+    ) != inner.final_claim
+    {
         return Err(error("witness does not satisfy the shared inner claim"));
     }
     bind_opening(
         t,
-        &inner.eval_points,
-        &inner.v_evaluation,
+        &inner.point,
+        &inner.terminal_evaluations[0],
         &inner.final_claim,
         &cfg,
     );
-    let rows: Vec<_> = eq_table(&inner.eval_points[..prepared.h_layout.row_vars], &cfg)
+    let rows: Vec<_> = eq_table(&inner.point[..prepared.h_layout.row_vars], &cfg)
         .map_err(error)?
         .into_iter()
         .map(|mut x| {
-            x = cfg.mul(&(x), &(&inner.v_evaluation));
+            x = cfg.mul(&(x), &(&inner.terminal_evaluations[0]));
             u128::from(cfg.to_integer(&x))
         })
         .collect();
@@ -314,8 +333,8 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         flock_nonces,
         outer: outer.proof,
         outer_nonces,
-        inner: inner.sumcheck_proof,
-        inner_nonces: inner.round_nonces,
+        inner: inner.proof,
+        inner_nonces,
         opening,
     })
 }
@@ -378,8 +397,17 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         linear_batch_weight,
         &cfg,
     )?;
-    let (inner_eval_point, inner_final_claim) = proof.inner.verify_grinded::<crate::sumcheck::inner::packed::Sha256InnerGrinding>(transcript, inner_claim.claimed_sum().clone(), prepared.h_layout.row_vars + prepared.h_layout.col_vars, &cfg, &proof.inner_nonces, security.inner)
-    .map_err(error)?;
+    let (inner_eval_point, inner_final_claim) = proof
+        .inner
+        .verify_grinded::<Sha256InnerGrinding>(
+            transcript,
+            inner_claim.claimed_sum().clone(),
+            prepared.h_layout.row_vars + prepared.h_layout.col_vars,
+            &cfg,
+            &proof.inner_nonces,
+            security.inner,
+        )
+        .map_err(error)?;
     // inner_final_claim ≡ scale · h(inner_eval_point) (mod q).
     let scale = mod_q_coefficients.evaluate_batched_matrix_mle(
         prepared,

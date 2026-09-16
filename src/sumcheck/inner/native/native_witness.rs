@@ -1,6 +1,5 @@
 //! Declared-width, borrowed u128/u256 assignment segments and mixed first rounds.
 use super::*;
-use crate::piop::spartan::raw_monty::RawFieldStorage;
 use field::{CtOrd, CtSelect, Fp, FpLinearAcc, MergeAccumulator, RingOps, Uint};
 
 #[derive(Clone, Copy)]
@@ -124,12 +123,6 @@ pub(super) fn wide_coefficients<const N: usize>(
     assert_eq!(weights.len() % 2, 0);
     let f = ctx;
     let zero = || [FpLinearAcc::<2, N>::zero(); 2];
-    let merge = |mut a: [FpLinearAcc<2, N>; 2], b: [FpLinearAcc<2, N>; 2]| {
-        for i in 0..2 {
-            a[i].merge_assign(&b[i]);
-        }
-        a
-    };
     let block = |start: usize, weights: &[Raw]| {
         let mut acc = zero();
         for (i, m) in weights.chunks_exact(2).enumerate() {
@@ -150,7 +143,7 @@ pub(super) fn wide_coefficients<const N: usize>(
             .par_chunks(2 * FOLD_BLOCK)
             .enumerate()
             .map(|(i, w)| block(i * 2 * FOLD_BLOCK, w))
-            .reduce(zero, merge);
+            .reduce(zero, merge_accumulators);
         return acc.map(|a| raw_shared(field::Reduce::reduce(f, a)));
     }
     block(0, weights).map(|a| raw_shared(field::Reduce::reduce(f, a)))
@@ -210,12 +203,6 @@ pub(super) fn wide_fold<const N: usize, const FOLD_WEIGHTS: bool>(
     let coefficients = [f.sub(&f.one(), &challenge), challenge];
     let prepared_fold = PreparedLimbFold::<N>::new(ctx, coefficients);
     let zero = || [FpLinearAcc::<2, 2>::zero(); 2];
-    let merge = |mut a: [FpLinearAcc<2, 2>; 2], b: [FpLinearAcc<2, 2>; 2]| {
-        for i in 0..2 {
-            a[i].merge_assign(&b[i]);
-        }
-        a
-    };
     let block = |start: usize, mout: &mut [Raw], out: &mut [Uint<2>]| {
         let mut acc = zero();
         for (pair, z) in out.chunks_exact_mut(2).enumerate() {
@@ -251,12 +238,12 @@ pub(super) fn wide_fold<const N: usize, const FOLD_WEIGHTS: bool>(
                 .zip(out.par_chunks_mut(2 * FOLD_BLOCK))
                 .enumerate()
                 .map(|(i, (m, z))| block(i * 2 * FOLD_BLOCK, m, z))
-                .reduce(zero, merge)
+                .reduce(zero, merge_accumulators)
         } else {
             out.par_chunks_mut(2 * FOLD_BLOCK)
                 .enumerate()
                 .map(|(i, z)| block(i * 2 * FOLD_BLOCK, &mut [], z))
-                .reduce(zero, merge)
+                .reduce(zero, merge_accumulators)
         };
         return reduce(acc);
     }
@@ -507,40 +494,53 @@ mod tests {
                         .zip(&projected)
                         .fold(0, |a, (&m, &w)| ctx.add_raw(a, ctx.mul_raw(m, w)));
                     let claim = crate::utils::delayed_reduction::element(&cfg, raw_claim);
-                    let expected = prove_inner_raw(
-                        &mut Blake3Transcript::new(),
+                    let expected = crate::sumcheck::inner::prove_inner_sumcheck(
                         &ctx,
+                        &mut Blake3Transcript::new(),
                         claim.clone(),
-                        matrix.clone(),
                         RawWitness::Field(projected.clone()),
-                        4 * cap,
+                        crate::sumcheck::inner::native::NativeWeights::Dense {
+                            matrix: matrix.clone(),
+                            live: 4 * cap,
+                        },
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
                     )
+                    .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                     .unwrap();
-                    let got = prove_inner_raw(
-                        &mut Blake3Transcript::new(),
+                    let got = crate::sumcheck::inner::prove_inner_sumcheck(
                         &ctx,
+                        &mut Blake3Transcript::new(),
                         claim.clone(),
-                        matrix,
                         RawWitness::Limbs(input),
-                        4 * cap,
+                        crate::sumcheck::inner::native::NativeWeights::Dense {
+                            matrix: matrix,
+                            live: 4 * cap,
+                        },
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
                     )
+                    .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                     .unwrap();
                     assert_eq!(got, expected, "dense log={log}");
                     if cap >= 2 {
-                        let got = prove_inner_structured_raw(
-                            &mut Blake3Transcript::new(),
+                        let got = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut Blake3Transcript::new(),
                             claim,
-                            &weights,
-                            &BlockScales {
-                                block_len: cap,
-                                rows: cap,
-                                scales,
-                            },
                             RawWitness::Limbs(input),
-                            4 * cap,
-                            log + 2,
+                            crate::sumcheck::inner::native::NativeWeights::Blocks {
+                                weights: (&weights).to_vec(),
+                                scales: (&BlockScales {
+                                    block_len: cap,
+                                    rows: cap,
+                                    scales,
+                                })
+                                    .clone(),
+                                live: 4 * cap,
+                                num_vars: log + 2,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
                         assert_eq!(got, expected, "structured log={log}");
                     }
@@ -617,40 +617,53 @@ mod tests {
                                 .zip(&projected)
                                 .fold(0, |a, (&m, &w)| ctx.add_raw(a, ctx.mul_raw(m, w))),
                         );
-                        let expected = prove_inner_raw(
-                            &mut Blake3Transcript::new(),
+                        let expected = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut Blake3Transcript::new(),
                             claim.clone(),
-                            matrix.clone(),
                             RawWitness::Field(projected.clone()),
-                            4 * cap,
+                            crate::sumcheck::inner::native::NativeWeights::Dense {
+                                matrix: matrix.clone(),
+                                live: 4 * cap,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
-                        let got = prove_inner_raw(
-                            &mut Blake3Transcript::new(),
+                        let got = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut Blake3Transcript::new(),
                             claim.clone(),
-                            matrix,
                             RawWitness::Wide(input),
-                            4 * cap,
+                            crate::sumcheck::inner::native::NativeWeights::Dense {
+                                matrix: matrix,
+                                live: 4 * cap,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
                         assert_eq!(got, expected, "dense log={log} live={live}");
                         if cap >= 2 {
-                            let got = prove_inner_structured_raw(
-                                &mut Blake3Transcript::new(),
+                            let got = crate::sumcheck::inner::prove_inner_sumcheck(
                                 &ctx,
+                                &mut Blake3Transcript::new(),
                                 claim,
-                                &weights,
-                                &BlockScales {
-                                    block_len: cap,
-                                    rows: cap,
-                                    scales,
-                                },
                                 RawWitness::Wide(input),
-                                4 * cap,
-                                log + 2,
+                                crate::sumcheck::inner::native::NativeWeights::Blocks {
+                                    weights: (&weights).to_vec(),
+                                    scales: (&BlockScales {
+                                        block_len: cap,
+                                        rows: cap,
+                                        scales,
+                                    })
+                                        .clone(),
+                                    live: 4 * cap,
+                                    num_vars: log + 2,
+                                },
+                                &mut crate::sumcheck::UngrindedRoundBoundary,
                             )
+                            .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                             .unwrap();
                             assert_eq!(got, expected, "structured log={log} live={live}");
                         }

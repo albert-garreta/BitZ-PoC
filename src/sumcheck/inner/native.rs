@@ -1,5 +1,6 @@
 //! Encoded Montgomery storage and native kernels for the Spartan inner prover.
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
+#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 pub use crate::sumcheck::outer::arithmetic::NativeWideProducts;
 #[cfg(test)]
@@ -16,7 +17,6 @@ use rayon::prelude::*;
 
 #[cfg(test)]
 use crate::piop::spartan::sumcheck::R1csProductMles;
-use crate::transcript::traits::Transcript;
 
 use crate::piop::spartan::{
     baby_bear_mul::{BABY_BEAR_MODULUS, BabyBearMulCoefficient},
@@ -24,17 +24,18 @@ use crate::piop::spartan::{
         BlockSelectorLayout, PrefixUnivariateRowFactors, PreparedConstraintMatrices,
         SpartanMatrixCoefficient,
     },
-    sumcheck::{
-        InnerSumcheckOutput, SumcheckError, SumcheckProof, SumcheckProverOutput,
-        recover_full_round_polynomial_and_sample_next_challenge,
-    },
     u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
 };
+
+pub(crate) use crate::sumcheck::arithmetic::merge_accumulators as merge_product_pair;
+use crate::sumcheck::{SumcheckError, arithmetic::merge_accumulators};
 
 mod folded;
 
 mod native_witness;
-use folded::{FoldedValue, FoldedWitness};
+mod state;
+use folded::FoldedValue;
+pub use state::NativeWeights;
 
 pub use native_witness::{NativeLimbWitness, NativeU128Witness};
 
@@ -42,7 +43,7 @@ pub(crate) type Field = Fp<2>;
 pub(crate) type FieldConfig = field::FpCtx<2>;
 
 /// One canonical Montgomery residue of the runtime field: the same two limbs
-/// `Fp<2>::as_montgomery` exposes, packed little-endian into a `u128`.
+/// `Fp<2>::as_montgomery_integer` exposes, packed little-endian into a `u128`.
 pub(crate) type Raw = u128;
 
 /// Minimum work items before a kernel splits across the rayon pool. Matches
@@ -241,13 +242,6 @@ pub(crate) fn linear_pair() -> LinearPair {
 }
 
 #[inline(always)]
-pub(crate) fn merge_product_pair(mut left: ProductPair, right: ProductPair) -> ProductPair {
-    left[0] += right[0];
-    left[1] += right[1];
-    left
-}
-
-#[inline(always)]
 pub(crate) fn reduce_product_pair(pair: ProductPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
     let [endpoint, infinity] = pair;
     [
@@ -321,7 +315,7 @@ pub enum RawWitness<'a> {
 
 impl<'a> RawWitness<'a> {
     /// A complete native table.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn native_owned(values: Vec<u64>) -> Self {
         let domain = values.len();
         Self::Native {
@@ -475,18 +469,13 @@ fn inner_coefficients_native_raw(
         }
         accumulators
     };
-    let merge = |mut left: LinearPair, right: LinearPair| -> LinearPair {
-        left[0] += right[0];
-        left[1] += right[1];
-        left
-    };
     #[cfg(feature = "parallel")]
     if parallel(matrix.len() / 2) {
         let total = matrix
             .par_chunks(2 * FOLD_BLOCK)
             .zip(witness.par_chunks(2 * FOLD_BLOCK))
             .map(|(m, w)| block(m, w))
-            .reduce(linear_pair, merge);
+            .reduce(linear_pair, merge_accumulators);
         return reduce_linear_pair(total, ctx);
     }
     reduce_linear_pair(block(matrix, witness), ctx)
@@ -553,333 +542,11 @@ fn fold_inner_native_raw(
             .map(|(m, w, m_out, w_out)| block(m, w, m_out, w_out))
             .reduce(
                 folded::pair::<field::Uint<2>>,
-                folded::merge::<field::Uint<2>>,
+                merge_accumulators::<field::FpLinearAcc<2, 2>, 2>,
             );
         return folded::reduce::<field::Uint<2>>(ctx, total);
     }
     folded::reduce::<field::Uint<2>>(ctx, block(matrix_in, witness_in, matrix_out, witness_out))
-}
-
-/// Proves the quadratic inner sumcheck `initial_claim = Σ_y matrix(y) · witness(y)`
-/// on raw tables: the raw twin of `prove_inner_sumcheck_with_reducer` (field
-/// witness) and `prove_inner_sumcheck_u32_native_with_reducer` (native
-/// witness) with the delayed-Barrett reducer.
-///
-/// `live` bounds the leading entries that may be nonzero in BOTH tables: the
-/// batched matrix is zero beyond the logical column count by construction and
-/// the assignment padding is validated zero before the transcript moves.
-/// Rounds therefore touch only the live prefix; the values are exactly those
-/// of the full-table prover, whose padded pairs contribute zero.
-pub(crate) fn prove_inner_raw<T: Transcript>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    initial_claim: Field,
-    matrix: Vec<Raw>,
-    witness: RawWitness<'_>,
-    live: usize,
-) -> Result<InnerSumcheckOutput<Field>, SumcheckError> {
-    let cfg = ctx.clone();
-    let len = matrix.len();
-    if !len.is_power_of_two() || witness.len() != len || live > len {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    if let RawWitness::Native { values, domain, .. } = &witness
-        && values.len() > *domain
-    {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    let witness = witness.materialize();
-    let num_vars = len.trailing_zeros() as usize;
-    let zero = Field::zero_with_cfg(&cfg);
-    let mut current_claim = initial_claim;
-    let mut eval_points = Vec::with_capacity(num_vars);
-    let mut round_polynomials = Vec::with_capacity(num_vars);
-
-    let finish = |matrix_evaluation: Raw,
-                  witness_evaluation: Raw,
-                  current_claim: Field,
-                  round_polynomials: Vec<[Field; 3]>,
-                  eval_points: Vec<Field>| {
-        let batched_matrix_evaluation =
-            crate::utils::delayed_reduction::element(&cfg, matrix_evaluation);
-        let witness_evaluation = crate::utils::delayed_reduction::element(&cfg, witness_evaluation);
-        if current_claim != cfg.mul(&batched_matrix_evaluation, &witness_evaluation) {
-            return Err(SumcheckError::InvalidTerminalClaim);
-        }
-        Ok(InnerSumcheckOutput {
-            sumcheck: SumcheckProverOutput {
-                proof: SumcheckProof { round_polynomials },
-                eval_points,
-                final_claim: current_claim,
-            },
-            batched_matrix_evaluation,
-            witness_evaluation,
-        })
-    };
-
-    if num_vars == 0 {
-        let witness_evaluation = match &witness {
-            RawWitness::Native { values, .. } => ctx.native_residue(values[0]),
-            RawWitness::Field(values) => values[0],
-            RawWitness::Wide(values) => {
-                raw_shared(field::IntegerEmbedding::from_integer(ctx, &values.read(0)))
-            }
-            RawWitness::Limbs(values) => {
-                raw_shared(field::IntegerEmbedding::from_integer(ctx, &values.read(0)))
-            }
-        };
-        return finish(
-            matrix[0],
-            witness_evaluation,
-            current_claim,
-            round_polynomials,
-            eval_points,
-        );
-    }
-
-    // Round zero over the live prefix, then the first fold (which is also the
-    // native → field projection when the witness is exact).
-    let pairs = live.div_ceil(2);
-    let round0_scope = tracing::info_span!("raw:inner_round0").entered();
-    let coefficients = match &witness {
-        RawWitness::Native { values, .. } => {
-            inner_coefficients_native_raw(ctx, &matrix[..2 * pairs], &values[..2 * pairs])
-        }
-        RawWitness::Wide(values) => {
-            native_witness::wide_coefficients(ctx, &matrix[..2 * pairs], |i| values.read(i))
-        }
-        RawWitness::Limbs(values) => {
-            native_witness::wide_coefficients(ctx, &matrix[..2 * pairs], |i| values.read(i))
-        }
-        RawWitness::Field(values) => {
-            inner_coefficients_field_raw(ctx, &matrix[..2 * pairs], &values[..2 * pairs])
-        }
-    };
-    drop(round0_scope);
-    let mut coefficients_without_linear = [
-        crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
-        crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
-    ];
-    let challenge = recover_full_round_polynomial_and_sample_next_challenge(
-        transcript,
-        &mut current_claim,
-        &coefficients_without_linear,
-        &mut round_polynomials,
-        &mut eval_points,
-        &zero,
-        &cfg,
-    )?;
-    let challenge_raw = ctx.raw(&challenge);
-    let next_len = len / 2;
-    let live = live.div_ceil(2);
-    let mut matrix_next = vec![0 as Raw; next_len];
-    if next_len == 1 {
-        let matrix_evaluation = ctx.interpolate(matrix[0], matrix[1], challenge_raw);
-        let witness_evaluation = match &witness {
-            RawWitness::Native { values, .. } => fold_native_pair(
-                ctx,
-                ctx.sub_raw(ctx.one_raw(), challenge_raw),
-                challenge_raw,
-                values[0],
-                values[1],
-            ),
-            RawWitness::Field(values) => ctx.interpolate(values[0], values[1], challenge_raw),
-            RawWitness::Wide(values) => {
-                let f = ctx;
-                raw_shared(f.weighted_pair(
-                    &[
-                        shared_raw(f, ctx.sub_raw(ctx.one_raw(), challenge_raw)),
-                        shared_raw(f, challenge_raw),
-                    ],
-                    &[values.read(0), values.read(1)],
-                ))
-            }
-            RawWitness::Limbs(values) => {
-                let f = ctx;
-                raw_shared(f.weighted_pair(
-                    &[
-                        shared_raw(f, ctx.sub_raw(ctx.one_raw(), challenge_raw)),
-                        shared_raw(f, challenge_raw),
-                    ],
-                    &[values.read(0), values.read(1)],
-                ))
-            }
-        };
-        return finish(
-            matrix_evaluation,
-            witness_evaluation,
-            current_claim,
-            round_polynomials,
-            eval_points,
-        );
-    }
-    let written = 2 * live.div_ceil(2);
-    let fold0_scope = tracing::info_span!("raw:inner_fold0").entered();
-    let (coefficients, witness_next) = match &witness {
-        RawWitness::Native { values, .. } => {
-            let mut out = vec![field::Uint::<2>::ZERO; next_len];
-            let coefficients = fold_inner_native_raw(
-                ctx,
-                &matrix[..2 * written],
-                &values[..2 * written],
-                &mut matrix_next[..written],
-                &mut out[..written],
-                challenge_raw,
-            );
-            (coefficients, FoldedWitness::Integers(out))
-        }
-        RawWitness::Wide(values) => {
-            let mut out = vec![field::Uint::<2>::ZERO; next_len];
-            let coefficients = native_witness::wide_fold::<4, true>(
-                ctx,
-                &matrix[..2 * written],
-                |i| values.read(i),
-                &mut matrix_next[..written],
-                &mut out[..written],
-                challenge_raw,
-            );
-            (coefficients, FoldedWitness::Integers(out))
-        }
-        RawWitness::Limbs(values) => {
-            let mut out = vec![field::Uint::<2>::ZERO; next_len];
-            let coefficients = native_witness::wide_fold::<32, true>(
-                ctx,
-                &matrix[..2 * written],
-                |i| values.read(i),
-                &mut matrix_next[..written],
-                &mut out[..written],
-                challenge_raw,
-            );
-            (coefficients, FoldedWitness::Integers(out))
-        }
-        RawWitness::Field(values) => {
-            let mut out = vec![shared_raw(ctx, 0); next_len];
-            let coefficients = folded::fold_round::<field::Fp<2>, true, _>(
-                ctx,
-                &matrix[..2 * written],
-                &values[..2 * written],
-                |value| shared_raw(ctx, value),
-                &mut matrix_next[..written],
-                &mut out[..written],
-                challenge_raw,
-            );
-            (coefficients, FoldedWitness::Field(out))
-        }
-    };
-    coefficients_without_linear = [
-        crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
-        crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
-    ];
-    drop(matrix);
-    drop(witness);
-    drop(fold0_scope);
-
-    let _rounds_scope = tracing::info_span!("raw:inner_rounds").entered();
-    let (matrix_evaluation, witness_evaluation) = match witness_next {
-        FoldedWitness::Integers(values) => inner_dense_rounds(
-            transcript,
-            ctx,
-            &mut current_claim,
-            matrix_next,
-            values,
-            live,
-            coefficients_without_linear,
-            &mut round_polynomials,
-            &mut eval_points,
-        )?,
-        FoldedWitness::Field(values) => inner_dense_rounds(
-            transcript,
-            ctx,
-            &mut current_claim,
-            matrix_next,
-            values,
-            live,
-            coefficients_without_linear,
-            &mut round_polynomials,
-            &mut eval_points,
-        )?,
-    };
-    finish(
-        matrix_evaluation,
-        witness_evaluation,
-        current_claim,
-        round_polynomials,
-        eval_points,
-    )
-}
-
-/// Runs the remaining dense inner rounds from a prepared state: field-valued
-/// `matrix` and `witness` tables (the latter in `scale` form), the leading
-/// `live` entries possibly nonzero, and the current round's `[c0, c2]`
-/// already computed. Returns the terminal `(matrix, witness)` values, both
-/// as raw residues.
-#[allow(clippy::too_many_arguments)]
-fn inner_dense_rounds<T: Transcript, W: FoldedValue>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    current_claim: &mut Field,
-    mut matrix: Vec<Raw>,
-    mut witness: Vec<W>,
-    mut live: usize,
-    mut coefficients_without_linear: [Field; 2],
-    round_polynomials: &mut Vec<[Field; 3]>,
-    eval_points: &mut Vec<Field>,
-) -> Result<(Raw, Raw), SumcheckError> {
-    let cfg = ctx.clone();
-    debug_assert_eq!(matrix.len(), witness.len());
-    let zero = Field::zero_with_cfg(&cfg);
-    let mut matrix_scratch = vec![0 as Raw; matrix.len() / 2];
-    let mut witness_scratch = vec![W::zero(ctx); witness.len() / 2];
-    super::engine::drive(
-        ctx,
-        transcript,
-        matrix.len().ilog2() as usize,
-        eval_points,
-        core::slice::from_mut(current_claim),
-        core::slice::from_mut(&mut coefficients_without_linear),
-        &mut [[zero; 3]],
-        |transcript, _, messages| {
-            crate::piop::spartan::absorb_field_elements(transcript, &messages[0], ctx);
-            round_polynomials.push(messages[0]);
-            crate::piop::spartan::squeeze_field(transcript, ctx)
-        },
-        |_, challenge, next| {
-            let challenge_raw = ctx.raw(challenge);
-            let next_len = matrix.len() / 2;
-            let next_live = live.div_ceil(2);
-            matrix_scratch.truncate(next_len);
-            witness_scratch.truncate(next_len);
-            if next_len == 1 {
-                matrix_scratch[0] = ctx.interpolate(matrix[0], matrix[1], challenge_raw);
-                witness_scratch[0] = W::from_encoding(
-                    ctx,
-                    ctx.interpolate(witness[0].encoding(), witness[1].encoding(), challenge_raw),
-                );
-            } else {
-                let written = 2 * next_live.div_ceil(2);
-                let coefficients = folded::fold_round::<W, true, _>(
-                    ctx,
-                    &matrix[..2 * written],
-                    &witness[..2 * written],
-                    |value| value,
-                    &mut matrix_scratch[..written],
-                    &mut witness_scratch[..written],
-                    challenge_raw,
-                );
-                matrix_scratch[written..].fill(0);
-                witness_scratch[written..].fill(W::zero(ctx));
-                next[0] = [
-                    crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
-                    crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
-                ];
-            }
-            std::mem::swap(&mut matrix, &mut matrix_scratch);
-            std::mem::swap(&mut witness, &mut witness_scratch);
-            live = next_live;
-            Ok(())
-        },
-    )?;
-    Ok((matrix[0], witness[0].final_raw(ctx)))
 }
 
 // ---------------------------------------------------------------------------
@@ -889,7 +556,8 @@ fn inner_dense_rounds<T: Transcript, W: FoldedValue>(
 /// The batched matrix of a block-selector relation, without materializing it:
 /// `D(k · block_len + r) = scales[k] · weights[r]` for `r < rows`, zero for
 /// blocks without a scale and for `r ≥ rows`.
-pub(crate) struct BlockScales {
+#[derive(Clone)]
+pub struct BlockScales {
     pub block_len: usize,
     pub rows: usize,
     /// Per block: the summed `f · coefficient` of the runs starting there.
@@ -1002,7 +670,7 @@ fn fold_block_native_raw(
             .map(|(w, z, out)| block(w, z, out))
             .reduce(
                 folded::pair::<field::Uint<2>>,
-                folded::merge::<field::Uint<2>>,
+                merge_accumulators::<field::FpLinearAcc<2, 2>, 2>,
             );
         return folded::reduce::<field::Uint<2>>(ctx, total);
     }
@@ -1089,352 +757,6 @@ enum BlockValues<'a> {
     ConstantOne,
     Zero,
     Limbs(&'a [field::Uint<32>]),
-}
-
-/// Proves the inner sumcheck of a block-selector relation without the dense
-/// batched matrix: the raw twin of `prove_inner_raw` on
-/// `D(k · block_len + r) = scales[k] · weights[r]`.
-///
-/// Rounds over the in-block coordinates fold ONE weight vector plus the
-/// witness blocks that carry a scale, and each message is
-/// `Σ_k scales[k] · (Σ_i w'(2i) z'_k(2i), Σ_i Δw' Δz'_k)`; blocks without a
-/// scale contribute nothing until the block coordinates, where their fold is
-/// one weighted sum against the equality table of the in-block challenges
-/// (a single product for the constant block). The block rounds then run
-/// densely on `blocks` entries. Every message equals the dense prover's.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_inner_structured_raw<T: Transcript>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    initial_claim: Field,
-    weights: &[Raw],
-    scales: &BlockScales,
-    witness: RawWitness<'_>,
-    live: usize,
-    num_column_vars: usize,
-) -> Result<InnerSumcheckOutput<Field>, SumcheckError> {
-    match witness {
-        RawWitness::Field(_) => prove_inner_structured_typed::<T, field::Fp<2>>(
-            transcript,
-            ctx,
-            initial_claim,
-            weights,
-            scales,
-            witness,
-            live,
-            num_column_vars,
-        ),
-        RawWitness::Native { .. } | RawWitness::Wide(_) | RawWitness::Limbs(_) => {
-            prove_inner_structured_typed::<T, field::Uint<2>>(
-                transcript,
-                ctx,
-                initial_claim,
-                weights,
-                scales,
-                witness,
-                live,
-                num_column_vars,
-            )
-        }
-    }
-}
-
-fn prove_inner_structured_typed<T: Transcript, W: FoldedValue>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    initial_claim: Field,
-    weights: &[Raw],
-    scales: &BlockScales,
-    witness: RawWitness<'_>,
-    live: usize,
-    num_column_vars: usize,
-) -> Result<InnerSumcheckOutput<Field>, SumcheckError> {
-    let cfg = ctx.clone();
-    let block_len = scales.block_len;
-    let blocks = scales.scales.len();
-    let domain = 1usize << num_column_vars;
-    if !block_len.is_power_of_two()
-        || block_len < 2
-        || block_len * blocks != domain
-        || !blocks.is_power_of_two()
-        || witness.len() != domain
-        || live > domain
-        || scales.rows > block_len
-        || weights.len() < scales.rows
-    {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    // A borrowed native table must cover every live entry in whole blocks;
-    // otherwise pad it (the generated relations lend block-aligned tables).
-    let witness = match witness {
-        RawWitness::Native {
-            values,
-            domain,
-            constant_prefix,
-        } if values.len() < live || !values.len().is_multiple_of(block_len) => RawWitness::Native {
-            values,
-            domain,
-            constant_prefix,
-        }
-        .materialize(),
-        other => other,
-    };
-    let zero = Field::zero_with_cfg(&cfg);
-    let mut current_claim = initial_claim;
-    let mut eval_points = Vec::with_capacity(num_column_vars);
-    let mut round_polynomials = Vec::with_capacity(num_column_vars);
-    let live_of = |block: usize| live.saturating_sub(block * block_len).min(block_len);
-    // Whole blocks: entries past a block's live prefix are validated zero,
-    // so pair windows may straddle the live boundary exactly as in the dense
-    // prover.
-    let block_values = |block: usize| -> BlockValues<'_> {
-        let start = block * block_len;
-        let end = start + block_len;
-        match &witness {
-            RawWitness::Native {
-                values,
-                constant_prefix,
-                ..
-            } => {
-                if block == 0 && constant_prefix.is_some_and(|prefix| prefix.0 == block_len) {
-                    BlockValues::ConstantOne
-                } else {
-                    BlockValues::Native(values.get(start..end).unwrap_or(&[]))
-                }
-            }
-            RawWitness::Field(values) => BlockValues::Field(&values[start..end]),
-            RawWitness::Wide(values) => {
-                assert_eq!(values.len() / 4, block_len);
-                values.block(block)
-            }
-            RawWitness::Limbs(values) => {
-                assert_eq!(values.len() / 4, block_len);
-                values.block(block)
-            }
-        }
-    };
-
-    // The weight vector as one block: zero beyond the logical rows.
-    let mut wz = vec![0 as Raw; block_len];
-    wz[..scales.rows].copy_from_slice(&weights[..scales.rows]);
-
-    // Blocks that carry a scale and live entries drive the in-block rounds.
-    let scaled: Vec<(usize, Raw)> = (0..blocks)
-        .filter_map(|block| scales.scales[block].map(|scale| (block, scale)))
-        .filter(|(block, _)| live_of(*block) > 0)
-        .collect();
-    let combine = |partials: &[[Raw; 2]]| -> [Field; 2] {
-        let mut c0 = 0 as Raw;
-        let mut c2 = 0 as Raw;
-        for ((_, scale), partial) in scaled.iter().zip(partials) {
-            c0 = ctx.add_raw(c0, ctx.mul_raw(*scale, partial[0]));
-            c2 = ctx.add_raw(c2, ctx.mul_raw(*scale, partial[1]));
-        }
-        [
-            crate::utils::delayed_reduction::element(&cfg, c0),
-            crate::utils::delayed_reduction::element(&cfg, c2),
-        ]
-    };
-
-    // Round zero over the original witness.
-    let round0_scope = tracing::info_span!("raw:inner_round0").entered();
-    let partials: Vec<[Raw; 2]> = scaled
-        .iter()
-        .map(|&(block, _)| {
-            let pairs = live_of(block).div_ceil(2);
-            block_values(block).coefficients(ctx, &wz[..2 * pairs])
-        })
-        .collect();
-    let mut coefficients_without_linear = combine(&partials);
-    drop(round0_scope);
-
-    // In-block rounds: fold the weights once per round, then every scaled
-    // block against them. `tables[i]` holds scaled block `i` after its first
-    // fold (plain for a native witness).
-    let mut challenges_raw: Vec<Raw> = Vec::with_capacity(num_column_vars);
-    let mut tables: Vec<Vec<W>> = Vec::new();
-    let mut scratches: Vec<Vec<W>> = Vec::new();
-    let mut lives: Vec<usize> = scaled.iter().map(|&(block, _)| live_of(block)).collect();
-    let mut wz_scratch = vec![0 as Raw; block_len / 2];
-    let mut len = block_len;
-    let mut finals: Vec<Raw> = Vec::new(); // scaled blocks' terminal values (raw)
-    let _low_scope = tracing::info_span!("raw:inner_block_rounds").entered();
-    super::engine::drive(
-        ctx,
-        transcript,
-        block_len.ilog2() as usize,
-        &mut eval_points,
-        core::slice::from_mut(&mut current_claim),
-        core::slice::from_mut(&mut coefficients_without_linear),
-        &mut [[zero; 3]],
-        |transcript, _, messages| {
-            crate::piop::spartan::absorb_field_elements(transcript, &messages[0], ctx);
-            round_polynomials.push(messages[0]);
-            crate::piop::spartan::squeeze_field(transcript, ctx)
-        },
-        |_, challenge, next| {
-            let first_fold = tables.is_empty();
-            let challenge_raw = ctx.raw(challenge);
-            challenges_raw.push(challenge_raw);
-            let next_len = len / 2;
-            wz_scratch.truncate(next_len);
-            fold_table_raw(ctx, &wz, &mut wz_scratch, challenge_raw);
-            std::mem::swap(&mut wz, &mut wz_scratch);
-
-            if next_len == 1 {
-                // Final in-block fold: one value per scaled block.
-                finals = scaled
-                    .iter()
-                    .enumerate()
-                    .map(|(index, &(block, _))| {
-                        if first_fold {
-                            block_values(block).folded_pair(ctx, challenge_raw)
-                        } else {
-                            let table = &tables[index];
-                            W::from_encoding(
-                                ctx,
-                                ctx.interpolate(
-                                    table[0].encoding(),
-                                    table[1].encoding(),
-                                    challenge_raw,
-                                ),
-                            )
-                            .final_raw(ctx)
-                        }
-                    })
-                    .collect();
-                len = next_len;
-                return Ok(());
-            }
-
-            let mut partials = Vec::with_capacity(scaled.len());
-            for (index, &(block, _)) in scaled.iter().enumerate() {
-                let next_live = lives[index].div_ceil(2);
-                let written = 2 * next_live.div_ceil(2);
-                if first_fold {
-                    let mut out = vec![W::zero(ctx); next_len];
-                    let partial = W::fold_initial(
-                        ctx,
-                        block_values(block),
-                        &wz[..written],
-                        &mut out[..written],
-                        challenge_raw,
-                    );
-                    tables.push(out);
-                    scratches.push(vec![W::zero(ctx); next_len / 2]);
-                    partials.push(partial);
-                } else {
-                    let scratch = &mut scratches[index];
-                    scratch.truncate(next_len);
-                    let partial = folded::fold_round::<W, false, _>(
-                        ctx,
-                        &wz[..written],
-                        &tables[index][..2 * written],
-                        |value| value,
-                        &mut [],
-                        &mut scratch[..written],
-                        challenge_raw,
-                    );
-                    scratch[written..].fill(W::zero(ctx));
-                    std::mem::swap(&mut tables[index], scratch);
-                    partials.push(partial);
-                }
-                lives[index] = next_live;
-            }
-            next[0] = combine(&partials);
-            len = next_len;
-            Ok(())
-        },
-    )?;
-    debug_assert_eq!(len, 1);
-    debug_assert_eq!(finals.len(), scaled.len());
-    let weight_final = wz[0];
-
-    // Block rounds on the dense `blocks`-entry tables. Unscaled blocks fold
-    // to one weighted sum; the full equality table is built only if one of
-    // them is not the sparse constant block.
-    let eq_at_zero = challenges_raw
-        .iter()
-        .fold(ctx.one_raw(), |product, &challenge| {
-            ctx.mul_raw(product, ctx.sub_raw(ctx.one_raw(), challenge))
-        });
-    let mut eq: Option<Vec<Raw>> = None;
-    let mut matrix = vec![0 as Raw; blocks];
-    let mut witness_final = vec![0 as Raw; blocks];
-    for (index, &(block, scale_value)) in scaled.iter().enumerate() {
-        matrix[block] = ctx.mul_raw(scale_value, weight_final);
-        witness_final[block] = finals[index];
-    }
-    for (block, slot) in witness_final.iter_mut().enumerate() {
-        if live_of(block) == 0 || scales.scales[block].is_some() {
-            continue;
-        }
-        *slot = match sparse_block_value_raw(eq_at_zero, block_values(block)) {
-            Some(value) => value,
-            None => {
-                let eq = eq.get_or_insert_with(|| eq_table_raw(ctx, &challenges_raw));
-                weighted_block_sum_raw(ctx, eq, block_values(block))
-            }
-        };
-    }
-    drop(witness);
-
-    let finish = |matrix_evaluation: Raw,
-                  witness_evaluation: Raw,
-                  current_claim: Field,
-                  round_polynomials: Vec<[Field; 3]>,
-                  eval_points: Vec<Field>| {
-        let batched_matrix_evaluation =
-            crate::utils::delayed_reduction::element(&cfg, matrix_evaluation);
-        let witness_evaluation = crate::utils::delayed_reduction::element(&cfg, witness_evaluation);
-        if current_claim != cfg.mul(&batched_matrix_evaluation, &witness_evaluation) {
-            return Err(SumcheckError::InvalidTerminalClaim);
-        }
-        Ok(InnerSumcheckOutput {
-            sumcheck: SumcheckProverOutput {
-                proof: SumcheckProof { round_polynomials },
-                eval_points,
-                final_claim: current_claim,
-            },
-            batched_matrix_evaluation,
-            witness_evaluation,
-        })
-    };
-    if blocks == 1 {
-        return finish(
-            matrix[0],
-            witness_final[0],
-            current_claim,
-            round_polynomials,
-            eval_points,
-        );
-    }
-    let coefficients = inner_coefficients_field_raw(ctx, &matrix, &witness_final);
-    let coefficients_without_linear = [
-        crate::utils::delayed_reduction::element(&cfg, coefficients[0]),
-        crate::utils::delayed_reduction::element(&cfg, coefficients[1]),
-    ];
-    let (matrix_evaluation, witness_evaluation) = inner_dense_rounds(
-        transcript,
-        ctx,
-        &mut current_claim,
-        matrix,
-        witness_final
-            .into_iter()
-            .map(|v| shared_raw(ctx, v))
-            .collect::<Vec<_>>(),
-        blocks,
-        coefficients_without_linear,
-        &mut round_polynomials,
-        &mut eval_points,
-    )?;
-    finish(
-        matrix_evaluation,
-        witness_evaluation,
-        current_claim,
-        round_polynomials,
-        eval_points,
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1598,63 +920,43 @@ pub(crate) enum RowFunctional<'a> {
     Prefix(&'a PrefixUnivariateRowFactors<Field>),
 }
 
-/// Binds the matrices with `functional` and proves the inner sumcheck on raw
-/// tables: structured (no dense batched matrix) when the matrices are block
-/// selectors, dense otherwise. Both routes emit identical messages.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn inner_sumcheck_raw<T, C>(
-    transcript: &mut T,
+/// Bind/batch matrix coefficients while retaining block-selector structure.
+pub(crate) fn prepare_inner_inputs<'a, C>(
     ctx: &field::FpCtx<2>,
     matrices: &PreparedConstraintMatrices<Field, C>,
-    initial_claim: Field,
     functional: RowFunctional<'_>,
     rho: Raw,
-    witness: RawWitness<'_>,
-) -> Result<InnerSumcheckOutput<Field>, SumcheckError>
+    witness: RawWitness<'a>,
+) -> (RawWitness<'a>, NativeWeights)
 where
-    T: Transcript,
     C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
 {
-    let reducer = ctx;
-    let num_column_vars = matrices.num_column_vars();
+    let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
+    let num_vars = matrices.num_column_vars();
     let live = matrices.matrices().column_count();
-    if let Some(layout) = matrices
-        .block_selector()
-        .filter(|layout| layout.block_len >= 2)
-    {
-        let (weights, scales) = {
-            let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
-            let weights = match functional {
-                RowFunctional::Point(point) => eq_table_raw(ctx, &ctx.raw_vec(point)),
-                RowFunctional::Prefix(factors) => prefix_row_weights_raw(ctx, factors),
-            };
-            (weights, block_scales_raw(ctx, layout, rho, num_column_vars))
+    let weights = if let Some(layout) = matrices.block_selector().filter(|l| l.block_len >= 2) {
+        let weights = match functional {
+            RowFunctional::Point(point) => eq_table_raw(ctx, &ctx.raw_vec(point)),
+            RowFunctional::Prefix(factors) => prefix_row_weights_raw(ctx, factors),
         };
-        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        return prove_inner_structured_raw(
-            transcript,
-            ctx,
-            initial_claim,
-            &weights,
-            &scales,
-            witness,
+        NativeWeights::Blocks {
+            weights,
+            scales: block_scales_raw(ctx, layout, rho, num_vars),
             live,
-            num_column_vars,
-        );
-    }
-    let matrix = {
-        let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
-        match functional {
+            num_vars,
+        }
+    } else {
+        let matrix = match functional {
             RowFunctional::Point(point) => {
                 bind_and_batch_raw(ctx, matrices, &eq_table_raw(ctx, &ctx.raw_vec(point)), rho)
             }
             RowFunctional::Prefix(factors) => {
                 bind_and_batch_prefix_raw(ctx, matrices, factors, rho)
             }
-        }
+        };
+        NativeWeights::Dense { matrix, live }
     };
-    let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-    prove_inner_raw(transcript, ctx, initial_claim, matrix, witness, live)
+    (witness, weights)
 }
 
 /// Materializes the prefix-univariate row weights `prefix[s] · tail(x)` in
@@ -2281,14 +1583,18 @@ mod tests {
                     )
                     .unwrap();
                     let mut raw_transcript = Blake3Transcript::new();
-                    let actual = prove_inner_raw(
-                        &mut raw_transcript,
+                    let actual = crate::sumcheck::inner::prove_inner_sumcheck(
                         &ctx,
+                        &mut raw_transcript,
                         field_claim,
-                        ctx.raw_vec(&matrix),
                         RawWitness::Field(ctx.raw_vec(&witness)),
-                        live,
+                        crate::sumcheck::inner::native::NativeWeights::Dense {
+                            matrix: ctx.raw_vec(&matrix),
+                            live: live,
+                        },
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
                     )
+                    .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                     .unwrap();
                     assert_eq!(actual, expected, "field num_vars={num_vars} live={live}");
                     assert_eq!(
@@ -2313,14 +1619,18 @@ mod tests {
                     )
                     .unwrap();
                     let mut raw_transcript = Blake3Transcript::new();
-                    let actual = prove_inner_raw(
-                        &mut raw_transcript,
+                    let actual = crate::sumcheck::inner::prove_inner_sumcheck(
                         &ctx,
+                        &mut raw_transcript,
                         native_claim,
-                        ctx.raw_vec(&matrix),
                         RawWitness::native_owned(native.clone()),
-                        live,
+                        crate::sumcheck::inner::native::NativeWeights::Dense {
+                            matrix: ctx.raw_vec(&matrix),
+                            live: live,
+                        },
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
                     )
+                    .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                     .unwrap();
                     assert_eq!(actual, expected, "native num_vars={num_vars} live={live}");
                     assert_eq!(
@@ -2538,26 +1848,34 @@ mod tests {
                             )
                         };
                         let mut dense_transcript = Blake3Transcript::new();
-                        let expected = prove_inner_raw(
-                            &mut dense_transcript,
+                        let expected = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut dense_transcript,
                             claim.clone(),
-                            dense.clone(),
                             dense_witness,
-                            live,
+                            crate::sumcheck::inner::native::NativeWeights::Dense {
+                                matrix: dense.clone(),
+                                live: live,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
                         let mut structured_transcript = Blake3Transcript::new();
-                        let actual = prove_inner_structured_raw(
-                            &mut structured_transcript,
+                        let actual = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut structured_transcript,
                             claim,
-                            &weights,
-                            &scaled,
                             structured_witness,
-                            live,
-                            num_column_vars,
+                            crate::sumcheck::inner::native::NativeWeights::Blocks {
+                                weights: (&weights).to_vec(),
+                                scales: (&scaled).clone(),
+                                live: live,
+                                num_vars: num_column_vars,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
                         assert_eq!(
                             actual, expected,
@@ -2617,34 +1935,43 @@ mod tests {
                         });
                         let claim = crate::utils::delayed_reduction::element(&cfg, claim);
                         let mut dense_transcript = Blake3Transcript::new();
-                        let expected = prove_inner_raw(
-                            &mut dense_transcript,
+                        let expected = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut dense_transcript,
                             claim.clone(),
-                            matrix,
                             RawWitness::native_borrowed(&native, domain),
-                            live,
+                            crate::sumcheck::inner::native::NativeWeights::Dense {
+                                matrix: matrix,
+                                live: live,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
                         let mut structured_transcript = Blake3Transcript::new();
-                        let actual = prove_inner_structured_raw(
-                            &mut structured_transcript,
+                        let actual = crate::sumcheck::inner::prove_inner_sumcheck(
                             &ctx,
+                            &mut structured_transcript,
                             claim,
-                            &weights,
-                            &BlockScales {
-                                block_len,
-                                rows,
-                                scales,
-                            },
                             RawWitness::native_borrowed_with_constant_prefix(
                                 &native,
                                 domain,
                                 declaration.map(NativeConstantPrefix::new),
                             ),
-                            live,
-                            domain.ilog2() as usize,
+                            crate::sumcheck::inner::native::NativeWeights::Blocks {
+                                weights: (&weights).to_vec(),
+                                scales: (&BlockScales {
+                                    block_len,
+                                    rows,
+                                    scales,
+                                })
+                                    .clone(),
+                                live: live,
+                                num_vars: domain.ilog2() as usize,
+                            },
+                            &mut crate::sumcheck::UngrindedRoundBoundary,
                         )
+                        .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                         .unwrap();
                         assert_eq!(
                             actual, expected,

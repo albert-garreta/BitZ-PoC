@@ -137,6 +137,7 @@ where
 }
 
 /// Local output produced while writing a sumcheck proof to the transcript.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SumcheckProverOutput<F, const COEFFS: usize> {
     pub proof: SumcheckProof<F, COEFFS>,
@@ -300,6 +301,7 @@ where
 }
 
 /// Completes and records one sumcheck round, then samples its challenge.
+#[cfg(test)]
 pub(crate) fn recover_full_round_polynomial_and_sample_next_challenge<
     F,
     const INPUT_COEFFS: usize,

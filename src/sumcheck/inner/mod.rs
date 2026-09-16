@@ -2,7 +2,8 @@
 //! Optimized borrowed, packed, and factored integrations use the same round engine.
 pub(crate) mod binary;
 mod dense;
-pub(crate) mod engine;
+pub(crate) mod input;
+pub use input::InitialClaims;
 pub mod evaluation_form;
 pub(crate) mod native;
 pub(crate) mod packed;
@@ -34,25 +35,19 @@ pub struct BatchedInnerSumcheckOutput<E, const K: usize> {
     pub terminal_evaluations: [[E; 2]; K],
 }
 
-/// Prove s = Σ_i weights[i] * values[i], folding the low Boolean coordinate first.
-/// Original integer values are embedded only inside their consuming operations.
-pub fn prove_inner_sumcheck<F, T>(
+/// Prove one dot product. Input representations select preparation/folding only;
+/// all messages, challenges and terminal checks belong to the batched prover.
+pub fn prove_inner_sumcheck<F, V>(
     field: &F,
     transcript: &mut impl Transcript,
-    initial_claim: Elem<F>,
-    values: Vec<T>,
-    weights: Vec<Elem<F>>,
+    initial_claim: F::Elem,
+    values: V,
+    weights: V::Weights,
     boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<InnerSumcheckOutput<Elem<F>>, SumcheckError>
+) -> Result<InnerSumcheckOutput<F::Elem>, SumcheckError>
 where
-    F: FieldOps
-        + PreparedLinearCombination<T>
-        + BatchMulAcc<Elem<F>, T>
-        + BatchMulAcc<Elem<F>>
-        + Sync,
-    F: Reduce<Acc<F, T>, Output = Elem<F>> + Reduce<Acc<F, Elem<F>>, Output = Elem<F>>,
-    Elem<F>: SpartanField<Config = F>,
-    T: Copy + Send + Sync,
+    F: FieldOps + Sync,
+    V: input::Input<F>,
 {
     let output = prove_batched_inner_sumcheck(
         field,
@@ -71,90 +66,107 @@ where
     })
 }
 
-/// Prove K separate dot products with a common challenge per round. No random
-/// linear combination is introduced; every initial claim remains independent.
-pub fn prove_batched_inner_sumcheck<F, T, const K: usize>(
+/// Prove independent dot products using one challenge per round. Arrays retain
+/// their compile-time batch size; vectors support protocol-defined runtime batches.
+/// No random linear combination of the claims is introduced.
+pub fn prove_batched_inner_sumcheck<'a, F, B>(
     field: &F,
     transcript: &mut impl Transcript,
-    initial_claims: &[Elem<F>; K],
-    values: [Vec<T>; K],
-    weights: [Vec<Elem<F>>; K],
+    initial_claims: impl Into<InitialClaims<'a, F::Elem>>,
+    values: B,
+    weights: B::Weights,
     boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<BatchedInnerSumcheckOutput<Elem<F>, K>, SumcheckError>
+) -> Result<B::Output, SumcheckError>
 where
-    F: FieldOps
-        + PreparedLinearCombination<T>
-        + BatchMulAcc<Elem<F>, T>
-        + BatchMulAcc<Elem<F>>
-        + Sync,
-    F: Reduce<Acc<F, T>, Output = Elem<F>> + Reduce<Acc<F, Elem<F>>, Output = Elem<F>>,
-    Elem<F>: SpartanField<Config = F>,
-    T: Copy + Send + Sync,
+    F: FieldOps + Sync,
+    F::Elem: 'a,
+    B: input::Batch<F>,
 {
-    if K == 0 {
+    use input::{Codec, State};
+    let initial_claims = initial_claims.into();
+    let mut states = values.prepare(field, weights)?;
+    let slots = states.as_mut();
+    if slots.is_empty() {
         return Err(SumcheckError::InvalidProductDimensions);
     }
-    let len = values[0].len();
-    if !len.is_power_of_two()
-        || values.iter().any(|v| v.len() != len)
-        || weights.iter().any(|w| w.len() != len)
-    {
+    let rounds = slots[0].state.num_vars();
+    if slots.iter().any(|s| s.state.num_vars() != rounds) {
         return Err(SumcheckError::InvalidProductDimensions);
     }
-    let rounds = len.ilog2() as usize;
     boundary.validate(rounds)?;
-    let mut inputs = values.into_iter().zip(weights);
-    let mut tables = core::array::from_fn::<_, K, _>(|_| {
-        let (v, w) = inputs.next().unwrap();
-        dense::Tables::new(v, w)
-    });
-    let mut coefficients = core::array::from_fn::<_, K, _>(|i| {
-        if rounds == 0 {
-            [field.zero(); 2]
-        } else {
-            dense::first_round(field, &tables[i])
+    match initial_claims {
+        InitialClaims::Known(claims) => {
+            if claims.len() != slots.len() {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            for (slot, claim) in slots.iter_mut().zip(claims) {
+                slot.claim = *claim;
+            }
         }
-    });
-    let mut claims = *initial_claims;
-    let mut proofs = core::array::from_fn::<_, K, _>(|_| SumcheckProof {
-        round_polynomials: Vec::with_capacity(rounds),
-    });
+        InitialClaims::Compute => {
+            for slot in &mut *slots {
+                slot.claim = slot
+                    .state
+                    .initial_claim()
+                    .ok_or(SumcheckError::InvalidProductDimensions)?;
+            }
+        }
+    }
+    for slot in &*slots {
+        slot.state.validate_claim(field, &slot.claim)?;
+    }
+    B::Codec::start(field, transcript, rounds, slots.len())?;
     let mut point = Vec::with_capacity(rounds);
-    engine::drive(
-        field,
-        transcript,
-        rounds,
-        &mut point,
-        &mut claims,
-        &mut coefficients,
-        &mut [[field.zero(); 3]; K],
-        |transcript, round, messages| {
-            for (proof, message) in proofs.iter_mut().zip(messages) {
-                absorb_field_elements(transcript, message, field);
-                proof.round_polynomials.push(*message);
+    for round in 0..rounds {
+        for slot in &mut *slots {
+            let [c0, c2] = slot.state.coefficients(field)?;
+            let c1 = field.sub(&field.sub(&slot.claim, &field.add(&c0, &c0)), &c2);
+            let message = [c0, c1, c2];
+            B::Codec::absorb(field, transcript, &message);
+            slot.proof.round_polynomials.push(message);
+        }
+        boundary.after_round(transcript, round)?;
+        let challenge = B::Codec::challenge(field, transcript)?;
+        point.push(challenge);
+        let advance = |slot: &mut input::Slot<F, B::State>| {
+            let &[c0, c1, c2] = slot.proof.round_polynomials.last().unwrap();
+            slot.claim = field.add(
+                &c0,
+                &field.mul(&challenge, &field.add(&c1, &field.mul(&challenge, &c2))),
+            );
+            slot.state.fold(field, &challenge)
+        };
+        #[cfg(feature = "parallel")]
+        if slots.len() > 1 {
+            use rayon::prelude::*;
+            slots.par_iter_mut().try_for_each(advance)?;
+        } else {
+            for slot in &mut *slots {
+                advance(slot)?;
             }
-            boundary.after_round(transcript, round)?;
-            squeeze_field(transcript, field)
-        },
-        |_, challenge, next| {
-            for (tables, coefficients) in tables.iter_mut().zip(next) {
-                *coefficients = dense::fold_round(field, tables, challenge);
-            }
-            Ok(())
-        },
-    )?;
-    let terminal_evaluations = core::array::from_fn(|i| tables[i].terminal(field));
-    for (claim, &[w, v]) in claims.iter().zip(&terminal_evaluations) {
-        if *claim != field.mul(&w, &v) {
+        }
+        #[cfg(not(feature = "parallel"))]
+        for slot in &mut *slots {
+            advance(slot)?;
+        }
+    }
+    for slot in &mut *slots {
+        slot.terminal = slot.state.terminal(field)?;
+        let [weight, value] = slot.terminal;
+        if !field::CtEq::ct_eq(&slot.claim, &field.mul(&weight, &value)).declassify() {
             return Err(SumcheckError::InvalidTerminalClaim);
         }
     }
-    Ok(BatchedInnerSumcheckOutput {
-        proofs,
-        point,
-        final_claims: claims,
-        terminal_evaluations,
-    })
+    Ok(B::finish(states, point))
+}
+
+/// Runtime-sized counterpart of `BatchedInnerSumcheckOutput<E, K>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DynamicBatchedInnerSumcheckOutput<E> {
+    pub proofs: Vec<SumcheckProof<E, 3>>,
+    pub point: Vec<E>,
+    pub final_claims: Vec<E>,
+    pub terminal_evaluations: Vec<[E; 2]>,
 }
 
 #[cfg(test)]

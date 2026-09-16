@@ -1,11 +1,13 @@
 //! Aligned repeated coefficients followed by a compact unrelated circuit tail.
 use super::*;
-use crate::piop::spartan::SpartanField as _;
 use field::RingOps;
 
 use crate::poly::mle::CompositeMultilinearExtension;
 
 impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
+    fn declared_num_vars(&self) -> Option<usize> {
+        Some(self.num_vars())
+    }
     fn evaluation_at(&self, index: usize) -> Result<Field, SumcheckError> {
         CompositeMultilinearExtension::evaluation_at(self, index)
             .map_err(|_| SumcheckError::InvalidProductDimensions)
@@ -136,7 +138,7 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
             .inner_factor()
             .chunks_exact(prefix)
             .map(|chunk| {
-                let mut sum = product_accumulator_zero(cfg);
+                let mut sum = product_accumulator_zero();
                 for (a, b) in weights.iter().zip(chunk) {
                     product_multiply_accumulate(cfg, &mut sum, a, b);
                 }
@@ -197,7 +199,7 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                 folded[suffix - repeated_suffixes].clone()
             } else {
                 let start = (suffix - repeated_suffixes) * prefix;
-                let mut sum = product_accumulator_zero(cfg);
+                let mut sum = product_accumulator_zero();
                 for (a, b) in weights.iter().zip(
                     &self.tail_evaluations()
                         [start..self.tail_evaluations().len().min(start + prefix)],
@@ -366,12 +368,12 @@ struct TailShapeState {
 }
 
 impl TailShapeState {
-    fn new<const K: usize>(reducer: &field::FpCtx<2>) -> Self {
+    fn new<const K: usize>() -> Self {
         let prefix = 1usize << K;
         let shapes = (prefix + 1) * (prefix + 1);
         Self {
             sums: (0..shapes * prefix)
-                .map(|_| linear_accumulator_zero(reducer))
+                .map(|_| linear_accumulator_zero())
                 .collect(),
             used: vec![false; shapes],
         }
@@ -460,7 +462,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         (0..blocks)
             .into_par_iter()
             .try_fold(
-                || TailShapeState::new::<K>(cfg),
+                || TailShapeState::new::<K>(),
                 |mut state, block| -> Result<_, SumcheckError> {
                     accumulate_tail_block::<K, _>(
                         &mut state,
@@ -475,10 +477,10 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 },
             )
             .try_reduce(
-                || TailShapeState::new::<K>(cfg),
+                || TailShapeState::new::<K>(),
                 |mut left, right| {
                     for (l, r) in left.sums.iter_mut().zip(right.sums) {
-                        linear_merge(cfg, l, r);
+                        linear_merge(l, r);
                     }
                     for (l, r) in left.used.iter_mut().zip(right.used) {
                         *l |= r;
@@ -487,7 +489,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 },
             )?
     } else {
-        let mut state = TailShapeState::new::<K>(cfg);
+        let mut state = TailShapeState::new::<K>();
         for block in 0..blocks {
             accumulate_tail_block::<K, _>(
                 &mut state,
@@ -503,7 +505,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     };
     #[cfg(not(feature = "parallel"))]
     let state = {
-        let mut state = TailShapeState::new::<K>(cfg);
+        let mut state = TailShapeState::new::<K>();
         for block in 0..blocks {
             accumulate_tail_block::<K, _>(
                 &mut state,
@@ -560,7 +562,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
             if g == 0 {
                 continue;
             }
-            let mut inner = linear_accumulator_zero(cfg);
+            let mut inner = linear_accumulator_zero();
             let mut touched = false;
             for (i, value) in values.iter().enumerate() {
                 if row[i] != 0 {
@@ -631,9 +633,7 @@ fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         Ok(())
     };
     let new_state = || RepeatedState {
-        sums: (0..cells)
-            .map(|_| linear_accumulator_zero(reducer))
-            .collect(),
+        sums: (0..cells).map(|_| linear_accumulator_zero()).collect(),
     };
     #[cfg(feature = "parallel")]
     let state = if outer.len() >= 1 << 8 && rayon::current_num_threads() > 1 {
@@ -645,7 +645,7 @@ fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
             })
             .try_reduce(new_state, |mut left, right| {
                 for (l, r) in left.sums.iter_mut().zip(right.sums) {
-                    linear_merge(reducer, l, r);
+                    linear_merge(l, r);
                 }
                 Ok(left)
             })?
@@ -677,8 +677,8 @@ fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         for position in 0..positions {
             let block = &inner[position * prefix..(position + 1) * prefix];
             let cells = &table[position * prefix..(position + 1) * prefix];
-            let mut u = linear_accumulator_zero(reducer);
-            let mut a = linear_accumulator_zero(reducer);
+            let mut u = linear_accumulator_zero();
+            let mut a = linear_accumulator_zero();
             let mut touched = false;
             for i in 0..prefix {
                 if row[i] != 0 {
@@ -708,32 +708,6 @@ fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         beta_values.push(total);
     }
     Ok(beta_values)
-}
-
-pub(crate) fn prove_composite_inner_sumcheck<T: Transcript, H: Sha256InnerBitSource + ?Sized>(
-    transcript: &mut T,
-    initial: Field,
-    num_vars: usize,
-    coefficients: &CompositeMultilinearExtension<'_, Field>,
-    h: &H,
-    prefix: usize,
-    cfg: &FieldConfig,
-    grinding_bits: u32,
-) -> Result<Sha256InnerSumcheckOutput, SumcheckError> {
-    if num_vars != coefficients.num_vars() {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    prove_sha256_inner_sumcheck_with_source(
-        transcript,
-        initial,
-        num_vars,
-        coefficients.live_len(),
-        coefficients,
-        h,
-        prefix,
-        cfg,
-        grinding_bits,
-    )
 }
 
 #[cfg(test)]
@@ -873,32 +847,63 @@ mod tests {
                 }
             }
             for prefix in 0..=4 {
-                let actual = prove_composite_inner_sumcheck(
-                    &mut Blake3Transcript::new(),
-                    claim.clone(),
-                    num_vars,
-                    &coefficients,
-                    &bit,
-                    prefix,
-                    &cfg,
-                    0,
-                )
+                let actual = {
+                    let coefficients = &coefficients;
+                    let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                        crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                    >::with_round_offset(0, 0);
+                    crate::sumcheck::inner::prove_inner_sumcheck(
+                        &cfg,
+                        &mut Blake3Transcript::new(),
+                        claim.clone(),
+                        crate::sumcheck::inner::packed::PackedInput::new(
+                            coefficients,
+                            &bit,
+                            num_vars,
+                            coefficients.live_len(),
+                            prefix,
+                        ),
+                        (),
+                        &mut boundary,
+                    )
+                    .map(|out| {
+                        crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                            out,
+                            boundary.into_nonces(),
+                        )
+                    })
+                }
                 .unwrap();
-                let expected = prove_sha256_inner_sumcheck(
-                    &mut Blake3Transcript::new(),
-                    claim.clone(),
-                    num_vars,
-                    live,
-                    &|i| {
+                let expected = {
+                    let coefficients = &|i| {
                         coefficients
                             .evaluation_at(i)
                             .map_err(|_| SumcheckError::InvalidProductDimensions)
-                    },
-                    &bit,
-                    prefix,
-                    &cfg,
-                    0,
-                )
+                    };
+                    let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                        crate::sumcheck::inner::packed::Sha256InnerGrinding,
+                    >::with_round_offset(0, 0);
+                    crate::sumcheck::inner::prove_inner_sumcheck(
+                        &cfg,
+                        &mut Blake3Transcript::new(),
+                        claim.clone(),
+                        crate::sumcheck::inner::packed::PackedInput::new(
+                            coefficients,
+                            &bit,
+                            num_vars,
+                            live,
+                            prefix,
+                        ),
+                        (),
+                        &mut boundary,
+                    )
+                    .map(|out| {
+                        crate::sumcheck::inner::packed::Sha256InnerSumcheckOutput::from_inner(
+                            out,
+                            boundary.into_nonces(),
+                        )
+                    })
+                }
                 .unwrap();
                 assert!(actual == expected, "width {width}, prefix {prefix}");
             }

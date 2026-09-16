@@ -14,25 +14,28 @@
 //! 3. Each group produces a subclaim at the shared point r = (r_1, ..., r_n)
 
 use crate::poly::coefficient::PolynomialField;
+#[cfg(test)]
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcribable, Transcript};
-use crate::utils::{
-    add, cfg_iter, cfg_iter_mut, inner_transparent_field::InnerTransparentField, mul,
-};
+use crate::utils::{add, inner_transparent_field::InnerTransparentField, mul};
+#[cfg(test)]
+use crate::utils::{cfg_iter, cfg_iter_mut};
 
+#[cfg(test)]
 use num_traits::Zero;
-#[cfg(feature = "parallel")]
+#[cfg(all(test, feature = "parallel"))]
 use rayon::prelude::*;
+#[cfg(test)]
 use std::marker::PhantomData;
 
+#[cfg(test)]
 use crate::piop::CombFn;
 
+#[cfg(test)]
+use crate::piop::sumcheck::prover::{ProverState as SumcheckProverState, RoundPolyEvaluator};
 use crate::piop::sumcheck::{
     SumCheckError,
-    prover::{
-        NatEvaluatedPolyWithoutConstant, ProverMsg as SumcheckProverMsg,
-        ProverState as SumcheckProverState, RoundPolyEvaluator,
-    },
+    prover::{NatEvaluatedPolyWithoutConstant, ProverMsg as SumcheckProverMsg},
     verifier::VerifierState,
 };
 

@@ -7383,8 +7383,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         FQ_BITS, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_pow_table,
         rlc_case_weights, rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::poly::coefficient::FieldRepresentation;
-    use crate::poly::mle::DenseMultilinearExtension;
     use crate::poly::utils::build_eq_x_r_vec;
     use crate::taps::{extract_virtual_tap_rows, tap_classes, tap_support_tables};
 
@@ -7433,7 +7431,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
 
     // (3)–(4) Per cluster: forests + presums, then the cluster's cascade.
     let one = Gf::one();
-    let zero_inner = Gf::zero().into_inner();
     let mut sides_out: Vec<TapFamilyClusterSide> = Vec::with_capacity(clusters.len());
     // Ring surfaces collected per cluster: (point, streams) with cluster id.
     struct RingSurface {
@@ -7502,8 +7499,20 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                     [r_tbl, m_tbls[gi].clone()]
                 })
                 .collect();
-            let (presum, r_star) =
-                crate::sumcheck::inner::binary::prove_batch(transcript, groups, t_x);
+            let (presum, r_star) = {
+                let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_x);
+                crate::sumcheck::inner::binary::encode(
+                    crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                        &field::Gf128Ops,
+                        transcript,
+                        crate::sumcheck::inner::InitialClaims::Compute,
+                        values,
+                        weights,
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                    .expect("valid post-GKR dot products"),
+                )
+            };
             debug_assert_eq!(
                 presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
                 e_d + one,
@@ -8948,8 +8957,6 @@ fn prove_rlc_family_front(
     use crate::pcs::{
         extract_virtual_xor_rows, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::poly::coefficient::FieldRepresentation;
-    use crate::poly::mle::DenseMultilinearExtension;
     use crate::poly::utils::build_eq_x_r_vec;
 
     let j = family_cols.len();
@@ -8984,7 +8991,6 @@ fn prove_rlc_family_front(
 
     // (3) Per chunk: eager 2^j-case forest + (2^j − 1)-channel presum.
     let one = Gf::one();
-    let zero_inner = Gf::zero().into_inner();
     let mut mfs = Vec::with_capacity(lch_x);
     let mut us = Vec::with_capacity(lch_x);
     let mut presums = Vec::with_capacity(lch_x);
@@ -9092,7 +9098,20 @@ fn prove_rlc_family_front(
                 [r_tbl, m_tbls[gi].clone()]
             })
             .collect();
-        let (presum, r_star) = crate::sumcheck::inner::binary::prove_batch(transcript, groups, t_x);
+        let (presum, r_star) = {
+            let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_x);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        };
         debug_assert_eq!(
             presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
             e_d + one,

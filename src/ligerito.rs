@@ -38,7 +38,9 @@
 
 use crate::piop::lookup::gkr_product::{ProductForestProof, verify_product_forest};
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
+#[cfg(test)]
 use crate::poly::coefficient::FieldRepresentation;
+#[cfg(test)]
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::poly::univariate::binary_gf128::{Gf128 as Gf, REDUCTION_LOW_GF128};
 use crate::poly::utils::build_eq_x_r_vec;
@@ -1269,8 +1271,20 @@ pub(crate) fn prove_int_eval_common(
     let r_tbl = row_bit_weights(p, row_weights, alpha, &rho);
     let m_tbl = xi_combined_rows(p, rows, &eq_xi);
 
-    let (presum, r_star) =
-        crate::sumcheck::inner::binary::prove_batch(transcript, vec![[r_tbl, m_tbl]], t_w);
+    let (presum, r_star) = {
+        let (values, weights) = crate::sumcheck::inner::binary::inputs(vec![[r_tbl, m_tbl]], t_w);
+        crate::sumcheck::inner::binary::encode(
+            crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                &field::Gf128Ops,
+                transcript,
+                crate::sumcheck::inner::InitialClaims::Compute,
+                values,
+                weights,
+                &mut crate::sumcheck::UngrindedRoundBoundary,
+            )
+            .expect("valid post-GKR dot products"),
+        )
+    };
 
     // Residual claim point: M̂(r*, ξ) = μ.
     let point: Vec<Gf> = r_star.iter().chain(xi.iter()).copied().collect();
@@ -1527,7 +1541,21 @@ pub(crate) fn prove_int_eval_merged_common(
 
     let (presum, r_star) = {
         let _g = tracing::info_span!("mc:presum_run").entered();
-        crate::sumcheck::inner::binary::prove_batch(transcript, vec![[r_tbl, m_tbl]], t_w)
+        {
+            let (values, weights) =
+                crate::sumcheck::inner::binary::inputs(vec![[r_tbl, m_tbl]], t_w);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        }
     };
 
     // Residual claim point: M̂(r*, z_c) = μ.
@@ -1652,7 +1680,20 @@ pub(crate) fn prove_x_claims_batched_common(
     drop(_g_tbls);
     let (presum, r_star) = {
         let _g = tracing::info_span!("mc:presum_run").entered();
-        crate::sumcheck::inner::binary::prove_batch(transcript, groups, t_w)
+        {
+            let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_w);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        }
     };
 
     // Shared residual point: every claim's M-hat_n(r*, z_clear) = mu_n.

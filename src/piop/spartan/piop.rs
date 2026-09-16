@@ -1,15 +1,14 @@
 //! Composition of Spartan's outer and inner sumchecks.
 use crate::sumcheck::{
     UngrindedRoundBoundary,
+    inner::{native::prepare_inner_inputs, prove_inner_sumcheck},
     outer::{
         self, EqualityFactors, OuterArithmetic, OuterClaim, OuterRows,
         arithmetic::{NativeProducts, factors_from_raw},
     },
     proof::OuterSumcheckOutput,
 };
-use field::{BatchMulAcc, MergeAccumulator, Reduce};
 
-use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
 use blake3::Hasher;
 #[cfg(test)]
@@ -28,7 +27,7 @@ use super::{
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
     raw_monty::{
-        NativeConstantPrefix, RawMontyCoefficient, RawWitness, RowFunctional, inner_sumcheck_raw,
+        NativeConstantPrefix, RawMontyCoefficient, RawWitness, RowFunctional,
         make_equality_factors_raw,
     },
     squeeze_field,
@@ -365,7 +364,6 @@ where
 
     let field_config = matrices.config();
     let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Result<Vec<_>, _>>()?;
@@ -396,25 +394,32 @@ where
         &field_config,
     );
     let inner = {
-        inner_sumcheck_raw(
-            transcript,
+        let (values, weights) = prepare_inner_inputs(
             &ctx,
             matrices,
-            inner_initial_claim,
             RowFunctional::Point(&outer.eval_points),
             ctx.raw(&rho),
             witness,
+        );
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        prove_inner_sumcheck(
+            &ctx,
+            transcript,
+            inner_initial_claim,
+            values,
+            weights,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = SpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
@@ -504,25 +509,24 @@ where
     };
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        crate::sumcheck::inner::prove_inner_sumcheck(
+        prove_inner_sumcheck(
             field_config,
             transcript,
             inner_initial_claim,
             assignment.evaluations,
             batched_matrix.evaluations,
             &mut UngrindedRoundBoundary,
-        )
-        .map(super::sumcheck::InnerSumcheckOutput::from)?
+        )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = SpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
 
     Ok((proof, claim))
@@ -590,25 +594,24 @@ where
     };
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        crate::sumcheck::inner::prove_inner_sumcheck(
+        prove_inner_sumcheck(
             field_config,
             transcript,
             inner_initial_claim,
             assignment.evaluations,
             batched_matrix.evaluations,
             &mut UngrindedRoundBoundary,
-        )
-        .map(super::sumcheck::InnerSumcheckOutput::from)?
+        )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = UnivariateSkipSpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
@@ -634,7 +637,6 @@ where
 
     let field_config = matrices.config();
     let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Result<Vec<_>, _>>()?;
@@ -669,25 +671,32 @@ where
     let inner = {
         let witness = RawWitness::Field(ctx.raw_vec(&assignment.evaluations));
         drop(assignment);
-        inner_sumcheck_raw(
-            transcript,
+        let (values, weights) = prepare_inner_inputs(
             &ctx,
             matrices,
-            inner_initial_claim,
             RowFunctional::Point(&outer.eval_points),
             ctx.raw(&rho),
             witness,
+        );
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        prove_inner_sumcheck(
+            &ctx,
+            transcript,
+            inner_initial_claim,
+            values,
+            weights,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = SpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
@@ -719,7 +728,6 @@ where
 
     let field_config = matrices.config();
     let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
         .map(|_| squeeze_field(transcript, field_config))
@@ -752,25 +760,32 @@ where
     );
     let inner = {
         let row_factors = row_binding.row_factors(matrices.num_row_vars(), field_config)?;
-        inner_sumcheck_raw(
-            transcript,
+        let (values, weights) = prepare_inner_inputs(
             &ctx,
             matrices,
-            inner_initial_claim,
             RowFunctional::Prefix(&row_factors),
             ctx.raw(&rho),
             witness,
+        );
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        prove_inner_sumcheck(
+            &ctx,
+            transcript,
+            inner_initial_claim,
+            values,
+            weights,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = UnivariateSkipSpartanPiopProof {
         outer: outer_proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }

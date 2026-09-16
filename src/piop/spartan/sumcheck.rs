@@ -16,6 +16,7 @@ pub struct R1csProductMles<F> {
 }
 
 /// Prover-local result of the Spartan inner sumcheck.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct InnerSumcheckOutput<F> {
     pub sumcheck: SumcheckProverOutput<F, 3>,
@@ -23,6 +24,7 @@ pub(crate) struct InnerSumcheckOutput<F> {
     pub witness_evaluation: F,
 }
 
+#[cfg(test)]
 impl<F> From<crate::sumcheck::inner::InnerSumcheckOutput<F>> for InnerSumcheckOutput<F> {
     fn from(out: crate::sumcheck::inner::InnerSumcheckOutput<F>) -> Self {
         let [batched_matrix_evaluation, witness_evaluation] = out.terminal_evaluations;

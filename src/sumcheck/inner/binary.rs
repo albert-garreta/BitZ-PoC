@@ -1,8 +1,6 @@
 //! The post-GKR quadratic batch, retaining its evaluation-form wire codec.
-use crate::piop::sumcheck::{
-    multi_degree::MultiDegreeSumcheckProof,
-    prover::{NatEvaluatedPolyWithoutConstant, ProverMsg},
-};
+use super::evaluation_form::MultiDegreeSumcheckProof;
+use crate::piop::sumcheck::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
 use crate::poly::coefficient::PolynomialField;
 use crate::transcript::traits::Transcript;
 use field::{Gf128 as F, Gf128Ops, Gf128Product, PreparedGf128Mul};
@@ -73,80 +71,120 @@ fn fold_round([a, b]: &mut [Vec<F>; 2], challenge: F) -> [F; 2] {
     acc.map(Gf128Product::reduce)
 }
 
-/// Shared ordinary rounds, with the historical post-GKR header, interpolation
-/// nodes, and challenge reabsorption. The enclosing protocol binds the claims.
-pub(crate) fn prove_batch(
-    transcript: &mut impl Transcript,
-    mut pairs: Vec<[Vec<F>; 2]>,
-    num_vars: usize,
-) -> (MultiDegreeSumcheckProof<F>, Vec<F>) {
+/// Check the public GKR domain and retain the existing owned pair storage.
+pub(crate) fn inputs(pairs: Vec<[Vec<F>; 2]>, num_vars: usize) -> (Vec<[Vec<F>; 2]>, Vec<()>) {
     assert!(num_vars > 0 && !pairs.is_empty());
     assert!(
         pairs
             .iter()
             .all(|[a, b]| a.len() == 1usize << num_vars && b.len() == a.len())
     );
-    let mut buf = [0; 16];
-    for n in [num_vars, pairs.len()]
-        .into_iter()
-        .chain(core::iter::repeat_n(2, pairs.len()))
-    {
-        transcript.absorb_random_field(&F::interpolation_node(n as u64, &()), &mut buf);
+    let weights = vec![(); pairs.len()];
+    (pairs, weights)
+}
+
+pub struct State {
+    pair: [Vec<F>; 2],
+    coefficients: [F; 2],
+    initial: F,
+    num_vars: usize,
+}
+pub struct EvaluationCodec;
+impl super::input::Codec<Gf128Ops> for EvaluationCodec {
+    fn start(
+        _: &Gf128Ops,
+        t: &mut impl Transcript,
+        rounds: usize,
+        claims: usize,
+    ) -> Result<(), super::SumcheckError> {
+        let mut buf = [0; 16];
+        for n in [rounds, claims]
+            .into_iter()
+            .chain(core::iter::repeat_n(2, claims))
+        {
+            t.absorb_random_field(&F::interpolation_node(n as u64, &()), &mut buf);
+        }
+        Ok(())
     }
-    let first: Vec<_> = pairs.iter().map(first_round).collect();
-    let claimed_sums: Vec<_> = first.iter().map(|[even, _, odd]| *even + *odd).collect();
-    let mut claims = claimed_sums.clone();
-    let mut coefficients: Vec<_> = first.iter().map(|[c0, c2, _]| [*c0, *c2]).collect();
-    let mut messages = vec![[F::ZERO; 3]; pairs.len()];
-    let mut group_messages: Vec<Vec<ProverMsg<F>>> = (0..pairs.len())
-        .map(|_| Vec::with_capacity(num_vars))
-        .collect();
-    let mut point = Vec::with_capacity(num_vars);
+    fn absorb(_: &Gf128Ops, t: &mut impl Transcript, &[c0, c1, c2]: &[F; 3]) {
+        let node = F::interpolation_node(2, &());
+        t.absorb_random_field_slice(&[c0 + c1 + c2, c0 + node * (c1 + node * c2)], &mut [0; 16]);
+    }
+    fn challenge(_: &Gf128Ops, t: &mut impl Transcript) -> Result<F, super::SumcheckError> {
+        let r = t.get_field_challenge(&());
+        t.absorb_random_field(&r, &mut [0; 16]);
+        Ok(r)
+    }
+}
+impl super::input::sealed::Input for [Vec<F>; 2] {}
+impl super::input::Input<Gf128Ops> for [Vec<F>; 2] {
+    type Weights = ();
+    type State = State;
+    type Codec = EvaluationCodec;
+    fn prepare(self, _: &Gf128Ops, _: ()) -> Result<State, super::SumcheckError> {
+        if self[0].len() < 2 || !self[0].len().is_power_of_two() || self[1].len() != self[0].len() {
+            return Err(super::SumcheckError::InvalidProductDimensions);
+        }
+        let num_vars = self[0].len().ilog2() as usize;
+        let [c0, c2, odd] = first_round(&self);
+        Ok(State {
+            pair: self,
+            coefficients: [c0, c2],
+            initial: c0 + odd,
+            num_vars,
+        })
+    }
+}
+impl super::input::State<Gf128Ops> for State {
+    fn num_vars(&self) -> usize {
+        self.num_vars
+    }
+    fn initial_claim(&self) -> Option<F> {
+        Some(self.initial)
+    }
+    fn coefficients(&self, _: &Gf128Ops) -> Result<[F; 2], super::SumcheckError> {
+        Ok(self.coefficients)
+    }
+    fn fold(&mut self, _: &Gf128Ops, r: &F) -> Result<(), super::SumcheckError> {
+        self.coefficients = fold_round(&mut self.pair, *r);
+        Ok(())
+    }
+    fn terminal(&self, _: &Gf128Ops) -> Result<[F; 2], super::SumcheckError> {
+        Ok([self.pair[0][0], self.pair[1][0]])
+    }
+}
+
+/// Preserve the enclosing protocol's evaluation-form proof envelope. This does
+/// not run a sumcheck or mutate the transcript.
+pub(crate) fn encode(
+    output: super::DynamicBatchedInnerSumcheckOutput<F>,
+) -> (MultiDegreeSumcheckProof<F>, Vec<F>) {
     let node = F::interpolation_node(2, &());
-    super::engine::drive(
-        &Gf128Ops,
-        transcript,
-        num_vars,
-        &mut point,
-        &mut claims,
-        &mut coefficients,
-        &mut messages,
-        |transcript, _, messages| {
-            for (group, &[c0, c1, c2]) in group_messages.iter_mut().zip(messages) {
-                let tail_evaluations = vec![c0 + c1 + c2, c0 + node * (c1 + node * c2)];
-                transcript.absorb_random_field_slice(&tail_evaluations, &mut buf);
-                group.push(ProverMsg(NatEvaluatedPolyWithoutConstant {
-                    tail_evaluations,
-                }));
-            }
-            let r = transcript.get_field_challenge(&());
-            transcript.absorb_random_field(&r, &mut buf);
-            Ok::<_, core::convert::Infallible>(r)
-        },
-        |_, r, next| {
-            #[cfg(feature = "parallel")]
-            {
-                pairs
-                    .par_iter_mut()
-                    .zip(next.par_iter_mut())
-                    .for_each(|(pair, out)| *out = fold_round(pair, *r));
-            }
-            #[cfg(not(feature = "parallel"))]
-            {
-                for (pair, out) in pairs.iter_mut().zip(next) {
-                    *out = fold_round(pair, *r);
-                }
-            }
-            Ok(())
-        },
-    )
-    .unwrap();
-    for (claim, [a, b]) in claims.iter().zip(&pairs) {
-        assert_eq!(*claim, a[0] * b[0], "inner terminal claim");
-    }
+    let claimed_sums = output
+        .proofs
+        .iter()
+        .map(|p| {
+            let [_, c1, c2] = p.round_polynomials[0];
+            c1 + c2
+        })
+        .collect();
+    let messages = output
+        .proofs
+        .into_iter()
+        .map(|p| {
+            p.round_polynomials
+                .into_iter()
+                .map(|[c0, c1, c2]| {
+                    ProverMsg(NatEvaluatedPolyWithoutConstant {
+                        tail_evaluations: vec![c0 + c1 + c2, c0 + node * (c1 + node * c2)],
+                    })
+                })
+                .collect()
+        })
+        .collect();
     (
-        MultiDegreeSumcheckProof::quadratic(group_messages, claimed_sums),
-        point,
+        MultiDegreeSumcheckProof::quadratic(messages, claimed_sums),
+        output.point,
     )
 }
 
@@ -197,7 +235,20 @@ mod tests {
             let (expected, states) =
                 MultiDegreeSumcheck::prove_as_subprotocol(&mut old, groups, vars, &());
             let mut new = Blake3Transcript::new();
-            let (actual, point) = prove_batch(&mut new, pairs, vars);
+            let (actual, point) = {
+                let (values, weights) = crate::sumcheck::inner::binary::inputs(pairs, vars);
+                crate::sumcheck::inner::binary::encode(
+                    crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                        &field::Gf128Ops,
+                        &mut new,
+                        crate::sumcheck::inner::InitialClaims::Compute,
+                        values,
+                        weights,
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                    .expect("valid post-GKR dot products"),
+                )
+            };
             assert_eq!(actual, expected);
             assert_eq!(point, states[0].randomness);
             assert_eq!(
