@@ -18,7 +18,7 @@ use crate::{
     piop::spartan::{
         f2z::SpartanF2zField as F,
         matrix::{eq_table, make_equality_factors},
-        raw_monty::{Raw, make_equality_factors_raw},
+        raw_monty::{Raw, make_equality_factors_raw, raw_to_words, words_to_raw},
         sumcheck::OuterSumcheckProof,
     },
     poly::mle::{CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension},
@@ -194,7 +194,7 @@ impl<'a> ModQCoefficients<'a> {
         if output.len() != relation.local.tail.columns() {
             return Err(error("P-256 tape column count mismatch"));
         }
-        Ok(output.iter().map(|words| words_raw(*words)).collect())
+        Ok(output.iter().map(words_to_raw).collect())
     }
 
     /// The geometric runs of the tape's last output, as field bases:
@@ -218,7 +218,7 @@ impl<'a> ModQCoefficients<'a> {
             let mut start = run.first_column;
             let end = run.first_column + run.len;
             let mut base_at_start =
-                crate::utils::delayed_reduction::element(&cfg, words_raw(run.base));
+                crate::utils::delayed_reduction::element(&cfg, words_to_raw(&run.base));
             let first = exceptions.partition_point(|&c| c < start);
             for &cell in &exceptions[first..] {
                 if cell >= end {
@@ -359,7 +359,7 @@ impl<'a> ModQCoefficients<'a> {
                 .apply_forward_weighted(&row_triples(&weights.matrix_rows), &columns)
                 .map_err(|e| error(format!("P-256 tape: {e}")))?
         };
-        value = ctx.add_raw(value, words_raw(tail));
+        value = ctx.add_raw(value, words_to_raw(&tail));
         for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
             value = ctx.add_raw(
                 value,
@@ -699,11 +699,6 @@ impl BatchedMatrixMle {
 #[cfg(feature = "parallel")]
 const TAIL_BLOCK: usize = 1 << 12;
 
-/// Little-endian words of a raw Montgomery residue, the tape's element form.
-const fn raw_words(value: Raw) -> [u64; 2] {
-    [value as u64, (value >> 64) as u64]
-}
-
 /// The per-row `[A, B, C]` weight triples of the tape, from the slot layout
 /// `3 · row + matrix` of [`RowWeights::matrix_rows`].
 fn row_triples(matrix_rows: &[Raw]) -> Vec<[[u64; 2]; 3]> {
@@ -711,9 +706,9 @@ fn row_triples(matrix_rows: &[Raw]) -> Vec<[[u64; 2]; 3]> {
         .chunks_exact(3)
         .map(|slots| {
             [
-                raw_words(slots[0]),
-                raw_words(slots[1]),
-                raw_words(slots[2]),
+                raw_to_words(slots[0]),
+                raw_to_words(slots[1]),
+                raw_to_words(slots[2]),
             ]
         })
         .collect()
@@ -727,28 +722,24 @@ fn row_triples(matrix_rows: &[Raw]) -> Vec<[[u64; 2]; 3]> {
 /// contributes `high[b] · (Q[lo] − 2^(hi − lo) · Q[hi])` times the running
 /// power of two, so a group costs a few multiplications per block it spans.
 struct TailEqualityColumns {
-    ctx: field::FpCtx<2>,
+    equality: RawEqualityWeights,
     offset: usize,
-    low: Vec<Raw>,
-    high: Vec<Raw>,
     /// `Q[t] = low[t] + 2 · Q[t + 1]`, `Q[L] = 0`.
     suffix: Vec<Raw>,
     /// `2^k` in Montgomery form for `k ≤ L`.
     pow2: Vec<Raw>,
-    shift: u32,
-    mask: usize,
 }
 
 impl TailEqualityColumns {
     /// The equality tables of `point`, split at half the point (as
     /// `make_equality_factors` splits them).
     fn new(ctx: &field::FpCtx<2>, offset: usize, point: &[F]) -> Self {
-        let (low, high) = make_equality_factors_raw(ctx, point);
-        let block = low.len();
+        let equality = RawEqualityWeights::new(ctx, point);
+        let block = equality.low.len();
         let mut suffix = vec![0 as Raw; block + 1];
         for t in (0..block).rev() {
             let doubled = ctx.add_raw(suffix[t + 1], suffix[t + 1]);
-            suffix[t] = ctx.add_raw(low[t], doubled);
+            suffix[t] = ctx.add_raw(equality.low[t], doubled);
         }
         let mut pow2 = Vec::with_capacity(block + 1);
         pow2.push(ctx.native_residue(1));
@@ -756,58 +747,47 @@ impl TailEqualityColumns {
             pow2.push(ctx.add_raw(pow2[k], pow2[k]));
         }
         Self {
-            ctx: ctx.clone(),
+            equality,
             offset,
-            low,
-            high,
             suffix,
             pow2,
-            shift: block.ilog2(),
-            mask: block - 1,
         }
     }
-}
 
-impl TailEqualityColumns {
     /// `eq(point, index)` over the whole assignment domain.
     #[inline]
     fn eq_at(&self, index: usize) -> Raw {
-        self.ctx
-            .mul_raw(self.low[index & self.mask], self.high[index >> self.shift])
+        self.equality.at(index)
     }
 }
 
 impl ForwardColumns for TailEqualityColumns {
     fn scalar(&self, column: usize) -> [u64; 2] {
-        raw_words(self.eq_at(self.offset + column))
+        raw_to_words(self.eq_at(self.offset + column))
     }
 
     fn power_sum(&self, first: usize, len: usize) -> [u64; 2] {
-        let ctx = &self.ctx;
-        let block = self.low.len();
+        let equality = &self.equality;
+        let ctx = &equality.ctx;
+        let block = equality.low.len();
         let mut sum = 0 as Raw;
         let mut base = self.pow2[0];
         let mut index = self.offset + first;
         let end = index + len;
         while index < end {
-            let b = index >> self.shift;
-            let lo = index & self.mask;
+            let b = index >> equality.shift;
+            let lo = index & equality.mask;
             let hi = (lo + (end - index)).min(block);
             let part = ctx.sub_raw(
                 self.suffix[lo],
                 ctx.mul_raw(self.pow2[hi - lo], self.suffix[hi]),
             );
-            sum = ctx.add_raw(sum, ctx.mul_raw(ctx.mul_raw(base, part), self.high[b]));
+            sum = ctx.add_raw(sum, ctx.mul_raw(ctx.mul_raw(base, part), equality.high[b]));
             base = ctx.mul_raw(base, self.pow2[hi - lo]);
             index += hi - lo;
         }
-        raw_words(sum)
+        raw_to_words(sum)
     }
-}
-
-/// The raw Montgomery residue of the tape's little-endian words.
-const fn words_raw(words: [u64; 2]) -> Raw {
-    (words[0] as Raw) | ((words[1] as Raw) << 64)
 }
 
 struct RowWeights {

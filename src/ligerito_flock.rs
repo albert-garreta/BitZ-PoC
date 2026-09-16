@@ -61,8 +61,9 @@ use field::PreparedGf128Mul;
 
 use crate::ligerito::{
     IntEvalRsError, LOG_PACKING, RingSwitchProof, RsOpenConfig, RsOpenError, packed_vars,
-    phi_byte_tables, phi_from_words, prove_int_eval_merged_common, prove_x_claims_batched_common,
-    repack_leaf_bits, residual_b_evals, ring_switch_prove, ring_switch_verify, row_bit_vars,
+    phi_bit_sum, phi_byte_tables, phi_from_words, prove_int_eval_merged_common,
+    prove_x_claims_batched_common, repack_leaf_bits, residual_b_evals, ring_switch_prove,
+    ring_switch_verify, row_bit_vars,
     rs_fast, sv_fold_mfr, verify_int_eval_merged_common, verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
@@ -2029,7 +2030,7 @@ pub fn prove_rs_ligerito_batch(
     } else {
         for ell in 0..l {
             for (y, &ev) in eq_his[ell].iter().enumerate() {
-                b_comb[ell * slice + y] = etas[ell] * phi_r2(ev, &eq_r2);
+                b_comb[ell * slice + y] = etas[ell] * phi_bit_sum(ev, &eq_r2);
             }
         }
     }
@@ -2177,24 +2178,6 @@ where
     Ok(())
 }
 
-/// `Φ_{r″}` — the F₂-linear batching map on the bit representation:
-/// `β_u ↦ eq_r2[u]`, applied to a K element by summing over its set bits.
-#[allow(clippy::arithmetic_side_effects)]
-#[inline]
-fn phi_r2(ev: Gf, eq_r2: &[Gf]) -> Gf {
-    let w = ev.as_words();
-    let mut acc = Gf::zero();
-    for wi in 0..2usize {
-        let mut bits = w[wi];
-        while bits != 0 {
-            let t = bits.trailing_zeros() as usize;
-            acc += eq_r2[(wi << 6) | t];
-            bits &= bits.wrapping_sub(1);
-        }
-    }
-    acc
-}
-
 /// Dense in-pack marginal `s_v[j] = Σ_y eq_hi[y]·bit_j(P[y])`,
 /// chunk-parallel with per-chunk accumulators. Default: the
 /// method-of-four-Russians kernel ([`sv_fold_mfr`]); `F2Z_RS_FAST=0`
@@ -2290,7 +2273,7 @@ fn fill_phi_basis(b: &mut [Gf128], eq_his: &[Vec<Gf>], etas: &[Gf], eq_r2: &[Gf]
                 let y = base + off;
                 let mut acc = Gf::zero();
                 for (l, eq_hi) in eq_his.iter().enumerate() {
-                    acc += etas[l] * phi_r2(eq_hi[y], eq_r2);
+                    acc += etas[l] * phi_bit_sum(eq_hi[y], eq_r2);
                 }
                 *slot = acc;
             }
@@ -5024,7 +5007,7 @@ fn prove_mod_q_lig_xor_impl(
     // Φ images of the per-chunk eq tables, shared across the claims.
     let phi_ns_all: Vec<Vec<Gf>> = xor_eq_ns
         .iter()
-        .map(|eq_ns| cfg_iter!(eq_ns).map(|&e| phi_r2(e, &eq_r2)).collect())
+        .map(|eq_ns| cfg_iter!(eq_ns).map(|&e| phi_bit_sum(e, &eq_r2)).collect())
         .collect();
     let mut ring_idx = lch;
     for &n in &active {
@@ -9441,7 +9424,7 @@ fn prove_rlc_families_closure(
     for (_, ring_data) in parts {
         let phi_ns_all: Vec<Vec<Gf>> = ring_data
             .iter()
-            .map(|(eq_ns, _)| cfg_iter!(eq_ns).map(|&e| phi_r2(e, &eq_r2)).collect())
+            .map(|(eq_ns, _)| cfg_iter!(eq_ns).map(|&e| phi_bit_sum(e, &eq_r2)).collect())
             .collect();
         for ((_, spec_cols), phi_ns) in ring_data.iter().zip(phi_ns_all.iter()) {
             for &i_col in spec_cols {
@@ -12621,6 +12604,11 @@ where
     result
 }
 
+/// Packs per parallel task of the verifier's basis engines: a 2^21-cell
+/// source is 64 tasks, enough to balance ten threads (the prover keeps its
+/// 2^11-pack tasks; the per-task cost is one duplicated instance read-off).
+const VERIFIER_TASK_PACKS: usize = 1 << 8;
+
 /// The verifier's ρ-batched Ligerito basis `a′`: the packed-source plane
 /// engine for the plain repetition (with the constant column), the
 /// affine-tail engine for an identity compact tail, and the per-pack kernel
@@ -12632,11 +12620,6 @@ where
 /// vector [`virtual_a_prime`] returns on the folded weights (pinned by
 /// `verifier_basis_matches_streamed_basis_on_the_ecdsa_map`). Any other
 /// shape, or the plane engine opted out, takes [`virtual_a_prime`] itself.
-/// Packs per parallel task of the verifier's basis engines: a 2^21-cell
-/// source is 64 tasks, enough to balance ten threads (the prover keeps its
-/// 2^11-pack tasks; the per-task cost is one duplicated instance read-off).
-const VERIFIER_TASK_PACKS: usize = 1 << 8;
-
 fn verifier_a_prime<M>(
     map: &M,
     weights: &VirtColumnWeights<'_, M>,
@@ -17250,7 +17233,7 @@ mod tests {
             .map(|y| {
                 let mut acc = Gf::zero();
                 for l in 0..lch {
-                    acc += etas[l] * phi_r2(eq_his[l][y], &eq_r2);
+                    acc += etas[l] * phi_bit_sum(eq_his[l][y], &eq_r2);
                 }
                 acc
             })

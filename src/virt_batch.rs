@@ -57,7 +57,10 @@
 use rayon::prelude::*;
 
 use crate::{
-    ligerito::{LOG_PACKING, PackedBits, phi_byte_tables, phi_from_words, transpose_8x8_bits},
+    ligerito::{
+        LOG_PACKING, PackedBits, phi_bit_sum, phi_byte_tables, phi_byte_tables_into, phi_from_words,
+        transpose_8x8_bits,
+    },
     poly::univariate::binary_gf128::Gf128 as Gf,
     utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter, wide_mul::WideMulAcc},
 };
@@ -199,6 +202,21 @@ pub(crate) fn transpose_128x128(rows: &[[u64; 2]; PACK]) -> [[u64; 2]; PACK] {
     out
 }
 
+/// Aligned bit planes, zero-padding only the final partial source pack.
+fn aligned_planes(unpacked: &[[u64; 2]]) -> Vec<[[u64; 2]; PACK]> {
+    let (full, tail) = unpacked.as_chunks::<PACK>();
+    cfg_into_iter!(0..unpacked.len().div_ceil(PACK))
+        .map(|block| {
+            if let Some(rows) = full.get(block) {
+                return transpose_128x128(rows);
+            }
+            let mut rows = [[0u64; 2]; PACK];
+            rows[..tail.len()].copy_from_slice(tail);
+            transpose_128x128(&rows)
+        })
+        .collect()
+}
+
 /// `x << n` on a 128-bit slot vector, `0 ≤ n < 128`.
 #[inline(always)]
 fn shl128(x: [u64; 2], n: usize) -> [u64; 2] {
@@ -244,23 +262,6 @@ fn instance_dual_images(e: Gf) -> [Gf; PACK] {
     g
 }
 
-/// [`phi_byte_tables`] into a caller-owned 4096-entry buffer.
-fn phi_byte_tables_into(out: &mut [Gf], eq: &[Gf]) {
-    debug_assert_eq!(out.len(), 16 * 256);
-    debug_assert_eq!(eq.len(), PACK);
-    for pos in 0..16usize {
-        let tbl = &mut out[pos << 8..(pos + 1) << 8];
-        tbl[0] = Gf::zero();
-        for j in 0..8usize {
-            let base = eq[(pos << 3) | j];
-            let half = 1usize << j;
-            for k in 0..half {
-                tbl[half + k] = tbl[k] + base;
-            }
-        }
-    }
-}
-
 /// The monomial `X^u`.
 #[cfg(test)]
 #[inline]
@@ -297,16 +298,7 @@ impl RhoTables {
                 let mut image = columns[a];
                 let mut out = [Gf::zero(); PACK];
                 for slot in out.iter_mut() {
-                    let words = image.as_words();
-                    let mut acc = Gf::zero();
-                    for (word, base) in words.iter().zip([0usize, 64]) {
-                        let mut bits = *word;
-                        while bits != 0 {
-                            acc += rho[base + bits.trailing_zeros() as usize];
-                            bits &= bits.wrapping_sub(1);
-                        }
-                    }
-                    *slot = acc;
+                    *slot = phi_bit_sum(image, rho);
                     image = image.mul_x();
                 }
                 out
@@ -466,22 +458,13 @@ impl PackedSourcePlanes {
         }
 
         // Aligned local bit planes: planes[l][l'][a] bit j = bit_a(ŝ_{l, 1 + 128l' + j}).
-        let aligned = local_width.div_ceil(PACK);
         let planes: Vec<Vec<[[u64; 2]; PACK]>> = s
             .iter()
             .map(|s_l| {
                 let unpacked: Vec<[u64; 2]> = cfg_iter!(s_l[1..])
                     .map(|&value| dual_unpack(value))
                     .collect();
-                cfg_into_iter!(0..aligned)
-                    .map(|block| {
-                        let mut rows = [[0u64; 2]; PACK];
-                        let lo = block << LOG_PACKING;
-                        let hi = (lo + PACK).min(local_width);
-                        rows[..hi - lo].copy_from_slice(&unpacked[lo..hi]);
-                        transpose_128x128(&rows)
-                    })
-                    .collect()
+                aligned_planes(&unpacked)
             })
             .collect();
 
@@ -621,7 +604,7 @@ impl PackedSourcePlanes {
                             }
                             *slot = kernel::reduce(&acc);
                         }
-                        phi_byte_tables_into(&mut tables, &reduced);
+                        phi_byte_tables_into(&mut tables, |i| reduced[i]);
                         let images = instance_dual_images(eq_inst_l[instance]);
                         for (h, g) in hs.iter_mut().zip(images.iter()) {
                             *h += phi_from_words(*g.as_words(), &tables);
@@ -652,9 +635,7 @@ impl PackedSourcePlanes {
         slots: &mut [Gf],
     ) {
         let chunks = self.r_tables.len();
-        let mut current: Option<usize> = None;
-        let mut rho_p = vec![Gf::zero(); chunks * PACK];
-        let mut fixed = vec![kernel::fixed(&Gf::zero()); chunks * PACK];
+        let mut cache = CoefficientCache::<1>::new(chunks);
         for (offset, slot) in slots.iter_mut().enumerate() {
             let y = y_lo + offset;
             let mut acc = kernel::zero();
@@ -663,23 +644,11 @@ impl PackedSourcePlanes {
                 *slot += phi_from_words(*self.constant_weight.as_words(), rho_tables);
             }
             self.runs(y, |instance, phase, m| {
-                if current != Some(instance) {
-                    for l in 0..chunks {
-                        let coeffs = &mut rho_p[l << LOG_PACKING..(l + 1) << LOG_PACKING];
-                        coefficient_tables.coefficients(self.eq_inst[l][instance], coeffs);
-                        for (f, c) in fixed[l << LOG_PACKING..(l + 1) << LOG_PACKING]
-                            .iter_mut()
-                            .zip(coeffs.iter())
-                        {
-                            *f = kernel::fixed(c);
-                        }
-                    }
-                    current = Some(instance);
-                }
                 for l in 0..chunks {
+                    let fixed =
+                        cache.fixed(coefficient_tables, l, instance, self.eq_inst[l][instance]);
                     let r = &self.r_tables[l][phase][m << LOG_PACKING..(m + 1) << LOG_PACKING];
-                    let f = &fixed[l << LOG_PACKING..(l + 1) << LOG_PACKING];
-                    for (r_a, f_a) in r.iter().zip(f.iter()) {
+                    for (r_a, f_a) in r.iter().zip(fixed.iter()) {
                         kernel::mul_acc(&mut acc, r_a, f_a);
                     }
                 }
@@ -826,7 +795,6 @@ impl AffineTailPlanes {
         assert!(rows.is_power_of_two() && rows >= PACK);
         assert!(eq.iter().all(|table| table.len() == rows));
         let t = rows.trailing_zeros() as usize;
-        let mask = rows - 1;
         let phase = (row_start.wrapping_sub(source_start)) & (PACK - 1);
         let blocks = rows >> LOG_PACKING;
         let unpacked: Vec<Vec<[u64; 2]>> = eq
@@ -836,15 +804,7 @@ impl AffineTailPlanes {
         // The planes of every aligned block: planes[l][m][a].
         let planes: Vec<Vec<[[u64; 2]; PACK]>> = unpacked
             .iter()
-            .map(|table| {
-                cfg_into_iter!(0..blocks)
-                    .map(|m| {
-                        let mut block = [[0u64; 2]; PACK];
-                        block.copy_from_slice(&table[m << LOG_PACKING..(m + 1) << LOG_PACKING]);
-                        transpose_128x128(&block)
-                    })
-                    .collect()
-            })
+            .map(|table| aligned_planes(table))
             .collect();
         let r_tables = planes
             .iter()
@@ -895,12 +855,6 @@ impl AffineTailPlanes {
             r_low,
             r_high,
         }
-        .check_mask(mask)
-    }
-
-    fn check_mask(self, mask: usize) -> Self {
-        debug_assert_eq!(mask, (1usize << self.t) - 1);
-        self
     }
 
     /// The derived row of source column `j`.
@@ -913,9 +867,9 @@ impl AffineTailPlanes {
     /// in tasks of `task_packs`, each pack owned by one task (the sum is
     /// deterministic whatever the task size or thread count). Full packs go
     /// through the per-block lookup tables when the tail spans at least
-    /// [`LOOKUP_MIN_HIGH_PER_BLOCK`] high indices per block (their build is
-    /// `2^{t−7}·128` products per chunk, amortized over the tail's packs),
-    /// else through the plane products; the two agree exactly
+    /// [`LOOKUP_MIN_HIGH_PER_BLOCK`] high indices per block, amortizing the
+    /// table build over the tail's packs; otherwise they use plane products.
+    /// The two agree exactly
     /// (`affine_tail_lookup_matches_products`).
     pub(crate) fn add_a_prime(
         &self,
@@ -950,7 +904,7 @@ impl AffineTailPlanes {
                 if y_hi <= first_pack || y_lo > last_pack {
                     return;
                 }
-                let mut cache = CoefficientCache::new(self.zc.len());
+                let mut cache = CoefficientCache::<2>::new(self.zc.len());
                 for y in y_lo.max(first_pack)..y_hi.min(last_pack + 1) {
                     let slot = &mut slots[y - y_lo];
                     let column_lo = (y << LOG_PACKING).max(self.source_start);
@@ -1011,7 +965,7 @@ impl AffineTailPlanes {
         cfg_chunks_mut!(tables, 16 * 256)
             .enumerate()
             .for_each(|(block, table)| {
-                phi_byte_tables_into(table, &d[block << LOG_PACKING..(block + 1) << LOG_PACKING]);
+                phi_byte_tables_into(table, |i| d[(block << LOG_PACKING) + i]);
             });
         TailLookupTables {
             tables,
@@ -1046,7 +1000,7 @@ impl AffineTailPlanes {
     fn full_pack(
         &self,
         coefficient_tables: &RhoTables,
-        cache: &mut CoefficientCache,
+        cache: &mut CoefficientCache<2>,
         y: usize,
     ) -> Gf {
         let rows = 1usize << self.t;
@@ -1085,7 +1039,7 @@ impl AffineTailPlanes {
     fn partial_pack(
         &self,
         coefficient_tables: &RhoTables,
-        cache: &mut CoefficientCache,
+        cache: &mut CoefficientCache<2>,
         y: usize,
         column_lo: usize,
         column_hi: usize,
@@ -1154,27 +1108,31 @@ impl TailLookupTables {
     }
 }
 
-/// The prepared instance coefficients `ρ′_{l,·}(e)` of the most recent high
-/// index per chunk: a tail task visits its high indices in increasing
-/// order, so one read-off per (chunk, high index) per task.
-struct CoefficientCache {
-    keys: Vec<Option<usize>>,
-    fixed: Vec<Vec<kernel::Fixed>>,
+/// Prepared `ρ′_{l,·}(e)` multipliers per chunk. Repetition tasks need one
+/// cached index; tail tasks need two so packs straddling a row keep both halves.
+struct CoefficientCache<const ENTRIES: usize> {
+    entries: Vec<CachedCoefficients>,
     scratch: Vec<Gf>,
 }
 
-impl CoefficientCache {
+#[derive(Clone)]
+struct CachedCoefficients {
+    key: Option<usize>,
+    fixed: [kernel::Fixed; PACK],
+}
+
+impl<const ENTRIES: usize> CoefficientCache<ENTRIES> {
     fn new(chunks: usize) -> Self {
         Self {
-            keys: vec![None; 2 * chunks],
-            fixed: vec![vec![kernel::fixed(&Gf::zero()); PACK]; 2 * chunks],
+            entries: vec![CachedCoefficients {
+                key: None,
+                fixed: [kernel::fixed(&Gf::zero()); PACK],
+            }; ENTRIES * chunks],
             scratch: vec![Gf::zero(); PACK],
         }
     }
 
-    /// The prepared multipliers of chunk `l` at high index `c` (instance
-    /// factor `e = zc_l[c]`); two entries per chunk so a straddling pack
-    /// keeps both of its high indices.
+    /// The prepared multipliers of chunk `l` at index `c` with factor `e`.
     fn fixed(
         &mut self,
         coefficient_tables: &RhoTables,
@@ -1182,15 +1140,15 @@ impl CoefficientCache {
         c: usize,
         e: Gf,
     ) -> &[kernel::Fixed] {
-        let slot = 2 * l + (c & 1);
-        if self.keys[slot] != Some(c) {
+        let entry = &mut self.entries[ENTRIES * l + c % ENTRIES];
+        if entry.key != Some(c) {
             coefficient_tables.coefficients(e, &mut self.scratch);
-            for (f, value) in self.fixed[slot].iter_mut().zip(self.scratch.iter()) {
+            for (f, value) in entry.fixed.iter_mut().zip(self.scratch.iter()) {
                 *f = kernel::fixed(value);
             }
-            self.keys[slot] = Some(c);
+            entry.key = Some(c);
         }
-        &self.fixed[slot]
+        &entry.fixed
     }
 }
 
@@ -1333,15 +1291,6 @@ mod tests {
                 assert_eq!(u128::from(r[0]) | (u128::from(r[1]) << 64), rv, "shr {n}");
             }
         }
-    }
-
-    #[test]
-    fn phi_byte_tables_into_matches() {
-        let eq: Vec<Gf> = (0..PACK).map(|i| sample(0xA000 + i as u64)).collect();
-        let expect = phi_byte_tables(&eq, Gf::one());
-        let mut got = vec![sample(1); 16 * 256];
-        phi_byte_tables_into(&mut got, &eq);
-        assert_eq!(got, expect);
     }
 
     /// The fixed-scalar accumulator reproduces `Σ x_k·f` exactly.

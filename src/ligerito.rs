@@ -512,6 +512,24 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
     s
 }
 
+/// `Φ_{r″}` — the F₂-linear batching map on the bit representation:
+/// `β_u ↦ eq_r2[u]`, applied to a K element by summing over its set bits.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+pub(crate) fn phi_bit_sum(ev: Gf, eq_r2: &[Gf]) -> Gf {
+    let w = ev.as_words();
+    let mut acc = Gf::zero();
+    for wi in 0..2usize {
+        let mut bits = w[wi];
+        while bits != 0 {
+            let t = bits.trailing_zeros() as usize;
+            acc += eq_r2[(wi << 6) | t];
+            bits &= bits.wrapping_sub(1);
+        }
+    }
+    acc
+}
+
 /// 16 byte-position subset-sum tables of `scale·eq_r2`:
 /// `T[pos·256 + v] = Σ_{bit j of v} scale·eq_r2[pos·8 + j]` (64 KB). A
 /// `Φ_{r″}` image then costs 16 gathers + a XOR tree ([`phi_from_words`])
@@ -522,17 +540,27 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
 pub(crate) fn phi_byte_tables(eq_r2: &[Gf], scale: Gf) -> Vec<Gf> {
     debug_assert_eq!(eq_r2.len(), 128);
     let mut t = vec![Gf::zero(); 16 * 256];
+    phi_byte_tables_into(&mut t, |i| scale * eq_r2[i]);
+    t
+}
+
+/// Fill the byte-position subset sums of 128 coefficients, overwriting `out`.
+/// The callback lets callers supply precomputed or scaled coefficients without
+/// allocating an intermediate table or multiplying the unit-scale case.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn phi_byte_tables_into(out: &mut [Gf], coefficient: impl Fn(usize) -> Gf) {
+    debug_assert_eq!(out.len(), 16 * 256);
     for pos in 0..16usize {
-        let tbl = &mut t[pos << 8..(pos + 1) << 8];
+        let table = &mut out[pos << 8..(pos + 1) << 8];
+        table[0] = Gf::zero();
         for j in 0..8usize {
-            let base = scale * eq_r2[(pos << 3) | j];
+            let base = coefficient((pos << 3) | j);
             let half = 1usize << j;
             for k in 0..half {
-                tbl[half + k] = tbl[k] + base;
+                table[half + k] = table[k] + base;
             }
         }
     }
-    t
 }
 
 /// `Σ_l T_l[…]` gather for one element: 16 byte-indexed lookups into a
@@ -2014,6 +2042,23 @@ mod tests {
                 sv_scalar_accum(&mut expect, *wit[y].as_words(), eq[y]);
             }
             assert_eq!(sv_fold_mfr(&wit, &eq), expect, "len {len}");
+        }
+    }
+
+    #[test]
+    fn phi_byte_tables_into_reuses_buffer() {
+        let mut tables = vec![sample(1); 16 * 256];
+        for seed in [0xA000, 0xB000] {
+            let coefficients: Vec<_> = (0..128).map(|i| sample(seed + i)).collect();
+            phi_byte_tables_into(&mut tables, |i| coefficients[i]);
+            for (position, table) in tables.chunks_exact(256).enumerate() {
+                for (bits, &actual) in table.iter().enumerate() {
+                    let expected = (0..8)
+                        .filter(|&bit| bits & (1 << bit) != 0)
+                        .fold(Gf::zero(), |sum, bit| sum + coefficients[8 * position + bit]);
+                    assert_eq!(actual, expected, "position {position}, bits {bits}");
+                }
+            }
         }
     }
 
