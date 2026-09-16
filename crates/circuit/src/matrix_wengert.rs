@@ -353,6 +353,13 @@ struct Root {
     kind: RootKind,
 }
 
+/// One term `coefficient · value[source]` of a sum node's forward program.
+#[derive(Clone, Copy, Debug)]
+struct Term {
+    source: u32,
+    coefficient: u32,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct PowerGroup {
     first_column: u32,
@@ -383,6 +390,28 @@ pub struct WengertTape {
     power_groups: Box<[PowerGroup]>,
     /// Shared integer coefficients, before reduction; entries 0 and 1 are +1 and -1.
     coefficients: IntegerTable,
+    /// Forward program (local F2Z addition): per live sum node, in the
+    /// reverse-level numbering, its `(source, coefficient)` terms over live
+    /// sources — the same edges as `edges`, grouped by dependent instead of
+    /// by source. A power group's sum has no terms here: its bit inputs are
+    /// dead in the graph, and [`PreparedWengertEvaluator::apply_forward_weighted`]
+    /// takes the group's geometric input sum from the caller instead.
+    forward_offsets: Box<[u32]>,
+    forward_terms: Box<[Term]>,
+}
+
+/// Column values of a forward pass, in the evaluator's Montgomery form.
+///
+/// The caller owns the integer-witness column values `x`; the tape only ever
+/// needs a scalar column on its own, or the geometric sum
+/// `Σ_{k < len} 2^k · x_{first + k}` of one power group's columns. Local F2Z
+/// addition; not part of upstream f2z-benchmark.
+pub trait ForwardColumns: Sync {
+    /// `x_column` for a scalar (non-power-group) column.
+    fn scalar(&self, column: usize) -> [u64; 2];
+
+    /// `Σ_{k < len} 2^k · x_{first + k}`.
+    fn power_sum(&self, first: usize, len: usize) -> [u64; 2];
 }
 
 /// Evaluates the transpose of the tape's linear map modulo a fixed prime `q`.
@@ -417,8 +446,13 @@ pub struct PreparedWengertEvaluator<'a> {
     coefficients: Vec<[u64; 2]>,
     weighted_challenges: Vec<[[u64; 2]; 3]>,
     adjoints: Vec<[u64; 2]>,
+    /// The reverse pass's column outputs; allocated by the first reverse
+    /// pass (a forward-only evaluator never materializes it).
     output: Vec<[u64; 2]>,
     powers_of_two: Vec<[u64; 2]>,
+    /// The forward pass's node values (every live node); allocated by the
+    /// first forward pass.
+    forward_values: Vec<[u64; 2]>,
 }
 
 impl WengertTape {
@@ -622,6 +656,29 @@ impl WengertTape {
             *cursor += 1;
         }
 
+        // The forward program: the same live, nonzero terms as `edges`,
+        // grouped by their sum node (the power groups' inputs are dead, so a
+        // power group's sum keeps no terms).
+        let mut forward_offsets = Vec::with_capacity(live_internal_count + 1);
+        forward_offsets.push(0_u32);
+        let mut forward_terms = Vec::with_capacity(edges.len());
+        for &old in &ordering[..live_internal_count] {
+            if let RawNode::Sum(terms) = &nodes[old as usize] {
+                for term in terms {
+                    if !live[term.node as usize] || term.is_zero() {
+                        continue;
+                    }
+                    forward_terms.push(Term {
+                        source: old_to_new[term.node as usize],
+                        coefficient: intern(term.coefficient),
+                    });
+                }
+            }
+            forward_offsets
+                .push(u32::try_from(forward_terms.len()).expect("too many Wengert terms"));
+        }
+        debug_assert_eq!(forward_terms.len(), edges.len());
+
         Self {
             constraints,
             input_nodes: input_nodes
@@ -648,6 +705,8 @@ impl WengertTape {
                 })
                 .collect(),
             coefficients,
+            forward_offsets: forward_offsets.into_boxed_slice(),
+            forward_terms: forward_terms.into_boxed_slice(),
         }
     }
 
@@ -691,6 +750,8 @@ impl WengertTape {
             + self.roots.len() * size_of::<Root>()
             + self.power_groups.len() * size_of::<PowerGroup>()
             + self.coefficients.payload_bytes()
+            + self.forward_offsets.len() * size_of::<u32>()
+            + self.forward_terms.len() * size_of::<Term>()
     }
 
     /// Prepares this tape for repeated evaluation modulo `modulus`.
@@ -711,10 +772,12 @@ impl WengertTape {
             return Err(WengertApplyError::EvenModulus);
         }
         let field = create_prime_field(Uint::from_words(modulus_words));
+        let projection =
+            field::PreparedSignedProjection::new(field.clone(), self.coefficients.max_limbs());
         let view = self.coefficients.view();
         let project = |index: usize| {
-            *field
-                .from_integer(&field::ZRef::from_twos_complement_words(&view[index]))
+            *projection
+                .project(&view[index])
                 .as_montgomery_integer()
                 .as_words()
         };
@@ -751,8 +814,9 @@ impl WengertTape {
             coefficients,
             weighted_challenges: vec![[[0; 2]; 3]; self.row_count()],
             adjoints: vec![[0; 2]; self.level_offsets.last().copied().unwrap_or(0) as usize],
-            output: vec![[0; 2]; self.column_count()],
+            output: Vec::new(),
             powers_of_two,
+            forward_values: Vec::new(),
         })
     }
 
@@ -900,13 +964,16 @@ impl PreparedWengertEvaluator<'_> {
             .as_words()
     }
 
-    /// Bytes occupied by reduced coefficients and reusable apply vectors.
+    /// Bytes occupied by reduced coefficients and reusable apply vectors
+    /// (the column output and the forward values count once allocated by
+    /// their first pass).
     pub fn workspace_bytes(&self) -> usize {
         self.coefficients.len() * size_of::<[u64; 2]>()
             + self.weighted_challenges.len() * size_of::<[[u64; 2]; 3]>()
             + self.adjoints.len() * size_of::<[u64; 2]>()
             + self.output.len() * size_of::<[u64; 2]>()
             + self.powers_of_two.len() * size_of::<[u64; 2]>()
+            + self.forward_values.len() * size_of::<[u64; 2]>()
     }
 
     /// Computes `r * (A + x B + x^2 C)` using Montgomery inputs and output.
@@ -937,11 +1004,8 @@ impl PreparedWengertEvaluator<'_> {
         let Self {
             tape,
             field,
-            coefficients,
             weighted_challenges,
-            adjoints,
-            output,
-            powers_of_two,
+            ..
         } = self;
         if challenges.len() != tape.constraints {
             return Err(WengertApplyError::ChallengeLength {
@@ -995,6 +1059,120 @@ impl PreparedWengertEvaluator<'_> {
         Ok(&self.output)
     }
 
+    /// `Σ_row (w_A · A_row + w_B · B_row + w_C · C_row) · x` for the column
+    /// values `x` of `columns`, by a FORWARD pass: every sum node takes
+    /// `Σ coefficient · value[source]` over its terms, a power group's sum
+    /// takes the caller's geometric input sum, and the roots close the sum
+    /// with the row weights. It is the same bilinear form
+    /// `⟨w, (A + …) x⟩ = ⟨(A + …)ᵀ w, x⟩` that [`Self::apply_weighted`]
+    /// followed by a dot product with `x` computes (the reverse pass is the
+    /// transpose of this program, edge for edge), so the two agree
+    /// exactly; the forward pass never materializes the column vector.
+    /// Weights, column values and the result are in the evaluator's
+    /// Montgomery form. Local F2Z addition; not part of upstream
+    /// f2z-benchmark.
+    pub fn apply_forward_weighted<V: ForwardColumns>(
+        &mut self,
+        weights: &[[[u64; 2]; 3]],
+        columns: &V,
+    ) -> Result<[u64; 2], WengertApplyError> {
+        if weights.len() != self.tape.constraints {
+            return Err(WengertApplyError::ChallengeLength {
+                expected: self.tape.constraints,
+                actual: weights.len(),
+            });
+        }
+        let Self {
+            tape,
+            field,
+            coefficients,
+            forward_values: values,
+            ..
+        } = self;
+        values.clear();
+        values.resize(tape.node_count(), [0; 2]);
+        for (column, &node) in tape.input_nodes.iter().enumerate() {
+            if node != NO_NODE {
+                values[node as usize] = columns.scalar(column);
+            }
+        }
+        for group in tape.power_groups.iter() {
+            let first = group.first_column as usize;
+            if group.full_node != NO_NODE {
+                values[group.full_node as usize] = columns.power_sum(first, group.len as usize);
+            }
+            if group.low_node != NO_NODE {
+                values[group.low_node as usize] = columns.power_sum(first, group.low_len as usize);
+            }
+        }
+        let scale = |source: [u64; 2], coefficient: u32| -> [u64; 2] {
+            if coefficient == 0 {
+                source
+            } else if coefficient == 1 {
+                neg_representative(source, field)
+            } else {
+                mul_representatives(source, coefficients[coefficient as usize], field)
+            }
+        };
+        // Sources sit at strictly higher levels (or are inputs), so a level
+        // reads only past its own end; its nodes are independent.
+        for level in (0..tape.level_count()).rev() {
+            let start = tape.level_offsets[level] as usize;
+            let end = tape.level_offsets[level + 1] as usize;
+            let (current_and_before, later) = values.split_at_mut(end);
+            let current = &mut current_and_before[start..end];
+            let evaluate = |offset: usize, slot: &mut [u64; 2]| {
+                let node = start + offset;
+                let terms = &tape.forward_terms
+                    [tape.forward_offsets[node] as usize..tape.forward_offsets[node + 1] as usize];
+                if terms.is_empty() {
+                    // A power group's sum: already holds its geometric input sum.
+                    return;
+                }
+                let mut value = [0_u64; 2];
+                let mut initialized = false;
+                for term in terms {
+                    let source = term.source as usize;
+                    debug_assert!(source >= end);
+                    let contribution = scale(later[source - end], term.coefficient);
+                    if initialized {
+                        value = add_representatives(value, contribution, field);
+                    } else {
+                        value = contribution;
+                        initialized = true;
+                    }
+                }
+                *slot = value;
+            };
+            if rayon::current_num_threads() > 1 && current.len() >= PARALLEL_LEVEL_THRESHOLD {
+                current
+                    .par_iter_mut()
+                    .enumerate()
+                    .for_each(|(offset, slot)| evaluate(offset, slot));
+            } else {
+                current
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(offset, slot)| evaluate(offset, slot));
+            }
+        }
+        let mut result = [0_u64; 2];
+        for (node, &value) in values.iter().enumerate() {
+            let roots =
+                &tape.roots[tape.root_offsets[node] as usize..tape.root_offsets[node + 1] as usize];
+            for root in roots {
+                let weight = weights[root.row as usize][match root.kind {
+                    RootKind::A => 0,
+                    RootKind::B => 1,
+                    RootKind::C => 2,
+                }];
+                let term = mul_representatives(weight, scale(value, root.coefficient), field);
+                result = add_representatives(result, term, field);
+            }
+        }
+        Ok(result)
+    }
+
     /// The reverse pass over the prepared `weighted_challenges`, into `output`.
     /// Addition and multiplication by Montgomery coefficients preserve the
     /// weights' representation, including through the power-of-two groups.
@@ -1007,7 +1185,9 @@ impl PreparedWengertEvaluator<'_> {
             adjoints,
             output,
             powers_of_two,
+            forward_values: _,
         } = self;
+        output.resize(tape.column_count(), [0; 2]);
         let context = ReverseContext {
             tape,
             field,
@@ -1700,6 +1880,100 @@ mod tests {
                 .map(|value| evaluator.from_montgomery(value))
                 .collect();
             assert_eq!(output, expected);
+        }
+    }
+
+    /// Dense column values for the forward-pass test: every column value is
+    /// stored, and a power group's sum is the plain doubling chain.
+    struct DenseColumns {
+        values: Vec<[u64; 2]>,
+        field: FpCtx<2>,
+    }
+
+    impl ForwardColumns for DenseColumns {
+        fn scalar(&self, column: usize) -> [u64; 2] {
+            self.values[column]
+        }
+
+        fn power_sum(&self, first: usize, len: usize) -> [u64; 2] {
+            let mut sum = [0; 2];
+            for k in (0..len).rev() {
+                sum = add_representatives(sum, sum, &self.field);
+                sum = add_representatives(sum, self.values[first + k], &self.field);
+            }
+            sum
+        }
+    }
+
+    /// The forward pass is the reverse pass's column vector dotted with the
+    /// column values: on the example tape and the SHA-256 compression tape,
+    /// random weight triples and random column values, at `2^127 − 1` and
+    /// `2^128 − 159`.
+    #[test]
+    fn forward_pass_matches_reverse_dot_product() {
+        let mut sha_generator = WengertGenerator::new(COMPRESSION_INPUT_BITS);
+        let sha_inputs = sha_generator.take_boxed_inputs();
+        let _ = compression_circuit(&mut sha_generator, &sha_inputs);
+        let tapes = [build_tape(), sha_generator.finish()];
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut random = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for modulus in [
+            (BigUint::one() << 127_usize) - BigUint::one(),
+            (BigUint::one() << 128_usize) - BigUint::from(159_u64),
+        ] {
+            let runtime = ModRingCtx::<2>::new(Uint::from_words(
+                crate::matrix_products::biguint_words(&modulus),
+            ))
+            .unwrap();
+            for tape in &tapes {
+                let mut evaluator = tape.prepare(&runtime).unwrap();
+                let element = |random: &mut dyn FnMut() -> u64| {
+                    *evaluator
+                        .field
+                        .from_integer(&Uint::from_words([random(), random()]))
+                        .as_montgomery_integer()
+                        .as_words()
+                };
+                let weights: Vec<[[u64; 2]; 3]> = (0..tape.row_count())
+                    .map(|_| {
+                        [
+                            element(&mut random),
+                            element(&mut random),
+                            element(&mut random),
+                        ]
+                    })
+                    .collect();
+                let columns = DenseColumns {
+                    values: (0..tape.column_count())
+                        .map(|_| element(&mut random))
+                        .collect(),
+                    field: evaluator.field.clone(),
+                };
+                assert!(evaluator.output.is_empty());
+                let forward = evaluator
+                    .apply_forward_weighted(&weights, &columns)
+                    .unwrap();
+                assert!(evaluator.output.is_empty());
+                let reverse = evaluator.apply_weighted(&weights).unwrap().to_vec();
+                let mut dot = [0; 2];
+                for (output, value) in reverse.iter().zip(&columns.values) {
+                    let term = mul_representatives(*output, *value, &evaluator.field);
+                    dot = add_representatives(dot, term, &evaluator.field);
+                }
+                assert_eq!(forward, dot);
+                assert_eq!(
+                    evaluator.apply_forward_weighted(&weights[1..], &columns),
+                    Err(WengertApplyError::ChallengeLength {
+                        expected: tape.row_count(),
+                        actual: tape.row_count() - 1,
+                    })
+                );
+            }
         }
     }
 

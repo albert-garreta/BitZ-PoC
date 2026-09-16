@@ -100,19 +100,36 @@ where
     for (i, ri) in r.iter().enumerate() {
         let half = 1usize << i;
         let (lo, hi) = buf.split_at_mut(half);
-        cfg_iter_mut!(lo)
-            .zip(cfg_iter_mut!(hi))
-            .for_each(|(lo_j, hi_j)| {
-                // child for `x_i = 1`
-                let one_child = lo_j.clone() * ri;
-                // child for `x_i = 0`: parent - one_child = parent * (1 - r_i)
-                *lo_j -= &one_child;
-                *hi_j = one_child;
-            });
+        let expand = |lo_j: &mut F, hi_j: &mut F| {
+            // child for `x_i = 1`
+            let one_child = lo_j.clone() * ri;
+            // child for `x_i = 0`: parent - one_child = parent * (1 - r_i)
+            *lo_j -= &one_child;
+            *hi_j = one_child;
+        };
+        // The levels are independent per element, so a level may run in
+        // parallel; below `EQ_PARALLEL_MIN_HALF` parents the pool dispatch
+        // costs more than the level (a 15-variable table has 12 such
+        // levels), so those run inline. Same products either way.
+        #[cfg(feature = "parallel")]
+        if half >= EQ_PARALLEL_MIN_HALF && rayon::current_num_threads() > 1 {
+            lo.par_iter_mut()
+                .zip(hi.par_iter_mut())
+                .for_each(|(lo_j, hi_j)| expand(lo_j, hi_j));
+            continue;
+        }
+        lo.iter_mut()
+            .zip(hi.iter_mut())
+            .for_each(|(lo_j, hi_j)| expand(lo_j, hi_j));
     }
 
     Ok(())
 }
+
+/// Parents per level from which [`build_eq_x_r_helper`] splits the level
+/// across the pool.
+#[cfg(feature = "parallel")]
+const EQ_PARALLEL_MIN_HALF: usize = 1 << 12;
 
 /// This function build the eq(x, r) polynomial for any given r.
 ///

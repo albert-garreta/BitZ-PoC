@@ -154,6 +154,7 @@ struct Measurements<D> {
 
 #[derive(Serialize)]
 struct F2zDetails {
+    proof_digest: String,
     ligerito_profile: String,
     phases_seconds: Vec<(String, f64)>,
     verify_phases_seconds: Vec<(String, f64)>,
@@ -298,6 +299,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
         let codec = tracing::info_span!("benchmark:codec").entered();
         let proof_bytes = proof.to_bytes();
         let object_bytes = proof_bytes.len();
+        let proof_digest = blake3::hash(&proof_bytes).to_hex().to_string();
         let wire = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .serialize(&F2zWire {
@@ -356,6 +358,7 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 opening_ms: phase("ecdsa:f2z_prove"),
                 folding_ms: None,
                 details: F2zDetails {
+                    proof_digest,
                     ligerito_profile: ligerito_profile.clone(),
                     phases_seconds: phases,
                     verify_phases_seconds: verify_phases,
@@ -543,6 +546,7 @@ mod reporting_tests {
             opening_ms: None,
             folding_ms: None,
             details: F2zDetails {
+                proof_digest: "test-proof".into(),
                 ligerito_profile: "custom:1:4".into(),
                 phases_seconds: vec![("commit".into(), 0.003)],
                 verify_phases_seconds: vec![],

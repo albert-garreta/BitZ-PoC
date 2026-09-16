@@ -1,0 +1,21 @@
+[bench_gate] ecdsa-verifier-merge-prover-followup: idle 100% (streak 1/5)
+[bench_gate] ecdsa-verifier-merge-prover-followup: idle 99% (streak 2/5)
+[bench_gate] ecdsa-verifier-merge-prover-followup: idle 100% (streak 3/5)
+[bench_gate] ecdsa-verifier-merge-prover-followup: idle 100% (streak 4/5)
+[bench_gate] ecdsa-verifier-merge-prover-followup: idle 99% (streak 5/5)
+[bench_gate] ecdsa-verifier-merge-prover-followup: starting (swap baseline 8.00 GB, guard +12 GB)
+f2z-all-i3-l100-t10-r1 pass=0 base
+  median verify 7.116 ms; prove 34.532 ms
+f2z-all-i3-l100-t10-r1 pass=0 merged
+  median verify 4.813 ms; prove 37.876 ms
+f2z-all-i3-l100-t10-r1 pass=1 merged
+  median verify 4.426 ms; prove 33.471 ms
+f2z-all-i3-l100-t10-r1 pass=1 base
+  median verify 7.063 ms; prove 33.175 ms
+[
+  {
+    "config": "f2z-all-i3-l100-t10-r1",
+    "verify_speedup": 1.580262838174089,
+    "prover_speedup": 0.9475241419619155
+  }
+]
