@@ -20,7 +20,7 @@ where
     ///
     /// The protocol using the generic reduction remains responsible for its
     /// terminal identity.
-    pub(crate) fn verify(
+    pub fn verify(
         &self,
         transcript: &mut impl Transcript,
         initial_claim: F,
@@ -59,7 +59,7 @@ where
         )
     }
 
-    pub(crate) fn verify_with_round_boundary<P>(
+    pub fn verify_with_round_boundary<P>(
         &self,
         transcript: &mut impl Transcript,
         initial_claim: F,
@@ -70,49 +70,69 @@ where
     where
         P: RoundBoundaryPolicy,
     {
+        let (point, [claim]) = Self::verify_batch_with_round_boundary(
+            [self],
+            transcript,
+            &[initial_claim],
+            expected_rounds,
+            field_cfg,
+            round_boundary,
+        )?;
+        Ok((point, claim))
+    }
+
+    /// Verify separate claims sharing each round challenge. The caller still
+    /// discharges every terminal evaluation against its matrix/PCS statement.
+    pub fn verify_batch_with_round_boundary<const K: usize>(
+        proofs: [&Self; K],
+        transcript: &mut impl Transcript,
+        initial_claims: &[F; K],
+        expected_rounds: usize,
+        field: &F::Config,
+        boundary: &mut impl RoundBoundaryPolicy,
+    ) -> Result<(Vec<F>, [F; K]), SumcheckError> {
+        if K == 0 {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
         if COEFFS == 0 {
             return Err(SumcheckError::EmptyRoundPolynomial);
         }
-
-        let actual_rounds = self.round_polynomials.len();
-        if actual_rounds != expected_rounds {
-            return Err(SumcheckError::InvalidRoundCount {
-                expected: expected_rounds,
-                actual: actual_rounds,
-            });
-        }
-        round_boundary.validate(expected_rounds)?;
-        validate_field_elements(core::slice::from_ref(&initial_claim), field_cfg)?;
-        for coefficients in &self.round_polynomials {
-            validate_field_elements(coefficients, field_cfg)?;
-        }
-
-        let zero = F::zero_with_cfg(field_cfg);
-        let mut current_claim = initial_claim;
-        let mut eval_points = Vec::with_capacity(expected_rounds);
-
-        for (round, coefficients) in self.round_polynomials.iter().enumerate() {
-            absorb_field_elements(transcript, coefficients, &field_cfg);
-
-            let at_zero = coefficients[0].clone();
-            let at_one = coefficients
-                .iter()
-                .fold(zero.clone(), |mut sum, coefficient| {
-                    sum = field_cfg.add(&(sum), &(coefficient));
-                    sum
+        for proof in proofs {
+            if proof.round_polynomials.len() != expected_rounds {
+                return Err(SumcheckError::InvalidRoundCount {
+                    expected: expected_rounds,
+                    actual: proof.round_polynomials.len(),
                 });
-
-            if (field_cfg).add(&at_zero, &at_one) != current_claim {
-                return Err(SumcheckError::InvalidRoundClaim { round });
             }
-
-            round_boundary.after_round(transcript, round)?;
-            let challenge = squeeze_field(transcript, field_cfg)?;
-            current_claim = evaluate_polynomial(coefficients, &challenge, &zero, &field_cfg);
-            eval_points.push(challenge);
         }
-
-        Ok((eval_points, current_claim))
+        boundary.validate(expected_rounds)?;
+        validate_field_elements(initial_claims, field)?;
+        for proof in proofs {
+            for coefficients in &proof.round_polynomials {
+                validate_field_elements(coefficients, field)?;
+            }
+        }
+        let zero = field.zero();
+        let mut claims = *initial_claims;
+        let mut point = Vec::with_capacity(expected_rounds);
+        for round in 0..expected_rounds {
+            for (proof, claim) in proofs.iter().zip(&claims) {
+                let coefficients = &proof.round_polynomials[round];
+                absorb_field_elements(transcript, coefficients, field);
+                let at_one = coefficients.iter().fold(zero, |sum, c| field.add(&sum, c));
+                if field.add(&coefficients[0], &at_one) != *claim {
+                    return Err(SumcheckError::InvalidRoundClaim { round });
+                }
+            }
+            boundary.after_round(transcript, round)?;
+            let challenge = squeeze_field(transcript, field)?;
+            for (proof, claim) in proofs.iter().zip(&mut claims) {
+                *claim =
+                    evaluate_polynomial(&proof.round_polynomials[round], &challenge, &zero, field);
+            }
+            point.push(challenge);
+        }
+        Ok((point, claims))
     }
 }
 

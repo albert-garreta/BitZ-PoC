@@ -163,8 +163,30 @@ impl Gf128PreparedAcc {
         }
     }
 }
+impl crate::MergeAccumulator for Gf128PreparedAcc {
+    fn zero() -> Self {
+        Self::zero()
+    }
+    #[inline(always)]
+    fn merge_assign(&mut self, rhs: &Self) {
+        #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
+        // SAFETY: AES implies the NEON support used by this accumulator.
+        unsafe {
+            self.words.0 = core::arch::aarch64::veorq_u64(self.words.0, rhs.words.0);
+            self.words.1 = core::arch::aarch64::veorq_u64(self.words.1, rhs.words.1);
+        }
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
+        {
+            self.words ^= rhs.words;
+        }
+    }
+}
 impl crate::BatchMulAcc<Gf128, PreparedGf128Mul> for crate::Gf128Ops {
     type Accumulator = Gf128PreparedAcc;
+    #[inline(always)]
+    fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &Gf128, rhs: &PreparedGf128Mul) {
+        acc.add_mul(lhs, rhs);
+    }
     fn batch_mul_acc(&self, lhs: &[Gf128], rhs: &[PreparedGf128Mul]) -> Self::Accumulator {
         assert_eq!(lhs.len(), rhs.len(), "prepared MAC shape mismatch");
         self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))

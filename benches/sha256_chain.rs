@@ -32,6 +32,10 @@
 //! padded blocks.
 
 mod common;
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
 
 use std::{hint::black_box};
 
@@ -257,6 +261,7 @@ fn bench_shape<P: IopSecurityProfile>(
             timing.prove_ms,
             timing.verify_ms,
         );
+        common::print_regression_phases(&timing.prove_phases);
         prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
         verifier.record_verify(timing.verify_ms, &timing.verify_phases);
         witness_samples.push(timing.witness_ms);
@@ -303,6 +308,9 @@ fn bench_shape<P: IopSecurityProfile>(
 }
 
 fn main() {
+    #[cfg(feature = "bench-peak-memory")]
+    let _heap_report = common::heap_run::Report::start();
+
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 3);
     let root_seed = common::seed(None, 0x4632_5a5f_4348_4149);

@@ -63,8 +63,8 @@ use crate::ligerito::{
     IntEvalRsError, LOG_PACKING, RingSwitchProof, RsOpenConfig, RsOpenError, packed_vars,
     phi_bit_sum, phi_byte_tables, phi_from_words, prove_int_eval_merged_common,
     prove_x_claims_batched_common, repack_leaf_bits, residual_b_evals, ring_switch_prove,
-    ring_switch_verify, row_bit_vars,
-    rs_fast, sv_fold_mfr, verify_int_eval_merged_common, verify_x_claims_batched_common,
+    ring_switch_verify, row_bit_vars, rs_fast, sv_fold_mfr, verify_int_eval_merged_common,
+    verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
 use crate::pcs::{
@@ -7383,7 +7383,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         FQ_BITS, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_pow_table,
         rlc_case_weights, rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
     use crate::poly::coefficient::FieldRepresentation;
     use crate::poly::mle::DenseMultilinearExtension;
     use crate::poly::utils::build_eq_x_r_vec;
@@ -7491,14 +7490,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                     crate::ligerito::xi_combined_rows_and(&p_x, &members, &eq_zc)
                 })
                 .collect();
-            let to_mle = |tbl: Vec<Gf>| {
-                DenseMultilinearExtension::from_evaluations_vec(
-                    t_x,
-                    tbl.into_iter().map(|g| g.into_inner()).collect(),
-                    zero_inner,
-                )
-            };
-            let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = active
+            let groups: Vec<[Vec<Gf>; 2]> = active
                 .iter()
                 .enumerate()
                 .map(|(gi, &s)| {
@@ -7507,21 +7499,16 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                         .zip(taus[s].iter())
                         .map(|(&e, &t)| e * t)
                         .collect();
-                    MultiDegreeSumcheckGroup::new(
-                        2,
-                        vec![to_mle(r_tbl), to_mle(m_tbls[gi].clone())],
-                        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-                    )
+                    [r_tbl, m_tbls[gi].clone()]
                 })
                 .collect();
-            let (presum, states) =
-                MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_x, &());
+            let (presum, r_star) =
+                crate::sumcheck::inner::binary::prove_batch(transcript, groups, t_x);
             debug_assert_eq!(
                 presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
                 e_d + one,
                 "presum channels must sum to the forest exit claim"
             );
-            let r_star = states[0].randomness.clone();
             let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
             mfs.push(mf);
             us.push(u);
@@ -7763,7 +7750,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
         mod_q_num_chunks, recombine_read_off, rlc_case_pow_table, rlc_case_weights,
         rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
     use crate::taps::{residual_b_evals_tap, tap_classes, tap_closure_desc, tap_inpack_table};
 
@@ -7854,14 +7840,9 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
             if active.is_empty() || active.iter().any(|s| s.count_ones() > 4) {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
             }
-            let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-                transcript,
-                t_x,
-                &vec![2; active.len()],
-                &side.presums[l],
-                &(),
-            )
-            .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
+            let subclaims = side.presums[l]
+                .verify_as_subprotocol(transcript, t_x, &vec![2; active.len()], &())
+                .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
             let sums = side.presums[l].claimed_sums();
             if sums.len() != active.len() {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -8967,7 +8948,6 @@ fn prove_rlc_family_front(
     use crate::pcs::{
         extract_virtual_xor_rows, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
     use crate::poly::coefficient::FieldRepresentation;
     use crate::poly::mle::DenseMultilinearExtension;
     use crate::poly::utils::build_eq_x_r_vec;
@@ -9100,14 +9080,7 @@ fn prove_rlc_family_front(
             .iter()
             .map(|&s| crate::ligerito::xi_combined_rows(&p_x, &and_rows[s - 1], &eq_zc))
             .collect();
-        let to_mle = |tbl: Vec<Gf>| {
-            DenseMultilinearExtension::from_evaluations_vec(
-                t_x,
-                tbl.into_iter().map(|g| g.into_inner()).collect(),
-                zero_inner,
-            )
-        };
-        let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = active
+        let groups: Vec<[Vec<Gf>; 2]> = active
             .iter()
             .enumerate()
             .map(|(gi, &s)| {
@@ -9116,21 +9089,15 @@ fn prove_rlc_family_front(
                     .zip(taus[s].iter())
                     .map(|(&e, &t)| e * t)
                     .collect();
-                MultiDegreeSumcheckGroup::new(
-                    2,
-                    vec![to_mle(r_tbl), to_mle(m_tbls[gi].clone())],
-                    Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-                )
+                [r_tbl, m_tbls[gi].clone()]
             })
             .collect();
-        let (presum, states) =
-            MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_x, &());
+        let (presum, r_star) = crate::sumcheck::inner::binary::prove_batch(transcript, groups, t_x);
         debug_assert_eq!(
             presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
             e_d + one,
             "presum channels must sum to the forest exit claim"
         );
-        let r_star = states[0].randomness.clone();
         actives.push(active);
         let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
         mfs.push(mf);
@@ -9741,7 +9708,6 @@ fn verify_rlc_family_front(
     use crate::pcs::{
         is_generator, mod_q_chunk_width, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
 
     let j = family_cols.len();
@@ -9797,14 +9763,9 @@ fn verify_rlc_family_front(
         if active.is_empty() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
-        let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-            transcript,
-            t_x,
-            &vec![2; active.len()],
-            &part.presums[l],
-            &(),
-        )
-        .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
+        let subclaims = part.presums[l]
+            .verify_as_subprotocol(transcript, t_x, &vec![2; active.len()], &())
+            .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
         let sums = part.presums[l].claimed_sums();
         if sums.len() != active.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));

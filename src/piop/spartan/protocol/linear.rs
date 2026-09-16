@@ -42,7 +42,7 @@ use super::{
         absorb_spartan_message,
         sha256::inner_sumcheck::{
             SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource,
-            prove_sha256_inner_sumcheck_factored, verify_sha256_inner_sumcheck,
+            prove_sha256_inner_sumcheck_factored,
         },
         squeeze_field,
         sumcheck::SumcheckProof,
@@ -501,7 +501,6 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
                 &*bits,
                 options.prefix_vars,
                 config,
-                &reducer,
                 security.piop_round_grinding_bits,
             )
             .map_err(super::super::piop::SpartanError::from)?
@@ -688,15 +687,7 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     } else {
         let (assignment_point, inner_claim) = {
             let _scope = tracing::info_span!("sha256:spartan_inner_verify").entered();
-            verify_sha256_inner_sumcheck(
-                transcript,
-                batching.initial_claim().clone(),
-                &proof.inner,
-                &proof.inner_nonces,
-                opened.row_vars + opened.col_vars,
-                config,
-                security.piop_round_grinding_bits,
-            )
+            proof.inner.verify_grinded::<crate::sumcheck::inner::packed::Sha256InnerGrinding>(transcript, batching.initial_claim().clone(), opened.row_vars + opened.col_vars, config, &proof.inner_nonces, security.piop_round_grinding_bits)
             .map_err(super::super::piop::SpartanError::from)?
         };
         drop(step3_scope);

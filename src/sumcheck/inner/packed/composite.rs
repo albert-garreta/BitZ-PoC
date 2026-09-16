@@ -35,11 +35,10 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
         h: &H,
         cfg: &FieldConfig,
         zero: &Field,
-        reducer: &field::FpCtx<2>,
     ) -> Result<PrefixAccumulators, SumcheckError> {
         if self.repeated().inner_factor().len() < 1 << K {
             return build_prefix_accumulators_generic::<K, _, _>(
-                num_vars, live_len, self, h, cfg, zero, reducer,
+                num_vars, live_len, self, h, cfg, zero,
             );
         }
         let repeated = self.repeated();
@@ -52,7 +51,7 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                 repeated.inner_factor(),
                 h,
                 zero,
-                reducer,
+                cfg,
             )?;
             scatter_beta_values::<K>(&beta_values, zero, &cfg)
         } else {
@@ -63,7 +62,6 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                 h,
                 cfg,
                 zero,
-                reducer,
             )?
         };
         let tail_start = self.repeated().live_len();
@@ -79,7 +77,6 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                     h,
                     cfg,
                     zero,
-                    reducer,
                 )?;
                 scatter_beta_values::<K>(&beta_values, zero, &cfg)
             }
@@ -90,7 +87,6 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                 &|i: usize| h.bit_at(tail_start + i),
                 cfg,
                 zero,
-                reducer,
             )?,
         };
         let constant = build_prefix_accumulators_generic::<K, _, _>(
@@ -106,7 +102,6 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
             h,
             cfg,
             zero,
-            reducer,
         )?;
         for other in [tail, constant] {
             for (dst, src) in result.rounds.iter_mut().zip(other.rounds) {
@@ -126,13 +121,12 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
         cfg: &FieldConfig,
         zero: &Field,
         one: &Field,
-        reducer: &field::FpCtx<2>,
     ) -> Result<CompactPrefixVTable, SumcheckError> {
         let width = self.repeated().inner_factor().len();
         let prefix = 1 << K;
         if width < prefix {
             return fold_prefix_v_table_generic::<K, _>(
-                num_vars, live_len, self, challenges, cfg, zero, one, reducer,
+                num_vars, live_len, self, challenges, cfg, zero, one,
             );
         }
         let weights = equality_weights_lsb(challenges, zero, one, &cfg);
@@ -142,11 +136,11 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
             .inner_factor()
             .chunks_exact(prefix)
             .map(|chunk| {
-                let mut sum = product_accumulator_zero(reducer);
+                let mut sum = product_accumulator_zero(cfg);
                 for (a, b) in weights.iter().zip(chunk) {
-                    product_multiply_accumulate(reducer, &mut sum, a, b);
+                    product_multiply_accumulate(cfg, &mut sum, a, b);
                 }
-                product_reduce(reducer, sum, cfg)
+                product_reduce(sum, cfg)
             })
             .collect::<Result<_, _>>()?;
         let repeated_suffixes = self.repeated().live_len() / prefix;
@@ -203,14 +197,14 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
                 folded[suffix - repeated_suffixes].clone()
             } else {
                 let start = (suffix - repeated_suffixes) * prefix;
-                let mut sum = product_accumulator_zero(reducer);
+                let mut sum = product_accumulator_zero(cfg);
                 for (a, b) in weights.iter().zip(
                     &self.tail_evaluations()
                         [start..self.tail_evaluations().len().min(start + prefix)],
                 ) {
-                    product_multiply_accumulate(reducer, &mut sum, a, b);
+                    product_multiply_accumulate(cfg, &mut sum, a, b);
                 }
-                product_reduce(reducer, sum, cfg)?
+                product_reduce(sum, cfg)?
             };
             if suffix == 0 {
                 value = cfg.add(
@@ -447,7 +441,6 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     h: &H,
     cfg: &FieldConfig,
     zero: &Field,
-    reducer: &field::FpCtx<2>,
 ) -> Result<Vec<Field>, SumcheckError> {
     debug_assert!(K > 0 && K <= 4);
     let prefix = 1usize << K;
@@ -467,7 +460,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         (0..blocks)
             .into_par_iter()
             .try_fold(
-                || TailShapeState::new::<K>(reducer),
+                || TailShapeState::new::<K>(cfg),
                 |mut state, block| -> Result<_, SumcheckError> {
                     accumulate_tail_block::<K, _>(
                         &mut state,
@@ -476,16 +469,16 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                         tail_start,
                         tail_len,
                         h,
-                        reducer,
+                        cfg,
                     )?;
                     Ok(state)
                 },
             )
             .try_reduce(
-                || TailShapeState::new::<K>(reducer),
+                || TailShapeState::new::<K>(cfg),
                 |mut left, right| {
                     for (l, r) in left.sums.iter_mut().zip(right.sums) {
-                        linear_merge(reducer, l, r);
+                        linear_merge(cfg, l, r);
                     }
                     for (l, r) in left.used.iter_mut().zip(right.used) {
                         *l |= r;
@@ -494,7 +487,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 },
             )?
     } else {
-        let mut state = TailShapeState::new::<K>(reducer);
+        let mut state = TailShapeState::new::<K>(cfg);
         for block in 0..blocks {
             accumulate_tail_block::<K, _>(
                 &mut state,
@@ -503,14 +496,14 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 tail_start,
                 tail_len,
                 h,
-                reducer,
+                cfg,
             )?;
         }
         state
     };
     #[cfg(not(feature = "parallel"))]
     let state = {
-        let mut state = TailShapeState::new::<K>(reducer);
+        let mut state = TailShapeState::new::<K>(cfg);
         for block in 0..blocks {
             accumulate_tail_block::<K, _>(
                 &mut state,
@@ -519,7 +512,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 tail_start,
                 tail_len,
                 h,
-                reducer,
+                cfg,
             )?;
         }
         state
@@ -535,7 +528,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
             *reduced = Some(
                 accumulators
                     .into_iter()
-                    .map(|acc| linear_reduce(reducer, acc, cfg))
+                    .map(|acc| linear_reduce(acc, cfg))
                     .collect::<Result<Vec<_>, _>>()?,
             );
         }
@@ -567,12 +560,12 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
             if g == 0 {
                 continue;
             }
-            let mut inner = linear_accumulator_zero(reducer);
+            let mut inner = linear_accumulator_zero(cfg);
             let mut touched = false;
             for (i, value) in values.iter().enumerate() {
                 if row[i] != 0 {
                     linear_multiply_accumulate_signed(
-                        reducer,
+                        cfg,
                         &mut inner,
                         value,
                         i64::from(row[i]),
@@ -582,7 +575,7 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 }
             }
             if touched {
-                let inner = linear_reduce(reducer, inner, cfg)?;
+                let inner = linear_reduce(inner, cfg)?;
                 total = cfg.add(&(total), &(&(cfg.mul(&(signed_field(g)), &(&inner)))));
             }
         }
@@ -674,7 +667,7 @@ fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     let table: Vec<Field> = state
         .sums
         .into_iter()
-        .map(|acc| linear_reduce(reducer, acc, &reducer))
+        .map(|acc| linear_reduce(acc, &reducer))
         .collect::<Result<Vec<_>, _>>()?;
 
     let ext = ternary_extension_table::<K>();
@@ -707,8 +700,8 @@ fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
                 }
             }
             if touched {
-                let u = linear_reduce(reducer, u, &reducer)?;
-                let a = linear_reduce(reducer, a, &reducer)?;
+                let u = linear_reduce(u, &reducer)?;
+                let a = linear_reduce(a, &reducer)?;
                 total = reducer.add(&(total), &(&(reducer.mul(&(u), &(&a)))));
             }
         }
@@ -725,7 +718,6 @@ pub(crate) fn prove_composite_inner_sumcheck<T: Transcript, H: Sha256InnerBitSou
     h: &H,
     prefix: usize,
     cfg: &FieldConfig,
-    reducer: &field::FpCtx<2>,
     grinding_bits: u32,
 ) -> Result<Sha256InnerSumcheckOutput, SumcheckError> {
     if num_vars != coefficients.num_vars() {
@@ -740,7 +732,6 @@ pub(crate) fn prove_composite_inner_sumcheck<T: Transcript, H: Sha256InnerBitSou
         h,
         prefix,
         cfg,
-        reducer,
         grinding_bits,
     )
 }
@@ -822,14 +813,13 @@ mod tests {
             cfg: &FieldConfig,
             zero: &Field,
             one: &Field,
-            reducer: &field::FpCtx<2>,
         ) {
             let bit_source = |i: usize| bit(i);
             let a = plain
-                .build_prefix_accumulators::<K, _>(num_vars, live, &bit_source, cfg, zero, reducer)
+                .build_prefix_accumulators::<K, _>(num_vars, live, &bit_source, cfg, zero)
                 .unwrap();
             let b = structured
-                .build_prefix_accumulators::<K, _>(num_vars, live, &bit_source, cfg, zero, reducer)
+                .build_prefix_accumulators::<K, _>(num_vars, live, &bit_source, cfg, zero)
                 .unwrap();
             for (round, (x, y)) in a.rounds.iter().zip(&b.rounds).enumerate() {
                 assert!(x == y, "K={K}: accumulators differ in round {round}");
@@ -838,58 +828,18 @@ mod tests {
                 .map(|i| Field::from_with_cfg(i as u64 * 977 + 31, cfg))
                 .collect();
             let a = plain
-                .fold_prefix_table::<K>(num_vars, live, &challenges, cfg, zero, one, reducer)
+                .fold_prefix_table::<K>(num_vars, live, &challenges, cfg, zero, one)
                 .unwrap();
             let b = structured
-                .fold_prefix_table::<K>(num_vars, live, &challenges, cfg, zero, one, reducer)
+                .fold_prefix_table::<K>(num_vars, live, &challenges, cfg, zero, one)
                 .unwrap();
             assert_eq!(a.suffix_count, b.suffix_count);
             assert!(a.values == b.values, "K={K}: folded tables differ");
         }
-        check::<1>(
-            &plain,
-            &structured,
-            num_vars,
-            live,
-            &bit,
-            &cfg,
-            &zero,
-            &one,
-            &reducer,
-        );
-        check::<2>(
-            &plain,
-            &structured,
-            num_vars,
-            live,
-            &bit,
-            &cfg,
-            &zero,
-            &one,
-            &reducer,
-        );
-        check::<3>(
-            &plain,
-            &structured,
-            num_vars,
-            live,
-            &bit,
-            &cfg,
-            &zero,
-            &one,
-            &reducer,
-        );
-        check::<4>(
-            &plain,
-            &structured,
-            num_vars,
-            live,
-            &bit,
-            &cfg,
-            &zero,
-            &one,
-            &reducer,
-        );
+        check::<1>(&plain, &structured, num_vars, live, &bit, &cfg, &zero, &one);
+        check::<2>(&plain, &structured, num_vars, live, &bit, &cfg, &zero, &one);
+        check::<3>(&plain, &structured, num_vars, live, &bit, &cfg, &zero, &one);
+        check::<4>(&plain, &structured, num_vars, live, &bit, &cfg, &zero, &one);
     }
 
     #[test]
@@ -931,7 +881,6 @@ mod tests {
                     &bit,
                     prefix,
                     &cfg,
-                    &reducer,
                     0,
                 )
                 .unwrap();
@@ -948,7 +897,6 @@ mod tests {
                     &bit,
                     prefix,
                     &cfg,
-                    &reducer,
                     0,
                 )
                 .unwrap();

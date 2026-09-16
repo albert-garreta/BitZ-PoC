@@ -639,6 +639,10 @@ macro_rules! binary_batch {
     ($ctx:ty,$value:ty,$product:ty) => {
         impl BatchMulAcc<$value> for $ctx {
             type Accumulator = XorAccumulator<$product>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &$value, rhs: &$value) {
+                acc.payload.xor_assign(self.mul_wide(lhs, rhs));
+            }
             fn batch_mul_acc(&self, lhs: &[$value], rhs: &[$value]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len());
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))

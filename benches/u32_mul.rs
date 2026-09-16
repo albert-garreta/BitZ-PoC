@@ -265,6 +265,7 @@ fn bench_exponent<P: IopSecurityProfile>(
                 params.col_vars,
                 sample_index + 1,
             );
+            common::print_regression_phases(&prove_phases);
             prover.record_prove(prove_ms, commit_ms, &prove_phases);
             verifier.record_verify(verify_ms, &verify_phases);
             black_box(&proof);

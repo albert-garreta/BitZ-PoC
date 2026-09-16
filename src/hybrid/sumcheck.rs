@@ -449,16 +449,31 @@ pub(super) fn prove(
     drop(high);
     drop(tables_scope);
     let dense_scope = tracing::info_span!("js:dense_rounds").entered();
-    while witness.len() > 1 {
-        observe(t, &message);
-        let r = sample(t);
-        value = evaluate_round(message, value, r);
-        point.push(r);
-        rounds.push(message);
-        message = dense_fold(&mut witness, &mut weights, &mut spare_x, &mut spare_w, r);
-    }
+    let dense_rounds = witness.len().ilog2() as usize;
+    let mut current_claim = [value];
+    crate::sumcheck::inner::engine::drive(
+        &field::Gf128Ops,
+        t,
+        dense_rounds,
+        &mut point,
+        &mut current_claim,
+        &mut [message],
+        &mut [[F::ZERO; 3]],
+        |t, _, messages| {
+            let message = [messages[0][0], messages[0][2]];
+            observe(t, &message);
+            rounds.push(message);
+            Ok::<_, core::convert::Infallible>(sample(t))
+        },
+        |_, r, next| {
+            next[0] = dense_fold(&mut witness, &mut weights, &mut spare_x, &mut spare_w, *r);
+            Ok(())
+        },
+    )
+    .unwrap();
+    value = current_claim[0];
     drop(dense_scope);
-    debug_assert_eq!(value, witness[0] * weights[0]);
+    assert_eq!(value, witness[0] * weights[0], "inner terminal claim");
     observe(t, &witness);
     let terminal = witness[0];
     *scratch = Scratch {

@@ -14,7 +14,6 @@ pub(super) trait FoldedValue: Copy + Send + Sync {
     fn reduce(ctx: &field::FpCtx<2>, acc: Self::Acc) -> Raw;
     fn fold_initial(
         ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
         block: BlockValues<'_>,
         weights: &[Raw],
         out: &mut [Self],
@@ -48,13 +47,12 @@ impl FoldedValue for Uint<2> {
     }
     fn fold_initial(
         ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
         block: BlockValues<'_>,
         weights: &[Raw],
         out: &mut [Self],
         challenge: Raw,
     ) -> [Raw; 2] {
-        block.fold_integer_block(ctx, reducer, weights, out, challenge)
+        block.fold_integer_block(ctx, weights, out, challenge)
     }
 }
 impl FoldedValue for Fp<2> {
@@ -84,7 +82,6 @@ impl FoldedValue for Fp<2> {
     }
     fn fold_initial(
         ctx: &field::FpCtx<2>,
-        _: &field::FpCtx<2>,
         block: BlockValues<'_>,
         weights: &[Raw],
         out: &mut [Self],

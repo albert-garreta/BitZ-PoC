@@ -135,6 +135,9 @@ impl Context {
             assert!(matching.next().is_none(), "duplicate F2Z {label}");
             timing.add(name, tag, s.start_ns, s.end_ns);
         }
+        super::common::print_regression_phases(&::f2z::observability::totals(
+            raw.iter().filter(|s| s.end_ns <= trial.verification.start_ns),
+        ));
         timing
     }
 

@@ -264,19 +264,10 @@ pub(super) fn wide_fold<const N: usize, const FOLD_WEIGHTS: bool>(
 }
 
 impl BlockValues<'_> {
-    pub(super) fn coefficients(
-        self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        weights: &[Raw],
-    ) -> [Raw; 2] {
+    pub(super) fn coefficients(self, ctx: &field::FpCtx<2>, weights: &[Raw]) -> [Raw; 2] {
         match self {
-            Self::Native(v) => {
-                inner_coefficients_native_raw(ctx, reducer, weights, &v[..weights.len()])
-            }
-            Self::Field(v) => {
-                inner_coefficients_field_raw(ctx, reducer, weights, &v[..weights.len()])
-            }
+            Self::Native(v) => inner_coefficients_native_raw(ctx, weights, &v[..weights.len()]),
+            Self::Field(v) => inner_coefficients_field_raw(ctx, weights, &v[..weights.len()]),
             Self::Zero => [0; 2],
             Self::Limbs(v) => wide_coefficients(ctx, weights, |i| read_limbs(v, i)),
             Self::U128(v) => wide_coefficients(ctx, weights, |i| read_u128(v, i)),
@@ -286,18 +277,13 @@ impl BlockValues<'_> {
             }
         }
     }
-    pub(super) fn folded_pair(
-        self,
-        ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
-        challenge: Raw,
-    ) -> Raw {
+    pub(super) fn folded_pair(self, ctx: &field::FpCtx<2>, challenge: Raw) -> Raw {
         let f = ctx;
         let c = shared_raw(f, challenge);
         let coefficients = [f.sub(&f.one(), &c), c];
         match self {
             Self::Native(v) => fold_native_pair(
-                reducer,
+                ctx,
                 ctx.sub_raw(ctx.one_raw(), challenge),
                 challenge,
                 v[0],
@@ -320,14 +306,13 @@ impl BlockValues<'_> {
     pub(super) fn fold_integer_block(
         self,
         ctx: &field::FpCtx<2>,
-        reducer: &field::FpCtx<2>,
         weights: &[Raw],
         out: &mut [Uint<2>],
         challenge: Raw,
     ) -> [Raw; 2] {
         match self {
             Self::Native(v) => {
-                fold_block_native_raw(ctx, reducer, weights, &v[..2 * out.len()], out, challenge)
+                fold_block_native_raw(ctx, weights, &v[..2 * out.len()], out, challenge)
             }
             Self::Field(_) => unreachable!("integer source dispatch"),
             Self::Zero => {
@@ -525,7 +510,6 @@ mod tests {
                     let expected = prove_inner_raw(
                         &mut Blake3Transcript::new(),
                         &ctx,
-                        &ctx,
                         claim.clone(),
                         matrix.clone(),
                         RawWitness::Field(projected.clone()),
@@ -534,7 +518,6 @@ mod tests {
                     .unwrap();
                     let got = prove_inner_raw(
                         &mut Blake3Transcript::new(),
-                        &ctx,
                         &ctx,
                         claim.clone(),
                         matrix,
@@ -546,7 +529,6 @@ mod tests {
                     if cap >= 2 {
                         let got = prove_inner_structured_raw(
                             &mut Blake3Transcript::new(),
-                            &ctx,
                             &ctx,
                             claim,
                             &weights,
@@ -573,7 +555,7 @@ mod tests {
         for q in [(1u128 << 100) - 15, u128::MAX - 158] {
             let cfg = Field::make_cfg(&Uint::from_words(raw_to_words(q))).unwrap();
             let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
-            let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+            let ctx = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
             for log in [0, 1, 2, 6, 13] {
                 let cap = 1usize << log;
                 for live in [cap, cap.saturating_sub(1).max(1)] {
@@ -638,7 +620,6 @@ mod tests {
                         let expected = prove_inner_raw(
                             &mut Blake3Transcript::new(),
                             &ctx,
-                            &reducer,
                             claim.clone(),
                             matrix.clone(),
                             RawWitness::Field(projected.clone()),
@@ -648,7 +629,6 @@ mod tests {
                         let got = prove_inner_raw(
                             &mut Blake3Transcript::new(),
                             &ctx,
-                            &reducer,
                             claim.clone(),
                             matrix,
                             RawWitness::Wide(input),
@@ -660,7 +640,6 @@ mod tests {
                             let got = prove_inner_structured_raw(
                                 &mut Blake3Transcript::new(),
                                 &ctx,
-                                &reducer,
                                 claim,
                                 &weights,
                                 &BlockScales {

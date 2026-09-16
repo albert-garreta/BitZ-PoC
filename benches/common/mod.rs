@@ -41,6 +41,8 @@ pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
+#[cfg(feature = "bench-peak-memory")]
+pub mod heap_run;
 #[cfg(feature = "span-metrics")]
 pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
@@ -965,4 +967,10 @@ pub fn ligerito_identity(
         "ligerito_hex".into(),
         f2z::ligerito_flock::ResolvedLigerito::encode_report(&ligerito_report(resolved, ood)),
     )
+}
+
+/// Per-trial detail timings, emitted after the captured proof/verification scopes.
+/// Retain each label separately so improvements cannot hide a slower inner sumcheck.
+pub fn print_regression_phases(phases: &[(String, f64)]) {
+    println!("REGRESSION_PHASES {}", serde_json::to_string(phases).expect("phase JSON"));
 }

@@ -9,10 +9,10 @@ use super::{
     univariate::{UnivariateSkipProof, lagrange_weights_at},
 };
 use crate::piop::spartan::{SpartanField, matrix::make_equality_factors};
-use crate::sumcheck::arithmetic::SumcheckProductReducer;
 use crate::sumcheck::{RoundBoundaryPolicy, SumcheckError, SumcheckProof};
 use crate::transcript::traits::Transcript;
 use field::FieldOps;
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 
 /// Public field constants for 1..=4 little-endian prefix bits.
 #[derive(Clone, Debug)]
@@ -32,6 +32,11 @@ pub fn prepare_univariate_skip<F: FieldOps>(
 ) -> Result<PreparedUnivariateSkip<F::Elem>, SumcheckError>
 where
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     if !(1..=4).contains(&skip_vars) {
         return Err(SumcheckError::InvalidProductDimensions);
@@ -103,8 +108,13 @@ pub fn prove_outer_zerocheck_with_skip<F, I: OuterRows>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<SkippedOuterOutput<F::Elem>, SumcheckError>
 where
-    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<F::Elem>,
+    F: OuterArithmetic<I::AB, I::C>,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     let prefix = prepare_prefix(
         field, transcript, prepared, tau_tail, &rows, factors, boundary,
@@ -129,8 +139,13 @@ fn finish_prefix<F>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<SkippedOuterOutput<F::Elem>, SumcheckError>
 where
-    F: FieldOps + SumcheckProductReducer<F::Elem>,
+    F: FieldOps,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     #[cfg(feature = "bench-internals")]
     let _phase = super::measure::Phase::start(3);
@@ -164,8 +179,13 @@ fn prepare_prefix<F, I: OuterRows>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<PreparedPrefix<F::Elem>, SumcheckError>
 where
-    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<F::Elem>,
+    F: OuterArithmetic<I::AB, I::C>,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     #[cfg(feature = "bench-internals")]
     let setup = super::measure::Phase::start(0);
@@ -320,8 +340,13 @@ fn prefix<F, I: OuterRows, const M: usize, const LANES: usize, const STEPS: usiz
     mut factors: EqualityFactors<F::Elem>,
 ) -> Result<PreparedPrefix<F::Elem>, SumcheckError>
 where
-    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<F::Elem>,
+    F: OuterArithmetic<I::AB, I::C>,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     debug_assert_eq!(M - 1, LANES);
     #[cfg(feature = "bench-internals")]
@@ -423,6 +448,11 @@ pub fn verify_outer_zerocheck_with_skip<F: FieldOps>(
 ) -> Result<SkippedOuterVerifierOutput<F::Elem>, SumcheckError>
 where
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     if prepared.modulus != F::Elem::canonical_modulus_encoding(field) {
         return Err(SumcheckError::FieldConfigurationMismatch);

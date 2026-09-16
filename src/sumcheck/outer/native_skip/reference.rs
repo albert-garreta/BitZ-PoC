@@ -1,6 +1,7 @@
 use super::super::univariate::{
     PrefixSkipK1, PrefixSkipK2, PrefixSkipK3, PrefixSkipK4, PrefixSkipSpec,
 };
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 // Exact native-u32 arithmetic for the univariate-prefix outer-sumcheck skip.
 //
 // The native R1CS product tables keep `Az` and `Bz` as exact `u32` values and
@@ -26,13 +27,13 @@ use crate::poly::mle::DenseMultilinearExtension;
 
 use crate::piop::spartan::{
     raw_monty::{NativeProducts, Raw, RawProducts},
-    sumcheck::{R1csProductMles, SumcheckError, SumcheckLinearReducer, SumcheckProductReducer},
+    sumcheck::{R1csProductMles, SumcheckError, SumcheckLinearReducer},
 };
 
 type Field = Fp<2>;
 type FieldConfig = field::FpCtx<2>;
 type LinearAccumulator<R> = <R as SumcheckLinearReducer>::Accumulator;
-type ProductAccumulator<R> = <R as SumcheckProductReducer<Field>>::Accumulator;
+type ProductAccumulator<R> = <R as BatchMulAcc<Field>>::Accumulator;
 
 /// Checked standalone entry point for native skip-message arithmetic.
 ///
@@ -52,7 +53,10 @@ pub(crate) fn compute_native_message<R>(
     reducer: &R,
 ) -> Result<Vec<Field>, SumcheckError>
 where
-    R: SumcheckLinearReducer + SumcheckProductReducer<Field>,
+    R: SumcheckLinearReducer
+        + BatchMulAcc<Field>
+        + Reduce<<R as BatchMulAcc<Field>>::Accumulator, Output = Field>
+        + Sync,
 {
     validate_native_inputs_for_skip(skip_vars, products)?;
     validate_equality_factors(equality_factors, products.az.num_vars - skip_vars)?;
@@ -80,7 +84,10 @@ pub(crate) fn native_message_validated<R>(
     reducer: &R,
 ) -> Result<Vec<Field>, SumcheckError>
 where
-    R: SumcheckLinearReducer + SumcheckProductReducer<Field>,
+    R: SumcheckLinearReducer
+        + BatchMulAcc<Field>
+        + Reduce<<R as BatchMulAcc<Field>>::Accumulator, Output = Field>
+        + Sync,
 {
     match skip_vars {
         1 => native_message_for::<PrefixSkipK1, 2, 1, R>(
@@ -506,7 +513,10 @@ fn native_message_for<S, const M: usize, const LANES: usize, R>(
 ) -> Result<Vec<Field>, SumcheckError>
 where
     S: PrefixSkipSpec<InterpolatedAB = i64, Residual = i128>,
-    R: SumcheckLinearReducer + SumcheckProductReducer<Field>,
+    R: SumcheckLinearReducer
+        + BatchMulAcc<Field>
+        + Reduce<<R as BatchMulAcc<Field>>::Accumulator, Output = Field>
+        + Sync,
 {
     debug_assert_eq!(S::BLOCK_LEN, M);
     debug_assert!(validate_native_inputs::<M>(products).is_ok());
@@ -579,10 +589,8 @@ where
 
     let mut message = outer
         .into_iter()
-        .map(|accumulator| {
-            <R as SumcheckProductReducer<Field>>::reduce(reducer, accumulator, field_cfg)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|accumulator| Reduce::reduce(reducer, accumulator))
+        .collect::<Vec<_>>();
 
     // The last lane accumulated Delta^(M-1) A * Delta^(M-1) B.  Dividing by
     // ((M - 1)!)^2 converts it to the coefficient of Y^(2M - 2), i.e.
@@ -613,7 +621,10 @@ fn accumulate_high_bucket<const M: usize, const LANES: usize, R>(
     field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) -> Result<(), SumcheckError>
 where
-    R: SumcheckLinearReducer + SumcheckProductReducer<Field>,
+    R: SumcheckLinearReducer
+        + BatchMulAcc<Field>
+        + Reduce<<R as BatchMulAcc<Field>>::Accumulator, Output = Field>
+        + Sync,
 {
     debug_assert_eq!(LANES, finite_lagrange.len() + 1);
     let mut inner = linear_limb_accumulators::<LANES, R>(reducer);
@@ -656,12 +667,7 @@ where
         let low = <R as SumcheckLinearReducer>::reduce(reducer, low, &field_config)?;
         let high = <R as SumcheckLinearReducer>::reduce(reducer, high, &field_config)?;
         let value = (field_config).add(&low, &(field_config).mul(&high, two_to_64));
-        <R as SumcheckProductReducer<Field>>::multiply_accumulate(
-            reducer,
-            outer,
-            high_weight,
-            &value,
-        );
+        <R as BatchMulAcc<Field>>::mul_acc(reducer, outer, high_weight, &value);
     }
     Ok(())
 }
@@ -984,9 +990,9 @@ where
 #[cfg(test)]
 fn product_accumulators<const LANES: usize, R>(reducer: &R) -> [ProductAccumulator<R>; LANES]
 where
-    R: SumcheckProductReducer<Field>,
+    R: BatchMulAcc<Field> + Reduce<<R as BatchMulAcc<Field>>::Accumulator, Output = Field> + Sync,
 {
-    std::array::from_fn(|_| <R as SumcheckProductReducer<Field>>::accumulator_zero(reducer))
+    std::array::from_fn(|_| <R as BatchMulAcc<Field>>::Accumulator::zero())
 }
 
 #[cfg(feature = "parallel")]
@@ -996,11 +1002,11 @@ fn merge_product_accumulators<const LANES: usize, R>(
     right: [ProductAccumulator<R>; LANES],
     reducer: &R,
 ) where
-    R: SumcheckProductReducer<Field>,
+    R: BatchMulAcc<Field> + Reduce<<R as BatchMulAcc<Field>>::Accumulator, Output = Field> + Sync,
 {
     debug_assert_eq!(left.len(), right.len());
     for (left, right) in left.iter_mut().zip(right) {
-        <R as SumcheckProductReducer<Field>>::merge(reducer, left, right);
+        left.merge_assign(&right);
     }
 }
 

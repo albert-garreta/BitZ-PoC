@@ -31,7 +31,7 @@ use crate::{
         matrix::eq_table,
         protocol::{check_boundary, f2z_generator, grind_boundary},
         sha256::inner_sumcheck::{
-            ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck,
+            ColumnMajorPackedBits, prove_composite_inner_sumcheck,
         },
         squeeze_field,
         sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
@@ -256,7 +256,6 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
             prefix_vars,
             &cfg,
-            &reducer,
             security.inner,
         )
         .map_err(error)?
@@ -379,15 +378,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         linear_batch_weight,
         &cfg,
     )?;
-    let (inner_eval_point, inner_final_claim) = verify_sha256_inner_sumcheck(
-        transcript,
-        inner_claim.claimed_sum().clone(),
-        &proof.inner,
-        &proof.inner_nonces,
-        prepared.h_layout.row_vars + prepared.h_layout.col_vars,
-        &cfg,
-        security.inner,
-    )
+    let (inner_eval_point, inner_final_claim) = proof.inner.verify_grinded::<crate::sumcheck::inner::packed::Sha256InnerGrinding>(transcript, inner_claim.claimed_sum().clone(), prepared.h_layout.row_vars + prepared.h_layout.col_vars, &cfg, &proof.inner_nonces, security.inner)
     .map_err(error)?;
     // inner_final_claim ≡ scale · h(inner_eval_point) (mod q).
     let scale = mod_q_coefficients.evaluate_batched_matrix_mle(

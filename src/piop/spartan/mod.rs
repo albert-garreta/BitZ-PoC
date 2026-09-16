@@ -205,7 +205,8 @@ pub trait SpartanField:
     Copy + core::fmt::Debug + Eq + Send + Sync + field::CtEq + field::CtSelect
 {
     type Inner: Clone + core::fmt::Debug + Eq + Send + Sync;
-    type Config: sumcheck::SumcheckProductReducer<Self>
+    type Config: field::BatchMulAcc<Self>
+        + field::Reduce<<Self::Config as field::BatchMulAcc<Self>>::Accumulator, Output = Self>
         + crate::sumcheck::outer::OuterArithmetic<Self, Self>
         + field::BatchFieldOps<Elem = Self>
         + field::CanonicalCodec<Self>

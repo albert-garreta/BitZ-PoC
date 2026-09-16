@@ -5,12 +5,10 @@ use crate::piop::spartan::SpartanField;
 use crate::sumcheck::arithmetic::{outer_fold_grain, parallel_outer_fold, should_parallelize};
 use crate::sumcheck::{
     SumcheckError,
-    arithmetic::{
-        SumcheckProductReducer, merge_accumulators, reduce_two_accumulators_bounded,
-        reduce_two_prepared,
-    },
+    arithmetic::{merge_accumulators, reduce_two_accumulators_bounded, reduce_two_prepared},
 };
 use field::PreparedLinearCombination;
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -79,8 +77,13 @@ pub(super) fn integer_buckets<F, AB, C, const LANES: usize>(
     ) + Sync,
 ) -> Result<[F::Elem; LANES], SumcheckError>
 where
-    F: OuterArithmetic<AB, C> + SumcheckProductReducer<F::Elem>,
+    F: OuterArithmetic<AB, C>,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     let one = [field.one()];
     let (low, high) = weights.buckets(&one);
@@ -89,15 +92,14 @@ where
         "equality bucket exceeds accumulator bound"
     );
     let prepared = field.prepare_weights(low);
-    let zero = || core::array::from_fn(|_| field.accumulator_zero());
-    let bucket = |mut outer: [<F as SumcheckProductReducer<F::Elem>>::Accumulator; LANES],
-                  h: usize| {
+    let zero = || core::array::from_fn(|_| <F as BatchMulAcc<F::Elem>>::Accumulator::zero());
+    let bucket = |mut outer: [<F as BatchMulAcc<F::Elem>>::Accumulator; LANES], h: usize| {
         let mut inner = core::array::from_fn(|_| field.accumulator());
         for l in 0..low.len() {
             accumulate(&mut inner, &prepared, h * low.len() + l, l);
         }
         for (out, inner) in outer.iter_mut().zip(inner) {
-            field.multiply_accumulate(out, &high[h], &field.finish_accumulator(&prepared, inner));
+            field.mul_acc(out, &high[h], &field.finish_accumulator(&prepared, inner));
         }
         outer
     };
@@ -107,7 +109,7 @@ where
             .into_par_iter()
             .with_min_len(1024usize.div_ceil(low.len()))
             .fold(zero, bucket)
-            .reduce(zero, |a, b| merge_accumulators(a, b, field))
+            .reduce(zero, |a, b| merge_accumulators(a, b))
     } else {
         (0..high.len()).fold(zero(), bucket)
     };
@@ -115,7 +117,7 @@ where
     let total = (0..high.len()).fold(zero(), bucket);
     let mut result = [field.zero(); LANES];
     for (r, a) in result.iter_mut().zip(total) {
-        *r = SumcheckProductReducer::reduce_bounded(field, a, high.len(), field)?;
+        *r = field.prepare_reduce(high.len())(a);
     }
     Ok(result)
 }
@@ -130,8 +132,13 @@ pub(super) fn fold_and_message<F>(
     fold: impl FoldRows<F::Elem>,
 ) -> Result<Option<[F::Elem; 2]>, SumcheckError>
 where
-    F: SumcheckProductReducer<F::Elem> + field::FieldOps,
+    F: field::FieldOps,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     if products.az.len() == 1 {
         let [a, b, c] = fold.fold(0);
@@ -158,11 +165,16 @@ fn fold_buckets<F>(
     fold: impl FoldRows<F::Elem>,
 ) -> Result<Option<[F::Elem; 2]>, SumcheckError>
 where
-    F: SumcheckProductReducer<F::Elem> + field::FieldOps,
+    F: field::FieldOps,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
-    let inner_reduction = field.prepare_reduction(low.len(), field);
-    let zero = || core::array::from_fn(|_| field.accumulator_zero());
+    let inner_reduction = field.prepare_reduce(low.len());
+    let zero = || core::array::from_fn(|_| <F as BatchMulAcc<F::Elem>>::Accumulator::zero());
     let bucket = |h: usize, a: &mut [F::Elem], b: &mut [F::Elem], c: &mut [F::Elem]| {
         let mut inner = zero();
         for (l, w) in low.iter().enumerate() {
@@ -179,10 +191,10 @@ where
                 &mut inner, w, endpoint, &a0, &a1, &b0, &b1, &c0, &c1, field, field,
             );
         }
-        let values = reduce_two_prepared(inner, field, &inner_reduction, field)?;
+        let values = reduce_two_prepared(inner, &inner_reduction);
         let mut out = zero();
         for (a, v) in out.iter_mut().zip(values) {
-            field.multiply_accumulate(a, &high[h], &v);
+            field.mul_acc(a, &high[h], &v);
         }
         Ok::<_, SumcheckError>(out)
     };
@@ -198,9 +210,9 @@ where
             .with_min_len(min_buckets)
             .enumerate()
             .try_fold(zero, |outer, (h, (a, b, c))| {
-                Ok::<_, SumcheckError>(merge_accumulators(outer, bucket(h, a, b, c)?, field))
+                Ok::<_, SumcheckError>(merge_accumulators(outer, bucket(h, a, b, c)?))
             })
-            .try_reduce(zero, |a, b| Ok(merge_accumulators(a, b, field)))?;
+            .try_reduce(zero, |a, b| Ok(merge_accumulators(a, b)))?;
         return Ok(Some(reduce_two_accumulators_bounded(
             total,
             field,
@@ -216,7 +228,7 @@ where
         .zip(products.cz.chunks_mut(chunk))
         .enumerate()
     {
-        total = merge_accumulators(total, bucket(h, a, b, c)?, field);
+        total = merge_accumulators(total, bucket(h, a, b, c)?);
     }
     Ok(Some(reduce_two_accumulators_bounded(
         total,

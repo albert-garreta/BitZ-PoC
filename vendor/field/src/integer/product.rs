@@ -433,6 +433,10 @@ impl<const A: usize, const B: usize> WideMul<Z<A>, Z<B>> for IntegerOps {
 
 impl<const A: usize, const B: usize> BatchMulAcc<Uint<A>, Uint<B>> for IntegerOps {
     type Accumulator = UintAccumulator<A, B>;
+    #[inline(always)]
+    fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &Uint<A>, rhs: &Uint<B>) {
+        acc.mac(lhs, rhs);
+    }
     fn batch_mul_acc(&self, lhs: &[Uint<A>], rhs: &[Uint<B>]) -> Self::Accumulator {
         assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
         self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))
@@ -454,6 +458,10 @@ macro_rules! signed_batch {
     ($lhs:ident, $rhs:ident) => {
         impl<const A: usize, const B: usize> BatchMulAcc<$lhs<A>, $rhs<B>> for IntegerOps {
             type Accumulator = ZAccumulator<A, B>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &$lhs<A>, rhs: &$rhs<B>) {
+                acc.add_product(self.mul_wide(lhs, rhs));
+            }
             fn batch_mul_acc(&self, lhs: &[$lhs<A>], rhs: &[$rhs<B>]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))

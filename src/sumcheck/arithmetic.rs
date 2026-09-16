@@ -2,53 +2,18 @@
 use super::SumcheckError;
 use crate::piop::spartan::SpartanField;
 use crate::poly::mle::DenseMultilinearExtension;
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 #[cfg(test)]
 use field::{CtMask, CtSelect};
 use field::{Fp, RingOps};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-/// Protocol accumulation hook for shared delayed products and the independent
-/// test oracle. Workers merge exact products before the shared context reduces.
-#[doc(hidden)]
-pub trait SumcheckProductReducer<F>: Sync
-where
-    F: SpartanField,
-{
-    type Accumulator: Send;
-
-    type PreparedReduction<'a>: Send + Sync where Self: 'a;
-    fn prepare_reduction(&self, max_terms: usize, config: &F::Config) -> Self::PreparedReduction<'_>;
-    fn reduce_prepared(&self, accumulator: Self::Accumulator, prepared: &Self::PreparedReduction<'_>, config: &F::Config) -> Result<F, SumcheckError> {
-        let _ = prepared;
-        self.reduce(accumulator, config)
-    }
-    fn accumulator_zero(&self) -> Self::Accumulator;
-    fn multiply_accumulate(&self, accumulator: &mut Self::Accumulator, lhs: &F, rhs: &F);
-    fn merge(&self, accumulator: &mut Self::Accumulator, other: Self::Accumulator);
-    fn reduce(
-        &self,
-        accumulator: Self::Accumulator,
-        config: &F::Config,
-    ) -> Result<F, SumcheckError>;
-    /// The caller bounds every MAC contributing to this exact accumulator,
-    /// including merged workers, using public dimensions only.
-    fn reduce_bounded(
-        &self,
-        accumulator: Self::Accumulator,
-        max_terms: usize,
-        config: &F::Config,
-    ) -> Result<F, SumcheckError> {
-        let _ = max_terms;
-        self.reduce(accumulator, config)
-    }
-}
-
 /// Native-linear accumulation policy used only at the u32 prover's first
 /// sumcheck round and native-to-field fold boundary.
 ///
 /// A separate trait keeps the Montgomery scale visible: these accumulators
 /// contain `field * u64` terms (`R` scaling), unlike the `field * field`
-/// products (`R^2` scaling) handled by [`SumcheckProductReducer`].
+/// products (`R^2` scaling) handled by the field library.
 pub(crate) trait SumcheckLinearReducer: Sync {
     type Accumulator: Send;
 
@@ -61,43 +26,6 @@ pub(crate) trait SumcheckLinearReducer: Sync {
         accumulator: Self::Accumulator,
         config: &field::FpCtx<2>,
     ) -> Result<Fp<2>, SumcheckError>;
-}
-
-impl<const L: usize> SumcheckProductReducer<Fp<L>> for field::FpCtx<L> {
-    type Accumulator = field::FpProductAcc<L>;
-    type PreparedReduction<'a> = field::PreparedProductReduction<'a, L>;
-    fn prepare_reduction(&self, max_terms: usize, _: &Self) -> Self::PreparedReduction<'_> {
-        self.prepare_product_reduction(max_terms)
-    }
-    #[inline(always)]
-    fn reduce_prepared(&self, acc: Self::Accumulator, prepared: &Self::PreparedReduction<'_>, _: &Self) -> Result<Fp<L>, SumcheckError> {
-        Ok(prepared.reduce(acc))
-    }
-    #[inline]
-    fn accumulator_zero(&self) -> Self::Accumulator {
-        Self::Accumulator::default()
-    }
-    #[inline]
-    fn multiply_accumulate(&self, acc: &mut Self::Accumulator, lhs: &Fp<L>, rhs: &Fp<L>) {
-        acc.accumulate(lhs, rhs);
-    }
-    #[inline]
-    fn merge(&self, acc: &mut Self::Accumulator, other: Self::Accumulator) {
-        *acc += other;
-    }
-    #[inline]
-    fn reduce(&self, acc: Self::Accumulator, _field: &Self) -> Result<Fp<L>, SumcheckError> {
-        Ok(field::Reduce::reduce(self, acc))
-    }
-    #[inline]
-    fn reduce_bounded(
-        &self,
-        acc: Self::Accumulator,
-        max_terms: usize,
-        _field: &Self,
-    ) -> Result<Fp<L>, SumcheckError> {
-        Ok(self.reduce_product_with_public_bound(acc, max_terms))
-    }
 }
 
 impl SumcheckLinearReducer for field::FpCtx<2> {
@@ -131,6 +59,7 @@ impl SumcheckLinearReducer for field::FpCtx<2> {
 /// Independent unbounded integer oracle, used only by differential tests.
 #[cfg(test)]
 pub(crate) struct BigUintSumcheckOracle {
+    field: field::FpCtx<2>,
     modulus: num_bigint::BigUint,
     linear_correction: num_bigint::BigUint,
     product_correction: num_bigint::BigUint,
@@ -144,6 +73,7 @@ impl BigUintSumcheckOracle {
         let linear_correction = r.modpow(&(&modulus - BigUint::from(2u8)), &modulus);
         let product_correction = (&linear_correction * &linear_correction) % &modulus;
         Ok(Self {
+            field: field.clone(),
             modulus,
             linear_correction,
             product_correction,
@@ -163,27 +93,45 @@ impl BigUintSumcheckOracle {
     }
 }
 #[cfg(test)]
-impl SumcheckProductReducer<Fp<2>> for BigUintSumcheckOracle {
-    type Accumulator = num_bigint::BigUint;
-    type PreparedReduction<'a> = ();
-    fn prepare_reduction(&self, _: usize, _: &field::FpCtx<2>) {}
-
-    fn accumulator_zero(&self) -> Self::Accumulator {
-        num_bigint::BigUint::from(0u8)
+pub(crate) struct OracleProductAcc(num_bigint::BigUint);
+#[cfg(test)]
+impl field::MergeAccumulator for OracleProductAcc {
+    fn zero() -> Self {
+        Self(num_bigint::BigUint::from(0u8))
     }
-    fn multiply_accumulate(&self, acc: &mut Self::Accumulator, lhs: &Fp<2>, rhs: &Fp<2>) {
-        *acc += num_bigint::BigUint::from(u128::from(*lhs.as_montgomery_integer()))
+    fn merge_assign(&mut self, rhs: &Self) {
+        self.0 += &rhs.0;
+    }
+}
+#[cfg(test)]
+impl field::BatchMulAcc<Fp<2>> for BigUintSumcheckOracle {
+    type Accumulator = OracleProductAcc;
+    fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &Fp<2>, rhs: &Fp<2>) {
+        acc.0 += num_bigint::BigUint::from(u128::from(*lhs.as_montgomery_integer()))
             * num_bigint::BigUint::from(u128::from(*rhs.as_montgomery_integer()));
     }
-    fn merge(&self, acc: &mut Self::Accumulator, other: Self::Accumulator) {
-        *acc += other;
+    fn batch_mul_acc(&self, lhs: &[Fp<2>], rhs: &[Fp<2>]) -> Self::Accumulator {
+        assert_eq!(lhs.len(), rhs.len());
+        self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))
     }
-    fn reduce(
+    fn batch_mul_acc_map(
         &self,
-        acc: Self::Accumulator,
-        field: &field::FpCtx<2>,
-    ) -> Result<Fp<2>, SumcheckError> {
-        Ok(self.finish(acc, &self.product_correction, field))
+        len: usize,
+        mut term: impl FnMut(usize) -> (Fp<2>, Fp<2>),
+    ) -> Self::Accumulator {
+        let mut acc = OracleProductAcc::zero();
+        for i in 0..len {
+            let (a, b) = term(i);
+            self.mul_acc(&mut acc, &a, &b);
+        }
+        acc
+    }
+}
+#[cfg(test)]
+impl field::Reduce<OracleProductAcc> for BigUintSumcheckOracle {
+    type Output = Fp<2>;
+    fn reduce(&self, acc: OracleProductAcc) -> Self::Output {
+        self.finish(acc.0, &self.product_correction, &self.field)
     }
 }
 #[cfg(test)]
@@ -208,88 +156,79 @@ impl SumcheckLinearReducer for BigUintSumcheckOracle {
 }
 
 #[inline]
-pub(crate) fn merge_accumulators<F, R, const COEFFS: usize>(
-    mut left: [R::Accumulator; COEFFS],
-    right: [R::Accumulator; COEFFS],
-    reducer: &R,
-) -> [R::Accumulator; COEFFS]
-where
-    F: SpartanField,
-    R: SumcheckProductReducer<F>,
-{
+pub(crate) fn merge_accumulators<A: MergeAccumulator, const COEFFS: usize>(
+    mut left: [A; COEFFS],
+    right: [A; COEFFS],
+) -> [A; COEFFS] {
     for (left, right) in left.iter_mut().zip(right) {
-        reducer.merge(left, right);
+        left.merge_assign(&right);
     }
     left
 }
 
 #[inline]
 pub(crate) fn reduce_two_accumulators<F, R>(
-    accumulators: [R::Accumulator; 2],
-    reducer: &R,
-    config: &F::Config,
+    [a, b]: [<R as BatchMulAcc<F>>::Accumulator; 2],
+    field: &R,
+    _: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
-    let [c0, c2] = accumulators;
-    Ok([reducer.reduce(c0, config)?, reducer.reduce(c2, config)?])
+    Ok([Reduce::reduce(field, a), Reduce::reduce(field, b)])
 }
 
 #[inline(always)]
-pub(crate) fn reduce_two_prepared<F: SpartanField, R: SumcheckProductReducer<F>>(
-    [a, b]: [R::Accumulator; 2], reducer: &R, prepared: &R::PreparedReduction<'_>, config: &F::Config,
-) -> Result<[F; 2], SumcheckError> {
-    Ok([reducer.reduce_prepared(a, prepared, config)?, reducer.reduce_prepared(b, prepared, config)?])
+pub(crate) fn reduce_two_prepared<A, E>([a, b]: [A; 2], reduce: &impl Fn(A) -> E) -> [E; 2] {
+    [reduce(a), reduce(b)]
 }
 
 #[inline]
 pub(crate) fn reduce_two_accumulators_bounded<F, R>(
-    accumulators: [R::Accumulator; 2],
-    reducer: &R,
+    accumulators: [<R as BatchMulAcc<F>>::Accumulator; 2],
+    field: &R,
     max_terms: usize,
-    config: &F::Config,
+    _: &F::Config,
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
-    let [a, b] = accumulators;
-    Ok([
-        reducer.reduce_bounded(a, max_terms, config)?,
-        reducer.reduce_bounded(b, max_terms, config)?,
-    ])
+    Ok(reduce_two_prepared(
+        accumulators,
+        &field.prepare_reduce(max_terms),
+    ))
 }
 
 pub(crate) fn sum_product_accumulators<F, R, const COEFFS: usize>(
     len: usize,
-    contribution: impl Fn(&mut [R::Accumulator; COEFFS], usize) + Sync,
+    contribution: impl Fn(&mut [<R as BatchMulAcc<F>>::Accumulator; COEFFS], usize) + Sync,
     reducer: &R,
-) -> [R::Accumulator; COEFFS]
+) -> [<R as BatchMulAcc<F>>::Accumulator; COEFFS]
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     #[cfg(feature = "parallel")]
     if should_parallelize(len) {
         return (0..len)
             .into_par_iter()
             .fold(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
                 |mut accumulators, index| {
                     contribution(&mut accumulators, index);
                     accumulators
                 },
             )
             .reduce(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
-                |left, right| merge_accumulators(left, right, reducer),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
+                |left, right| merge_accumulators(left, right),
             );
     }
 
     (0..len).fold(
-        std::array::from_fn(|_| reducer.accumulator_zero()),
+        std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
         |mut accumulators, index| {
             contribution(&mut accumulators, index);
             accumulators

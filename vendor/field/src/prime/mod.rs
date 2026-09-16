@@ -15,7 +15,7 @@ pub use sampling::*;
 mod dot;
 mod fold;
 mod prepared_linear;
-pub use prepared_linear::{PreparedWordWeights, PreparedProductReduction};
+pub use prepared_linear::{PreparedProductReduction, PreparedWordWeights};
 mod operators;
 mod projection;
 pub use projection::PreparedSignedProjection;
@@ -404,6 +404,8 @@ macro_rules! impl_prime {
         }
         impl<$($generic)*> BatchMulAcc<PrimeValue<$id, L>> for $provider {
             type Accumulator = PrimeProductAcc<$id, L>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &PrimeValue<$id, L>, rhs: &PrimeValue<$id, L>) { acc.accumulate(lhs, rhs); }
             fn batch_mul_acc(&self, lhs: &[PrimeValue<$id, L>], rhs: &[PrimeValue<$id, L>]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))
@@ -418,6 +420,10 @@ macro_rules! impl_prime {
             type Output = PrimeValue<$id, L>;
             fn reduce(&self, input: PrimeProductAcc<$id, L>) -> Self::Output {
                 PrimeValue::new(self.params().reduce_product_acc(&input.payload))
+            }
+            fn prepare_reduce(&self, max_terms: usize) -> impl Fn(PrimeProductAcc<$id, L>) -> Self::Output + Send + Sync + '_ {
+                let prepared = PreparedProductReduction::<L, $id>::new(self.params(), max_terms);
+                move |acc| prepared.reduce(acc)
             }
         }
         impl<$($generic)*> Reduce<PrimeProduct<$id, L>> for $provider {
@@ -453,6 +459,8 @@ macro_rules! impl_prime {
         }
         impl<$($generic)*, const N: usize> BatchMulAcc<PrimeValue<$id, L>, Uint<N>> for $provider {
             type Accumulator = PrimeLinearAcc<$id, L, N>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &PrimeValue<$id, L>, rhs: &Uint<N>) { acc.accumulate(lhs, rhs); }
             fn batch_mul_acc(&self, lhs: &[PrimeValue<$id, L>], rhs: &[Uint<N>]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))
@@ -469,6 +477,8 @@ macro_rules! impl_prime {
         }
         impl<$($generic)*, const N: usize> BatchMulAcc<PrimeValue<$id, L>, Z<N>> for $provider {
             type Accumulator = PrimeSignedLinearAcc<$id, L, N>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &PrimeValue<$id, L>, rhs: &Z<N>) { acc.accumulate(lhs, rhs); }
             fn batch_mul_acc(&self, lhs: &[PrimeValue<$id, L>], rhs: &[Z<N>]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))
@@ -535,6 +545,8 @@ macro_rules! native_operand {
         }
         impl<$($generic)*> BatchMulAcc<PrimeValue<$id, L>, $native> for $provider {
             type Accumulator = PrimeLinearAcc<$id, L, $n>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &PrimeValue<$id, L>, rhs: &$native) { acc.accumulate(lhs, &($convert)(*rhs)); }
             fn batch_mul_acc(&self, lhs: &[PrimeValue<$id, L>], rhs: &[$native]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], rhs[i]))
@@ -562,6 +574,8 @@ macro_rules! native_signed_operand {
         }
         impl<$($generic)*> BatchMulAcc<PrimeValue<$id, L>, $native> for $provider {
             type Accumulator = PrimeSignedLinearAcc<$id, L, $n>;
+            #[inline(always)]
+            fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &PrimeValue<$id, L>, rhs: &$native) { acc.accumulate(lhs, &($convert)(*rhs)); }
             fn batch_mul_acc(&self, lhs: &[PrimeValue<$id, L>], rhs: &[$native]) -> Self::Accumulator {
                 assert_eq!(lhs.len(), rhs.len(), "batch input lengths differ");
                 self.batch_mul_acc_map(lhs.len(), |i| (lhs[i], ($convert)(rhs[i])))

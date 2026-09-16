@@ -7,6 +7,7 @@ use crate::sumcheck::{
     },
     proof::OuterSumcheckOutput,
 };
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
@@ -31,10 +32,7 @@ use super::{
         make_equality_factors_raw,
     },
     squeeze_field,
-    sumcheck::{
-        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
-        prove_inner_sumcheck_with_reducer,
-    },
+    sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof},
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
@@ -125,14 +123,12 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let reducer = matrices.config().clone();
-    prove_spartan_piop_with_reducer(
+    prove_spartan_piop_field_tables(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
         assignment,
-        &reducer,
     )
 }
 
@@ -160,15 +156,13 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let reducer = matrices.config().clone();
-    prove_spartan_piop_with_univariate_skip_and_reducer(
+    prove_spartan_piop_skipped_field_tables(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
         assignment,
         skip_vars,
-        &reducer,
     )
 }
 
@@ -405,7 +399,6 @@ where
         inner_sumcheck_raw(
             transcript,
             &ctx,
-            &reducer,
             matrices,
             inner_initial_claim,
             RowFunctional::Point(&outer.eval_points),
@@ -456,18 +449,16 @@ where
     )
 }
 
-fn prove_spartan_piop_with_reducer<F, C, R>(
+fn prove_spartan_piop_field_tables<F, C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<F, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<F>,
     assignment: DenseMultilinearExtension<F>,
-    reducer: &R,
 ) -> Result<(SpartanPiopProof<F>, ScaledMleEvaluationClaim<F>), SpartanError>
 where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
-    R: SumcheckProductReducer<F>,
 {
     {
         let _g = tracing::info_span!("sp:validate").entered();
@@ -513,14 +504,15 @@ where
     };
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        prove_inner_sumcheck_with_reducer(
+        crate::sumcheck::inner::prove_inner_sumcheck(
+            field_config,
             transcript,
             inner_initial_claim,
-            batched_matrix,
-            assignment,
-            field_config,
-            reducer,
-        )?
+            assignment.evaluations,
+            batched_matrix.evaluations,
+            &mut UngrindedRoundBoundary,
+        )
+        .map(super::sumcheck::InnerSumcheckOutput::from)?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
@@ -536,14 +528,13 @@ where
     Ok((proof, claim))
 }
 
-fn prove_spartan_piop_with_univariate_skip_and_reducer<F, C, R>(
+fn prove_spartan_piop_skipped_field_tables<F, C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<F, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<F>,
     assignment: DenseMultilinearExtension<F>,
     skip_vars: usize,
-    reducer: &R,
 ) -> Result<
     (
         UnivariateSkipSpartanPiopProof<F>,
@@ -554,7 +545,6 @@ fn prove_spartan_piop_with_univariate_skip_and_reducer<F, C, R>(
 where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
-    R: SumcheckProductReducer<F>,
 {
     validate_prover_inputs(matrices, &products, &assignment)?;
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
@@ -600,14 +590,15 @@ where
     };
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        prove_inner_sumcheck_with_reducer(
+        crate::sumcheck::inner::prove_inner_sumcheck(
+            field_config,
             transcript,
             inner_initial_claim,
-            batched_matrix,
-            assignment,
-            field_config,
-            reducer,
-        )?
+            assignment.evaluations,
+            batched_matrix.evaluations,
+            &mut UngrindedRoundBoundary,
+        )
+        .map(super::sumcheck::InnerSumcheckOutput::from)?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
@@ -623,7 +614,7 @@ where
 }
 
 /// The raw-table Spartan prover for field-valued products: identical
-/// statement, transcript, and proof to [`prove_spartan_piop_with_reducer`]
+/// statement, transcript, and proof to [`prove_spartan_piop_field_tables`]
 /// with the delayed-Barrett reducer, on 16-byte residue tables.
 fn prove_spartan_piop_raw_field<C>(
     transcript: &mut impl Transcript,
@@ -681,7 +672,6 @@ where
         inner_sumcheck_raw(
             transcript,
             &ctx,
-            &reducer,
             matrices,
             inner_initial_claim,
             RowFunctional::Point(&outer.eval_points),
@@ -765,7 +755,6 @@ where
         inner_sumcheck_raw(
             transcript,
             &ctx,
-            &reducer,
             matrices,
             inner_initial_claim,
             RowFunctional::Prefix(&row_factors),
