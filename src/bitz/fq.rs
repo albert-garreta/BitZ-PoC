@@ -35,6 +35,14 @@ static MU_LO: AtomicU64 = AtomicU64::new(MU100 as u64);
 static MU_HI: AtomicU64 = AtomicU64::new((MU100 >> 64) as u64);
 static BITS: AtomicU32 = AtomicU32::new(BITS100);
 
+/// Tests that install a modulus hold this: the modulus is process-wide
+/// and the test harness runs tests in parallel.
+#[cfg(test)]
+pub(crate) fn test_modulus_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// The installed modulus.
 #[inline]
 pub fn modulus() -> u128 {

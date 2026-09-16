@@ -10,12 +10,9 @@
 //! virtual opening.
 
 use circuit::Circuit;
-use circuit::constraints::ConstraintGenerator;
 use circuit::matrix_transpose::{MTransposeGenerator, MaterializedMTranspose};
 use circuit::witgen::Witgen;
 use flock_core::merkle::HashKind;
-
-use std::sync::Mutex;
 
 use circuit::witgen::PackedWitness;
 
@@ -23,8 +20,9 @@ use super::fq::{Fq, Q, modulus, set_modulus};
 use super::map::map_digest;
 use super::params::{BitZParams, LinearClaim, Root, Shape, MIN_LOG_BITS};
 use super::pcs::{CommitError, Pcs};
+use super::generator::{CompactCircuit, CompactGenerator};
 use super::spartan::{
-    LoweredScratch, MatrixError, PreparedConstraintMatrices, PreparedIntegerMatrices, Products,
+    MapRows, MatrixError, PreparedConstraintMatrices, PreparedIntegerMatrices, Products,
     ScaledMleEvaluationClaim, SpartanError, SpartanPiopProof, eq_table, prove_spartan_piop,
     prove_spartan_piop_absorbed, verify_spartan_proof, verify_spartan_proof_absorbed,
 };
@@ -139,7 +137,8 @@ pub struct Witness {
     committed_row: Vec<u64>,
     virtual_bits: VirtualTable,
     products: Products,
-    assignment: Vec<Fq>,
+    /// `h` as bits: the provers read it in place.
+    assignment: PackedWitness,
 }
 
 impl Witness {
@@ -155,9 +154,30 @@ impl Witness {
         &self.products
     }
 
-    pub fn assignment(&self) -> &[Fq] {
+    pub fn assignment(&self) -> &PackedWitness {
         &self.assignment
     }
+}
+
+/// The circuit through the compact backend and the vendored transpose
+/// recorder: the compact R1CS, `M^T`, and `M`'s rows for the digests.
+fn synthesize<S: CircuitStatement>(
+    statement: &S,
+) -> Result<(CompactCircuit, MaterializedMTranspose, MapRows), Error> {
+    let mut constraints = CompactGenerator::new(statement.input_bits());
+    let inputs = constraints.inputs();
+    statement.synthesize(&mut constraints, &inputs)?;
+    let circuit = constraints.finish()?;
+    let mut generator = MTransposeGenerator::new(statement.input_bits());
+    let inputs = generator.take_inputs();
+    statement.synthesize(&mut generator, &inputs)?;
+    let map = generator.finish();
+    if map.row_count() != circuit.h_len || map.column_count() != circuit.f_len {
+        return Err(Error::Configuration("map and assignment dimensions differ"));
+    }
+    let (column_offsets, row_indices) = map.csc();
+    let rows = MapRows::from_csc(column_offsets, row_indices, map.row_count());
+    Ok((circuit, map, rows))
 }
 
 /// Their `Proof`, plus the terminal claim the prover derived (the verifier
@@ -173,19 +193,9 @@ pub struct Proof {
 impl<S: CircuitStatement> Prepared<S> {
     /// Their `Prepared::new`.
     pub fn new(statement: S) -> Result<Self, Error> {
-        let mut constraints = ConstraintGenerator::new(statement.input_bits());
-        let inputs: Vec<_> = (0..statement.input_bits())
-            .map(|i| constraints.input(i))
-            .collect();
-        statement.synthesize(&mut constraints, &inputs)?;
-        let matrices = PreparedConstraintMatrices::from_vendored(&constraints.into_matrices())?;
-        let mut generator = MTransposeGenerator::new(statement.input_bits());
-        let inputs = generator.take_inputs();
-        statement.synthesize(&mut generator, &inputs)?;
-        let map = generator.finish();
-        if map.row_count() != matrices.column_count() {
-            return Err(Error::Configuration("map and assignment dimensions differ"));
-        }
+        let (circuit, map, rows) = synthesize(&statement)?;
+        let matrices = PreparedConstraintMatrices::from_compact(circuit.matrices, &rows)?;
+        drop(rows);
         let claim_shape = shape_for(map.row_count())?;
         let committed_shape = shape_for(map.column_count() - 1)?;
         let params = BitZParams::new(claim_shape, Q, self::generator())
@@ -253,7 +263,7 @@ impl<S: CircuitStatement> Prepared<S> {
         if !products.satisfied() {
             return Err(Error::Unsatisfied);
         }
-        let assignment = self.matrices.assignment(&h)?;
+        self.matrices.check_assignment(&h)?;
         let mut committed_row = f.words().to_vec();
         committed_row.resize((1 << self.committed_shape.log_bits()) / 64, 0);
         let virtual_bits = VirtualTable::new(self.params.shape(), h.words(), h.bit_len());
@@ -261,7 +271,7 @@ impl<S: CircuitStatement> Prepared<S> {
             committed_row,
             virtual_bits,
             products,
-            assignment,
+            assignment: h,
         })
     }
 
@@ -357,17 +367,6 @@ pub struct PreparedSampled<S> {
     committed_shape: Shape,
     pcs: Pcs,
     prime_bits: u32,
-    /// The lowered matrices', the products' and the assignment's buffers
-    /// from the last proof or verification, reused by the next: what
-    /// [`Prepared`] holds from its setup, this scheme rebuilds per prime.
-    scratch: Mutex<SampledScratch>,
-}
-
-#[derive(Debug, Default)]
-struct SampledScratch {
-    lowered: LoweredScratch,
-    products: Products,
-    assignment: Vec<Fq>,
 }
 
 /// The witness before any prime: `f` as one row, `h` at the claim shape and
@@ -398,19 +397,9 @@ impl<S: CircuitStatement> PreparedSampled<S> {
         if !(64..=100).contains(&prime_bits) {
             return Err(Error::Configuration("prime width outside 64..=100 bits"));
         }
-        let mut constraints = ConstraintGenerator::new(statement.input_bits());
-        let inputs: Vec<_> = (0..statement.input_bits())
-            .map(|i| constraints.input(i))
-            .collect();
-        statement.synthesize(&mut constraints, &inputs)?;
-        let matrices = PreparedIntegerMatrices::from_vendored(&constraints.into_matrices())?;
-        let mut generator = MTransposeGenerator::new(statement.input_bits());
-        let inputs = generator.take_inputs();
-        statement.synthesize(&mut generator, &inputs)?;
-        let map = generator.finish();
-        if map.row_count() != matrices.column_count() {
-            return Err(Error::Configuration("map and assignment dimensions differ"));
-        }
+        let (circuit, map, rows) = synthesize(&statement)?;
+        let matrices = PreparedIntegerMatrices::from_compact(circuit.matrices, &rows)?;
+        drop(rows);
         let claim_shape = shape_for(map.row_count())?;
         let committed_shape = shape_for(map.column_count() - 1)?;
         let pcs = Pcs::new(&committed_shape, HashKind::Blake3)
@@ -425,16 +414,7 @@ impl<S: CircuitStatement> PreparedSampled<S> {
             committed_shape,
             pcs,
             prime_bits,
-            scratch: Mutex::new(SampledScratch::default()),
         })
-    }
-
-    fn take_scratch(&self) -> SampledScratch {
-        std::mem::take(&mut *self.scratch.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
-    }
-
-    fn keep_scratch(&self, scratch: SampledScratch) {
-        *self.scratch.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = scratch;
     }
 
     pub fn statement(&self) -> &S {
@@ -491,15 +471,11 @@ impl<S: CircuitStatement> PreparedSampled<S> {
         }
         // Satisfaction over the integers implies it modulo any prime: the
         // installed modulus is as good a check as any before the draw.
-        let mut scratch = self.take_scratch();
-        let matrices = self.matrices.lower_into(scratch.lowered)?;
-        matrices.products_into(&h, &mut scratch.products)?;
-        let satisfied = scratch.products.satisfied();
-        scratch.lowered = matrices.into_scratch();
-        self.keep_scratch(scratch);
-        if !satisfied {
+        let matrices = self.matrices.lower()?;
+        if !matrices.products(&h)?.satisfied() {
             return Err(Error::Unsatisfied);
         }
+        matrices.check_assignment(&h)?;
         let mut committed_row = f.words().to_vec();
         committed_row.resize((1 << self.committed_shape.log_bits()) / 64, 0);
         let virtual_bits = VirtualTable::new(&self.claim_shape, h.words(), h.bit_len());
@@ -533,28 +509,14 @@ impl<S: CircuitStatement> PreparedSampled<S> {
         set_modulus(prime).map_err(|_| Error::Configuration("the sampled prime is not admissible"))?;
         let params = self.params()?;
         transcript.public_message(&params);
-        let lowering = std::time::Instant::now();
-        let started = lowering;
-        let mut scratch = self.take_scratch();
-        let matrices = self.matrices.lower_into(scratch.lowered)?;
-        super::trace("  lower", started);
         let started = std::time::Instant::now();
-        matrices.products_into(&witness.assignment, &mut scratch.products)?;
-        super::trace("  products", started);
+        let matrices = self.matrices.lower()?;
+        let products = matrices.products(&witness.assignment)?;
+        super::trace("lowering", started);
         let started = std::time::Instant::now();
-        matrices.assignment_into(&witness.assignment, &mut scratch.assignment)?;
-        super::trace("  assignment", started);
-        super::trace("lowering", lowering);
-        let started = std::time::Instant::now();
-        let spartan = prove_spartan_piop_absorbed(
-            &mut transcript,
-            &matrices,
-            &scratch.products,
-            &scratch.assignment,
-        );
-        scratch.lowered = matrices.into_scratch();
-        self.keep_scratch(scratch);
-        let (spartan, terminal) = spartan.map_err(Error::Spartan)?;
+        let (spartan, terminal) =
+            prove_spartan_piop_absorbed(&mut transcript, &matrices, &products, &witness.assignment)
+                .map_err(Error::Spartan)?;
         super::trace("spartan", started);
         let claim = opening_claim(&params, &terminal)?;
         let statement = VirtualStatement::new(
@@ -589,14 +551,11 @@ impl<S: CircuitStatement> PreparedSampled<S> {
         let params = self.params()?;
         transcript.public_message(&params);
         let started = std::time::Instant::now();
-        let mut scratch = self.take_scratch();
-        let matrices = self.matrices.lower_into(scratch.lowered)?;
+        let matrices = self.matrices.lower()?;
         super::trace("v: lowering", started);
         let started = std::time::Instant::now();
-        let terminal = verify_spartan_proof_absorbed(&mut transcript, &matrices, &proof.spartan);
-        scratch.lowered = matrices.into_scratch();
-        self.keep_scratch(scratch);
-        let terminal = terminal.map_err(Error::Spartan)?;
+        let terminal = verify_spartan_proof_absorbed(&mut transcript, &matrices, &proof.spartan)
+            .map_err(Error::Spartan)?;
         super::trace("v: spartan", started);
         let claim = opening_claim(&params, &terminal)?;
         let statement = VirtualStatement::new(

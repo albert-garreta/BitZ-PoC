@@ -10,7 +10,7 @@
 use std::time::{Duration, Instant};
 
 use f2z::bitz::e2e::{Prepared, PreparedSampled};
-use f2z::bitz::statements::{Sha256Circuit, Sha256Statement};
+use f2z::bitz::statements::{AnyCircuit, AnyStatement};
 use f2z::bitz::{record_phases, take_phases};
 
 fn median(v: &[Duration]) -> Duration {
@@ -37,7 +37,7 @@ fn peak_rss_bytes() -> u64 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let circuit = Sha256Circuit::parse(&args[0]).expect("sha256-compression|sha256-chain");
+    let circuit = AnyCircuit::parse(&args[0]).expect("sha256-compression|sha256-chain|mul-u32|mul-u64|mul-u128");
     let blocks: usize = args[1].parse().expect("blocks");
     let mut seed = 7u64;
     let mut reps = 5usize;
@@ -66,7 +66,7 @@ fn main() {
     let threads = 1;
     println!("bitz_e2e_bench circuit={} blocks={blocks} seed={seed} reps={reps} threads={threads} sampled={sampled}", circuit.name());
 
-    let statement = Sha256Statement::seeded(circuit, blocks, seed);
+    let statement = AnyStatement::seeded(circuit, blocks, seed).expect("statement");
     let inputs = statement.input();
     if sampled {
         return bench_sampled(statement, &inputs, reps, seed, threads);
@@ -171,9 +171,9 @@ fn main() {
 }
 
 /// The sampled-prime scheme, the same measurements.
-fn bench_sampled(statement: Sha256Statement, inputs: &[bool], reps: usize, seed: u64, threads: usize) {
-    let circuit = statement.circuit;
-    let blocks = statement.blocks.len();
+fn bench_sampled(statement: AnyStatement, inputs: &[bool], reps: usize, seed: u64, threads: usize) {
+    let circuit = statement.circuit();
+    let blocks = statement.size();
     let started = Instant::now();
     let prepared = PreparedSampled::new(statement, 100).expect("prepared");
     let setup = started.elapsed();

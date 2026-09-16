@@ -300,7 +300,7 @@ fn main() {
         let mut prover = build_prover(session.as_bytes(), instance.as_bytes());
         bind(&mut prover);
         let started = Instant::now();
-        let (proof, terminal) = prove_spartan_piop(&mut prover, &matrices, &products, &assignment).expect("prove");
+        let (proof, terminal) = prove_spartan_piop(&mut prover, &matrices, &products, &h).expect("prove");
         times.push(started.elapsed());
         let next: Gf = prover.verifier_message();
         let transcript_proof = prover.finish();

@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use f2z::bitz::e2e::{Prepared, PreparedSampled, Proof, SampledProof, opening_claim};
 use f2z::bitz::fq::{Q, modulus, set_modulus};
 use f2z::bitz::spartan::{ScaledMleEvaluationClaim, SpartanPiopProof};
-use f2z::bitz::statements::{Sha256Circuit, Sha256Statement, splitmix64};
+use f2z::bitz::statements::{AnyCircuit, AnyStatement, splitmix64};
 use f2z::bitz::transcript::Proof as TranscriptProof;
 use f2z::bitz::{LinearClaim, Root};
 use f2z::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
@@ -117,12 +117,12 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
     }
     let field = |k: &str| meta.get(k).cloned().ok_or_else(|| format!("meta.txt lacks {k}"));
     let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| format!("{name}: {e}"));
-    let circuit = Sha256Circuit::parse(&field("circuit")?).ok_or("unknown circuit")?;
+    let circuit = AnyCircuit::parse(&field("circuit")?).ok_or("unknown circuit")?;
     let blocks: usize = field("blocks")?.parse().map_err(|e| format!("blocks: {e}"))?;
+    let seed: u64 = field("seed")?.parse().map_err(|e| format!("seed: {e}"))?;
     let public = read("public.bin")?;
-    let statement =
-        Sha256Statement::from_public_bytes(circuit, &public).ok_or("public.bin does not parse")?;
-    assert_eq!(statement.blocks.len(), blocks);
+    let statement = AnyStatement::from_public_bytes(circuit, &public, seed).ok_or("public.bin does not parse")?;
+    assert_eq!(statement.size(), blocks);
     let q: u128 = field("q")?.parse().map_err(|e| format!("q: {e}"))?;
     if q != Q {
         return Err(format!("modulus {q} is not this crate's Q"));
@@ -277,14 +277,14 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
 fn check_sampled(dir: &Path, meta: &HashMap<String, String>, verbose: bool) -> Result<Report, String> {
     let field = |k: &str| meta.get(k).cloned().ok_or_else(|| format!("meta.txt lacks {k}"));
     let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| format!("{name}: {e}"));
-    let circuit = Sha256Circuit::parse(&field("circuit")?).ok_or("unknown circuit")?;
+    let circuit = AnyCircuit::parse(&field("circuit")?).ok_or("unknown circuit")?;
     let blocks: usize = field("blocks")?.parse().map_err(|e| format!("blocks: {e}"))?;
+    let seed: u64 = field("seed")?.parse().map_err(|e| format!("seed: {e}"))?;
     let prime_bits: u32 = field("prime_bits")?.parse().map_err(|e| format!("prime_bits: {e}"))?;
     let their_prime: u128 = field("prime")?.parse().map_err(|e| format!("prime: {e}"))?;
     let public = read("public.bin")?;
-    let statement =
-        Sha256Statement::from_public_bytes(circuit, &public).ok_or("public.bin does not parse")?;
-    assert_eq!(statement.blocks.len(), blocks);
+    let statement = AnyStatement::from_public_bytes(circuit, &public, seed).ok_or("public.bin does not parse")?;
+    assert_eq!(statement.size(), blocks);
 
     let started = Instant::now();
     let prepared = PreparedSampled::new(statement.clone(), prime_bits).map_err(|e| format!("PreparedSampled::new: {e:?}"))?;

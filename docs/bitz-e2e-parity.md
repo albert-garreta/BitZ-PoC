@@ -9,7 +9,11 @@ prover at every size the e2e runs** — 1, 8, 64 and 608 blocks, across
 seeds — with their verifier accepting our proofs and ours accepting theirs.
 The same holds for the **sampled-prime scheme** (the prime drawn from the
 transcript per proof, their branch `bitz-k4-prime` composed end to end on
-`bitz-e2e-k4-prime`): see "The sampled prime" below.
+`bitz-e2e-k4-prime`): see "The sampled prime" below. The matrices are kept
+in a **compact form** that takes the scheme to 4096 SHA blocks on the
+24 GB box (see "Memory at scale"), and the paper's other statements —
+the u32/u64/u128 products, SHA-256 + ECDSA, the MultiSwap Mod-R1CS — are
+written in their gadget language and pinned the same way ("The circuits").
 The feasibility analysis that preceded it is
 `docs/bitz-piop-parity-feasibility.md`; the PCS half and its conventions are
 `docs/bitz-parity-continue-prompt.md`.
@@ -30,18 +34,31 @@ The feasibility analysis that preceded it is
   - `src/bitz/transcript.rs` — `squeeze_prime(bits)` on both halves (their
     rule: masked squeeze, top and low bits set, first probable prime).
   - `src/bitz/spartan/{poly,matrix,sumcheck,piop}.rs` — the little-endian eq
-    table; the R1CS matrices lowered from the vendored circuit crate with the
-    constraint digest streamed (`M` hashed, not kept), the 2^16-column chunk
-    index, `bind_and_batch`, `evaluate_batched`, the products and the
-    assignment; the outer (cubic, one dense eq table) and inner (quadratic)
-    provers with fused fold-and-next passes and `c1` reconstruction, the
-    Boolean round-0 kernels, the reusable verifier; the composition and the
-    canonical out-of-band bytes `spartan.bin` (`to_bytes`/`from_bytes`).
-    For the sampled prime: `PreparedIntegerMatrices` (the coefficients kept
-    as integers — `IntegerCoefficient::{PowerOfTwo, Small, Big}` — with
-    their integer digest, `lower()` under the installed modulus into the
-    flat `SparseMatrix` in parallel), `prove/verify_spartan_piop_absorbed`
+    table; the R1CS matrices in the **compact form** (`CompactMatrix`: a
+    `u32` column and a `u16` code per nonzero, the code `2·shift + sign` for
+    `±2^shift` or `ESCAPE` into a side table for the constants; six bytes
+    per nonzero, the same buffer for the fixed and the sampled scheme —
+    lowering under a modulus is a table of `2·(max shift + 1)` residues),
+    both canonical digests streamed from it with `M`'s rows (`MapRows`, CSR
+    from the map's CSC), the 2^16-column chunk index, `bind_and_batch`,
+    `evaluate_batched`, the products; the outer (cubic, one dense eq table)
+    and inner (quadratic) provers with fused fold-and-next passes and `c1`
+    reconstruction, the inner sumcheck's round 0 fed the bits of `h` in
+    place (`InnerWitness::Bits`: no dense table of `h` ever exists), the
+    reusable verifier; the composition and the canonical out-of-band bytes
+    `spartan.bin` (`to_bytes`/`from_bytes`); `prove/verify_spartan_piop_absorbed`
     (the digest already absorbed) and `prove/verify_spartan_piop_sampled`.
+  - `src/bitz/generator.rs` — the **compact backend** for the vendored
+    circuit trait (`CompactGenerator`): their `ConstraintGenerator`'s
+    numbering, the rows recorded straight into the compact matrices, the
+    Boolean side forgotten (`M` comes from the vendored `MTransposeGenerator`,
+    compact already). A unit test pins it to the vendored backend row for
+    row on the abc compression.
+  - `src/bitz/mul.rs`, `src/bitz/ecdsa.rs`, `src/bitz/modr1cs.rs` — the
+    paper's statements in their gadget language (see "The circuits");
+    `src/bitz/statements.rs` also holds `AnyCircuit`/`AnyStatement`, the
+    by-name switch every probe and bench takes.
+    `scripts/bitz_mirror_statements.py` writes their copies.
   - `src/bitz/map.rs` — the map digest (blake3 over the CSC arrays) and the
     `M^T` transpose (XOR gathers), through the `csc()` accessor added to the
     vendored `crates/circuit/src/matrix_transpose.rs`.
@@ -72,7 +89,7 @@ The feasibility analysis that preceded it is
   `dump_e2e` + `verify_e2e`. Their code untouched; their tests green
   (bitz-cli 4, circuit 48, common 43, spartan 23, tests 26).
 - **f2z-benchmark, branch `bitz-e2e-k4-prime`** (worktree
-  `~/f2z-benchmark-prime`, local, unpushed): the merge `71f1b4f` of
+  `~/f2z-benchmark-prime`, pushed): the merge `71f1b4f` of
   `bitz-e2e-k4` with `bitz-k4-prime` (`0049646`, the sampled prime with a
   minimal diff: `Fq<RUNTIME>`, `squeeze_prime`, `PreparedIntegerMatrices`,
   `prove/verify_spartan_piop_sampled`), then `45f84a6`: `PreparedSampled`
@@ -80,7 +97,11 @@ The feasibility analysis that preceded it is
   prime, install, absorb `BitZParams<RUNTIME>`, lower, Spartan, opening),
   its round-trip/tamper test, `dump_e2e --sampled` (`kind=e2e-sampled`,
   `prime_bits`, `prime`, the integer digest as `constraint_digest`) and
-  `verify_e2e --sampled`. bitz-cli tests: 2 + 3 green.
+  `verify_e2e --sampled`. bitz-cli tests: 2 + 3 green. Then the circuits:
+  `tooling/cli/examples/common/{mul,ecdsa,modr1cs}.rs` (mirrored from ours,
+  the lift method renamed `f2z` → `bitz`, their trait's name), `dump_e2e` /
+  `verify_e2e` switching on the circuit name, `num-bigint` as a
+  dev-dependency for the host P-256 signer. Their protocol code untouched.
 
 ## How to run (the loop that guards every change)
 
@@ -121,6 +142,16 @@ BITZ_REPEAT=3 $O/bitz_e2e_parity $SCRATCH/e2ep_ch8          # kind=e2e-sampled �
 $P/verify_e2e $SCRATCH/e2ep_ch8 ours. --sampled
 $O/bitz_e2e_parity --sweep $P $SCRATCH/sweep_p sha256-chain 1,8,64,608 3 --sampled
 $O/bitz_e2e_bench sha256-chain 608 --sampled --reps 3
+
+# the other circuits: <size> is gates for mul-*, the compression exponent for
+# sha256-ecdsa, ignored for a Mod-R1CS instance file
+$O/bitz_modr1cs_export $SCRATCH/multiswap.bin        # the paper's MultiSwap instance
+for c in mul-u32 mul-u64 mul-u128 sha256-ecdsa mod-r1cs:$SCRATCH/multiswap.bin; do
+  $P/dump_e2e $c 1024 7 $SCRATCH/x --sampled && $O/bitz_e2e_parity $SCRATCH/x \
+    && $P/verify_e2e $SCRATCH/x ours. --sampled; done
+$O/bitz_e2e_parity --sweep $P $SCRATCH/sweep_m mul-u32 256,4096 2 --sampled
+$O/bitz_e2e_bench mul-u32 262144 --reps 3; $O/bitz_e2e_bench sha256-ecdsa 7 --reps 3
+python3 scripts/bitz_mirror_statements.py ~/f2z-benchmark-prime   # after editing a statement
 ```
 
 Acceptance for every change: the sweep passes (root, `spartan.bin`, the
@@ -215,6 +246,93 @@ their code is theirs to tune). Levers left on ours: flatten the integer
 matrices too (the lowering reads scattered per-row vectors), and the
 fixed-path levers.
 
+## Memory at scale (the compact form; M5, 10 threads, seed 7, `bitz_e2e_bench`)
+
+The vendored generator kept every nonzero as a `BTreeMap` node holding a
+heap `BigInt`, and the lowered matrices held 24 bytes per nonzero; at 608
+SHA blocks that was 7 s of setup and 9 GB, and the 1024-block dump needed
+11 GB. The compact backend and the compact matrices (six bytes per
+nonzero, the residues through a table, `h` read as bits) give, on the
+fixed scheme (the sampled scheme costs 5–15 ms more per proof, the
+products under the drawn prime):
+
+| SHA-256 chain blocks | shapes h / f | setup | prove (warm / cold) | verify | claim absorb | peak RSS (was) |
+|---|---|---|---|---|---|---|
+| 608 | (15,9) / (14,8) | 2.4 s | 228 / 246 ms | 114 ms | 53 ms | **1.42 GB** (9.0) |
+| 1024 | (15,10) / (14,9) | 4.1 s | 401 / 436 | 215 | 108 | 2.62 (11) |
+| 2048 | (16,10) / (15,9) | 8.0 s | 789 / 848 | 434 | 220 | 5.23 (—) |
+| 4096 | (17,10) / (15,10) | 16.7 s | 1,880 / 1,812 | 853 | 431 | 10.2 (—) |
+
+Byte-identical to the previous form everywhere it was pinned (every kept
+dump, the sampled and fixed sweeps at 1/8/64/608 blocks, the Spartan
+fixtures). What scales linearly by their design and now dominates: the
+claim over `f` the verifier absorbs (`2^m` residues, 16 bytes each: 64 MB
+at 608 blocks, 1 GB at 4096 — the "claim absorb" column, per side), the
+dense `D` table of the inner sumcheck (`2^n` residues over the padded
+`h` domain) and the transpose; 4096 blocks is about the box's limit
+(`h = 2^27`, `D` 2 GB, the claim 1 GB). The oracle cannot dump beyond
+about 1024 blocks, so the larger sizes are ours alone, on the pinned code.
+
+## The circuits (their gadget language, both sides)
+
+Every statement is written once against the vendored `Circuit` trait and
+mirrored into their examples by `scripts/bitz_mirror_statements.py` (their
+trait names the lift `bitz`, ours `f2z`; nothing else differs), so the two
+sides synthesize the same rows, the dumps pin the transcripts and the
+sizes beyond their generator's reach run here.
+
+- **`mul-u32` / `mul-u64` / `mul-u128`** (`src/bitz/mul.rs`): `N` products
+  `x·y = z` over the integers, the operands as the circuit's inputs (seeded,
+  private), the product as a hint, one rank-1 row on the bit lifts per
+  product; `4W` committed bits and one row per gate, the relation of the
+  paper's mul tables. Public bytes: the width and the count.
+- **`sha256-ecdsa`** (`src/bitz/ecdsa.rs`): `2^L` compressions of a seeded
+  message (padding block included) and one P-256 verification of the digest
+  through the vendored `sha256_block_aligned_circuit` and
+  `verify_digest_circuit`; public `L`, `Q`, `r`, `s` (the paper's
+  statement), the message and the two inverses private. A host P-256 signer
+  (affine, Fermat inversions) derives the key and nonce from the seed so
+  both sides get the same instance without files.
+- **`mod-r1cs:<file>`** (`src/bitz/modr1cs.rs`): an integer Mod-R1CS
+  instance from a file, `A·z ∘ B·z = C·z + m ∘ q`; every value a hint at
+  its width (one bit where a `v·v = v` row constrains it, 2048 otherwise),
+  and per modular row the quotient (2048 bits) and the product `t = m·q`
+  (4096 bits) hinted with their own row `m·q = t`, so every coefficient on a
+  bit is a power of two and the moduli sit on the constant column.
+  `bitz_modr1cs_export` writes the paper's MultiSwap instance (Limber's
+  `k = 0`: 6,209 live rows, 6,204 live columns, 1,608 constants) from the
+  crate's Limber port. Public bytes: the instance digest (rows, moduli,
+  coefficients, widths) and the counts.
+
+Our numbers (fixed scheme, 10 threads):
+
+| circuit | size | rows / h / f | setup | prove | verify | peak RSS |
+|---|---|---|---|---|---|---|
+| sha256-ecdsa | L = 7 | 31,637 / 3.8 M / 2^22 | 1.0 s | 136 ms | 88 ms | 0.60 GB |
+| mul-u32 | 2^16 | 65,536 / 8.4 M / 2^23 | 0.9 s | 246 ms | 144 ms | 1.39 GB |
+| mul-u32 | 2^18 | 2^18 / 33.6 M / 2^25 | 2.7 s | 894 ms | 568 ms | 5.46 GB |
+| mul-u32 (sampled) | 2^20 | 2^20 / 134 M / 2^27 | 10.8 s | 3.9–7.9 s | 5.0 s | 14.8 GB |
+| multiswap (mod-r1cs) | 6,209 rows (+3,957 product rows) | 10,166 / 32.4 M / 2^25 | 7.4 s | 833 ms | 665 ms | 6.63 GB |
+
+Their side on the same MultiSwap instance (`dump_e2e --sampled`): setup
+35.6 s, witness 0.5 s, prove 3,667 ms, verify 1,608 ms, 15.6 GB (their
+`BigInt` generator); ours under the sampled prime: 11.1 s, 0.4 s, 845 ms,
+629 ms, 6.1 GB. On SHA-256 + ECDSA at `L = 3` (`5`): theirs 176 (267) ms
+prove / 105 (156) verify, ours 126 (228) / 82 (187); on `2^10` u32
+products theirs 145 / 73, ours 120 / 64.
+
+The mul relation's cost is the opening: with `4W` bits per gate the claim
+over `f` is `2^m` residues (`2^18` u32 gates: 512 MB absorbed per side;
+`2^20`: 2 GB, and the box pages). Their design's scaling, faithfully.
+
+Pinned, their dump → our re-proof (root, `spartan.bin`, `claim_h`, narg,
+hints IDENTICAL) → their verifier on ours (ACCEPTED), fixed and sampled
+prime: `mul-u32` at 256, 1,024 and 4,096 gates (two seeds each in the
+sweeps), `mul-u64` at 1,024 and 4,096, `mul-u128` at 512 and 2,048,
+`sha256-ecdsa` at `L = 3, 4, 5`, MultiSwap mini (1,337 rows, `MultiswapDims::mini`)
+and the full instance (6,209 rows, sampled; their dump takes 15.6 GB, so
+that one is the ceiling of what their generator pins).
+
 ## What stage D found (all byte-identical, all kept unless noted)
 
 - The single-column commit of `f` skips the column-lane packing (`Pcs::commit`
@@ -275,6 +393,17 @@ the transpose's 64 MB first touch (a reused buffer across repeats).
   is absorbed after the squeeze). A `meta.txt` with `kind=e2e-sampled` has
   `q = prime` and `constraint_digest` = the integer digest (domain
   `bitz/spartan/integer-constraint-matrices/v1`), not the residue digest.
+- **Their circuit trait names the lift `bitz`/`bitz_unsigned`** where the
+  vendored crate here says `f2z`/`f2z_unsigned`; the mirror script renames,
+  nothing else differs. Use the fused `f2z_unsigned` for wide lifts: the
+  witness generator overrides it with a packed word, while a per-bit lift
+  runs a `LIMBS²` schoolbook per bit (MultiSwap's witness went 47 s → 0.4
+  s, its setup 53 → 7 s).
+- **zsh does not split `$spec`** in `set -- $spec`; use `${=spec}` or the
+  probes get one argument (every case "fails" at the argument parse).
+- **The modulus is process-wide in the tests too**: tests that install a
+  sampled prime hold `fq::test_modulus_guard()`, or the parallel test
+  harness makes a fixed-prime test's residues wrong.
 - **Fresh allocations fault under the kernel's map lock and every parallel
   pass after them runs slower.** The first sampled-prime `prove` lowered
   33.7 M residues into fresh per-row vectors, built products and assignment

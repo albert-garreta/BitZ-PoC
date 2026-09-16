@@ -36,12 +36,16 @@
 
 pub mod codec;
 pub mod e2e;
+pub mod ecdsa;
 pub mod fold;
 pub mod forest;
 pub mod fq;
+pub mod generator;
 pub mod gkr;
 pub(crate) mod kernels;
 pub mod map;
+pub mod modr1cs;
+pub mod mul;
 pub mod params;
 pub mod pcs;
 pub mod reduce;

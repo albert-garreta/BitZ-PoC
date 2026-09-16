@@ -9,8 +9,8 @@ pub mod poly;
 pub mod sumcheck;
 
 pub use matrix::{
-    IntegerCoefficient, MatrixError, PreparedConstraintMatrices, LoweredScratch, PreparedIntegerMatrices,
-    SparseMatrix, residue,
+    CompactMatrix, CompactMatrixBuilder, ESCAPE, IntegerCoefficient, MapRows, MatrixError,
+    PreparedConstraintMatrices, PreparedIntegerMatrices, compact_from_vendored, residue,
 };
 pub use piop::{
     ScaledMleEvaluationClaim, SpartanError, SpartanPiopProof, prove_spartan_piop,
@@ -19,6 +19,6 @@ pub use piop::{
 };
 pub use poly::{eq_eval, eq_table};
 pub use sumcheck::{
-    InnerSumcheckOutput, OuterSumcheckOutput, OuterSumcheckProof, Products, SumcheckError,
-    SumcheckProof, mle_evaluate, prove_inner_sumcheck, prove_outer_sumcheck,
+    InnerSumcheckOutput, InnerWitness, OuterSumcheckOutput, OuterSumcheckProof, Products,
+    SumcheckError, SumcheckProof, mle_evaluate, prove_inner_sumcheck, prove_outer_sumcheck,
 };

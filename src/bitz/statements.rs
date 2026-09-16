@@ -256,3 +256,146 @@ mod tests {
         assert_eq!(Sha256Statement::from_public_bytes(Sha256Circuit::Chain, &public), Some(statement));
     }
 }
+
+/// Every circuit the probes, the harness and the bench take by name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnyCircuit {
+    Sha256(Sha256Circuit),
+    Mul(super::mul::MulWidth),
+    /// `size` is the compression exponent `L`.
+    Ecdsa,
+    /// `mod-r1cs:<file>`: a Mod-R1CS instance file (`size` is ignored).
+    ModR1cs(&'static str),
+}
+
+impl AnyCircuit {
+    pub fn parse(name: &str) -> Option<Self> {
+        if name == "sha256-ecdsa" {
+            return Some(Self::Ecdsa);
+        }
+        if let Some(path) = name.strip_prefix("mod-r1cs:") {
+            return Some(Self::ModR1cs(Box::leak(path.to_string().into_boxed_str())));
+        }
+        Sha256Circuit::parse(name)
+            .map(Self::Sha256)
+            .or_else(|| super::mul::MulWidth::parse(name).map(Self::Mul))
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sha256(circuit) => circuit.name(),
+            Self::Mul(width) => width.name(),
+            Self::Ecdsa => "sha256-ecdsa",
+            Self::ModR1cs(_) => "mod-r1cs",
+        }
+    }
+
+    fn instance(path: &str) -> Result<super::modr1cs::Instance, Error> {
+        let bytes = std::fs::read(path).map_err(|_| Error::Input("the instance file cannot be read"))?;
+        super::modr1cs::Instance::from_bytes(&bytes).ok_or(Error::Input("the instance file does not parse"))
+    }
+}
+
+/// A statement of any circuit; `size` is blocks for SHA-256, gates for the
+/// multiplications, the compression exponent for SHA-256 + ECDSA.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnyStatement {
+    Sha256(Sha256Statement),
+    Mul(super::mul::MulStatement),
+    Ecdsa(super::ecdsa::EcdsaStatement),
+    ModR1cs(super::modr1cs::ModR1csStatement),
+}
+
+impl AnyStatement {
+    pub fn seeded(circuit: AnyCircuit, size: usize, seed: u64) -> Result<Self, Error> {
+        Ok(match circuit {
+            AnyCircuit::Sha256(circuit) => Self::Sha256(Sha256Statement::seeded(circuit, size, seed)),
+            AnyCircuit::Mul(width) => Self::Mul(super::mul::MulStatement::new(width, size, seed)),
+            AnyCircuit::Ecdsa => Self::Ecdsa(super::ecdsa::EcdsaStatement::seeded(
+                u8::try_from(size).map_err(|_| Error::Input("compression exponent"))?,
+                seed,
+            )?),
+            AnyCircuit::ModR1cs(path) => {
+                Self::ModR1cs(super::modr1cs::ModR1csStatement::new(AnyCircuit::instance(path)?))
+            }
+        })
+    }
+
+    /// From a dump's public bytes (and its seed, for the private inputs).
+    pub fn from_public_bytes(circuit: AnyCircuit, public: &[u8], seed: u64) -> Option<Self> {
+        match circuit {
+            AnyCircuit::Sha256(circuit) => Sha256Statement::from_public_bytes(circuit, public).map(Self::Sha256),
+            AnyCircuit::Mul(_) => super::mul::MulStatement::from_public_bytes(public, seed).map(Self::Mul),
+            AnyCircuit::Ecdsa => super::ecdsa::EcdsaStatement::from_public_bytes(public, seed).map(Self::Ecdsa),
+            AnyCircuit::ModR1cs(path) => {
+                let statement = super::modr1cs::ModR1csStatement::new(AnyCircuit::instance(path).ok()?);
+                statement.matches_public_bytes(public).then_some(Self::ModR1cs(statement))
+            }
+        }
+    }
+
+    pub fn circuit(&self) -> AnyCircuit {
+        match self {
+            Self::Sha256(statement) => AnyCircuit::Sha256(statement.circuit),
+            Self::Mul(statement) => AnyCircuit::Mul(statement.width),
+            Self::Ecdsa(_) => AnyCircuit::Ecdsa,
+            Self::ModR1cs(_) => AnyCircuit::ModR1cs(""),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Sha256(statement) => statement.blocks.len(),
+            Self::Mul(statement) => statement.gates,
+            Self::Ecdsa(statement) => usize::from(statement.log_compressions),
+            Self::ModR1cs(statement) => statement.instance().rows.len(),
+        }
+    }
+
+    pub fn input(&self) -> Vec<bool> {
+        match self {
+            Self::Sha256(statement) => statement.input(),
+            Self::Mul(statement) => statement.input(),
+            Self::Ecdsa(statement) => statement.input(),
+            Self::ModR1cs(statement) => statement.input(),
+        }
+    }
+}
+
+impl CircuitStatement for AnyStatement {
+    fn domain(&self) -> &'static [u8] {
+        match self {
+            Self::Sha256(statement) => statement.domain(),
+            Self::Mul(statement) => statement.domain(),
+            Self::Ecdsa(statement) => statement.domain(),
+            Self::ModR1cs(statement) => statement.domain(),
+        }
+    }
+
+    fn public_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Sha256(statement) => statement.public_bytes(),
+            Self::Mul(statement) => statement.public_bytes(),
+            Self::Ecdsa(statement) => statement.public_bytes(),
+            Self::ModR1cs(statement) => statement.public_bytes(),
+        }
+    }
+
+    fn input_bits(&self) -> usize {
+        match self {
+            Self::Sha256(statement) => statement.input_bits(),
+            Self::Mul(statement) => statement.input_bits(),
+            Self::Ecdsa(statement) => statement.input_bits(),
+            Self::ModR1cs(statement) => statement.input_bits(),
+        }
+    }
+
+    fn synthesize<CS: Circuit>(&self, cs: &mut CS, inputs: &[CS::Bool]) -> Result<(), Error> {
+        match self {
+            Self::Sha256(statement) => statement.synthesize(cs, inputs),
+            Self::Mul(statement) => statement.synthesize(cs, inputs),
+            Self::Ecdsa(statement) => statement.synthesize(cs, inputs),
+            Self::ModR1cs(statement) => statement.synthesize(cs, inputs),
+        }
+    }
+}

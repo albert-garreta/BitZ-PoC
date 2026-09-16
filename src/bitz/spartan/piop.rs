@@ -13,7 +13,7 @@ use super::super::fq::{Fq, set_modulus};
 use super::super::transcript::{ProverState, VerifierState};
 use super::matrix::{MatrixError, PreparedConstraintMatrices, PreparedIntegerMatrices};
 use super::poly::eq_table;
-use super::sumcheck::{
+use super::sumcheck::{InnerWitness, 
     OuterSumcheckProof, Products, SumcheckError, SumcheckProof, mle_evaluate,
     prove_inner_sumcheck, prove_outer_sumcheck,
 };
@@ -72,18 +72,8 @@ pub fn prove_spartan_piop(
     transcript: &mut ProverState,
     matrices: &PreparedConstraintMatrices,
     products: &Products,
-    assignment: &[Fq],
+    assignment: &PackedWitness,
 ) -> Result<(SpartanPiopProof, ScaledMleEvaluationClaim), SpartanError> {
-    let num_row_vars = matrices.num_row_vars();
-    let num_column_vars = matrices.num_column_vars();
-    let rows = 1usize << num_row_vars;
-    if products.az.len() != rows || products.bz.len() != rows || products.cz.len() != rows {
-        return Err(SpartanError::InvalidProductDimensions);
-    }
-    if assignment.len() != 1usize << num_column_vars {
-        return Err(SpartanError::InvalidAssignmentDimensions);
-    }
-
     transcript.public_message(matrices.digest());
     prove_spartan_piop_absorbed(transcript, matrices, products, assignment)
 }
@@ -95,17 +85,16 @@ pub fn prove_spartan_piop_absorbed(
     transcript: &mut ProverState,
     matrices: &PreparedConstraintMatrices,
     products: &Products,
-    assignment: &[Fq],
+    assignment: &PackedWitness,
 ) -> Result<(SpartanPiopProof, ScaledMleEvaluationClaim), SpartanError> {
     let num_row_vars = matrices.num_row_vars();
-    let num_column_vars = matrices.num_column_vars();
     let rows = 1usize << num_row_vars;
     if products.az.len() != rows || products.bz.len() != rows || products.cz.len() != rows {
         return Err(SpartanError::InvalidProductDimensions);
     }
-    if assignment.len() != 1usize << num_column_vars {
-        return Err(SpartanError::InvalidAssignmentDimensions);
-    }
+    matrices
+        .check_assignment(assignment)
+        .map_err(|_| SpartanError::InvalidAssignmentDimensions)?;
     let tau: Vec<Fq> = (0..num_row_vars).map(|_| transcript.squeeze_fq()).collect();
     let started = std::time::Instant::now();
     let outer = prove_outer_sumcheck(transcript, Fq::ZERO, eq_table(&tau), products)?;
@@ -120,8 +109,13 @@ pub fn prove_spartan_piop_absorbed(
     let batched_matrix = matrices.bind_and_batch(&outer.eval_points, rho)?;
     super::super::trace("  spartan bind+batch", started);
     let started = std::time::Instant::now();
-    // The assignment is `h`, Boolean by construction.
-    let inner = prove_inner_sumcheck(transcript, inner_initial_claim, batched_matrix, assignment, true)?;
+    // The assignment is `h`, Boolean by construction: its bits, in place.
+    let inner = prove_inner_sumcheck(
+        transcript,
+        inner_initial_claim,
+        batched_matrix,
+        InnerWitness::Bits(assignment),
+    )?;
     super::super::trace("  spartan inner", started);
 
     let claim = ScaledMleEvaluationClaim {
@@ -190,8 +184,7 @@ pub fn prove_spartan_piop_sampled(
     set_modulus(prime).map_err(|_| SpartanError::InvalidModulus)?;
     let lowered = matrices.lower()?;
     let products = lowered.products(assignment)?;
-    let assignment = lowered.assignment(assignment)?;
-    let (proof, claim) = prove_spartan_piop_absorbed(transcript, &lowered, &products, &assignment)?;
+    let (proof, claim) = prove_spartan_piop_absorbed(transcript, &lowered, &products, assignment)?;
     Ok((proof, claim, prime))
 }
 
@@ -313,8 +306,10 @@ mod tests {
     use circuit::sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, compression_circuit};
     use circuit::witgen::{PackedWitness, Witgen};
 
+    use num_bigint::BigInt;
+
     use super::super::super::transcript::{build_prover, build_verifier};
-    use super::super::matrix::SparseMatrix;
+    use super::super::matrix::{CompactMatrix, IntegerCoefficient};
     use super::*;
 
     fn splitmix(state: &mut u64) -> u64 {
@@ -328,14 +323,35 @@ mod tests {
     const ROWS: usize = 5;
     const COLUMNS: usize = 7;
 
-    fn multiply(matrix: &SparseMatrix, assignment: &[Fq]) -> Vec<Fq> {
+    fn multiply(matrix: &CompactMatrix, assignment: &[Fq]) -> Vec<Fq> {
         matrix
             .rows()
             .map(|row| {
-                row.iter()
-                    .fold(Fq::ZERO, |sum, &(column, coefficient)| sum + coefficient * assignment[column])
+                row.iter().fold(Fq::ZERO, |sum, (column, coefficient)| {
+                    sum + coefficient.residue() * assignment[*column]
+                })
             })
             .collect()
+    }
+
+    /// A compact matrix from `(column, residue)` rows: the residue as the
+    /// integer itself.
+    fn compact(rows: Vec<Vec<(usize, Fq)>>, columns: usize) -> CompactMatrix {
+        let rows: Vec<Vec<(usize, IntegerCoefficient)>> = rows
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|(column, value)| (column, IntegerCoefficient::new(&BigInt::from(value.lift()))))
+                    .collect()
+            })
+            .collect();
+        CompactMatrix::from_rows(rows.iter().map(Vec::as_slice), columns).unwrap()
+    }
+
+    /// `h` as a packed witness (the only public constructor is the witness
+    /// generator's).
+    fn packed(bits: &[bool]) -> PackedWitness {
+        Witgen::with_inputs(bits).into_witness()
     }
 
     fn padded(values: Vec<Fq>) -> Vec<Fq> {
@@ -354,7 +370,7 @@ mod tests {
         bits.extend((1..COLUMNS).map(|_| splitmix(&mut state) & 1 == 1));
         let values: Vec<Fq> = bits.iter().map(|&b| Fq::from(b)).collect();
         let random_matrix = |state: &mut u64| {
-            SparseMatrix::new(
+            compact(
                 (0..ROWS)
                     .map(|_| {
                         let mut entries = vec![(0, Fq::new(u128::from(splitmix(state) % 9 + 1)))];
@@ -372,7 +388,7 @@ mod tests {
         let b = random_matrix(&mut state);
         let az = multiply(&a, &values);
         let bz = multiply(&b, &values);
-        let c = SparseMatrix::new(
+        let c = compact(
             az.iter().zip(&bz).map(|(&x, &y)| vec![(0, x * y)]).collect(),
             COLUMNS,
         );
@@ -385,13 +401,13 @@ mod tests {
             cz: padded(cz),
         };
         assert!(products.satisfied());
+        let h = packed(&bits);
         let assignment = padded(values);
 
         let session = b"spartan/piop/random-r1cs/fq/v1";
         let instance = b"five-rows-seven-columns";
         let mut prover = build_prover(session, instance);
-        let (proof, claim) =
-            prove_spartan_piop(&mut prover, &matrices, &products, &assignment).unwrap();
+        let (proof, claim) = prove_spartan_piop(&mut prover, &matrices, &products, &h).unwrap();
         assert_eq!(proof.outer.sumcheck.round_polynomials.len(), 3);
         assert_eq!(proof.inner.round_polynomials.len(), 3);
         let transcript_proof = prover.finish();
@@ -456,8 +472,7 @@ mod tests {
         let session = b"spartan/piop/sha256-compression/v1";
         let instance = b"abc-single-compression";
         let mut prover = build_prover(session, instance);
-        let (proof, claim) =
-            prove_spartan_piop(&mut prover, &matrices, &products, &assignment).unwrap();
+        let (proof, claim) = prove_spartan_piop(&mut prover, &matrices, &products, &h).unwrap();
         assert_eq!(proof.outer.sumcheck.round_polynomials.len(), 8);
         assert_eq!(proof.inner.round_polynomials.len(), 15);
         let transcript_proof = prover.finish();
