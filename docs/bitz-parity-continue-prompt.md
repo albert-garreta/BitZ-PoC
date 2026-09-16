@@ -28,10 +28,13 @@ the same instance. Their code is the oracle; ours must never change a byte.
   then the 2026-09-16 session: `0b75cb0` levels 5..t−1 built from
   cache-resident level-4 rows into the one arena, level 4 rebuilt into it
   when its turn comes (peak −256 MB), `0fcd1e3` the nibble-table column fold
-  in one pass + the width-1 bit round two rows per scatter.
+  in one pass + the width-1 bit round two rows per scatter, `f5c26e6` the
+  Ligerito proof-of-work scan through the crate's thread-parallel
+  smallest-nonce search (−20 ms at n = 28) + `examples/bitz_bench.rs`.
   Files:
   `src/bitz/{mod,transcript,codec,params,fold,gkr,forest,kernels,reduce,sumcheck,pcs}.rs`,
-  `examples/bitz_parity.rs` (the harness), `examples/bitz_root_probe.rs`,
+  `examples/bitz_parity.rs` (the harness), `examples/bitz_bench.rs` (the
+  paper-metrics bench, below), `examples/bitz_root_probe.rs`,
   `docs/bitz-parity-continue-prompt.md` (this file). The crate's own protocol
   is untouched.
 - **f2z-benchmark, branch `bitz-k4`** (`~/f2z-benchmark`, pushed to
@@ -86,6 +89,16 @@ for l in sys.stdin:
 [print(f"{k:26s} {statistics.median(v):7.1f}") for k,v in d.items()]'
 ```
 
+```sh
+# the paper's raw-performance metrics for ONE size, own random instance
+# (reference split, q = 2^100 − 15, generator X, the dump labels): median of
+# 5 commits, one warm-up prove then 5 timed + verified proves (medians of
+# the wall time and of every traced phase, summed into the paper's
+# buckets), proof bytes, the process's peak RSS; one size per process.
+# Prints a RESULT line; the comparison below was 8 threads, 20 s apart.
+RAYON_NUM_THREADS=8 $CARGO_TARGET_DIR/release/examples/bitz_bench 28 --reps 5
+```
+
 **Cold vs warm.** A single traced run is a COLD prove: every large
 buffer is fresh and its page faults are inside the phase (the level
 build was 32 ms cold and is 12 ms warm). `BITZ_REPEAT` is WARM: libmalloc
@@ -114,10 +127,11 @@ accepts ours, the unit tests pass (10).
 
 ## Where the time goes (2026-09-16, n = 28 at (17, 11), 10 threads)
 
-Warm (BITZ_REPEAT=20): min 273.8 ms, median 276.5 (was 277.6 / 296.8 on
-2026-09-15). Cold single run 299–301 ms, peak RSS 0.84 GB (was 304–308 ms
-and 0.97 GB in the same session, same binary flags). Their prover:
-6.1–7.2 s native. Warm per-phase medians:
+Warm (BITZ_REPEAT=20): min 253.3 ms, median 258.9 with the fast PoW scan
+(273.8 / 276.5 before it; 277.6 / 296.8 on 2026-09-15). Cold single run
+≈ 278 ms, peak RSS 0.84 GB (was 304–308 ms and 0.97 GB at the session's
+start, same binary flags). Their prover: 6.1–7.2 s native. Warm per-phase
+medians (before the fast scan except where noted):
 fold + images 8.2 (column folds 7.5 = the nibble-table fold in
 `bitz::fold::fold_columns`; images 0.5);
 GKR 214.5 = levels ≥ 4 build 12.3 (level-3 tables 1.0 + levels 5..16
@@ -128,12 +142,95 @@ level 2 35.7 (bit round 8.2, tables 1.2, table rounds 7.2 + 9.7, tail
 10.1, tail 8.9) + level 0 50.7 (bit rounds 6.3 + 7.2 + 8.5, tables 1.9,
 table rounds 7.5 + 10.5, tail 8.8);
 opening 53.4 (sumcheck 7.4 = combine columns 4.5 + fold rows 2.2 + rounds
-0.6; ring switch 6.8; Ligerito 37.2).
+0.6; ring switch 6.8; Ligerito 37.2 → 15.9 with the fast PoW scan: ≈ 21 ms
+of it was flock's challenger grinding 2^16-bit query PoWs and 2^15..2^9
+fold PoWs one nonce at a time on one thread with the `blake3` crate's
+scalar compress; `find_pow` now calls the crate's
+`utils::blake3x4::smallest_pow_nonce`, which returns exactly the serial
+scan's smallest nonce, so the bytes are unchanged. BitZ's PoW prefix is
+31 bytes (`bitz-pcs-pow-v1` ‖ seed), not a multiple of 4, so it takes the
+kernel's thread-parallel SCALAR path, not its NEON lanes; byte-offset lanes
+would take the remaining ≈ 3 ms to < 1).
 Cold, the same phases carry their first touch: level build 20.6 (256 MB
 of arena), level-3 tables 4.5 (64 MB), the opening +3 (90 MB inside
 flock); the per-level tables of levels 2..0 recycle the freed level-3
 tables and fault nothing.
 Verifier: ours 5.2–5.4 ms on their n = 28 proof against their 7.1–7.4.
+
+## Head-to-head with the crate's own F2Z (the paper's raw-performance metrics)
+
+2026-09-16, same box (M5, 4 P + 6 E, 24 GB), 8 rayon threads, one size per
+process, 20 s between sizes; both provers measured the paper's way (medians
+of 5 timed reps after one warm-up, every timed proof verified, commit =
+median of 5; F2Z through `f2z --sweep 20-30 --threads 8 --reps 5 --profile
+custom:1:4 --cooldown 20 --latex <scratch>` at the branch's master
+ac0aa44 — its own protocol is untouched here — and BitZ through
+`bitz_bench`). Two rounds each in alternating order (r1 / r2), then one
+BitZ round with the fast PoW scan. BitZ's smallest shape is n = 22
+(`MIN_LOG_BITS`); its n = 29/30 rows have no reference proof (their prover
+needs 23/46 GB), the protocol is the code parity-checked at n ≤ 28. Both
+openers are flock's `fast` ladder (rate 1/2, k = 4, Johnson + OOD, 100-bit
+round-by-round target, BLAKE3); the paper's buckets: grand products =
+BitZ `fold+images` + `gkr`; ring switch incl. sumcheck = `sumcheck` +
+`ring switch`; Ligerito = `ligerito`; Total = commit + prove. Proof bytes:
+BitZ narg = every transcript message (non-Ligerito), hints = the Ligerito
+proof. ms unless noted; KB = 1000 B.
+
+| n | (t,s) | prover | commit | grand prod. | ring switch + sc | Ligerito | Total (r1 / r2) | verify (r1 / r2) | proof non-Lig / Lig / total KB | peak RSS GB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20 | (12,8) | F2Z (main) | 0.33 | 5.52 | 1.21 | 0.67 | 8.02 / 7.97 | 1.69 / 1.70 | 16.7 / 81.4 / 98.0 | 0.03 |
+| 21 | (13,8) | F2Z (main) | 0.55 | 7.43 | 1.44 | 1.19 | 11.1 / 11.0 | 2.06 / 2.06 | 17.5 / 90.2 / 107.8 | 0.04 |
+| 22 | (14,8) | F2Z (main) | 0.66 | 11.0 | 1.95 | 1.53 | 15.8 / 15.5 | 2.85 / 2.88 | 18.4 / 100.0 / 118.4 | 0.07 |
+| 22 | (14,8) | BitZ (7a9f2fa) | 0.97 | 19.6 | 0.96 | 17.7 | 39.1 / 39.4 | 1.66 / 1.63 | 15.4 / 103.4 / 118.8 | 0.04 |
+| 22 | (14,8) | BitZ + fast PoW scan | 0.98 | 20.0 | 1.07 | 3.48 | 25.8 | 1.62 | 15.4 / 103.4 / 118.8 | 0.04 |
+| 23 | (14,9) | F2Z (main) | 0.99 | 17.0 | 2.14 | 2.89 | 23.6 / 23.8 | 2.49 / 2.48 | 23.4 / 116.6 / 140.0 | 0.14 |
+| 23 | (14,9) | BitZ (7a9f2fa) | 1.99 | 24.2 | 1.21 | 10.9 | 38.5 / 38.4 | 1.66 / 1.66 | 19.8 / 121.8 / 141.7 | 0.07 |
+| 23 | (14,9) | BitZ + fast PoW scan | 1.99 | 24.3 | 1.29 | 3.50 | 31.3 | 1.62 | 19.8 / 121.8 / 141.7 | 0.07 |
+| 24 | (15,9) | F2Z (main) | 1.64 | 27.8 | 3.06 | 3.23 | 36.6 / 36.6 | 3.46 / 3.40 | 24.4 / 129.4 / 153.8 | 0.24 |
+| 24 | (15,9) | BitZ (7a9f2fa) | 3.00 | 33.2 | 1.87 | 28.5 | 67.4 / 67.7 | 2.11 / 2.16 | 20.8 / 131.8 / 152.6 | 0.12 |
+| 24 | (15,9) | BitZ + fast PoW scan | 3.29 | 34.0 | 1.93 | 6.67 | 46.4 | 2.15 | 20.8 / 131.8 / 152.6 | 0.12 |
+| 25 | (15,10) | F2Z (main) | 2.72 | 49.6 | 4.20 | 3.95 | 61.5 / 60.7 | 3.86 / 3.91 | 33.1 / 140.9 / 174.0 | 0.47 |
+| 25 | (15,10) | BitZ (7a9f2fa) | 4.76 | 46.2 | 2.76 | 16.4 | 70.7 / 69.0 | 2.54 / 2.50 | 29.8 / 144.7 / 174.4 | 0.18 |
+| 25 | (15,10) | BitZ + fast PoW scan | 4.67 | 46.2 | 2.81 | 5.70 | 60.4 | 2.48 | 29.8 / 144.7 / 174.4 | 0.19 |
+| 26 | (16,10) | F2Z (main) | 5.11 | 86.5 | 6.62 | 5.72 | 106 / 107 | 4.61 / 4.62 | 34.5 / 160.3 / 194.8 | 0.66 |
+| 26 | (16,10) | BitZ (7a9f2fa) | 6.34 | 74.5 | 4.65 | 23.1 | 109 / 110 | 3.19 / 3.16 | 30.5 / 162.7 / 193.2 | 0.36 |
+| 26 | (16,10) | BitZ + fast PoW scan | 6.72 | 74.9 | 4.62 | 7.74 | 95.0 | 3.09 | 30.5 / 162.7 / 193.2 | 0.36 |
+| 27 | (17,10) | F2Z (main) | 9.60 | 162 | 11.2 | 9.68 | 196 / 196 | 6.76 / 6.26 | 35.6 / 172.9 / 208.5 | 1.17 |
+| 27 | (17,10) | BitZ (7a9f2fa) | 10.9 | 132 | 7.99 | 18.1 | 171 / 173 | 4.61 / 4.70 | 31.5 / 176.7 / 208.2 | 0.71 |
+| 27 | (17,10) | BitZ + fast PoW scan | 10.7 | 135 | 8.11 | 9.26 | 165 | 4.67 | 31.5 / 176.7 / 208.2 | 0.71 |
+| 28 | (17,11) | F2Z (main) | 19.3 | 309 | 19.2 | 11.7 | 363 / 367 | 7.26 / 7.45 | 52.6 / 186.3 / 238.9 | 2.30 |
+| 28 | (17,11) | BitZ (7a9f2fa) | 19.3 | 227 | 14.4 | 35.9 | 298 / 301 | 5.07 / 5.03 | 48.8 / 188.9 / 237.7 | 1.25 |
+| 28 | (17,11) | BitZ + fast PoW scan | 19.1 | 233 | 14.5 | 15.6 | 284 | 4.99 | 48.8 / 188.9 / 237.7 | 1.25 |
+| 29 | (18,11) | F2Z (main) | 38.6 | 649 | 39.2 | 17.9 | 750 / 802 | 10.22 / 9.80 | 54.0 / 206.4 / 260.4 | 4.28 |
+| 29 | (18,11) | BitZ (7a9f2fa) | 40.1 | 430 | 28.1 | 53.5 | 556 / 568 | 8.18 / 8.30 | 49.6 / 209.5 / 259.1 | 2.50 |
+| 29 | (18,11) | BitZ + fast PoW scan | 41.3 | 444 | 28.2 | 25.4 | 543 | 8.31 | 49.6 / 209.5 / 259.1 | 2.50 |
+| 30 | (18,12) | F2Z (main) | 73.8 | 1313 | 84.2 | 33.3 | 1506 / 1539 | 9.88 / 10.55 | 87.4 / 221.1 / 308.5 | 7.94 |
+| 30 | (18,12) | BitZ (7a9f2fa) | 78.5 | 821 | 49.9 | 81.4 | 1035 / 1061 | 8.85 / 9.06 | 83.1 / 224.8 / 307.9 | 4.41 |
+| 30 | (18,12) | BitZ + fast PoW scan | 81.9 | 834 | 50.8 | 44.2 | 1015 | 8.96 | 83.1 / 224.8 / 307.9 | 4.40 |
+
+| n | BitZ/F2Z total (committed) | BitZ/F2Z total (fast scan) | grand prod. | ring+sc | Ligerito (committed → fast) | verify | proof | RSS |
+|---|---|---|---|---|---|---|---|---|
+| 22 | 2.51 | 1.65 | 1.78 | 0.49 | 11.61 → 2.27 | 0.58 | 1.003 | 0.61 |
+| 23 | 1.62 | 1.32 | 1.42 | 0.57 | 3.77 → 1.21 | 0.67 | 1.012 | 0.48 |
+| 24 | 1.85 | 1.27 | 1.20 | 0.61 | 8.82 → 2.07 | 0.61 | 0.992 | 0.51 |
+| 25 | 1.14 | 0.99 | 0.93 | 0.66 | 4.14 → 1.44 | 0.66 | 1.002 | 0.39 |
+| 26 | 1.03 | 0.89 | 0.86 | 0.70 | 4.04 → 1.35 | 0.69 | 0.992 | 0.55 |
+| 27 | 0.88 | 0.84 | 0.81 | 0.71 | 1.87 → 0.96 | 0.68 | 0.999 | 0.61 |
+| 28 | 0.82 | 0.78 | 0.73 | 0.75 | 3.07 → 1.34 | 0.70 | 0.995 | 0.54 |
+| 29 | 0.72 | 0.70 | 0.66 | 0.72 | 2.99 → 1.42 | 0.80 | 0.995 | 0.58 |
+| 30 | 0.69 | 0.67 | 0.63 | 0.59 | 2.44 → 1.33 | 0.90 | 0.998 | 0.55 |
+
+Reading: at n ≤ 24 the crate's merged forest is 1.2–1.8× faster than
+BitZ's per-level GKR (its bit/table rounds have per-level fixed costs);
+from n = 25 the per-level design wins and the gap widens to 0.63× at
+n = 30 (the forest's in-tree rounds are the crate's known 66–85 % block).
+BitZ's ring switch + sumcheck is 0.5–0.75×, its verifier 0.6–0.9×, its
+peak RSS ≈ 0.5× (the one arena vs the forest's `2^n·4 B` levels), and
+the proofs are the same size within 1 % at every n (same opener, same
+message count). The Ligerito column was 2–12× before the fast PoW scan
+and is 1.0–1.4× after it — what remains is the 31-byte-prefix scalar
+path plus flock's engine scaling ≈ 2× on threads either way. The round 1
+→ round 2 drift is ≤ 3 % except F2Z n = 29 (+7 %, thermal).
 
 ## The design, in one paragraph each
 
@@ -200,7 +297,9 @@ Verifier: ours 5.2–5.4 ms on their n = 28 proof against their 7.1–7.4.
   images (parallel), and the verifier's reconstruction as a wide u128
   remainder (`U128::widening_mul` + `rem_wide_vartime`, sum by `add_mod`).
 - `pcs.rs`: their statement frames, ring switch, Ligerito via a flock
-  `Challenger` framed their way, proof as a bincode-fixint hint.
+  `Challenger` framed their way (its `grind_pow` = their
+  `blake3("bitz-pcs-pow-v1" ‖ seed ‖ nonce_le)` smallest-nonce PoW through
+  the crate's parallel scan), proof as a bincode-fixint hint.
 
 ## Scaling and floors (measured 2026-09-16, n = 28, warm)
 
@@ -283,8 +382,10 @@ compared two fills that both recycled.
    lookups); only fewer lookups would move it, and byte tables did not.
 4. Opening: `xi_combined_rows_packed` (4.5 ms) is 2^17 rows × 32 groups × 8
    byte lookups with a data-dependent exit — a fixed trip count may shave
-   ~20 %. Ligerito (37 ms) and the ring switch (6.8) are flock's engine,
-   outside `src/bitz`.
+   ~20 %. Ligerito (15.9 ms after the fast PoW scan) and the ring switch
+   (6.8) are flock's engine, outside `src/bitz`; the PoW's 31-byte prefix
+   could get NEON lanes (byte-offset nonce placement in
+   `utils::blake3x4`, ≈ −2 ms, a crate-utility change).
 5. Measure properly: `BITZ_REPEAT` (warm) with the per-phase medians, a
    separate cold single run, `RAYON_NUM_THREADS`, interleave binaries in
    one thermal window (the box drifts ≈ 10 ms between back-to-back
