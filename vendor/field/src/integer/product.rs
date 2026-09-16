@@ -90,6 +90,53 @@ pub struct ZAccumulator<const A: usize, const B: usize>(pub(crate) UintAccumulat
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IntegerOps;
 
+impl IntegerOps {
+    /// Signed product modulo 2^(64*OUT), with a schedule fixed by the widths.
+    /// This is an exact signed product when the caller's public bounds place
+    /// the result in `Z<OUT>`; otherwise it has wrapping semantics.
+    #[inline(always)]
+    pub fn wrapping_signed_product<const A: usize, const B: usize, const OUT: usize>(
+        &self,
+        lhs: &Z<A>,
+        rhs: &Z<B>,
+    ) -> Z<OUT> {
+        const {
+            assert!(A > 0 && B > 0 && OUT > 0 && OUT <= A + B);
+        }
+        let mut words = [0; OUT];
+        for i in 0..A.min(OUT) {
+            let mut carry = 0;
+            for j in 0..B.min(OUT - i) {
+                let sum = lhs.0.0[i] as u128 * rhs.0.0[j] as u128 + words[i + j] as u128 + carry;
+                words[i + j] = sum as u64;
+                carry = sum >> 64;
+            }
+            if i + B < OUT {
+                words[i + B] = carry as u64;
+            }
+        }
+        // a = unsigned(a) - sign(a)*2^(64*A), and likewise for b.
+        // The product of the two sign corrections vanishes modulo 2^(64*OUT).
+        let sign_a = lhs.is_negative_ct().word();
+        let sign_b = rhs.is_negative_ct().word();
+        let mut borrow = 0;
+        for i in A..OUT {
+            let (word, b0) = words[i].overflowing_sub(rhs.0.0[i - A] & sign_a);
+            let (word, b1) = word.overflowing_sub(borrow);
+            words[i] = word;
+            borrow = u64::from(b0 | b1);
+        }
+        let mut borrow = 0;
+        for i in B..OUT {
+            let (word, b0) = words[i].overflowing_sub(lhs.0.0[i - B] & sign_b);
+            let (word, b1) = word.overflowing_sub(borrow);
+            words[i] = word;
+            borrow = u64::from(b0 | b1);
+        }
+        Z::from_twos_complement_words(words)
+    }
+}
+
 impl<const A: usize, const B: usize> Words for UintProduct<A, B> {
     fn len(&self) -> usize {
         A + B

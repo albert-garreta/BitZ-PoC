@@ -104,6 +104,20 @@ impl Inputs {
             _ => panic!("unsupported width {bits}"),
         }
     }
+    fn fixture_digest(&self) -> String {
+        let mut hash = blake3::Hasher::new();
+        let mut row = |a: u128,b: u128,c: [u64;4]| {
+            hash.update(&a.to_le_bytes()); hash.update(&b.to_le_bytes());
+            for word in c { hash.update(&word.to_le_bytes()); }
+        };
+        match self {
+            Self::U32{a,b,c,..} => for i in 0..a.len() { row(a[i] as u128,b[i] as u128,[c[i],0,0,0]); },
+            Self::U64{a,b,c,..} => for i in 0..a.len() { row(a[i] as u128,b[i] as u128,[c[i] as u64,(c[i]>>64) as u64,0,0]); },
+            Self::U128{a,b,c,..} => for i in 0..a.len() { row(a[i],b[i],*c[i].as_words()); },
+        }
+        hash.finalize().to_hex().to_string()
+    }
+
     // The field-based skip entrypoint consumes owned projected tables. Include
     // this required work in the timer on BOTH versions; no fixture clones.
     fn project(&self, f: &Field, n: usize) -> R1csProductMles<Elem> {
@@ -186,6 +200,7 @@ pub fn run() {
         for width in words("OUTER_WIDTHS", "32 64 128") {
             let bits: u32 = width.parse().unwrap();
             let input = Inputs::new(bits, n);
+            let fixture_digest = input.fixture_digest();
             for protocol in words("OUTER_PROTOCOLS", "ordinary skip-1 skip-2 skip-3 skip-4") {
                 let k: usize = if protocol == "ordinary" {
                     0
@@ -205,6 +220,7 @@ pub fn run() {
                     for j in 0..variants.len() {
                         let variant = &variants[(j + sample) % variants.len()];
                         let mut transcript = Blake3Transcript::new();
+                        adapter::reset_measurements();
                         let started = Instant::now();
                         let proof = match variant.as_str() {
                             "production" => {
@@ -231,7 +247,7 @@ pub fn run() {
                         black_box(&proof);
                         println!(
                             "OUTER_SAMPLE {}",
-                            serde_json::json!({"revision":adapter::REVISION,"variant":variant,"bits":bits,"rows":1usize<<n,"protocol":protocol,"threads":rayon::current_num_threads(),"sample":sample,"warmup":sample==0,"ns":ns.to_string(),"proof_digest":fingerprint,"verified":true})
+                            serde_json::json!({"revision":adapter::REVISION,"variant":variant,"bits":bits,"rows":1usize<<n,"protocol":protocol,"threads":rayon::current_num_threads(),"sample":sample,"warmup":sample==0,"ns":ns.to_string(),"proof_digest":fingerprint,"fixture_digest":fixture_digest,"verified":true,"phase_ns":adapter::take_measurements()})
                         );
                     }
                 }

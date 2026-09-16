@@ -14,6 +14,8 @@ mod sampling;
 pub use sampling::*;
 mod dot;
 mod fold;
+mod prepared_linear;
+pub use prepared_linear::{PreparedWordWeights, PreparedProductReduction};
 mod operators;
 mod projection;
 pub use projection::PreparedSignedProjection;
@@ -346,6 +348,13 @@ macro_rules! impl_prime {
         impl<$($generic)*> RingOps for $provider {
             type Elem = PrimeValue<$id, L>;
             fn zero(&self) -> Self::Elem { PrimeValue::new(Uint::ZERO) }
+            fn zero_vec(&self, len: usize) -> Vec<Self::Elem> {
+                // SAFETY: PrimeValue contains only Uint<L> ([u64; L]) and a
+                // PhantomData marker. All-zero bytes are valid for both, and
+                // encode Montgomery zero at every supported modulus. Box
+                // preserves the element alignment and allocation layout.
+                unsafe { Box::<[Self::Elem]>::new_zeroed_slice(len).assume_init().into_vec() }
+            }
             fn one(&self) -> Self::Elem { PrimeValue::new(self.params().one) }
             #[inline] fn add(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem { PrimeValue::new(self.params().add(&a.words, &b.words)) }
             #[inline] fn sub(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem { PrimeValue::new(self.params().sub(&a.words, &b.words)) }

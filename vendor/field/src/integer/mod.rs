@@ -93,24 +93,50 @@ impl<const L: usize> Uint<L> {
     }
     pub(crate) fn adc(&self, rhs: &Self) -> (Self, u64) {
         let mut out = Self::ZERO;
-        let mut carry = 0;
-        for i in 0..L {
-            let sum = self.0[i] as u128 + rhs.0[i] as u128 + carry as u128;
-            out.0[i] = sum as u64;
-            carry = (sum >> 64) as u64;
+        #[cfg(target_arch = "x86_64")]
+        {
+            let mut carry = 0u8;
+            for i in 0..L {
+                carry =
+                    core::arch::x86_64::_addcarry_u64(carry, self.0[i], rhs.0[i], &mut out.0[i]);
+            }
+            (out, u64::from(carry))
         }
-        (out, carry)
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let mut carry = 0;
+            for i in 0..L {
+                let sum = self.0[i] as u128 + rhs.0[i] as u128 + carry as u128;
+                out.0[i] = sum as u64;
+                carry = (sum >> 64) as u64;
+            }
+            (out, carry)
+        }
     }
     pub(crate) fn sbb(&self, rhs: &Self) -> (Self, u64) {
         let mut out = Self::ZERO;
-        let mut borrow = 0;
-        for i in 0..L {
-            let (word, b0) = self.0[i].overflowing_sub(rhs.0[i]);
-            let (word, b1) = word.overflowing_sub(borrow);
-            out.0[i] = word;
-            borrow = (b0 | b1) as u64;
+        // Express a single borrow chain on x86-64. The baseline SBB intrinsic
+        // avoids expanding every limb into two subtractions and boolean merges.
+        #[cfg(target_arch = "x86_64")]
+        {
+            let mut borrow = 0u8;
+            for i in 0..L {
+                borrow =
+                    core::arch::x86_64::_subborrow_u64(borrow, self.0[i], rhs.0[i], &mut out.0[i]);
+            }
+            (out, u64::from(borrow))
         }
-        (out, borrow)
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let mut borrow = 0;
+            for i in 0..L {
+                let (word, b0) = self.0[i].overflowing_sub(rhs.0[i]);
+                let (word, b1) = word.overflowing_sub(borrow);
+                out.0[i] = word;
+                borrow = (b0 | b1) as u64;
+            }
+            (out, borrow)
+        }
     }
     /// Shift with zero fill. A public shift at least the width returns zero.
     pub fn shr(&self, public_shift: usize) -> Self {

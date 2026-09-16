@@ -143,3 +143,6 @@ pub(super) fn generic(
         Inputs::U128 { a, b, c, .. } => prove!(a, b, c),
     }
 }
+
+pub(super) fn reset_measurements() { crate::sumcheck::outer::measure::reset(); }
+pub(super) fn take_measurements() -> Option<[u64;4]> { crate::sumcheck::outer::measure::take() }

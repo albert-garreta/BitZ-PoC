@@ -1,5 +1,7 @@
 //! Native first folds and fused two-limb arithmetic for the shared outer engine.
+#[cfg(test)]
 use super::engine::RoundState;
+#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::*;
 use crate::piop::spartan::sumcheck::R1csProductMles;
@@ -7,15 +9,19 @@ use crate::sumcheck::SumcheckError;
 use crate::sumcheck::outer::ordinary::*;
 use crate::sumcheck::{boundary::*, proof::*};
 use crate::transcript::traits::Transcript;
+#[cfg(test)]
 use crate::utils::delayed_reduction::EncodedMac;
 use field::RingOps;
 
-#[cfg(feature = "parallel")]
+#[cfg(all(test, feature = "parallel"))]
 use rayon::prelude::*;
 mod native;
 pub(crate) use native::NativeInput;
 pub use native::NativeWideProducts;
+#[cfg(test)]
+pub(super) use native::legacy_dispatch as prove_native_reference;
 /// Removes the current Boolean coordinate by adding adjacent equality weights.
+#[cfg(test)]
 pub(crate) fn strip_coordinate_raw(ctx: &field::FpCtx<2>, input: &[Raw]) -> Vec<Raw> {
     debug_assert!(input.len() >= 2 && input.len().is_power_of_two());
     #[cfg(feature = "parallel")]
@@ -35,11 +41,13 @@ pub(crate) fn strip_coordinate_raw(ctx: &field::FpCtx<2>, input: &[Raw]) -> Vec<
 /// `low[pair % low.len()] · high[pair / low.len()]`, or `high[pair]` once the
 /// low coordinates are exhausted.
 #[derive(Clone, Copy)]
+#[cfg(test)]
 pub(crate) struct RawEqWeights<'a> {
     low: Option<&'a [Raw]>,
     high: &'a [Raw],
 }
 
+#[cfg(test)]
 impl<'a> RawEqWeights<'a> {
     #[inline(always)]
     fn pair_weight(&self, ctx: &field::FpCtx<2>, pair: usize) -> Raw {
@@ -97,6 +105,7 @@ pub struct RawProducts {
 }
 
 impl RawProducts {
+    #[cfg(test)]
     pub(crate) fn zeros(len: usize) -> Self {
         Self {
             az: vec![0; len],
@@ -119,12 +128,14 @@ impl RawProducts {
         self.az.len()
     }
 
+    #[cfg(test)]
     fn truncate(&mut self, len: usize) {
         self.az.truncate(len);
         self.bz.truncate(len);
         self.cz.truncate(len);
     }
 
+    #[cfg(test)]
     fn swap(&mut self, other: &mut Self) {
         std::mem::swap(&mut self.az, &mut other.az);
         std::mem::swap(&mut self.bz, &mut other.bz);
@@ -133,6 +144,7 @@ impl RawProducts {
 }
 
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn accumulate_cofactor_raw(
     ctx: &field::FpCtx<2>,
     accumulators: &mut ProductPair,
@@ -160,6 +172,7 @@ pub(crate) fn accumulate_cofactor_raw(
 /// Branch-free `accumulator += (±weight) · |value|` for `|value| ≤ u64::MAX`.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn accumulate_native_cofactor_raw(
     ctx: &field::FpCtx<2>,
     accumulators: &mut LinearPair,
@@ -190,6 +203,7 @@ pub(crate) fn accumulate_native_cofactor_raw(
 
 /// `[endpoint evaluation, leading coefficient]` of the cofactor over the
 /// current raw product tables.
+#[cfg(test)]
 pub(crate) fn cofactor_evaluations_raw(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -275,6 +289,7 @@ pub(crate) fn cofactor_evaluations_raw(
 
 /// The native (exact `u64`) twin of [`cofactor_evaluations_raw`] for the first
 /// outer round: field × `u64` accumulation, one reduction per bucket.
+#[cfg(test)]
 pub(crate) fn native_cofactor_evaluations_raw(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -370,12 +385,14 @@ pub(crate) fn native_cofactor_evaluations_raw(
 }
 
 /// Raw slices of one product table triple, for disjoint parallel blocks.
+#[cfg(test)]
 pub(crate) struct ProductSlices<'a> {
     az: &'a [Raw],
     bz: &'a [Raw],
     cz: &'a [Raw],
 }
 
+#[cfg(test)]
 pub(crate) struct ProductSlicesMut<'a> {
     az: &'a mut [Raw],
     bz: &'a mut [Raw],
@@ -383,6 +400,7 @@ pub(crate) struct ProductSlicesMut<'a> {
 }
 
 /// Folds every table at `challenge` (no accumulation): the last round.
+#[cfg(test)]
 pub(crate) fn fold_products_raw(
     ctx: &field::FpCtx<2>,
     input: &RawProducts,
@@ -410,6 +428,7 @@ pub(crate) fn fold_products_raw(
 
 /// Folds the tables at `challenge` and accumulates the next round's cofactor
 /// evaluations from the folded pairs in the same pass.
+#[cfg(test)]
 pub(crate) fn fold_products_and_cofactor_evaluations_raw(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -570,6 +589,7 @@ pub(crate) fn fold_products_and_cofactor_evaluations_raw(
 /// is `(1 - challenge) · v0 + challenge · v1`, Montgomery-reduced once and
 /// converted to raw form — and accumulates the next round's cofactor
 /// evaluations in the same pass.
+#[cfg(test)]
 pub(crate) fn fold_native_products_and_cofactor_evaluations_raw(
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -720,6 +740,7 @@ pub(crate) fn fold_native_products_and_cofactor_evaluations_raw(
 }
 
 /// Shared prover-side scalars of one outer sumcheck.
+#[cfg(test)]
 pub(crate) struct EncodedScalars<'a> {
     ctx: &'a field::FpCtx<2>,
     reducer: &'a field::FpCtx<2>,
@@ -729,6 +750,7 @@ pub(crate) struct EncodedScalars<'a> {
     one: Field,
 }
 
+#[cfg(test)]
 impl EncodedScalars<'_> {
     fn coefficients(
         &self,
@@ -756,6 +778,7 @@ impl EncodedScalars<'_> {
 
 /// Removes the active coordinate from the equality factors: the low table
 /// while it has more than one entry, then the high table.
+#[cfg(test)]
 pub(crate) fn strip_active_coordinate(
     ctx: &field::FpCtx<2>,
     eq_low: &mut Vec<Raw>,
@@ -768,6 +791,7 @@ pub(crate) fn strip_active_coordinate(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn weights_of<'a>(eq_low: &'a [Raw], eq_high: &'a [Raw]) -> RawEqWeights<'a> {
     RawEqWeights {
         low: (!eq_low.is_empty() && eq_low.len() > 1).then_some(eq_low),
@@ -781,6 +805,7 @@ pub(crate) fn weights_of<'a>(eq_low: &'a [Raw], eq_high: &'a [Raw]) -> RawEqWeig
 /// `round_boundary` acts between each absorbed round polynomial and its
 /// challenge ([`UngrindedRoundBoundary`] adds no transcript bytes).
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn continue_encoded<T: Transcript, P: RoundBoundaryPolicy>(
     transcript: &mut T,
     scalars: &EncodedScalars<'_>,
@@ -833,6 +858,7 @@ fn continue_encoded<T: Transcript, P: RoundBoundaryPolicy>(
 }
 
 /// Only the three terminal scalars cross back from raw storage.
+#[cfg(test)]
 fn finish_encoded(
     transcript: &mut impl Transcript,
     ctx: &field::FpCtx<2>,
@@ -850,6 +876,7 @@ fn finish_encoded(
     )
 }
 
+#[cfg(test)]
 fn encoded_scalars<'a>(
     ctx: &'a field::FpCtx<2>,
     reducer: &'a field::FpCtx<2>,
@@ -899,6 +926,48 @@ pub(crate) fn prove_encoded<T: Transcript>(
 /// under the same policy.
 #[allow(clippy::too_many_arguments)]
 fn prepare_encoded<T: Transcript, P: RoundBoundaryPolicy>(
+    transcript: &mut T,
+    ctx: &field::FpCtx<2>,
+    _reducer: &field::FpCtx<2>,
+    initial_claim: Field,
+    tau: &[Field],
+    eq_low: Vec<Raw>,
+    eq_high: Vec<Raw>,
+    products: RawProducts,
+    round_boundary: &mut P,
+    known_zero: bool,
+) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
+    super::api::prove_from_rows(
+        ctx,
+        transcript,
+        initial_claim,
+        tau,
+        &native::ResidueRows {
+            field: ctx,
+            products: &products,
+        },
+        known_zero,
+        factors_from_raw(ctx, eq_low, eq_high),
+        round_boundary,
+    )
+    .map(Into::into)
+}
+
+pub(super) fn factors_from_raw(
+    ctx: &field::FpCtx<2>,
+    low: Vec<Raw>,
+    high: Vec<Raw>,
+) -> EqualityFactors<Field> {
+    EqualityFactors::new(
+        low.into_iter().map(|x| shared_raw(ctx, x)).collect(),
+        high.into_iter().map(|x| shared_raw(ctx, x)).collect(),
+        ctx,
+    )
+}
+
+/// Independent retained field arithmetic reference for differential tests.
+#[cfg(test)]
+pub(super) fn prepare_encoded_reference<T: Transcript, P: RoundBoundaryPolicy>(
     transcript: &mut T,
     ctx: &field::FpCtx<2>,
     reducer: &field::FpCtx<2>,
@@ -992,6 +1061,7 @@ pub(crate) fn prove_native<'a, T: Transcript>(
     )
 }
 
+#[cfg(test)]
 fn prove_native_prefix<T: Transcript>(
     transcript: &mut T,
     ctx: &field::FpCtx<2>,

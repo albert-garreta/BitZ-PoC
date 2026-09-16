@@ -1,16 +1,18 @@
 //! Owned and borrowed inputs for equality-weighted outer sumchecks.
-use super::{engine::RoundState, ordinary::*};
-use crate::piop::spartan::{SpartanField, matrix::make_equality_factors};
-use crate::sumcheck::arithmetic::{
-    SumcheckProductReducer, reduce_two_accumulators, sum_product_accumulators,
+use super::{
+    OuterArithmetic,
+    engine::RoundState,
+    inputs::{OuterRows, SliceRows},
+    ordinary::*,
+    traversal::*,
 };
+use crate::piop::spartan::{SpartanField, matrix::make_equality_factors};
+use crate::sumcheck::arithmetic::SumcheckProductReducer;
 use crate::sumcheck::{
     RoundBoundaryPolicy, SumcheckError, SumcheckProof, proof::OuterSumcheckOutput,
 };
 use crate::transcript::traits::Transcript;
-use field::{FieldOps, FoldPairs, Reduce, RingOps, WideMul};
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
+use field::{FieldOps, RingOps};
 
 /// A and B have the same input type; C can hold wider exact products.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,6 +49,21 @@ impl<E> From<OuterSumcheckOutput<E>> for OuterOutput<E> {
     }
 }
 
+impl<E> From<OuterOutput<E>> for OuterSumcheckOutput<E> {
+    fn from(out: OuterOutput<E>) -> Self {
+        Self {
+            proof: crate::sumcheck::proof::OuterSumcheckProof {
+                sumcheck: out.proof,
+                az_mle_claim: out.evaluations.ax,
+                bz_mle_claim: out.evaluations.bx,
+                cz_mle_claim: out.evaluations.cx,
+            },
+            eval_points: out.point,
+            final_claim: out.final_claim,
+        }
+    }
+}
+
 pub(super) fn validate_shape(a: usize, b: usize, c: usize) -> Result<usize, SumcheckError> {
     if !a.is_power_of_two() || a != b || a != c {
         return Err(SumcheckError::InvalidProductDimensions);
@@ -64,34 +81,27 @@ pub fn prove_outer_sumcheck<F, AB, C>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
 where
-    F: FieldOps
-        + SumcheckProductReducer<<F as RingOps>::Elem>
-        + WideMul<<F as RingOps>::Elem, AB>
-        + WideMul<<F as RingOps>::Elem, C>
-        + FoldPairs<AB, <F as RingOps>::Elem>
-        + FoldPairs<C, <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, AB>>::Product, Output = <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, C>>::Product, Output = <F as RingOps>::Elem>,
+    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
     <F as RingOps>::Elem: SpartanField<Config = F>,
     AB: Copy + Send + Sync,
     C: Copy + Send + Sync,
 {
-    let (state, factors, products) = prepare_first(
+    let prepared = prepare_first(
         field,
         transcript,
         initial_claim,
         tau,
-        &inputs.ax,
-        &inputs.bx,
-        &inputs.cx,
+        &SliceRows {
+            ax: &inputs.ax,
+            bx: &inputs.bx,
+            cx: &inputs.cx,
+        },
         false,
         boundary,
+        None,
     )?;
     drop(inputs); // Native tables need not coexist with all subsequent fold scratch.
-    Ok(continue_field(
-        transcript, field, field, tau, factors, products, state, None, boundary,
-    )?
-    .into())
+    finish_first(field, transcript, tau, prepared, boundary)
 }
 
 /// Proves claim = Σₓ eq(tau,x) (A(x)B(x)−C(x)). A zero claim is allowed
@@ -107,33 +117,22 @@ pub fn prove_outer_sumcheck_from_slices<F, AB, C>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
 where
-    F: FieldOps
-        + SumcheckProductReducer<<F as RingOps>::Elem>
-        + WideMul<<F as RingOps>::Elem, AB>
-        + WideMul<<F as RingOps>::Elem, C>
-        + FoldPairs<AB, <F as RingOps>::Elem>
-        + FoldPairs<C, <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, AB>>::Product, Output = <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, C>>::Product, Output = <F as RingOps>::Elem>,
+    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
     <F as RingOps>::Elem: SpartanField<Config = F>,
     AB: Copy + Send + Sync,
     C: Copy + Send + Sync,
 {
-    let (state, factors, products) = prepare_first(
+    let prepared = prepare_first(
         field,
         transcript,
         initial_claim,
         tau,
-        ax,
-        bx,
-        cx,
+        &SliceRows { ax, bx, cx },
         false,
         boundary,
+        None,
     )?;
-    Ok(continue_field(
-        transcript, field, field, tau, factors, products, state, None, boundary,
-    )?
-    .into())
+    finish_first(field, transcript, tau, prepared, boundary)
 }
 
 /// Proves a rowwise zero relation, using H(X)=h₂X(X−1) in the first round.
@@ -146,34 +145,27 @@ pub fn prove_outer_zerocheck<F, AB, C>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
 where
-    F: FieldOps
-        + SumcheckProductReducer<<F as RingOps>::Elem>
-        + WideMul<<F as RingOps>::Elem, AB>
-        + WideMul<<F as RingOps>::Elem, C>
-        + FoldPairs<AB, <F as RingOps>::Elem>
-        + FoldPairs<C, <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, AB>>::Product, Output = <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, C>>::Product, Output = <F as RingOps>::Elem>,
+    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
     <F as RingOps>::Elem: SpartanField<Config = F>,
     AB: Copy + Send + Sync,
     C: Copy + Send + Sync,
 {
-    let (state, factors, products) = prepare_first(
+    let prepared = prepare_first(
         field,
         transcript,
         field.zero(),
         tau,
-        &inputs.ax,
-        &inputs.bx,
-        &inputs.cx,
+        &SliceRows {
+            ax: &inputs.ax,
+            bx: &inputs.bx,
+            cx: &inputs.cx,
+        },
         true,
         boundary,
+        None,
     )?;
     drop(inputs); // Native tables need not coexist with all subsequent fold scratch.
-    Ok(continue_field(
-        transcript, field, field, tau, factors, products, state, None, boundary,
-    )?
-    .into())
+    finish_first(field, transcript, tau, prepared, boundary)
 }
 
 /// Proves a rowwise zero relation, using H(X)=h₂X(X−1) in the first round.
@@ -188,117 +180,169 @@ pub fn prove_outer_zerocheck_from_slices<F, AB, C>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<<F as RingOps>::Elem>, SumcheckError>
 where
-    F: FieldOps
-        + SumcheckProductReducer<<F as RingOps>::Elem>
-        + WideMul<<F as RingOps>::Elem, AB>
-        + WideMul<<F as RingOps>::Elem, C>
-        + FoldPairs<AB, <F as RingOps>::Elem>
-        + FoldPairs<C, <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, AB>>::Product, Output = <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, C>>::Product, Output = <F as RingOps>::Elem>,
+    F: OuterArithmetic<AB, C> + SumcheckProductReducer<<F as RingOps>::Elem>,
     <F as RingOps>::Elem: SpartanField<Config = F>,
     AB: Copy + Send + Sync,
     C: Copy + Send + Sync,
 {
-    let (state, factors, products) = prepare_first(
+    let prepared = prepare_first(
         field,
         transcript,
         field.zero(),
         tau,
-        ax,
-        bx,
-        cx,
+        &SliceRows { ax, bx, cx },
         true,
         boundary,
+        None,
     )?;
-    Ok(continue_field(
-        transcript, field, field, tau, factors, products, state, None, boundary,
+    finish_first(field, transcript, tau, prepared, boundary)
+}
+
+/// Production storage adapters enter the same protocol and arithmetic traversal.
+/// Factors must be fresh equality tables for `tau` in the same coordinate order.
+/// A known-zero relation requires a zero initial claim and A(x)B(x)=C(x) at every row.
+pub(super) fn prove_from_rows<F, I: OuterRows>(
+    field: &F,
+    transcript: &mut impl Transcript,
+    claim: F::Elem,
+    tau: &[F::Elem],
+    rows: &I,
+    known_zero: bool,
+    factors: EqualityFactors<F::Elem>,
+    boundary: &mut impl RoundBoundaryPolicy,
+) -> Result<OuterOutput<F::Elem>, SumcheckError>
+where
+    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<F::Elem>,
+    F::Elem: SpartanField<Config = F>,
+{
+    let prepared = prepare_first(
+        field,
+        transcript,
+        claim,
+        tau,
+        rows,
+        known_zero,
+        boundary,
+        Some(factors),
+    )?;
+    finish_first(field, transcript, tau, prepared, boundary)
+}
+
+struct PreparedOrdinary<E> {
+    state: RoundState<E>,
+    factors: EqualityFactors<E>,
+    products: R1csProductTableBuffers<E>,
+    pending: Option<[E; 3]>,
+    inverses: Vec<E>,
+}
+
+fn finish_first<F>(
+    field: &F,
+    transcript: &mut impl Transcript,
+    tau: &[F::Elem],
+    prepared: PreparedOrdinary<F::Elem>,
+    boundary: &mut impl RoundBoundaryPolicy,
+) -> Result<OuterOutput<F::Elem>, SumcheckError>
+where
+    F: FieldOps + SumcheckProductReducer<F::Elem>,
+    F::Elem: SpartanField<Config = F>,
+{
+    #[cfg(feature = "bench-internals")]
+    let _phase = super::measure::Phase::start(3);
+    Ok(continue_field_with_inverses(
+        transcript,
+        field,
+        field,
+        tau,
+        prepared.factors,
+        prepared.products,
+        prepared.state,
+        prepared.pending,
+        Some(prepared.inverses),
+        boundary,
     )?
     .into())
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prepare_first<F, AB, C>(
+fn prepare_first<F, I: OuterRows>(
     field: &F,
     transcript: &mut impl Transcript,
     initial_claim: <F as RingOps>::Elem,
     tau: &[<F as RingOps>::Elem],
-    ax: &[AB],
-    bx: &[AB],
-    cx: &[C],
+    rows: &I,
     known_zero: bool,
     boundary: &mut impl RoundBoundaryPolicy,
-) -> Result<
-    (
-        RoundState<<F as RingOps>::Elem>,
-        EqualityFactors<<F as RingOps>::Elem>,
-        R1csProductTableBuffers<<F as RingOps>::Elem>,
-    ),
-    SumcheckError,
->
+    prepared_factors: Option<EqualityFactors<F::Elem>>,
+) -> Result<PreparedOrdinary<F::Elem>, SumcheckError>
 where
-    F: FieldOps
-        + SumcheckProductReducer<<F as RingOps>::Elem>
-        + WideMul<<F as RingOps>::Elem, AB>
-        + WideMul<<F as RingOps>::Elem, C>
-        + FoldPairs<AB, <F as RingOps>::Elem>
-        + FoldPairs<C, <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, AB>>::Product, Output = <F as RingOps>::Elem>
-        + Reduce<<F as WideMul<<F as RingOps>::Elem, C>>::Product, Output = <F as RingOps>::Elem>,
+    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<<F as RingOps>::Elem>,
     <F as RingOps>::Elem: SpartanField<Config = F>,
-    AB: Copy + Send + Sync,
-    C: Copy + Send + Sync,
 {
-    let n = validate_shape(ax.len(), bx.len(), cx.len())?;
+    #[cfg(feature = "bench-internals")]
+    let setup = super::measure::Phase::start(0);
+    let (a, b, c) = rows.dimensions();
+    let n = validate_shape(a, b, c)?;
     if tau.len() != n {
         return Err(SumcheckError::InvalidEqualityDimensions);
     }
     boundary.validate(n)?;
-    let (low, high) =
-        make_equality_factors(tau, field).map_err(|_| SumcheckError::InvalidEqualityDimensions)?;
-    let mut factors = EqualityFactors::new(low.evaluations, high.evaluations, field);
+    if known_zero && initial_claim != field.zero() {
+        return Err(SumcheckError::InvalidTerminalClaim);
+    }
+    let mut factors = if let Some(factors) = prepared_factors {
+        if !factors.matches_rows(a) {
+            return Err(SumcheckError::InvalidEqualityDimensions);
+        }
+        factors
+    } else {
+        let (low, high) = make_equality_factors(tau, field)
+            .map_err(|_| SumcheckError::InvalidEqualityDimensions)?;
+        EqualityFactors::new(low.evaluations, high.evaluations, field)
+    };
     let mut state = RoundState::new(initial_claim, n, field);
-    // Multiplication by one uses the operand's exact-product/reduction contract.
-    // No field-valued input table is allocated before the first fold.
-    let ab = |v: &AB| Reduce::reduce(field, field.mul_wide(&field.one(), v));
-    let c = |v: &C| Reduce::reduce(field, field.mul_wide(&field.one(), v));
     if n == 0 {
-        return Ok((
+        let [a, b, c] = PreparedFold::<_, _, 1>::new(field, [field.one()], rows).fold(0);
+        return Ok(PreparedOrdinary {
             state,
             factors,
-            R1csProductTableBuffers {
-                az: vec![ab(&ax[0])],
-                bz: vec![ab(&bx[0])],
-                cz: vec![c(&cx[0])],
+            products: R1csProductTableBuffers {
+                az: vec![a],
+                bz: vec![b],
+                cz: vec![c],
             },
-        ));
+            pending: None,
+            inverses: Vec::new(),
+        });
     }
+    #[cfg(feature = "bench-internals")]
+    drop(setup);
+    #[cfg(feature = "bench-internals")]
+    let coefficients_phase = super::measure::Phase::start(1);
+    let inverses = batch_invert_nonzero(tau, field);
     factors.strip(field);
-    let weights = factors.weights();
     let endpoint = FactoredEndpoint::for_tau(&tau[0]);
-    let accumulators = sum_product_accumulators(
-        ax.len() / 2,
-        |acc, pair| {
+    let evaluations = integer_buckets::<F, I::AB, I::C, 2>(
+        field,
+        factors.weights(),
+        |acc, weights, pair, index| {
             let i = 2 * pair;
-            let a0 = ab(&ax[i]);
-            let a1 = ab(&ax[i + 1]);
-            let b0 = ab(&bx[i]);
-            let b1 = ab(&bx[i + 1]);
-            let weight = weights.pair_weight(pair, field);
-            let leading = field.mul(&field.sub(&a1, &a0), &field.sub(&b1, &b0));
-            field.multiply_accumulate(&mut acc[1], &weight, &leading);
+            let a0 = field.lift_ab(rows.a(i));
+            let a1 = field.lift_ab(rows.a(i + 1));
+            let b0 = field.lift_ab(rows.b(i));
+            let b1 = field.lift_ab(rows.b(i + 1));
+            let leading = field.product(field.sub_ab(a1, a0), field.sub_ab(b1, b0));
+            field.accumulate::<false>(&mut acc[1], weights, index, leading);
             if !known_zero {
-                let (a, b, index) = match endpoint {
+                let (a, b, i) = match endpoint {
                     FactoredEndpoint::Zero | FactoredEndpoint::KnownZero => (a0, b0, i),
                     FactoredEndpoint::One => (a1, b1, i + 1),
                 };
-                let residual = field.sub(&field.mul(&a, &b), &c(&cx[index]));
-                field.multiply_accumulate(&mut acc[0], &weight, &residual);
+                let residual = field.residual(field.product(a, b), field.lift_c(rows.c(i)));
+                field.accumulate::<false>(&mut acc[0], weights, index, residual);
             }
         },
-        field,
-    );
-    let evaluations = reduce_two_accumulators(accumulators, field, field)?;
+    )?;
     let coefficients = if known_zero {
         // (1−tau+(2tau−1)X) h₂ X(X−1), stored as [c₀,c₂,c₃].
         let e0 = field.sub(&field.one(), &tau[0]);
@@ -309,7 +353,7 @@ where
             field.mul(&e1, &evaluations[1]),
         ]
     } else {
-        let inv = *field.inverse_ct(&tau[0]).value();
+        let inv = inverses[0];
         reconstruct_eq_factored_cubic_without_linear(
             &state.claim,
             &tau[0],
@@ -322,35 +366,38 @@ where
         )
     };
     let challenge = state.sample(field, transcript, tau, &coefficients, boundary)?;
-    let mut products = R1csProductTableBuffers::filled(ax.len() / 2, &field.zero());
-    // Keep native-to-field conversion inside the fold. Each worker owns
-    // disjoint output ranges for all three tables, with one parallel join.
-    let fold = |start: usize, a: &mut [F::Elem], b: &mut [F::Elem], c: &mut [F::Elem]| {
-        let end = start + 2 * a.len();
-        field.fold_pairs_into(&ax[start..end], a, &challenge);
-        field.fold_pairs_into(&bx[start..end], b, &challenge);
-        field.fold_pairs_into(&cx[start..end], c, &challenge);
+    #[cfg(feature = "bench-internals")]
+    drop(coefficients_phase);
+    #[cfg(feature = "bench-internals")]
+    let _fold = super::measure::Phase::start(2);
+    let mut products = R1csProductTableBuffers::zeroed(a / 2, field);
+    let coefficients = [field.sub(&field.one(), &challenge), challenge];
+    let fold = PreparedFold::new(field, coefficients, rows);
+    let endpoint = if n > 1 {
+        FactoredEndpoint::for_tau(&tau[1])
+    } else {
+        FactoredEndpoint::Zero
     };
-    #[cfg(feature = "parallel")]
-    let parallel = crate::sumcheck::arithmetic::should_parallelize(ax.len() / 4);
-    #[cfg(not(feature = "parallel"))]
-    let parallel = false;
-    #[cfg(feature = "parallel")]
-    if parallel {
-        const OUTPUT_CHUNK: usize = 2048;
-        (
-            products.az.par_chunks_mut(OUTPUT_CHUNK),
-            products.bz.par_chunks_mut(OUTPUT_CHUNK),
-            products.cz.par_chunks_mut(OUTPUT_CHUNK),
+    let next = fold_and_message(field, &mut products, &mut factors, endpoint, fold)?;
+    let pending = next.map(|values| {
+        reconstruct_eq_factored_cubic_without_linear(
+            &state.claim,
+            &tau[1],
+            &inverses[1],
+            endpoint,
+            values,
+            &state.equality_scale,
+            &field.one(),
+            field,
         )
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(i, (a, b, c))| fold(2 * i * OUTPUT_CHUNK, a, b, c));
-    }
-    if !parallel {
-        fold(0, &mut products.az, &mut products.bz, &mut products.cz);
-    }
-    Ok((state, factors, products))
+    });
+    Ok(PreparedOrdinary {
+        state,
+        factors,
+        products,
+        pending,
+        inverses,
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

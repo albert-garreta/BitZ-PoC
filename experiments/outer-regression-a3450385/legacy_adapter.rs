@@ -91,3 +91,6 @@ pub(super) fn production(
         )
     }
 }
+
+pub(super) fn reset_measurements() {}
+pub(super) fn take_measurements() -> Option<[u64;4]> { None }
