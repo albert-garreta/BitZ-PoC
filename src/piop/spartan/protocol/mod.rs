@@ -22,6 +22,8 @@
 
 pub mod binding;
 pub mod bitify;
+#[cfg(feature = "bitz-parity")]
+pub mod bitz_opener;
 pub mod linear;
 
 use std::{borrow::Cow, sync::OnceLock};

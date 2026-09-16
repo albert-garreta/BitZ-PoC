@@ -163,6 +163,11 @@ use f2z::piop::spartan::{
     U32MulProof, U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
+#[cfg(feature = "bitz-parity")]
+use f2z::piop::spartan::protocol::{
+    OpeningProof, PreparedRelationPrefix, ProveOptions,
+    bitz_opener::{self, BitzLigerito, BitzOpener, BitzProof},
+};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use flock_core::pcs::ligerito::{LigeritoSecurityConfig};
 
@@ -472,8 +477,9 @@ fn usage() -> ! {
        f2z --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
          (paper-table mode: one fresh process per n, then the LaTeX table is written —\n\
           default paper/raw-performance-table.tex in the crate; t/s do not apply)\n\
-       f2z --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr] [--word-bits 1|8]\n\
-         (2^e u32×u32→u64 multiplications through the Spartan PIOP + F2Z opening; e ≥ 15)\n\
+       f2z --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr] [--word-bits 1|8] [--pcs f2z|bitz]\n\
+         (2^e u32×u32→u64 multiplications through the Spartan PIOP + F2Z opening; e ≥ 15;\n\
+          --pcs bitz discharges through BitZ's scheme, --profile fast|udr|custom:<r>:<k> its Ligerito ladder)\n\
        f2z --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--word-bits W] [--cooldown S] [--latex <path>]\n\
          (paper-table mode for --mul; default paper/u32-mul-table.tex)\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
@@ -505,6 +511,13 @@ struct Opts {
     threads: Option<usize>,
     reps: usize,
     profile: String,
+    /// `--pcs f2z|bitz`: the opener of `--mul` (the crate's chunked
+    /// exponent-fold forest, or BitZ's scheme through
+    /// `protocol::bitz_opener`; the latter takes `--profile fast|udr|...`
+    /// as its Ligerito ladder, `fast` = BitZ as shipped).
+    pcs: String,
+    /// Whether `--profile` (or `F2Z_LIG_PROFILE`) was given.
+    profile_explicit: bool,
     word_bits: usize,
     family: Option<String>,
     taps: Option<String>,
@@ -560,6 +573,8 @@ fn parse_args() -> Opts {
         cooldown_s: 0,
         sweep_threads: None,
         rep_cooldown_s: 0,
+        pcs: "f2z".to_string(),
+        profile_explicit: std::env::var_os("F2Z_LIG_PROFILE").is_some(),
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -575,7 +590,14 @@ fn parse_args() -> Opts {
             }
             "--profile" => {
                 profile_explicit = true;
+                o.profile_explicit = true;
                 o.profile = args.next().unwrap_or_else(|| usage());
+            }
+            "--pcs" => {
+                o.pcs = args.next().unwrap_or_else(|| usage());
+                if o.pcs != "f2z" && o.pcs != "bitz" {
+                    usage();
+                }
             }
             "--word-bits" | "-w" => {
                 o.word_bits =
@@ -2860,6 +2882,267 @@ fn mul_prove_e2e(
     (proof, hint)
 }
 
+
+#[cfg(feature = "bitz-parity")]
+fn profile_is_default(o: &Opts) -> bool {
+    !o.profile_explicit
+}
+
+/// `--mul <e> --pcs bitz`: the same relation, prime draw, PIOP and
+/// bitification, the claim discharged through BitZ's scheme
+/// (`protocol::bitz_opener`); the same measurements and result line, with
+/// BitZ's phases in the opening buckets (grand products := its column
+/// folds + GKR, ring switch := its reduction sumcheck + ring switch,
+/// Ligerito := its Ligerito) and `pcs=bitz`.
+#[cfg(feature = "bitz-parity")]
+fn mul_shape_bitz<P: IopSecurityProfile>(
+    o: &Opts,
+    e: usize,
+    witness: &U32MulWitness,
+    layout: f2z::piop::spartan::U32MulLayout,
+    params: IntegerMatrixLayout,
+    witness_ms: f64,
+    profile: &str,
+) {
+    let multiplications = 1usize << e;
+    let ladder = BitzLigerito::parse(profile, P::LIGERITO_TARGET_BITS).unwrap_or_else(|error| {
+        eprintln!("--pcs bitz --profile {profile}: {error}");
+        exit(2)
+    });
+    let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0 = tracing::info_span!("f2z:t0").entered();
+    let prefix = PreparedRelationPrefix::new::<P>(layout).unwrap_or_else(|err| {
+        eprintln!("relation preparation failed at profile {}: {err}", P::NAME);
+        exit(1)
+    });
+    let opener = BitzOpener::new(params, ladder, P::LIGERITO_TARGET_BITS).unwrap_or_else(|err| {
+        eprintln!("BitZ opener: {err}");
+        exit(1)
+    });
+    drop(t0);
+    let setup_ms = f2z::observability::duration(&t0_recording.intervals().expect("setup capture"), "f2z:t0").expect("setup duration").as_secs_f64() * 1e3;
+    let sec = prefix.security();
+    let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
+    let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
+    let threads_eff: usize = {
+        #[cfg(feature = "parallel")]
+        {
+            rayon::current_num_threads()
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            1
+        }
+    };
+    let (opener_bits, opener_bind) = opener.opening_bits();
+    let lig_tag = format!("bitz-{}", ladder.name());
+    println!(
+        "f2z --mul --pcs bitz: 2^{e} = {multiplications} u32×u32→u64 multiplications | BitZ shape (t={}, s={}) \
+         | profile={} λ={} | ladder={lig_tag} | q ∈ [2^{q_lo_log2}, 2^{q_bits}) sampled after the commit | \
+         threads={threads_eff}",
+        params.row_vars, params.col_vars, sec.profile_name, sec.lambda,
+    );
+    println!(
+        "excluded from prove: witness generation {witness_ms:.2} ms (median of {}) | one-time setup {setup_ms:.1} ms",
+        o.reps
+    );
+
+    let prove_e2e = |record: bool| -> (BitzProof, FlockCommitHint, Vec<(String, std::time::Duration)>) {
+        let proving = tracing::info_span!("cli:mul.proving").entered();
+        let commit = tracing::info_span!("cli:mul.commit").entered();
+        let hint = opener.commit(witness.f2z_bit_rows()).unwrap_or_else(|err| {
+            eprintln!("BitZ commitment failed: {err}");
+            exit(1)
+        });
+        drop(commit);
+        f2z::bitz::record_phases(record);
+        let proof = bitz_opener::prove(
+            &mut Blake3Transcript::new(),
+            &prefix,
+            &opener,
+            witness,
+            &hint,
+            ProveOptions::default(),
+        )
+        .unwrap_or_else(|err| {
+            eprintln!("BitZ prove failed: {err}");
+            exit(1)
+        });
+        let phases = if record { f2z::bitz::take_phases() } else { Vec::new() };
+        f2z::bitz::record_phases(false);
+        drop(proving);
+        (proof, hint, phases)
+    };
+    let verify = |hint: &FlockCommitHint, proof: &BitzProof| {
+        bitz_opener::verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, proof)
+            .unwrap_or_else(|err| {
+                eprintln!("verification failed: {err}");
+                exit(1)
+            });
+    };
+
+    // Warm-up (the first end-to-end correctness check), the tracked peak
+    // probe, then the timed reps with heap tracking off.
+    {
+        let (proof, hint, _) = prove_e2e(false);
+        verify(&hint, &proof);
+        black_box(&proof);
+    }
+    reset_peak();
+    {
+        let (peak_proof, peak_hint, _) = prove_e2e(false);
+        black_box(&peak_proof);
+        black_box(&peak_hint);
+    }
+    let peak = peak_mb();
+    set_heap_tracking(false);
+
+    let mut commit_ms_v = Vec::with_capacity(o.reps);
+    let mut prove_ms_v = Vec::with_capacity(o.reps);
+    let mut verify_ms_v = Vec::with_capacity(o.reps);
+    let mut s2_v = Vec::new();
+    let mut s3_v = Vec::new();
+    let mut s4_v = Vec::new();
+    let mut s5_v = Vec::new();
+    let mut gp_v = Vec::new();
+    let mut rs_v = Vec::new();
+    let mut lig_v = Vec::new();
+    let mut last: Option<(BitzProof, FlockCommitHint)> = None;
+    let phase = |phases: &[(String, std::time::Duration)], label: &str| -> f64 {
+        phases
+            .iter()
+            .filter(|(l, _)| l == label)
+            .map(|(_, d)| d.as_secs_f64() * 1e3)
+            .sum()
+    };
+    for _ in 0..o.reps {
+        let recording = f2z::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let (proof, hint, phases) = prove_e2e(true);
+        let verification = tracing::info_span!("cli:mul.verification").entered();
+        verify(&hint, &proof);
+        drop(verification);
+        let intervals = recording.intervals().expect("query CLI mul trial");
+        let ms = |label: &str| f2z::observability::duration(&intervals, label).map_or(0.0, |d| d.as_secs_f64() * 1e3);
+        prove_ms_v.push(ms("cli:mul.proving"));
+        commit_ms_v.push(ms("cli:mul.commit"));
+        verify_ms_v.push(ms("cli:mul.verification"));
+        s2_v.push(ms("step2:project_prove"));
+        s3_v.push(ms("step3:piop_prove"));
+        s4_v.push(ms("step4:bitify_prove"));
+        s5_v.push(ms("step5:open_prove"));
+        gp_v.push(phase(&phases, "fold+images") + phase(&phases, "gkr"));
+        rs_v.push(phase(&phases, "sumcheck") + phase(&phases, "ring switch"));
+        lig_v.push(phase(&phases, "ligerito"));
+        black_box(&proof);
+        last = Some((proof, hint));
+    }
+    set_heap_tracking(true);
+    let (proof, hint) = last.expect("reps ≥ 1");
+
+    let spartan_elements = proof.spartan_payload_elements();
+    let boundary_nonces = proof.grinding_nonce_count(sec);
+    let piop_bytes = spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>();
+    let open_bytes = proof.f2z().to_bytes().len();
+    // BitZ's Ligerito proof (query openings) rides its hint stream; the
+    // narg string carries its folds, GKR, sumcheck, ring-switch and the
+    // ladder's round messages.
+    let open_lig_bytes = proof.f2z().hints.len();
+    let total_bytes = piop_bytes + open_bytes;
+
+    let commit_med = median(commit_ms_v.clone());
+    let prove_med = median(prove_ms_v.clone());
+    let verify_med = median(verify_ms_v.clone());
+    let (s2, s3, s4, s5) = (median(s2_v), median(s3_v), median(s4_v), median(s5_v));
+    let (gp, rs, lig) = (median(gp_v), median(rs_v), median(lig_v));
+    let residual = prove_med - (commit_med + s2 + s3 + s4 + s5);
+    println!(
+        "commit:  {commit_med:9.2} ms   (median of {}; bit-pack + flock commit under the BitZ ladder, inside prove)",
+        o.reps
+    );
+    println!(
+        "prove:   {prove_med:9.2} ms   peak {peak:8.2} MB   (median of {}, end-to-end incl. commit, verified)",
+        o.reps
+    );
+    println!(
+        "    paper buckets: commit {commit_med:.2} | PIOP incl. projection {:.2} | bitify {s4:.2} | \
+         BitZ folds+GKR {gp:.2} | BitZ sumcheck+ring switch {rs:.2} | Ligerito {lig:.2} | residual {residual:.2} ms",
+        s2 + s3
+    );
+    println!("verify:  {verify_med:9.2} ms");
+    println!(
+        "proof:   {:9.1} KB  = piop {:.1} + open {:.1} (narg {:.1} | hints {:.1})",
+        total_bytes as f64 / 1e3,
+        piop_bytes as f64 / 1e3,
+        open_bytes as f64 / 1e3,
+        (open_bytes - open_lig_bytes) as f64 / 1e3,
+        open_lig_bytes as f64 / 1e3,
+    );
+    let lambda_achieved = sec.accounting.achieved_bits().min(opener_bits);
+    println!(
+        "security: profile {} target λ={} b, PIOP achieved {:.1} b (binding term: {}) | BitZ opening {opener_bits:.1} b \
+         (binding: {opener_bind}; ladder {lig_tag}, rate 1/{}, initial k={}, blake3 Merkle, target {} b) | \
+         q ∈ [2^{q_lo_log2}, 2^{q_bits}) transcript-sampled after the commitment",
+        sec.profile_name,
+        sec.lambda,
+        sec.accounting.achieved_bits(),
+        sec.accounting.binding_term().name,
+        1usize << hint.commitment.params.log_inv_rate,
+        hint.commitment.params.log_batch_size,
+        opener.security().target_security_bits,
+    );
+    let ligerito = serde_json::json!({
+        "requested_profile": profile, "resolved_profile": lig_tag, "pcs": "bitz",
+        "regime": if opener.security().levels.first().is_some_and(|l| l.eta.is_some()) { "johnson" } else { "udr" },
+        "target_bits": opener.security().target_security_bits,
+        "configuration_fingerprint": opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        "outer_ood": false, "opening_bits": opener_bits, "opening_binding": opener_bind,
+        "configuration": opener.security(),
+    });
+    let r = MulResult {
+        ligerito,
+        e,
+        multiplications,
+        n: params.row_vars + params.col_vars,
+        t: params.row_vars,
+        s: params.col_vars,
+        w: params.word_bits,
+        chunks: 1,
+        profile: sec.profile_name.to_string(),
+        lambda: sec.lambda,
+        lambda_achieved,
+        lambda_bind: if opener_bits < sec.accounting.achieved_bits() { format!("bitz:{}", opener_bind.replace(' ', "-")) } else { sec.accounting.binding_term().name.to_string() },
+        lig_target_bits: opener.security().target_security_bits,
+        q_lo_log2,
+        q_bits,
+        lig_log_inv_rate: hint.commitment.params.log_inv_rate,
+        lig_initial_k: hint.commitment.params.log_batch_size,
+        lig_regime: lig_tag.clone(),
+        lig_hash: hash_name(hint.commitment.params.merkle_hash),
+        threads: threads_eff,
+        reps: o.reps,
+        witness_ms,
+        setup_ms,
+        commit_ms: commit_med,
+        prove_ms: prove_med,
+        s2_project_ms: s2,
+        s3_piop_ms: s3,
+        s4_bitify_ms: s4,
+        s5_open_ms: s5,
+        s5_gp_ms: gp,
+        s5_rs_ms: rs,
+        s5_lig_ms: lig,
+        prove_residual_ms: residual,
+        prove_peak_mb: peak,
+        verify_ms: verify_med,
+        proof_bytes: total_bytes,
+        proof_piop_bytes: piop_bytes,
+        proof_open_bytes: open_bytes,
+        proof_open_nonlig_bytes: open_bytes - open_lig_bytes,
+        proof_open_lig_bytes: open_lig_bytes,
+    };
+    println!("{} pcs=bitz", r.to_line());
+}
+
 /// `--mul <e>`: dispatch on the compile-time security profile.
 fn run_mul_shape(o: &Opts, e: usize) {
     match o.lambda {
@@ -2925,6 +3208,18 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     drop(inputs);
     let layout = *witness.layout();
     let params = layout.f2z_params();
+    if o.pcs == "bitz" {
+        #[cfg(feature = "bitz-parity")]
+        {
+            let profile = if profile_is_default(o) { "fast".to_string() } else { o.profile.clone() };
+            return mul_shape_bitz::<P>(o, e, &witness, layout, params, witness_ms, &profile);
+        }
+        #[cfg(not(feature = "bitz-parity"))]
+        {
+            eprintln!("--pcs bitz needs a build with --features bitz-parity");
+            exit(2);
+        }
+    }
 
     // The Ligerito opener: the raw-performance table's Johnson geometry by
     // default (so the two paper tables share one opener), or the relation's
@@ -3171,6 +3466,8 @@ fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
         a.push(o.lambda.to_string());
         a.push("--profile".to_string());
         a.push(o.profile.clone());
+        a.push("--pcs".to_string());
+        a.push(o.pcs.clone());
         a
     });
     let rows: Vec<MulResult> = lines

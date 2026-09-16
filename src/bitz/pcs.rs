@@ -105,16 +105,42 @@ pub struct Pcs {
 }
 
 impl Pcs {
+    /// Their scheme as shipped: flock's embedded `fast` ladder for the size.
     pub fn new(shape: &Shape, merkle_hash: HashKind) -> Result<Self, ConfigError> {
         let m = shape.log_bits();
+        let profile = LigeritoProfile::Fast;
+        let security = security_config(m, profile, merkle_hash)?;
+        Self::with_security(shape, &security, profile)
+    }
+
+    /// The same scheme over any validated flock ladder (the crate's own
+    /// resolved selections: unique decoding with fold grinding, a Johnson
+    /// ladder at another rate): the commitment is made under the ladder's
+    /// level 0 (its rate and interleaving), the opening runs it. `profile`
+    /// is the tag the parameter frame carries (the ladder's family).
+    pub fn with_security(
+        shape: &Shape,
+        security: &LigeritoSecurityConfig,
+        profile: LigeritoProfile,
+    ) -> Result<Self, ConfigError> {
+        let m = shape.log_bits();
+        if security.m != m {
+            return Err(ConfigError::Invalid("security config is for another size"));
+        }
         let bit_len = 1usize
             .checked_shl(m as u32)
             .ok_or(ConfigError::Invalid("bit length overflow"))?;
-        let profile = LigeritoProfile::Fast;
-        let security = security_config(m, profile, merkle_hash)?;
+        let merkle_hash = security
+            .merkle_hash()
+            .map_err(|_| ConfigError::Invalid("merkle hash"))?;
+        let log_inv_rate = security
+            .levels
+            .first()
+            .map(|level| level.log_inv_rate)
+            .ok_or(ConfigError::Invalid("no levels"))?;
         let params = PcsParams {
             m,
-            log_inv_rate: profile.log_inv_rate(),
+            log_inv_rate,
             log_batch_size: security.initial_k,
             profile,
             merkle_hash,
