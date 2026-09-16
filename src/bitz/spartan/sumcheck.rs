@@ -229,11 +229,17 @@ pub fn prove_outer_sumcheck(
 }
 
 /// Proves the inner sumcheck: `initial_claim = Σ_y matrix[y]·witness[y]`.
+///
+/// `witness_is_boolean` says every witness entry is `0` or `1` (Spartan's
+/// assignment `h`), which lets the initial coefficients and the first fold
+/// skip every witness multiplication — the same field sums, computed as
+/// selections. It is the caller's promise; a wrong promise is a wrong proof.
 pub fn prove_inner_sumcheck(
     transcript: &mut ProverState,
     initial_claim: Fq,
     matrix: Vec<Fq>,
     witness: &[Fq],
+    witness_is_boolean: bool,
 ) -> Result<InnerSumcheckOutput, SumcheckError> {
     let len = matrix.len();
     if !len.is_power_of_two() || witness.len() != len {
@@ -251,7 +257,15 @@ pub fn prove_inner_sumcheck(
         // from then on two buffers alternate as fold input and output.
         let mut witness_in = vec![Fq::ZERO; len / 2];
         let mut witness_out = vec![Fq::ZERO; len / 4];
-        let mut without_linear = inner_coefficients(&matrix, witness);
+        debug_assert!(
+            !witness_is_boolean || witness.iter().all(|w| *w == Fq::ZERO || *w == Fq::ONE),
+            "a Boolean witness holds only 0 and 1"
+        );
+        let mut without_linear = if witness_is_boolean {
+            inner_coefficients_boolean(&matrix, witness)
+        } else {
+            inner_coefficients(&matrix, witness)
+        };
 
         for round in 0..num_vars {
             let challenge = recover_and_sample(
@@ -268,6 +282,14 @@ pub fn prove_inner_sumcheck(
                 if next_len == 1 {
                     matrix_scratch[0] = interpolate_pair(matrix[0], matrix[1], challenge);
                     witness_in[0] = interpolate_pair(witness[0], witness[1], challenge);
+                } else if witness_is_boolean {
+                    without_linear = fold_inner_and_next_boolean(
+                        &matrix,
+                        witness,
+                        &mut matrix_scratch,
+                        &mut witness_in,
+                        challenge,
+                    );
                 } else {
                     without_linear = fold_inner_and_next(
                         &matrix,
@@ -537,6 +559,77 @@ fn fold_inner_and_next(
     partials.into_iter().fold([Fq::ZERO; 2], add_coefficients)
 }
 
+/// `[c0, c2]` over the adjacent pairs when every witness entry is `0` or
+/// `1`: `m0·w0` is `m0` or nothing, `(m1 − m0)(w1 − w0)` is `±(m1 − m0)` or
+/// nothing. The same sums as [`inner_coefficients`], without multiplies.
+fn inner_coefficients_boolean(matrix: &[Fq], witness: &[Fq]) -> [Fq; 2] {
+    let pairs = matrix.len() / 2;
+    let blocks = pairs.div_ceil(PAIRS_PER_BLOCK);
+    let partials: Vec<[Fq; 2]> = cfg_into_iter!(0..blocks)
+        .map(|block| {
+            let start = block * PAIRS_PER_BLOCK;
+            let end = (start + PAIRS_PER_BLOCK).min(pairs);
+            let (mut c0, mut c2) = (Fq::ZERO, Fq::ZERO);
+            for pair in start..end {
+                let i = 2 * pair;
+                let (w0, w1) = (!witness[i].is_zero(), !witness[i + 1].is_zero());
+                if w0 {
+                    c0 += matrix[i];
+                }
+                match (w0, w1) {
+                    (false, true) => c2 += matrix[i + 1] - matrix[i],
+                    (true, false) => c2 -= matrix[i + 1] - matrix[i],
+                    _ => {}
+                }
+            }
+            [c0, c2]
+        })
+        .collect();
+    partials.into_iter().fold([Fq::ZERO; 2], add_coefficients)
+}
+
+/// [`fold_inner_and_next`] for a `0`/`1` witness: its fold is a selection
+/// among `0`, `1`, `r` and `1 − r` (no multiply); the matrix fold and the
+/// next round's coefficients are computed as usual.
+fn fold_inner_and_next_boolean(
+    matrix: &[Fq],
+    witness: &[Fq],
+    matrix_out: &mut [Fq],
+    witness_out: &mut [Fq],
+    challenge: Fq,
+) -> [Fq; 2] {
+    let out_block = 2 * PAIRS_PER_BLOCK;
+    debug_assert_eq!(matrix.len(), 2 * matrix_out.len());
+    debug_assert_eq!(witness.len(), 2 * witness_out.len());
+    let one_minus_r = Fq::ONE - challenge;
+    let partials: Vec<[Fq; 2]> = cfg_chunks_mut!(matrix_out, out_block)
+        .zip(cfg_chunks_mut!(witness_out, out_block))
+        .enumerate()
+        .map(|(block, (mo, wo))| {
+            let start = block * 2 * out_block;
+            for j in 0..mo.len() {
+                let i = start + 2 * j;
+                mo[j] = interpolate_pair(matrix[i], matrix[i + 1], challenge);
+                let (w0, w1) = (!witness[i].is_zero(), !witness[i + 1].is_zero());
+                wo[j] = match (w0, w1) {
+                    (false, false) => Fq::ZERO,
+                    (true, true) => Fq::ONE,
+                    (false, true) => challenge,
+                    (true, false) => one_minus_r,
+                };
+            }
+            (0..mo.len() / 2).fold([Fq::ZERO; 2], |sum, pair| {
+                let j = 2 * pair;
+                add_coefficients(
+                    sum,
+                    inner_pair_coefficients([mo[j], mo[j + 1]], [wo[j], wo[j + 1]]),
+                )
+            })
+        })
+        .collect();
+    partials.into_iter().fold([Fq::ZERO; 2], add_coefficients)
+}
+
 /// The multilinear extension of `evaluations` at `point`, little-endian
 /// (variable 0 = index bit 0), by folding adjacent pairs.
 pub fn mle_evaluate(evaluations: &[Fq], point: &[Fq]) -> Fq {
@@ -682,7 +775,10 @@ mod tests {
         let instance = (num_vars as u64).to_le_bytes();
 
         let mut prover = build_prover(INNER_SESSION, &instance);
-        let output = prove_inner_sumcheck(&mut prover, claim, matrix.clone(), &witness).unwrap();
+        let output = prove_inner_sumcheck(&mut prover, claim, matrix.clone(), &witness, true).unwrap();
+        let mut general = build_prover(INNER_SESSION, &instance);
+        let general_output = prove_inner_sumcheck(&mut general, claim, matrix.clone(), &witness, false).unwrap();
+        assert_eq!(general_output, output, "the Boolean kernels give the general kernels' bytes");
         let next_prover = prover.squeeze_fq();
         let proof = prover.finish();
 
@@ -713,7 +809,7 @@ mod tests {
         let witness = vec![fq(7), fq(11)];
         let claim = fq(3 * 7 + 5 * 11);
         let mut prover = build_prover(INNER_SESSION, b"one-variable");
-        let output = prove_inner_sumcheck(&mut prover, claim, matrix, &witness).unwrap();
+        let output = prove_inner_sumcheck(&mut prover, claim, matrix, &witness, false).unwrap();
         // c0 = 21, c2 = 2·4 = 8, c1 = claim − 2·21 − 8 = 76 − 50 = 26.
         assert_eq!(output.proof.round_polynomials, vec![[fq(21), fq(26), fq(8)]]);
     }

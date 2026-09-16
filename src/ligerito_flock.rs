@@ -272,7 +272,7 @@ impl core::fmt::Debug for FlockCommitHint {
 /// bits above) and run flock's PCS commit (NEON interleaved NTT + SHA-256
 /// Merkle).
 #[allow(clippy::arithmetic_side_effects)]
-fn commit_rs_flock_from_rows(
+pub(crate) fn commit_rs_flock_from_rows(
     p: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     packed_cols: Vec<Vec<u64>>,

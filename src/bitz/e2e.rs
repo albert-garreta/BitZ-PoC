@@ -270,6 +270,7 @@ impl<S: CircuitStatement> Prepared<S> {
         let root = Root(*hint.root());
         let mut transcript = build_prover(SESSION, self.statement.domain());
         self.bind(&mut transcript, &root);
+        let started = std::time::Instant::now();
         let (spartan, terminal) = prove_spartan_piop(
             &mut transcript,
             &self.matrices,
@@ -277,6 +278,7 @@ impl<S: CircuitStatement> Prepared<S> {
             &witness.assignment,
         )
         .map_err(Error::Spartan)?;
+        super::trace("spartan", started);
         let claim = opening_claim(&self.params, &terminal)?;
         let statement = VirtualStatement::new(
             self.params,
@@ -300,8 +302,10 @@ impl<S: CircuitStatement> Prepared<S> {
     pub fn verify(&self, proof: &Proof) -> Result<(), Error> {
         let mut transcript = build_verifier(SESSION, self.statement.domain(), &proof.opening);
         self.bind(&mut transcript, &proof.root);
+        let started = std::time::Instant::now();
         let terminal = verify_spartan_proof(&mut transcript, &self.matrices, &proof.spartan)
             .map_err(Error::Spartan)?;
+        super::trace("v: spartan", started);
         let claim = opening_claim(&self.params, &terminal)?;
         let statement = VirtualStatement::new(
             self.params,

@@ -82,15 +82,22 @@ pub fn prove_spartan_piop(
 
     transcript.public_message(matrices.digest());
     let tau: Vec<Fq> = (0..num_row_vars).map(|_| transcript.squeeze_fq()).collect();
+    let started = std::time::Instant::now();
     let outer = prove_outer_sumcheck(transcript, Fq::ZERO, eq_table(&tau), products)?;
+    super::super::trace("  spartan outer", started);
 
     // The outer prover absorbed the three evaluations before returning.
     let rho = transcript.squeeze_fq();
     let inner_initial_claim = outer.proof.az_mle_claim
         + rho * outer.proof.bz_mle_claim
         + rho * rho * outer.proof.cz_mle_claim;
+    let started = std::time::Instant::now();
     let batched_matrix = matrices.bind_and_batch(&outer.eval_points, rho)?;
-    let inner = prove_inner_sumcheck(transcript, inner_initial_claim, batched_matrix, assignment)?;
+    super::super::trace("  spartan bind+batch", started);
+    let started = std::time::Instant::now();
+    // The assignment is `h`, Boolean by construction.
+    let inner = prove_inner_sumcheck(transcript, inner_initial_claim, batched_matrix, assignment, true)?;
+    super::super::trace("  spartan inner", started);
 
     let claim = ScaledMleEvaluationClaim {
         point: inner.eval_points,
@@ -124,7 +131,9 @@ pub fn verify_spartan_proof(
         proof
             .inner
             .verify(transcript, inner_initial_claim, num_column_vars)?;
+    let started = std::time::Instant::now();
     let scale = matrices.evaluate_batched(&outer.eval_points, rho, &column_point)?;
+    super::super::trace("  v: spartan evaluate", started);
     Ok(ScaledMleEvaluationClaim {
         point: column_point,
         scale,

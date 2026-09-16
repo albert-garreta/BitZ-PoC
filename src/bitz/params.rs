@@ -213,7 +213,8 @@ impl LinearClaim {
 /// Each weight vector with a little-endian `u64` length, then the target.
 impl Encoding<[u8]> for LinearClaim {
     fn encode(&self) -> impl AsRef<[u8]> {
-        let mut bytes = Vec::new();
+        let mut bytes =
+            Vec::with_capacity(16 * (self.row_weights.len() + self.column_weights.len() + 2));
         for weights in [&self.row_weights, &self.column_weights] {
             bytes.extend_from_slice(&(weights.len() as u64).to_le_bytes());
             for &weight in weights {
@@ -270,7 +271,8 @@ impl LinearClaimGf {
 
 impl Encoding<[u8]> for LinearClaimGf {
     fn encode(&self) -> impl AsRef<[u8]> {
-        let mut bytes = Vec::new();
+        let mut bytes =
+            Vec::with_capacity(16 * (self.row_weights.len() + self.column_weights.len() + 2));
         for weights in [&self.row_weights, &self.column_weights] {
             bytes.extend_from_slice(&(weights.len() as u64).to_le_bytes());
             for &weight in weights {

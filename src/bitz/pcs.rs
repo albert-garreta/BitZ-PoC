@@ -153,7 +153,22 @@ impl Pcs {
         {
             return Err(CommitError::RowsShapeMismatch);
         }
-        let hint = commit_rs_ligerito_rows(&shape.layout(), rows, &self.prover_config);
+        // A single column (the e2e's committed `f`) is never folded here — the
+        // forest runs on the virtual bits — so its column-lane packing (2^m
+        // words for one bit each) is not built; the opening sumcheck then
+        // combines the columns from the rows. Same values, same bytes.
+        let hint = if shape.log_columns() == 0 {
+            crate::ligerito_flock::commit_rs_flock_from_rows(
+                &shape.layout(),
+                rows,
+                Vec::new(),
+                self.prover_config.log_inv_rates[0],
+                self.prover_config.initial_k,
+                self.prover_config.merkle_hash,
+            )
+        } else {
+            commit_rs_ligerito_rows(&shape.layout(), rows, &self.prover_config)
+        };
         let root = Root(*hint.root());
         Ok((root, hint))
     }
@@ -651,7 +666,15 @@ fn bind_inner_product_statement(
     transcript.public_message(INNER_PRODUCT_STATEMENT_LABEL);
     transcript.public_message(root);
     transcript.public_message(pcs);
-    transcript.public_message(claim);
+    // The claim's encoding is absorbed as the bytes it is: pre-encoding it
+    // (the e2e's single-column claim is 64 MB) separates the copy from the
+    // sponge in the traces without changing what the sponge sees.
+    let started = std::time::Instant::now();
+    let encoded = claim.encode();
+    super::trace("    claim encode", started);
+    let started = std::time::Instant::now();
+    transcript.public_message(encoded.as_ref());
+    super::trace("    claim absorb", started);
 }
 
 /// Samples the seven MLE ring-switch challenges.
