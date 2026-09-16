@@ -153,6 +153,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_LEAF_A2_FACTORED",
     "F2Z_LEAF_TILE",
     "F2Z_LIG_PROFILE",
+    "F2Z_PCS",
     "F2Z_LUT3",
     "F2Z_LUT4",
     "F2Z_LUT_PRFM",
