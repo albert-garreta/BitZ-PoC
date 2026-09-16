@@ -3405,18 +3405,6 @@ fn prove_merged_forest_lazy_multi_sched(
         .iter()
         .map(|&(packed_cols, _)| extract_column_bit_halves(packed_cols, per, row_len))
         .collect();
-    let mut col_bits_all: Vec<Option<Vec<(&[u64], &[u64])>>> = extracted
-        .iter()
-        .map(|columns| {
-            Some(
-                columns
-                    .iter()
-                    .map(|(l, r)| (l.as_slice(), r.as_slice()))
-                    .collect(),
-            )
-        })
-        .collect();
-
     if depth == 4 || !l8 {
         // The L/4 schedule — the DEFAULT (and forced at depth 4, where
         // the deeper chain degenerates): stored chain tops at level d−3,
@@ -3425,10 +3413,7 @@ fn prove_merged_forest_lazy_multi_sched(
         let (levels, roots) = build_levels(num_trees, depth - 3, |k| {
             let (n, c) = (k >> s, k & (per - 1));
             let t4 = &tabs[tab_of[n]].t4;
-            let cb = col_bits_all[n]
-                .as_ref()
-                .expect("leaf bits alive for the build");
-            let (lb, rb) = &cb[c];
+            let (lb, rb) = &extracted[n][c];
             // Paired T4 gathers — level d−2 never materialises (see the
             // single prover's L/4 build).
             let at = T4At {
@@ -3463,10 +3448,7 @@ fn prove_merged_forest_lazy_multi_sched(
                         jit_layer_generate(hh, zx, num_trees, false, suffix, |k| {
                             let (n, c) = (k >> s, k & (per - 1));
                             let t4 = &tabs[tab_of[n]].t4;
-                            let cb = col_bits_all[n]
-                                .as_ref()
-                                .expect("leaf bits alive for the JIT regen");
-                            let (lb, rb) = &cb[c];
+                            let (lb, rb) = &extracted[n][c];
                             let at = T4At {
                                 lbits: lb,
                                 rbits: rb,
@@ -3488,10 +3470,7 @@ fn prove_merged_forest_lazy_multi_sched(
                             .map(|k| {
                                 let (n, c) = (k >> s, k & (per - 1));
                                 let t4 = &tabs[tab_of[n]].t4;
-                                let cb = col_bits_all[n]
-                                    .as_ref()
-                                    .expect("leaf bits alive for the JIT regen");
-                                let (lb, rb) = &cb[c];
+                                let (lb, rb) = &extracted[n][c];
                                 // Exact-capacity halves: a split_off would carry
                                 // 2× allocation through the layer.
                                 let full = t4_level_values(lb, rb, T4Src::Pre(t4), q1);
@@ -3516,11 +3495,10 @@ fn prove_merged_forest_lazy_multi_sched(
                         bufs: (0..num_trees)
                             .map(|k| {
                                 let (n, c) = (k >> s, k & (per - 1));
-                                let cb =
-                                    col_bits_all[n].as_ref().expect("bits alive for pair layer");
+                                let (lbits, rbits) = &extracted[n][c];
                                 GroupBufs::Pair2Bits {
-                                    lbits: cb[c].0,
-                                    rbits: cb[c].1,
+                                    lbits,
+                                    rbits,
                                     tau_set: tab_of[n],
                                 }
                             })
@@ -3538,24 +3516,19 @@ fn prove_merged_forest_lazy_multi_sched(
                         flat: None,
                     })
                 } else if ell == depth - 1 {
-                    let per_claim_bits: Vec<Vec<(&[u64], &[u64])>> = col_bits_all
-                        .iter_mut()
-                        .map(|t| t.take().expect("leaf bits consumed once"))
-                        .collect();
                     // Two bit-driven rounds (k = d−1 = 3): dense buffers only
                     // after round 2.
                     Some(BitLayer {
-                        bufs: per_claim_bits
-                            .into_iter()
+                        bufs: extracted
+                            .iter()
                             .enumerate()
                             .flat_map(|(n, cb)| {
                                 let ts = tab_of[n];
-                                cb.into_iter()
-                                    .map(move |(lbits, rbits)| GroupBufs::Leaf2Bits {
-                                        lbits,
-                                        rbits,
-                                        tau_set: ts,
-                                    })
+                                cb.iter().map(move |(lbits, rbits)| GroupBufs::Leaf2Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: ts,
+                                })
                             })
                             .collect(),
                         tau_sets: tabs.iter().map(|t| t.leaf_tau.clone()).collect(),
@@ -3588,10 +3561,7 @@ fn prove_merged_forest_lazy_multi_sched(
     let (levels, roots) = build_levels(num_trees, depth - 4, |k| {
         let (n, c) = (k >> s, k & (per - 1));
         let t4 = &tabs[tab_of[n]].t4;
-        let cb = col_bits_all[n]
-            .as_ref()
-            .expect("leaf bits alive for the build");
-        let (lb, rb) = &cb[c];
+        let (lb, rb) = &extracted[n][c];
         // Paired T4 gathers — level d−2 never materialises (see the
         // single prover's L/8 build).
         let at = T4At {
@@ -3628,10 +3598,7 @@ fn prove_merged_forest_lazy_multi_sched(
                 jit_layer_generate(hh, zx, num_trees, false, suffix, |k| {
                     let (n, c) = (k >> s, k & (per - 1));
                     let t4 = &tabs[tab_of[n]].t4;
-                    let cb = col_bits_all[n]
-                        .as_ref()
-                        .expect("leaf bits alive for the JIT regen");
-                    let (lb, rb) = &cb[c];
+                    let (lb, rb) = &extracted[n][c];
                     let at = T4At {
                         lbits: lb,
                         rbits: rb,
@@ -3654,10 +3621,7 @@ fn prove_merged_forest_lazy_multi_sched(
                     .map(|k| {
                         let (n, c) = (k >> s, k & (per - 1));
                         let t4 = &tabs[tab_of[n]].t4;
-                        let cb = col_bits_all[n]
-                            .as_ref()
-                            .expect("leaf bits alive for the JIT regen");
-                        let (lb, rb) = &cb[c];
+                        let (lb, rb) = &extracted[n][c];
                         let full = t4_level_values(lb, rb, T4Src::Pre(t4), q1);
                         let e: Vec<Gf> = (0..hh).map(|y| full[y] * full[y + h3]).collect();
                         let o: Vec<Gf> = (hh..h3).map(|y| full[y] * full[y + h3]).collect();
@@ -3679,12 +3643,10 @@ fn prove_merged_forest_lazy_multi_sched(
             let bufs: Vec<GroupBufs<'_, Gf>> = (0..num_trees)
                 .map(|k| {
                     let (n, c) = (k >> s, k & (per - 1));
-                    let cb = col_bits_all[n]
-                        .as_ref()
-                        .expect("bits alive for the T4 layer");
+                    let (lbits, rbits) = &extracted[n][c];
                     GroupBufs::T4Bits {
-                        lbits: cb[c].0,
-                        rbits: cb[c].1,
+                        lbits,
+                        rbits,
                         tau_set: tab_of[n],
                     }
                 })
@@ -3706,10 +3668,10 @@ fn prove_merged_forest_lazy_multi_sched(
                 bufs: (0..num_trees)
                     .map(|k| {
                         let (n, c) = (k >> s, k & (per - 1));
-                        let cb = col_bits_all[n].as_ref().expect("bits alive for pair layer");
+                        let (lbits, rbits) = &extracted[n][c];
                         GroupBufs::Pair3Bits {
-                            lbits: cb[c].0,
-                            rbits: cb[c].1,
+                            lbits,
+                            rbits,
                             tau_set: tab_of[n],
                         }
                     })
@@ -3727,23 +3689,18 @@ fn prove_merged_forest_lazy_multi_sched(
                 flat: None,
             })
         } else if ell == depth - 1 {
-            let per_claim_bits: Vec<Vec<(&[u64], &[u64])>> = col_bits_all
-                .iter_mut()
-                .map(|t| t.take().expect("leaf bits consumed once"))
-                .collect();
             // Three bit-driven rounds (k = d−1 ≥ 4): leaf set ≈ L/8.
             Some(BitLayer {
-                bufs: per_claim_bits
-                    .into_iter()
+                bufs: extracted
+                    .iter()
                     .enumerate()
                     .flat_map(|(n, cb)| {
                         let ts = tab_of[n];
-                        cb.into_iter()
-                            .map(move |(lbits, rbits)| GroupBufs::Leaf3Bits {
-                                lbits,
-                                rbits,
-                                tau_set: ts,
-                            })
+                        cb.iter().map(move |(lbits, rbits)| GroupBufs::Leaf3Bits {
+                            lbits,
+                            rbits,
+                            tau_set: ts,
+                        })
                     })
                     .collect(),
                 tau_sets: tabs.iter().map(|t| t.leaf_tau.clone()).collect(),
