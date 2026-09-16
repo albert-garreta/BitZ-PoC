@@ -1,28 +1,8 @@
-//! Compact raw-residue kernels for the two-limb runtime-field Spartan prover.
-//!
-//! Dense tables retain reduced Montgomery residues as `u128` beside one shared
-//! [`field::FpCtx<2>`]. Both this storage and the shared `Fp<2>` element occupy
-//! two limbs; neither stores a per-element context. Native witness/product
-//! segments remain borrowed until their first fold, whose output representation
-//! matches the next round. Scalar arithmetic, exact accumulation and reduction
-//! delegate to the shared provider with its prepared constants.
-//!
-//! Every kernel computes exactly the field elements the generic `sumcheck.rs`
-//! and `matrix.rs` prover code computes: the same equality tables, the same
-//! folded tables, the same round-polynomial coefficients, and the same
-//! terminal claims. Exact modular arithmetic is independent of evaluation
-//! order, so the sumcheck messages, transcript, and proof bytes are
-//! bit-identical to the generic prover's. Verifier code never uses this
-//! module.
-//!
-//! Two further prover-only shortcuts live here, both value-preserving: the
-//! inner sumcheck touches only the live (validated-zero-padded) prefix of its
-//! tables, and for block-selector relations (`BlockSelectorLayout`) it never
-//! materializes the batched matrix — that matrix is a per-block scaled copy
-//! of the row-weight vector, so one weight table is folded alongside the
-//! witness blocks (`prove_inner_structured_raw`).
-
+//! Encoded Montgomery storage and native kernels for the Spartan inner prover.
+//! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
 use crate::piop::spartan::SpartanField as _;
+pub(crate) use crate::sumcheck::outer::arithmetic::*;
+pub use crate::sumcheck::outer::arithmetic::{NativeWideProducts, RawProducts};
 use crate::utils::delayed_reduction::EncodedMac;
 #[cfg(test)]
 use field::Uint;
@@ -42,10 +22,8 @@ use super::{
         SpartanMatrixCoefficient,
     },
     sumcheck::{
-        FactoredEndpoint, InnerSumcheckOutput, OuterSumcheckOutput, OuterSumcheckProof,
-        R1csProductMles, RoundBoundaryPolicy, SumcheckError, SumcheckProof, SumcheckProverOutput,
-        TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS, UngrindedRoundBoundary, batch_invert_nonzero,
-        equality_coordinate_evaluation, reconstruct_eq_factored_cubic_without_linear,
+        InnerSumcheckOutput, R1csProductMles, RoundBoundaryPolicy, SumcheckError, SumcheckProof,
+        SumcheckProverOutput, UngrindedRoundBoundary,
         recover_full_round_polynomial_and_sample_next_challenge,
         recover_full_round_polynomial_and_sample_next_challenge_with_boundary,
     },
@@ -53,15 +31,14 @@ use super::{
 };
 
 mod folded;
-mod native_products;
+
 mod native_witness;
 use folded::{FoldedValue, FoldedWitness};
-pub(crate) use native_products::NativeOuterInput;
-pub use native_products::NativeWideProducts;
+
 pub use native_witness::{NativeLimbWitness, NativeU128Witness};
 
-type Field = Fp<2>;
-type FieldConfig = field::FpCtx<2>;
+pub(crate) type Field = Fp<2>;
+pub(crate) type FieldConfig = field::FpCtx<2>;
 
 /// One canonical Montgomery residue of the runtime field: the same two limbs
 /// `Fp<2>::as_montgomery` exposes, packed little-endian into a `u128`.
@@ -74,24 +51,24 @@ const PARALLEL_MIN_ITEMS: usize = 1 << 12;
 
 /// Output elements per parallel block in the fused fold kernels (even, so a
 /// block always holds whole output pairs).
-const FOLD_BLOCK: usize = 1 << 11;
+pub(crate) const FOLD_BLOCK: usize = 1 << 11;
 
 /// Columns per parallel block in the matrix binding kernel.
 const BIND_BLOCK: usize = 1 << 12;
 
 #[cfg(feature = "parallel")]
 #[inline]
-fn parallel(work_items: usize) -> bool {
+pub(crate) fn parallel(work_items: usize) -> bool {
     work_items >= PARALLEL_MIN_ITEMS && rayon::current_num_threads() > 1
 }
 
 #[inline(always)]
-const fn words_to_raw(words: &[u64; 2]) -> Raw {
+pub(crate) const fn words_to_raw(words: &[u64; 2]) -> Raw {
     (words[0] as u128) | ((words[1] as u128) << 64)
 }
 
 #[inline(always)]
-const fn raw_to_words(value: Raw) -> [u64; 2] {
+pub(crate) const fn raw_to_words(value: Raw) -> [u64; 2] {
     [value as u64, (value >> 64) as u64]
 }
 
@@ -200,11 +177,11 @@ impl RawFieldStorage for field::FpCtx<2> {
     }
 }
 #[inline(always)]
-fn shared_raw(ctx: &field::FpCtx<2>, raw: Raw) -> field::Fp<2> {
+pub(crate) fn shared_raw(ctx: &field::FpCtx<2>, raw: Raw) -> field::Fp<2> {
     ctx.from_montgomery_integer(field::Uint::from_words(raw_to_words(raw)))
 }
 #[inline(always)]
-fn raw_shared(value: field::Fp<2>) -> Raw {
+pub(crate) fn raw_shared(value: field::Fp<2>) -> Raw {
     words_to_raw(value.as_montgomery_integer().as_words())
 }
 
@@ -255,128 +232,11 @@ pub(crate) fn make_equality_factors_raw(
 }
 
 /// Sums adjacent pairs: the equality table with its active (lowest) coordinate
-/// removed.
-fn strip_coordinate_raw(ctx: &field::FpCtx<2>, input: &[Raw]) -> Vec<Raw> {
-    debug_assert!(input.len() >= 2 && input.len().is_power_of_two());
-    #[cfg(feature = "parallel")]
-    if parallel(input.len() / 2) {
-        return input
-            .par_chunks_exact(2)
-            .map(|pair| ctx.add_raw(pair[0], pair[1]))
-            .collect();
-    }
-    input
-        .chunks_exact(2)
-        .map(|pair| ctx.add_raw(pair[0], pair[1]))
-        .collect()
-}
-
-/// Equality weights with the active coordinate stripped: the pair weight is
-/// `low[pair % low.len()] · high[pair / low.len()]`, or `high[pair]` once the
-/// low coordinates are exhausted.
-#[derive(Clone, Copy)]
-struct RawEqWeights<'a> {
-    low: Option<&'a [Raw]>,
-    high: &'a [Raw],
-}
-
-impl<'a> RawEqWeights<'a> {
-    #[inline(always)]
-    fn pair_weight(&self, ctx: &field::FpCtx<2>, pair: usize) -> Raw {
-        match self.low {
-            Some(low) => ctx.mul_raw(low[pair % low.len()], self.high[pair / low.len()]),
-            None => self.high[pair],
-        }
-    }
-
-    /// The low table when the two-level bucket decomposition applies.
-    #[inline]
-    fn two_level_low(&self) -> Option<&'a [Raw]> {
-        self.low
-            .filter(|low| low.len() >= TWO_LEVEL_EQUALITY_MIN_LOW_PAIRS)
-    }
-
-    fn pair_count(&self) -> usize {
-        self.low.map_or(1, <[Raw]>::len) * self.high.len()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Outer sumcheck
-// ---------------------------------------------------------------------------
-
-/// Borrowed exact native `Az`, `Bz`, `Cz` tables of one common power-of-two
-/// length (the row domain), read by the first outer round and the prefix
-/// skip without copying the relation's witness.
-#[derive(Clone, Copy)]
-pub(crate) struct NativeProducts<'a> {
-    pub az: &'a [u64],
-    pub bz: &'a [u64],
-    pub cz: &'a [u64],
-}
-
-impl<'a> NativeProducts<'a> {
-    pub(crate) fn from_mles(products: &'a R1csProductMles<u64>) -> Self {
-        Self {
-            az: &products.az.evaluations,
-            bz: &products.bz.evaluations,
-            cz: &products.cz.evaluations,
-        }
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.az.len()
-    }
-}
-
-/// Owned raw `Az`, `Bz`, `Cz` tables.
-pub struct RawProducts {
-    pub az: Vec<Raw>,
-    pub bz: Vec<Raw>,
-    pub cz: Vec<Raw>,
-}
-
-impl RawProducts {
-    pub(crate) fn zeros(len: usize) -> Self {
-        Self {
-            az: vec![0; len],
-            bz: vec![0; len],
-            cz: vec![0; len],
-        }
-    }
-
-    pub(crate) fn from_field(ctx: &field::FpCtx<2>, products: &R1csProductMles<Field>) -> Self {
-        Self {
-            az: ctx.raw_vec(&products.az.evaluations),
-            bz: ctx.raw_vec(&products.bz.evaluations),
-            cz: ctx.raw_vec(&products.cz.evaluations),
-        }
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        debug_assert_eq!(self.az.len(), self.bz.len());
-        debug_assert_eq!(self.az.len(), self.cz.len());
-        self.az.len()
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.az.truncate(len);
-        self.bz.truncate(len);
-        self.cz.truncate(len);
-    }
-
-    fn swap(&mut self, other: &mut Self) {
-        std::mem::swap(&mut self.az, &mut other.az);
-        std::mem::swap(&mut self.bz, &mut other.bz);
-        std::mem::swap(&mut self.cz, &mut other.cz);
-    }
-}
-
-type ProductPair = [field::FpProductAcc<2>; 2];
-type LinearPair = [field::FpLinearAcc<2, 1>; 2];
+pub(crate) type ProductPair = [field::FpProductAcc<2>; 2];
+pub(crate) type LinearPair = [field::FpLinearAcc<2, 1>; 2];
 
 #[inline(always)]
-fn product_pair() -> ProductPair {
+pub(crate) fn product_pair() -> ProductPair {
     [
         field::FpProductAcc::<2>::default(),
         field::FpProductAcc::<2>::default(),
@@ -384,7 +244,7 @@ fn product_pair() -> ProductPair {
 }
 
 #[inline(always)]
-fn linear_pair() -> LinearPair {
+pub(crate) fn linear_pair() -> LinearPair {
     [
         field::FpLinearAcc::<2, 1>::default(),
         field::FpLinearAcc::<2, 1>::default(),
@@ -392,14 +252,14 @@ fn linear_pair() -> LinearPair {
 }
 
 #[inline(always)]
-fn merge_product_pair(mut left: ProductPair, right: ProductPair) -> ProductPair {
+pub(crate) fn merge_product_pair(mut left: ProductPair, right: ProductPair) -> ProductPair {
     left[0] += right[0];
     left[1] += right[1];
     left
 }
 
 #[inline(always)]
-fn reduce_product_pair(pair: ProductPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
+pub(crate) fn reduce_product_pair(pair: ProductPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
     let [endpoint, infinity] = pair;
     [
         endpoint.reduce_encoded(reducer),
@@ -408,7 +268,7 @@ fn reduce_product_pair(pair: ProductPair, reducer: &field::FpCtx<2>) -> [Raw; 2]
 }
 
 #[inline(always)]
-fn reduce_linear_pair(pair: LinearPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
+pub(crate) fn reduce_linear_pair(pair: LinearPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
     let [endpoint, infinity] = pair;
     [
         endpoint.reduce_encoded(reducer),
@@ -416,33 +276,8 @@ fn reduce_linear_pair(pair: LinearPair, reducer: &field::FpCtx<2>) -> [Raw; 2] {
     ]
 }
 
-/// Adds one pair's endpoint residual and leading coefficient, weighted.
 #[inline(always)]
-#[allow(clippy::too_many_arguments)]
-fn accumulate_cofactor_raw(
-    ctx: &field::FpCtx<2>,
-    accumulators: &mut ProductPair,
-    weight: Raw,
-    endpoint: FactoredEndpoint,
-    az0: Raw,
-    az1: Raw,
-    bz0: Raw,
-    bz1: Raw,
-    cz0: Raw,
-    cz1: Raw,
-) {
-    let residual = match endpoint {
-        FactoredEndpoint::Zero => ctx.sub_raw(ctx.mul_raw(az0, bz0), cz0),
-        FactoredEndpoint::One => ctx.sub_raw(ctx.mul_raw(az1, bz1), cz1),
-    };
-    accumulators[0].accumulate_encoded(ctx, weight, residual);
-    let infinity = ctx.mul_raw(ctx.sub_raw(az1, az0), ctx.sub_raw(bz1, bz0));
-    accumulators[1].accumulate_encoded(ctx, weight, infinity);
-}
-
-/// Branch-free `accumulator += (±weight) · |value|` for `|value| ≤ u64::MAX`.
-#[inline(always)]
-fn accumulate_signed_raw(
+pub(crate) fn accumulate_signed_raw(
     ctx: &field::FpCtx<2>,
     accumulator: &mut field::FpLinearAcc<2, 1>,
     weight: Raw,
@@ -456,988 +291,6 @@ fn accumulate_signed_raw(
     accumulator.accumulate_encoded(ctx, selected, magnitude as u64);
 }
 
-/// Adds one native pair's exact endpoint residual and leading coefficient.
-#[inline(always)]
-#[allow(clippy::too_many_arguments)]
-fn accumulate_native_cofactor_raw(
-    ctx: &field::FpCtx<2>,
-    accumulators: &mut LinearPair,
-    weight: Raw,
-    negative_weight: Raw,
-    endpoint: FactoredEndpoint,
-    az0: u64,
-    az1: u64,
-    bz0: u64,
-    bz1: u64,
-    cz0: u64,
-    cz1: u64,
-) {
-    let (az_e, bz_e, cz_e) = match endpoint {
-        FactoredEndpoint::Zero => (az0, bz0, cz0),
-        FactoredEndpoint::One => (az1, bz1, cz1),
-    };
-    // Multiplicands are validated 32-bit wide, so the product is a u64 and the
-    // residual magnitude is at most u64::MAX; each delta is below 2^32.
-    let residual = i128::from(az_e * bz_e) - i128::from(cz_e);
-    let infinity = (i128::from(az1) - i128::from(az0)) * (i128::from(bz1) - i128::from(bz0));
-    accumulate_signed_raw(ctx, &mut accumulators[0], weight, negative_weight, residual);
-    accumulate_signed_raw(ctx, &mut accumulators[1], weight, negative_weight, infinity);
-}
-
-/// `[endpoint evaluation, leading coefficient]` of the cofactor over the
-/// current raw product tables.
-fn cofactor_evaluations_raw(
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    products: &RawProducts,
-    weights: RawEqWeights<'_>,
-    endpoint: FactoredEndpoint,
-) -> [Raw; 2] {
-    let pair_count = products.len() / 2;
-    debug_assert_eq!(pair_count, weights.pair_count());
-
-    if let Some(low) = weights.two_level_low() {
-        let low_pairs = low.len();
-        let bucket = |high_index: usize| -> ProductPair {
-            let mut inner = product_pair();
-            let start = 2 * high_index * low_pairs;
-            for (low_index, &weight) in low.iter().enumerate() {
-                let index = start + 2 * low_index;
-                accumulate_cofactor_raw(
-                    ctx,
-                    &mut inner,
-                    weight,
-                    endpoint,
-                    products.az[index],
-                    products.az[index + 1],
-                    products.bz[index],
-                    products.bz[index + 1],
-                    products.cz[index],
-                    products.cz[index + 1],
-                );
-            }
-            let inner = reduce_product_pair(inner, reducer);
-            let high_weight = weights.high[high_index];
-            let mut outer = product_pair();
-            outer[0].accumulate_encoded(ctx, high_weight, inner[0]);
-            outer[1].accumulate_encoded(ctx, high_weight, inner[1]);
-            outer
-        };
-        #[cfg(feature = "parallel")]
-        if parallel(pair_count) {
-            let total = (0..weights.high.len())
-                .into_par_iter()
-                .map(bucket)
-                .reduce(product_pair, merge_product_pair);
-            return reduce_product_pair(total, reducer);
-        }
-        let total = (0..weights.high.len())
-            .map(bucket)
-            .fold(product_pair(), merge_product_pair);
-        return reduce_product_pair(total, reducer);
-    }
-
-    let block = |start: usize, end: usize| -> ProductPair {
-        let mut accumulators = product_pair();
-        for pair in start..end {
-            let index = 2 * pair;
-            let weight = weights.pair_weight(ctx, pair);
-            accumulate_cofactor_raw(
-                ctx,
-                &mut accumulators,
-                weight,
-                endpoint,
-                products.az[index],
-                products.az[index + 1],
-                products.bz[index],
-                products.bz[index + 1],
-                products.cz[index],
-                products.cz[index + 1],
-            );
-        }
-        accumulators
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(pair_count) {
-        let blocks = pair_count.div_ceil(FOLD_BLOCK);
-        let total = (0..blocks)
-            .into_par_iter()
-            .map(|b| block(b * FOLD_BLOCK, ((b + 1) * FOLD_BLOCK).min(pair_count)))
-            .reduce(product_pair, merge_product_pair);
-        return reduce_product_pair(total, reducer);
-    }
-    reduce_product_pair(block(0, pair_count), reducer)
-}
-
-/// The native (exact `u64`) twin of [`cofactor_evaluations_raw`] for the first
-/// outer round: field × `u64` accumulation, one reduction per bucket.
-fn native_cofactor_evaluations_raw(
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    products: NativeProducts<'_>,
-    weights: RawEqWeights<'_>,
-    endpoint: FactoredEndpoint,
-) -> [Raw; 2] {
-    let (az, bz, cz) = (products.az, products.bz, products.cz);
-    let pair_count = az.len() / 2;
-    debug_assert_eq!(pair_count, weights.pair_count());
-
-    if let Some(low) = weights.two_level_low() {
-        let negative_low: Vec<Raw> = low.iter().map(|&weight| ctx.neg_raw(weight)).collect();
-        let low_pairs = low.len();
-        let bucket = |high_index: usize| -> ProductPair {
-            let mut inner = linear_pair();
-            let start = 2 * high_index * low_pairs;
-            for (low_index, (&weight, &negative_weight)) in
-                low.iter().zip(&negative_low).enumerate()
-            {
-                let index = start + 2 * low_index;
-                accumulate_native_cofactor_raw(
-                    ctx,
-                    &mut inner,
-                    weight,
-                    negative_weight,
-                    endpoint,
-                    az[index],
-                    az[index + 1],
-                    bz[index],
-                    bz[index + 1],
-                    cz[index],
-                    cz[index + 1],
-                );
-            }
-            let inner = reduce_linear_pair(inner, reducer);
-            let high_weight = weights.high[high_index];
-            let mut outer = product_pair();
-            outer[0].accumulate_encoded(ctx, high_weight, inner[0]);
-            outer[1].accumulate_encoded(ctx, high_weight, inner[1]);
-            outer
-        };
-        #[cfg(feature = "parallel")]
-        if parallel(pair_count) {
-            let total = (0..weights.high.len())
-                .into_par_iter()
-                .map(bucket)
-                .reduce(product_pair, merge_product_pair);
-            return reduce_product_pair(total, reducer);
-        }
-        let total = (0..weights.high.len())
-            .map(bucket)
-            .fold(product_pair(), merge_product_pair);
-        return reduce_product_pair(total, reducer);
-    }
-
-    let block = |start: usize, end: usize| -> LinearPair {
-        let mut accumulators = linear_pair();
-        for pair in start..end {
-            let index = 2 * pair;
-            let weight = weights.pair_weight(ctx, pair);
-            accumulate_native_cofactor_raw(
-                ctx,
-                &mut accumulators,
-                weight,
-                ctx.neg_raw(weight),
-                endpoint,
-                az[index],
-                az[index + 1],
-                bz[index],
-                bz[index + 1],
-                cz[index],
-                cz[index + 1],
-            );
-        }
-        accumulators
-    };
-    let merge = |mut left: LinearPair, right: LinearPair| -> LinearPair {
-        left[0] += right[0];
-        left[1] += right[1];
-        left
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(pair_count) {
-        let blocks = pair_count.div_ceil(FOLD_BLOCK);
-        let total = (0..blocks)
-            .into_par_iter()
-            .map(|b| block(b * FOLD_BLOCK, ((b + 1) * FOLD_BLOCK).min(pair_count)))
-            .reduce(linear_pair, merge);
-        return reduce_linear_pair(total, reducer);
-    }
-    reduce_linear_pair(block(0, pair_count), reducer)
-}
-
-/// Raw slices of one product table triple, for disjoint parallel blocks.
-struct ProductSlices<'a> {
-    az: &'a [Raw],
-    bz: &'a [Raw],
-    cz: &'a [Raw],
-}
-
-struct ProductSlicesMut<'a> {
-    az: &'a mut [Raw],
-    bz: &'a mut [Raw],
-    cz: &'a mut [Raw],
-}
-
-/// Folds every table at `challenge` (no accumulation): the last round.
-fn fold_products_raw(
-    ctx: &field::FpCtx<2>,
-    input: &RawProducts,
-    output: &mut RawProducts,
-    challenge: Raw,
-) {
-    debug_assert_eq!(input.len(), 2 * output.len());
-    let fold = |table_in: &[Raw], table_out: &mut [Raw]| {
-        #[cfg(feature = "parallel")]
-        if parallel(table_out.len()) {
-            table_in
-                .par_chunks_exact(2)
-                .zip(table_out.par_iter_mut())
-                .for_each(|(pair, value)| *value = ctx.interpolate(pair[0], pair[1], challenge));
-            return;
-        }
-        for (pair, value) in table_in.chunks_exact(2).zip(table_out.iter_mut()) {
-            *value = ctx.interpolate(pair[0], pair[1], challenge);
-        }
-    };
-    fold(&input.az, &mut output.az);
-    fold(&input.bz, &mut output.bz);
-    fold(&input.cz, &mut output.cz);
-}
-
-/// Folds the tables at `challenge` and accumulates the next round's cofactor
-/// evaluations from the folded pairs in the same pass.
-fn fold_products_and_cofactor_evaluations_raw(
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    input: &RawProducts,
-    output: &mut RawProducts,
-    challenge: Raw,
-    weights: RawEqWeights<'_>,
-    endpoint: FactoredEndpoint,
-) -> [Raw; 2] {
-    debug_assert_eq!(input.len(), 2 * output.len());
-    let out_pairs = output.len() / 2;
-    debug_assert_eq!(out_pairs, weights.pair_count());
-
-    // One contiguous output pair range → its input window is four times as
-    // long. `first_pair` indexes the equality weights.
-    let process = |first_pair: usize,
-                   input: ProductSlices<'_>,
-                   output: ProductSlicesMut<'_>|
-     -> ProductPair {
-        let pairs = output.az.len() / 2;
-        let mut accumulators = product_pair();
-        if let Some(low) = weights.two_level_low() {
-            // The block is a whole number of high buckets (see the callers).
-            let low_pairs = low.len();
-            debug_assert_eq!(pairs % low_pairs, 0);
-            debug_assert_eq!(first_pair % low_pairs, 0);
-            let mut high_index = first_pair / low_pairs;
-            let mut base = 0;
-            while base < pairs {
-                let mut inner = product_pair();
-                for (low_index, &weight) in low.iter().enumerate() {
-                    let pair = base + low_index;
-                    let (i, o) = (4 * pair, 2 * pair);
-                    let az = [
-                        ctx.interpolate(input.az[i], input.az[i + 1], challenge),
-                        ctx.interpolate(input.az[i + 2], input.az[i + 3], challenge),
-                    ];
-                    let bz = [
-                        ctx.interpolate(input.bz[i], input.bz[i + 1], challenge),
-                        ctx.interpolate(input.bz[i + 2], input.bz[i + 3], challenge),
-                    ];
-                    let cz = [
-                        ctx.interpolate(input.cz[i], input.cz[i + 1], challenge),
-                        ctx.interpolate(input.cz[i + 2], input.cz[i + 3], challenge),
-                    ];
-                    output.az[o] = az[0];
-                    output.az[o + 1] = az[1];
-                    output.bz[o] = bz[0];
-                    output.bz[o + 1] = bz[1];
-                    output.cz[o] = cz[0];
-                    output.cz[o + 1] = cz[1];
-                    accumulate_cofactor_raw(
-                        ctx, &mut inner, weight, endpoint, az[0], az[1], bz[0], bz[1], cz[0], cz[1],
-                    );
-                }
-                let inner = reduce_product_pair(inner, reducer);
-                let high_weight = weights.high[high_index];
-                accumulators[0].accumulate_encoded(ctx, high_weight, inner[0]);
-                accumulators[1].accumulate_encoded(ctx, high_weight, inner[1]);
-                high_index += 1;
-                base += low_pairs;
-            }
-        } else {
-            for pair in 0..pairs {
-                let (i, o) = (4 * pair, 2 * pair);
-                let az = [
-                    ctx.interpolate(input.az[i], input.az[i + 1], challenge),
-                    ctx.interpolate(input.az[i + 2], input.az[i + 3], challenge),
-                ];
-                let bz = [
-                    ctx.interpolate(input.bz[i], input.bz[i + 1], challenge),
-                    ctx.interpolate(input.bz[i + 2], input.bz[i + 3], challenge),
-                ];
-                let cz = [
-                    ctx.interpolate(input.cz[i], input.cz[i + 1], challenge),
-                    ctx.interpolate(input.cz[i + 2], input.cz[i + 3], challenge),
-                ];
-                output.az[o] = az[0];
-                output.az[o + 1] = az[1];
-                output.bz[o] = bz[0];
-                output.bz[o + 1] = bz[1];
-                output.cz[o] = cz[0];
-                output.cz[o + 1] = cz[1];
-                let weight = weights.pair_weight(ctx, first_pair + pair);
-                accumulate_cofactor_raw(
-                    ctx,
-                    &mut accumulators,
-                    weight,
-                    endpoint,
-                    az[0],
-                    az[1],
-                    bz[0],
-                    bz[1],
-                    cz[0],
-                    cz[1],
-                );
-            }
-        }
-        accumulators
-    };
-
-    // Block size in output pairs: a multiple of the low pair count so every
-    // block covers whole high buckets.
-    let block_pairs = match weights.two_level_low() {
-        Some(low) => {
-            let low_pairs = low.len();
-            (FOLD_BLOCK / 2).div_ceil(low_pairs).max(1) * low_pairs
-        }
-        None => FOLD_BLOCK / 2,
-    };
-
-    #[cfg(feature = "parallel")]
-    if parallel(out_pairs) {
-        let out_block = 2 * block_pairs;
-        let in_block = 4 * block_pairs;
-        let total = (
-            input.az.par_chunks(in_block),
-            input.bz.par_chunks(in_block),
-            input.cz.par_chunks(in_block),
-            output.az.par_chunks_mut(out_block),
-            output.bz.par_chunks_mut(out_block),
-            output.cz.par_chunks_mut(out_block),
-        )
-            .into_par_iter()
-            .enumerate()
-            .map(|(block, (az, bz, cz, az_out, bz_out, cz_out))| {
-                process(
-                    block * block_pairs,
-                    ProductSlices { az, bz, cz },
-                    ProductSlicesMut {
-                        az: az_out,
-                        bz: bz_out,
-                        cz: cz_out,
-                    },
-                )
-            })
-            .reduce(product_pair, merge_product_pair);
-        return reduce_product_pair(total, reducer);
-    }
-
-    let total = process(
-        0,
-        ProductSlices {
-            az: &input.az,
-            bz: &input.bz,
-            cz: &input.cz,
-        },
-        ProductSlicesMut {
-            az: &mut output.az,
-            bz: &mut output.bz,
-            cz: &mut output.cz,
-        },
-    );
-    reduce_product_pair(total, reducer)
-}
-
-/// Folds the exact native tables into the field at `challenge` — every output
-/// is `(1 - challenge) · v0 + challenge · v1`, Montgomery-reduced once and
-/// converted to raw form — and accumulates the next round's cofactor
-/// evaluations in the same pass.
-fn fold_native_products_and_cofactor_evaluations_raw(
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    products: NativeProducts<'_>,
-    output: &mut RawProducts,
-    challenge: Raw,
-    weights: Option<(RawEqWeights<'_>, FactoredEndpoint)>,
-) -> [Raw; 2] {
-    let (az_in, bz_in, cz_in) = (products.az, products.bz, products.cz);
-    debug_assert_eq!(az_in.len(), 2 * output.len());
-    let one_minus_challenge = ctx.sub_raw(ctx.one_raw(), challenge);
-    // Plain Montgomery reduction plus one conversion multiply: cheaper than
-    // the Barrett remainder of the R-scaled sum, same canonical residue.
-    let fold = |v0: u64, v1: u64| -> Raw {
-        ctx.plain_to_raw(fold_native_pair_plain(
-            ctx,
-            one_minus_challenge,
-            challenge,
-            v0,
-            v1,
-        ))
-    };
-
-    let Some((weights, endpoint)) = weights else {
-        // Final fold: a single output entry per table, no next round.
-        debug_assert_eq!(output.len(), 1);
-        output.az[0] = fold(az_in[0], az_in[1]);
-        output.bz[0] = fold(bz_in[0], bz_in[1]);
-        output.cz[0] = fold(cz_in[0], cz_in[1]);
-        return [0, 0];
-    };
-
-    let out_pairs = output.len() / 2;
-    debug_assert_eq!(out_pairs, weights.pair_count());
-    let process = |first_pair: usize,
-                   az_in: &[u64],
-                   bz_in: &[u64],
-                   cz_in: &[u64],
-                   az_out: &mut [Raw],
-                   bz_out: &mut [Raw],
-                   cz_out: &mut [Raw]|
-     -> ProductPair {
-        let pairs = az_out.len() / 2;
-        let mut accumulators = product_pair();
-        let mut emit = |pair: usize| -> [[Raw; 2]; 3] {
-            let (i, o) = (4 * pair, 2 * pair);
-            let az = [
-                fold(az_in[i], az_in[i + 1]),
-                fold(az_in[i + 2], az_in[i + 3]),
-            ];
-            let bz = [
-                fold(bz_in[i], bz_in[i + 1]),
-                fold(bz_in[i + 2], bz_in[i + 3]),
-            ];
-            let cz = [
-                fold(cz_in[i], cz_in[i + 1]),
-                fold(cz_in[i + 2], cz_in[i + 3]),
-            ];
-            az_out[o] = az[0];
-            az_out[o + 1] = az[1];
-            bz_out[o] = bz[0];
-            bz_out[o + 1] = bz[1];
-            cz_out[o] = cz[0];
-            cz_out[o + 1] = cz[1];
-            [az, bz, cz]
-        };
-        if let Some(low) = weights.two_level_low() {
-            let low_pairs = low.len();
-            debug_assert_eq!(pairs % low_pairs, 0);
-            debug_assert_eq!(first_pair % low_pairs, 0);
-            let mut high_index = first_pair / low_pairs;
-            let mut base = 0;
-            while base < pairs {
-                let mut inner = product_pair();
-                for (low_index, &weight) in low.iter().enumerate() {
-                    let [az, bz, cz] = emit(base + low_index);
-                    accumulate_cofactor_raw(
-                        ctx, &mut inner, weight, endpoint, az[0], az[1], bz[0], bz[1], cz[0], cz[1],
-                    );
-                }
-                let inner = reduce_product_pair(inner, reducer);
-                let high_weight = weights.high[high_index];
-                accumulators[0].accumulate_encoded(ctx, high_weight, inner[0]);
-                accumulators[1].accumulate_encoded(ctx, high_weight, inner[1]);
-                high_index += 1;
-                base += low_pairs;
-            }
-        } else {
-            for pair in 0..pairs {
-                let [az, bz, cz] = emit(pair);
-                let weight = weights.pair_weight(ctx, first_pair + pair);
-                accumulate_cofactor_raw(
-                    ctx,
-                    &mut accumulators,
-                    weight,
-                    endpoint,
-                    az[0],
-                    az[1],
-                    bz[0],
-                    bz[1],
-                    cz[0],
-                    cz[1],
-                );
-            }
-        }
-        accumulators
-    };
-
-    let block_pairs = match weights.two_level_low() {
-        Some(low) => {
-            let low_pairs = low.len();
-            (FOLD_BLOCK / 2).div_ceil(low_pairs).max(1) * low_pairs
-        }
-        None => FOLD_BLOCK / 2,
-    };
-
-    #[cfg(feature = "parallel")]
-    if parallel(out_pairs) {
-        let out_block = 2 * block_pairs;
-        let in_block = 4 * block_pairs;
-        let total = (
-            az_in.par_chunks(in_block),
-            bz_in.par_chunks(in_block),
-            cz_in.par_chunks(in_block),
-            output.az.par_chunks_mut(out_block),
-            output.bz.par_chunks_mut(out_block),
-            output.cz.par_chunks_mut(out_block),
-        )
-            .into_par_iter()
-            .enumerate()
-            .map(|(block, (az, bz, cz, az_out, bz_out, cz_out))| {
-                process(block * block_pairs, az, bz, cz, az_out, bz_out, cz_out)
-            })
-            .reduce(product_pair, merge_product_pair);
-        return reduce_product_pair(total, reducer);
-    }
-
-    let total = process(
-        0,
-        az_in,
-        bz_in,
-        cz_in,
-        &mut output.az,
-        &mut output.bz,
-        &mut output.cz,
-    );
-    reduce_product_pair(total, reducer)
-}
-
-/// Shared prover-side scalars of one outer sumcheck.
-struct OuterScalars<'a> {
-    config: FieldConfig,
-    ctx: &'a field::FpCtx<2>,
-    reducer: &'a field::FpCtx<2>,
-    tau: &'a [Field],
-    tau_inverses: Vec<Field>,
-    zero: Field,
-    one: Field,
-}
-
-impl OuterScalars<'_> {
-    fn coefficients(
-        &self,
-        round: usize,
-        current_claim: &Field,
-        endpoint: FactoredEndpoint,
-        evaluations: [Raw; 2],
-        bound_equality: &Field,
-    ) -> [Field; 3] {
-        reconstruct_eq_factored_cubic_without_linear(
-            current_claim,
-            &self.tau[round],
-            &self.tau_inverses[round],
-            endpoint,
-            [
-                crate::utils::delayed_reduction::element(&self.config, evaluations[0]),
-                crate::utils::delayed_reduction::element(&self.config, evaluations[1]),
-            ],
-            bound_equality,
-            &self.one,
-            &self.config,
-        )
-    }
-}
-
-/// Removes the active coordinate from the equality factors: the low table
-/// while it has more than one entry, then the high table.
-fn strip_active_coordinate(ctx: &field::FpCtx<2>, eq_low: &mut Vec<Raw>, eq_high: &mut Vec<Raw>) {
-    if eq_low.len() > 1 {
-        *eq_low = strip_coordinate_raw(ctx, eq_low);
-    } else {
-        *eq_high = strip_coordinate_raw(ctx, eq_high);
-    }
-}
-
-fn weights_of<'a>(eq_low: &'a [Raw], eq_high: &'a [Raw]) -> RawEqWeights<'a> {
-    RawEqWeights {
-        low: (!eq_low.is_empty() && eq_low.len() > 1).then_some(eq_low),
-        high: eq_high,
-    }
-}
-
-/// Runs the remaining field-valued outer rounds from a prepared state: the
-/// equality factors already stripped of the current coordinate (they are the
-/// current round's weights) and the current round's coefficients computed.
-/// `round_boundary` acts between each absorbed round polynomial and its
-/// challenge ([`UngrindedRoundBoundary`] adds no transcript bytes).
-#[allow(clippy::too_many_arguments)]
-fn outer_rounds_raw<T: Transcript, P: RoundBoundaryPolicy>(
-    transcript: &mut T,
-    scalars: &OuterScalars<'_>,
-    mut current_claim: Field,
-    mut bound_equality: Field,
-    mut eq_low: Vec<Raw>,
-    mut eq_high: Vec<Raw>,
-    mut products: RawProducts,
-    mut coefficients_without_linear: [Field; 3],
-    round_polynomials: &mut Vec<[Field; 4]>,
-    eval_points: &mut Vec<Field>,
-    round_boundary: &mut P,
-) -> Result<(Field, Field, RawProducts), SumcheckError> {
-    let ctx = scalars.ctx;
-    let mut scratch = RawProducts::zeros(products.len() / 2);
-    while products.len() > 1 {
-        let round = eval_points.len();
-        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
-            transcript,
-            &mut current_claim,
-            &coefficients_without_linear,
-            round_polynomials,
-            eval_points,
-            &scalars.zero,
-            &scalars.config,
-            round_boundary,
-        )?;
-        let bound_factor =
-            equality_coordinate_evaluation(&scalars.tau[round], &challenge, &scalars.one, &ctx);
-        bound_equality = ctx.mul(&(bound_equality), &(&bound_factor));
-        let challenge_raw = ctx.raw(&challenge);
-
-        let next_len = products.len() / 2;
-        scratch.truncate(next_len);
-        if next_len == 1 {
-            fold_products_raw(ctx, &products, &mut scratch, challenge_raw);
-            products.swap(&mut scratch);
-            break;
-        }
-
-        strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
-        let next_round = round + 1;
-        let endpoint = FactoredEndpoint::for_tau(&scalars.tau[next_round]);
-        let evaluations = fold_products_and_cofactor_evaluations_raw(
-            ctx,
-            scalars.reducer,
-            &products,
-            &mut scratch,
-            challenge_raw,
-            weights_of(&eq_low, &eq_high),
-            endpoint,
-        );
-        coefficients_without_linear = scalars.coefficients(
-            next_round,
-            &current_claim,
-            endpoint,
-            evaluations,
-            &bound_equality,
-        );
-        products.swap(&mut scratch);
-    }
-    Ok((current_claim, bound_equality, products))
-}
-
-/// Absorbs the terminal evaluations and assembles the outer output. The
-/// field-valued prover rejects an inconsistent terminal claim (as the generic
-/// field prover does); the native prover only debug-asserts it (as the generic
-/// native prover does).
-#[allow(clippy::too_many_arguments)]
-fn finish_outer<T: Transcript>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    current_claim: Field,
-    bound_equality: &Field,
-    products: &RawProducts,
-    round_polynomials: Vec<[Field; 4]>,
-    eval_points: Vec<Field>,
-    reject_inconsistent_terminal: bool,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    let cfg = ctx.clone();
-    debug_assert_eq!(products.len(), 1);
-    let az_mle_claim = crate::utils::delayed_reduction::element(&cfg, products.az[0]);
-    let bz_mle_claim = crate::utils::delayed_reduction::element(&cfg, products.bz[0]);
-    let cz_mle_claim = crate::utils::delayed_reduction::element(&cfg, products.cz[0]);
-    let expected = cfg.mul(
-        &(bound_equality.clone()),
-        &(&(cfg.sub(
-            &(cfg.mul(&(az_mle_claim.clone()), &(&bz_mle_claim))),
-            &(&cz_mle_claim),
-        ))),
-    );
-    if reject_inconsistent_terminal {
-        if current_claim != expected {
-            return Err(SumcheckError::InvalidTerminalClaim);
-        }
-    } else {
-        debug_assert_eq!(current_claim, expected);
-    }
-    absorb_field_elements(
-        transcript,
-        &[
-            az_mle_claim.clone(),
-            bz_mle_claim.clone(),
-            cz_mle_claim.clone(),
-        ],
-        &cfg,
-    );
-    Ok(OuterSumcheckOutput {
-        proof: OuterSumcheckProof {
-            sumcheck: SumcheckProof { round_polynomials },
-            az_mle_claim,
-            bz_mle_claim,
-            cz_mle_claim,
-        },
-        eval_points,
-        final_claim: current_claim,
-    })
-}
-
-fn outer_scalars<'a>(
-    ctx: &'a field::FpCtx<2>,
-    reducer: &'a field::FpCtx<2>,
-    tau: &'a [Field],
-    cfg: FieldConfig,
-) -> OuterScalars<'a> {
-    OuterScalars {
-        config: cfg.clone(),
-        ctx,
-        reducer,
-        tau,
-        tau_inverses: batch_invert_nonzero(tau, &cfg),
-        zero: Field::zero_with_cfg(&cfg),
-        one: Field::one_with_cfg(&cfg),
-    }
-}
-
-/// Proves the cubic outer sumcheck from field-valued raw product tables: the
-/// raw twin of `prove_outer_sumcheck_with_reducer` with the delayed-Barrett
-/// reducer. `eq_low`/`eq_high` are the full equality factors of `tau`.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_outer_field_raw<T: Transcript>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    initial_claim: Field,
-    tau: &[Field],
-    eq_low: Vec<Raw>,
-    eq_high: Vec<Raw>,
-    products: RawProducts,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    prove_outer_field_raw_with_boundary(
-        transcript,
-        ctx,
-        reducer,
-        initial_claim,
-        tau,
-        eq_low,
-        eq_high,
-        products,
-        &mut UngrindedRoundBoundary,
-    )
-}
-
-/// [`prove_outer_field_raw`] under an explicit message/challenge round
-/// boundary policy: the raw twin of
-/// `prove_outer_sumcheck_with_reducer_grinded`, transcript-identical to it
-/// under the same policy.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn prove_outer_field_raw_with_boundary<T: Transcript, P: RoundBoundaryPolicy>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    initial_claim: Field,
-    tau: &[Field],
-    mut eq_low: Vec<Raw>,
-    mut eq_high: Vec<Raw>,
-    products: RawProducts,
-    round_boundary: &mut P,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    let num_vars = tau.len();
-    if products.len() != 1usize << num_vars || eq_low.len() * eq_high.len() != products.len() {
-        return Err(SumcheckError::InvalidEqualityDimensions);
-    }
-    round_boundary.validate(num_vars)?;
-    let scalars = outer_scalars(ctx, reducer, tau, ctx.clone());
-    let bound_equality = scalars.one.clone();
-    let mut round_polynomials = Vec::with_capacity(num_vars);
-    let mut eval_points = Vec::with_capacity(num_vars);
-    if num_vars == 0 {
-        return finish_outer(
-            transcript,
-            ctx,
-            initial_claim,
-            &bound_equality,
-            &products,
-            round_polynomials,
-            eval_points,
-            true,
-        );
-    }
-
-    strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
-    let endpoint = FactoredEndpoint::for_tau(&tau[0]);
-    let evaluations = {
-        let _scope = tracing::info_span!("raw:outer_round0").entered();
-        cofactor_evaluations_raw(
-            ctx,
-            reducer,
-            &products,
-            weights_of(&eq_low, &eq_high),
-            endpoint,
-        )
-    };
-    let coefficients =
-        scalars.coefficients(0, &initial_claim, endpoint, evaluations, &bound_equality);
-    let _rounds_scope = tracing::info_span!("raw:outer_rounds").entered();
-    let (current_claim, bound_equality, products) = outer_rounds_raw(
-        transcript,
-        &scalars,
-        initial_claim,
-        bound_equality,
-        eq_low,
-        eq_high,
-        products,
-        coefficients,
-        &mut round_polynomials,
-        &mut eval_points,
-        round_boundary,
-    )?;
-    finish_outer(
-        transcript,
-        ctx,
-        current_claim,
-        &bound_equality,
-        &products,
-        round_polynomials,
-        eval_points,
-        true,
-    )
-}
-
-/// Proves the outer sumcheck whose first round runs on exact native `u64`
-/// products: the raw twin of `prove_outer_sumcheck_u32_native_with_reducer`.
-/// `Az`/`Bz` must already be validated 32-bit wide.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_outer_native_raw<T: Transcript, P: NativeOuterInput>(
-    transcript: &mut T,
-    ctx: &field::FpCtx<2>,
-    reducer: &field::FpCtx<2>,
-    initial_claim: Field,
-    tau: &[Field],
-    mut eq_low: Vec<Raw>,
-    mut eq_high: Vec<Raw>,
-    products: P,
-) -> Result<OuterSumcheckOutput<Field>, SumcheckError> {
-    let num_vars = tau.len();
-    let len = products.len();
-    if len != 1usize << num_vars || !products.valid_shape() || eq_low.len() * eq_high.len() != len {
-        return Err(SumcheckError::InvalidEqualityDimensions);
-    }
-    let scalars = outer_scalars(ctx, reducer, tau, ctx.clone());
-    let mut bound_equality = scalars.one.clone();
-    let mut round_polynomials = Vec::with_capacity(num_vars);
-    let mut eval_points = Vec::with_capacity(num_vars);
-    if num_vars == 0 {
-        let [a, b, c] = products.singleton(ctx);
-        let single = RawProducts {
-            az: vec![a],
-            bz: vec![b],
-            cz: vec![c],
-        };
-        return finish_outer(
-            transcript,
-            ctx,
-            initial_claim,
-            &bound_equality,
-            &single,
-            round_polynomials,
-            eval_points,
-            false,
-        );
-    }
-
-    // Round zero on the exact tables.
-    strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
-    let endpoint = FactoredEndpoint::for_tau(&tau[0]);
-    let evaluations = {
-        let _scope = tracing::info_span!("raw:outer_native_round0").entered();
-        products.round0(ctx, reducer, weights_of(&eq_low, &eq_high), endpoint)
-    };
-    let coefficients =
-        scalars.coefficients(0, &initial_claim, endpoint, evaluations, &bound_equality);
-    let mut current_claim = initial_claim;
-    let challenge = recover_full_round_polynomial_and_sample_next_challenge(
-        transcript,
-        &mut current_claim,
-        &coefficients,
-        &mut round_polynomials,
-        &mut eval_points,
-        &scalars.zero,
-        &scalars.config,
-    )?;
-    bound_equality = ctx.mul(
-        &(bound_equality),
-        &(&equality_coordinate_evaluation(&tau[0], &challenge, &scalars.one, ctx)),
-    );
-    let challenge_raw = ctx.raw(&challenge);
-
-    // Fold into the field, preparing round one in the same pass.
-    let mut folded = RawProducts::zeros(len / 2);
-    if len == 2 {
-        products.fold(ctx, reducer, &mut folded, challenge_raw, None);
-        return finish_outer(
-            transcript,
-            ctx,
-            current_claim,
-            &bound_equality,
-            &folded,
-            round_polynomials,
-            eval_points,
-            false,
-        );
-    }
-    strip_active_coordinate(ctx, &mut eq_low, &mut eq_high);
-    let endpoint = FactoredEndpoint::for_tau(&tau[1]);
-    let evaluations = {
-        let _scope = tracing::info_span!("raw:outer_native_fold0").entered();
-        products.fold(
-            ctx,
-            reducer,
-            &mut folded,
-            challenge_raw,
-            Some((weights_of(&eq_low, &eq_high), endpoint)),
-        )
-    };
-    let coefficients =
-        scalars.coefficients(1, &current_claim, endpoint, evaluations, &bound_equality);
-    let _rounds_scope = tracing::info_span!("raw:outer_rounds").entered();
-    let (current_claim, bound_equality, products) = outer_rounds_raw(
-        transcript,
-        &scalars,
-        current_claim,
-        bound_equality,
-        eq_low,
-        eq_high,
-        folded,
-        coefficients,
-        &mut round_polynomials,
-        &mut eval_points,
-        &mut UngrindedRoundBoundary,
-    )?;
-    finish_outer(
-        transcript,
-        ctx,
-        current_claim,
-        &bound_equality,
-        &products,
-        round_polynomials,
-        eval_points,
-        false,
-    )
-}
-
-// ---------------------------------------------------------------------------
 // Inner sumcheck
 // ---------------------------------------------------------------------------
 
@@ -1558,7 +411,7 @@ fn fold_native_pair(
 /// `(1-c)_raw · w0 + c_raw · w1 < 2 · 2^64 · q` is Montgomery-reduced once,
 /// which is far cheaper than the Barrett remainder the raw form needs.
 #[inline(always)]
-fn fold_native_pair_plain(
+pub(crate) fn fold_native_pair_plain(
     ctx: &field::FpCtx<2>,
     one_minus_challenge: Raw,
     challenge: Raw,
@@ -2970,14 +1823,14 @@ mod tests {
         },
         squeeze_field,
         sumcheck::{
-            prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
-            prove_outer_sumcheck_u32_native_with_reducer, prove_outer_sumcheck_with_reducer,
+            prove_field_with_factors, prove_inner_sumcheck_u32_native_with_reducer,
+            prove_inner_sumcheck_with_reducer, prove_u32_first_round,
         },
         u32_mul::{U32MulLayout, u32_mul_constraint_matrices},
         univariate_skip::PrefixUnivariateRowBinding,
         univariate_skip_native::{
-            compute_u32_native_skip_message_raw, compute_u32_native_skip_message_validated,
-            fold_u32_native_prefix_raw, fold_u32_native_prefix_validated,
+            encoded_native_message, fold_encoded_lagrange, fold_native_lagrange_validated,
+            native_message_validated,
         },
     };
     use super::*;
@@ -3281,7 +2134,7 @@ mod tests {
                 let claim = outer_claim(&cfg, &tau, &products);
 
                 let mut generic_transcript = Blake3Transcript::new();
-                let expected = prove_outer_sumcheck_with_reducer(
+                let expected = prove_field_with_factors(
                     &mut generic_transcript,
                     claim.clone(),
                     &tau,
@@ -3294,7 +2147,7 @@ mod tests {
 
                 let mut raw_transcript = Blake3Transcript::new();
                 let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
-                let actual = prove_outer_field_raw(
+                let actual = prove_encoded(
                     &mut raw_transcript,
                     &ctx,
                     &reducer,
@@ -3371,7 +2224,7 @@ mod tests {
                 let claim = outer_claim(&cfg, &tau, &field_products);
 
                 let mut generic_transcript = Blake3Transcript::new();
-                let expected = prove_outer_sumcheck_u32_native_with_reducer(
+                let expected = prove_u32_first_round(
                     &mut generic_transcript,
                     claim.clone(),
                     &tau,
@@ -3384,7 +2237,7 @@ mod tests {
 
                 let mut raw_transcript = Blake3Transcript::new();
                 let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau);
-                let actual = prove_outer_native_raw(
+                let actual = prove_native(
                     &mut raw_transcript,
                     &ctx,
                     &reducer,
@@ -3951,7 +2804,7 @@ mod tests {
                 for skip_vars in 1..=4usize.min(num_vars) {
                     let tau_tail = random_fields(&mut rng, &cfg, num_vars - skip_vars);
                     let factors = make_equality_factors(&tau_tail, &cfg).unwrap();
-                    let expected = compute_u32_native_skip_message_validated(
+                    let expected = native_message_validated(
                         skip_vars,
                         &factors,
                         &mles,
@@ -3960,14 +2813,14 @@ mod tests {
                     )
                     .unwrap();
                     let (eq_low, eq_high) = make_equality_factors_raw(&ctx, &tau_tail);
-                    let actual = compute_u32_native_skip_message_raw(
+                    let actual = encoded_native_message(
                         &cfg, skip_vars, &eq_low, &eq_high, products, &ctx, &reducer,
                     )
                     .unwrap();
                     assert_eq!(actual, expected, "skip message K={skip_vars} n={num_vars}");
 
                     let z = random_field(&mut rng, &cfg);
-                    let expected = fold_u32_native_prefix_validated(
+                    let expected = fold_native_lagrange_validated(
                         skip_vars,
                         mles.clone(),
                         &z,
@@ -3975,7 +2828,7 @@ mod tests {
                         &generic_reducer,
                     )
                     .unwrap();
-                    let actual = fold_u32_native_prefix_raw(skip_vars, products, &z, &ctx).unwrap();
+                    let actual = fold_encoded_lagrange(skip_vars, products, &z, &ctx).unwrap();
                     assert_eq!(ctx.raw_vec(&expected.az.evaluations), actual.az);
                     assert_eq!(ctx.raw_vec(&expected.bz.evaluations), actual.bz);
                     assert_eq!(ctx.raw_vec(&expected.cz.evaluations), actual.cz);

@@ -74,11 +74,13 @@ pub(super) fn fold_signed<const L: usize, const N: usize>(
 macro_rules! fold_unsigned_source {
     ([$($generic:tt)*] $provider:ty, $id:ty, $src:ty, $convert:expr) => {
         impl<$($generic)*> FoldPairs<$src, PrimeValue<$id,L>> for $provider {
-            fn fold_pairs_into(&self, src:&[$src], offset:usize, out:&mut[PrimeValue<$id,L>], challenge:&Self::Elem) {
-                self.fold_pairs_map_into(src.len(),offset,|i|src[i],out,challenge);
+            fn fold_pairs_into(&self, src:&[$src], out:&mut[PrimeValue<$id,L>], challenge:&Self::Elem) {
+                assert_eq!(src.len(),out.len().checked_mul(2).expect("fold extent overflow"));
+                self.fold_pairs_map_into(|i|src[i],out,challenge);
             }
-            fn fold_pairs_map_into(&self, len:usize, offset:usize, mut read:impl FnMut(usize)->$src, out:&mut[PrimeValue<$id,L>], challenge:&Self::Elem) {
-                let start=source_start(len,offset,out.len());
+            fn fold_pairs_map_into(&self,  mut read:impl FnMut(usize)->$src, out:&mut[PrimeValue<$id,L>], challenge:&Self::Elem) {
+                out.len().checked_mul(2).expect("fold extent overflow");
+                let start=0;
                 let complement=self.params().sub(&self.params().one,&challenge.words);
                 for(i,dst) in out.iter_mut().enumerate() {
                     let left=($convert)(read(start+2*i));
@@ -88,11 +90,13 @@ macro_rules! fold_unsigned_source {
             }
         }
         impl<$($generic)*> FoldPairs<$src, Uint<L>> for $provider {
-            fn fold_pairs_into(&self, src:&[$src], offset:usize, out:&mut[Uint<L>], challenge:&Self::Elem) {
-                self.fold_pairs_map_into(src.len(),offset,|i|src[i],out,challenge);
+            fn fold_pairs_into(&self, src:&[$src], out:&mut[Uint<L>], challenge:&Self::Elem) {
+                assert_eq!(src.len(),out.len().checked_mul(2).expect("fold extent overflow"));
+                self.fold_pairs_map_into(|i|src[i],out,challenge);
             }
-            fn fold_pairs_map_into(&self, len:usize, offset:usize, mut read:impl FnMut(usize)->$src, out:&mut[Uint<L>], challenge:&Self::Elem) {
-                let start=source_start(len,offset,out.len());
+            fn fold_pairs_map_into(&self,  mut read:impl FnMut(usize)->$src, out:&mut[Uint<L>], challenge:&Self::Elem) {
+                out.len().checked_mul(2).expect("fold extent overflow");
+                let start=0;
                 let complement=self.params().sub(&self.params().one,&challenge.words);
                 for(i,dst) in out.iter_mut().enumerate() {
                     let left=($convert)(read(start+2*i));
@@ -118,11 +122,13 @@ fn source_start(source_len: usize, pair_offset: usize, output_len: usize) -> usi
 macro_rules! fold_source {
     ([$($generic:tt)*] $provider:ty, $id:ty, $src:ty, $project:expr) => {
         impl<$($generic)*> FoldPairs<$src, PrimeValue<$id,L>> for $provider {
-            fn fold_pairs_into(&self, src: &[$src], pair_offset: usize, dst: &mut [PrimeValue<$id,L>], challenge: &Self::Elem) {
-                self.fold_pairs_map_into(src.len(), pair_offset, |i| src[i], dst, challenge);
+            fn fold_pairs_into(&self, src: &[$src], dst: &mut [PrimeValue<$id,L>], challenge: &Self::Elem) {
+                assert_eq!(src.len(),dst.len().checked_mul(2).expect("fold extent overflow"));
+                self.fold_pairs_map_into( |i| src[i], dst, challenge);
             }
-            fn fold_pairs_map_into(&self, source_len: usize, pair_offset: usize, mut read: impl FnMut(usize)->$src, dst: &mut [PrimeValue<$id,L>], challenge: &Self::Elem) {
-                let start=source_start(source_len,pair_offset,dst.len());
+            fn fold_pairs_map_into(&self,  mut read: impl FnMut(usize)->$src, dst: &mut [PrimeValue<$id,L>], challenge: &Self::Elem) {
+                dst.len().checked_mul(2).expect("fold extent overflow");
+                let start=0;
                 for (i,out) in dst.iter_mut().enumerate() {
                     let left=($project)(self, read(start+2*i));
                     let right=($project)(self, read(start+2*i+1));
@@ -131,11 +137,13 @@ macro_rules! fold_source {
             }
         }
         impl<$($generic)*> FoldPairs<$src, Uint<L>> for $provider {
-            fn fold_pairs_into(&self, src: &[$src], pair_offset: usize, dst: &mut [Uint<L>], challenge: &Self::Elem) {
-                self.fold_pairs_map_into(src.len(), pair_offset, |i| src[i], dst, challenge);
+            fn fold_pairs_into(&self, src: &[$src], dst: &mut [Uint<L>], challenge: &Self::Elem) {
+                assert_eq!(src.len(),dst.len().checked_mul(2).expect("fold extent overflow"));
+                self.fold_pairs_map_into( |i| src[i], dst, challenge);
             }
-            fn fold_pairs_map_into(&self, source_len: usize, pair_offset: usize, mut read: impl FnMut(usize)->$src, dst: &mut [Uint<L>], challenge: &Self::Elem) {
-                let start=source_start(source_len,pair_offset,dst.len());
+            fn fold_pairs_map_into(&self,  mut read: impl FnMut(usize)->$src, dst: &mut [Uint<L>], challenge: &Self::Elem) {
+                dst.len().checked_mul(2).expect("fold extent overflow");
+                let start=0;
                 for (i,out) in dst.iter_mut().enumerate() {
                     let left=($project)(self, read(start+2*i));
                     let right=($project)(self, read(start+2*i+1));
@@ -155,11 +163,13 @@ macro_rules! fold_sources {
         fold_unsigned_source!([$($generic)*] $provider,$id,Bit,|v:Bit|Uint::from_words([v.as_u64()]));
         fold_unsigned_source!([$($generic)*, const N:usize] $provider,$id,Uint<N>,|v:Uint<N>|v);
         impl<$($generic)*, const N:usize> FoldPairs<Z<N>, PrimeValue<$id,L>> for $provider {
-            fn fold_pairs_into(&self,src:&[Z<N>],offset:usize,out:&mut[PrimeValue<$id,L>],challenge:&Self::Elem) {
-                self.fold_pairs_map_into(src.len(),offset,|i|src[i],out,challenge);
+            fn fold_pairs_into(&self,src:&[Z<N>],out:&mut[PrimeValue<$id,L>],challenge:&Self::Elem) {
+                assert_eq!(src.len(),out.len().checked_mul(2).expect("fold extent overflow"));
+                self.fold_pairs_map_into(|i|src[i],out,challenge);
             }
-            fn fold_pairs_map_into(&self,len:usize,offset:usize,mut read:impl FnMut(usize)->Z<N>,out:&mut[PrimeValue<$id,L>],challenge:&Self::Elem) {
-                let start=source_start(len,offset,out.len());
+            fn fold_pairs_map_into(&self,mut read:impl FnMut(usize)->Z<N>,out:&mut[PrimeValue<$id,L>],challenge:&Self::Elem) {
+                out.len().checked_mul(2).expect("fold extent overflow");
+                let start=0;
                 let complement=self.params().sub(&self.params().one,&challenge.words);
                 for(i,dst) in out.iter_mut().enumerate() {
                     let left=read(start+2*i); let right=read(start+2*i+1);
@@ -168,11 +178,13 @@ macro_rules! fold_sources {
             }
         }
         impl<$($generic)*, const N:usize> FoldPairs<Z<N>, Uint<L>> for $provider {
-            fn fold_pairs_into(&self,src:&[Z<N>],offset:usize,out:&mut[Uint<L>],challenge:&Self::Elem) {
-                self.fold_pairs_map_into(src.len(),offset,|i|src[i],out,challenge);
+            fn fold_pairs_into(&self,src:&[Z<N>],out:&mut[Uint<L>],challenge:&Self::Elem) {
+                assert_eq!(src.len(),out.len().checked_mul(2).expect("fold extent overflow"));
+                self.fold_pairs_map_into(|i|src[i],out,challenge);
             }
-            fn fold_pairs_map_into(&self,len:usize,offset:usize,mut read:impl FnMut(usize)->Z<N>,out:&mut[Uint<L>],challenge:&Self::Elem) {
-                let start=source_start(len,offset,out.len());
+            fn fold_pairs_map_into(&self,mut read:impl FnMut(usize)->Z<N>,out:&mut[Uint<L>],challenge:&Self::Elem) {
+                out.len().checked_mul(2).expect("fold extent overflow");
+                let start=0;
                 let complement=self.params().sub(&self.params().one,&challenge.words);
                 for(i,dst) in out.iter_mut().enumerate() {
                     let left=read(start+2*i); let right=read(start+2*i+1);

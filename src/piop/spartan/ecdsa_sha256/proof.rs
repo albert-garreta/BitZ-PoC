@@ -1,4 +1,4 @@
-use crate::piop::spartan::SpartanField as _;
+use crate::sumcheck::outer::arithmetic::prove_encoded_zerocheck;
 use field::{RingOps, Uint};
 
 use flock_core::pcs::{
@@ -31,7 +31,7 @@ use crate::{
         grinding::GrindingDomain,
         matrix::eq_table,
         protocol::{check_boundary, f2z_generator, grind_boundary},
-        raw_monty::{make_equality_factors_raw, prove_outer_field_raw_with_boundary},
+        raw_monty::make_equality_factors_raw,
         sha256::inner_sumcheck::{
             ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck,
         },
@@ -220,7 +220,6 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         // prover (no bytes at difficulty 0).
         let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
         let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
-        let raw_reducer = &ctx;
         let products = {
             let _scope = tracing::info_span!("ecdsa:outer_products").entered();
             witness.build_outer_raw_products(prepared, &ctx)
@@ -231,11 +230,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         };
         let mut round_boundary =
             ProverGrindingRoundBoundary::<OuterGrinding>::with_round_offset(security.outer, 0);
-        let outer = prove_outer_field_raw_with_boundary(
+        let outer = prove_encoded_zerocheck(
             t,
             &ctx,
-            &raw_reducer,
-            F::zero_with_cfg(&cfg),
             &outer_eq_challenges,
             eq_low,
             eq_high,

@@ -175,20 +175,64 @@ pub trait WrappingArithmetic: Sized {
     fn wrapping_neg(&self) -> Self;
 }
 
+/// Adjacent, little-endian Boolean folding. Challenges must already be known.
 pub trait FoldPairs<Src, Dst>: RingOps {
-    fn fold_pairs_into(
-        &self,
-        src: &[Src],
-        pair_offset: usize,
-        dst: &mut [Dst],
-        challenge: &Self::Elem,
-    );
+    /// dst[i] = (1-r) src[2i] + r src[2i+1]. Requires src.len()=2*dst.len().
+    fn fold_pairs_into(&self, src: &[Src], dst: &mut [Dst], challenge: &Self::Elem);
+    /// The mapped source has exactly 2*dst.len() entries. Used for split-limb
+    /// storage or public zero padding without allocating a source vector.
     fn fold_pairs_map_into(
         &self,
-        source_len: usize,
-        pair_offset: usize,
         read: impl FnMut(usize) -> Src,
         dst: &mut [Dst],
         challenge: &Self::Elem,
     );
+
+    /// dst[i] = Σ_b eq(challenges,b) src[2^k*i+b], r[0] binds the low bit.
+    /// Allocates 2^k small equality weights; native conversion is fused into
+    /// each batch MAC. This is Boolean folding, not univariate interpolation.
+    fn fold_prefix_into(&self, src: &[Src], dst: &mut [Dst], challenges: &[Self::Elem])
+    where
+        Src: Copy,
+        Self: BatchMulAcc<Self::Elem, Src>
+            + Reduce<<Self as BatchMulAcc<Self::Elem, Src>>::Accumulator, Output = Dst>,
+    {
+        let width = 1usize
+            .checked_shl(u32::try_from(challenges.len()).expect("fold depth overflow"))
+            .expect("fold depth overflow");
+        assert_eq!(
+            Some(src.len()),
+            dst.len().checked_mul(width),
+            "fold lengths differ"
+        );
+        self.fold_prefix_map_into(|i| src[i], dst, challenges);
+    }
+    /// Mapped counterpart of fold_prefix_into; reads each source entry once.
+    fn fold_prefix_map_into(
+        &self,
+        mut read: impl FnMut(usize) -> Src,
+        dst: &mut [Dst],
+        challenges: &[Self::Elem],
+    ) where
+        Self: BatchMulAcc<Self::Elem, Src>
+            + Reduce<<Self as BatchMulAcc<Self::Elem, Src>>::Accumulator, Output = Dst>,
+    {
+        let width = 1usize
+            .checked_shl(u32::try_from(challenges.len()).expect("fold depth overflow"))
+            .expect("fold depth overflow");
+        dst.len().checked_mul(width).expect("fold extent overflow");
+        let mut weights = vec![self.one(); width];
+        for (bit, r) in challenges.iter().enumerate() {
+            let complement = self.sub(&self.one(), r);
+            for (i, w) in weights.iter_mut().enumerate() {
+                *w = self.mul(w, if (i >> bit) & 1 == 0 { &complement } else { r });
+            }
+        }
+        for (i, out) in dst.iter_mut().enumerate() {
+            *out = Reduce::reduce(
+                self,
+                self.batch_mul_acc_map(width, |b| (weights[b], read(i * width + b))),
+            );
+        }
+    }
 }

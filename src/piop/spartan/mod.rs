@@ -32,8 +32,8 @@ pub mod u128_mul;
 pub mod u32_mul;
 pub mod u64_f2z;
 pub mod u64_mul;
-pub mod univariate_skip;
-pub(crate) mod univariate_skip_native;
+pub(crate) use crate::sumcheck::outer::native_skip as univariate_skip_native;
+pub use crate::sumcheck::outer::univariate as univariate_skip;
 
 pub use baby_bear_f2z::{
     BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearSpartanF2zError,
