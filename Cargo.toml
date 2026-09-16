@@ -340,6 +340,10 @@ required-features = ["span-metrics"]
 name = "bitz_parity"
 required-features = ["bitz-parity"]
 
+[[example]]
+name = "bitz_bench"
+required-features = ["bitz-parity"]
+
 [features]
 default = ["parallel"]
 # Numeric span metrics require the native trace processor at runtime.

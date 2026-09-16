@@ -1002,25 +1002,36 @@ impl Challenger for VerifierChallenger<'_, '_> {
     }
 }
 
+/// The smallest nonce that passes [`pow_valid`] — exactly what a serial
+/// scan from zero returns, found by the crate's multi-lane BLAKE3 scan
+/// across the thread pool ([`crate::utils::blake3x4::smallest_pow_nonce`]:
+/// the same `blake3(prefix ‖ nonce_le)`, every chunk below the hit's
+/// scanned to completion, so the result does not depend on scheduling).
 fn find_pow(seed: &[u8; 16], bits: u32) -> u64 {
     if bits == 0 {
         return 0;
     }
-    let mut nonce = 0u64;
-    loop {
-        if pow_valid(seed, nonce, bits) {
-            return nonce;
-        }
-        nonce = nonce.checked_add(1).expect("proof-of-work nonce exhausted");
-    }
+    let mut prefix = [0u8; POW_PREFIX.len() + 16];
+    prefix[..POW_PREFIX.len()].copy_from_slice(POW_PREFIX);
+    prefix[POW_PREFIX.len()..].copy_from_slice(seed);
+    #[cfg(feature = "parallel")]
+    let found = crate::utils::blake3x4::smallest_pow_nonce(&prefix, bits);
+    #[cfg(not(feature = "parallel"))]
+    let found = crate::utils::blake3x4::first_pow_nonce(&prefix, 0, u64::MAX, bits);
+    let nonce = found.expect("proof-of-work nonce exhausted");
+    debug_assert!(pow_valid(seed, nonce, bits));
+    nonce
 }
+
+/// Their proof-of-work domain prefix.
+const POW_PREFIX: &[u8] = b"bitz-pcs-pow-v1";
 
 fn pow_valid(seed: &[u8; 16], nonce: u64, bits: u32) -> bool {
     if bits == 0 {
         return nonce == 0;
     }
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"bitz-pcs-pow-v1");
+    hasher.update(POW_PREFIX);
     hasher.update(seed);
     hasher.update(&nonce.to_le_bytes());
     let digest = hasher.finalize();

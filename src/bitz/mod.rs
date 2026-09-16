@@ -208,8 +208,13 @@ impl BitZVerifier {
 /// cost ≈ 0.5 µs each (≈ 30 ms per GB) on this platform and do not
 /// parallelise, so the count says how much of a phase is first touch.
 pub(crate) fn trace(label: &str, started: std::time::Instant) {
+    let elapsed = started.elapsed();
+    if let Ok(mut phases) = PHASES.lock() {
+        if let Some(recorded) = phases.as_mut() {
+            recorded.push((label.trim().to_string(), elapsed));
+        }
+    }
     if std::env::var_os("BITZ_TRACE").is_some() {
-        let elapsed = started.elapsed();
         let faults = minor_faults();
         let previous = LAST_FAULTS.swap(faults, std::sync::atomic::Ordering::Relaxed);
         let delta = faults.saturating_sub(previous);
@@ -221,6 +226,29 @@ pub(crate) fn trace(label: &str, started: std::time::Instant) {
 }
 
 static LAST_FAULTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The phase timings a bench collects programmatically: while recording
+/// is on, every [`trace`] call also appends `(label, elapsed)` here.
+static PHASES: std::sync::Mutex<Option<Vec<(String, std::time::Duration)>>> =
+    std::sync::Mutex::new(None);
+
+/// Starts (`true`) or stops (`false`) collecting phase timings; starting
+/// discards anything collected before.
+pub fn record_phases(on: bool) {
+    if let Ok(mut phases) = PHASES.lock() {
+        *phases = if on { Some(Vec::new()) } else { None };
+    }
+}
+
+/// The phases recorded since the last call (or since recording started),
+/// in completion order, labels trimmed.
+pub fn take_phases() -> Vec<(String, std::time::Duration)> {
+    PHASES
+        .lock()
+        .ok()
+        .and_then(|mut phases| phases.as_mut().map(std::mem::take))
+        .unwrap_or_default()
+}
 
 /// Resets the fault baseline so the first trace line of a run counts only
 /// its own faults.
