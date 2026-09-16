@@ -195,10 +195,10 @@ use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 /// Prover-side state of the flock-backed commitment.
 pub struct FlockCommitHint {
     /// Per-column bit rows (shared layout with the zinc backend).
-    rows: Vec<Vec<u64>>,
-    /// Column-lane packing for the branch-native bit-affine forest,
-    /// built once at commit.
-    packed_cols: Vec<Vec<u64>>,
+    rows: std::sync::Arc<Vec<Vec<u64>>>,
+    /// Materialize the alternate layout only for a consumer that needs it.
+    packed_cols: std::sync::OnceLock<Vec<Vec<u64>>>,
+    row_layout: IntegerMatrixLayout,
     /// The packed message in flock representation.
     p_msg: Vec<Gf128>,
     pub commitment: Commitment,
@@ -216,6 +216,15 @@ impl FlockCommitHint {
     /// computations in tests/benches.
     pub fn rows(&self) -> &[Vec<u64>] {
         &self.rows
+    }
+
+    fn packed_cols(&self) -> &[Vec<u64>] {
+        self.packed_cols
+            .get_or_init(|| crate::ligerito::pack_columns_from_rows(&self.row_layout, &self.rows))
+    }
+
+    pub(crate) fn matches_rows(&self, rows: &std::sync::Arc<Vec<Vec<u64>>>) -> bool {
+        std::sync::Arc::ptr_eq(&self.rows, rows) || self.rows == *rows
     }
 }
 
@@ -235,8 +244,8 @@ impl core::fmt::Debug for FlockCommitHint {
 #[allow(clippy::arithmetic_side_effects)]
 fn commit_rs_flock_from_rows(
     p: &IntegerMatrixLayout,
-    rows: Vec<Vec<u64>>,
-    packed_cols: Vec<Vec<u64>>,
+    rows: std::sync::Arc<Vec<Vec<u64>>>,
+    packed_cols: Option<Vec<Vec<u64>>>,
     log_inv_rate: usize,
     log_batch: usize,
     merkle_hash: HashKind,
@@ -269,7 +278,10 @@ fn commit_rs_flock_from_rows(
     let (commitment, prover_data) = commit(&p_msg, &params);
     FlockCommitHint {
         rows,
-        packed_cols,
+        packed_cols: packed_cols
+            .map(std::sync::OnceLock::from)
+            .unwrap_or_default(),
+        row_layout: *p,
         p_msg,
         commitment,
         prover_data,
@@ -286,11 +298,10 @@ pub fn commit_rs_flock_with(
     log_batch: usize,
 ) -> FlockCommitHint {
     let rows = repack_leaf_bits(p, data);
-    let packed_cols = crate::ligerito::pack_columns_from_rows(p, &rows);
     commit_rs_flock_from_rows(
         p,
-        rows,
-        packed_cols,
+        rows.into(),
+        None,
         log_inv_rate,
         log_batch,
         HashKind::default(),
@@ -299,7 +310,7 @@ pub fn commit_rs_flock_with(
 
 /// Commit starting from per-column bit rows (the [`repack_leaf_bits`]
 /// layout: bit `i = (b<<log₂W)|j` of row `c` = bit `j` of cell `(b,c)`,
-/// 64 bits per word) — the column-lane packing is built here and the
+/// 64 bits per word) — column-lane packing is built on first use and the
 /// `u128` cell tensor never exists. This is the memory-honest entry for
 /// harnesses/hosts that can produce bits directly: peak stays at the
 /// packed scale (`2^n/8` bytes per store) instead of 16 B per cell.
@@ -308,11 +319,19 @@ pub fn commit_rs_ligerito_rows(
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> FlockCommitHint {
-    let packed_cols = crate::ligerito::pack_columns_from_rows(p, &rows);
+    commit_rs_ligerito_shared_rows(p, rows.into(), pc)
+}
+
+/// Share immutable source storage with a witness that outlives commitment.
+pub(crate) fn commit_rs_ligerito_shared_rows(
+    p: &IntegerMatrixLayout,
+    rows: std::sync::Arc<Vec<Vec<u64>>>,
+    pc: &LigProverConfig,
+) -> FlockCommitHint {
     commit_rs_flock_from_rows(
         p,
         rows,
-        packed_cols,
+        None,
         pc.log_inv_rates[0],
         pc.initial_k,
         pc.merkle_hash,
@@ -331,8 +350,8 @@ pub fn commit_rs_ligerito_packed(
     let rows = crate::ligerito::rows_from_packed_cols(p, &packed_cols);
     commit_rs_flock_from_rows(
         p,
-        rows,
-        packed_cols,
+        rows.into(),
+        Some(packed_cols),
         pc.log_inv_rates[0],
         pc.initial_k,
         pc.merkle_hash,
@@ -1745,7 +1764,7 @@ pub fn prove_rs_open_ligerito(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_tbl,
         beta0,
         &hint.prover_data.codeword,
@@ -1827,7 +1846,7 @@ pub fn prove_rs_ligerito(
         transcript,
         p,
         &hint.rows,
-        Some(&hint.packed_cols),
+        Some(hint.packed_cols()),
         row_weights,
         alpha,
     );
@@ -2052,7 +2071,7 @@ pub fn prove_rs_ligerito_batch(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -2222,24 +2241,6 @@ fn dense_ring_sv(p_msg: &[Gf128], eq_hi: &[Gf]) -> Vec<Gf> {
         }
     }
     s
-}
-
-/// Parallel copy of the packed message — `Vec::clone` of the 2^{m_p}·16-B
-/// buffer is a single-thread memcpy (~2–3 ms at n = 28); the flock prover
-/// entry point consumes an owned Vec while the hint must keep its copy, so
-/// the copy itself is unavoidable but its wall time is not. Byte-identical
-/// (pure data movement).
-fn par_clone_f128(src: &[Gf128]) -> Vec<Gf128> {
-    #[cfg(feature = "parallel")]
-    {
-        let mut out = vec![Gf128::ZERO; src.len()];
-        out.par_chunks_mut(1 << 16)
-            .zip(src.par_chunks(1 << 16))
-            .for_each(|(d, s)| d.copy_from_slice(s));
-        out
-    }
-    #[cfg(not(feature = "parallel"))]
-    src.to_vec()
 }
 
 /// Overwrite `b[y] = Σ_l η_l·Φ_{r″}(eq_his[l][y])` — the η-combined
@@ -2905,7 +2906,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
         let proof = match precomputed_round0 {
             Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
                 pc,
-                par_clone_f128(&hint.p_msg),
+                hint.p_msg.as_slice(),
                 basis,
                 target,
                 &hint.prover_data.codeword,
@@ -2916,7 +2917,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
             ),
             None => ligerito::recursive_prover_with_basis(
                 pc,
-                par_clone_f128(&hint.p_msg),
+                hint.p_msg.as_slice(),
                 basis,
                 target,
                 &hint.prover_data.codeword,
@@ -2933,7 +2934,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
     match precomputed_round0 {
         Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
             pc,
-            par_clone_f128(&hint.p_msg),
+            hint.p_msg.as_slice(),
             basis,
             target,
             &hint.prover_data.codeword,
@@ -2944,7 +2945,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
         ),
         None => ligerito::recursive_prover_with_basis(
             pc,
-            par_clone_f128(&hint.p_msg),
+            hint.p_msg.as_slice(),
             basis,
             target,
             &hint.prover_data.codeword,
@@ -3248,7 +3249,7 @@ where
         hint,
         p,
         &hint.rows,
-        Some(&hint.packed_cols),
+        Some(hint.packed_cols()),
         chunks,
         alpha,
         pc,
@@ -3287,7 +3288,7 @@ where
         hint,
         p,
         &hint.rows,
-        Some(&hint.packed_cols),
+        Some(hint.packed_cols()),
         chunks,
         alpha,
         pc,
@@ -4836,7 +4837,7 @@ fn prove_mod_q_lig_xor_impl(
             transcript,
             p,
             &hint.rows,
-            Some(&hint.packed_cols),
+            Some(hint.packed_cols()),
             w_l,
             alpha,
         );
@@ -5046,7 +5047,7 @@ fn prove_mod_q_lig_xor_impl(
     let _g_lig = tracing::info_span!("mq:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -6903,7 +6904,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let _g_lig = tracing::info_span!("tap:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -7730,7 +7731,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     let _g_l = tracing::info_span!("tapf:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -9447,7 +9448,7 @@ fn prove_rlc_families_closure(
     let _g_l = tracing::info_span!("rlc:lig").entered();
     ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -11568,7 +11569,7 @@ impl<'a, M: circuit::linear_map::binary::VirtualMap> VirtualOpeningWeights<'a, M
     /// repetition whose shape pays for it; `None` keeps the per-cell
     /// kernels. `F2Z_VIRT_PLANES=0` opts out (A/B; bit-identical messages
     /// either way).
-    fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes> {
+    fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes<'_>> {
         self.packed_source_planes_with(true)
     }
 
@@ -11577,7 +11578,7 @@ impl<'a, M: circuit::linear_map::binary::VirtualMap> VirtualOpeningWeights<'a, M
     fn packed_source_planes_with(
         &self,
         plane_major: bool,
-    ) -> Option<crate::virt_batch::PackedSourcePlanes> {
+    ) -> Option<crate::virt_batch::PackedSourcePlanes<'_>> {
         let Self::PackedSourceRepeated {
             local_width,
             eq_inst_gf,
@@ -11602,7 +11603,7 @@ impl<'a, M: circuit::linear_map::binary::VirtualMap> VirtualOpeningWeights<'a, M
         Some(build(
             *local_width,
             *instances,
-            eq_inst_gf.clone(),
+            eq_inst_gf,
             s,
             *constant_weight,
         ))
@@ -12334,7 +12335,7 @@ where
             hint_f,
             h_layout,
             &hint_f.rows,
-            Some(&hint_f.packed_cols),
+            Some(hint_f.packed_cols()),
             chunks,
             alpha,
             pc,
@@ -13051,6 +13052,35 @@ mod tests {
         assert!(!challenger.verify_pow(1, 0));
     }
 
+    #[test]
+    fn shared_rows_and_lazy_columns_preserve_commitment_storage() {
+        let p = IntegerMatrixLayout {
+            row_vars: 4,
+            col_vars: 6,
+            word_bits: 32,
+        };
+        let (pc, _) = lig_configs(
+            packed_vars(&p),
+            LigConfig::Adhoc {
+                log_batch: 2,
+                log_inv_rate: 2,
+            },
+        )
+        .unwrap();
+        let data: Vec<_> = (0..p.cells()).map(|i| i as u128).collect();
+        let mut rows = std::sync::Arc::new(repack_leaf_bits(&p, &data));
+        let hint = commit_rs_ligerito_shared_rows(&p, rows.clone(), &pc);
+        assert!(std::sync::Arc::ptr_eq(&rows, &hint.rows));
+        assert!(hint.packed_cols.get().is_none());
+        assert!(hint.matches_rows(&std::sync::Arc::new((*rows).clone())));
+        let expected = crate::ligerito::pack_columns_from_rows(&p, &rows);
+        assert_eq!(hint.packed_cols(), expected);
+        assert_eq!(hint.packed_cols().as_ptr(), hint.packed_cols().as_ptr());
+        std::sync::Arc::make_mut(&mut rows)[0][0] ^= 1;
+        assert!(!hint.matches_rows(&rows));
+        assert_eq!(hint.packed_cols(), expected);
+    }
+
     /// Supplying canonical row weights densely, as validated chunk-major
     /// limbs, or through an on-demand generator must produce the same proof
     /// and Fiat–Shamir continuation.  The W=32 shape exercises two chunks
@@ -13517,7 +13547,7 @@ mod tests {
                 let planes = PackedSourcePlanes::new(
                     local_width,
                     instances,
-                    eq_inst_gf.clone(),
+                    eq_inst_gf,
                     s,
                     *constant_weight,
                 );
@@ -13692,13 +13722,8 @@ mod tests {
                     .map(|pack| sample(0xB300 + pack as u64))
                     .collect();
                 let a_cols = crate::dual_basis::dual_basis_cols();
-                let planes = PackedSourcePlanes::new(
-                    width,
-                    instances,
-                    eq_inst_gf.clone(),
-                    s,
-                    *constant_weight,
-                );
+                let planes =
+                    PackedSourcePlanes::new(width, instances, eq_inst_gf, s, *constant_weight);
                 let expect_hs = virtual_hs_fold(&map, &generic, &p_msg, &a_cols);
                 assert_eq!(
                     virtual_hs_fold(&map, &structured, &p_msg, &a_cols),
@@ -13847,7 +13872,10 @@ mod tests {
         const CHILD: &str = "F2Z_QUAD_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
             let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "ligerito_flock::tests::mle_eval_mod_q_ligerito_roundtrips"])
+                .args([
+                    "--exact",
+                    "ligerito_flock::tests::mle_eval_mod_q_ligerito_roundtrips",
+                ])
                 .env(CHILD, "1")
                 .status()
                 .unwrap();

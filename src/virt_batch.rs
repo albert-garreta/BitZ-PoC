@@ -357,13 +357,13 @@ impl RhoTables {
 // ---------------------------------------------------------------------
 
 /// The precomputed plane tables of one packed-source repetition.
-pub(crate) struct PackedSourcePlanes {
+pub(crate) struct PackedSourcePlanes<'a> {
     /// `w`: nonconstant source cells per instance.
     local_width: usize,
     /// `1 + w·instances`; every later source column has weight zero.
     live_cols: usize,
     /// Per chunk `l`, per instance `i`: `e_{l,i}`.
-    eq_inst: Vec<Vec<Gf>>,
+    eq_inst: &'a [Vec<Gf>],
     /// Per chunk `l`, per phase `φ` (empty when no instance has that
     /// phase): `R_a(m)` for local pack `m`, stored at `m·128 + a` (the
     /// a′ pass walks one pack's 128 planes).
@@ -375,7 +375,7 @@ pub(crate) struct PackedSourcePlanes {
     constant_weight: Gf,
 }
 
-impl PackedSourcePlanes {
+impl<'a> PackedSourcePlanes<'a> {
     /// Table bytes the engine would allocate for this shape.
     fn table_bytes(local_width: usize, instances: usize, chunks: usize) -> Option<usize> {
         let mut phases = [false; PACK];
@@ -417,7 +417,7 @@ impl PackedSourcePlanes {
     pub(crate) fn new(
         local_width: usize,
         instances: usize,
-        eq_inst: Vec<Vec<Gf>>,
+        eq_inst: &'a [Vec<Gf>],
         s: &[Vec<Gf>],
         constant_weight: Gf,
     ) -> Self {
@@ -429,7 +429,7 @@ impl PackedSourcePlanes {
     pub(crate) fn new_basis_only(
         local_width: usize,
         instances: usize,
-        eq_inst: Vec<Vec<Gf>>,
+        eq_inst: &'a [Vec<Gf>],
         s: &[Vec<Gf>],
         constant_weight: Gf,
     ) -> Self {
@@ -439,7 +439,7 @@ impl PackedSourcePlanes {
     fn new_with(
         local_width: usize,
         instances: usize,
-        eq_inst: Vec<Vec<Gf>>,
+        eq_inst: &'a [Vec<Gf>],
         s: &[Vec<Gf>],
         constant_weight: Gf,
         plane_major: bool,

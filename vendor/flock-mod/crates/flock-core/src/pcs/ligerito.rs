@@ -35,6 +35,7 @@ use crate::lincheck::build_eq_table;
 use crate::merkle::{self, Hash, HashKind};
 use crate::ntt::additive_ntt_f128::AdditiveNttF128;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 // ===================================================================
 // Config
@@ -1877,7 +1878,13 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
 
     let inv_sks_vks: Vec<Gf128> = sks_vks
         .iter()
-        .map(|&v| if v.is_zero() { Gf128::ZERO } else { v.inverse_or_zero() })
+        .map(|&v| {
+            if v.is_zero() {
+                Gf128::ZERO
+            } else {
+                v.inverse_or_zero()
+            }
+        })
         .collect();
 
     let prefix_len = ris_for_basis.len();
@@ -1995,7 +2002,13 @@ pub fn induce_sumcheck_poly(
     // Precompute inv_sks_vks once across all queries and threads.
     let inv_sks_vks: Vec<Gf128> = sks_vks
         .iter()
-        .map(|&v| if v.is_zero() { Gf128::ZERO } else { v.inverse_or_zero() })
+        .map(|&v| {
+            if v.is_zero() {
+                Gf128::ZERO
+            } else {
+                v.inverse_or_zero()
+            }
+        })
         .collect();
 
     // Per-thread chunked accumulation: each thread accumulates a partial
@@ -2341,11 +2354,13 @@ impl Drop for LigeroWitness {
     }
 }
 
-// SumcheckProver owns the two witness-sized polynomials of the open (the
-// packed witness `f` and the γ-combined basis) — recycle both on drop.
-impl Drop for SumcheckProver {
+// Only owned fold storage may enter the scratch pool; the initial witness
+// can still belong to the commitment hint.
+impl Drop for SumcheckProver<'_> {
     fn drop(&mut self) {
-        crate::scratch::give_f128(std::mem::take(&mut self.f));
+        if let Cow::Owned(f) = std::mem::take(&mut self.f) {
+            crate::scratch::give_f128(f);
+        }
         crate::scratch::give_f128(std::mem::take(&mut self.combined_basis));
     }
 }
@@ -2616,7 +2631,11 @@ fn partial_eval_lsb_one(evals: &mut Vec<Gf128>, r: Gf128) {
 ///
 /// Returns `(folded_f, folded_b, next_msg)` where `next_msg = round_msg_lsb
 /// (folded_f, folded_b)`. Bit-identical to the unfused sequence.
-fn fold_and_msg_lsb(f: &[Gf128], b: &[Gf128], r: Gf128) -> (Vec<Gf128>, Vec<Gf128>, SumcheckMessage) {
+fn fold_and_msg_lsb(
+    f: &[Gf128],
+    b: &[Gf128],
+    r: Gf128,
+) -> (Vec<Gf128>, Vec<Gf128>, SumcheckMessage) {
     use crate::field::Gf128Product;
     use rayon::prelude::*;
     let n = f.len();
@@ -2957,8 +2976,10 @@ fn fold_pair_no_msg(f: &[Gf128], b: &[Gf128], r: Gf128) -> (Vec<Gf128>, Vec<Gf12
     (nf, nb)
 }
 
-pub struct SumcheckProver {
-    f: Vec<Gf128>,
+/// Borrows the initial polynomial when possible. Each fold produces its own
+/// smaller buffer; only owned buffers are returned to the scratch pool.
+pub struct SumcheckProver<'a> {
+    f: Cow<'a, [Gf128]>,
     /// Single combined basis poly. After every `glue(β)`, the introduced
     /// `b_new` is folded into here as `combined_basis += β · b_new`. This
     /// keeps fold cost O(1 + 1) = (f + combined_basis) regardless of how
@@ -2974,8 +2995,13 @@ pub struct SumcheckProver {
     pending_fold: Option<Gf128>,
 }
 
-impl SumcheckProver {
-    pub fn new(f: Vec<Gf128>, b1: Vec<Gf128>, h1: Gf128) -> (Self, SumcheckMessage) {
+impl<'a> SumcheckProver<'a> {
+    pub fn new(
+        f: impl Into<Cow<'a, [Gf128]>>,
+        b1: Vec<Gf128>,
+        h1: Gf128,
+    ) -> (Self, SumcheckMessage) {
+        let f = f.into();
         assert_eq!(f.len(), b1.len());
         let mut inst = Self {
             f,
@@ -2996,11 +3022,12 @@ impl SumcheckProver {
     /// `recursive_prover_with_basis` to consume the round0 prime that
     /// `compute_combined_basis_and_target` produces for free.
     pub fn new_with_first_msg(
-        f: Vec<Gf128>,
+        f: impl Into<Cow<'a, [Gf128]>>,
         b1: Vec<Gf128>,
         h1: Gf128,
         first_msg: SumcheckMessage,
     ) -> (Self, SumcheckMessage) {
+        let f = f.into();
         assert_eq!(f.len(), b1.len());
         let mut inst = Self {
             f,
@@ -3022,7 +3049,7 @@ impl SumcheckProver {
         let (nf, nb, msg) = fold_and_msg_lsb(&self.f, &self.combined_basis, r);
         // Recycle the outgoing buffers (the round-0 pair is the 2^(m-7)
         // packed witness + b_combined) instead of munmap-ing them.
-        crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
+        self.replace_folded(nf);
         crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
         self.transcript.push(msg);
         msg
@@ -3034,7 +3061,7 @@ impl SumcheckProver {
     pub fn fold1_lookahead(&mut self, r: Gf128) -> (SumcheckMessage, FoldLookahead) {
         debug_assert!(self.pending_fold.is_none(), "fold1 with pending lookahead");
         let (nf, nb, msg, la) = fold1_lookahead_lsb(&self.f, &self.combined_basis, r);
-        crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
+        self.replace_folded(nf);
         crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
         self.transcript.push(msg);
         (msg, la)
@@ -3061,7 +3088,7 @@ impl SumcheckProver {
             .take()
             .expect("fold2_lookahead without pending challenge");
         let (nf, nb, msg, la) = fold2_lookahead_lsb(&self.f, &self.combined_basis, r_a, r);
-        crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
+        self.replace_folded(nf);
         crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
         self.transcript.push(msg);
         (msg, la)
@@ -3072,7 +3099,7 @@ impl SumcheckProver {
     pub fn drain_pending_fold(&mut self) {
         if let Some(r) = self.pending_fold.take() {
             let (nf, nb) = fold_pair_no_msg(&self.f, &self.combined_basis, r);
-            crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
+            self.replace_folded(nf);
             crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
         }
     }
@@ -3144,6 +3171,22 @@ impl SumcheckProver {
 
     pub fn transcript(&self) -> &[SumcheckMessage] {
         &self.transcript
+    }
+
+    fn replace_folded(&mut self, folded: Vec<Gf128>) {
+        if let Cow::Owned(previous) = std::mem::replace(&mut self.f, Cow::Owned(folded)) {
+            crate::scratch::give_f128(previous);
+        }
+    }
+
+    /// Transfer the final polynomial and messages into the proof. The
+    /// protocol has materialized its folds before reaching this boundary.
+    fn finish(mut self) -> (Vec<Gf128>, Vec<SumcheckMessage>) {
+        assert!(self.pending_fold.is_none(), "finish with pending fold");
+        (
+            std::mem::take(&mut self.f).into_owned(),
+            std::mem::take(&mut self.transcript),
+        )
     }
 }
 
@@ -3351,9 +3394,9 @@ pub fn recursive_prover_with_l0<Ch: Challenger>(
 /// basis with no single `z`), runs `initial_k` real sumcheck rounds folding
 /// both `f` and `b` together with FS challenges. The folded f becomes wtns_1
 /// and the rest of the protocol proceeds identically.
-pub fn recursive_prover_with_basis<Ch: Challenger>(
+pub fn recursive_prover_with_basis<'a, Ch: Challenger>(
     config: &ProverConfig,
-    packed_witness: Vec<Gf128>,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
     b_initial: Vec<Gf128>,
     target: Gf128,
     l0_codeword: &[Gf128],
@@ -3379,9 +3422,9 @@ pub fn recursive_prover_with_basis<Ch: Challenger>(
 /// side effect while building `b_initial` — passing them in here lets
 /// `SumcheckProver::new` skip the redundant 256 MB read pass over (f, b1).
 #[allow(clippy::too_many_arguments)]
-pub fn recursive_prover_with_basis_precomputed_round0<Ch: Challenger>(
+pub fn recursive_prover_with_basis_precomputed_round0<'a, Ch: Challenger>(
     config: &ProverConfig,
-    packed_witness: Vec<Gf128>,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
     b_initial: Vec<Gf128>,
     target: Gf128,
     l0_codeword: &[Gf128],
@@ -3407,9 +3450,9 @@ pub fn recursive_prover_with_basis_precomputed_round0<Ch: Challenger>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn recursive_prover_with_basis_impl<Ch: Challenger>(
+fn recursive_prover_with_basis_impl<'a, Ch: Challenger>(
     config: &ProverConfig,
-    packed_witness: Vec<Gf128>,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
     b_initial: Vec<Gf128>,
     target: Gf128,
     l0_codeword: &[Gf128],
@@ -3420,15 +3463,25 @@ fn recursive_prover_with_basis_impl<Ch: Challenger>(
 ) -> LigeritoProof {
     let initial_root = *l0_tree.last().expect("nonempty initial Merkle tree");
     recursive_prover_with_basis_initial_impl(
-        config, packed_witness, b_initial, target, initial_root,
+        config,
+        packed_witness,
+        b_initial,
+        target,
+        initial_root,
         |positions, lanes, queries| {
             assert_eq!(l0_codeword.len(), positions * lanes);
             assert_eq!(l0_tree.len(), 2 * positions - 1);
             RecursiveProof {
-                opened_rows: queries.iter().map(|&q| l0_codeword[q * lanes..(q + 1) * lanes].to_vec()).collect(),
+                opened_rows: queries
+                    .iter()
+                    .map(|&q| l0_codeword[q * lanes..(q + 1) * lanes].to_vec())
+                    .collect(),
                 merkle_proof: merkle_multi_proof_for(l0_tree, positions, queries),
             }
-        }, first_msg, round1_lookahead, challenger,
+        },
+        first_msg,
+        round1_lookahead,
+        challenger,
     )
 }
 
@@ -3440,9 +3493,9 @@ fn recursive_prover_with_basis_impl<Ch: Challenger>(
 /// identifier. This hook supports virtual concatenation of committed oracles
 /// without constructing a third initial Merkle tree.
 #[allow(clippy::too_many_arguments)]
-pub fn recursive_prover_with_basis_initial<Ch, O>(
+pub fn recursive_prover_with_basis_initial<'a, Ch, O>(
     config: &ProverConfig,
-    packed_witness: Vec<Gf128>,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
     b_initial: Vec<Gf128>,
     target: Gf128,
     initial_root: Hash,
@@ -3454,15 +3507,22 @@ where
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
 {
     recursive_prover_with_basis_initial_impl(
-        config, packed_witness, b_initial, target, initial_root,
-        open_initial, None, None, challenger,
+        config,
+        packed_witness,
+        b_initial,
+        target,
+        initial_root,
+        open_initial,
+        None,
+        None,
+        challenger,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn recursive_prover_with_basis_initial_impl<Ch, O>(
+fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
     config: &ProverConfig,
-    packed_witness: Vec<Gf128>,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
     b_initial: Vec<Gf128>,
     target: Gf128,
     initial_root: Hash,
@@ -3475,6 +3535,7 @@ where
     Ch: Challenger,
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
 {
+    let packed_witness = packed_witness.into();
     let log_n = packed_witness.len().trailing_zeros() as usize;
     let r = config.recursive_steps;
     let initial_k = config.initial_k;
@@ -3605,9 +3666,8 @@ where
     let log_inv_rate_1 = config.log_inv_rates[1];
     let _t = std::time::Instant::now();
     let ntt_1 = AdditiveNttF128::standard(log_msg_cols_1 + log_inv_rate_1);
-    let f1 = sc_prover.f().to_vec();
     let wtns_1 = ligero_commit(
-        &f1,
+        sc_prover.f(),
         log_msg_cols_1,
         log_num_interleaved_1,
         log_inv_rate_1,
@@ -3660,7 +3720,12 @@ where
     let _t = std::time::Instant::now();
     let initial_proof = open_initial(l0_block_len, l0_num_interleaved, &queries_0);
     assert_eq!(initial_proof.opened_rows.len(), queries_0.len());
-    assert!(initial_proof.opened_rows.iter().all(|row| row.len() == l0_num_interleaved));
+    assert!(
+        initial_proof
+            .opened_rows
+            .iter()
+            .all(|row| row.len() == l0_num_interleaved)
+    );
     let opened_rows_0 = &initial_proof.opened_rows;
     if trace {
         t_opens += _t.elapsed();
@@ -3723,7 +3788,7 @@ where
         }
 
         if i == r - 1 {
-            let yr = sc_prover.f().to_vec();
+            let (yr, sumcheck_transcript) = sc_prover.finish();
             for v in &yr {
                 challenger.observe_f128(*v);
             }
@@ -3788,7 +3853,7 @@ where
                     opened_rows: opened_rows_last,
                     merkle_proof: merkle_proof_last,
                 },
-                sumcheck_transcript: sc_prover.transcript().to_vec(),
+                sumcheck_transcript,
                 grinding_nonces,
                 ood_values,
                 fold_grinding_nonces,
@@ -3802,9 +3867,8 @@ where
         let log_inv_rate_next = config.log_inv_rates[i + 2];
         let _t = std::time::Instant::now();
         let ntt_next = AdditiveNttF128::standard(log_msg_cols_next + log_inv_rate_next);
-        let f_evals = sc_prover.f().to_vec();
         let wtns_next = ligero_commit(
-            &f_evals,
+            sc_prover.f(),
             log_msg_cols_next,
             log_num_interleaved_next,
             log_inv_rate_next,
@@ -3853,10 +3917,6 @@ where
         if trace {
             t_opens += _t.elapsed();
         }
-        recursive_proofs.push(RecursiveProof {
-            opened_rows: opened_rows_i.clone(),
-            merkle_proof: merkle_proof_i,
-        });
 
         let sks_vks_i = eval_sk_at_vks(n_next);
         let _t = std::time::Instant::now();
@@ -3871,6 +3931,11 @@ where
         if trace {
             t_induce += _t.elapsed();
         }
+
+        recursive_proofs.push(RecursiveProof {
+            opened_rows: opened_rows_i,
+            merkle_proof: merkle_proof_i,
+        });
 
         let _t = std::time::Instant::now();
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
@@ -3916,11 +3981,24 @@ where
     F: Fn(&[Gf128], usize) -> Vec<Gf128>,
 {
     recursive_verifier_with_basis_initial(
-        config, proof, log_n, target, expected_initial_root, eval_b_residual,
-        |positions, lanes, queries, opening| verify_level_opens(
-            expected_initial_root, positions, queries, &opening.opened_rows,
-            lanes, &opening.merkle_proof, config.merkle_hash,
-        ), challenger,
+        config,
+        proof,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        |positions, lanes, queries, opening| {
+            verify_level_opens(
+                expected_initial_root,
+                positions,
+                queries,
+                &opening.opened_rows,
+                lanes,
+                &opening.merkle_proof,
+                config.merkle_hash,
+            )
+        },
+        challenger,
     )
 }
 
@@ -4084,8 +4162,17 @@ where
     let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
     let _t = std::time::Instant::now();
     if proof.initial_proof.opened_rows.len() != queries_0.len()
-        || proof.initial_proof.opened_rows.iter().any(|row| row.len() != num_interleaved_0)
-        || !authenticate_initial(block_len_0, num_interleaved_0, &queries_0, &proof.initial_proof)
+        || proof
+            .initial_proof
+            .opened_rows
+            .iter()
+            .any(|row| row.len() != num_interleaved_0)
+        || !authenticate_initial(
+            block_len_0,
+            num_interleaved_0,
+            &queries_0,
+            &proof.initial_proof,
+        )
     {
         return false;
     }
@@ -4976,13 +5063,10 @@ fn recursive_prover_inner<Ch: Challenger>(
     let queries_0 = sample_distinct_queries(challenger, wtns_0.block_len, num_queries_0);
     let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
     let t = std::time::Instant::now();
-    let opened_rows_0: Vec<Vec<Gf128>> = queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
+    let opened_rows_0: Vec<Vec<Gf128>> =
+        queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
     let merkle_proof_0 = merkle_multi_proof_for(&wtns_0.tree, wtns_0.block_len, &queries_0);
     t_opens += t.elapsed();
-    let initial_proof = RecursiveProof {
-        opened_rows: opened_rows_0.clone(),
-        merkle_proof: merkle_proof_0,
-    };
 
     // ---- Induce basis from wtns_0 opens ----
     let sks_vks_n1 = eval_sk_at_vks(n1);
@@ -4997,6 +5081,11 @@ fn recursive_prover_inner<Ch: Challenger>(
         &alpha_0,
     );
     t_induce += t.elapsed();
+
+    let initial_proof = RecursiveProof {
+        opened_rows: opened_rows_0,
+        merkle_proof: merkle_proof_0,
+    };
 
     // ---- Start sumcheck: f¹ · eq(z[initial_k..], ·) = claimed_value ----
     let eq_z_residual = build_eq_table(&eval_point[initial_k..]);
@@ -5041,7 +5130,7 @@ fn recursive_prover_inner<Ch: Challenger>(
                 t_total.elapsed()
             );
             // Last iter: send residual yr + open wtns_prev.
-            let yr = sc_prover.f().to_vec();
+            let (yr, sumcheck_transcript) = sc_prover.finish();
             for v in &yr {
                 challenger.observe_f128(*v);
             }
@@ -5065,7 +5154,7 @@ fn recursive_prover_inner<Ch: Challenger>(
                     opened_rows: opened_rows_last,
                     merkle_proof: merkle_proof_last,
                 },
-                sumcheck_transcript: sc_prover.transcript().to_vec(),
+                sumcheck_transcript,
                 grinding_nonces: Vec::new(), // legacy recursive_prover_inner: no grinding plumbed
                 ood_values: Vec::new(),
                 fold_grinding_nonces: Vec::new(),
@@ -5084,10 +5173,9 @@ fn recursive_prover_inner<Ch: Challenger>(
         let log_msg_cols_next = n_next - log_num_interleaved_next;
         let log_inv_rate_next = config.log_inv_rates[i + 2];
         let ntt_next = AdditiveNttF128::standard(log_msg_cols_next + log_inv_rate_next);
-        let f_evals = sc_prover.f().to_vec();
         let t = std::time::Instant::now();
         let wtns_next = ligero_commit(
-            &f_evals,
+            sc_prover.f(),
             log_msg_cols_next,
             log_num_interleaved_next,
             log_inv_rate_next,
@@ -5113,10 +5201,6 @@ fn recursive_prover_inner<Ch: Challenger>(
         let merkle_proof_i =
             merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_i);
         t_opens += t.elapsed();
-        recursive_proofs.push(RecursiveProof {
-            opened_rows: opened_rows_i.clone(),
-            merkle_proof: merkle_proof_i,
-        });
 
         // Induce fresh basis from these opens.
         let sks_vks_i = eval_sk_at_vks(n_next);
@@ -5128,6 +5212,11 @@ fn recursive_prover_inner<Ch: Challenger>(
             &queries_i,
             &alpha_i,
         );
+
+        recursive_proofs.push(RecursiveProof {
+            opened_rows: opened_rows_i,
+            merkle_proof: merkle_proof_i,
+        });
 
         // Introduce + glue.
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
@@ -5513,7 +5602,9 @@ mod tests {
             let plain_msgs: Vec<SumcheckMessage> = rs.iter().map(|&r| plain.fold(r)).collect();
 
             let (mut la_prover, _) =
-                SumcheckProver::new_with_first_msg(f.clone(), b.clone(), target, first);
+                SumcheckProver::new_with_first_msg(f.as_slice(), b.clone(), target, first);
+            assert!(matches!(&la_prover.f, Cow::Borrowed(_)));
+            assert_eq!(la_prover.f().as_ptr(), f.as_ptr());
             let mut lookahead: Option<FoldLookahead> = None;
             let mut la_msgs = Vec::with_capacity(k);
             for &r in &rs {
@@ -5541,6 +5632,15 @@ mod tests {
                 plain.combined_basis, la_prover.combined_basis,
                 "k={k}: folded basis mismatch"
             );
+            let final_ptr = la_prover.f().as_ptr();
+            let (final_f, messages) = la_prover.finish();
+            assert_eq!(
+                final_f.as_ptr(),
+                final_ptr,
+                "final fold must move into proof"
+            );
+            assert_eq!(final_f, plain.f());
+            assert_eq!(messages.len(), plain.transcript().len());
         }
     }
 
@@ -5769,7 +5869,11 @@ mod tests {
     #[ignore]
     fn regen_embedded_tomls() {
         let write = std::env::var("REGEN_WRITE").is_ok();
-        let ms: Vec<usize> = if write { (22..=35).collect() } else { vec![22, 29, 32] };
+        let ms: Vec<usize> = if write {
+            (22..=35).collect()
+        } else {
+            vec![22, 29, 32]
+        };
         for &m in &ms {
             for profile in [
                 LigeritoProfile::Fast,

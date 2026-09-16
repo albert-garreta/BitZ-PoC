@@ -62,6 +62,7 @@ def main():
     parser.add_argument('--candidate', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--kinds', nargs='+', default=['mul', 'sha', 'u32', 'multiswap'])
+    parser.add_argument('--workloads', nargs='+', choices=['u32-mod32', 'u64', 'u128'], default=['u32-mod32', 'u64', 'u128'])
     parser.add_argument('--exponents', type=int, nargs='+', default=[15, 19])
     parser.add_argument('--threads', type=int, nargs='+', default=[1, 10])
     parser.add_argument('--batches', type=int, nargs='+', default=[1, 4, 8])
@@ -77,7 +78,7 @@ def main():
     cases = []
     if 'mul' in args.kinds:
         cases += [('mul', 'mul_e2e_compare', f'{w}-n{n}', dict(F2Z_MUL_COMPARE_WORKLOADS=w, F2Z_BENCH_SHAPES=str(n)))
-                  for w in ['u32-mod32', 'u64', 'u128'] for n in args.exponents]
+                  for w in args.workloads for n in args.exponents]
     if 'u32' in args.kinds:
         cases += [('u32', 'u32_mul', f'full-u32-w{w}-n{n}', dict(F2Z_MUL_WORD_BITS=str(w), F2Z_BENCH_SHAPES=str(n)))
                   for w in [1, 8] for n in args.exponents]
