@@ -1,7 +1,7 @@
 //! The paper's raw-performance row for the BitZ parity prover at one size.
 //!
-//! `bitz_bench <n> [--reps R] [--seed S]` builds a random instance at the
-//! reference split (`t = max(⌈3n/5⌉, 7)` capped at `n − 1`, `s = n − t`,
+//! `bitz_bench <n> [--reps R] [--seed S] [--shape t:s]` builds a random instance at the
+//! reference split (or the `--shape` split) (`t = max(⌈3n/5⌉, 7)` capped at `n − 1`, `s = n − t`,
 //! `q = 2^100 − 15`, generator `X`, the dump examples' transcript labels),
 //! commits it `R` times (median), proves it once to warm up and then `R`
 //! times (medians of the wall time and of every traced phase, the paper's
@@ -65,6 +65,7 @@ fn main() {
     let mut n: Option<usize> = None;
     let mut reps = 5usize;
     let mut seed = 1u64;
+    let mut shape_override: Option<(usize, usize)> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -76,15 +77,29 @@ fn main() {
                 seed = args[i + 1].parse().expect("--seed");
                 i += 2;
             }
+            "--shape" => {
+                let (t, s) = args[i + 1].split_once(':').expect("--shape t:s");
+                shape_override = Some((t.parse().expect("t"), s.parse().expect("s")));
+                i += 2;
+            }
             x => {
                 n = Some(x.parse().expect("n"));
                 i += 1;
             }
         }
     }
-    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S]");
-    let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
-    let s = n - t;
+    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--shape t:s]");
+    // The reference split unless `--shape t:s` names another split of the same n.
+    let (t, s) = match shape_override {
+        Some((t, s)) => {
+            assert_eq!(t + s, n, "--shape must split n");
+            (t, s)
+        }
+        None => {
+            let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
+            (t, n - t)
+        }
+    };
     let shape = Shape::new(t, s).expect("shape");
     let params = BitZParams::new(shape, Q, Gf::from_words([2, 0])).expect("params");
     #[cfg(feature = "parallel")]
