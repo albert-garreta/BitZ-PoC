@@ -27,11 +27,18 @@ identity on dumped vectors before anything is optimised).
 
 ## The oracle: what their end-to-end proof is
 
-Everything below is on their branch `feat/circuit-e2e` at `d6b637e`
-(2026-09-16, "feat: generate inputs for circuit benchmark runs";
+Everything below is on their branch `feat/circuit-e2e` (`d6b637e`,
+2026-09-16, "feat: generate inputs for circuit benchmark runs";
 https://github.com/worldfnd/BitZ/blob/d6b637e855d0bdfaacde437ff49095b0912d63ad/tooling/cli/src/end_to_end.rs#L81
 is the line the user's colleagues flagged as important: `Prepared::new`,
-the setup of the whole scheme — read it first). Files:
+the setup of the whole scheme — read it first; then `0013ce4` "refactor:
+separate circuit adapters from proving tools", which REMOVED the SHA-256
+adapter (`tooling/cli/src/sha256.rs`) and the CLI's circuit selection —
+the tip's `circuit-e2e` binary registers no adapter, `bitz_cli::end_to_end::
+{CircuitStatement, Prepared}` + `bitz_cli::benchmark::run` remain, and the
+only registered statement is the test's one-bit `PublicBit`). **Our oracle
+is the local branch `bitz-e2e-k4` in `~/f2z-benchmark`** (see "The oracle
+branch" below). Files:
 
 - `tooling/cli/src/end_to_end.rs` (290 lines): `CircuitStatement` (a
   deterministic circuit with public inputs; `domain`, `public_bytes`,
@@ -42,10 +49,13 @@ the setup of the whole scheme — read it first). Files:
   **constraint digest**; synthesise AGAIN through `MTransposeGenerator`
   into the materialised map `M^T` — which has its own **map digest**; check
   `map.h_len() == a.column_count()`; claim shape = `shape_for(h_len)`,
-  committed shape = `shape_for(f_len − 1)` where `shape_for(bits) =
-  Shape::new(7, max(log2(next_pow2(bits)), 22) − 7)` — **t = 7 rows, all
-  the rest columns**, NOT the PCS's reference split; `BitZParams<Q100>`
-  with `smallest_generator()`; `Pcs::new(committed_shape, Fast, Blake3)`),
+  committed shape = `shape_for(f_len − 1)` where, ON OUR ORACLE BRANCH,
+  `shape_for(bits) = Shape::for_log_bits(max(log2(next_pow2(bits)), 22))`
+  — the reference split `t = ⌈0.6·n⌉`, the one our parity PCS is
+  validated on (upstream `feat/circuit-e2e` has `Shape::new(7, log_bits −
+  7)` there: t = 7 rows, everything else columns — we changed it, see
+  below); `BitZParams<Q100>` with `smallest_generator()`;
+  `Pcs::new(committed_shape, Fast, Blake3)`),
   `witness` (`ProductWitgen` replay → `f`, `h`, exact products
   `Az, Bz, Cz`; satisfaction check; `pack` into `F128` words zero-padded
   to the shapes), `commit`, `prove`, `verify`, `bind`, `opening_claim`.
@@ -59,13 +69,14 @@ the setup of the whole scheme — read it first). Files:
   (quadratic) on the batched matrix against the assignment MLE →
   `ScaledMleEvaluationClaim { point, scale, value }` → `opening_claim`:
   zero-extend the point to the claim shape's `log_bits`, rows =
-  `scale · eq_table(point[..7])`, columns = `eq_table(point[7..])`, target
-  = `value` → `LinearClaim<Fq>` on `h` → `VirtualStatement::new(params,
+  `scale · eq_table(point[..t])`, columns = `eq_table(point[t..])` for the
+  claim shape's `t`, target = `value` → `LinearClaim<Fq>` on `h` →
+  `VirtualStatement::new(params,
   committed_shape, &map, &claim)` → `BitZProver::prove_virtual`
   (`crates/prover/src/prove.rs`): `public_message(b"bitz/virtual-statement/v1")`,
   root, `VirtualParams`, map digest, the claim; `fold_and_reduce` on the
   VIRTUAL bits `h` (the fold round + GKR we already mirror in
-  `src/bitz/{fold,reduce,forest,gkr}.rs`, at shape `(7, log_bits(h) − 7)`);
+  `src/bitz/{fold,reduce,forest,gkr}.rs`, at the claim shape);
   `statement.transpose_query(query)` (`crates/common/src/virtual_map.rs`:
   the reduced query's `F128` weights over `h` — `eq_table(point)` for an
   MLE query, `row ⊗ column` for an inner-product query — pushed through
@@ -109,23 +120,42 @@ the setup of the whole scheme — read it first). Files:
   `u128::MAX − ((u128::MAX % Q + 1) % Q)`, reduce the first accepted one.
   Round polynomials and evaluations enter through `public_message` —
   they are NOT in the narg string.
-- The CLI (`tooling/cli/src/main.rs`): `circuit-e2e --circuit
-  sha256-compression|sha256-chain [--num-blocks N] [--threads N]`; blocks
-  come from `rand::rng()` (UNSEEDED — a dump example must derive them from
-  a seed), prints `setup_ms witness_ms commit_ms prove_ms total_prove_ms
-  verify_ms`; nothing is dumped. `crates/host` (the wire format) covers the
-  PCS proof only; the e2e `SpartanPiopProof` has no canonical byte
-  encoding on their side.
+- The CLI at `d6b637e` (`tooling/cli/src/main.rs` + `sha256.rs`):
+  `circuit-e2e --circuit sha256-compression|sha256-chain [--num-blocks N]
+  [--threads N]`; blocks came from `rand::rng()` (UNSEEDED — a dump example
+  must derive them from a seed); it printed `setup_ms witness_ms commit_ms
+  prove_ms total_prove_ms verify_ms`; nothing was dumped. At the tip
+  (`0013ce4`) the SHA-256 adapter is gone: restore `sha256.rs` from
+  `d6b637e` (`git show d6b637e:tooling/cli/src/sha256.rs`) as a fixture of
+  the dump/verify examples on the oracle branch — it is their code, keep
+  it verbatim. `crates/host` (the wire format) covers the PCS proof only;
+  the e2e `SpartanPiopProof` has no canonical byte encoding on their side.
 
-**Branch trap (decisive):** `feat/circuit-e2e` forks from `main` (`0c75fd8`)
-and does NOT contain `bitz-k4`'s commits — `2882439` (the `Fast` profile
-on the k = 4 Ligerito ladder, `crates/pcs/configs/ligerito-k4/`, which is
-what `src/bitz` mirrors), `344903c` (`Shape::for_log_bits`, tests on
-`2^100 − 15`) and `61ad2c8` (the `dump_bitz`/`verify_bitz` examples). So
-the e2e as it stands opens through a DIFFERENT Ligerito ladder than our
-PCS. The oracle must be a combined branch (see step 0). `main` at
-`0c75fd8` differs from `bitz-k4` only by those three commits; the PIOP
-crates are identical on both.
+**The oracle branch (done 2026-09-16, local only).** `feat/circuit-e2e`
+forks from `main` (`0c75fd8`) and does NOT contain `bitz-k4`'s commits —
+`2882439` (the `Fast` profile on the k = 4 Ligerito ladder,
+`crates/pcs/configs/ligerito-k4/`, which is what `src/bitz` mirrors),
+`344903c` (`Shape::for_log_bits`, tests on `2^100 − 15`) and `61ad2c8`
+(the `dump_bitz`/`verify_bitz` examples) — so upstream's e2e opens
+through a DIFFERENT Ligerito ladder than our PCS. In `~/f2z-benchmark`
+the branch **`bitz-e2e-k4`** = `origin/feat/circuit-e2e` (`0013ce4`) with
+`origin/bitz-k4` (`344903c`) merged (clean, `c0cac39`) and one commit of
+ours on top (`90655c4`, tip of the branch; their tests green on it:
+`bitz-cli` 4, `circuit` 48, `common` 43, `spartan` 23, `tests` 26):
+`tooling/cli/src/end_to_end.rs::shape_for` now uses
+`Shape::for_log_bits` (the reference split) instead of `Shape::new(7,
+log_bits − 7)`, with a unit test pinning `(14, 8)` up to `2^22` bits and
+`(15, 9)` at `2^24`. Consequences: the claim shape over `h` and the
+committed shape over `f` are both reference splits of their own padded
+lengths (1 block: `h` 20,457 → `2^22` floor → `(14, 8)`, `f − 1` 7,144 →
+`(14, 8)`; 608 blocks: `f` ≈ 608 × 6,888 ≈ `2^22` → `(14, 8)`, `h` ≈
+`2^24` → `(15, 9)` — verify these counts in the feasibility doc), so our
+PCS runs in its validated regime and the only new shape feature is the
+single-column `InnerProduct` query on `f` after the transpose. The branch
+is NOT pushed to `worldfnd/BitZ`; pushing it (or asking the colleagues to
+adopt the split) is the user's call. `main` at `0c75fd8` differs from
+`bitz-k4` only by those three commits; the PIOP crates are identical on
+both.
 
 ## Our side
 
@@ -160,24 +190,21 @@ crates are identical on both.
 Write `docs/bitz-piop-parity-feasibility.md` answering, with evidence
 (commands run, numbers, file:line citations), at least:
 
-0. **The oracle branch.** In `~/f2z-benchmark` (`git fetch origin`), create
-   `bitz-e2e-k4` = `origin/feat/circuit-e2e` with `origin/bitz-k4` merged
-   in (expect little conflict: `bitz-k4` touches `crates/pcs/configs`,
-   `pcs::ligerito::security_config`, `common::Shape::for_log_bits`,
-   `crates/tests/examples`; the e2e touches `common/virtual_map.rs`,
-   `prover`/`verifier`, `circuit/matrix_transpose.rs`, `tooling/cli`). Run
-   their tests (`cargo test --workspace`, plus `-p spartan`, `-p tests`,
-   `-p circuit-cli` or whatever `tooling/cli`'s package is) and the CLI
-   at `--num-blocks 1, 8, 64, 608` with `RUSTFLAGS="-C target-cpu=native"`
-   built ONCE into `CARGO_TARGET_DIR=$HOME/f2z-benchmark/target`; record
-   `setup/witness/commit/prove/verify` and peak RSS per size (their 608-block
-   proof = 2^22 committed bits, h ≈ 2^24). Confirm which Ligerito ladder
-   `Pcs::new(.., Fast, ..)` resolves to on the merged branch and that our
-   `src/bitz` PCS (k = 4 ladder, `sha_lig_configs`-style embedded TOMLs)
-   is the one it matches. Pin the merged commit in the doc. If the merge
-   is not clean or their tests fail, that is a finding — do not paper
-   over it; propose asking the colleagues to land `bitz-k4` on the e2e
-   branch.
+0. **The oracle branch** exists: `bitz-e2e-k4` in `~/f2z-benchmark`
+   (`git log --oneline -3` there; `git fetch origin` first and check
+   whether `feat/circuit-e2e` or `bitz-k4` moved again — if so, re-merge
+   and re-apply the `shape_for` commit; keep the packages `bitz-cli`,
+   `spartan`, `common`, `tests`, `circuit` green: `CARGO_TARGET_DIR=
+   $HOME/f2z-benchmark/target RUSTFLAGS="-C target-cpu=native" cargo test
+   --release -p bitz-cli -p spartan -p common -p tests -p circuit`). Still
+   to do here: restore the SHA-256 adapter from `d6b637e` as an example
+   fixture, run the e2e at 1, 8, 64, 608 blocks through
+   `bitz_cli::benchmark::run` (a small example: seeded blocks, expected
+   digest via `sha2::compress256` as the old CLI did), record
+   `setup/witness/commit/prove/verify` and peak RSS per size, confirm which
+   Ligerito ladder `Pcs::new(.., Fast, ..)` resolves to (it must be
+   `ligerito-k4`, what `src/bitz` embeds) and the `(t, s)` shapes
+   `Prepared::new` derives per size. Pin the exact commit in the doc.
 1. **The byte surface.** List every transcript event of the e2e prove in
    order with its encoding, split into (a) narg bytes (prover messages:
    the 2^s integer folds — note `s = log_bits(h) − 7`, i.e. up to 2^17
@@ -215,20 +242,23 @@ Write `docs/bitz-piop-parity-feasibility.md` answering, with evidence
    dumped `M, A, B, C` (Fq coefficients) and `M^T` (offsets/indices) for the
    first stages and regenerate them later. Either way the digests must be
    recomputed on our side and compared, not copied.
-4. **Our PCS at t = 7.** The e2e uses `Shape::new(7, log_bits − 7)` for
-   BOTH the virtual claim shape (the fold + GKR run over `h` at (7, 17) for
-   608 blocks) and the committed shape ((7, 15)). Our parity PCS was only
-   ever exercised at the reference split (t ≥ 14, s ≥ 8). Verify it accepts
-   t = 7 (`Forest::new` needs t ≥ 4, the table-driven path t ≥ 6; the
-   column groups assume 64-column blocks; `MIN_LOG_BITS = 22` holds) and
-   MEASURE it: extend their `dump_bitz` (or use the merged CLI) to dump
-   PCS instances at explicit `(7, 15)` and `(7, 17)` and run
-   `bitz_parity`/`BITZ_TRACE` on them — parity first, then the profile
-   (at t = 7 the arena is 2^{3+s} entries, the level-0..2 bit rounds and
-   the column-side rounds dominate; the `s`-round flat eq table is 2^17
-   entries). Note also that `prove_lin`'s query here is a single-column
-   `LinearClaim<F128>` over 2^22 bits (`InnerProduct`, not `Mle`), which
-   selects the inner-product sumcheck path.
+4. **Our PCS on the e2e's queries.** With the reference split on the
+   oracle branch, the fold + GKR over `h` and the opening over `f` run at
+   the shapes our parity PCS is validated on ((14, 8) at 1 block and at
+   the 608-block committed shape; (15, 9) for `h` at 608 blocks — inside
+   the sweep's range). What is new: (a) the fold's claim on `h` is an
+   `Fq` claim whose row weights are `scale · eq_table(point[..t])` and
+   column weights `eq_table(point[t..])` (all residues; `LinearClaim::new`
+   takes them as is); (b) after `transpose_query` the PCS opens a
+   single-column `LinearClaim<F128>` over `2^22` bits (`OpeningQuery::
+   InnerProduct` with `Shape::new(log_bits, 0)`) — our `pcs::prove_lin` /
+   `sumcheck::prove` were only exercised with the two-sided shapes; check
+   `col_vars = 0` end to end (`xi_combined_rows_packed` with one column,
+   `fold_rows_point` over all bits) with a dumped vector; (c) the upstream
+   `(7, n − 7)` split is not needed for parity any more, but if the
+   colleagues keep it upstream, measure our PCS at `(7, 15)`/`(7, 17)` once
+   (`Forest::new` needs t ≥ 4, the table-driven path t ≥ 6; the arena is
+   `2^{t−4+s}` entries) so the difference is known.
 5. **The virtual reduction.** `transpose_query` applies `M^T` to a dense
    `F128` weight vector of length `h_len` (2^24 × 16 B = 256 MB at 608
    blocks) — a sparse Boolean matrix–vector product over GF(2^128). Estimate
@@ -244,19 +274,20 @@ Write `docs/bitz-piop-parity-feasibility.md` answering, with evidence
    work (rows 2^8·blocks, nonzeros) and estimate. Decide whether to port
    their code shape first (fast to pin) and optimise after, as with the
    PCS.
-7. **Verifier parity both ways.** Their verifier for the e2e is the CLI's
-   `verify` (not the spec-derived `verifier` crate alone). We need, on
-   their side, `dump_e2e <circuit> <blocks> <seed> <dir>` and
-   `verify_e2e <circuit> <blocks> <seed> <dir> <ours.*>` examples (in
-   `tooling/cli` or `crates/tests/examples`), seeded, writing the
-   statement's public bytes, the inputs, `meta.txt` (shapes, digests,
-   session/domain), `f`/`h` (or enough to regenerate them), the products
-   if we cannot regenerate, the Spartan proof bytes, narg, hints. Propose
-   the file format; keep it byte-defined.
+7. **Verifier parity both ways.** Their verifier for the e2e is
+   `Prepared::verify` (not the spec-derived `verifier` crate alone). We
+   need, on the oracle branch, `dump_e2e <circuit> <blocks> <seed> <dir>`
+   and `verify_e2e <circuit> <blocks> <seed> <dir> <ours.*>` examples
+   under `tooling/cli/examples/` (the SHA-256 statement restored from
+   `d6b637e` inside them), seeded, writing the statement's public bytes,
+   the inputs, `meta.txt` (shapes, digests, session/domain), `f`/`h` (or
+   enough to regenerate them), the products if we cannot regenerate, the
+   Spartan proof bytes, narg, hints. Propose the file format; keep it
+   byte-defined.
 8. **Effort and risks.** Order the stages below, estimate each, and name
-   what could block: the merge (0), the circuit drift (3), t = 7
-   performance (4), the 256 MB transpose (5), unknown `Encoding` details
-   (1), `rand::rng()` in the CLI (7).
+   what could block: upstream moving under the oracle branch (0), the
+   circuit drift (3), the single-column query path (4), the 256 MB
+   transpose (5), unknown `Encoding` details (1), seeding the blocks (7).
 
 Do not write protocol code in this session beyond throwaway probes needed
 to answer the questions (e.g. running our PCS at t = 7, computing digests).
@@ -298,9 +329,9 @@ in the tree stay uncommitted).
 
 ```sh
 # their side, once per checkout, native flags, their own target dir
-cd ~/f2z-benchmark && git checkout bitz-e2e-k4      # the merged oracle (step 0)
+cd ~/f2z-benchmark && git checkout bitz-e2e-k4      # the merged oracle + our shape_for commit
 CARGO_TARGET_DIR=$HOME/f2z-benchmark/target RUSTFLAGS="-C target-cpu=native" \
-  cargo build --release -p spartan -p tests --examples   # + tooling/cli once dump_e2e exists
+  cargo build --release -p tests -p bitz-cli --examples   # dump_bitz/verify_bitz today; dump_e2e/verify_e2e once written
 # our side
 cd ~/f2z-pcs && git checkout bitz-parity
 RUSTFLAGS="-C target-cpu=native" cargo build --release --features bitz-parity --example bitz_parity --example bitz_bench
@@ -327,15 +358,18 @@ let it overwrite `paper/raw-performance-table.tex`).
 - `Fq` challenges are rejection-sampled from `u128` squeezes; one skipped
   squeeze shifts every later challenge. `Fq` encodes as 16 LE bytes of the
   canonical residue; `F128` as 16 LE bytes of the two words.
-- The e2e shapes are `(7, log_bits − 7)`, not `Shape::for_log_bits`; the
-  virtual claim shape and the committed shape differ (`h_len` vs
-  `f_len − 1`, each padded to a power of two, floor `2^22`).
+- The e2e's two shapes are derived separately (`h_len` vs `f_len − 1`,
+  each padded to a power of two, floor `2^22`) — on our oracle branch
+  through `Shape::for_log_bits`; upstream still has `(7, log_bits − 7)`.
+  A proof made under one split does not verify under the other (the
+  fold's row/column weights and the GKR's rounds follow the shape).
 - Their CLI seeds nothing (`rand::rng()`): every dump example must take a
   seed and derive the blocks from it, as `dump_bitz` does.
 - The vendored `crates/circuit` has drifted from theirs; digests decide,
   not eyeballing.
 - `feat/circuit-e2e` lacks `bitz-k4` (different Ligerito ladder) — the
-  merged oracle branch is not optional.
+  merged oracle branch `bitz-e2e-k4` is not optional; it is local and
+  unpushed, and upstream keeps moving (`0013ce4` landed the same day).
 - Shell: `grep pattern $F` with an empty `$F` hangs the step; macOS has no
   `timeout`; never `git add -A` (the `.claude/worktrees` gitlinks).
 - Never `git commit` without `--no-gpg-sign`; paper edits stay
