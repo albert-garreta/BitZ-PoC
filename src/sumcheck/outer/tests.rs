@@ -444,3 +444,76 @@ fn encoded_zero_prefix_preserves_grinding_rounds_and_transcript() {
     .unwrap();
     assert_eq!(prover.state_digest(), verifier.state_digest());
 }
+#[cfg(feature = "parallel")]
+#[test]
+fn parallel_first_fold_matches_serial_and_allows_concurrent_proofs() {
+    let serial = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+    let parallel = rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build()
+        .unwrap();
+    let f = field();
+    // Cross the first-fold cutoff; workers share immutable native inputs.
+    for n in [12, 13, 14] {
+        let a: Vec<u64> = (0..1usize << n)
+            .map(|i| (i as u64).wrapping_mul(0x9e3779b97f4a7c15))
+            .collect();
+        let b: Vec<u64> = a.iter().map(|v| v.rotate_left(27)).collect();
+        let c: Vec<u128> = a
+            .iter()
+            .zip(&b)
+            .map(|(a, b)| *a as u128 * *b as u128)
+            .collect();
+        let tau: Vec<_> = (0..n)
+            .map(|i| fe(&f, if i < 2 { i as u64 } else { i as u64 + 7 }))
+            .collect();
+        for zero in [false, true] {
+            let prove = || {
+                let mut prover = Blake3Transcript::new();
+                let out = if zero {
+                    prove_outer_zerocheck_from_slices(
+                        &f,
+                        &mut prover,
+                        &tau,
+                        &a,
+                        &b,
+                        &c,
+                        &mut UngrindedRoundBoundary,
+                    )
+                } else {
+                    prove_outer_sumcheck_from_slices(
+                        &f,
+                        &mut prover,
+                        f.zero(),
+                        &tau,
+                        &a,
+                        &b,
+                        &c,
+                        &mut UngrindedRoundBoundary,
+                    )
+                }
+                .unwrap();
+                let mut verifier = Blake3Transcript::new();
+                verify_outer_sumcheck(
+                    &f,
+                    &mut verifier,
+                    f.zero(),
+                    &tau,
+                    &out.proof,
+                    out.evaluations,
+                    &mut UngrindedRoundBoundary,
+                )
+                .unwrap();
+                assert_eq!(prover.state_digest(), verifier.state_digest());
+                (out, prover.state_digest())
+            };
+            let expected = serial.install(prove);
+            let (left, right) = parallel.install(|| rayon::join(prove, prove));
+            assert_eq!(left, expected);
+            assert_eq!(right, expected);
+        }
+    }
+}
