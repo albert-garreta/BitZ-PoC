@@ -205,13 +205,16 @@ fn copy_bits(dst: &mut [u64], dst_off: usize, src: &[u64], src_off: usize, len: 
     let mut done = 0;
     while done < len {
         let (s, d) = (src_off + done, dst_off + done);
-        let take = (64 - s % 64).min(64 - d % 64).min(len - done);
-        let mask = if take == 64 {
-            u64::MAX
-        } else {
-            (1u64 << take) - 1
-        };
-        dst[d / 64] |= ((src[s / 64] >> (s % 64)) & mask) << (d % 64);
+        let take = (64 - d % 64).min(len - done);
+        let shift = s % 64;
+        let mut value = src[s / 64] >> shift;
+        // Assemble a whole destination word even when the source is unaligned.
+        // Read the next source word only when the requested bits cross into it.
+        if take > 64 - shift {
+            value |= src[s / 64 + 1] << (64 - shift);
+        }
+        let mask = u64::MAX >> (64 - take);
+        dst[d / 64] |= (value & mask) << (d % 64);
         done += take;
     }
 }
@@ -427,4 +430,52 @@ pub fn generate_sha256_ecdsa_witness(
         products,
         statement: statement.clone(),
     })
+}
+
+#[cfg(test)]
+mod packing_tests {
+    use super::copy_bits;
+
+    #[test]
+    fn unaligned_copies_match_individual_bits() {
+        copy_bits(&mut [], 0, &[], 0, 0);
+        for pattern in 0..3 {
+            let source: Vec<u64> = (0..20)
+                .map(|i| match pattern {
+                    0 => 0,
+                    1 => u64::MAX,
+                    _ => (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                })
+                .collect();
+            for src_off in 64usize..128 {
+                for dst_off in 0usize..64 {
+                    for len in [0, 1, 2, 31, 63, 64, 65, 127, 128, 129, 191, 1024] {
+                        // Preserve nonzero bits outside the copy and provide
+                        // exactly the source storage needed by this range.
+                        let mut actual = vec![0xa5a5_a5a5_a5a5_a5a5; 20];
+                        for bit in dst_off..dst_off + len {
+                            actual[bit / 64] &= !(1u64 << (bit % 64));
+                        }
+                        let mut expected = actual.clone();
+                        for bit in 0..len {
+                            let value =
+                                (source[(src_off + bit) / 64] >> ((src_off + bit) % 64)) & 1;
+                            expected[(dst_off + bit) / 64] |= value << ((dst_off + bit) % 64);
+                        }
+                        copy_bits(
+                            &mut actual,
+                            dst_off,
+                            &source[..(src_off + len).div_ceil(64)],
+                            src_off,
+                            len,
+                        );
+                        assert_eq!(
+                            actual, expected,
+                            "source {src_off}, destination {dst_off}, length {len}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
