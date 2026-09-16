@@ -123,13 +123,12 @@ pub fn row_bit_weights(
         .enumerate()
         .for_each(|(b, slots)| {
             let w = row_weights[b];
-            let mut power =
-                Gf::from(comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64])));
+            let mut power = comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64]));
             // Reuse the equality table as output and the previous bit's
             // power: alpha^(w*2^(j+1)) = (alpha^(w*2^j))^2.
             let last = slots.len() - 1;
             for (j, slot) in slots.iter_mut().enumerate() {
-                *slot = *slot * (power - one);
+                *slot *= power - one;
                 if j != last {
                     power = power.square();
                 }

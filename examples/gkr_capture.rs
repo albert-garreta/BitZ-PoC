@@ -73,7 +73,7 @@ mod allocations {
             }
         }
     }
-    static COUNTERS: [Counters; 28] = [const { Counters::new() }; 28];
+    static COUNTERS: [Counters; NAMES.len()] = [const { Counters::new() }; NAMES.len()];
     pub struct Allocator;
     fn account(bytes: usize) {
         let live = LIVE.fetch_add(bytes, Relaxed) + bytes;
@@ -221,8 +221,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (r, s) = signature.split_bytes();
     let statement = Sha256EcdsaStatement {
         log_compressions: exponent as u8,
-        qx: point.x().unwrap().as_slice().try_into()?,
-        qy: point.y().unwrap().as_slice().try_into()?,
+        qx: (*point.x().unwrap()).into(),
+        qy: (*point.y().unwrap()).into(),
         r: r.into(),
         s: s.into(),
     };
