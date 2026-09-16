@@ -298,6 +298,13 @@ impl MaterializedMTranspose {
         self.row_indices.len()
     }
 
+    /// The CSC arrays (`column_offsets`, `row_indices`) — FEASIBILITY PROBE
+    /// ACCESSOR, uncommitted: lets an example recompute the upstream map
+    /// digest over the same bytes.
+    pub fn csc(&self) -> (&[u32], &[u32]) {
+        (&self.column_offsets, &self.row_indices)
+    }
+
     /// Bytes occupied by the fixed-width CSC payload.
     pub const fn payload_bytes(&self) -> usize {
         self.column_offsets.len() * size_of::<u32>() + self.row_indices.len() * size_of::<u32>()

@@ -94,6 +94,8 @@ libc = "0.2" # getrusage: peak resident set of CLI sweep children
 # f2z-benchmark (BitZ) implementation drives, so the parity prover can emit
 # its exact narg string and challenge sequence.
 spongefish = { version = "0.7.4", optional = true }
+# The BitZ Spartan PIOP's constraint digest (their `sha2` 0.10 SHA-256).
+sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive", "env", "string"] }
@@ -348,6 +350,10 @@ required-features = ["bitz-parity"]
 name = "bitz_lin_probe"
 required-features = ["bitz-parity"]
 
+[[example]]
+name = "bitz_spartan_parity"
+required-features = ["bitz-parity"]
+
 [features]
 default = ["parallel"]
 # Numeric span metrics require the native trace processor at runtime.
@@ -363,7 +369,7 @@ bench-peak-memory = []
 # Exposes narrowly scoped policy controls used by controlled benchmark binaries.
 bench-internals = []
 # Byte-for-byte transcript parity with the BitZ (f2z-benchmark) implementation.
-bitz-parity = ["dep:spongefish"]
+bitz-parity = ["dep:spongefish", "dep:sha2", "circuit/full"]
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
 sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]

@@ -24,6 +24,8 @@
 //! - [`sumcheck`]: the dense degree-2 sumcheck to one MLE claim.
 //! - [`pcs`]: step 6, statement binding, ring switch and the Ligerito
 //!   opening through a challenger that frames flock's events their way.
+//! - [`fq`], [`spartan`]: the end-to-end scheme's prime field and their
+//!   Spartan PIOP over the circuit R1CS (branch `bitz-e2e-parity`).
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::cast_possible_truncation,
@@ -33,11 +35,14 @@
 pub mod codec;
 pub mod fold;
 pub mod forest;
+pub mod fq;
 pub mod gkr;
 pub(crate) mod kernels;
+pub mod map;
 pub mod params;
 pub mod pcs;
 pub mod reduce;
+pub mod spartan;
 pub mod sumcheck;
 pub mod transcript;
 
