@@ -1,5 +1,5 @@
 //! Binius64 multiplication and PIOP with the F2Z opener, at the CLI-selected
-//! rate and a whole-protocol union-bound target of 100 bits.
+//! rate and security accounting, with a target of 100 bits.
 use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
 use super::{CapturedSpan, Corpus, Timing, Workload, binius};
 use binius_frontend::Circuit;
@@ -19,10 +19,10 @@ impl Context {
     pub(super) fn setup_at_rate(
         corpus: Arc<Corpus>,
         rate: usize,
+        accounting: Accounting,
     ) -> Result<Self, f2z::binius_ligerito::Error> {
         let (circuit, wires) = binius::compile(&corpus);
-        let prepared =
-            Prepared::with_options(circuit.constraint_system(), rate, Accounting::UnionBound)?;
+        let prepared = Prepared::with_options(circuit.constraint_system(), rate, accounting)?;
         Ok(Self {
             corpus,
             circuit,
@@ -192,8 +192,12 @@ mod tests {
         use tracing_subscriber::prelude::*;
 
         // The F2Z opener requires packed log >= 13.
-        let context =
-            Context::setup_at_rate(Arc::new(Corpus::new(Workload::U32, 11, 7)), 1).unwrap();
+        let context = Context::setup_at_rate(
+            Arc::new(Corpus::new(Workload::U32, 11, 7)),
+            1,
+            Accounting::UnionBound,
+        )
+        .unwrap();
         let witness = binius::populate(&context.corpus, &context.circuit, &context.wires, false)
             .unwrap()
             .into_value_vec();

@@ -217,3 +217,65 @@ fn whir_configuration_is_applied_or_rejected() {
     pcs.whir_rate_cap = Some(2);
     assert!(pcs.expand(true).is_err());
 }
+
+#[test]
+fn phase_records_use_milliseconds_and_union_overlaps() {
+    use f2z::observability::Interval;
+    let interval = |id, name: &str, start_ns, end_ns| Interval {
+        id,
+        parent: None,
+        track_id: id,
+        depth: 0,
+        name: name.into(),
+        component: None,
+        start_ns,
+        end_ns,
+    };
+    let intervals = [
+        interval(1, "prove", 0, 10_000_000),
+        interval(2, "opening", 1_000_000, 3_000_000),
+        interval(3, "opening", 2_000_000, 4_000_000),
+        interval(4, "bitify", 5_000_000, 7_000_000),
+    ];
+    let phases: std::collections::BTreeMap<_, _> = mul::phase_milliseconds(&intervals, "prove")
+        .unwrap()
+        .into_iter()
+        .collect();
+    assert_eq!(phases["opening"], 3.);
+    assert_eq!(phases["bitify"], 2.);
+    let commit_ms = 4.;
+    assert_eq!(commit_ms + phases["opening"] + phases["bitify"], 9.);
+}
+
+#[test]
+fn accounting_is_part_of_only_the_applicable_case() {
+    let flags = [
+        "proof",
+        "--workload",
+        "u32-mod32",
+        "--backends",
+        "binius64,binius64-ligerito",
+        "--log-n",
+        "15",
+        "--threads",
+        "1",
+        "--binius-ligerito-accounting",
+        "rbr",
+    ];
+    let args = parse(&flags);
+    let jobs = args.expand(true).unwrap();
+    assert!(jobs[0].case.binius_ligerito_accounting.is_none());
+    assert_eq!(
+        jobs[1].case.binius_ligerito_accounting.as_deref(),
+        Some("rbr")
+    );
+    let mut witness = args;
+    witness.mode = Mode::Witness;
+    assert!(
+        witness
+            .expand(true)
+            .unwrap()
+            .iter()
+            .all(|j| j.case.binius_ligerito_accounting.is_none())
+    );
+}

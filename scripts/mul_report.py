@@ -15,7 +15,7 @@ def label(row):
     pieces = [case["mode"], case["workload"], case["backend"], f"2^{case['log_n']}",
               f"t={case['threads']}", f"seed={case['seed']}"]
     pieces += [f"{key}={value}" for key, value in config.items() if value is not None]
-    pieces += [f"{key}={case[key]}" for key in ("variant", "preset", "log_inv_rate", "limber_bits") if key in case]
+    pieces += [f"{key}={case[key]}" for key in ("variant", "preset", "log_inv_rate", "binius_ligerito_accounting", "limber_bits") if key in case]
     pieces += [f"whir.{key}={value}" for key, value in case.get("whir", {}).items() if value is not None]
     return " / ".join(pieces)
 

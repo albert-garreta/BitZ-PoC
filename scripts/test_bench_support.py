@@ -38,6 +38,26 @@ class Support(unittest.TestCase):
             kill.assert_called_once()
             self.assertEqual(process.wait.call_count, 2)
 
+    def test_interruption_kills_group_and_reaps_child(self):
+        # A real detached child must not survive Ctrl-C in the parent runner.
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                   start_new_session=True)
+        real_wait = process.wait
+        def interrupted_wait(timeout=None):
+            if timeout == 123:
+                raise KeyboardInterrupt
+            return real_wait(timeout=5)
+        try:
+            with patch.object(support.subprocess, "Popen", return_value=process), \
+                 patch.object(process, "wait", side_effect=interrupted_wait):
+                with self.assertRaises(KeyboardInterrupt):
+                    support.run_process(["worker"], timeout=123)
+            self.assertEqual(process.returncode, -9)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                real_wait()
+
     def test_atomic_json_and_file_hash(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "result.json"

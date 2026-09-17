@@ -104,6 +104,8 @@ pub struct Args {
     pub variants: Option<String>,
     #[arg(long, value_parser = clap::value_parser!(u8).range(1..=3))]
     pub log_inv_rate: Option<u8>,
+    #[arg(long, default_value = "union", value_parser = ["union", "rbr"])]
+    pub binius_ligerito_accounting: String,
     #[arg(long)]
     pub whir_degree: Option<usize>,
     #[arg(long)]
@@ -161,6 +163,8 @@ pub struct Case {
     pub preset: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_inv_rate: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binius_ligerito_accounting: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limber_bits: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -473,6 +477,9 @@ impl Args {
                                         )
                                         .then_some(self.log_inv_rate.unwrap_or(1))
                                     },
+                                    binius_ligerito_accounting: (backend == "binius64-ligerito"
+                                        && self.mode == Mode::Proof)
+                                        .then(|| self.binius_ligerito_accounting.clone()),
                                     limber_bits: (backend == "limber" && self.mode == Mode::Proof)
                                         .then_some(self.limber_bits),
                                     whir: if backend == "plonky3-whir"

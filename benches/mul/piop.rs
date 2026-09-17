@@ -158,7 +158,7 @@ pub fn run(run: &mut Run) -> anyhow::Result<()> {
         if let Some(r) = recording {
             let spans = r.intervals()?;
             for (prefix, scope) in [("prove", "mul:piop-prove"), ("verify", "mul:piop-verify")] {
-                for (name, ms) in f2z::observability::phase_totals(&spans, scope)? {
+                for (name, ms) in super::phase_milliseconds(&spans, scope)? {
                     m.insert(format!("{prefix}/{name}_ms"), ms);
                 }
             }

@@ -79,6 +79,11 @@ wrapping products. F2Z's wrapping comparison includes the high product limb in
 its full integer relation. `u64` and `u128` retain full double-width products.
 BabyBear uses `a*b = c + p*k` with p=2013265921.
 
+`--binius-ligerito-accounting union|rbr` selects whole-protocol union-bound
+or round-by-round accounting for `binius64-ligerito` proofs (default `union`).
+The choice is recorded in the case identity and report label. Use `rbr` to
+reproduce the accounting used by the dated comparison campaign.
+
 `--ligerito custom:1:4,udrg:1:4` selects explicit F2Z opener configurations;
 `custom:3:4` selects Johnson decoding at rate 1/8. Use `--bound` or
 `--ligerito`, not both. The profile determines the security target.

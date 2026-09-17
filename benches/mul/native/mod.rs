@@ -354,12 +354,17 @@ enum Context {
     Limber(limber::Context),
 }
 impl Context {
-    fn setup(backend: Backend, corpus: Arc<Corpus>, rate: usize) -> anyhow::Result<Self> {
+    fn setup(
+        backend: Backend,
+        corpus: Arc<Corpus>,
+        rate: usize,
+        accounting: f2z::binius_ligerito::Accounting,
+    ) -> anyhow::Result<Self> {
         Ok(match backend {
             Backend::F2z | Backend::Plonky3Whir => unreachable!("prepared separately"),
             Backend::Binius => Self::Binius(binius::Context::setup_at_rate(corpus, rate)),
             Backend::BiniusLigerito => Self::BiniusLigerito(
-                binius_ligerito::Context::setup_at_rate(corpus, rate).map_err(
+                binius_ligerito::Context::setup_at_rate(corpus, rate, accounting).map_err(
                     |error| match error {
                         f2z::binius_ligerito::Error::Config(reason) => {
                             anyhow::Error::new(super::Unsupported(reason))
@@ -692,6 +697,11 @@ pub(super) fn run(run: &mut Run) -> anyhow::Result<()> {
             backend,
             Arc::clone(&corpus),
             run.job.case.log_inv_rate.unwrap_or(1) as usize,
+            if run.job.case.binius_ligerito_accounting.as_deref() == Some("rbr") {
+                f2z::binius_ligerito::Accounting::RoundByRound
+            } else {
+                f2z::binius_ligerito::Accounting::UnionBound
+            },
         )?
     };
     let setup_ms = started.elapsed().as_secs_f64() * 1000.;

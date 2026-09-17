@@ -288,7 +288,7 @@ where
         }
         if let Some(recording) = recording {
             let intervals = recording.intervals()?;
-            let phases = f2z::observability::phase_totals(&intervals, "mul:proving")?;
+            let phases = super::phase_milliseconds(&intervals, "mul:proving")?;
             let phase = |label: &str| {
                 phases
                     .iter()
@@ -305,7 +305,7 @@ where
                 metrics.insert("pcs_ms".into(), commit_ms + bitify + open);
             }
             for (prefix, scope) in [("prove", "mul:proving"), ("verify", "mul:verification")] {
-                for (phase, ms) in f2z::observability::phase_totals(&intervals, scope)? {
+                for (phase, ms) in super::phase_milliseconds(&intervals, scope)? {
                     metrics.insert(format!("{prefix}/{phase}_ms"), ms);
                 }
             }

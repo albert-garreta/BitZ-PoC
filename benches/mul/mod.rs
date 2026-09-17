@@ -20,6 +20,18 @@ use std::{
 };
 
 pub type Metrics = BTreeMap<String, f64>;
+
+/// Observability totals are seconds; benchmark records consistently use milliseconds.
+pub fn phase_milliseconds(
+    intervals: &[f2z::observability::Interval],
+    scope: &str,
+) -> std::io::Result<Vec<(String, f64)>> {
+    Ok(f2z::observability::phase_totals(intervals, scope)?
+        .into_iter()
+        .map(|(name, seconds)| (name, seconds * 1000.))
+        .collect())
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Sample {
     pub case_id: String,

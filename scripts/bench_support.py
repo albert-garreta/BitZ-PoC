@@ -72,15 +72,24 @@ def run_process(command, *, env=None, cwd=None, stdout=None, stderr=None,
                 timeout=None, preexec_fn=None, start_new_session=True):
     process = subprocess.Popen(command, cwd=cwd, env=env, stdout=stdout, stderr=stderr,
                                start_new_session=start_new_session, preexec_fn=preexec_fn)
+    def stop():
+        try:
+            if start_new_session:
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except ProcessLookupError:
+            pass  # The child may finish between wait and cancellation.
+        process.wait()
+
     try:
         return process.wait(timeout=timeout), False
     except subprocess.TimeoutExpired:
-        if start_new_session:
-            os.killpg(process.pid, signal.SIGKILL)
-        else:
-            process.kill()
-        process.wait()
+        stop()
         return None, True
+    except BaseException:
+        stop()
+        raise
 
 
 def run_logged(command, env, path, cwd=ROOT):
