@@ -6,6 +6,7 @@ used here. Each block is a fresh process with the worker's own warmup.
 """
 import argparse
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -33,6 +34,11 @@ def main():
     parser.add_argument('--blocks', type=int, default=6)
     parser.add_argument('--reps', type=int, default=5)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--seeds', type=int, nargs='+')
+    parser.add_argument('--targets', type=int, nargs='+', choices=[100, 128], default=[100])
+    parser.add_argument('--baseline-env', action='append', default=[])
+    parser.add_argument('--candidate-env', action='append', default=[])
+    parser.add_argument('--schedule', choices=['l2','l4','l8'], default='l4')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = {k: getattr(args, k).resolve(strict=True) for k in ['baseline', 'candidate']}
@@ -44,50 +50,57 @@ def main():
                     affinity=sorted(os.sched_getaffinity(0)))
     (args.output / 'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     summaries = []
-    for method in args.methods:
-        for exponent in args.exponents:
-            for threads in args.threads:
-                samples = {k: [] for k in binaries}
-                blocks = {k: [] for k in binaries}
-                digest = None
-                for block in range(args.blocks):
-                    for variant in (list(binaries) if block % 2 == 0 else list(binaries)[::-1]):
-                        name = f'{method}-i{exponent}-t{threads}-b{block}-{variant}'
-                        env = dict(clean_env, F2Z_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE='l4',
-                                   RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads))
-                        available = sorted(os.sched_getaffinity(0))
-                        cpus = ','.join(map(str, available[:threads]))
-                        command = ['taskset', '-c', cpus, str(binaries[variant]), '--method', method,
-                                   '--r', str(exponent), '--c', '0', '--target', '100',
-                                   '--threads', str(threads), '--reps', str(args.reps), '--seed', str(args.seed)]
-                        with (args.output / (name+'.stdout')).open('w') as out, (args.output / (name+'.stderr')).open('w') as err:
-                            subprocess.run(command, env=env, stdout=out, stderr=err, timeout=600, check=True)
-                        rows = [json.loads(line) for line in (args.output / (name+'.stdout')).read_text().splitlines()
-                                if line.startswith('{')]
-                        rows = [{**r, **r.get('measurements', {})} for r in rows]
-                        assert len(rows) == args.reps + 1 and all(r['verified'] for r in rows), name
-                        for row in rows:
-                            digest = digest or row['proof_digest']
-                            assert row['proof_digest'] == digest, f'proof bytes changed: {name}'
-                        rows = [r for r in rows if r['trial'] == 'sample']
-                        for row in rows:
-                            phases = dict(row['phases_seconds'])
-                            row['gkr_ms'] = 1000 * phases['mc:forest']
-                            row['grid_ms'] = 1000 * phases.get('eqf:grid', 0)
-                        metrics = ['witness_to_proof_ms', 'prove_ms', 'gkr_ms', 'grid_ms', 'verify_ms']
-                        medians = {m: statistics.median(r[m] for r in rows) for m in metrics}
-                        samples[variant].extend(rows)
-                        blocks[variant].append(medians)
-                        print(name, {m: round(v, 3) for m, v in medians.items()}, flush=True)
-                summary = dict(method=method, exponent=exponent, threads=threads, proof_digest=digest, metrics={})
-                for metric in metrics:
-                    ratios = [b[metric]/a[metric] for a, b in zip(blocks['baseline'], blocks['candidate']) if a[metric]]
-                    summary['metrics'][metric] = dict(
-                        baseline_ms=statistics.median(r[metric] for r in samples['baseline']),
-                        candidate_ms=statistics.median(r[metric] for r in samples['candidate']),
-                        paired_ratios=ratios, ratio_ci95=paired_interval(ratios) if ratios else None)
-                summaries.append(summary)
-                (args.output / 'summary.json').write_text(json.dumps(summaries, indent=2)+'\n')
+    for method, exponent, threads, target, seed in itertools.product(
+            args.methods, args.exponents, args.threads, args.targets, args.seeds or [args.seed]):
+        samples = {k: [] for k in binaries}
+        cold = {k: [] for k in binaries}
+        blocks = {k: [] for k in binaries}
+        digest = None
+        for block in range(args.blocks):
+            for variant in (list(binaries) if block % 2 == 0 else list(binaries)[::-1]):
+                name = f'{method}-i{exponent}-t{threads}-target{target}-seed{seed}-b{block}-{variant}'
+                env = dict(clean_env, F2Z_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
+                           RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads))
+                env.update(dict(item.split('=', 1) for item in getattr(args, variant + '_env')))
+                available = sorted(os.sched_getaffinity(0))
+                cpus = ','.join(map(str, available[:threads]))
+                command = ['taskset', '-c', cpus, str(binaries[variant]), '--method', method,
+                           '--r', str(exponent), '--c', '0', '--target', str(target),
+                           '--threads', str(threads), '--reps', str(args.reps), '--seed', str(seed)]
+                with (args.output / (name+'.stdout')).open('w') as out, (args.output / (name+'.stderr')).open('w') as err:
+                    subprocess.run(command, env=env, stdout=out, stderr=err, timeout=600, check=True)
+                rows = [json.loads(line) for line in (args.output / (name+'.stdout')).read_text().splitlines()
+                        if line.startswith('{')]
+                rows = [{**r, **r.get('measurements', {})} for r in rows]
+                assert len(rows) == args.reps + 1 and all(r['verified'] for r in rows), name
+                for row in rows:
+                    digest = digest or row['proof_digest']
+                    assert row['proof_digest'] == digest, f'proof bytes changed: {name}'
+                for row in rows:
+                    phases = dict(row['phases_seconds'])
+                    row['gkr_ms'] = 1000 * phases['mc:forest']
+                    row['grid_ms'] = 1000 * phases.get('eqf:grid', 0)
+                metrics = ['witness_to_proof_ms', 'prove_ms', 'gkr_ms', 'grid_ms', 'verify_ms']
+                first = [r for r in rows if r['trial'] == 'warmup']
+                assert len(first) == 1, name
+                cold[variant].extend(first)
+                rows = [r for r in rows if r['trial'] == 'sample']
+                medians = {m: statistics.median(r[m] for r in rows) for m in metrics}
+                medians.update({'cold_' + m: first[0][m] for m in metrics})
+                samples[variant].extend(rows)
+                blocks[variant].append(medians)
+                print(name, {m: round(v, 3) for m, v in medians.items()}, flush=True)
+        summary = dict(method=method, exponent=exponent, threads=threads, target=target, seed=seed, proof_digest=digest, metrics={})
+        for metric in metrics + ['cold_' + m for m in metrics]:
+            source = cold if metric.startswith('cold_') else samples
+            field = metric.removeprefix('cold_')
+            ratios = [b[metric]/a[metric] for a, b in zip(blocks['baseline'], blocks['candidate']) if a[metric]]
+            summary['metrics'][metric] = dict(
+                baseline_ms=statistics.median(r[field] for r in source['baseline']),
+                candidate_ms=statistics.median(r[field] for r in source['candidate']),
+                paired_ratios=ratios, ratio_ci95=paired_interval(ratios) if ratios else None)
+        summaries.append(summary)
+        (args.output / 'summary.json').write_text(json.dumps(summaries, indent=2)+'\n')
     return 0
 
 

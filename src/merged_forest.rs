@@ -41,8 +41,8 @@ use core::mem::MaybeUninit;
 
 use crate::pcs::IntegerMatrixLayout;
 use crate::piop::sumcheck::eq_factored::{
-    EqInnerGroupMixed, FlatDense, GroupBufs, PRFM_DIST, Pair2TauSet, PreRound, SuffixTensorArena,
-    prove_eq_inner_sumcheck_mixed_gruen, prove_eq_inner_sumcheck_mixed_pre,
+    EqInnerGroupMixed, FlatDense, GroupBufs, PRFM_DIST, Pair2TauSet, PreRound, SharedPointInput,
+    SuffixTensorArena, prove_eq_inner_sumcheck_mixed_gruen, prove_eq_inner_sumcheck_mixed_pre,
     prove_eq_inner_sumcheck_mixed_prepared, suffix_tensors, verify_eq_inner_sumcheck_gruen,
 };
 use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
@@ -173,8 +173,7 @@ fn build_levels(
 
 /// The stored upper levels, either per-tree ([`TreeLevels`]) or as ONE
 /// flat store per level ([`FlatDense`], slot ℓ−1 = level ℓ, stride
-/// `2^{ℓ−1}` per side, segments = live trees plus the elided-const tail's
-/// synthetic all-ones segment when it rides). The flat form replaces
+/// `2^{ℓ−1}` per side, segments = real trees only). The flat form replaces
 /// `2·top` allocations per tree with 2 per level — the wide-shallow
 /// forest's `build_levels` allocation floor — and its level-major
 /// construction streams contiguously. Same products, same values.
@@ -238,21 +237,19 @@ unsafe fn gf_assume_init(mut values: Vec<MaybeUninit<Gf>>) -> Vec<Gf> {
 /// straight into its segment (`gen_top(c, l_seg, r_seg)`), each lower
 /// level is one level-major elementwise pass (`parent_l[i] = cl[i]·cr[i]`,
 /// `parent_r[i] = cl[i+h]·cr[i+h]` — [`parent_halves_top`]'s exact
-/// products), and the elided-const tail rides as one all-ones segment
-/// (`nseg = live + 1`) whose products stay ones through every level.
+/// products). Only live trees have storage.
 /// Returns the slots plus the live trees' roots.
 #[allow(clippy::arithmetic_side_effects)]
 fn build_levels_flat(
     live: usize,
-    nseg: usize,
     top: usize,
     gen_top: impl Fn(usize, &mut [MaybeUninit<Gf>], &mut [MaybeUninit<Gf>]) + Sync,
 ) -> (Vec<Option<FlatDense<Gf>>>, Vec<Gf>) {
     let _g = tracing::info_span!("mf:build_levels").entered();
-    let one = Gf::one();
-    debug_assert!(top >= 1 && nseg >= live);
+    let nseg = live;
+    debug_assert!(top >= 1);
     let mut slots: Vec<Option<FlatDense<Gf>>> = (0..top).map(|_| None).collect();
-    // Level `top`: generate live segments, fill the const tail with ones.
+    // Level `top`: generate live segments.
     let seg_top = 1usize << (top - 1);
     let mut lt = gf_uninit(nseg * seg_top);
     let mut rt = gf_uninit(nseg * seg_top);
@@ -260,13 +257,7 @@ fn build_levels_flat(
         .zip(cfg_chunks_mut!(rt, seg_top))
         .enumerate()
         .for_each(|(c, (lseg, rseg))| {
-            if c < live {
-                gen_top(c, lseg, rseg);
-            } else {
-                for value in lseg.iter_mut().chain(rseg.iter_mut()) {
-                    value.write(one);
-                }
-            }
+            gen_top(c, lseg, rseg);
         });
     // SAFETY: the chunk traversal covers every segment, and each branch
     // initializes every slot in both stores.
@@ -278,8 +269,7 @@ fn build_levels_flat(
         r: rt,
         seg: seg_top,
     });
-    // Levels top−1 .. 1: one elementwise pass each, all segments (the
-    // const segment's 1·1 products keep it all-ones with no special case).
+    // Levels top−1 .. 1: one elementwise pass each.
     for lvl in (1..top).rev() {
         let cseg = 1usize << lvl; // child (level lvl+1) stride
         let pseg = cseg >> 1; // parent (level lvl) stride
@@ -795,15 +785,10 @@ fn dense_jit_fused_grid_into(
 /// (`k ≥ 3`), else round 1's coefficient triple. `mk(c)` hands out tree
 /// `c`'s per-position value reader and its prefetch hook.
 #[allow(clippy::arithmetic_side_effects)]
-/// `extra_const` appends the elided tail's synthetic constant-1 group
-/// (see [`col_elide`]) through the SAME fused generator — the driver
-/// cannot recompute a fused round-1 entry itself, so the group has to be
-/// born here, all-ones value reader and all.
 fn jit_layer_generate<'a, V, L, MK>(
     hh: usize,
     zx: &[Gf],
     num_trees: usize,
-    extra_const: bool,
     tensors: &SuffixTensorArena<Gf>,
     mk: MK,
 ) -> (Vec<GroupBufs<'a, Gf>>, Option<PreRound<Gf>>)
@@ -812,7 +797,6 @@ where
     V: Fn(usize) -> Gf,
     L: Fn(usize),
 {
-    let one = Gf::one();
     if crate::piop::sumcheck::eq_factored::eqf_double() && zx.len() >= 3 && jit_grid() {
         let v2 = tensors.tensor(1);
         let generated: Vec<(GroupBufs<'_, Gf>, [Gf; 9])> = cfg_into_iter!(0..num_trees)
@@ -822,17 +806,13 @@ where
                 (GroupBufs::Dense(vec![pair]), g)
             })
             .collect();
-        let mut bufs = Vec::with_capacity(num_trees + 1);
-        let mut grid = Vec::with_capacity(num_trees + 1);
+        let mut bufs = Vec::with_capacity(num_trees);
+        let mut grid = Vec::with_capacity(num_trees);
         for (b, g) in generated {
             bufs.push(b);
             grid.push(g);
         }
-        if extra_const {
-            let (pair, g) = dense_jit_fused_grid(hh, v2, |_| one, |_| ());
-            bufs.push(GroupBufs::Dense(vec![pair]));
-            grid.push(g);
-        }
+
         (bufs, Some(PreRound::Grid(grid)))
     } else {
         let v1 = tensors.tensor(0);
@@ -843,31 +823,25 @@ where
                 (GroupBufs::Dense(vec![pair]), coeffs)
             })
             .collect();
-        let mut bufs = Vec::with_capacity(num_trees + 1);
-        let mut round1 = Vec::with_capacity(num_trees + 1);
+        let mut bufs = Vec::with_capacity(num_trees);
+        let mut round1 = Vec::with_capacity(num_trees);
         for (b, c) in generated {
             bufs.push(b);
             round1.push(c);
         }
-        if extra_const {
-            let (pair, coeffs) = dense_jit_fused_round1(hh, v1, |_| one, |_| ());
-            bufs.push(GroupBufs::Dense(vec![pair]));
-            round1.push(coeffs);
-        }
+
         (bufs, Some(PreRound::Coeffs(round1)))
     }
 }
 
 /// [`jit_layer_generate`] into ONE flat store: the same fused generators
-/// write each tree's segment directly (the const tail's all-ones segment
-/// included, generated through the same fused body so its `PreRound`
-/// entry is the identical value). Two allocations replace `2·(live+1)`.
+/// write each real tree's segment directly. Padding has no storage.
+/// Two allocations replace `2·live`.
 #[allow(clippy::arithmetic_side_effects)]
 fn jit_layer_generate_flat<V, L, MK>(
     hh: usize,
     zx: &[Gf],
     live: usize,
-    extra_const: bool,
     tensors: &SuffixTensorArena<Gf>,
     mk: MK,
 ) -> (FlatDense<Gf>, PreRound<Gf>)
@@ -876,8 +850,7 @@ where
     V: Fn(usize) -> Gf,
     L: Fn(usize),
 {
-    let one = Gf::one();
-    let nseg = live + usize::from(extra_const);
+    let nseg = live;
     let mut l = gf_uninit(nseg * hh);
     let mut r = gf_uninit(nseg * hh);
     let pre = if crate::piop::sumcheck::eq_factored::eqf_double() && zx.len() >= 3 && jit_grid() {
@@ -886,12 +859,8 @@ where
             .zip(cfg_chunks_mut!(r, hh))
             .enumerate()
             .map(|(c, (lseg, rseg))| {
-                if c < live {
-                    let (value, look) = mk(c);
-                    dense_jit_fused_grid_into(hh, v2, value, look, lseg, rseg)
-                } else {
-                    dense_jit_fused_grid_into(hh, v2, |_| one, |_| (), lseg, rseg)
-                }
+                let (value, look) = mk(c);
+                dense_jit_fused_grid_into(hh, v2, value, look, lseg, rseg)
             })
             .collect();
         PreRound::Grid(grids)
@@ -901,12 +870,8 @@ where
             .zip(cfg_chunks_mut!(r, hh))
             .enumerate()
             .map(|(c, (lseg, rseg))| {
-                if c < live {
-                    let (value, look) = mk(c);
-                    dense_jit_fused_round1_into(hh, v1, value, look, lseg, rseg)
-                } else {
-                    dense_jit_fused_round1_into(hh, v1, |_| one, |_| (), lseg, rseg)
-                }
+                let (value, look) = mk(c);
+                dense_jit_fused_round1_into(hh, v1, value, look, lseg, rseg)
             })
             .collect();
         PreRound::Coeffs(coeffs)
@@ -940,9 +905,8 @@ fn drive_grouped<'a>(
         live >= 1 && live <= num_trees,
         "live columns must be in 1..=2^s"
     );
-    // Elided trees are constant 1 (see `col_elide`): their whole tail is
-    // ONE synthetic group carrying the summed eq weight.
-    let has_const = live < num_trees;
+    // Elided trees are constant 1 (see `col_elide`); only their aggregate
+    // equality weight enters phase A.
     let one = Gf::one();
     absorb_gfs(transcript, 0x30, &roots);
     let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
@@ -968,8 +932,7 @@ fn drive_grouped<'a>(
                     (e, o)
                 }
                 ForestLevels::Flat(slots) => {
-                    // Stride-1 store: `l`/`r` ARE the per-tree root halves
-                    // (the const segment, when present, is already 1).
+                    // Stride-1 store: `l`/`r` are the live root halves.
                     let fs = slots[0].take().expect("level 1 present");
                     debug_assert_eq!(fs.seg, 1, "level-1 stride");
                     let (mut e, mut o) = (fs.l, fs.r);
@@ -988,39 +951,27 @@ fn drive_grouped<'a>(
             } else {
                 build_eq_x_r_vec(&z_c, &()).expect("nonempty tree point")
             };
-            // The elided tail's weight, folded into one group's `scale`.
+            // The elided tail's aggregate equality weight.
             let const_scale = eq_zc[live..].iter().fold(Gf::zero(), |a, &b| a + b);
-            // `bufs` carries `live` real groups, plus the synthetic
-            // constant group when a JIT layer already appended its
-            // fused round-1 entry (which the driver cannot recompute).
+            // Only real groups enter buffer processing. Padding is carried
+            // algebraically by `constant_weight` in the Gruen sumcheck.
             let mk_groups = |bufs: Vec<GroupBufs<'a, Gf>>| -> Vec<EqInnerGroupMixed<'_, Gf>> {
-                let mut gs: Vec<EqInnerGroupMixed<'_, Gf>> = bufs
-                    .into_iter()
+                assert_eq!(bufs.len(), live);
+                bufs.into_iter()
                     .enumerate()
                     .map(|(c, bufs)| EqInnerGroupMixed {
                         q: z_x.as_slice().into(),
-                        scale: if c < live { eq_zc[c] } else { const_scale },
+                        scale: eq_zc[c],
                         bufs,
                     })
-                    .collect();
-                if has_const && gs.len() == live {
-                    gs.push(EqInnerGroupMixed {
-                        q: z_x.as_slice().into(),
-                        scale: const_scale,
-                        bufs: GroupBufs::Dense(vec![(vec![one; 1 << ell], vec![one; 1 << ell])]),
-                    });
-                }
-                gs
+                    .collect()
             };
-            // Flat-store layers: group 0 borrows the shared point; the
-            // remaining marker groups use empty slices. Scales are the same
-            // eq weights, and the store carries every segment, including
-            // the const tail.
             let mk_groups_flat = |nseg: usize| -> Vec<EqInnerGroupMixed<'_, Gf>> {
+                assert_eq!(nseg, live);
                 (0..nseg)
                     .map(|c| EqInnerGroupMixed {
                         q: (if c == 0 { z_x.as_slice() } else { &[] }).into(),
-                        scale: if c < live { eq_zc[c] } else { const_scale },
+                        scale: eq_zc[c],
                         bufs: GroupBufs::Flat,
                     })
                     .collect()
@@ -1075,7 +1026,10 @@ fn drive_grouped<'a>(
                 };
             let (sc, r_x, finals) = prove_eq_inner_sumcheck_mixed_prepared(
                 transcript,
-                groups,
+                SharedPointInput {
+                    groups,
+                    constant_weight: const_scale,
+                },
                 &tau_sets,
                 &pair_tau_sets,
                 &t4_sets,
@@ -1085,13 +1039,9 @@ fn drive_grouped<'a>(
                 &(),
                 Some(prepared_suffix),
             );
-            // The elided trees' L and R are the all-ones multilinear, so
-            // their exit values are (1, 1) at any point — the synthetic
-            // group's own final is exactly that, and is dropped.
-            debug_assert!(
-                !has_const || finals[live][0] == (one, one),
-                "constant group must exit at (1, 1)"
-            );
+            // Elided trees evaluate to (1,1) at every point; restore them
+            // below in their original tree-index order for phase B.
+            debug_assert_eq!(finals.len(), live);
             let mut e = Vec::with_capacity(num_trees);
             let mut o = Vec::with_capacity(num_trees);
             for f in finals.iter().take(live) {
@@ -1293,8 +1243,8 @@ pub(crate) fn forest_lut4() -> bool {
 ///
 /// The driver's per-layer message is `Σ_c eq(z_c, c)·H_c(·)` with `H_c`
 /// linear in the group's `scale`, and every constant-1 tree has the SAME
-/// `H` — so the whole zero tail collapses into ONE synthetic group with
-/// `scale = Σ_{c ≥ live} eq(z_c, c)` and all-ones buffers. Char-2 addition
+/// `H` — so the whole zero tail contributes the scalar
+/// `C = Σ_{c ≥ live} eq(z_c, c)` without buffers. Char-2 addition
 /// is XOR, so re-associating the sum is exact: the round polynomials, the
 /// absorbed roots and the whole transcript are **byte-identical** to the
 /// un-elided forest. Nothing moves on the verifier side.
@@ -1364,10 +1314,9 @@ fn prove_merged_forest_lazy_impl(
     let depth = row_len.trailing_zeros() as usize;
     let s = p.col_vars;
     let num_trees = p.cols();
-    // Only the `live` leading trees are generated; the tail rides the
-    // driver's synthetic constant-1 group (see `col_elide`).
+    // Only the `live` leading trees are generated; the driver accounts
+    // for the constant tail analytically (see `col_elide`).
     let live = live.clamp(1, num_trees);
-    let has_const = live < num_trees;
     let one = Gf::one();
     if depth < 3 {
         // Tiny trees: the LeafBits round needs k ≥ 2 — materialise.
@@ -1599,8 +1548,7 @@ fn prove_merged_forest_lazy_impl(
             }
         };
         let (levels_l4, roots) = if use_flat {
-            let nseg = live + usize::from(has_const);
-            let (slots, roots) = build_levels_flat(live, nseg, depth - 3, gen3_flat);
+            let (slots, roots) = build_levels_flat(live, depth - 3, gen3_flat);
             (ForestLevels::Flat(slots), roots)
         } else {
             let (lv, roots) = build_levels(live, depth - 3, |c| {
@@ -1634,63 +1582,7 @@ fn prove_merged_forest_lazy_impl(
                     let (bufs, round1, flat) = if use_flat {
                         if jit_r1 {
                             let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                            let (fs, pre) =
-                                jit_layer_generate_flat(hh, zx, live, has_const, suffix, |c| {
-                                    let (lb, rb) = &cb[c];
-                                    let at = T4At {
-                                        lbits: lb,
-                                        rbits: rb,
-                                        t4: t4_src(t4f, &t4, &te, &to),
-                                        q1,
-                                    };
-                                    (
-                                        move |j| at.at(j),
-                                        move |j| {
-                                            if t4_pf {
-                                                at.prefetch_at(j);
-                                            }
-                                        },
-                                    )
-                                });
-                            (Vec::new(), Some(pre), Some(fs))
-                        } else {
-                            // Diagnostic (`F2Z_JIT_R1=0`): plain flat generation,
-                            // no fused round 1 — same values, flat segments.
-                            let nseg = live + usize::from(has_const);
-                            let one = Gf::one();
-                            let mut l = gf_uninit(nseg * hh);
-                            let mut r = gf_uninit(nseg * hh);
-                            cfg_chunks_mut!(l, hh)
-                                .zip(cfg_chunks_mut!(r, hh))
-                                .enumerate()
-                                .for_each(|(c, (lseg, rseg))| {
-                                    if c < live {
-                                        let (lb, rb) = &cb[c];
-                                        let full =
-                                            t4_level_values(lb, rb, t4_src(t4f, &t4, &te, &to), q1);
-                                        for (slot, &value) in lseg.iter_mut().zip(&full[..hh]) {
-                                            slot.write(value);
-                                        }
-                                        for (slot, &value) in rseg.iter_mut().zip(&full[hh..]) {
-                                            slot.write(value);
-                                        }
-                                    } else {
-                                        for value in lseg.iter_mut().chain(rseg.iter_mut()) {
-                                            value.write(one);
-                                        }
-                                    }
-                                });
-                            // SAFETY: every flat segment is fully initialized by
-                            // either the live-column copy or the constant branch.
-                            let l = unsafe { gf_assume_init(l) };
-                            // SAFETY: same coverage argument as for `l`.
-                            let r = unsafe { gf_assume_init(r) };
-                            (Vec::new(), None, Some(FlatDense { l, r, seg: hh }))
-                        }
-                    } else if jit_r1 {
-                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                        let (bufs, round1) =
-                            jit_layer_generate(hh, zx, live, has_const, suffix, |c| {
+                            let (fs, pre) = jit_layer_generate_flat(hh, zx, live, suffix, |c| {
                                 let (lb, rb) = &cb[c];
                                 let at = T4At {
                                     lbits: lb,
@@ -1707,6 +1599,53 @@ fn prove_merged_forest_lazy_impl(
                                     },
                                 )
                             });
+                            (Vec::new(), Some(pre), Some(fs))
+                        } else {
+                            // Diagnostic (`F2Z_JIT_R1=0`): plain flat generation,
+                            // no fused round 1 — same values, flat segments.
+                            let nseg = live;
+                            let mut l = gf_uninit(nseg * hh);
+                            let mut r = gf_uninit(nseg * hh);
+                            cfg_chunks_mut!(l, hh)
+                                .zip(cfg_chunks_mut!(r, hh))
+                                .enumerate()
+                                .for_each(|(c, (lseg, rseg))| {
+                                    let (lb, rb) = &cb[c];
+                                    let full =
+                                        t4_level_values(lb, rb, t4_src(t4f, &t4, &te, &to), q1);
+                                    for (slot, &value) in lseg.iter_mut().zip(&full[..hh]) {
+                                        slot.write(value);
+                                    }
+                                    for (slot, &value) in rseg.iter_mut().zip(&full[hh..]) {
+                                        slot.write(value);
+                                    }
+                                });
+                            // SAFETY: every flat segment is fully initialized by
+                            // the live-column copy.
+                            let l = unsafe { gf_assume_init(l) };
+                            // SAFETY: same coverage argument as for `l`.
+                            let r = unsafe { gf_assume_init(r) };
+                            (Vec::new(), None, Some(FlatDense { l, r, seg: hh }))
+                        }
+                    } else if jit_r1 {
+                        let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
+                        let (bufs, round1) = jit_layer_generate(hh, zx, live, suffix, |c| {
+                            let (lb, rb) = &cb[c];
+                            let at = T4At {
+                                lbits: lb,
+                                rbits: rb,
+                                t4: t4_src(t4f, &t4, &te, &to),
+                                q1,
+                            };
+                            (
+                                move |j| at.at(j),
+                                move |j| {
+                                    if t4_pf {
+                                        at.prefetch_at(j);
+                                    }
+                                },
+                            )
+                        });
                         (bufs, round1, None)
                     } else {
                         let bufs: Vec<GroupBufs<'_, Gf>> = cfg_into_iter!(0..live)
@@ -1843,7 +1782,7 @@ fn prove_merged_forest_lazy_impl(
                 .expect("leaf bits alive for the JIT regen");
             let (bufs, round1) = if jit_r1 {
                 let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
-                jit_layer_generate(hh, zx, live, has_const, suffix, |c| {
+                jit_layer_generate(hh, zx, live, suffix, |c| {
                     let (lb, rb) = &cb[c];
                     let at = T4At {
                         lbits: lb,
@@ -1998,6 +1937,10 @@ use crate::piop::sumcheck::quad::{
 /// changing: prover and verifier BOTH dispatch through this — the env
 /// var is the experiment's out-of-band configuration. Read per call.
 pub fn quad_active(p: &IntegerMatrixLayout) -> bool {
+    // A single tree uses the existing binary zero-variable reduction.
+    if p.col_vars == 0 {
+        return false;
+    }
     let knob = std::env::var("F2Z_QUAD").unwrap_or_default();
     let forced = knob == "force" || knob == "force2";
     if !(forced || knob == "1" || knob == "2") || forest_schedule() != ForestSchedule::L4 {
@@ -3427,7 +3370,7 @@ fn prove_merged_forest_lazy_multi_sched(
                     // round-1 message into the generation pass.
                     let hh = q1 >> 1;
                     let (bufs, round1) = if jit_r1 {
-                        jit_layer_generate(hh, zx, num_trees, false, suffix, |k| {
+                        jit_layer_generate(hh, zx, num_trees, suffix, |k| {
                             let (n, c) = (k >> s, k & (per - 1));
                             let t4 = &tabs[tab_of[n]].t4;
                             let (lb, rb) = &extracted[n][c];
@@ -3577,7 +3520,7 @@ fn prove_merged_forest_lazy_multi_sched(
             // message into the generation pass.
             let hh = h3 >> 1;
             let (bufs, round1) = if jit_r1 {
-                jit_layer_generate(hh, zx, num_trees, false, suffix, |k| {
+                jit_layer_generate(hh, zx, num_trees, suffix, |k| {
                     let (n, c) = (k >> s, k & (per - 1));
                     let t4 = &tabs[tab_of[n]].t4;
                     let (lb, rb) = &extracted[n][c];
@@ -4111,8 +4054,8 @@ mod tests {
 
     /// **Live-column elision is byte-identical.** A zero-padded witness
     /// ends in all-zero columns, whose trees are constant `α^0 = 1`;
-    /// eliding them (building only `live` trees + ONE synthetic
-    /// constant-1 group carrying the summed eq weight) must reproduce the
+    /// eliding them (building only `live` trees and carrying the constant
+    /// contribution analytically) must reproduce the
     /// un-elided forest exactly — same roots, same round polynomials,
     /// same exit claim, same transcript state — under every schedule, and
     /// the un-elided verifier must accept.
@@ -4141,7 +4084,7 @@ mod tests {
                 .map(|b| (0..w).map(|j| sample(0xB0B + (b * w + j) as u64)).collect())
                 .collect();
             let words = row_len.div_ceil(64);
-            for live in 1..=p.cols() {
+            for live in 0..=p.cols() {
                 // Columns `live..2^s` are ALL ZERO — the padding tail.
                 let rows: Vec<Vec<u64>> = (0..p.cols())
                     .map(|c| {
@@ -4162,7 +4105,11 @@ mod tests {
                 let packed_cols = pack_columns_from_rows(&p, &rows);
                 // The detector must find exactly the zero tail (the
                 // last live column is non-zero by construction).
-                assert_eq!(live_cols(&p, &rows), live, "detector (t={t},s={s},W={w})");
+                assert_eq!(
+                    live_cols(&p, &rows),
+                    live.max(1),
+                    "detector (t={t},s={s},W={w})"
+                );
 
                 for sched in [ForestSchedule::L2, ForestSchedule::L4, ForestSchedule::L8] {
                     let mut t_full = Blake3Transcript::new();

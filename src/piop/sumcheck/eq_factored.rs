@@ -2317,7 +2317,10 @@ where
 {
     prove_eq_inner_sumcheck_mixed_prepared(
         transcript,
-        groups,
+        SharedPointInput {
+            groups,
+            constant_weight: F::zero_with_cfg(field_cfg),
+        },
         tau_sets,
         pair_tau_sets,
         t4_sets,
@@ -2329,10 +2332,17 @@ where
     )
 }
 
+/// Real groups plus an analytic all-ones contribution at their shared point.
+/// A nonzero constant is supported only by the shared-point Gruen format.
+pub(crate) struct SharedPointInput<'a, F: Clone> {
+    pub(crate) groups: Vec<EqInnerGroupMixed<'a, F>>,
+    pub(crate) constant_weight: F,
+}
+
 /// Internal forest entry with suffixes constructed for this layer's shared point.
 pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<'_, F>>,
+    input: SharedPointInput<'_, F>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2348,6 +2358,14 @@ where
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
+    let SharedPointInput {
+        groups,
+        constant_weight,
+    } = input;
+    assert!(
+        gruen || constant_weight == F::zero_with_cfg(field_cfg),
+        "analytic constants require the shared-point Gruen format"
+    );
     // Flat single-pair storage (the wide-shallow forest layout): all
     // groups are `Flat` markers over ONE shared store, group 0 carries the
     // shared point and the rest leave `q` empty (no clones). Semantically
@@ -2599,17 +2617,18 @@ where
                 })
                 .collect()
         };
-        let claimed_sum = scales
-            .iter()
-            .zip(&final_evals)
-            .fold(zero, |sum, (scale, pairs)| {
-                let group_sum = pairs
-                    .iter()
-                    .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
-                        acc + &(left.clone() * right)
-                    });
-                sum + &(scale.clone() * &group_sum)
-            });
+        let claimed_sum =
+            scales
+                .iter()
+                .zip(&final_evals)
+                .fold(constant_weight.clone(), |sum, (scale, pairs)| {
+                    let group_sum = pairs
+                        .iter()
+                        .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
+                            acc + &(left.clone() * right)
+                        });
+                    sum + &(scale.clone() * &group_sum)
+                });
         return (
             SumcheckProof {
                 messages: Vec::new(),
@@ -3477,6 +3496,12 @@ where
                 ch.2 += &p.2;
             }
             if j == 1 {
+                // The all-ones group has H(X)=1: it contributes C only to
+                // the initial claim. Later C*A_j is the constant coefficient
+                // reconstructed from that claim by the verifier. Gruen sends
+                // only the two nonconstant coefficients, so no prefix buffer
+                // or per-round multiplication for the constant is needed.
+                ch.0 += &constant_weight;
                 claimed_sum = ch.0.clone() + &(qj.clone() * &(ch.1.clone() + &ch.2));
             }
             vec![ch.1, ch.2]
@@ -4018,6 +4043,8 @@ where
                         None
                     };
                     views.map(|views| {
+                        #[cfg(feature = "bench-internals")]
+                        let _activation = tracing::info_span!("eqf:mats_tile_active").entered();
                         if j == 2 {
                             let h_off = half << 2; // 2^k at j = 2
                             mats_fold_tiled(
@@ -4103,6 +4130,8 @@ where
                 out
             };
             if mat_grid_now && !mat_grids.is_empty() && mat_grids.iter().all(Option::is_some) {
+                #[cfg(feature = "bench-internals")]
+                let _activation = tracing::info_span!("eqf:mat_grid_deposit").entered();
                 // Every group's materialising fold produced the next
                 // round-pair's grid — deposit it; `grid_rho` stays unset
                 // until the NEXT round's challenge (the deposited-grid
@@ -4258,6 +4287,156 @@ mod tests {
                     })
             })
             .collect()
+    }
+
+    #[test]
+    fn analytic_constants_with_zero_equality_prefix() {
+        #[derive(Default)]
+        struct Fixed {
+            one: bool,
+            absorbed: Vec<u8>,
+        }
+        impl Transcript for Fixed {
+            fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
+                let mut bytes = vec![0; T::NUM_BYTES];
+                if self.one && !bytes.is_empty() {
+                    bytes[0] = 1;
+                }
+                T::read_transcription_bytes_exact(&bytes)
+            }
+            fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+                output.fill(0);
+            }
+            fn absorb_inner(&mut self, bytes: &[u8]) {
+                self.absorbed.extend_from_slice(bytes);
+            }
+        }
+        for k in 1..=6 {
+            for one in [false, true] {
+                let q = vec![if one { Gf::zero() } else { Gf::one() }; k];
+                let mk = |constant| EqInnerGroupMixed {
+                    q: q.as_slice().into(),
+                    scale: sample(777),
+                    bufs: GroupBufs::Dense(vec![(
+                        (0..1 << k)
+                            .map(|i| if constant { Gf::one() } else { sample(i) })
+                            .collect(),
+                        (0..1 << k)
+                            .map(|i| if constant { Gf::one() } else { sample(i + 100) })
+                            .collect(),
+                    )]),
+                };
+                let mut dense_t = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let dense = prove_eq_inner_sumcheck_mixed_gruen(
+                    &mut dense_t,
+                    vec![mk(false), mk(true)],
+                    &[],
+                    &[],
+                    &[],
+                    &(),
+                );
+                let mut analytic_t = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let analytic = prove_eq_inner_sumcheck_mixed_prepared(
+                    &mut analytic_t,
+                    SharedPointInput {
+                        groups: vec![mk(false)],
+                        constant_weight: sample(777),
+                    },
+                    &[],
+                    &[],
+                    &[],
+                    None,
+                    None,
+                    true,
+                    &(),
+                    None,
+                );
+                assert_eq!(dense.0, analytic.0);
+                assert_eq!(dense.1, analytic.1);
+                assert_eq!(dense_t.absorbed, analytic_t.absorbed);
+                let mut vt = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let sub = verify_eq_inner_sumcheck_gruen(&mut vt, &q, &analytic.0, &()).unwrap();
+                assert_eq!(sub.expected_evaluation, Gf::zero());
+            }
+        }
+    }
+
+    #[test]
+    fn analytic_constants_match_dense_transcript() {
+        use crate::transcript::Blake3Transcript;
+        for k in 0..=7 {
+            for edge in 0..3 {
+                let q: Vec<Gf> = (0..k)
+                    .map(|i| match edge {
+                        0 => Gf::zero(),
+                        1 => Gf::one(),
+                        _ => sample(90 + i as u64),
+                    })
+                    .collect();
+                for c in [Gf::zero(), Gf::one(), sample(777)] {
+                    let n = 1 << k;
+                    let mk = || EqInnerGroupMixed {
+                        q: q.as_slice().into(),
+                        scale: sample(42),
+                        bufs: GroupBufs::Dense(vec![(
+                            (0..n).map(|i| sample(i as u64)).collect(),
+                            (0..n).map(|i| sample(1000 + i as u64)).collect(),
+                        )]),
+                    };
+                    let constant = EqInnerGroupMixed {
+                        q: q.as_slice().into(),
+                        scale: c,
+                        bufs: GroupBufs::Dense(vec![(vec![Gf::one(); n], vec![Gf::one(); n])]),
+                    };
+                    let mut td = Blake3Transcript::new();
+                    let dense = prove_eq_inner_sumcheck_mixed_gruen(
+                        &mut td,
+                        vec![mk(), constant],
+                        &[],
+                        &[],
+                        &[],
+                        &(),
+                    );
+                    let mut ta = Blake3Transcript::new();
+                    let analytic = prove_eq_inner_sumcheck_mixed_prepared(
+                        &mut ta,
+                        SharedPointInput {
+                            groups: vec![mk()],
+                            constant_weight: c,
+                        },
+                        &[],
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        true,
+                        &(),
+                        None,
+                    );
+                    assert_eq!(analytic.0, dense.0, "k={k}, edge={edge}");
+                    assert_eq!(analytic.1, dense.1);
+                    assert_eq!(analytic.2, dense.2[..1]);
+                    assert_eq!(ta.state_digest(), td.state_digest());
+                    let mut tv = Blake3Transcript::new();
+                    let sub =
+                        verify_eq_inner_sumcheck_gruen(&mut tv, &q, &analytic.0, &()).unwrap();
+                    let eq = analytic.1.iter().zip(&q).fold(Gf::one(), |acc, (&r, &q)| {
+                        acc * ((Gf::one() + r) * (Gf::one() + q) + r * q)
+                    });
+                    let (l, r) = analytic.2[0][0];
+                    assert_eq!(sub.expected_evaluation, eq * (sample(42) * l * r + c));
+                }
+            }
+        }
     }
 
     #[test]

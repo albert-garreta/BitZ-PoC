@@ -1050,6 +1050,7 @@ fn run_once(
         .expect("verify");
     }
     drop(root_scope);
+    common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
     // Provenance scans are deliberately outside all reported timing
     // boundaries; they validate the trial but are not protocol work.
     assert_eq!(prepared.statement_digest(), &circuit.statement_digest());

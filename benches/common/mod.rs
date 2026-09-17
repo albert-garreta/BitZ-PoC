@@ -20,6 +20,7 @@
 
 pub mod cli;
 pub mod environment;
+pub mod proof_fingerprint;
 
 /// Serialize native SDK sessions in tests and explicitly supply their subscriber.
 #[cfg(all(test, feature = "span-metrics"))]
@@ -133,6 +134,7 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_BENCH_PASS",
     "F2Z_BENCH_QUIET",
     "F2Z_BENCH_PHASE_SAMPLES",
+    "F2Z_BENCH_PROOF_FINGERPRINT",
     "F2Z_BENCH_REPS",
     "F2Z_BENCH_SEED",
     "F2Z_BENCH_SHAPES",
@@ -144,10 +146,12 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_EQF_DOUBLE_MIN",
     "F2Z_EQF_FUSE",
     "F2Z_EQF_NOKERNEL",
+    "F2Z_EQF_PREFIX_MIN_GROUPS",
     "F2Z_EQ_TABLE_SAMPLES",
     "F2Z_FIXED_SCALAR",
     "F2Z_FLAT_FOREST",
     "F2Z_FOLDV_LUT",
+    "F2Z_GKR_DENSE_CACHE",
     "F2Z_INNER_FIELD_ACCUM",
     "F2Z_INNER_NATIVE_FOLD",
     "F2Z_JIT_GRID",
@@ -158,6 +162,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_LIG_PROFILE",
     "F2Z_LUT3",
     "F2Z_LUT4",
+    "F2Z_LUT16_UNROLL",
+    "F2Z_LUT16_SHARED_MIN_GROUPS",
     "F2Z_LUT_PRFM",
     "F2Z_MATS_PRE",
     "F2Z_MATS_TILE",

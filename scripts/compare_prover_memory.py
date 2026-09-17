@@ -19,10 +19,16 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--exponents', type=int, nargs='+', default=[7, 10])
     parser.add_argument('--threads', type=int, nargs='+', default=[1, 10])
+    parser.add_argument('--baseline-env', action='append', default=[])
+    parser.add_argument('--candidate-env', action='append', default=[])
+    parser.add_argument('--schedule', choices=['l2', 'l4', 'l8'], default='l4')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = {v: getattr(args, v).resolve(strict=True) for v in ['baseline', 'candidate']}
-    (args.output/'manifest.json').write_text(json.dumps({v: dict(path=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for v,p in binaries.items()}, indent=2))
+    (args.output/'manifest.json').write_text(json.dumps(dict(
+        binaries={v: dict(path=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for v,p in binaries.items()},
+        args={k: str(v) if isinstance(v, Path) else v for k,v in vars(args).items()},
+        affinity=sorted(os.sched_getaffinity(0))), indent=2))
     clean = {k:v for k,v in os.environ.items() if not k.startswith(('F2Z_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
     results = []
     for exponent in args.exponents:
@@ -31,7 +37,8 @@ def main():
             for variant, binary in binaries.items():
                 name = f'i{exponent}-t{threads}-{variant}'
                 directory = (args.output/name).resolve()
-                env = dict(clean, F2_FOREST_SCHEDULE='l4', RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads))
+                env = dict(clean, F2_FOREST_SCHEDULE=args.schedule, RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads))
+                env.update(item.split('=', 1) for item in getattr(args, variant + '_env'))
                 cpus = ','.join(map(str, sorted(os.sched_getaffinity(0))[:threads]))
                 log = args.output/(name+'.log')
                 with log.open('w') as out:
