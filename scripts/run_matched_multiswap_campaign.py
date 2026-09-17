@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import matched_multiswap_report as report
-from prepare_matched_limber import BASE_REVISION as LIMBER_BASE_REVISION
+from prepare_matched_limber import DEFAULT_DESTINATION, limber_dependency
 
 
 WORKLOAD_DISCLOSURE = (
@@ -579,7 +579,8 @@ def _parse_expected_digests(raw_values: Sequence[str]) -> dict[int, str]:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--f2z-root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--limber-root", type=Path)
+    parser.add_argument("--limber-root", type=Path, default=DEFAULT_DESTINATION,
+                        help=f"checkout of Cargo.toml's pinned Limber revision (default: {DEFAULT_DESTINATION})")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--campaign-id")
     parser.add_argument("--samples", type=int, default=10)
@@ -630,7 +631,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
         campaign_id = args.campaign_id or stamp
         f2z_root = args.f2z_root.resolve()
-        limber_root = (args.limber_root or (f2z_root.parent / "limber-impl")).resolve()
+        limber_root = args.limber_root.resolve()
+        limber_revision = limber_dependency(f2z_root)["rev"]
         run_dir = (
             args.output_dir.resolve()
             if args.output_dir
@@ -668,10 +670,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "comparison_checks": "pending",
             "canonical_validation": "pending",
         }
-        manifest["repositories"]["limber"]["instrumented_base_revision"] = LIMBER_BASE_REVISION
-        patch = f2z_root / "patches/limber-multiswap.patch"
-        if patch.is_file():
-            manifest["repositories"]["limber"]["matched_patch_sha256"] = hashlib.sha256(patch.read_bytes()).hexdigest()
+        manifest["repositories"]["limber"]["expected_git_revision"] = limber_revision
         if batch_counts is not None:
             manifest["workload"]["batch_counts"] = list(batch_counts)
             manifest["workload"]["k_semantics"] = "independent copies of the k=0 reference circuit in one proof"
@@ -687,10 +686,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise report.CampaignError(f"refusing to overwrite run directory {run_dir}")
         if not f2z_root.is_dir() or not limber_root.is_dir():
             raise report.CampaignError("F2Z and Limber repository roots must both exist")
+        if manifest["repositories"]["limber"]["git_revision"] != limber_revision:
+            raise report.CampaignError(
+                f"Limber checkout must be at Cargo.toml's pinned revision {limber_revision}; "
+                "pass --limber-root with a matching checkout"
+            )
         manifest["validator"] = None if args.draft else preflight_profiler(args.profiler)
-        ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", LIMBER_BASE_REVISION, "HEAD"], cwd=limber_root)
-        if ancestor.returncode:
-            raise report.CampaignError(f"Limber must descend from instrumented base {LIMBER_BASE_REVISION}")
         manifest["toolchains"] = {
             "f2z": _capture(["rustc", "--version"], f2z_root),
             "limber": _capture(["rustup", "run", "nightly-2026-07-01", "rustc", "--version"], limber_root),

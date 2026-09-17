@@ -2,7 +2,7 @@
 
 This diagnostic experiment is excluded from the paper benchmark suite. It
 measures terminal PCS claims and does not prove the multiplication constraints.
-Use the [native full-proving comparison](native-mul-compare.md) for u32 and
+Use the [native full-proving comparison](../README.md#integer-multiplication) for u32 and
 BabyBear comparisons in the paper. The details below document the historical
 PCS experiment.
 

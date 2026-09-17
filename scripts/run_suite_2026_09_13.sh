@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The 2026-09-13 bench-suite campaign queue (docs/native-mul-compare.md, "The
-# suite"): integer-mult tables at odd exponents, every scheme at 1 and 10
+# The 2026-09-13 bench-suite campaign queue (README.md, "Integer
+# multiplication"): integer-mult tables at odd exponents, every scheme at 1 and 10
 # threads, Binius suite under round-by-round accounting, Limber at the pinned
 # 100-bit Brakedown target, Plonky3-FRI at rate 1/2.
 #
 # Every campaign is one fresh runner process, serialized through
-# scripts/bench_gate.py (machine lock + sustained-idle wait + swap guard). Run
+# scripts/bench_gate.py (machine lock + swap guard). Run
 # this ONLY when no other session is measuring (the gate waits, but a campaign
 # started elsewhere without the lock will still collide) and with the source
 # tree frozen — the runners reject tracked-source edits mid-campaign.

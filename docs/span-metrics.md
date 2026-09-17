@@ -8,9 +8,17 @@ they do not maintain a second clock or collector. `src/utils/prof.rs` is retired
 
 ## Runtime requirements
 
-Install the native Perfetto trace processor separately and set
-`PERFETTO_TRACE_PROCESSOR=/absolute/path/to/trace_processor_shell`, or put that
-executable on `PATH`. Queries run locally, in Rust, through the native processor;
+Install the native Perfetto trace processor into this checkout:
+
+```bash
+bash scripts/install_trace_processor.sh
+export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
+```
+
+Run these commands from the repository root. The installer pins Perfetto v58.2,
+verifies its SHA-256 checksum, and reuses a matching installation. Alternatively,
+set `PERFETTO_TRACE_PROCESSOR` to another native processor or put
+`trace_processor_shell` on `PATH`. Queries run locally, in Rust, through the native processor;
 there is no Python step or automatic download. In-memory querying currently uses
 Unix `/dev/stdin`. Build profiling examples and the `f2z` CLI with
 `--features span-metrics`; add their backend features as usual.

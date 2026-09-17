@@ -508,9 +508,12 @@ dependencies = [
 name = "circuit"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "field",
  "num-traits",
  "rayon",
+ "thiserror 2.0.20",
+ "tracing",
 ]
 
 [[package]]

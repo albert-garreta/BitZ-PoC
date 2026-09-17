@@ -127,8 +127,7 @@ env RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=8 \
   --bench sha256_ecdsa_compare --target-dir /path/to/variant-target
 
 python3 scripts/bench_gate.py run --label ecdsa-verifier-merge \
-  --min-idle 88 --hold-seconds 10 --poll-seconds 2 \
-  --max-idle-wait-seconds 300 -- python3 /path/to/run.py
+  --poll-seconds 2 -- python3 /path/to/run.py
 ```
 
 The runner checks proof digests and sizes and requires more than a 5% verifier

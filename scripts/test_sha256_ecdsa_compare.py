@@ -79,6 +79,37 @@ class CampaignTests(unittest.TestCase):
         rows[1]["security"]["ligerito"] = ligerito_report(False)
         self.assertFalse(campaign.validate_rows(rows, self.case, 1))
 
+    def test_wall_clock_requires_explicit_backend_and_unavailable_phases(self):
+        case = dict(self.case, timing="wall-clock")
+        rows = copy.deepcopy(self.rows)
+        for row in rows:
+            row.update(timing="wall-clock", outer_ms=None, inner_ms=None,
+                       opening_ms=None, folding_ms=None,
+                       phases_seconds=[], verify_phases_seconds=[])
+        self.assertTrue(campaign.validate_rows(rows, case, 1))
+        self.assertFalse(campaign.validate_rows(rows, self.case, 1))
+        for key, value in [("timing", "perfetto"), ("timing", "unknown"),
+                           ("verify_ms", None), ("e2e_prover_ms", None),
+                           ("verified", False), ("opening_ms", 0), ("inner_ms", 0)]:
+            bad = copy.deepcopy(rows)
+            bad[1][key] = value
+            self.assertFalse(campaign.validate_rows(bad, case, 1), key)
+        with tempfile.TemporaryDirectory() as path:
+            directory = Path(path)
+            (directory / "case.result.json").write_text(json.dumps(dict(
+                case=case, rows=rows, status="complete", peak_rss_bytes=123)))
+            self.assertTrue(campaign.summarize(directory))
+            import csv
+            with (directory / "summary.csv").open() as stream:
+                summary = next(csv.DictReader(stream))
+            self.assertEqual(summary["timing"], "wall-clock")
+            self.assertEqual(summary["piop_ms"], "")
+            self.assertEqual(summary["iop_ms"], "")
+
+    def test_resume_rejects_changed_timing_backend(self):
+        old = dict(binary_sha256="native", runner_sha256="runner", timing="perfetto")
+        self.assertFalse(campaign.compatible_manifest(old, dict(old, timing="wall-clock")))
+
     def test_resume_rejects_changed_ligerito_profile(self):
         old = dict(binary_sha256="native", ligerito_profile="custom:3:4")
         self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))

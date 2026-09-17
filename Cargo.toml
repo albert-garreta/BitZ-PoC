@@ -59,7 +59,7 @@ postcard = { version = "1.1.3", default-features = false, features = ["alloc"], 
 bellpepper = { version = "0.4.1", optional = true }
 bellpepper-core = { version = "0.4.0", optional = true }
 ff = { version = "0.13.1", features = ["derive", "bits"], optional = true }
-limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0", default-features = false, optional = true }
+limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "836c50f23e674098dcfbe42a4873f583d4e0fe3f", default-features = false, optional = true }
 spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "d3e686ebc4554cabfbe6282ef3c91baba00f755f", default-features = false, features = ["sha256-ecdsa"], optional = true }
 
 # Optional Binius64 stack for the PCS and native SHA-256 comparisons.
@@ -226,6 +226,15 @@ required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
 # Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
 # Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
 # 21 measured verified samples by default.
+
+[[bench]]
+name = "sha256_chain_compare"
+harness = false
+required-features = ["span-metrics", "binius64-bench"]
+
+[[test]]
+name = "sha256_chain_comparison"
+required-features = ["span-metrics", "binius64-bench"]
 
 [[bench]]
 name = "hybrid_u32_sha256"

@@ -83,22 +83,24 @@ every measured proof.
 
 ## Prepare Limber
 
-The required instrumented base is
-`861f10a6a4d705d92a9faf13a8f860d8ba057ca0` in
-`https://github.com/wu-s-john/limber-impl.git`. The patch is stored in this
-repository so reproducing the comparison does not depend on a temporary
-working directory:
+The required published revision is
+`836c50f23e674098dcfbe42a4873f583d4e0fe3f` in
+`https://github.com/wu-s-john/limber-impl.git`. Both the setup helper and the
+campaign runner read this pin from F2Z's `Cargo.toml` and require Python 3.11
+or newer. Prepare a checkout directly from that revision:
 
 ```sh
 python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
 ```
 
-An existing local clone can be supplied with `--source PATH`. The helper
-refuses existing destinations, checks out the exact base on
-`codex/multiswap-matched`, checks/applies the patch, and creates a local commit.
-The current patch is `patches/limber-multiswap.patch`; recreate checkouts made
-with the older patch before running the 114-bit campaign. It prints the resulting
-revision and patch SHA-256. Nothing is pushed.
+An existing local clone containing the pinned revision can be supplied with
+`--source PATH`. The helper refuses existing destinations, checks out the
+published commit with detached HEAD, and prints the path, source, and revision.
+It applies no patch and creates no commit. Skip preparation if the checkout
+already exists at the pinned revision.
+
+The runner defaults to `/tmp/limber-matched114`. Use `--limber-root` for another
+checkout; execution rejects a revision that differs from the Cargo dependency.
 
 ## Preview and run
 

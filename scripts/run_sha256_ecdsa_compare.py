@@ -84,6 +84,15 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None):
         return False
     for sample, row in enumerate(rows):
         row = sample_metrics(row)
+        timing = row.get("timing", "perfetto")
+        if timing not in ("perfetto", "wall-clock") or timing != case.get("timing", "perfetto"):
+            return False
+        if timing == "wall-clock":
+            if case["method"].startswith("binius64"):
+                return False
+            if any(row.get(k) is not None for k in
+                   ("outer_ms", "inner_ms", "opening_ms", "folding_ms")):
+                return False
         if row.get("schema") != SCHEMA or row.get("verified") is not True:
             return False
         if any(row.get(k) != v for k, v in case.items()):
@@ -140,6 +149,8 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None):
         for key in METRICS:
             value = row.get(key)
             optional = ["folding_ms", "outer_ms", "inner_ms", "opening_ms"]
+            if timing == "wall-clock":
+                optional += ["piop_ms", "iop_ms"]
             if value is None and key in optional:
                 continue
             if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
@@ -157,11 +168,11 @@ def summarize(directory):
     fields = ["method", "log_compressions", "r", "c", "security_target", "threads", "seed",
               "status", "samples", "peak_rss_bytes", "fixture_id", "security_model",
               "economic_bits", "statistical_bits_lower_bound", *METRICS,
-              "log_inv_rate", "ligerito_profile"]
+              "log_inv_rate", "ligerito_profile", "timing"]
     fixture_ids = {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
                      "fixture_id", "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", "security_model", "economic_bits",
-                     "statistical_bits_lower_bound", *METRICS, "log_inv_rate", "ligerito_profile"]
+                     "statistical_bits_lower_bound", *METRICS, "log_inv_rate", "ligerito_profile", "timing"]
     with (directory / "summary.csv").open("w", newline="") as stream, \
             (directory / "samples.csv").open("w", newline="") as sample_stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -171,6 +182,7 @@ def summarize(directory):
         for path, result in zip(paths, results):
             row = {k: result["case"][k] for k in fields[:7]}
             row.update(status=result["status"], peak_rss_bytes=result["peak_rss_bytes"],
+                       timing=result["case"].get("timing", "perfetto"),
                        log_inv_rate=result["case"].get("log_inv_rate"),
                        ligerito_profile=result["case"].get("ligerito_profile"))
             normalized = [sample_metrics(s) for s in result["rows"]]
@@ -210,6 +222,38 @@ def summarize(directory):
         "memory_note": "peak_rss_bytes is the whole worker maximum, including setup and all trials; repeated in samples.csv, not measured per proof.",
     }, indent=2) + "\n")
     return not mismatches
+
+
+def print_summary(directory):
+    """Print median timings and whole-worker peak memory, including resumed cases."""
+    columns = [("method", "Method"), ("status", "Status"), ("timing", "Timing"),
+               ("log_compressions", "Exponent"), ("threads", "Threads"),
+               ("ligerito_profile", "Profile"), ("setup_ms", "Setup ms"),
+               ("witness_ms", "Witness ms"), ("prove_ms", "Prove ms"),
+               ("e2e_prover_ms", "E2E ms"), ("verify_ms", "Verify ms"),
+               ("proof_material_bytes", "Proof bytes"), ("peak_rss_bytes", "Peak RSS MiB")]
+    with (directory / "summary.csv").open() as stream:
+        rows = list(csv.DictReader(stream))
+    table = [[label for _, label in columns]]
+    for row in rows:
+        values = []
+        for key, _ in columns:
+            value = row.get(key) or "-"
+            if row["status"] != "complete" and key in METRICS:
+                value = "-"
+            elif value != "-" and key.endswith("_ms"):
+                value = f"{float(value):.3f}"
+            elif value != "-" and key == "peak_rss_bytes":
+                value = f"{int(value) / 1024**2:.1f}"
+            values.append(value)
+        table.append(values)
+    widths = [max(len(row[i]) for row in table) for i in range(len(columns))]
+    print("\nMedian timings (warmup excluded; E2E excludes setup and codec):")
+    for row in table:
+        print("  ".join(value.ljust(width) for value, width in zip(row, widths)))
+    print("\nPeak RSS is the whole-worker maximum, including setup, warmup, measured proofs "
+          "and verification; it is not a per-proof median. MiB = 2^20 bytes.")
+    print(f"\nFull results: {directory / 'summary.csv'}\nIndividual trials: {directory / 'samples.csv'}")
 
 
 def build(args, directory):
@@ -296,6 +340,8 @@ def run_case(binary, case, args, directory):
     worker = args.binius64_worker if binius else binary
     command = [str(worker), "--method", case["method"], "--r", str(r), "--c", str(c),
                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
+    if not binius:
+        command.extend(["--timing", args.timing])
     if case["security_target"] is not None:
         command.extend(["--target", str(case["security_target"])])
     if "log_inv_rate" in case:
@@ -420,7 +466,7 @@ def prepare_binius(args, directory):
 
 def compatible_manifest(previous, current):
     return all(previous.get(key) == current.get(key) for key in
-               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile", "binius_log_inv_rate"])
+               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile", "binius_log_inv_rate", "timing"])
 
 
 def main():
@@ -448,6 +494,8 @@ def main():
     parser.add_argument("--memory-gib", type=int, default=48)
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument("--timing", choices=["perfetto", "wall-clock"], default="perfetto",
+                        help="wall-clock uses Rust timers without Perfetto; supported for F2Z and Spartan, with internal phase timings unavailable")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()
@@ -455,12 +503,16 @@ def main():
         parser.error("select either --binius-log-inv-rate or --binius-rates")
     args.binius_rates = args.binius_rates or ([args.binius_log_inv_rate] if args.binius_log_inv_rate is not None else DEFAULT_BINIUS_RATES)
     args.with_binius64 = any(method.startswith("binius64") for method in args.methods)
-    if os.environ.get("F2Z_LIG_PROFILE"):
-        parser.error("unset F2Z_LIG_PROFILE: the runner selects it per case (--f2z-profiles)")
     if args.summarize_only:
         if not args.output.is_dir() or not any(args.output.glob("*.result.json")):
             parser.error("--summarize-only requires an output directory with recorded cases")
-        return 0 if summarize(args.output.resolve()) else 1
+        matched = summarize(args.output.resolve())
+        print_summary(args.output.resolve())
+        return 0 if matched else 1
+    if os.environ.get("F2Z_LIG_PROFILE"):
+        parser.error("unset F2Z_LIG_PROFILE: the runner selects it per case (--f2z-profiles)")
+    if args.timing == "wall-clock" and args.with_binius64:
+        parser.error("--timing wall-clock supports --methods f2z-split f2z-all spartan-mc")
     if args.exponents and any(i not in range(3, 17) for i in args.exponents):
         parser.error("compression exponents must be in 3..16")
     try:
@@ -477,6 +529,7 @@ def main():
     directory = args.output.resolve()
     binary = args.binary.resolve(strict=True) if args.binary else build(args, directory)
     manifest = metadata(binary)
+    manifest["timing"] = args.timing
     # Profiles are pinned per case (recorded in each case and row); the
     # manifest-level value only guards resumption against runner-policy drift.
     manifest["ligerito_profile"] = "per-case:" + ",".join(args.f2z_profiles)
@@ -509,11 +562,15 @@ def main():
             target.write_bytes((ROOT / relative).read_bytes())
     jobs = list(cases(spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
                       f2z_profiles=args.f2z_profiles, binius_rates=sorted(set(args.binius_rates))))
+    for case in jobs:
+        if not case["method"].startswith("binius64"):
+            case["timing"] = args.timing
     (directory / "requested_cases.json").write_text(json.dumps(jobs, indent=2)+"\n")
     complete = True
     for case in jobs:
         complete = run_case(binary, case, args, directory) and complete
     matched = summarize(directory)
+    print_summary(directory)
     if not matched:
         print("ERROR: completed methods used different fixtures; see comparison.json", file=sys.stderr)
     return 0 if complete and matched else 1

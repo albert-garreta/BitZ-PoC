@@ -11,5 +11,5 @@ against the other schemes.
 It lives here, not in `protocol/benches/`, because the two crates pin
 incompatible `crypto-bigint` releases and cannot be linked together. To run
 it, copy it into a zinc-plus checkout; the commands are in
-`BENCH_INSTRUCTIONS.md`, the design and the CHECKED-validated geometry in
-`docs/native-mul-compare.md`.
+[BENCH_INSTRUCTIONS.md](../../BENCH_INSTRUCTIONS.md). See also
+[the multiplication benchmark instructions](../../README.md#integer-multiplication).

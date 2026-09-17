@@ -1,4 +1,5 @@
 /target
+/.tools/perfetto/
 /crates/*/target/
 /bench_results/
 /benches/results/

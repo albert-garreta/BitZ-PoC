@@ -1471,7 +1471,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "limber"
 version = "0.1.0"
-source = "git+https://github.com/wu-s-john/limber-impl.git?rev=861f10a6a4d705d92a9faf13a8f860d8ba057ca0#861f10a6a4d705d92a9faf13a8f860d8ba057ca0"
+source = "git+https://github.com/wu-s-john/limber-impl.git?rev=836c50f23e674098dcfbe42a4873f583d4e0fe3f#836c50f23e674098dcfbe42a4873f583d4e0fe3f"
 dependencies = [
  "bellpepper",
  "bellpepper-core",

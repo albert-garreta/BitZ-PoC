@@ -1,8 +1,8 @@
 # Benchmarks in the paper
 
 All commands run from the repository root. Measurements are serialized by
-`scripts/bench_gate.py` (machine lock, sustained-idle wait, swap guard): run
-one campaign at a time, on an otherwise idle machine.
+`scripts/bench_gate.py` (machine lock and swap guard). Campaigns start as soon
+as the lock is available, without waiting for a CPU-idle threshold.
 
 ```sh
 rustup toolchain install 1.98.1
@@ -11,6 +11,17 @@ export RUSTFLAGS="-C target-cpu=native"
 
 ## Campaigns
 
+### Integer multiplication
+
+```sh
+python3 scripts/run_multiplication_benchmarks.py \
+  --workloads u32 u64 u128 --threads 1 10 --reps 5
+```
+
+Add `--dry-run` to preview the plan. Results go to a fresh
+`PerfRuns/<timestamp>-multiplication/`, or a new directory selected with
+`--output`. Its top-level `metrics.csv` combines all completed campaigns.
+
 ### Suite: integer multiplication, SHA+ECDSA, hybrid, MultiSwap
 
 ```sh
@@ -18,9 +29,6 @@ bash scripts/run_suite_2026_09_13.sh                  # every phase, in order
 bash scripts/run_suite_2026_09_13.sh sha-ecdsa        # tab:sha256-ecdsa
 bash scripts/run_suite_2026_09_13.sh hybrid-witness   # tab:hybrid
 bash scripts/run_suite_2026_09_13.sh hybrid-counts    # tab:hybrid-equal-counts
-bash scripts/run_suite_2026_09_13.sh u32              # tab:native-mul
-bash scripts/run_suite_2026_09_13.sh u64              # tab:native-mul-u64
-bash scripts/run_suite_2026_09_13.sh u128             # tab:native-mul-u128
 bash scripts/run_suite_2026_09_13.sh multiswap        # tab:multiswap (F2Z row)
 ```
 

@@ -1,4 +1,4 @@
-//! Native end-to-end multiplication proofs. See docs/native-mul-compare.md.
+//! Native end-to-end multiplication proofs. See README.md, "Integer multiplication".
 #[path = "mul_e2e_compare/binius.rs"]
 mod binius;
 #[path = "mul_e2e_compare/binius_ligerito.rs"]

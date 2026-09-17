@@ -46,6 +46,40 @@ and compiler flags are inherited; `RUSTFLAGS` defaults to `-C target-cpu=native`
 Selecting `binius64` additionally builds its isolated worker; the root comparison feature
 does not enable the root Binius, Plonky3, or Limber adapters.
 
+For F2Z or Spartan results without Perfetto or `trace_processor_shell`, select
+`--timing wall-clock`:
+
+```sh
+env -u F2Z_LIG_PROFILE RUSTFLAGS="-C target-cpu=native" \
+  python3 scripts/run_sha256_ecdsa_compare.py \
+  --output bench_results/sha256-p256-wall-clock \
+  --methods f2z-split --exponents 7 --targets 100 --threads 10 \
+  --seeds 0 --reps 5 --f2z-profiles custom:1:4 --timing wall-clock
+```
+
+This mode uses Rust's monotonic clock for setup, witness generation, commitment,
+protocol, end-to-end proving, serialization, and verification. Proofs are still
+serialized and verified. Internal phase breakdowns (outer, inner, opening,
+folding, and the derived PIOP/IOP split) are unavailable and remain null in JSON
+and blank in CSV. It supports `f2z-split`, `f2z-all`, and `spartan-mc`.
+The default `--timing perfetto` retains phase breakdowns and requires the native
+processor on `PATH` or at `PERFETTO_TRACE_PROCESSOR`.
+
+The runner prints median timings and `Peak RSS MiB` for every method after each
+campaign, with full results in `summary.csv` and individual trials in
+`samples.csv`. Peak RSS is the whole-worker maximum, including setup, warmup,
+measured proofs and verification; it is not a per-proof median. CSV and JSON
+retain the original `peak_rss_bytes` values. To display saved results
+without rebuilding or running any worker:
+
+```sh
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --output bench_results/sha256-p256-wall-clock --summarize-only
+```
+
+Choose a new output directory when changing timing backends or benchmark code;
+the manifest prevents mixing measurements from different configurations.
+
 To compare Spartan chunkings of a 1,024-compression chain:
 
 ```sh
@@ -78,6 +112,7 @@ sha256_ecdsa_compare --method f2z-split|f2z-all|spartan-mc|binius64|binius64-lig
                     --r R --c C
                     [--target 100|128] [--log-inv-rate 1|3] [--threads N] [--reps N] [--seed N]
                     [--fixture FILE] [--binius64-worker PATH]
+                    [--timing perfetto|wall-clock]
 ```
 
 `--log-inv-rate` selects the Binius-family commitment rate (1 = rate 1/2,

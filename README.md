@@ -89,6 +89,121 @@ for custom sizes, timing definitions, proof files and security accounting.
 Cross-system comparisons measure complete native proofs: witness generation,
 commitment, constraint proving, PCS opening, and verification.
 
+Install the native Perfetto trace processor locally, then set its path in each
+shell used for benchmarks. Run these commands from the repository root:
+
+```bash
+bash scripts/install_trace_processor.sh
+export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
+export RUSTFLAGS="-C target-cpu=native"
+```
+
+The installer downloads Perfetto **v58.2** for macOS or Linux, verifies its
+SHA-256 checksum, and reuses an existing matching installation. It requires
+`curl` and `sha256sum` or `shasum`. The binary stays in this checkout's ignored
+`.tools/perfetto/` directory; no system installation is needed.
+
+### Run all five benchmark campaigns
+
+This block runs SHA-256/P-256, SHA-256 chain comparisons, multiplication comparisons,
+the BitZ full-product u32 sweep, and matched MultiSwap sequentially. It uses
+Python 3.11 or newer and an existing Limber checkout at the pinned revision.
+Adjust the F2Z and Limber directory paths for your machine.
+
+These commands run directly, without the benchmark gate. MultiSwap's
+`--draft` runs proofs, verification, and repository comparison checks while
+skipping the external `zk_trace.py` checks. Results are labeled accordingly.
+The block stops on failure and saves logs and reports under one fresh
+`bench_results/all-benchmarks-*` directory, including the u32 LaTeX output.
+
+```bash
+bash <<'BASH'
+set -euo pipefail
+
+cd /Users/johnwu/code/zk/f2z-pcs
+
+# Setup
+rustup toolchain install 1.98.1
+rustup toolchain install nightly-2026-07-01
+bash scripts/install_trace_processor.sh
+
+export RUSTFLAGS="-C target-cpu=native"
+export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
+unset F2Z_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
+
+mkdir -p bench_results
+export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
+echo "Results: $RUN_DIR"
+
+# Use the existing pinned Limber checkout.
+LIMBER_DIR=/tmp/limber-matched114
+test "$(git -C "$LIMBER_DIR" rev-parse HEAD)" = \
+  "836c50f23e674098dcfbe42a4873f583d4e0fe3f"
+
+# 1. SHA-256 + P-256: F2Z, Binius64, Binius64-Ligerito
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --output "$RUN_DIR/sha256-p256" \
+  --methods f2z-split binius64 binius64-ligerito \
+  --exponents 4 5 6 7 \
+  --targets 100 \
+  --threads 1 10 \
+  --reps 5 \
+  --f2z-profiles custom:1:4 custom:3:4 \
+  --binius-rates 1 3 \
+  --timing perfetto \
+  2>&1 | tee "$RUN_DIR/sha256-p256.log"
+
+# 2. SHA-256 chains: F2Z, Binius64, Binius64-Ligerito
+python3 scripts/run_sha256_chain_compare.py \
+  --methods f2z binius64 binius64-ligerito \
+  --exponents 7 8 9 10 11 12 13 14 15 16 \
+  --threads 1 10 \
+  --reps 5 \
+  --f2z-profiles custom:1:4 custom:3:4 \
+  --binius-rates 1 3 \
+  --output "$RUN_DIR/sha256-chain" \
+  2>&1 | tee "$RUN_DIR/sha256-chain.log"
+
+# 3. All multiplication comparisons
+python3 scripts/run_multiplication_benchmarks.py \
+  --no-gate \
+  --workloads u32 u64 u128 \
+  --backends f2z binius64 binius64-ligerito plonky3-fri limber \
+  --threads 1 10 \
+  --reps 5 \
+  --f2z-profiles custom:1:4 custom:3:4 \
+  --binius-rates 1 3 \
+  --output "$RUN_DIR/multiplication" \
+  2>&1 | tee "$RUN_DIR/multiplication.log"
+
+# 4. BitZ full-product u32 × u32 → u64, with component breakdown
+cargo +1.98.1 run --release --bin f2z \
+  --features unchecked,span-metrics -- \
+  --mul-sweep 15-22 \
+  --threads 10 \
+  --reps 5 \
+  --profile custom:1:4 \
+  --cooldown 20 \
+  --latex "$RUN_DIR/u32-full-product.tex" \
+  2>&1 | tee "$RUN_DIR/u32-full-product.log"
+
+# 5. MultiSwap: F2Z, Limber-Hyrax, Limber-Brakedown
+python3 scripts/run_matched_multiswap_campaign.py \
+  --draft \
+  --limber-root "$LIMBER_DIR" \
+  --security-bits 114 \
+  --batch-counts 1,2,4,8,16 \
+  --all-threads 10 \
+  --warmups 1 \
+  --samples 10 \
+  --rustflags="-C target-cpu=native" \
+  --output-dir "$RUN_DIR/multiswap" \
+  2>&1 | tee "$RUN_DIR/multiswap.log"
+
+echo "Completed. Results: $RUN_DIR"
+BASH
+```
+
 ### Raw performance of BitZ PCS on the core LinBitsRings relation
 
 ```sh
@@ -127,6 +242,24 @@ regenerates the paper table from a finished run.
 
 ### Integer multiplication
 
+Run all multiplication comparisons sequentially with explicit options:
+
+```bash
+python3 scripts/run_multiplication_benchmarks.py \
+  --workloads u32 u64 u128 --threads 1 10 --reps 5
+```
+
+Add `--dry-run` to preview the sizes, systems, rates and commands. Use
+`--backends f2z limber` or `--exponents 15 17 19` to select a smaller run,
+and `--output bench_results/multiplication-run` to name a new results directory.
+By default, results go into a fresh `PerfRuns/<timestamp>-multiplication/`
+directory with a combined `metrics.csv`, `suite.json` progress, and per-campaign
+logs and raw samples. The runner uses the local Perfetto installation above,
+preserves the paper suite's per-backend size limits and rates, and retains the
+machine lock and swap guards. Campaigns start as soon as the lock is available.
+Add `--no-gate` to run campaigns directly without the lock or swap guard.
+Use `--help` for the full list of options.
+
 *BitZ performance step-by-step*
 
 ```sh
@@ -147,7 +280,7 @@ bash scripts/run_native_mul_compare.sh
 
 
 *64-bit multiplication* (`x · y = z_lo + 2^64 · z_hi` for random 64-bit `x, y`; the `u64` workload
-runs on BitZ and Binius64, see `docs/native-mul-compare.md`):
+runs on BitZ and Binius64):
 ```sh
 RAYON_NUM_THREADS=8 \
 F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
@@ -186,8 +319,6 @@ multiplications modulo 2^32** on F2Z, Binius64, Plonky3-FRI and
 Limber-Brakedown, with identical inputs. Limber uses the `int_mult` example
 on your fork's `f2z-benching` branch in the sibling checkout. The old
 multiplication Limber adapter has been removed.
-See the [native multiplication benchmark guide](docs/native-mul-compare.md)
-for setup, security targets, measurement boundaries, and table generation.
 
 ### RSA MultiSwap — matched 114-bit comparison
 
@@ -206,13 +337,19 @@ roughly 114-bit bound. This accounting is per check/round, not a combined
 whole-proof soundness bound or an RSA key-strength claim. Limber retains its
 native 128-bit integer target and 117-bit integer challenge bound target.
 
-Run these commands from the repository root. Prepare the patched Limber fork
-once, using a destination that does not already exist; skip this step if it
-was prepared with the current patch (recreate older 112-bit checkouts):
+Run these commands from the repository root. MultiSwap uses the same published
+Limber revision as `Cargo.toml`: `836c50f23e674098dcfbe42a4873f583d4e0fe3f`.
+Prepare its checkout once, using a destination that does not already exist;
+skip this step if `/tmp/limber-matched114` is already at that revision:
 
 ```sh
 python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
 ```
+
+This clones the pinned revision directly, with no patching or local commits.
+The runner defaults to `/tmp/limber-matched114`; `--limber-root` selects another
+checkout, whose revision must match the Cargo dependency pin. The setup and
+campaign scripts require Python 3.11 or newer.
 
 The runner requires this repository's pinned Rust toolchain and Limber's
 `nightly-2026-07-01`. It sets `MSCFG=paper` and each backend's security
@@ -436,6 +573,35 @@ PIOP and the proof bytes are the independent batch's.
 `prepare_sha256_chain_batch_with_profile_and_initial_state` prepares a
 chain from any public initial chaining value (a continuation).
 
+Compare the same raw chain with **F2Z, Binius64, and Binius64-Ligerito**:
+
+```bash
+python3 scripts/run_sha256_chain_compare.py \
+  --methods f2z binius64 binius64-ligerito \
+  --exponents 7 8 9 10 11 12 13 14 15 16 \
+  --threads 1 10 --reps 5 \
+  --f2z-profiles custom:1:4 custom:3:4 --binius-rates 1 3 \
+  --output bench_results/sha256-chain-comparison
+```
+
+This runs 120 configurations sequentially, with one excluded warmup per
+configuration. Every backend uses identical deterministic public blocks and
+final chaining state, starts from the standard IV, and verifies every proof.
+No padding or ECDSA is added. `--dry-run` previews the matrix without building
+or writing files. The runner uses the local Perfetto processor and runs directly
+without `bench_gate` or an external Python profiler.
+
+The new output directory contains `summary.csv` (median timings and whole-worker
+peak RSS), `samples.csv`, raw result JSON with phase timings and security details,
+logs, fixtures, and source/build provenance. Prove time includes commitment;
+E2E also includes witness generation, while setup and verification are separate.
+Peak RSS includes fixture construction, setup and warmup, and excludes compilation.
+F2Z proof size combines analytical PIOP payload bytes with serialized PCS and
+commitment bytes; both Binius variants report serialized proofs including
+commitments. The 100-bit F2Z economic target, BaseFold query target, and
+Binius-Ligerito per-round algebraic target have distinct accounting, recorded
+in each result. Timed-out or invalid cases retain their logs and fail the campaign.
+
 ### Padded SHA-256 message with P-256 ECDSA
 
 The `ecdsa` feature adds one padded message hash followed by one signature
@@ -591,9 +757,7 @@ python3 scripts/native_mul_table.py PerfRuns/<run-directory> --out paper/native-
 
 The exporter rejects incompatible workloads, configurations, corpora,
 measurement policies and machines. Historical chain, Hyrax, WHIR and
-full-product rows remain separate. The [benchmark guide](docs/native-mul-compare.md)
-documents timing and proof-size conventions, tested revisions, validation,
-wider workloads, and deferred work.
+full-product rows remain separate.
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
 ```sh

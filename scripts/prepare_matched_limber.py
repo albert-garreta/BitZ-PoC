@@ -1,40 +1,35 @@
 #!/usr/bin/env python3
-"""Create an isolated Limber revision with the matched-comparison patch."""
+"""Check out the published Limber revision pinned in F2Z's Cargo.toml."""
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import subprocess
+import tomllib
 
-BASE_REVISION = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0"
-UPSTREAM = "https://github.com/wu-s-john/limber-impl.git"
+DEFAULT_DESTINATION = Path("/tmp/limber-matched114")
+
+
+def limber_dependency(f2z_root: Path) -> dict[str, object]:
+    with (f2z_root / "Cargo.toml").open("rb") as manifest:
+        return tomllib.load(manifest)["dependencies"]["limber"]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("destination", type=Path)
-    parser.add_argument("--source", default=UPSTREAM, help="Git URL or existing local clone")
+    parser.add_argument("destination", type=Path, nargs="?", default=DEFAULT_DESTINATION)
+    parser.add_argument("--source", help="Git URL or existing local clone (default: Cargo.toml dependency)")
     args = parser.parse_args()
     destination = args.destination.resolve()
     if destination.exists():
         parser.error("destination already exists; choose an unused checkout path")
-    patch = Path(__file__).resolve().parents[1] / "patches/limber-multiswap.patch"
-    subprocess.run(["git", "clone", "--no-checkout", args.source, str(destination)], check=True)
-    subprocess.run(["git", "checkout", "-b", "codex/multiswap-matched", BASE_REVISION], cwd=destination, check=True)
-    subprocess.run(["git", "apply", "--check", str(patch)], cwd=destination, check=True)
-    subprocess.run(["git", "apply", str(patch)], cwd=destination, check=True)
-    patch_sha256 = hashlib.sha256(patch.read_bytes()).hexdigest()
-    subprocess.run(["git", "add", "--all"], cwd=destination, check=True)
-    subprocess.run([
-        "git", "-c", "user.name=Codex", "-c", "user.email=codex@openai.com", "commit", "--no-gpg-sign",
-        "-m", "Match MultiSwap batches and integer commitment security targets",
-        "-m", f"Base: {BASE_REVISION}\nPatch-SHA256: {patch_sha256}",
-    ], cwd=destination, check=True)
+    dependency = limber_dependency(Path(__file__).resolve().parents[1])
+    source = args.source or dependency["git"]
+    subprocess.run(["git", "clone", "--no-checkout", source, str(destination)], check=True)
+    subprocess.run(["git", "checkout", "--detach", dependency["rev"]], cwd=destination, check=True)
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination, text=True).strip()
-    print(json.dumps({"path": str(destination), "base_revision": BASE_REVISION,
-                      "patch_sha256": patch_sha256, "git_revision": revision}, indent=2))
+    print(json.dumps({"path": str(destination), "source": source, "git_revision": revision}, indent=2))
 
 
 if __name__ == "__main__":
