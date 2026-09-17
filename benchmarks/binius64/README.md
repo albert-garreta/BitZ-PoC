@@ -17,7 +17,7 @@ The fork builds on Albert Garreta's
 and P-256 gadgets. Albert's secp256k1 recovery example remains a distinct workload.
 
 Pinned fork: [`bc73510e`](https://github.com/wu-s-john/binius64/commit/bc73510ed63bf47eec25d4d10ade84f1c1fe2790),
-on [`f2z-benching`](https://github.com/wu-s-john/binius64/tree/f2z-benching).
+on [`bitz-benching`](https://github.com/wu-s-john/binius64/tree/bitz-benching).
 The SHA+ECDSA branch also points to this consolidation commit. The root's other
 Binius adapters use the same revision; neither workspace uses a local Binius patch.
 Albert's benchmark commit is preserved as `9e880ff4` after rebasing onto upstream

@@ -6,18 +6,18 @@ opener** (`binius64-ligerito`, rates 1/2 and 1/8, round-by-round 100-bit gate)
 on the same signed-message relation; **BitZ AllRows** and **Spartan MC** remain
 selectable. All modes are non-ZK. BitZ's existing
 composed prover is reused. The Spartan dependency is pinned to the implementation
-on the fork's `f2z-benching` branch; `Cargo.lock` records the exact revision.
+on the fork's `bitz-benching` branch; `Cargo.lock` records the exact revision.
 
 The backend commit
 [`3b94130453838550a1086ee75c5d280f5c25df3d`](https://github.com/wu-s-john/Spartan2/commit/3b94130453838550a1086ee75c5d280f5c25df3d)
-is published on the fork's `f2z-benching` branch. Cargo can fetch the pinned
+is published on the fork's `bitz-benching` branch. Cargo can fetch the pinned
 revision from GitHub; it is also available in this machine's Cargo cache.
 
 The [earlier measurements](sha256-ecdsa-shared-kernels-results.md) cover every
 exponent 4 through 11, both thread counts, and both Spartan chunking policies.
 
 The optional [Binius64 worker](../benchmarks/binius64/README.md) uses the rebased
-`f2z-benching` fork through an immutable Git revision shared with the root's
+`bitz-benching` fork through an immutable Git revision shared with the root's
 Binius SHA/u32/hybrid adapters. The SHA+ECDSA worker retains its own Cargo
 workspace, lockfile, and toolchain. See [branch consolidation](binius64-consolidation.md).
 

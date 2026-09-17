@@ -10,7 +10,7 @@ The Rust worker in this directory calls `noir_rs` and the native Barretenberg
 application logic in a measured sample. The standalone Cargo workspace keeps
 the pinned Noir toolchain out of the BitZ crate's normal dependency graph.
 
-Use the sibling `../zk-passport-circuits` checkout on `f2z-benching`. Its
+Use the sibling `../zk-passport-circuits` checkout on `bitz-benching`. Its
 `benchmarks/sha256-ecdsa` package contains the SHA chain and the P-256 circuit.
 The circuit is derived from ZKPassport's arithmetic, with explicit canonical
 encoding and final coordinate checks. Its README documents these changes

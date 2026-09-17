@@ -324,7 +324,7 @@ Every warmup and measured trial generates and verifies the complete proof.
 The default `u32-mod32` workload (`u32` is an alias) compares **independent
 multiplications modulo 2^32** on BitZ, Binius64, Plonky3-FRI and
 Limber-Brakedown, with identical inputs. Limber uses the `int_mult` example
-on your fork's `f2z-benching` branch in the sibling checkout. The old
+on your fork's `bitz-benching` branch in the sibling checkout. The old
 multiplication Limber adapter has been removed.
 
 ### RSA MultiSwap — matched 114-bit comparison
@@ -677,7 +677,7 @@ same SHA-256 compression chain followed by one P-256 ECDSA verification,
 using identical low-s fixtures.
 
 Use the sibling `../zk-passport-circuits` checkout on the fork's
-[`f2z-benching` branch](https://github.com/wu-s-john/zk-passport-circuits/tree/f2z-benching).
+[`bitz-benching` branch](https://github.com/wu-s-john/zk-passport-circuits/tree/bitz-benching).
 Run from this repository's root on Linux x86_64. The bootstrap builds the
 Rust runner and prepares the pinned native tools:
 
@@ -729,7 +729,7 @@ BITZ_BENCH_LAMBDA=100 BITZ_BENCH_SHAPES="15 20" BITZ_BENCH_REPS=5 RUSTFLAGS="-C 
 
 ### Independent multiplication modulo 2^32: four backends
 
-Prepare the sibling `limber-impl` checkout on your fork's `f2z-benching`
+Prepare the sibling `limber-impl` checkout on your fork's `bitz-benching`
 branch with the independent Brakedown `examples/int_mult.rs`. Run the smoke
 case (2^15 operations, one in-process warmup, five verified samples):
 
