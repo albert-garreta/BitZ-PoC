@@ -15,66 +15,28 @@
 mod common;
 use clap::builder::TypedValueParser;
 
-use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use f2z::piop::spartan::{
-    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CmAndWitness, SpartanF2zField,
-    prepare_cm_and_relation, project_cm_and_witness, prove_cm_and_f2z, spartan_f2z_field_config,
-    verify_cm_and_f2z,
+    CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CmAndWitness, SpartanF2zField, prepare_cm_and_relation,
+    prove_cm_and_f2z, spartan_f2z_field_config, verify_cm_and_f2z,
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-struct PeakAlloc;
-
-static CURRENT_BYTES: AtomicUsize = AtomicUsize::new(0);
-static PEAK_BYTES: AtomicUsize = AtomicUsize::new(0);
-
-unsafe impl GlobalAlloc for PeakAlloc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() {
-            let current = CURRENT_BYTES.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
-            PEAK_BYTES.fetch_max(current, Ordering::Relaxed);
-        }
-        pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) };
-        CURRENT_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let resized = unsafe { System.realloc(pointer, layout, new_size) };
-        if !resized.is_null() {
-            if new_size >= layout.size() {
-                let increase = new_size - layout.size();
-                let current = CURRENT_BYTES.fetch_add(increase, Ordering::Relaxed) + increase;
-                PEAK_BYTES.fetch_max(current, Ordering::Relaxed);
-            } else {
-                CURRENT_BYTES.fetch_sub(layout.size() - new_size, Ordering::Relaxed);
-            }
-        }
-        resized
-    }
-}
-
 #[global_allocator]
-static ALLOCATOR: PeakAlloc = PeakAlloc;
+static ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
 fn reset_peak() {
-    PEAK_BYTES.store(CURRENT_BYTES.load(Ordering::Relaxed), Ordering::Relaxed);
+    common::peak_memory::reset_peak();
 }
 
 fn live_mib() -> f64 {
-    CURRENT_BYTES.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::live_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 fn peak_mib() -> f64 {
-    PEAK_BYTES.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::peak_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 fn median(mut samples: Vec<f64>) -> f64 {
@@ -106,10 +68,11 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let mut rng = StdRng::seed_from_u64(shape_seed);
     let field_config = spartan_f2z_field_config();
 
-    let (witness, started) = f2z::observability::measure(
-        tracing::info_span!("cm_and:witness"),
-        || CmAndWitness::from_fn(gates, |_| (rng.random::<u32>(), rng.random::<u32>())).unwrap(),
-    ).expect("measure completed operation");
+    let (witness, started) =
+        f2z::observability::measure(tracing::info_span!("cm_and:witness"), || {
+            CmAndWitness::from_fn(gates, |_| (rng.random::<u32>(), rng.random::<u32>())).unwrap()
+        })
+        .expect("measure completed operation");
     let witness_ms = started.as_secs_f64() * 1e3;
     let layout = *witness.layout();
 
@@ -119,25 +82,44 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
         .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
         .expect("valid CM-AND relation");
     let resolved = relation.ligerito_configuration().unwrap();
-    println!("LIGERITO_CONFIG {}", common::ligerito_report(resolved, resolved.round0(100).unwrap()));
-    let relation_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_and:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+    println!(
+        "LIGERITO_CONFIG {}",
+        common::ligerito_report(resolved, resolved.round0(100).unwrap())
+    );
+    let relation_ms = {
+        drop(started);
+        f2z::observability::duration(
+            &started_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "cm_and:started",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
 
-    let (bit_rows, started) = f2z::observability::measure(
-        tracing::info_span!("cm_and:bit_rows"),
-        || witness.f_bit_rows(),
-    ).expect("measure completed operation");
+    let (bit_rows, started) =
+        f2z::observability::measure(tracing::info_span!("cm_and:bit_rows"), || {
+            witness.f_bit_rows()
+        })
+        .expect("measure completed operation");
     let bit_rows_ms = started.as_secs_f64() * 1e3;
 
-    let (hint, started) = f2z::observability::measure(
-        tracing::info_span!("cm_and:hint"),
-        || f2z::piop::spartan::cm::commit_cm_and_witness_with_config(&layout, bit_rows, relation.ligerito_configuration().unwrap().prover()).expect("F2Z commitment succeeds"),
-    ).expect("measure completed operation");
+    let (hint, started) = f2z::observability::measure(tracing::info_span!("cm_and:hint"), || {
+        f2z::piop::spartan::cm::commit_cm_and_witness_with_config(
+            &layout,
+            bit_rows,
+            relation.ligerito_configuration().unwrap().prover(),
+        )
+        .expect("F2Z commitment succeeds")
+    })
+    .expect("measure completed operation");
     let commit_ms = started.as_secs_f64() * 1e3;
 
     // Excluded warm-up; also the first end-to-end correctness check.
-    let warm = project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let warm_proof = prove_cm_and_f2z(&mut pt, &relation, warm, &hint).expect("warm-up prove");
+    let warm_proof = prove_cm_and_f2z(&mut pt, &relation, &witness, &hint).expect("warm-up prove");
     let mut vt = Blake3Transcript::new();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &warm_proof).expect("warm-up verify");
     drop(warm_proof);
@@ -149,11 +131,10 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let mut verify_splits: Vec<[f64; 3]> = Vec::with_capacity(reps);
     let mut last_proof = None;
     for _ in 0..reps {
-        let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).unwrap();
         let mut pt = Blake3Transcript::new();
         let recording = f2z::observability::Recording::start(Vec::new()).expect("start CM prover");
         let proving = tracing::info_span!("benchmark:proving").entered();
-        let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).expect("prove");
+        let proof = prove_cm_and_f2z(&mut pt, &relation, &witness, &hint).expect("prove");
         drop(proving);
         let intervals = recording.intervals().expect("query CM prover");
         prove_ms.push(common::span_ms(&intervals, "benchmark:proving"));
@@ -194,13 +175,11 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     drop(last_proof);
 
     // One extra proof for the peak-heap measurement.
-    let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).unwrap();
-    drop(witness);
 
     let live_before = live_mib();
     reset_peak();
     let mut pt = Blake3Transcript::new();
-    let peak_proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).expect("peak prove");
+    let peak_proof = prove_cm_and_f2z(&mut pt, &relation, &witness, &hint).expect("peak prove");
     black_box(&peak_proof);
     let peak = peak_mib();
     let mut vt = Blake3Transcript::new();

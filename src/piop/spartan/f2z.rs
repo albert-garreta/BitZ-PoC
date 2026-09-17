@@ -14,51 +14,38 @@
 //! binding and its transcript domains. The outer Spartan reduction uses a
 //! fixed known-zero univariate-prefix skip.
 
+use crate::piop::spartan::mul::{MulLayout, MulWitness};
+#[cfg(any(test, feature = "bench-internals"))]
+use crate::piop::spartan::protocol::PreparedRelation;
+use crate::piop::spartan::protocol::ProtocolError;
+#[cfg(feature = "bench-internals")]
+use crate::piop::spartan::protocol::terminal::PreparedTerminalOpening;
+
 use crate::piop::spartan::SpartanField as _;
 use field::{RingOps, Uint};
-use std::borrow::Cow;
 
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
 
 #[cfg(test)]
 use crate::pcs::Q100Element;
 use crate::{
-    ligerito::LOG_PACKING,
-    ligerito_flock::{FlockCommitHint, IntEvalRsLigModQProof, ModQOpeningKind},
+    ligerito_flock::ModQOpeningKind,
     pcs::{FQ_MOD, IntegerMatrixLayout},
-    transcript::traits::Transcript,
 };
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
         self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
-        PreparedRelation, PreparedRelationPrefix, Proof, ProtocolError, RelationSpec, SlotRange,
+        RelationSpec, SlotRange,
     },
     u32_mul::{
-        U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS,
-        U32_MUL_X_SLOT_START, U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, U32MulError, U32MulLayout,
-        U32MulWitness, u32_mul_constraint_matrices,
+        U32_MUL_PRODUCT_BITS, U32_MUL_PRODUCT_SLOT_START, U32_MUL_X_BITS, U32_MUL_X_SLOT_START,
+        U32_MUL_Y_BITS, U32_MUL_Y_SLOT_START, u32_mul_constraint_matrices,
     },
 };
 
 pub use super::protocol::{MIN_PRODUCTION_GATE_VARS, SpartanF2zField};
-pub(crate) use super::protocol::{
-    binding::{hash_code, profile_code},
-    checked_pow2, packed_variables,
-};
-
-/// Failures in layout validation, claim translation, or either proof system.
-pub type SpartanF2zError = ProtocolError;
-
-impl From<U32MulError> for ProtocolError {
-    fn from(error: U32MulError) -> Self {
-        Self::relation(error)
-    }
-}
-
-/// Backward-compatible name for the shared, Ligerito-only configuration policy.
-pub use crate::ligerito_flock::LigeritoSelection as U32MulLigerito;
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
 pub fn spartan_f2z_field_config() -> <SpartanF2zField as crate::piop::spartan::SpartanField>::Config
@@ -115,64 +102,44 @@ pub(crate) fn u32_mul_instance_facts(p: &IntegerMatrixLayout, row_vars: usize) -
     }
 }
 
-fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), ProtocolError> {
-    let p = layout.f2z_params();
-    if !matches!(p.word_bits, 1 | 8)
-        || p.row_vars < LOG_PACKING
-        || p.col_vars > layout.gate_vars()
-        || p.row_vars.saturating_add(p.word_bits) > 126
-    {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-    let total_vars = p
-        .row_vars
-        .checked_add(p.word_bits.trailing_zeros() as usize)
-        .and_then(|value| value.checked_add(p.col_vars))
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
-    if total_vars
-        != layout
-            .gate_vars()
-            .checked_add(7)
-            .ok_or(ProtocolError::InvalidF2zParameters)?
-        || U32_MUL_BIT_SLOTS != 1_usize << 7
-    {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-
-    let row_count = checked_pow2(p.row_vars)?;
-    let col_count = checked_pow2(p.col_vars)?;
-    let committed_bits = row_count
-        .checked_mul(col_count)
-        .and_then(|cells| cells.checked_mul(p.word_bits))
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
-    let expected_bits = U32_MUL_BIT_SLOTS
-        .checked_mul(layout.capacity())
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
-    if committed_bits != expected_bits || packed_variables(&p)? != layout.gate_vars() {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-    Ok(())
-}
-
-impl RelationSpec for U32MulLayout {
+impl RelationSpec for MulLayout<u32> {
     type Coefficient = bool;
-    type Witness = U32MulWitness;
-    type Map = crate::f2map::RepeatedVirtualMap;
+    type Witness = MulWitness<u32>;
+    type Map = Self;
 
     fn domains(&self) -> &'static Domains {
         &U32_MUL_DOMAINS
     }
 
     fn committed_layout(&self) -> IntegerMatrixLayout {
+        MulLayout::committed_layout(self)
+    }
+    fn opening_layout(&self) -> IntegerMatrixLayout {
         self.f2z_params()
+    }
+    fn opening_word_bits(&self) -> usize {
+        self.word_bits()
+    }
+    fn map(&self) -> Option<&Self> {
+        (!self.uses_direct_opening()).then_some(self)
+    }
+    fn derived_rows(&self, witness: &Self::Witness) -> Option<Vec<Vec<u64>>> {
+        (!self.uses_direct_opening()).then(|| witness.derived_bit_rows())
+    }
+    fn claim_digest(&self, frame: protocol::ClaimFrame<'_>) -> Result<[u8; 32], ProtocolError> {
+        self.packed_claim_digest(frame)
     }
 
     fn gate_vars(&self) -> usize {
-        U32MulLayout::gate_vars(self)
+        MulLayout::<u32>::gate_vars(self)
     }
 
     fn instance_facts(&self) -> IopInstanceFacts {
-        u32_mul_instance_facts(&self.f2z_params(), U32MulLayout::gate_vars(self))
+        let mut facts =
+            u32_mul_instance_facts(&self.f2z_params(), MulLayout::<u32>::gate_vars(self));
+        facts.opening_word_bits = self.word_bits() as u32;
+        facts.direct_opening = self.uses_direct_opening();
+        facts
     }
 
     fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
@@ -180,13 +147,13 @@ impl RelationSpec for U32MulLayout {
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
-        validate_layout_geometry(self)
+        self.validate_protocol_geometry()
     }
 
     /// Block order in the integer assignment is 00=constant, 01=x, 10=y,
     /// 11=product, with the first block-selector coordinate as the low bit.
     fn block_table(&self) -> BlockTable {
-        BlockTable::new(
+        let table = BlockTable::new(
             2,
             vec![
                 None,
@@ -204,7 +171,12 @@ impl RelationSpec for U32MulLayout {
                 }),
             ],
         )
-        .expect("the u32 block table is complete")
+        .expect("the u32 block table is complete");
+        if self.uses_direct_opening() {
+            table
+        } else {
+            table.with_word_packing(32, self.word_bits())
+        }
     }
 
     fn kernel(&self) -> Kernel {
@@ -222,7 +194,7 @@ impl RelationSpec for U32MulLayout {
             .max(security.ring_switch_grinding_bits)
     }
 
-    fn check_witness(&self, witness: &U32MulWitness) -> Result<(), ProtocolError> {
+    fn check_witness(&self, witness: &MulWitness<u32>) -> Result<(), ProtocolError> {
         if witness.layout() != self {
             return Err(ProtocolError::RelationWitnessLayoutMismatch);
         }
@@ -271,13 +243,14 @@ impl RelationSpec for U32MulLayout {
             self.multiplications(),
             self.capacity(),
             self.assignment_len(),
-            U32MulLayout::gate_vars(self),
+            MulLayout::<u32>::gate_vars(self),
             p.row_vars,
             p.col_vars,
             p.word_bits,
             U32_MUL_UNIVARIATE_SKIP_VARS,
             U32_MUL_UNIVARIATE_SKIP_DEGREE as usize,
         ])?;
+        self.bind_packing(&mut hasher)?;
         Ok(hasher.finalize())
     }
 
@@ -287,7 +260,7 @@ impl RelationSpec for U32MulLayout {
             self.multiplications(),
             self.capacity(),
             self.assignment_len(),
-            U32MulLayout::gate_vars(self),
+            MulLayout::<u32>::gate_vars(self),
             p.row_vars,
             p.col_vars,
             p.word_bits,
@@ -301,6 +274,7 @@ impl RelationSpec for U32MulLayout {
         // Mapping version 2: little-endian bits, 00/01/10/11 block order, and
         // canonical nonzero-scale normalization onto the folded row functional.
         hasher.bytes(&[2, 0, 0, 1, 2, 3]);
+        self.bind_packing(hasher)?;
         Ok(())
     }
 
@@ -308,76 +282,20 @@ impl RelationSpec for U32MulLayout {
     /// and the assignment is its block table: lend both, no copy.
     fn piop_witness<'w>(
         &self,
-        witness: &'w U32MulWitness,
+        witness: &'w MulWitness<u32>,
         _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        let product_len = self.multiplications().next_power_of_two();
-        Ok(PiopWitness::Native {
-            az: Cow::Borrowed(&witness.x_values()[..product_len]),
-            bz: Cow::Borrowed(&witness.y_values()[..product_len]),
-            cz: Cow::Borrowed(&witness.product_values()[..product_len]),
-            assignment: witness.assignment(),
-            constant_prefix: Some(super::raw_monty::NativeConstantPrefix::new(
-                witness.layout().capacity(),
-            )),
-        })
+        Ok(PiopWitness::Mul32(witness))
     }
 }
-
-/// Setup-once, prime-independent bundle for the u32 protocol.
-pub type PreparedU32MulRelation = PreparedRelation<U32MulLayout>;
-
-/// The prime-independent prefix of the u32 protocol (no standalone opener),
-/// for compositions that discharge the bitified claim through their own
-/// opener ([`crate::hybrid`]).
-pub type U32MulPrefixRelation = PreparedRelationPrefix<U32MulLayout>;
-
-/// A u32 multiplication proof over a transcript-selected prime.
-pub type U32MulProof = Proof;
-
-/// Commits prebuilt compact `32 + 32 + 64` bit rows under the prepared
-/// relation's profile-selected Ligerito configuration.
-pub fn commit_u32_mul_witness(
-    prepared: &PreparedU32MulRelation,
-    rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, SpartanF2zError> {
-    protocol::commit(prepared, rows)
-}
-
-/// Proves the u32 batch under the prepared relation's security profile.
-pub fn prove_u32_mul<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedU32MulRelation,
-    witness: &U32MulWitness,
-    hint: &FlockCommitHint,
-) -> Result<U32MulProof, SpartanF2zError> {
-    protocol::prove(transcript, prepared, witness, hint)
-}
-
-/// Verifies a u32 multiplication proof, re-deriving the prime from the bound
-/// transcript and enforcing the canonical univariate-prefix width.
-pub fn verify_u32_mul<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedU32MulRelation,
-    commitment: &Commitment,
-    proof: &U32MulProof,
-) -> Result<(), SpartanF2zError> {
-    protocol::verify(transcript, prepared, commitment, proof)
-}
-
-/// Public, setup-once context for benchmarking only the terminal F2Z opening
-/// of a u32 multiplication assignment at the fixed comparison field.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub type PreparedU32TerminalF2zOpening = protocol::terminal::PreparedTerminalOpening<U32MulLayout>;
 
 /// Prepares a fixed-q, PCS-only terminal-opening context.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub fn prepare_u32_terminal_f2z_opening(
-    prepared: &PreparedU32MulRelation,
+    prepared: &PreparedRelation<MulLayout<u32>>,
     commitment: &Commitment,
-) -> Result<PreparedU32TerminalF2zOpening, SpartanF2zError> {
+) -> Result<PreparedTerminalOpening<MulLayout<u32>>, ProtocolError> {
     protocol::terminal::prepare(
         prepared,
         commitment,
@@ -387,52 +305,11 @@ pub fn prepare_u32_terminal_f2z_opening(
     )
 }
 
-/// Commits already-materialized 32/32/64 compact bit rows with the exact
-/// configuration retained by the PCS-only context.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn commit_u32_terminal_f2z_witness(
-    prepared: &PreparedU32TerminalF2zOpening,
-    rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, SpartanF2zError> {
-    protocol::terminal::commit(prepared, rows)
-}
-
-/// Proves one already-derived terminal assignment-MLE claim, with all Spartan
-/// work deliberately outside the benchmark boundary.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn prove_u32_terminal_claim_f2z<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedU32TerminalF2zOpening,
-    hint: &FlockCommitHint,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<SpartanF2zField>,
-) -> Result<IntEvalRsLigModQProof, SpartanF2zError> {
-    protocol::terminal::prove(transcript, prepared, hint, terminal_claim)
-}
-
-/// Verifies the PCS-only u32 terminal opening from public data alone.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn verify_u32_terminal_claim_f2z<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedU32TerminalF2zOpening,
-    commitment: &Commitment,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<SpartanF2zField>,
-    proof: &IntEvalRsLigModQProof,
-) -> Result<(), SpartanF2zError> {
-    protocol::terminal::verify(transcript, prepared, commitment, terminal_claim, proof)
-}
-
-/// Canonical standalone F2Z opening payload bytes.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn u32_terminal_claim_f2z_proof_bytes(proof: &IntEvalRsLigModQProof) -> Vec<u8> {
-    proof.to_bytes()
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::piop::spartan::protocol::Proof;
+    use crate::piop::spartan::protocol::packed_variables;
+    use crate::transcript::traits::Transcript;
 
     use super::*;
     use crate::{
@@ -441,13 +318,12 @@ mod tests {
             matrix::ScaledMleEvaluationClaim,
             profile::{Lambda100, Lambda128, Limber114, ProfileError},
             protocol::{SpartanProof, bitify},
-            u32_mul::U32MulF2zWidth,
         },
         transcript::Blake3Transcript,
     };
 
     fn skip_proof(
-        proof: &U32MulProof,
+        proof: &Proof,
     ) -> &super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
         proof
             .spartan()
@@ -456,7 +332,7 @@ mod tests {
     }
 
     fn skip_proof_mut(
-        proof: &mut U32MulProof,
+        proof: &mut Proof,
     ) -> &mut super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
         match &mut proof.prefix_mut().spartan {
             SpartanProof::UnivariateSkip(spartan) => spartan,
@@ -476,24 +352,23 @@ mod tests {
         // case the verifier's closed-form matrix binding handles with its
         // two prefix-sum terms.
         let multiplications = (1usize << 15) + 77;
-        let witness =
-            U32MulWitness::from_fn_with_f2z_width(multiplications, U32MulF2zWidth::W1, |i| {
-                let x = (i as u32).wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
-                let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
-                (x, y)
-            })
-            .unwrap();
+        let witness = MulWitness::<u32>::from_fn_with_word_bits(multiplications, 1, |i| {
+            let x = (i as u32).wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
+            let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
+            (x, y)
+        })
+        .unwrap();
         let layout = *witness.layout();
         assert_eq!(layout.capacity(), 1 << 16);
-        let prepared = PreparedU32MulRelation::new(layout).unwrap();
+        let prepared = PreparedRelation::<MulLayout<u32>>::new(layout).unwrap();
         assert_eq!(
             prepared.skeleton().unwrap().matrices().row_count(),
             multiplications
         );
 
-        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = protocol::commit(&prepared, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
+        let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(
             skip_proof(&proof)
                 .outer
@@ -504,7 +379,7 @@ mod tests {
             16 - U32_MUL_UNIVARIATE_SKIP_VARS
         );
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared,
             &hint.commitment,
@@ -527,7 +402,7 @@ mod tests {
         }
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
-            verify_u32_mul(
+            protocol::verify(
                 &mut verifier_transcript,
                 &prepared,
                 &hint.commitment,
@@ -540,54 +415,60 @@ mod tests {
     #[test]
     fn early_ood_binds_regime_root_and_payload() {
         use crate::ligerito_flock::{IntEvalRsLigModQProof, LigeritoSelection};
-        let witness = U32MulWitness::from_fn(1 << 15, |i| (i as u32, u32::MAX)).unwrap();
+        let witness = MulWitness::<u32>::from_fn(1 << 15, |i| (i as u32, u32::MAX)).unwrap();
         for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
-            let p = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(
+            let p = PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<Lambda100>(
                 *witness.layout(),
                 selection,
             )
             .unwrap();
-            let hint = commit_u32_mul_witness(&p, witness.f2z_bit_rows()).unwrap();
+            let hint = protocol::commit(&p, witness.f2z_bit_rows()).unwrap();
             let mut pt = Blake3Transcript::new();
-            let mut proof = prove_u32_mul(&mut pt, &p, &witness, &hint).unwrap();
-            *proof.f2z_mut() = IntEvalRsLigModQProof::from_bytes(&proof.f2z().to_bytes()).unwrap();
-            let check = |proof: &U32MulProof| {
-                verify_u32_mul(&mut Blake3Transcript::new(), &p, &hint.commitment, proof)
+            let mut proof = protocol::prove(&mut pt, &p, &witness, &hint).unwrap();
+            *proof.f2z_mut().direct_mut().unwrap() =
+                IntEvalRsLigModQProof::from_bytes(&proof.f2z().to_bytes()).unwrap();
+            let check = |proof: &Proof| {
+                protocol::verify(&mut Blake3Transcript::new(), &p, &hint.commitment, proof)
             };
             check(&proof).unwrap();
             let mut bad = proof.clone();
-            if let Some(round) = bad.f2z_mut().ood.as_mut() {
+            if let Some(round) = bad.f2z_mut().direct_mut().unwrap().ood.as_mut() {
                 round.y = round.y + crate::poly::univariate::binary_gf128::Gf128::one();
             } else {
-                bad.f2z_mut().ood = Some(crate::ligerito_flock::OodRound {
+                bad.f2z_mut().direct_mut().unwrap().ood = Some(crate::ligerito_flock::OodRound {
                     y: crate::poly::univariate::binary_gf128::Gf128::zero(),
                     nonce: None,
                 });
             }
             assert!(check(&bad).is_err());
-            if proof.f2z().ood.is_some() {
+            if proof.f2z().ood().is_some() {
                 let mut bad = proof.clone();
-                bad.f2z_mut().ood = None;
+                bad.f2z_mut().direct_mut().unwrap().ood = None;
                 assert!(check(&bad).is_err());
                 let mut bad = proof.clone();
-                bad.f2z_mut().ood.as_mut().unwrap().nonce = Some(u64::MAX);
+                bad.f2z_mut()
+                    .direct_mut()
+                    .unwrap()
+                    .ood
+                    .as_mut()
+                    .unwrap()
+                    .nonce = Some(u64::MAX);
                 assert!(check(&bad).is_err());
             }
             let mut root = hint.commitment.clone();
             root.root[0] ^= 1;
-            assert!(verify_u32_mul(&mut Blake3Transcript::new(), &p, &root, &proof).is_err());
+            assert!(protocol::verify(&mut Blake3Transcript::new(), &p, &root, &proof).is_err());
             let other = if selection == LigeritoSelection::JOHNSON {
                 LigeritoSelection::MATCHED_UDR
             } else {
                 LigeritoSelection::JOHNSON
             };
-            let foreign = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(
-                *witness.layout(),
-                other,
-            )
+            let foreign = PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<
+                Lambda100,
+            >(*witness.layout(), other)
             .unwrap();
             assert!(
-                verify_u32_mul(
+                protocol::verify(
                     &mut Blake3Transcript::new(),
                     &foreign,
                     &hint.commitment,
@@ -607,15 +488,14 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let multiplications = 1usize << 15;
-        let witness =
-            U32MulWitness::from_fn_with_f2z_width(multiplications, U32MulF2zWidth::W1, |i| {
-                let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
-                let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
-                (x, y)
-            })
-            .unwrap();
+        let witness = MulWitness::<u32>::from_fn_with_word_bits(multiplications, 1, |i| {
+            let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
+            let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
+            (x, y)
+        })
+        .unwrap();
         let layout = *witness.layout();
-        let prepared = PreparedU32MulRelation::new(layout).unwrap();
+        let prepared = PreparedRelation::<MulLayout<u32>>::new(layout).unwrap();
 
         // The derived interval keeps one exponent-fold chunk and no grinding.
         let security = prepared.security();
@@ -636,9 +516,9 @@ mod tests {
             "the runtime interval is one-chunk by construction"
         );
 
-        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = protocol::commit(&prepared, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
+        let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(
             skip_proof(&proof).outer.skip.skip_vars,
             U32_MUL_UNIVARIATE_SKIP_VARS as u8
@@ -656,7 +536,7 @@ mod tests {
         assert_eq!(skip_proof(&proof).inner.round_polynomials.len(), 17);
         assert_eq!(proof.spartan_payload_elements(), 109);
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared,
             &hint.commitment,
@@ -666,18 +546,18 @@ mod tests {
 
         // Determinism: a second prove is byte-identical.
         let mut second_transcript = Blake3Transcript::new();
-        let second = prove_u32_mul(&mut second_transcript, &prepared, &witness, &hint).unwrap();
+        let second = protocol::prove(&mut second_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(second.f2z().to_bytes(), proof.f2z().to_bytes());
         assert_eq!(second.spartan(), proof.spartan());
 
         // Tampering with the Spartan claim is rejected.
         let one = SpartanF2zField::from_with_cfg(1u64, &spartan_f2z_field_config());
-        let reject = |mutate: &dyn Fn(&mut U32MulProof)| {
+        let reject = |mutate: &dyn Fn(&mut Proof)| {
             let mut tampered = proof.clone();
             mutate(&mut tampered);
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(
-                verify_u32_mul(
+                protocol::verify(
                     &mut verifier_transcript,
                     &prepared,
                     &hint.commitment,
@@ -711,8 +591,8 @@ mod tests {
             skip_proof_mut(&mut wrong_k).outer.skip.skip_vars = actual;
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(matches!(
-                verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &wrong_k),
-                Err(SpartanF2zError::UnexpectedUnivariateSkipVariables {
+                protocol::verify(&mut verifier_transcript, &prepared, &hint.commitment, &wrong_k),
+                Err(ProtocolError::UnexpectedUnivariateSkipVariables {
                     expected: 3,
                     actual: rejected
                 }) if rejected == actual
@@ -726,16 +606,17 @@ mod tests {
 
         // Strategy-2 profiles are rejected up front.
         assert!(matches!(
-            PreparedU32MulRelation::new_with_profile::<Limber114>(layout),
-            Err(SpartanF2zError::UnsupportedProfile)
-                | Err(SpartanF2zError::Profile(
+            PreparedRelation::<MulLayout<u32>>::new_with_profile::<Limber114>(layout),
+            Err(ProtocolError::UnsupportedProfile)
+                | Err(ProtocolError::Profile(
                     ProfileError::GrindingTooExpensive { .. }
                 ))
         ));
 
         // λ = 128 is genuine on this path too: the initial boundary, every
         // PIOP draw, and the forest rounds all carry proof-of-work.
-        let prepared128 = PreparedU32MulRelation::new_with_profile::<Lambda128>(layout).unwrap();
+        let prepared128 =
+            PreparedRelation::<MulLayout<u32>>::new_with_profile::<Lambda128>(layout).unwrap();
         assert_eq!(prepared128.security().initial_grinding_bits, 22);
         assert_eq!(prepared128.security().terminal_grinding_bits, 22);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
@@ -758,15 +639,15 @@ mod tests {
             ),
             "the Ligerito configuration must follow the profile target"
         );
-        let hint128 = commit_u32_mul_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
+        let hint128 = protocol::commit(&prepared128, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof128 =
-            prove_u32_mul(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
+            protocol::prove(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
         assert_eq!(prepared128.security().piop_round_grinding_bits, 22);
         assert_eq!(proof128.piop_nonces().len(), 43);
-        assert!(!proof128.f2z().grinding_nonces.is_empty());
+        assert!(!proof128.opening_grinding_nonces().is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared128,
             &hint128.commitment,
@@ -777,7 +658,7 @@ mod tests {
         tampered.prefix_mut().piop_nonces[3] ^= 1;
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
-            verify_u32_mul(
+            protocol::verify(
                 &mut verifier_transcript,
                 &prepared128,
                 &hint128.commitment,
@@ -821,8 +702,8 @@ mod tests {
 
     fn bitify_test_claim(
         claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
-        layout: &U32MulLayout,
-    ) -> Result<bitify::BitifiedClaim, SpartanF2zError> {
+        layout: &MulLayout<u32>,
+    ) -> Result<bitify::BitifiedClaim, ProtocolError> {
         bitify::bitify(
             claim,
             layout.f2z_params(),
@@ -835,8 +716,8 @@ mod tests {
 
     fn prepare_test_claim(
         opening: &bitify::BitifiedClaim,
-        layout: &U32MulLayout,
-    ) -> Result<PreparedClaim, SpartanF2zError> {
+        layout: &MulLayout<u32>,
+    ) -> Result<PreparedClaim, ProtocolError> {
         let arith = field::FpCtx::from_prime_u128(FQ_MOD);
         Ok(PreparedClaim {
             chunks: bitify::prepare_chunks(opening, &layout.block_table(), FQ_BITS, &arith)?,
@@ -870,8 +751,8 @@ mod tests {
 
     #[test]
     fn bitification_is_the_adjoint_of_integer_reconstruction() {
-        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
-            let witness = U32MulWitness::from_inputs_with_f2z_width(
+        for width in [1, 8] {
+            let witness = MulWitness::<u32>::from_inputs_with_word_bits(
                 &[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)],
                 width,
             )
@@ -945,7 +826,7 @@ mod tests {
 
     #[test]
     fn zero_scale_keeps_a_nonzero_row_functional() {
-        let layout = U32MulLayout::new(3).unwrap();
+        let layout = MulLayout::<u32>::new(3).unwrap();
         let mut point = (0..layout.gate_vars())
             .map(|coordinate| Q100Element::from_u128((coordinate + 2) as u128))
             .collect::<Vec<_>>();
@@ -969,7 +850,7 @@ mod tests {
 
     #[test]
     fn constant_only_claim_uses_the_deterministic_dummy_functional() {
-        let layout = U32MulLayout::new(3).unwrap();
+        let layout = MulLayout::<u32>::new(3).unwrap();
         let gate_point = (0..layout.gate_vars())
             .map(|coordinate| Q100Element::from_u128((coordinate + 2) as u128))
             .collect::<Vec<_>>();
@@ -997,7 +878,7 @@ mod tests {
 
     #[test]
     fn malformed_claim_residue_is_rejected_before_canonical_projection() {
-        let layout = U32MulLayout::new(3).unwrap();
+        let layout = MulLayout::<u32>::new(3).unwrap();
         let config = spartan_f2z_field_config();
         let malformed = field::FpCtx::from_prime_u128(u128::MAX - 158)
             .from_montgomery_integer(*config.modulus());
@@ -1008,33 +889,33 @@ mod tests {
 
         assert!(matches!(
             bitify_test_claim(&claim, &layout),
-            Err(SpartanF2zError::ClaimFieldMismatch)
+            Err(ProtocolError::ClaimFieldMismatch)
         ));
     }
 
     #[test]
     fn combined_protocol_uses_only_validator_gated_production_profiles() {
-        let small = U32MulLayout::new(3).unwrap();
+        let small = MulLayout::<u32>::new(3).unwrap();
         assert!(matches!(
-            PreparedU32MulRelation::new(small),
-            Err(SpartanF2zError::UnauditedF2zParameters)
+            PreparedRelation::<MulLayout<u32>>::new(small),
+            Err(ProtocolError::UnauditedF2zParameters)
         ));
 
-        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+        for width in [1, 8] {
             let production =
-                U32MulLayout::new_with_f2z_width(1 << MIN_PRODUCTION_GATE_VARS, width).unwrap();
-            PreparedU32MulRelation::new(production)
+                MulLayout::<u32>::new_with_word_bits(1 << MIN_PRODUCTION_GATE_VARS, width).unwrap();
+            PreparedRelation::<MulLayout<u32>>::new(production)
                 .expect("the smallest validated profile is available");
 
-            let largest = U32MulLayout::new_with_f2z_width(1 << 25, width).unwrap();
+            let largest = MulLayout::<u32>::new_with_word_bits(1 << 25, width).unwrap();
             let packed = packed_variables(&largest.f2z_params()).unwrap();
             for target in [100, 128] {
-                U32MulLigerito::ValidatedUdr
+                crate::ligerito_flock::LigeritoSelection::ValidatedUdr
                     .resolve(packed, target)
                     .expect("the full advertised benchmark range has a validated config");
             }
             // The raw-performance table's Johnson opener at the 100-bit target.
-            U32MulLigerito::CustomJohnson {
+            crate::ligerito_flock::LigeritoSelection::CustomJohnson {
                 log_inv_rate: 1,
                 initial_k: 4,
             }
@@ -1046,23 +927,20 @@ mod tests {
     #[test]
     #[ignore = "runs one production-sized W=8 Spartan/F2Z proof"]
     fn u32_mul_w8_proof_verifies() {
-        let witness = U32MulWitness::from_fn_with_f2z_width(
-            1 << MIN_PRODUCTION_GATE_VARS,
-            U32MulF2zWidth::W8,
-            |index| {
+        let witness =
+            MulWitness::<u32>::from_fn_with_word_bits(1 << MIN_PRODUCTION_GATE_VARS, 8, |index| {
                 let value = (index as u32).wrapping_mul(0x9E37_79B9);
                 (value, value.rotate_left(13) ^ 0xA5A5_5A5A)
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
         let layout = *witness.layout();
-        let prepared = PreparedU32MulRelation::new(layout).unwrap();
-        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let prepared = PreparedRelation::<MulLayout<u32>>::new(layout).unwrap();
+        let hint = protocol::commit(&prepared, witness.f2z_bit_rows()).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
+        let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared,
             &hint.commitment,

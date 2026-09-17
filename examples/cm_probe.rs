@@ -12,7 +12,7 @@
 
 use f2z::piop::spartan::{
     CmAndWitness, SpartanF2zField, commit_cm_and_witness, prepare_cm_and_relation,
-    project_cm_and_witness, prove_cm_and_f2z, spartan_f2z_field_config, verify_cm_and_f2z,
+    prove_cm_and_f2z, spartan_f2z_field_config, verify_cm_and_f2z,
 };
 use f2z::transcript::Blake3Transcript;
 
@@ -44,20 +44,19 @@ fn main() {
 
     // Warm-up (excluded), also the correctness check.
     let profile = f2z::observability::Recording::start(Vec::new()).expect("capture warmup");
-    let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).unwrap();
+    let proof = prove_cm_and_f2z(&mut pt, &relation, &witness, &hint).unwrap();
     let mut vt = Blake3Transcript::new();
     verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).unwrap();
     f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe warmup", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
     drop(proof);
 
     let profile = f2z::observability::Recording::start(Vec::new()).expect("capture prove");
-    let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("cm_probe:started").entered();
-    let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).unwrap();
+    let proof = prove_cm_and_f2z(&mut pt, &relation, &witness, &hint).unwrap();
     eprintln!(
         "== PROVE 2^{log2_gates} gates: {:.2} ms ==",
         { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3

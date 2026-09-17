@@ -1,15 +1,10 @@
+use ::f2z::ligerito_flock::LigeritoSelection;
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::PreparedRelation;
+use f2z::piop::spartan::mul::{MulLayout, MulWitness};
+
 use super::{Corpus, Timing, Workload};
-use f2z::{
-    piop::spartan::{
-        Lambda100, PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation,
-        U32MulLayout, U32MulWitness, U64MulLayout, U64MulWitness, U128MulLayout, U128MulWitness,
-        commit_u32_mul_witness, commit_u64_mul_witness, commit_u128_mul_witness,
-        f2z::U32MulLigerito, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
-        verify_u64_mul, verify_u128_mul,
-    },
-    transcript::Blake3Transcript,
-    observability::Recording,
-};
+use f2z::{observability::Recording, piop::spartan::Lambda100, transcript::Blake3Transcript};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -24,9 +19,9 @@ fn u64_split_shift() -> i8 {
 }
 
 enum Relation {
-    U32(PreparedU32MulRelation),
-    U64(PreparedU64MulRelation),
-    U128(PreparedU128MulRelation),
+    U32(PreparedRelation<MulLayout<u32>>),
+    U64(PreparedRelation<MulLayout<u64>>),
+    U128(PreparedRelation<MulLayout<u128>>),
 }
 pub(super) struct Context {
     corpus: Arc<Corpus>,
@@ -36,19 +31,25 @@ pub(super) struct Context {
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         let n = corpus.len();
-        let split_shift = if corpus.workload == Workload::U64 { u64_split_shift() } else { 0 };
+        let word_bits = super::common::cli::env::<usize>("F2Z_MUL_WORD_BITS").unwrap_or(1);
+        let split_shift = if corpus.workload == Workload::U64 {
+            u64_split_shift()
+        } else {
+            0
+        };
         let relation = match corpus.workload {
             Workload::U32 => {
-                let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<Lambda100>(
-                    U32MulLayout::new(n).unwrap(),
-                    super::common::ligerito_selection(100),
-                )
-                .expect("u32 Johnson relation");
+                let relation =
+                    PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<Lambda100>(
+                        MulLayout::<u32>::new_with_word_bits(n, word_bits).unwrap(),
+                        super::common::ligerito_selection(100),
+                    )
+                    .expect("u32 Johnson relation");
                 Relation::U32(relation)
             }
             Workload::U64 => Relation::U64(
-                PreparedU64MulRelation::new_with_profile_and_ligerito::<Lambda100>(
-                    U64MulLayout::new(n)
+                PreparedRelation::<MulLayout<u64>>::new_with_profile_and_ligerito::<Lambda100>(
+                    MulLayout::<u64>::new_with_word_bits(n, word_bits)
                         .unwrap()
                         .with_split_shift(split_shift)
                         .unwrap(),
@@ -57,8 +58,8 @@ impl Context {
                 .unwrap(),
             ),
             Workload::U128 => Relation::U128(
-                PreparedU128MulRelation::new_with_profile_and_ligerito::<Lambda100>(
-                    U128MulLayout::new(n).unwrap(),
+                PreparedRelation::<MulLayout<u128>>::new_with_profile_and_ligerito::<Lambda100>(
+                    MulLayout::<u128>::new_with_word_bits(n, word_bits).unwrap(),
                     super::common::ligerito_selection(100),
                 )
                 .unwrap(),
@@ -68,6 +69,16 @@ impl Context {
     }
     pub(super) fn config(&self) -> Value {
         let mut config = json!({"profile":"Lambda100","target_bits":100,"piop":"Spartan over transcript-sampled prime","pcs":"F2Z/Ligerito","word_bits":1});
+        config["word_bits"] = json!(match &self.relation {
+            Relation::U32(p) => p.layout().word_bits(),
+            Relation::U64(p) => p.layout().word_bits(),
+            Relation::U128(p) => p.layout().word_bits(),
+        });
+        config["packing"] = match &self.relation {
+            Relation::U32(p) => packing_report(p.layout()),
+            Relation::U64(p) => packing_report(p.layout()),
+            Relation::U128(p) => packing_report(p.layout()),
+        };
         if let Relation::U32(relation) = &self.relation {
             let security = relation.security();
             let params = relation.params();
@@ -142,125 +153,113 @@ impl Context {
     }
 
     pub(super) fn prove_and_verify(&self) -> usize {
-        let root = tracing::info_span!("Verified trial", component = "benchmark.verified-trial", tag_end_to_end = true).entered();
-        let total = tracing::info_span!("Witness to proof", component = "benchmark.witness-to-proof").entered();
-        // Serialized proof size: the commitment root, the Spartan payload as
-        // 16-byte field elements, the transmitted nonces outside the opening
-        // as 8-byte words, and the F2Z opening's exact codec bytes.
-        let proof_bytes = match &self.relation {
-            Relation::U32(relation) => {
-                let witness = {
-                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
-                    U32MulWitness::from_inputs(&self.corpus.narrow_inputs()).expect("u32 witness")
-                };
-                for (i, &(a, b)) in self.corpus.inputs().iter().enumerate() {
-                    assert_eq!(
-                        u128::from(witness.product_values()[i] as u32),
-                        self.corpus.workload.output(a, b)
-                    );
-                }
-                let online = tracing::info_span!("native-mul:online").entered();
-                let hint = {
-                    let _s = tracing::info_span!("native-mul:commit").entered();
-                    commit_u32_mul_witness(relation, witness.f2z_bit_rows())
-                        .expect("u32 commitment")
-                };
-                let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
-                    .expect("u32 full proof");
-                drop(online);
-                drop(total);
-                {
-                    let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
-                    verify_u32_mul(
-                        &mut Blake3Transcript::new(),
-                        relation,
-                        &hint.commitment,
-                        &proof,
-                    )
-                    .expect("u32 full verification");
-                }
-                drop(root);
-                let bytes = hint.commitment.root.len()
-                    + proof.spartan_payload_elements() * 16
-                    + (proof.grinding_nonce_count(relation.security())
-                        - proof.f2z().grinding_nonces.len())
-                        * 8
-                    + proof.f2z().to_bytes().len();
-                std::hint::black_box(proof);
-                bytes
-            }
-            Relation::U64(relation) => {
-                let witness = {
-                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
-                    U64MulWitness::from_inputs(self.corpus.inputs())
-                        .and_then(|w| w.with_split_shift(self.split_shift))
-                        .expect("u64 witness")
-                };
-                for (i, &(a, b)) in self.corpus.inputs().iter().enumerate() {
-                    assert_eq!(witness.product(i), self.corpus.workload.output(a, b));
-                }
-                let online = tracing::info_span!("native-mul:online").entered();
-                let hint = {
-                    let _s = tracing::info_span!("native-mul:commit").entered();
-                    commit_u64_mul_witness(relation, witness.f2z_bit_rows())
-                        .expect("u64 commitment")
-                };
-                let proof = prove_u64_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
-                    .expect("u64 full proof");
-                drop(online);
-                drop(total);
-                {
-                    let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
-                    verify_u64_mul(
-                        &mut Blake3Transcript::new(),
-                        relation,
-                        &hint.commitment,
-                        &proof,
-                    )
-                    .expect("u64 full verification");
-                }
-                drop(root);
-                let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
-                std::hint::black_box(proof);
-                bytes
-            }
-            Relation::U128(relation) => {
-                let witness = {
-                    let _s = tracing::info_span!("Witness generation", component = "benchmark.witness-evaluation", tag_witness_generation = true).entered();
-                    U128MulWitness::from_inputs(self.corpus.wide_inputs()).expect("u128 witness")
-                };
-                for (i, &(x, y)) in self.corpus.wide_inputs().iter().enumerate() {
-                    let [_, _, lo, hi] = self.corpus.workload.wide_row(x, y);
-                    assert_eq!(witness.product(i), (lo, hi));
-                }
-                let online = tracing::info_span!("native-mul:online").entered();
-                let hint = {
-                    let _s = tracing::info_span!("native-mul:commit").entered();
-                    commit_u128_mul_witness(relation, witness.f2z_bit_rows())
-                        .expect("u128 commitment")
-                };
-                let proof = prove_u128_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
-                    .expect("u128 full proof");
-                drop(online);
-                drop(total);
-                {
-                    let _s = tracing::info_span!("Verification", component = "benchmark.verification", tag_verification = true).entered();
-                    verify_u128_mul(
-                        &mut Blake3Transcript::new(),
-                        relation,
-                        &hint.commitment,
-                        &proof,
-                    )
-                    .expect("u128 full verification");
-                }
-                drop(root);
-                let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
-                std::hint::black_box(proof);
-                bytes
-            }
-        };
-        proof_bytes
+        match &self.relation {
+            Relation::U32(relation) => trial(
+                relation,
+                |i| {
+                    let (x, y) = self.corpus.inputs()[i];
+                    (x as u32, y as u32)
+                },
+                |w| {
+                    for (i, &(x, y)) in self.corpus.inputs().iter().enumerate() {
+                        assert_eq!(
+                            u128::from(w.z_lo_values()[i]),
+                            self.corpus.workload.output(x, y)
+                        );
+                    }
+                },
+            ),
+            Relation::U64(relation) => trial(
+                relation,
+                |i| self.corpus.inputs()[i],
+                |w| {
+                    for (i, &(x, y)) in self.corpus.inputs().iter().enumerate() {
+                        assert_eq!(w.product(i), self.corpus.workload.output(x, y));
+                    }
+                },
+            ),
+            Relation::U128(relation) => trial(
+                relation,
+                |i| self.corpus.wide_inputs()[i],
+                |w| {
+                    for (i, &(x, y)) in self.corpus.wide_inputs().iter().enumerate() {
+                        let [_, _, lo, hi] = self.corpus.workload.wide_row(x, y);
+                        assert_eq!((w.z_lo_values()[i], w.z_hi_values()[i]), (lo, hi));
+                    }
+                },
+            ),
+        }
     }
+}
+
+fn packing_report<T: ::f2z::piop::spartan::MulWord>(layout: &MulLayout<T>) -> Value {
+    let shape = |p: ::f2z::pcs::IntegerMatrixLayout| {
+        json!({
+            "t": p.row_vars, "s": p.col_vars, "physical_word_bits": p.word_bits,
+        })
+    };
+    json!({
+        "logical_word_bits": layout.word_bits(),
+        "mode": if layout.uses_direct_opening() {"direct"} else {"virtual"},
+        "committed": shape(layout.committed_layout()),
+        "opening": shape(layout.f2z_params()),
+    })
+}
+
+fn trial<T: ::f2z::piop::spartan::mul::MulWord>(
+    relation: &PreparedRelation<MulLayout<T>>,
+    input: impl FnMut(usize) -> (T, T),
+    check: impl FnOnce(&MulWitness<T>),
+) -> usize
+where
+    MulLayout<T>: ::f2z::piop::spartan::protocol::RelationSpec<Witness = MulWitness<T>>,
+{
+    let root = tracing::info_span!(
+        "Verified trial",
+        component = "benchmark.verified-trial",
+        tag_end_to_end = true
+    )
+    .entered();
+    let total =
+        tracing::info_span!("Witness to proof", component = "benchmark.witness-to-proof").entered();
+    let witness = {
+        let _scope = tracing::info_span!(
+            "Witness generation",
+            component = "benchmark.witness-evaluation",
+            tag_witness_generation = true
+        )
+        .entered();
+        MulWitness::from_fn_with_layout(*relation.layout(), input).expect("multiplication witness")
+    };
+    check(&witness);
+    let online = tracing::info_span!("native-mul:online").entered();
+    let hint = {
+        let _scope = tracing::info_span!("native-mul:commit").entered();
+        protocol::commit(relation, witness.f2z_bit_rows()).expect("multiplication commitment")
+    };
+    let proof = protocol::prove(&mut Blake3Transcript::new(), relation, &witness, &hint)
+        .expect("multiplication proof");
+    drop(online);
+    drop(total);
+    {
+        let _scope = tracing::info_span!(
+            "Verification",
+            component = "benchmark.verification",
+            tag_verification = true
+        )
+        .entered();
+        protocol::verify(
+            &mut Blake3Transcript::new(),
+            relation,
+            &hint.commitment,
+            &proof,
+        )
+        .expect("multiplication verification");
+    }
+    drop(root);
+    let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
+    std::hint::black_box(proof);
+    bytes
 }
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
@@ -268,8 +267,19 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("mul_e2e_compare/f2z:started").entered();
     if corpus.workload.is_wide() {
-        let w = U128MulWitness::from_inputs(corpus.wide_inputs()).unwrap();
-        let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+        let w = MulWitness::<u128>::from_inputs(corpus.wide_inputs()).unwrap();
+        let ms = {
+            drop(started);
+            f2z::observability::duration(
+                &started_recording
+                    .intervals()
+                    .expect("complete operation capture"),
+                "mul_e2e_compare/f2z:started",
+            )
+            .expect("query completed operation")
+        }
+        .as_secs_f64()
+            * 1e3;
         let rows = (0..corpus.len())
             .map(|i| {
                 [
@@ -284,15 +294,26 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     }
     let (rows, generation_ms) = match corpus.workload {
         Workload::U32 => {
-            let w = U32MulWitness::from_inputs(&corpus.narrow_inputs()).unwrap();
-            let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+            let w = MulWitness::<u32>::from_inputs(&corpus.narrow_inputs()).unwrap();
+            let ms = {
+                drop(started);
+                f2z::observability::duration(
+                    &started_recording
+                        .intervals()
+                        .expect("complete operation capture"),
+                    "mul_e2e_compare/f2z:started",
+                )
+                .expect("query completed operation")
+            }
+            .as_secs_f64()
+                * 1e3;
             (
                 (0..corpus.len())
                     .map(|i| {
-                        let product = w.product_values()[i];
+                        let product = w.product(i);
                         [
-                            w.x_values()[i],
-                            w.y_values()[i],
+                            u64::from(w.x_values()[i]),
+                            u64::from(w.y_values()[i]),
                             u64::from(product as u32),
                             product >> 32,
                         ]
@@ -302,7 +323,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
             )
         }
         Workload::U64 => {
-            let w = U64MulWitness::from_inputs(corpus.inputs())
+            let w = MulWitness::<u64>::from_inputs(corpus.inputs())
                 .and_then(|w| w.with_split_shift(split_shift))
                 .unwrap();
             let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
@@ -310,8 +331,8 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
                 (0..corpus.len())
                     .map(|i| {
                         [
-                            w.x_values()[i],
-                            w.y_values()[i],
+                            u64::from(w.x_values()[i]),
+                            u64::from(w.y_values()[i]),
                             w.z_lo_values()[i],
                             w.z_hi_values()[i],
                         ]
@@ -335,15 +356,21 @@ mod tests {
         let _trace = super::super::common::test_tracing();
         use tracing_subscriber::prelude::*;
         let context = Context::setup(Arc::new(Corpus::new(Workload::U32, 15, 7)));
-        let bytes = tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || context.prove_and_verify());
-        tracing::subscriber::with_default(tracing_subscriber::registry().with(f2z::observability::layer()), || {
-            for _ in 0..6 {
-                let timing = context.run();
-                timing.validate();
-                assert_eq!(timing.proof_bytes, bytes);
-                assert!(timing.metrics().piop_ms > 0.0);
-            }
-        });
+        let bytes =
+            tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+                context.prove_and_verify()
+            });
+        tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(f2z::observability::layer()),
+            || {
+                for _ in 0..6 {
+                    let timing = context.run();
+                    timing.validate();
+                    assert_eq!(timing.proof_bytes, bytes);
+                    assert!(timing.metrics().piop_ms > 0.0);
+                }
+            },
+        );
     }
     use super::*;
 
@@ -356,7 +383,7 @@ mod tests {
         };
         assert_eq!(
             relation.ligerito(),
-            Some(U32MulLigerito::CustomJohnson {
+            Some(LigeritoSelection::CustomJohnson {
                 log_inv_rate: 1,
                 initial_k: 4
             })
@@ -397,10 +424,11 @@ mod tests {
         let Relation::U32(relation) = &context.relation else {
             unreachable!()
         };
-        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
-        let hint = commit_u32_mul_witness(relation, witness.f2z_bit_rows()).unwrap();
-        let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint).unwrap();
-        verify_u32_mul(
+        let witness = MulWitness::<u32>::from_inputs(&inputs).unwrap();
+        let hint = protocol::commit(relation, witness.f2z_bit_rows()).unwrap();
+        let proof =
+            protocol::prove(&mut Blake3Transcript::new(), relation, &witness, &hint).unwrap();
+        protocol::verify(
             &mut Blake3Transcript::new(),
             relation,
             &hint.commitment,
@@ -410,22 +438,22 @@ mod tests {
         let mut commitment = hint.commitment.clone();
         commitment.root[0] ^= 1;
         assert!(
-            verify_u32_mul(&mut Blake3Transcript::new(), relation, &commitment, &proof).is_err()
+            protocol::verify(&mut Blake3Transcript::new(), relation, &commitment, &proof).is_err()
         );
         for change_carry in [false, true] {
-            let mut rows: Vec<_> = witness.mod32_rows().collect();
+            let mut rows: Vec<_> = witness.rows().collect();
             if change_carry {
-                rows[1].w ^= 1;
+                rows[1].hi ^= 1;
             } else {
-                rows[1].z ^= 1;
+                rows[1].lo ^= 1;
             }
-            let bad = U32MulWitness::from_mod32_rows(&rows).unwrap();
-            let bad_hint = commit_u32_mul_witness(relation, bad.f2z_bit_rows()).unwrap();
+            let bad = MulWitness::<u32>::from_rows(&rows).unwrap();
+            let bad_hint = protocol::commit(relation, bad.f2z_bit_rows()).unwrap();
             if let Ok(bad_proof) =
-                prove_u32_mul(&mut Blake3Transcript::new(), relation, &bad, &bad_hint)
+                protocol::prove(&mut Blake3Transcript::new(), relation, &bad, &bad_hint)
             {
                 assert!(
-                    verify_u32_mul(
+                    protocol::verify(
                         &mut Blake3Transcript::new(),
                         relation,
                         &bad_hint.commitment,

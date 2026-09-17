@@ -8,13 +8,12 @@
 //!   cargo run --release --example spartan_probe --features unchecked,span-metrics
 //! ```
 
+use ::f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::PreparedRelation;
+use f2z::piop::spartan::mul::{MulLayout, MulWitness};
 
-use f2z::piop::spartan::{
-    BabyBearMulWitness, PreparedBabyBearMulRelation, PreparedU32MulRelation,
-    U32MulWitness, commit_baby_bear_mul_paper_witness,
-    commit_u32_mul_witness, prove_baby_bear_mul_paper, prove_u32_mul,
-    sample_baby_bear_operand_with, verify_baby_bear_mul_paper, verify_u32_mul,
-};
+use f2z::piop::spartan::{BabyBearMulWitness, sample_baby_bear_operand_with};
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -41,24 +40,29 @@ fn main() {
     match kind.as_str() {
         "u32" => {
             let witness =
-                U32MulWitness::from_fn(count, |_| (rng.random::<u32>(), rng.random::<u32>()))
+                MulWitness::<u32>::from_fn(count, |_| (rng.random::<u32>(), rng.random::<u32>()))
                     .expect("witness");
-            let relation = PreparedU32MulRelation::new(*witness.layout()).expect("relation");
+            let relation =
+                PreparedRelation::<MulLayout<u32>>::new(*witness.layout()).expect("relation");
             for rep in 0..=reps {
-                let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
-                let (hint, started) = f2z::observability::measure(
-                    tracing::info_span!("spartan_probe:hint"),
-                    || commit_u32_mul_witness(&relation, witness.f2z_bit_rows()).expect("commit"),
-                ).expect("measure completed operation");
+                let profile =
+                    f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                let (hint, started) =
+                    f2z::observability::measure(tracing::info_span!("spartan_probe:hint"), || {
+                        protocol::commit(&relation, witness.f2z_bit_rows()).expect("commit")
+                    })
+                    .expect("measure completed operation");
                 let commit_ms = started.as_secs_f64() * 1e3;
                 let mut transcript = Blake3Transcript::new();
-                let (proof, started) = f2z::observability::measure(
-                    tracing::info_span!("spartan_probe:proof"),
-                    || prove_u32_mul(&mut transcript, &relation, &witness, &hint).expect("prove"),
-                ).expect("measure completed operation");
+                let (proof, started) =
+                    f2z::observability::measure(tracing::info_span!("spartan_probe:proof"), || {
+                        protocol::prove(&mut transcript, &relation, &witness, &hint).expect("prove")
+                    })
+                    .expect("measure completed operation");
                 let prove_ms = started.as_secs_f64() * 1e3;
                 let mut verifier = Blake3Transcript::new();
-                verify_u32_mul(&mut verifier, &relation, &hint.commitment, &proof).expect("verify");
+                protocol::verify(&mut verifier, &relation, &hint.commitment, &proof)
+                    .expect("verify");
                 let header = if rep == 0 {
                     format!(
                         "u32 2^{exponent} WARM-UP (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
@@ -80,29 +84,25 @@ fn main() {
             })
             .expect("witness");
             let layout = *witness.layout();
-            let prepared = PreparedBabyBearMulRelation::new(layout).expect("relation");
+            let prepared = PreparedRelation::<BabyBearMulLayout>::new(layout).expect("relation");
             for rep in 0..=reps {
-                let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
-                let (hint, started) = f2z::observability::measure(
-                    tracing::info_span!("spartan_probe:hint"),
-                    || commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows())
-                    .expect("commit"),
-                ).expect("measure completed operation");
+                let profile =
+                    f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                let (hint, started) =
+                    f2z::observability::measure(tracing::info_span!("spartan_probe:hint"), || {
+                        protocol::commit(&prepared, witness.f2z_bit_rows()).expect("commit")
+                    })
+                    .expect("measure completed operation");
                 let commit_ms = started.as_secs_f64() * 1e3;
                 let mut transcript = Blake3Transcript::new();
-                let (proof, started) = f2z::observability::measure(
-                    tracing::info_span!("spartan_probe:proof"),
-                    || prove_baby_bear_mul_paper(
-                    &mut transcript,
-                    &prepared,
-                    &witness,
-                    &hint,
-                )
-                .expect("prove"),
-                ).expect("measure completed operation");
+                let (proof, started) =
+                    f2z::observability::measure(tracing::info_span!("spartan_probe:proof"), || {
+                        protocol::prove(&mut transcript, &prepared, &witness, &hint).expect("prove")
+                    })
+                    .expect("measure completed operation");
                 let prove_ms = started.as_secs_f64() * 1e3;
                 let mut verifier = Blake3Transcript::new();
-                verify_baby_bear_mul_paper(&mut verifier, &prepared, &hint.commitment, &proof)
+                protocol::verify(&mut verifier, &prepared, &hint.commitment, &proof)
                     .expect("verify");
                 let header = if rep == 0 {
                     format!(

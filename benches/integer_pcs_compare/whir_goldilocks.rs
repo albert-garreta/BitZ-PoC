@@ -226,14 +226,22 @@ impl Backend {
 
     pub fn materialize(
         &self,
-        x: &[u64],
-        y: &[u64],
-        product: &[u64],
+        witness: &f2z::piop::spartan::MulWitness<u32>,
     ) -> Result<MaterializedWitness, Error> {
-        let table = plonky3::column_table::<Val>(
-            self.capacity,
-            &[("X", x), ("Y", y), ("Product", product)],
-        )?;
+        let capacity = witness.layout().capacity();
+        if capacity != self.capacity {
+            return Err(plonky3::ColumnError::Length {
+                column: "X",
+                expected: self.capacity,
+                actual: capacity,
+            }
+            .into());
+        }
+        let table = plonky3::column_table_from_fn::<Val>(capacity, 3, |col, i| match col {
+            0 => ("X", u64::from(witness.x_values()[i])),
+            1 => ("Y", u64::from(witness.y_values()[i])),
+            _ => ("Product", witness.product(i)),
+        })?;
         let witness = WhirLayout::new_witness(vec![table], self.folding);
         debug_assert_eq!(witness.table_shapes(), self.protocol.table_shapes());
         Ok(MaterializedWitness { witness })
@@ -420,8 +428,10 @@ mod tests {
     #[test]
     fn rejects_changed_claim_and_openings() {
         use super::*;
-        let backend = Backend::setup(16).unwrap();
-        let witness = backend.materialize(&[2; 16], &[3; 16], &[6; 16]).unwrap();
+        let backend = Backend::setup(256).unwrap();
+        let witness = backend
+            .materialize(&f2z::piop::spartan::MulWitness::<u32>::from_fn(256, |_| (2, 3)).unwrap())
+            .unwrap();
         let committed = backend.commit(witness, 42);
         let ready = backend.derive_and_bind_claim(committed).unwrap();
         let mut opened = backend.open(ready);

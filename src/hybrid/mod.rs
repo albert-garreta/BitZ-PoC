@@ -8,6 +8,11 @@
 //! virtual packed witness), Spartan/F2Z GKR, Binius SHA PIOP, joint bit
 //! sumcheck, one ring switch, one Ligerito continuation. The SHA workload is
 //! a sequential compression chain starting from the standard SHA-256 IV.
+use crate::piop::spartan::MulRow;
+use crate::piop::spartan::mul::{MulError, MulLayout, MulWitness};
+use crate::piop::spartan::protocol::PreparedRelationPrefix;
+use crate::piop::spartan::protocol::ProtocolError;
+
 mod channel;
 mod codec;
 pub mod mod32_binius;
@@ -16,14 +21,10 @@ mod security;
 mod sha;
 pub(crate) mod sumcheck;
 
-pub use crate::piop::spartan::u32_mul::U32MulMod32Row;
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::{
     ligerito_flock::OodRoundParams,
-    piop::spartan::{
-        f2z::{U32MulPrefixRelation, hybrid as mul},
-        u32_mul::{U32MulLayout, U32MulWitness},
-    },
+    piop::spartan::f2z::hybrid as mul,
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use flock_core::{
@@ -47,9 +48,9 @@ pub enum Error {
     #[error("Binius: {0}")]
     Binius(String),
     #[error(transparent)]
-    Multiplication(#[from] crate::piop::spartan::f2z::SpartanF2zError),
+    Multiplication(#[from] ProtocolError),
     #[error(transparent)]
-    Relation(#[from] crate::piop::spartan::u32_mul::U32MulError),
+    Relation(#[from] MulError),
     #[error(transparent)]
     Spartan(#[from] crate::piop::spartan::piop::SpartanError),
     #[error(transparent)]
@@ -98,7 +99,7 @@ pub(crate) struct BinaryClaim {
 /// witness and final SHA state; it is reusable across instances of this shape.
 pub struct PreparedHybrid {
     parameters: Parameters,
-    multiplication: U32MulPrefixRelation,
+    multiplication: PreparedRelationPrefix<MulLayout<u32>>,
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
@@ -113,7 +114,7 @@ pub struct PreparedHybrid {
 /// Witness and the two initial commitments, retained until proof generation.
 pub struct CommittedHybrid {
     statement: Statement,
-    multiplication: U32MulWitness,
+    multiplication: MulWitness<u32>,
     rows: Vec<Vec<u64>>,
     sha: binius_core::constraint_system::ValueVec,
     packed: [Vec<Gf128>; 2],
@@ -126,8 +127,8 @@ impl CommittedHybrid {
     }
 
     /// The committed x, y, modular result z, and carry w for every live row.
-    pub fn multiplication_rows(&self) -> impl ExactSizeIterator<Item = U32MulMod32Row> + '_ {
-        self.multiplication.mod32_rows()
+    pub fn multiplication_rows(&self) -> impl ExactSizeIterator<Item = MulRow<u32>> + '_ {
+        self.multiplication.rows()
     }
 }
 
@@ -165,8 +166,9 @@ impl PreparedHybrid {
                 "SHA compression count must be a power of two from 2 to 2^16",
             ));
         }
-        let layout = U32MulLayout::new(parameters.multiplications)?;
-        let multiplication = U32MulPrefixRelation::new::<security::CompositionProfile>(layout)?;
+        let layout = MulLayout::<u32>::new(parameters.multiplications)?;
+        let multiplication =
+            PreparedRelationPrefix::<MulLayout<u32>>::new::<security::CompositionProfile>(layout)?;
         let sha = sha::ShaRelation::new(parameters.sha_compressions)?;
         let geometry = opening::Geometry::new([
             crate::ligerito::packed_vars(&multiplication.params()),
@@ -259,7 +261,7 @@ impl PreparedHybrid {
         inputs: &[(u32, u32)],
         blocks: &[[u32; 16]],
     ) -> Result<CommittedHybrid, Error> {
-        let multiplication = U32MulWitness::from_inputs(inputs)?;
+        let multiplication = MulWitness::<u32>::from_inputs(inputs)?;
         self.commit_multiplication(multiplication, blocks)
     }
 
@@ -267,15 +269,15 @@ impl PreparedHybrid {
     /// Supplied z and w are retained; the proof checks the equality.
     pub fn commit_mod32(
         &self,
-        rows: &[U32MulMod32Row],
+        rows: &[MulRow<u32>],
         blocks: &[[u32; 16]],
     ) -> Result<CommittedHybrid, Error> {
-        self.commit_multiplication(U32MulWitness::from_mod32_rows(rows)?, blocks)
+        self.commit_multiplication(MulWitness::<u32>::from_rows(rows)?, blocks)
     }
 
     fn commit_multiplication(
         &self,
-        multiplication: U32MulWitness,
+        multiplication: MulWitness<u32>,
         blocks: &[[u32; 16]],
     ) -> Result<CommittedHybrid, Error> {
         if multiplication.layout() != self.multiplication.layout()
@@ -570,7 +572,7 @@ mod tests {
         prepared.verify(committed.statement(), &decoded).unwrap();
         // A changed multiplication row is still caught below the floor.
         let mut rows: Vec<_> = committed.multiplication_rows().collect();
-        rows[7].z ^= 1;
+        rows[7].lo ^= 1;
         let invalid = prepared.commit_mod32(&rows, &blocks).unwrap();
         assert!(
             prepared.prove(&invalid).is_err()
@@ -639,14 +641,14 @@ mod tests {
         };
         let prepared = PreparedHybrid::new(parameters).unwrap();
         let edges = [
-            U32MulMod32Row::new(u32::MAX, u32::MAX),
-            U32MulMod32Row::new(65_536, 65_536),
-            U32MulMod32Row::new(u32::MAX, 2),
-            U32MulMod32Row::new(0, u32::MAX),
-            U32MulMod32Row::new(1, u32::MAX),
+            MulRow::<u32>::new(u32::MAX, u32::MAX),
+            MulRow::<u32>::new(65_536, 65_536),
+            MulRow::<u32>::new(u32::MAX, 2),
+            MulRow::<u32>::new(0, u32::MAX),
+            MulRow::<u32>::new(1, u32::MAX),
         ];
-        assert_eq!((edges[0].z, edges[0].w), (1, u32::MAX - 1));
-        assert_eq!((edges[1].z, edges[1].w), (0, 1));
+        assert_eq!((edges[0].lo, edges[0].hi), (1, u32::MAX - 1));
+        assert_eq!((edges[1].lo, edges[1].hi), (0, 1));
         let rows: Vec<_> = (0..parameters.multiplications)
             .map(|i| edges[i % edges.len()])
             .collect();
@@ -667,8 +669,8 @@ mod tests {
             match limb {
                 0 => row.x ^= 1,
                 1 => row.y ^= 1,
-                2 => row.z ^= 1,
-                _ => row.w ^= 1,
+                2 => row.lo ^= 1,
+                _ => row.hi ^= 1,
             }
             let invalid = prepared.commit_mod32(&changed, &blocks).unwrap();
             assert_eq!(invalid.multiplication_rows().next(), Some(changed[0]));

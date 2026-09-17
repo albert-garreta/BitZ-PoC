@@ -117,10 +117,6 @@ pub fn column_table<F: PrimeField64>(
     capacity: usize,
     columns: &[(&'static str, &[u64])],
 ) -> Result<Table<F>, ColumnError> {
-    let len = capacity
-        .checked_mul(columns.len())
-        .ok_or(ColumnError::SizeOverflow)?;
-    let mut values = Vec::with_capacity(len);
     for &(column, input) in columns {
         if input.len() != capacity {
             return Err(ColumnError::Length {
@@ -129,7 +125,24 @@ pub fn column_table<F: PrimeField64>(
                 actual: input.len(),
             });
         }
-        for (index, &value) in input.iter().enumerate() {
+    }
+    column_table_from_fn(capacity, columns.len(), |col, index| {
+        (columns[col].0, columns[col].1[index])
+    })
+}
+
+pub fn column_table_from_fn<F: PrimeField64>(
+    capacity: usize,
+    columns: usize,
+    read: impl Fn(usize, usize) -> (&'static str, u64),
+) -> Result<Table<F>, ColumnError> {
+    let len = capacity
+        .checked_mul(columns)
+        .ok_or(ColumnError::SizeOverflow)?;
+    let mut values = Vec::with_capacity(len);
+    for col in 0..columns {
+        for index in 0..capacity {
+            let (column, value) = read(col, index);
             if value >= F::ORDER_U64 {
                 return Err(ColumnError::NonCanonical {
                     column,

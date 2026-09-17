@@ -21,23 +21,17 @@
 //! allocator accounting in the latency run. `F2Z_BENCH_ORDER` rotates the
 //! first measured protocol across fresh processes.
 
+use f2z::piop::spartan::mul::MulWitness;
 mod common;
 
-use std::{hint::black_box};
-
-#[cfg(feature = "bench-peak-memory")]
-use std::{
-    alloc::{GlobalAlloc, Layout, System},
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::hint::black_box;
 
 use f2z::{
     piop::spartan::{
         PreparedConstraintMatrices, R1csProductMles, SpartanF2zField, SpartanPiopProof,
-        U32MulWitness, UnivariateSkipSpartanPiopProof, prepare_u32_mul_relation,
-        project_u32_mul_native_witness, prove_spartan_piop_u32_native,
-        prove_spartan_piop_u32_native_with_univariate_skip, spartan_f2z_field_config,
-        verify_spartan_proof, verify_spartan_univariate_skip_proof,
+        UnivariateSkipSpartanPiopProof, prepare_u32_mul_relation, project_u32_mul_native_witness,
+        prove_spartan_piop_u32_native, prove_spartan_piop_u32_native_with_univariate_skip,
+        spartan_f2z_field_config, verify_spartan_proof, verify_spartan_univariate_skip_proof,
     },
     poly::mle::DenseMultilinearExtension,
     transcript::Blake3Transcript,
@@ -50,61 +44,22 @@ const DEFAULT_EXPONENT: usize = 15;
 const DEFAULT_REPETITIONS: usize = 5;
 
 #[cfg(feature = "bench-peak-memory")]
-struct PeakAlloc;
-
-#[cfg(feature = "bench-peak-memory")]
-static CURRENT_BYTES: AtomicUsize = AtomicUsize::new(0);
-#[cfg(feature = "bench-peak-memory")]
-static PEAK_BYTES: AtomicUsize = AtomicUsize::new(0);
-
-#[cfg(feature = "bench-peak-memory")]
-unsafe impl GlobalAlloc for PeakAlloc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() {
-            let current = CURRENT_BYTES.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
-            PEAK_BYTES.fetch_max(current, Ordering::Relaxed);
-        }
-        pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) };
-        CURRENT_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let resized = unsafe { System.realloc(pointer, layout, new_size) };
-        if !resized.is_null() {
-            if new_size >= layout.size() {
-                let increase = new_size - layout.size();
-                let current = CURRENT_BYTES.fetch_add(increase, Ordering::Relaxed) + increase;
-                PEAK_BYTES.fetch_max(current, Ordering::Relaxed);
-            } else {
-                CURRENT_BYTES.fetch_sub(layout.size() - new_size, Ordering::Relaxed);
-            }
-        }
-        resized
-    }
-}
-
-#[cfg(feature = "bench-peak-memory")]
 #[global_allocator]
-static ALLOCATOR: PeakAlloc = PeakAlloc;
+static ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
 #[cfg(feature = "bench-peak-memory")]
 fn reset_peak() {
-    PEAK_BYTES.store(CURRENT_BYTES.load(Ordering::Relaxed), Ordering::Relaxed);
+    common::peak_memory::reset_peak();
 }
 
 #[cfg(feature = "bench-peak-memory")]
 fn live_mib() -> f64 {
-    CURRENT_BYTES.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::live_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 #[cfg(feature = "bench-peak-memory")]
 fn peak_mib() -> f64 {
-    PEAK_BYTES.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::peak_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 #[cfg(not(feature = "bench-peak-memory"))]
@@ -708,7 +663,7 @@ fn bench_exponent(
         .expect("multiplication domain fits usize");
     let shape_seed = root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let mut rng = StdRng::seed_from_u64(shape_seed);
-    let witness = U32MulWitness::from_fn(multiplications, |_| {
+    let witness = MulWitness::<u32>::from_fn(multiplications, |_| {
         (rng.random::<u32>(), rng.random::<u32>())
     })
     .expect("valid u32 multiplication witness");

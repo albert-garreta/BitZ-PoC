@@ -7,7 +7,8 @@
 //! PROBE_SHAPES="19:11 20:12" RAYON_NUM_THREADS=8 \
 //!   RUSTFLAGS="-C target-cpu=native" cargo run --release --example hybrid_probe --features hybrid
 //! ```
-use f2z::hybrid::{Parameters, PreparedHybrid, U32MulMod32Row};
+use f2z::hybrid::{Parameters, PreparedHybrid};
+use f2z::piop::spartan::MulRow;
 use tracing_subscriber::prelude::*;
 
 fn rss_peak() -> u64 {
@@ -35,12 +36,21 @@ fn main() {
     let reps: usize = std::env::var("PROBE_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
     let verify = std::env::var("PROBE_VERIFY").map_or(true, |v| v != "0");
     for (mul_log, sha_log) in shapes {
-        let parameters = Parameters { multiplications: 1 << mul_log, sha_compressions: 1 << sha_log };
-        let (prepared, t0) = f2z::observability::measure(
-            tracing::info_span!("hybrid_probe:prepared"),
-            || PreparedHybrid::new(parameters).expect("prepare"),
-        ).expect("measure completed operation");
-        eprintln!("setup {}:{} {:.0} ms", mul_log, sha_log, t0.as_secs_f64() * 1e3);
+        let parameters = Parameters {
+            multiplications: 1 << mul_log,
+            sha_compressions: 1 << sha_log,
+        };
+        let (prepared, t0) =
+            f2z::observability::measure(tracing::info_span!("hybrid_probe:prepared"), || {
+                PreparedHybrid::new(parameters).expect("prepare")
+            })
+            .expect("measure completed operation");
+        eprintln!(
+            "setup {}:{} {:.0} ms",
+            mul_log,
+            sha_log,
+            t0.as_secs_f64() * 1e3
+        );
         let inputs: Vec<_> = (0..parameters.multiplications as u32)
             .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
             .collect();
@@ -49,9 +59,13 @@ fn main() {
             .collect();
         for rep in 0..=reps {
             let _ = memory.take();
-            let start_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let start_recording =
+                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
             let start = tracing::info_span!("hybrid_probe:start").entered();
-            let rows: Vec<_> = inputs.iter().map(|&(x, y)| U32MulMod32Row::new(x, y)).collect();
+            let rows: Vec<_> = inputs
+                .iter()
+                .map(|&(x, y)| MulRow::<u32>::new(x, y))
+                .collect();
             let committed = prepared.commit_mod32(&rows, &blocks).expect("commit");
             drop(start);
             let proof = tracing::info_span!("hybrid_probe:proof").in_scope(|| prepared.prove(&committed).expect("prove"));

@@ -14,6 +14,9 @@
 //! proof-only view back to that commitment. Non-power-of-two assignment-row
 //! batches retain the legacy inner-sumcheck fallback.
 
+use crate::piop::spartan::protocol::ProtocolError;
+use crate::piop::spartan::protocol::linear::LinearProof;
+
 use crate::piop::spartan::SpartanField as _;
 use crate::poly::mle::FactoredMultilinearExtension;
 #[cfg(test)]
@@ -48,14 +51,15 @@ use crate::{
 
 use super::super::{
     SpartanError, SpartanField,
-    f2z::{SpartanF2zField, hash_code, profile_code},
+    f2z::SpartanF2zField,
     matrix::eq_table,
     profile::IopSecurityParams,
     protocol::{
-        FieldConfig, ProtocolError,
+        FieldConfig,
+        binding::{hash_code, profile_code},
         linear::{
-            LinearBatching, LinearDomains, LinearProof, LinearProveOptions, LinearRelationSpec,
-            OpeningClaim, frame, prove_linear, verify_linear,
+            LinearBatching, LinearDomains, LinearProveOptions, LinearRelationSpec, OpeningClaim,
+            frame, prove_linear, verify_linear,
         },
     },
     sumcheck::SumcheckError,
@@ -94,20 +98,11 @@ pub(super) type RawMontgomery = u128;
 /// deliberately absent from the proof and transcript.
 pub const SHA256_DEFAULT_INNER_PREFIX_VARS: usize = 2;
 
-/// Runtime-prime SHA-256 proof with explicit Spartan Fiat--Shamir grinding
-/// nonces: the shared linear-relation proof. The prime itself is
-/// intentionally absent: the verifier re-derives it after binding the
-/// commitment and public statement. The inner sumcheck is empty for direct
-/// product openings and populated only by the legacy non-power-of-two
-/// fallback.
-pub type Sha256CompressionProof = LinearProof;
-/// Failures in the SHA-256 Spartan/F2Z adapter: the shared protocol error.
-pub type Sha256F2zError = ProtocolError;
 /// Derives the BLAKE3/UDR Ligerito configuration selected by the prepared
 /// batch's security profile.
 pub fn sha256_compression_configs(
     prepared: &PreparedSha256CompressionBatch,
-) -> Result<(LigProverConfig, LigVerifierConfig), Sha256F2zError> {
+) -> Result<(LigProverConfig, LigVerifierConfig), ProtocolError> {
     let f_layout = prepared.source_params();
     validate_source_params(f_layout)?;
     let resolved = prepared.ligerito_configuration()?;
@@ -119,12 +114,12 @@ pub(super) fn commit_source_rows_with_config(
     f_layout: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
-) -> Result<FlockCommitHint, Sha256F2zError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     validate_source_params(f_layout)?;
     validate_rows(f_layout, &rows)?;
     validate_shared_constant(&rows)?;
     let hint = commit_rs_ligerito_rows(f_layout, rows, pc);
-    validate_ligerito_commitment(&hint.commitment, pc).map_err(Sha256F2zError::F2z)?;
+    validate_ligerito_commitment(&hint.commitment, pc).map_err(ProtocolError::F2z)?;
     Ok(hint)
 }
 
@@ -133,7 +128,7 @@ pub fn commit_sha256_compression_witness_with_config(
     prepared: &PreparedSha256CompressionBatch,
     witness: &Sha256CompressionWitnessBatch,
     pc: &LigProverConfig,
-) -> Result<FlockCommitHint, Sha256F2zError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     validate_ligerito_config_for(prepared, pc)?;
     validate_rows(prepared.source_params(), witness.source_rows())?;
     validate_shared_constant(witness.source_rows())?;
@@ -144,7 +139,7 @@ pub fn commit_sha256_compression_witness_with_config(
 pub fn commit_sha256_compression_witness(
     prepared: &PreparedSha256CompressionBatch,
     witness: &Sha256CompressionWitnessBatch,
-) -> Result<FlockCommitHint, Sha256F2zError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     let (pc, _) = sha256_compression_configs(prepared)?;
     commit_sha256_compression_witness_with_config(prepared, witness, &pc)
 }
@@ -181,7 +176,7 @@ enum Sha256CompressionRelation<'p> {
 
 impl<'p> Sha256CompressionRelation<'p> {
     /// Validates the batch's geometry and selects its opening path.
-    fn new(prepared: &'p PreparedSha256CompressionBatch) -> Result<Self, Sha256F2zError> {
+    fn new(prepared: &'p PreparedSha256CompressionBatch) -> Result<Self, ProtocolError> {
         let f_layout = prepared.source_params();
         let h_layout = prepared.assignment_params();
         validate_common_geometry(None, prepared.map(), h_layout, f_layout)?;
@@ -204,7 +199,7 @@ impl<'p> Sha256CompressionRelation<'p> {
                 order: None,
                 instance_vars,
             })),
-            _ => Err(Sha256F2zError::InvalidGeometry),
+            _ => Err(ProtocolError::InvalidGeometry),
         }
     }
 }
@@ -481,7 +476,7 @@ pub fn prove_sha256_compressions_with_prefix_vars_and_config<T: Transcript + Sen
     hint_f: &FlockCommitHint,
     prefix_vars: usize,
     pc: &LigProverConfig,
-) -> Result<Sha256CompressionProof, Sha256F2zError> {
+) -> Result<LinearProof, ProtocolError> {
     let options = LinearProveOptions { prefix_vars };
     match Sha256CompressionRelation::new(prepared)? {
         Sha256CompressionRelation::Product(spec) => prove_linear(
@@ -515,7 +510,7 @@ pub fn prove_sha256_compressions_with_config<T: Transcript + Send>(
     witness: &Sha256CompressionWitnessBatch,
     hint_f: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<Sha256CompressionProof, Sha256F2zError> {
+) -> Result<LinearProof, ProtocolError> {
     prove_sha256_compressions_with_prefix_vars_and_config(
         transcript,
         prepared,
@@ -534,7 +529,7 @@ pub fn prove_sha256_compressions<T: Transcript + Send>(
     public_statement: &[Sha256CompressionStatement],
     witness: &Sha256CompressionWitnessBatch,
     hint_f: &FlockCommitHint,
-) -> Result<Sha256CompressionProof, Sha256F2zError> {
+) -> Result<LinearProof, ProtocolError> {
     let (pc, _) = sha256_compression_configs(prepared)?;
     prove_sha256_compressions_with_config(
         transcript,
@@ -555,7 +550,7 @@ pub fn prove_sha256_compressions_with_prefix_vars<T: Transcript + Send>(
     witness: &Sha256CompressionWitnessBatch,
     hint_f: &FlockCommitHint,
     prefix_vars: usize,
-) -> Result<Sha256CompressionProof, Sha256F2zError> {
+) -> Result<LinearProof, ProtocolError> {
     let (pc, _) = sha256_compression_configs(prepared)?;
     prove_sha256_compressions_with_prefix_vars_and_config(
         transcript,
@@ -576,9 +571,9 @@ pub fn verify_sha256_compressions_with_config<T: Transcript + Send>(
     prepared: &PreparedSha256CompressionBatch,
     public_statement: &[Sha256CompressionStatement],
     commitment_f: &Commitment,
-    proof: &Sha256CompressionProof,
+    proof: &LinearProof,
     vc: &LigVerifierConfig,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     match Sha256CompressionRelation::new(prepared)? {
         Sha256CompressionRelation::Product(spec) => {
             verify_linear(transcript, &spec, public_statement, commitment_f, proof, vc)
@@ -595,8 +590,8 @@ pub fn verify_sha256_compressions<T: Transcript + Send>(
     prepared: &PreparedSha256CompressionBatch,
     public_statement: &[Sha256CompressionStatement],
     commitment_f: &Commitment,
-    proof: &Sha256CompressionProof,
-) -> Result<(), Sha256F2zError> {
+    proof: &LinearProof,
+) -> Result<(), ProtocolError> {
     let (_, vc) = sha256_compression_configs(prepared)?;
     verify_sha256_compressions_with_config(
         transcript,
@@ -641,13 +636,13 @@ impl ProductLinearBatching {
         public_batch_weight: SpartanF2zField,
         constant_weight: SpartanF2zField,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<Self, Sha256F2zError> {
+    ) -> Result<Self, ProtocolError> {
         validate_public_statement(prepared.instances(), public_statement)?;
         if instance_point.len() != instance_vars(prepared.instances())?
             || beta.len() != SHA256_H_BAR_LIVE_BITS
             || slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
         {
-            return Err(Sha256F2zError::InvalidGeometry);
+            return Err(ProtocolError::InvalidGeometry);
         }
 
         let instance_weights = eq_table(instance_point, field_config)
@@ -673,7 +668,7 @@ impl ProductLinearBatching {
                 field_config.mul(&(public_batch_weight.clone()), &(slot_weight));
             let coefficient = local_coefficients
                 .get_mut(local_column)
-                .ok_or(Sha256F2zError::InvalidGeometry)?;
+                .ok_or(ProtocolError::InvalidGeometry)?;
             *coefficient = field_config.add(coefficient, &public_coefficient);
         }
         let shared_coefficient = field_config.mul(
@@ -721,7 +716,7 @@ impl ProductLinearBatching {
     fn factored_matrix_mle(
         &self,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<FactoredMultilinearExtension<'_, SpartanF2zField>, Sha256F2zError> {
+    ) -> Result<FactoredMultilinearExtension<'_, SpartanF2zField>, ProtocolError> {
         FactoredMultilinearExtension::with_leading_value(
             (1 + self.instance_weights.len() * (self.local_coefficients.len() - 1))
                 .next_power_of_two()
@@ -736,7 +731,7 @@ impl ProductLinearBatching {
                 crate::piop::spartan::sumcheck::SumcheckError::InvalidProductDimensions,
             )
         })
-        .map_err(Sha256F2zError::from)
+        .map_err(ProtocolError::from)
     }
 
     #[cfg(test)]
@@ -767,7 +762,7 @@ impl ProductLinearBatching {
         &self,
         assignment_point: &[SpartanF2zField],
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<SpartanF2zField, Sha256F2zError> {
+    ) -> Result<SpartanF2zField, ProtocolError> {
         let constant_equality = equality_at_zero(assignment_point, field_config)?;
         let zero = SpartanF2zField::zero_with_cfg(field_config);
         let repeated_nonconstant = evaluate_affine_equality_repetition(
@@ -796,12 +791,12 @@ impl ProductLinearBatching {
         &self,
         assignment_equality: &FactoredEqualityWeights,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<SpartanF2zField, Sha256F2zError> {
+    ) -> Result<SpartanF2zField, ProtocolError> {
         let mut evaluation = field_config.mul(
             &(self.shared_coefficient.clone()),
             &(&assignment_equality
                 .evaluate(SHA256_SHARED_CONSTANT_CELL, field_config)
-                .ok_or(Sha256F2zError::InvalidGeometry)?),
+                .ok_or(ProtocolError::InvalidGeometry)?),
         );
         for instance in 0..self.instances {
             for local_column in 1..self.local_coefficients.len() {
@@ -809,7 +804,7 @@ impl ProductLinearBatching {
                     1 + instance * super::constraints::SHA256_H_INSTANCE_BITS + local_column - 1;
                 let equality = assignment_equality
                     .evaluate(flat_column, field_config)
-                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                    .ok_or(ProtocolError::InvalidGeometry)?;
                 let coefficient = field_config.mul(
                     &(self.instance_weights[instance].clone()),
                     &(&self.local_coefficients[local_column]),
@@ -868,12 +863,12 @@ impl PublicLinearBatching {
         public_batch_weight: SpartanF2zField,
         constant_weight: SpartanF2zField,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<Self, Sha256F2zError> {
+    ) -> Result<Self, ProtocolError> {
         validate_public_statement(prepared.instances(), public_statement)?;
         if public_instance_point.len() != instance_vars(prepared.instances())?
             || slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
         {
-            return Err(Sha256F2zError::InvalidGeometry);
+            return Err(ProtocolError::InvalidGeometry);
         }
         let instance_weights =
             eq_table(public_instance_point, field_config).map_err(SpartanError::from)?;
@@ -955,7 +950,7 @@ impl PublicLinearBatching {
         &self,
         assignment_point: &[SpartanF2zField],
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<SpartanF2zField, Sha256F2zError> {
+    ) -> Result<SpartanF2zField, ProtocolError> {
         let constant_equality = equality_at_zero(assignment_point, field_config)?;
         let repeated_public = evaluate_affine_equality_repetition(
             self.instances,
@@ -992,12 +987,12 @@ impl PublicLinearBatching {
         &self,
         assignment_equality: &FactoredEqualityWeights,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<SpartanF2zField, Sha256F2zError> {
+    ) -> Result<SpartanF2zField, ProtocolError> {
         let mut evaluation = field_config.mul(
             &(self.constant_weight.clone()),
             &(&assignment_equality
                 .evaluate(SHA256_SHARED_CONSTANT_CELL, field_config)
-                .ok_or(Sha256F2zError::InvalidGeometry)?),
+                .ok_or(ProtocolError::InvalidGeometry)?),
         );
         for instance in 0..self.instances {
             for word_slot in 0..SHA256_PUBLIC_WORDS {
@@ -1009,7 +1004,7 @@ impl PublicLinearBatching {
                             - 1;
                     let equality = assignment_equality
                         .evaluate(flat_column, field_config)
-                        .ok_or(Sha256F2zError::InvalidGeometry)?;
+                        .ok_or(ProtocolError::InvalidGeometry)?;
                     let coefficient = field_config.mul(
                         &(self.scaled_instance_weights[instance].clone()),
                         &(&self.slot_weights[slot]),
@@ -1053,14 +1048,14 @@ fn linear_opening_claim(
     collapsed_evaluation: &SpartanF2zField,
     inner_claim: SpartanF2zField,
     field_config: &FieldConfig,
-) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
+) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), ProtocolError> {
     if assignment_equality.len() != h_layout.cells()
         || assignment_equality.low_vars != h_layout.row_vars
         || assignment_equality.low.len() != h_layout.rows()
         || assignment_equality.high.len() != h_layout.cols()
         || prepared.linear_assignment_column_count() > h_layout.cells()
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     assignment_equality.scale(collapsed_evaluation, field_config);
     let row_weights = assignment_equality.low;
@@ -1118,7 +1113,7 @@ fn product_opening_claim(
     h_layout: &IntegerMatrixLayout,
     layout: PackedSourceOrder,
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<(ProductRowWeights, Vec<u128>, u128), Sha256F2zError> {
+) -> Result<(ProductRowWeights, Vec<u128>, u128), ProtocolError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
@@ -1126,13 +1121,13 @@ fn product_opening_claim(
         || h_layout.row_vars + h_layout.col_vars != instance_vars + 15
         || batching.local_coefficients.len() != SHA256_H_BAR_LIVE_BITS
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
 
     let (row_weights, col_weights) = match layout {
         PackedSourceOrder::LocalMajor => {
             if h_layout.row_vars > instance_vars {
-                return Err(Sha256F2zError::InvalidGeometry);
+                return Err(ProtocolError::InvalidGeometry);
             }
             let low =
                 compact_eq_table(&batching.instance_point[..h_layout.row_vars], field_config)?;
@@ -1142,7 +1137,7 @@ fn product_opening_claim(
                 || low.len() * high.len() != batching.instances
                 || h_layout.cols() != SHA256_H_BAR_LIVE_BITS.next_power_of_two() * high.len()
             {
-                return Err(Sha256F2zError::InvalidGeometry);
+                return Err(ProtocolError::InvalidGeometry);
             }
 
             let high_instances = high.len();
@@ -1173,7 +1168,7 @@ fn product_opening_claim(
             let local_domain = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
             let local_vars = local_domain.ilog2() as usize;
             if h_layout.row_vars < local_vars || h_layout.row_vars > local_vars + instance_vars {
-                return Err(Sha256F2zError::InvalidGeometry);
+                return Err(ProtocolError::InvalidGeometry);
             }
             let low_instance_vars = h_layout.row_vars - local_vars;
             let low_instance =
@@ -1184,7 +1179,7 @@ fn product_opening_claim(
                 || low_instance.len() * high.len() != batching.instances
                 || high.len() != h_layout.cols()
             {
-                return Err(Sha256F2zError::InvalidGeometry);
+                return Err(ProtocolError::InvalidGeometry);
             }
             let local = batching
                 .local_coefficients
@@ -1220,13 +1215,11 @@ fn product_opening_claim(
 }
 
 #[cfg(test)]
-fn flat_constraint_vars(
-    prepared: &PreparedSha256CompressionBatch,
-) -> Result<usize, Sha256F2zError> {
+fn flat_constraint_vars(prepared: &PreparedSha256CompressionBatch) -> Result<usize, ProtocolError> {
     let live_rows = prepared.linear_row_count();
     let domain = live_rows
         .checked_next_power_of_two()
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .ok_or(ProtocolError::InvalidGeometry)?;
     Ok(domain.ilog2() as usize)
 }
 
@@ -1234,10 +1227,10 @@ pub(super) const fn local_constraint_vars() -> usize {
     SHA256_CONSTRAINTS.next_power_of_two().ilog2() as usize
 }
 
-pub(super) fn instance_vars(instances: usize) -> Result<usize, Sha256F2zError> {
+pub(super) fn instance_vars(instances: usize) -> Result<usize, ProtocolError> {
     let domain = instances
         .checked_next_power_of_two()
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .ok_or(ProtocolError::InvalidGeometry)?;
     Ok(domain.ilog2() as usize)
 }
 
@@ -1245,15 +1238,15 @@ pub(super) fn instance_vars(instances: usize) -> Result<usize, Sha256F2zError> {
 fn public_instance_point(
     constraint_point: &[SpartanF2zField],
     instances: usize,
-) -> Result<&[SpartanF2zField], Sha256F2zError> {
+) -> Result<&[SpartanF2zField], ProtocolError> {
     let vars = instance_vars(instances)?;
     let start = constraint_point
         .len()
         .checked_sub(vars)
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .ok_or(ProtocolError::InvalidGeometry)?;
     constraint_point
         .get(start..)
-        .ok_or(Sha256F2zError::InvalidGeometry)
+        .ok_or(ProtocolError::InvalidGeometry)
 }
 
 /// Computes `β = Cᵀ eq(·, ξ)` directly from the retained signed CSC
@@ -1399,18 +1392,18 @@ fn evaluate_repeated_flat_linear_collapse(
     relation: &PreparedSha256LinearRelation,
     constraint_point: &[SpartanF2zField],
     assignment_point: &[SpartanF2zField],
-) -> Result<SpartanF2zField, Sha256F2zError> {
+) -> Result<SpartanF2zField, ProtocolError> {
     if constraint_point.len() != flat_constraint_vars(prepared)?
         || assignment_point.len()
             != prepared.assignment_params().row_vars + prepared.assignment_params().col_vars
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
 
     let constant_column = relation
         .matrix()
         .column(SHA256_SHARED_CONSTANT_CELL)
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .ok_or(ProtocolError::InvalidGeometry)?;
     let constant_evaluation = evaluate_affine_equality_repetition(
         prepared.instances(),
         SHA256_CONSTRAINTS,
@@ -1464,24 +1457,24 @@ fn evaluate_affine_equality_repetition<I>(
     instance_point: Option<&[SpartanF2zField]>,
     terms: I,
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<SpartanF2zField, Sha256F2zError>
+) -> Result<SpartanF2zField, ProtocolError>
 where
     I: IntoIterator<Item = (usize, usize, SpartanF2zField)>,
 {
     if instances == 0 {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     let input_vars = instance_vars(instances)?;
     if instance_point.is_some_and(|point| point.len() != input_vars) {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     let rounds = left_point.len().max(right_point.len());
     if input_vars > rounds {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     let input_capacity = 1usize
-        .checked_shl(u32::try_from(input_vars).map_err(|_| Sha256F2zError::InvalidGeometry)?)
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .checked_shl(u32::try_from(input_vars).map_err(|_| ProtocolError::InvalidGeometry)?)
+        .ok_or(ProtocolError::InvalidGeometry)?;
     let bounded = instances != input_capacity;
 
     // Each round has eight possible `(left_bit, right_bit, instance_bit)`
@@ -1551,10 +1544,10 @@ where
             for bit in 0..=usize::from(input_active) {
                 let left = left_carry
                     .checked_add(left_stride * bit)
-                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                    .ok_or(ProtocolError::InvalidGeometry)?;
                 let right = right_carry
                     .checked_add(right_stride * bit)
-                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                    .ok_or(ProtocolError::InvalidGeometry)?;
                 let left_bit = left & 1;
                 let right_bit = right & 1;
                 let weight_index = left_bit | (right_bit << 1) | (bit << 2);
@@ -1594,7 +1587,7 @@ where
 fn equality_at_zero(
     point: &[SpartanF2zField],
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<SpartanF2zField, Sha256F2zError> {
+) -> Result<SpartanF2zField, ProtocolError> {
     let one = SpartanF2zField::one_with_cfg(field_config);
     Ok(point.iter().fold(one.clone(), |product, challenge| {
         field_config.mul(
@@ -1610,17 +1603,17 @@ fn evaluate_flat_linear_collapse_dense(
     relation: &PreparedSha256LinearRelation,
     constraint_weights: &[RawMontgomery],
     assignment_weights: &FactoredEqualityWeights,
-) -> Result<SpartanF2zField, Sha256F2zError> {
+) -> Result<SpartanF2zField, ProtocolError> {
     if assignment_weights.len() != prepared.assignment_params().cells()
         || constraint_weights.len()
             != 1usize
                 .checked_shl(
                     u32::try_from(flat_constraint_vars(prepared)?)
-                        .map_err(|_| Sha256F2zError::InvalidGeometry)?,
+                        .map_err(|_| ProtocolError::InvalidGeometry)?,
                 )
-                .ok_or(Sha256F2zError::InvalidGeometry)?
+                .ok_or(ProtocolError::InvalidGeometry)?
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
 
     let zero = SpartanF2zField::zero_with_cfg(relation.config());
@@ -1632,12 +1625,12 @@ fn evaluate_flat_linear_collapse_dense(
         for instance in 0..prepared.instances() {
             let flat_column = prepared
                 .flat_assignment_column(instance, local_column)
-                .ok_or(Sha256F2zError::InvalidGeometry)?;
+                .ok_or(ProtocolError::InvalidGeometry)?;
             let mut column_value = zero.clone();
             for (local_row, coefficient) in column {
                 let flat_row = prepared
                     .flat_constraint_row(instance, local_row)
-                    .ok_or(Sha256F2zError::InvalidGeometry)?;
+                    .ok_or(ProtocolError::InvalidGeometry)?;
                 let constraint_weight =
                     field_from_raw(constraint_weights[flat_row], relation.config());
                 column_value = relation.config().add(
@@ -1647,7 +1640,7 @@ fn evaluate_flat_linear_collapse_dense(
             }
             let assignment_weight = assignment_weights
                 .evaluate(flat_column, relation.config())
-                .ok_or(Sha256F2zError::InvalidGeometry)?;
+                .ok_or(ProtocolError::InvalidGeometry)?;
             evaluation = relation.config().add(
                 &evaluation,
                 &relation.config().mul(&column_value, &assignment_weight),
@@ -1673,16 +1666,16 @@ impl FactoredEqualityWeights {
         point: &[SpartanF2zField],
         low_vars: usize,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> Result<Self, Sha256F2zError> {
+    ) -> Result<Self, ProtocolError> {
         if low_vars > point.len() {
-            return Err(Sha256F2zError::InvalidGeometry);
+            return Err(ProtocolError::InvalidGeometry);
         }
         let low = compact_eq_table(&point[..low_vars], field_config)?;
         let high = compact_eq_table(&point[low_vars..], field_config)?;
-        let vars = u32::try_from(point.len()).map_err(|_| Sha256F2zError::InvalidGeometry)?;
+        let vars = u32::try_from(point.len()).map_err(|_| ProtocolError::InvalidGeometry)?;
         let len = 1usize
             .checked_shl(vars)
-            .ok_or(Sha256F2zError::InvalidGeometry)?;
+            .ok_or(ProtocolError::InvalidGeometry)?;
         Ok(Self {
             low,
             high,
@@ -1737,18 +1730,18 @@ impl FactoredEqualityWeights {
 pub(super) fn compact_eq_table(
     point: &[SpartanF2zField],
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<Vec<RawMontgomery>, Sha256F2zError> {
-    let vars = u32::try_from(point.len()).map_err(|_| Sha256F2zError::InvalidGeometry)?;
+) -> Result<Vec<RawMontgomery>, ProtocolError> {
+    let vars = u32::try_from(point.len()).map_err(|_| ProtocolError::InvalidGeometry)?;
     let table_len = 1usize
         .checked_shl(vars)
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .ok_or(ProtocolError::InvalidGeometry)?;
     let mut table = vec![0; table_len];
     table[0] = raw_montgomery(&SpartanF2zField::one_with_cfg(field_config));
 
     for (coordinate, challenge) in point.iter().enumerate() {
         let half = 1usize
-            .checked_shl(u32::try_from(coordinate).map_err(|_| Sha256F2zError::InvalidGeometry)?)
-            .ok_or(Sha256F2zError::InvalidGeometry)?;
+            .checked_shl(u32::try_from(coordinate).map_err(|_| ProtocolError::InvalidGeometry)?)
+            .ok_or(ProtocolError::InvalidGeometry)?;
         let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
         let expand = |(zero_child, one_child): (&mut RawMontgomery, &mut RawMontgomery)| {
             let parent = field_from_raw(*zero_child, field_config);
@@ -1792,7 +1785,7 @@ pub(super) fn field_from_raw(
     field_config.from_montgomery_integer(FieldUint::from(value))
 }
 
-pub(super) fn validate_source_params(f_layout: &IntegerMatrixLayout) -> Result<(), Sha256F2zError> {
+pub(super) fn validate_source_params(f_layout: &IntegerMatrixLayout) -> Result<(), ProtocolError> {
     let host_bits = usize::BITS as usize;
     if f_layout.word_bits != 1
         || f_layout.row_vars < LOG_PACKING
@@ -1800,7 +1793,7 @@ pub(super) fn validate_source_params(f_layout: &IntegerMatrixLayout) -> Result<(
         || f_layout.row_vars >= host_bits
         || f_layout.col_vars >= host_bits
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     Ok(())
 }
@@ -1810,7 +1803,7 @@ fn validate_common_geometry(
     map: &PackedRepeatedVirtualMap,
     h_layout: &IntegerMatrixLayout,
     f_layout: &IntegerMatrixLayout,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     validate_source_params(f_layout)?;
     if h_layout.word_bits != 1
         || h_layout.row_vars < LOG_PACKING
@@ -1822,13 +1815,13 @@ fn validate_common_geometry(
         || !map_fixes_constant_assignment(map)
         || !map_fixes_public_statement(map)
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     if linear_relation.is_some_and(|relation| {
         relation.matrix().row_count() != SHA256_CONSTRAINTS
             || relation.matrix().column_count() != SHA256_H_BAR_LIVE_BITS
     }) {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     Ok(())
 }
@@ -1837,7 +1830,7 @@ fn validate_product_geometry(
     map: &PackedSourceRepeatedVirtualMap,
     h_layout: &IntegerMatrixLayout,
     f_layout: &IntegerMatrixLayout,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     validate_source_params(f_layout)?;
     let instance_vars = map.instances().ilog2() as usize;
     let local_stride = SHA256_H_BAR_LIVE_BITS.next_power_of_two();
@@ -1870,7 +1863,7 @@ fn validate_product_geometry(
         || !map_fixes_constant_assignment_local(map.local())
         || !map_fixes_public_statement_local(map.local())
     {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     Ok(())
 }
@@ -1940,10 +1933,10 @@ fn public_bit_index_for_h_column(h_column: usize) -> Option<usize> {
 pub(super) fn validate_rows(
     p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     let words = p.rows().div_ceil(64);
     if rows.len() != p.cols() || rows.iter().any(|row| row.len() != words) {
-        return Err(Sha256F2zError::InvalidGeometry);
+        return Err(ProtocolError::InvalidGeometry);
     }
     Ok(())
 }
@@ -1971,12 +1964,12 @@ fn packed_flat_bit(
     Ok((word >> (row % u64::BITS as usize)) & 1)
 }
 
-pub(super) fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Sha256F2zError> {
+pub(super) fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), ProtocolError> {
     let packed = rows
         .get(SHA256_SHARED_CONSTANT_CELL)
-        .ok_or(Sha256F2zError::InvalidGeometry)?;
+        .ok_or(ProtocolError::InvalidGeometry)?;
     if packed.first().is_none_or(|word| word & 1 == 0) {
-        return Err(Sha256F2zError::InvalidSharedConstant);
+        return Err(ProtocolError::InvalidSharedConstant);
     }
     Ok(())
 }
@@ -1984,9 +1977,9 @@ pub(super) fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Sha256F2
 fn validate_public_statement(
     expected: usize,
     public_statement: &[Sha256CompressionStatement],
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     if public_statement.len() != expected {
-        return Err(Sha256F2zError::InvalidPublicStatementLength {
+        return Err(ProtocolError::InvalidPublicStatementLength {
             expected,
             actual: public_statement.len(),
         });
@@ -1999,7 +1992,7 @@ fn assignment_binding(
     commitment: &Commitment,
     config: &dyn LigeritoStatementConfig,
     public_statement_binding: &[u8; 32],
-) -> Result<[u8; 32], Sha256F2zError> {
+) -> Result<[u8; 32], ProtocolError> {
     let mut hash = Hasher::new();
     hash.update(SHA256_ASSIGNMENT_BINDING_DOMAIN);
     hash.update(&commitment.root);
@@ -2020,7 +2013,7 @@ fn assignment_binding(
         (None, None) => {
             hash.update(&[0]);
         }
-        _ => return Err(Sha256F2zError::InvalidGeometry),
+        _ => return Err(ProtocolError::InvalidGeometry),
     }
     hash.update(public_statement_binding);
     for value in [
@@ -2048,17 +2041,15 @@ fn assignment_binding(
 fn validate_ligerito_config_for(
     prepared: &PreparedSha256CompressionBatch,
     actual: &dyn LigeritoStatementConfig,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     let (expected, _) = sha256_compression_configs(prepared)?;
     if ligerito_config_digest(&expected)? != ligerito_config_digest(actual)? {
-        return Err(Sha256F2zError::MismatchedLigeritoConfig);
+        return Err(ProtocolError::MismatchedLigeritoConfig);
     }
     Ok(())
 }
 
-fn ligerito_config_digest(
-    config: &dyn LigeritoStatementConfig,
-) -> Result<[u8; 32], Sha256F2zError> {
+fn ligerito_config_digest(config: &dyn LigeritoStatementConfig) -> Result<[u8; 32], ProtocolError> {
     let mut hash = Hasher::new();
     hash_ligerito_config(&mut hash, config)?;
     Ok(*hash.finalize().as_bytes())
@@ -2067,7 +2058,7 @@ fn ligerito_config_digest(
 fn hash_security_profile(
     hash: &mut Hasher,
     prepared: &PreparedSha256CompressionBatch,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     hash_security_params(hash, prepared.security())
 }
 
@@ -2076,7 +2067,7 @@ fn hash_security_profile(
 pub(super) fn hash_security_params(
     hash: &mut Hasher,
     security: &super::super::profile::IopSecurityParams,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     hash_usize(hash, security.profile_name.len())?;
     hash.update(security.profile_name.as_bytes());
     hash.update(&security.lambda.to_le_bytes());
@@ -2112,7 +2103,7 @@ pub(super) fn hash_security_params(
 pub(super) fn hash_ligerito_config(
     hash: &mut Hasher,
     config: &dyn LigeritoStatementConfig,
-) -> Result<(), Sha256F2zError> {
+) -> Result<(), ProtocolError> {
     for value in [
         config.recursive_steps(),
         config.initial_log_msg_cols(),
@@ -2141,7 +2132,7 @@ pub(super) fn hash_ligerito_config(
 
 fn public_statement_binding(
     public_statement: &[Sha256CompressionStatement],
-) -> Result<[u8; 32], Sha256F2zError> {
+) -> Result<[u8; 32], ProtocolError> {
     let mut hash = Hasher::new();
     hash.update(SHA256_PUBLIC_STATEMENT_DOMAIN);
     hash_usize(&mut hash, public_statement.len())?;
@@ -2153,10 +2144,10 @@ fn public_statement_binding(
     Ok(*hash.finalize().as_bytes())
 }
 
-pub(super) fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256F2zError> {
+pub(super) fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), ProtocolError> {
     hash.update(
         &u64::try_from(value)
-            .map_err(|_| Sha256F2zError::BindingEncodingOverflow)?
+            .map_err(|_| ProtocolError::BindingEncodingOverflow)?
             .to_le_bytes(),
     );
     Ok(())
@@ -2227,9 +2218,9 @@ mod tests {
         prepared: &PreparedSha256CompressionBatch,
         public_statement: &[Sha256CompressionStatement],
         commitment: &Commitment,
-        proof: &Sha256CompressionProof,
+        proof: &LinearProof,
         vc: &LigVerifierConfig,
-        mutate: impl Fn(&mut Sha256CompressionProof, u64),
+        mutate: impl Fn(&mut LinearProof, u64),
     ) {
         let rejected = (1..=32_u64).any(|delta| {
             let mut tampered = proof.clone();
@@ -2592,7 +2583,7 @@ mod tests {
                 &hint,
                 &pc,
             ),
-            Err(Sha256F2zError::InvalidPublicStatementLength {
+            Err(ProtocolError::InvalidPublicStatementLength {
                 expected: 128,
                 actual: 127
             })
@@ -2615,7 +2606,7 @@ mod tests {
                 SHA256_INNER_PREFIX_MAX_VARS + 1,
                 &pc,
             ),
-            Err(Sha256F2zError::InvalidInnerPrefix { actual: 5, max: 4 })
+            Err(ProtocolError::InvalidInnerPrefix { actual: 5, max: 4 })
         ));
         assert_eq!(
             invalid_prefix_transcript.get_challenge::<u128>(),
@@ -2627,7 +2618,7 @@ mod tests {
         let (wrong_pc, wrong_vc) = sha256_compression_configs(&default_prepared).unwrap();
         assert!(matches!(
             commit_sha256_compression_witness_with_config(&prepared, &witness, &wrong_pc),
-            Err(Sha256F2zError::MismatchedLigeritoConfig)
+            Err(ProtocolError::MismatchedLigeritoConfig)
         ));
         let mut wrong_config_transcript = Blake3Transcript::new();
         assert!(matches!(
@@ -2639,14 +2630,14 @@ mod tests {
                 &hint,
                 &wrong_pc,
             ),
-            Err(Sha256F2zError::MismatchedLigeritoConfig)
+            Err(ProtocolError::MismatchedLigeritoConfig)
         ));
 
         let mut missing_constant = witness.clone();
         missing_constant.source_rows_mut_for_tests()[0][0] &= !1;
         assert!(matches!(
             commit_sha256_compression_witness_with_config(&prepared, &missing_constant, &pc),
-            Err(Sha256F2zError::InvalidSharedConstant)
+            Err(ProtocolError::InvalidSharedConstant)
         ));
         let bypass_hint = commit_rs_ligerito_rows(
             prepared.source_params(),
@@ -2664,7 +2655,7 @@ mod tests {
                 &bypass_hint,
                 &pc,
             ),
-            Err(Sha256F2zError::InvalidSharedConstant)
+            Err(ProtocolError::InvalidSharedConstant)
         ));
         assert_eq!(
             bypass_transcript.get_challenge::<u128>(),
@@ -2731,7 +2722,7 @@ mod tests {
                 &proof,
                 &vc,
             ),
-            Err(Sha256F2zError::InvalidPublicStatementLength {
+            Err(ProtocolError::InvalidPublicStatementLength {
                 expected: 128,
                 actual: 127
             })
@@ -2752,7 +2743,7 @@ mod tests {
                 &proof,
                 &wrong_vc,
             ),
-            Err(Sha256F2zError::MismatchedLigeritoConfig)
+            Err(ProtocolError::MismatchedLigeritoConfig)
         ));
 
         assert_nonce_mutation_rejects(
@@ -3061,7 +3052,7 @@ mod tests {
     fn public_statement_length_validation_rejects_mismatched_count() {
         assert!(matches!(
             validate_public_statement(1, &[]),
-            Err(Sha256F2zError::InvalidPublicStatementLength {
+            Err(ProtocolError::InvalidPublicStatementLength {
                 expected: 1,
                 actual: 0
             })

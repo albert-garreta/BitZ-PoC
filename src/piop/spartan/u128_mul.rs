@@ -14,11 +14,10 @@
 //! `z` as four) purely as host representation; the relation is over `ℤ`.
 
 use crate::piop::spartan::SpartanField as _;
+use crate::piop::spartan::mul::{MulError, MulLayout, MulWitness};
 use field::RingOps;
-use thiserror::Error;
 
 use crate::{
-    pcs::IntegerMatrixLayout,
     poly::mle::DenseMultilinearExtension,
     utils::{cfg_iter, cfg_iter_mut},
 };
@@ -27,8 +26,8 @@ use crate::{
 use rayon::prelude::*;
 
 use super::{
-    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
-    SpartanMatrixError, SpartanRelationBackend, slot_rows::pack_slot_major_rows_w1_words,
+    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SpartanField,
+    SpartanMatrixError,
 };
 
 /// Committed little-endian bits of each operand.
@@ -46,142 +45,9 @@ pub const U128_MUL_BIT_SLOTS: usize = U128_MUL_Z_SLOT_START + U128_MUL_PRODUCT_B
 /// `log2` of [`U128_MUL_BIT_SLOTS`]: the physical slot coordinates on the
 /// folded row axis.
 pub const U128_MUL_SLOT_VARS: usize = 9;
-/// Words of 64 committed bits per gate.
-const WORDS_PER_GATE: usize = U128_MUL_BIT_SLOTS / 64;
 
 /// Four assignment blocks: `[e0 | x | y | z]`.
 pub(super) const U128_MUL_ASSIGNMENT_BLOCKS: usize = 4;
-// Keep even small relation fixtures in the geometry accepted by the F2Z row
-// packer. The combined production proof applies its stricter 2^15 minimum.
-const MIN_CAPACITY: usize = 1 << 8;
-
-/// Integer relation backend used by the u128 multiplication prover.
-///
-/// The matrices are Bit selectors; the assignment holds 128- and
-/// 256-bit integers, so neither the witness nor the products have a native
-/// `u64` first round — the prover works on residues built from the limbs.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct U128MulRelationBackend;
-
-impl<F> SpartanRelationBackend<F> for U128MulRelationBackend
-where
-    F: SpartanField,
-{
-    type MatrixCoeff = bool;
-    type Witness = u128;
-    type Product = u128;
-}
-
-/// Failures while constructing the u128 multiplication relation.
-#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
-pub enum U128MulError {
-    /// A multiplication batch must contain at least one live row.
-    #[error("a u128 multiplication batch must not be empty")]
-    EmptyBatch,
-
-    /// The padded assignment or committed-bit domain does not fit in `usize`.
-    #[error("the u128 multiplication domain is too large")]
-    DomainTooLarge,
-
-    /// The generated relation or projected witness is malformed.
-    #[error(transparent)]
-    SpartanMatrix(#[from] SpartanMatrixError),
-}
-
-/// Shared shape of the integer assignment and its compact F2Z bit witness.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct U128MulLayout {
-    multiplications: usize,
-    capacity: usize,
-    gate_vars: usize,
-}
-
-impl U128MulLayout {
-    /// Creates a layout for `multiplications` live rows.
-    ///
-    /// The gate capacity is `max(256, multiplications).next_power_of_two()`.
-    /// The combined Spartan/F2Z production API additionally requires at least
-    /// `2^15` slots so it can use a validator-gated Ligerito profile.
-    pub fn new(multiplications: usize) -> Result<Self, U128MulError> {
-        if multiplications == 0 {
-            return Err(U128MulError::EmptyBatch);
-        }
-
-        let capacity = multiplications
-            .max(MIN_CAPACITY)
-            .checked_next_power_of_two()
-            .ok_or(U128MulError::DomainTooLarge)?;
-
-        capacity
-            .checked_mul(U128_MUL_ASSIGNMENT_BLOCKS)
-            .and_then(|_| capacity.checked_mul(U128_MUL_BIT_SLOTS))
-            .ok_or(U128MulError::DomainTooLarge)?;
-
-        let gate_vars = capacity.trailing_zeros() as usize;
-        Ok(Self {
-            multiplications,
-            capacity,
-            gate_vars,
-        })
-    }
-
-    /// Number of live multiplication rows.
-    pub const fn multiplications(&self) -> usize {
-        self.multiplications
-    }
-
-    /// Power-of-two gate capacity, including zero-padded gates.
-    pub const fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    /// Number of variables selecting one padded gate.
-    pub const fn gate_vars(&self) -> usize {
-        self.gate_vars
-    }
-
-    /// Assignment length: four blocks of `capacity` integers (already a
-    /// power of two, so this is also the assignment-MLE length).
-    pub const fn assignment_len(&self) -> usize {
-        U128_MUL_ASSIGNMENT_BLOCKS * self.capacity
-    }
-
-    /// Number of variables in the assignment MLE.
-    pub const fn assignment_vars(&self) -> usize {
-        self.gate_vars + 2
-    }
-
-    /// F2Z shape for the slot-major 128/128/256-bit witness.
-    ///
-    /// If `g = log2(capacity)`, the low `s = floor(g/2)` gate coordinates
-    /// become F2Z columns. The remaining gate coordinates and the nine
-    /// physical slot coordinates become folded row variables, so the
-    /// committed tensor has `g + 9` variables.
-    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
-        let s = self.gate_vars / 2;
-        IntegerMatrixLayout {
-            row_vars: U128_MUL_SLOT_VARS + self.gate_vars - s,
-            col_vars: s,
-            word_bits: 1,
-        }
-    }
-
-    /// Maps `(bit_slot, gate)` to the F2Z row-major cell `(b, c)`.
-    ///
-    /// `params.cell_index(b, c) == bit_slot * capacity + gate`.
-    pub const fn f2z_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
-        if bit_slot >= U128_MUL_BIT_SLOTS || gate >= self.capacity {
-            return None;
-        }
-
-        let s = self.gate_vars / 2;
-        let column_mask = (1usize << s) - 1;
-        let gate_high = gate >> s;
-        let b = (bit_slot << (self.gate_vars - s)) | gate_high;
-        let c = gate & column_mask;
-        Some((b, c))
-    }
-}
 
 /// The exact 256-bit product of two 128-bit integers as `(low, high)`
 /// 128-bit halves.
@@ -203,191 +69,25 @@ pub const fn mul_u128_full(x: u128, y: u128) -> (u128, u128) {
     (low, high)
 }
 
-/// Exact native assignment for a batch of u128 multiplications, stored as
-/// per-block tables of host integers: `x`, `y` as `u128`, `z` as its
-/// low and high 128-bit halves. Only the first constant entry is one; unused
-/// gates in every other block are zero.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct U128MulWitness {
-    layout: U128MulLayout,
-    x: Box<[u128]>,
-    y: Box<[u128]>,
-    z_lo: Box<[u128]>,
-    z_hi: Box<[u128]>,
-}
-
-impl U128MulWitness {
-    /// Constructs the exact assignment from explicit operand pairs.
-    pub fn from_inputs(inputs: &[(u128, u128)]) -> Result<Self, U128MulError> {
-        Self::from_fn(inputs.len(), |index| inputs[index])
-    }
-
-    /// Constructs the exact assignment without retaining a separate input
-    /// vector, which is useful for large deterministic benchmark batches.
-    pub fn from_fn(
-        multiplications: usize,
-        mut input: impl FnMut(usize) -> (u128, u128),
-    ) -> Result<Self, U128MulError> {
-        let layout = U128MulLayout::new(multiplications)?;
-        let capacity = layout.capacity;
-        let mut x = vec![0_u128; capacity];
-        let mut y = vec![0_u128; capacity];
-        let mut z_lo = vec![0_u128; capacity];
-        let mut z_hi = vec![0_u128; capacity];
-        for index in 0..multiplications {
-            let (a, b) = input(index);
-            let (lo, hi) = mul_u128_full(a, b);
-            x[index] = a;
-            y[index] = b;
-            z_lo[index] = lo;
-            z_hi[index] = hi;
-        }
-        Ok(Self {
-            layout,
-            x: x.into_boxed_slice(),
-            y: y.into_boxed_slice(),
-            z_lo: z_lo.into_boxed_slice(),
-            z_hi: z_hi.into_boxed_slice(),
-        })
-    }
-
-    /// Shape shared by this assignment and its bit representation.
-    pub const fn layout(&self) -> &U128MulLayout {
-        &self.layout
-    }
-
-    /// Padded left-operand block.
-    pub fn x_values(&self) -> &[u128] {
-        &self.x
-    }
-
-    /// Padded right-operand block.
-    pub fn y_values(&self) -> &[u128] {
-        &self.y
-    }
-
-    /// Padded low halves of the products.
-    pub fn z_lo_values(&self) -> &[u128] {
-        &self.z_lo
-    }
-
-    /// Padded high halves of the products.
-    pub fn z_hi_values(&self) -> &[u128] {
-        &self.z_hi
-    }
-
-    /// The exact product of live row `index` as `(low, high)` halves.
-    pub fn product(&self, index: usize) -> (u128, u128) {
-        (self.z_lo[index], self.z_hi[index])
-    }
-
-    /// The eight 64-bit committed words of one gate, in slot order.
-    #[allow(clippy::cast_possible_truncation)]
-    fn gate_words(&self, gate: usize) -> [u64; WORDS_PER_GATE] {
-        let split = |value: u128| [value as u64, (value >> 64) as u64];
-        let [x0, x1] = split(self.x[gate]);
-        let [y0, y1] = split(self.y[gate]);
-        let [z0, z1] = split(self.z_lo[gate]);
-        let [z2, z3] = split(self.z_hi[gate]);
-        [x0, x1, y0, y1, z0, z1, z2, z3]
-    }
-
-    /// Builds the compact F2Z rows without materializing a cell tensor.
-    ///
-    /// Row `c` is 512 lanes of `high_gate_count` bits: bit `gate_high` of
-    /// lane `slot` is slot `slot` of gate `(gate_high << s) | c`. Whenever a
-    /// lane spans whole words (every production layout) the rows are built
-    /// by the block transposes of [`super::slot_rows`]; smaller layouts take
-    /// the bitwise path. Both produce identical rows.
-    #[allow(clippy::arithmetic_side_effects)]
-    pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
-        let params = self.layout.f2z_params();
-        let words_per_row = params.rows() / u64::BITS as usize;
-        let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
-
-        let s = self.layout.gate_vars / 2;
-        let high_gate_count = 1_usize << (self.layout.gate_vars - s);
-        if high_gate_count.is_multiple_of(u64::BITS as usize) {
-            pack_slot_major_rows_w1_words::<WORDS_PER_GATE, _>(
-                &mut rows,
-                s,
-                high_gate_count,
-                self.layout.multiplications,
-                |gate| self.gate_words(gate),
-            );
-        } else {
-            self.write_bit_rows_bitwise(&mut rows);
-        }
-        rows
-    }
-
-    /// Reference packing: one masked read-modify-write per committed bit.
-    #[allow(clippy::arithmetic_side_effects)]
-    fn write_bit_rows_bitwise(&self, rows: &mut [Vec<u64>]) {
-        for gate in 0..self.layout.multiplications {
-            for (word, value) in self.gate_words(gate).into_iter().enumerate() {
-                for bit in 0..64 {
-                    if value & (1_u64 << bit) == 0 {
-                        continue;
-                    }
-                    let (b, c) = self
-                        .layout
-                        .f2z_cell(word * 64 + bit, gate)
-                        .expect("witness bit coordinates are in bounds");
-                    rows[c][b / u64::BITS as usize] |= 1_u64 << (b % u64::BITS as usize);
-                }
-            }
-        }
-    }
-}
-
 /// Builds the three Bit selector matrices for this relation.
 ///
 /// Each live row has one nonzero in each matrix:
 ///
 /// `A[i,M+i] = 1`, `B[i,2M+i] = 1`, and `C[i,3M+i] = 1`.
 pub fn u128_mul_constraint_matrices(
-    layout: &U128MulLayout,
-) -> Result<ConstraintMatrices<bool>, U128MulError> {
-    let a = selector_matrix(layout, 1)?;
-    let b = selector_matrix(layout, 2)?;
-    let c = selector_matrix(layout, 3)?;
+    layout: &MulLayout<u128>,
+) -> Result<ConstraintMatrices<bool>, MulError> {
+    let a = super::mul::selector_matrix(layout, &[(1, true)])?;
+    let b = super::mul::selector_matrix(layout, &[(2, true)])?;
+    let c = super::mul::selector_matrix(layout, &[(3, true)])?;
     Ok(ConstraintMatrices::new(a, b, c)?)
-}
-
-#[allow(clippy::arithmetic_side_effects)]
-fn selector_matrix(
-    layout: &U128MulLayout,
-    block: usize,
-) -> Result<SparseMatrix<bool>, SpartanMatrixError> {
-    let columns = layout.assignment_len();
-    let rows = layout.multiplications;
-    let offset = block * layout.capacity;
-
-    let mut column_offsets = vec![0; columns + 1];
-    for (row, boundary) in column_offsets[offset + 1..offset + rows + 1]
-        .iter_mut()
-        .enumerate()
-    {
-        *boundary = row + 1;
-    }
-    column_offsets[offset + rows + 1..].fill(rows);
-    let row_indices = (0..rows).collect();
-    let coefficients = vec![true; rows];
-
-    Ok(SparseMatrix::try_from_csc_parts(
-        rows,
-        column_offsets,
-        row_indices,
-        coefficients,
-    )?)
 }
 
 /// Generates and prepares the Bit selector matrices over a Spartan field.
 pub fn prepare_u128_mul_relation<F>(
-    layout: U128MulLayout,
+    layout: MulLayout<u128>,
     field_config: &F::Config,
-) -> Result<PreparedConstraintMatrices<F, bool>, U128MulError>
+) -> Result<PreparedConstraintMatrices<F, bool>, MulError>
 where
     F: SpartanField,
 {
@@ -401,9 +101,9 @@ where
 /// layouts in parallel.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn project_u128_mul_witness<F>(
-    witness: &U128MulWitness,
+    witness: &MulWitness<u128>,
     field_config: &F::Config,
-) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), U128MulError>
+) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), MulError>
 where
     F: SpartanField + Send + Sync,
     F::Config: Sync,
@@ -470,6 +170,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::SparseMatrix;
     use num_bigint::BigUint;
 
     use super::*;
@@ -509,7 +210,7 @@ mod tests {
 
     #[test]
     fn layout_shapes() {
-        let layout = U128MulLayout::new(1000).unwrap();
+        let layout = MulLayout::<u128>::new(1000).unwrap();
         assert_eq!(layout.capacity(), 1024);
         assert_eq!(layout.gate_vars(), 10);
         assert_eq!(layout.assignment_len(), 4 * 1024);
@@ -518,7 +219,7 @@ mod tests {
         assert_eq!((p.row_vars, p.col_vars, p.word_bits), (9 + 5, 5, 1));
         assert_eq!(p.rows() * p.cols(), U128_MUL_BIT_SLOTS * layout.capacity());
         assert_eq!(U128_MUL_BIT_SLOTS, 1 << U128_MUL_SLOT_VARS);
-        assert_eq!(U128MulLayout::new(0), Err(U128MulError::EmptyBatch));
+        assert_eq!(MulLayout::<u128>::new(0), Err(MulError::EmptyBatch));
     }
 
     #[test]
@@ -526,7 +227,7 @@ mod tests {
         // 2^12 gates: s = 6, h = 6, high_gate_count = 64 → the transposed
         // packer runs; compare with the bitwise reference on the same witness.
         let inputs = inputs(3000);
-        let witness = U128MulWitness::from_inputs(&inputs).unwrap();
+        let witness = MulWitness::<u128>::from_inputs(&inputs).unwrap();
         let layout = *witness.layout();
         assert_eq!(layout.gate_vars(), 12);
         let rows = witness.f2z_bit_rows();
@@ -556,7 +257,7 @@ mod tests {
 
     #[test]
     fn matrices_select_the_expected_columns() {
-        let layout = U128MulLayout::new(300).unwrap();
+        let layout = MulLayout::<u128>::new(300).unwrap();
         let matrices = u128_mul_constraint_matrices(&layout).unwrap();
         let capacity = layout.capacity();
         assert_eq!(matrices.a().row_count(), 300);
@@ -580,7 +281,7 @@ mod tests {
     #[test]
     fn projection_satisfies_the_relation_in_the_field() {
         let inputs = inputs(300);
-        let witness = U128MulWitness::from_inputs(&inputs).unwrap();
+        let witness = MulWitness::<u128>::from_inputs(&inputs).unwrap();
         let config = spartan_f2z_field_config();
         let (assignment, products) =
             project_u128_mul_witness::<SpartanF2zField>(&witness, &config).unwrap();

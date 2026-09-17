@@ -205,13 +205,27 @@ mod cli_transport_tests {
 
     #[test]
     fn parent_transport_roundtrips_selected_whir_parameters() {
-        let params = Some(super::super::common::whir_tuning::Params { folding: 2,
-            max_round_log_inv_rate: Some(4), ..Default::default() });
+        let params = Some(super::super::common::whir_tuning::Params {
+            folding: 2,
+            max_round_log_inv_rate: Some(4),
+            ..Default::default()
+        });
         let encoded = serde_json::to_string(&params).unwrap();
-        let outer = super::super::Args::try_parse_from(["mul", "--measure-memory", "plonky3-whir",
-            "u32-mod32", "15", "18446744073709551615", &encoded, "--bench"]).unwrap();
-        let inner = Args::try_parse_from(std::iter::once("memory".to_owned())
-            .chain(outer.measure_memory.unwrap())).unwrap();
+        let outer = super::super::Args::try_parse_from([
+            "mul",
+            "--measure-memory",
+            "plonky3-whir",
+            "u32-mod32",
+            "15",
+            "18446744073709551615",
+            &encoded,
+            "--bench",
+        ])
+        .unwrap();
+        let inner = Args::try_parse_from(
+            std::iter::once("memory".to_owned()).chain(outer.measure_memory.unwrap()),
+        )
+        .unwrap();
         assert_eq!(inner.backend, Backend::Plonky3Whir);
         assert_eq!(inner.workload, Workload::U32);
         assert_eq!((inner.exponent, inner.seed), (15, u64::MAX));

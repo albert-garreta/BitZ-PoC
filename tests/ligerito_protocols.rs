@@ -39,8 +39,7 @@ fn cm_and_both_regimes_roundtrip_and_bind_roots() {
             r.prover(),
         )
         .unwrap();
-        let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &field).unwrap();
-        let proof = prove_cm_and_f2z(&mut Blake3Transcript::new(), &p, projected, &hint).unwrap();
+        let proof = prove_cm_and_f2z(&mut Blake3Transcript::new(), &p, &witness, &hint).unwrap();
         verify_cm_and_f2z(&mut Blake3Transcript::new(), &p, &hint.commitment, &proof).unwrap();
         let bytes = proof.f2z().to_bytes();
         let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&bytes).unwrap();

@@ -27,11 +27,11 @@ fn baby_bear_roundtrip() {
 
 #[test]
 fn goldilocks_roundtrip() {
-    let backend = goldilocks::Backend::setup(16).unwrap();
-    let x = vec![u32::MAX as u64; 16];
-    let y = (0..16).map(|i| u32::MAX as u64 - i).collect::<Vec<_>>();
-    let product = x.iter().zip(&y).map(|(x, y)| x * y).collect::<Vec<_>>();
-    let witness = backend.materialize(&x, &y, &product).unwrap();
+    let backend = goldilocks::Backend::setup(256).unwrap();
+    let native =
+        f2z::piop::spartan::MulWitness::<u32>::from_fn(256, |i| (u32::MAX, u32::MAX - i as u32))
+            .unwrap();
+    let witness = backend.materialize(&native).unwrap();
     let committed = backend.commit(witness, u64::MAX);
     let ready = backend.derive_and_bind_claim(committed).unwrap();
     let opened = backend.open(ready);

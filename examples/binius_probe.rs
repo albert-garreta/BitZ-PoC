@@ -17,7 +17,8 @@ use binius_hash::Blake3HashSuite;
 use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
-use f2z::hybrid::{U32MulMod32Row, chaining_value};
+use f2z::hybrid::chaining_value;
+use f2z::piop::spartan::MulRow;
 
 type Challenger = HasherChallenger<blake3::Hasher>;
 
@@ -81,12 +82,16 @@ fn main() {
             .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
             .collect();
         for rep in 0..=reps {
-            let start_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let start_recording =
+                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
             let start = tracing::info_span!("binius_probe:start").entered();
-            let rows: Vec<_> = inputs.iter().map(|&(x, y)| U32MulMod32Row::new(x, y)).collect();
+            let rows: Vec<_> = inputs
+                .iter()
+                .map(|&(x, y)| MulRow::<u32>::new(x, y))
+                .collect();
             let mut filler = circuit.new_witness_filler();
             for (wires, row) in mul_wires.iter().zip(&rows) {
-                for (&wire, value) in wires.iter().zip([row.x, row.y, row.z, row.w]) {
+                for (&wire, value) in wires.iter().zip([row.x, row.y, row.lo, row.hi]) {
                     filler[wire] = Word(value as u64);
                 }
             }

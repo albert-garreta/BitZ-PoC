@@ -12,10 +12,9 @@ pub use inner_sumcheck::SHA256_INNER_PREFIX_MAX_VARS;
 pub use chain::{
     PreparedSha256ChainBatch, SHA256_CHAIN_F_BAR_LIVE_BITS, SHA256_CHAIN_F_INSTANCE_BITS,
     SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CHAIN_H_INSTANCE_BITS, SHA256_CHAIN_TERMINAL_BITS,
-    Sha256ChainProof, Sha256ChainStatement, Sha256ChainWitnessBatch,
-    commit_sha256_chain_witness, commit_sha256_chain_witness_with_config,
-    generate_sha256_chain_witnesses, prepare_sha256_chain_batch,
-    prepare_sha256_chain_batch_with_profile,
+    Sha256ChainStatement, Sha256ChainWitnessBatch, commit_sha256_chain_witness,
+    commit_sha256_chain_witness_with_config, generate_sha256_chain_witnesses,
+    prepare_sha256_chain_batch, prepare_sha256_chain_batch_with_profile,
     prepare_sha256_chain_batch_with_profile_and_initial_state, prove_sha256_chain,
     prove_sha256_chain_with_config, sha256_chain_configs, sha256_compress,
     verify_sha256_chain, verify_sha256_chain_with_config,
@@ -44,10 +43,9 @@ pub use prime::{
     SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
 };
 pub use proof::{
-    SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionProof, Sha256F2zError,
-    commit_sha256_compression_witness, commit_sha256_compression_witness_with_config,
-    prove_sha256_compressions, prove_sha256_compressions_with_config,
-    prove_sha256_compressions_with_prefix_vars,
+    SHA256_DEFAULT_INNER_PREFIX_VARS, commit_sha256_compression_witness,
+    commit_sha256_compression_witness_with_config, prove_sha256_compressions,
+    prove_sha256_compressions_with_config, prove_sha256_compressions_with_prefix_vars,
     prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
     verify_sha256_compressions, verify_sha256_compressions_with_config,
 };

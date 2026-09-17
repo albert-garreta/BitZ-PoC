@@ -112,6 +112,9 @@ fn first_coefficients(ctx: &FieldConfig, matrix: &[Raw], witness: &RawWitness<'_
             inner_coefficients_native_raw(ctx, matrix, &values[..matrix.len()])
         }
         RawWitness::Field(v) => inner_coefficients_field_raw(ctx, matrix, &v[..matrix.len()]),
+        RawWitness::Wide(v) if v.words() == 1 => {
+            inner_coefficients_native_map(ctx, matrix, |i| v.read_u64(i))
+        }
         RawWitness::Wide(v) => native_witness::wide_coefficients(ctx, matrix, |i| v.read(i)),
         RawWitness::Limbs(v) => native_witness::wide_coefficients(ctx, matrix, |i| v.read(i)),
     }
@@ -175,6 +178,14 @@ fn first_fold<'a>(
                     &mut out[..written],
                     r,
                 ),
+                RawWitness::Wide(v) if v.words() == 1 => fold_native_map::<true>(
+                    ctx,
+                    &matrix[..2 * written],
+                    |i| v.read_u64(i),
+                    &mut mout[..written],
+                    &mut out[..written],
+                    r,
+                ),
                 RawWitness::Wide(v) => native_witness::wide_fold::<4, true>(
                     ctx,
                     &matrix[..2 * written],
@@ -233,7 +244,7 @@ fn block_values<'a>(
         }
         RawWitness::Field(v) => BlockValues::Field(&v[start..end]),
         RawWitness::Wide(v) => {
-            assert_eq!(v.len() / 4, block_len);
+            assert_eq!(v.block_len(), block_len);
             v.block(block)
         }
         RawWitness::Limbs(v) => {

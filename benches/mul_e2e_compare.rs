@@ -1,4 +1,5 @@
 //! Native end-to-end multiplication proofs. See docs/native-mul-compare.md.
+use f2z::piop::spartan::mul::{MulLayout, MulWitness};
 #[path = "mul_e2e_compare/binius.rs"]
 mod binius;
 #[path = "mul_e2e_compare/binius_ligerito.rs"]
@@ -159,14 +160,13 @@ impl Corpus {
         narrow(self.inputs())
     }
     fn from_wide_inputs(workload: Workload, inputs: Vec<(u128, u128)>) -> Self {
-        use f2z::piop::spartan::U128MulWitness;
         assert!(
             workload.is_wide(),
             "{} operands are u64 values",
             workload.slug()
         );
         let digest = common::mul_witness::u128_digest(
-            &U128MulWitness::from_inputs(&inputs).expect("canonical u128 witness"),
+            &MulWitness::<u128>::from_inputs(&inputs).expect("canonical u128 witness"),
         );
         Self {
             workload,
@@ -175,7 +175,6 @@ impl Corpus {
         }
     }
     fn from_inputs(workload: Workload, inputs: Vec<(u64, u64)>) -> Self {
-        use f2z::piop::spartan::U64MulWitness;
         let digest = match workload {
             Workload::U32 => mod32::digest_rows(
                 inputs.iter().map(|&(a, b)| {
@@ -186,7 +185,7 @@ impl Corpus {
                 inputs.len(),
             ),
             Workload::U64 => common::mul_witness::u64_digest(
-                &U64MulWitness::from_inputs(&inputs).expect("canonical u64 witness"),
+                &MulWitness::<u64>::from_inputs(&inputs).expect("canonical u64 witness"),
             ),
             Workload::U128 => panic!("the u128 workload has 128-bit operands"),
         };
@@ -371,7 +370,9 @@ impl Context {
         match backend {
             Backend::F2z => Self::F2z(f2z_backend::Context::setup(corpus)),
             Backend::Binius => Self::Binius(binius::Context::setup(corpus)),
-            Backend::BiniusLigerito => Self::BiniusLigerito(binius_ligerito::Context::setup(corpus)),
+            Backend::BiniusLigerito => {
+                Self::BiniusLigerito(binius_ligerito::Context::setup(corpus))
+            }
             Backend::Plonky3Fri => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
             Backend::Limber => Self::Limber(limber::Context::setup(corpus)),
             Backend::Plonky3Whir => Self::Plonky3Whir(
@@ -811,7 +812,12 @@ mod tests {
         tracing::subscriber::with_default(
             tracing_subscriber::registry().with(f2z::observability::layer()),
             || {
-                for backend in [Backend::Binius, Backend::Plonky3Fri, Backend::Plonky3Whir, Backend::Limber] {
+                for backend in [
+                    Backend::Binius,
+                    Backend::Plonky3Fri,
+                    Backend::Plonky3Whir,
+                    Backend::Limber,
+                ] {
                     let context = Context::setup(
                         backend,
                         Arc::new(Corpus::new(Workload::U32, 4, 7)),
@@ -947,10 +953,9 @@ impl WitnessAudit {
         generation_ms: f64,
         representation: &'static str,
     ) -> Self {
-        use f2z::piop::spartan::U128MulLayout;
         let inputs = corpus.wide_inputs();
         assert_eq!(rows.len(), inputs.len(), "native witness row count");
-        let layout = U128MulLayout::new(rows.len()).expect("canonical u128 layout");
+        let layout = MulLayout::<u128>::new(rows.len()).expect("canonical u128 layout");
         let capacity = layout.capacity();
         let mut hash = blake3::Hasher::new();
         hash.update(b"f2z/u128-mul-compare/integer-witness/v1");
@@ -1009,7 +1014,7 @@ impl WitnessAudit {
             };
         }
         assert_eq!(corpus.workload, Workload::U64);
-        let layout = f2z::piop::spartan::U64MulLayout::new(n).expect("canonical u64 layout");
+        let layout = MulLayout::<u64>::new(n).expect("canonical u64 layout");
         let (capacity, assignment_len) = (layout.capacity(), layout.assignment_len());
         let mut assignment = vec![0u64; assignment_len];
         assignment[0] = 1;
@@ -1287,7 +1292,9 @@ mod cli_environment_tests {
 
     #[test]
     fn configuration_probe() {
-        let Ok(mode) = std::env::var("F2Z_MUL_CLI_TEST_MODE") else { return };
+        let Ok(mode) = std::env::var("F2Z_MUL_CLI_TEST_MODE") else {
+            return;
+        };
         let config = CompareEnv::read();
         let exponents = if mode == "proof" { config.proof_exponents() } else { config.witness_exponents() };
         let memory = (mode == "proof").then(|| common::cli::environment::<MemoryEnv>().enabled == "1");
@@ -1340,19 +1347,39 @@ mod cli_environment_tests {
 
     #[test]
     fn campaign_overrides_alias_duplicates_and_memory_switch() {
-        let config = config("proof", &[("F2Z_MUL_COMPARE_WORKLOADS", "u64 u128"),
-            ("F2Z_MUL_COMPARE_BACKENDS", "f2z binius64"), ("F2Z_BENCH_REPS", "3"),
-            ("F2Z_BENCH_SEED", "0Xff"), ("F2Z_MUL_COMPARE_MEMORY", "0")]);
-        assert_eq!(config["workloads"], json!(["u64","u128"]));
+        let config = config(
+            "proof",
+            &[
+                ("F2Z_MUL_COMPARE_WORKLOADS", "u64 u128"),
+                ("F2Z_MUL_COMPARE_BACKENDS", "f2z binius64"),
+                ("F2Z_BENCH_REPS", "3"),
+                ("F2Z_BENCH_SEED", "0Xff"),
+                ("F2Z_MUL_COMPARE_MEMORY", "0"),
+            ],
+        );
+        assert_eq!(config["workloads"], json!(["u64", "u128"]));
         assert_eq!(config["reps"], 3);
         assert_eq!(config["seed"], 255);
         assert_eq!(config["memory"], false);
         for settings in [
             vec![("F2Z_MUL_COMPARE_WORKLOADS", "u32 u32-mod32")],
             vec![("F2Z_MUL_COMPARE_BACKENDS", "f2z f2z")],
-            vec![("F2Z_MUL_COMPARE_WORKLOADS", "u64"), ("F2Z_MUL_COMPARE_BACKENDS", "plonky3-fri")],
-            vec![("F2Z_BENCH_REPS", "0")], vec![("F2Z_MUL_COMPARE_MEMORY", "true")],
-        ] { assert!(!child("proof", &settings).status.success(), "accepted {settings:?}"); }
-        assert!(child("witness", &[("F2Z_MUL_COMPARE_MEMORY", "unused")]).status.success());
+            vec![
+                ("F2Z_MUL_COMPARE_WORKLOADS", "u64"),
+                ("F2Z_MUL_COMPARE_BACKENDS", "plonky3-fri"),
+            ],
+            vec![("F2Z_BENCH_REPS", "0")],
+            vec![("F2Z_MUL_COMPARE_MEMORY", "true")],
+        ] {
+            assert!(
+                !child("proof", &settings).status.success(),
+                "accepted {settings:?}"
+            );
+        }
+        assert!(
+            child("witness", &[("F2Z_MUL_COMPARE_MEMORY", "unused")])
+                .status
+                .success()
+        );
     }
 }

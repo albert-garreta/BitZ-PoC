@@ -52,9 +52,7 @@
 mod common;
 use clap::builder::TypedValueParser;
 
-use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use f2z::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
 use f2z::ligerito::packed_vars;
@@ -135,45 +133,17 @@ fn bench_lig_configs(
 
 // Peak-heap tracker (wraps System): high-water mark of currently outstanding
 // bytes. Negligible overhead (one relaxed atomic op per alloc/dealloc).
-struct PeakAlloc;
-static CUR: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
-unsafe impl GlobalAlloc for PeakAlloc {
-    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
-        let p = unsafe { System.alloc(l) };
-        if !p.is_null() {
-            let c = CUR.fetch_add(l.size(), Ordering::Relaxed) + l.size();
-            PEAK.fetch_max(c, Ordering::Relaxed);
-        }
-        p
-    }
-    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
-        unsafe { System.dealloc(p, l) };
-        CUR.fetch_sub(l.size(), Ordering::Relaxed);
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
-        let q = unsafe { System.realloc(p, l, new) };
-        if !q.is_null() {
-            if new >= l.size() {
-                let c = CUR.fetch_add(new - l.size(), Ordering::Relaxed) + (new - l.size());
-                PEAK.fetch_max(c, Ordering::Relaxed);
-            } else {
-                CUR.fetch_sub(l.size() - new, Ordering::Relaxed);
-            }
-        }
-        q
-    }
-}
 #[global_allocator]
-static ALLOC: PeakAlloc = PeakAlloc;
+static ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
 fn reset_peak() {
-    PEAK.store(CUR.load(Ordering::Relaxed), Ordering::Relaxed);
+    common::peak_memory::reset_peak();
 }
 fn peak_mb() -> f64 {
-    PEAK.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::peak_bytes() as f64 / (1024.0 * 1024.0)
 }
 fn live_mb() -> f64 {
-    CUR.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::live_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 /// The evaluation prime is SAMPLED from the transcript after the

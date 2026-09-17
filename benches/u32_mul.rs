@@ -24,87 +24,43 @@
 //!
 //! `F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=1` is the smallest production smoke
 //! shape. The production reducer is delayed Barrett.
-//! `F2Z_MUL_WORD_BITS=1|8` selects the F2Z word width; the default is `1`.
+//! `F2Z_MUL_WORD_BITS` selects the F2Z word width; the default is `1`.
 //! `F2Z_BENCH_PASS=latency|memory|both` separates the measured repetitions
 //! from the extra peak-heap proof. Memory measurement requires the
 //! benchmark-only `bench-peak-memory` feature.
+
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::PreparedRelation;
+use ::f2z::piop::spartan::protocol::Proof;
+use ::f2z::piop::spartan::protocol::ProtocolError;
+use f2z::piop::spartan::mul::{MulLayout, MulWitness};
 
 mod common;
 
 use std::hint::black_box;
 
-#[cfg(feature = "bench-peak-memory")]
-use std::{
-    alloc::{GlobalAlloc, Layout, System},
-    sync::atomic::{AtomicUsize, Ordering},
-};
-
 use f2z::ligerito_flock::FlockCommitHint;
-use f2z::pcs::mod_q_num_chunks;
-use f2z::piop::spartan::{
-    IopSecurityProfile, PreparedU32MulRelation, PrimePolicy, SpartanF2zError,
-    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulProof, U32MulWitness,
-    commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
-};
+use f2z::piop::spartan::{IopSecurityProfile, PrimePolicy, U32_MUL_UNIVARIATE_SKIP_VARS};
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[cfg(feature = "bench-peak-memory")]
-struct PeakAlloc;
-
-#[cfg(feature = "bench-peak-memory")]
-static CURRENT_BYTES: AtomicUsize = AtomicUsize::new(0);
-#[cfg(feature = "bench-peak-memory")]
-static PEAK_BYTES: AtomicUsize = AtomicUsize::new(0);
-
-#[cfg(feature = "bench-peak-memory")]
-unsafe impl GlobalAlloc for PeakAlloc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() {
-            let current = CURRENT_BYTES.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
-            PEAK_BYTES.fetch_max(current, Ordering::Relaxed);
-        }
-        pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(pointer, layout) };
-        CURRENT_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let resized = unsafe { System.realloc(pointer, layout, new_size) };
-        if !resized.is_null() {
-            if new_size >= layout.size() {
-                let increase = new_size - layout.size();
-                let current = CURRENT_BYTES.fetch_add(increase, Ordering::Relaxed) + increase;
-                PEAK_BYTES.fetch_max(current, Ordering::Relaxed);
-            } else {
-                CURRENT_BYTES.fetch_sub(layout.size() - new_size, Ordering::Relaxed);
-            }
-        }
-        resized
-    }
-}
-
-#[cfg(feature = "bench-peak-memory")]
 #[global_allocator]
-static ALLOCATOR: PeakAlloc = PeakAlloc;
+static ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
 #[cfg(feature = "bench-peak-memory")]
 fn reset_peak() {
-    PEAK_BYTES.store(CURRENT_BYTES.load(Ordering::Relaxed), Ordering::Relaxed);
+    common::peak_memory::reset_peak();
 }
 
 #[cfg(feature = "bench-peak-memory")]
 fn live_mib() -> f64 {
-    CURRENT_BYTES.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::live_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 #[cfg(feature = "bench-peak-memory")]
 fn peak_mib() -> f64 {
-    PEAK_BYTES.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
+    common::peak_memory::peak_bytes() as f64 / (1024.0 * 1024.0)
 }
 
 #[cfg(not(feature = "bench-peak-memory"))]
@@ -124,16 +80,13 @@ fn peak_mib() -> f64 {
 
 use common::cli::BenchmarkPass;
 
-
-
-fn f2z_width() -> U32MulF2zWidth {
+fn f2z_width() -> usize {
     common::cli::value(
         "F2Z_MUL_WORD_BITS",
         std::env::var_os("F2Z_MUL_WORD_BITS").unwrap_or_else(|| "1".into()),
         |value: &str| match value.parse::<usize>() {
-            Ok(1) => Ok(U32MulF2zWidth::W1),
-            Ok(8) => Ok(U32MulF2zWidth::W8),
-            _ => Err("expected 1 or 8"),
+            Ok(width @ 1..=126) => Ok(width),
+            _ => Err("expected a width from 1 to 126"),
         },
     )
 }
@@ -148,18 +101,17 @@ fn exponents() -> Vec<usize> {
 
 /// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
 fn prove_e2e(
-    relation: &PreparedU32MulRelation,
-    witness: &U32MulWitness,
-) -> (U32MulProof, FlockCommitHint) {
+    relation: &PreparedRelation<MulLayout<u32>>,
+    witness: &MulWitness<u32>,
+) -> (Proof, FlockCommitHint) {
     let proving = tracing::info_span!("benchmark:proving").entered();
     let commit = tracing::info_span!("benchmark:commit").entered();
     let bit_rows = witness.f2z_bit_rows();
-    let commitment_hint =
-        commit_u32_mul_witness(relation, bit_rows).expect("F2Z commitment succeeds");
+    let commitment_hint = protocol::commit(relation, bit_rows).expect("F2Z commitment succeeds");
     drop(commit);
 
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_u32_mul(&mut prover_transcript, relation, witness, &commitment_hint)
+    let proof = protocol::prove(&mut prover_transcript, relation, witness, &commitment_hint)
         .expect("combined proving succeeds");
     drop(proving);
     (proof, commitment_hint)
@@ -171,7 +123,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     reps: usize,
     root_seed: u64,
     pass: BenchmarkPass,
-    f2z_width: U32MulF2zWidth,
+    f2z_width: usize,
     order: usize,
     threads: usize,
 ) {
@@ -182,24 +134,29 @@ fn bench_exponent<P: IopSecurityProfile>(
     let mut rng = StdRng::seed_from_u64(shape_seed);
 
     // Witness generation (excluded from prove).
-    let (witness, started) = f2z::observability::measure(
-        tracing::info_span!("u32_mul:witness"),
-        || U32MulWitness::from_fn_with_f2z_width(multiplications, f2z_width, |_| {
-        (rng.random::<u32>(), rng.random::<u32>())
-    })
-    .expect("valid u32 multiplication witness"),
-    ).expect("measure completed operation");
+    let (witness, started) =
+        f2z::observability::measure(tracing::info_span!("u32_mul:witness"), || {
+            MulWitness::<u32>::from_fn_with_word_bits(multiplications, f2z_width, |_| {
+                (rng.random::<u32>(), rng.random::<u32>())
+            })
+            .expect("valid u32 multiplication witness")
+        })
+        .expect("measure completed operation");
     let witness_ms = started.as_secs_f64() * 1e3;
     let layout = *witness.layout();
     let params = layout.f2z_params();
 
     // One-time public preprocessing (excluded from prove): q-independent
     // exact matrices plus the instantiated runtime-prime security profile.
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("u32_mul:started").entered();
-    let relation = match PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
+    let relation = match PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<P>(
+        layout,
+        common::ligerito_selection(P::LIGERITO_TARGET_BITS),
+    ) {
         Ok(relation) => relation,
-        Err(error @ (SpartanF2zError::Profile(_) | SpartanF2zError::UnsupportedProfile)) => {
+        Err(error @ (ProtocolError::Profile(_) | ProtocolError::UnsupportedProfile)) => {
             println!();
             println!(
                 "u32_mul gates=2^{exponent} profile={}: SKIPPED - {error}",
@@ -213,12 +170,12 @@ fn bench_exponent<P: IopSecurityProfile>(
     println!("LIGERITO_CONFIG {}", common::ligerito_report(relation.ligerito_configuration(), relation.security().ood));
     let profile_name = relation.security().profile_name;
     let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
-    let f2z_chunks = mod_q_num_chunks(&params, q_bits);
+    let f2z_chunks = q_bits.div_ceil(127 - params.row_vars - layout.word_bits());
 
     // Excluded warm-up. This is also the first end-to-end correctness check.
     let (warm_proof, warm_hint) = prove_e2e(&relation, &witness);
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_u32_mul(
+    protocol::verify(
         &mut verifier_transcript,
         &relation,
         &warm_hint.commitment,
@@ -243,7 +200,7 @@ fn bench_exponent<P: IopSecurityProfile>(
 
             let mut verifier_transcript = Blake3Transcript::new();
             let verification = tracing::info_span!("benchmark:verification").entered();
-            verify_u32_mul(
+            protocol::verify(
                 &mut verifier_transcript,
                 &relation,
                 &commitment_hint.commitment,
@@ -260,7 +217,7 @@ fn bench_exponent<P: IopSecurityProfile>(
 
             println!(
                 "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
-                params.word_bits,
+                layout.word_bits(),
                 params.row_vars,
                 params.col_vars,
                 sample_index + 1,
@@ -288,7 +245,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         let peak = peak_mib();
 
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u32_mul(
+        protocol::verify(
             &mut verifier_transcript,
             &relation,
             &peak_hint.commitment,
@@ -298,7 +255,9 @@ fn bench_exponent<P: IopSecurityProfile>(
 
         println!(
             "  MEMORY pass=memory profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
-            params.word_bits, params.row_vars, params.col_vars,
+            layout.word_bits(),
+            params.row_vars,
+            params.col_vars,
         );
         memory_metrics = Some((live_before_prove, peak));
     }
@@ -306,7 +265,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     println!();
     println!(
         "u32_mul gates=2^{exponent} ({multiplications}) W={} [{}] profile={profile_name} (λ={})  seed={shape_seed:#018x}",
-        params.word_bits,
+        layout.word_bits(),
         PROTOCOL_LABEL,
         relation.security().lambda,
     );
@@ -323,7 +282,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         3 * multiplications,
         params.row_vars,
         params.col_vars,
-        params.word_bits,
+        layout.word_bits(),
         f2z_chunks,
         128usize * layout.capacity(),
         (16usize * layout.capacity()) as f64 / (1024.0 * 1024.0),
@@ -335,7 +294,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     if let Some((prover, verifier, last_proof)) = latency {
         let spartan_elements = last_proof.spartan_payload_elements();
         let boundary_nonces = last_proof.grinding_nonce_count(relation.security())
-            - last_proof.f2z().grinding_nonces.len();
+            - last_proof.opening_grinding_nonces().len();
         let report = common::BenchReport {
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
@@ -347,7 +306,7 @@ fn bench_exponent<P: IopSecurityProfile>(
                 ("protocol".into(), PROTOCOL_LABEL.into()),
                 ("skip_vars".into(), U32_MUL_UNIVARIATE_SKIP_VARS.to_string()),
                 ("strategy".into(), STRATEGY_LABEL.into()),
-                ("word_bits".into(), params.word_bits.to_string()),
+                ("word_bits".into(), layout.word_bits().to_string()),
                 ("projection_bits".into(), q_bits.to_string()),
                 ("f2z_t".into(), params.row_vars.to_string()),
                 ("f2z_s".into(), params.col_vars.to_string()),
@@ -401,7 +360,7 @@ fn main() {
     println!("rayon threads: {threads}");
     println!(
         "repetitions: {reps}; root seed: {seed:#018x}; F2Z word bits: {}",
-        f2z_width.word_bits(),
+        f2z_width,
     );
     println!(
         "benchmark pass: {}; protocol: {PROTOCOL_LABEL} (skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS}); strategy: {STRATEGY_LABEL}; order: {order}",

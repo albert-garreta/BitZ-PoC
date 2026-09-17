@@ -35,14 +35,14 @@ pub fn test_tracing() -> (
     );
     (subscriber, lock)
 }
+#[cfg(feature = "bench-peak-memory")]
+pub mod heap_run;
 pub mod mul_witness;
 pub mod output;
 pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
-#[cfg(feature = "bench-peak-memory")]
-pub mod heap_run;
 #[cfg(feature = "span-metrics")]
 pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]

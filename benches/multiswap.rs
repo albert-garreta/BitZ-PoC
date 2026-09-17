@@ -37,6 +37,9 @@
 
 #![recursion_limit = "512"]
 
+use ::f2z::ligerito_flock::IntEvalRsLigVirtProof;
+use ::f2z::piop::spartan::protocol::Proof;
+
 pub(crate) mod common;
 #[cfg(feature = "bench-peak-memory")]
 #[global_allocator]
@@ -48,7 +51,7 @@ use std::{collections::HashMap, fs::File, hint::black_box, io::BufWriter, proces
 
 use f2z::observability::Interval;
 use f2z::piop::spartan::multiswap::{
-    MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims, MultiswapProof,
+    MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims,
     PreparedMultiswapRelation, commit_multiswap_witness, prove_multiswap_mod_r1cs,
     verify_multiswap_mod_r1cs,
 };
@@ -988,7 +991,7 @@ fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
     values
 }
 
-fn proof_sizes(proof: &MultiswapProof) -> (usize, usize) {
+fn proof_sizes(proof: &Proof<IntEvalRsLigVirtProof>) -> (usize, usize) {
     let opening_bytes = proof.f2z().to_bytes().len();
     let piop_bytes = proof.spartan_payload_elements() * 16 + proof.mu_prime_bytes() + 8;
     (piop_bytes, opening_bytes)
@@ -1001,7 +1004,7 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
     setup_ns: u64,
-) -> (RepTiming, MultiswapProof) {
+) -> (RepTiming, Proof<IntEvalRsLigVirtProof>) {
     let recording =
         f2z::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();

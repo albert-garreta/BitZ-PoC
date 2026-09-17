@@ -1,4 +1,12 @@
 //! Controlled decoding-bound experiment within F2Z. No competing backend configuration is read.
+use ::f2z::ligerito_flock::IntEvalRsLigModQProof;
+use ::f2z::ligerito_flock::IntEvalRsLigVirtProof;
+use ::f2z::piop::spartan::MulRow;
+use ::f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use ::f2z::piop::spartan::mul::{MulLayout, MulWitness};
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::PreparedRelation;
+
 mod common;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 macro_rules! bail {
@@ -147,10 +155,10 @@ fn main() -> Result<()> {
         tracing::info_span!("bounds:setup").entered(),
     );
     macro_rules! multiplication {
-        ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr) => {{
+        ($rel:ty,$layout:ty,$wit:ty,$commit:path,$prove:path,$verify:path,$data:expr) => {{
             let data = $data;
-            let p = $rel::new_with_profile_and_ligerito::<Lambda100>(
-                $layout::new(data.len())?,
+            let p = <$rel>::new_with_profile_and_ligerito::<Lambda100>(
+                <$layout>::new(data.len())?,
                 e.selection,
             )?;
             e.run(
@@ -158,7 +166,7 @@ fn main() -> Result<()> {
                 p.ligerito_configuration(),
                 p.security().ood,
                 &bincode::serialize(&data)?,
-                || Ok($wit::from_inputs(&data)?),
+                || Ok(<$wit>::from_inputs(&data)?),
                 |w| Ok($commit(&p, w.f2z_bit_rows())?),
                 |w, h| Ok($prove(&mut Blake3Transcript::new(), &p, w, h)?),
                 |_, h, proof| {
@@ -171,14 +179,14 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?;
+                    let decoded = IntEvalRsLigModQProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
                         &b,
                         proof.spartan_payload_elements() * 16
                             + (proof.grinding_nonce_count(p.security())
-                                - proof.f2z().grinding_nonces.len())
+                                - proof.opening_grinding_nonces().len())
                                 * 8,
                     ))
                 },
@@ -187,45 +195,45 @@ fn main() -> Result<()> {
     }
     match e.case.as_str() {
         "u32-mod32" | "u32-full" => multiplication!(
-            PreparedU32MulRelation,
-            U32MulLayout,
-            U32MulWitness,
-            commit_u32_mul_witness,
-            prove_u32_mul,
-            verify_u32_mul,
+            PreparedRelation<MulLayout<u32>>,
+            MulLayout<u32>,
+            MulWitness<u32>,
+            protocol::commit,
+            protocol::prove,
+            protocol::verify,
             input
                 .iter()
                 .map(|&(x, y)| (x as u32, y as u32))
                 .collect::<Vec<_>>()
         ),
         "u64" => multiplication!(
-            PreparedU64MulRelation,
-            U64MulLayout,
-            U64MulWitness,
-            commit_u64_mul_witness,
-            prove_u64_mul,
-            verify_u64_mul,
+            PreparedRelation<MulLayout<u64>>,
+            MulLayout<u64>,
+            MulWitness<u64>,
+            protocol::commit,
+            protocol::prove,
+            protocol::verify,
             input
                 .iter()
                 .map(|&(x, y)| (x as u64, y as u64))
                 .collect::<Vec<_>>()
         ),
         "u128" => multiplication!(
-            PreparedU128MulRelation,
-            U128MulLayout,
-            U128MulWitness,
-            commit_u128_mul_witness,
-            prove_u128_mul,
-            verify_u128_mul,
+            PreparedRelation<MulLayout<u128>>,
+            MulLayout<u128>,
+            MulWitness<u128>,
+            protocol::commit,
+            protocol::prove,
+            protocol::verify,
             input
         ),
         "baby-bear" => multiplication!(
-            PreparedBabyBearMulRelation,
+            PreparedRelation<BabyBearMulLayout>,
             BabyBearMulLayout,
             BabyBearMulWitness,
-            commit_baby_bear_mul_paper_witness,
-            prove_baby_bear_mul_paper,
-            verify_baby_bear_mul_paper,
+            protocol::commit,
+            protocol::prove,
+            protocol::verify,
             input
                 .iter()
                 .map(|&(x, y)| ((x % 2013265921) as u32, (y % 2013265921) as u32))
@@ -272,7 +280,7 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
@@ -315,7 +323,7 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
@@ -336,7 +344,7 @@ fn main() -> Result<()> {
                 .map(|i| std::array::from_fn(|j| (i * 16 + j) as u32))
                 .collect();
             e.run(setup,p.ligerito_configuration(),p.ood_round(),&bincode::serialize(&(&input,&blocks))?,
-                || Ok(input.iter().map(|&(x,y)|U32MulMod32Row::new(x as u32,y as u32)).collect::<Vec<_>>()),
+                || Ok(input.iter().map(|&(x,y)|MulRow::<u32>::new(x as u32,y as u32)).collect::<Vec<_>>()),
                 |rows| Ok(p.commit_mod32(rows,&blocks)?), |_,h| Ok(p.prove(h)?),
                 |_,h,proof| { let b=proof.to_bytes(); let decoded=p.proof_from_bytes(h.statement(),&b)?; Ok(p.verify(h.statement(),&decoded)?) },
                 |_,proof| Ok(ProofSize { total_bytes: proof.to_bytes().len(), commitment_bytes: None,

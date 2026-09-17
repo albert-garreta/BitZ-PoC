@@ -29,15 +29,18 @@
 //! `scripts/baby_bear_mul_bench_report.py` parses is available at commit
 //! b7713d8; the script has not been ported to `schema=f2z/1`.
 
+use ::f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::PreparedRelation;
+use ::f2z::piop::spartan::protocol::ProtocolError;
+
 mod common;
 
 use std::hint::black_box;
 
 use f2z::piop::spartan::{
-    BABY_BEAR_MODULUS, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile, Lambda100,
-    Lambda128, PreparedBabyBearMulRelation, PrimePolicy,
-    commit_baby_bear_mul_paper_witness, prove_baby_bear_mul_paper, sample_baby_bear_operand_with,
-    verify_baby_bear_mul_paper,
+    BABY_BEAR_MODULUS, BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, PrimePolicy,
+    sample_baby_bear_operand_with,
 };
 use f2z::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -63,12 +66,15 @@ fn bench_profile<P: IopSecurityProfile>(
 
     // One-time public preprocessing under this profile (excluded from
     // prove): raw exact matrices + the instantiated security parameters.
-    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("baby_bear_mul:setup_started").entered();
-    let prepared = match PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
+    let prepared = match PreparedRelation::<BabyBearMulLayout>::new_with_profile_and_ligerito::<P>(
+        layout,
+        common::ligerito_selection(P::LIGERITO_TARGET_BITS),
+    ) {
         Ok(prepared) => prepared,
-        Err(error @ (BabyBearSpartanF2zError::Profile(_)
-        | BabyBearSpartanF2zError::UnsupportedProfile)) => {
+        Err(error @ (ProtocolError::Profile(_) | ProtocolError::UnsupportedProfile)) => {
             println!();
             println!(
                 "baby_bear_mul gates=2^{exponent} profile={}: SKIPPED - {error}",
@@ -102,15 +108,18 @@ fn bench_profile<P: IopSecurityProfile>(
     );
 
     // Excluded warm-up; also the first end-to-end correctness check.
-    let warm_hint =
-        commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let warm_hint = protocol::commit(&prepared, witness.f2z_bit_rows()).expect("commit");
     let mut warm_transcript = Blake3Transcript::new();
-    let warm_proof =
-        prove_baby_bear_mul_paper(&mut warm_transcript, &prepared, witness, &warm_hint)
-            .expect("warm-up prove");
+    let warm_proof = protocol::prove(&mut warm_transcript, &prepared, witness, &warm_hint)
+        .expect("warm-up prove");
     let mut warm_verifier = Blake3Transcript::new();
-    verify_baby_bear_mul_paper(&mut warm_verifier, &prepared, &warm_hint.commitment, &warm_proof)
-        .expect("warm-up verify");
+    protocol::verify(
+        &mut warm_verifier,
+        &prepared,
+        &warm_hint.commitment,
+        &warm_proof,
+    )
+    .expect("warm-up verify");
     drop((warm_proof, warm_hint));
 
     let mut prover = common::StepSamples::default();
@@ -120,19 +129,22 @@ fn bench_profile<P: IopSecurityProfile>(
         let recording = f2z::observability::Recording::start(Vec::new()).expect("start BabyBear trial");
         let proving = tracing::info_span!("benchmark:proving").entered();
         let commit = tracing::info_span!("benchmark:commit").entered();
-        let hint =
-            commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+        let hint = protocol::commit(&prepared, witness.f2z_bit_rows()).expect("commit");
         drop(commit);
         let mut prover_transcript = Blake3Transcript::new();
         let proof =
-            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, witness, &hint)
-                .expect("prove");
+            protocol::prove(&mut prover_transcript, &prepared, witness, &hint).expect("prove");
         drop(proving);
 
         let verification = tracing::info_span!("benchmark:verification").entered();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_baby_bear_mul_paper(&mut verifier_transcript, &prepared, &hint.commitment, &proof)
-            .expect("verify");
+        protocol::verify(
+            &mut verifier_transcript,
+            &prepared,
+            &hint.commitment,
+            &proof,
+        )
+        .expect("verify");
         drop(verification);
         let intervals = recording.intervals().expect("query BabyBear trial");
         let commit_ms = common::span_ms(&intervals, "benchmark:commit");
@@ -150,7 +162,7 @@ fn bench_profile<P: IopSecurityProfile>(
 
     let spartan_elements = proof.spartan_payload_elements();
     let boundary_nonces =
-        proof.grinding_nonce_count(&security) - proof.f2z().grinding_nonces.len();
+        proof.grinding_nonce_count(&security) - proof.opening_grinding_nonces().len();
     let report = common::BenchReport {
         bench: "baby_bear_mul",
         shape: format!("2p{exponent}"),
@@ -164,7 +176,7 @@ fn bench_profile<P: IopSecurityProfile>(
             ("f2z_s".into(), params.col_vars.to_string()),
             (
                 "forest_grinding_nonces".into(),
-                proof.f2z().grinding_nonces.len().to_string(),
+                proof.opening_grinding_nonces().len().to_string(),
             ),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
         ],
@@ -223,16 +235,17 @@ fn main() {
 
         // Witness generation (excluded from prove); shared by both profiles
         // so the two rows are directly comparable.
-        let (witness, started) = f2z::observability::measure(
-            tracing::info_span!("baby_bear_mul:witness"),
-            || BabyBearMulWitness::from_fn(multiplications, |_| {
-            (
-                sample_baby_bear_operand_with(|| rng.random::<u32>()),
-                sample_baby_bear_operand_with(|| rng.random::<u32>()),
-            )
-        })
-        .expect("valid BabyBear multiplication witness"),
-        ).expect("measure completed operation");
+        let (witness, started) =
+            f2z::observability::measure(tracing::info_span!("baby_bear_mul:witness"), || {
+                BabyBearMulWitness::from_fn(multiplications, |_| {
+                    (
+                        sample_baby_bear_operand_with(|| rng.random::<u32>()),
+                        sample_baby_bear_operand_with(|| rng.random::<u32>()),
+                    )
+                })
+                .expect("valid BabyBear multiplication witness")
+            })
+            .expect("measure completed operation");
         let witness_ms = started.as_secs_f64() * 1e3;
 
         match selected {

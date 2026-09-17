@@ -28,7 +28,7 @@ use std::time::Instant;
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
     IntEvalRsLigModQProof, commit_rs_flock_with, commit_rs_ligerito_rows,
-    prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito,
+    historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use f2z::transcript::Blake3Transcript;
@@ -836,8 +836,11 @@ const DATA_CLASSES: [DataClass; 5] = [
     DataClass::Sparse,
     DataClass::SingleBit,
 ];
-const POINT_CLASSES: [PointClass; 3] =
-    [PointClass::Uniform, PointClass::ZeroOneMax, PointClass::Repeated];
+const POINT_CLASSES: [PointClass; 3] = [
+    PointClass::Uniform,
+    PointClass::ZeroOneMax,
+    PointClass::Repeated,
+];
 
 /// Legal-shape sampler: W a power of two, t >= max(1, 7 - log2 W)
 /// (ligerito_flock.rs:284), s >= 1, t + W <= 126 (pcs.rs:1005), and
@@ -1300,7 +1303,13 @@ fn domain_boundary_probes() {
     }
 
     // (3) t + W > 126 must panic in mod_q_chunk_width (pcs.rs:1005).
-    let r = catch_unwind(|| mod_q_chunk_width(&IntegerMatrixLayout { row_vars: 100, col_vars: 1, word_bits: 32 }));
+    let r = catch_unwind(|| {
+        mod_q_chunk_width(&IntegerMatrixLayout {
+            row_vars: 100,
+            col_vars: 1,
+            word_bits: 32,
+        })
+    });
     match r {
         Err(e) => println!("probe: t+W=132 chunk width panicked as expected: {}", panic_msg(&e)),
         Ok(v) => panic!("t+W=132 mod_q_chunk_width unexpectedly returned {v}"),
@@ -1686,7 +1695,9 @@ fn fork_decode(m: &[u8]) -> DecodeOutcome {
     }
     #[cfg(not(unix))]
     {
-        match catch_unwind(AssertUnwindSafe(|| IntEvalRsLigModQProof::from_bytes(m).is_ok())) {
+        match catch_unwind(AssertUnwindSafe(|| {
+            IntEvalRsLigModQProof::from_bytes(m).is_ok()
+        })) {
             Ok(true) => DecodeOutcome::DecodeOk,
             Ok(false) => DecodeOutcome::DecodeErr,
             Err(_) => DecodeOutcome::DecodePanic,

@@ -5,6 +5,12 @@
 //! WHIR commits the three exact Goldilocks columns, and Binius64 commits one
 //! exact 128-bit packed row per gate before ring switching to BaseFold.
 
+use ::f2z::ligerito_flock::IntEvalRsLigModQProof;
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::PreparedRelation;
+use ::f2z::piop::spartan::protocol::terminal::PreparedTerminalOpening;
+use f2z::piop::spartan::mul::{MulLayout, MulWitness};
+
 mod common;
 use common::mul_witness::u32_digest as witness_digest;
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
@@ -24,14 +30,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use f2z::observability::Interval;
 use f2z::pcs::FQ_MOD;
-use f2z::piop::spartan::f2z::{
-    PreparedU32TerminalF2zOpening, commit_u32_terminal_f2z_witness,
-    prepare_u32_terminal_f2z_opening, prove_u32_terminal_claim_f2z,
-    u32_terminal_claim_f2z_proof_bytes, verify_u32_terminal_claim_f2z,
-};
+use f2z::piop::spartan::f2z::prepare_u32_terminal_f2z_opening;
 use f2z::piop::spartan::{
-    PreparedU32MulRelation, ScaledMleEvaluationClaim, SpartanF2zField, SpartanField,
-    U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness, spartan_f2z_field_config,
+    ScaledMleEvaluationClaim, SpartanF2zField, SpartanField, spartan_f2z_field_config,
 };
 use f2z::transcript::Blake3Transcript;
 use f2z::transcript::traits::Transcript;
@@ -512,7 +513,7 @@ fn seed_f2z_transcript(commitment: &[u8], seed: u64) -> Blake3Transcript {
 }
 
 fn derive_f2z_claim(
-    witness: &U32MulWitness,
+    witness: &MulWitness<u32>,
     mut prover: Blake3Transcript,
     mut verifier: Blake3Transcript,
 ) -> (
@@ -567,7 +568,7 @@ fn derive_f2z_claim(
                 arith.mul_u128(chi[1], u128::from(witness.x_values()[gate])),
                 arith.mul_u128(chi[2], u128::from(witness.y_values()[gate])),
             ),
-            arith.mul_u128(chi[3], u128::from(witness.product_values()[gate])),
+            arith.mul_u128(chi[3], u128::from(witness.product(gate))),
         );
         value = arith.add_u128(value, arith.mul_u128(eq[gate], selected));
     }
@@ -588,7 +589,7 @@ fn run_f2z(
     writer: &mut TraceWriter,
     exponent: usize,
     shape_seed: u64,
-    witness: &U32MulWitness,
+    witness: &MulWitness<u32>,
     digest: &str,
     witness_ms: f64,
     reps: usize,
@@ -596,14 +597,14 @@ fn run_f2z(
     let setup_recording =
         f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup = tracing::info_span!("u32_pcs_compare:setup").entered();
-    let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<
+    let relation = PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<
         f2z::piop::spartan::Lambda100,
     >(*witness.layout(), common::ligerito_selection(100))?;
-    let preflight = commit_u32_mul_witness(&relation, witness.f2z_bit_rows())?;
+    let preflight = protocol::commit(&relation, witness.f2z_bit_rows())?;
     let commitment = preflight.commitment.clone();
     drop(preflight);
     flock_core::scratch::clear();
-    let prepared: PreparedU32TerminalF2zOpening =
+    let prepared: PreparedTerminalOpening<MulLayout<u32>> =
         prepare_u32_terminal_f2z_opening(&relation, &commitment)?;
     let ligerito =
         common::ligerito_report(relation.ligerito_configuration(), relation.security().ood);
@@ -632,7 +633,7 @@ fn run_f2z(
         };
         let (hint, encoding, pt, vt) = {
             let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
-            let hint = commit_u32_terminal_f2z_witness(&prepared, rows)?;
+            let hint = protocol::terminal::commit(&prepared, rows)?;
             let encoding = bincode::serialize(&hint.commitment)?;
             let pt = seed_f2z_transcript(&encoding, seed);
             let vt = seed_f2z_transcript(&encoding, seed);
@@ -644,15 +645,15 @@ fn run_f2z(
         };
         let proof = {
             let _phase = tracing::info_span!(OPENING_SCOPE).entered();
-            prove_u32_terminal_claim_f2z(&mut pt, &prepared, &hint, &claim)?
+            protocol::terminal::prove(&mut pt, &prepared, &hint, &claim)?
         };
         {
             let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
-            verify_u32_terminal_claim_f2z(&mut vt, &prepared, &hint.commitment, &claim, &proof)?;
+            protocol::terminal::verify(&mut vt, &prepared, &hint.commitment, &claim, &proof)?;
         }
         drop(root);
         let intervals = recording.intervals().expect("query PCS trial");
-        let proof_bytes = u32_terminal_claim_f2z_proof_bytes(&proof).len();
+        let proof_bytes = IntEvalRsLigModQProof::to_bytes(&proof).len();
         writer.write(
             Run {
                 backend: Backend::F2z,
@@ -681,7 +682,7 @@ fn run_whir(
     writer: &mut TraceWriter,
     exponent: usize,
     shape_seed: u64,
-    witness: &U32MulWitness,
+    witness: &MulWitness<u32>,
     digest: &str,
     witness_ms: f64,
     reps: usize,
@@ -724,11 +725,7 @@ fn run_whir(
         let root = tracing::info_span!(ROOT_SCOPE).entered();
         let materialized = {
             let _phase = tracing::info_span!(MATERIALIZE_SCOPE).entered();
-            backend.materialize(
-                witness.x_values(),
-                witness.y_values(),
-                witness.product_values(),
-            )?
+            backend.materialize(witness)?
         };
         let committed = {
             let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
@@ -772,14 +769,12 @@ fn run_whir(
     Ok(())
 }
 
-fn pack_binius_rows(witness: &U32MulWitness) -> Vec<u128> {
-    witness
-        .x_values()
-        .iter()
-        .zip(witness.y_values())
-        .zip(witness.product_values())
-        .map(|((x, y), product)| {
-            u128::from(*x) | (u128::from(*y) << 32) | (u128::from(*product) << 64)
+fn pack_binius_rows(witness: &MulWitness<u32>) -> Vec<u128> {
+    (0..witness.layout().capacity())
+        .map(|i| {
+            u128::from(witness.x_values()[i])
+                | (u128::from(witness.y_values()[i]) << 32)
+                | (u128::from(witness.product(i)) << 64)
         })
         .collect()
 }
@@ -789,7 +784,7 @@ fn run_binius(
     writer: &mut TraceWriter,
     exponent: usize,
     shape_seed: u64,
-    witness: &U32MulWitness,
+    witness: &MulWitness<u32>,
     digest: &str,
     witness_ms: f64,
     reps: usize,
@@ -847,7 +842,7 @@ fn run_ligerito(
     writer: &mut TraceWriter,
     exponent: usize,
     shape_seed: u64,
-    witness: &U32MulWitness,
+    witness: &MulWitness<u32>,
     digest: &str,
     witness_ms: f64,
     reps: usize,
@@ -944,11 +939,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut rng = StdRng::seed_from_u64(shape_seed);
         let (witness, start) =
             f2z::observability::measure(tracing::info_span!("u32_pcs_compare:witness"), || {
-                U32MulWitness::from_fn_with_f2z_width(
-                    1usize << exponent,
-                    U32MulF2zWidth::W1,
-                    |_| (rng.random::<u32>(), rng.random::<u32>()),
-                )
+                MulWitness::<u32>::from_fn_with_word_bits(1usize << exponent, 1, |_| {
+                    (rng.random::<u32>(), rng.random::<u32>())
+                })
             })
             .expect("measure completed operation");
         let witness = witness?;

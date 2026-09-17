@@ -1,61 +1,157 @@
-//! Declared-width, borrowed u128/u256 assignment segments and mixed first rounds.
+//! Borrowed native assignment blocks and declared-width first-round kernels.
 use super::*;
 use field::{CtOrd, CtSelect, Fp, FpLinearAcc, MergeAccumulator, RingOps, Uint};
 
+/// Borrowed logical blocks, including implicit constants and padding.
 #[derive(Clone, Copy)]
-pub struct NativeU128Witness<'a> {
+pub struct NativeBlockWitness<'a> {
     block_len: usize,
-    x: &'a [u128],
-    y: &'a [u128],
-    z_lo: &'a [u128],
-    z_hi: &'a [u128],
+    block_count: usize,
+    words: usize,
+    blocks: [BlockValues<'a>; 8],
 }
-impl<'a> NativeU128Witness<'a> {
+impl<'a> NativeBlockWitness<'a> {
+    fn from_blocks<const N: usize>(
+        block_len: usize,
+        words: usize,
+        blocks: [BlockValues<'a>; N],
+    ) -> Self {
+        assert!(block_len.is_power_of_two() && N.is_power_of_two() && N <= 8);
+        assert!(block_len.checked_mul(N).is_some());
+        let mut storage = [BlockValues::Zero; 8];
+        for (i, block) in blocks.into_iter().enumerate() {
+            let len = match block {
+                BlockValues::Native(x) => x.len(),
+                BlockValues::U32(x) => x.len(),
+                BlockValues::U128(x) => x.len(),
+                BlockValues::U64FromU32Halves(lo, hi) => {
+                    assert_eq!(lo.len(), hi.len());
+                    lo.len()
+                }
+                BlockValues::U256(lo, hi) => {
+                    assert_eq!(lo.len(), hi.len());
+                    lo.len()
+                }
+                BlockValues::ConstantOne | BlockValues::Zero => 0,
+                _ => panic!("expected native multiplication block"),
+            };
+            assert!(len <= block_len);
+            storage[i] = block;
+        }
+        Self {
+            block_len,
+            block_count: N,
+            words,
+            blocks: storage,
+        }
+    }
+    pub(crate) fn u32(
+        block_len: usize,
+        x: &'a [u32],
+        y: &'a [u32],
+        lo: &'a [u32],
+        hi: &'a [u32],
+    ) -> Self {
+        assert_eq!(x.len(), y.len());
+        assert_eq!(x.len(), lo.len());
+        Self::from_blocks(
+            block_len,
+            1,
+            [
+                BlockValues::ConstantOne,
+                BlockValues::U32(x),
+                BlockValues::U32(y),
+                BlockValues::U64FromU32Halves(lo, hi),
+            ],
+        )
+    }
+    pub(crate) fn u64(
+        block_len: usize,
+        x: &'a [u64],
+        y: &'a [u64],
+        lo: &'a [u64],
+        hi: &'a [u64],
+    ) -> Self {
+        assert_eq!(x.len(), y.len());
+        assert_eq!(x.len(), lo.len());
+        assert_eq!(x.len(), hi.len());
+        Self::from_blocks(
+            block_len,
+            1,
+            [
+                BlockValues::ConstantOne,
+                BlockValues::Native(x),
+                BlockValues::Native(y),
+                BlockValues::Native(lo),
+                BlockValues::Native(hi),
+                BlockValues::Zero,
+                BlockValues::Zero,
+                BlockValues::Zero,
+            ],
+        )
+    }
     pub(crate) fn new(
         block_len: usize,
         x: &'a [u128],
         y: &'a [u128],
-        z_lo: &'a [u128],
-        z_hi: &'a [u128],
+        lo: &'a [u128],
+        hi: &'a [u128],
     ) -> Self {
-        assert!(block_len.is_power_of_two());
-        assert!(block_len.checked_mul(4).is_some());
-        assert!(x.len() <= block_len);
         assert_eq!(x.len(), y.len());
-        assert_eq!(x.len(), z_lo.len());
-        assert_eq!(x.len(), z_hi.len());
-        Self {
+        assert_eq!(x.len(), lo.len());
+        Self::from_blocks(
             block_len,
-            x,
-            y,
-            z_lo,
-            z_hi,
-        }
+            4,
+            [
+                BlockValues::ConstantOne,
+                BlockValues::U128(x),
+                BlockValues::U128(y),
+                BlockValues::U256(lo, hi),
+            ],
+        )
     }
-    pub(super) fn len(self) -> usize {
-        4 * self.block_len
+    pub(super) fn len(&self) -> usize {
+        self.block_len * self.block_count
     }
-    pub(super) fn block(self, index: usize) -> BlockValues<'a> {
-        match index {
-            0 => BlockValues::ConstantOne,
-            1 => BlockValues::U128(self.x),
-            2 => BlockValues::U128(self.y),
-            3 => BlockValues::U256(self.z_lo, self.z_hi),
-            _ => panic!("assignment block out of range"),
-        }
+    pub(super) fn block_len(&self) -> usize {
+        self.block_len
     }
-    // Dense fallback handles boundary-crossing pairs when block_len == 1.
-    // Only scalar temporaries widen here; the borrowed segments retain widths.
-    pub(super) fn read(self, index: usize) -> Uint<4> {
+    pub(super) fn words(&self) -> usize {
+        self.words
+    }
+    pub(super) fn block(&self, i: usize) -> BlockValues<'a> {
+        assert!(i < self.block_count);
+        self.blocks[i]
+    }
+    pub(super) fn read_u64(&self, index: usize) -> u64 {
         assert!(index < self.len());
         let row = index % self.block_len;
         match self.block(index / self.block_len) {
-            BlockValues::ConstantOne => Uint::from_u64((row == 0) as u64),
-            BlockValues::U128(values) => read_u128(values, row).zero_extend(),
-            BlockValues::U256(lo, hi) => read_u256(lo, hi, row),
-            _ => unreachable!(),
+            BlockValues::ConstantOne => (row == 0) as u64,
+            BlockValues::Zero => 0,
+            BlockValues::Native(v) => v.get(row).copied().unwrap_or(0),
+            BlockValues::U32(v) => read_u32(v, row),
+            BlockValues::U64FromU32Halves(lo, hi) => read_u64_halves(lo, hi, row),
+            _ => unreachable!("declared one-word source"),
         }
     }
+    pub(super) fn read(&self, index: usize) -> Uint<4> {
+        assert!(index < self.len());
+        let row = index % self.block_len;
+        match self.block(index / self.block_len) {
+            BlockValues::U128(v) => read_u128(v, row).zero_extend(),
+            BlockValues::U256(lo, hi) => read_u256(lo, hi, row),
+            _ => Uint::from_u64(self.read_u64(index)),
+        }
+    }
+}
+#[inline(always)]
+fn read_u32(v: &[u32], i: usize) -> u64 {
+    u64::from(v.get(i).copied().unwrap_or(0))
+}
+#[inline(always)]
+fn read_u64_halves(lo: &[u32], hi: &[u32], i: usize) -> u64 {
+    read_u32(lo, i) | (read_u32(hi, i) << 32)
 }
 /// A four-block assignment: implicit one, borrowed witness, borrowed quotient,
 /// implicit zero. The source contract declares 32 limbs, independently of values.
@@ -253,6 +349,13 @@ pub(super) fn wide_fold<const N: usize, const FOLD_WEIGHTS: bool>(
 impl BlockValues<'_> {
     pub(super) fn coefficients(self, ctx: &field::FpCtx<2>, weights: &[Raw]) -> [Raw; 2] {
         match self {
+            Self::U32(v) => inner_coefficients_native_map(ctx, weights, |i| read_u32(v, i)),
+            Self::U64FromU32Halves(lo, hi) => {
+                inner_coefficients_native_map(ctx, weights, |i| read_u64_halves(lo, hi, i))
+            }
+            Self::Native(v) if v.len() < weights.len() => {
+                inner_coefficients_native_map(ctx, weights, |i| v.get(i).copied().unwrap_or(0))
+            }
             Self::Native(v) => inner_coefficients_native_raw(ctx, weights, &v[..weights.len()]),
             Self::Field(v) => inner_coefficients_field_raw(ctx, weights, &v[..weights.len()]),
             Self::Zero => [0; 2],
@@ -269,12 +372,26 @@ impl BlockValues<'_> {
         let c = shared_raw(f, challenge);
         let coefficients = [f.sub(&f.one(), &c), c];
         match self {
+            Self::U32(v) => fold_native_pair(
+                ctx,
+                ctx.sub_raw(ctx.one_raw(), challenge),
+                challenge,
+                read_u32(v, 0),
+                read_u32(v, 1),
+            ),
+            Self::U64FromU32Halves(lo, hi) => fold_native_pair(
+                ctx,
+                ctx.sub_raw(ctx.one_raw(), challenge),
+                challenge,
+                read_u64_halves(lo, hi, 0),
+                read_u64_halves(lo, hi, 1),
+            ),
             Self::Native(v) => fold_native_pair(
                 ctx,
                 ctx.sub_raw(ctx.one_raw(), challenge),
                 challenge,
-                v[0],
-                v[1],
+                v.first().copied().unwrap_or(0),
+                v.get(1).copied().unwrap_or(0),
             ),
             Self::Field(v) => ctx.interpolate(v[0], v[1], challenge),
             Self::Zero => 0,
@@ -298,6 +415,25 @@ impl BlockValues<'_> {
         challenge: Raw,
     ) -> [Raw; 2] {
         match self {
+            Self::U32(v) => {
+                fold_native_map::<false>(ctx, weights, |i| read_u32(v, i), &mut [], out, challenge)
+            }
+            Self::U64FromU32Halves(lo, hi) => fold_native_map::<false>(
+                ctx,
+                weights,
+                |i| read_u64_halves(lo, hi, i),
+                &mut [],
+                out,
+                challenge,
+            ),
+            Self::Native(v) if v.len() < 2 * out.len() => fold_native_map::<false>(
+                ctx,
+                weights,
+                |i| v.get(i).copied().unwrap_or(0),
+                &mut [],
+                out,
+                challenge,
+            ),
             Self::Native(v) => {
                 fold_block_native_raw(ctx, weights, &v[..2 * out.len()], out, challenge)
             }
@@ -365,6 +501,10 @@ pub(super) fn weighted_wide_block(
     block: BlockValues<'_>,
 ) -> Raw {
     match block {
+        BlockValues::U32(v) => weighted_wide(ctx, eq, |i| Uint::<1>::from_u64(read_u32(v, i))),
+        BlockValues::U64FromU32Halves(lo, hi) => {
+            weighted_wide(ctx, eq, |i| Uint::<1>::from_u64(read_u64_halves(lo, hi, i)))
+        }
         BlockValues::U128(v) => weighted_wide(ctx, eq, |i| read_u128(v, i)),
         BlockValues::U256(lo, hi) => weighted_wide(ctx, eq, |i| read_u256(lo, hi, i)),
         BlockValues::ConstantOne => eq[0],
@@ -574,7 +714,7 @@ mod tests {
                     let y = values();
                     let lo = values();
                     let hi = values();
-                    let input = NativeU128Witness::new(cap, &x, &y, &lo, &hi);
+                    let input = NativeBlockWitness::new(cap, &x, &y, &lo, &hi);
                     let two128 = cfg.mul(
                         &(Field::from_with_cfg(1u128 << 127, &cfg)),
                         &(&Field::from_with_cfg(2u64, &cfg)),
@@ -666,6 +806,139 @@ mod tests {
                             .map(crate::piop::spartan::sumcheck::InnerSumcheckOutput::from)
                             .unwrap();
                             assert_eq!(got, expected, "structured log={log} live={live}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn compact_u32_u64_blocks_match_dense_proofs_and_transcripts() {
+        use crate::{
+            sumcheck::{UngrindedRoundBoundary, inner::prove_inner_sumcheck},
+            transcript::traits::Transcript,
+        };
+        let mut rng = StdRng::seed_from_u64(0x636f6d70616374);
+        let cfg = Field::make_cfg(&Uint::from((1u128 << 100) - 15)).unwrap();
+        let ctx = field_context(&cfg);
+        for log in [0, 1, 2, 6, 13] {
+            let cap = 1usize << log;
+            for live in [cap, cap.saturating_sub(1).max(1)] {
+                let values: [Vec<u64>; 4] = core::array::from_fn(|b| {
+                    (0..live)
+                        .map(|i| match i % 5 {
+                            0 => u64::MAX,
+                            1 => 0,
+                            2 => 1u64 << (b * 16),
+                            _ => rng.random(),
+                        })
+                        .collect()
+                });
+                let narrow = values
+                    .each_ref()
+                    .map(|v| v.iter().map(|&x| x as u32).collect::<Vec<_>>());
+                for bits in [32, 64] {
+                    let input = if bits == 32 {
+                        NativeBlockWitness::u32(cap, &narrow[0], &narrow[1], &narrow[2], &narrow[3])
+                    } else {
+                        NativeBlockWitness::u64(cap, &values[0], &values[1], &values[2], &values[3])
+                    };
+                    let blocks = if bits == 32 { 4 } else { 8 };
+                    let mut native = vec![0; blocks * cap];
+                    native[0] = 1;
+                    for i in 0..live {
+                        if bits == 32 {
+                            native[cap + i] = u64::from(narrow[0][i]);
+                            native[2 * cap + i] = u64::from(narrow[1][i]);
+                            native[3 * cap + i] =
+                                u64::from(narrow[2][i]) | (u64::from(narrow[3][i]) << 32);
+                        } else {
+                            for b in 0..4 {
+                                native[(b + 1) * cap + i] = values[b][i];
+                            }
+                        }
+                    }
+                    assert_eq!(
+                        (0..native.len())
+                            .map(|i| input.read_u64(i))
+                            .collect::<Vec<_>>(),
+                        native
+                    );
+                    let weights: Vec<_> = (0..cap)
+                        .map(|_| ctx.native_residue_u128(rng.random()))
+                        .collect();
+                    for alternate in [false, true] {
+                        let scales: Vec<_> = (0..blocks)
+                            .map(|b| {
+                                ((b % 2 == 0) == alternate)
+                                    .then(|| ctx.native_residue_u128(rng.random()))
+                            })
+                            .collect();
+                        let matrix: Vec<_> = scales
+                            .iter()
+                            .flat_map(|s| {
+                                weights.iter().map(|&w| s.map_or(0, |s| ctx.mul_raw(s, w)))
+                            })
+                            .collect();
+                        let projected: Vec<_> =
+                            native.iter().map(|&v| ctx.native_residue(v)).collect();
+                        let claim = shared_raw(
+                            &ctx,
+                            matrix
+                                .iter()
+                                .zip(&projected)
+                                .fold(0, |acc, (&m, &w)| ctx.add_raw(acc, ctx.mul_raw(m, w))),
+                        );
+                        let mut expected_t = Blake3Transcript::new();
+                        let expected = prove_inner_sumcheck(
+                            &ctx,
+                            &mut expected_t,
+                            claim,
+                            RawWitness::Field(projected),
+                            NativeWeights::Dense {
+                                matrix: matrix.clone(),
+                                live: native.len(),
+                            },
+                            &mut UngrindedRoundBoundary,
+                        )
+                        .unwrap();
+                        let expected_tail = expected_t.get_challenges::<u8>(32);
+                        for structured in [false, true] {
+                            if structured && cap == 1 {
+                                continue;
+                            }
+                            let weights = if structured {
+                                NativeWeights::Blocks {
+                                    weights: weights.clone(),
+                                    scales: BlockScales {
+                                        block_len: cap,
+                                        rows: cap,
+                                        scales: scales.clone(),
+                                    },
+                                    live: native.len(),
+                                    num_vars: log + blocks.ilog2() as usize,
+                                }
+                            } else {
+                                NativeWeights::Dense {
+                                    matrix: matrix.clone(),
+                                    live: native.len(),
+                                }
+                            };
+                            let mut transcript = Blake3Transcript::new();
+                            let got = prove_inner_sumcheck(
+                                &ctx,
+                                &mut transcript,
+                                claim,
+                                RawWitness::Wide(input),
+                                weights,
+                                &mut UngrindedRoundBoundary,
+                            )
+                            .unwrap();
+                            assert_eq!(
+                                got, expected,
+                                "bits={bits} log={log} live={live} structured={structured}"
+                            );
+                            assert_eq!(transcript.get_challenges::<u8>(32), expected_tail);
                         }
                     }
                 }

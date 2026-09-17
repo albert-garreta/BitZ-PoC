@@ -46,8 +46,10 @@ use crate::{
         LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
         bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
         prove_mle_eval_mod_q_ligerito_virtual_runtime,
+        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime,
         prove_mle_eval_mod_q_ligerito_with_weight_chunks,
         verify_mle_eval_mod_q_ligerito_virtual_runtime,
+        verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime,
         verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
     },
     pcs::IntegerMatrixLayout,
@@ -429,23 +431,10 @@ pub enum PiopWitness<'w> {
         /// Public constant block established by a typed witness constructor.
         constant_prefix: Option<super::raw_monty::NativeConstantPrefix>,
     },
-    /// Borrowed u64 operands, split products, and native assignment.
-    NativeU64 {
-        products: super::raw_monty::NativeWideProducts<'w, u64>,
-        assignment: &'w [u64],
-        /// Public constant block established by a typed witness constructor.
-        constant_prefix: Option<super::raw_monty::NativeConstantPrefix>,
-    },
-    /// Borrowed u128 operands, split products, and segmented assignment.
-    NativeU128 {
-        products: super::raw_monty::NativeWideProducts<'w, u128>,
-        witness: RawWitness<'w>,
-    },
-    /// Signed exact row operands and a borrowed native assignment.
-    SignedProducts {
-        products: crate::sumcheck::outer::OuterInputs<field::Z<2>, field::Z<4>>,
-        assignment: &'w [u64],
-    },
+    Mul32(&'w super::MulWitness<u32>),
+    Mul64(&'w super::MulWitness<u64>),
+    Mul128(&'w super::MulWitness<u128>),
+    CmAnd(&'w super::CmAndWitness),
     /// Exact 4096-bit row operands with a borrowed declared-width assignment.
     IntegerProducts {
         products: crate::sumcheck::outer::OuterInputs<field::Uint<64>>,
@@ -493,6 +482,14 @@ pub trait RelationSpec: Sync {
 
     /// Geometry of the committed bit tensor.
     fn committed_layout(&self) -> IntegerMatrixLayout;
+    /// Geometry after the public virtual map; ordinary relations use the source.
+    fn opening_layout(&self) -> IntegerMatrixLayout {
+        self.committed_layout()
+    }
+    /// Integer magnitude bound; a smaller width requires a padding map.
+    fn opening_word_bits(&self) -> usize {
+        self.opening_layout().word_bits
+    }
 
     /// Number of gate coordinates of the assignment MLE (the assignment has
     /// `gate_vars + selector_vars` variables).
@@ -1034,14 +1031,72 @@ impl OpeningProof for IntEvalRsLigVirtProof {
 /// A proof over a transcript-selected prime: the Spartan reduction, the
 /// optional Step-5.0 lift, the F2Z opening and any profile-selected
 /// grinding nonces.
+/// The prepared relation determines which opening proof is accepted.
 #[derive(Clone)]
-pub struct Proof<O: OpeningProof = IntEvalRsLigModQProof> {
+pub enum Opening {
+    Direct(IntEvalRsLigModQProof),
+    Virtual(IntEvalRsLigVirtProof),
+}
+impl Opening {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Direct(p) => p.to_bytes(),
+            Self::Virtual(p) => p.to_bytes(),
+        }
+    }
+    pub fn ood(&self) -> Option<&OodRound> {
+        match self {
+            Self::Direct(p) => p.ood.as_ref(),
+            Self::Virtual(p) => p.ood.as_ref(),
+        }
+    }
+    pub fn direct(&self) -> Option<&IntEvalRsLigModQProof> {
+        match self {
+            Self::Direct(p) => Some(p),
+            _ => None,
+        }
+    }
+    pub fn direct_mut(&mut self) -> Option<&mut IntEvalRsLigModQProof> {
+        match self {
+            Self::Direct(p) => Some(p),
+            _ => None,
+        }
+    }
+}
+impl OpeningProof for Opening {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes()
+    }
+    fn grinding_nonces(&self) -> &[u64] {
+        match self {
+            Self::Direct(p) => &p.grinding_nonces,
+            Self::Virtual(p) => &p.grinding_nonces,
+        }
+    }
+    fn ood(&self) -> Option<&OodRound> {
+        self.ood()
+    }
+}
+
+#[derive(Clone)]
+pub struct Proof<O: OpeningProof = Opening> {
     prefix: SpartanPrefixProof,
     reduction: Option<ReductionProof>,
     f2z: O,
 }
 
 impl<O: OpeningProof> Proof<O> {
+    fn map_opening<P: OpeningProof>(self, map: impl FnOnce(O) -> P) -> Proof<P> {
+        Proof {
+            prefix: self.prefix,
+            reduction: self.reduction,
+            f2z: map(self.f2z),
+        }
+    }
+    pub fn opening_grinding_nonces(&self) -> &[u64] {
+        self.f2z.grinding_nonces()
+    }
+
     /// Spartan outer and inner sumcheck proofs.
     pub const fn spartan(&self) -> &SpartanProof {
         &self.prefix.spartan
@@ -1167,8 +1222,8 @@ pub fn commit<S: RelationSpec>(
     Ok(hint)
 }
 
-/// Proves the relation with delayed Barrett reduction, discharging the
-/// bitified claim directly through the runtime-q exponent fold.
+/// Proves a one-prime relation, selecting direct or virtual discharge from
+/// the prepared relation's public map. Strategy 2 uses `prove_reduced`.
 pub fn prove<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
@@ -1192,6 +1247,10 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     witness: &S::Witness,
     hint: &FlockCommitHint,
 ) -> Result<Proof, ProtocolError> {
+    if prefix.spec.map().is_some() {
+        return prove_virtual_with_opener(transcript, prefix, opener, witness, hint)
+            .map(|p| p.map_opening(Opening::Virtual));
+    }
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
     let p = prefix.params();
@@ -1236,12 +1295,12 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     Ok(Proof {
         prefix: proved.messages,
         reduction: None,
-        f2z,
+        f2z: Opening::Direct(f2z),
     })
 }
 
-/// Verifies a direct-discharge proof, re-deriving the prime from the bound
-/// transcript.
+/// Verifies the relation-selected discharge, re-deriving the prime from the
+/// bound transcript and rejecting an incompatible opening variant.
 pub fn verify<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
@@ -1265,6 +1324,13 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &Proof,
 ) -> Result<(), ProtocolError> {
+    let f2z = match (&proof.f2z, prefix.spec.map().is_some()) {
+        (Opening::Direct(p), false) => p,
+        (Opening::Virtual(p), true) => {
+            return verify_virtual_parts(transcript, prefix, opener, commitment, &proof.prefix, p);
+        }
+        _ => return Err(ProtocolError::UnsupportedDischarge),
+    };
     let spec = &prefix.spec;
     let p = prefix.params();
     let vc = opener.verifier()?;
@@ -1275,13 +1341,8 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     let scopes = &domains.scopes;
     check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
 
-    let (binding, ood) = bind_verifier_statement(
-        transcript,
-        prefix,
-        opener,
-        commitment,
-        proof.f2z.ood.as_ref(),
-    )?;
+    let (binding, ood) =
+        bind_verifier_statement(transcript, prefix, opener, commitment, f2z.ood.as_ref())?;
     let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
 
@@ -1305,7 +1366,7 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
         transcript,
         domains.opening,
         commitment,
-        &proof.f2z,
+        f2z,
         &p,
         &chunks,
         &col_weights_q,
@@ -1330,6 +1391,29 @@ fn bind_claim_frame<T: Transcript, S: RelationSpec>(
     let digest = spec.claim_digest(frame)?;
     absorb_spartan_message(transcript, spec.domains().claim_tag, &digest);
     Ok(())
+}
+
+fn virtual_weight_chunks<S: RelationSpec>(
+    spec: &S,
+    weights: &[u128],
+    q_bits: usize,
+) -> Result<crate::pcs::ModQWeightChunks, ProtocolError> {
+    let p = spec.opening_layout();
+    let width = spec.opening_word_bits();
+    let result = if width < p.word_bits {
+        crate::pcs::ModQWeightChunks::from_dense_padded(
+            &p,
+            weights,
+            q_bits,
+            width,
+            spec.map().ok_or(ProtocolError::UnsupportedDischarge)?,
+        )
+    } else if width == p.word_bits {
+        crate::pcs::ModQWeightChunks::from_dense(&p, weights, q_bits)
+    } else {
+        Err(())
+    };
+    result.map_err(|_| ProtocolError::InvalidF2zParameters)
 }
 
 /// Proves the relation, discharging the bitified claim through the
@@ -1394,14 +1478,15 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
         let _scope = (scopes.f2z_prove)().entered();
         let derived = spec.derived_rows(witness);
         let h_rows = derived.as_deref().unwrap_or(hint.rows());
-        prove_mle_eval_mod_q_ligerito_virtual_runtime(
+        let chunks = virtual_weight_chunks(spec, &row_weights, prime.modulus_bits())?;
+        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime(
             transcript,
             hint,
             h_rows,
-            &p,
+            &spec.opening_layout(),
             &p,
             map,
-            &row_weights,
+            &chunks,
             prime.modulus_u128(),
             prime.modulus_bits(),
             f2z_generator(),
@@ -1443,6 +1528,24 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &Proof<IntEvalRsLigVirtProof>,
 ) -> Result<(), ProtocolError> {
+    verify_virtual_parts(
+        transcript,
+        prefix,
+        opener,
+        commitment,
+        &proof.prefix,
+        &proof.f2z,
+    )
+}
+
+fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    commitment: &Commitment,
+    messages: &SpartanPrefixProof,
+    f2z: &IntEvalRsLigVirtProof,
+) -> Result<(), ProtocolError> {
     let spec = &prefix.spec;
     let p = prefix.params();
     let vc = opener.verifier()?;
@@ -1452,16 +1555,11 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
-    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
+    check_proof_kernel(spec.kernel(), &messages.spartan)?;
 
-    let (binding, ood) = bind_verifier_statement(
-        transcript,
-        prefix,
-        opener,
-        commitment,
-        proof.f2z.ood.as_ref(),
-    )?;
-    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
+    let (binding, ood) =
+        bind_verifier_statement(transcript, prefix, opener, commitment, f2z.ood.as_ref())?;
+    let verified = verify_piop(transcript, prefix, &binding, messages)?;
     let prime = &verified.prime;
 
     let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime)?;
@@ -1483,14 +1581,15 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
     let _scope = (scopes.f2z_verify)().entered();
-    verify_mle_eval_mod_q_ligerito_virtual_runtime(
+    let chunks = virtual_weight_chunks(spec, &row_weights, prime.modulus_bits())?;
+    verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime(
         transcript,
         commitment,
-        &proof.f2z,
-        &p,
+        f2z,
+        &spec.opening_layout(),
         &p,
         map,
-        &row_weights,
+        &chunks,
         &col_weights,
         f2z_generator(),
         verified.opening.claimed,
@@ -1966,6 +2065,17 @@ where
             )?;
             (SpartanProof::UnivariateSkip(proof), claim)
         }
+        (Kernel::UnivariateSkip { skip_vars }, PiopWitness::Mul32(witness)) => {
+            let (proof, claim) = super::piop::prove_spartan_piop_raw_native_u64_with_skip_core(
+                transcript,
+                matrices,
+                binding,
+                witness,
+                witness.inner_witness(),
+                skip_vars,
+            )?;
+            (SpartanProof::UnivariateSkip(proof), claim)
+        }
         (Kernel::UnivariateSkip { .. }, _) => return Err(ProtocolError::UnsupportedKernel),
         (
             Kernel::Plain,
@@ -1992,39 +2102,44 @@ where
             )?;
             (SpartanProof::Plain(proof), claim)
         }
-        (
-            Kernel::Plain,
-            PiopWitness::NativeU64 {
-                products,
-                assignment,
-                constant_prefix,
-            },
-        ) => {
+        (Kernel::Plain, PiopWitness::Mul32(witness)) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                witness,
+                witness.inner_witness(),
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::Mul64(witness)) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                witness.native_products(),
+                witness.inner_witness(),
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::Mul128(witness)) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                witness.native_products(),
+                witness.inner_witness(),
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::CmAnd(witness)) => {
             let (proof, claim) = prove_spartan_piop_raw_products_native_assignment(
                 transcript,
                 matrices,
                 binding,
-                products,
-                assignment,
-                constant_prefix,
-            )?;
-            (SpartanProof::Plain(proof), claim)
-        }
-        (Kernel::Plain, PiopWitness::NativeU128 { products, witness }) => {
-            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
-                transcript, matrices, binding, products, witness,
-            )?;
-            (SpartanProof::Plain(proof), claim)
-        }
-        (
-            Kernel::Plain,
-            PiopWitness::SignedProducts {
-                products,
-                assignment,
-            },
-        ) => {
-            let (proof, claim) = prove_spartan_piop_raw_products_native_assignment(
-                transcript, matrices, binding, products, assignment, None,
+                witness,
+                witness.assignment(),
+                None,
             )?;
             (SpartanProof::Plain(proof), claim)
         }
@@ -2099,7 +2214,7 @@ fn bitify_and_bind<S: RelationSpec>(
 ) -> Result<(BitifiedClaim, [u8; 32]), ProtocolError> {
     let opening = bitify::bitify(
         terminal_claim,
-        spec.committed_layout(),
+        spec.opening_layout(),
         spec.gate_vars(),
         table,
         scale_side,

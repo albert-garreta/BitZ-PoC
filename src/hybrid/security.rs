@@ -1,9 +1,9 @@
 //! Union-bound accounting for the supported composition shapes.
+use crate::piop::spartan::mul::MulLayout;
+use crate::piop::spartan::protocol::PreparedRelationPrefix;
+
 use super::{Error, opening::Geometry};
-use crate::piop::spartan::{
-    f2z::U32MulPrefixRelation,
-    profile::{IopSecurityProfile, PrimePolicy},
-};
+use crate::piop::spartan::profile::{IopSecurityProfile, PrimePolicy};
 
 /// Slack for the complete composition: the standalone 100-bit per-round
 /// preset cannot be reused as a 100-bit whole-protocol guarantee.
@@ -74,7 +74,7 @@ impl SecurityReport {
 }
 
 pub(super) fn account(
-    mul: &U32MulPrefixRelation,
+    mul: &PreparedRelationPrefix<MulLayout<u32>>,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
@@ -89,7 +89,7 @@ pub(super) fn account(
 /// The union-bound accounting WITHOUT the 100-bit gate, so a caller solving
 /// the smallest clearing component target can probe candidates.
 pub(super) fn account_terms(
-    mul: &U32MulPrefixRelation,
+    mul: &PreparedRelationPrefix<MulLayout<u32>>,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
     resolved: &crate::ligerito_flock::ResolvedLigerito,

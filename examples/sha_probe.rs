@@ -91,26 +91,28 @@ fn main() {
             .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
             .collect::<Vec<_>>();
 
-        let (hint, started) = f2z::observability::measure(
-            tracing::info_span!("sha_probe:hint"),
-            || commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
-            .expect("SHA source commitment succeeds"),
-        ).expect("measure completed operation");
+        let (hint, started) =
+            f2z::observability::measure(tracing::info_span!("sha_probe:hint"), || {
+                commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
+                    .expect("SHA source commitment succeeds")
+            })
+            .expect("measure completed operation");
         let commit_ms = started.as_secs_f64() * 1e3;
         let mut transcript = Blake3Transcript::new();
-        let (proof, started) = f2z::observability::measure(
-            tracing::info_span!("sha_probe:proof"),
-            || prove_sha256_compressions_with_prefix_vars_and_config(
-            &mut transcript,
-            &prepared,
-            &statements,
-            &witness,
-            &hint,
-            SHA256_DEFAULT_INNER_PREFIX_VARS,
-            &pc,
-        )
-        .expect("SHA proof succeeds"),
-        ).expect("measure completed operation");
+        let (proof, started) =
+            f2z::observability::measure(tracing::info_span!("sha_probe:proof"), || {
+                prove_sha256_compressions_with_prefix_vars_and_config(
+                    &mut transcript,
+                    &prepared,
+                    &statements,
+                    &witness,
+                    &hint,
+                    SHA256_DEFAULT_INNER_PREFIX_VARS,
+                    &pc,
+                )
+                .expect("SHA proof succeeds")
+            })
+            .expect("measure completed operation");
         let prove_ms = started.as_secs_f64() * 1e3;
         let label = if rep == 0 { "warmup".to_owned() } else { format!("rep {rep}") };
         let f2z_bytes = proof.f2z().to_bytes();

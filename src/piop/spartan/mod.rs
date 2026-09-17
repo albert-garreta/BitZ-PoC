@@ -17,6 +17,7 @@ pub mod ecdsa_sha256;
 pub mod f2z;
 pub mod grinding;
 pub mod matrix;
+pub mod mul;
 pub mod multiswap;
 pub mod opening_mode;
 #[cfg(feature = "bench-internals")]
@@ -34,6 +35,7 @@ pub mod sumcheck;
 pub mod u128_f2z;
 pub mod u128_mul;
 pub mod u32_mul;
+pub use mul::{MulError, MulLayout, MulRow, MulWitness, MulWord};
 pub mod u64_f2z;
 pub mod u64_mul;
 #[cfg(test)]
@@ -42,29 +44,25 @@ pub(crate) use crate::sumcheck::outer::native_skip as univariate_skip_native;
 pub use crate::sumcheck::outer::univariate as univariate_skip;
 
 pub use baby_bear_f2z::{
-    BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearSpartanF2zError,
-    PreparedBabyBearMulRelation, baby_bear_mul_instance_facts, commit_baby_bear_mul_paper_witness,
-    commit_baby_bear_mul_witness, commit_baby_bear_mul_witness_with_ligerito,
-    prove_baby_bear_mul_paper, verify_baby_bear_mul_paper,
+    baby_bear_mul_instance_facts, commit_baby_bear_mul_witness,
+    commit_baby_bear_mul_witness_with_ligerito,
 };
 pub use baby_bear_mul::{
     BABY_BEAR_MODULUS, BabyBearMulCoefficient, BabyBearMulError, BabyBearMulLayout,
-    BabyBearMulNativeMles, BabyBearMulRelationBackend, BabyBearMulWitness,
-    baby_bear_mul_constraint_matrices, prepare_baby_bear_mul_relation,
+    BabyBearMulWitness, baby_bear_mul_constraint_matrices, prepare_baby_bear_mul_relation,
     project_baby_bear_mul_native_witness, project_baby_bear_mul_witness,
     sample_baby_bear_operand_with,
 };
 pub use cm::{
     CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndSpec,
-    CmAndWitness, CmF2zError, CmF2zProof, PreparedCmAndRelation, ProjectedCmAndWitness, cm_and_map,
-    commit_cm_and_witness, commit_cm_and_witness_with_config, prepare_cm_and_relation,
-    project_cm_and_witness, prove_cm_and_f2z, prove_cm_and_f2z_with_config, verify_cm_and_f2z,
+    CmAndWitness, PreparedCmAndRelation, cm_and_map, commit_cm_and_witness,
+    commit_cm_and_witness_with_config, prepare_cm_and_relation, project_cm_and_witness,
+    prove_cm_and_f2z, prove_cm_and_f2z_with_config, verify_cm_and_f2z,
     verify_cm_and_f2z_with_config,
 };
 pub use f2z::{
-    PreparedU32MulRelation, SpartanF2zError, SpartanF2zField, U32_MUL_UNIVARIATE_SKIP_DEGREE,
-    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulProof, commit_u32_mul_witness, prove_u32_mul,
-    spartan_f2z_field_config, verify_u32_mul,
+    SpartanF2zField, U32_MUL_UNIVARIATE_SKIP_DEGREE, U32_MUL_UNIVARIATE_SKIP_VARS,
+    spartan_f2z_field_config,
 };
 
 pub use crate::sparse_matrix::SparseMatrixError;
@@ -74,9 +72,7 @@ pub use matrix::{
     SpartanMatrixError, build_assignment_mle, build_boolean_assignment_mle, build_product_mles,
     eq_eval, eq_table, make_equality_factors,
 };
-pub use opening_mode::{
-    Direct, EvaluatedSpartanAssignment, OpeningMode, SpartanF2zProof, Virtualized,
-};
+pub use opening_mode::EvaluatedSpartanAssignment;
 pub use piop::{
     SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
     SpartanError, SpartanPiopProof, prove_spartan_nonsuccinct, prove_spartan_piop,
@@ -92,7 +88,7 @@ pub use profile::{
 pub use sha256::{
     PreparedSha256ChainBatch, SHA256_CHAIN_F_BAR_LIVE_BITS, SHA256_CHAIN_F_INSTANCE_BITS,
     SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CHAIN_H_INSTANCE_BITS, SHA256_CHAIN_TERMINAL_BITS,
-    Sha256ChainProof, Sha256ChainStatement, Sha256ChainWitnessBatch, commit_sha256_chain_witness,
+    Sha256ChainStatement, Sha256ChainWitnessBatch, commit_sha256_chain_witness,
     commit_sha256_chain_witness_with_config, generate_sha256_chain_witnesses,
     prepare_sha256_chain_batch, prepare_sha256_chain_batch_with_profile,
     prepare_sha256_chain_batch_with_profile_and_initial_state, prove_sha256_chain,
@@ -104,11 +100,11 @@ pub use sha256::{
     SHA256_DEFAULT_INNER_PREFIX_VARS, SHA256_F_BAR_LIVE_BITS, SHA256_F_INSTANCE_BITS,
     SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
     SHA256_INNER_PREFIX_MAX_VARS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
-    Sha256CompressionInput, Sha256CompressionProof, Sha256CompressionStatement,
-    Sha256CompressionWitnessBatch, Sha256ConstraintError, Sha256F2zError, Sha256OpeningLayout,
-    Sha256PrimeError, Sha256WitnessError, commit_sha256_compression_witness,
-    commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
-    prepare_sha256_compression_batch, prepare_sha256_compression_batch_for_assignment_rows,
+    Sha256CompressionInput, Sha256CompressionStatement, Sha256CompressionWitnessBatch,
+    Sha256ConstraintError, Sha256OpeningLayout, Sha256PrimeError, Sha256WitnessError,
+    commit_sha256_compression_witness, commit_sha256_compression_witness_with_config,
+    generate_sha256_compression_witnesses, prepare_sha256_compression_batch,
+    prepare_sha256_compression_batch_for_assignment_rows,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
     prepare_sha256_compression_batch_with_profile,
     prepare_sha256_compression_batch_with_profile_and_layout, prove_sha256_compressions,
@@ -124,27 +120,18 @@ pub use sha256::{
 };
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
-    U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
-    U32MulF2zWidth, U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness,
+    U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS,
     prepare_u32_mul_relation, project_u32_mul_native_witness, u32_mul_constraint_matrices,
 };
-pub use u64_f2z::{
-    PreparedU64MulRelation, U64MulBitifiedClaim, U64MulProof, U64MulSpartanF2zError,
-    commit_u64_mul_witness, prove_u64_mul, u64_mul_instance_facts, verify_u64_mul,
-};
+pub use u64_f2z::u64_mul_instance_facts;
 pub use u64_mul::{
-    U64_MUL_BIT_SLOTS, U64_MUL_LIMB_BASE, U64_MUL_VALUE_BITS, U64MulCoefficient, U64MulError,
-    U64MulLayout, U64MulRelationBackend, U64MulWitness, prepare_u64_mul_relation,
-    project_u64_mul_witness, u64_mul_constraint_matrices,
+    U64_MUL_BIT_SLOTS, U64_MUL_LIMB_BASE, U64_MUL_VALUE_BITS, U64MulCoefficient,
+    prepare_u64_mul_relation, project_u64_mul_witness, u64_mul_constraint_matrices,
 };
-pub use u128_f2z::{
-    PreparedU128MulRelation, U128MulBitifiedClaim, U128MulProof, U128MulSpartanF2zError,
-    commit_u128_mul_witness, prove_u128_mul, u128_mul_instance_facts, verify_u128_mul,
-};
+pub use u128_f2z::u128_mul_instance_facts;
 pub use u128_mul::{
-    U128_MUL_BIT_SLOTS, U128_MUL_OPERAND_BITS, U128_MUL_PRODUCT_BITS, U128MulError, U128MulLayout,
-    U128MulRelationBackend, U128MulWitness, mul_u128_full, prepare_u128_mul_relation,
-    project_u128_mul_witness, u128_mul_constraint_matrices,
+    U128_MUL_BIT_SLOTS, U128_MUL_OPERAND_BITS, U128_MUL_PRODUCT_BITS, mul_u128_full,
+    prepare_u128_mul_relation, project_u128_mul_witness, u128_mul_constraint_matrices,
 };
 pub use univariate_skip::{
     UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
@@ -248,20 +235,6 @@ pub trait SpartanField:
     {
         field::IntegerEmbedding::from_integer(field, &value)
     }
-}
-
-/// Type-level relation boundary connecting sparse coefficients, witness
-/// entries, and matrix-product entries before they are folded into `F`.
-pub trait SpartanRelationBackend<F>
-where
-    F: SpartanField,
-{
-    /// Coefficient type stored by the prepared sparse matrices.
-    type MatrixCoeff: SpartanMatrixCoefficient<F>;
-    /// Native value type stored by the assignment MLE.
-    type Witness;
-    /// Native value type stored by `Az`, `Bz`, and `Cz`.
-    type Product;
 }
 
 impl<const L: usize> SpartanField for field::Fp<L> {

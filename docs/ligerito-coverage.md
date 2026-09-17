@@ -32,9 +32,9 @@ capacity guarantee. Comparison backends and runners may impose tighter limits.
 
 | Workload / entrypoints | Preparation and policy | Shape preflight / proof validation |
 |---|---|---|
-| Full u32 product; mod32 relation; `u32_mul`, `mul_e2e_compare`, `f2z --mul` | `PreparedU32MulRelation::new_with_profile_and_ligerito`; Lambda100 defaults Johnson | `coverage::multiplication_shapes_preflight_without_witnesses`: L=15..28, W=1 and W=8; u32 proof/tamper tests, both regimes |
-| u64 / u128 full products; `mul_e2e_compare` | `PreparedU64MulRelation` / `PreparedU128MulRelation`; same resolver | u64 L=15..27, u128 L=15..26; native relation roundtrips and malformed-witness tests |
-| BabyBear multiplication; `baby_bear_mul` | `PreparedBabyBearMulRelation`; target inherited from Lambda100 or Lambda128 | L=15..28; paper-path proof tests and fixed-modulus compatibility tests |
+| Full u32 product; mod32 relation; `u32_mul`, `mul_e2e_compare`, `f2z --mul` | `PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito`; Lambda100 defaults Johnson | `coverage::multiplication_shapes_preflight_without_witnesses`: L=15..28, W=1 and W=8; u32 proof/tamper tests, both regimes |
+| u64 / u128 full products; `mul_e2e_compare` | `PreparedRelation<MulLayout<u64>>` / `PreparedRelation<MulLayout<u128>>`; same resolver | u64 L=15..27, u128 L=15..26; native relation roundtrips and malformed-witness tests |
+| BabyBear multiplication; `baby_bear_mul` | `PreparedRelation<BabyBearMulLayout>`; target inherited from Lambda100 or Lambda128 | L=15..28; paper-path proof tests and fixed-modulus compatibility tests |
 | Terminal u32 / BabyBear PCS comparisons; `u32_pcs_compare`, `baby_bear_pcs_compare` | Prepared terminal opener retains resolved Ligerito policy; fixed-q BabyBear exposes explicit `_with_ligerito` APIs | Terminal and combined adapter roundtrips; same committed-source shape eligibility |
 | CM-AND; `cm_and` | `PreparedCmAndRelation::with_ligerito`; 100-bit Ligerito policy | L=15..28 configuration preflight; both-regime `ligerito_protocols` proof/codec checks. Tiny algebra fixtures have no production security claim |
 | SHA compression; `sha256_compressions`, `sha256_e2e_compare` F2Z arm | Prepared SHA compression policy, target inherited from enclosing profile | K=7..16; explicit inner-sumcheck, assignment-row-sized, and product layouts; proof/public-output tests |

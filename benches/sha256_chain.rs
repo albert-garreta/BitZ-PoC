@@ -36,8 +36,7 @@ mod common;
 #[global_allocator]
 static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
-
-use std::{hint::black_box};
+use std::hint::black_box;
 
 use f2z::{
     f2map::VirtualMap,

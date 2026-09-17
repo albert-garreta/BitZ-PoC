@@ -14,9 +14,9 @@ relation at a small shape and fails on any drift.
 
 | Path | Role |
 |---|---|
-| `protocol/mod.rs` | the runner: `commit`, `prove`/`verify` (direct exponent-fold discharge), `prove_virtual`/`verify_virtual` (virtual map onto a derived grid), `prove_reduced`/`verify_reduced` (Strategy 2: exact integer lift + grinded fresh-prime reduction), `prove_prefix`/`verify_prefix` (statement → bitified claim, for callers with their own discharge) and the `terminal` sub-API used by the bench-internals probes |
+| `protocol/mod.rs` | the runner: `commit`, `prove`/`verify` (relation-selected direct or virtual discharge), `prove_virtual`/`verify_virtual` (virtual map onto a derived grid), `prove_reduced`/`verify_reduced` (Strategy 2: exact integer lift + grinded fresh-prime reduction), `prove_piop`/`verify_piop` (after statement binding → bitified claim, for callers with their own discharge) and the `terminal` sub-API used by the bench-internals probes |
 | `protocol/binding.rs` | `BindingHasher`: the canonical BLAKE3 encodings every assignment binding and claim digest are built from |
-| `protocol/bitify.rs` | `BlockTable`, `bitify`, `bridge_digest`, the `Modular` arithmetic trait (`ProjArith` below 2^126, `FieldArith` for full-width fingerprint primes) |
+| `protocol/bitify.rs` | `BlockTable`, `bitify`, `bridge_digest`, using the existing runtime field arithmetic |
 | `protocol/linear.rs` | the linear-batching mode: relations whose constraints are all linear in a derived bit grid (no nonlinear outer sumcheck) — `prove_linear`/`verify_linear` |
 
 The paper's §2.1 steps map onto the runner as follows. A `RelationSpec`
@@ -53,21 +53,25 @@ supplies everything marked *relation*; the runner owns the rest.
 
 | Relation | Spec | Mode | Kernel |
 |---|---|---|---|
-| u32×u32→u64 (`f2z.rs`) | `U32MulLayout` | direct | univariate skip K=3 |
-| u64×u64→u128 (`u64_f2z.rs`) | `U64MulLayout` | direct | plain |
-| u128×u128→u256 (`u128_f2z.rs`) | `U128MulLayout` | direct | plain |
+| u32×u32→u64 (`f2z.rs`) | `MulLayout<u32>` | direct for W=1/8; virtual otherwise | univariate skip K=3 |
+| u64×u64→u128 (`u64_f2z.rs`) | `MulLayout<u64>` | direct for W=1; virtual otherwise | plain |
+| u128×u128→u256 (`u128_f2z.rs`) | `MulLayout<u128>` | direct for W=1; virtual otherwise | plain |
 | BabyBear (`baby_bear_f2z.rs`) | `BabyBearMulLayout` | direct | plain |
 | RSA MultiSwap (`multiswap/proof.rs`) | `MultiswapSpec` | reduced (Strategy 2) | plain |
 | CM-AND (`cm.rs`) | `CmAndSpec` | virtual | plain |
-| Hybrid mod-2^32 × SHA (`f2z/hybrid.rs`) | `U32MulLayout` prefix | `prove_prefix` + the hybrid's own forest discharge | univariate skip K=3 |
+| Hybrid mod-2^32 × SHA (`f2z/hybrid.rs`) | `MulLayout<u32>` prefix | `prove_piop` + the hybrid's own forest discharge | univariate skip K=3 |
 | SHA-256 compressions (`sha256/proof.rs`) | `Sha256CompressionSpec` | linear (product opening, or legacy inner sumcheck for non-power-of-two batches) | — |
 | SHA-256 chain (`sha256/chain.rs`) | `PreparedSha256ChainBatch` | linear (product opening) | — |
 | SHA-256 + P-256 ECDSA (`ecdsa_sha256/proof.rs`) | — | its own composite kernel (grinded outer sumcheck, batched matrix + linear rows in one inner sumcheck, opening with per-block flock grinding) on the shared boundaries | composite |
 
-The per-relation `prove_*`/`verify_*` functions the benches call are thin
-wrappers over the runner; their proof types are aliases of the runner's
-`Proof` / `LinearProof`, and their error types are aliases of the one
-`ProtocolError`.
+Multiplication and BabyBear callers use the shared runner directly. Relation
+proof, claim, preparation and error aliases have been removed; callers name
+`Proof`, `LinearProof`, `PreparedRelation<Spec>`, `BitifiedClaim` and
+`ProtocolError`. Wrappers that perform relation-specific preparation or
+opening policy selection remain.
+
+The multiplication witness interface is described in
+[the native witness section below](#native-multiplication-witnesses).
 
 The linear mode (`LinearRelationSpec`) shares the runner's statement,
 policy, Round-0, boundary and prime steps and adds the linear PIOP: the
@@ -93,3 +97,115 @@ RUSTFLAGS="-C target-cpu=native" cargo test --release --features hybrid,ecdsa,be
 
 `F2Z_RECORD_PINS=1` prints the pin tuples for re-recording after a
 deliberate transcript change.
+
+## Native multiplication witnesses
+
+`MulLayout<T>`, `MulWitness<T>` and `MulRow<T>` support `u32`, `u64` and
+`u128`. A witness stores four padded native blocks `[x | y | lo | hi]`.
+The blocks use separate buffers to preserve allocator reuse for partial
+batches. The constant assignment block is implicit. `from_fn`
+computes exact product limbs; `from_rows` preserves supplied limbs so that
+incorrect claims remain detectable.
+
+```rust
+use f2z::piop::spartan::{MulWitness, protocol::{self, PreparedRelation}};
+use f2z::transcript::Blake3Transcript;
+
+let witness = MulWitness::<u64>::from_fn(1 << 15, |i| (i as u64, u64::MAX))?;
+let prepared = PreparedRelation::new(*witness.layout())?;
+let hint = protocol::commit(&prepared, witness.f2z_bit_rows())?;
+let proof = protocol::prove(
+    &mut Blake3Transcript::new(), &prepared, &witness, &hint,
+)?;
+protocol::verify(
+    &mut Blake3Transcript::new(), &prepared, &hint.commitment, &proof,
+)?;
+```
+
+The native width selects arithmetic and statement policy. Existing
+assignments are preserved: u32/u128 have an exact double-width product
+block; u64 has separate low/high blocks and its existing eight-block MLE
+domain. The u32 univariate skip and u64/u128 plain outer protocols remain
+unchanged.
+
+### Inside the prover
+
+1. Validate the witness layout and bind the commitment and public relation.
+2. Draw the runtime prime and project the prepared selector matrices.
+3. Read the compact witness through `OuterRows`; `OuterArithmetic` handles
+   each declared operand/product width. Products are joined on demand.
+4. Run the existing generic inner sumcheck over borrowed native blocks and
+   factored matrix weights. Implicit constant/zero blocks remain implicit;
+   projection and the first fold stay fused.
+5. Translate the terminal claim using `BlockTable` and bind the opening
+   functional.
+6. Open directly or through the prepared public packing map. `Proof`
+   contains an `Opening::Direct` or `Opening::Virtual`; verification checks
+   that the variant matches the relation before processing the proof.
+
+The optimized internal `RawWitness` / `NativeWeights` representations remain.
+Replacing them with eagerly projected dense vectors caused a measured
+1.9–3.1× slowdown in the isolated inner-sumcheck experiment. Ordinary callers
+only pass `&MulWitness<T>`.
+
+CM-AND also implements `OuterRows` directly. Its production prover borrows
+`&CmAndWitness`; it no longer clones an assignment into a projected wrapper
+or allocates three signed row tables. Explicit dense reference projections
+use the existing `EvaluatedSpartanAssignment` bundle, also shared by the
+u32 and BabyBear native reference helpers.
+
+### Packing widths
+
+Use `MulWitness::<T>::from_fn_with_word_bits(n, W, input)` or
+`MulLayout::<T>::new_with_word_bits(n, W)`. A custom layout can be passed to
+`from_fn_with_layout` or `from_rows_with_layout`.
+
+The logical width must satisfy `W >= 1` and `t + W <= 126`, where `t` is
+computed for the opening layout, including padded cells. Constructors also
+check host-index overflow. A zero-bit integer cell has no representation.
+
+For non-power-of-two widths, the physical stride is
+`P = W.next_power_of_two()`. Each native limb uses
+`next_power_of_two(ceil(T::BITS / W))` cells; unused cells and high bits are
+public zeros. The bound used for exponent-fold weight chunks is
+`c_w = 127 - t - W`.
+
+Existing W=1 paths and u32 W=8 keep their commitment layouts and proof bytes.
+Other widths commit the compact W=1 source, then open the padded derived
+grid through `MulLayout<T>`'s public virtual map. The map, logical width and
+physical geometry are bound into the statement; the smaller value bound is
+established by the map's support, independently of witness values.
+
+`committed_layout()` describes `f2z_bit_rows()`. `f2z_params()` describes the
+opening grid. They differ for the virtual packing path. New widths can cost
+more than the existing direct modes because of the virtual opening.
+
+### Qualification
+
+The deterministic `qualification_probe` example measures witness generation,
+packing, commitment, proving and verification separately, verifies every
+proof, and prints a digest and proof size. Build timing and allocation
+versions separately; allocator instrumentation changes latency.
+
+```sh
+cargo build --release --locked --example qualification_probe
+RAYON_NUM_THREADS=8 target/release/examples/qualification_probe u64 18 6 1
+cargo build --release --locked --example qualification_probe --features bench-peak-memory
+RAYON_NUM_THREADS=8 target/release/examples/qualification_probe u64 18 0 1
+```
+
+Arguments are native type, log batch size, measured repetitions, and W.
+Repetition zero is warmup. `F2Z_QUALIFICATION_N` overrides the batch size;
+`F2Z_QUALIFICATION_WITNESS_ONLY=1` isolates construction.
+With packing-only mode, `F2Z_QUALIFICATION_REUSE_ROWS=1` measures repeated
+writes into existing buffers through `write_f2z_bit_rows`. This avoids glibc
+heap-trimming costs that can increase when the witness allocation shrinks;
+the allocating API can pay those costs in allocate-and-discard loops.
+`F2Z_QUALIFICATION_PREFIX_ONLY=1` isolates the Spartan reduction and verifies
+its terminal claim, excluding commitment and opening. `F2Z_QUALIFICATION_PACK_ONLY=1` measures
+witness construction followed by packing, without proving. This allows checks
+just above a power of two, where demand-zero padding matters.
+
+`mul_e2e_compare` shares one typed witness-to-proof routine across all three
+native types. `F2Z_MUL_WORD_BITS` selects W for that benchmark and `u32_mul`.
+The paper-table CLI retains its existing W=1/8 selection.

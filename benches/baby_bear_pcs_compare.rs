@@ -5,6 +5,11 @@
 //! native field.  The measured boundary starts with backend materialization
 //! and ends after verification of the prescribed terminal MLE claim.
 
+use ::f2z::ligerito_flock::IntEvalRsLigModQProof;
+use ::f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use ::f2z::piop::spartan::protocol;
+use ::f2z::piop::spartan::protocol::terminal::PreparedTerminalOpening;
+
 mod common;
 use common::mul_witness::baby_bear_digest as witness_digest;
 use common::output::{BenchmarkOutput, FileMode, JsonStyle, JsonlWriter};
@@ -29,11 +34,7 @@ use baby_bear_pcs_compare::whir::{self, SecuritySummary, WhirAdapterError, WhirB
 
 use f2z::observability::Interval;
 use f2z::pcs::FQ_MOD;
-use f2z::piop::spartan::baby_bear_f2z::{
-    PreparedBabyBearTerminalF2zOpening, baby_bear_terminal_claim_f2z_proof_bytes,
-    commit_baby_bear_terminal_f2z_witness, prepare_baby_bear_terminal_f2z_opening,
-    prove_baby_bear_terminal_claim_f2z, verify_baby_bear_terminal_claim_f2z,
-};
+use f2z::piop::spartan::baby_bear_f2z::prepare_baby_bear_terminal_f2z_opening;
 use f2z::piop::spartan::{
     BabyBearMulWitness, ScaledMleEvaluationClaim, SpartanF2zField, SpartanField,
     commit_baby_bear_mul_witness, prepare_baby_bear_mul_relation, sample_baby_bear_operand_with,
@@ -1206,7 +1207,7 @@ fn run_f2z_series(
     // pool, so clear it before allocating the shape's relation matrices.
     flock_core::scratch::clear();
     let matrices = prepare_baby_bear_mul_relation(layout, &spartan_f2z_field_config())?;
-    let prepared: PreparedBabyBearTerminalF2zOpening =
+    let prepared: PreparedTerminalOpening<BabyBearMulLayout> =
         f2z::piop::spartan::baby_bear_f2z::prepare_baby_bear_terminal_f2z_opening_with_ligerito(
             &matrices,
             &layout,
@@ -1240,7 +1241,7 @@ fn run_f2z_series(
             };
             let (hint, commitment_encoding, prover_transcript, verifier_transcript) = {
                 let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
-                let hint = commit_baby_bear_terminal_f2z_witness(&prepared, rows)?;
+                let hint = protocol::terminal::commit(&prepared, rows)?;
                 let commitment_encoding = bincode::serialize(&hint.commitment)?;
                 let prover_transcript = seed_f2z_claim_transcript(&commitment_encoding, seed);
                 let verifier_transcript = seed_f2z_claim_transcript(&commitment_encoding, seed);
@@ -1257,7 +1258,7 @@ fn run_f2z_series(
             };
             let (proof, commitment) = {
                 let _phase = tracing::info_span!(OPENING_SCOPE).entered();
-                let proof = prove_baby_bear_terminal_claim_f2z(
+                let proof = protocol::terminal::prove(
                     &mut fixture.prover_transcript,
                     &prepared,
                     &hint,
@@ -1269,7 +1270,7 @@ fn run_f2z_series(
             };
             {
                 let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
-                verify_baby_bear_terminal_claim_f2z(
+                protocol::terminal::verify(
                     &mut fixture.verifier_transcript,
                     &prepared,
                     &commitment,
@@ -1287,7 +1288,7 @@ fn run_f2z_series(
                 intervals,
             )
         };
-        let proof_bytes = baby_bear_terminal_claim_f2z_proof_bytes(&proof).len();
+        let proof_bytes = IntEvalRsLigModQProof::to_bytes(&proof).len();
         let artifacts = checked_artifacts(commitment_bytes, claim_bytes, proof_bytes)?;
         let metadata = RunMetadata {
             backend: Backend::F2z,

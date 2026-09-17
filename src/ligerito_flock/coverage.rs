@@ -1,4 +1,8 @@
 //! Shape-only preflights: no large witness, commitment, or proof allocation.
+use crate::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use crate::piop::spartan::mul::MulLayout;
+use crate::piop::spartan::protocol::PreparedRelation;
+
 use super::*;
 use crate::piop::spartan::{self, IopSecurityProfile, Lambda100, Lambda128};
 
@@ -75,11 +79,8 @@ fn check(params: crate::pcs::IntegerMatrixLayout, facts: spartan::IopInstanceFac
 #[test]
 fn multiplication_shapes_preflight_without_witnesses() {
     for exponent in 15..=28 {
-        for width in [
-            spartan::u32_mul::U32MulF2zWidth::W1,
-            spartan::u32_mul::U32MulF2zWidth::W8,
-        ] {
-            let layout = spartan::U32MulLayout::new_with_f2z_width(1 << exponent, width).unwrap();
+        for width in [1, 8] {
+            let layout = MulLayout::<u32>::new_with_word_bits(1 << exponent, width).unwrap();
             let p = layout.f2z_params();
             check(p, spartan::f2z::u32_mul_instance_facts(&p, exponent));
         }
@@ -101,15 +102,11 @@ fn multiplication_shapes_preflight_without_witnesses() {
                 .unwrap();
         }
         if exponent <= 27 {
-            let p = spartan::U64MulLayout::new(1 << exponent)
-                .unwrap()
-                .f2z_params();
+            let p = MulLayout::<u64>::new(1 << exponent).unwrap().f2z_params();
             check(p, spartan::u64_f2z::u64_mul_instance_facts(&p, exponent));
         }
         if exponent <= 26 {
-            let p = spartan::U128MulLayout::new(1 << exponent)
-                .unwrap()
-                .f2z_params();
+            let p = MulLayout::<u128>::new(1 << exponent).unwrap().f2z_params();
             check(p, spartan::u128_f2z::u128_mul_instance_facts(&p, exponent));
         }
     }
@@ -117,17 +114,16 @@ fn multiplication_shapes_preflight_without_witnesses() {
         assert!(LigeritoSelection::JOHNSON.resolve(m - 7, 100).is_err());
     }
     assert!(
-        spartan::PreparedU32MulRelation::new(spartan::U32MulLayout::new(1 << 14).unwrap()).is_err()
+        PreparedRelation::<MulLayout<u32>>::new(MulLayout::<u32>::new(1 << 14).unwrap()).is_err()
     );
     assert!(
-        spartan::PreparedU64MulRelation::new(spartan::U64MulLayout::new(1 << 14).unwrap()).is_err()
+        PreparedRelation::<MulLayout<u64>>::new(MulLayout::<u64>::new(1 << 14).unwrap()).is_err()
     );
     assert!(
-        spartan::PreparedU128MulRelation::new(spartan::U128MulLayout::new(1 << 14).unwrap())
-            .is_err()
+        PreparedRelation::<MulLayout<u128>>::new(MulLayout::<u128>::new(1 << 14).unwrap()).is_err()
     );
     assert!(
-        spartan::PreparedBabyBearMulRelation::new(
+        PreparedRelation::<BabyBearMulLayout>::new(
             spartan::BabyBearMulLayout::new(1 << 14).unwrap()
         )
         .is_err()

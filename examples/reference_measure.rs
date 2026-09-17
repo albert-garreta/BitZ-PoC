@@ -10,7 +10,7 @@
 
 use f2z::ligerito::packed_vars;
 use f2z::ligerito_flock::{
-    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs,
+    commit_rs_ligerito_rows, historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
 use f2z::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
@@ -127,10 +127,11 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let mut bytes = 0usize;
     for _ in 0..reps {
         let mut pt = f2z::transcript::Blake3Transcript::new();
-        let (proof, t0) = f2z::observability::measure(
-            tracing::info_span!("reference_measure:proof"),
-            || prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc),
-        ).expect("measure completed operation");
+        let (proof, t0) =
+            f2z::observability::measure(tracing::info_span!("reference_measure:proof"), || {
+                prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc)
+            })
+            .expect("measure completed operation");
         prove_ms.push(t0.as_secs_f64() * 1e3);
 
         let ser = proof.to_bytes();

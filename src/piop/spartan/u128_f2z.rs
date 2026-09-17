@@ -9,43 +9,26 @@
 //! Mixed arithmetic consumes the 128- and 256-bit values directly in the
 //! first rounds and fuses projection into the required folded output.
 
+use crate::piop::spartan::mul::{MulLayout, MulWitness};
+use crate::piop::spartan::protocol::ProtocolError;
+
 use field::RingOps;
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
 
-use crate::{
-    ligerito::LOG_PACKING,
-    ligerito_flock::{FlockCommitHint, ModQOpeningKind},
-    pcs::IntegerMatrixLayout,
-    transcript::traits::Transcript,
-};
+use crate::{ligerito_flock::ModQOpeningKind, pcs::IntegerMatrixLayout};
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
-        self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
-        PreparedRelation, Proof, ProtocolError, RelationSpec, SlotRange, checked_pow2,
-        packed_variables,
+        BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+        RelationSpec, SlotRange,
     },
-    raw_monty::{NativeU128Witness, NativeWideProducts, RawWitness},
     u128_mul::{
         U128_MUL_ASSIGNMENT_BLOCKS, U128_MUL_BIT_SLOTS, U128_MUL_OPERAND_BITS,
-        U128_MUL_PRODUCT_BITS, U128_MUL_SLOT_VARS, U128_MUL_X_SLOT_START, U128_MUL_Y_SLOT_START,
-        U128_MUL_Z_SLOT_START, U128MulError, U128MulLayout, U128MulWitness,
+        U128_MUL_PRODUCT_BITS, U128_MUL_X_SLOT_START, U128_MUL_Y_SLOT_START, U128_MUL_Z_SLOT_START,
         u128_mul_constraint_matrices,
     },
 };
-
-/// Failures in layout validation, claim translation, or either proof system.
-pub type U128MulSpartanF2zError = ProtocolError;
-
-/// The factorized claim bound between Spartan and F2Z.
-pub type U128MulBitifiedClaim = protocol::BitifiedClaim;
-
-impl From<U128MulError> for ProtocolError {
-    fn from(error: U128MulError) -> Self {
-        Self::relation(error)
-    }
-}
 
 const BINDING_DOMAIN: &[u8] = b"f2z/spartan-u128-f2z/assignment/v1-runtime";
 const ASSIGNMENT_BLOCK_ORDER: &[u8] = b"e0|x|y|z";
@@ -79,69 +62,47 @@ pub fn u128_mul_instance_facts(params: &IntegerMatrixLayout, row_vars: usize) ->
     }
 }
 
-fn validate_layout_geometry(layout: &U128MulLayout) -> Result<(), ProtocolError> {
-    let params = layout.f2z_params();
-    if params.word_bits != 1
-        || params.row_vars < LOG_PACKING
-        || params.col_vars > layout.gate_vars()
-        || params.row_vars.saturating_add(params.word_bits) > 126
-    {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-    let total_vars = params
-        .row_vars
-        .checked_add(params.col_vars)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
-    if total_vars
-        != layout
-            .gate_vars()
-            .checked_add(U128_MUL_SLOT_VARS)
-            .ok_or(ProtocolError::InvalidF2zParameters)?
-        || U128_MUL_BIT_SLOTS != 1_usize << U128_MUL_SLOT_VARS
-        || U128_MUL_BIT_SLOTS != 2 * U128_MUL_OPERAND_BITS + U128_MUL_PRODUCT_BITS
-        || layout.assignment_len() != U128_MUL_ASSIGNMENT_BLOCKS * layout.capacity()
-    {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-
-    let row_count = checked_pow2(params.row_vars)?;
-    let col_count = checked_pow2(params.col_vars)?;
-    let cells = row_count
-        .checked_mul(col_count)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
-    let expected_cells = U128_MUL_BIT_SLOTS
-        .checked_mul(layout.capacity())
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
-    // `packed_variables` counts one packed variable per 128 bits: the nine
-    // slot variables leave two extra packed variables on top of the gates.
-    if cells != expected_cells
-        || packed_variables(&params)? != layout.gate_vars() + (U128_MUL_SLOT_VARS - LOG_PACKING)
-    {
-        return Err(ProtocolError::InvalidF2zParameters);
-    }
-    Ok(())
-}
-
-impl RelationSpec for U128MulLayout {
+impl RelationSpec for MulLayout<u128> {
     type Coefficient = bool;
-    type Witness = U128MulWitness;
-    type Map = crate::f2map::RepeatedVirtualMap;
+    type Witness = MulWitness<u128>;
+    type Map = Self;
 
     fn domains(&self) -> &'static Domains {
         &U128_MUL_DOMAINS
     }
 
     fn committed_layout(&self) -> IntegerMatrixLayout {
+        MulLayout::committed_layout(self)
+    }
+    fn opening_layout(&self) -> IntegerMatrixLayout {
         self.f2z_params()
+    }
+    fn opening_word_bits(&self) -> usize {
+        self.word_bits()
+    }
+    fn map(&self) -> Option<&Self> {
+        (!self.uses_direct_opening()).then_some(self)
+    }
+    fn derived_rows(&self, witness: &Self::Witness) -> Option<Vec<Vec<u64>>> {
+        (!self.uses_direct_opening()).then(|| witness.derived_bit_rows())
+    }
+    fn claim_digest(
+        &self,
+        frame: super::protocol::ClaimFrame<'_>,
+    ) -> Result<[u8; 32], ProtocolError> {
+        self.packed_claim_digest(frame)
     }
 
     fn gate_vars(&self) -> usize {
-        U128MulLayout::gate_vars(self)
+        MulLayout::<u128>::gate_vars(self)
     }
 
     fn instance_facts(&self) -> IopInstanceFacts {
         let row_vars = self.multiplications().next_power_of_two().trailing_zeros() as usize;
-        u128_mul_instance_facts(&self.f2z_params(), row_vars)
+        let mut facts = u128_mul_instance_facts(&self.f2z_params(), row_vars);
+        facts.opening_word_bits = self.word_bits() as u32;
+        facts.direct_opening = self.uses_direct_opening();
+        facts
     }
 
     fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
@@ -149,13 +110,13 @@ impl RelationSpec for U128MulLayout {
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
-        validate_layout_geometry(self)
+        self.validate_protocol_geometry()
     }
 
     /// Block order is 00=e0, 01=x, 10=y, 11=z with little-endian bit weights
     /// `2^0 … 2^255` on the committed slots.
     fn block_table(&self) -> BlockTable {
-        BlockTable::new(
+        let table = BlockTable::new(
             2,
             vec![
                 None,
@@ -173,14 +134,19 @@ impl RelationSpec for U128MulLayout {
                 }),
             ],
         )
-        .expect("the u128 block table is complete")
+        .expect("the u128 block table is complete");
+        if self.uses_direct_opening() {
+            table
+        } else {
+            table.with_word_packing(128, self.word_bits())
+        }
     }
 
     fn kernel(&self) -> Kernel {
         Kernel::Plain
     }
 
-    fn check_witness(&self, witness: &U128MulWitness) -> Result<(), ProtocolError> {
+    fn check_witness(&self, witness: &MulWitness<u128>) -> Result<(), ProtocolError> {
         if witness.layout() != self {
             return Err(ProtocolError::RelationWitnessLayoutMismatch);
         }
@@ -213,7 +179,7 @@ impl RelationSpec for U128MulLayout {
             self.multiplications(),
             self.capacity(),
             self.assignment_len(),
-            U128MulLayout::gate_vars(self),
+            MulLayout::<u128>::gate_vars(self),
             U128_MUL_ASSIGNMENT_BLOCKS,
             U128_MUL_OPERAND_BITS,
             U128_MUL_PRODUCT_BITS,
@@ -225,6 +191,7 @@ impl RelationSpec for U128MulLayout {
             p.col_vars,
             p.word_bits,
         ])?;
+        self.bind_packing(&mut hasher)?;
         Ok(hasher.finalize())
     }
 
@@ -234,7 +201,7 @@ impl RelationSpec for U128MulLayout {
             self.multiplications(),
             self.capacity(),
             self.assignment_len(),
-            U128MulLayout::gate_vars(self),
+            MulLayout::<u128>::gate_vars(self),
             U128_MUL_ASSIGNMENT_BLOCKS,
             p.row_vars,
             p.col_vars,
@@ -249,81 +216,30 @@ impl RelationSpec for U128MulLayout {
         // Mapping version one: little-endian bits, e0/x/y/z block order, and
         // nonzero scale normalized onto the folded row factors.
         hasher.bytes(&[1, 0, 1, 2, 3]);
+        self.bind_packing(hasher)?;
         Ok(())
     }
 
     /// Borrow native operand/product segments for the mixed first rounds.
     fn piop_witness<'w>(
         &self,
-        witness: &'w U128MulWitness,
+        witness: &'w MulWitness<u128>,
         _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        let live = self.multiplications();
-        let products = NativeWideProducts::new(
-            &witness.x_values()[..live],
-            &witness.y_values()[..live],
-            &witness.z_lo_values()[..live],
-            &witness.z_hi_values()[..live],
-            live.next_power_of_two(),
-        );
-        let assignment = NativeU128Witness::new(
-            self.capacity(),
-            &witness.x_values()[..live],
-            &witness.y_values()[..live],
-            &witness.z_lo_values()[..live],
-            &witness.z_hi_values()[..live],
-        );
-        Ok(PiopWitness::NativeU128 {
-            products,
-            witness: RawWitness::Wide(assignment),
-        })
+        Ok(PiopWitness::Mul128(witness))
     }
-}
-
-/// Setup-once, prime-independent bundle for the u128 protocol.
-pub type PreparedU128MulRelation = PreparedRelation<U128MulLayout>;
-
-/// A u128 multiplication proof over a transcript-selected prime.
-pub type U128MulProof = Proof;
-
-/// Commits prebuilt compact bit rows under the prepared relation's
-/// profile-selected Ligerito configuration.
-pub fn commit_u128_mul_witness(
-    prepared: &PreparedU128MulRelation,
-    rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, U128MulSpartanF2zError> {
-    protocol::commit(prepared, rows)
-}
-
-/// Proves the u128 batch under the prepared relation's security profile.
-pub fn prove_u128_mul<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedU128MulRelation,
-    witness: &U128MulWitness,
-    hint: &FlockCommitHint,
-) -> Result<U128MulProof, U128MulSpartanF2zError> {
-    protocol::prove(transcript, prepared, witness, hint)
-}
-
-/// Verifies a u128 multiplication proof, re-deriving the prime from the
-/// bound transcript.
-pub fn verify_u128_mul<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedU128MulRelation,
-    commitment: &Commitment,
-    proof: &U128MulProof,
-) -> Result<(), U128MulSpartanF2zError> {
-    protocol::verify(transcript, prepared, commitment, proof)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::piop::spartan::protocol::{self, PreparedRelation};
     use crate::transcript::Blake3Transcript;
+    use crate::transcript::traits::Transcript;
 
-    fn witness(multiplications: usize, salt: u64) -> U128MulWitness {
+    fn witness(multiplications: usize, salt: u64) -> MulWitness<u128> {
         let mut state = 0x243f_6a88_85a3_08d3_u64 ^ salt;
-        U128MulWitness::from_fn(multiplications, |index| {
+        MulWitness::<u128>::from_fn(multiplications, |index| {
             let mut next = || {
                 state ^= state << 13;
                 state ^= state >> 7;
@@ -350,15 +266,15 @@ mod tests {
 
         let witness = witness(1 << 15, 0);
         let layout = *witness.layout();
-        let prepared = PreparedU128MulRelation::new(layout).unwrap();
+        let prepared = PreparedRelation::<MulLayout<u128>>::new(layout).unwrap();
         assert_eq!(prepared.security().lambda, 100);
         assert_eq!(prepared.params().row_vars, 9 + 15 - 7);
-        let hint = commit_u128_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = protocol::commit(&prepared, witness.f2z_bit_rows()).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
-        let proof = prove_u128_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
+        let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_u128_mul(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared,
             &hint.commitment,
@@ -368,7 +284,7 @@ mod tests {
         assert!(proof.size_bytes(prepared.security()) > 0);
 
         let mut second_transcript = Blake3Transcript::new();
-        let second = prove_u128_mul(&mut second_transcript, &prepared, &witness, &hint).unwrap();
+        let second = protocol::prove(&mut second_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(proof.f2z().to_bytes(), second.f2z().to_bytes());
         assert_eq!(proof.piop_nonces(), second.piop_nonces());
     }
@@ -381,21 +297,21 @@ mod tests {
 
         let honest = witness(1 << 15, 1);
         let layout = *honest.layout();
-        let prepared = PreparedU128MulRelation::new(layout).unwrap();
+        let prepared = PreparedRelation::<MulLayout<u128>>::new(layout).unwrap();
 
         // Flip one committed bit of the product's high half at gate 3; the
         // commitment no longer matches the honest assignment.
         let mut rows = honest.f2z_bit_rows();
         let (b, c) = layout.f2z_cell(U128_MUL_Z_SLOT_START + 200, 3).unwrap();
         rows[c][b / 64] ^= 1 << (b % 64);
-        let hint = commit_u128_mul_witness(&prepared, rows).unwrap();
+        let hint = protocol::commit(&prepared, rows).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
-        let outcome = prove_u128_mul(&mut prover_transcript, &prepared, &honest, &hint);
+        let outcome = protocol::prove(&mut prover_transcript, &prepared, &honest, &hint);
         if let Ok(proof) = outcome {
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(
-                verify_u128_mul(
+                protocol::verify(
                     &mut verifier_transcript,
                     &prepared,
                     &hint.commitment,
@@ -410,8 +326,8 @@ mod tests {
     fn small_layouts_are_rejected_by_the_production_api() {
         let witness = witness(1 << 10, 2);
         assert!(matches!(
-            PreparedU128MulRelation::new(*witness.layout()),
-            Err(U128MulSpartanF2zError::UnauditedF2zParameters)
+            PreparedRelation::<MulLayout<u128>>::new(*witness.layout()),
+            Err(ProtocolError::UnauditedF2zParameters)
         ));
     }
 }

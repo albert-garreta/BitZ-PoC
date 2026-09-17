@@ -1,5 +1,9 @@
 //! Shared benchmark and proof CLI runner. Run each mode in its own process for
 //! meaningful peak-memory comparisons; every mode uses BLAKE3 Merkle hashing.
+use ::f2z::piop::spartan::protocol::{self, PreparedRelation};
+use f2z::piop::spartan::MulRow;
+use f2z::piop::spartan::mul::{MulLayout, MulWitness};
+
 use binius_circuits::sha256::compress::{State, sha256_compress_2x_seq};
 use binius_core::{constraint_system::ValueVec, word::Word};
 use binius_frontend::{Circuit, CircuitBuilder, Wire};
@@ -10,12 +14,8 @@ use binius_verifier::Verifier;
 use f2z::{
     binius_ligerito::{Accounting, Prepared as BiniusLigerito},
     hybrid::{CompositionProfile, Parameters, PreparedHybrid, chaining_value},
-    piop::spartan::{
-        f2z::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
-        u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
-    },
-    transcript::Blake3Transcript,
     observability::{self, Interval, Recording},
+    transcript::Blake3Transcript,
 };
 use std::error::Error;
 
@@ -116,17 +116,13 @@ impl Native {
             backend,
         })
     }
-    fn populate(
-        &self,
-        inputs: &[U32MulMod32Row],
-        blocks: &[[u32; 16]],
-    ) -> Result<ValueVec, AnyError> {
+    fn populate(&self, inputs: &[MulRow<u32>], blocks: &[[u32; 16]]) -> Result<ValueVec, AnyError> {
         if inputs.len() != self.multiplications.len() || blocks.len() != self.blocks.len() {
             return Err("native witness shape does not match the circuit".into());
         }
         let mut filler = self.circuit.new_witness_filler();
         for (wires, row) in self.multiplications.iter().zip(inputs) {
-            for (&wire, value) in wires.iter().zip([row.x, row.y, row.z, row.w]) {
+            for (&wire, value) in wires.iter().zip([row.x, row.y, row.lo, row.hi]) {
                 filler[wire] = Word(value as u64);
             }
         }
@@ -284,7 +280,10 @@ struct BiniusConfig {
 fn binius_ligerito_log_inv_rate() -> usize {
     std::env::var("F2Z_BINIUS_LOG_INV_RATE")
         .ok()
-        .map(|v| v.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be an integer"))
+        .map(|v| {
+            v.parse()
+                .expect("F2Z_BINIUS_LOG_INV_RATE must be an integer")
+        })
         .unwrap_or(f2z::binary_pcs::LOG_INV_RATE)
 }
 
@@ -412,7 +411,7 @@ pub fn run() -> Result<(), AnyError> {
             let witness = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
-                .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
+                .map(|&(x, y)| MulRow::<u32>::new(x, y))
                 .collect();
             // Hybrid fuses assignment synthesis into commit_mod32, so this is
             // the native row construction only; witness_commit_ms below is
@@ -510,12 +509,11 @@ pub fn run() -> Result<(), AnyError> {
             binius,
         )?;
         let separate = if mode == "separate" {
-            Some(PreparedU32MulRelation::new_with_profile_and_ligerito::<
-                CompositionProfile,
-            >(
-                U32MulLayout::new(inputs.len())?,
-                ligerito,
-            )?)
+            Some(
+                PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<
+                    CompositionProfile,
+                >(MulLayout::<u32>::new(inputs.len())?, ligerito)?,
+            )
         } else {
             None
         };
@@ -545,7 +543,7 @@ pub fn run() -> Result<(), AnyError> {
             let witness_scope = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
-                .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
+                .map(|&(x, y)| MulRow::<u32>::new(x, y))
                 .collect();
             let witness = native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
             // Native witness generation: row construction plus the circuit's
@@ -553,9 +551,10 @@ pub fn run() -> Result<(), AnyError> {
             drop(witness_scope);
             let bytes = native.prove(&witness)?;
             let mul = if let Some(relation) = &separate {
-                let witness = U32MulWitness::from_mod32_rows(&rows)?;
-                let hint = commit_u32_mul_witness(relation, witness.f2z_bit_rows())?;
-                let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)?;
+                let witness = MulWitness::<u32>::from_rows(&rows)?;
+                let hint = protocol::commit(relation, witness.f2z_bit_rows())?;
+                let proof =
+                    protocol::prove(&mut Blake3Transcript::new(), relation, &witness, &hint)?;
                 Some((hint, proof))
             } else {
                 None
@@ -571,13 +570,13 @@ pub fn run() -> Result<(), AnyError> {
                     + proof.f2z().to_bytes().len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
-                        - proof.f2z().grinding_nonces.len())
+                        - proof.opening_grinding_nonces().len())
                         * 8;
             }
             let verify = tracing::info_span!("benchmark:verification").entered();
             native.verify(&witness, bytes)?;
             if let Some((hint, proof)) = &mul {
-                verify_u32_mul(
+                protocol::verify(
                     &mut Blake3Transcript::new(),
                     separate.as_ref().expect("separate mode"),
                     &hint.commitment,
@@ -632,17 +631,55 @@ mod cli_tests {
         BiniusConfig::command().debug_assert();
         let defaults = parse(&[]).unwrap();
         assert_eq!((defaults.mode.as_str(), defaults.iterations), ("hybrid", 5));
-        assert!(defaults.profile.is_none() && defaults.mul_log.is_none() && defaults.sha_log.is_none());
-        let sweep = parse(&["--sweep", "--mode", "all", "--shapes", "15:7,16:8",
-            "--iterations", "3", "--results-dir", "campaign", "--bench"]).unwrap();
+        assert!(
+            defaults.profile.is_none() && defaults.mul_log.is_none() && defaults.sha_log.is_none()
+        );
+        let sweep = parse(&[
+            "--sweep",
+            "--mode",
+            "all",
+            "--shapes",
+            "15:7,16:8",
+            "--iterations",
+            "3",
+            "--results-dir",
+            "campaign",
+            "--bench",
+        ])
+        .unwrap();
         assert!(sweep.sweep);
         assert_eq!((sweep.mode.as_str(), sweep.iterations), ("all", 3));
-        assert_eq!(sweep.shapes.unwrap(), super::sweep::parse_shapes("15:7,16:8").unwrap());
-        assert_eq!(sweep.results_dir.as_deref(), Some(std::path::Path::new("campaign")));
-        assert_eq!(parse(&["--verify", "proof"]).unwrap().verify.as_deref(), Some("proof"));
-        let single = parse(&["--mul-log", "9", "--sha-log", "1", "--mul-log", "22",
-            "--sha-log", "16", "--iterations", "1", "--iterations", "2"]).unwrap();
-        assert_eq!((single.mul_log, single.sha_log, single.iterations), (Some(22), Some(16), 2));
+        assert_eq!(
+            sweep.shapes.unwrap(),
+            super::sweep::parse_shapes("15:7,16:8").unwrap()
+        );
+        assert_eq!(
+            sweep.results_dir.as_deref(),
+            Some(std::path::Path::new("campaign"))
+        );
+        assert_eq!(
+            parse(&["--verify", "proof"]).unwrap().verify.as_deref(),
+            Some("proof")
+        );
+        let single = parse(&[
+            "--mul-log",
+            "9",
+            "--sha-log",
+            "1",
+            "--mul-log",
+            "22",
+            "--sha-log",
+            "16",
+            "--iterations",
+            "1",
+            "--iterations",
+            "2",
+        ])
+        .unwrap();
+        assert_eq!(
+            (single.mul_log, single.sha_log, single.iterations),
+            (Some(22), Some(16), 2)
+        );
     }
 
     #[test]
@@ -663,9 +700,14 @@ mod cli_tests {
 
     #[test]
     fn profile_environment_probe() {
-        let Ok(mode) = std::env::var("F2Z_CLI_PROFILE_PROBE") else { return };
-        let argv = if mode == "override" { vec!["hybrid", "--profile", "custom:1:4"] }
-            else { vec!["hybrid"] };
+        let Ok(mode) = std::env::var("F2Z_CLI_PROFILE_PROBE") else {
+            return;
+        };
+        let argv = if mode == "override" {
+            vec!["hybrid", "--profile", "custom:1:4"]
+        } else {
+            vec!["hybrid"]
+        };
         let args = Args::try_parse_from(argv).unwrap();
         println!("CLI_PROFILE {}", args.profile.as_deref().unwrap());
     }

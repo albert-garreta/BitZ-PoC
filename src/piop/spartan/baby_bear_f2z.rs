@@ -13,6 +13,12 @@
 //! shared protocol of [`super::protocol`] and keeps the PCS-only
 //! terminal-opening benchmark path.
 
+use crate::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use crate::piop::spartan::protocol::PreparedRelation;
+use crate::piop::spartan::protocol::ProtocolError;
+#[cfg(feature = "bench-internals")]
+use crate::piop::spartan::protocol::terminal::PreparedTerminalOpening;
+
 use crate::piop::spartan::SpartanField as _;
 use field::RingOps;
 use std::borrow::Cow;
@@ -23,7 +29,6 @@ use crate::{
     ligerito::LOG_PACKING,
     ligerito_flock::{FlockCommitHint, LigeritoSelection, ModQOpeningKind},
     pcs::{FQ_MOD, IntegerMatrixLayout},
-    transcript::traits::Transcript,
 };
 
 use super::{
@@ -31,21 +36,14 @@ use super::{
         BABY_BEAR_MODULUS, BABY_BEAR_MUL_A_SLOT_START, BABY_BEAR_MUL_B_SLOT_START,
         BABY_BEAR_MUL_BIT_SLOTS, BABY_BEAR_MUL_C_SLOT_START, BABY_BEAR_MUL_K_SLOT_START,
         BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS, BABY_BEAR_MUL_VALUE_BITS, BabyBearMulCoefficient,
-        BabyBearMulError, BabyBearMulLayout, BabyBearMulWitness, baby_bear_mul_constraint_matrices,
+        BabyBearMulError, BabyBearMulWitness, baby_bear_mul_constraint_matrices,
     },
     profile::{IopInstanceFacts, IopSecurityParams},
     protocol::{
         self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
-        PreparedRelation, Proof, ProtocolError, RelationSpec, SlotRange, checked_pow2,
-        packed_variables,
+        RelationSpec, SlotRange, checked_pow2, packed_variables,
     },
 };
-
-/// Failures in layout validation, claim translation, or either proof system.
-pub type BabyBearSpartanF2zError = ProtocolError;
-
-/// The factorized claim bound between Spartan and F2Z.
-pub type BabyBearBitifiedClaim = protocol::BitifiedClaim;
 
 impl From<BabyBearMulError> for ProtocolError {
     fn from(error: BabyBearMulError) -> Self {
@@ -339,49 +337,12 @@ impl RelationSpec for BabyBearMulLayout {
     }
 }
 
-/// Setup-once, prime-independent bundle for the BabyBear protocol.
-pub type PreparedBabyBearMulRelation = PreparedRelation<BabyBearMulLayout>;
-
-/// A BabyBear multiplication proof over a transcript-selected prime.
-pub type BabyBearMulPaperProof = Proof;
-
-/// Commits prebuilt compact bit rows under the prepared relation's
-/// profile-selected Ligerito configuration.
-pub fn commit_baby_bear_mul_paper_witness(
-    prepared: &PreparedBabyBearMulRelation,
-    rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
-    protocol::commit(prepared, rows)
-}
-
-/// Proves the BabyBear batch under the prepared relation's security
-/// profile using delayed Barrett reduction.
-pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedBabyBearMulRelation,
-    witness: &BabyBearMulWitness,
-    hint: &FlockCommitHint,
-) -> Result<BabyBearMulPaperProof, BabyBearSpartanF2zError> {
-    protocol::prove(transcript, prepared, witness, hint)
-}
-
-/// Verifies a BabyBear multiplication proof, re-deriving the prime from the
-/// bound transcript.
-pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedBabyBearMulRelation,
-    commitment: &Commitment,
-    proof: &BabyBearMulPaperProof,
-) -> Result<(), BabyBearSpartanF2zError> {
-    protocol::verify(transcript, prepared, commitment, proof)
-}
-
 /// Commits compact bit rows under the Johnson opener at the 100-bit target
 /// (the PCS-only comparison's preflight commitment).
 pub fn commit_baby_bear_mul_witness(
     layout: &BabyBearMulLayout,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     commit_baby_bear_mul_witness_with_ligerito(layout, rows, LigeritoSelection::JOHNSON)
 }
 
@@ -390,19 +351,12 @@ pub fn commit_baby_bear_mul_witness_with_ligerito(
     layout: &BabyBearMulLayout,
     rows: Vec<Vec<u64>>,
     selection: LigeritoSelection,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
-    let prepared = PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<
+) -> Result<FlockCommitHint, ProtocolError> {
+    let prepared = PreparedRelation::<BabyBearMulLayout>::new_with_profile_and_ligerito::<
         super::profile::Lambda100,
     >(*layout, selection)?;
     protocol::commit(&prepared, rows)
 }
-
-/// Public, setup-once context for benchmarking only the terminal F2Z opening
-/// of a BabyBear multiplication assignment at the fixed comparison field.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub type PreparedBabyBearTerminalF2zOpening =
-    protocol::terminal::PreparedTerminalOpening<BabyBearMulLayout>;
 
 /// Prepares the fixed-q, PCS-only terminal-opening context under the Johnson
 /// opener.
@@ -412,7 +366,7 @@ pub fn prepare_baby_bear_terminal_f2z_opening(
     matrices: &super::PreparedConstraintMatrices<protocol::SpartanF2zField, BabyBearMulCoefficient>,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
-) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
+) -> Result<PreparedTerminalOpening<BabyBearMulLayout>, ProtocolError> {
     prepare_baby_bear_terminal_f2z_opening_with_ligerito(
         matrices,
         layout,
@@ -430,7 +384,7 @@ pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
     selection: LigeritoSelection,
-) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
+) -> Result<PreparedTerminalOpening<BabyBearMulLayout>, ProtocolError> {
     use super::SpartanField;
     let expected = protocol::SpartanF2zField::canonical_modulus_encoding(
         &super::f2z::spartan_f2z_field_config(),
@@ -443,7 +397,7 @@ pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
     {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
-    let prepared = PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<
+    let prepared = PreparedRelation::<BabyBearMulLayout>::new_with_profile_and_ligerito::<
         super::profile::Lambda100,
     >(*layout, selection)?;
     protocol::terminal::prepare(
@@ -457,54 +411,9 @@ pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
     )
 }
 
-/// Commits already-materialized compact bit rows with the exact
-/// configuration retained by the PCS-only context.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn commit_baby_bear_terminal_f2z_witness(
-    prepared: &PreparedBabyBearTerminalF2zOpening,
-    rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
-    protocol::terminal::commit(prepared, rows)
-}
-
-/// Proves one already-derived terminal assignment-MLE claim, with all Spartan
-/// work deliberately outside the benchmark boundary.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn prove_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedBabyBearTerminalF2zOpening,
-    hint: &FlockCommitHint,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<protocol::SpartanF2zField>,
-) -> Result<crate::ligerito_flock::IntEvalRsLigModQProof, BabyBearSpartanF2zError> {
-    protocol::terminal::prove(transcript, prepared, hint, terminal_claim)
-}
-
-/// Verifies the PCS-only BabyBear terminal opening from public data alone.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn verify_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
-    transcript: &mut T,
-    prepared: &PreparedBabyBearTerminalF2zOpening,
-    commitment: &Commitment,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<protocol::SpartanF2zField>,
-    proof: &crate::ligerito_flock::IntEvalRsLigModQProof,
-) -> Result<(), BabyBearSpartanF2zError> {
-    protocol::terminal::verify(transcript, prepared, commitment, terminal_claim, proof)
-}
-
-/// Canonical standalone F2Z opening payload bytes.
-#[cfg(feature = "bench-internals")]
-#[doc(hidden)]
-pub fn baby_bear_terminal_claim_f2z_proof_bytes(
-    proof: &crate::ligerito_flock::IntEvalRsLigModQProof,
-) -> Vec<u8> {
-    proof.to_bytes()
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::transcript::traits::Transcript;
 
     use super::*;
     use crate::{
@@ -545,18 +454,17 @@ mod tests {
         let witness = witness(1 << 15);
         let layout = *witness.layout();
         // λ = 100: no grinding anywhere, one chunk by construction.
-        let prepared = PreparedBabyBearMulRelation::new(layout).unwrap();
-        let hint = commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let prepared = PreparedRelation::<BabyBearMulLayout>::new(layout).unwrap();
+        let hint = protocol::commit(&prepared, witness.f2z_bit_rows()).unwrap();
         assert_eq!(prepared.security().lambda, 100);
         assert_eq!(prepared.security().ligerito_target_bits, 100);
         assert_eq!(prepared.security().initial_grinding_bits, 0);
         let mut prover_transcript = Blake3Transcript::new();
-        let proof =
-            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
+        let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert!(proof.piop_nonces().is_empty());
-        assert!(proof.f2z().grinding_nonces.is_empty());
+        assert!(proof.opening_grinding_nonces().is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_baby_bear_mul_paper(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared,
             &hint.commitment,
@@ -568,8 +476,7 @@ mod tests {
         {
             let mut second_transcript = Blake3Transcript::new();
             let second =
-                prove_baby_bear_mul_paper(&mut second_transcript, &prepared, &witness, &hint)
-                    .unwrap();
+                protocol::prove(&mut second_transcript, &prepared, &witness, &hint).unwrap();
             assert_eq!(second.f2z().to_bytes(), proof.f2z().to_bytes());
             assert_eq!(second.spartan(), proof.spartan());
             assert_eq!(
@@ -580,20 +487,18 @@ mod tests {
 
         // λ = 128: initial + per-draw PIOP + forest boundaries all armed.
         let prepared128 =
-            PreparedBabyBearMulRelation::new_with_profile::<Lambda128>(layout).unwrap();
+            PreparedRelation::<BabyBearMulLayout>::new_with_profile::<Lambda128>(layout).unwrap();
         assert!(prepared128.security().initial_grinding_bits > 0);
         assert!(prepared128.security().piop_round_grinding_bits > 0);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
-        let hint128 =
-            commit_baby_bear_mul_paper_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
+        let hint128 = protocol::commit(&prepared128, witness.f2z_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof128 =
-            prove_baby_bear_mul_paper(&mut prover_transcript, &prepared128, &witness, &hint128)
-                .unwrap();
+            protocol::prove(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
         assert_eq!(proof128.piop_nonces().len(), 2 * 15 + 1 + 15 + 3);
-        assert!(!proof128.f2z().grinding_nonces.is_empty());
+        assert!(!proof128.opening_grinding_nonces().is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
-        verify_baby_bear_mul_paper(
+        protocol::verify(
             &mut verifier_transcript,
             &prepared128,
             &hint128.commitment,
@@ -604,7 +509,7 @@ mod tests {
         tampered.prefix_mut().piop_nonces[3] ^= 1;
         let mut verifier_transcript = Blake3Transcript::new();
         assert!(
-            verify_baby_bear_mul_paper(
+            protocol::verify(
                 &mut verifier_transcript,
                 &prepared128,
                 &hint128.commitment,
@@ -736,11 +641,11 @@ mod tests {
     fn combined_protocol_uses_only_validator_gated_production_profiles() {
         let small = BabyBearMulLayout::new(3).unwrap();
         assert!(matches!(
-            PreparedBabyBearMulRelation::new(small),
-            Err(BabyBearSpartanF2zError::UnauditedF2zParameters)
+            PreparedRelation::<BabyBearMulLayout>::new(small),
+            Err(ProtocolError::UnauditedF2zParameters)
         ));
         let production = BabyBearMulLayout::new(1 << protocol::MIN_PRODUCTION_GATE_VARS).unwrap();
-        PreparedBabyBearMulRelation::new(production)
+        PreparedRelation::<BabyBearMulLayout>::new(production)
             .expect("the smallest validated profile is available");
     }
 }

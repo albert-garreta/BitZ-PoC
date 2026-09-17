@@ -29,6 +29,10 @@
 //! reconstructions, exactly as in the direct `u32_mul` bridge but over
 //! a 3-variable block selector.
 
+use crate::ligerito_flock::IntEvalRsLigVirtProof;
+use crate::piop::spartan::protocol::Proof;
+use crate::piop::spartan::protocol::ProtocolError;
+
 use crate::piop::spartan::SpartanField as _;
 use field::RingOps;
 #[cfg(test)]
@@ -44,8 +48,8 @@ use crate::{
     f2map::{PreparedVirtualMap, PreparedVirtualMapError, cell_count},
     ligerito::{LOG_PACKING, packed_vars},
     ligerito_flock::{
-        FlockCommitHint, IntEvalRsLigVirtProof, LigeritoSelection, ModQOpeningKind,
-        commit_rs_ligerito_rows, sha_lig_configs,
+        FlockCommitHint, LigeritoSelection, ModQOpeningKind, commit_rs_ligerito_rows,
+        sha_lig_configs,
     },
     pcs::IntegerMatrixLayout,
     transcript::traits::Transcript,
@@ -61,8 +65,8 @@ use super::{
     profile::{IopInstanceFacts, IopSecurityParams, Lambda100},
     protocol::{
         self, BindingHasher, BlockTable, ClaimFrame, Domains, FieldConfig, Kernel, MatrixSource,
-        Opener, PiopWitness, PreparedRelation, PreparedRelationPrefix, PrimeStrategy, Proof,
-        ProtocolError, RelationSpec, ScaleSide, Schedule, SlotRange,
+        Opener, PiopWitness, PreparedRelation, PreparedRelationPrefix, PrimeStrategy, RelationSpec,
+        ScaleSide, Schedule, SlotRange,
     },
 };
 
@@ -115,10 +119,6 @@ pub enum CmAndError {
     #[error(transparent)]
     VirtualMap(#[from] PreparedVirtualMapError),
 }
-
-/// Failures in the combined CM-AND Spartan + virtual-F2Z pipeline.
-/// Failures of the CM-AND protocol.
-pub type CmF2zError = ProtocolError;
 
 impl From<CmAndError> for ProtocolError {
     fn from(error: CmAndError) -> Self {
@@ -380,7 +380,7 @@ pub struct CmAndSpec {
 
 impl RelationSpec for CmAndSpec {
     type Coefficient = SpartanF2zField;
-    type Witness = ProjectedCmAndWitness<SpartanF2zField>;
+    type Witness = CmAndWitness;
     type Map = PreparedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
@@ -497,10 +497,7 @@ impl RelationSpec for CmAndSpec {
         Kernel::Plain
     }
 
-    fn check_witness(
-        &self,
-        witness: &ProjectedCmAndWitness<SpartanF2zField>,
-    ) -> Result<(), ProtocolError> {
+    fn check_witness(&self, witness: &CmAndWitness) -> Result<(), ProtocolError> {
         if witness.layout() != &self.layout {
             return Err(ProtocolError::RelationWitnessLayoutMismatch);
         }
@@ -543,13 +540,10 @@ impl RelationSpec for CmAndSpec {
 
     fn piop_witness<'w>(
         &self,
-        witness: &'w ProjectedCmAndWitness<SpartanF2zField>,
+        witness: &'w CmAndWitness,
         _config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        Ok(PiopWitness::SignedProducts {
-            products: witness.integer_products(),
-            assignment: &witness.assignment,
-        })
+        Ok(PiopWitness::CmAnd(witness))
     }
 
     fn map(&self) -> Option<&PreparedVirtualMap> {
@@ -557,11 +551,8 @@ impl RelationSpec for CmAndSpec {
     }
 
     /// The virtual opening runs against the derived grid `h = M·f`.
-    fn derived_rows(
-        &self,
-        witness: &ProjectedCmAndWitness<SpartanF2zField>,
-    ) -> Option<Vec<Vec<u64>>> {
-        Some(witness.h_rows().to_vec())
+    fn derived_rows(&self, witness: &CmAndWitness) -> Option<Vec<Vec<u64>>> {
+        Some(witness.h_bit_rows())
     }
 
     fn claim_digest(&self, frame: ClaimFrame<'_>) -> Result<[u8; 32], ProtocolError> {
@@ -636,7 +627,7 @@ impl PreparedCmAndRelation {
         }
     }
 
-    fn production(&self) -> Result<&PreparedRelation<CmAndSpec>, CmF2zError> {
+    fn production(&self) -> Result<&PreparedRelation<CmAndSpec>, ProtocolError> {
         match &self.prepared {
             CmPrepared::Production(relation) => Ok(relation),
             CmPrepared::Unaudited(_) => Err(ProtocolError::UnauditedF2zParameters),
@@ -658,7 +649,7 @@ impl PreparedCmAndRelation {
 
     pub fn ligerito_configuration(
         &self,
-    ) -> Result<&crate::ligerito_flock::ResolvedLigerito, CmF2zError> {
+    ) -> Result<&crate::ligerito_flock::ResolvedLigerito, ProtocolError> {
         Ok(self.production()?.ligerito_configuration())
     }
 
@@ -706,125 +697,80 @@ pub fn prepare_cm_and_relation(
     Ok(PreparedCmAndRelation { prepared })
 }
 
-/// Prepared CM-AND assignment. F2Z consumes exact integer row operands;
-/// explicit compatibility access through `spartan()` lazily projects to a field.
-/// `Az = Bz = 0`; `Cz` is computed so a false witness retains its residual.
-#[derive(Clone, Debug)]
-pub struct ProjectedCmAndWitness<F: SpartanField> {
-    layout: CmAndLayout,
-    assignment: Box<[u64]>,
-    field_config: F::Config,
-    spartan: std::sync::OnceLock<EvaluatedSpartanAssignment<F>>,
-    h_rows: Vec<Vec<u64>>,
-}
-
-impl<F: SpartanField> ProjectedCmAndWitness<F> {
-    /// The shared layout.
-    pub const fn layout(&self) -> &CmAndLayout {
-        &self.layout
-    }
-
-    /// Explicit compatibility projection; the F2Z prover keeps integer operands.
-    pub fn spartan(&self) -> &EvaluatedSpartanAssignment<F> {
-        self.spartan.get_or_init(|| self.materialize_spartan())
-    }
-
-    /// Packed synthesized rows consumed by the virtual F2Z prover.
-    pub fn h_rows(&self) -> &[Vec<u64>] {
-        &self.h_rows
-    }
-
-    /// Moves out the layout, Spartan witness bundle, and synthesized rows.
-    pub fn into_parts(mut self) -> (CmAndLayout, EvaluatedSpartanAssignment<F>, Vec<Vec<u64>>) {
-        let spartan = self
-            .spartan
-            .take()
-            .unwrap_or_else(|| self.materialize_spartan());
-        (self.layout, spartan, self.h_rows)
-    }
-
-    fn integer_products(&self) -> crate::sumcheck::outer::OuterInputs<field::Z<2>, field::Z<4>> {
-        let capacity = self.layout.capacity;
+impl crate::sumcheck::outer::OuterRows for CmAndWitness {
+    type AB = field::Z<2>;
+    type C = field::Z<4>;
+    fn dimensions(&self) -> (usize, usize, usize) {
         let rows = self.layout.gates.next_power_of_two();
-        let mut cx = vec![field::Z::ZERO; rows];
-        for (i, value) in cx.iter_mut().enumerate().take(self.layout.gates) {
-            let x = i128::from(self.assignment[capacity + i]);
-            let y = i128::from(self.assignment[2 * capacity + i]);
-            let z = i128::from(self.assignment[3 * capacity + i]);
-            let w = i128::from(self.assignment[4 * capacity + i]);
-            *value = field::Z::from(x + y - 2 * z - w);
-        }
-        crate::sumcheck::outer::OuterInputs {
-            ax: vec![field::Z::ZERO; rows],
-            bx: vec![field::Z::ZERO; rows],
-            cx,
-        }
+        (rows, rows, rows)
+    }
+    fn a(&self, _row: usize) -> Self::AB {
+        field::Z::ZERO
+    }
+    fn b(&self, _row: usize) -> Self::AB {
+        field::Z::ZERO
+    }
+    fn c(&self, row: usize) -> Self::C {
+        let [x, y, z, w] = [1, 2, 3, 4].map(|block| i128::from(self.block(block)[row]));
+        field::Z::from(x + y - 2 * z - w)
     }
 }
 
-/// Prepares the integer assignment; field projection is deferred until `spartan()` is requested.
-#[allow(clippy::arithmetic_side_effects)]
-pub fn project_cm_and_witness<F>(
+/// Materializes the field assignment and matrix products for reference callers.
+/// Production proofs borrow the native witness through `OuterRows`.
+pub fn project_cm_and_witness<F: SpartanField>(
     witness: &CmAndWitness,
     field_config: &F::Config,
-) -> Result<ProjectedCmAndWitness<F>, CmAndError>
-where
-    F: SpartanField,
-{
+) -> Result<EvaluatedSpartanAssignment<F>, CmAndError> {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
-    Ok(ProjectedCmAndWitness {
-        layout: witness.layout,
-        assignment: witness.assignment.clone(),
-        field_config: field_config.clone(),
-        spartan: std::sync::OnceLock::new(),
-        h_rows: witness.h_bit_rows(),
-    })
+    let field_assignment: Vec<F> = witness
+        .assignment
+        .as_ref()
+        .iter()
+        .copied()
+        .map(|value| F::from_with_cfg(value, field_config))
+        .collect();
+
+    let live = witness.layout.gates;
+    let zero = F::zero_with_cfg(field_config);
+    let zeros = vec![zero; live];
+    let cz: Vec<F> = (0..live)
+        .map(|i| {
+            // x + y − 2z − w, in the field.
+            let mut acc = field_assignment[witness.layout.capacity + i].clone();
+            acc = field_config.add(
+                &(acc),
+                &(&field_assignment[2 * witness.layout.capacity + i]),
+            );
+            let mut two_z = field_assignment[3 * witness.layout.capacity + i].clone();
+            two_z = field_config.add(
+                &(two_z),
+                &(&field_assignment[3 * witness.layout.capacity + i]),
+            );
+            acc = field_config.sub(&(acc), &(&two_z));
+            acc = field_config.sub(
+                &(acc),
+                &(&field_assignment[4 * witness.layout.capacity + i]),
+            );
+            acc
+        })
+        .collect();
+    let products = build_product_mles(&zeros, &zeros, &cz, live, field_config)
+        .expect("validated CM row dimensions");
+    let assignment = build_assignment_mle(
+        &field_assignment,
+        witness.layout.assignment_len(),
+        field_config,
+    )
+    .expect("validated CM assignment dimensions");
+    Ok(EvaluatedSpartanAssignment::new(assignment, products))
 }
 
-impl<F: SpartanField> ProjectedCmAndWitness<F> {
-    fn materialize_spartan(&self) -> EvaluatedSpartanAssignment<F> {
-        let field_config = &self.field_config;
-        let field_assignment: Vec<F> = self
-            .assignment
-            .as_ref()
-            .iter()
-            .copied()
-            .map(|value| F::from_with_cfg(value, field_config))
-            .collect();
-
-        let live = self.layout.gates;
-        let zero = F::zero_with_cfg(field_config);
-        let zeros = vec![zero; live];
-        let cz: Vec<F> = (0..live)
-            .map(|i| {
-                // x + y − 2z − w, in the field.
-                let mut acc = field_assignment[self.layout.capacity + i].clone();
-                acc = field_config.add(&(acc), &(&field_assignment[2 * self.layout.capacity + i]));
-                let mut two_z = field_assignment[3 * self.layout.capacity + i].clone();
-                two_z =
-                    field_config.add(&(two_z), &(&field_assignment[3 * self.layout.capacity + i]));
-                acc = field_config.sub(&(acc), &(&two_z));
-                acc = field_config.sub(&(acc), &(&field_assignment[4 * self.layout.capacity + i]));
-                acc
-            })
-            .collect();
-        let products = build_product_mles(&zeros, &zeros, &cz, live, field_config)
-            .expect("validated CM row dimensions");
-        let assignment = build_assignment_mle(
-            &field_assignment,
-            self.layout.assignment_len(),
-            field_config,
-        )
-        .expect("validated CM assignment dimensions");
-        EvaluatedSpartanAssignment::new(assignment, products)
-    }
-}
-
-fn checked_pow2(exponent: usize) -> Result<usize, CmF2zError> {
+fn checked_pow2(exponent: usize) -> Result<usize, ProtocolError> {
     protocol::checked_pow2(exponent)
 }
 
-fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), CmF2zError> {
+fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), ProtocolError> {
     let p = layout.f2z_params();
     if p.word_bits != 1
         || p.row_vars < LOG_PACKING
@@ -832,47 +778,44 @@ fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), CmF2zError> {
         || p.row_vars.saturating_add(p.word_bits) > 126
         || CM_AND_H_SLOTS != 1usize << 7
     {
-        return Err(CmF2zError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidF2zParameters);
     }
     let total_vars = p
         .row_vars
         .checked_add(p.col_vars)
-        .ok_or(CmF2zError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidF2zParameters)?;
     if total_vars
         != layout
             .gate_vars()
             .checked_add(7)
-            .ok_or(CmF2zError::InvalidF2zParameters)?
+            .ok_or(ProtocolError::InvalidF2zParameters)?
         || packed_vars(&p)
             != p.row_vars
                 .checked_sub(LOG_PACKING)
                 .and_then(|f| f.checked_add(p.col_vars))
-                .ok_or(CmF2zError::InvalidF2zParameters)?
+                .ok_or(ProtocolError::InvalidF2zParameters)?
     {
-        return Err(CmF2zError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidF2zParameters);
     }
     let cells = checked_pow2(p.row_vars)?
         .checked_mul(checked_pow2(p.col_vars)?)
-        .ok_or(CmF2zError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidF2zParameters)?;
     if cells
         != CM_AND_H_SLOTS
             .checked_mul(layout.capacity())
-            .ok_or(CmF2zError::InvalidF2zParameters)?
+            .ok_or(ProtocolError::InvalidF2zParameters)?
     {
-        return Err(CmF2zError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidF2zParameters);
     }
     Ok(())
 }
 
-/// Virtualized opening paired with the ordinary Spartan PIOP.
-pub type CmF2zProof = Proof<IntEvalRsLigVirtProof>;
-
-fn cm_configs(layout: &CmAndLayout) -> Result<(LigProverConfig, LigVerifierConfig), CmF2zError> {
+fn cm_configs(layout: &CmAndLayout) -> Result<(LigProverConfig, LigVerifierConfig), ProtocolError> {
     if layout.gate_vars() < MIN_PRODUCTION_GATE_VARS {
-        return Err(CmF2zError::UnauditedF2zParameters);
+        return Err(ProtocolError::UnauditedF2zParameters);
     }
     let p = layout.f2z_params();
-    sha_lig_configs(packed_vars(&p)).map_err(CmF2zError::LigeritoConfig)
+    sha_lig_configs(packed_vars(&p)).map_err(ProtocolError::LigeritoConfig)
 }
 
 /// Commits prebuilt compact `f` rows (`x`/`y`/`z` bits) under an explicit
@@ -882,7 +825,7 @@ pub fn commit_cm_and_witness_with_config(
     layout: &CmAndLayout,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
-) -> Result<FlockCommitHint, CmF2zError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     validate_cm_layout_geometry(layout)?;
     let p = layout.f2z_params();
     protocol::validate_bit_rows(&p, &rows)?;
@@ -896,7 +839,7 @@ pub fn commit_cm_and_witness_with_config(
 pub fn commit_cm_and_witness(
     layout: &CmAndLayout,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, CmF2zError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     let (pc, vc) = cm_configs(layout)?;
     let p = layout.f2z_params();
     protocol::validate_config_pair(&p, &pc, &vc)?;
@@ -909,25 +852,25 @@ pub fn commit_cm_and_witness(
 pub fn prove_cm_and_f2z_with_config<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
-    witness: ProjectedCmAndWitness<SpartanF2zField>,
+    witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<CmF2zProof, CmF2zError> {
+) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
     let opener = Opener::Custom {
         prover: Some(pc.clone()),
         verifier: None,
     };
-    protocol::prove_virtual_with_opener(transcript, relation.prefix(), &opener, &witness, hint_f)
+    protocol::prove_virtual_with_opener(transcript, relation.prefix(), &opener, witness, hint_f)
 }
 
 /// Proves with the production (validator-gated) configuration.
 pub fn prove_cm_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
-    witness: ProjectedCmAndWitness<SpartanF2zField>,
+    witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
-) -> Result<CmF2zProof, CmF2zError> {
-    protocol::prove_virtual(transcript, relation.production()?, &witness, hint_f)
+) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+    protocol::prove_virtual(transcript, relation.production()?, witness, hint_f)
 }
 
 /// Verifies both proof systems on one transcript, under an explicit
@@ -937,9 +880,9 @@ pub fn verify_cm_and_f2z_with_config<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &CmF2zProof,
+    proof: &Proof<IntEvalRsLigVirtProof>,
     vc: &LigVerifierConfig,
-) -> Result<(), CmF2zError> {
+) -> Result<(), ProtocolError> {
     let opener = Opener::Custom {
         prover: None,
         verifier: Some(vc.clone()),
@@ -952,8 +895,8 @@ pub fn verify_cm_and_f2z<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &CmF2zProof,
-) -> Result<(), CmF2zError> {
+    proof: &Proof<IntEvalRsLigVirtProof>,
+) -> Result<(), ProtocolError> {
     protocol::verify_virtual(transcript, relation.production()?, commitment, proof)
 }
 
@@ -1070,7 +1013,6 @@ mod tests {
         let zero = SpartanF2zField::zero_with_cfg(&config);
         assert!(
             projected
-                .spartan()
                 .products()
                 .cz
                 .evaluations
@@ -1085,8 +1027,8 @@ mod tests {
         })
         .unwrap();
         let projected = project_cm_and_witness::<SpartanF2zField>(&bad, &config).unwrap();
-        assert_ne!(projected.spartan().products().cz.evaluations[0], zero);
-        assert_eq!(projected.spartan().products().cz.evaluations[1], zero);
+        assert_ne!(projected.products().cz.evaluations[0], zero);
+        assert_eq!(projected.products().cz.evaluations[1], zero);
     }
 
     #[test]
@@ -1100,16 +1042,13 @@ mod tests {
         for (column, entries) in relation.matrices().matrices().c().columns().enumerate() {
             for (row, coefficient) in entries {
                 let mut term = coefficient.clone();
-                term = config.mul(
-                    &(term),
-                    &(&projected.spartan().assignment().evaluations[column]),
-                );
+                term = config.mul(&(term), &(&projected.assignment().evaluations[column]));
                 matrix_products[row] = config.add(&(matrix_products[row]), &(&term));
             }
         }
 
         assert_eq!(
-            &projected.spartan().products().cz.evaluations[..witness.layout().gates()],
+            &projected.products().cz.evaluations[..witness.layout().gates()],
             matrix_products.as_slice(),
         );
         assert!(
@@ -1203,14 +1142,14 @@ mod tests {
         let layout = CmAndLayout::new(3).unwrap();
         assert!(matches!(
             cm_configs(&layout),
-            Err(CmF2zError::UnauditedF2zParameters)
+            Err(ProtocolError::UnauditedF2zParameters)
         ));
         let production = CmAndLayout::new(1 << MIN_PRODUCTION_GATE_VARS).unwrap();
         cm_configs(&production).expect("the smallest embedded profile is available");
         let relation = prepare_cm_and_relation(layout, &spartan_f2z_field_config()).unwrap();
         assert!(matches!(
             relation.ligerito_configuration(),
-            Err(CmF2zError::UnauditedF2zParameters)
+            Err(ProtocolError::UnauditedF2zParameters)
         ));
     }
 }

@@ -263,17 +263,19 @@ map directly as CSC columns:
 - a z source bit feeds only its identity row;
 - padded source slots have empty columns.
 
-`project_cm_and_witness` produces one `EvaluatedSpartanAssignment` containing
-assignment `h` and products `Ah`, `Bh`, and `Ch`, plus packed `h_rows`, from
-the same `CmAndWitness`. The unchanged Spartan PIOP proves the R1CS over `h`.
-Its terminal assignment claim is bitified and passed to virtual F2Z, which
-binds it to the commitment to `f` through the public CSC map.
+The Spartan PIOP borrows `CmAndWitness` through `OuterRows` and its native
+assignment slice. It evaluates the signed residual without allocating `Ah`,
+`Bh` or `Ch` tables. Its terminal assignment claim is bitified and passed to
+virtual F2Z, which binds the synthesized `h` rows to the commitment to `f`
+through the public CSC map. `project_cm_and_witness` remains an explicit
+dense reference projection, returning `EvaluatedSpartanAssignment`.
 
-Canonical u32 multiplication uses `U32MulProof`: its runtime-prime Spartan
-component applies the fixed K=3 univariate-prefix skip and its terminal claim
-is opened by `IntEvalRsLigModQProof`. CM pairs ordinary Spartan with
-`IntEvalRsLigVirtProof`; its sealed `SpartanF2zProof<S, M>` mode prevents a
-direct opening from being passed to a virtualized verifier.
+Canonical u32 multiplication uses `protocol::Proof`: its runtime-prime
+Spartan component applies the fixed K=3 univariate-prefix skip. The generic
+runner selects `Opening::Direct` or `Opening::Virtual` from the prepared
+relation and rejects a mismatched variant before transcript processing.
+Existing u32 W=1/8 paths use `IntEvalRsLigModQProof`; other packing widths
+use `IntEvalRsLigVirtProof`. CM also exposes its explicit virtual entrypoints.
 
 SHA-256 witness synthesis and affine constants are intentionally outside this
 refactor; a future client only needs to supply synthesized `f`, `h`,
