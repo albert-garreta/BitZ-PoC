@@ -287,6 +287,8 @@ impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
 
 mod composite;
+#[cfg(feature = "ecdsa")]
+pub(crate) use composite::CompactCompositeMle;
 mod state;
 pub use state::PackedInput;
 
@@ -1968,7 +1970,6 @@ fn linear_multiply_accumulate(
     reducer.mul_acc(accumulator, lhs, rhs);
 }
 
-#[cfg(feature = "parallel")]
 #[inline]
 fn linear_merge(accumulator: &mut LinearAccumulator, other: LinearAccumulator) {
     accumulator.merge_assign(&other);

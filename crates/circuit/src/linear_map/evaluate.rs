@@ -259,16 +259,11 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
         self.adjoint_kernel(seed_count, seed, out, write, &Immediate)
     }
 
-    fn adjoint_kernel<O: Send, K: NodeReduction<F>>(
+    fn compute_adjoints<K: NodeReduction<F>>(
         &mut self,
-        seed_count: usize,
-        seed: impl Fn(usize) -> F::Elem + Sync,
-        out: &mut [O],
-        write: impl Fn(F::Elem) -> O + Sync,
+        seed: &(impl Fn(usize) -> F::Elem + Sync),
         kernel: &K,
-    ) -> Result<(), LinearMapError> {
-        length("output weights", self.graph.output_count, seed_count)?;
-        length("input coefficients", self.graph.inputs.len(), out.len())?;
+    ) {
         let Self {
             graph,
             field,
@@ -288,7 +283,7 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
             *adjoints = field.zero_vec(internal);
         }
         let evaluate =
-            |node: usize, prior: &[F::Elem]| arithmetic.evaluate(graph, node, prior, &seed, kernel);
+            |node: usize, prior: &[F::Elem]| arithmetic.evaluate(graph, node, prior, seed, kernel);
         for range in graph.levels.windows(2) {
             let (start, end) = (range[0], range[1]);
             let (prior, rest) = adjoints.split_at_mut(start);
@@ -316,6 +311,84 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
                 p = field.add(&p, &p);
             }
         }
+    }
+
+    /// Visit scalar inputs and geometric ranges from the shared adjoints.
+    /// Length-one ranges are scalar values; no dense output is allocated.
+    pub(super) fn adjoint_map_segments(
+        &mut self,
+        seed_count: usize,
+        seed: impl Fn(usize) -> F::Elem + Sync,
+        mut emit: impl FnMut(PowerRun<F::Elem>),
+    ) -> Result<(), LinearMapError> {
+        length("output weights", self.graph.output_count, seed_count)?;
+        self.compute_adjoints(&seed, &Immediate);
+        let arithmetic = Arithmetic {
+            field: &self.field,
+            coefficients: &self.coefficients,
+        };
+        let scalar = |column| {
+            let node = self.graph.inputs[column];
+            PowerRun {
+                first_column: column,
+                len: 1,
+                base: if node == NONE {
+                    self.field.zero()
+                } else {
+                    arithmetic.evaluate(
+                        self.graph,
+                        node as usize,
+                        &self.adjoints,
+                        &seed,
+                        &Immediate,
+                    )
+                },
+            }
+        };
+        let mut cursor = 0;
+        for run in self.power_runs() {
+            if run.len == 0 {
+                continue;
+            }
+            for column in cursor..run.first_column {
+                emit(scalar(column));
+            }
+            cursor = run.first_column + run.len;
+            emit(run);
+        }
+        for column in cursor..self.graph.inputs.len() {
+            emit(scalar(column));
+        }
+        Ok(())
+    }
+
+    fn adjoint_kernel<O: Send, K: NodeReduction<F>>(
+        &mut self,
+        seed_count: usize,
+        seed: impl Fn(usize) -> F::Elem + Sync,
+        out: &mut [O],
+        write: impl Fn(F::Elem) -> O + Sync,
+        kernel: &K,
+    ) -> Result<(), LinearMapError> {
+        length("output weights", self.graph.output_count, seed_count)?;
+        length("input coefficients", self.graph.inputs.len(), out.len())?;
+        self.compute_adjoints(&seed, kernel);
+        let Self {
+            graph,
+            field,
+            coefficients,
+            adjoints,
+            powers,
+            parallel,
+            ..
+        } = self;
+        let field = &*field;
+        let arithmetic = Arithmetic {
+            field,
+            coefficients,
+        };
+        let evaluate =
+            |node: usize, prior: &[F::Elem]| arithmetic.evaluate(graph, node, prior, &seed, kernel);
         let fill = |chunk_index: usize, chunk: &mut [O]| {
             let begin = chunk_index * OUTPUT_CHUNK;
             let end = begin + chunk.len();

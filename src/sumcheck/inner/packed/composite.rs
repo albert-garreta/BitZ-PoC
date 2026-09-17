@@ -1,5 +1,9 @@
 //! Aligned repeated coefficients followed by a compact unrelated circuit tail.
 use super::*;
+#[cfg(feature = "ecdsa")]
+mod compact;
+#[cfg(feature = "ecdsa")]
+pub(crate) use compact::CompactCompositeMle;
 use field::RingOps;
 
 use crate::poly::mle::CompositeMultilinearExtension;
@@ -518,6 +522,11 @@ fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         state
     };
 
+    finish_tail_shapes::<K>(state, cfg, zero)
+}
+
+fn finish_tail_shapes<const K: usize>(state: TailShapeState, cfg: &FieldConfig, zero: &Field) -> Result<Vec<Field>, SumcheckError> {
+    let prefix = 1usize << K;
     let shapes = (prefix + 1) * (prefix + 1);
     let TailShapeState { sums, used } = state;
     let mut reduced: Vec<Option<Vec<Field>>> = vec![None; shapes];

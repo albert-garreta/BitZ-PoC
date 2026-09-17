@@ -25,6 +25,7 @@ mod matrix_reference;
 #[cfg(feature = "full")]
 pub mod matrix_transpose;
 #[cfg(feature = "full")]
+pub mod montgomery_tail;
 #[cfg(feature = "full")]
 pub mod p256;
 pub mod sha256;

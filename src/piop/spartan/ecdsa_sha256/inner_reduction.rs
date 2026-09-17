@@ -706,70 +706,68 @@ mod tests {
         }
     }
 
-    /// Every tail run must reproduce the materialized values it covers, and the
-    /// runs must be sorted and disjoint (the prover kernel relies on both).
+    /// Compare compact emission with the independent expanded matrix, including
+    /// public-cell corrections in both outer modes and two field contexts.
     #[test]
-    fn tail_runs_describe_the_materialized_tail() {
-        let modulus = (1u128 << 127) - 1;
-        let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
-        let f = |n| field::Fp::<2>::from_with_cfg(n, &cfg);
-        let (statement, _) = fixture();
-        for mode in [OuterMode::Split, OuterMode::AllRows] {
-            let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
-            let outer = OuterSumcheckProof {
-                sumcheck: SumcheckProof {
-                    round_polynomials: Vec::new(),
-                },
-                az_mle_claim: f(5u64),
-                bz_mle_claim: f(7),
-                cz_mle_claim: f(11),
-            };
-            let claim = InnerSumcheckClaim::from_outer_claims(
-                &relation,
-                &statement,
-                &outer,
-                (0..relation.outer_sumcheck_num_vars())
-                    .map(|i| f(i as u64 + 13))
-                    .collect(),
-                f(17),
-                (0..relation.linear_vars())
-                    .map(|i| f(i as u64 + 19))
-                    .collect(),
-                f(23),
-                &cfg,
-            )
-            .unwrap();
-            let mut coefficients = ModQCoefficients::from_relation(&relation, &cfg);
-            let prepared = coefficients
-                .build_batched_matrix_mle(&relation, &claim, &cfg)
+    fn compact_tail_matches_expanded_matrix() {
+        for modulus in [sampled_prime(), (1u128 << 127) - 1] {
+            let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+            let f = |n| field::Fp::<2>::from_with_cfg(n, &cfg);
+            let (statement, _) = fixture();
+            for mode in [OuterMode::Split, OuterMode::AllRows] {
+                let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
+                let outer = OuterSumcheckProof {
+                    sumcheck: SumcheckProof {
+                        round_polynomials: Vec::new(),
+                    },
+                    az_mle_claim: f(5u64),
+                    bz_mle_claim: f(7),
+                    cz_mle_claim: f(11),
+                };
+                let claim = InnerSumcheckClaim::from_outer_claims(
+                    &relation,
+                    &statement,
+                    &outer,
+                    (0..relation.outer_sumcheck_num_vars())
+                        .map(|i| f(i as u64 + 13))
+                        .collect(),
+                    f(17),
+                    (0..relation.linear_vars())
+                        .map(|i| f(i as u64 + 19))
+                        .collect(),
+                    f(23),
+                    &cfg,
+                )
                 .unwrap();
-            let two = f(2);
-            let mut covered = 0usize;
-            let mut end = 0usize;
-            for &(start, len, ref base) in &prepared.tail_runs {
-                assert!(
-                    start >= end && len > 0,
-                    "{mode:?}: runs overlap or are empty"
-                );
-                end = start + len;
-                let mut value = base.clone();
-                for k in 0..len {
-                    assert_eq!(
-                        prepared.p256_evaluations[start + k],
-                        value,
-                        "{mode:?}: run at {start} disagrees at offset {k}"
-                    );
-                    value = cfg.mul(&(value), &(&two));
+                let mut coefficients = ModQCoefficients::from_relation(&relation, &cfg);
+                let prepared = coefficients
+                    .build_batched_matrix_mle(&relation, &claim, &cfg)
+                    .unwrap();
+                let weights = coefficients.build_row_weights(&relation, &claim);
+                let mut oracle: Vec<u128> = (0..relation.local.tail.column_count())
+                    .map(|column| {
+                        coefficients.p256_column_weight(&relation, &weights.matrix_rows, column)
+                    })
+                    .collect();
+                for (&cell, &weight) in relation.local.public_h.iter().zip(&weights.public_bits) {
+                    oracle[cell] = coefficients.ctx.add_raw(oracle[cell], weight);
                 }
-                covered += len;
+                let mut actual = vec![0; prepared.p256_tail.len()];
+                prepared
+                    .p256_tail
+                    .visit(0..actual.len(), |start, len, base| {
+                        let mut value = words_to_raw(&base);
+                        for entry in &mut actual[start..start + len] {
+                            *entry = value;
+                            value = coefficients.ctx.add_raw(value, value);
+                        }
+                    });
+                assert_eq!(
+                    actual.iter().zip(&oracle).position(|(a, b)| a != b),
+                    None,
+                    "{mode:?}, {modulus}"
+                );
             }
-            assert!(end <= prepared.p256_evaluations.len());
-            // The lifts cover most of the P-256 witness; the rest are scalar columns.
-            assert!(
-                covered * 10 > prepared.p256_evaluations.len() * 8,
-                "{mode:?}: only {covered} of {} covered",
-                prepared.p256_evaluations.len()
-            );
         }
     }
 

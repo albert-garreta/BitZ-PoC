@@ -1,90 +1,51 @@
 //! A repeated local factor followed by a corrected circuit tail. This owner
 //! is shared by binding and the existing structured inner-sumcheck MLE adapter.
 use crate::piop::spartan::matrix::make_equality_factors;
-use crate::poly::mle::{
-    CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
-};
+use crate::poly::mle::EqualityWeights;
+#[cfg(test)]
+use crate::poly::mle::FactoredMultilinearExtension;
 use crate::sumcheck::SumcheckError;
 use crate::sumcheck::inner::native::{RawFieldStorage, make_equality_factors_raw, raw_to_words};
+use crate::sumcheck::inner::packed::CompactCompositeMle;
 use circuit::linear_map::ColumnValues;
+use circuit::montgomery_tail::MontgomeryTail;
 use field::RingOps;
 
-/// Owned public matrix MLE. Field elements already store Montgomery evaluations.
-/// For `N` SHA instances and `H` local wires, its Bit table is
-/// `[sha_local_evaluations ⊗ instance_weights, p256_evaluations]`:
-/// entry `i + N*j` is `instance_weights[i] * sha_local_evaluations[j]`,
-/// with `constant_weight` added at index zero and implicit zero padding.
+/// One owned coefficient representation: repeated SHA factors, a compact
+/// Montgomery tail, and the constant-wire adjustment.
 pub(crate) struct CompositeCoefficients {
-    /// Arithmetic for the cached P-256 evaluations.
-    pub(crate) ctx: field::FpCtx<2>,
-    /// Assignment domain size is `2^num_vars`, including zero padding.
     pub(crate) num_vars: usize,
-    /// `N = 2^log_compressions` instance weights.
     pub(crate) instance_weights: Vec<field::Fp<2>>,
-    /// `H = SHA_H = 20,457` local evaluations.
     pub(crate) sha_local_evaluations: Vec<field::Fp<2>>,
-    /// `P = 1,215,663` evaluations for the current P-256 circuit.
-    pub(crate) p256_evaluations: Vec<field::Fp<2>>,
-    /// Weight of the equation `witness[0] = 1`.
+    pub(crate) p256_tail: MontgomeryTail,
     pub(crate) constant_weight: field::Fp<2>,
-    /// `N · H`, the first P-256 assignment index.
-    pub(crate) p256_assignment_offset: usize,
-    /// Geometric runs of `p256_evaluations` (from the tape's power groups, split
-    /// around the public-bit cells): `(start, len, base)` with
-    /// `p256_evaluations[start + k] = base · 2^k`. Prover-side structure only.
-    pub(crate) tail_runs: Vec<(usize, usize, field::Fp<2>)>,
 }
 
 impl CompositeCoefficients {
     pub(crate) fn as_mle(
         &self,
         cfg: &field::FpCtx<2>,
-    ) -> Result<CompositeMultilinearExtension<'_, field::Fp<2>>, crate::sumcheck::SumcheckError>
-    {
-        CompositeMultilinearExtension::from_parts(
+    ) -> Result<CompactCompositeMle<'_>, SumcheckError> {
+        CompactCompositeMle::new(
             self.num_vars,
             &self.sha_local_evaluations,
             &self.instance_weights,
-            &self.p256_evaluations,
-            self.constant_weight.clone(),
+            &self.p256_tail,
+            self.constant_weight,
             cfg,
         )
-        .and_then(|mle| mle.with_tail_runs(&self.tail_runs))
         .map_err(|_| SumcheckError::InvalidProductDimensions)
     }
 
     pub(crate) fn evaluate(
         &self,
-        assignment_point: &[field::Fp<2>],
+        point: &[field::Fp<2>],
         cfg: &field::FpCtx<2>,
-    ) -> Result<field::Fp<2>, crate::sumcheck::SumcheckError> {
+    ) -> Result<field::Fp<2>, SumcheckError> {
         let _scope = tracing::info_span!("ecdsa:coefficient_evaluate").entered();
-        if self.num_vars != assignment_point.len() {
-            return Err(SumcheckError::InvalidProductDimensions);
-        }
-        let equality = equality_weights(assignment_point, cfg)?;
-        let mut value = evaluate_sha_factors(
-            &self.instance_weights,
-            &self.sha_local_evaluations,
-            assignment_point,
-            cfg,
-        )?;
-        value = cfg.add(
-            &(value),
-            &(&(cfg.mul(&(self.constant_weight.clone()), &(&equality.at(0))))),
-        );
-        value = cfg.add(
-            &(value),
-            &(&evaluate_tail_by_runs(
-                cfg,
-                &self.ctx,
-                self.p256_assignment_offset,
-                &self.p256_evaluations,
-                &self.tail_runs,
-                &equality,
-            )),
-        );
-        Ok(value)
+        self.as_mle(cfg)?
+            .evaluate(point, cfg)
+            .map_err(|_| SumcheckError::InvalidProductDimensions)
     }
 }
 
@@ -238,6 +199,7 @@ pub(crate) fn equality_weights(
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn evaluate_sha_factors(
     instances: &[field::Fp<2>],
     sha: &[field::Fp<2>],
@@ -257,6 +219,7 @@ pub(crate) fn evaluate_sha_factors(
 /// `Q[t] = Σ_{i ≥ t} 2^(i − t) · low[i]` (a backward recurrence, no inverses),
 /// so the runs cost a few multiplications each; columns outside every run pay
 /// two multiplications.
+#[cfg(test)]
 pub(crate) fn evaluate_tail_by_runs(
     cfg: &field::FpCtx<2>,
     ctx: &field::FpCtx<2>,
@@ -357,14 +320,12 @@ impl CompositeBinding<'_, '_> {
         rows: &CompositeRows<'_>,
     ) -> Result<CompositeCoefficients, crate::sumcheck::SumcheckError> {
         let mut out = CompositeCoefficients {
-            ctx: self.field.clone(),
             num_vars: self.num_vars,
             instance_weights: Vec::new(),
             sha_local_evaluations: Vec::new(),
-            p256_evaluations: Vec::new(),
+            p256_tail: MontgomeryTail::new(self.field.clone(), 0, vec![], vec![])
+                .expect("empty tail is valid"),
             constant_weight: self.field.zero(),
-            p256_assignment_offset: self.tail_offset,
-            tail_runs: Vec::new(),
         };
         self.bind_rows_into(rows, &mut out)?;
         Ok(out)
@@ -376,25 +337,21 @@ impl CompositeBinding<'_, '_> {
     ) -> Result<(), crate::sumcheck::SumcheckError> {
         self.validate(rows)?;
         let field = self.field;
-        if out.p256_evaluations.capacity() == 0 {
-            out.p256_evaluations = field.zero_vec(self.tail_columns);
-        } else {
-            out.p256_evaluations.resize(self.tail_columns, field.zero());
-        }
-        self.tape
-            .adjoint_map_into(
-                rows.tail_rows.len() / 3,
-                |r, k| raw_to_words(rows.tail_rows[3 * r + k]),
-                &mut out.p256_evaluations,
-            )
+        let mut tail = self
+            .tape
+            .adjoint_map_structured(rows.tail_rows.len() / 3, |r, k| {
+                raw_to_words(rows.tail_rows[3 * r + k])
+            })
             .map_err(|_| SumcheckError::InvalidProductDimensions)?;
-        out.tail_runs = split_runs(field, self.tape.power_runs(), rows.correction_columns);
-        for (&column, &value) in rows.correction_columns.iter().zip(rows.corrections) {
-            out.p256_evaluations[column] = field.add(
-                &out.p256_evaluations[column],
-                &crate::sumcheck::inner::native::shared_raw(field, value),
-            );
-        }
+        let corrections: Vec<_> = rows
+            .correction_columns
+            .iter()
+            .zip(rows.corrections)
+            .map(|(&column, &value)| (column, raw_to_words(value)))
+            .collect();
+        tail.add_sparse(&corrections)
+            .map_err(|_| SumcheckError::InvalidProductDimensions)?;
+        out.p256_tail = tail;
         let fill = |src: &[u128], dst: &mut Vec<field::Fp<2>>| {
             dst.clear();
             dst.extend(
@@ -404,9 +361,7 @@ impl CompositeBinding<'_, '_> {
         };
         fill(rows.instances, &mut out.instance_weights);
         fill(rows.local, &mut out.sha_local_evaluations);
-        out.ctx = field.clone();
         out.num_vars = self.num_vars;
-        out.p256_assignment_offset = self.tail_offset;
         out.constant_weight = crate::sumcheck::inner::native::shared_raw(field, rows.constant);
         Ok(())
     }
@@ -451,38 +406,4 @@ impl CompositeBinding<'_, '_> {
         }
         Ok(crate::sumcheck::inner::native::shared_raw(field, value))
     }
-}
-
-/// Split geometric runs around corrections. Repeated/cancelling correction
-/// indices are harmless: each exceptional coordinate is removed exactly once.
-pub(crate) fn split_runs(
-    field: &field::FpCtx<2>,
-    runs: Vec<circuit::linear_map::circuit::PowerRun>,
-    exceptions: &[usize],
-) -> Vec<(usize, usize, field::Fp<2>)> {
-    let mut exceptions = exceptions.to_vec();
-    exceptions.sort_unstable();
-    exceptions.dedup();
-    let mut out = Vec::with_capacity(runs.len() + exceptions.len());
-    for run in runs {
-        let mut start = run.first_column;
-        let end = start + run.len;
-        let mut base = field.from_montgomery_integer(field::Uint::from_words(run.base));
-        for &cell in &exceptions[exceptions.partition_point(|&i| i < start)..] {
-            if cell >= end {
-                break;
-            }
-            if cell > start {
-                out.push((start, cell - start, base));
-            }
-            for _ in start..=cell {
-                base = field.add(&base, &base);
-            }
-            start = cell + 1;
-        }
-        if start < end {
-            out.push((start, end - start, base));
-        }
-    }
-    out
 }

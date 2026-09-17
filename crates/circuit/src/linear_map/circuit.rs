@@ -726,6 +726,70 @@ impl PreparedWengertEvaluator<'_> {
             .expect("validated graph dimensions");
         Ok(&self.output)
     }
+    /// Emit one compact Montgomery owner without a dense column table.
+    pub fn adjoint_map_structured(
+        &mut self,
+        row_count: usize,
+        weights: impl Fn(usize, usize) -> [u64; 2] + Sync,
+    ) -> Result<crate::montgomery_tail::MontgomeryTail, &'static str> {
+        use crate::montgomery_tail::{MontgomeryTail, TailSegment};
+        if row_count != self.constraints {
+            return Err("wrong number of tape row weights");
+        }
+        let f = self.core.field.clone();
+        for row in 0..row_count {
+            for kind in 0..3 {
+                if u128::from(Uint::from_words(weights(row, kind))) >= u128::from(*f.modulus()) {
+                    return Err("noncanonical Montgomery row weight");
+                }
+            }
+        }
+        let run_len: usize = self.core.graph.groups.iter().map(|g| g.len as usize).sum();
+        let mut literals = Vec::with_capacity(self.column_count() - run_len);
+        let mut segments = Vec::with_capacity(self.core.graph.groups.len() * 2 + 1);
+        #[cfg(test)]
+        {
+            self.output = Vec::new();
+        }
+        self.core
+            .adjoint_map_segments(
+                3 * row_count,
+                |i| f.from_montgomery_integer(Uint::from_words(weights(i / 3, i % 3))),
+                |run| {
+                    let base = *run.base.as_montgomery_integer().as_words();
+                    if run.len == 1 {
+                        let first = literals.len();
+                        literals.push(base);
+                        if let Some(TailSegment::Literals { start, values }) = segments.last_mut()
+                            && *start + values.len() == run.first_column
+                        {
+                            values.end += 1;
+                        } else {
+                            segments.push(TailSegment::Literals {
+                                start: run.first_column,
+                                values: first..first + 1,
+                            });
+                        }
+                    } else if base != [0; 2] {
+                        segments.push(TailSegment::Geometric {
+                            start: run.first_column,
+                            len: run.len,
+                            base,
+                        });
+                    }
+                },
+            )
+            .map_err(|_| "wrong number of tape row weights")?;
+        MontgomeryTail::new(f.0, self.column_count(), segments, literals)
+    }
+
+    pub fn apply_weighted_structured(
+        &mut self,
+        weights: &[[[u64; 2]; 3]],
+    ) -> Result<crate::montgomery_tail::MontgomeryTail, &'static str> {
+        self.adjoint_map_structured(weights.len(), |row, kind| weights[row][kind])
+    }
+
     pub fn adjoint_map_into(
         &mut self,
         row_count: usize,
@@ -794,7 +858,6 @@ pub struct PowerRun {
 /// The input/output words may be canonical residues or Montgomery encodings;
 /// addition and scaling by a Montgomery coefficient preserve that representation.
 #[inline(always)]
-#[cfg(test)]
 pub(crate) fn mul_representatives(
     left: [u64; 2],
     coefficient: [u64; 2],
@@ -809,7 +872,6 @@ pub(crate) fn mul_representatives(
 }
 
 #[inline(always)]
-#[cfg(test)]
 pub(crate) fn add_representatives(left: [u64; 2], right: [u64; 2], field: &FpCtx<2>) -> [u64; 2] {
     *field
         .add(
@@ -1376,6 +1438,15 @@ mod tests {
                     .unwrap();
                 assert!(evaluator.output.is_empty());
                 let reverse = evaluator.apply_weighted(&weights).unwrap().to_vec();
+                let compact = evaluator.apply_weighted_structured(&weights).unwrap();
+                assert!(evaluator.output.is_empty());
+                for (column, value) in reverse.iter().enumerate() {
+                    assert_eq!(compact.value(column), Some(*value));
+                }
+                assert!(evaluator.apply_weighted_structured(&weights[1..]).is_err());
+                let mut invalid = weights.clone();
+                invalid[0][0] = *evaluator.core.field.modulus().as_words();
+                assert!(evaluator.apply_weighted_structured(&invalid).is_err());
                 let mut dot = [0; 2];
                 for (output, value) in reverse.iter().zip(&columns.values) {
                     let term = mul_representatives(*output, *value, &evaluator.core.field);

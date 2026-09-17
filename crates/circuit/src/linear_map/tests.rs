@@ -119,6 +119,21 @@ fn packed_full_low_zero_and_alias_boundaries() {
                 );
                 pow = f.add(&pow, &pow);
             }
+            let mut compact = vec![f.zero(); bits + 1];
+            prepared
+                .adjoint_map_segments(
+                    w.len(),
+                    |i| w[i],
+                    |run| {
+                        let mut value = run.base;
+                        for slot in &mut compact[run.first_column..run.first_column + run.len] {
+                            *slot = value;
+                            value = f.add(&value, &value);
+                        }
+                    },
+                )
+                .unwrap();
+            assert_eq!(compact, out);
             let xs = (0..=bits)
                 .map(|i| f.from_integer(&(i as u64 + 1)))
                 .collect::<Vec<_>>();
