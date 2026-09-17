@@ -34,6 +34,18 @@ def classify_interval(interval, maximum=1.0):
     return 'inconclusive'
 
 
+def timing_ratios(baseline, candidate, diagnostic=False):
+    if len(baseline) != len(candidate):
+        raise ValueError('unpaired timing blocks')
+    if any(not math.isfinite(v) or v < 0 for v in baseline + candidate):
+        raise ValueError('invalid timing')
+    if any(v == 0 for v in baseline + candidate):
+        if diagnostic:
+            return []  # A removed optional phase has no log-ratio interval.
+        raise ValueError('missing mandatory timing')
+    return [b/a for a,b in zip(baseline, candidate)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', type=Path, required=True)
@@ -116,13 +128,16 @@ def main():
         for metric in metrics + ['cold_' + m for m in metrics]:
             source = cold if metric.startswith('cold_') else samples
             field = metric.removeprefix('cold_')
-            ratios = [b[metric]/a[metric] for a, b in zip(blocks['baseline'], blocks['candidate']) if a[metric]]
+            ratios = timing_ratios([b[metric] for b in blocks['baseline']],
+                                   [b[metric] for b in blocks['candidate']],
+                                   diagnostic=field == 'grid_ms')
+            interval = paired_interval(ratios) if ratios else None
             summary['metrics'][metric] = dict(
                 baseline_ms=statistics.median(r[field] for r in source['baseline']),
                 candidate_ms=statistics.median(r[field] for r in source['candidate']),
-                paired_ratios=ratios, ratio_ci95=paired_interval(ratios) if ratios else None)
+                paired_ratios=ratios, ratio_ci95=interval)
             if ratios:
-                summary['metrics'][metric]['nonregression'] = classify_interval(paired_interval(ratios))
+                summary['metrics'][metric]['nonregression'] = classify_interval(interval)
         summaries.append(summary)
         (args.output / 'summary.json').write_text(json.dumps(summaries, indent=2)+'\n')
     return 0

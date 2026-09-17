@@ -156,14 +156,15 @@ def main():
                         medians.update({'cold_' + m: first[0][m] for m in ['e2e_ms', 'prove_ms', 'gkr_ms', 'verify_ms']})
                     blocks[variant].append(medians)
                     print(directory.name, {m:round(v,3) for m,v in medians.items()}, flush=True)
-            result = dict(case=case, threads=threads, sample_proof_bytes=sample_sizes,
+            result = dict(case=case, threads=threads, seed=args.seed, sample_proof_bytes=sample_sizes,
                           first_proof_bytes=first_size, fingerprints=expected_fingerprints, metrics={})
             common_metrics = set.intersection(*(set(row) for rows in blocks.values() for row in rows))
             for metric in sorted(common_metrics):
                 ratios = [b[metric]/a[metric] for a,b in zip(blocks['baseline'],blocks['candidate'])]
+                interval = paired_interval(ratios)
                 result['metrics'][metric] = dict(baseline_ms=statistics.median(b[metric] for b in blocks['baseline']),
-                    candidate_ms=statistics.median(b[metric] for b in blocks['candidate']), paired_ratios=ratios, ratio_ci95=paired_interval(ratios),
-                    nonregression=classify_interval(paired_interval(ratios)))
+                    candidate_ms=statistics.median(b[metric] for b in blocks['candidate']), paired_ratios=ratios, ratio_ci95=interval,
+                    nonregression=classify_interval(interval))
             results.append(result)
             (args.output/'summary.json').write_text(json.dumps(results, indent=2))
 
