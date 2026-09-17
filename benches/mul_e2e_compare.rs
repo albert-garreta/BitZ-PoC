@@ -4,6 +4,10 @@ mod binius;
 #[path = "mul_e2e_compare/binius_ligerito.rs"]
 mod binius_ligerito;
 mod common;
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
 use common::output::{BenchmarkOutput, FileMode, JsonStyle};
 #[path = "mul_e2e_compare/f2z.rs"]
 mod f2z_backend;
@@ -504,6 +508,9 @@ struct MemoryEnv {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "bench-peak-memory")]
+    let _heap_report = common::heap_run::Report::start();
+
     let args = <Args as clap::Parser>::parse();
     if let Some(args) = args.measure_memory {
         return memory::run_child(args);

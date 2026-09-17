@@ -14,9 +14,10 @@ use std::mem::size_of;
 use field::{FpCtx, IntegerEmbedding, Uint, create_prime_field};
 use rayon::prelude::*;
 
-use crate::constraints::{CoefficientIndex, ConstraintMatrices, SparseIntegerMatrix};
+use crate::constraints::ConstraintMatrices;
 use crate::integer_storage::IntegerTable;
-use crate::matrix_wengert::{add_representatives, mul_representatives, neg_representative};
+use crate::linear_map::CsrMatrix;
+use crate::linear_map::circuit::{add_representatives, mul_representatives, neg_representative};
 
 const PARALLEL_NNZ_THRESHOLD: usize = 1 << 15;
 const PARALLEL_VECTOR_THRESHOLD: usize = 1 << 14;
@@ -43,12 +44,12 @@ enum CoefficientClass {
 #[derive(Debug)]
 struct IntegerEntry {
     coordinate: u32,
-    coefficient: CoefficientIndex,
+    coefficient: usize,
     kind: MatrixKind,
 }
 
 impl IntegerEntry {
-    fn new(row: usize, kind: MatrixKind, coefficient: CoefficientIndex, words: &[u64]) -> Self {
+    fn new(row: usize, kind: MatrixKind, coefficient: usize, words: &[u64]) -> Self {
         assert!(row <= ROW_MASK as usize, "too many sparse matrix rows");
         let class = if words[0] == 1 && words[1..].iter().all(|&w| w == 0) {
             CoefficientClass::One
@@ -106,7 +107,7 @@ impl MaterializedAbc {
         let mut column_offsets = vec![0_u32; column_count + 1];
         for (matrix, _) in sources {
             for row in matrix.rows() {
-                for &(column, _) in row.entries() {
+                for &column in row.indices() {
                     column_offsets[column + 1] = column_offsets[column + 1]
                         .checked_add(1)
                         .expect("too many entries in one sparse column");
@@ -125,13 +126,15 @@ impl MaterializedAbc {
             })
             .collect::<Vec<Vec<IntegerEntry>>>();
         for (matrix, kind) in sources {
-            for (row, sparse_row) in matrix.rows().iter().enumerate() {
-                for (column, coefficient) in sparse_row.entries() {
-                    columns[*column].push(IntegerEntry::new(
+            for (row, sparse_row) in matrix.rows().enumerate() {
+                for (&column, coefficient) in
+                    sparse_row.indices().iter().zip(sparse_row.entry_range())
+                {
+                    columns[column].push(IntegerEntry::new(
                         row,
                         kind,
-                        *coefficient,
-                        matrix.coefficient_words(*coefficient),
+                        coefficient,
+                        &matrix.coefficients()[coefficient],
                     ));
                 }
             }
@@ -142,7 +145,8 @@ impl MaterializedAbc {
             coordinates.push(entry.coordinate);
             sources[entry.kind as usize]
                 .0
-                .copy_coefficient_to(entry.coefficient, &mut coefficients);
+                .coefficients()
+                .copy_row_to(entry.coefficient, &mut coefficients);
         }
         debug_assert_eq!(coordinates.len(), total_nonzeros);
 
@@ -212,8 +216,8 @@ impl MaterializedAbc {
     }
 }
 
-fn nonzero_count(matrix: &SparseIntegerMatrix) -> usize {
-    matrix.rows().iter().map(|row| row.entries().len()).sum()
+fn nonzero_count(matrix: &CsrMatrix<IntegerTable>) -> usize {
+    matrix.nnz()
 }
 
 /// Modulus-prepared sparse-matrix evaluator with Montgomery input and output.
@@ -349,7 +353,7 @@ mod tests {
     use super::*;
     use crate::Circuit;
     use crate::constraints::ConstraintGenerator;
-    use crate::matrix_wengert::WengertGenerator;
+    use crate::linear_map::circuit::WengertGenerator;
 
     fn example_circuit<CS: Circuit>(circuit: &mut CS, inputs: &[CS::Bool; 3]) {
         let a = circuit.f2z::<2>(inputs[0].clone());

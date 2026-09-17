@@ -14,6 +14,7 @@
 //! Spartan PIOP runs on values projected into the runtime field.
 
 use crate::piop::spartan::SpartanField as _;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use std::borrow::Cow;
 
@@ -22,7 +23,6 @@ use thiserror::Error;
 use crate::{
     pcs::IntegerMatrixLayout,
     poly::mle::DenseMultilinearExtension,
-    sparse_matrix::SparseColumn,
     utils::{cfg_iter, cfg_iter_mut},
 };
 
@@ -31,7 +31,7 @@ use rayon::prelude::*;
 
 use super::{
     ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
-    SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
+    SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
     SpartanRelationBackend, slot_rows::pack_slot_major_rows_w1_256,
 };
 
@@ -114,26 +114,6 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for U64MulCoefficient {
                 scaled
             }
         }
-    }
-
-    fn column_dot(
-        column: SparseColumn<'_, Self>,
-        row_weights: &[SpartanF2zField],
-        zero: &SpartanF2zField,
-        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> SpartanF2zField {
-        if let Some((row, coefficient)) = column.single() {
-            return coefficient.scale(&row_weights[row], field_config);
-        }
-
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation = field_config.add(
-                &(evaluation),
-                &(&coefficient.scale(&row_weights[row], field_config)),
-            );
-        }
-        evaluation
     }
 }
 
@@ -507,7 +487,7 @@ pub fn u64_mul_constraint_matrices(
 fn selector_matrix(
     layout: &U64MulLayout,
     block: usize,
-) -> Result<SparseMatrix<U64MulCoefficient>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[U64MulCoefficient]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let offset = block * layout.capacity;
@@ -524,13 +504,13 @@ fn selector_matrix(
         .map(|row| (row, U64MulCoefficient::One))
         .collect::<Vec<_>>();
 
-    Ok(SparseMatrix::try_from_csc(rows, column_offsets, entries)?)
+    Ok(CscMatrix::try_from_csc(rows, column_offsets, entries)?)
 }
 
 #[allow(clippy::arithmetic_side_effects)]
 fn output_matrix(
     layout: &U64MulLayout,
-) -> Result<SparseMatrix<U64MulCoefficient>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[U64MulCoefficient]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let lo_offset = 3 * layout.capacity;
@@ -555,7 +535,7 @@ fn output_matrix(
     let mut entries = Vec::with_capacity(2 * rows);
     entries.extend((0..rows).map(|row| (row, U64MulCoefficient::One)));
     entries.extend((0..rows).map(|row| (row, U64MulCoefficient::LimbBase)));
-    Ok(SparseMatrix::try_from_csc(rows, column_offsets, entries)?)
+    Ok(CscMatrix::try_from_csc(rows, column_offsets, entries)?)
 }
 
 /// Generates and prepares the compact u64 matrices over the Spartan/F2Z
@@ -762,7 +742,7 @@ mod tests {
         assert_eq!(matrices.a().row_count(), 300);
         assert_eq!(matrices.a().column_count(), layout.assignment_len());
         for row in [0, 1, 299] {
-            let single = |m: &SparseMatrix<U64MulCoefficient>, column: usize| {
+            let single = |m: &CscMatrix<Box<[U64MulCoefficient]>>, column: usize| {
                 let (row, coefficient) = m
                     .column(column)
                     .expect("column in range")

@@ -7,10 +7,9 @@
 //! point.  The remaining row variables are then handled by the existing cubic
 //! outer sumcheck without changing its proof or transcript format.
 
-#[cfg(test)]
-use crate::sumcheck::arithmetic::SumcheckProductReducer;
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 use field::RingOps;
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 #[cfg(test)]
 use field::{Fp, Uint};
 
@@ -323,7 +322,7 @@ pub(crate) fn prove_field_skip_with_factors_reference<F, R>(
 ) -> Result<UnivariateSkipOuterSumcheckOutput<F>, SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     validate_products_for_skip(skip_vars, &products)?;
     if tau_tail.len() != products.az.num_vars - skip_vars {

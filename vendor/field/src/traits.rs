@@ -10,7 +10,9 @@ pub trait RingOps {
     fn zero(&self) -> Self::Elem;
     /// Allocate initialized additive identities. Providers with a zero bit
     /// representation can request zeroed allocation without a serial fill.
-    fn zero_vec(&self, len: usize) -> Vec<Self::Elem> { vec![self.zero(); len] }
+    fn zero_vec(&self, len: usize) -> Vec<Self::Elem> {
+        vec![self.zero(); len]
+    }
 
     fn one(&self) -> Self::Elem;
     fn add(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem;
@@ -48,7 +50,9 @@ impl<C: RingOps + ?Sized> RingOps for &C {
     fn zero(&self) -> Self::Elem {
         (**self).zero()
     }
-    fn zero_vec(&self, len: usize) -> Vec<Self::Elem> { (**self).zero_vec(len) }
+    fn zero_vec(&self, len: usize) -> Vec<Self::Elem> {
+        (**self).zero_vec(len)
+    }
     fn one(&self) -> Self::Elem {
         (**self).one()
     }
@@ -93,7 +97,14 @@ pub trait WideMul<Lhs, Rhs = Lhs> {
     fn mul_wide(&self, lhs: &Lhs, rhs: &Rhs) -> Self::Product;
 }
 pub trait BatchMulAcc<Lhs, Rhs = Lhs> {
-    type Accumulator;
+    type Accumulator: MergeAccumulator + Send;
+    /// Add one exact product. The caller establishes the total term bound,
+    /// including merged workers, before entering the loop.
+    fn mul_acc(&self, accumulator: &mut Self::Accumulator, lhs: &Lhs, rhs: &Rhs) {
+        accumulator.merge_assign(
+            &self.batch_mul_acc(core::slice::from_ref(lhs), core::slice::from_ref(rhs)),
+        );
+    }
     fn batch_mul_acc(&self, lhs: &[Lhs], rhs: &[Rhs]) -> Self::Accumulator;
     /// Invoke `term` exactly once for each index, in ascending order.
     fn batch_mul_acc_map(
@@ -110,15 +121,28 @@ pub trait MergeAccumulator: Sized {
 pub trait Reduce<Input> {
     type Output;
     fn reduce(&self, input: Input) -> Self::Output;
+
+    /// Prepare reduction once from a public total product count. Each input
+    /// must satisfy that bound, including all merged worker contributions.
+    /// The returned operation retains this context and performs no allocation.
+    fn prepare_reduce(&self, _max_terms: usize) -> impl Fn(Input) -> Self::Output + Send + Sync + '_
+    where
+        Self: Sync,
+    {
+        move |input| self.reduce(input)
+    }
 }
 
 /// A reusable linear combination of at most sixteen declared-width operands.
 /// Preparation depends only on the public coefficients and field context.
 /// Implementations must process every declared operand limb, including zeroes.
 pub trait PreparedLinearCombination<Src>: FieldOps {
-    type Prepared<'a, const TERMS: usize>: Send + Sync where Self: 'a;
+    type Prepared<'a, const TERMS: usize>: Send + Sync
+    where
+        Self: 'a;
     fn prepare_linear_combination<const TERMS: usize>(
-        &self, coefficients: [Self::Elem; TERMS],
+        &self,
+        coefficients: [Self::Elem; TERMS],
     ) -> Self::Prepared<'_, TERMS>;
     /// The preparation borrows its field context, so evaluation cannot use a
     /// different modulus. `read` runs once per coefficient, in ascending order.
@@ -255,5 +279,29 @@ pub trait FoldPairs<Src, Dst>: RingOps {
                 self.batch_mul_acc_map(width, |b| (weights[b], read(i * width + b))),
             );
         }
+    }
+}
+
+// Prepared linear maps may retain a borrowed provider. Borrowing must preserve
+// its exact accumulator type and its prepared reduction, just as RingOps does.
+impl<C: BatchMulAcc<L, R> + ?Sized, L, R> BatchMulAcc<L, R> for &C {
+    type Accumulator = C::Accumulator;
+    fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &L, rhs: &R) {
+        (**self).mul_acc(acc, lhs, rhs)
+    }
+    fn batch_mul_acc(&self, lhs: &[L], rhs: &[R]) -> Self::Accumulator {
+        (**self).batch_mul_acc(lhs, rhs)
+    }
+    fn batch_mul_acc_map(&self, len: usize, term: impl FnMut(usize) -> (L, R)) -> Self::Accumulator {
+        (**self).batch_mul_acc_map(len, term)
+    }
+}
+impl<C: Reduce<I> + Sync + ?Sized, I> Reduce<I> for &C {
+    type Output = C::Output;
+    fn reduce(&self, input: I) -> Self::Output {
+        (**self).reduce(input)
+    }
+    fn prepare_reduce(&self, max_terms: usize) -> impl Fn(I) -> Self::Output + Send + Sync + '_ {
+        (**self).prepare_reduce(max_terms)
     }
 }

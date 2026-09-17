@@ -154,6 +154,18 @@ an alias and the canonical name to different values is an error):
 so a typo'd knob can never silently do nothing. The registry lives in
 `benches/common/mod.rs` (`KNOWN_F2Z_ENV`); add new knobs there.
 
+`F2Z_BENCH_PROOF_FINGERPRINT=1` emits a diagnostic digest of every proof
+message and the transcript continuation after the timed boundary. It does not
+alter protocol parameters or proof encoding.
+
+`scripts/compare_prover_workloads.py --require-cold-and-fingerprints` rejects
+captures that omit the first proof or complete diagnostic fingerprints. SHA
+chains and full u32 report `PROVER_TRIAL` rows for that first proof and every
+warmed sample, including an enclosing witness-to-proof wall-clock interval.
+SHA-chain samples use distinct deterministic input seeds. Proof sizes and
+fingerprints must match the corresponding trial in each compared executable;
+they are not required to match different trials within one process.
+
 Timing-enabled executables require `--features span-metrics` (native comparison
 features include it) and a native `trace_processor_shell`, either on `PATH` or
 selected by `PERFETTO_TRACE_PROCESSOR`. Their single subscriber records ordinary

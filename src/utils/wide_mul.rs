@@ -24,6 +24,12 @@
 /// so any sum of products computed through this trait equals the same sum
 /// computed with reduced multiplies — bit-for-bit.
 pub trait WideMulAcc: Sized {
+    /// Optional inverse for a public equality coordinate. Unsupported fields
+    /// and zero return `None`, retaining the three-coefficient GKR kernel.
+    fn eqf_inverse(&self) -> Option<Self> {
+        None
+    }
+
     /// The accumulator representation (unreduced for char-2 carryless
     /// fields; `Self` for fields whose multiply is cheapest reduced).
     type Wide: Clone + Send;

@@ -157,6 +157,10 @@ impl InnerTransparentField for Gf128 {
 /// word-array form remains on every other target. Same field values
 /// either way (the trait laws).
 impl crate::utils::wide_mul::WideMulAcc for Gf128 {
+    fn eqf_inverse(&self) -> Option<Self> {
+        (self.as_words() != &[0, 0]).then(|| self.inverse_or_zero())
+    }
+
     type Wide = field::Gf128Product;
     #[inline(always)]
     fn wide_zero(_: &Self) -> Self::Wide {

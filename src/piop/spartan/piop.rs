@@ -1,14 +1,20 @@
 //! Composition of Spartan's outer and inner sumchecks.
 use crate::sumcheck::{
     UngrindedRoundBoundary,
+    bridge::{
+        PreparedBinding,
+        native::{NativeBinding, RowFunctional},
+    },
+    inner::prove_inner_sumcheck,
     outer::{
         self, EqualityFactors, OuterArithmetic, OuterClaim, OuterRows,
         arithmetic::{NativeProducts, factors_from_raw},
     },
     proof::OuterSumcheckOutput,
 };
+#[cfg(test)]
+use circuit::linear_map::CscMatrix;
 
-use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
 use blake3::Hasher;
 #[cfg(test)]
@@ -26,15 +32,9 @@ use super::{
         MleClaimError, PreparedConstraintMatrices, ProductRowFunctional, ScaledMleEvaluationClaim,
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
-    raw_monty::{
-        NativeConstantPrefix, RawMontyCoefficient, RawWitness, RowFunctional, inner_sumcheck_raw,
-        make_equality_factors_raw,
-    },
+    raw_monty::{NativeConstantPrefix, RawMontyCoefficient, RawWitness, make_equality_factors_raw},
     squeeze_field,
-    sumcheck::{
-        OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProductReducer, SumcheckProof,
-        prove_inner_sumcheck_with_reducer,
-    },
+    sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof},
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
@@ -125,14 +125,12 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let reducer = matrices.config().clone();
-    prove_spartan_piop_with_reducer(
+    prove_spartan_piop_field_tables(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
         assignment,
-        &reducer,
     )
 }
 
@@ -160,15 +158,13 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let reducer = matrices.config().clone();
-    prove_spartan_piop_with_univariate_skip_and_reducer(
+    prove_spartan_piop_skipped_field_tables(
         transcript,
         matrices,
         assignment_oracle_binding,
         products,
         assignment,
         skip_vars,
-        &reducer,
     )
 }
 
@@ -371,7 +367,6 @@ where
 
     let field_config = matrices.config();
     let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Result<Vec<_>, _>>()?;
@@ -402,26 +397,28 @@ where
         &field_config,
     );
     let inner = {
-        inner_sumcheck_raw(
-            transcript,
+        let weights = NativeBinding::new(&ctx, matrices, rho)
+            .bind_structured_rows(&RowFunctional::Point(&outer.eval_points))?;
+        let values = witness;
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        prove_inner_sumcheck(
             &ctx,
-            &reducer,
-            matrices,
+            transcript,
             inner_initial_claim,
-            RowFunctional::Point(&outer.eval_points),
-            ctx.raw(&rho),
-            witness,
+            values,
+            weights,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = SpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
@@ -456,18 +453,16 @@ where
     )
 }
 
-fn prove_spartan_piop_with_reducer<F, C, R>(
+fn prove_spartan_piop_field_tables<F, C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<F, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<F>,
     assignment: DenseMultilinearExtension<F>,
-    reducer: &R,
 ) -> Result<(SpartanPiopProof<F>, ScaledMleEvaluationClaim<F>), SpartanError>
 where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
-    R: SumcheckProductReducer<F>,
 {
     {
         let _g = tracing::info_span!("sp:validate").entered();
@@ -509,41 +504,42 @@ where
     );
     let batched_matrix = {
         let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
-        matrices.bind_and_batch(&outer.eval_points, &rho)?
+        crate::piop::spartan::matrix::eq_table_prover(&outer.eval_points, matrices.config())
+            .map_err(crate::sumcheck::SumcheckError::from)
+            .and_then(|weights| matrices.binding(&rho).bind_rows(&weights))?
     };
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        prove_inner_sumcheck_with_reducer(
+        prove_inner_sumcheck(
+            field_config,
             transcript,
             inner_initial_claim,
-            batched_matrix,
-            assignment,
-            field_config,
-            reducer,
+            assignment.evaluations,
+            batched_matrix.evaluations,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = SpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
 
     Ok((proof, claim))
 }
 
-fn prove_spartan_piop_with_univariate_skip_and_reducer<F, C, R>(
+fn prove_spartan_piop_skipped_field_tables<F, C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<F, C>,
     assignment_oracle_binding: &[u8; 32],
     products: R1csProductMles<F>,
     assignment: DenseMultilinearExtension<F>,
     skip_vars: usize,
-    reducer: &R,
 ) -> Result<
     (
         UnivariateSkipSpartanPiopProof<F>,
@@ -554,7 +550,6 @@ fn prove_spartan_piop_with_univariate_skip_and_reducer<F, C, R>(
 where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
-    R: SumcheckProductReducer<F>,
 {
     validate_prover_inputs(matrices, &products, &assignment)?;
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
@@ -596,34 +591,34 @@ where
         let row_factors = outer
             .row_binding
             .row_factors(matrices.num_row_vars(), field_config)?;
-        matrices.bind_and_batch_with_prefix_univariate_factors(&row_factors, &rho)?
+        matrices.structured().bind_prefix(&row_factors, &rho)?
     };
     let inner = {
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
-        prove_inner_sumcheck_with_reducer(
+        prove_inner_sumcheck(
+            field_config,
             transcript,
             inner_initial_claim,
-            batched_matrix,
-            assignment,
-            field_config,
-            reducer,
+            assignment.evaluations,
+            batched_matrix.evaluations,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = UnivariateSkipSpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
 
 /// The raw-table Spartan prover for field-valued products: identical
-/// statement, transcript, and proof to [`prove_spartan_piop_with_reducer`]
+/// statement, transcript, and proof to [`prove_spartan_piop_field_tables`]
 /// with the delayed-Barrett reducer, on 16-byte residue tables.
 fn prove_spartan_piop_raw_field<C>(
     transcript: &mut impl Transcript,
@@ -643,7 +638,6 @@ where
 
     let field_config = matrices.config();
     let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
     let tau = (0..matrices.num_row_vars())
         .map(|_| squeeze_field(transcript, field_config))
         .collect::<Result<Vec<_>, _>>()?;
@@ -678,26 +672,28 @@ where
     let inner = {
         let witness = RawWitness::Field(ctx.raw_vec(&assignment.evaluations));
         drop(assignment);
-        inner_sumcheck_raw(
-            transcript,
+        let weights = NativeBinding::new(&ctx, matrices, rho)
+            .bind_structured_rows(&RowFunctional::Point(&outer.eval_points))?;
+        let values = witness;
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        prove_inner_sumcheck(
             &ctx,
-            &reducer,
-            matrices,
+            transcript,
             inner_initial_claim,
-            RowFunctional::Point(&outer.eval_points),
-            ctx.raw(&rho),
-            witness,
+            values,
+            weights,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = SpartanPiopProof {
         outer: outer.proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
@@ -729,7 +725,6 @@ where
 
     let field_config = matrices.config();
     let ctx = crate::piop::spartan::raw_monty::field_context(field_config);
-    let reducer = &ctx;
     let tail_vars = matrices.num_row_vars() - usize::from(skip_vars);
     let tau_tail = (0..tail_vars)
         .map(|_| squeeze_field(transcript, field_config))
@@ -762,26 +757,28 @@ where
     );
     let inner = {
         let row_factors = row_binding.row_factors(matrices.num_row_vars(), field_config)?;
-        inner_sumcheck_raw(
-            transcript,
+        let weights = NativeBinding::new(&ctx, matrices, rho)
+            .bind_structured_rows(&RowFunctional::Prefix(&row_factors))?;
+        let values = witness;
+        let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
+        prove_inner_sumcheck(
             &ctx,
-            &reducer,
-            matrices,
+            transcript,
             inner_initial_claim,
-            RowFunctional::Prefix(&row_factors),
-            ctx.raw(&rho),
-            witness,
+            values,
+            weights,
+            &mut UngrindedRoundBoundary,
         )?
     };
 
     let claim = ScaledMleEvaluationClaim::new(
-        inner.sumcheck.eval_points.into_boxed_slice(),
-        inner.batched_matrix_evaluation,
-        inner.sumcheck.final_claim,
+        inner.point.into_boxed_slice(),
+        inner.terminal_evaluations[0],
+        inner.final_claim,
     );
     let proof = UnivariateSkipSpartanPiopProof {
         outer: outer_proof,
-        inner: inner.sumcheck.proof,
+        inner: inner.proof,
     };
     Ok((proof, claim))
 }
@@ -827,7 +824,10 @@ where
         matrices.num_column_vars(),
         field_config,
     )?;
-    let matrix_evaluation = matrices.evaluate_batched(&outer.eval_points, &rho, &column_point)?;
+    let matrix_evaluation =
+        matrices
+            .structured()
+            .evaluate_equality(&outer.eval_points, &rho, &column_point)?;
 
     Ok(ScaledMleEvaluationClaim::new(
         column_point.into_boxed_slice(),
@@ -891,7 +891,9 @@ where
         tail_point: &outer.row_binding.tail_point,
     };
     let matrix_evaluation =
-        matrices.evaluate_batched_with_product_row_functional(&functional, &rho, &column_point)?;
+        matrices
+            .structured()
+            .evaluate_product(&functional, &rho, &column_point)?;
 
     Ok(ScaledMleEvaluationClaim::new(
         column_point.into_boxed_slice(),
@@ -1385,7 +1387,7 @@ mod tests {
 
     use super::*;
     use crate::piop::spartan::matrix::{
-        ConstraintMatrices, SparseMatrix, build_assignment_mle, build_product_mles,
+        ConstraintMatrices, build_assignment_mle, build_product_mles,
     };
     use crate::piop::spartan::u32_mul::{
         U32MulWitness, prepare_u32_mul_relation, project_u32_mul_native_witness,
@@ -1404,7 +1406,7 @@ mod tests {
     }
 
     fn multiply(
-        matrix: &SparseMatrix<Fp<2>>,
+        matrix: &CscMatrix<Box<[Fp<2>]>>,
         assignment: &[Fp<2>],
         config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
     ) -> Vec<Fp<2>> {
@@ -1431,7 +1433,7 @@ mod tests {
         let assignment_values: Vec<_> = (0..COLUMNS)
             .map(|column| field(if column == 0 { 1 } else { (column + 1) as u128 }, config))
             .collect();
-        let a = SparseMatrix::try_from_rows(
+        let a = CscMatrix::try_from_rows(
             COLUMNS,
             (0..ROWS)
                 .map(|row| {
@@ -1443,7 +1445,7 @@ mod tests {
                 .collect(),
         )
         .unwrap();
-        let b = SparseMatrix::try_from_rows(
+        let b = CscMatrix::try_from_rows(
             COLUMNS,
             (0..ROWS)
                 .map(|row| {
@@ -1457,7 +1459,7 @@ mod tests {
         .unwrap();
         let az = multiply(&a, &assignment_values, config);
         let bz = multiply(&b, &assignment_values, config);
-        let c = SparseMatrix::try_from_rows(
+        let c = CscMatrix::try_from_rows(
             COLUMNS,
             az.iter()
                 .zip(&bz)
@@ -2136,7 +2138,7 @@ mod tests {
         let modulus = Uint::<2>::from(Q100).zero_extend::<3>();
         let config = Fp::<3>::make_cfg(&modulus).unwrap();
         let one = Fp::<3>::one_with_cfg(&config);
-        let a = SparseMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
+        let a = CscMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
         let b = a.clone();
         let c = a.clone();
         let matrices =
@@ -2183,7 +2185,7 @@ mod tests {
         let zero = Fp::<2>::zero_with_cfg(&config);
         let logical_rows = (1 << 13) + 1;
         let matrix = || {
-            SparseMatrix::try_from_rows(
+            CscMatrix::try_from_rows(
                 1,
                 (0..logical_rows)
                     .map(|row| {
@@ -2295,7 +2297,7 @@ mod tests {
 
         let logical_columns = (1 << 15) + 1;
         let wide_matrix =
-            || SparseMatrix::try_from_rows(logical_columns, vec![vec![(0, one.clone())]]).unwrap();
+            || CscMatrix::try_from_rows(logical_columns, vec![vec![(0, one.clone())]]).unwrap();
         let wide_matrices = PreparedConstraintMatrices::new(
             ConstraintMatrices::new(wide_matrix(), wide_matrix(), wide_matrix()).unwrap(),
             &config,
@@ -2440,9 +2442,9 @@ mod tests {
         let config = config(Q100);
         let one = Fp::<2>::one_with_cfg(&config);
         let zero = Fp::<2>::zero_with_cfg(&config);
-        let a = SparseMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
+        let a = CscMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
         let b = a.clone();
-        let c = SparseMatrix::try_from_rows(1, vec![Vec::new()]).unwrap();
+        let c = CscMatrix::try_from_rows(1, vec![Vec::new()]).unwrap();
         let matrices =
             PreparedConstraintMatrices::new(ConstraintMatrices::new(a, b, c).unwrap(), &config)
                 .unwrap();

@@ -393,7 +393,7 @@ fn standalone_p256_projections() {
     let mut fast_m = MTransposeGenerator::new(VERIFY_DIGEST_INPUT_BITS);
     let fast_inputs = fast_m.take_boxed_inputs();
     verify_digest_circuit(&mut fast_m, &fast_inputs);
-    assert_eq!(fast_m.finish().apply(&challenges).unwrap(), expected_rm);
+    assert_eq!(fast_m.finish().mul_left(&challenges).unwrap(), expected_rm);
 }
 
 fn combined_projections() {
@@ -415,7 +415,7 @@ fn combined_projections() {
     let mut fast_m = MTransposeGenerator::new(VERIFY_2KB_INPUT_BITS);
     let fast_inputs = fast_m.take_boxed_inputs();
     verify_2kb_message_circuit(&mut fast_m, &fast_inputs);
-    assert_eq!(fast_m.finish().apply(&challenges).unwrap(), expected_rm);
+    assert_eq!(fast_m.finish().mul_left(&challenges).unwrap(), expected_rm);
 }
 
 #[test]

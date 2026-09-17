@@ -4,15 +4,16 @@
 
 mod support;
 
-use field::{ModRingCtx, Uint};
-use circuit::matrix_transpose::{MTransposeGenerator, MaterializedMTranspose};
-use circuit::matrix_wengert::{WengertGenerator, WengertTape};
+use circuit::linear_map::circuit::{WengertGenerator, WengertTape};
+use circuit::linear_map::{CscMatrix, ImplicitOnes, LeftMul};
+use circuit::matrix_transpose::MTransposeGenerator;
 use circuit::p256::{
     VERIFY_DIGEST_INPUT_BITS, VERIFY_DIGEST_WITNESS_BITS, prepare, verify_digest_circuit,
 };
 use circuit::witgen::ProductWitgen;
 use divan::{Bencher, black_box};
 use field::Gf128;
+use field::{ModRingCtx, Uint};
 use num_bigint::BigUint;
 use num_traits::One;
 use std::sync::Once;
@@ -24,21 +25,21 @@ fn main() {
     divan::main();
 }
 
-fn build_transpose() -> MaterializedMTranspose {
+fn build_transpose() -> CscMatrix<ImplicitOnes, u32> {
     let mut generator = MTransposeGenerator::new(VERIFY_DIGEST_INPUT_BITS);
     let inputs = generator.take_boxed_inputs();
     verify_digest_circuit(&mut generator, &inputs);
     generator.finish()
 }
 
-fn report_m_transpose(transpose: &MaterializedMTranspose) {
-    let bytes = transpose.payload_bytes();
+fn report_m_transpose(transpose: &CscMatrix<ImplicitOnes, u32>) {
+    let bytes = transpose.topology_bytes();
     REPORT_M_TRANSPOSE.call_once(|| {
         eprintln!(
             "P-256 ECDSA M (stored as M^T): {bytes} bytes ({:.2} MiB), {} nonzeros, \
              {} M rows x {} M columns",
             bytes as f64 / (1024.0 * 1024.0),
-            transpose.nonzero_count(),
+            transpose.nnz(),
             transpose.row_count(),
             transpose.column_count(),
         );
@@ -140,7 +141,7 @@ fn p256_rm(bencher: Bencher) {
             )
         })
         .collect();
-    bencher.bench_local(|| black_box(transpose.apply(black_box(&challenges)).unwrap()));
+    bencher.bench_local(|| black_box(transpose.mul_left(black_box(&challenges)).unwrap()));
 }
 
 /// Apply the preprocessed reverse-mode tape modulo a runtime prime.
@@ -169,9 +170,22 @@ fn p256_rabc(bencher: Bencher) {
     drop(encoder);
     bencher.bench_local(|| {
         let mut evaluator = tape.prepare(black_box(&modulus)).unwrap();
-        let output = evaluator
-            .apply(black_box(&challenges), black_box(x))
-            .unwrap();
+        let field = evaluator.field();
+        let x = field.from_montgomery_integer(field::Uint::from_words(black_box(x)));
+        let x2 = field::RingOps::square(field, &x);
+        let weights: Vec<_> = black_box(&challenges)
+            .iter()
+            .flat_map(|&words| {
+                let w = field.from_montgomery_integer(field::Uint::from_words(words));
+                [
+                    w,
+                    field::RingOps::mul(field, &w, &x),
+                    field::RingOps::mul(field, &w, &x2),
+                ]
+            })
+            .collect();
+        let mut output = field::RingOps::zero_vec(field, tape.column_count());
+        evaluator.mul_left_into(&weights, &mut output).unwrap();
         black_box(output);
     });
 }

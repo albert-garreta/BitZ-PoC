@@ -37,22 +37,24 @@ use flock_core::pcs::{
 
 use thiserror::Error;
 
-use crate::{
-    ext_proj::PrimeSamplingError,
-    f2map::VirtualMap,
-    ligerito::{LOG_PACKING, packed_vars},
-    ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, IntEvalRsLigVirtProof,
-        LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
-        bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_virtual_runtime,
-        prove_mle_eval_mod_q_ligerito_with_weight_chunks,
-        verify_mle_eval_mod_q_ligerito_virtual_runtime,
-        verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
+use {
+    crate::{
+        ext_proj::PrimeSamplingError,
+        ligerito::{LOG_PACKING, packed_vars},
+        ligerito_flock::{
+            FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, IntEvalRsLigVirtProof,
+            LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
+            bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
+            prove_mle_eval_mod_q_ligerito_virtual_runtime,
+            prove_mle_eval_mod_q_ligerito_with_weight_chunks,
+            verify_mle_eval_mod_q_ligerito_virtual_runtime,
+            verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
+        },
+        pcs::IntegerMatrixLayout,
+        poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::Gf128},
+        transcript::traits::Transcript,
     },
-    pcs::IntegerMatrixLayout,
-    poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::Gf128},
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 use super::{

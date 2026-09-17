@@ -18,32 +18,36 @@
 //! 4. (legacy) the inner sumcheck; the opening claim frame;
 //! 5. the virtual opening of the derived grid.
 
+use crate::sumcheck::boundary::ProverGrindingRoundBoundary;
+use crate::sumcheck::inner::{
+    packed::{PackedInput, Sha256InnerGrinding},
+    prove_inner_sumcheck,
+};
 use field::RingOps;
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
 
-use crate::{
-    f2map::VirtualMap,
-    ligerito::packed_vars,
-    ligerito_flock::{
-        FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
-        bind_prover_ood, bind_verifier_ood,
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
-        verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+use {
+    crate::{
+        ligerito::packed_vars,
+        ligerito_flock::{
+            FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
+            bind_prover_ood, bind_verifier_ood,
+            prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+            verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+        },
+        pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
+        transcript::traits::Transcript,
     },
-    pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 use super::{
     super::{
         absorb_spartan_message,
-        sha256::inner_sumcheck::{
-            SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource,
-            prove_sha256_inner_sumcheck_factored, verify_sha256_inner_sumcheck,
-        },
+        sha256::inner_sumcheck::{SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource},
         squeeze_field,
         sumcheck::SumcheckProof,
     },
@@ -489,24 +493,41 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             None,
         )
     } else {
-        let inner = {
+        let (inner, inner_nonces) = {
             let _scope = tracing::info_span!("sha256:spartan_inner_prove").entered();
             let factored = batching.factored_matrix_mle(config)?;
             let bits = spec.inner_bits(witness)?;
-            prove_sha256_inner_sumcheck_factored(
-                transcript,
-                batching.initial_claim().clone(),
-                spec.opened_layout().row_vars + spec.opened_layout().col_vars,
-                &factored,
-                &*bits,
-                options.prefix_vars,
-                config,
-                &reducer,
-                security.piop_round_grinding_bits,
-            )
+            {
+                let coefficients = &factored;
+                let mut boundary =
+                    ProverGrindingRoundBoundary::<Sha256InnerGrinding>::with_round_offset(
+                        security.piop_round_grinding_bits,
+                        0,
+                    );
+                prove_inner_sumcheck(
+                    config,
+                    transcript,
+                    batching.initial_claim().clone(),
+                    PackedInput::new(
+                        coefficients,
+                        &*bits,
+                        spec.opened_layout().row_vars + spec.opened_layout().col_vars,
+                        coefficients.live_len(),
+                        options.prefix_vars,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .map(|out| (out, boundary.into_nonces()))
+            }
             .map_err(super::super::piop::SpartanError::from)?
         };
-        if inner.final_claim != config.mul(&(inner.v_evaluation.clone()), &(&inner.h_evaluation)) {
+        if inner.final_claim
+            != config.mul(
+                &(inner.terminal_evaluations[0].clone()),
+                &(&inner.terminal_evaluations[1]),
+            )
+        {
             return Err(ProtocolError::InvalidInnerTerminalClaim);
         }
         drop(step3_scope);
@@ -514,18 +535,18 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         let claim = {
             let _scope = tracing::info_span!("sha256:opening_prepare_prover").entered();
             spec.inner_claim(
-                &inner.eval_points,
-                &inner.v_evaluation,
+                &inner.point,
+                &inner.terminal_evaluations[0],
                 inner.final_claim.clone(),
                 &prime,
             )?
         };
         drop(step4_scope);
         (
-            inner.sumcheck_proof,
-            inner.round_nonces,
+            inner.proof,
+            inner_nonces,
             claim,
-            Some((inner.eval_points, inner.v_evaluation)),
+            Some((inner.point, inner.terminal_evaluations[0])),
         )
     };
     let rows = weight_source(spec.opened_layout(), prime.modulus_bits(), &claim)?;
@@ -688,16 +709,17 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     } else {
         let (assignment_point, inner_claim) = {
             let _scope = tracing::info_span!("sha256:spartan_inner_verify").entered();
-            verify_sha256_inner_sumcheck(
-                transcript,
-                batching.initial_claim().clone(),
-                &proof.inner,
-                &proof.inner_nonces,
-                opened.row_vars + opened.col_vars,
-                config,
-                security.piop_round_grinding_bits,
-            )
-            .map_err(super::super::piop::SpartanError::from)?
+            proof
+                .inner
+                .verify_grinded::<Sha256InnerGrinding>(
+                    transcript,
+                    batching.initial_claim().clone(),
+                    opened.row_vars + opened.col_vars,
+                    config,
+                    &proof.inner_nonces,
+                    security.piop_round_grinding_bits,
+                )
+                .map_err(super::super::piop::SpartanError::from)?
         };
         drop(step3_scope);
         let _step4 = tracing::info_span!("step4:bitify_verify").entered();

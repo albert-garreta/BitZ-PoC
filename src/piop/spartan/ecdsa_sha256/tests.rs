@@ -1,7 +1,7 @@
 use super::*;
-use crate::f2map::VirtualMap;
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
+use circuit::linear_map::binary::VirtualMap;
 use field::Uint;
 use num_bigint::{BigInt, BigUint};
 use sha2::{Digest, Sha256};
@@ -50,8 +50,8 @@ pub(super) fn fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
 
 #[test]
 fn compact_map_matches_generated_witness_and_exact_constraints() {
-    // 2^3 packs the assignment bit by bit, 2^6 through the 64×64 transposes.
-    for exponent in [3, 6] {
+    // Cover bit packing, tiles within columns, and tiles spanning columns.
+    for exponent in [3, 6, 10] {
         map_matches_witness(exponent);
     }
 }
@@ -391,7 +391,7 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
     // Both traces separately satisfy their rows. Only the virtual-map digest
     // alias connects the changed SHA trace to the original P-256 trace.
     copy_prefix(
-        &mut witness.f_rows,
+        std::sync::Arc::make_mut(&mut witness.f_rows).as_mut_slice(),
         &different.f_rows,
         &prepared.f_layout,
         prepared.map.f_offset,

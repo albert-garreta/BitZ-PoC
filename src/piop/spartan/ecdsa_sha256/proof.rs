@@ -1,9 +1,10 @@
+use crate::sumcheck::inner::{
+    packed::{PackedInput, Sha256InnerGrinding},
+    prove_inner_sumcheck,
+};
 use field::{RingOps, Uint};
 
-use flock_core::pcs::{
-    commit::Commitment,
-    ligerito::{ProverConfig, VerifierConfig},
-};
+use flock_core::pcs::commit::Commitment;
 
 use super::{
     Config, Result, error,
@@ -12,31 +13,31 @@ use super::{
     security::Sha256EcdsaSecurity,
     witness::Sha256EcdsaWitness,
 };
-use crate::{
-    ext_proj::sample_prime_in_interval,
-    f2map::VirtualMap,
-    ligerito::packed_vars,
-    ligerito_flock::{
-        FlockCommitHint, IntEvalRsLigVirtProof, commit_rs_ligerito_rows,
-        grinding::{GrindingContext, GrindingNonces},
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
-        validate_ligerito_commitment,
-        verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
-    },
-    pcs::ModQWeightChunks,
-    piop::spartan::{
-        SpartanField, absorb_spartan_message,
-        f2z::SpartanF2zField as F,
-        grinding::GrindingDomain,
-        matrix::eq_table,
-        protocol::{check_boundary, f2z_generator, grind_boundary},
-        sha256::inner_sumcheck::{
-            ColumnMajorPackedBits, prove_composite_inner_sumcheck, verify_sha256_inner_sumcheck,
+use {
+    crate::{
+        ext_proj::sample_prime_in_interval,
+        ligerito::packed_vars,
+        ligerito_flock::{
+            FlockCommitHint, IntEvalRsLigVirtProof, commit_rs_ligerito_shared_rows,
+            grinding::{GrindingContext, GrindingNonces},
+            prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
+            validate_ligerito_commitment,
+            verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
         },
-        squeeze_field,
-        sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
+        pcs::ModQWeightChunks,
+        piop::spartan::{
+            SpartanField, absorb_spartan_message,
+            f2z::SpartanF2zField as F,
+            grinding::GrindingDomain,
+            matrix::eq_table,
+            protocol::{check_boundary, f2z_generator, grind_boundary},
+            sha256::inner_sumcheck::ColumnMajorPackedBits,
+            squeeze_field,
+            sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
+        },
+        transcript::traits::Transcript,
     },
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 enum OuterGrinding {}
@@ -58,25 +59,18 @@ pub struct Sha256EcdsaProof {
     pub(crate) opening: IntEvalRsLigVirtProof,
 }
 
-fn configs(prepared: &PreparedSha256Ecdsa) -> Result<(ProverConfig, VerifierConfig)> {
-    Ok((
-        prepared.ligerito.prover().clone(),
-        prepared.ligerito.verifier().clone(),
-    ))
-}
-
 pub fn commit_sha256_ecdsa(
     prepared: &PreparedSha256Ecdsa,
     witness: &Sha256EcdsaWitness,
 ) -> Result<FlockCommitHint> {
-    let (pc, _) = configs(prepared)?;
+    let pc = prepared.ligerito.prover();
     if witness.statement.log_compressions as usize != prepared.log_n {
         return Err(error("witness layout mismatch"));
     }
-    Ok(commit_rs_ligerito_rows(
+    Ok(commit_rs_ligerito_shared_rows(
         &prepared.f_layout,
         witness.f_rows.clone(),
-        &pc,
+        pc,
     ))
 }
 
@@ -193,14 +187,14 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     hint: &FlockCommitHint,
     prefix_vars: usize,
 ) -> Result<Sha256EcdsaProof> {
-    let (pc, _) = configs(prepared)?;
-    if &witness.statement != statement || hint.rows() != witness.f_rows {
+    let pc = prepared.ligerito.prover();
+    if &witness.statement != statement || !hint.matches_rows(&witness.f_rows) {
         return Err(error("statement or commitment witness mismatch"));
     }
     if prefix_vars > 4 {
         return Err(error("inner prefix must be in 0..=4"));
     }
-    validate_ligerito_commitment(&hint.commitment, &pc).map_err(|e| error(format!("{e:?}")))?;
+    validate_ligerito_commitment(&hint.commitment, pc).map_err(|e| error(format!("{e:?}")))?;
     let security = prepared.security()?;
     bind_statement(t, prepared, statement, &hint.commitment, &security)?;
     let ood = crate::ligerito_flock::bind_prover_ood(t, hint, security.ood);
@@ -210,8 +204,8 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         outer_eq_challenges,
         grinding_nonce: initial_nonce,
     } = derive_initial_challenges(t, prepared, &security, None)?;
-    let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).map_err(error)?;
-    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    crate::utils::delayed_reduction::prepare_field(&cfg).map_err(error)?;
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, &cfg);
     let (outer, outer_nonces) = {
         let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
         let rows = witness.outer_integer_rows(prepared);
@@ -246,44 +240,62 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     )?;
     let batched_matrix_mle =
         mod_q_coefficients.build_batched_matrix_mle(prepared, &inner_claim, &cfg)?;
-    let inner = {
+    drop(mod_q_coefficients);
+    let (inner, inner_nonces) = {
         let _scope = tracing::info_span!("ecdsa:shared_inner_prove").entered();
-        prove_composite_inner_sumcheck(
-            t,
-            inner_claim.claimed_sum().clone(),
-            prepared.h_layout.row_vars + prepared.h_layout.col_vars,
-            &batched_matrix_mle.as_mle(&cfg)?,
-            &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
-            prefix_vars,
-            &cfg,
-            &reducer,
-            security.inner,
-        )
+        {
+            let coefficients = &batched_matrix_mle.as_mle(&cfg)?;
+            let mut boundary =
+                ProverGrindingRoundBoundary::<Sha256InnerGrinding>::with_round_offset(
+                    security.inner,
+                    0,
+                );
+            prove_inner_sumcheck(
+                &cfg,
+                t,
+                inner_claim.claimed_sum().clone(),
+                PackedInput::new(
+                    coefficients,
+                    &ColumnMajorPackedBits::new(&witness.h_rows, prepared.h_layout.row_vars),
+                    prepared.h_layout.row_vars + prepared.h_layout.col_vars,
+                    coefficients.live_len(),
+                    prefix_vars,
+                ),
+                (),
+                &mut boundary,
+            )
+            .map(|out| (out, boundary.into_nonces()))
+        }
         .map_err(error)?
     };
-    if batched_matrix_mle.evaluate(&inner.eval_points, &cfg)? != inner.v_evaluation {
+    if batched_matrix_mle.evaluate(&inner.point, &cfg)? != inner.terminal_evaluations[0] {
         return Err(error("batched matrix MLE evaluation mismatch"));
     }
-    if cfg.mul(&(inner.v_evaluation.clone()), &(&inner.h_evaluation)) != inner.final_claim {
+    drop(batched_matrix_mle);
+    if cfg.mul(
+        &(inner.terminal_evaluations[0].clone()),
+        &(&inner.terminal_evaluations[1]),
+    ) != inner.final_claim
+    {
         return Err(error("witness does not satisfy the shared inner claim"));
     }
     bind_opening(
         t,
-        &inner.eval_points,
-        &inner.v_evaluation,
+        &inner.point,
+        &inner.terminal_evaluations[0],
         &inner.final_claim,
         &cfg,
     );
-    let rows: Vec<_> = eq_table(&inner.eval_points[..prepared.h_layout.row_vars], &cfg)
+    let rows: Vec<_> = eq_table(&inner.point[..prepared.h_layout.row_vars], &cfg)
         .map_err(error)?
         .into_iter()
         .map(|mut x| {
-            x = cfg.mul(&(x), &(&inner.v_evaluation));
+            x = cfg.mul(&(x), &(&inner.terminal_evaluations[0]));
             u128::from(cfg.to_integer(&x))
         })
         .collect();
     let mut flock_nonces = Vec::new();
-    let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
+    let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
         .map_err(|_| error("invalid row weights"))?;
     let mut grinding = GrindingContext {
         plan: &security.flock,
@@ -304,7 +316,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             f2z_generator(),
             security.forest,
             ood,
-            &pc,
+            pc,
             Some(&mut grinding),
         )
     };
@@ -315,8 +327,8 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         flock_nonces,
         outer: outer.proof,
         outer_nonces,
-        inner: inner.sumcheck_proof,
-        inner_nonces: inner.round_nonces,
+        inner: inner.proof,
+        inner_nonces,
         opening,
     })
 }
@@ -328,8 +340,8 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     commitment: &Commitment,
     proof: &Sha256EcdsaProof,
 ) -> Result<()> {
-    let (_, vc) = configs(prepared)?;
-    validate_ligerito_commitment(commitment, &vc).map_err(|e| error(format!("{e:?}")))?;
+    let vc = prepared.ligerito.verifier();
+    validate_ligerito_commitment(commitment, vc).map_err(|e| error(format!("{e:?}")))?;
     let security = prepared.security()?;
     bind_statement(transcript, prepared, statement, commitment, &security)?;
     let ood = crate::ligerito_flock::bind_verifier_ood(
@@ -368,7 +380,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     )?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
         sample_inner_batch_challenges(transcript, prepared, &cfg)?;
-    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
         prepared,
         statement,
@@ -379,16 +391,17 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         linear_batch_weight,
         &cfg,
     )?;
-    let (inner_eval_point, inner_final_claim) = verify_sha256_inner_sumcheck(
-        transcript,
-        inner_claim.claimed_sum().clone(),
-        &proof.inner,
-        &proof.inner_nonces,
-        prepared.h_layout.row_vars + prepared.h_layout.col_vars,
-        &cfg,
-        security.inner,
-    )
-    .map_err(error)?;
+    let (inner_eval_point, inner_final_claim) = proof
+        .inner
+        .verify_grinded::<Sha256InnerGrinding>(
+            transcript,
+            inner_claim.claimed_sum().clone(),
+            prepared.h_layout.row_vars + prepared.h_layout.col_vars,
+            &cfg,
+            &proof.inner_nonces,
+            security.inner,
+        )
+        .map_err(error)?;
     // inner_final_claim ≡ scale · h(inner_eval_point) (mod q).
     let scale = mod_q_coefficients.evaluate_batched_matrix_mle(
         prepared,
@@ -396,6 +409,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         &inner_eval_point,
         &cfg,
     )?;
+    drop(mod_q_coefficients);
     bind_opening(
         transcript,
         &inner_eval_point,
@@ -424,7 +438,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     // chunks: L × R; folds = chunks · h: L × C.
     // folds[ℓ][c] = Σ_b chunks[ℓ][b] · h[b,c].
     // chunks[0][b] = rows[b].
-    let chunks = ModQWeightChunks::from_dense(&prepared.h_layout, &rows, 113)
+    let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
         .map_err(|_| error("invalid row weights"))?;
     let mut grinding = GrindingContext {
         plan: &security.flock,
@@ -447,7 +461,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         f2z_generator(),
         security.forest,
         ood,
-        &vc,
+        vc,
         cols.len(),
         |values, width, count| {
             // This profile has one 113-bit chunk; the F2Z preflight enforces the

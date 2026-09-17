@@ -30,6 +30,9 @@
 //! validator-gated Ligerito security configs ([`sha_lig_configs`]); the
 //! `RsOpenConfig::num_queries` knob does not apply on this backend.
 
+#[cfg(test)]
+use circuit::linear_map::CscMatrix;
+
 use anyhow::Context;
 use flock_core::challenger::Challenger;
 mod configuration;
@@ -57,14 +60,17 @@ use crate::piop::spartan::grinding::{
 use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcript;
-use field::PreparedGf128Mul;
+use circuit::linear_map::binary_adjoint::{
+    AffineTailWeights, BinaryAdjoint, BinaryRowWeights, DenseWeightCorrection,
+    virtual_column_weight,
+};
 
 use crate::ligerito::{
     IntEvalRsError, LOG_PACKING, RingSwitchProof, RsOpenConfig, RsOpenError, packed_vars,
     phi_bit_sum, phi_byte_tables, phi_from_words, prove_int_eval_merged_common,
     prove_x_claims_batched_common, repack_leaf_bits, residual_b_evals, ring_switch_prove,
-    ring_switch_verify, row_bit_vars,
-    rs_fast, sv_fold_mfr, verify_int_eval_merged_common, verify_x_claims_batched_common,
+    ring_switch_verify, row_bit_vars, rs_fast, sv_fold_mfr, verify_int_eval_merged_common,
+    verify_x_claims_batched_common,
 };
 use crate::merged_forest::MergedForestProof;
 use crate::pcs::{
@@ -189,10 +195,10 @@ use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 /// Prover-side state of the flock-backed commitment.
 pub struct FlockCommitHint {
     /// Per-column bit rows (shared layout with the zinc backend).
-    rows: Vec<Vec<u64>>,
-    /// Column-lane packing for the branch-native bit-affine forest,
-    /// built once at commit.
-    packed_cols: Vec<Vec<u64>>,
+    rows: std::sync::Arc<Vec<Vec<u64>>>,
+    /// Materialize the alternate layout only for a consumer that needs it.
+    packed_cols: std::sync::OnceLock<Vec<Vec<u64>>>,
+    row_layout: IntegerMatrixLayout,
     /// The packed message in flock representation.
     p_msg: Vec<Gf128>,
     pub commitment: Commitment,
@@ -210,6 +216,15 @@ impl FlockCommitHint {
     /// computations in tests/benches.
     pub fn rows(&self) -> &[Vec<u64>] {
         &self.rows
+    }
+
+    fn packed_cols(&self) -> &[Vec<u64>] {
+        self.packed_cols
+            .get_or_init(|| crate::ligerito::pack_columns_from_rows(&self.row_layout, &self.rows))
+    }
+
+    pub(crate) fn matches_rows(&self, rows: &std::sync::Arc<Vec<Vec<u64>>>) -> bool {
+        std::sync::Arc::ptr_eq(&self.rows, rows) || self.rows == *rows
     }
 }
 
@@ -229,8 +244,8 @@ impl core::fmt::Debug for FlockCommitHint {
 #[allow(clippy::arithmetic_side_effects)]
 fn commit_rs_flock_from_rows(
     p: &IntegerMatrixLayout,
-    rows: Vec<Vec<u64>>,
-    packed_cols: Vec<Vec<u64>>,
+    rows: std::sync::Arc<Vec<Vec<u64>>>,
+    packed_cols: Option<Vec<Vec<u64>>>,
     log_inv_rate: usize,
     log_batch: usize,
     merkle_hash: HashKind,
@@ -263,7 +278,10 @@ fn commit_rs_flock_from_rows(
     let (commitment, prover_data) = commit(&p_msg, &params);
     FlockCommitHint {
         rows,
-        packed_cols,
+        packed_cols: packed_cols
+            .map(std::sync::OnceLock::from)
+            .unwrap_or_default(),
+        row_layout: *p,
         p_msg,
         commitment,
         prover_data,
@@ -280,11 +298,10 @@ pub fn commit_rs_flock_with(
     log_batch: usize,
 ) -> FlockCommitHint {
     let rows = repack_leaf_bits(p, data);
-    let packed_cols = crate::ligerito::pack_columns_from_rows(p, &rows);
     commit_rs_flock_from_rows(
         p,
-        rows,
-        packed_cols,
+        rows.into(),
+        None,
         log_inv_rate,
         log_batch,
         HashKind::default(),
@@ -293,7 +310,7 @@ pub fn commit_rs_flock_with(
 
 /// Commit starting from per-column bit rows (the [`repack_leaf_bits`]
 /// layout: bit `i = (b<<log₂W)|j` of row `c` = bit `j` of cell `(b,c)`,
-/// 64 bits per word) — the column-lane packing is built here and the
+/// 64 bits per word) — column-lane packing is built on first use and the
 /// `u128` cell tensor never exists. This is the memory-honest entry for
 /// harnesses/hosts that can produce bits directly: peak stays at the
 /// packed scale (`2^n/8` bytes per store) instead of 16 B per cell.
@@ -302,11 +319,19 @@ pub fn commit_rs_ligerito_rows(
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> FlockCommitHint {
-    let packed_cols = crate::ligerito::pack_columns_from_rows(p, &rows);
+    commit_rs_ligerito_shared_rows(p, rows.into(), pc)
+}
+
+/// Share immutable source storage with a witness that outlives commitment.
+pub(crate) fn commit_rs_ligerito_shared_rows(
+    p: &IntegerMatrixLayout,
+    rows: std::sync::Arc<Vec<Vec<u64>>>,
+    pc: &LigProverConfig,
+) -> FlockCommitHint {
     commit_rs_flock_from_rows(
         p,
         rows,
-        packed_cols,
+        None,
         pc.log_inv_rates[0],
         pc.initial_k,
         pc.merkle_hash,
@@ -325,8 +350,8 @@ pub fn commit_rs_ligerito_packed(
     let rows = crate::ligerito::rows_from_packed_cols(p, &packed_cols);
     commit_rs_flock_from_rows(
         p,
-        rows,
-        packed_cols,
+        rows.into(),
+        Some(packed_cols),
         pc.log_inv_rates[0],
         pc.initial_k,
         pc.merkle_hash,
@@ -1739,7 +1764,7 @@ pub fn prove_rs_open_ligerito(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_tbl,
         beta0,
         &hint.prover_data.codeword,
@@ -1821,7 +1846,7 @@ pub fn prove_rs_ligerito(
         transcript,
         p,
         &hint.rows,
-        Some(&hint.packed_cols),
+        Some(hint.packed_cols()),
         row_weights,
         alpha,
     );
@@ -2046,7 +2071,7 @@ pub fn prove_rs_ligerito_batch(
 
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -2216,24 +2241,6 @@ fn dense_ring_sv(p_msg: &[Gf128], eq_hi: &[Gf]) -> Vec<Gf> {
         }
     }
     s
-}
-
-/// Parallel copy of the packed message — `Vec::clone` of the 2^{m_p}·16-B
-/// buffer is a single-thread memcpy (~2–3 ms at n = 28); the flock prover
-/// entry point consumes an owned Vec while the hint must keep its copy, so
-/// the copy itself is unavoidable but its wall time is not. Byte-identical
-/// (pure data movement).
-fn par_clone_f128(src: &[Gf128]) -> Vec<Gf128> {
-    #[cfg(feature = "parallel")]
-    {
-        let mut out = vec![Gf128::ZERO; src.len()];
-        out.par_chunks_mut(1 << 16)
-            .zip(src.par_chunks(1 << 16))
-            .for_each(|(d, s)| d.copy_from_slice(s));
-        out
-    }
-    #[cfg(not(feature = "parallel"))]
-    src.to_vec()
 }
 
 /// Overwrite `b[y] = Σ_l η_l·Φ_{r″}(eq_his[l][y])` — the η-combined
@@ -2899,7 +2906,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
         let proof = match precomputed_round0 {
             Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
                 pc,
-                par_clone_f128(&hint.p_msg),
+                hint.p_msg.as_slice(),
                 basis,
                 target,
                 &hint.prover_data.codeword,
@@ -2910,7 +2917,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
             ),
             None => ligerito::recursive_prover_with_basis(
                 pc,
-                par_clone_f128(&hint.p_msg),
+                hint.p_msg.as_slice(),
                 basis,
                 target,
                 &hint.prover_data.codeword,
@@ -2927,7 +2934,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
     match precomputed_round0 {
         Some((u0, u2)) => ligerito::recursive_prover_with_basis_precomputed_round0(
             pc,
-            par_clone_f128(&hint.p_msg),
+            hint.p_msg.as_slice(),
             basis,
             target,
             &hint.prover_data.codeword,
@@ -2938,7 +2945,7 @@ fn prove_prepared_mod_q_ligerito_with_security(
         ),
         None => ligerito::recursive_prover_with_basis(
             pc,
-            par_clone_f128(&hint.p_msg),
+            hint.p_msg.as_slice(),
             basis,
             target,
             &hint.prover_data.codeword,
@@ -3242,7 +3249,7 @@ where
         hint,
         p,
         &hint.rows,
-        Some(&hint.packed_cols),
+        Some(hint.packed_cols()),
         chunks,
         alpha,
         pc,
@@ -3281,7 +3288,7 @@ where
         hint,
         p,
         &hint.rows,
-        Some(&hint.packed_cols),
+        Some(hint.packed_cols()),
         chunks,
         alpha,
         pc,
@@ -4044,7 +4051,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     prove_mle_eval_mod_q_ligerito_virtual_with_ood(
         transcript,
@@ -4079,7 +4086,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
 ) -> Result<(), FlockRsError>
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     verify_mle_eval_mod_q_ligerito_virtual_with_ood(
         transcript,
@@ -4830,7 +4837,7 @@ fn prove_mod_q_lig_xor_impl(
             transcript,
             p,
             &hint.rows,
-            Some(&hint.packed_cols),
+            Some(hint.packed_cols()),
             w_l,
             alpha,
         );
@@ -5040,7 +5047,7 @@ fn prove_mod_q_lig_xor_impl(
     let _g_lig = tracing::info_span!("mq:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -6897,7 +6904,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
     let _g_lig = tracing::info_span!("tap:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -7383,9 +7390,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
         FQ_BITS, fq_challenge, mod_q_chunk_width, mod_q_num_chunks, rlc_case_pow_table,
         rlc_case_weights, rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
-    use crate::poly::coefficient::FieldRepresentation;
-    use crate::poly::mle::DenseMultilinearExtension;
     use crate::poly::utils::build_eq_x_r_vec;
     use crate::taps::{extract_virtual_tap_rows, tap_classes, tap_support_tables};
 
@@ -7434,7 +7438,6 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
 
     // (3)–(4) Per cluster: forests + presums, then the cluster's cascade.
     let one = Gf::one();
-    let zero_inner = Gf::zero().into_inner();
     let mut sides_out: Vec<TapFamilyClusterSide> = Vec::with_capacity(clusters.len());
     // Ring surfaces collected per cluster: (point, streams) with cluster id.
     struct RingSurface {
@@ -7491,14 +7494,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                     crate::ligerito::xi_combined_rows_and(&p_x, &members, &eq_zc)
                 })
                 .collect();
-            let to_mle = |tbl: Vec<Gf>| {
-                DenseMultilinearExtension::from_evaluations_vec(
-                    t_x,
-                    tbl.into_iter().map(|g| g.into_inner()).collect(),
-                    zero_inner,
-                )
-            };
-            let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = active
+            let groups: Vec<[Vec<Gf>; 2]> = active
                 .iter()
                 .enumerate()
                 .map(|(gi, &s)| {
@@ -7507,21 +7503,28 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
                         .zip(taus[s].iter())
                         .map(|(&e, &t)| e * t)
                         .collect();
-                    MultiDegreeSumcheckGroup::new(
-                        2,
-                        vec![to_mle(r_tbl), to_mle(m_tbls[gi].clone())],
-                        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-                    )
+                    [r_tbl, m_tbls[gi].clone()]
                 })
                 .collect();
-            let (presum, states) =
-                MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_x, &());
+            let (presum, r_star) = {
+                let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_x);
+                crate::sumcheck::inner::binary::encode(
+                    crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                        &field::Gf128Ops,
+                        transcript,
+                        crate::sumcheck::inner::InitialClaims::Compute,
+                        values,
+                        weights,
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                    .expect("valid post-GKR dot products"),
+                )
+            };
             debug_assert_eq!(
                 presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
                 e_d + one,
                 "presum channels must sum to the forest exit claim"
             );
-            let r_star = states[0].randomness.clone();
             let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
             mfs.push(mf);
             us.push(u);
@@ -7728,7 +7731,7 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_family(
     let _g_l = tracing::info_span!("tapf:lig").entered();
     let lig = ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -7763,7 +7766,6 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
         mod_q_num_chunks, recombine_read_off, rlc_case_pow_table, rlc_case_weights,
         rlc_chunk_case_weights, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
     use crate::taps::{residual_b_evals_tap, tap_classes, tap_closure_desc, tap_inpack_table};
 
@@ -7854,14 +7856,9 @@ pub fn verify_mle_eval_mod_q_ligerito_tap_family(
             if active.is_empty() || active.iter().any(|s| s.count_ones() > 4) {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
             }
-            let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-                transcript,
-                t_x,
-                &vec![2; active.len()],
-                &side.presums[l],
-                &(),
-            )
-            .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
+            let subclaims = side.presums[l]
+                .verify_as_subprotocol(transcript, t_x, &vec![2; active.len()], &())
+                .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
             let sums = side.presums[l].claimed_sums();
             if sums.len() != active.len() {
                 return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -8513,9 +8510,9 @@ fn rlc_prove_eqf_level(
     let mut groups_a: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(specs.len() * cols);
     for (si, (pt, eta, na, nb)) in specs.iter().enumerate() {
         for c in 0..cols {
-            let (lbits, rbits) = (na[c].clone(), nb[c].clone());
+            let (lbits, rbits) = (na[c].as_slice(), nb[c].as_slice());
             groups_a.push(EqInnerGroupMixed {
-                q: pt[..t_x].to_vec(),
+                q: (&pt[..t_x]).into(),
                 scale: *eta * eq_tops[si][c],
                 bufs: if deep {
                     GroupBufs::Leaf3Bits {
@@ -8557,7 +8554,7 @@ fn rlc_prove_eqf_level(
     let mut groups_b: Vec<EqInnerGroupMixed<Gf>> = Vec::with_capacity(specs.len());
     for ((pt, eta, ..), (fa, fb)) in specs.iter().zip(f_pairs) {
         groups_b.push(EqInnerGroupMixed {
-            q: pt[t_x..].to_vec(),
+            q: (&pt[t_x..]).into(),
             scale: *eta,
             bufs: GroupBufs::Dense(vec![(fa, fb)]),
         });
@@ -8967,9 +8964,6 @@ fn prove_rlc_family_front(
     use crate::pcs::{
         extract_virtual_xor_rows, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::{MultiDegreeSumcheck, MultiDegreeSumcheckGroup};
-    use crate::poly::coefficient::FieldRepresentation;
-    use crate::poly::mle::DenseMultilinearExtension;
     use crate::poly::utils::build_eq_x_r_vec;
 
     let j = family_cols.len();
@@ -9004,7 +8998,6 @@ fn prove_rlc_family_front(
 
     // (3) Per chunk: eager 2^j-case forest + (2^j − 1)-channel presum.
     let one = Gf::one();
-    let zero_inner = Gf::zero().into_inner();
     let mut mfs = Vec::with_capacity(lch_x);
     let mut us = Vec::with_capacity(lch_x);
     let mut presums = Vec::with_capacity(lch_x);
@@ -9100,14 +9093,7 @@ fn prove_rlc_family_front(
             .iter()
             .map(|&s| crate::ligerito::xi_combined_rows(&p_x, &and_rows[s - 1], &eq_zc))
             .collect();
-        let to_mle = |tbl: Vec<Gf>| {
-            DenseMultilinearExtension::from_evaluations_vec(
-                t_x,
-                tbl.into_iter().map(|g| g.into_inner()).collect(),
-                zero_inner,
-            )
-        };
-        let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = active
+        let groups: Vec<[Vec<Gf>; 2]> = active
             .iter()
             .enumerate()
             .map(|(gi, &s)| {
@@ -9116,21 +9102,28 @@ fn prove_rlc_family_front(
                     .zip(taus[s].iter())
                     .map(|(&e, &t)| e * t)
                     .collect();
-                MultiDegreeSumcheckGroup::new(
-                    2,
-                    vec![to_mle(r_tbl), to_mle(m_tbls[gi].clone())],
-                    Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-                )
+                [r_tbl, m_tbls[gi].clone()]
             })
             .collect();
-        let (presum, states) =
-            MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_x, &());
+        let (presum, r_star) = {
+            let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_x);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        };
         debug_assert_eq!(
             presum.claimed_sums().iter().fold(Gf::zero(), |a, &b| a + b),
             e_d + one,
             "presum channels must sum to the forest exit claim"
         );
-        let r_star = states[0].randomness.clone();
         actives.push(active);
         let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
         mfs.push(mf);
@@ -9455,7 +9448,7 @@ fn prove_rlc_families_closure(
     let _g_l = tracing::info_span!("rlc:lig").entered();
     ligerito::recursive_prover_with_basis(
         pc,
-        par_clone_f128(&hint.p_msg),
+        hint.p_msg.as_slice(),
         b_comb,
         target,
         &hint.prover_data.codeword,
@@ -9741,7 +9734,6 @@ fn verify_rlc_family_front(
     use crate::pcs::{
         is_generator, mod_q_chunk_width, rlc_case_pow_table, rlc_tau_tables, virtual_xor_params,
     };
-    use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheck;
     use crate::poly::utils::build_eq_x_r_vec;
 
     let j = family_cols.len();
@@ -9797,14 +9789,9 @@ fn verify_rlc_family_front(
         if active.is_empty() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
         }
-        let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-            transcript,
-            t_x,
-            &vec![2; active.len()],
-            &part.presums[l],
-            &(),
-        )
-        .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
+        let subclaims = part.presums[l]
+            .verify_as_subprotocol(transcript, t_x, &vec![2; active.len()], &())
+            .map_err(|_| FlockRsError::Common(IntEvalRsError::PreSumcheck))?;
         let sums = part.presums[l].claimed_sums();
         if sums.len() != active.len() {
             return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -10943,7 +10930,7 @@ impl IntEvalRsLigExtProof {
 // F₂-VIRTUALIZATION (paper `s:to_f2_virtual` / `s:virtualization`,
 // construction `c:virtual_iop`): open a mod-q claim about the DERIVED
 // vector `h = M·f` over `F₂` against the commitment to `f` alone. `M` is
-// a public sparse [`PreparedVirtualMap`](crate::f2map::PreparedVirtualMap)
+// a public sparse [`PreparedVirtualMap`](circuit::linear_map::binary::PreparedVirtualMap)
 // between the two bit-cell grids; `h` is
 // never committed.
 //
@@ -11090,7 +11077,7 @@ struct AdjointBatchVerifierReduction<'proof, 'map, M> {
 
 impl<M> ModQLigVerifierReduction for AdjointBatchVerifierReduction<'_, '_, M>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     fn validate_shape(&self, _chunk_count: usize) -> Result<(), FlockRsError> {
         Ok(())
@@ -11137,7 +11124,7 @@ where
 
         let weights = {
             let _g = tracing::info_span!("mqv:vwprep").entered();
-            VirtColumnWeights::new_factored_tail(self.map, points, &etas, self.derived_row_bits)
+            BinaryAdjoint::new_factored_tail(self.map, points, &etas, self.derived_row_bits)
         };
         let a_prime = {
             let _g = tracing::info_span!("mqv:vaprime").entered();
@@ -11159,7 +11146,7 @@ enum VirtualVerifierReduction<'proof, 'map, M> {
 
 impl<M> ModQLigVerifierReduction for VirtualVerifierReduction<'_, '_, M>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     fn validate_shape(&self, chunk_count: usize) -> Result<(), FlockRsError> {
         match self {
@@ -11200,7 +11187,7 @@ pub fn virtual_id_fast_eligible<M>(
     f_layout: &IntegerMatrixLayout,
 ) -> bool
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     use crate::f2map::cell_row_bits;
     map.is_identity()
@@ -11242,7 +11229,7 @@ fn absorb_virtual_statement<M, S>(
     alpha: Gf,
 ) -> BoundModQStatement
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     let mut hash = blake3::Hasher::new();
@@ -11287,63 +11274,6 @@ where
     BoundModQStatement::new()
 }
 
-/// The η-combined per-derived-cell transpose coefficients
-/// `E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`, factored over the (row, column)
-/// split of `r`'s flat index with the η's folded into the column tables
-/// once — one product per (cell, chunk), exactly the old `mqv:wcoef`
-/// formula, now evaluated on demand instead of materialized.
-struct VirtRowCoeffs {
-    eq_rs: Vec<Vec<Gf>>,
-    scaled_zc: Vec<Vec<Gf>>,
-    t_wh: usize,
-    h_mask: usize,
-}
-
-impl VirtRowCoeffs {
-    #[allow(clippy::arithmetic_side_effects)]
-    fn new(points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
-        use crate::poly::utils::build_eq_x_r_vec;
-        let eq_rs: Vec<Vec<Gf>> = points
-            .iter()
-            .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
-            .collect();
-        let scaled_zc: Vec<Vec<Gf>> = points
-            .iter()
-            .zip(etas.iter())
-            .map(|(pt, &eta)| {
-                if pt.len() == t_wh {
-                    vec![eta]
-                } else {
-                    build_eq_x_r_vec(&pt[t_wh..], &())
-                        .expect("nonempty assignment-column point")
-                        .into_iter()
-                        .map(|x| eta * x)
-                        .collect()
-                }
-            })
-            .collect();
-        Self {
-            eq_rs,
-            scaled_zc,
-            t_wh,
-            h_mask: (1usize << t_wh) - 1,
-        }
-    }
-
-    #[allow(clippy::arithmetic_side_effects)]
-    #[inline]
-    fn coeff(&self, r: usize) -> Gf {
-        let (c, b) = (r >> self.t_wh, r & self.h_mask);
-        // Polynomial reduction is linear over F2. XOR the degree-at-most-254
-        // products first; their sum fits the same width for any chunk count.
-        let mut acc = field::Gf128Product::zero();
-        for (l, zc) in self.scaled_zc.iter().enumerate() {
-            acc ^= self.eq_rs[l][b].mul_unreduced(zc[c]);
-        }
-        acc.reduce()
-    }
-}
-
 #[cfg(test)]
 #[test]
 fn virtual_row_coefficients_match_direct_equality_weights() {
@@ -11373,7 +11303,7 @@ fn virtual_row_coefficients_match_direct_equality_weights() {
             .map(|point| build_eq_x_r_vec(point, &()).unwrap())
             .collect();
         for row_bits in [1, 4, BITS] {
-            let actual = VirtRowCoeffs::new(&points, &etas, row_bits);
+            let actual = BinaryRowWeights::new(&points, &etas, row_bits, binary_equality);
             for row in 0..1usize << BITS {
                 let expected = full
                     .iter()
@@ -11437,26 +11367,12 @@ fn hs_scatter_block16(s: &mut [Gf; 128], wits: &[[u64; 2]; 16], vals: &[Gf; 16])
     }
 }
 
-/// The batching message obtained by streaming CSC source columns and merging
-/// fixed-size partial accumulators by field addition. Neither the transposed
-/// weight vector nor a coefficient table is materialized.
-#[allow(clippy::arithmetic_side_effects)]
-#[inline]
-fn virtual_column_weight<M>(map: &M, column: usize, coeffs: &VirtRowCoeffs) -> Gf
-where
-    M: crate::f2map::VirtualMap,
-{
-    map.column_rows(column)
-        .expect("source column in bounds")
-        .fold(Gf::zero(), |acc, row| acc + coeffs.coeff(row))
-}
-
 #[cfg(all(test, feature = "ecdsa"))]
 #[test]
 fn chained_compact_tail_weights_and_planes_match_generic() {
-    use crate::{
-        f2map::VirtualMap,
-        piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+    use {
+        crate::piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+        circuit::linear_map::binary::VirtualMap,
     };
     let prepared = prepare_sha256_ecdsa(7, 100, OuterMode::Split).unwrap();
     let map = prepared.map();
@@ -11473,15 +11389,19 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
         Gf::from_polynomial_words([73, 13]),
         Gf::from_polynomial_words([89, 37]),
     ];
-    let weights =
-        VirtColumnWeights::new(map, &points, &etas, prepared.assignment_params().row_vars);
+    let weights = BinaryAdjoint::new(map, &points, &etas, prepared.assignment_params().row_vars);
     assert!(matches!(
         &weights,
-        VirtColumnWeights::PackedSourceRepeated { corrections, .. } if !corrections.is_empty()
+        BinaryAdjoint::PackedSourceRepeated { corrections, .. } if !corrections.is_empty()
     ));
-    let generic = VirtColumnWeights::Generic {
+    let generic = BinaryAdjoint::Generic {
         map,
-        coeffs: VirtRowCoeffs::new(&points, &etas, prepared.assignment_params().row_vars),
+        coeffs: BinaryRowWeights::new(
+            &points,
+            &etas,
+            prepared.assignment_params().row_vars,
+            binary_equality,
+        ),
     };
     let mut actual = [Gf::zero(); 128];
     let mut expected = actual;
@@ -11518,9 +11438,9 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
 #[cfg(all(test, feature = "ecdsa"))]
 #[test]
 fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
-    use crate::{
-        f2map::VirtualMap,
-        piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+    use {
+        crate::piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+        circuit::linear_map::binary::VirtualMap,
     };
     let splitmix = |x: u64| {
         let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -11549,12 +11469,12 @@ fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
                 })
                 .collect();
             let etas: Vec<Gf> = (0..chunks as u64).map(|l| sample(0x9B00 + l)).collect();
-            let dense = VirtColumnWeights::new(map, &points, &etas, t_wh);
-            let factored = VirtColumnWeights::new_factored_tail(map, &points, &etas, t_wh);
+            let dense = BinaryAdjoint::new(map, &points, &etas, t_wh);
+            let factored = BinaryAdjoint::new_factored_tail(map, &points, &etas, t_wh);
             assert!(
                 matches!(
                     factored,
-                    VirtColumnWeights::PackedSourceRepeated {
+                    BinaryAdjoint::PackedSourceRepeated {
                         affine_tail: Some(_),
                         ..
                     }
@@ -11589,220 +11509,42 @@ fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
     }
 }
 
-/// Per-prove column-weight engine for the batching passes: fills whole
-/// 128-column source packs with `W_j = Σ_{r:M[r,j]=1} E_r`
-/// (`E_r = Σ_l η_l·eq_{bits(r)}(pt_l)`).
-///
-/// For a power-of-two tensor repetition (`global = local·2^k + instance`,
-/// [`crate::f2map::VirtualMap::repetition`]) the eq tensor factors over
-/// the instance/local bit split, so
-///
-/// ```text
-/// W_{(lc, inst)} = Σ_l eq_inst_l[inst] · S_{l,lc},
-/// S_{l,lc}       = η_l · Σ_{lr ∈ localcol(lc)} eq_loc_l[lr],
-/// ```
-///
-/// with the `S` tables precomputed once in `O(L·(local_rows + nnz_local))`
-/// field ops. One weight then costs `L` multiplies instead of the
-/// streamed fold's `L·deg`, and a local column with all `S_{·,lc} = 0`
-/// zeroes its whole pack in one check. FieldRepresentation associativity and
-/// distributivity make every value BIT-IDENTICAL to the streamed
-/// per-nonzero fold — prover and verifier transcripts are unchanged
-/// (pinned by `virtual_pack_weights_match_generic`).
-/// One cross-instance or boundary term of a chained packed-source
-/// repetition ([`crate::f2map::ChainedPackedSourceMap`]): source cell
-/// `(inst, lc)` with `inst ∈ [inst_lo, inst_hi)` gains
-/// `Σ_l eq_l[inst − inst_lo] · s_l[lc]`. The chain link (`prev`) carries the
-/// instance tables ROTATED by one (instance `i − 1`'s cells feed instance
-/// `i`'s rows, so source instance `j` takes `eq[j + 1]`); the boundary maps
-/// (`first`/`last`) carry the single entry `eq[0]` / `eq[N − 1]`.
-struct ExtraWeightTerm {
-    /// Active source instances `[inst_lo, inst_hi)`.
-    inst_lo: usize,
-    inst_hi: usize,
-    /// Per chunk: the instance factors of the active instances, in order.
-    eq_inst: Vec<Vec<PreparedGf128Mul>>,
-    /// Per chunk: the eta-scaled local-row equality sums of this term's
-    /// local map (index 0 = the constant column, `1..=w` the cells).
-    s: Vec<Vec<Gf>>,
-    /// Nonconstant local offsets `[col_lo, col_hi)` (`0..w`) that carry
-    /// any entry; runs outside are skipped.
-    col_lo: usize,
-    col_hi: usize,
+trait VirtualOpeningWeights<'a, M: circuit::linear_map::binary::VirtualMap>: Sized {
+    fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self;
+    fn new_factored_tail(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self;
+    fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes>;
+    fn packed_source_planes_with(
+        &self,
+        plane_major: bool,
+    ) -> Option<crate::virt_batch::PackedSourcePlanes>;
+    fn add_extra_hs(&self, hs: &mut [Gf; 128], p_msg: &[Gf128], a_cols: &[Gf; 128]);
+    fn extra_a_prime_deltas(&self, phi_tables: &[Gf]) -> Vec<(usize, Gf)>;
+    fn add_extra_a_prime(
+        &self,
+        basis: &mut [Gf],
+        round0: &mut (Gf, Gf),
+        rho: &[Gf],
+        p_msg: &[Gf128],
+    );
 }
-
-impl ExtraWeightTerm {
-    /// Adds this term's weights of the run `[local_offset, local_offset +
-    /// targets.len())` of instance `instance`.
-    #[allow(clippy::arithmetic_side_effects)]
-    #[inline]
-    fn accumulate(&self, instance: usize, local_offset: usize, targets: &mut [Gf]) {
-        if instance < self.inst_lo || instance >= self.inst_hi {
-            return;
-        }
-        let lo = local_offset.max(self.col_lo);
-        let hi = (local_offset + targets.len()).min(self.col_hi);
-        if lo >= hi {
-            return;
-        }
-        let slot = instance - self.inst_lo;
-        for (eq_l, s_l) in self.eq_inst.iter().zip(self.s.iter()) {
-            let fixed = &eq_l[slot];
-            let source = &s_l[1 + lo..1 + hi];
-            for (target, &value) in targets[lo - local_offset..hi - local_offset]
-                .iter_mut()
-                .zip(source)
-            {
-                *target += Gf::from(fixed.mul(&value.into()));
-            }
-        }
-    }
-
-    /// Whether the term touches any nonconstant cell.
-    const fn is_empty(&self) -> bool {
-        self.col_lo >= self.col_hi || self.inst_lo >= self.inst_hi
-    }
+fn binary_equality(point: &[Gf], cfg: &()) -> Result<Vec<Gf>, ()> {
+    crate::poly::utils::build_eq_x_r_vec(point, cfg).map_err(|_| ())
 }
-
-/// Verifier-side factored form of an identity compact tail
-/// ([`crate::f2map::ChainedSourceTail`] whose local map is the identity):
-/// source column `j ∈ [source_start, source_start + len)` carries the
-/// derived-row weight `E_{row_start + (j − source_start)}` — one
-/// [`VirtRowCoeffs::coeff`] per cell, evaluated on demand by
-/// [`VirtColumnWeights::pack_weights`] and consumed by the affine-tail plane
-/// engine ([`AffineTailPlanes`]) without ever being materialized.
-struct AffineTailWeights {
-    source_start: usize,
-    len: usize,
-    row_start: usize,
-    coeffs: VirtRowCoeffs,
-}
-
-impl AffineTailWeights {
-    fn end(&self) -> usize {
-        self.source_start + self.len
-    }
-
-    #[allow(clippy::arithmetic_side_effects)]
-    fn add_pack(&self, pack: usize, out: &mut [Gf; 128]) {
-        let base = pack << LOG_PACKING;
-        let lo = base.max(self.source_start);
-        let hi = (base + 128).min(self.end());
-        for column in lo..hi {
-            out[column - base] += self
-                .coeffs
-                .coeff(self.row_start + (column - self.source_start));
-        }
-    }
-
-    fn planes(&self) -> AffineTailPlanes {
-        AffineTailPlanes::new(
-            self.source_start,
-            self.len,
-            self.row_start,
-            &self.coeffs.eq_rs,
-            &self.coeffs.scaled_zc,
-        )
-    }
-}
-
-struct DenseWeightCorrection {
-    start: usize,
-    weights: Vec<Gf>,
-}
-
-impl DenseWeightCorrection {
-    fn end(&self) -> usize {
-        self.start + self.weights.len()
-    }
-    fn add_pack(&self, pack: usize, out: &mut [Gf; 128]) {
-        let base = pack << LOG_PACKING;
-        let lo = base.max(self.start);
-        let hi = (base + 128).min(self.end());
-        if lo < hi {
-            for (dst, src) in out[lo - base..hi - base]
-                .iter_mut()
-                .zip(&self.weights[lo - self.start..hi - self.start])
-            {
-                *dst += *src;
-            }
-        }
-    }
-}
-
-enum VirtColumnWeights<'a, M: crate::f2map::VirtualMap> {
-    /// Factored tensor-repetition tables.
-    Repeated {
-        /// `k`: the instance coordinates are the low `k` bits.
-        instance_bits: usize,
-        /// Per chunk `l`: eq table over `pt_l[..k]` (`2^k` entries).
-        eq_inst: Vec<Vec<Gf>>,
-        /// Per chunk `l`: `η_l`-scaled local-column sums of the eq table
-        /// over `pt_l[k..]`.
-        s: Vec<Vec<Gf>>,
-        _map: core::marker::PhantomData<&'a M>,
-    },
-    /// Factored tensor tables for an instance-major packed source with one
-    /// shared constant column. Unlike `Repeated`, source packs normally stay
-    /// within one instance and walk consecutive local columns.
-    PackedSourceRepeated {
-        /// Number of nonconstant source cells in one local instance.
-        local_width: usize,
-        /// End of the live source prefix; the remaining source domain is zero.
-        live_cols: usize,
-        /// Per chunk and instance: a preprocessed multiplier for the instance
-        /// equality weight, reused across each contiguous local-column run.
-        eq_inst: Vec<Vec<PreparedGf128Mul>>,
-        /// The same instance equality tables as plain field elements (the
-        /// plane engine's instance factors).
-        eq_inst_gf: Vec<Vec<Gf>>,
-        /// Number of instances (`2^k`).
-        instances: usize,
-        /// Per chunk and local column: the eta-scaled local-row equality sum.
-        s: Vec<Vec<Gf>>,
-        /// Weight of the one source constant shared by every instance
-        /// (including every boundary term's constant-column part).
-        constant_weight: Gf,
-        /// Cross-instance and boundary terms of a chained repetition
-        /// (empty for a plain repetition). They are folded into
-        /// [`Self::pack_weights`]; the plane engine covers only the plain
-        /// part, so the prover adds them through [`Self::add_extra_hs`] /
-        /// [`Self::add_extra_a_prime`].
-        extra: Vec<ExtraWeightTerm>,
-        /// Appended compact relation and its source aliases, including column zero.
-        corrections: Vec<DenseWeightCorrection>,
-        /// Verifier-side: an identity compact tail kept factored instead of
-        /// folded into `corrections` (see [`Self::new_factored_tail`]).
-        affine_tail: Option<AffineTailWeights>,
-        _map: core::marker::PhantomData<&'a M>,
-    },
-    /// The streamed per-nonzero fold (any map).
-    Generic { map: &'a M, coeffs: VirtRowCoeffs },
-}
-
-/// Splits a derived-domain point of a packed-source repetition into its
-/// `(instance, local)` coordinate slices for the given derived order.
-fn packed_source_point_split<'p>(
-    order: crate::f2map::PackedSourceOrder,
-    instance_bits: usize,
-    local_bits: usize,
-    point: &'p [Gf],
-) -> (&'p [Gf], &'p [Gf]) {
-    match order {
-        crate::f2map::PackedSourceOrder::LocalMajor => {
-            (&point[..instance_bits], &point[instance_bits..])
-        }
-        crate::f2map::PackedSourceOrder::InstanceMajor => {
-            (&point[local_bits..], &point[..local_bits])
-        }
-    }
-}
-
-impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
+impl<'a, M: circuit::linear_map::binary::VirtualMap> VirtualOpeningWeights<'a, M>
+    for BinaryAdjoint<'a, M>
+{
     /// The weights with every compact-tail column folded (the prover's form:
     /// its batching message reads the tail weights per cell).
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
-        Self::new_with_tail(map, points, etas, t_wh, false)
+        Self::new_with_tail(
+            map,
+            points,
+            etas,
+            t_wh,
+            false,
+            binary_equality,
+            cfg!(feature = "parallel"),
+        )
     }
 
     /// The verifier's form: an identity compact tail stays factored
@@ -11812,331 +11554,22 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
     /// as in [`Self::new`] (pinned by
     /// `verifier_basis_matches_streamed_basis_on_the_ecdsa_map`).
     fn new_factored_tail(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
-        Self::new_with_tail(map, points, etas, t_wh, true)
-    }
-
-    #[allow(clippy::arithmetic_side_effects)]
-    fn new_with_tail(
-        map: &'a M,
-        points: &[Vec<Gf>],
-        etas: &[Gf],
-        t_wh: usize,
-        factored_tail: bool,
-    ) -> Self {
-        use crate::poly::utils::build_eq_x_r_vec;
-        if let Some(parts) = map.chained_packed_source()
-            && parts.instances.is_power_of_two()
-            && parts.instances > 1
-            && parts.local.cols() > 1
-        {
-            let _g = tracing::info_span!("mqv:w_chained").entered();
-            let instances = parts.instances;
-            let k = instances.trailing_zeros() as usize;
-            let local_width = parts.local.cols() - 1;
-            let point_fits =
-                |pt: &Vec<Gf>| k < pt.len() && (1usize << (pt.len() - k)) >= parts.local.rows();
-            if let Some(live_cols) = local_width
-                .checked_mul(instances)
-                .and_then(|width| width.checked_add(1))
-                .filter(|&width| width <= map.cols())
-                && points.iter().all(point_fits)
-            {
-                debug_assert!(parts.local.rows() * instances <= map.rows());
-                let eq_inst_gf: Vec<Vec<Gf>> = points
-                    .iter()
-                    .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
-                    .collect();
-                let eq_loc: Vec<Vec<Gf>> = points
-                    .iter()
-                    .map(|pt| build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty"))
-                    .collect();
-                let scaled_sums = |local: &crate::f2map::PreparedVirtualMap| -> Vec<Vec<Gf>> {
-                    eq_loc
-                        .iter()
-                        .zip(etas.iter())
-                        .map(|(eq_loc_l, &eta)| {
-                            local
-                                .matrix()
-                                .columns()
-                                .map(|column| {
-                                    let sum = column
-                                        .row_indices()
-                                        .iter()
-                                        .fold(Gf::zero(), |acc, &lr| acc + eq_loc_l[lr]);
-                                    eta * sum
-                                })
-                                .collect()
-                        })
-                        .collect()
-                };
-                let s = scaled_sums(parts.local);
-                let eq_inst: Vec<Vec<PreparedGf128Mul>> = eq_inst_gf
-                    .iter()
-                    .map(|table| {
-                        table
-                            .iter()
-                            .copied()
-                            .map(|value| PreparedGf128Mul::new(value.into()))
-                            .collect()
-                    })
-                    .collect();
-                // Source instance `j` of the chain link feeds instance
-                // `j + 1`'s rows: rotate the instance tables by one.
-                let term = |inst_lo: usize,
-                            inst_hi: usize,
-                            shift: usize,
-                            local: &crate::f2map::PreparedVirtualMap| {
-                    let (col_lo, col_hi) =
-                        crate::f2map::ChainedPackedSourceMap::nonconstant_column_span(local);
-                    ExtraWeightTerm {
-                        inst_lo,
-                        inst_hi,
-                        eq_inst: eq_inst_gf
-                            .iter()
-                            .map(|table| {
-                                (inst_lo..inst_hi)
-                                    .map(|inst| PreparedGf128Mul::new(table[inst + shift].into()))
-                                    .collect()
-                            })
-                            .collect(),
-                        s: scaled_sums(local),
-                        col_lo,
-                        col_hi,
-                    }
-                };
-                let terms = [
-                    term(0, instances - 1, 1, parts.prev),
-                    term(0, 1, 0, parts.first),
-                    term(instances - 1, instances, 0, parts.last),
-                ];
-                // Column zero: the plain part sums each chunk's instance
-                // table to one; every boundary term adds its own
-                // instance-weighted constant-column sum.
-                let mut constant_weight = s.iter().fold(Gf::zero(), |acc, s_l| acc + s_l[0]);
-                for term in &terms {
-                    for (eq_l, s_l) in term.eq_inst.iter().zip(term.s.iter()) {
-                        if s_l[0] == Gf::zero() {
-                            continue;
-                        }
-                        for fixed in eq_l {
-                            constant_weight += Gf::from(fixed.mul(&s_l[0].into()));
-                        }
-                    }
-                }
-                let extra = terms.into_iter().filter(|term| !term.is_empty()).collect();
-                let mut corrections = Vec::new();
-                let mut affine_tail = None;
-                if let Some(tail) = map.chained_packed_source_tail() {
-                    let _g = tracing::info_span!("mqv:w_tail").entered();
-                    let coeffs = VirtRowCoeffs::new(points, etas, t_wh);
-                    let matrix = tail.map.matrix();
-                    let aliases_len = tail.aliases.len();
-                    assert!(aliases_len <= matrix.columns().len());
-                    let factored = factored_tail && tail.map.is_identity();
-                    let column_weight = |column| {
-                        if tail.map.is_identity() {
-                            return coeffs.coeff(tail.row_offset + column);
-                        }
-                        matrix.column(column).map_or(Gf::zero(), |col| {
-                            col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
-                                sum + coeffs.coeff(tail.row_offset + r)
-                            })
-                        })
-                    };
-                    let mut aliases = std::collections::BTreeMap::<usize, Gf>::new();
-                    for (tail_column, &source_column) in tail.aliases.iter().enumerate() {
-                        *aliases.entry(source_column).or_insert(Gf::zero()) +=
-                            column_weight(tail_column);
-                    }
-                    for (column, weight) in aliases {
-                        if let Some(last) = corrections
-                            .last_mut()
-                            .filter(|last: &&mut DenseWeightCorrection| column <= last.end() + 128)
-                        {
-                            last.weights.resize(column - last.start + 1, Gf::zero());
-                            last.weights[column - last.start] += weight;
-                        } else {
-                            corrections.push(DenseWeightCorrection {
-                                start: column,
-                                weights: vec![weight],
-                            });
-                        }
-                    }
-                    if factored {
-                        affine_tail = Some(AffineTailWeights {
-                            source_start: tail.source_offset,
-                            len: matrix.columns().len() - aliases_len,
-                            row_start: tail.row_offset + aliases_len,
-                            coeffs,
-                        });
-                    } else {
-                        // Collect the dense suffix directly into its final buffer.
-                        // P-256 has 1.2M tail columns; copying this table would add
-                        // a second large allocation and a serial memory pass.
-                        corrections.push(DenseWeightCorrection {
-                            start: tail.source_offset,
-                            weights: cfg_into_iter!(
-                                tail.aliases.len()..matrix.columns().len(),
-                                1 << 12
-                            )
-                            .map(column_weight)
-                            .collect(),
-                        });
-                    }
-                }
-                return Self::PackedSourceRepeated {
-                    local_width,
-                    live_cols,
-                    eq_inst,
-                    eq_inst_gf,
-                    instances,
-                    s,
-                    constant_weight,
-                    extra,
-                    corrections,
-                    affine_tail,
-                    _map: core::marker::PhantomData,
-                };
-            }
-        }
-        if let Some((local, instances)) = map.packed_source_repetition()
-            && instances.is_power_of_two()
-            && instances > 1
-            && local.cols() > 1
-        {
-            let k = instances.trailing_zeros() as usize;
-            let local_width = local.cols() - 1;
-            // Where the instance and local coordinates sit in a derived
-            // point: local-major keeps the instance in the low `k` bits,
-            // instance-major keeps the local row in the low
-            // `log₂ local_stride` bits (the rest of the point is exactly the
-            // instance). The factorization below is otherwise identical.
-            let order = map.packed_source_order();
-            let local_bits = local.rows().next_power_of_two().trailing_zeros() as usize;
-            let point_fits = |pt: &Vec<Gf>| match order {
-                crate::f2map::PackedSourceOrder::LocalMajor => {
-                    k < pt.len() && (1usize << (pt.len() - k)) >= local.rows()
-                }
-                crate::f2map::PackedSourceOrder::InstanceMajor => pt.len() == local_bits + k,
-            };
-            if let Some(live_cols) = local_width
-                .checked_mul(instances)
-                .and_then(|width| width.checked_add(1))
-                .filter(|&width| width <= map.cols())
-                && points.iter().all(point_fits)
-            {
-                // Padded global columns are not `(instance, local-column)`
-                // coordinates. Keep the structural boundary with the
-                // factorized representation so those packs evaluate to zero.
-                debug_assert!(local.rows() * instances <= map.rows());
-                let eq_inst_gf: Vec<Vec<Gf>> = points
-                    .iter()
-                    .map(|pt| {
-                        build_eq_x_r_vec(packed_source_point_split(order, k, local_bits, pt).0, &())
-                            .expect("k >= 1")
-                    })
-                    .collect();
-                let eq_inst: Vec<Vec<PreparedGf128Mul>> = eq_inst_gf
-                    .iter()
-                    .map(|table| {
-                        table
-                            .iter()
-                            .copied()
-                            .map(|value| PreparedGf128Mul::new(value.into()))
-                            .collect()
-                    })
-                    .collect();
-                let s: Vec<Vec<Gf>> = points
-                    .iter()
-                    .zip(etas.iter())
-                    .map(|(pt, &eta)| {
-                        let eq_loc = build_eq_x_r_vec(
-                            packed_source_point_split(order, k, local_bits, pt).1,
-                            &(),
-                        )
-                        .expect("local coords non-empty");
-                        local
-                            .matrix()
-                            .columns()
-                            .map(|column| {
-                                let sum = column
-                                    .row_indices()
-                                    .iter()
-                                    .fold(Gf::zero(), |acc, &lr| acc + eq_loc[lr]);
-                                eta * sum
-                            })
-                            .collect()
-                    })
-                    .collect();
-                // Column zero is shared by every repetition. The instance
-                // equality table sums to one, so its factored weight is just
-                // the sum of the local constant-column terms.
-                let constant_weight = s.iter().fold(Gf::zero(), |acc, s_l| acc + s_l[0]);
-                return Self::PackedSourceRepeated {
-                    local_width,
-                    live_cols,
-                    eq_inst,
-                    eq_inst_gf,
-                    instances,
-                    s,
-                    constant_weight,
-                    extra: Vec::new(),
-                    corrections: Vec::new(),
-                    affine_tail: None,
-                    _map: core::marker::PhantomData,
-                };
-            }
-        }
-        if let Some((local, instances)) = map.repetition()
-            && instances.is_power_of_two()
-            && instances > 1
-        {
-            let k = instances.trailing_zeros() as usize;
-            if points.iter().all(|pt| k < pt.len()) {
-                debug_assert_eq!(local.rows() << k, map.rows());
-                debug_assert_eq!(local.cols() << k, map.cols());
-                let eq_inst: Vec<Vec<Gf>> = points
-                    .iter()
-                    .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
-                    .collect();
-                let s: Vec<Vec<Gf>> = points
-                    .iter()
-                    .zip(etas.iter())
-                    .map(|(pt, &eta)| {
-                        let eq_loc =
-                            build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty");
-                        local
-                            .matrix()
-                            .columns()
-                            .map(|column| {
-                                let sum = column
-                                    .row_indices()
-                                    .iter()
-                                    .fold(Gf::zero(), |acc, &lr| acc + eq_loc[lr]);
-                                eta * sum
-                            })
-                            .collect()
-                    })
-                    .collect();
-                return Self::Repeated {
-                    instance_bits: k,
-                    eq_inst,
-                    s,
-                    _map: core::marker::PhantomData,
-                };
-            }
-        }
-        Self::Generic {
+        Self::new_with_tail(
             map,
-            coeffs: VirtRowCoeffs::new(points, etas, t_wh),
-        }
+            points,
+            etas,
+            t_wh,
+            true,
+            binary_equality,
+            cfg!(feature = "parallel"),
+        )
     }
 
     /// The plane engine ([`crate::virt_batch`]) for a packed-source
     /// repetition whose shape pays for it; `None` keeps the per-cell
     /// kernels. `F2Z_VIRT_PLANES=0` opts out (A/B; bit-identical messages
     /// either way).
-    fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes> {
+    fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes<'_>> {
         self.packed_source_planes_with(true)
     }
 
@@ -12145,7 +11578,7 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
     fn packed_source_planes_with(
         &self,
         plane_major: bool,
-    ) -> Option<crate::virt_batch::PackedSourcePlanes> {
+    ) -> Option<crate::virt_batch::PackedSourcePlanes<'_>> {
         let Self::PackedSourceRepeated {
             local_width,
             eq_inst_gf,
@@ -12170,193 +11603,10 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         Some(build(
             *local_width,
             *instances,
-            eq_inst_gf.clone(),
+            eq_inst_gf,
             s,
             *constant_weight,
         ))
-    }
-
-    /// Fills the 128 weights of source pack `pack`. Returns `false` when
-    /// the pack is structurally all-zero and may be skipped — exact: a
-    /// zero weight contributes nothing to either batching pass.
-    #[allow(clippy::arithmetic_side_effects)]
-    #[inline]
-    fn pack_weights(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
-        let base = pack << LOG_PACKING;
-        match self {
-            Self::Repeated {
-                instance_bits: k,
-                eq_inst,
-                s,
-                ..
-            } => {
-                if *k >= LOG_PACKING {
-                    // All 128 columns share one local column: hoist its
-                    // scaled sums (pass-fixed multipliers).
-                    let lc = base >> k;
-                    let inst0 = base & ((1usize << k) - 1);
-                    out.fill(Gf::zero());
-                    let mut live = false;
-                    for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
-                        let s_lc = s_l[lc];
-                        if s_lc == Gf::zero() {
-                            continue;
-                        }
-                        live = true;
-                        let fixed = PreparedGf128Mul::new(s_lc.into());
-                        for (target, &weight) in
-                            out.iter_mut().zip(eq_inst_l[inst0..inst0 + 128].iter())
-                        {
-                            *target += Gf::from(fixed.mul(&weight.into()));
-                        }
-                    }
-                    live
-                } else {
-                    let mask = (1usize << k) - 1;
-                    let mut live = false;
-                    for (slot, target) in out.iter_mut().enumerate() {
-                        let column = base | slot;
-                        let (lc, inst) = (column >> k, column & mask);
-                        let mut acc = Gf::zero();
-                        for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
-                            acc += eq_inst_l[inst] * s_l[lc];
-                        }
-                        live |= acc != Gf::zero();
-                        *target = acc;
-                    }
-                    live
-                }
-            }
-            Self::PackedSourceRepeated {
-                local_width,
-                live_cols,
-                eq_inst,
-                s,
-                constant_weight,
-                extra,
-                corrections,
-                affine_tail,
-                ..
-            } => {
-                out.fill(Gf::zero());
-                let end = (base + 128).min(*live_cols);
-                let mut column = base;
-                if column == 0 {
-                    out[0] = *constant_weight;
-                    column = 1;
-                }
-
-                // Nonconstant columns are instance-major. Split the pack only
-                // at instance boundaries so division and fixed-multiplier
-                // selection happen once per run, not once per source cell.
-                while column < end {
-                    let offset = column - 1;
-                    let instance = offset / *local_width;
-                    let local_offset = offset % *local_width;
-                    let run_len = (end - column).min(*local_width - local_offset);
-                    let targets = &mut out[column - base..column - base + run_len];
-                    for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
-                        let fixed = &eq_inst_l[instance];
-                        let source = &s_l[1 + local_offset..1 + local_offset + run_len];
-                        for (target, &value) in targets.iter_mut().zip(source) {
-                            *target += Gf::from(fixed.mul(&value.into()));
-                        }
-                    }
-                    for term in extra {
-                        term.accumulate(instance, local_offset, targets);
-                    }
-                    column += run_len;
-                }
-                for correction in corrections {
-                    correction.add_pack(pack, out);
-                }
-                if let Some(tail) = affine_tail {
-                    tail.add_pack(pack, out);
-                }
-                out.iter().any(|weight| *weight != Gf::zero())
-            }
-            Self::Generic { map, coeffs } => {
-                let mut live = false;
-                for (slot, target) in out.iter_mut().enumerate() {
-                    let weight = virtual_column_weight(*map, base | slot, coeffs);
-                    live |= weight != Gf::zero();
-                    *target = weight;
-                }
-                live
-            }
-        }
-    }
-
-    /// Source packs touched by chained nonconstant terms or compact-tail
-    /// corrections. Tail corrections can include the shared constant column;
-    /// the SHA constant contribution is already in `constant_weight`.
-    #[allow(clippy::arithmetic_side_effects)]
-    fn extra_packs(&self) -> Vec<usize> {
-        let Self::PackedSourceRepeated {
-            local_width,
-            extra,
-            corrections,
-            ..
-        } = self
-        else {
-            return Vec::new();
-        };
-        let mut packs = Vec::new();
-        for term in extra {
-            if term.is_empty() {
-                continue;
-            }
-            for instance in term.inst_lo..term.inst_hi {
-                let first = 1 + instance * local_width + term.col_lo;
-                let last = 1 + instance * local_width + term.col_hi - 1;
-                packs.extend((first >> LOG_PACKING)..=(last >> LOG_PACKING));
-            }
-        }
-        for correction in corrections {
-            if !correction.weights.is_empty() {
-                packs.extend(
-                    (correction.start >> LOG_PACKING)..=((correction.end() - 1) >> LOG_PACKING),
-                );
-            }
-        }
-        packs.sort_unstable();
-        packs.dedup();
-        packs
-    }
-
-    /// The chained terms and compact tail's share of this pack's weights.
-    /// Returns `false` when it is all zero.
-    #[allow(clippy::arithmetic_side_effects)]
-    fn pack_weights_extra(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
-        out.fill(Gf::zero());
-        let Self::PackedSourceRepeated {
-            local_width,
-            live_cols,
-            extra,
-            corrections,
-            ..
-        } = self
-        else {
-            return false;
-        };
-        let base = pack << LOG_PACKING;
-        let end = (base + 128).min(*live_cols);
-        let mut column = base.max(1);
-        while column < end {
-            let offset = column - 1;
-            let instance = offset / *local_width;
-            let local_offset = offset % *local_width;
-            let run_len = (end - column).min(*local_width - local_offset);
-            let targets = &mut out[column - base..column - base + run_len];
-            for term in extra {
-                term.accumulate(instance, local_offset, targets);
-            }
-            column += run_len;
-        }
-        for correction in corrections {
-            correction.add_pack(pack, out);
-        }
-        out.iter().any(|weight| *weight != Gf::zero())
     }
 
     /// Adds the extra terms' contribution to the batching message `hs`
@@ -12476,19 +11726,32 @@ impl<'a, M: crate::f2map::VirtualMap> VirtColumnWeights<'a, M> {
         }
     }
 }
-
+trait TailOpeningPlanes {
+    fn planes(&self) -> AffineTailPlanes;
+}
+impl TailOpeningPlanes for circuit::linear_map::binary_adjoint::AffineTailWeights {
+    fn planes(&self) -> AffineTailPlanes {
+        AffineTailPlanes::new(
+            self.source_start,
+            self.len,
+            self.row_start,
+            &self.coeffs.eq_rs,
+            &self.coeffs.scaled_zc,
+        )
+    }
+}
 /// The batching message computed by streaming source columns of the CSC map.
 /// For source cell `j`, `W_j = Σ_{r:M[r,j]=1} E_r`; bit plane `i`
 /// contributes `bit_i(W_j) · pack(f)[j>>7] · A(e_{j&127})`.
 #[allow(clippy::arithmetic_side_effects)]
 fn virtual_hs_fold<M>(
     map: &M,
-    weights: &VirtColumnWeights<'_, M>,
+    weights: &BinaryAdjoint<'_, M>,
     p_msg: &[Gf128],
     a_cols: &[Gf; 128],
 ) -> Box<[Gf; 128]>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     // Keep the per-chunk 128-element accumulator comfortably below the
     // production source vector: at the 2^16 SHA batch this bounds the merge
@@ -12548,19 +11811,19 @@ where
 #[allow(clippy::arithmetic_side_effects)]
 fn virtual_a_prime<M>(
     map: &M,
-    weights: &VirtColumnWeights<'_, M>,
+    weights: &BinaryAdjoint<'_, M>,
     rho: &[Gf],
     a_cols: &[Gf; 128],
     n_packs: usize,
 ) -> Vec<Gf>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     debug_assert_eq!(map.cols(), n_packs << LOG_PACKING);
     let phi_tables = phi_byte_tables(rho, Gf::one());
     let mut result = vec![Gf::ZERO; n_packs];
     let live_packs = match weights {
-        VirtColumnWeights::PackedSourceRepeated {
+        BinaryAdjoint::PackedSourceRepeated {
             live_cols,
             corrections,
             affine_tail,
@@ -12574,7 +11837,7 @@ where
             .min(n_packs),
         _ => n_packs,
     };
-    let dense_packed_source = matches!(weights, VirtColumnWeights::PackedSourceRepeated { .. });
+    let dense_packed_source = matches!(weights, BinaryAdjoint::PackedSourceRepeated { .. });
     cfg_iter_mut!(&mut result[..live_packs])
         .enumerate()
         .for_each(|(pack, output)| {
@@ -12622,12 +11885,12 @@ const VERIFIER_TASK_PACKS: usize = 1 << 8;
 /// shape, or the plane engine opted out, takes [`virtual_a_prime`] itself.
 fn verifier_a_prime<M>(
     map: &M,
-    weights: &VirtColumnWeights<'_, M>,
+    weights: &BinaryAdjoint<'_, M>,
     rho: &[Gf],
     n_packs: usize,
 ) -> Vec<Gf>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     let planes = {
         let _g = tracing::info_span!("mqv:vplanes").entered();
@@ -12652,7 +11915,7 @@ where
             VERIFIER_TASK_PACKS,
         );
     }
-    if let VirtColumnWeights::PackedSourceRepeated {
+    if let BinaryAdjoint::PackedSourceRepeated {
         affine_tail: Some(tail),
         ..
     } = weights
@@ -12681,7 +11944,7 @@ struct AdjointBatchProverReduction<'a, M> {
 
 impl<M> ModQLigProverReduction for AdjointBatchProverReduction<'_, M>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     type Proof = Box<[Gf; 128]>;
 
@@ -12696,7 +11959,7 @@ where
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
         let weights = {
             let _g = tracing::info_span!("mqv:wprep").entered();
-            VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
+            BinaryAdjoint::new(self.map, points, &etas, self.derived_row_bits)
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         debug_assert_eq!(hint.p_msg.len(), 1usize << self.source_packed_vars);
@@ -12789,7 +12052,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
@@ -12833,7 +12096,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q(q, q_bits, row_weights_q)?;
     let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
@@ -12879,7 +12142,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
     checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
@@ -12925,7 +12188,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<M
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
@@ -12967,7 +12230,7 @@ fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus<M, S>(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security(
@@ -13008,7 +12271,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modul
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)
@@ -13072,7 +12335,7 @@ where
             hint_f,
             h_layout,
             &hint_f.rows,
-            Some(&hint_f.packed_cols),
+            Some(hint_f.packed_cols()),
             chunks,
             alpha,
             pc,
@@ -13155,7 +12418,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_with_ood<R, M>(
 ) -> Result<(), FlockRsError>
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
@@ -13205,7 +12468,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q(q, q_bits, row_weights_q)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
@@ -13260,7 +12523,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
     checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
@@ -13314,7 +12577,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
@@ -13365,7 +12628,7 @@ fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off<M, S, 
     read_off_accepts: C,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
     C: Fn(&[u128], usize, usize) -> bool,
 {
@@ -13412,7 +12675,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
     C: Fn(&[u128], usize, usize) -> bool,
 {
@@ -13708,11 +12971,11 @@ mod tests {
     /// Test-only wrapper that forces the ordinary virtual tail for an identity
     /// matrix, so source-parity coverage exercises the one-limb-at-a-time
     /// general path as well as the identity shortcut used in production.
-    struct GeneralPathMap(crate::f2map::PreparedVirtualMap);
+    struct GeneralPathMap(circuit::linear_map::binary::PreparedVirtualMap);
 
-    impl crate::f2map::VirtualMap for GeneralPathMap {
+    impl circuit::linear_map::binary::VirtualMap for GeneralPathMap {
         type ColumnRows<'a>
-            = <crate::f2map::PreparedVirtualMap as crate::f2map::VirtualMap>::ColumnRows<'a>
+            = <circuit::linear_map::binary::PreparedVirtualMap as circuit::linear_map::binary::VirtualMap>::ColumnRows<'a>
         where
             Self: 'a;
 
@@ -13737,7 +13000,7 @@ mod tests {
         }
 
         fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
-            crate::f2map::VirtualMap::column_rows(&self.0, column)
+            circuit::linear_map::binary::VirtualMap::column_rows(&self.0, column)
         }
     }
 
@@ -13789,16 +13052,47 @@ mod tests {
         assert!(!challenger.verify_pow(1, 0));
     }
 
+    #[test]
+    fn shared_rows_and_lazy_columns_preserve_commitment_storage() {
+        let p = IntegerMatrixLayout {
+            row_vars: 4,
+            col_vars: 6,
+            word_bits: 32,
+        };
+        let (pc, _) = lig_configs(
+            packed_vars(&p),
+            LigConfig::Adhoc {
+                log_batch: 2,
+                log_inv_rate: 2,
+            },
+        )
+        .unwrap();
+        let data: Vec<_> = (0..p.cells()).map(|i| i as u128).collect();
+        let mut rows = std::sync::Arc::new(repack_leaf_bits(&p, &data));
+        let hint = commit_rs_ligerito_shared_rows(&p, rows.clone(), &pc);
+        assert!(std::sync::Arc::ptr_eq(&rows, &hint.rows));
+        assert!(hint.packed_cols.get().is_none());
+        assert!(hint.matches_rows(&std::sync::Arc::new((*rows).clone())));
+        let expected = crate::ligerito::pack_columns_from_rows(&p, &rows);
+        assert_eq!(hint.packed_cols(), expected);
+        assert_eq!(hint.packed_cols().as_ptr(), hint.packed_cols().as_ptr());
+        std::sync::Arc::make_mut(&mut rows)[0][0] ^= 1;
+        assert!(!hint.matches_rows(&rows));
+        assert_eq!(hint.packed_cols(), expected);
+    }
+
     /// Supplying canonical row weights densely, as validated chunk-major
     /// limbs, or through an on-demand generator must produce the same proof
     /// and Fiat–Shamir continuation.  The W=32 shape exercises two chunks
     /// under the fixed 100-bit test modulus.
     #[test]
     fn virtual_runtime_dense_and_weight_chunks_are_transcript_identical() {
-        use crate::{
-            f2map::{PreparedVirtualMap, cell_count},
-            pcs::{FQ_BITS, FQ_MOD, GeneratedModQWeightSource, fq_add, fq_mul},
-            sparse_matrix::SparseMatrix,
+        use {
+            crate::{
+                f2map::cell_count,
+                pcs::{FQ_BITS, FQ_MOD, GeneratedModQWeightSource, fq_add, fq_mul},
+            },
+            circuit::linear_map::binary::PreparedVirtualMap,
         };
 
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -13821,17 +13115,13 @@ mod tests {
         let hint = commit_rs_ligerito(&p, &data, &pc);
         let cells = cell_count(&p);
         let map = GeneralPathMap(
-            PreparedVirtualMap::new(
-                SparseMatrix::try_from_binary_csc(
-                    cells,
-                    (0..=cells).collect(),
-                    (0..cells).collect(),
-                )
-                .unwrap(),
+            PreparedVirtualMap::from_implicit(
+                CscMatrix::try_from_binary_csc(cells, (0..=cells).collect(), (0..cells).collect())
+                    .unwrap(),
             )
             .unwrap(),
         );
-        assert!(!crate::f2map::VirtualMap::is_identity(&map));
+        assert!(!circuit::linear_map::binary::VirtualMap::is_identity(&map));
 
         let row_weights = (0..p.rows())
             .map(|row| {
@@ -13995,8 +13285,7 @@ mod tests {
     /// implies an all-zero pack.
     #[test]
     fn virtual_pack_weights_match_generic() {
-        use crate::f2map::{PreparedVirtualMap, RepeatedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{PreparedVirtualMap, RepeatedVirtualMap};
 
         let local_rows = 32usize;
         let local_cols = 16usize;
@@ -14018,12 +13307,13 @@ mod tests {
             })
             .collect();
         let local =
-            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+            PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap();
 
         for instances in [16usize, 256] {
             let repeated = RepeatedVirtualMap::new(local.clone(), instances).unwrap();
-            let vars = crate::f2map::VirtualMap::rows(&repeated).trailing_zeros() as usize;
+            let vars =
+                circuit::linear_map::binary::VirtualMap::rows(&repeated).trailing_zeros() as usize;
             let t_wh = vars / 2;
             let points: Vec<Vec<Gf>> = (0..2u64)
                 .map(|l| {
@@ -14033,16 +13323,16 @@ mod tests {
                 })
                 .collect();
             let etas = vec![sample(0xE1), sample(0xE2)];
-            let structured = VirtColumnWeights::new(&repeated, &points, &etas, t_wh);
+            let structured = BinaryAdjoint::new(&repeated, &points, &etas, t_wh);
             assert!(
-                matches!(structured, VirtColumnWeights::Repeated { .. }),
+                matches!(structured, BinaryAdjoint::Repeated { .. }),
                 "power-of-two repetition must take the factored path"
             );
-            let generic = VirtColumnWeights::Generic {
+            let generic = BinaryAdjoint::Generic {
                 map: &repeated,
-                coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
             };
-            let n_packs = crate::f2map::VirtualMap::cols(&repeated) >> LOG_PACKING;
+            let n_packs = circuit::linear_map::binary::VirtualMap::cols(&repeated) >> LOG_PACKING;
             assert!(n_packs >= 2);
             for pack in 0..n_packs {
                 let mut fast = [Gf::zero(); 128];
@@ -14063,8 +13353,7 @@ mod tests {
     /// match the generic CSC walk across instance boundaries and padding.
     #[test]
     fn virtual_packed_source_weights_match_generic() {
-        use crate::f2map::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
 
         let local_rows = 29usize;
         let local_cols = 16usize; // 15-wide instance runs cross 128-cell packs.
@@ -14086,10 +13375,10 @@ mod tests {
             })
             .collect();
         let local =
-            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+            PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap();
 
-        use crate::f2map::PackedSourceOrder;
+        use circuit::linear_map::binary::PackedSourceOrder;
         for (instances, order) in [
             (4usize, PackedSourceOrder::LocalMajor),
             (256, PackedSourceOrder::LocalMajor),
@@ -14121,14 +13410,14 @@ mod tests {
                     })
                     .collect();
                 let etas = vec![sample(0xEA), sample(0xEB)];
-                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+                let structured = BinaryAdjoint::new(&map, &points, &etas, t_wh);
                 assert!(
-                    matches!(structured, VirtColumnWeights::PackedSourceRepeated { .. }),
+                    matches!(structured, BinaryAdjoint::PackedSourceRepeated { .. }),
                     "packed source repetition must take its factored path ({order:?})"
                 );
-                let generic = VirtColumnWeights::Generic {
+                let generic = BinaryAdjoint::Generic {
                     map: &map,
-                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                    coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
                 };
                 let n_packs = cols >> LOG_PACKING;
                 for pack in 0..n_packs {
@@ -14194,8 +13483,8 @@ mod tests {
     /// widths) local layouts, one and two chunks, padded suffixes.
     #[test]
     fn virtual_planes_match_cellwise() {
-        use crate::f2map::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
+
         use crate::virt_batch::PackedSourcePlanes;
 
         for (local_rows, local_width, instances) in [
@@ -14222,10 +13511,9 @@ mod tests {
                     rows.into_iter().map(|row| (row, true)).collect()
                 })
                 .collect();
-            let local = PreparedVirtualMap::new(
-                SparseMatrix::try_from_columns(local_rows, columns).unwrap(),
-            )
-            .unwrap();
+            let local =
+                PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
+                    .unwrap();
             let rows = (local_rows * instances).next_power_of_two();
             let live_cols = 1 + local_width * instances;
             let cols = live_cols.next_power_of_two().max(128);
@@ -14246,8 +13534,8 @@ mod tests {
                     })
                     .collect();
                 let etas: Vec<Gf> = (0..chunks as u64).map(|c| sample(0xE0 + c)).collect();
-                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
-                let VirtColumnWeights::PackedSourceRepeated {
+                let structured = BinaryAdjoint::new(&map, &points, &etas, t_wh);
+                let BinaryAdjoint::PackedSourceRepeated {
                     eq_inst_gf,
                     s,
                     constant_weight,
@@ -14259,13 +13547,13 @@ mod tests {
                 let planes = PackedSourcePlanes::new(
                     local_width,
                     instances,
-                    eq_inst_gf.clone(),
+                    eq_inst_gf,
                     s,
                     *constant_weight,
                 );
-                let generic = VirtColumnWeights::Generic {
+                let generic = BinaryAdjoint::Generic {
                     map: &map,
-                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                    coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
                 };
                 let p_msg: Vec<Gf128> = (0..n_packs)
                     .map(|pack| sample(0xB100 + pack as u64))
@@ -14303,15 +13591,15 @@ mod tests {
     /// extra terms, and the per-pack kernels) all equal the generic CSC walk.
     #[test]
     fn virtual_chained_weights_match_generic() {
-        use crate::f2map::{ChainedPackedSourceMap, PreparedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{ChainedPackedSourceMap, PreparedVirtualMap};
+
         use crate::virt_batch::PackedSourcePlanes;
 
         let local_rows = 40usize;
         let width = 600usize; // ≥ 512: the plane engine is eligible.
         let local_cols = width + 1;
         let prepared = |columns: Vec<Vec<(usize, bool)>>| {
-            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+            PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap()
         };
         let rows_of = |seed: usize, count: usize, lo: usize, hi: usize| -> Vec<(usize, bool)> {
@@ -14401,8 +13689,8 @@ mod tests {
                     })
                     .collect();
                 let etas: Vec<Gf> = (0..chunks as u64).map(|c| sample(0xE8 + c)).collect();
-                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
-                let VirtColumnWeights::PackedSourceRepeated {
+                let structured = BinaryAdjoint::new(&map, &points, &etas, t_wh);
+                let BinaryAdjoint::PackedSourceRepeated {
                     eq_inst_gf,
                     s,
                     constant_weight,
@@ -14415,9 +13703,9 @@ mod tests {
                 // `first` reads only the constant column: its weight lives
                 // in `constant_weight`, so only `prev` and `last` remain.
                 assert_eq!(extra.len(), 2, "prev and last");
-                let generic = VirtColumnWeights::Generic {
+                let generic = BinaryAdjoint::Generic {
                     map: &map,
-                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh),
+                    coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
                 };
                 for pack in 0..n_packs {
                     let mut fast = [Gf::zero(); 128];
@@ -14434,13 +13722,8 @@ mod tests {
                     .map(|pack| sample(0xB300 + pack as u64))
                     .collect();
                 let a_cols = crate::dual_basis::dual_basis_cols();
-                let planes = PackedSourcePlanes::new(
-                    width,
-                    instances,
-                    eq_inst_gf.clone(),
-                    s,
-                    *constant_weight,
-                );
+                let planes =
+                    PackedSourcePlanes::new(width, instances, eq_inst_gf, s, *constant_weight);
                 let expect_hs = virtual_hs_fold(&map, &generic, &p_msg, &a_cols);
                 assert_eq!(
                     virtual_hs_fold(&map, &structured, &p_msg, &a_cols),
@@ -14486,9 +13769,9 @@ mod tests {
 
     #[test]
     fn virtual_hs_and_a_prime_match_cellwise() {
-        use crate::{
-            f2map::{PreparedVirtualMap, cell_count, cell_row_bits},
-            sparse_matrix::SparseMatrix,
+        use {
+            crate::f2map::{cell_count, cell_row_bits},
+            circuit::linear_map::binary::PreparedVirtualMap,
         };
 
         let f_layout = IntegerMatrixLayout {
@@ -14517,7 +13800,7 @@ mod tests {
                 l
             })
             .collect();
-        let matrix = SparseMatrix::try_from_rows(
+        let matrix = CscMatrix::try_from_rows(
             n_f,
             lists
                 .into_iter()
@@ -14535,8 +13818,8 @@ mod tests {
             })
             .collect();
         let etas = vec![sample(0xA1), sample(0xA2)];
-        let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh);
-        let weights = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+        let coeffs = BinaryRowWeights::new(&points, &etas, t_wh, binary_equality);
+        let weights = BinaryAdjoint::new(&map, &points, &etas, t_wh);
         let a_cols = crate::dual_basis::dual_basis_cols();
         let n_packs = n_f >> LOG_PACKING;
         let p_msg: Vec<Gf128> = (0..n_packs).map(|y| sample(0xB000 + y as u64)).collect();
@@ -14544,7 +13827,7 @@ mod tests {
         // Materialized weights (the old `mqv:wcoef` + `mqv:wtbl`).
         let mut w_tbl = vec![Gf::zero(); n_f];
         for (j, column) in map.matrix().columns().enumerate() {
-            for &row in column.row_indices() {
+            for &row in column.indices() {
                 w_tbl[j] += coeffs.coeff(row);
             }
         }
@@ -14584,6 +13867,21 @@ mod tests {
     /// 2-chunk (W=32) regimes, with a local 𝔽_q (q = 2^100 − 15).
     #[test]
     fn mle_eval_mod_q_ligerito_roundtrips() {
+        // This test changes process-wide protocol dispatch settings. A mutex
+        // cannot protect other tests that simply read those settings.
+        const CHILD: &str = "F2Z_QUAD_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "ligerito_flock::tests::mle_eval_mod_q_ligerito_roundtrips",
+                ])
+                .env(CHILD, "1")
+                .status()
+                .unwrap();
+            assert!(status.success(), "isolated quad test failed");
+            return;
+        }
         use crate::pcs::{mod_q_chunk_width, mod_q_num_chunks};
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         const Q: u128 = (1u128 << 100) - 15;

@@ -38,6 +38,10 @@
 #![recursion_limit = "512"]
 
 pub(crate) mod common;
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
 use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 use std::{collections::HashMap, fs::File, hint::black_box, io::BufWriter, process::Command};
@@ -1046,6 +1050,7 @@ fn run_once(
         .expect("verify");
     }
     drop(root_scope);
+    common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
     // Provenance scans are deliberately outside all reported timing
     // boundaries; they validate the trial but are not protocol work.
     assert_eq!(prepared.statement_digest(), &circuit.statement_digest());
@@ -1084,6 +1089,9 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
+    #[cfg(feature = "bench-peak-memory")]
+    let _heap_report = common::heap_run::Report::start();
+
     common::cli::EnvironmentCli::parse();
     let env: Env = common::cli::environment();
     let reps = common::reps(Some("F2Z_MULTISWAP_REPS"), 5);
@@ -1214,6 +1222,7 @@ fn main() {
         }
         if rep != 0 {
             witness_samples.push(timing.witness_ms);
+            common::print_regression_phases(&timing.prove_phases);
             prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
             verifier.record_verify(timing.verify_ms, &timing.verify_phases);
             last_proof = Some(proof);

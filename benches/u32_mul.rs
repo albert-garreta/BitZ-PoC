@@ -9,7 +9,7 @@
 //! transcript-sampled Step-2 prime (commit-before-prime, Zaratan order),
 //! Spartan over that runtime field, bitification, and the F2Z opening,
 //! re-run per repetition. Witness generation and relation preparation are
-//! excluded and reported one-time. `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule`
+//! excluded from `prove_ms`; each trial reports witness-through-proof separately. `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule`
 //! selects the security profile (default `Lambda100`; the two-prime
 //! `Limber114` profile is MultiSwap-only and is rejected here); the
 //! canonical Spartan outer reduction uses the K=3 univariate-prefix skip.
@@ -43,7 +43,7 @@ use f2z::ligerito_flock::FlockCommitHint;
 use f2z::pcs::mod_q_num_chunks;
 use f2z::piop::spartan::{
     IopSecurityProfile, PreparedU32MulRelation, PrimePolicy, SpartanF2zError,
-    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulProof, U32MulWitness,
+    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulLayout, U32MulProof, U32MulWitness,
     commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
 };
 use f2z::transcript::Blake3Transcript;
@@ -124,8 +124,6 @@ fn peak_mib() -> f64 {
 
 use common::cli::BenchmarkPass;
 
-
-
 fn f2z_width() -> U32MulF2zWidth {
     common::cli::value(
         "F2Z_MUL_WORD_BITS",
@@ -142,8 +140,11 @@ const PROTOCOL_LABEL: &str = "skip-k3";
 const STRATEGY_LABEL: &str = "delayed-barrett";
 
 fn exponents() -> Vec<usize> {
-    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
-        .unwrap_or_else(|| (15..=25).collect())
+    common::shape_values(
+        None,
+        clap::builder::RangedU64ValueParser::<usize>::new().range(15..),
+    )
+    .unwrap_or_else(|| (15..=25).collect())
 }
 
 /// One end-to-end prove: bit-pack + commit (Step 1) + the combined proof.
@@ -165,6 +166,76 @@ fn prove_e2e(
     (proof, commitment_hint)
 }
 
+fn make_witness(count: usize, width: U32MulF2zWidth, seed: u64) -> U32MulWitness {
+    let mut rng = StdRng::seed_from_u64(seed);
+    U32MulWitness::from_fn_with_f2z_width(count, width, |_| (rng.random(), rng.random()))
+        .expect("valid u32 witness")
+}
+
+struct TrialTiming {
+    proof: U32MulProof,
+    hint: FlockCommitHint,
+    witness_ms: f64,
+    commit_ms: f64,
+    prove_ms: f64,
+    verify_ms: f64,
+    prove_phases: Vec<(String, f64)>,
+    verify_phases: Vec<(String, f64)>,
+}
+fn run_trial(
+    relation: &PreparedU32MulRelation,
+    count: usize,
+    width: U32MulF2zWidth,
+    seed: u64,
+    trial: &str,
+) -> TrialTiming {
+    let recording = f2z::observability::Recording::start(Vec::new()).expect("start u32 trial");
+    let e2e = tracing::info_span!("benchmark:witness_to_proof").entered();
+    let witness =
+        tracing::info_span!("benchmark:witness").in_scope(|| make_witness(count, width, seed));
+    let (proof, hint) = prove_e2e(relation, &witness);
+    drop(e2e);
+    let mut verifier_transcript = Blake3Transcript::new();
+    tracing::info_span!("benchmark:verification")
+        .in_scope(|| verify_u32_mul(&mut verifier_transcript, relation, &hint.commitment, &proof))
+        .expect("combined verification succeeds");
+    common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &verifier_transcript);
+    let intervals = recording.intervals().expect("query u32 trial");
+    let witness_ms = common::span_ms(&intervals, "benchmark:witness");
+    let commit_ms = common::span_ms(&intervals, "benchmark:commit");
+    let prove_ms = common::span_ms(&intervals, "benchmark:proving");
+    let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+    let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+    let verify_phases =
+        f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
+    if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+        let gkr = prove_phases
+            .iter()
+            .find(|(n, _)| n == "mc:forest")
+            .map_or(0.0, |(_, v)| 1000.0 * v);
+        let bytes = proof.spartan_payload_elements() * 16
+            + (proof.grinding_nonce_count(relation.security()) - proof.f2z().grinding_nonces.len())
+                * 8
+            + proof.f2z().to_bytes().len();
+        println!(
+            "PROVER_TRIAL {}",
+            serde_json::json!({"trial":trial,"verified":true,
+            "e2e_ms":common::span_ms(&intervals,"benchmark:witness_to_proof"),"prove_ms":prove_ms,
+            "witness_ms":witness_ms,"verify_ms":verify_ms,"gkr_ms":gkr,"proof_bytes":bytes})
+        );
+    }
+    TrialTiming {
+        proof,
+        hint,
+        witness_ms,
+        commit_ms,
+        prove_ms,
+        verify_ms,
+        prove_phases,
+        verify_phases,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn bench_exponent<P: IopSecurityProfile>(
     exponent: usize,
@@ -179,25 +250,19 @@ fn bench_exponent<P: IopSecurityProfile>(
         .checked_shl(u32::try_from(exponent).expect("exponent fits u32"))
         .expect("multiplication domain fits usize");
     let shape_seed = root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-    let mut rng = StdRng::seed_from_u64(shape_seed);
-
-    // Witness generation (excluded from prove).
-    let (witness, started) = f2z::observability::measure(
-        tracing::info_span!("u32_mul:witness"),
-        || U32MulWitness::from_fn_with_f2z_width(multiplications, f2z_width, |_| {
-        (rng.random::<u32>(), rng.random::<u32>())
-    })
-    .expect("valid u32 multiplication witness"),
-    ).expect("measure completed operation");
-    let witness_ms = started.as_secs_f64() * 1e3;
-    let layout = *witness.layout();
+    let layout =
+        U32MulLayout::new_with_f2z_width(multiplications, f2z_width).expect("valid layout");
     let params = layout.f2z_params();
 
     // One-time public preprocessing (excluded from prove): q-independent
     // exact matrices plus the instantiated runtime-prime security profile.
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording =
+        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("u32_mul:started").entered();
-    let relation = match PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
+    let relation = match PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(
+        layout,
+        common::ligerito_selection(P::LIGERITO_TARGET_BITS),
+    ) {
         Ok(relation) => relation,
         Err(error @ (SpartanF2zError::Profile(_) | SpartanF2zError::UnsupportedProfile)) => {
             println!();
@@ -209,22 +274,30 @@ fn bench_exponent<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
-    let setup_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "u32_mul:started").expect("query completed operation") }.as_secs_f64() * 1e3;
-    println!("LIGERITO_CONFIG {}", common::ligerito_report(relation.ligerito_configuration(), relation.security().ood));
+    let setup_ms = {
+        drop(started);
+        f2z::observability::duration(
+            &started_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "u32_mul:started",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
+    println!(
+        "LIGERITO_CONFIG {}",
+        common::ligerito_report(relation.ligerito_configuration(), relation.security().ood)
+    );
     let profile_name = relation.security().profile_name;
     let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
     let f2z_chunks = mod_q_num_chunks(&params, q_bits);
 
-    // Excluded warm-up. This is also the first end-to-end correctness check.
-    let (warm_proof, warm_hint) = prove_e2e(&relation, &witness);
-    let mut verifier_transcript = Blake3Transcript::new();
-    verify_u32_mul(
-        &mut verifier_transcript,
-        &relation,
-        &warm_hint.commitment,
-        &warm_proof,
-    )
-    .expect("warm-up combined verification succeeds");
+    // First witness/commit/prove after setup, reported separately from samples.
+    let warm = run_trial(&relation, multiplications, f2z_width, shape_seed, "warmup");
+    let witness_ms = warm.witness_ms;
+    let (warm_proof, warm_hint) = (warm.proof, warm.hint);
     let ligerito_log_inv_rate = warm_hint.commitment.params.log_inv_rate;
     let ligerito_initial_k = warm_hint.commitment.params.log_batch_size;
     let ligerito_hash = warm_hint.commitment.params.merkle_hash;
@@ -237,27 +310,16 @@ fn bench_exponent<P: IopSecurityProfile>(
         let mut verifier = common::StepSamples::default();
         let mut last_proof = None;
         for sample_index in 0..reps {
-
-            let recording = f2z::observability::Recording::start(Vec::new()).expect("start u32 trial");
-            let (proof, commitment_hint) = prove_e2e(&relation, &witness);
-
-            let mut verifier_transcript = Blake3Transcript::new();
-            let verification = tracing::info_span!("benchmark:verification").entered();
-            verify_u32_mul(
-                &mut verifier_transcript,
-                &relation,
-                &commitment_hint.commitment,
-                &proof,
-            )
-            .expect("combined verification succeeds");
-            drop(verification);
-            let intervals = recording.intervals().expect("query u32 trial");
-            let commit_ms = common::span_ms(&intervals, "benchmark:commit");
-            let prove_ms = common::span_ms(&intervals, "benchmark:proving");
-            let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-            let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
-            let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
-
+            let TrialTiming {
+                proof,
+                hint: _,
+                witness_ms: _,
+                commit_ms,
+                prove_ms,
+                verify_ms,
+                prove_phases,
+                verify_phases,
+            } = run_trial(&relation, multiplications, f2z_width, shape_seed, "sample");
             println!(
                 "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
                 params.word_bits,
@@ -265,6 +327,7 @@ fn bench_exponent<P: IopSecurityProfile>(
                 params.col_vars,
                 sample_index + 1,
             );
+            common::print_regression_phases(&prove_phases);
             prover.record_prove(prove_ms, commit_ms, &prove_phases);
             verifier.record_verify(verify_ms, &verify_phases);
             black_box(&proof);
@@ -280,6 +343,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         // This proof runs only in the explicit memory pass used by the runner.
         // `both` retains the old direct `cargo bench` behavior for convenience.
 
+        let witness = make_witness(multiplications, f2z_width, shape_seed);
         let live_before_prove = live_mib();
         reset_peak();
         let (peak_proof, peak_hint) = prove_e2e(&relation, &witness);
@@ -339,7 +403,10 @@ fn bench_exponent<P: IopSecurityProfile>(
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
             extra: vec![
-            common::ligerito_identity(relation.ligerito_configuration(), relation.security().ood),
+                common::ligerito_identity(
+                    relation.ligerito_configuration(),
+                    relation.security().ood,
+                ),
                 ("profile".into(), profile_name.into()),
                 ("pass".into(), pass.as_str().into()),
                 ("multiplications".into(), multiplications.to_string()),

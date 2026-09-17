@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "d9ea2ad3fd1bce6e59aff5fe9290fddc682e634e",
+  "tracked_baseline_dirty": false,
+  "machine": "ARM64 MacBook Pro",
+  "os": "Darwin 25.5.0",
+  "rust": "1.98.1 (48a229cea 2026-09-01)",
+  "llvm": "22.1.8",
+  "target": "aarch64-apple-darwin",
+  "rayon_threads": [
+    1,
+    4
+  ],
+  "graph_samples": 100,
+  "graph_warmups": 5,
+  "graph_process_repeats": 3,
+  "proof_samples": 25,
+  "proof_warmups": 2,
+  "proof_process_repeats": 3,
+  "disputed_proof_samples": 100,
+  "disputed_proof_process_repeats": 4,
+  "graph_profile": "release, default codegen, no allocator instrumentation",
+  "proof_profile": "release, lto=true, codegen-units=1",
+  "memory_profile": "separate bench-memory build",
+  "remote_runs": false
+}

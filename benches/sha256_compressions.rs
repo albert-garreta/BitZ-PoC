@@ -70,24 +70,26 @@ use std::{
     process::Command,
 };
 
-use f2z::{
-    f2map::VirtualMap,
-    observability::Interval,
-    piop::spartan::{
-        IopSecurityProfile, PreparedSha256CompressionBatch, PrimePolicy,
-        SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS, SHA256_DEFAULT_INNER_PREFIX_VARS,
-        SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS, SHA256_INNER_PREFIX_MAX_VARS,
-        SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput,
-        Sha256CompressionStatement, Sha256ConstraintError, Sha256OpeningLayout, SpartanField,
-        commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
-        prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-        prepare_sha256_compression_batch_with_profile_and_layout,
-        prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
-        verify_sha256_compressions_with_config,
-    },
-    transcript::Blake3Transcript,
-};
 use serde_json::{Value, json};
+use {
+    circuit::linear_map::binary::VirtualMap,
+    f2z::{
+        observability::Interval,
+        piop::spartan::{
+            IopSecurityProfile, PreparedSha256CompressionBatch, PrimePolicy,
+            SHA256_COMMITMENT_FIELD_BITS, SHA256_CONSTRAINTS, SHA256_DEFAULT_INNER_PREFIX_VARS,
+            SHA256_F_INSTANCE_BITS, SHA256_H_INSTANCE_BITS, SHA256_INNER_PREFIX_MAX_VARS,
+            SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput,
+            Sha256CompressionStatement, Sha256ConstraintError, Sha256OpeningLayout, SpartanField,
+            commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
+            prepare_sha256_compression_batch_for_assignment_rows_with_profile,
+            prepare_sha256_compression_batch_with_profile_and_layout,
+            prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
+            verify_sha256_compressions_with_config,
+        },
+        transcript::Blake3Transcript,
+    },
+};
 
 #[cfg(feature = "bench-internals")]
 use f2z::piop::spartan::{

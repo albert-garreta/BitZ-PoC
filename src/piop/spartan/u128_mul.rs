@@ -14,6 +14,7 @@
 //! `z` as four) purely as host representation; the relation is over `ℤ`.
 
 use crate::piop::spartan::SpartanField as _;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use thiserror::Error;
 
@@ -27,7 +28,7 @@ use crate::{
 use rayon::prelude::*;
 
 use super::{
-    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
+    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SpartanField,
     SpartanMatrixError, SpartanRelationBackend, slot_rows::pack_slot_major_rows_w1_words,
 };
 
@@ -359,7 +360,7 @@ pub fn u128_mul_constraint_matrices(
 fn selector_matrix(
     layout: &U128MulLayout,
     block: usize,
-) -> Result<SparseMatrix<bool>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[bool]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let offset = block * layout.capacity;
@@ -375,7 +376,7 @@ fn selector_matrix(
     let row_indices = (0..rows).collect();
     let coefficients = vec![true; rows];
 
-    Ok(SparseMatrix::try_from_csc_parts(
+    Ok(CscMatrix::try_from_csc_parts(
         rows,
         column_offsets,
         row_indices,
@@ -562,7 +563,7 @@ mod tests {
         assert_eq!(matrices.a().row_count(), 300);
         assert_eq!(matrices.a().column_count(), layout.assignment_len());
         for row in [0, 1, 299] {
-            let single = |m: &SparseMatrix<bool>, column: usize| {
+            let single = |m: &CscMatrix<Box<[bool]>>, column: usize| {
                 let (row, coefficient) = m
                     .column(column)
                     .expect("column in range")

@@ -1,11 +1,11 @@
 //! Owned and borrowed inputs for equality-weighted outer sumchecks.
 use super::{OuterArithmetic, engine::RoundState, inputs::OuterRows, ordinary::*, traversal::*};
 use crate::piop::spartan::{SpartanField, matrix::make_equality_factors};
-use crate::sumcheck::arithmetic::SumcheckProductReducer;
 use crate::sumcheck::{
     RoundBoundaryPolicy, SumcheckError, SumcheckProof, proof::OuterSumcheckOutput,
 };
 use crate::transcript::traits::Transcript;
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 use field::{FieldOps, RingOps};
 
 /// A and B have the same input type; C can hold wider exact products.
@@ -89,8 +89,13 @@ pub fn prove_outer_sumcheck<F, I: OuterRows>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<F::Elem>, SumcheckError>
 where
-    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<F::Elem>,
+    F: OuterArithmetic<I::AB, I::C>,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     let (initial_claim, known_zero) = match claim {
         OuterClaim::Sum(value) => (value, false),
@@ -126,8 +131,13 @@ fn finish_first<F>(
     boundary: &mut impl RoundBoundaryPolicy,
 ) -> Result<OuterOutput<F::Elem>, SumcheckError>
 where
-    F: FieldOps + SumcheckProductReducer<F::Elem>,
+    F: FieldOps,
     F::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     #[cfg(feature = "bench-internals")]
     let _phase = super::measure::Phase::start(3);
@@ -158,8 +168,13 @@ fn prepare_first<F, I: OuterRows>(
     prepared_factors: Option<EqualityFactors<F::Elem>>,
 ) -> Result<PreparedOrdinary<F::Elem>, SumcheckError>
 where
-    F: OuterArithmetic<I::AB, I::C> + SumcheckProductReducer<<F as RingOps>::Elem>,
+    F: OuterArithmetic<I::AB, I::C>,
     <F as RingOps>::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     #[cfg(feature = "bench-internals")]
     let setup = super::measure::Phase::start(0);
@@ -303,6 +318,11 @@ pub fn verify_outer_sumcheck<F>(
 where
     F: FieldOps,
     <F as RingOps>::Elem: SpartanField<Config = F>,
+    F: BatchMulAcc<<F as field::RingOps>::Elem>
+        + Reduce<
+            <F as BatchMulAcc<<F as field::RingOps>::Elem>>::Accumulator,
+            Output = <F as field::RingOps>::Elem,
+        > + Sync,
 {
     use crate::sumcheck::proof::{eq_eval, validate_field_elements};
     validate_field_elements(tau, field)?;

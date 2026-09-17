@@ -318,9 +318,10 @@ impl<const L: usize> PreparedLinearCombination<Fp<L>> for FpCtx<L> {
 
 /// Reduction schedule selected once from a public MAC count and modulus.
 /// Each use must receive at most that many products, including merged terms.
-pub struct PreparedProductReduction<'a, const L: usize> {
-    field: &'a FpCtx<L>,
+pub struct PreparedProductReduction<'a, const L: usize, Id = RuntimePrime> {
+    parameters: &'a PrimeParameters<L>,
     mode: ProductReductionMode,
+    id: core::marker::PhantomData<fn() -> Id>,
 }
 #[derive(Clone, Copy)]
 enum ProductReductionMode {
@@ -328,37 +329,57 @@ enum ProductReductionMode {
     Montgomery,
     General,
 }
-impl<const L: usize> PreparedProductReduction<'_, L> {
-    #[inline(always)]
-    pub fn reduce(&self, accumulator: FpProductAcc<L>) -> Fp<L> {
-        match self.mode {
-            ProductReductionMode::Zero => self.field.zero(),
-            ProductReductionMode::Montgomery => {
-                let (low, high, head) = accumulator.unreduced_integer().as_parts();
-                debug_assert_eq!(head, 0);
-                Fp::new(self.field.params().redc(UintProduct {
-                    low: *low,
-                    high: *high,
-                }))
-            }
-            ProductReductionMode::General => Reduce::reduce(self.field, accumulator),
-        }
-    }
-}
-impl<const L: usize> FpCtx<L> {
-    pub fn prepare_product_reduction(&self, max_terms: usize) -> PreparedProductReduction<'_, L> {
+impl<const L: usize, Id> PreparedProductReduction<'_, L, Id> {
+    pub(super) fn new(
+        parameters: &PrimeParameters<L>,
+        max_terms: usize,
+    ) -> PreparedProductReduction<'_, L, Id> {
+        let bits = parameters
+            .modulus
+            .as_words()
+            .iter()
+            .rposition(|&w| w != 0)
+            .map_or(0, |i| {
+                64 * i + 64 - parameters.modulus.as_words()[i].leading_zeros() as usize
+            });
         let mode = if max_terms == 0 {
             ProductReductionMode::Zero
         } else {
             let log_terms = (usize::BITS - (max_terms - 1).leading_zeros()) as usize;
-            // S < m*p^2 < p*R when bitlen(p)+ceil(log2(m)) <= log2(R).
-            if self.modulus_bits() + log_terms <= 64 * L {
+            // S < m*p² < p*R: only public dimensions select the schedule.
+            if bits + log_terms <= 64 * L {
                 ProductReductionMode::Montgomery
             } else {
                 ProductReductionMode::General
             }
         };
-        PreparedProductReduction { field: self, mode }
+        PreparedProductReduction {
+            parameters,
+            mode,
+            id: core::marker::PhantomData,
+        }
+    }
+    #[inline(always)]
+    pub fn reduce(&self, accumulator: PrimeProductAcc<Id, L>) -> PrimeValue<Id, L> {
+        match self.mode {
+            ProductReductionMode::Zero => PrimeValue::new(Uint::ZERO),
+            ProductReductionMode::Montgomery => {
+                let (low, high, head) = accumulator.unreduced_integer().as_parts();
+                debug_assert_eq!(head, 0);
+                PrimeValue::new(self.parameters.redc(UintProduct {
+                    low: *low,
+                    high: *high,
+                }))
+            }
+            ProductReductionMode::General => {
+                PrimeValue::new(self.parameters.reduce_product_acc(&accumulator.payload))
+            }
+        }
+    }
+}
+impl<const L: usize> FpCtx<L> {
+    pub fn prepare_product_reduction(&self, max_terms: usize) -> PreparedProductReduction<'_, L> {
+        PreparedProductReduction::new(self.params(), max_terms)
     }
     /// Reduce a sum bounded by a PUBLIC total MAC count. Products have scale
     /// R^2, and the result has scale R. No private magnitude selects a schedule.

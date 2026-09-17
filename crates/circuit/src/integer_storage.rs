@@ -71,7 +71,7 @@ impl Eq for IntegerTable {}
 
 impl IntegerTable {
     /// Copies a row while preserving its declared type-level width.
-    pub(crate) fn copy_row_to(&self, index: usize, output: &mut Self) {
+    pub fn copy_row_to(&self, index: usize, output: &mut Self) {
         let loc = self.order[index];
         self.segments[loc.segment as usize].copy_row_to(loc.index as usize, output);
     }

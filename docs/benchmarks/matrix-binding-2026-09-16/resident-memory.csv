@@ -1,0 +1,5 @@
+workload,variant,peak_resident_bytes
+sha,baseline,97910784
+sha,current,94846976
+u64,baseline,122486784
+u64,current,118079488

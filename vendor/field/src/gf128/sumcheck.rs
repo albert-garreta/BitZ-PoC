@@ -4,6 +4,13 @@ use crate::{Gf128, Gf128Ops, Gf128Product, SumcheckKernels};
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
 #[path = "kernels/sumcheck_aarch64.rs"]
 mod neon;
+#[cfg(all(
+    target_arch = "x86_64",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1"
+))]
+#[path = "kernels/sumcheck_x86_64.rs"]
+mod x86;
 fn reduce_wide(words: [u64; 4]) -> Gf128 {
     Gf128Product::from_polynomial_words(words).reduce()
 }
@@ -333,6 +340,14 @@ impl Gf128 {
         }
         #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
         {
+            #[cfg(all(
+                target_arch = "x86_64",
+                target_feature = "pclmulqdq",
+                target_feature = "sse4.1"
+            ))]
+            if pending.len() <= 2 {
+                return Some(x86::grid_pass(l, r, pending, suffix, quads));
+            }
             let _ = (l, r, pending, suffix, quads);
             None
         }

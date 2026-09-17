@@ -1,6 +1,10 @@
 //! One worker process per (compression count, outer mode, security, threads).
 //! Signing is fixture preparation; inversion hints belong to timed witness generation.
 mod common;
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
+
 
 use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use p256::ecdsa::{
@@ -25,6 +29,9 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    #[cfg(feature = "bench-peak-memory")]
+    let _heap_report = common::heap_run::Report::start();
+
     let args = <Args as clap::Parser>::parse();
     let Args { exponent, security: lambda, reps, .. } = args;
     let exponent = exponent as usize;

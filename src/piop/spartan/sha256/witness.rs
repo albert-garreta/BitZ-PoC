@@ -17,7 +17,7 @@ use thiserror::Error;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::{f2map::PackedSourceOrder, pcs::IntegerMatrixLayout};
+use {crate::pcs::IntegerMatrixLayout, circuit::linear_map::binary::PackedSourceOrder};
 
 use super::constraints::{
     PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
@@ -537,12 +537,12 @@ mod tests {
     use num_bigint::BigInt;
 
     use super::*;
-    use crate::{
-        f2map::VirtualMap,
-        piop::spartan::sha256::constraints::{
+    use {
+        crate::piop::spartan::sha256::constraints::{
             SHA256_CONSTRAINTS, prepare_sha256_compression_batch_for_product_t_test,
             prepare_sha256_compression_batch_for_test,
         },
+        circuit::linear_map::binary::VirtualMap,
     };
 
     fn abc_input() -> Sha256CompressionInput {

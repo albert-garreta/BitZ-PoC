@@ -398,13 +398,25 @@ where
             // so the claimed sum is Σ_t ρ^t·v_t and the final evaluation
             // pins each tree's contribution by Schwartz–Zippel.
             let rho: Option<F> = (active > 1).then(|| transcript.get_field_challenge(field_cfg));
+            // Own callback-produced bits for the entire sumcheck; groups only
+            // borrow these immutable inputs.
+            let leaf_bits: Vec<_> = if leaf.is_some() && depths[..active].contains(&(k + 1)) {
+                cfg_into_iter!(0..active)
+                    .map(|t| {
+                        leaf.filter(|_| depths[t] == k + 1)
+                            .map(|leaf| (leaf.bits_of)(t))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let groups = {
                 let _g = tracing::info_span!("gkr:groups").entered();
                 // Prefix scales ρ^t (sequential prefix product — `active` muls),
-                // then build the per-tree groups in parallel: each clones its
-                // point and MOVES its layer halves into the fold buffers —
-                // layers are stored pre-split ([`LayerHalves`]), so the handoff
-                // is allocation- and memcpy-free.
+                // then build the per-tree groups in parallel. Each borrows
+                // its point and either moves pre-split dense halves
+                // ([`LayerHalves`]) or borrows callback-owned leaf bits, so
+                // handing off these buffers needs no allocation or memcpy.
                 let mut scales = Vec::with_capacity(active);
                 let mut scale = one.clone();
                 for _ in 0..active {
@@ -422,7 +434,8 @@ where
                             // the committed bits — the leaf values are never
                             // materialised.
                             (0, Some(leaf)) => {
-                                let (lbits, rbits) = (leaf.bits_of)(t);
+                                let (lbits, rbits) =
+                                    leaf_bits[t].as_ref().expect("leaf bits present");
                                 crate::piop::sumcheck::eq_factored::GroupBufs::LeafBits {
                                     lbits,
                                     rbits,
@@ -439,7 +452,7 @@ where
                             }
                         };
                         crate::piop::sumcheck::eq_factored::EqInnerGroupMixed {
-                            q: r[t].clone(),
+                            q: r[t].as_slice().into(),
                             scale: scales[t].clone(),
                             bufs,
                         }

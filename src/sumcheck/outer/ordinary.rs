@@ -12,6 +12,7 @@ use crate::transcript::traits::Transcript;
 #[cfg(test)]
 use field::Fp;
 use field::RingOps;
+use field::{BatchMulAcc, MergeAccumulator, Reduce};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 /// Independent direct-cubic field-table oracle under the requested boundary policy.
@@ -28,7 +29,7 @@ pub(crate) fn prove_field_with_boundary_reference<F, R, P>(
 ) -> Result<OuterSumcheckOutput<F>, SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
     P: RoundBoundaryPolicy,
 {
     let num_vars = products.az.num_vars;
@@ -240,7 +241,10 @@ pub(crate) fn prove_u32_first_round<R>(
     reducer: &R,
 ) -> Result<OuterSumcheckOutput<Fp<2>>, SumcheckError>
 where
-    R: SumcheckProductReducer<Fp<2>> + SumcheckLinearReducer,
+    R: BatchMulAcc<Fp<2>>
+        + Reduce<<R as BatchMulAcc<Fp<2>>>::Accumulator, Output = Fp<2>>
+        + Sync
+        + SumcheckLinearReducer,
 {
     let num_vars = products.az.num_vars;
     if !has_dense_shape(&products.az)
@@ -449,7 +453,10 @@ pub(crate) fn compute_u32_native_eq_factored_coefficients_without_linear<R>(
     field_config: &crate::piop::spartan::protocol::FieldConfig,
 ) -> Result<[Fp<2>; 3], SumcheckError>
 where
-    R: SumcheckLinearReducer + SumcheckProductReducer<Fp<2>>,
+    R: SumcheckLinearReducer
+        + BatchMulAcc<Fp<2>>
+        + Reduce<<R as BatchMulAcc<Fp<2>>>::Accumulator, Output = Fp<2>>
+        + Sync,
 {
     let pair_count = products.len() / 2;
     let endpoint = FactoredEndpoint::for_tau(tau);
@@ -469,8 +476,7 @@ where
             .map(|weight| (field_config).sub(zero, weight))
             .collect::<Vec<_>>();
         let low_pair_count = low_weights.len();
-        let accumulate_high_bucket = |mut outer: [<R as SumcheckProductReducer<Fp<2>>>::Accumulator;
-                                          2],
+        let accumulate_high_bucket = |mut outer: [<R as BatchMulAcc<Fp<2>>>::Accumulator; 2],
                                       high_index: usize|
          -> Result<_, SumcheckError> {
             let mut inner =
@@ -494,12 +500,7 @@ where
             let inner = reduce_two_linear_accumulators(inner, reducer, &field_config)?;
             let high_weight = &equality_weights.high[high_index];
             for (outer, inner) in outer.iter_mut().zip(&inner) {
-                <R as SumcheckProductReducer<Fp<2>>>::multiply_accumulate(
-                    reducer,
-                    outer,
-                    high_weight,
-                    inner,
-                );
+                <R as BatchMulAcc<Fp<2>>>::mul_acc(reducer, outer, high_weight, inner);
             }
             Ok(outer)
         };
@@ -509,25 +510,16 @@ where
             (0..equality_weights.high.len())
                 .into_par_iter()
                 .try_fold(
-                    || {
-                        std::array::from_fn(|_| {
-                            <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
-                        })
-                    },
+                    || std::array::from_fn(|_| <R as BatchMulAcc<Fp<2>>>::Accumulator::zero()),
                     accumulate_high_bucket,
                 )
                 .try_reduce(
-                    || {
-                        std::array::from_fn(|_| {
-                            <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
-                        })
-                    },
-                    |left, right| Ok(merge_accumulators(left, right, reducer)),
+                    || std::array::from_fn(|_| <R as BatchMulAcc<Fp<2>>>::Accumulator::zero()),
+                    |left, right| Ok(merge_accumulators(left, right)),
                 )?
         } else {
-            let mut accumulators = std::array::from_fn(|_| {
-                <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
-            });
+            let mut accumulators =
+                std::array::from_fn(|_| <R as BatchMulAcc<Fp<2>>>::Accumulator::zero());
             for high_index in 0..equality_weights.high.len() {
                 accumulators = accumulate_high_bucket(accumulators, high_index)?;
             }
@@ -536,9 +528,8 @@ where
 
         #[cfg(not(feature = "parallel"))]
         let accumulators = {
-            let mut accumulators = std::array::from_fn(|_| {
-                <R as SumcheckProductReducer<Fp<2>>>::accumulator_zero(reducer)
-            });
+            let mut accumulators =
+                std::array::from_fn(|_| <R as BatchMulAcc<Fp<2>>>::Accumulator::zero());
             for high_index in 0..equality_weights.high.len() {
                 accumulators = accumulate_high_bucket(accumulators, high_index)?;
             }
@@ -727,7 +718,7 @@ where
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn accumulate_eq_factored_cofactor_evaluations<F, R>(
-    accumulators: &mut [R::Accumulator; 2],
+    accumulators: &mut [<R as BatchMulAcc<F>>::Accumulator; 2],
     weight: &F,
     endpoint: FactoredEndpoint,
     az_zero: &F,
@@ -740,7 +731,7 @@ pub(crate) fn accumulate_eq_factored_cofactor_evaluations<F, R>(
     field_config: &F::Config,
 ) where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     let endpoint_residual = match endpoint {
         FactoredEndpoint::Zero => {
@@ -750,12 +741,12 @@ pub(crate) fn accumulate_eq_factored_cofactor_evaluations<F, R>(
         #[cfg(test)]
         FactoredEndpoint::KnownZero => field_config.zero(),
     };
-    reducer.multiply_accumulate(&mut accumulators[0], weight, &endpoint_residual);
+    reducer.mul_acc(&mut accumulators[0], weight, &endpoint_residual);
 
     let az_delta = (field_config).sub(az_one, az_zero);
     let bz_delta = (field_config).sub(bz_one, bz_zero);
     let infinity = (field_config).mul(&az_delta, &bz_delta);
-    reducer.multiply_accumulate(&mut accumulators[1], weight, &infinity);
+    reducer.mul_acc(&mut accumulators[1], weight, &infinity);
 }
 
 /// Public-modulus constants used to interpolate a cubic from evaluations at
@@ -891,7 +882,7 @@ pub(crate) fn compute_two_level_cofactor_evaluations<F, R>(
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     let low_weights = equality_weights
         .low_weights()
@@ -902,10 +893,10 @@ where
         low_pair_count * equality_weights.high.len()
     );
 
-    let accumulate_high_bucket = |mut outer: [R::Accumulator; 2],
+    let accumulate_high_bucket = |mut outer: [<R as BatchMulAcc<F>>::Accumulator; 2],
                                   high_index: usize|
      -> Result<_, SumcheckError> {
-        let mut inner = std::array::from_fn(|_| reducer.accumulator_zero());
+        let mut inner = std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero());
         let product_pair_start = high_index * low_pair_count;
 
         for (low_pair_index, weight) in low_weights.iter().enumerate() {
@@ -928,7 +919,7 @@ where
         let inner = reduce_two_accumulators_bounded(inner, reducer, low_pair_count, &field_config)?;
         let high_weight = &equality_weights.high[high_index];
         for (outer, inner) in outer.iter_mut().zip(&inner) {
-            reducer.multiply_accumulate(outer, high_weight, inner);
+            reducer.mul_acc(outer, high_weight, inner);
         }
         Ok(outer)
     };
@@ -938,12 +929,12 @@ where
         let accumulators = (0..equality_weights.high.len())
             .into_par_iter()
             .try_fold(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
                 accumulate_high_bucket,
             )
             .try_reduce(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
-                |left, right| Ok(merge_accumulators(left, right, reducer)),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
+                |left, right| Ok(merge_accumulators(left, right)),
             )?;
         return reduce_two_accumulators_bounded(
             accumulators,
@@ -953,7 +944,7 @@ where
         );
     }
 
-    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    let mut accumulators = std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero());
     for high_index in 0..equality_weights.high.len() {
         accumulators = accumulate_high_bucket(accumulators, high_index)?;
     }
@@ -981,7 +972,7 @@ pub(crate) fn compute_eq_factored_coefficients_without_linear<F, R>(
 ) -> Result<[F; 3], SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     let pair_count = products.len() / 2;
     let endpoint = FactoredEndpoint::for_tau(tau);
@@ -1118,13 +1109,13 @@ pub(crate) fn fold_products_and_compute_next_two_level<F, R>(
 ) -> Result<[F; 2], SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     let low_weights = equality_weights
         .low_weights()
         .expect("two-level accumulation requires stripped low weights");
     let low_pair_count = low_weights.len();
-    let inner_reduction = reducer.prepare_reduction(low_pair_count, field_config);
+    let inner_reduction = reducer.prepare_reduce(low_pair_count);
     debug_assert_eq!(
         output.len() / 2,
         low_pair_count * equality_weights.high.len()
@@ -1132,7 +1123,7 @@ where
     let input_values_per_high = 4 * low_pair_count;
     let output_values_per_high = 2 * low_pair_count;
 
-    let accumulate_high_bucket = |mut outer: [R::Accumulator; 2],
+    let accumulate_high_bucket = |mut outer: [<R as BatchMulAcc<F>>::Accumulator; 2],
                                   high_index: usize,
                                   az: &[F],
                                   bz: &[F],
@@ -1141,7 +1132,7 @@ where
                                   bz_output: &mut [F],
                                   cz_output: &mut [F]|
      -> Result<_, SumcheckError> {
-        let mut inner = std::array::from_fn(|_| reducer.accumulator_zero());
+        let mut inner = std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero());
         for (low_pair_index, weight) in low_weights.iter().enumerate() {
             let input_start = 4 * low_pair_index;
             let output_start = 2 * low_pair_index;
@@ -1170,10 +1161,10 @@ where
             );
         }
 
-        let inner = reduce_two_prepared(inner, reducer, &inner_reduction, field_config)?;
+        let inner = reduce_two_prepared(inner, &inner_reduction);
         let high_weight = &equality_weights.high[high_index];
         for (outer, inner) in outer.iter_mut().zip(&inner) {
-            reducer.multiply_accumulate(outer, high_weight, inner);
+            reducer.mul_acc(outer, high_weight, inner);
         }
         Ok(outer)
     };
@@ -1193,7 +1184,7 @@ where
             .with_min_len(min_buckets)
             .enumerate()
             .try_fold(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
                 |outer, (high_index, (az, bz, cz, az_output, bz_output, cz_output))| {
                     accumulate_high_bucket(
                         outer, high_index, az, bz, cz, az_output, bz_output, cz_output,
@@ -1201,8 +1192,8 @@ where
                 },
             )
             .try_reduce(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
-                |left, right| Ok(merge_accumulators(left, right, reducer)),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
+                |left, right| Ok(merge_accumulators(left, right)),
             )?;
         return reduce_two_accumulators_bounded(
             accumulators,
@@ -1212,7 +1203,7 @@ where
         );
     }
 
-    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    let mut accumulators = std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero());
     for high_index in 0..equality_weights.high.len() {
         let input_start = high_index * input_values_per_high;
         let output_start = high_index * output_values_per_high;
@@ -1252,7 +1243,7 @@ pub(crate) fn fold_products_and_compute_next<F, R>(
 ) -> Result<[F; 3], SumcheckError>
 where
     F: SpartanField,
-    R: SumcheckProductReducer<F>,
+    R: BatchMulAcc<F> + Reduce<<R as BatchMulAcc<F>>::Accumulator, Output = F> + Sync,
 {
     debug_assert_eq!(input.len(), 2 * output.len());
     let endpoint = FactoredEndpoint::for_tau(tau);
@@ -1282,7 +1273,7 @@ where
         ));
     }
 
-    let accumulate = |mut accumulators: [R::Accumulator; 2],
+    let accumulate = |mut accumulators: [<R as BatchMulAcc<F>>::Accumulator; 2],
                       chunk: usize,
                       az: &[F],
                       bz: &[F],
@@ -1332,7 +1323,7 @@ where
             .into_par_iter()
             .enumerate()
             .fold(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
                 |accumulators, (chunk, (az, bz, cz, az_output, bz_output, cz_output))| {
                     accumulate(
                         accumulators,
@@ -1347,8 +1338,8 @@ where
                 },
             )
             .reduce(
-                || std::array::from_fn(|_| reducer.accumulator_zero()),
-                |left, right| merge_accumulators(left, right, reducer),
+                || std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero()),
+                |left, right| merge_accumulators(left, right),
             );
         let evaluations =
             reduce_two_accumulators_bounded(accumulators, reducer, chunk_count, &field_config)?;
@@ -1364,7 +1355,7 @@ where
         ));
     }
 
-    let mut accumulators = std::array::from_fn(|_| reducer.accumulator_zero());
+    let mut accumulators = std::array::from_fn(|_| <R as BatchMulAcc<F>>::Accumulator::zero());
     for chunk in 0..chunk_count {
         let input_start = 4 * chunk;
         let output_start = 2 * chunk;
@@ -1447,7 +1438,10 @@ impl<E: SpartanField> EqualityFactors<E> {
 
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
-pub(super) fn continue_field<E: SpartanField, R: SumcheckProductReducer<E>>(
+pub(super) fn continue_field<
+    E: SpartanField,
+    R: BatchMulAcc<E> + Reduce<<R as BatchMulAcc<E>>::Accumulator, Output = E> + Sync,
+>(
     transcript: &mut impl Transcript,
     field: &E::Config,
     reducer: &R,
@@ -1464,7 +1458,10 @@ pub(super) fn continue_field<E: SpartanField, R: SumcheckProductReducer<E>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn continue_field_with_inverses<E: SpartanField, R: SumcheckProductReducer<E>>(
+pub(super) fn continue_field_with_inverses<
+    E: SpartanField,
+    R: BatchMulAcc<E> + Reduce<<R as BatchMulAcc<E>>::Accumulator, Output = E> + Sync,
+>(
     transcript: &mut impl Transcript,
     field: &E::Config,
     reducer: &R,

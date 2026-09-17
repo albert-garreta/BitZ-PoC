@@ -37,10 +37,10 @@
 //! prover and verifier).
 
 use crate::piop::lookup::gkr_product::{ProductForestProof, verify_product_forest};
-use crate::piop::sumcheck::multi_degree::{
-    MultiDegreeSumcheck, MultiDegreeSumcheckGroup, MultiDegreeSumcheckProof,
-};
+use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
+#[cfg(test)]
 use crate::poly::coefficient::FieldRepresentation;
+#[cfg(test)]
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::poly::univariate::binary_gf128::{Gf128 as Gf, REDUCTION_LOW_GF128};
 use crate::poly::utils::build_eq_x_r_vec;
@@ -1271,22 +1271,20 @@ pub(crate) fn prove_int_eval_common(
     let r_tbl = row_bit_weights(p, row_weights, alpha, &rho);
     let m_tbl = xi_combined_rows(p, rows, &eq_xi);
 
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: &[Gf]| {
-        DenseMultilinearExtension::from_evaluations_vec(
-            t_w,
-            tbl.iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
+    let (presum, r_star) = {
+        let (values, weights) = crate::sumcheck::inner::binary::inputs(vec![[r_tbl, m_tbl]], t_w);
+        crate::sumcheck::inner::binary::encode(
+            crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                &field::Gf128Ops,
+                transcript,
+                crate::sumcheck::inner::InitialClaims::Compute,
+                values,
+                weights,
+                &mut crate::sumcheck::UngrindedRoundBoundary,
+            )
+            .expect("valid post-GKR dot products"),
         )
     };
-    let group = MultiDegreeSumcheckGroup::new(
-        2,
-        vec![to_mle(&r_tbl), to_mle(&m_tbl)],
-        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-    );
-    let (presum, states) =
-        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &());
-    let r_star = states[0].randomness.clone();
 
     // Residual claim point: M̂(r*, ξ) = μ.
     let point: Vec<Gf> = r_star.iter().chain(xi.iter()).copied().collect();
@@ -1354,9 +1352,9 @@ pub(crate) fn verify_int_eval_common(
         .iter()
         .zip(eq_xi.iter())
         .fold(Gf::zero(), |acc, (l, e)| acc + *e * (*l - one));
-    let subclaims =
-        MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
-            .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = presum
+        .verify_as_subprotocol(transcript, t_w, &[2], &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
     if presum.claimed_sums() != [y_xi] {
         return Err(IntEvalRsError::PreSumcheck);
     }
@@ -1397,8 +1395,10 @@ pub(crate) fn verify_int_eval_common(
 /// `{0, 1, F::from(2)}`; reduction is `F₂`-linear and the outer sums are
 /// exact), so the emitted proof is byte-identical. Attached under
 /// [`rs_fast`] purely so `F2Z_RS_FAST=0` restores the generic path for A/B.
+#[cfg(test)]
 pub(crate) struct ProdPairWideEvaluator;
 
+#[cfg(test)]
 impl crate::piop::sumcheck::prover::RoundPolyEvaluator<Gf> for ProdPairWideEvaluator {
     #[allow(clippy::arithmetic_side_effects)]
     fn round_evals(
@@ -1488,7 +1488,7 @@ pub(crate) fn prove_int_eval_merged_common(
     MultiDegreeSumcheckProof<Gf>,
     Vec<Gf>,
 ) {
-    use crate::merged_forest::prove_merged_forest_lazy;
+    use crate::merged_forest::prove_merged_forest_lazy_from_rows;
     use crate::pcs::chunk_pow2_table;
     let t_w = row_bit_vars(p);
     let owned;
@@ -1507,7 +1507,13 @@ pub(crate) fn prove_int_eval_merged_common(
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
         if crate::merged_forest::quad_active(p) {
-            crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
+            crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
+                transcript,
+                p,
+                Some(rows),
+                packed_cols,
+                &pow2,
+            )
         } else {
             // A zero-padded witness ends in all-zero columns; those trees
             // are constant 1 and never get built (byte-identical proof).
@@ -1515,7 +1521,7 @@ pub(crate) fn prove_int_eval_merged_common(
                 let _g = tracing::info_span!("mc:live_cols").entered();
                 crate::merged_forest::live_cols(p, rows)
             };
-            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2, live)
+            prove_merged_forest_lazy_from_rows(transcript, p, rows, packed_cols, &pow2, live)
         }
     };
     drop(pow2);
@@ -1539,29 +1545,24 @@ pub(crate) fn prove_int_eval_merged_common(
     };
     drop(_g_tbls);
 
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: &[Gf]| {
-        DenseMultilinearExtension::from_evaluations_vec(
-            t_w,
-            tbl.iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
-        )
-    };
-    let group = MultiDegreeSumcheckGroup::new(
-        2,
-        vec![to_mle(&r_tbl), to_mle(&m_tbl)],
-        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-    );
-    let group = if rs_fast() {
-        group.with_round_evaluator(Box::new(ProdPairWideEvaluator))
-    } else {
-        group
-    };
-    let (presum, states) = {
+    let (presum, r_star) = {
         let _g = tracing::info_span!("mc:presum_run").entered();
-        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &())
+        {
+            let (values, weights) =
+                crate::sumcheck::inner::binary::inputs(vec![[r_tbl, m_tbl]], t_w);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        }
     };
-    let r_star = states[0].randomness.clone();
 
     // Residual claim point: M̂(r*, z_c) = μ.
     let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
@@ -1665,21 +1666,13 @@ pub(crate) fn prove_x_claims_batched_common(
     } else {
         build_eq_x_r_vec(z_claim, &()).expect("log N >= 1")
     };
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: Vec<Gf>| {
-        DenseMultilinearExtension::from_evaluations_vec(
-            t_w,
-            tbl.into_iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
-        )
-    };
     // One q_rowbit table per UNIQUE weight set; per-claim groups take a
     // scaled copy.
     let r_tbls: Vec<Vec<Gf>> = w_reps
         .iter()
         .map(|&r| row_bit_weights(p, claim_weights[r], alpha, z_bj))
         .collect();
-    let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = (0..n_real)
+    let groups: Vec<[Vec<Gf>; 2]> = (0..n_real)
         .map(|n| {
             let mut r_tbl = r_tbls[w_of[n]].clone();
             let scale = eq_claim[n];
@@ -1687,19 +1680,27 @@ pub(crate) fn prove_x_claims_batched_common(
                 *e = *e * scale;
             }
             let m_tbl = xi_combined_rows(p, claim_rows[n], &eq_clear);
-            MultiDegreeSumcheckGroup::new(
-                2,
-                vec![to_mle(r_tbl), to_mle(m_tbl)],
-                Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-            )
+            [r_tbl, m_tbl]
         })
         .collect();
     drop(_g_tbls);
-    let (presum, states) = {
+    let (presum, r_star) = {
         let _g = tracing::info_span!("mc:presum_run").entered();
-        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_w, &())
+        {
+            let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_w);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        }
     };
-    let r_star = states[0].randomness.clone();
 
     // Shared residual point: every claim's M-hat_n(r*, z_clear) = mu_n.
     let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
@@ -1759,14 +1760,9 @@ pub(crate) fn verify_x_claims_batched_common(
         verify_merged_forest(transcript, &roots, mf, t_w, p.col_vars.wrapping_add(log_n))
             .map_err(|_| IntEvalRsError::Forest)?;
 
-    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-        transcript,
-        t_w,
-        &vec![2; n_real],
-        presum,
-        &(),
-    )
-    .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = presum
+        .verify_as_subprotocol(transcript, t_w, &vec![2; n_real], &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
     let sums = presum.claimed_sums();
     if sums.len() != n_real {
         return Err(IntEvalRsError::PreSumcheck);
@@ -1883,9 +1879,9 @@ pub(crate) fn verify_int_eval_merged_common(
     // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
     // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
     let _g_presum = tracing::info_span!("mv:presum").entered();
-    let subclaims =
-        MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
-            .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = presum
+        .verify_as_subprotocol(transcript, t_w, &[2], &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
     let one = Gf::one();
     if presum.claimed_sums() != [e_d + one] {
         return Err(IntEvalRsError::PreSumcheck);
@@ -2055,7 +2051,9 @@ mod tests {
                 for (bits, &actual) in table.iter().enumerate() {
                     let expected = (0..8)
                         .filter(|&bit| bits & (1 << bit) != 0)
-                        .fold(Gf::zero(), |sum, bit| sum + coefficients[8 * position + bit]);
+                        .fold(Gf::zero(), |sum, bit| {
+                            sum + coefficients[8 * position + bit]
+                        });
                     assert_eq!(actual, expected, "position {position}, bits {bits}");
                 }
             }

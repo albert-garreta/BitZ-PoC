@@ -17,8 +17,10 @@
 use crate::piop::spartan::SpartanField as _;
 use crate::poly::mle::FactoredMultilinearExtension;
 #[cfg(test)]
-use field::{Fp, Uint};
-use field::{RingOps, Uint as FieldUint};
+use crate::sumcheck::arithmetic::SumcheckLinearReducer;
+#[cfg(test)]
+use field::Fp;
+use field::{RingOps, Uint};
 use std::collections::{HashMap, hash_map::Entry};
 
 use blake3::Hasher;
@@ -30,18 +32,20 @@ use flock_core::pcs::{
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
 
-use crate::{
-    f2map::{
+use {
+    crate::{
+        f2map::cell_count,
+        ligerito::LOG_PACKING,
+        ligerito_flock::{
+            FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito, commit_rs_ligerito_rows,
+            validate_ligerito_commitment,
+        },
+        pcs::IntegerMatrixLayout,
+        transcript::traits::Transcript,
+    },
+    circuit::linear_map::binary::{
         PackedRepeatedVirtualMap, PackedSourceOrder, PackedSourceRepeatedVirtualMap, VirtualMap,
-        cell_count,
     },
-    ligerito::LOG_PACKING,
-    ligerito_flock::{
-        FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito, commit_rs_ligerito_rows,
-        validate_ligerito_commitment,
-    },
-    pcs::IntegerMatrixLayout,
-    transcript::traits::Transcript,
 };
 
 use super::super::{
@@ -56,7 +60,7 @@ use super::super::{
             OpeningClaim, frame, prove_linear, verify_linear,
         },
     },
-    sumcheck::{SumcheckError, SumcheckLinearReducer},
+    sumcheck::SumcheckError,
 };
 
 use super::{
@@ -85,7 +89,6 @@ const SHA256_ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"f2z/spartan-sha256-assignment/
 
 /// One runtime-field element in Montgomery form, without cloning the shared
 /// 128-bit modulus configuration into every dense table entry.
-pub(super) type RawMontgomery = u128;
 
 /// Default number of low witness-position variables handled by the packed
 /// native-bit prefix kernel.  This is a prover-local performance choice and is
@@ -380,8 +383,12 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
         let local_row_weights = eq_table(local_point, config).map_err(SpartanError::from)?;
         let beta = {
             let _scope = tracing::info_span!("sha256:local_relation_collapse").entered();
-            collapse_local_linear_columns(self.prepared, &local_row_weights, reducer, config)
-                .map_err(SpartanError::from)?
+            crate::sumcheck::bridge::repeated::collapse_signed_columns(
+                self.prepared.linear_relation().native_matrix(),
+                &local_row_weights,
+                reducer,
+            )
+            .map_err(SpartanError::from)?
         };
         ProductLinearBatching::new(
             self.prepared,
@@ -1051,7 +1058,7 @@ fn linear_opening_claim(
     collapsed_evaluation: &SpartanF2zField,
     inner_claim: SpartanF2zField,
     field_config: &FieldConfig,
-) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), Sha256F2zError> {
+) -> Result<(Vec<u128>, Vec<u128>, u128), Sha256F2zError> {
     if assignment_equality.len() != h_layout.cells()
         || assignment_equality.low_vars != h_layout.row_vars
         || assignment_equality.low.len() != h_layout.rows()
@@ -1075,10 +1082,10 @@ fn linear_opening_claim(
 }
 
 enum ProductRowWeights {
-    InstanceOnly(Vec<RawMontgomery>),
+    InstanceOnly(Vec<u128>),
     LocalAndInstance {
-        local: Vec<RawMontgomery>,
-        low_instance: Vec<RawMontgomery>,
+        local: Vec<u128>,
+        low_instance: Vec<u128>,
         local_domain: usize,
     },
 }
@@ -1254,77 +1261,11 @@ fn public_instance_point(
         .ok_or(Sha256F2zError::InvalidGeometry)
 }
 
-/// Computes `β = Cᵀ eq(·, ξ)` directly from the retained signed CSC
-/// relation. The local row domain has 256 entries, of which exactly the first
-/// 184 are live; the zero suffix is represented only by absent matrix rows.
-fn collapse_local_linear_columns(
-    prepared: &PreparedSha256CompressionBatch,
-    local_row_weights: &[SpartanF2zField],
-    reducer: &field::FpCtx<2>,
-    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<Vec<SpartanF2zField>, SumcheckError> {
-    let relation = prepared.linear_relation().native_matrix();
-    if relation.column_count() != SHA256_H_BAR_LIVE_BITS {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-    collapse_native_linear_columns(relation, local_row_weights, reducer, field_config)
-}
-
-/// [`collapse_local_linear_columns`] over any native signed local relation
-/// with [`SHA256_CONSTRAINTS`] live rows: `β_c = Σ_r eq(r, ξ) C[r, c]`.
-pub(super) fn collapse_native_linear_columns(
-    relation: &crate::sparse_matrix::SparseMatrix<i64>,
-    local_row_weights: &[SpartanF2zField],
-    reducer: &field::FpCtx<2>,
-    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<Vec<SpartanF2zField>, SumcheckError> {
-    let expected_rows = 1usize << local_constraint_vars();
-    if relation.row_count() != SHA256_CONSTRAINTS || local_row_weights.len() != expected_rows {
-        return Err(SumcheckError::InvalidProductDimensions);
-    }
-
-    let zero = SpartanF2zField::zero_with_cfg(field_config);
-    let collapse_column = |local_column: usize| {
-        let column = relation
-            .column(local_column)
-            .ok_or(SumcheckError::InvalidProductDimensions)?;
-        let mut accumulator = <field::FpCtx<2> as SumcheckLinearReducer>::accumulator_zero(reducer);
-        for (local_row, coefficient) in column {
-            let weight = local_row_weights
-                .get(local_row)
-                .ok_or(SumcheckError::InvalidProductDimensions)?;
-            let negative_weight;
-            let selected_weight = if *coefficient < 0 {
-                negative_weight = field_config.sub(&(zero.clone()), &(weight));
-                &negative_weight
-            } else {
-                weight
-            };
-            <field::FpCtx<2> as SumcheckLinearReducer>::multiply_accumulate(
-                reducer,
-                &mut accumulator,
-                selected_weight,
-                &coefficient.unsigned_abs(),
-            );
-        }
-        <field::FpCtx<2> as SumcheckLinearReducer>::reduce(reducer, accumulator, field_config)
-    };
-
-    #[cfg(feature = "parallel")]
-    if relation.column_count() >= 1 << 12 && rayon::current_num_threads() > 1 {
-        return (0..relation.column_count())
-            .into_par_iter()
-            .map(collapse_column)
-            .collect();
-    }
-    (0..relation.column_count()).map(collapse_column).collect()
-}
-
 #[cfg(test)]
 fn collapse_flat_linear_column(
     prepared: &PreparedSha256CompressionBatch,
     relation: &PreparedSha256LinearRelation,
-    constraint_weights: &[RawMontgomery],
+    constraint_weights: &[u128],
     reducer: &field::FpCtx<2>,
     flat_column: usize,
 ) -> Result<SpartanF2zField, SumcheckError> {
@@ -1606,7 +1547,7 @@ fn equality_at_zero(
 fn evaluate_flat_linear_collapse_dense(
     prepared: &PreparedSha256CompressionBatch,
     relation: &PreparedSha256LinearRelation,
-    constraint_weights: &[RawMontgomery],
+    constraint_weights: &[u128],
     assignment_weights: &FactoredEqualityWeights,
 ) -> Result<SpartanF2zField, Sha256F2zError> {
     if assignment_weights.len() != prepared.assignment_params().cells()
@@ -1660,8 +1601,8 @@ fn evaluate_flat_linear_collapse_dense(
 /// the two vectors can be passed to the integer opening without constructing
 /// the full `2^(t+s)` equality table.
 struct FactoredEqualityWeights {
-    low: Vec<RawMontgomery>,
-    high: Vec<RawMontgomery>,
+    low: Vec<u128>,
+    high: Vec<u128>,
     low_vars: usize,
     len: usize,
 }
@@ -1698,7 +1639,7 @@ impl FactoredEqualityWeights {
         factor: &SpartanF2zField,
         field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
     ) {
-        let scale = |weight: &mut RawMontgomery| {
+        let scale = |weight: &mut u128| {
             let value = field_config.mul(&(field_from_raw(*weight, field_config)), &(factor));
             *weight = raw_montgomery(&value);
         };
@@ -1735,7 +1676,7 @@ impl FactoredEqualityWeights {
 pub(super) fn compact_eq_table(
     point: &[SpartanF2zField],
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<Vec<RawMontgomery>, Sha256F2zError> {
+) -> Result<Vec<u128>, Sha256F2zError> {
     let vars = u32::try_from(point.len()).map_err(|_| Sha256F2zError::InvalidGeometry)?;
     let table_len = 1usize
         .checked_shl(vars)
@@ -1748,7 +1689,7 @@ pub(super) fn compact_eq_table(
             .checked_shl(u32::try_from(coordinate).map_err(|_| Sha256F2zError::InvalidGeometry)?)
             .ok_or(Sha256F2zError::InvalidGeometry)?;
         let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
-        let expand = |(zero_child, one_child): (&mut RawMontgomery, &mut RawMontgomery)| {
+        let expand = |(zero_child, one_child): (&mut u128, &mut u128)| {
             let parent = field_from_raw(*zero_child, field_config);
             let high = field_config.mul(&(parent.clone()), &(challenge));
             *zero_child = raw_montgomery(&(field_config.sub(&(parent), &(&high))));
@@ -1777,17 +1718,17 @@ pub(super) fn compact_eq_table(
 }
 
 #[inline]
-pub(super) fn raw_montgomery(value: &SpartanF2zField) -> RawMontgomery {
+pub(super) fn raw_montgomery(value: &SpartanF2zField) -> u128 {
     let words = value.as_montgomery_integer().as_words();
     u128::from(words[0]) | (u128::from(words[1]) << 64)
 }
 
 #[inline]
 pub(super) fn field_from_raw(
-    value: RawMontgomery,
+    value: u128,
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 ) -> SpartanF2zField {
-    field_config.from_montgomery_integer(FieldUint::from(value))
+    field_config.from_montgomery_integer(Uint::from(value))
 }
 
 pub(super) fn validate_source_params(f_layout: &IntegerMatrixLayout) -> Result<(), Sha256F2zError> {
@@ -1877,10 +1818,12 @@ fn map_fixes_constant_assignment(map: &PackedRepeatedVirtualMap) -> bool {
     map_fixes_constant_assignment_local(map.local())
 }
 
-pub(super) fn map_fixes_constant_assignment_local(map: &crate::f2map::PreparedVirtualMap) -> bool {
+pub(super) fn map_fixes_constant_assignment_local(
+    map: &circuit::linear_map::binary::PreparedVirtualMap,
+) -> bool {
     let mut constant_source = None;
     for (column, entries) in map.matrix().columns().enumerate() {
-        for row in entries.row_indices() {
+        for row in entries.indices() {
             if *row == SHA256_SHARED_CONSTANT_CELL && constant_source.replace(column).is_some() {
                 return false;
             }
@@ -1893,12 +1836,12 @@ fn map_fixes_public_statement(map: &PackedRepeatedVirtualMap) -> bool {
     map_fixes_public_statement_local(map.local())
 }
 
-fn map_fixes_public_statement_local(map: &crate::f2map::PreparedVirtualMap) -> bool {
+fn map_fixes_public_statement_local(map: &circuit::linear_map::binary::PreparedVirtualMap) -> bool {
     const PUBLIC_BITS: usize = SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS;
 
     let mut sources = [None; PUBLIC_BITS];
     for (f_column, entries) in map.matrix().columns().enumerate() {
-        for &h_column in entries.row_indices() {
+        for &h_column in entries.indices() {
             let Some(index) = public_bit_index_for_h_column(h_column) else {
                 continue;
             };
@@ -2908,7 +2851,7 @@ mod tests {
             .matrix()
             .column(PRIVATE_LOCAL_SOURCE_CELL)
             .unwrap()
-            .row_indices()
+            .indices()
         {
             for (row, coefficient) in prepared
                 .linear_relation()
@@ -3106,9 +3049,12 @@ mod tests {
             .collect::<Vec<_>>();
         let local_row_weights = eq_table(&local_row_point, &field_config).unwrap();
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_config).unwrap();
-        let beta =
-            collapse_local_linear_columns(&prepared, &local_row_weights, &reducer, &field_config)
-                .unwrap();
+        let beta = crate::sumcheck::bridge::repeated::collapse_signed_columns(
+            prepared.linear_relation().native_matrix(),
+            &local_row_weights,
+            &reducer,
+        )
+        .unwrap();
         let projected = prepared.project_linear_relation(&field_config).unwrap();
 
         assert_eq!(local_row_weights.len(), 1 << 8);
@@ -3139,9 +3085,12 @@ mod tests {
             .collect::<Vec<_>>();
         let local_row_weights = eq_table(&local_row_point, &field_config).unwrap();
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_config).unwrap();
-        let beta =
-            collapse_local_linear_columns(&prepared, &local_row_weights, &reducer, &field_config)
-                .unwrap();
+        let beta = crate::sumcheck::bridge::repeated::collapse_signed_columns(
+            prepared.linear_relation().native_matrix(),
+            &local_row_weights,
+            &reducer,
+        )
+        .unwrap();
         let instance_point = [SpartanF2zField::from_with_cfg(13_u64, &field_config)];
         let slot_weights = (0..SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS)
             .map(|slot| SpartanF2zField::from_with_cfg(slot as u64 + 17, &field_config))

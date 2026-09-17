@@ -14,68 +14,12 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use crate::integer_storage::IntegerTable;
+use crate::linear_map::{CsrBuilder, CsrMatrix, ImplicitOnes};
 use field::{CheckedArithmetic, CtEq, CtMask, CtSelect, CtValue, IntegerOps, WideMul, Z};
 use num_traits::{One, Zero};
 
 use crate::witgen::PackedWitness;
 use crate::{BoolWitness, Circuit, HintResult, PackedBits, ScalarBits, WitnessContext};
-
-/// One row of a sparse matrix, sorted by increasing column index.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SparseRow<C> {
-    entries: Vec<(usize, C)>,
-}
-
-impl<C> SparseRow<C> {
-    /// Nonzero `(column, coefficient)` entries in increasing column order.
-    pub fn entries(&self) -> &[(usize, C)] {
-        &self.entries
-    }
-}
-
-/// Handle into a matrix's declared-width coefficient storage.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CoefficientIndex(usize);
-
-/// Sparse rows whose coefficient indices refer to fixed-width typed segments.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct SparseIntegerMatrix {
-    rows: Vec<SparseRow<CoefficientIndex>>,
-    columns: usize,
-    coefficients: IntegerTable,
-}
-
-impl SparseIntegerMatrix {
-    pub fn rows(&self) -> &[SparseRow<CoefficientIndex>] {
-        &self.rows
-    }
-    pub fn row_count(&self) -> usize {
-        self.rows.len()
-    }
-    pub const fn column_count(&self) -> usize {
-        self.columns
-    }
-    pub fn coefficients(&self) -> &IntegerTable {
-        &self.coefficients
-    }
-    pub fn coefficient_words(&self, index: CoefficientIndex) -> &[u64] {
-        &self.coefficients[index.0]
-    }
-    pub fn copy_coefficient_to(&self, index: CoefficientIndex, output: &mut IntegerTable) {
-        self.coefficients.copy_row_to(index.0, output);
-    }
-    pub fn row_entries(&self, row: usize) -> impl ExactSizeIterator<Item = (usize, &[u64])> {
-        self.rows[row]
-            .entries
-            .iter()
-            .map(|&(column, index)| (column, self.coefficient_words(index)))
-    }
-    fn push<const L: usize>(&mut self, value: LinearCombination<L>) {
-        value.validate_boolean_bounds();
-        let row = value.into_sparse_row(&mut self.coefficients);
-        self.rows.push(row);
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 struct RowCheck {
@@ -89,54 +33,17 @@ impl PartialEq for RowCheck {
 }
 impl Eq for RowCheck {}
 
-/// One sparse F2 row, represented solely by its nonzero column positions.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SparseBoolRow {
-    positions: Vec<usize>,
-}
-
-impl SparseBoolRow {
-    /// Nonzero column positions in increasing order.
-    pub fn positions(&self) -> &[usize] {
-        &self.positions
-    }
-}
-
-/// A row-major sparse matrix over F2.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SparseBoolMatrix {
-    rows: Vec<SparseBoolRow>,
-    columns: usize,
-}
-
-impl SparseBoolMatrix {
-    /// Matrix rows.
-    pub fn rows(&self) -> &[SparseBoolRow] {
-        &self.rows
-    }
-
-    /// Number of rows.
-    pub fn row_count(&self) -> usize {
-        self.rows.len()
-    }
-
-    /// Number of columns, including the constant column zero.
-    pub const fn column_count(&self) -> usize {
-        self.columns
-    }
-}
-
 /// The four sparse matrices generated for an F2Z circuit.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstraintMatrices {
     /// Boolean-to-integer witness matrix.
-    pub m: SparseBoolMatrix,
+    pub m: CsrMatrix<ImplicitOnes>,
     /// Left R1CS matrix.
-    pub a: SparseIntegerMatrix,
+    pub a: CsrMatrix<IntegerTable>,
     /// Right R1CS matrix.
-    pub b: SparseIntegerMatrix,
+    pub b: CsrMatrix<IntegerTable>,
     /// Output R1CS matrix.
-    pub c: SparseIntegerMatrix,
+    pub c: CsrMatrix<IntegerTable>,
     row_checks: Vec<RowCheck>,
 }
 
@@ -180,17 +87,15 @@ impl ConstraintMatrices {
         Ok(self
             .m
             .rows()
-            .iter()
             .map(|row| {
-                let value = row.positions().iter().fold(false, |value, column| {
+                row.indices().iter().fold(false, |value, column| {
                     value
                         ^ if *column == 0 {
                             true
                         } else {
                             witness.bit(column - 1)
                         }
-                });
-                value
+                })
             })
             .collect())
     }
@@ -220,12 +125,15 @@ impl ConstraintMatrices {
 }
 
 fn evaluate_integer_row<const L: usize>(
-    matrix: &SparseIntegerMatrix,
+    matrix: &CsrMatrix<IntegerTable>,
     row: usize,
     witness: &[bool],
 ) -> Z<L> {
     matrix
-        .row_entries(row)
+        .row(row)
+        .unwrap()
+        .iter()
+        .map(|(column, coefficient)| (column, coefficient.as_words()))
         .fold(Z::ZERO, |sum, (column, words)| {
             // Width and positive/negative subset bounds were checked at preparation.
             let coefficient = Z::from_twos_complement_words(
@@ -378,23 +286,18 @@ impl<const L: usize> LinearCombination<L> {
         }
     }
 
-    fn into_sparse_row(self, storage: &mut IntegerTable) -> SparseRow<CoefficientIndex> {
-        let mut entries =
-            Vec::with_capacity(self.witnesses.len() + usize::from(!self.constant.is_zero()));
-        // Store the compact handles directly. Collecting them from a Vec of
-        // full-width coefficients can retain that much larger allocation.
-        let mut push = |column, coefficient| {
-            let index = storage.len();
-            storage.push(coefficient);
-            entries.push((column, CoefficientIndex(index)));
-        };
-        if !self.constant.is_zero() {
-            push(0, self.constant);
-        }
-        for (witness, coefficient) in self.witnesses {
-            push(witness + 1, coefficient);
-        }
-        SparseRow { entries }
+    fn append_to(self, builder: &mut CsrBuilder<IntegerTable>) {
+        self.validate_boolean_bounds();
+        let constant = (!self.constant.is_zero()).then_some((0, self.constant));
+        builder
+            .push_row(
+                constant.into_iter().chain(
+                    self.witnesses
+                        .into_iter()
+                        .map(|(witness, coefficient)| (witness + 1, coefficient)),
+                ),
+            )
+            .expect("canonical circuit columns fit usize");
     }
 }
 
@@ -495,9 +398,9 @@ pub struct ConstraintGenerator {
     input_witnesses: usize,
     next_boolean_witness: usize,
     m_rows: Vec<BoolLinearCombination>,
-    a: SparseIntegerMatrix,
-    b: SparseIntegerMatrix,
-    c: SparseIntegerMatrix,
+    a: CsrBuilder<IntegerTable>,
+    b: CsrBuilder<IntegerTable>,
+    c: CsrBuilder<IntegerTable>,
     row_checks: Vec<RowCheck>,
 }
 
@@ -508,9 +411,9 @@ impl ConstraintGenerator {
             input_witnesses,
             next_boolean_witness: input_witnesses,
             m_rows: Vec::new(),
-            a: SparseIntegerMatrix::default(),
-            b: SparseIntegerMatrix::default(),
-            c: SparseIntegerMatrix::default(),
+            a: CsrBuilder::new(IntegerTable::default()),
+            b: CsrBuilder::new(IntegerTable::default()),
+            c: CsrBuilder::new(IntegerTable::default()),
             row_checks: Vec::new(),
         }
     }
@@ -551,41 +454,38 @@ impl ConstraintGenerator {
             input_witnesses: _,
             next_boolean_witness,
             m_rows,
-            mut a,
-            mut b,
-            mut c,
-            row_checks,
-        } = self;
-        let integer_columns = m_rows.len() + 1;
-
-        let mut materialized_m = Vec::with_capacity(integer_columns);
-        materialized_m.push(SparseBoolRow { positions: vec![0] });
-        materialized_m.extend(m_rows.into_iter().map(bool_sparse_row));
-
-        a.columns = integer_columns;
-        b.columns = integer_columns;
-        c.columns = integer_columns;
-
-        ConstraintMatrices {
-            m: SparseBoolMatrix {
-                rows: materialized_m,
-                columns: next_boolean_witness + 1,
-            },
             a,
             b,
             c,
             row_checks,
+        } = self;
+        let integer_columns = m_rows.len() + 1;
+
+        let mut materialized_m = CsrBuilder::new(ImplicitOnes::default());
+        materialized_m.push_row([(0, true)]).expect("constant row");
+        for row in m_rows {
+            let constant = row.constant.then_some((0, true));
+            materialized_m
+                .push_row(
+                    constant
+                        .into_iter()
+                        .chain(row.witnesses.into_iter().map(|witness| (witness + 1, true))),
+                )
+                .expect("canonical Boolean columns");
+        }
+        ConstraintMatrices {
+            m: materialized_m
+                .finish(next_boolean_witness + 1)
+                .expect("allocated Boolean columns"),
+            a: a.finish(integer_columns)
+                .expect("allocated integer columns"),
+            b: b.finish(integer_columns)
+                .expect("allocated integer columns"),
+            c: c.finish(integer_columns)
+                .expect("allocated integer columns"),
+            row_checks,
         }
     }
-}
-
-fn bool_sparse_row(value: BoolLinearCombination) -> SparseBoolRow {
-    let mut positions = Vec::with_capacity(value.witnesses.len() + usize::from(value.constant));
-    if value.constant {
-        positions.push(0);
-    }
-    positions.extend(value.witnesses.into_iter().map(|witness| witness + 1));
-    SparseBoolRow { positions }
 }
 
 impl Circuit for ConstraintGenerator {
@@ -639,9 +539,9 @@ impl Circuit for ConstraintGenerator {
         b: LinearCombination<LIMBS>,
         c: LinearCombination<LIMBS>,
     ) {
-        self.a.push(a);
-        self.b.push(b);
-        self.c.push(c);
+        a.append_to(&mut self.a);
+        b.append_to(&mut self.b);
+        c.append_to(&mut self.c);
         self.row_checks.push(RowCheck {
             limbs: LIMBS,
             check: check_integer_constraint::<LIMBS>,
@@ -679,23 +579,40 @@ mod tests {
         assert_eq!(matrices.m.column_count(), 3);
         assert_eq!(matrices.a.row_count(), 1);
         assert_eq!(matrices.a.column_count(), 4);
-        assert_eq!(matrices.m.rows()[0].positions(), &[0]);
-        assert_eq!(matrices.m.rows()[1].positions(), &[1, 2]);
+        assert_eq!(matrices.m.row(0).unwrap().indices(), &[0]);
+        assert_eq!(matrices.m.row(1).unwrap().indices(), &[1, 2]);
         assert_eq!(
-            matrices.a.row_entries(0).collect::<Vec<_>>(),
+            matrices
+                .a
+                .row(0)
+                .unwrap()
+                .iter()
+                .map(|(column, coefficient)| (column, coefficient.as_words()))
+                .collect::<Vec<_>>(),
             [(2, &[2][..])]
         );
         assert_eq!(
-            matrices.c.row_entries(0).collect::<Vec<_>>(),
+            matrices
+                .c
+                .row(0)
+                .unwrap()
+                .iter()
+                .map(|(column, coefficient)| (column, coefficient.as_words()))
+                .collect::<Vec<_>>(),
             [(1, &[u64::MAX][..]), (2, &[1][..]), (3, &[1][..])]
         );
         let satisfying = Witgen::with_inputs(&[true, false]);
         assert!(matrices.is_satisfied(satisfying.witness()));
-        let index = matrices.c.coefficients.len();
-        matrices.c.coefficients.push(Z::<1>::ONE);
-        matrices.c.rows[0]
-            .entries
-            .push((0, CoefficientIndex(index)));
+        let mut changed = CsrBuilder::new(IntegerTable::default());
+        changed
+            .push_row([
+                (0, Z::<1>::ONE),
+                (1, -Z::<1>::ONE),
+                (2, Z::<1>::ONE),
+                (3, Z::<1>::ONE),
+            ])
+            .unwrap();
+        matrices.c = changed.finish(4).unwrap();
         assert_eq!(
             matrices.check_witness(satisfying.witness()),
             Err(SatisfactionError::Constraint { row: 0 })
@@ -712,7 +629,7 @@ mod tests {
         assert_eq!(
             matrices
                 .b
-                .coefficients
+                .coefficients()
                 .iter()
                 .map(<[u64]>::len)
                 .collect::<Vec<_>>(),

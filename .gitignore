@@ -30,3 +30,11 @@ scripts/__pycache__
 /vendor/field/target/
 
 /vendor/flock-mod/target/
+
+# Curated matrix-binding API and qualification records.
+!docs/
+/docs/*
+!/docs/matrix-binding.md
+!/docs/benchmarks/
+/docs/benchmarks/*
+!/docs/benchmarks/matrix-binding-2026-09-16/

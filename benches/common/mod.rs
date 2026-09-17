@@ -20,6 +20,7 @@
 
 pub mod cli;
 pub mod environment;
+pub mod proof_fingerprint;
 
 /// Serialize native SDK sessions in tests and explicitly supply their subscriber.
 #[cfg(all(test, feature = "span-metrics"))]
@@ -41,6 +42,8 @@ pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
+#[cfg(feature = "bench-peak-memory")]
+pub mod heap_run;
 #[cfg(feature = "span-metrics")]
 pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
@@ -130,6 +133,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_BENCH_ORDER",
     "F2Z_BENCH_PASS",
     "F2Z_BENCH_QUIET",
+    "F2Z_BENCH_PHASE_SAMPLES",
+    "F2Z_BENCH_PROOF_FINGERPRINT",
     "F2Z_BENCH_REPS",
     "F2Z_BENCH_SEED",
     "F2Z_BENCH_SHAPES",
@@ -141,6 +146,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_EQF_DOUBLE_MIN",
     "F2Z_EQF_FUSE",
     "F2Z_EQF_NOKERNEL",
+    "F2Z_GKR_DIRECT_CLOSE",
+    "F2Z_GKR_RECOVER",
     "F2Z_EQ_TABLE_SAMPLES",
     "F2Z_FIXED_SCALAR",
     "F2Z_FLAT_FOREST",
@@ -606,6 +613,10 @@ impl StepSamples {
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
     pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
+        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"prove", "total_ms":total_ms,
+                "commit_ms":commit_ms, "phases_seconds":phases}));
+        }
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
         self.record_scopes(
@@ -622,6 +633,10 @@ impl StepSamples {
 
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
     pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
+        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"verify", "total_ms":total_ms,
+                "phases_seconds":phases}));
+        }
         self.total.push(total_ms);
         self.commit.push(None);
         self.record_scopes(
@@ -965,4 +980,10 @@ pub fn ligerito_identity(
         "ligerito_hex".into(),
         f2z::ligerito_flock::ResolvedLigerito::encode_report(&ligerito_report(resolved, ood)),
     )
+}
+
+/// Per-trial detail timings, emitted after the captured proof/verification scopes.
+/// Retain each label separately so improvements cannot hide a slower inner sumcheck.
+pub fn print_regression_phases(phases: &[(String, f64)]) {
+    println!("REGRESSION_PHASES {}", serde_json::to_string(phases).expect("phase JSON"));
 }

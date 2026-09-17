@@ -67,10 +67,10 @@ pub use f2z::{
     spartan_f2z_field_config, verify_u32_mul,
 };
 
-pub use crate::sparse_matrix::SparseMatrixError;
+pub use circuit::linear_map::SparseMatrixError;
 pub use matrix::{
     ConstraintMatrices, ConstraintMatricesSkeleton, MleClaimError, ModulusIndependentCoefficient,
-    PreparedConstraintMatrices, ScaledMleEvaluationClaim, SparseMatrix, SpartanMatrixCoefficient,
+    PreparedConstraintMatrices, ScaledMleEvaluationClaim, SpartanMatrixCoefficient,
     SpartanMatrixError, build_assignment_mle, build_boolean_assignment_mle, build_product_mles,
     eq_eval, eq_table, make_equality_factors,
 };
@@ -205,7 +205,8 @@ pub trait SpartanField:
     Copy + core::fmt::Debug + Eq + Send + Sync + field::CtEq + field::CtSelect
 {
     type Inner: Clone + core::fmt::Debug + Eq + Send + Sync;
-    type Config: sumcheck::SumcheckProductReducer<Self>
+    type Config: field::BatchMulAcc<Self>
+        + field::Reduce<<Self::Config as field::BatchMulAcc<Self>>::Accumulator, Output = Self>
         + crate::sumcheck::outer::OuterArithmetic<Self, Self>
         + field::BatchFieldOps<Elem = Self>
         + field::CanonicalCodec<Self>

@@ -135,6 +135,12 @@ impl Context {
             assert!(matching.next().is_none(), "duplicate F2Z {label}");
             timing.add(name, tag, s.start_ns, s.end_ns);
         }
+        super::common::print_regression_phases(&::f2z::observability::totals(
+            raw.iter().filter(|s| s.end_ns <= trial.verification.start_ns),
+        ));
+        for span in raw.iter().filter(|s| s.label() == "mc:forest") {
+            timing.add("gkr", "gkr", span.start_ns, span.end_ns);
+        }
         timing
     }
 
@@ -162,7 +168,8 @@ impl Context {
                     commit_u32_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u32 commitment")
                 };
-                let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                let mut transcript = Blake3Transcript::new();
+                let proof = prove_u32_mul(&mut transcript, relation, &witness, &hint)
                     .expect("u32 full proof");
                 drop(online);
                 drop(total);
@@ -177,6 +184,7 @@ impl Context {
                     .expect("u32 full verification");
                 }
                 drop(root);
+                super::common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &transcript);
                 let bytes = hint.commitment.root.len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
@@ -202,7 +210,8 @@ impl Context {
                     commit_u64_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u64 commitment")
                 };
-                let proof = prove_u64_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                let mut transcript = Blake3Transcript::new();
+                let proof = prove_u64_mul(&mut transcript, relation, &witness, &hint)
                     .expect("u64 full proof");
                 drop(online);
                 drop(total);
@@ -217,6 +226,7 @@ impl Context {
                     .expect("u64 full verification");
                 }
                 drop(root);
+                super::common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &transcript);
                 let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
                 bytes
@@ -236,7 +246,8 @@ impl Context {
                     commit_u128_mul_witness(relation, witness.f2z_bit_rows())
                         .expect("u128 commitment")
                 };
-                let proof = prove_u128_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)
+                let mut transcript = Blake3Transcript::new();
+                let proof = prove_u128_mul(&mut transcript, relation, &witness, &hint)
                     .expect("u128 full proof");
                 drop(online);
                 drop(total);
@@ -251,6 +262,7 @@ impl Context {
                     .expect("u128 full verification");
                 }
                 drop(root);
+                super::common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &transcript);
                 let bytes = hint.commitment.root.len() + proof.size_bytes(relation.security());
                 std::hint::black_box(proof);
                 bytes
