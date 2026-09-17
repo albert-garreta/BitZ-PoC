@@ -9,6 +9,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parents[1] / "scripts"))
+from local_provenance import vendor_snapshots
 
 
 def main():
@@ -23,7 +25,7 @@ def main():
     subprocess.run(command, cwd=ROOT, env=env, stdout=sys.stderr, check=True)
     binary = ROOT / "target/release/binius64-sha256-ecdsa"
     info = json.loads(subprocess.check_output([str(binary), "--build-info"], text=True))
-    info.update(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
+    info.update(vendor_snapshots=vendor_snapshots(ROOT.parents[1]), binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
     # Resolved sha2 backends, one line per version: the bitz path dependency
     # pulls flock-core, whose `asm` feature accelerates sha2 0.10 (host-side
     # p256 digests only); binius-hash's BaseFold Merkle hashing is sha2 0.11,

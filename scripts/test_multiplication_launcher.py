@@ -18,6 +18,9 @@ from test_mul_report import fixture
 
 class Launcher(unittest.TestCase):
     def setUp(self):
+        check = patch.object(launcher, "vendor_snapshots", return_value={})
+        check.start()
+        self.addCleanup(check.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.output = (Path(self.temp.name) / "results").resolve()

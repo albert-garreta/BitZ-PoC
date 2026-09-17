@@ -258,7 +258,7 @@ struct TraceWriter {
     output: JsonlWriter<BufWriter<File>>,
     campaign_id: String,
     git_rev: String,
-    git_dirty: bool,
+    git_dirty: Option<bool>,
     build_profile: String,
     cpu: String,
     threads: usize,
@@ -283,14 +283,9 @@ impl TraceWriter {
         let campaign_id = std::env::var("BITZ_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
         let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
-            command_output("git", &["rev-parse", "--short", "HEAD"], "unknown")
+            common::environment::revision()
         });
-        let git_dirty = Command::new("git")
-            .args(["status", "--porcelain", "--untracked-files=no"])
-            .output()
-            .map_or(true, |output| {
-                !output.status.success() || !output.stdout.is_empty()
-            });
+        let git_dirty = common::environment::dirty();
         let cpu = std::env::var("BITZ_MULTISWAP_CPU").unwrap_or_else(|_| {
             command_output(
                 "sysctl",
