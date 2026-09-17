@@ -117,7 +117,7 @@ SHA-256 checksum, and reuses an existing matching installation. It requires
 
 This block runs SHA-256/P-256, SHA-256 chain comparisons, multiplication comparisons,
 the BitZ full-product u32 sweep, and matched MultiSwap sequentially. It uses
-Python 3.11 or newer and an existing Limber checkout at the pinned revision.
+Python 3.11 or newer and an existing Limber checkout with the matched benchmark.
 The examples use `../limber-impl`; set `LIMBER_DIR` if your Limber checkout is elsewhere.
 
 These commands run directly, without the benchmark gate. MultiSwap's
@@ -143,10 +143,8 @@ mkdir -p bench_results
 export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
 echo "Results: $RUN_DIR"
 
-# Use the existing pinned Limber checkout.
+# Use the existing Limber checkout.
 LIMBER_DIR=../limber-impl
-test "$(git -C "$LIMBER_DIR" rev-parse HEAD)" = \
-  "836c50f23e674098dcfbe42a4873f583d4e0fe3f"
 
 # 1. SHA-256 + P-256: BitZ, Binius64, Binius64-Ligerito
 python3 scripts/run_sha256_ecdsa_compare.py \
@@ -347,24 +345,19 @@ roughly 114-bit bound. This accounting is per check/round, not a combined
 whole-proof soundness bound or an RSA key-strength claim. Limber retains its
 native 128-bit integer target and 117-bit integer challenge bound target.
 
-Run these commands from the repository root. MultiSwap uses the same published
-Limber revision as `Cargo.toml`: `836c50f23e674098dcfbe42a4873f583d4e0fe3f`.
-Prepare its checkout once, using a destination that does not already exist;
-skip this step if `../limber-impl` is already at that revision:
+Run these commands from the repository root. MultiSwap benchmarks the existing
+Limber checkout supplied through `--limber-root` and records its revision for
+provenance. If you need a checkout, the optional setup helper clones the Cargo
+dependency revision into a destination that does not already exist:
 
 ```sh
 python3 scripts/prepare_matched_limber.py ../limber-impl
 ```
 
-This clones the pinned revision directly and prepares its benchmark hash domains.
+This clones the dependency revision directly, with no patching or local commits.
 Use `--limber-root ../limber-impl` for the sibling
-checkout, whose revision must match the Cargo dependency pin. The setup and
-campaign scripts require Python 3.11 or newer.
-
-The setup helper and campaign runner migrate the Limber benchmark’s three
-comparison hash domains to the BitZ namespace in the supplied checkout.
-The campaign records the modified benchmark source hash and Git status;
-no local commit is created. This step is idempotent and skipped by `--dry-run`.
+checkout. The runner does not require its revision to match the Cargo dependency.
+The setup and campaign scripts require Python 3.11 or newer.
 
 The runner requires this repository's pinned Rust toolchain and Limber's
 `nightly-2026-07-01`. It sets `MSCFG=paper` and each backend's security

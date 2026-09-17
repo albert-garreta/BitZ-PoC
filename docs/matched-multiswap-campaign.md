@@ -83,11 +83,13 @@ every measured proof.
 
 ## Prepare Limber
 
-The required published revision is
-`836c50f23e674098dcfbe42a4873f583d4e0fe3f` in
-`https://github.com/wu-s-john/limber-impl.git`. Both the setup helper and the
-campaign runner read this pin from BitZ's `Cargo.toml` and require Python 3.11
-or newer. Prepare a checkout directly from that revision:
+Use an existing Limber checkout with the matched benchmark support. The campaign
+records its actual revision and local changes for provenance without requiring
+it to match BitZ's Cargo dependency. The setup helper and campaign runner require
+Python 3.11 or newer.
+
+If you need a checkout, the optional setup helper reads the source and revision
+from BitZ's `Cargo.toml`:
 
 ```sh
 python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
@@ -96,11 +98,11 @@ python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
 An existing local clone containing the pinned revision can be supplied with
 `--source PATH`. The helper refuses existing destinations, checks out the
 published commit with detached HEAD, and prints the path, source, and revision.
-It creates no commit. Skip preparation if the checkout
-already exists at the pinned revision.
+It creates no commit. Skip preparation when using an
+existing checkout.
 
 The runner defaults to `/tmp/limber-matched114`. Use `--limber-root` for another
-checkout; execution rejects a revision that differs from the Cargo dependency.
+checkout; no commit-equality check is performed.
 
 The setup helper and campaign runner migrate the Limber benchmark’s three
 comparison hash domains to the BitZ namespace in the supplied checkout.

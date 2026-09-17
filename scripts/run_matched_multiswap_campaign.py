@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import matched_multiswap_report as report
-from prepare_matched_limber import DEFAULT_DESTINATION, limber_dependency, migrate_multiswap_domains
+from prepare_matched_limber import DEFAULT_DESTINATION, migrate_multiswap_domains
 
 
 WORKLOAD_DISCLOSURE = (
@@ -580,7 +580,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bitz-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--limber-root", type=Path, default=DEFAULT_DESTINATION,
-                        help=f"checkout of Cargo.toml's pinned Limber revision (default: {DEFAULT_DESTINATION})")
+                        help=f"Limber checkout to benchmark (default: {DEFAULT_DESTINATION})")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--campaign-id")
     parser.add_argument("--samples", type=int, default=10)
@@ -632,7 +632,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         campaign_id = args.campaign_id or stamp
         bitz_root = args.bitz_root.resolve()
         limber_root = args.limber_root.resolve()
-        limber_revision = limber_dependency(bitz_root)["rev"]
         run_dir = (
             args.output_dir.resolve()
             if args.output_dir
@@ -670,7 +669,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "comparison_checks": "pending",
             "canonical_validation": "pending",
         }
-        manifest["repositories"]["limber"]["expected_git_revision"] = limber_revision
         if batch_counts is not None:
             manifest["workload"]["batch_counts"] = list(batch_counts)
             manifest["workload"]["k_semantics"] = "independent copies of the k=0 reference circuit in one proof"
@@ -686,11 +684,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise report.CampaignError(f"refusing to overwrite run directory {run_dir}")
         if not bitz_root.is_dir() or not limber_root.is_dir():
             raise report.CampaignError("BitZ and Limber repository roots must both exist")
-        if manifest["repositories"]["limber"]["git_revision"] != limber_revision:
-            raise report.CampaignError(
-                f"Limber checkout must be at Cargo.toml's pinned revision {limber_revision}; "
-                "pass --limber-root with a matching checkout"
-            )
         manifest["validator"] = None if args.draft else preflight_profiler(args.profiler)
         try:
             domain_migration = migrate_multiswap_domains(limber_root)
