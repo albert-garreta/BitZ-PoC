@@ -1625,15 +1625,16 @@ fn eqf_nokernel() -> bool {
     *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
 }
 
-// Opt-in until the complete proving workload matrix qualifies.
+/// Aggregate only needed coefficients. `F2Z_GKR_DIRECT_CLOSE=0` opts out.
 fn direct_close_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_GKR_DIRECT_CLOSE").is_ok_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var("F2Z_GKR_DIRECT_CLOSE").map_or(true, |v| v != "0"))
 }
 
+/// Recover the linear coefficient when supported. `F2Z_GKR_RECOVER=0` opts out.
 fn coefficient_recovery_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_GKR_RECOVER").is_ok_and(|v| v == "1"))
+    *ON.get_or_init(|| std::env::var("F2Z_GKR_RECOVER").map_or(true, |v| v != "0"))
 }
 
 /// Batch the two public-coordinate inverses without storing a per-round

@@ -5,7 +5,7 @@
     "commit": "db82a93bc96d548c917cda90b96f046115bc27dc",
     "parent": "289d7ac655b24a434a66bf79663ccd5c24b40cd0"
   },
-  "production_enabled": false,
+  "production_enabled": true,
   "full_matrix_confirmation_completed": false,
   "machine": {
     "platform": "Linux-6.17.0-41-generic-x86_64-with-glibc2.42",
@@ -6968,7 +6968,7 @@
     },
     "qualification_harness_tests": 7
   },
-  "production_source_matches_baseline": true,
+  "production_source_matches_baseline": false,
   "memory": [
     {
       "exponent": 7,
@@ -9299,5 +9299,25 @@
       30,
       31
     ]
+  },
+  "adoption": {
+    "decision": "User approved merging after reviewing measured gains and regressions.",
+    "implementation_commit": "db82a93bc96d548c917cda90b96f046115bc27dc",
+    "merge_commit": "36d13325",
+    "enabled_by_default": [
+      "F2Z_GKR_RECOVER",
+      "F2Z_GKR_DIRECT_CLOSE"
+    ],
+    "disable_value": "0",
+    "original_automatic_acceptance_policy_satisfied": false,
+    "validation": {
+      "default_on_sumcheck_tests": 9,
+      "explicit_opt_out_sumcheck_tests": 9,
+      "default_on_forest_equivalence_tests": 4,
+      "default_on_transcript_pins": 20,
+      "default_on_virtual_open": 4,
+      "default_on_forest_grinding": 1,
+      "default_on_ecdsa_regression": 1
+    }
   }
 }

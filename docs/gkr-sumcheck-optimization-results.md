@@ -1,5 +1,12 @@
 # GKR sumcheck optimization qualification
 
+**Adoption update:** the user approved merging the measured implementation
+from `db82a93b` after reviewing the gains and regressions below. Coefficient
+recovery and selective closing reductions are now enabled by default on
+`gkr-optimizations`. Set `F2Z_GKR_RECOVER=0` or `F2Z_GKR_DIRECT_CLOSE=0` to
+disable either path; controls are read once per process. This adoption decision
+does not change the benchmark results or turn inconclusive gates into passes.
+
 This campaign compares proving code with `4c03f2c190ccb1e54ef1e856e5330fdeb1651f5e`.
 The earlier ownership and compact-coefficient optimizations are already in that
 baseline. Their historical speedups are not gains from this campaign.
@@ -129,8 +136,8 @@ after observing this fixed campaign.
 | 47 | Warm verifier | 7.074 | 7.057 | [0.9829, 1.0062] |
 
 First-proof nonregression also remains inconclusive in some cells. The
-candidate therefore does not qualify for a new default under the approved
-policy. Whole-matrix 24-block confirmation cannot change this unmet primary
+candidate therefore did not qualify for a new default under the original
+automatic policy. Whole-matrix 24-block confirmation cannot change this unmet primary
 gate and is not represented as completed. A separate six-block workload
 screen and allocation measurements characterize the candidate further.
 
@@ -150,8 +157,9 @@ not the complete 24-block acceptance matrix.
 The small ten-thread SHA chain (`sha-n7`) regresses from **33.998 to 35.843 ms**
 whole-prover time, ratio interval **[1.00304, 1.06093]**. Its GKR phase also
 regresses, **20.321 to 22.013 ms**, interval **[1.02449, 1.09763]**. A universal
-default is therefore rejected independently of the inconclusive 2% primary
-gate. No fixture-specific dispatch was introduced to hide this result.
+default was therefore rejected by the original automatic policy independently
+of the inconclusive 2% primary gate. The subsequent user approval accepts this
+tradeoff; no fixture-specific dispatch was introduced to hide this result.
 
 All intervals below are candidate/baseline. Full per-block ratios,
 first-proof GKR, online-prover timings, verifier measurements, fingerprints,
@@ -306,19 +314,25 @@ commitment, proving, and GKR, are retained in the qualification JSON.
 - The explicit ECDSA regression test passes for split/all-row outer modes
   and security targets 100/128. Existing proof and continuation pins are unchanged.
 
-The exact tested Rust candidate is committed as **`db82a93b`**, on
-**`gkr-cofactor-experiment-20260917`**. It contains opt-in controls
-`F2Z_GKR_RECOVER=1` and `F2Z_GKR_DIRECT_CLOSE=1`, both off by default.
-The baseline implementation has been restored on `gkr-optimizations`;
-`git diff 4c03f2c1 -- src crates vendor` is empty. Only the measurement harness
-and this report are retained on the production branch from this campaign.
+The exact measured implementation is preserved in **`db82a93b`**, on
+**`gkr-cofactor-experiment-20260917`**. That archived commit has opt-in controls;
+all reported candidate measurements enabled both controls explicitly.
+The implementation is now merged into **`gkr-optimizations`**, with both controls
+on by default. Explicit `0` selects the corresponding baseline path.
 
-No new default satisfies the approved acceptance policy. The experiment does
-show useful warmed improvements, but the fixed primary confirmation does not
-establish the minimum 2% GKR gain, several first-proof gates remain inconclusive,
-and the workload screen flags a small-SHA whole-prover regression. Consequently,
-the complete 24-block workload/outer-mode/security matrix was not run.
-The production prover retains its baseline implementation.
+The original automatic acceptance policy was not satisfied: the fixed primary
+confirmation does not establish the minimum 2% GKR gain, several first-proof
+gates remain inconclusive, and the screen flags a small-SHA whole-prover
+regression. The complete 24-block workload/outer-mode/security matrix was not
+run. The user subsequently approved adoption with these measured tradeoffs.
+The default-setting change does not introduce a new arithmetic implementation
+or claim a new benchmark result.
+
+With both environment variables unset, the enabled defaults pass nine sumcheck
+tests, four forest-equivalence tests, 20 transcript pins, four virtual openings,
+the grinding test, and the pinned ECDSA regression across both outer modes and
+security targets 100/128. A separate process with both controls set to `0`
+also passes the nine sumcheck tests.
 
 Raw builds, hashes, paired samples, allocation counters, compatibility checks,
 and rejected patches are retained under `PerfRuns/gruen-20260917/`. The
