@@ -12,18 +12,18 @@
 //! and a wrong geometry.
 
 use circuit::linear_map::CscMatrix;
-use f2z::ligerito::IntEvalRsError;
-use f2z::ligerito::{LOG_PACKING, RsOpenError, packed_vars};
-use f2z::ligerito_flock::{
+use bitz::ligerito::IntEvalRsError;
+use bitz::ligerito::{LOG_PACKING, RsOpenError, packed_vars};
+use bitz::ligerito_flock::{
     FlockRsError, IntEvalRsLigVirtProof, LigConfig, VirtualReductionProof, commit_rs_ligerito_rows,
     lig_configs, prove_mle_eval_mod_q_ligerito, prove_mle_eval_mod_q_ligerito_virtual,
     verify_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito_virtual,
 };
-use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
-use f2z::transcript::{Blake3Transcript, traits::Transcript};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
+use bitz::transcript::{Blake3Transcript, traits::Transcript};
 use {
     circuit::linear_map::binary::PreparedVirtualMap,
-    f2z::f2map::{cell_count, cell_row_bits},
+    bitz::f2map::{cell_count, cell_row_bits},
 };
 
 const Q: u128 = (1u128 << 100) - 15;
@@ -189,7 +189,7 @@ fn clone_proof(p: &IntEvalRsLigVirtProof) -> IntEvalRsLigVirtProof {
 
 /// The AdjointBatch reduction's `h_i` vector, mutable (all `run_shape`
 /// proofs use non-identity maps).
-fn hs_mut(p: &mut IntEvalRsLigVirtProof) -> &mut [f2z::poly::univariate::binary_gf128::Gf128; 128] {
+fn hs_mut(p: &mut IntEvalRsLigVirtProof) -> &mut [bitz::poly::univariate::binary_gf128::Gf128; 128] {
     match &mut p.reduction {
         VirtualReductionProof::AdjointBatch { hs } => hs,
         VirtualReductionProof::Eq { .. } => panic!("expected the adjoint-batch reduction"),
@@ -206,7 +206,7 @@ fn assert_proof_pin(
 ) {
     let actual_hash = blake3::hash(bytes).to_hex().to_string();
     let actual_next = transcript.get_challenge::<u128>();
-    if std::env::var_os("F2Z_RECORD_PINS").is_some() {
+    if std::env::var_os("BITZ_RECORD_PINS").is_some() {
         println!("VIRTUAL_PIN old={expected_hash} hash={actual_hash} next={actual_next}");
         return;
     }
@@ -433,7 +433,7 @@ fn run_shape(
     let mut bad = clone_proof(&proof);
     {
         let hs = hs_mut(&mut bad);
-        hs[5] = hs[5] + f2z::poly::univariate::binary_gf128::Gf128::one();
+        hs[5] = hs[5] + bitz::poly::univariate::binary_gf128::Gf128::one();
     }
     let mut vt = Blake3Transcript::new();
     assert_eq!(
@@ -462,7 +462,7 @@ fn run_shape(
     {
         let hs = hs_mut(&mut bad);
         hs[7] =
-            hs[7] + f2z::poly::univariate::binary_gf128::Gf128::from_polynomial_words([1 << 9, 0]);
+            hs[7] + bitz::poly::univariate::binary_gf128::Gf128::from_polynomial_words([1 << 9, 0]);
     }
     let mut vt = Blake3Transcript::new();
     assert!(
@@ -495,7 +495,7 @@ fn run_shape(
             &map,
             &rw_q,
             &col_w,
-            f2z::poly::univariate::binary_gf128::Gf128::one(),
+            bitz::poly::univariate::binary_gf128::Gf128::one(),
             y,
             Q_BITS,
             &vc_f,
@@ -570,11 +570,11 @@ fn virtual_open_roundtrips_one_chunk_w1() {
         },
         0x5EED_0001,
         (
-            "da079acb96cb908356dbeae9657279d0a266e2cebdd3b559f1e298c2f4dca7b8",
-            225010898117021338595252203487158044287,
+            "1115c44897d5692a14d3dede98045df3eed07b4bd4d3d040dbfa895846af38c6",
+            192585698080378905241560888412794267565,
         ),
         (
-            "75b829adf5d9fad7bb38f7372cd439c7271318ad19105e996b4a7887c9fff59f",
+            "215a0046dcfd0d96e56d450f408c4ffde22d109f482f101714a8aeeed1a0f3d2",
             153861637926687422897714699783274573012,
         ),
     );
@@ -591,11 +591,11 @@ fn virtual_open_roundtrips_two_chunks_w32() {
         },
         0x5EED_0002,
         (
-            "512d377daaee23bd31d9c9b3f4e36f817ad8721cdd6c351910d0764997f36a5a",
-            263204232473552520619525429556553869187,
+            "84ffddb7a5cb68eff1ad2b27e2ff501fdc2ffb40cd892e768661e293df9c394d",
+            331034142433143676266683986480971162761,
         ),
         (
-            "b65b6911eec48f8ee27ae81e46b02616cd15ad63bc720c6e610f77ee49ca8de5",
+            "d246b50b90f32df6aa4dbe53c32b2ca718b9075583a58a79e1cf3a752adc459c",
             6231788490516170606793433123686130868,
         ),
     );
@@ -699,7 +699,7 @@ fn virtual_open_single_live_row() {
 /// Eq on a non-eligible statement.
 #[test]
 fn virtual_open_identity_fast_path() {
-    use f2z::poly::univariate::binary_gf128::Gf128 as Gf;
+    use bitz::poly::univariate::binary_gf128::Gf128 as Gf;
     let p = IntegerMatrixLayout {
         row_vars: 10,
         col_vars: 5,
@@ -739,8 +739,8 @@ fn virtual_open_identity_fast_path() {
         "virtual identity Eq",
         &proof.to_bytes(),
         &mut pt,
-        "3d8a2ddad741be2cc67e6e6eb30c343fe517750ad28cbe11341632ba2a1013f1",
-        212699747587527204783989650411446418412,
+        "22638c20a03fcf817a58387b08626c9cd3a844c9713ce6b91a0215b8973ed581",
+        164515492270633433948669108842503103805,
     );
     assert!(
         matches!(proof.reduction, VirtualReductionProof::Eq { .. }),
@@ -918,7 +918,7 @@ fn virtual_open_identity_fast_path() {
 
     // Switch off: the general dual-basis reduction proves the identity map
     // too, and the (env-independent) verifier accepts it as well.
-    unsafe { std::env::set_var("F2Z_VIRT_ID_FAST", "0") };
+    unsafe { std::env::set_var("BITZ_VIRT_ID_FAST", "0") };
     let mut pt = Blake3Transcript::new();
     let general = prove_mle_eval_mod_q_ligerito_virtual(
         &mut pt, &hint, &rows_f, &p, &p, &map, &rw_q, Q_BITS, alpha, &pc,
@@ -927,16 +927,16 @@ fn virtual_open_identity_fast_path() {
         "virtual identity AdjointBatch",
         &general.to_bytes(),
         &mut pt,
-        "477b91c0b243b911b5848e75eee140332c991519636c01bd6ecdbc8275c946cb",
-        83601039004344076089583121593053695609,
+        "c231a95b49e013188a4918a600b1c9f5c789acde695e23d024503338f2ce6c59",
+        44537582123746099412702163952417241356,
     );
-    unsafe { std::env::remove_var("F2Z_VIRT_ID_FAST") };
+    unsafe { std::env::remove_var("BITZ_VIRT_ID_FAST") };
     assert!(
         matches!(
             general.reduction,
             VirtualReductionProof::AdjointBatch { .. }
         ),
-        "F2Z_VIRT_ID_FAST=0 must fall back to AdjointBatch"
+        "BITZ_VIRT_ID_FAST=0 must fall back to AdjointBatch"
     );
     let mut vt = Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito_virtual(

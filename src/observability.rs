@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn missing_processor_is_an_error_not_a_clock_fallback() {
-        let processor = TraceProcessor::new("/nonexistent-f2z-perfetto-test/trace_processor_shell");
+        let processor = TraceProcessor::new("/nonexistent-bitz-perfetto-test/trace_processor_shell");
         assert_eq!(
             processor.intervals(&[]).unwrap_err().kind(),
             if cfg!(unix) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and measure only the two F2Z SHA-256 workloads."""
+"""Build and measure only the two BitZ SHA-256 workloads."""
 
 from __future__ import annotations
 
@@ -90,17 +90,17 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     started = datetime.now(timezone.utc)
-    out = (args.out_dir or ROOT / "bench_results" / started.strftime("sha256-f2z-%Y%m%dT%H%M%S.%fZ")).resolve()
+    out = (args.out_dir or ROOT / "bench_results" / started.strftime("sha256-bitz-%Y%m%dT%H%M%S.%fZ")).resolve()
     out.mkdir(parents=True, exist_ok=False)
     env = os.environ.copy()
     env.setdefault("RUSTFLAGS", "-C target-cpu=native")
     # Select the standard workload/layout despite aliases or a previous trace run.
     removed = {
         key: env.pop(key) for key in list(env)
-        if key.startswith("F2Z_SHA_") or key in {"F2Z_BENCH_SHAPES", "F2Z_BENCH_PASS", "OBLONG_PROFILE_INTERVALS"}
+        if key.startswith("BITZ_SHA_") or key in {"BITZ_BENCH_SHAPES", "BITZ_BENCH_PASS", "OBLONG_PROFILE_INTERVALS"}
     }
-    env.update(RAYON_NUM_THREADS=str(args.threads), F2Z_BENCH_REPS=str(args.reps),
-               F2Z_BENCH_SEED=hex(args.seed), F2Z_BENCH_LAMBDA=args.security)
+    env.update(RAYON_NUM_THREADS=str(args.threads), BITZ_BENCH_REPS=str(args.reps),
+               BITZ_BENCH_SEED=hex(args.seed), BITZ_BENCH_LAMBDA=args.security)
     features = ["span-metrics"] if args.checked else ["unchecked", "span-metrics"]
     build = ["cargo", "bench", "--locked", "--no-run", "--message-format=json-render-diagnostics"]
     if args.offline:
@@ -117,7 +117,7 @@ def main() -> int:
         "workload": args.workload, "shapes": args.shapes, "threads": args.threads,
         "reps": args.reps, "warmups": 1, "lambda": args.security, "seed": hex(args.seed),
         "features": features, "default_features": True, "build_command": build,
-        "environment": {key: value for key, value in env.items() if key.startswith(("F2Z_", "F2_", "OBLONG_"))
+        "environment": {key: value for key, value in env.items() if key.startswith(("BITZ_", "F2_", "OBLONG_"))
                         or key in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_HOME", "CARGO_TARGET_DIR", "RAYON_NUM_THREADS"}},
         "cleared_environment": removed, "runs": [],
     }
@@ -141,7 +141,7 @@ def main() -> int:
             bench = BENCHES[workload]
             for shape in args.shapes:
                 run_id = f"{workload}-2p{shape}"
-                run_env = dict(env, F2Z_BENCH_SHAPES=str(shape))
+                run_env = dict(env, BITZ_BENCH_SHAPES=str(shape))
                 log = run_logged([executables[bench]], run_env, out / f"{run_id}.log")
                 results = [fields(line) for line in log.splitlines() if line.startswith("RESULT ")]
                 raw = [fields(line.strip()) for line in log.splitlines() if line.strip().startswith("SAMPLE ")]

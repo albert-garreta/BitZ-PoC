@@ -165,7 +165,7 @@ pub fn sample_prime_context(
         max_rejection_draws: 0,
     };
     policy.max_rejection_draws = policy.minimum_rejection_draws()?;
-    transcript.absorb_slice(b"f2z/shared-prime-sampling/v1");
+    transcript.absorb_slice(b"bitz/shared-prime-sampling/v1");
     transcript.absorb_slice(&min.to_le_bytes());
     transcript.absorb_slice(&max.to_le_bytes());
     transcript.absorb_slice(&policy.target_security_bits.to_le_bytes());

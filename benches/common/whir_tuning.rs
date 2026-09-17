@@ -95,7 +95,7 @@ impl Params {
 
 /// Explicit replay only. Ordinary invocations never read a previous winner.
 pub fn replay() -> Result<Option<Params>, String> {
-    let Some(path) = std::env::var_os("F2Z_WHIR_CONFIG") else {
+    let Some(path) = std::env::var_os("BITZ_WHIR_CONFIG") else {
         return Ok(None);
     };
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
@@ -429,9 +429,9 @@ pub fn tune<C>(
     report: impl Fn(&C) -> Value,
 ) -> Result<(Params, TuningReport), String> {
     let reps = if explicit.is_some() { 0 } else {
-        super::cli::env::<std::num::NonZeroUsize>("F2Z_WHIR_TUNING_REPS").map_or(5, usize::from)
+        super::cli::env::<std::num::NonZeroUsize>("BITZ_WHIR_TUNING_REPS").map_or(5, usize::from)
     };
-    let recording = f2z::observability::Recording::start(Vec::new()).map_err(|e| e.to_string())?;
+    let recording = bitz::observability::Recording::start(Vec::new()).map_err(|e| e.to_string())?;
     let campaign = tracing::info_span!("whir:tuning").entered();
     if let Some(params) = explicit {
         let context = setup(params)?;
@@ -444,7 +444,7 @@ pub fn tune<C>(
                 security: report(&context),
                 tuning_ms: {
                     drop(campaign);
-                    f2z::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
+                    bitz::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
                         .map_err(|e| e.to_string())?.as_secs_f64() * 1e3
                 },
                 candidates: vec![],
@@ -506,7 +506,7 @@ pub fn tune<C>(
             candidates,
             tuning_ms: {
                 drop(campaign);
-                f2z::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
+                bitz::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
                     .map_err(|e| e.to_string())?.as_secs_f64() * 1e3
             },
             workload: None,

@@ -29,7 +29,7 @@ def main():
         binaries={v: dict(path=str(p), sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for v,p in binaries.items()},
         args={k: str(v) if isinstance(v, Path) else v for k,v in vars(args).items()},
         affinity=sorted(os.sched_getaffinity(0))), indent=2))
-    clean = {k:v for k,v in os.environ.items() if not k.startswith(('F2Z_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
+    clean = {k:v for k,v in os.environ.items() if not k.startswith(('BITZ_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
     results = []
     for exponent in args.exponents:
         digest = None

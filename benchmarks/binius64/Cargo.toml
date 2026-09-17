@@ -18,12 +18,12 @@ binius-hash = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed6
 binius-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
 binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
 binius-transcript = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-# The F2Z opener over the same circuit and PIOP (`--method binius64-ligerito`):
+# The BitZ opener over the same circuit and PIOP (`--method binius64-ligerito`):
 # the parent crate's Binius64 adapter, pinned to the identical fork revision, so
 # the constraint-system and witness types unify. Its revision + dirty flag are
 # baked into --build-info (build.rs); the campaign manifest records the parent
 # repository's tracked diff.
-f2z = { path = "../..", features = ["binius64-bench", "span-metrics"] }
+bitz = { path = "../..", features = ["binius64-bench", "span-metrics"] }
 blake3 = "1.8"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 rayon = "1.11"
@@ -43,7 +43,7 @@ sha2 = "0.10"
 [profile.release]
 debug = 1
 # Match the parent crate's release profile: without fat LTO + codegen-units=1
-# the F2Z opener's vendored field kernels lose cross-unit inlining (measured
+# the BitZ opener's vendored field kernels lose cross-unit inlining (measured
 # 1.2-1.5x slower there), which would bias the opener rows; Binius64's own
 # prover shares whatever benefit it gets.
 lto = true

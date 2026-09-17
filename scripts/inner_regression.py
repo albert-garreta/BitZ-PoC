@@ -15,22 +15,22 @@ def cases(extended=False):
         for target in [100, 128]:
             for mode in ['split', 'all']:
                 result.append(dict(id=f'ecdsa-{mode}-{target}-t{threads}', exe='sha256_ecdsa', args=['3', mode, str(target)], threads=threads, env={}))
-            result.append(dict(id=f'sha-chain-{target}-t{threads}', exe='sha256_chain', args=[], threads=threads, env={'F2Z_BENCH_SHAPES': '7', 'F2Z_BENCH_LAMBDA': str(target)}))
+            result.append(dict(id=f'sha-chain-{target}-t{threads}', exe='sha256_chain', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '7', 'BITZ_BENCH_LAMBDA': str(target)}))
         for width in [1, 8]:
-            result.append(dict(id=f'u32-w{width}-t{threads}', exe='u32_mul', args=[], threads=threads, env={'F2Z_BENCH_SHAPES': '15', 'F2Z_MUL_WORD_BITS': str(width), 'F2Z_BENCH_PASS': 'latency'}))
+            result.append(dict(id=f'u32-w{width}-t{threads}', exe='u32_mul', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '15', 'BITZ_MUL_WORD_BITS': str(width), 'BITZ_BENCH_PASS': 'latency'}))
         for width in [64, 128]:
-            result.append(dict(id=f'u{width}-t{threads}', exe='mul_e2e_compare', args=[], threads=threads, env={'F2Z_BENCH_SHAPES': '15', 'F2Z_MUL_COMPARE_WORKLOADS': f'u{width}', 'F2Z_MUL_COMPARE_BACKENDS': 'f2z', 'F2Z_MUL_COMPARE_MEMORY': '0'}))
+            result.append(dict(id=f'u{width}-t{threads}', exe='mul_e2e_compare', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '15', 'BITZ_MUL_COMPARE_WORKLOADS': f'u{width}', 'BITZ_MUL_COMPARE_BACKENDS': 'bitz', 'BITZ_MUL_COMPARE_MEMORY': '0'}))
         for batch in [1, 2]:
-            result.append(dict(id=f'multiswap-b{batch}-t{threads}', exe='multiswap', args=[], threads=threads, env={'F2Z_BENCH_SHAPES': '0', 'F2Z_MULTISWAP_BATCH_COUNT': str(batch), 'F2Z_BENCH_LAMBDA': '114'}))
+            result.append(dict(id=f'multiswap-b{batch}-t{threads}', exe='multiswap', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '0', 'BITZ_MULTISWAP_BATCH_COUNT': str(batch), 'BITZ_BENCH_LAMBDA': '114'}))
     if extended:
         for old in list(result):
             if old['exe'] in ['u32_mul', 'mul_e2e_compare', 'sha256_chain']:
                 c = {**old, 'env': dict(old['env'])}
-                c['env']['F2Z_BENCH_SHAPES'] = '9' if c['exe'] == 'sha256_chain' else '17'
+                c['env']['BITZ_BENCH_SHAPES'] = '9' if c['exe'] == 'sha256_chain' else '17'
                 c['id'] += '-large'
                 result.append(c)
             if old['exe'] in ['u32_mul', 'mul_e2e_compare']:
-                c = {**old, 'env': {**old['env'], 'F2Z_LIG_PROFILE': 'custom:3:4'}, 'id': old['id'] + '-rate3'}
+                c = {**old, 'env': {**old['env'], 'BITZ_LIG_PROFILE': 'custom:3:4'}, 'id': old['id'] + '-rate3'}
                 result.append(c)
     return result
 
@@ -113,11 +113,11 @@ def run_one(root, out, case, side, reps, pair, memory=False):
             raise ValueError(f'cached run has different inputs or binary: {run}')
         return cached
     run.mkdir(parents=True, exist_ok=True)
-    env = {k: v for k, v in os.environ.items() if not k.startswith(('F2Z_', 'FLOCK_', 'RAYON_'))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('BITZ_', 'FLOCK_', 'RAYON_'))}
     env.update(case['env'])
-    env.update(RAYON_NUM_THREADS=str(case['threads']), F2Z_BENCH_REPS=str(reps), F2Z_BENCH_SEED='0x5533326d756c0064', F2Z_MUL_COMPARE_OUTPUT_DIR=str(run / 'native'), F2Z_MULTISWAP_TRACE_PATH=str(run / 'trace.jsonl'))
+    env.update(RAYON_NUM_THREADS=str(case['threads']), BITZ_BENCH_REPS=str(reps), BITZ_BENCH_SEED='0x5533326d756c0064', BITZ_MUL_COMPARE_OUTPUT_DIR=str(run / 'native'), BITZ_MULTISWAP_TRACE_PATH=str(run / 'trace.jsonl'))
     if memory and case['exe'] == 'u32_mul':
-        env['F2Z_BENCH_PASS'] = 'both'
+        env['BITZ_BENCH_PASS'] = 'both'
     command = [str(root / path_side / case['exe']), *case['args']]
     if case['exe'] == 'sha256_ecdsa':
         command.append(str(reps))
@@ -125,7 +125,7 @@ def run_one(root, out, case, side, reps, pair, memory=False):
     print(f"RUN {case['id']} {pair} {side}", flush=True)
     with open(run / 'stdout.log', 'w') as stdout, open(run / 'stderr.log', 'w') as stderr:
         result = subprocess.run(['/usr/bin/time', '-l', *command], env=env, stdout=stdout, stderr=stderr)
-    data = dict(request=request, command=command, environment={k: v for k, v in env.items() if k.startswith(('F2Z_', 'RAYON_', 'PERFETTO_'))}, exit_code=result.returncode, wall_seconds=time.time() - started)
+    data = dict(request=request, command=command, environment={k: v for k, v in env.items() if k.startswith(('BITZ_', 'RAYON_', 'PERFETTO_'))}, exit_code=result.returncode, wall_seconds=time.time() - started)
     if result.returncode == 0:
         try:
             data.update(parse_run(case, run))

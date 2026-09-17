@@ -14,7 +14,7 @@ from compare_prover_snapshots import paired_interval, classify_interval
 
 
 def evaluate(ecdsa, workloads):
-    expected_ecdsa = set(itertools.product(['f2z-split', 'f2z-all'], [7, 10, 12], [1, 10], [100, 128], [31, 47]))
+    expected_ecdsa = set(itertools.product(['bitz-split', 'bitz-all'], [7, 10, 12], [1, 10], [100, 128], [31, 47]))
     cases = ([f'{w}-n{n}' for w in ['u32-mod32', 'u64', 'u128'] for n in [15, 19]]
              + [f'full-u32-w{w}-n{n}' for w in [1, 8] for n in [15, 19]]
              + [f'sha-n{n}' for n in [7, 10, 12]]
@@ -29,7 +29,7 @@ def evaluate(ecdsa, workloads):
                 key = tuple(row[k] for k in ['method', 'exponent', 'threads', 'target', 'seed'])
                 seen = seen_e
                 total = 'e2e_prover_ms'
-                if key[:4] == ('f2z-split', 10, 10, 100):
+                if key[:4] == ('bitz-split', 10, 10, 100):
                     primary[key[4]] = row['metrics']['gkr_ms']['paired_ratios']
             else:
                 key = tuple(row[k] for k in ['case', 'threads', 'seed'])

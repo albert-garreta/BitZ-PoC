@@ -20,7 +20,7 @@ struct Args {
     params: WhirParams,
 }
 
-const RESULT_PREFIX: &str = "F2Z_MEMORY_RESULT ";
+const RESULT_PREFIX: &str = "BITZ_MEMORY_RESULT ";
 const BOUNDARY: &str = "fresh process: corpus generation, public setup, witness generation, commitment, proving, verification, and proof-size accounting; one verified proof, no warmup";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,7 +94,7 @@ pub(super) fn run_child(args: Vec<String>) -> Result<(), Box<dyn std::error::Err
         Context::Plonky3Fri(context) => context.prove_and_verify(),
         Context::Plonky3Whir(context) => context.prove_and_verify(),
         Context::Limber(context) => context.prove_and_verify(),
-        Context::F2z(context) => context.prove_and_verify(),
+        Context::Bitz(context) => context.prove_and_verify(),
     };
     let sample = Sample {
         backend: backend.slug().into(),
@@ -172,7 +172,7 @@ mod tests {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn peak_rss_bytes() -> std::io::Result<u64> {
     Err(std::io::Error::other(
-        "peak RSS is supported on macOS and Linux; use F2Z_MUL_COMPARE_MEMORY=0 for latency-only runs",
+        "peak RSS is supported on macOS and Linux; use BITZ_MUL_COMPARE_MEMORY=0 for latency-only runs",
     ))
 }
 
@@ -184,15 +184,15 @@ mod cli_tests {
     #[test]
     fn typed_memory_arguments() {
         Args::command().debug_assert();
-        let args = Args::try_parse_from(["memory", "f2z", "u32", "15", "18446744073709551615", "null"]).unwrap();
+        let args = Args::try_parse_from(["memory", "bitz", "u32", "15", "18446744073709551615", "null"]).unwrap();
         assert_eq!(args.workload, Workload::U32);
         assert_eq!(args.seed, u64::MAX);
         assert!(args.params.is_none());
         for args in [
             ["memory", "unknown", "u32", "15", "0", "null"],
-            ["memory", "f2z", "u256", "15", "0", "null"],
-            ["memory", "f2z", "u32", "x", "0", "null"],
-            ["memory", "f2z", "u32", "15", "0", "invalid-json"],
+            ["memory", "bitz", "u256", "15", "0", "null"],
+            ["memory", "bitz", "u32", "x", "0", "null"],
+            ["memory", "bitz", "u32", "15", "0", "invalid-json"],
         ] { assert!(Args::try_parse_from(args).is_err()); }
     }
 }

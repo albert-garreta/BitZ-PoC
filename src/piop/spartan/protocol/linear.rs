@@ -51,7 +51,7 @@ use super::{
         squeeze_field,
         sumcheck::SumcheckProof,
     },
-    BindingHasher, FieldConfig, ProtocolError, SpartanF2zField, check_boundary, f2z_generator,
+    BindingHasher, FieldConfig, ProtocolError, SpartanBitzField, check_boundary, bitz_generator,
     grind_boundary,
 };
 use crate::piop::spartan::profile::IopSecurityParams;
@@ -78,18 +78,18 @@ pub(crate) struct LinearDomains {
 /// `μ`, the factored coefficient table `V` of the legacy inner sumcheck,
 /// and its closed-form evaluation.
 pub(crate) trait LinearBatching {
-    fn initial_claim(&self) -> &SpartanF2zField;
+    fn initial_claim(&self) -> &SpartanBitzField;
 
     fn factored_matrix_mle(
         &self,
         config: &FieldConfig,
-    ) -> Result<FactoredMultilinearExtension<'_, SpartanF2zField>, ProtocolError>;
+    ) -> Result<FactoredMultilinearExtension<'_, SpartanBitzField>, ProtocolError>;
 
     fn evaluate(
         &self,
-        point: &[SpartanF2zField],
+        point: &[SpartanBitzField],
         config: &FieldConfig,
-    ) -> Result<SpartanF2zField, ProtocolError>;
+    ) -> Result<SpartanBitzField, ProtocolError>;
 }
 
 /// The rank-one functional the virtual opening discharges: the canonical
@@ -168,11 +168,11 @@ pub(crate) trait LinearRelationSpec: Sync {
     fn batching(
         &self,
         statement: &Self::Statement,
-        local_point: &[SpartanF2zField],
-        instance_point: &[SpartanF2zField],
-        slot_weights: Vec<SpartanF2zField>,
-        public_io_batch: SpartanF2zField,
-        constant_one: SpartanF2zField,
+        local_point: &[SpartanBitzField],
+        instance_point: &[SpartanBitzField],
+        slot_weights: Vec<SpartanBitzField>,
+        public_io_batch: SpartanBitzField,
+        constant_one: SpartanBitzField,
         reducer: &field::FpCtx<2>,
         config: &FieldConfig,
     ) -> Result<Self::Batching, ProtocolError>;
@@ -187,9 +187,9 @@ pub(crate) trait LinearRelationSpec: Sync {
     /// The legacy path's claim from the inner sumcheck's terminal point.
     fn inner_claim<'a>(
         &'a self,
-        point: &[SpartanF2zField],
-        coefficient_evaluation: &SpartanF2zField,
-        final_claim: SpartanF2zField,
+        point: &[SpartanBitzField],
+        coefficient_evaluation: &SpartanBitzField,
+        final_claim: SpartanBitzField,
         prime: &'a field::FpCtx<2>,
     ) -> Result<OpeningClaim<'a>, ProtocolError>;
 
@@ -208,10 +208,10 @@ pub(crate) trait LinearRelationSpec: Sync {
 #[derive(Clone)]
 pub struct LinearProof {
     initial_nonce: u64,
-    inner: SumcheckProof<SpartanF2zField, 3>,
+    inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
-    f2z: IntEvalRsLigVirtProof,
+    bitz: IntEvalRsLigVirtProof,
 }
 
 impl LinearProof {
@@ -219,7 +219,7 @@ impl LinearProof {
         self.initial_nonce
     }
 
-    pub const fn inner(&self) -> &SumcheckProof<SpartanF2zField, 3> {
+    pub const fn inner(&self) -> &SumcheckProof<SpartanBitzField, 3> {
         &self.inner
     }
 
@@ -231,8 +231,8 @@ impl LinearProof {
         self.terminal_nonce
     }
 
-    pub const fn f2z(&self) -> &IntEvalRsLigVirtProof {
-        &self.f2z
+    pub const fn bitz(&self) -> &IntEvalRsLigVirtProof {
+        &self.bitz
     }
 
     /// PIOP payload bytes: the two boundary nonces, the inner round
@@ -245,7 +245,7 @@ impl LinearProof {
         &mut self.initial_nonce
     }
 
-    pub fn inner_mut(&mut self) -> &mut SumcheckProof<SpartanF2zField, 3> {
+    pub fn inner_mut(&mut self) -> &mut SumcheckProof<SpartanBitzField, 3> {
         &mut self.inner
     }
 
@@ -257,8 +257,8 @@ impl LinearProof {
         &mut self.terminal_nonce
     }
 
-    pub fn f2z_mut(&mut self) -> &mut IntEvalRsLigVirtProof {
-        &mut self.f2z
+    pub fn bitz_mut(&mut self) -> &mut IntEvalRsLigVirtProof {
+        &mut self.bitz
     }
 }
 
@@ -285,7 +285,7 @@ fn challenge_point<T: Transcript>(
     domain: &[u8],
     vars: usize,
     config: &FieldConfig,
-) -> Result<Vec<SpartanF2zField>, ProtocolError> {
+) -> Result<Vec<SpartanBitzField>, ProtocolError> {
     absorb_spartan_message(transcript, b"challenge-domain", domain);
     Ok((0..vars)
         .map(|_| squeeze_field(transcript, config))
@@ -294,9 +294,9 @@ fn challenge_point<T: Transcript>(
 
 /// The batching challenges after the terminal boundary.
 struct BatchChallenges {
-    constant_one: SpartanF2zField,
-    slot_weights: Vec<SpartanF2zField>,
-    public_io_batch: SpartanF2zField,
+    constant_one: SpartanBitzField,
+    slot_weights: Vec<SpartanBitzField>,
+    public_io_batch: SpartanBitzField,
 }
 
 fn batch_challenges<T: Transcript, S: LinearRelationSpec>(
@@ -329,9 +329,9 @@ fn batch_challenges<T: Transcript, S: LinearRelationSpec>(
 fn claim_digest(
     domains: &LinearDomains,
     binding: &[u8; 32],
-    local_point: &[SpartanF2zField],
-    instance_point: &[SpartanF2zField],
-    assignment: Option<(&[SpartanF2zField], &SpartanF2zField)>,
+    local_point: &[SpartanBitzField],
+    instance_point: &[SpartanBitzField],
+    assignment: Option<(&[SpartanBitzField], &SpartanBitzField)>,
     challenges: &BatchChallenges,
     claim: &OpeningClaim<'_>,
     rows: &impl ModQWeightSource,
@@ -399,7 +399,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         });
     }
     crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, pc)
-        .map_err(ProtocolError::F2z)?;
+        .map_err(ProtocolError::Bitz)?;
     let f_layout = spec.source_layout();
     if hint.commitment.params.m != f_layout.row_vars + f_layout.col_vars {
         return Err(ProtocolError::InvalidGeometry);
@@ -569,9 +569,9 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         absorb_spartan_message(transcript, domains.claim_tag, &digest);
     }
 
-    let f2z = {
+    let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = tracing::info_span!("sha256:f2z_prove").entered();
+        let _scope = tracing::info_span!("sha256:bitz_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
             transcript,
             hint,
@@ -582,12 +582,12 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             &rows,
             prime.modulus_u128(),
             prime.modulus_bits(),
-            f2z_generator(),
+            bitz_generator(),
             security.forest_round_grinding_bits,
             ood,
             pc,
         )
-        .map_err(ProtocolError::F2z)?
+        .map_err(ProtocolError::Bitz)?
     };
 
     Ok(LinearProof {
@@ -595,7 +595,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         inner,
         inner_nonces,
         terminal_nonce,
-        f2z,
+        bitz,
     })
 }
 
@@ -612,7 +612,7 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     spec.validate_statement(statement)?;
     spec.validate_opener_config(vc)?;
     crate::ligerito_flock::validate_ligerito_commitment(commitment, vc)
-        .map_err(ProtocolError::F2z)?;
+        .map_err(ProtocolError::Bitz)?;
     let f_layout = spec.source_layout();
     let opened = spec.opened_layout();
     let product_layout = spec.product_layout();
@@ -641,9 +641,9 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         transcript,
         packed_vars(f_layout),
         security.ood,
-        proof.f2z.ood.as_ref(),
+        proof.bitz.ood.as_ref(),
     )
-    .map_err(ProtocolError::F2z)?;
+    .map_err(ProtocolError::Bitz)?;
 
     let step2_scope = tracing::info_span!("step2:project_verify").entered();
     {
@@ -756,17 +756,17 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     }
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = tracing::info_span!("sha256:f2z_verify").entered();
+    let _scope = tracing::info_span!("sha256:bitz_verify").entered();
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
         transcript,
         commitment,
-        &proof.f2z,
+        &proof.bitz,
         opened,
         f_layout,
         spec.map(),
         &rows,
         &claim.cols,
-        f2z_generator(),
+        bitz_generator(),
         claim.claimed,
         prime.modulus_u128(),
         prime.modulus_bits(),
@@ -774,5 +774,5 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         ood,
         vc,
     )
-    .map_err(ProtocolError::F2z)
+    .map_err(ProtocolError::Bitz)
 }

@@ -1,11 +1,11 @@
-//! End-to-end benchmark of Limber's MultiSwap Mod-R1CS through F2Z.
+//! End-to-end benchmark of Limber's MultiSwap Mod-R1CS through BitZ.
 //!
 //! The circuit is the wired RSA-accumulator instance ported from
 //! `lucasxia01/limber-impl@benches/multiswap_modp.rs` (`k = 0`, the only
 //! configuration Limber's authors mark quotable): four real square-and-
 //! multiply chains with 352-bit exponents mod RSA-2048, wired Pocklington
 //! hash-to-prime chains, chained Poseidon-cost rows, and full bit
-//! decomposition/reconstruction.  F2Z commits the witness and quotient
+//! decomposition/reconstruction.  BitZ commits the witness and quotient
 //! values as raw bits (`2^25` committed bits), Spartan proves the relation
 //! over a transcript-sampled 128-bit fingerprint prime, and the terminal
 //! assignment claim is reduced by Step 5.0 (exact integer lift plus a
@@ -13,8 +13,8 @@
 //!
 //! Output follows the unified schema (`docs/bench-schema.md`): the online
 //! prover includes bit-packing, commitment, both prime draws, Spartan,
-//! bitification, Step 5.0, and the F2Z opening. With
-//! `F2Z_MULTISWAP_TRACE_PATH`, every warmup/sample additionally records a
+//! bitification, Step 5.0, and the BitZ opening. With
+//! `BITZ_MULTISWAP_TRACE_PATH`, every warmup/sample additionally records a
 //! fresh witness synthesis, the online prover, and verification as exact
 //! `zkperf.trace/v1` intervals. Relation preparation remains outside those
 //! measured boundaries.
@@ -26,10 +26,10 @@
 //!   cargo bench --bench multiswap --features unchecked
 //! ```
 //!
-//! `F2Z_BENCH_REPS` selects the measured repetitions (default 5, plus one
-//! untimed warmup; `F2Z_MULTISWAP_REPS` is a deprecated alias).
-//! `F2Z_BENCH_SHAPES` selects the Limber `k` parameter (default `0`).
-//! `F2Z_BENCH_LAMBDA` selects the security profile: MultiSwap's relation
+//! `BITZ_BENCH_REPS` selects the measured repetitions (default 5, plus one
+//! untimed warmup; `BITZ_MULTISWAP_REPS` is a deprecated alias).
+//! `BITZ_BENCH_SHAPES` selects the Limber `k` parameter (default `0`).
+//! `BITZ_BENCH_LAMBDA` selects the security profile: MultiSwap's relation
 //! needs a two-prime (Strategy 2) profile, so `114` (`Limber114`, the
 //! pinned comparison target and the default) is the only admissible value
 //! today; the single-prime profiles abort with that list.
@@ -46,17 +46,17 @@ use common::output::{BenchmarkOutput, FileMode, JsonlWriter};
 
 use std::{collections::HashMap, fs::File, hint::black_box, io::BufWriter, process::Command};
 
-use f2z::observability::Interval;
-use f2z::piop::spartan::multiswap::{
+use bitz::observability::Interval;
+use bitz::piop::spartan::multiswap::{
     MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims, MultiswapProof,
     PreparedMultiswapRelation, commit_multiswap_witness, prove_multiswap_mod_r1cs,
     verify_multiswap_mod_r1cs,
 };
-use f2z::piop::spartan::{IopSecurityProfile, PrimePolicy};
-use f2z::transcript::Blake3Transcript;
+use bitz::piop::spartan::{IopSecurityProfile, PrimePolicy};
+use bitz::transcript::Blake3Transcript;
 use serde_json::{Value, json};
 
-const CONSTRAINT_DIGEST_DOMAIN: &str = "f2z/multiswap/circuit-digest/v1";
+const CONSTRAINT_DIGEST_DOMAIN: &str = "bitz/multiswap/circuit-digest/v1";
 
 #[derive(Clone, Copy)]
 enum Trial {
@@ -157,7 +157,7 @@ impl WitnessStats {
             .sum();
 
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"f2z/multiswap/integer-assignment/v1");
+        hasher.update(b"bitz/multiswap/integer-assignment/v1");
         hasher.update(&(domain as u64).to_le_bytes());
         // Historical diagnostic digest uses minimal unsigned byte encodings.
         // This value-dependent formatting is outside all prover kernels.
@@ -212,7 +212,7 @@ impl WitnessStats {
             "assignment_set_bits": self.assignment_set_bits,
             "assignment_nonzero_16bit_chunks": self.assignment_nonzero_16bit_chunks,
             "active_logup_blocks": null,
-            "assignment_digest_domain": "f2z/multiswap/integer-assignment/v1",
+            "assignment_digest_domain": "bitz/multiswap/integer-assignment/v1",
             "assignment_digest_blake3": self.assignment_digest_blake3,
         })
     }
@@ -234,13 +234,13 @@ struct RepTiming {
 
 #[derive(clap::Parser)]
 struct Env {
-    #[arg(long, env = "F2Z_MULTISWAP_BATCH_COUNT", default_value_t = 1)]
+    #[arg(long, env = "BITZ_MULTISWAP_BATCH_COUNT", default_value_t = 1)]
     batch_count: usize,
-    #[arg(long, env = "F2Z_MULTISWAP_CHECK_ONLY", default_value = "0")]
+    #[arg(long, env = "BITZ_MULTISWAP_CHECK_ONLY", default_value = "0")]
     check_only: String,
-    #[arg(long, env = "F2Z_MULTISWAP_TRACE_PATH")]
+    #[arg(long, env = "BITZ_MULTISWAP_TRACE_PATH")]
     trace_path: Option<std::path::PathBuf>,
-    #[arg(long, env = "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST", value_parser = normalized_digest)]
+    #[arg(long, env = "BITZ_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST", value_parser = normalized_digest)]
     expected_constraint_digest: Option<String>,
 }
 
@@ -277,9 +277,9 @@ impl TraceWriter {
         let output = BenchmarkOutput::new("")
             .jsonl(path, FileMode::CreateNew)
             .expect("create new MultiSwap trace JSONL without overwriting");
-        let campaign_id = std::env::var("F2Z_MULTISWAP_CAMPAIGN_ID")
+        let campaign_id = std::env::var("BITZ_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
-        let git_rev = std::env::var("F2Z_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
+        let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
             command_output("git", &["rev-parse", "--short", "HEAD"], "unknown")
         });
         let git_dirty = Command::new("git")
@@ -288,7 +288,7 @@ impl TraceWriter {
             .map_or(true, |output| {
                 !output.status.success() || !output.stdout.is_empty()
             });
-        let cpu = std::env::var("F2Z_MULTISWAP_CPU").unwrap_or_else(|_| {
+        let cpu = std::env::var("BITZ_MULTISWAP_CPU").unwrap_or_else(|_| {
             command_output(
                 "sysctl",
                 &["-n", "machdep.cpu.brand_string"],
@@ -296,7 +296,7 @@ impl TraceWriter {
             )
         });
         let build_profile =
-            std::env::var("F2Z_MULTISWAP_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
+            std::env::var("BITZ_MULTISWAP_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
         let expected_constraint_digest = env.expected_constraint_digest.clone();
         Some(Self {
             output,
@@ -364,7 +364,7 @@ impl TraceWriter {
         if let Some(expected) = &self.expected_constraint_digest {
             assert_eq!(
                 expected, &constraint_digest,
-                "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST does not match the measured relation"
+                "BITZ_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST does not match the measured relation"
             );
         }
 
@@ -384,11 +384,11 @@ impl TraceWriter {
         let trial_fragment = trial.id_fragment();
         let batch_count = circuit.batch_count();
         let run_id = format!(
-            "{}-f2z-k{k}-b{batch_count}-{}t-{trial_fragment}",
+            "{}-bitz-k{k}-b{batch_count}-{}t-{trial_fragment}",
             self.campaign_id, self.threads
         );
         let series_id = format!(
-            "{}-f2z-k{k}-b{batch_count}-{}-{}t-{}",
+            "{}-bitz-k{k}-b{batch_count}-{}-{}t-{}",
             self.campaign_id, self.git_rev, self.threads, self.build_profile
         );
         let root_span_id = span_id(roots[0].id);
@@ -407,8 +407,8 @@ impl TraceWriter {
                 "suite": "multiswap-matched",
                 "name": "wired-multiswap-rsa-cost-model",
                 "label": "Limber paper wired MultiSwap/RSA cost-model",
-                "algorithm": "integer Mod-R1CS / Spartan / virtual F2Z",
-                "implementation": "f2z-ligerito",
+                "algorithm": "integer Mod-R1CS / Spartan / virtual BitZ",
+                "implementation": "bitz-ligerito",
                 "git_rev": self.git_rev,
                 "git_dirty": self.git_dirty,
                 "build_profile": self.build_profile,
@@ -494,9 +494,9 @@ impl TraceWriter {
                 "timeline": "observed half-open intervals",
                 "setup_ns": self.setup_ns.to_string(),
                 "expected_constraint_digest_provided": self.expected_constraint_digest.is_some().to_string(),
-                "f2z_virt_id_fast": env_setting("F2Z_VIRT_ID_FAST", "default:on"),
-                "f2z_rs_fast": env_setting("F2Z_RS_FAST", "default:on"),
-                "f2z_flat_forest": env_setting("F2Z_FLAT_FOREST", "default:shape-dependent"),
+                "bitz_virt_id_fast": env_setting("BITZ_VIRT_ID_FAST", "default:on"),
+                "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
+                "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
                 "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
                 "arithmetic": "delayed-barrett",
             },
@@ -555,7 +555,7 @@ impl TraceWriter {
                 "start_ns": interval.start_ns.to_string(),
                 "end_ns": interval.end_ns.to_string(),
                 "duration_ns": interval.end_ns.saturating_sub(interval.start_ns).to_string(),
-                "lane": {"process": "f2z-benchmark", "thread": "control"},
+                "lane": {"process": "bitz-benchmark", "thread": "control"},
                 "coordinate": coordinate,
                 "attributes": attributes,
             });
@@ -724,16 +724,16 @@ fn span_names(label: &str) -> (String, String) {
         "multiswap-trace:assignment_materialization" => {
             Some(("Materialize witness and quotient assignment", "Assignment"))
         }
-        "multiswap-trace:end_to_end_prove" => Some(("Online F2Z prover", "Prover")),
-        "multiswap-trace:commit" => Some(("Total F2Z commitment", "Commit")),
+        "multiswap-trace:end_to_end_prove" => Some(("Online BitZ prover", "Prover")),
+        "multiswap-trace:commit" => Some(("Total BitZ commitment", "Commit")),
         "multiswap-trace:source_packing" => {
             Some(("Pack integer assignment into source bits", "Source packing"))
         }
         "multiswap-trace:pcs_commitment" => {
             Some(("Commit packed source with Ligerito", "PCS commit"))
         }
-        "multiswap-trace:proof" => Some(("Spartan, bridge, and F2Z opening proof", "Proof")),
-        "multiswap-trace:verification" => Some(("Verify complete F2Z proof", "Verify")),
+        "multiswap-trace:proof" => Some(("Spartan, bridge, and BitZ opening proof", "Proof")),
+        "multiswap-trace:verification" => Some(("Verify complete BitZ proof", "Verify")),
         "step2:project_prove" => Some((
             "Transcript prime draw and relation projection",
             "Projection",
@@ -741,7 +741,7 @@ fn span_names(label: &str) -> (String, String) {
         "step3:piop_prove" => Some(("Spartan outer and inner sumchecks", "PIOP")),
         "step4:bitify_prove" => Some(("Bitify terminal opening claim", "Bitify")),
         "step5_0:reduce_prove" => Some(("Exact lift and runtime-prime reduction", "Exact bridge")),
-        "step5:open_prove" => Some(("Virtual F2Z PCS opening", "F2Z opening")),
+        "step5:open_prove" => Some(("Virtual BitZ PCS opening", "BitZ opening")),
         "mqv:pack" => Some(("Pack derived rows", "Derived packing")),
         "mc:forest" => Some(("Merged-forest GKR", "Merged GKR")),
         "mc:fold_v" => Some(("Fold integer v-message", "Integer fold")),
@@ -989,7 +989,7 @@ fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
 }
 
 fn proof_sizes(proof: &MultiswapProof) -> (usize, usize) {
-    let opening_bytes = proof.f2z().to_bytes().len();
+    let opening_bytes = proof.bitz().to_bytes().len();
     let piop_bytes = proof.spartan_payload_elements() * 16 + proof.mu_prime_bytes() + 8;
     (piop_bytes, opening_bytes)
 }
@@ -1003,7 +1003,7 @@ fn run_once(
     setup_ns: u64,
 ) -> (RepTiming, MultiswapProof) {
     let recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
+        bitz::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
 
     let witness_scope = tracing::info_span!("multiswap-trace:witness_generation").entered();
@@ -1021,7 +1021,7 @@ fn run_once(
     let commit_scope = tracing::info_span!("multiswap-trace:commit").entered();
     let rows = {
         let _scope = tracing::info_span!("multiswap-trace:source_packing").entered();
-        assignment.f2z_bit_rows()
+        assignment.bitz_bit_rows()
     };
     let hint = {
         let _scope = tracing::info_span!("multiswap-trace:pcs_commitment").entered();
@@ -1056,7 +1056,7 @@ fn run_once(
     assert_eq!(prepared.statement_digest(), &circuit.statement_digest());
     let witness_stats = WitnessStats::collect(&circuit, &assignment);
     let intervals = recording.intervals().expect("query Multiswap trial");
-    let totals = f2z::observability::totals(&intervals);
+    let totals = bitz::observability::totals(&intervals);
     let witness_ms = common::span_ms(&intervals, "multiswap-trace:witness_generation");
     let commit_ms = common::span_ms(&intervals, "multiswap-trace:commit");
     let prove_ms = common::span_ms(&intervals, "multiswap-trace:end_to_end_prove");
@@ -1094,7 +1094,7 @@ fn main() {
 
     common::cli::EnvironmentCli::parse();
     let env: Env = common::cli::environment();
-    let reps = common::reps(Some("F2Z_MULTISWAP_REPS"), 5);
+    let reps = common::reps(Some("BITZ_MULTISWAP_REPS"), 5);
     let k = common::shape_values(None, str::parse::<usize>).map_or(0, |shapes| {
         assert_eq!(shapes.len(), 1, "the MultiSwap bench takes one k shape");
         shapes[0]
@@ -1103,7 +1103,7 @@ fn main() {
     let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
     let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
 
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
 
     // Bootstrap the canonical relation outside measured trials. Each trial
@@ -1119,13 +1119,13 @@ fn main() {
 
     // One-time public preprocessing is excluded from every traced boundary.
     let setup_started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("multiswap:setup_started").entered();
     let prepared = common::with_profile!(profile, prepare(&circuit));
     let (pc, vc) = prepared.ligerito_configs();
     let setup_elapsed = {
         drop(setup_started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &setup_started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -1159,7 +1159,7 @@ fn main() {
     let p = *prepared.params();
     let layout = *prepared.layout();
     println!(
-        "MultiSwap through F2Z (Limber k={k}, batch={batch_count} circuit): {} live rows, {} live columns, \
+        "MultiSwap through BitZ (Limber k={k}, batch={batch_count} circuit): {} live rows, {} live columns, \
          nnz {} (mods folded into C), capacity 2^{}",
         circuit.live_rows(),
         circuit.live_columns(),
@@ -1169,7 +1169,7 @@ fn main() {
     println!("  canonical constraint digest: {constraint_digest}");
     println!(
         "  committed bits: 2^{} ({} B) = 2 blocks x 2^{} gates x {} bits | \
-         f2z t={} s={} W={} | fingerprint Q in [2^127, 2^128), step5.0 q' in [2^112, 2^113) | \
+         bitz t={} s={} W={} | fingerprint Q in [2^127, 2^128), step5.0 q' in [2^112, 2^113) | \
          threads={threads} reps={reps}",
         p.row_vars + p.col_vars,
         (1usize << (p.row_vars + p.col_vars)) / 8,
@@ -1231,7 +1231,7 @@ fn main() {
     }
 
     let proof = last_proof.expect("at least one measured repetition");
-    let (piop_bytes, f2z_bytes) = proof_sizes(&proof);
+    let (piop_bytes, bitz_bytes) = proof_sizes(&proof);
     println!(
         "  campaign witness generation (median of {reps}): {:.2} ms",
         common::median(&witness_samples)
@@ -1262,7 +1262,7 @@ fn main() {
         verifier: verifier.medians(),
         proof: common::ProofBytes {
             piop: piop_bytes,
-            open: f2z_bytes,
+            open: bitz_bytes,
         },
     };
     report.print_human_with_commitment(commitment_bytes);
@@ -1270,7 +1270,7 @@ fn main() {
 
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {
     json!({
-        "domain": "f2z-limber/multiswap-statement/v2",
+        "domain": "bitz-limber/multiswap-statement/v2",
         "digest_blake3": hex_bytes(circuit.comparison_statement_digest()),
         "batch_count": circuit.batch_count(), "public_input_count": 0, "public_inputs": [],
         "value_bits": MULTISWAP_VALUE_BITS, "integer_domain": "unsigned",

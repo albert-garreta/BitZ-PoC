@@ -21,16 +21,16 @@
 //! ```text
 //! RUSTFLAGS="-C target-cpu=native" cargo bench --bench field
 //! ```
-//! Knobs: `F2Z_BENCH_REPS` (timing repetitions per pattern, median
+//! Knobs: `BITZ_BENCH_REPS` (timing repetitions per pattern, median
 //! reported; default 5). Idle the box; expect ±5 % run-to-run.
 
 mod common;
 
 use std::hint::black_box;
 
-use f2z::poly::univariate::binary_b127::B127;
-use f2z::poly::univariate::binary_gf128::Gf128;
-use f2z::utils::wide_mul::WideMulAcc;
+use bitz::poly::univariate::binary_b127::B127;
+use bitz::poly::univariate::binary_gf128::Gf128;
+use bitz::utils::wide_mul::WideMulAcc;
 
 // ---------------------------------------------------------------------
 // Deterministic data (no rand dep in benches — the pcs.rs convention).
@@ -140,13 +140,13 @@ fn time_pair_ns_per_op<RG, RB>(
     let mut bs = Vec::with_capacity(reps);
     for _ in 0..reps {
         let t0_recording =
-            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t0 = tracing::info_span!("field:t0").entered();
         black_box(g_body());
         gs.push(
             {
                 drop(t0);
-                f2z::observability::duration(
+                bitz::observability::duration(
                     &t0_recording
                         .intervals()
                         .expect("complete operation capture"),
@@ -159,13 +159,13 @@ fn time_pair_ns_per_op<RG, RB>(
                 / ops as f64,
         );
         let t1_recording =
-            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t1 = tracing::info_span!("field:t1").entered();
         black_box(b_body());
         bs.push(
             {
                 drop(t1);
-                f2z::observability::duration(
+                bitz::observability::duration(
                     &t1_recording
                         .intervals()
                         .expect("complete operation capture"),
@@ -521,9 +521,9 @@ fn main() {
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
     common::enforce_known_env();
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
 
-    println!("F2Z field bench — GF(2^128) GHASH vs GF(2^127) b127, median of {reps} reps.");
+    println!("BitZ field bench — GF(2^128) GHASH vs GF(2^127) b127, median of {reps} reps.");
     println!("(alternating reps per pattern: both fields share each thermal window)");
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     println!("(target: aarch64 + neon — the NEON pipelines are active)");

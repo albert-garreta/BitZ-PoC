@@ -748,7 +748,7 @@ mod tests {
     /// columns, and an unstructured gap.
     #[test]
     fn structured_tail_matches_generic() {
-        let cfg = crate::piop::spartan::f2z::spartan_f2z_field_config();
+        let cfg = crate::piop::spartan::bitz::spartan_bitz_field_config();
         let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
         let f = |x: u64| Field::from_with_cfg(x, &cfg);
         let zero = f(0);
@@ -825,7 +825,7 @@ mod tests {
 
     #[test]
     fn composite_prefix_matches_generic_with_constant_tail_and_boundary() {
-        let cfg = crate::piop::spartan::f2z::spartan_f2z_field_config();
+        let cfg = crate::piop::spartan::bitz::spartan_bitz_field_config();
         let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
         let f = |x| Field::from_with_cfg(x, &cfg);
         for width in [8usize, 16, 32] {

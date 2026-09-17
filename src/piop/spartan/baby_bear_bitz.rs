@@ -1,4 +1,4 @@
-//! The BabyBear multiplication relation `a · b = c + p · k` over F2Z.
+//! The BabyBear multiplication relation `a · b = c + p · k` over BitZ.
 //!
 //! The integer R1CS assignment has five logical blocks,
 //!
@@ -42,9 +42,9 @@ use super::{
 };
 
 /// Failures in layout validation, claim translation, or either proof system.
-pub type BabyBearSpartanF2zError = ProtocolError;
+pub type BabyBearSpartanBitzError = ProtocolError;
 
-/// The factorized claim bound between Spartan and F2Z.
+/// The factorized claim bound between Spartan and BitZ.
 pub type BabyBearBitifiedClaim = protocol::BitifiedClaim;
 
 impl From<BabyBearMulError> for ProtocolError {
@@ -53,8 +53,8 @@ impl From<BabyBearMulError> for ProtocolError {
     }
 }
 
-const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-f2z/assignment/v1";
-const BABY_BEAR_PAPER_BINDING_DOMAIN: &[u8] = b"f2z/spartan-baby-bear-f2z/assignment/v2-runtime";
+const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"bitz/spartan-baby-bear-bitz/assignment/v1";
+const BABY_BEAR_PAPER_BINDING_DOMAIN: &[u8] = b"bitz/spartan-baby-bear-bitz/assignment/v2-runtime";
 const ASSIGNMENT_BLOCK_ORDER: &[u8] = b"e0|a|b|c|k|zero|zero|zero";
 
 const LOGICAL_ASSIGNMENT_BLOCKS: usize = 5;
@@ -62,16 +62,16 @@ const PADDED_ASSIGNMENT_BLOCKS: usize = 8;
 
 static BABY_BEAR_DOMAINS: Domains = Domains {
     statement_tag: b"baby-bear-paper-statement",
-    prime_sampling: b"f2z/spartan-baby-bear-mul/runtime-prime/v1",
-    initial_grinding: b"f2z/spartan-baby-bear-mul/grinding/initial/v1",
-    piop_grinding: b"f2z/spartan-baby-bear-mul/grinding/piop/v1",
-    terminal_grinding: b"f2z/spartan-baby-bear-mul/grinding/terminal/v1",
-    bitified_claim: b"f2z/spartan-baby-bear-f2z/bitified-claim/v2",
+    prime_sampling: b"bitz/spartan-baby-bear-mul/runtime-prime/v1",
+    initial_grinding: b"bitz/spartan-baby-bear-mul/grinding/initial/v1",
+    piop_grinding: b"bitz/spartan-baby-bear-mul/grinding/piop/v1",
+    terminal_grinding: b"bitz/spartan-baby-bear-mul/grinding/terminal/v1",
+    bitified_claim: b"bitz/spartan-baby-bear-bitz/bitified-claim/v2",
     opening: ModQOpeningKind::BabyBearMul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",
-    scopes: crate::protocol_scopes!("baby-bear-spartan-f2z"),
+    scopes: crate::protocol_scopes!("baby-bear-spartan-bitz"),
 };
 
 /// The public statement facts the security-profile derivation consumes for
@@ -93,41 +93,41 @@ pub fn baby_bear_mul_instance_facts(
 }
 
 fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), ProtocolError> {
-    let params = layout.f2z_params();
+    let params = layout.bitz_params();
     if params.word_bits != 1
         || params.row_vars < LOG_PACKING
         || params.col_vars > layout.gate_vars()
         || params.row_vars.saturating_add(params.word_bits) > 126
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     let total_vars = params
         .row_vars
         .checked_add(params.col_vars)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     if total_vars
         != layout
             .gate_vars()
             .checked_add(7)
-            .ok_or(ProtocolError::InvalidF2zParameters)?
+            .ok_or(ProtocolError::InvalidBitzParameters)?
         || BABY_BEAR_MUL_BIT_SLOTS != 1_usize << 7
         || BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS != 4 * BABY_BEAR_MUL_VALUE_BITS
         || layout.assignment_len() != LOGICAL_ASSIGNMENT_BLOCKS * layout.capacity()
         || layout.padded_assignment_len() != PADDED_ASSIGNMENT_BLOCKS * layout.capacity()
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
 
     let row_count = checked_pow2(params.row_vars)?;
     let col_count = checked_pow2(params.col_vars)?;
     let cells = row_count
         .checked_mul(col_count)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     let expected_cells = BABY_BEAR_MUL_BIT_SLOTS
         .checked_mul(layout.capacity())
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     if cells != expected_cells || packed_variables(&params)? != layout.gate_vars() {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     Ok(())
 }
@@ -138,7 +138,7 @@ fn fixed_q_assignment_binding(
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
 ) -> Result<[u8; 32], ProtocolError> {
-    let p = layout.f2z_params();
+    let p = layout.bitz_params();
     let mut hasher = BindingHasher::new();
     hasher
         .bytes(ASSIGNMENT_BINDING_DOMAIN)
@@ -178,7 +178,7 @@ impl RelationSpec for BabyBearMulLayout {
     }
 
     fn committed_layout(&self) -> IntegerMatrixLayout {
-        self.f2z_params()
+        self.bitz_params()
     }
 
     fn gate_vars(&self) -> usize {
@@ -187,7 +187,7 @@ impl RelationSpec for BabyBearMulLayout {
 
     fn instance_facts(&self) -> IopInstanceFacts {
         let row_vars = self.multiplications().next_power_of_two().trailing_zeros() as usize;
-        baby_bear_mul_instance_facts(&self.f2z_params(), row_vars)
+        baby_bear_mul_instance_facts(&self.bitz_params(), row_vars)
     }
 
     fn matrices(&self) -> Result<MatrixSource<BabyBearMulCoefficient>, ProtocolError> {
@@ -241,7 +241,7 @@ impl RelationSpec for BabyBearMulLayout {
         security: &IopSecurityParams,
         _ligerito: &LigProverConfig,
     ) -> Result<[u8; 32], ProtocolError> {
-        let p = self.f2z_params();
+        let p = self.bitz_params();
         let mut hasher = BindingHasher::new();
         hasher
             .bytes(BABY_BEAR_PAPER_BINDING_DOMAIN)
@@ -281,7 +281,7 @@ impl RelationSpec for BabyBearMulLayout {
     }
 
     fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {
-        let p = self.f2z_params();
+        let p = self.bitz_params();
         hasher.u64_le(BABY_BEAR_MODULUS);
         hasher.usizes(&[
             self.multiplications(),
@@ -350,7 +350,7 @@ pub type BabyBearMulPaperProof = Proof;
 pub fn commit_baby_bear_mul_paper_witness(
     prepared: &PreparedBabyBearMulRelation,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+) -> Result<FlockCommitHint, BabyBearSpartanBitzError> {
     protocol::commit(prepared, rows)
 }
 
@@ -361,7 +361,7 @@ pub fn prove_baby_bear_mul_paper<T: Transcript + Send>(
     prepared: &PreparedBabyBearMulRelation,
     witness: &BabyBearMulWitness,
     hint: &FlockCommitHint,
-) -> Result<BabyBearMulPaperProof, BabyBearSpartanF2zError> {
+) -> Result<BabyBearMulPaperProof, BabyBearSpartanBitzError> {
     protocol::prove(transcript, prepared, witness, hint)
 }
 
@@ -372,7 +372,7 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
     prepared: &PreparedBabyBearMulRelation,
     commitment: &Commitment,
     proof: &BabyBearMulPaperProof,
-) -> Result<(), BabyBearSpartanF2zError> {
+) -> Result<(), BabyBearSpartanBitzError> {
     protocol::verify(transcript, prepared, commitment, proof)
 }
 
@@ -381,7 +381,7 @@ pub fn verify_baby_bear_mul_paper<T: Transcript + Send>(
 pub fn commit_baby_bear_mul_witness(
     layout: &BabyBearMulLayout,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+) -> Result<FlockCommitHint, BabyBearSpartanBitzError> {
     commit_baby_bear_mul_witness_with_ligerito(layout, rows, LigeritoSelection::JOHNSON)
 }
 
@@ -390,30 +390,30 @@ pub fn commit_baby_bear_mul_witness_with_ligerito(
     layout: &BabyBearMulLayout,
     rows: Vec<Vec<u64>>,
     selection: LigeritoSelection,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+) -> Result<FlockCommitHint, BabyBearSpartanBitzError> {
     let prepared = PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<
         super::profile::Lambda100,
     >(*layout, selection)?;
     protocol::commit(&prepared, rows)
 }
 
-/// Public, setup-once context for benchmarking only the terminal F2Z opening
+/// Public, setup-once context for benchmarking only the terminal BitZ opening
 /// of a BabyBear multiplication assignment at the fixed comparison field.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub type PreparedBabyBearTerminalF2zOpening =
+pub type PreparedBabyBearTerminalBitzOpening =
     protocol::terminal::PreparedTerminalOpening<BabyBearMulLayout>;
 
 /// Prepares the fixed-q, PCS-only terminal-opening context under the Johnson
 /// opener.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn prepare_baby_bear_terminal_f2z_opening(
-    matrices: &super::PreparedConstraintMatrices<protocol::SpartanF2zField, BabyBearMulCoefficient>,
+pub fn prepare_baby_bear_terminal_bitz_opening(
+    matrices: &super::PreparedConstraintMatrices<protocol::SpartanBitzField, BabyBearMulCoefficient>,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
-) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
-    prepare_baby_bear_terminal_f2z_opening_with_ligerito(
+) -> Result<PreparedBabyBearTerminalBitzOpening, BabyBearSpartanBitzError> {
+    prepare_baby_bear_terminal_bitz_opening_with_ligerito(
         matrices,
         layout,
         commitment,
@@ -425,15 +425,15 @@ pub fn prepare_baby_bear_terminal_f2z_opening(
 /// projection, opener resolution and statement binding are excluded from
 /// all trial timers. `matrices` must be the relation at `q = 2^100 - 15`.
 #[cfg(feature = "bench-internals")]
-pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
-    matrices: &super::PreparedConstraintMatrices<protocol::SpartanF2zField, BabyBearMulCoefficient>,
+pub fn prepare_baby_bear_terminal_bitz_opening_with_ligerito(
+    matrices: &super::PreparedConstraintMatrices<protocol::SpartanBitzField, BabyBearMulCoefficient>,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
     selection: LigeritoSelection,
-) -> Result<PreparedBabyBearTerminalF2zOpening, BabyBearSpartanF2zError> {
+) -> Result<PreparedBabyBearTerminalBitzOpening, BabyBearSpartanBitzError> {
     use super::SpartanField;
-    let expected = protocol::SpartanF2zField::canonical_modulus_encoding(
-        &super::f2z::spartan_f2z_field_config(),
+    let expected = protocol::SpartanBitzField::canonical_modulus_encoding(
+        &super::bitz::spartan_bitz_field_config(),
     );
     if matrices.field_modulus_encoding() != expected {
         return Err(ProtocolError::UnsupportedFieldModulus);
@@ -461,10 +461,10 @@ pub fn prepare_baby_bear_terminal_f2z_opening_with_ligerito(
 /// configuration retained by the PCS-only context.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn commit_baby_bear_terminal_f2z_witness(
-    prepared: &PreparedBabyBearTerminalF2zOpening,
+pub fn commit_baby_bear_terminal_bitz_witness(
+    prepared: &PreparedBabyBearTerminalBitzOpening,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, BabyBearSpartanF2zError> {
+) -> Result<FlockCommitHint, BabyBearSpartanBitzError> {
     protocol::terminal::commit(prepared, rows)
 }
 
@@ -472,32 +472,32 @@ pub fn commit_baby_bear_terminal_f2z_witness(
 /// work deliberately outside the benchmark boundary.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn prove_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
+pub fn prove_baby_bear_terminal_claim_bitz<T: Transcript + Send>(
     transcript: &mut T,
-    prepared: &PreparedBabyBearTerminalF2zOpening,
+    prepared: &PreparedBabyBearTerminalBitzOpening,
     hint: &FlockCommitHint,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<protocol::SpartanF2zField>,
-) -> Result<crate::ligerito_flock::IntEvalRsLigModQProof, BabyBearSpartanF2zError> {
+    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<protocol::SpartanBitzField>,
+) -> Result<crate::ligerito_flock::IntEvalRsLigModQProof, BabyBearSpartanBitzError> {
     protocol::terminal::prove(transcript, prepared, hint, terminal_claim)
 }
 
 /// Verifies the PCS-only BabyBear terminal opening from public data alone.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn verify_baby_bear_terminal_claim_f2z<T: Transcript + Send>(
+pub fn verify_baby_bear_terminal_claim_bitz<T: Transcript + Send>(
     transcript: &mut T,
-    prepared: &PreparedBabyBearTerminalF2zOpening,
+    prepared: &PreparedBabyBearTerminalBitzOpening,
     commitment: &Commitment,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<protocol::SpartanF2zField>,
+    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<protocol::SpartanBitzField>,
     proof: &crate::ligerito_flock::IntEvalRsLigModQProof,
-) -> Result<(), BabyBearSpartanF2zError> {
+) -> Result<(), BabyBearSpartanBitzError> {
     protocol::terminal::verify(transcript, prepared, commitment, terminal_claim, proof)
 }
 
-/// Canonical standalone F2Z opening payload bytes.
+/// Canonical standalone BitZ opening payload bytes.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn baby_bear_terminal_claim_f2z_proof_bytes(
+pub fn baby_bear_terminal_claim_bitz_proof_bytes(
     proof: &crate::ligerito_flock::IntEvalRsLigModQProof,
 ) -> Vec<u8> {
     proof.to_bytes()
@@ -511,7 +511,7 @@ mod tests {
         pcs::{FQ_BITS, ModQWeightChunks, Q100Element, eq_le_table_fq, fq_sub},
         piop::spartan::{
             baby_bear_mul::sample_baby_bear_operand_with,
-            f2z::{SpartanF2zField, spartan_f2z_field_config},
+            bitz::{SpartanBitzField, spartan_bitz_field_config},
             matrix::ScaledMleEvaluationClaim,
             profile::Lambda128,
             protocol::bitify,
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn baby_bear_paper_path_roundtrips_at_both_targets() {
         // Hold the shared env lock so tests that toggle transcript-shaping
-        // `F2Z_*` variables cannot flip them between our prove and verify.
+        // `BITZ_*` variables cannot flip them between our prove and verify.
         let _env = crate::utils::QUAD_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -546,7 +546,7 @@ mod tests {
         let layout = *witness.layout();
         // λ = 100: no grinding anywhere, one chunk by construction.
         let prepared = PreparedBabyBearMulRelation::new(layout).unwrap();
-        let hint = commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = commit_baby_bear_mul_paper_witness(&prepared, witness.bitz_bit_rows()).unwrap();
         assert_eq!(prepared.security().lambda, 100);
         assert_eq!(prepared.security().ligerito_target_bits, 100);
         assert_eq!(prepared.security().initial_grinding_bits, 0);
@@ -554,7 +554,7 @@ mod tests {
         let proof =
             prove_baby_bear_mul_paper(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert!(proof.piop_nonces().is_empty());
-        assert!(proof.f2z().grinding_nonces.is_empty());
+        assert!(proof.bitz().grinding_nonces.is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
         verify_baby_bear_mul_paper(
             &mut verifier_transcript,
@@ -570,7 +570,7 @@ mod tests {
             let second =
                 prove_baby_bear_mul_paper(&mut second_transcript, &prepared, &witness, &hint)
                     .unwrap();
-            assert_eq!(second.f2z().to_bytes(), proof.f2z().to_bytes());
+            assert_eq!(second.bitz().to_bytes(), proof.bitz().to_bytes());
             assert_eq!(second.spartan(), proof.spartan());
             assert_eq!(
                 second_transcript.state_digest(),
@@ -585,13 +585,13 @@ mod tests {
         assert!(prepared128.security().piop_round_grinding_bits > 0);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
         let hint128 =
-            commit_baby_bear_mul_paper_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
+            commit_baby_bear_mul_paper_witness(&prepared128, witness.bitz_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof128 =
             prove_baby_bear_mul_paper(&mut prover_transcript, &prepared128, &witness, &hint128)
                 .unwrap();
         assert_eq!(proof128.piop_nonces().len(), 2 * 15 + 1 + 15 + 3);
-        assert!(!proof128.f2z().grinding_nonces.is_empty());
+        assert!(!proof128.bitz().grinding_nonces.is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
         verify_baby_bear_mul_paper(
             &mut verifier_transcript,
@@ -618,16 +618,16 @@ mod tests {
         point: &[Q100Element],
         scale: Q100Element,
         value: Q100Element,
-    ) -> ScaledMleEvaluationClaim<SpartanF2zField> {
-        let config = spartan_f2z_field_config();
+    ) -> ScaledMleEvaluationClaim<SpartanBitzField> {
+        let config = spartan_bitz_field_config();
         let point = point
             .iter()
-            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate.canonical_u128(), &config))
+            .map(|coordinate| SpartanBitzField::from_with_cfg(coordinate.canonical_u128(), &config))
             .collect::<Vec<_>>();
         ScaledMleEvaluationClaim::new(
             point.into_boxed_slice(),
-            SpartanF2zField::from_with_cfg(scale.canonical_u128(), &config),
-            SpartanF2zField::from_with_cfg(value.canonical_u128(), &config),
+            SpartanBitzField::from_with_cfg(scale.canonical_u128(), &config),
+            SpartanBitzField::from_with_cfg(value.canonical_u128(), &config),
         )
     }
 
@@ -650,7 +650,7 @@ mod tests {
         ])
         .unwrap();
         let layout = witness.layout();
-        let p = layout.f2z_params();
+        let p = layout.bitz_params();
         let arith = field::FpCtx::from_prime_u128(FQ_MOD);
 
         // Non-Bit selector coordinates exercise all eight assignment
@@ -706,7 +706,7 @@ mod tests {
         let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &arith).unwrap();
         let col_weights = bitify::column_weights(&opening, &arith).unwrap();
 
-        let rows = witness.f2z_bit_rows();
+        let rows = witness.bitz_bit_rows();
         let mut read_off = Q100Element::from_u128(0);
         for b in 0..p.rows() {
             for c in 0..p.cols() {
@@ -737,7 +737,7 @@ mod tests {
         let small = BabyBearMulLayout::new(3).unwrap();
         assert!(matches!(
             PreparedBabyBearMulRelation::new(small),
-            Err(BabyBearSpartanF2zError::UnauditedF2zParameters)
+            Err(BabyBearSpartanBitzError::UnauditedBitzParameters)
         ));
         let production = BabyBearMulLayout::new(1 << protocol::MIN_PRODUCTION_GATE_VARS).unwrap();
         PreparedBabyBearMulRelation::new(production)

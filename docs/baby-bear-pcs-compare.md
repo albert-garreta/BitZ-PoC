@@ -6,11 +6,11 @@ Use the [native full-proving comparison](../README.md#integer-multiplication) fo
 BabyBear comparisons in the paper. The details below document the historical
 PCS experiment.
 
-This benchmark compares the F2Z opening path with Plonky3 WHIR on the same
+This benchmark compares the BitZ opening path with Plonky3 WHIR on the same
 deterministically generated logical BabyBear multiplication witness. The
 default campaign requests `2^15` through `2^24` multiplication slots, uses one
 warmup followed by 21 measured trials per runnable backend/shape cell, and runs
-Rayon with 10 threads. F2Z runs at every default size. Under the frozen WHIR
+Rayon with 10 threads. BitZ runs at every default size. Under the frozen WHIR
 configuration, WHIR uses a degree-5 BabyBear extension and a 4-bit per-round
 proof-of-work cap, allowing the complete requested size sweep to run.
 
@@ -22,30 +22,30 @@ scripts/run_baby_bear_pcs_compare.sh
 
 The runner defaults `RUSTFLAGS` to `-Ctarget-cpu=native`. Existing environment
 overrides are retained, including `RUSTFLAGS`, `RAYON_NUM_THREADS`,
-`F2Z_BENCH_SHAPES`, `F2Z_BENCH_REPS`, `F2Z_BENCH_SEED`, and
-`F2Z_PCS_COMPARE_BACKENDS`. `F2Z_PCS_COMPARE_WHIR_DEGREE=4` selects the
+`BITZ_BENCH_SHAPES`, `BITZ_BENCH_REPS`, `BITZ_BENCH_SEED`, and
+`BITZ_PCS_COMPARE_BACKENDS`. `BITZ_PCS_COMPARE_WHIR_DEGREE=4` selects the
 degree-4 unique-decoding profile; the default value `5` selects the
 degree-5 Johnson-bound profile. For example, a short diagnostic run is:
 
 ```sh
-F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=3 \
+BITZ_BENCH_SHAPES="15 16" BITZ_BENCH_REPS=3 \
 RAYON_NUM_THREADS=8 scripts/run_baby_bear_pcs_compare.sh
 ```
 
 The corresponding degree-4 run is:
 
 ```sh
-F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=3 \
-F2Z_PCS_COMPARE_WHIR_DEGREE=4 RAYON_NUM_THREADS=8 \
+BITZ_BENCH_SHAPES="15 16" BITZ_BENCH_REPS=3 \
+BITZ_PCS_COMPARE_WHIR_DEGREE=4 RAYON_NUM_THREADS=8 \
 scripts/run_baby_bear_pcs_compare.sh
 ```
 
 Every invocation reserves a new
-`PerfRuns/<UTC>-baby-bear-f2z-vs-whir/` directory and refuses to overwrite an
-existing directory or trace. `F2Z_PCS_COMPARE_TRACE_PATH` may override the
-default trace location, and `F2Z_PCS_COMPARE_CAMPAIGN_PATH` may override the
+`PerfRuns/<UTC>-baby-bear-bitz-vs-whir/` directory and refuses to overwrite an
+existing directory or trace. `BITZ_PCS_COMPARE_TRACE_PATH` may override the
+default trace location, and `BITZ_PCS_COMPARE_CAMPAIGN_PATH` may override the
 campaign-manifest location. Relative paths are resolved from the repository
-root. `F2Z_PCS_COMPARE_CAMPAIGN_ID` may supply an explicit identifier;
+root. `BITZ_PCS_COMPARE_CAMPAIGN_ID` may supply an explicit identifier;
 otherwise the timestamped run name is used. The identifier is embedded in
 every run and series ID so separately generated traces can be merged safely.
 
@@ -71,7 +71,7 @@ The benchmark writes one JSON object with this compact contract:
 ```
 
 `cells` contains exactly one entry for every combination of implementation
-(`f2z` or `plonky3-whir`) and exponent (`15` through `24`). `status` is exactly
+(`bitz` or `plonky3-whir`) and exponent (`15` through `24`). `status` is exactly
 one of `measured`, `unavailable`, or `not_requested`. `reason` is an optional
 non-empty string; `required_pow_bits` and `budget` are optional non-negative
 integers. Every WHIR cell records `challenge_extension_degree` and
@@ -97,7 +97,7 @@ terminal relation `D * f(x, beta) = V`. Public setup and logical witness
 generation are excluded from measured PCS work. The logical witness is reused
 between the two backend runs; each backend performs its own excluded setup.
 
-The encodings are intentionally backend-native. F2Z commits the 31-bit
+The encodings are intentionally backend-native. BitZ commits the 31-bit
 decompositions of the four columns in its binary/GF(2^128) machinery and opens
 the integer MLE modulo `q = 2^100 - 15`. WHIR commits four native
 BabyBear columns and uses the degree-5 BabyBear binomial extension for
@@ -112,7 +112,7 @@ witness and prescribed opening obligation.
 
 The report keeps the following boundaries explicit:
 
-- `materialize`: F2Z bit packing or WHIR native-column construction.
+- `materialize`: BitZ bit packing or WHIR native-column construction.
 - `commit`: commitment generation and protocol-native public transcript/root
   binding from the materialized witness.
 - `claim setup`: prescribed-point sampling, terminal-value derivation, and
@@ -120,7 +120,7 @@ The report keeps the following boundaries explicit:
   prover time because it models a terminal claim already supplied by the
   relation protocol.
 - `opening`: the backend opening proof. WHIR's `open_at` computes and includes
-  the four claimed column evaluations; F2Z includes its claim bridge, weights,
+  the four claimed column evaluations; BitZ includes its claim bridge, weights,
   and opening proof work.
 - `verify`: opening verification and enforcement of linkage to
   `D * f(x, beta) = V`.
@@ -129,7 +129,7 @@ Total PCS prover time is the overlap-safe union of `materialize`, `commit`, and
 `opening`; it is not a sum of independently rounded medians. Verification is
 separate.
 
-F2Z exposes its existing nested profiler scopes beneath these five comparison
+BitZ exposes its existing nested profiler scopes beneath these five comparison
 rows, while the WHIR adapter currently exposes only the five coarse comparison
 rows. That produces a tiny asymmetric instrumentation overhead and means the
 WHIR report is not an internal-stage timeline; the top-level phase boundaries
@@ -137,7 +137,7 @@ remain directly comparable.
 
 ## Security and byte accounting
 
-The default target is 100-bit security. F2Z uses the fixed 100-bit modulus
+The default target is 100-bit security. BitZ uses the fixed 100-bit modulus
 `q = 2^100 - 15` and its GF(2^128)-based commitment/opening stack. The WHIR
 configuration is non-hiding,
 uses a constant folding factor of 4, starting log inverse rate 1, the Johnson
@@ -154,7 +154,7 @@ challenge extension degree, shape-derived OOD samples, query counts, and
 actual grinding bits for instantiated cells. The campaign manifest records
 the extension degree, configured cap, and derived maximum PoW for every
 measured WHIR cell. The comparison JSON, CSV, Markdown, and HTML preserve
-those metrics and reject mixed-degree aggregation. F2Z records its
+those metrics and reject mixed-degree aggregation. BitZ records its
 instantiated security profile and backend parameters. Results must be
 interpreted at the recorded configuration rather than from the target label
 alone.
@@ -162,7 +162,7 @@ alone.
 Wire size is reported as initial commitment bytes plus public terminal-claim
 bytes plus opening-proof bytes. WHIR proof serialization uses `postcard` and
 includes the four claimed evaluations; its initial commitment is serialized
-and counted separately. F2Z uses its native proof codec. This is wire-oriented
+and counted separately. BitZ uses its native proof codec. This is wire-oriented
 accounting, not an in-memory object-size comparison.
 
 ## Outputs
@@ -188,4 +188,4 @@ and unexpected absent trace data as `missing`.
 The runner validates the JSONL trace before generating either report. Git
 revision, dirty state, CPU, build profile, thread count, seed, and benchmark
 configuration are supplied to the trace metadata; explicit
-`F2Z_PCS_COMPARE_*` metadata overrides are preserved.
+`BITZ_PCS_COMPARE_*` metadata overrides are preserved.

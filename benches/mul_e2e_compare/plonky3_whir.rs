@@ -6,7 +6,7 @@ use super::mod32_air::{LIMB_BASE, TRACE_WIDTH, set_value};
 use super::mod32_air::{MulAir, generate};
 use super::trace_capture::TrialScopes;
 use super::{Corpus, Timing, Workload, captured};
-use f2z::observability::Recording;
+use bitz::observability::Recording;
 use p3_air::BaseAir;
 use p3_field::{PrimeCharacteristicRing, extension::BinomialExtensionField};
 use p3_matrix::dense::RowMajorMatrix;

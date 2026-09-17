@@ -6,7 +6,7 @@ mod common;
 static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
 
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
+use bitz::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use p256::ecdsa::{
     Signature, SigningKey,
     signature::{Signer, Verifier},
@@ -36,9 +36,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let Args { exponent, security: lambda, reps, .. } = args;
     let exponent = exponent as usize;
     let mode = if args.mode == "split" { OuterMode::Split } else { OuterMode::AllRows };
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
-    let (prepared, setup) = f2z::observability::measure(tracing::info_span!("ecdsa:setup"), || {
+    let (prepared, setup) = bitz::observability::measure(tracing::info_span!("ecdsa:setup"), || {
         prepare_sha256_ecdsa(exponent, lambda, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(lambda as usize)))
     })?;
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         s: s.into(),
     };
     for trial in 0..=reps {
-        let recording = f2z::observability::Recording::start(Vec::new())?;
+        let recording = bitz::observability::Recording::start(Vec::new())?;
         let start = tracing::info_span!("benchmark:witness").entered();
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message)?;
         drop(start);
@@ -95,13 +95,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         let commit_ms = common::span_ms(&intervals, "benchmark:commit");
         let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
         let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-        let verification = f2z::observability::span(&intervals, "benchmark:verification")?;
-        let prove_phases = f2z::observability::totals(intervals.iter().filter(|s| s.end_ns <= verification.start_ns));
-        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification")?;
+        let verification = bitz::observability::span(&intervals, "benchmark:verification")?;
+        let prove_phases = bitz::observability::totals(intervals.iter().filter(|s| s.end_ns <= verification.start_ns));
+        let verify_phases = bitz::observability::phase_totals(&intervals, "benchmark:verification")?;
         println!(
             "{}",
             json!({
-                "schema": "f2z/sha256-ecdsa/v2",
+                "schema": "bitz/sha256-ecdsa/v2",
                 "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(lambda)?), "trial": if trial==0 {"warmup"} else {"sample"}, "sample": trial,
                 "log_compressions": exponent, "compressions": prepared.compressions(), "message_bytes": message.len(),
                 "mode": args.mode, "security_target": lambda, "threads": threads,

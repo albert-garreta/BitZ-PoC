@@ -5,7 +5,7 @@
 //! and proves x*y = p. The compact witness remains 128 bits per operation.
 //!
 //! Order: commit both witnesses, Round 0 (the out-of-domain sample of the
-//! virtual packed witness), Spartan/F2Z GKR, Binius SHA PIOP, joint bit
+//! virtual packed witness), Spartan/BitZ GKR, Binius SHA PIOP, joint bit
 //! sumcheck, one ring switch, one Ligerito continuation. The SHA workload is
 //! a sequential compression chain starting from the standard SHA-256 IV.
 mod channel;
@@ -21,7 +21,7 @@ use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::{
     ligerito_flock::OodRoundParams,
     piop::spartan::{
-        f2z::{U32MulPrefixRelation, hybrid as mul},
+        bitz::{U32MulPrefixRelation, hybrid as mul},
         u32_mul::{U32MulLayout, U32MulWitness},
     },
     transcript::{Blake3Transcript, traits::Transcript},
@@ -47,7 +47,7 @@ pub enum Error {
     #[error("Binius: {0}")]
     Binius(String),
     #[error(transparent)]
-    Multiplication(#[from] crate::piop::spartan::f2z::SpartanF2zError),
+    Multiplication(#[from] crate::piop::spartan::bitz::SpartanBitzError),
     #[error(transparent)]
     Relation(#[from] crate::piop::spartan::u32_mul::U32MulError),
     #[error(transparent)]
@@ -284,7 +284,7 @@ impl PreparedHybrid {
             return Err(Error::Invalid("witness workload counts"));
         }
         let rows_scope = tracing::info_span!("hc:mul_bit_rows").entered();
-        let rows = multiplication.f2z_bit_rows();
+        let rows = multiplication.bitz_bit_rows();
         drop(rows_scope);
         let pack_scope = tracing::info_span!("hc:mul_pack").entered();
         let words_per_row = rows.first().map_or(0, |row| row.len() / 2);
@@ -332,7 +332,7 @@ impl PreparedHybrid {
             return Err(Error::Invalid("statement workload parameters"));
         }
         let mut h = blake3::Hasher::new();
-        h.update(b"f2z/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5");
+        h.update(b"bitz/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5");
         for n in [
             self.parameters.multiplications,
             self.parameters.sha_compressions,

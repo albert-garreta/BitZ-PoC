@@ -380,7 +380,7 @@ zinc_utils::define_modulus!(LimberBenchSlot, FIELD_LIMBS);
 type F = Fp<LimberBenchSlot, FIELD_LIMBS>;
 
 //
-// The statement: N independent u32 multiplications mod 2^32, on the F2Z
+// The statement: N independent u32 multiplications mod 2^32, on the BitZ
 // native-mul corpus (`benches/mul_e2e_compare/mod32.rs`, domain
 // "native-mul/mod32/inputs/v1"), so every scheme in that table proves the
 // same operands.
@@ -502,7 +502,7 @@ fn corpus_inputs(exponent: usize, seed: u64) -> Vec<(u32, u32)> {
         .collect()
 }
 
-/// The table's row digest: blake3 over (x, y, x·y mod 2^32) as the F2Z
+/// The table's row digest: blake3 over (x, y, x·y mod 2^32) as the BitZ
 /// bench computes it (`mod32::digest_rows`).
 fn corpus_digest(inputs: &[(u32, u32)]) -> String {
     let mut hasher = blake3::Hasher::new();

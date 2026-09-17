@@ -12,7 +12,7 @@ class PerformanceGateTests(unittest.TestCase):
         self.assertTrue(result['missing'])
 
     def test_tuning_blocks_cannot_qualify(self):
-        row = dict(method='f2z-split', exponent=10, threads=10, target=100, seed=31,
+        row = dict(method='bitz-split', exponent=10, threads=10, target=100, seed=31,
                    metrics={name: dict(paired_ratios=[0.9] * 6) for name in
                             ['gkr_ms', 'e2e_prover_ms', 'prove_ms', 'cold_e2e_prover_ms', 'cold_prove_ms', 'cold_gkr_ms']})
         with self.assertRaisesRegex(ValueError, '24 blocks'):

@@ -1,5 +1,5 @@
 """Reject late-OOD, unlabelled and inconsistent Ligerito result identities."""
-VERSION = "f2z/ligerito-policy/early-ood/v1"
+VERSION = "bitz/ligerito-policy/early-ood/v1"
 
 
 def validate_ligerito(report, target=None):
@@ -39,6 +39,6 @@ def decode_identity(encoded):
 
 
 def validate_result_fields(fields):
-    if fields.get("schema") not in ("f2z/2", "f2z-cli/2", "f2z-cli-mul/2"):
-        raise ValueError("historical or unsupported F2Z result schema")
+    if fields.get("schema") not in ("bitz/2", "bitz-cli/2", "bitz-cli-mul/2"):
+        raise ValueError("historical or unsupported BitZ result schema")
     return decode_identity(fields.get("ligerito_hex"))

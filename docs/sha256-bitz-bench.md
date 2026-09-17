@@ -1,22 +1,22 @@
-# SHA-256 with F2Z benchmarks
+# SHA-256 with BitZ benchmarks
 
-Run a small campaign with both existing F2Z workloads, one Rayon worker,
+Run a small campaign with both existing BitZ workloads, one Rayon worker,
 three measured repetitions and one verified warmup per configuration:
 
 ```sh
-python3 scripts/run_sha256_f2z_bench.py
+python3 scripts/run_sha256_bitz_bench.py
 ```
 
 The default shapes are `7 8 10`: 128, 256 and 1,024 compressions. Each
 workload/shape runs in a fresh process. The runner builds both benchmarks
 with `cargo bench --locked`, discovers their executables from Cargo JSON,
-and invokes those executables directly. It selects only the normal F2Z
+and invokes those executables directly. It selects only the normal BitZ
 features plus `unchecked`; no comparison backend is enabled.
 
 For a minimal run using cached dependencies:
 
 ```sh
-python3 scripts/run_sha256_f2z_bench.py --offline \
+python3 scripts/run_sha256_bitz_bench.py --offline \
   --workload compressions --shapes 7 --reps 1 --threads 1 \
   --out-dir bench_results/sha256-smoke
 ```
@@ -24,7 +24,7 @@ python3 scripts/run_sha256_f2z_bench.py --offline \
 For every power of two from 16 through 1,024 independent compressions:
 
 ```sh
-python3 scripts/run_sha256_f2z_bench.py --offline \
+python3 scripts/run_sha256_bitz_bench.py --offline \
   --workload compressions --shapes 4 5 6 7 8 9 10 --threads 1
 ```
 
@@ -47,7 +47,7 @@ constrains SHA-256 message padding; the chain is a raw block chain, not a
 complete padded message hash. Its `message_bytes` field counts raw block
 bytes, `64 * compressions`.
 
-The library API is exported from `f2z::piop::spartan`. The existing
+The library API is exported from `bitz::piop::spartan`. The existing
 [compression benchmark](../benches/sha256_compressions.rs) contains a
 complete example of this sequence:
 
@@ -74,7 +74,7 @@ Timing boundaries:
 - `witness_ms`: circuit replay, source/assignment bit packing and public
   statement materialization; the chain also computes native chaining states.
 - `setup_ms`: one-time public relation preparation and PCS configuration.
-- `prove_ms`: commitment through the finished F2Z proof, excluding witness
+- `prove_ms`: commitment through the finished BitZ proof, excluding witness
   generation, setup and verification. `s1_commit_ms` is included in it.
 - `verify_ms`: verification of that proof. Every warmup and sample is verified.
 - `witness_to_proof_ms`: the median of each sample's

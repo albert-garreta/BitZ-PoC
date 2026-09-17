@@ -319,7 +319,7 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
         .map(|words| words.iter().flat_map(|word| word.to_le_bytes()).collect())
         .collect();
     let mut hash = blake3::Hasher::new();
-    hash.update(b"f2z/sha256-ecdsa/local-relation/v2");
+    hash.update(b"bitz/sha256-ecdsa/local-relation/v2");
     for map in [&sha_local, &sha_prev, &sha_first, &p_map] {
         hash.update(&map.digest());
     }
@@ -642,7 +642,7 @@ pub fn prepare_sha256_ecdsa(
         + local.p_map.nnz()
         - 2 * canceled;
     let mut hash = blake3::Hasher::new();
-    hash.update(b"f2z/sha256-ecdsa/map/v1");
+    hash.update(b"bitz/sha256-ecdsa/map/v1");
     hash.update(&local.digest);
     hash.update(&last.digest());
     hash.update(&(n as u64).to_le_bytes());

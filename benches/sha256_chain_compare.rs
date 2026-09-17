@@ -13,7 +13,7 @@ use binius_hash::sha256::Sha256HashSuite;
 use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript};
 use binius_verifier::{Verifier, config::StdChallenger};
-use f2z::{
+use bitz::{
     binius_ligerito::{Accounting, Prepared},
     ligerito_flock::LigeritoSelection,
     observability::{self, Interval, Recording},
@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 use std::error::Error;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-const SCHEMA: &str = "f2z/sha256-chain-compare/v1";
+const SCHEMA: &str = "bitz/sha256-chain-compare/v1";
 const FIXTURE: &str = "sha256-chain/public-blocks-standard-iv/v1";
 const IV: [u32; 8] = circuit::sha256::INITIAL_STATE;
 
@@ -37,7 +37,7 @@ const IV: [u32; 8] = circuit::sha256::INITIAL_STATE;
 struct Args {
     #[command(flatten)]
     cargo: cli::CargoArgs,
-    #[arg(long, default_value = "f2z", value_parser = ["f2z", "binius64", "binius64-ligerito"])]
+    #[arg(long, default_value = "bitz", value_parser = ["bitz", "binius64", "binius64-ligerito"])]
     method: String,
     #[arg(long, value_parser = clap::value_parser!(u8).range(7..=16))]
     exponent: u8,
@@ -48,7 +48,7 @@ struct Args {
     #[arg(long, default_value = "0")]
     seed: u64,
     #[arg(long, default_value = "custom:1:4", value_parser = ["custom:1:4", "custom:3:4"])]
-    f2z_profile: String,
+    bitz_profile: String,
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
     log_inv_rate: u8,
     /// Describe the deterministic public statement without setup or proving.
@@ -222,8 +222,8 @@ fn emit(
     row.as_object_mut().unwrap().extend(json!({
         "schema":SCHEMA, "method":args.method, "log_compressions":args.exponent,
         "threads":args.threads, "seed":args.seed, "security_target":100,
-        "ligerito_profile":if args.method == "f2z" {Some(args.f2z_profile.as_str())} else {None},
-        "log_inv_rate":if args.method == "f2z" {args.f2z_profile.split(':').nth(1).unwrap().parse::<u8>()?} else {args.log_inv_rate},
+        "ligerito_profile":if args.method == "bitz" {Some(args.bitz_profile.as_str())} else {None},
+        "log_inv_rate":if args.method == "bitz" {args.bitz_profile.split(':').nth(1).unwrap().parse::<u8>()?} else {args.log_inv_rate},
         "trial":if trial == 0 {"warmup"} else {"sample"}, "sample":trial,
         "verified":true, "zk":false, "timing":"perfetto", "security":security,
         "setup_ms":setup_ms, "witness_ms":ms(intervals,"chain-compare:witness")?+packing_ms,
@@ -238,17 +238,17 @@ fn emit(
     Ok(())
 }
 
-fn run_f2z(args: &Args, fixture: &Fixture) -> Result<()> {
+fn run_bitz(args: &Args, fixture: &Fixture) -> Result<()> {
     let setup_recording = Recording::start(Vec::new())?;
     let setup = tracing::info_span!("chain-compare:setup").entered();
     let prepared = prepare_sha256_chain_batch(args.exponent.into())?
-        .with_ligerito(LigeritoSelection::parse(&args.f2z_profile, 100)?)?;
+        .with_ligerito(LigeritoSelection::parse(&args.bitz_profile, 100)?)?;
     let (pc, vc) = sha256_chain_configs(&prepared)?;
     drop(setup);
     let setup_ms = ms(&setup_recording.intervals()?, "chain-compare:setup")?;
-    let security = json!({"model":"F2Z per-check economic accounting",
+    let security = json!({"model":"BitZ per-check economic accounting",
         "economic_bits":prepared.security().accounting.achieved_bits(),
-        "ligerito":prepared.ligerito_configuration()?.report(&args.f2z_profile, prepared.security().ood)});
+        "ligerito":prepared.ligerito_configuration()?.report(&args.bitz_profile, prepared.security().ood)});
     for trial in 0..=args.reps {
         let recording = Recording::start(Vec::new())?;
         let e2e = tracing::info_span!("chain-compare:e2e").entered();
@@ -280,7 +280,7 @@ fn run_f2z(args: &Args, fixture: &Fixture) -> Result<()> {
         let intervals = recording.intervals()?;
         // PIOP is an analytical payload count; PCS and commitment are serialized.
         let proof_bytes = proof.piop_bytes()
-            + proof.f2z().to_bytes().len()
+            + proof.bitz().to_bytes().len()
             + bincode::serialized_size(&hint.commitment)? as usize;
         if args.self_test && trial == 0 {
             for position in [
@@ -304,7 +304,7 @@ fn run_f2z(args: &Args, fixture: &Fixture) -> Result<()> {
                 )
                 .is_ok()
                 {
-                    return Err("F2Z accepted changed public chain statement".into());
+                    return Err("BitZ accepted changed public chain statement".into());
                 }
             }
             *proof.initial_nonce_mut() ^= 1;
@@ -318,7 +318,7 @@ fn run_f2z(args: &Args, fixture: &Fixture) -> Result<()> {
             )
             .is_ok()
             {
-                return Err("F2Z accepted changed proof".into());
+                return Err("BitZ accepted changed proof".into());
             }
         }
         emit(
@@ -360,8 +360,8 @@ fn run_binius(args: &Args, fixture: &Fixture) -> Result<()> {
             Accounting::RoundByRound,
         )?;
         let s = prepared.security();
-        let security = json!({"model":"Binius64 PIOP with F2Z-Ligerito; per-round algebraic accounting",
-            "pcs":"F2Z-Ligerito", "accounting":s.accounting.name(), "target_bits":s.target_bits,
+        let security = json!({"model":"Binius64 PIOP with BitZ-Ligerito; per-round algebraic accounting",
+            "pcs":"BitZ-Ligerito", "accounting":s.accounting.name(), "target_bits":s.target_bits,
             "algebraic_bits":s.algebraic_bits, "log_inv_rate":args.log_inv_rate,
             "union_bound_bits":s.union_bound_bits, "round_by_round_bits":s.round_by_round_bits,
             "merkle_hash":"BLAKE3"});
@@ -460,8 +460,8 @@ fn main() -> Result<()> {
         .num_threads(args.threads)
         .build_global()?;
     observability::install()?;
-    if args.method == "f2z" {
-        run_f2z(&args, &fixture)
+    if args.method == "bitz" {
+        run_bitz(&args, &fixture)
     } else {
         run_binius(&args, &fixture)
     }
@@ -499,7 +499,7 @@ mod tests {
         observability::install().unwrap();
         let fixture = Fixture::generate(7, 7).unwrap();
         for rate in [1, 3] {
-            for method in ["f2z", "binius64", "binius64-ligerito"] {
+            for method in ["bitz", "binius64", "binius64-ligerito"] {
                 let mut args = Args::parse_from([
                     "test",
                     "--exponent",
@@ -512,9 +512,9 @@ mod tests {
                 args.seed = 7;
                 args.threads = rayon::current_num_threads();
                 args.log_inv_rate = rate;
-                args.f2z_profile = format!("custom:{rate}:4");
-                if method == "f2z" {
-                    run_f2z(&args, &fixture)
+                args.bitz_profile = format!("custom:{rate}:4");
+                if method == "bitz" {
+                    run_bitz(&args, &fixture)
                 } else {
                     run_binius(&args, &fixture)
                 }

@@ -3,7 +3,7 @@
 # COMPATIBILITY NOTE (2026-08-30): this script parses the PRE-SCHEMA output
 # of benches/baby_bear_mul.rs (its original SAMPLE/RESULT/MEMORY records and
 # the bench-peak-memory pass). The bench now emits the unified
-# `RESULT schema=f2z/1` format (docs/bench-schema.md) with two rows per
+# `RESULT schema=bitz/1` format (docs/bench-schema.md) with two rows per
 # shape (Lambda100 + Lambda128) and no memory pass. To reproduce the output
 # this script expects, run the bench from commit b7713d8. Porting this
 # audit harness to the unified schema is an open task.
@@ -85,14 +85,14 @@ SAMPLE_FIELDS = (
     "inner_native_witness_fold_ms",
     "inner_field_rounds_ms",
     "bitify_prove_ms",
-    "f2z_prove_ms",
-    "f2z_prepare_prove_ms",
+    "bitz_prove_ms",
+    "bitz_prepare_prove_ms",
     "prove_residual_ms",
     "verify_ms",
     "spartan_verify_ms",
     "bitify_verify_ms",
-    "f2z_verify_ms",
-    "f2z_prepare_verify_ms",
+    "bitz_verify_ms",
+    "bitz_prepare_verify_ms",
     "verify_residual_ms",
     "verified",
     "r1cs_rows",
@@ -122,7 +122,7 @@ SAMPLE_FIELDS = (
     "bit_pack_setup_ms",
     "commitment_setup_ms",
     "spartan_proof_payload_bytes",
-    "f2z_proof_bytes",
+    "bitz_proof_bytes",
     "shape_seed",
     "peak_heap_mib",
     "live_before_prove_mib",
@@ -174,17 +174,17 @@ SUMMARY_FIELDS = (
     "inner_native_witness_fold_ms",
     "inner_field_rounds_ms",
     "bitify_prove_ms",
-    "f2z_prove_ms",
-    "f2z_prepare_prove_ms",
+    "bitz_prove_ms",
+    "bitz_prepare_prove_ms",
     "prove_residual_ms",
     "verify_ms",
     "spartan_verify_ms",
     "bitify_verify_ms",
-    "f2z_verify_ms",
-    "f2z_prepare_verify_ms",
+    "bitz_verify_ms",
+    "bitz_prepare_verify_ms",
     "verify_residual_ms",
     "spartan_proof_payload_bytes",
-    "f2z_proof_bytes",
+    "bitz_proof_bytes",
     "peak_heap_mib",
     "live_before_prove_mib",
     "peak_heap_delta_mib",
@@ -232,14 +232,14 @@ TIMING_FIELDS = (
     "spartan_bind_ms",
     "spartan_inner_ms",
     "bitify_prove_ms",
-    "f2z_prove_ms",
-    "f2z_prepare_prove_ms",
+    "bitz_prove_ms",
+    "bitz_prepare_prove_ms",
     "prove_residual_ms",
     "verify_ms",
     "spartan_verify_ms",
     "bitify_verify_ms",
-    "f2z_verify_ms",
-    "f2z_prepare_verify_ms",
+    "bitz_verify_ms",
+    "bitz_prepare_verify_ms",
     "verify_residual_ms",
 )
 
@@ -277,7 +277,7 @@ RESULT_DETAIL_FIELDS = (
     "bit_pack_setup_ms",
     "commitment_setup_ms",
     "spartan_proof_payload_bytes",
-    "f2z_proof_bytes",
+    "bitz_proof_bytes",
     "shape_seed",
 )
 
@@ -478,7 +478,7 @@ def static_metadata(args: argparse.Namespace, exponents: tuple[int, ...]) -> dic
         memory_requirement_met = "true"
 
     return {
-        "benchmark_algorithm": "BabyBear integer multiplication Spartan PIOP + F2Z",
+        "benchmark_algorithm": "BabyBear integer multiplication Spartan PIOP + BitZ",
         "benchmark_date": args.benchmark_date,
         "run_timestamp_utc": args.run_timestamp,
         "commit": args.commit,
@@ -991,7 +991,7 @@ def main() -> None:
         ):
             if f64(result, field) < 0.0:
                 raise SystemExit(f"negative setup timing {field!r} for {pair}: {result[field]}")
-        for field in ("spartan_proof_payload_bytes", "f2z_proof_bytes"):
+        for field in ("spartan_proof_payload_bytes", "bitz_proof_bytes"):
             if integer(result, field) <= 0:
                 raise SystemExit(f"non-positive proof size {field!r} for {pair}: {result[field]}")
         try:

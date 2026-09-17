@@ -28,8 +28,8 @@ def fingerprint(row):
 
 # Configuration keys that later harness revisions record for information only;
 # when one side of a comparison predates them they are ignored, when both sides
-# carry them they must agree (they name the u64 F2Z split).
-INFORMATIONAL_CONFIG_KEYS = ("u64_split_shift", "f2z_t", "f2z_s")
+# carry them they must agree (they name the u64 BitZ split).
+INFORMATIONAL_CONFIG_KEYS = ("u64_split_shift", "bitz_t", "bitz_s")
 
 
 def protocol_identity(row, other):
@@ -68,7 +68,7 @@ def require_compatible(left, right, allow_source_drift=False):
 
 
 def validate_summary(row):
-    if row.get("backend") == "f2z":
+    if row.get("backend") == "bitz":
         validate_ligerito(row.get("config", {}).get("ligerito"), 100)
     if row.get("schema") != SUMMARY_SCHEMA or row.get("measurement_policy") != POLICY:
         raise ValueError("historical or unsupported multiplication results; regenerate the comparison")

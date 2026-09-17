@@ -28,7 +28,7 @@ use binius_math::{FieldSlice, FieldVec};
 use binius_verifier::config::B128;
 use flock_core::{field::Gf128, merkle::Hash, pcs::commit::ProverData};
 
-const ORACLE_DOMAIN: &[u8] = b"f2z/binius64-ligerito/oracle/v1";
+const ORACLE_DOMAIN: &[u8] = b"bitz/binius64-ligerito/oracle/v1";
 
 /// Bind an oracle's root, in commitment order, before Round 0 draws `ζ`.
 fn absorb_root(t: &mut Blake3Transcript, index: usize, root: &Hash) {

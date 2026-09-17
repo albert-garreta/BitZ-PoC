@@ -1,7 +1,7 @@
 //! Union-bound accounting for the supported composition shapes.
 use super::{Error, opening::Geometry};
 use crate::piop::spartan::{
-    f2z::U32MulPrefixRelation,
+    bitz::U32MulPrefixRelation,
     profile::{IopSecurityProfile, PrimePolicy},
 };
 

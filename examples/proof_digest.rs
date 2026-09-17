@@ -11,12 +11,12 @@
 //! RUSTFLAGS="-C target-cpu=native" cargo run --release --example proof_digest
 //! ```
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{
     commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs,
     verify_mle_eval_mod_q_ligerito,
 };
-use f2z::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
+use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 
 /// `𝔽_q`, `q = 2^100 − 15`.
 const Q: u128 = (1u128 << 100) - 15;
@@ -118,12 +118,12 @@ fn digest(t: usize, s: usize, w: usize) {
     let hint = commit_rs_ligerito_rows(&p, rows, &pc);
     let root_hex: String = hint.commitment.root.iter().map(|b| format!("{b:02x}")).collect();
 
-    let mut pt = f2z::transcript::Blake3Transcript::new();
+    let mut pt = bitz::transcript::Blake3Transcript::new();
     let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
     let ser = proof.to_bytes();
     let dg = blake3::hash(&ser);
 
-    let mut vt = f2z::transcript::Blake3Transcript::new();
+    let mut vt = bitz::transcript::Blake3Transcript::new();
     verify_mle_eval_mod_q_ligerito(
         &mut vt, &hint.commitment, &proof, &p, &rw_q, &cw, alpha, y, q_bits, &vc,
     )
@@ -139,7 +139,7 @@ fn digest(t: usize, s: usize, w: usize) {
 }
 
 fn main() {
-    println!("F2Z proof byte-identity digests (deterministic instances)\n");
+    println!("BitZ proof byte-identity digests (deterministic instances)\n");
     digest(12, 6, 1); // n=18: ad-hoc config regime
     digest(13, 9, 1); // n=22: embedded FAST config regime
     digest(4, 8, 32); // 2-chunk (W=32) regime

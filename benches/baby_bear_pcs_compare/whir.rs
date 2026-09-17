@@ -8,7 +8,7 @@
 //! f = [e_0 | A | B | C | K | 0 | 0 | 0].
 //! ```
 //!
-//! Spartan/F2Z numbers gate coordinates least-significant-coordinate first,
+//! Spartan/BitZ numbers gate coordinates least-significant-coordinate first,
 //! while Plonky3 stores a hypercube table in lexicographic (big-endian)
 //! coordinate order.  [`p3_opening_point`] performs the one explicit reversal
 //! at the adapter boundary.
@@ -106,7 +106,7 @@ pub enum WhirAdapterError {
 
 /// One native scaled claim `D * f(x, beta) = V`.
 ///
-/// Both coordinate vectors use Spartan/F2Z's little-endian logical ordering:
+/// Both coordinate vectors use Spartan/BitZ's little-endian logical ordering:
 /// `gate_point_lsb_first[0]` selects the adjacent pair of gate-table entries,
 /// and `beta_lsb_first` selects blocks `000=e0, 001=A, ..., 100=K`.
 #[derive(Clone, Debug, PartialEq, Eq)]

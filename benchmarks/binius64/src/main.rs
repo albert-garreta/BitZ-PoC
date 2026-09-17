@@ -1,16 +1,16 @@
 //! Isolated non-ZK Binius64 worker for the common SHA-chain/P-256 relation.
 //!
 //! Two openers over the identical circuit and witness: Binius64's own ring
-//! switch + BaseFold (`--method binius64`, the upstream prover), and the F2Z
-//! opener (`--method binius64-ligerito` / `--opener f2z`): the same PIOP up to
-//! the witness evaluation claim, every oracle committed and opened by F2Z's
+//! switch + BaseFold (`--method binius64`, the upstream prover), and the BitZ
+//! opener (`--method binius64-ligerito` / `--opener bitz`): the same PIOP up to
+//! the witness evaluation claim, every oracle committed and opened by BitZ's
 //! binary PCS under the round-by-round 100-bit gate
-//! (`f2z::binius_ligerito::Prepared`).
+//! (`bitz::binius_ligerito::Prepared`).
 #![recursion_limit = "256"]
 
 #[path = "../../../benches/support/sha256_ecdsa_fixture.rs"]
 mod fixture;
-use f2z::observability;
+use bitz::observability;
 #[path = "../../../benches/common/trace_capture.rs"]
 mod trace_capture;
 
@@ -20,7 +20,7 @@ use binius_hash::sha256::Sha256HashSuite;
 use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript};
 use binius_verifier::{Verifier, config::StdChallenger};
-use f2z::binius_ligerito::{Accounting, Prepared};
+use bitz::binius_ligerito::{Accounting, Prepared};
 use fixture::{Result, SignedFixture};
 use serde_json::json;
 use std::{collections::BTreeMap, path::PathBuf};
@@ -56,7 +56,7 @@ fn phase_timings(intervals: &[observability::Interval]) -> Result<BTreeMap<Strin
 }
 
 struct Args {
-    /// `binius64` (ring switch + BaseFold) or `binius64-ligerito` (F2Z opener).
+    /// `binius64` (ring switch + BaseFold) or `binius64-ligerito` (BitZ opener).
     method: String,
     exponent: u8,
     threads: usize,
@@ -97,7 +97,7 @@ impl Args {
                 "--method" if ["binius64", "binius64-ligerito"].contains(&value.as_str()) => {
                     out.method = value;
                 }
-                "--opener" if ["basefold", "f2z"].contains(&value.as_str()) => {
+                "--opener" if ["basefold", "bitz"].contains(&value.as_str()) => {
                     opener = Some(value);
                 }
                 "--r" => r = Some(value.parse()?),
@@ -112,7 +112,7 @@ impl Args {
             }
         }
         if let Some(opener) = opener {
-            let implied = if opener == "f2z" {
+            let implied = if opener == "bitz" {
                 "binius64-ligerito"
             } else {
                 "binius64"
@@ -134,7 +134,7 @@ impl Args {
             return Err("--log-inv-rate must be 1, 2, or 3".into());
         }
         if out.method == "binius64-ligerito" && out.target != 100 {
-            return Err("the F2Z opener's whole-protocol gate is fixed at 100 bits".into());
+            return Err("the BitZ opener's whole-protocol gate is fixed at 100 bits".into());
         }
         Ok(out)
     }
@@ -143,7 +143,7 @@ impl Args {
 fn build_info() -> serde_json::Value {
     json!({"binius_revision":env!("BINIUS_REVISION"), "lock_sha256":env!("LOCK_SHA256"),
         "source_sha256":env!("SOURCE_SHA256"), "rustc":env!("BUILD_RUSTC"), "rustflags":env!("BUILD_RUSTFLAGS"),
-        "f2z_revision":env!("F2Z_REVISION"), "f2z_dirty":env!("F2Z_DIRTY") == "dirty",
+        "bitz_revision":env!("BITZ_REVISION"), "bitz_dirty":env!("BITZ_DIRTY") == "dirty",
         "circuit_profile":PROFILE, "fixture_profile":fixture::SCHEMA, "zk":false})
 }
 
@@ -170,9 +170,9 @@ fn verify(
     Ok(())
 }
 
-/// Statement validation + decode + F2Z-opener verification, the counterpart
+/// Statement validation + decode + BitZ-opener verification, the counterpart
 /// of [`verify`] for `binius64-ligerito` rows.
-fn verify_f2z(prepared: &Prepared, fixture: &SignedFixture, proof: &[u8]) -> Result<()> {
+fn verify_bitz(prepared: &Prepared, fixture: &SignedFixture, proof: &[u8]) -> Result<()> {
     fixture.validate_statement()?;
     let expected = expected_words(fixture);
     let decoded = prepared.proof_from_bytes(proof)?;
@@ -182,14 +182,14 @@ fn verify_f2z(prepared: &Prepared, fixture: &SignedFixture, proof: &[u8]) -> Res
 
 fn base_row(args: &Args, fixture: &SignedFixture, trial: usize, circuit_id: &str) -> serde_json::Value {
     json!({
-        "schema":"f2z/sha256-ecdsa-compare/v1", "method":args.method, "zk":false,
+        "schema":"bitz/sha256-ecdsa-compare/v1", "method":args.method, "zk":false,
         "trial":if trial == 0 {"warmup"} else {"sample"}, "sample":trial,
         "log_compressions":args.exponent, "compressions":1usize << args.exponent, "message_bytes":fixture.message.len(),
         "signatures":1, "r":null, "c":null, "security_target":args.target, "log_inv_rate":args.log_inv_rate,
         "threads":args.threads, "seed":args.seed,
         "fixture_id":fixture.id, "fixture_profile":fixture::SCHEMA, "statement_bytes":129,
         "statement":"public-key-signature; witness-message", "binius_revision":env!("BINIUS_REVISION"),
-        "f2z_revision":env!("F2Z_REVISION"),
+        "bitz_revision":env!("BITZ_REVISION"),
         "circuit_profile":PROFILE, "circuit_id":circuit_id, "verified":true,
     })
 }
@@ -324,11 +324,11 @@ fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
     Ok(())
 }
 
-/// The F2Z opener over the same circuit and witness: Binius64's PIOP up to the
-/// witness evaluation claim, every oracle committed and opened by F2Z's binary
+/// The BitZ opener over the same circuit and witness: Binius64's PIOP up to the
+/// witness evaluation claim, every oracle committed and opened by BitZ's binary
 /// PCS, gated at 100 bits round-by-round. Witness packing happens inside the
 /// prover here, so `witness_ms` is the wire assignment alone.
-fn run_f2z_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
+fn run_bitz_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
     let recording = observability::Recording::start(Vec::new())?;
     let setup = tracing::info_span!("worker:setup").entered();
     let builder = CircuitBuilder::new();
@@ -343,7 +343,7 @@ fn run_f2z_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
     let setup_ms = observability::duration(&recording.intervals()?, "worker:setup")?.as_secs_f64() * 1000.;
     let security = prepared.security().clone();
     if security.algebraic_bits < f64::from(security.target_bits) {
-        return Err("F2Z opener gate unsatisfied".into());
+        return Err("BitZ opener gate unsatisfied".into());
     }
     let expected = expected_words(fixture);
     let circuit_id =
@@ -422,21 +422,21 @@ fn run_f2z_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
                     3 => other.s[31] ^= 1,
                     _ => other.log_compressions += 1,
                 }
-                if verify_f2z(&prepared, &other, &bytes).is_ok() {
+                if verify_bitz(&prepared, &other, &bytes).is_ok() {
                     return Err("accepted altered public statement".into());
                 }
             }
             let mut corrupt = bytes.clone();
             corrupt[0] ^= 1;
-            if verify_f2z(&prepared, &fixture, &corrupt).is_ok() {
+            if verify_bitz(&prepared, &fixture, &corrupt).is_ok() {
                 return Err("accepted corrupt proof".into());
             }
             let mut extra = bytes.clone();
             extra.push(0);
-            if verify_f2z(&prepared, &fixture, &extra).is_ok() {
+            if verify_bitz(&prepared, &fixture, &extra).is_ok() {
                 return Err("accepted trailing proof byte".into());
             }
-            if verify_f2z(&prepared, &fixture, &bytes[..bytes.len() - 1]).is_ok() {
+            if verify_bitz(&prepared, &fixture, &bytes[..bytes.len() - 1]).is_ok() {
                 return Err("accepted truncated proof".into());
             }
         }
@@ -449,8 +449,8 @@ fn run_f2z_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
                 "outer_ms":null, "inner_ms":null, "folding_ms":null,
                 "proof_object_bytes":proof_bytes, "proof_material_bytes":proof_bytes,
                 "phases_ms":{"Commit oracles":commit_ms, "PIOP prefix":piop_ms, "Opening":opening_ms},
-                "security":{"model":"Binius64 PIOP with the F2Z opener; whole-protocol algebraic accounting",
-                    "pcs":"F2Z-Ligerito", "accounting":security.accounting.name(),
+                "security":{"model":"Binius64 PIOP with the BitZ opener; whole-protocol algebraic accounting",
+                    "pcs":"BitZ-Ligerito", "accounting":security.accounting.name(),
                     "target_bits":security.target_bits, "algebraic_bits":security.algebraic_bits,
                     "union_bound_bits":security.union_bound_bits, "round_by_round_bits":security.round_by_round_bits,
                     "component_bits":prepared.component_bits(), "log_inv_rate":args.log_inv_rate,
@@ -473,10 +473,10 @@ fn run_f2z_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
 fn main() -> Result<()> {
     if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
         println!(
-            "binius64-sha256-ecdsa --r R --c C [--method binius64|binius64-ligerito] [--opener basefold|f2z]\n\
+            "binius64-sha256-ecdsa --r R --c C [--method binius64|binius64-ligerito] [--opener basefold|bitz]\n\
             \x20   [--target 100|128] [--log-inv-rate 1|2|3] [--threads N] [--reps N] [--seed N] [--fixture PATH] [--self-test]\n\
             Standard P-256, non-ZK; 3 <= R+C <= 16. --log-inv-rate selects rate 1/2 (1), 1/4 (2), or 1/8 (3) for either opener.\n\
-            --opener f2z (= --method binius64-ligerito) proves through the F2Z opener, round-by-round 100-bit gate.\n\
+            --opener bitz (= --method binius64-ligerito) proves through the BitZ opener, round-by-round 100-bit gate.\n\
             --build-info prints pinned source/build metadata."
         );
         return Ok(());
@@ -498,7 +498,7 @@ fn main() -> Result<()> {
         return Err("fixture configuration mismatch".into());
     }
     if args.method == "binius64-ligerito" {
-        run_f2z_opener(&args, &fixture)
+        run_bitz_opener(&args, &fixture)
     } else {
         run_basefold(&args, &fixture)
     }
@@ -731,7 +731,7 @@ mod tests {
     /// this round trip exercises the adapter's full IntMul + BinMul + AND
     /// reduction mix, and its security report must carry the BinMul term.
     #[test]
-    fn f2z_opener_round_trips_and_binds_the_statement() {
+    fn bitz_opener_round_trips_and_binds_the_statement() {
         let fixture = SignedFixture::generate(3, 7).unwrap();
         let builder = CircuitBuilder::new();
         let relation = Sha256Ecdsa::new(&builder, 3).unwrap();
@@ -765,13 +765,13 @@ mod tests {
         let proof = prepared.prove(&witness).unwrap();
         let bytes = proof.to_bytes();
         drop(witness);
-        verify_f2z(&prepared, &fixture, &bytes).unwrap();
+        verify_bitz(&prepared, &fixture, &bytes).unwrap();
         let mut other = fixture.clone();
         other.qx[31] ^= 1;
-        assert!(verify_f2z(&prepared, &other, &bytes).is_err());
-        assert!(verify_f2z(&prepared, &fixture, &bytes[..bytes.len() - 1]).is_err());
+        assert!(verify_bitz(&prepared, &other, &bytes).is_err());
+        assert!(verify_bitz(&prepared, &fixture, &bytes[..bytes.len() - 1]).is_err());
         let mut corrupt = bytes;
         corrupt[12] ^= 1;
-        assert!(verify_f2z(&prepared, &fixture, &corrupt).is_err());
+        assert!(verify_bitz(&prepared, &fixture, &corrupt).is_err());
     }
 }

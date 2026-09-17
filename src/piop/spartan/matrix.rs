@@ -25,7 +25,7 @@ use crate::poly::mle::DenseMultilinearExtension;
 
 /// Domain tag of the prepared-statement digest (`v2`), shared verbatim by
 /// the entry-wise walk and the skeleton's cached stream.
-const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"f2z/spartan/constraint-matrices/v2";
+const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"bitz/spartan/constraint-matrices/v2";
 
 use circuit::linear_map::CscMatrix;
 
@@ -966,7 +966,7 @@ where
     /// Directly discharges the claim against a complete evaluation table.
     ///
     /// This is the witness-aware path used until the assignment opening is
-    /// connected to the F2Z PCS.
+    /// connected to the BitZ PCS.
     pub fn nonsuccinct_verify(
         &self,
         polynomial: &DenseMultilinearExtension<F>,
@@ -1572,7 +1572,7 @@ mod tests {
         field_config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
     ) -> [u8; 32] {
         let mut hash = Hasher::new();
-        hash.update(b"f2z/spartan/constraint-matrices/v2");
+        hash.update(b"bitz/spartan/constraint-matrices/v2");
         hash_bytes(
             &mut hash,
             &Fp::<2>::canonical_modulus_encoding(field_config),

@@ -1,6 +1,6 @@
-# Matched 114-bit F2Z / Limber MultiSwap campaign
+# Matched 114-bit BitZ / Limber MultiSwap campaign
 
-The campaign compares F2Z/Ligerito, Limber-Hyrax, and Limber-Brakedown on
+The campaign compares BitZ/Ligerito, Limber-Hyrax, and Limber-Brakedown on
 identical copies of the RSA-2048 paper fixture. Every reported modeled check
 must reach **at least 114 bits** under `per-check-round-minimum/v1` accounting.
 This is a minimum over the modeled checks and rounds, not a new combined
@@ -27,10 +27,10 @@ Witness values and quotients are private unsigned integers below `2^2048`.
 The application public-input vector is explicitly **count=0, values=[]**.
 Padding uses zero witness values, zero quotients, and modulus two.
 
-`f2z-limber/multiswap-statement/v2` binds the canonical matrix digest, batch
+`bitz-limber/multiswap-statement/v2` binds the canonical matrix digest, batch
 count, variable bounds and roles, constant-column and padding conventions,
 and public-input count. The separate integer-assignment digest checks that
-all backends benchmark the same deterministic data. F2Z's commitment layout
+all backends benchmark the same deterministic data. BitZ's commitment layout
 remaps variables and folds the quotient-modulus terms into C; structural tests
 invert that remapping and compare every canonical linear form, including
 exact rows and quotient terms.
@@ -46,9 +46,9 @@ batch sweep.
 
 | Component | Matched setting |
 |---|---|
-| F2Z profile | `F2Z_BENCH_LAMBDA=114`, profile `limber114` |
-| F2Z reduction | Derived per shape; ten grinding bits for every selected batch |
-| F2Z Ligerito opening | Validated UDR configuration derived at target 114 |
+| BitZ profile | `BITZ_BENCH_LAMBDA=114`, profile `limber114` |
+| BitZ reduction | Derived per shape; ten grinding bits for every selected batch |
+| BitZ Ligerito opening | Validated UDR configuration derived at target 114 |
 | Comparison target | `MATCHED_SECURITY_BITS=114` |
 | Limber integer commitment | `MATCHED_INTEGER_SECURITY_BITS=128` (native CRT target) |
 | Limber integer challenge bound target | Native `LAMBDA_BOUND2=117` |
@@ -67,11 +67,11 @@ Limber's IntEval key format is version 2; its SNARK transcript
 binds the public shape and actual serialized verifier-key configuration.
 Brakedown keys also bind the runtime code/opening settings.
 
-F2Z's new profile binds its actual Ligerito configuration and the canonical
+BitZ's new profile binds its actual Ligerito configuration and the canonical
 statement into the transcript and rejects incompatible opener settings. The
 legacy one-copy `limber114` transcript pin is retained. The fingerprint defect
 bound stays below `2^8210` for every batch because copying does not enlarge an
-individual row. The separate F2Z reduction magnitude bound grows from
+individual row. The separate BitZ reduction magnitude bound grows from
 `2^282` to `2^286` across the sweep and is recomputed for each shape.
 
 Traces report the component bounds and actual parameters. The reporter
@@ -86,7 +86,7 @@ every measured proof.
 The required published revision is
 `836c50f23e674098dcfbe42a4873f583d4e0fe3f` in
 `https://github.com/wu-s-john/limber-impl.git`. Both the setup helper and the
-campaign runner read this pin from F2Z's `Cargo.toml` and require Python 3.11
+campaign runner read this pin from BitZ's `Cargo.toml` and require Python 3.11
 or newer. Prepare a checkout directly from that revision:
 
 ```sh
@@ -96,11 +96,16 @@ python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
 An existing local clone containing the pinned revision can be supplied with
 `--source PATH`. The helper refuses existing destinations, checks out the
 published commit with detached HEAD, and prints the path, source, and revision.
-It applies no patch and creates no commit. Skip preparation if the checkout
+It creates no commit. Skip preparation if the checkout
 already exists at the pinned revision.
 
 The runner defaults to `/tmp/limber-matched114`. Use `--limber-root` for another
 checkout; execution rejects a revision that differs from the Cargo dependency.
+
+The setup helper and campaign runner migrate the Limber benchmark’s three
+comparison hash domains to the BitZ namespace in the supplied checkout.
+The campaign records the modified benchmark source hash and Git status;
+no local commit is created. This step is idempotent and skipped by `--dry-run`.
 
 ## Preview and run
 
@@ -145,19 +150,19 @@ python3 scripts/run_matched_multiswap_campaign.py \
   --all-threads 16 --warmups 1 --samples 10
 ```
 
-F2Z uses the repository's Rust toolchain. Limber uses
+BitZ uses the repository's Rust toolchain. Limber uses
 `nightly-2026-07-01`. The runner preflights both toolchains and the validator,
 records their identities, overrides inherited workload/security settings,
 and compiles with native CPU flags. The benchmark commands are:
 
 ```text
-F2Z:    cargo bench --bench multiswap --features unchecked
+BitZ:    cargo bench --bench multiswap --features unchecked
 Limber: rustup run nightly-2026-07-01 cargo bench --bench multiswap_modp
 ```
 
 The runner supplies `MSCFG=paper`, workload, batch, target, backend, trace
 path, sampling policy, and thread count for each invocation. Use
-`--output-dir`, `--campaign-id`, `--f2z-root`, or `--rustflags` to override
+`--output-dir`, `--campaign-id`, `--bitz-root`, or `--rustflags` to override
 those controls. Omit `--all-threads` to detect physical performance cores on
 macOS or physical cores on Linux. Existing output directories are rejected.
 
@@ -198,7 +203,7 @@ Compilation and public setup are excluded from headline proving times.
 | Peak RSS | Process high-water resident memory, including setup and warmups, excluding compiler |
 
 PCS totals include commitment plus opening. Proof sizes include serialized
-commitments and openings, with analytical estimates for F2Z PIOP/bridge data
+commitments and openings, with analytical estimates for BitZ PIOP/bridge data
 and Limber's dynamic sumchecks. Peak RSS is not a per-trial allocation count.
 JSON includes the actual security parameters and statement contract; CSV and
 HTML compare timings, proof sizes, and memory by batch and thread count.

@@ -133,7 +133,7 @@ impl B127 {
     }
 }
 
-/// General polynomial reduction, adapted from F2Z's B127 implementation.
+/// General polynomial reduction, adapted from BitZ's B127 implementation.
 fn reduce_b127(prod: [u64; 4]) -> B127 {
     let h0 = (prod[1] >> 63) | (prod[2] << 1);
     let h1 = (prod[2] >> 63) | (prod[3] << 1);

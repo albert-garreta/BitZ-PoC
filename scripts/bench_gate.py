@@ -5,11 +5,11 @@ Serializes campaigns across sessions with a machine-wide lock and starts
 immediately after acquiring it. Aborts the campaign if swap growth passes a
 limit (the runaway-paging guard; Binius paging cells run with a higher limit).
 
-    python3 scripts/bench_gate.py run --label u32-f2z-r2-t10 \
+    python3 scripts/bench_gate.py run --label u32-bitz-r2-t10 \
         [--swap-grow-gb 12] -- command...
 
 Exit code: the command's, or 86 if the swap guard aborted it. The lock is
-`F2Z_BENCH_LOCK` (default /tmp/f2z-bench.lock), a mkdir lock holding the
+`BITZ_BENCH_LOCK` (default /tmp/bitz-bench.lock), a mkdir lock holding the
 owner pid; a lock whose owner is dead is reclaimed. Other sessions running
 timed work should take the same lock.
 """
@@ -26,7 +26,7 @@ import threading
 import time
 from pathlib import Path
 
-LOCK = Path(os.environ.get("F2Z_BENCH_LOCK", "/tmp/f2z-bench.lock"))
+LOCK = Path(os.environ.get("BITZ_BENCH_LOCK", "/tmp/bitz-bench.lock"))
 ABORTED = 86
 
 

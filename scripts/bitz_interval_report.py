@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build F2Z interval reports with protocol- and witness-component rows."""
+"""Build BitZ interval reports with protocol- and witness-component rows."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ MATH_BY_OPERATION: dict[str, tuple[str, ...]] = {
         r"d_c=\beta_c+\alpha_0\mathbf 1_{\{c=0\}}+\alpha_{\mathrm{pub}}\sum_{p:c_p=c}\lambda_p",
         r"V_{i,c}=u_i d_c",
     ),
-    "sha256.f2z_prove": (
+    "sha256.bitz_prove": (
         r"\widetilde{\bar{\mathbf h}}(\mathbf r)=v",
         r"\bar{\mathbf h}=M\bar{\mathbf f}",
     ),
@@ -214,10 +214,10 @@ COMPONENT_ROWS = (
         relationship="nested",
     ),
     ComponentRow(
-        "virtual-f2z",
-        "Virtual F2Z",
+        "virtual-bitz",
+        "Virtual BitZ",
         "opening-proof",
-        (("sha256.f2z_prove",),),
+        (("sha256.bitz_prove",),),
         parent_key="proof",
         relationship="nested",
     ),
@@ -226,7 +226,7 @@ COMPONENT_ROWS = (
         "Virtual-statement binding",
         "opening-proof",
         (("mqv.stmt",),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
@@ -234,7 +234,7 @@ COMPONENT_ROWS = (
         "Derived-row packing",
         "opening-proof",
         (("mqv.pack",),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
@@ -242,7 +242,7 @@ COMPONENT_ROWS = (
         "Power-table construction",
         "opening-proof",
         (("mc.pow2",),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
@@ -250,7 +250,7 @@ COMPONENT_ROWS = (
         "Merged-forest GKR",
         "opening-proof",
         (("mc.forest",),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
@@ -267,7 +267,7 @@ COMPONENT_ROWS = (
         "Integer fold / v-message",
         "opening-proof",
         (("mc.fold_v",),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
@@ -275,7 +275,7 @@ COMPONENT_ROWS = (
         "Pre-sumcheck",
         "sumcheck",
         (("mc.presum",), ("mc.presum_tbls", "mc.presum_run")),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
@@ -295,11 +295,11 @@ COMPONENT_ROWS = (
         relationship="nested",
     ),
     ComponentRow(
-        "f2z-setup-packing",
-        "F2Z setup / packing",
+        "bitz-setup-packing",
+        "BitZ setup / packing",
         "opening-proof",
         (("mqv.stmt", "mqv.pack", "mc.pack", "mc.pow2"),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="cross-cutting",
     ),
     ComponentRow(
@@ -310,12 +310,12 @@ COMPONENT_ROWS = (
             ("mq.reduction",),
             ("mq.rings", "mq.bcomb", "mqv.wprep", "mqv.hs", "mqv.aprime"),
         ),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
     ComponentRow(
         "virtual-weight-preparation",
-        "Virtual F2Z weight preparation",
+        "Virtual BitZ weight preparation",
         "opening-proof",
         (("mqv.wprep",),),
         parent_key="ring-switching",
@@ -323,7 +323,7 @@ COMPONENT_ROWS = (
     ),
     ComponentRow(
         "virtual-h-fold",
-        "Virtual F2Z h fold",
+        "Virtual BitZ h fold",
         "opening-proof",
         (("mqv.hs",),),
         parent_key="ring-switching",
@@ -331,7 +331,7 @@ COMPONENT_ROWS = (
     ),
     ComponentRow(
         "virtual-a-prime",
-        "Virtual F2Z a-prime construction",
+        "Virtual BitZ a-prime construction",
         "opening-proof",
         (("mqv.aprime",),),
         parent_key="ring-switching",
@@ -342,7 +342,7 @@ COMPONENT_ROWS = (
         "Recursive Ligerito",
         "opening-proof",
         (("mq.lig",),),
-        parent_key="virtual-f2z",
+        parent_key="virtual-bitz",
         relationship="nested",
     ),
 )
@@ -366,7 +366,7 @@ ROW_ORDER = (
     "piop",
     "bitify",
     "sumcheck",
-    "virtual-f2z",
+    "virtual-bitz",
     "virtual-statement-binding",
     "derived-row-packing",
     "power-table-construction",
@@ -376,7 +376,7 @@ ROW_ORDER = (
     "pre-sumcheck",
     "pre-sumcheck-tables",
     "pre-sumcheck-rounds",
-    "f2z-setup-packing",
+    "bitz-setup-packing",
     "ring-switching",
     "virtual-weight-preparation",
     "virtual-h-fold",
@@ -645,7 +645,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", nargs="+", type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--title", default="F2Z component interval profile")
+    parser.add_argument("--title", default="BitZ component interval profile")
     parser.add_argument("--fragment", action="store_true")
     parser.add_argument("--force", action="store_true")
     return parser

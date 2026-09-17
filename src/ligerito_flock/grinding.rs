@@ -162,7 +162,7 @@ impl<'a, 'b, T: Transcript + Send> GrindingChallenger<'a, 'b, T> {
         };
         self.valid &= block.native_bits == native;
         // This protocol domain separator stays fixed across Rust type renames.
-        self.inner.observe_label(b"f2z/flock/atomic/v1");
+        self.inner.observe_label(b"bitz/flock/atomic/v1");
         self.inner.observe_bytes(&(self.next as u64).to_le_bytes());
         self.inner.observe_label(block.label.as_bytes());
         self.inner.observe_bytes(&block.bits.to_le_bytes());

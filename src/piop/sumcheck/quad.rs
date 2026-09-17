@@ -1,5 +1,5 @@
 //! **Quad (arity-4) eq-factored sumcheck** for the merged forest's QUAD
-//! layers (EXPERIMENTAL, `F2Z_QUAD=1`): proves
+//! layers (EXPERIMENTAL, `BITZ_QUAD=1`): proves
 //! `Σ_x Σ_t eq(x; q)·scale_t·A_t(x)·B_t(x)·C_t(x)·D_t(x)` — one GKR layer
 //! certifying TWO product-tree levels at once (the four multiplicands are
 //! the quarters of level ℓ+2). Round polynomials have degree 5 (six
@@ -68,7 +68,7 @@ fn quad_slot(w: &Gf, a: [Gf; 4], d: [Gf; 4], acc: &mut [<Gf as WideMulAcc>::Wide
     Gf::wide_add_assign(&mut acc[4], &Gf::mul_wide(w, &h4));
 }
 
-/// Restructured slot body — the DEFAULT (`F2Z_QUAD_KERNEL=0` restores
+/// Restructured slot body — the DEFAULT (`BITZ_QUAD_KERNEL=0` restores
 /// [`quad_slot`], diagnostic / A-B): the suffix weight is pre-folded into
 /// the FIRST pair's operands (`w·a₀`, `w·d₀` — associativity moves it
 /// inside the product), the two pair-Karatsubas emit reduced quadratic
@@ -126,11 +126,11 @@ fn quad_cross_k(p: [Gf; 3], q: [Gf; 3], acc: &mut [<Gf as WideMulAcc>::Wide; 5])
     Gf::wide_add_assign(&mut acc[4], &m2);
 }
 
-/// The restructured-body knob: default ON; `F2Z_QUAD_KERNEL=0` restores
+/// The restructured-body knob: default ON; `BITZ_QUAD_KERNEL=0` restores
 /// the naive slot/node bodies. Read per prove call (NOT once per
 /// process) so the byte-identity pin can toggle it in one test process.
 fn quad_kernel_on() -> bool {
-    std::env::var("F2Z_QUAD_KERNEL").map_or(true, |v| v != "0")
+    std::env::var("BITZ_QUAD_KERNEL").map_or(true, |v| v != "0")
 }
 
 /// One round's message/transcript close, shared by the quad drivers:
@@ -402,7 +402,7 @@ pub fn prove_quad_eq_sumcheck(
 }
 
 // ========================================================================
-// The BOTTOM quad layer (`F2Z_QUAD=2`): the arity-2 plan's pair and leaf
+// The BOTTOM quad layer (`BITZ_QUAD=2`): the arity-2 plan's pair and leaf
 // layers merged into ONE arity-4 bit-driven layer — output d−2, consuming
 // the LEAVES, whose four quarter multiplicands are never materialised.
 // ========================================================================

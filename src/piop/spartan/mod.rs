@@ -9,12 +9,12 @@
 
 use crate::piop::spartan::SpartanField as _;
 use field::{Fp, Uint};
-pub mod baby_bear_f2z;
+pub mod baby_bear_bitz;
 pub mod baby_bear_mul;
 pub mod cm;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa_sha256;
-pub mod f2z;
+pub mod bitz;
 pub mod grinding;
 pub mod matrix;
 pub mod multiswap;
@@ -31,18 +31,18 @@ pub mod sha256;
 pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;
 pub mod sumcheck;
-pub mod u128_f2z;
+pub mod u128_bitz;
 pub mod u128_mul;
 pub mod u32_mul;
-pub mod u64_f2z;
+pub mod u64_bitz;
 pub mod u64_mul;
 #[cfg(test)]
 #[cfg(test)]
 pub(crate) use crate::sumcheck::outer::native_skip as univariate_skip_native;
 pub use crate::sumcheck::outer::univariate as univariate_skip;
 
-pub use baby_bear_f2z::{
-    BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearSpartanF2zError,
+pub use baby_bear_bitz::{
+    BabyBearBitifiedClaim, BabyBearMulPaperProof, BabyBearSpartanBitzError,
     PreparedBabyBearMulRelation, baby_bear_mul_instance_facts, commit_baby_bear_mul_paper_witness,
     commit_baby_bear_mul_witness, commit_baby_bear_mul_witness_with_ligerito,
     prove_baby_bear_mul_paper, verify_baby_bear_mul_paper,
@@ -56,15 +56,15 @@ pub use baby_bear_mul::{
 };
 pub use cm::{
     CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndSpec,
-    CmAndWitness, CmF2zError, CmF2zProof, PreparedCmAndRelation, ProjectedCmAndWitness, cm_and_map,
+    CmAndWitness, CmBitzError, CmBitzProof, PreparedCmAndRelation, ProjectedCmAndWitness, cm_and_map,
     commit_cm_and_witness, commit_cm_and_witness_with_config, prepare_cm_and_relation,
-    project_cm_and_witness, prove_cm_and_f2z, prove_cm_and_f2z_with_config, verify_cm_and_f2z,
-    verify_cm_and_f2z_with_config,
+    project_cm_and_witness, prove_cm_and_bitz, prove_cm_and_bitz_with_config, verify_cm_and_bitz,
+    verify_cm_and_bitz_with_config,
 };
-pub use f2z::{
-    PreparedU32MulRelation, SpartanF2zError, SpartanF2zField, U32_MUL_UNIVARIATE_SKIP_DEGREE,
+pub use bitz::{
+    PreparedU32MulRelation, SpartanBitzError, SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_DEGREE,
     U32_MUL_UNIVARIATE_SKIP_VARS, U32MulProof, commit_u32_mul_witness, prove_u32_mul,
-    spartan_f2z_field_config, verify_u32_mul,
+    spartan_bitz_field_config, verify_u32_mul,
 };
 
 pub use circuit::linear_map::SparseMatrixError;
@@ -75,7 +75,7 @@ pub use matrix::{
     eq_eval, eq_table, make_equality_factors,
 };
 pub use opening_mode::{
-    Direct, EvaluatedSpartanAssignment, OpeningMode, SpartanF2zProof, Virtualized,
+    Direct, EvaluatedSpartanAssignment, OpeningMode, SpartanBitzProof, Virtualized,
 };
 pub use piop::{
     SPARTAN_ASSIGNMENT_ORACLE_DOMAIN, SPARTAN_PIOP_DOMAIN, SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN,
@@ -105,7 +105,7 @@ pub use sha256::{
     SHA256_F_LIVE_BITS, SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
     SHA256_INNER_PREFIX_MAX_VARS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
     Sha256CompressionInput, Sha256CompressionProof, Sha256CompressionStatement,
-    Sha256CompressionWitnessBatch, Sha256ConstraintError, Sha256F2zError, Sha256OpeningLayout,
+    Sha256CompressionWitnessBatch, Sha256ConstraintError, Sha256BitzError, Sha256OpeningLayout,
     Sha256PrimeError, Sha256WitnessError, commit_sha256_compression_witness,
     commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
     prepare_sha256_compression_batch, prepare_sha256_compression_batch_for_assignment_rows,
@@ -125,11 +125,11 @@ pub use sha256::{
 pub use sumcheck::{OuterSumcheckProof, R1csProductMles, SumcheckError, SumcheckProof};
 pub use u32_mul::{
     U32_MUL_BIT_SLOTS, U32_MUL_PRODUCT_BITS, U32_MUL_X_BITS, U32_MUL_Y_BITS, U32MulError,
-    U32MulF2zWidth, U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness,
+    U32MulBitzWidth, U32MulLayout, U32MulNativeMles, U32MulRelationBackend, U32MulWitness,
     prepare_u32_mul_relation, project_u32_mul_native_witness, u32_mul_constraint_matrices,
 };
-pub use u64_f2z::{
-    PreparedU64MulRelation, U64MulBitifiedClaim, U64MulProof, U64MulSpartanF2zError,
+pub use u64_bitz::{
+    PreparedU64MulRelation, U64MulBitifiedClaim, U64MulProof, U64MulSpartanBitzError,
     commit_u64_mul_witness, prove_u64_mul, u64_mul_instance_facts, verify_u64_mul,
 };
 pub use u64_mul::{
@@ -137,8 +137,8 @@ pub use u64_mul::{
     U64MulLayout, U64MulRelationBackend, U64MulWitness, prepare_u64_mul_relation,
     project_u64_mul_witness, u64_mul_constraint_matrices,
 };
-pub use u128_f2z::{
-    PreparedU128MulRelation, U128MulBitifiedClaim, U128MulProof, U128MulSpartanF2zError,
+pub use u128_bitz::{
+    PreparedU128MulRelation, U128MulBitifiedClaim, U128MulProof, U128MulSpartanBitzError,
     commit_u128_mul_witness, prove_u128_mul, u128_mul_instance_facts, verify_u128_mul,
 };
 pub use u128_mul::{
@@ -157,7 +157,7 @@ use thiserror::Error;
 
 use crate::transcript::traits::Transcript;
 
-const SPARTAN_TRANSCRIPT_FRAME_DOMAIN: &[u8] = b"f2z/spartan/transcript-frame/v2";
+const SPARTAN_TRANSCRIPT_FRAME_DOMAIN: &[u8] = b"bitz/spartan/transcript-frame/v2";
 const FIELD_ELEMENTS_TAG: &[u8] = b"field-elements";
 
 /// Minimum modulus size accepted by the Spartan PIOP.

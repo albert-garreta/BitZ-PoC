@@ -84,7 +84,7 @@ fn suffix_evaluations(f: &Ctx, table: &[E], width: usize, point: &[E]) -> Vec<E>
     table
 }
 fn frame(f: &Ctx, t: &mut impl Transcript, n: usize, k: usize, claim: E) {
-    t.absorb_slice(b"f2z/inner/skip/experimental/v1");
+    t.absorb_slice(b"bitz/inner/skip/experimental/v1");
     t.absorb_slice(&(n as u64).to_le_bytes());
     t.absorb_slice(&(k as u64).to_le_bytes());
     absorb_field_elements(t, &[claim], f);

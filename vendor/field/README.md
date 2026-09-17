@@ -1,7 +1,7 @@
 # Field and integer arithmetic
 
 The shared package lives here under the Cargo package name `field`. Its core API
-is implemented; F2Z/Flock migration and full performance qualification are still
+is implemented; BitZ/Flock migration and full performance qualification are still
 in progress. See [API.md](API.md) for types and signatures,
 [PLAN.md](PLAN.md) for the migration plan, and
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for current evidence and remaining work.

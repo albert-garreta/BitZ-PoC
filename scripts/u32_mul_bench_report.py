@@ -40,9 +40,9 @@ IDENTITY_FIELDS = (
     "strategy",
     "word_bits",
     "projection_bits",
-    "f2z_t",
-    "f2z_s",
-    "f2z_chunks",
+    "bitz_t",
+    "bitz_s",
+    "bitz_chunks",
     "exponent",
     "multiplications",
 )
@@ -196,10 +196,10 @@ def canonical_shape(record: dict[str, str], kind: str) -> None:
         "protocol": "skip-k3",
         "skip_vars": "3",
         "strategy": "delayed-barrett",
-        "f2z_t": str(t),
-        "f2z_s": str(s),
+        "bitz_t": str(t),
+        "bitz_s": str(s),
         "projection_bits": str(projection_bits),
-        "f2z_chunks": str((projection_bits + chunk_width - 1) // chunk_width),
+        "bitz_chunks": str((projection_bits + chunk_width - 1) // chunk_width),
         "multiplications": str(1 << exponent),
     }
     for field, value in expected.items():
@@ -238,7 +238,7 @@ def validate_median(
 
 def metadata(args: argparse.Namespace) -> dict[str, str]:
     return {
-        "benchmark_algorithm": "u32 x u32 -> u64 runtime-prime Spartan PIOP + F2Z",
+        "benchmark_algorithm": "u32 x u32 -> u64 runtime-prime Spartan PIOP + BitZ",
         "benchmark_date": args.benchmark_date,
         "run_timestamp_utc": args.run_timestamp,
         "commit": args.commit,

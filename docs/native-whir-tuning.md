@@ -27,7 +27,7 @@ schedules are derived by the pinned WHIR implementation for these rates.
 Only security-eligible candidates run. One verified preliminary trial selects
 up to four fastest candidates. Each finalist receives one warmup and five tuning
 trials, and the lowest median wins. Ties use parameter ordering. Set
-`F2Z_WHIR_TUNING_REPS` to change the finalist repetition count. The winner stays
+`BITZ_WHIR_TUNING_REPS` to change the finalist repetition count. The winner stays
 fixed for that case's warmup and fresh measured repetitions. Every repetition
 regenerates the witness and verifies its complete proof.
 
@@ -77,28 +77,28 @@ than an invented machine label. External HTML rendering is optional through
 `ZK_TRACE_SCRIPT`; the benchmarks themselves need no private profiler checkout.
 
 ```sh
-RAYON_NUM_THREADS=8 F2Z_BENCH_SHAPES="15 16" \
-F2Z_MUL_COMPARE_BACKENDS=plonky3-whir \
+RAYON_NUM_THREADS=8 BITZ_BENCH_SHAPES="15 16" \
+BITZ_MUL_COMPARE_BACKENDS=plonky3-whir \
 bash scripts/run_native_mul_compare.sh
 
-RAYON_NUM_THREADS=8 F2Z_SHA_COMPARE_EXPONENTS="10 11" \
-F2Z_SHA_COMPARE_BACKENDS=plonky3-whir \
+RAYON_NUM_THREADS=8 BITZ_SHA_COMPARE_EXPONENTS="10 11" \
+BITZ_SHA_COMPARE_BACKENDS=plonky3-whir \
 bash scripts/run_native_sha256_compare.sh
 ```
 
 Explicit replay bypasses tuning and rechecks security for the requested case:
 
 ```sh
-F2Z_WHIR_CONFIG=/absolute/path/to/whir-u32-mod32-15.json \
-F2Z_MUL_COMPARE_WORKLOADS=u32-mod32 F2Z_MUL_COMPARE_BACKENDS=plonky3-whir \
+BITZ_WHIR_CONFIG=/absolute/path/to/whir-u32-mod32-15.json \
+BITZ_MUL_COMPARE_WORKLOADS=u32-mod32 BITZ_MUL_COMPARE_BACKENDS=plonky3-whir \
 RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
 ```
 
-`F2Z_WHIR_CONFIG` accepts either a saved tuning record or a JSON parameter object
+`BITZ_WHIR_CONFIG` accepts either a saved tuning record or a JSON parameter object
 with `extension_degree`, `folding`, `starting_log_inv_rate`, and `max_pow_bits`.
 The optional `max_round_log_inv_rate` field selects the round-rate cap; omitting
 it retains the native schedule.
-SHA's existing explicit `F2Z_SHA_COMPARE_P3_*` overrides also bypass tuning;
+SHA's existing explicit `BITZ_SHA_COMPARE_P3_*` overrides also bypass tuning;
 the shared replay file takes precedence. Its legacy pilot switch controls the
 other backends' pilot phases; ordinary WHIR runs still tune at each size.
 

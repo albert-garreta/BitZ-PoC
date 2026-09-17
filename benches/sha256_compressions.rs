@@ -1,5 +1,5 @@
 //! End-to-end benchmark for independent SHA-256 compressions through the
-//! repeated Spartan relation and virtual F2Z opening. This exercises the
+//! repeated Spartan relation and virtual BitZ opening. This exercises the
 //! runtime-prime protocol: commit before q, transcript-derived 112/113-bit prime,
 //! signed local-matrix collapse, and per-round Spartan grinding.
 //!
@@ -13,33 +13,33 @@
 //! repetitions after one warm-up. Override with, for example:
 //!
 //! ```text
-//! F2Z_BENCH_SHAPES="10 12" F2Z_BENCH_REPS=1 \
+//! BITZ_BENCH_SHAPES="10 12" BITZ_BENCH_REPS=1 \
 //!   cargo bench --bench sha256_compressions --features unchecked
 //! ```
 //!
 //! To size the batch by the packed assignment domain instead, set
-//! `F2Z_SHA_MNUMROWS_LOG2S`. For example, `F2Z_SHA_MNUMROWS_LOG2S="24 25"`
+//! `BITZ_SHA_MNUMROWS_LOG2S`. For example, `BITZ_SHA_MNUMROWS_LOG2S="24 25"`
 //! benchmarks the largest batch fitting in `MnumRows = 2^24` and `2^25`.
 //! Every compression occupies 20,456 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
 //! zero suffix.
 //! Power-of-two compression batches of at least 128 instances open the
 //! product-layout assignment directly. Batches of 16, 32 and 64 use the
-//! packed inner sumcheck. `F2Z_SHA_INNER_PREFIX_VARS=0..4` configures that
+//! packed inner sumcheck. `BITZ_SHA_INNER_PREFIX_VARS=0..4` configures that
 //! path and non-power-of-two assignment-row batches.
-//! `F2Z_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
-//! F2Z split of `2^t` rows (the read-off vector then has `2^(vars - t)`
+//! `BITZ_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
+//! BitZ split of `2^t` rows (the read-off vector then has `2^(vars - t)`
 //! columns; splits above the one-forest cap open with one forest per weight
-//! chunk). `F2Z_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
+//! chunk). `BITZ_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
 //! path; `=product` keeps the direct product opening on the transposed,
 //! instance-major product tensor (`t >= 15`).
 //!
-//! `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
+//! `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile the run measures at (default `Lambda100`; the two-prime
 //! `Limber114` profile is MultiSwap-only and is rejected here).
 //!
-//! (`F2Z_SHA_LOG2S` / `F2Z_SHA_REPS` / `F2Z_SHA_SEED` are deprecated
-//! aliases.) Set `F2Z_SHA_TRACE_PATH=/path/to/trace.jsonl` to emit one canonical
+//! (`BITZ_SHA_LOG2S` / `BITZ_SHA_REPS` / `BITZ_SHA_SEED` are deprecated
+//! aliases.) Set `BITZ_SHA_TRACE_PATH=/path/to/trace.jsonl` to emit one canonical
 //! `zkperf.trace/v1` run per warm-up/sample, including observed nested spans.
 //!
 //! Enable `bench-peak-memory` to measure peak live Rust heap during witness
@@ -73,7 +73,7 @@ use std::{
 use serde_json::{Value, json};
 use {
     circuit::linear_map::binary::VirtualMap,
-    f2z::{
+    bitz::{
         observability::Interval,
         piop::spartan::{
             IopSecurityProfile, PreparedSha256CompressionBatch, PrimePolicy,
@@ -92,7 +92,7 @@ use {
 };
 
 #[cfg(feature = "bench-internals")]
-use f2z::piop::spartan::{
+use bitz::piop::spartan::{
     SHA256_FIXED_98_PRIME, prepare_sha256_compression_batch_for_product_t_fixed98,
 };
 
@@ -105,7 +105,7 @@ struct RepTiming {
     prove_phases: Vec<(String, f64)>,
     verify_phases: Vec<(String, f64)>,
     spartan_bytes: usize,
-    f2z_bytes: usize,
+    bitz_bytes: usize,
     forests: usize,
     peak_heap_bytes: Option<usize>,
 }
@@ -162,7 +162,7 @@ impl BenchShape {
             Self::AssignmentRows(exponent) => {
                 assert!(
                     layout == Sha256OpeningLayout::Default,
-                    "F2Z_SHA_OPENING_T applies to compression-count shapes only"
+                    "BITZ_SHA_OPENING_T applies to compression-count shapes only"
                 );
                 prepare_sha256_compression_batch_for_assignment_rows_with_profile::<P>(exponent)
             }
@@ -170,7 +170,7 @@ impl BenchShape {
             Self::ProductLayout(t) => {
                 assert!(
                     layout == Sha256OpeningLayout::Default
-                        && P::NAME == f2z::piop::spartan::Lambda100::NAME,
+                        && P::NAME == bitz::piop::spartan::Lambda100::NAME,
                     "the fixed-98 product sweep requires the default profile and no opening layout override"
                 );
                 prepare_sha256_compression_batch_for_product_t_fixed98(14, t)
@@ -291,7 +291,7 @@ impl TraceWriter {
             "series_id": series_id,
             "root_span_id": root_span_id,
             "benchmark": {
-                "suite": "f2z-pcs",
+                "suite": "bitz-pcs",
                 "name": "sha256-compressions",
                 "label": match shape {
                     BenchShape::Compressions(_) => {
@@ -305,8 +305,8 @@ impl TraceWriter {
                         format!("2^14 SHA-256 compressions; product split ({t},{})", 29 - t)
                     }
                 },
-                "algorithm": "SHA-256 compression / Spartan + virtual F2Z (runtime prime)",
-                "implementation": "f2z runtime-prime SHA-256",
+                "algorithm": "SHA-256 compression / Spartan + virtual BitZ (runtime prime)",
+                "implementation": "bitz runtime-prime SHA-256",
                 "git_rev": self.git_rev,
                 "git_dirty": self.git_dirty,
                 "build_profile": self.build_profile,
@@ -373,18 +373,18 @@ impl TraceWriter {
             "tags": {
                 "root_boundary": "verified trial: prover plus verification; setup and input generation excluded",
                 "timeline": "observed half-open intervals",
-                "f2z_rs_fast": env_setting("F2Z_RS_FAST", "default:on"),
-                "f2z_foldv_lut": env_setting("F2Z_FOLDV_LUT", "default:on"),
+                "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
+                "bitz_foldv_lut": env_setting("BITZ_FOLDV_LUT", "default:on"),
                 "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
-                "f2z_flat_forest": env_setting("F2Z_FLAT_FOREST", "default:shape-dependent"),
-                "f2z_t4_factored": env_setting("F2Z_T4_FACTORED", "default:schedule-dependent"),
-                "f2z_jit_r1": env_setting("F2Z_JIT_R1", "default:on"),
-                "f2z_jit_grid": env_setting("F2Z_JIT_GRID", "default:on"),
-                "f2z_t4_prfm": env_setting("F2Z_T4_PRFM", "default:shape-dependent"),
-                "f2z_lut3": env_setting("F2Z_LUT3", "default:on"),
-                "f2z_lut4": env_setting("F2Z_LUT4", "default:off"),
-                "f2z_col_elide": env_setting("F2Z_COL_ELIDE", "default:on"),
-                "f2z_quad": env_setting("F2Z_QUAD", "default:off"),
+                "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
+                "bitz_t4_factored": env_setting("BITZ_T4_FACTORED", "default:schedule-dependent"),
+                "bitz_jit_r1": env_setting("BITZ_JIT_R1", "default:on"),
+                "bitz_jit_grid": env_setting("BITZ_JIT_GRID", "default:on"),
+                "bitz_t4_prfm": env_setting("BITZ_T4_PRFM", "default:shape-dependent"),
+                "bitz_lut3": env_setting("BITZ_LUT3", "default:on"),
+                "bitz_lut4": env_setting("BITZ_LUT4", "default:off"),
+                "bitz_col_elide": env_setting("BITZ_COL_ELIDE", "default:on"),
+                "bitz_quad": env_setting("BITZ_QUAD", "default:off"),
             },
         });
         self.output.write(&run).expect("write SHA trace run");
@@ -482,7 +482,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
     let witness = under("sha256-trace:witness_generation");
     let committing = under("sha256-trace:commit");
     let opening_prepare = has_fragment("opening_prepare_");
-    let f2z_opening = has_fragment("f2z_prove") || has_fragment("f2z_verify");
+    let bitz_opening = has_fragment("bitz_prove") || has_fragment("bitz_verify");
     let linear_reducer_init = has_fragment("reducer_init_");
     let local_relation_collapse = has_fragment("local_relation_collapse_");
     let product_batch_prepare = has_fragment("product_batch_prepare_");
@@ -490,7 +490,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
     let spartan = inner_sumcheck || local_relation_collapse || product_batch_prepare;
     let sumcheck = inner_sumcheck || under("eqf:rounds") || under("mc:presum_run");
     let in_eq_factored = labels.iter().any(|label| label.starts_with("eqf:"));
-    let fri = !in_eq_factored && f2z_opening && (under("mc:forest") || under("mc:fold_v"));
+    let fri = !in_eq_factored && bitz_opening && (under("mc:forest") || under("mc:fold_v"));
 
     let primary_phase = if root {
         "end-to-end"
@@ -506,7 +506,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
         "sumcheck"
     } else if spartan {
         "constraint-proof"
-    } else if f2z_opening {
+    } else if bitz_opening {
         "opening-proof"
     } else {
         "proving"
@@ -533,7 +533,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
             push_tag(&mut phase_tags, "preparation");
             push_tag(&mut phase_tags, "constraint-proof");
         }
-        if f2z_opening {
+        if bitz_opening {
             push_tag(&mut phase_tags, "opening-proof");
             push_tag(&mut phase_tags, "pcs");
         }
@@ -565,10 +565,10 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
         | "sha256:product_batch_prepare_verifier"
         | "sha256:spartan_inner_prove"
         | "sha256:opening_prepare_prover"
-        | "sha256:f2z_prove"
+        | "sha256:bitz_prove"
         | "sha256:spartan_inner_verify"
         | "sha256:opening_prepare_verifier"
-        | "sha256:f2z_verify" => "phase",
+        | "sha256:bitz_verify" => "phase",
         "spartan:round_grinding_prove" | "spartan:round_grinding_verify" => "round",
         _ => "procedure",
     };
@@ -581,7 +581,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
         "sha256:reducer_init_prover" | "sha256:product_batch_prepare_prover" => Some("preparation"),
         "sha256:local_relation_collapse_prover" => Some("constraint-proof"),
         "sha256:spartan_inner_prove" => Some("constraint-proof"),
-        "sha256:f2z_prove" => Some("opening-proof"),
+        "sha256:bitz_prove" => Some("opening-proof"),
         _ => None,
     };
     let primary_sequence = matches!(
@@ -614,7 +614,7 @@ fn span_names(label: &str) -> (String, String) {
             Some(("Materialize public SHA-256 statements", "Statement"))
         }
         "sha256-trace:commit" => Some(("Commit to packed Boolean source", "Commit")),
-        "sha256-trace:proof" => Some(("Spartan and virtual-F2Z proof", "Proof")),
+        "sha256-trace:proof" => Some(("Spartan and virtual-BitZ proof", "Proof")),
         "sha256-trace:verification" => Some(("Verify SHA-256 proof", "Verify")),
         "sha256:initial_grinding_prove" => Some(("Initial prover grinding", "Initial PoW")),
         "sha256:runtime_prime_sample_prover" | "sha256:runtime_prime_sample_verifier" => {
@@ -644,10 +644,10 @@ fn span_names(label: &str) -> (String, String) {
         "sha256:opening_prepare_prover" => {
             Some(("Factorize terminal opening claim", "Opening prep"))
         }
-        "sha256:f2z_prove" => Some(("Virtual F2Z opening proof", "Virtual F2Z")),
+        "sha256:bitz_prove" => Some(("Virtual BitZ opening proof", "Virtual BitZ")),
         "sha256:spartan_inner_verify" => Some(("Verify quadratic inner sumcheck", "Inner verify")),
         "spartan:round_grinding_verify" => Some(("Check inner-round grinding", "Check PoW")),
-        "sha256:f2z_verify" => Some(("Verify virtual F2Z opening", "F2Z verify")),
+        "sha256:bitz_verify" => Some(("Verify virtual BitZ opening", "BitZ verify")),
         _ => None,
     };
     known.map_or_else(
@@ -700,7 +700,7 @@ fn span_math(label: &str) -> Vec<&'static str> {
         "sha256:opening_prepare_prover" | "sha256:opening_prepare_verifier" => {
             vec!["\\widetilde h(r)=\\widetilde M(r,\\cdot)\\widetilde f"]
         }
-        "sha256:f2z_prove" | "sha256:f2z_verify" => {
+        "sha256:bitz_prove" | "sha256:bitz_verify" => {
             vec!["\\widetilde{\\bar h}(r)=v\\text{ from committed }\\bar f"]
         }
         _ => Vec::new(),
@@ -793,7 +793,7 @@ fn make_inputs(compressions: usize, seed: u64) -> Vec<Sha256CompressionInput> {
 
 #[derive(clap::Parser)]
 pub(crate) struct Env {
-    #[arg(long, env = "F2Z_SHA_PRODUCT_TS", value_parser = common::cli::list::<usize>
+    #[arg(long, env = "BITZ_SHA_PRODUCT_TS", value_parser = common::cli::list::<usize>
         .try_map(|values| {
             if !cfg!(feature = "bench-internals") || values.iter().all(|t| (7..=28).contains(t)) {
                 Ok(values)
@@ -803,27 +803,27 @@ pub(crate) struct Env {
         }))]
     #[cfg_attr(feature = "bench-internals", arg(conflicts_with = "assignment_rows"))]
     product_ts: Option<common::cli::List<usize>>,
-    #[arg(long, env = "F2Z_SHA_MNUMROWS_LOG2S", value_parser = common::cli::list::<usize>
+    #[arg(long, env = "BITZ_SHA_MNUMROWS_LOG2S", value_parser = common::cli::list::<usize>
         .try_map(|values| {
             if values.iter().all(|n| (18..=30).contains(n)) { Ok(values) } else { Err("expected row exponents in 18..=30") }
         }))]
     assignment_rows: Option<common::cli::List<usize>>,
-    #[arg(long, env = "F2Z_SHA_INNER_PREFIX_VARS", default_value_t = SHA256_DEFAULT_INNER_PREFIX_VARS,
+    #[arg(long, env = "BITZ_SHA_INNER_PREFIX_VARS", default_value_t = SHA256_DEFAULT_INNER_PREFIX_VARS,
         value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(..=SHA256_INNER_PREFIX_MAX_VARS as u64))]
     inner_prefix_vars: usize,
-    #[arg(long, env = "F2Z_SHA_OPENING_T", value_parser = |value: &str| value.trim().parse::<usize>())]
+    #[arg(long, env = "BITZ_SHA_OPENING_T", value_parser = |value: &str| value.trim().parse::<usize>())]
     opening_t: Option<usize>,
-    #[arg(long, env = "F2Z_SHA_OPENING_LAYOUT")]
+    #[arg(long, env = "BITZ_SHA_OPENING_LAYOUT")]
     opening_layout: Option<String>,
-    #[arg(long, env = "F2Z_SHA_TRACE_PATH")]
+    #[arg(long, env = "BITZ_SHA_TRACE_PATH")]
     trace_path: Option<PathBuf>,
-    #[arg(long, env = "F2Z_SHA_RESULT_PATH")]
+    #[arg(long, env = "BITZ_SHA_RESULT_PATH")]
     pub(crate) result_path: Option<PathBuf>,
-    #[arg(long, env = "F2Z_SHA_GIT_REV")]
+    #[arg(long, env = "BITZ_SHA_GIT_REV")]
     git_rev: Option<String>,
-    #[arg(long, env = "F2Z_SHA_CPU")]
+    #[arg(long, env = "BITZ_SHA_CPU")]
     cpu: Option<String>,
-    #[arg(long, env = "F2Z_SHA_BUILD_PROFILE", default_value = "bench")]
+    #[arg(long, env = "BITZ_SHA_BUILD_PROFILE", default_value = "bench")]
     build_profile: String,
     #[arg(skip)]
     reps: usize,
@@ -847,28 +847,28 @@ impl Env {
         #[cfg(feature = "bench-internals")]
         assert!(
             env.product_ts.is_none() || env.assignment_rows.is_none(),
-            "F2Z_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
+            "BITZ_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
         );
-        env.reps = if product_preset && std::env::var_os("F2Z_BENCH_REPS").is_none() {
+        env.reps = if product_preset && std::env::var_os("BITZ_BENCH_REPS").is_none() {
             // The product entrypoint historically supplies canonical reps=21,
             // including the normal conflict check against its legacy alias.
-            if let Some(alias) = common::cli::env::<String>("F2Z_SHA_REPS") {
+            if let Some(alias) = common::cli::env::<String>("BITZ_SHA_REPS") {
                 if alias != "21" {
                     clap::Error::raw(
                         clap::error::ErrorKind::ArgumentConflict,
-                        "F2Z_BENCH_REPS=21 and deprecated alias F2Z_SHA_REPS disagree",
+                        "BITZ_BENCH_REPS=21 and deprecated alias BITZ_SHA_REPS disagree",
                     )
                     .exit();
                 }
             }
             21
         } else {
-            common::reps(Some("F2Z_SHA_REPS"), 3)
+            common::reps(Some("BITZ_SHA_REPS"), 3)
         };
-        env.root_seed = common::seed(Some("F2Z_SHA_SEED"), 0x4632_5a5f_5348_4132);
+        env.root_seed = common::seed(Some("BITZ_SHA_SEED"), 0x4632_5a5f_5348_4132);
         env.selected = common::security_profile(PrimePolicy::SingleDerived);
         let compressions = common::shape_values(
-            Some("F2Z_SHA_LOG2S"),
+            Some("BITZ_SHA_LOG2S"),
             clap::builder::RangedU64ValueParser::<usize>::new()
                 .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64),
         );
@@ -877,7 +877,7 @@ impl Env {
             (Some(values), None) => {
                 assert!(
                     compressions.is_none(),
-                    "F2Z_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
+                    "BITZ_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
                 );
                 values
                     .iter()
@@ -888,7 +888,7 @@ impl Env {
             (_, Some(values)) => {
                 assert!(
                     compressions.is_none(),
-                    "F2Z_SHA_MNUMROWS_LOG2S cannot be combined with compression-count shape variables"
+                    "BITZ_SHA_MNUMROWS_LOG2S cannot be combined with compression-count shape variables"
                 );
                 values
                     .iter()
@@ -929,7 +929,7 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> (RepTiming, Vec<Interval>) {
-    let recording = f2z::observability::Recording::start(Vec::new()).expect("start SHA trial");
+    let recording = bitz::observability::Recording::start(Vec::new()).expect("start SHA trial");
     #[cfg(feature = "bench-peak-memory")]
     common::peak_memory::reset_peak();
     let verified_trial_scope = tracing::info_span!("sha256-trace:verified_trial").entered();
@@ -976,7 +976,7 @@ fn run_once(
         )
         .expect("SHA proof succeeds")
     };
-    let forests = proof.f2z().mfs.len();
+    let forests = proof.bitz().mfs.len();
     if prepared.opening_layout() == Sha256OpeningLayout::Default {
         assert_eq!(
             forests, 1,
@@ -1011,12 +1011,12 @@ fn run_once(
     let prove_ms = common::span_ms(&intervals, "sha256-trace:end_to_end_prove");
     let verify_ms = common::span_ms(&intervals, "sha256-trace:verification");
     let prove_phases =
-        f2z::observability::phase_totals(&intervals, "sha256-trace:end_to_end_prove").unwrap();
+        bitz::observability::phase_totals(&intervals, "sha256-trace:end_to_end_prove").unwrap();
     let verify_phases =
-        f2z::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
+        bitz::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
     black_box(&proof);
 
-    let f2z_bytes = proof.f2z().to_bytes().len();
+    let bitz_bytes = proof.bitz().to_bytes().len();
     let spartan_elements = 3 * proof.inner().round_polynomials.len();
     let field_bytes = <field::Fp<2> as SpartanField>::canonical_encoding_width();
     let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.inner_nonces().len() + 2);
@@ -1029,7 +1029,7 @@ fn run_once(
         prove_phases,
         verify_phases,
         spartan_bytes,
-        f2z_bytes,
+        bitz_bytes,
         forests,
         peak_heap_bytes,
     };
@@ -1057,7 +1057,7 @@ fn bench_shape<P: IopSecurityProfile>(
         };
 
     let setup_started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_compressions:setup_started").entered();
     let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
@@ -1077,7 +1077,7 @@ fn bench_shape<P: IopSecurityProfile>(
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
     let setup_ms = {
         drop(setup_started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &setup_started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -1183,7 +1183,7 @@ fn bench_shape<P: IopSecurityProfile>(
             }
         };
         println!(
-            "  opening layout: {kind} | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
+            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
             opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
         );
     }
@@ -1228,9 +1228,9 @@ fn bench_shape<P: IopSecurityProfile>(
             timing.prove_ms,
             timing.verify_ms,
             fmt_peak_heap_mib(timing.peak_heap_bytes),
-            timing.spartan_bytes + timing.f2z_bytes,
+            timing.spartan_bytes + timing.bitz_bytes,
             timing.spartan_bytes,
-            timing.f2z_bytes,
+            timing.bitz_bytes,
         );
         println!("  {sample_line}");
         if let Some(writer) = result_writer {
@@ -1309,7 +1309,7 @@ fn bench_shape<P: IopSecurityProfile>(
         verifier: verifier.medians(),
         proof: common::ProofBytes {
             piop: last.spartan_bytes,
-            open: last.f2z_bytes,
+            open: last.bitz_bytes,
         },
     };
     report.print_human();
@@ -1335,7 +1335,7 @@ pub(crate) fn run(env: Env) {
         .map_or(Sha256OpeningLayout::Default, |row_vars| {
             let choice = env.opening_layout.as_deref().unwrap_or("inner");
             let choice = common::cli::value(
-                "F2Z_SHA_OPENING_LAYOUT",
+                "BITZ_SHA_OPENING_LAYOUT",
                 choice,
                 clap::builder::PossibleValuesParser::new(["inner", "product"]),
             );
@@ -1345,7 +1345,7 @@ pub(crate) fn run(env: Env) {
                 Sha256OpeningLayout::InnerSumcheck { row_vars }
             }
         });
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
     let mut trace_writer = TraceWriter::new(&env, threads);
     let mut result_writer = env.result_path.as_deref().map(|path| {
@@ -1361,7 +1361,7 @@ pub(crate) fn run(env: Env) {
             .buffered(path, FileMode::Replace)
             .expect("create SHA result output")
     });
-    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual F2Z");
+    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual BitZ");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
@@ -1377,10 +1377,10 @@ pub(crate) fn run(env: Env) {
     }
     match layout {
         Sha256OpeningLayout::InnerSumcheck { row_vars } => println!(
-            "opening layout override: inner sumcheck with 2^{row_vars} F2Z rows (F2Z_SHA_OPENING_T={row_vars})"
+            "opening layout override: inner sumcheck with 2^{row_vars} BitZ rows (BITZ_SHA_OPENING_T={row_vars})"
         ),
         Sha256OpeningLayout::ProductTransposed { row_vars } => println!(
-            "opening layout override: transposed product tensor with 2^{row_vars} F2Z rows (F2Z_SHA_OPENING_LAYOUT=product F2Z_SHA_OPENING_T={row_vars})"
+            "opening layout override: transposed product tensor with 2^{row_vars} BitZ rows (BITZ_SHA_OPENING_LAYOUT=product BITZ_SHA_OPENING_T={row_vars})"
         ),
         Sha256OpeningLayout::Default => {}
     }
@@ -1413,19 +1413,19 @@ mod cli_preset_tests {
 
     #[test]
     fn configuration_probe() {
-        let Ok(mode) = std::env::var("F2Z_PRESET_TEST_MODE") else {
+        let Ok(mode) = std::env::var("BITZ_PRESET_TEST_MODE") else {
             return;
         };
         let before = [
-            std::env::var_os("F2Z_BENCH_REPS"),
-            std::env::var_os("F2Z_SHA_PRODUCT_TS"),
+            std::env::var_os("BITZ_BENCH_REPS"),
+            std::env::var_os("BITZ_SHA_PRODUCT_TS"),
         ];
         let config = Env::from_environment(mode == "product");
         assert_eq!(
             before,
             [
-                std::env::var_os("F2Z_BENCH_REPS"),
-                std::env::var_os("F2Z_SHA_PRODUCT_TS")
+                std::env::var_os("BITZ_BENCH_REPS"),
+                std::env::var_os("BITZ_SHA_PRODUCT_TS")
             ]
         );
         println!(
@@ -1440,7 +1440,7 @@ mod cli_preset_tests {
         std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
             .env_clear()
-            .env("F2Z_PRESET_TEST_MODE", mode)
+            .env("BITZ_PRESET_TEST_MODE", mode)
             .envs(settings.iter().copied())
             .output()
             .unwrap()
@@ -1471,13 +1471,13 @@ mod cli_preset_tests {
             default["shapes"],
             json!((7..=27).map(|t| ("product-ts", t)).collect::<Vec<_>>())
         );
-        assert_eq!(config("product", &[("F2Z_SHA_REPS", "21")]), default);
+        assert_eq!(config("product", &[("BITZ_SHA_REPS", "21")]), default);
         let explicit = config(
             "product",
             &[
-                ("F2Z_SHA_PRODUCT_TS", "7, 28"),
-                ("F2Z_BENCH_REPS", "3"),
-                ("F2Z_SHA_REPS", "3"),
+                ("BITZ_SHA_PRODUCT_TS", "7, 28"),
+                ("BITZ_BENCH_REPS", "3"),
+                ("BITZ_SHA_REPS", "3"),
             ],
         );
         assert_eq!(
@@ -1485,12 +1485,12 @@ mod cli_preset_tests {
             json!({"reps":3,"default":false,"shapes":[["product-ts",7],["product-ts",28]]})
         );
         for alias in ["3", "021"] {
-            let output = child("product", &[("F2Z_SHA_REPS", alias)]);
+            let output = child("product", &[("BITZ_SHA_REPS", alias)]);
             assert_eq!(output.status.code(), Some(2));
             assert!(String::from_utf8_lossy(&output.stderr).contains("disagree"));
         }
         assert_eq!(
-            child("product", &[("F2Z_BENCH_REPS", "3"), ("F2Z_SHA_REPS", "4")])
+            child("product", &[("BITZ_BENCH_REPS", "3"), ("BITZ_SHA_REPS", "4")])
                 .status
                 .code(),
             Some(2)
@@ -1507,31 +1507,31 @@ mod cli_preset_tests {
             json!((7..=16).map(|n| ("compressions", n)).collect::<Vec<_>>())
         );
         assert_eq!(
-            config("ordinary", &[("F2Z_SHA_LOG2S", "7 16")])["shapes"],
+            config("ordinary", &[("BITZ_SHA_LOG2S", "7 16")])["shapes"],
             json!([["compressions", 7], ["compressions", 16]])
         );
         assert_eq!(
-            config("ordinary", &[("F2Z_SHA_MNUMROWS_LOG2S", "18 30")])["shapes"],
+            config("ordinary", &[("BITZ_SHA_MNUMROWS_LOG2S", "18 30")])["shapes"],
             json!([["mnumrows", 18], ["mnumrows", 30]])
         );
         for (mode, settings) in [
-            ("ordinary", vec![("F2Z_BENCH_SHAPES", "6")]),
-            ("ordinary", vec![("F2Z_SHA_MNUMROWS_LOG2S", "17")]),
-            ("ordinary", vec![("F2Z_SHA_MNUMROWS_LOG2S", "31")]),
-            ("product", vec![("F2Z_SHA_PRODUCT_TS", "6")]),
-            ("product", vec![("F2Z_SHA_PRODUCT_TS", "29")]),
-            ("product", vec![("F2Z_BENCH_SHAPES", "14")]),
-            ("product", vec![("F2Z_SHA_MNUMROWS_LOG2S", "24")]),
+            ("ordinary", vec![("BITZ_BENCH_SHAPES", "6")]),
+            ("ordinary", vec![("BITZ_SHA_MNUMROWS_LOG2S", "17")]),
+            ("ordinary", vec![("BITZ_SHA_MNUMROWS_LOG2S", "31")]),
+            ("product", vec![("BITZ_SHA_PRODUCT_TS", "6")]),
+            ("product", vec![("BITZ_SHA_PRODUCT_TS", "29")]),
+            ("product", vec![("BITZ_BENCH_SHAPES", "14")]),
+            ("product", vec![("BITZ_SHA_MNUMROWS_LOG2S", "24")]),
             (
                 "ordinary",
                 vec![
-                    ("F2Z_SHA_PRODUCT_TS", "13"),
-                    ("F2Z_SHA_MNUMROWS_LOG2S", "24"),
+                    ("BITZ_SHA_PRODUCT_TS", "13"),
+                    ("BITZ_SHA_MNUMROWS_LOG2S", "24"),
                 ],
             ),
             (
                 "ordinary",
-                vec![("F2Z_BENCH_SHAPES", "14"), ("F2Z_SHA_MNUMROWS_LOG2S", "24")],
+                vec![("BITZ_BENCH_SHAPES", "14"), ("BITZ_SHA_MNUMROWS_LOG2S", "24")],
             ),
         ] {
             assert!(

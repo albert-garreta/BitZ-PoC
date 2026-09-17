@@ -6,7 +6,7 @@ This is the canonical plan, superseding the location and interface sketches in `
 
 ## Outcome and ownership
 
-Build one maintained arithmetic package at `vendor/field`, retaining the Cargo package name `field`. F2Z, `crates/circuit`, and local `flock-core` depend on it. Move the existing `crates/field` package into that location; do not retain a forwarding package or a second numeric implementation.
+Build one maintained arithmetic package at `vendor/field`, retaining the Cargo package name `field`. BitZ, `crates/circuit`, and local `flock-core` depend on it. Move the existing `crates/field` package into that location; do not retain a forwarding package or a second numeric implementation.
 
 The package owns fixed integers, binary fields, static/runtime prime fields, modular rings, typed wide products and accumulators, native mixed arithmetic, fused folds/rounds, preparation, and canonical codecs. Protocol schedules, transcripts, NTT plans, circuit expressions, sparse matrix structure, and proof types stay in their consumers.
 
@@ -46,13 +46,13 @@ vendor/field/
   benches/                         thin drivers over actual public/shared APIs
 ```
 
-Do not put F2Z or Flock protocol types into these modules. Architecture vector types, unchecked MAC helpers, reduction parameters, and raw constructors remain private.
+Do not put BitZ or Flock protocol types into these modules. Architecture vector types, unchecked MAC helpers, reduction parameters, and raw constructors remain private.
 
 Use these dependency paths, distinguishing relocation of existing dependencies from later consumer integration:
 
 | Consumer manifest | Dependency | Checkpoint |
 |---|---|---|
-| Root F2Z | `field = { path = "vendor/field" }` | Add during F2Z integration (4). |
+| Root BitZ | `field = { path = "vendor/field" }` | Add during BitZ integration (4). |
 | `crates/circuit` | `field = { path = "../../vendor/field" }` | Update existing path during relocation (1). |
 | Arithmetic experiment | `field = { path = "../../vendor/field" }` | Update existing path during relocation (1). |
 | Local `flock-core` | `arithmetic = { package = "field", path = "../../../field", features = ["serde"] }` | Add during Flock integration (5), after shared serde support exists. |
@@ -81,9 +81,9 @@ Exit: baseline can be reproduced independently of later source cleanup; the requ
 
 Move `crates/field` to `vendor/field`, update live paths/harness inputs and affected locks, and preserve the current kernels and behavior for this checkpoint. Preserve applicable license headers and add a provenance ledger identifying imported sources, revisions, modifications, and measured kernel selections.
 
-Keep root F2Z release/bench at fat LTO and one codegen unit. Preserve standalone Flock's measured thin-LTO bench profile and the experiment's fat-LTO profile. A dependency manifest does not control the consuming binary's profile. Give standalone field benchmarks explicit matching settings; do not count profile changes as arithmetic improvements.
+Keep root BitZ release/bench at fat LTO and one codegen unit. Preserve standalone Flock's measured thin-LTO bench profile and the experiment's fat-LTO profile. A dependency manifest does not control the consuming binary's profile. Give standalone field benchmarks explicit matching settings; do not count profile changes as arithmetic improvements.
 
-Exit: existing consumers resolve the relocated package; existing checks and targeted relocation timings pass with unchanged codegen settings. New F2Z/Flock dependencies wait for their integration checkpoints.
+Exit: existing consumers resolve the relocated package; existing checks and targeted relocation timings pass with unchanged codegen settings. New BitZ/Flock dependencies wait for their integration checkpoints.
 
 ### 2. Construct the typed arithmetic core
 
@@ -105,7 +105,7 @@ Measure actual shared API calls against frozen production and the accepted candi
 
 Exit: supported cases retain their accepted performance after the API boundary; missing/inconclusive results do not promote a replacement.
 
-### 4. Migrate mixed arithmetic and fused projection in F2Z
+### 4. Migrate mixed arithmetic and fused projection in BitZ
 
 | Path | Required change |
 |---|---|
@@ -125,13 +125,13 @@ Exit: each migrated path has identical arithmetic/proof validation and its own t
 
 ### 5. Unify Flock and circuit consumers
 
-Flock uses the shared `Gf8`/`Gf128` names directly, without compatibility aliases. F2Z's duplicate GF128 becomes the same shared type. Remove conversion vectors and now-duplicate trait implementations. Move standard arithmetic and serde implementations into the owning package and provide its optional serde feature before enabling Flock's new dependency; keep Flock-local protocol traits and its NTT scheduling in Flock.
+Flock uses the shared `Gf8`/`Gf128` names directly, without compatibility aliases. BitZ's duplicate GF128 becomes the same shared type. Remove conversion vectors and now-duplicate trait implementations. Move standard arithmetic and serde implementations into the owning package and provide its optional serde feature before enabling Flock's new dependency; keep Flock-local protocol traits and its NTT scheduling in Flock.
 
 Verify the AES GF8 embedding, GHASH polynomial/bit order, 16-byte GF128 size/alignment, canonical bytes, and actual serde/bincode framing. Adapt inverse-zero conventions explicitly at callers using the shared masked inverse result. Do not replace the independent upstream Flock test oracle with the local Flock consumer and create a dependency cycle/self-comparison.
 
 Migrate circuit integers, public coefficient pools, checked preparation, fixed arenas, bounds certificates, and prepared witness execution. Coefficients are evaluated immediately; symbolic expressions represent witness dependence only. Preserve materialized and Wengert backends, exact security-bound/norm calculations, packed witnesses, and public-width schedules. Move P-256 quotient/remainder and inversion off variable-size external integers.
 
-Exit: both integrated F2Z and standalone Flock checks/benches pass; consumers use the shared values without conversion bridges or performance-obscuring wrappers.
+Exit: both integrated BitZ and standalone Flock checks/benches pass; consumers use the shared values without conversion bridges or performance-obscuring wrappers.
 
 ### 6. Consolidate and delete superseded production code
 

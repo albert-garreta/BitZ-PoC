@@ -105,7 +105,7 @@ fn map_matches_witness(exponent: u8) {
 
 #[test]
 fn outer_integer_rows_match_independent_field_products() {
-    use crate::piop::spartan::f2z::SpartanF2zField as F;
+    use crate::piop::spartan::bitz::SpartanBitzField as F;
 
     // Any prime above 2^64 exercises the native reduction; the sampled
     // 113-bit primes are covered by the pinned transcript.

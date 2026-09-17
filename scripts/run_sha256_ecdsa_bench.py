@@ -68,7 +68,7 @@ def main():
         revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
         diff = subprocess.run(["git", "diff", "HEAD"], cwd=root, capture_output=True, check=True).stdout
         fingerprint = (binary.parent.parent / ".fingerprint"
-                       / binary.name.replace("sha256_ecdsa-", "f2z-", 1)
+                       / binary.name.replace("sha256_ecdsa-", "bitz-", 1)
                        / "test-bench-sha256_ecdsa.json")
         build = json.loads(fingerprint.read_text()) if fingerprint.exists() else {}
         build = {key: build[key] for key in ["rustc", "features", "rustflags", "compile_kind"] if key in build}
@@ -120,7 +120,7 @@ def main():
                             row = json.loads(line)
                         except ValueError:
                             continue
-                        if isinstance(row, dict) and row.get("schema") == "f2z/sha256-ecdsa/v2":
+                        if isinstance(row, dict) and row.get("schema") == "bitz/sha256-ecdsa/v2":
                             from ligerito_results import validate_ligerito
                             validate_ligerito(row.get("ligerito"), target)
                             rows.append(row)

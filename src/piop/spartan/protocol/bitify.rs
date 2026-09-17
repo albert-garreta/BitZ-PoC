@@ -6,7 +6,7 @@
 //! block `[1, 0, …]` and the others integer values reconstructed from
 //! contiguous bit-slot ranges of the committed tensor. Spartan's terminal
 //! point is low-coordinate-first: its last `selector_vars` coordinates select
-//! the block, the preceding ones select a gate. F2Z places the low gate
+//! the block, the preceding ones select a gate. BitZ places the low gate
 //! coordinates on the clear column axis; the high gate coordinates and the
 //! word slots form the folded row axis.
 
@@ -21,7 +21,7 @@ use crate::{
 use rayon::prelude::*;
 
 use super::{
-    ProtocolError, SpartanF2zField, SpartanField, binding::BindingHasher, checked_pow2,
+    ProtocolError, SpartanBitzField, SpartanField, binding::BindingHasher, checked_pow2,
     matrix::ScaledMleEvaluationClaim,
 };
 
@@ -83,7 +83,7 @@ pub enum ScaleSide {
     Columns,
 }
 
-/// The factorized claim bound between Spartan and F2Z: the row functional is
+/// The factorized claim bound between Spartan and BitZ: the row functional is
 /// one factor per variable block times the slot weights, the column
 /// functional is the equality table of the low gate coordinates.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -117,7 +117,7 @@ impl BitifiedClaim {
 /// Applies the adjoint of the block reconstruction map to a terminal claim
 /// over the runtime prime `q`.
 pub fn bitify(
-    claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
     params: IntegerMatrixLayout,
     gate_vars: usize,
     table: &BlockTable,
@@ -131,8 +131,8 @@ pub fn bitify(
         return Err(ProtocolError::InvalidClaimPoint);
     }
 
-    let modulus_encoding = SpartanF2zField::canonical_modulus_encoding(arith);
-    let project = |value: &SpartanF2zField| -> Result<u128, ProtocolError> {
+    let modulus_encoding = SpartanBitzField::canonical_modulus_encoding(arith);
+    let project = |value: &SpartanBitzField| -> Result<u128, ProtocolError> {
         value
             .validate_element(&modulus_encoding)
             .map_err(|_| ProtocolError::ClaimFieldMismatch)?;
@@ -184,7 +184,7 @@ pub fn bitify(
         .map(|(code, _)| block_factor(code))
         .collect();
 
-    // At a block point where the variable part vanishes the F2Z protocol
+    // At a block point where the variable part vanishes the BitZ protocol
     // still needs a nonempty row functional: a deterministic dummy row with
     // an all-zero clear read-off.
     if factors.iter().all(|factor| *factor == 0) {
@@ -243,7 +243,7 @@ pub fn eq_le_table_fq_fast_with(
     for &coordinate in point {
         let active_len = half
             .checked_mul(2)
-            .ok_or(ProtocolError::InvalidF2zParameters)?;
+            .ok_or(ProtocolError::InvalidBitzParameters)?;
         let factor = arith.prepare_multiplier_u128(coordinate);
         let (zero_children, one_children) = table[..active_len].split_at_mut(half);
         let expand = |zero: &mut u128, one: &mut u128| {
@@ -267,7 +267,7 @@ pub fn eq_le_table_fq_fast_with(
     Ok(table)
 }
 
-/// The dense canonical row weights of a structured opening, in F2Z row
+/// The dense canonical row weights of a structured opening, in BitZ row
 /// order `(word_slot << h) | gate_high`:
 ///
 /// `w[(word_slot << h) | g] = block_factor(word_slot) · 2^{W · (word_slot − block_word_start)} · eq(gate_high_point, g)`
@@ -284,12 +284,12 @@ fn structured_row_weights(
 ) -> Result<Vec<u128>, ProtocolError> {
     let word_bits = params.word_bits;
     if !word_bits.is_power_of_two() {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     let high_gate_count = checked_pow2(gate_high.len())?;
     let row_count = checked_pow2(params.row_vars)?;
     if !row_count.is_multiple_of(high_gate_count) {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     let word_slots = row_count / high_gate_count;
 
@@ -300,14 +300,14 @@ fn structured_row_weights(
         if !range.bit_slot_start.is_multiple_of(word_bits)
             || !range.bit_count.is_multiple_of(word_bits)
         {
-            return Err(ProtocolError::InvalidF2zParameters);
+            return Err(ProtocolError::InvalidBitzParameters);
         }
         let mut scalar = arith.reduce_u128(*block_factor);
         for word in
             range.bit_slot_start / word_bits..(range.bit_slot_start + range.bit_count) / word_bits
         {
             let Some(slot) = word_scalars.get_mut(word) else {
-                return Err(ProtocolError::InvalidF2zParameters);
+                return Err(ProtocolError::InvalidBitzParameters);
             };
             *slot = scalar;
             scalar = arith.mul_canonical_u128(scalar, &pow2_word);
@@ -358,16 +358,16 @@ pub(crate) fn prepare_chunks(
 ) -> Result<ModQWeightChunks, ProtocolError> {
     let params = opening.params;
     if opening.gate_point.len() < params.col_vars {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
 
     match &opening.rows {
         BitifiedRows::ConstantDummy => {
             let mut chunks = ModQWeightChunks::zeroed(&params, q_bits)
-                .map_err(|_| ProtocolError::InvalidF2zParameters)?;
+                .map_err(|_| ProtocolError::InvalidBitzParameters)?;
             chunks
                 .set_weight_range(0, &[1])
-                .map_err(|_| ProtocolError::InvalidF2zParameters)?;
+                .map_err(|_| ProtocolError::InvalidBitzParameters)?;
             Ok(chunks)
         }
         BitifiedRows::Structured(factors) => {
@@ -375,13 +375,13 @@ pub(crate) fn prepare_chunks(
                 structured_row_weights(&params, opening.gate_high(), table, factors, arith)?;
             if mod_q_num_chunks(&params, q_bits) == 1 {
                 ModQWeightChunks::from_single_chunk(&params, q_bits, weights)
-                    .map_err(|_| ProtocolError::InvalidF2zParameters)
+                    .map_err(|_| ProtocolError::InvalidBitzParameters)
             } else {
                 let mut chunks = ModQWeightChunks::zeroed(&params, q_bits)
-                    .map_err(|_| ProtocolError::InvalidF2zParameters)?;
+                    .map_err(|_| ProtocolError::InvalidBitzParameters)?;
                 chunks
                     .set_weight_range(0, &weights)
-                    .map_err(|_| ProtocolError::InvalidF2zParameters)?;
+                    .map_err(|_| ProtocolError::InvalidBitzParameters)?;
                 Ok(chunks)
             }
         }
@@ -422,7 +422,7 @@ pub fn bridge_digest(
     relation_digest: &[u8; 32],
     modulus: u128,
     constants: impl FnOnce(&mut BindingHasher) -> Result<(), ProtocolError>,
-    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
     opening: &BitifiedClaim,
     field_config: &super::FieldConfig,
 ) -> Result<[u8; 32], ProtocolError> {

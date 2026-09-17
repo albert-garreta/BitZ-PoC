@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """LaTeX table for the hybrid mod-2^32 multiplication + chained SHA-256 benchmark.
 
-2026-09-13 bench-suite methodology: six schemes — the F2Z hybrid at opener
+2026-09-13 bench-suite methodology: six schemes — the BitZ hybrid at opener
 rates 1/2 and 1/8, all-Binius64 at FRI rates 1/2 and 1/8, and the all-Binius
-circuit with the F2Z opener (round-by-round accounting) at rates 1/2 and 1/8 —
+circuit with the BitZ opener (round-by-round accounting) at rates 1/2 and 1/8 —
 each measured at 1 and 10 threads. One sweep directory per (scheme, threads):
 
     python3 scripts/hybrid_table.py --variant counts \
@@ -36,7 +36,7 @@ import subprocess
 from pathlib import Path
 
 # Table rows in display order: (mode, log_inv_rate) -> LaTeX label.
-# Naming rules (user directive 2026-09-13): the F2Z rows are \ftwoz-SNARK
+# Naming rules (user directive 2026-09-13): the BitZ rows are \ftwoz-SNARK
 # (never "(this work)"), and no \cite{...} after a scheme name in the table.
 ROWS = [
     (("hybrid", 1), r"\ftwoz-SNARK, rate $1/2$"),
@@ -107,26 +107,26 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
             "threads (runs must record an explicit thread count)"
         )
     if mode == "all-binius":
-        recorded = meta.get("F2Z_HYBRID_BINIUS_LOG_INV_RATE")
+        recorded = meta.get("BITZ_HYBRID_BINIUS_LOG_INV_RATE")
         if recorded is None:
             raise RunError(
-                f"{base}: run.txt does not record F2Z_HYBRID_BINIUS_LOG_INV_RATE; "
+                f"{base}: run.txt does not record BITZ_HYBRID_BINIUS_LOG_INV_RATE; "
                 "re-measure with the updated sweep"
             )
         if recorded != str(rate):
             raise RunError(f"{base}: all-Binius rate {recorded} does not match key rate {rate}")
     elif mode == "binius-ligerito":
-        recorded = meta.get("F2Z_BINIUS_LOG_INV_RATE")
-        accounting = meta.get("F2Z_BINIUS_LIGERITO_ACCOUNTING")
+        recorded = meta.get("BITZ_BINIUS_LOG_INV_RATE")
+        accounting = meta.get("BITZ_BINIUS_LIGERITO_ACCOUNTING")
         if recorded is None or accounting is None:
             raise RunError(
-                f"{base}: run.txt does not record the F2Z-opener knobs; re-measure with the updated sweep"
+                f"{base}: run.txt does not record the BitZ-opener knobs; re-measure with the updated sweep"
             )
         if recorded != str(rate):
-            raise RunError(f"{base}: F2Z-opener rate {recorded} does not match key rate {rate}")
+            raise RunError(f"{base}: BitZ-opener rate {recorded} does not match key rate {rate}")
         if accounting != "round-by-round":
             raise RunError(
-                f"{base}: F2Z-opener accounting {accounting!r}; the suite requires round-by-round (rbr)"
+                f"{base}: BitZ-opener accounting {accounting!r}; the suite requires round-by-round (rbr)"
             )
     else:  # hybrid
         profile = meta.get("profile")
@@ -272,7 +272,7 @@ def main() -> None:
         "% Rows: \\ftwoz-SNARK = hybrid (shared Johnson opener at the row's rate, Round 0, 100-bit whole-protocol union bound;",
         "%   rate 1/2 keeps the 106-bit component target, rate 1/8 solves the smallest in 100..=112);",
         "%   Binius64 = all-Binius circuit with ring switching + FRI at the row's rate (100-bit query-phase target);",
-        "%   Binius64 + F2Z opener = the same circuit, every oracle committed/opened by the F2Z opener at the row's rate,",
+        "%   Binius64 + BitZ opener = the same circuit, every oracle committed/opened by the BitZ opener at the row's rate,",
         "%   round-by-round accounting gated at 100 bits.",
         f"% Machine: {platform.machine()} {platform.platform()}. Columns: prover = total_prover_ms (witness synthesis, commitments, PIOPs, opening, encoding; setup excluded);",
         "%   verifier = verify_ms; proof = proof_bytes, KB = 1000 bytes; peak mem. = external RSS sample of the child process, GB = 2^30 bytes.",

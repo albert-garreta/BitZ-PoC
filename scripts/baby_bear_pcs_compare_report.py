@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregate canonical BabyBear F2Z/WHIR PCS comparison traces.
+"""Aggregate canonical BabyBear BitZ/WHIR PCS comparison traces.
 
 The input is canonical ``zkperf.trace/v1`` JSONL.  This reporter deliberately
 does not render interval timelines; use the zk-proof-profiler ``zk_trace.py``
@@ -23,8 +23,8 @@ from typing import Any, Iterable, Sequence
 TRACE_SCHEMA = "zkperf.trace/v1"
 REPORT_SCHEMA = "baby-bear-pcs-compare-report/v2"
 CAMPAIGN_SCHEMA = "baby-bear-pcs-compare-campaign/v2"
-BACKENDS = ("f2z", "plonky3-whir")
-BACKEND_LABELS = {"f2z": "F2Z", "plonky3-whir": "Plonky3 WHIR"}
+BACKENDS = ("bitz", "plonky3-whir")
+BACKEND_LABELS = {"bitz": "BitZ", "plonky3-whir": "Plonky3 WHIR"}
 EXPONENTS = tuple(range(15, 25))
 CAMPAIGN_STATUSES = ("measured", "unavailable", "not_requested")
 
@@ -74,7 +74,7 @@ class ReportError(Exception):
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Aggregate F2Z versus Plonky3 WHIR BabyBear PCS traces into "
+            "Aggregate BitZ versus Plonky3 WHIR BabyBear PCS traces into "
             "JSON, CSV, Markdown, and HTML comparison reports."
         )
     )
@@ -914,25 +914,25 @@ def aggregate_group(
 
 
 def comparison_entry(
-    f2z_stats: dict[str, Any] | None,
+    bitz_stats: dict[str, Any] | None,
     whir_stats: dict[str, Any] | None,
-    f2z_status: str,
+    bitz_status: str,
     whir_status: str,
 ) -> dict[str, Any]:
-    f2z_median = None if f2z_stats is None else f2z_stats["median"]
+    bitz_median = None if bitz_stats is None else bitz_stats["median"]
     whir_median = None if whir_stats is None else whir_stats["median"]
     lower: str | None = None
-    if f2z_median is not None and whir_median is not None:
-        if f2z_median < whir_median:
-            lower = "f2z"
-        elif whir_median < f2z_median:
+    if bitz_median is not None and whir_median is not None:
+        if bitz_median < whir_median:
+            lower = "bitz"
+        elif whir_median < bitz_median:
             lower = "plonky3-whir"
         else:
             lower = "tie"
     return {
-        "f2z_median": f2z_median,
+        "bitz_median": bitz_median,
         "plonky3_whir_median": whir_median,
-        "f2z_status": f2z_status,
+        "bitz_status": bitz_status,
         "plonky3_whir_status": whir_status,
         "lower": lower,
     }
@@ -975,25 +975,25 @@ def build_summary(
     timing_keys = [key for key, _, _ in TIMING_OPERATIONS] + [PCS_TOTAL_KEY]
     artifact_keys = [key for key, _ in ARTIFACT_METRICS]
     for exponent in EXPONENTS:
-        f2z = by_key[("f2z", exponent)]
+        bitz = by_key[("bitz", exponent)]
         whir = by_key[("plonky3-whir", exponent)]
         comparison.append(
             {
                 "log_multiplications": exponent,
                 "timings_ms": {
                     key: comparison_entry(
-                        f2z["timings_ms"][key],
+                        bitz["timings_ms"][key],
                         whir["timings_ms"][key],
-                        f2z["cell_status"],
+                        bitz["cell_status"],
                         whir["cell_status"],
                     )
                     for key in timing_keys
                 },
                 "artifacts_bytes": {
                     key: comparison_entry(
-                        f2z["artifacts_bytes"][key],
+                        bitz["artifacts_bytes"][key],
                         whir["artifacts_bytes"][key],
-                        f2z["cell_status"],
+                        bitz["cell_status"],
                         whir["cell_status"],
                     )
                     for key in artifact_keys
@@ -1122,28 +1122,28 @@ def markdown_backend_stat(
 
 
 def markdown_compare_cell(
-    f2z_stats: dict[str, Any] | None,
+    bitz_stats: dict[str, Any] | None,
     whir_stats: dict[str, Any] | None,
-    f2z_group: dict[str, Any],
+    bitz_group: dict[str, Any],
     whir_group: dict[str, Any],
     unit: str,
 ) -> str:
     left = (
-        cell_status_text(f2z_group)
-        if f2z_stats is None
-        else median_text(f2z_stats, unit)
+        cell_status_text(bitz_group)
+        if bitz_stats is None
+        else median_text(bitz_stats, unit)
     )
     right = (
         cell_status_text(whir_group)
         if whir_stats is None
         else median_text(whir_stats, unit)
     )
-    if f2z_stats is not None and whir_stats is not None:
-        f2z_median = f2z_stats["median"]
+    if bitz_stats is not None and whir_stats is not None:
+        bitz_median = bitz_stats["median"]
         whir_median = whir_stats["median"]
-        if f2z_median < whir_median:
+        if bitz_median < whir_median:
             left = f"**{left}**"
-        elif whir_median < f2z_median:
+        elif whir_median < bitz_median:
             right = f"**{right}**"
     return f"{left} / {right}"
 
@@ -1263,7 +1263,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
         [
             "## Combined comparison",
             "",
-            "Every comparison cell is **F2Z / Plonky3 WHIR**; the lower median is bold.",
+            "Every comparison cell is **BitZ / Plonky3 WHIR**; the lower median is bold.",
             "",
             "### Timing medians",
             "",
@@ -1271,7 +1271,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
     )
     combined_timing_rows: list[list[str]] = []
     for exponent in EXPONENTS:
-        f2z = index[("f2z", exponent)]
+        bitz = index[("bitz", exponent)]
         whir = index[("plonky3-whir", exponent)]
         combined_timing_rows.append(
             [
@@ -1279,15 +1279,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
                 *whir_config_cells(whir),
                 *(
                     markdown_compare_cell(
-                        f2z["timings_ms"][key],
+                        bitz["timings_ms"][key],
                         whir["timings_ms"][key],
-                        f2z,
+                        bitz,
                         whir,
                         "ms",
                     )
                     for key, _, _ in timing_columns
                 ),
-                f"{sample_count_text(f2z)} / {sample_count_text(whir)}",
+                f"{sample_count_text(bitz)} / {sample_count_text(whir)}",
             ]
         )
     lines.extend(
@@ -1310,7 +1310,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
     )
     combined_size_rows: list[list[str]] = []
     for exponent in EXPONENTS:
-        f2z = index[("f2z", exponent)]
+        bitz = index[("bitz", exponent)]
         whir = index[("plonky3-whir", exponent)]
         combined_size_rows.append(
             [
@@ -1318,15 +1318,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
                 *whir_config_cells(whir),
                 *(
                     markdown_compare_cell(
-                        f2z["artifacts_bytes"][key],
+                        bitz["artifacts_bytes"][key],
                         whir["artifacts_bytes"][key],
-                        f2z,
+                        bitz,
                         whir,
                         "bytes",
                     )
                     for key, _ in ARTIFACT_METRICS
                 ),
-                f"{sample_count_text(f2z)} / {sample_count_text(whir)}",
+                f"{sample_count_text(bitz)} / {sample_count_text(whir)}",
             ]
         )
     lines.extend(
@@ -1404,9 +1404,9 @@ def html_backend_stat(
 
 
 def html_compare_cell(
-    f2z_stats: dict[str, Any] | None,
+    bitz_stats: dict[str, Any] | None,
     whir_stats: dict[str, Any] | None,
-    f2z_group: dict[str, Any],
+    bitz_group: dict[str, Any],
     whir_group: dict[str, Any],
     unit: str,
 ) -> str:
@@ -1422,12 +1422,12 @@ def html_compare_cell(
         text = html.escape(median_text(stats, unit))
         return text, html.escape(stats_title(stats))
 
-    left, left_title = one(f2z_stats, f2z_group)
+    left, left_title = one(bitz_stats, bitz_group)
     right, right_title = one(whir_stats, whir_group)
-    if f2z_stats is not None and whir_stats is not None:
-        if f2z_stats["median"] < whir_stats["median"]:
+    if bitz_stats is not None and whir_stats is not None:
+        if bitz_stats["median"] < whir_stats["median"]:
             left = f"<strong>{left}</strong>"
-        elif whir_stats["median"] < f2z_stats["median"]:
+        elif whir_stats["median"] < bitz_stats["median"]:
             right = f"<strong>{right}</strong>"
     left_attr = f' title="{left_title}"' if left_title else ""
     right_attr = f' title="{right_title}"' if right_title else ""
@@ -1511,7 +1511,7 @@ def render_html(summary: dict[str, Any]) -> str:
     combined_timing_rows: list[list[str]] = []
     combined_size_rows: list[list[str]] = []
     for exponent in EXPONENTS:
-        f2z = index[("f2z", exponent)]
+        bitz = index[("bitz", exponent)]
         whir = index[("plonky3-whir", exponent)]
         combined_timing_rows.append(
             [
@@ -1519,15 +1519,15 @@ def render_html(summary: dict[str, Any]) -> str:
                 *whir_config_cells(whir),
                 *(
                     html_compare_cell(
-                        f2z["timings_ms"][key],
+                        bitz["timings_ms"][key],
                         whir["timings_ms"][key],
-                        f2z,
+                        bitz,
                         whir,
                         "ms",
                     )
                     for key, _, _ in timing_columns
                 ),
-                f"{html.escape(sample_count_text(f2z))} / {html.escape(sample_count_text(whir))}",
+                f"{html.escape(sample_count_text(bitz))} / {html.escape(sample_count_text(whir))}",
             ]
         )
         combined_size_rows.append(
@@ -1536,15 +1536,15 @@ def render_html(summary: dict[str, Any]) -> str:
                 *whir_config_cells(whir),
                 *(
                     html_compare_cell(
-                        f2z["artifacts_bytes"][key],
+                        bitz["artifacts_bytes"][key],
                         whir["artifacts_bytes"][key],
-                        f2z,
+                        bitz,
                         whir,
                         "bytes",
                     )
                     for key, _ in ARTIFACT_METRICS
                 ),
-                f"{html.escape(sample_count_text(f2z))} / {html.escape(sample_count_text(whir))}",
+                f"{html.escape(sample_count_text(bitz))} / {html.escape(sample_count_text(whir))}",
             ]
         )
 
@@ -1587,7 +1587,7 @@ def render_html(summary: dict[str, Any]) -> str:
 
     combined = (
         "<section><h2>Combined comparison</h2>"
-        "<p>Every cell is <strong>F2Z / Plonky3 WHIR</strong>. The lower median is bold.</p>"
+        "<p>Every cell is <strong>BitZ / Plonky3 WHIR</strong>. The lower median is bold.</p>"
         "<h3>Timing medians</h3>"
         + html_table(
             [
@@ -1654,7 +1654,7 @@ ul {{ margin-bottom:0; }}
 <body><main>
 <header class="meta">
 <h1>BabyBear PCS comparison</h1>
-<p>F2Z and Plonky3 WHIR over 2<sup>15</sup> through 2<sup>24</sup> multiplication witnesses. Successful, complete measured runs only; P10/P50/P90 use Hyndman–Fan Type 7.</p>
+<p>BitZ and Plonky3 WHIR over 2<sup>15</sup> through 2<sup>24</sup> multiplication witnesses. Successful, complete measured runs only; P10/P50/P90 use Hyndman–Fan Type 7.</p>
 <p>PCS total prover is an overlap-safe per-trial union of materialize, commit, and opening. Claim setup is shown separately. Timeline rendering is intentionally delegated to <code>zk_trace.py</code>.</p>
 <p><strong>N/A (unavailable)</strong> means the frozen backend configuration failed preflight; <strong>not requested</strong> reflects campaign selection; <strong>missing</strong> means an expected cell has no trace data.</p>
 <p>Source: <code>{html.escape(summary['source_trace'])}</code></p>

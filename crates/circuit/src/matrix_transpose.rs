@@ -311,12 +311,12 @@ impl Circuit for MTransposeGenerator {
         ScalarBits(std::array::from_fn(|_| self.recorder.allocate_witness()))
     }
 
-    fn f2z<const LIMBS: usize>(&mut self, value: MatrixBit) -> Z<LIMBS> {
+    fn bitz<const LIMBS: usize>(&mut self, value: MatrixBit) -> Z<LIMBS> {
         self.recorder.push_row(&value);
         Z::from(u64::from(value.constant_term()))
     }
 
-    fn f2z_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
         &mut self,
         bits_le: &<MatrixBit as BoolWitness>::Repr<N, M>,
     ) -> (Z<LIMBS>, Z<LIMBS>) {
@@ -353,8 +353,8 @@ mod tests {
     fn example_circuit<CS: Circuit>(circuit: &mut CS, inputs: &[CS::Bool; 3]) {
         let xy = circuit.xor(inputs[0].clone(), inputs[1].clone());
         let not_xy = circuit.xor(xy.clone(), CS::Bool::from(true));
-        let _ = circuit.f2z::<1>(xy);
-        let _ = circuit.f2z::<1>(not_xy);
+        let _ = circuit.bitz::<1>(xy);
+        let _ = circuit.bitz::<1>(not_xy);
 
         let captured = inputs[2].clone();
         let hinted = circuit.hint::<1, 2, 1, _>(move |context| {
@@ -368,8 +368,8 @@ mod tests {
                 1,
             >>::bit(&hinted, 0);
         let mixed = circuit.xor(hinted_zero, inputs[0].clone());
-        let _ = circuit.f2z::<1>(mixed);
-        let _: (CS::Z<1>, CS::Z<1>) = circuit.f2z_unsigned::<1, 2, 1, 1>(&hinted);
+        let _ = circuit.bitz::<1>(mixed);
+        let _: (CS::Z<1>, CS::Z<1>) = circuit.bitz_unsigned::<1, 2, 1, 1>(&hinted);
     }
 
     fn challenges(count: usize) -> Vec<Gf128> {

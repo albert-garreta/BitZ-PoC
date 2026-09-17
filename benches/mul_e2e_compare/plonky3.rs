@@ -4,7 +4,7 @@ use super::mod32_air::{LIMB_BASE, VALUE_COLUMNS, set_value};
 use super::mod32_air::{MulAir, TRACE_WIDTH, generate};
 use super::trace_capture::TrialScopes;
 use super::{Corpus, Timing, Workload, captured};
-use f2z::observability::Recording;
+use bitz::observability::Recording;
 use p3_air::symbolic::AirLayout;
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
@@ -45,10 +45,10 @@ type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, ValMmcs, ChallengeMmcs>;
 type Config = StarkConfig<Pcs, Challenge, Challenger>;
 
 fn configuration(trace_len: usize) -> (Config, StarkSecurityParams, usize) {
-    let rate = std::env::var("F2Z_PLONKY3_LOG_INV_RATE")
+    let rate = std::env::var("BITZ_PLONKY3_LOG_INV_RATE")
         .map(|s| {
             s.parse()
-                .expect("F2Z_PLONKY3_LOG_INV_RATE must be 1, 2, or 3")
+                .expect("BITZ_PLONKY3_LOG_INV_RATE must be 1, 2, or 3")
         })
         .unwrap_or(LOG_BLOWUP);
     configuration_at_rate(trace_len, rate)
@@ -88,7 +88,7 @@ fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkS
         (fri, security)
     };
     // Smallest query count whose proven round-by-round report clears the
-    // target at this trace length — the same smallest-clearing rule the F2Z
+    // target at this trace length — the same smallest-clearing rule the BitZ
     // opener applies to its per-round targets. Monotone in the query count.
     let clears = |num_queries: usize| {
         ProvenSecurity::compute(&assemble(num_queries).1, trace_len).security_bits() >= TARGET_BITS

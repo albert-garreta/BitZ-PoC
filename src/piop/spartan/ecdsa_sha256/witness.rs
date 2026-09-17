@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 #[cfg(test)]
-use crate::piop::spartan::protocol::{FieldConfig as Config, SpartanF2zField as F};
+use crate::piop::spartan::protocol::{FieldConfig as Config, SpartanBitzField as F};
 use circuit::{
     integer_storage::IntegerTableView,
     matrix_products::IntegerProducts,

@@ -50,7 +50,7 @@ impl Blake3Transcript {
 impl Transcript for Blake3Transcript {
     fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
         self.fill_with_random_bytes(output);
-        self.hasher.update(b"f2z/sampling-read/v1");
+        self.hasher.update(b"bitz/sampling-read/v1");
         self.hasher.update(&(output.len() as u64).to_le_bytes());
         self.hasher.update(output);
     }

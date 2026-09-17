@@ -1,6 +1,6 @@
-//! Byte-codec for the F2Z host proof stream.
+//! Byte-codec for the BitZ host proof stream.
 //!
-//! The complete F2Z proof object ([`crate::ligerito_flock::IntEvalRsLigModQProof`])
+//! The complete BitZ proof object ([`crate::ligerito_flock::IntEvalRsLigModQProof`])
 //! serializes field-by-field on the zinc side (merged forests, chunk folds,
 //! pre-sumchecks, ring-switch messages) via this codec, with flock's serde
 //! [`LigeritoProof`](flock_core::pcs::ligerito::LigeritoProof) embedded as a
@@ -11,7 +11,7 @@
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcribable;
 
-/// A decode failure of the F2Z proof stream.
+/// A decode failure of the BitZ proof stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecError {
     /// The buffer ended before a field could be fully read.

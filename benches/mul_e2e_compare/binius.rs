@@ -13,7 +13,7 @@ use binius_verifier::{
     config::StdChallenger,
     transcript::{ProverTranscript, VerifierTranscript},
 };
-use f2z::observability::Recording;
+use bitz::observability::Recording;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -226,13 +226,13 @@ mod tests {
 }
 
 /// `log2` of the inverse Reed–Solomon rate of the BaseFold commitment:
-/// `F2Z_BINIUS_LOG_INV_RATE` (default 1 = rate 1/2, the Binius64 default).
+/// `BITZ_BINIUS_LOG_INV_RATE` (default 1 = rate 1/2, the Binius64 default).
 /// A lower rate needs fewer test queries (smaller proof) at the cost of a
 /// larger encoding. The `binius64-ligerito` backend reads the same knob for
-/// its F2Z opener, so one campaign value sets the rate of both Binius rows.
+/// its BitZ opener, so one campaign value sets the rate of both Binius rows.
 pub(super) fn log_inv_rate() -> usize {
-    std::env::var("F2Z_BINIUS_LOG_INV_RATE")
-        .map(|value| value.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be a usize"))
+    std::env::var("BITZ_BINIUS_LOG_INV_RATE")
+        .map(|value| value.parse().expect("BITZ_BINIUS_LOG_INV_RATE must be a usize"))
         .unwrap_or(1)
 }
 
@@ -347,7 +347,7 @@ fn limbs(value: u128) -> [u64; 2] {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let (circuit, wires) = compile(corpus);
-    let (filler, started) = f2z::observability::measure(
+    let (filler, started) = bitz::observability::measure(
         tracing::info_span!("mul_e2e_compare/binius:filler"),
         || populate(corpus, &circuit, &wires, false).expect("Binius materialization"),
     ).expect("measure completed operation");

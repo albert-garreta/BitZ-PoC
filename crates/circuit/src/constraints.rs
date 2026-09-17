@@ -1,4 +1,4 @@
-//! Sparse constraint generation for the F2Z circuit language.
+//! Sparse constraint generation for the BitZ circuit language.
 //!
 //! The generated matrices follow Freigen's convention. `M` maps the Boolean
 //! witness, prefixed by a constant one, to the integer witness. Its first row
@@ -33,7 +33,7 @@ impl PartialEq for RowCheck {
 }
 impl Eq for RowCheck {}
 
-/// The four sparse matrices generated for an F2Z circuit.
+/// The four sparse matrices generated for an BitZ circuit.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstraintMatrices {
     /// Boolean-to-integer witness matrix.
@@ -524,7 +524,7 @@ impl Circuit for ConstraintGenerator {
         }))
     }
 
-    fn f2z<const LIMBS: usize>(
+    fn bitz<const LIMBS: usize>(
         &mut self,
         value: BoolLinearCombination,
     ) -> LinearCombination<LIMBS> {
@@ -570,9 +570,9 @@ mod tests {
         let mut generator = ConstraintGenerator::new(2);
         let [x, y] = generator.inputs();
         let sum = generator.xor(x.clone(), y.clone());
-        let z_sum = generator.f2z::<1>(sum);
-        let z_x = generator.f2z::<1>(x);
-        let z_y = generator.f2z::<1>(y);
+        let z_sum = generator.bitz::<1>(sum);
+        let z_x = generator.bitz::<1>(x);
+        let z_y = generator.bitz::<1>(y);
         generator.assert_r1c::<1>(z_x.clone() * Z::from(2u64), z_y.clone(), z_x + z_y - z_sum);
         let mut matrices = generator.into_matrices();
         assert_eq!(matrices.m.row_count(), 4);
@@ -656,7 +656,7 @@ mod tests {
     #[should_panic(expected = "declared circuit coefficient width exceeded")]
     fn public_subset_bound_is_checked() {
         let mut generator = ConstraintGenerator::new(1);
-        let x = generator.f2z::<1>(generator.input(0));
+        let x = generator.bitz::<1>(generator.input(0));
         generator.assert_r1c::<1>(
             x + LinearCombination::from(Z::MAX),
             Z::ONE.into(),

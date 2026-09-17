@@ -1,4 +1,4 @@
-//! Fixed two-limb delayed reduction, moved from F2Z's production kernel.
+//! Fixed two-limb delayed reduction, moved from BitZ's production kernel.
 //! Requires 2^64 < modulus < 2^128. Public modulus checks select the fallback.
 use super::params::PrimeParameters;
 

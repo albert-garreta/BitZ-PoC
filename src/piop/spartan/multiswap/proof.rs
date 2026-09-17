@@ -1,10 +1,10 @@
-//! The MultiSwap integer Mod-R1CS over F2Z (Limber's RSA-accumulator
+//! The MultiSwap integer Mod-R1CS over BitZ (Limber's RSA-accumulator
 //! benchmark), as a description of the shared protocol of
 //! [`super::super::protocol`] under the paper's Strategy 2 instantiation
 //! (large PIOP field, grinding concentrated at the Step 5.0 reduction draw):
 //!
 //! 1. Bind the complete public statement: the integer circuit digest, the
-//!    block layout, and the F2Z commitment to the witness/quotient bits.
+//!    block layout, and the BitZ commitment to the witness/quotient bits.
 //! 2. Draw the 128-bit fingerprint prime `Q` (the commit-before-prime
 //!    order is the Zaratan fingerprint; the full-width interval makes the
 //!    draw `<= 2^-114` sound without grinding).
@@ -18,7 +18,7 @@
 //!    lift `mu'` of that tensor claim; after checking `mu' = mu (mod Q)`
 //!    and the `d * Q^2` bound, a 10-bit grind and a fresh 113-bit
 //!    reduction prime `q'` re-project the claim below the exponent-fold
-//!    no-wrap boundary, and the runtime-`q'` F2Z opening discharges it.
+//!    no-wrap boundary, and the runtime-`q'` BitZ opening discharges it.
 //!
 //! The opening runs through the virtual-map entry points with the exact
 //! identity map, which the library recognizes and routes to the direct
@@ -56,7 +56,7 @@ use {
 };
 
 use super::super::{
-    PreparedConstraintMatrices, SpartanF2zField,
+    PreparedConstraintMatrices, SpartanBitzField,
     profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Limber114},
     protocol::{
         self, BindingHasher, BlockTable, ClaimFrame, Domains, FieldConfig, Kernel, MatrixSource,
@@ -76,9 +76,9 @@ use super::{
     },
 };
 
-const MULTISWAP_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-multiswap/statement/v2";
-const MULTISWAP_BINDING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/assignment-binding/v2";
-const MULTISWAP_OPENING_CLAIM_DOMAIN: &[u8] = b"f2z/spartan-multiswap/opening-claim/v3";
+const MULTISWAP_STATEMENT_DOMAIN: &[u8] = b"bitz/spartan-multiswap/statement/v2";
+const MULTISWAP_BINDING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/assignment-binding/v2";
+const MULTISWAP_OPENING_CLAIM_DOMAIN: &[u8] = b"bitz/spartan-multiswap/opening-claim/v3";
 /// Local identity block repeated across gates; any power-of-two factor of
 /// the cell count works, and the slot count keeps the local map small.
 const IDENTITY_LOCAL_ROWS: usize = MULTISWAP_SLOTS;
@@ -93,12 +93,12 @@ static MULTISWAP_DOMAINS: Domains = Domains {
     bitified_claim: b"",
     opening: ModQOpeningKind::U32Mul,
     claim_tag: b"multiswap-opening-claim",
-    reduction_grinding: b"f2z/spartan-multiswap/grinding/reduction/v2",
+    reduction_grinding: b"bitz/spartan-multiswap/grinding/reduction/v2",
     reduction_prime: REDUCTION_SAMPLING_DOMAIN,
     scopes: crate::protocol_scopes!("multiswap"),
 };
 
-/// Failures in the MultiSwap Spartan/F2Z adapter.
+/// Failures in the MultiSwap Spartan/BitZ adapter.
 pub type MultiswapError = ProtocolError;
 
 impl From<MultiswapCircuitError> for ProtocolError {
@@ -138,10 +138,10 @@ pub struct MultiswapSpec {
 impl MultiswapSpec {
     fn new(circuit: &MultiswapCircuit) -> Result<Self, ProtocolError> {
         let relation = MultiswapIntegerRelation::new(circuit)?;
-        let params = relation.layout().f2z_params();
+        let params = relation.layout().bitz_params();
         let cells = cell_count(&params);
         if cells % IDENTITY_LOCAL_ROWS != 0 {
-            return Err(ProtocolError::InvalidF2zParameters);
+            return Err(ProtocolError::InvalidBitzParameters);
         }
         let identity_columns = (0..IDENTITY_LOCAL_ROWS)
             .map(|index| vec![(index, true)])
@@ -180,7 +180,7 @@ impl MultiswapSpec {
 }
 
 impl RelationSpec for MultiswapSpec {
-    type Coefficient = SpartanF2zField;
+    type Coefficient = SpartanBitzField;
     type Witness = MultiswapAssignment;
     type Map = RepeatedVirtualMap;
 
@@ -199,7 +199,7 @@ impl RelationSpec for MultiswapSpec {
     }
 
     fn committed_layout(&self) -> IntegerMatrixLayout {
-        self.layout().f2z_params()
+        self.layout().bitz_params()
     }
 
     fn gate_vars(&self) -> usize {
@@ -215,7 +215,7 @@ impl RelationSpec for MultiswapSpec {
         )
     }
 
-    fn matrices(&self) -> Result<MatrixSource<SpartanF2zField>, ProtocolError> {
+    fn matrices(&self) -> Result<MatrixSource<SpartanBitzField>, ProtocolError> {
         Ok(MatrixSource::PerPrime)
     }
 
@@ -224,14 +224,14 @@ impl RelationSpec for MultiswapSpec {
     fn project_matrices(
         &self,
         config: &FieldConfig,
-    ) -> Result<PreparedConstraintMatrices<SpartanF2zField, SpartanF2zField>, ProtocolError> {
-        Ok(self.relation.project::<SpartanF2zField>(config)?)
+    ) -> Result<PreparedConstraintMatrices<SpartanBitzField, SpartanBitzField>, ProtocolError> {
+        Ok(self.relation.project::<SpartanBitzField>(config)?)
     }
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
         let params = self.committed_layout();
         if params.word_bits != 1 || cell_count(&params) % IDENTITY_LOCAL_ROWS != 0 {
-            return Err(ProtocolError::InvalidF2zParameters);
+            return Err(ProtocolError::InvalidBitzParameters);
         }
         Ok(())
     }
@@ -286,7 +286,7 @@ impl RelationSpec for MultiswapSpec {
         // configuration.
         if security.lambda != 114 || self.batch_count != 1 {
             hasher
-                .bytes(b"f2z/spartan-multiswap/configuration/v3")
+                .bytes(b"bitz/spartan-multiswap/configuration/v3")
                 .bytes(&security.lambda.to_le_bytes())
                 .bytes(security.profile_name.as_bytes())
                 .bytes(&config_digest(ligerito))
@@ -374,7 +374,7 @@ impl RelationSpec for MultiswapSpec {
 }
 
 /// Setup-once, prime-independent bundle: the integer relation, the identity
-/// opening map, the F2Z shape, the instantiated security profile, and the
+/// opening map, the BitZ shape, the instantiated security profile, and the
 /// statement digest.
 pub struct PreparedMultiswapRelation {
     inner: PreparedRelation<MultiswapSpec>,
@@ -434,7 +434,7 @@ impl PreparedMultiswapRelation {
 
     fn validate_config(&self, config: &impl LigeritoStatementConfig) -> Result<(), MultiswapError> {
         if config_digest(config) != self.opening_config_digest {
-            return Err(ProtocolError::F2z(FlockRsError::CommitmentConfig));
+            return Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig));
         }
         Ok(())
     }
@@ -454,7 +454,7 @@ impl PreparedMultiswapRelation {
         self.inner.layout().layout()
     }
 
-    /// F2Z shape of the committed bit tensor.
+    /// BitZ shape of the committed bit tensor.
     pub const fn params(&self) -> &IntegerMatrixLayout {
         &self.params
     }
@@ -496,12 +496,12 @@ pub fn commit_multiswap_witness(
     pc: &LigProverConfig,
 ) -> Result<FlockCommitHint, MultiswapError> {
     if p.word_bits != 1 {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     protocol::validate_bit_rows(p, &rows)?;
     let hint = crate::ligerito_flock::commit_rs_ligerito_rows(p, rows, pc);
     crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, pc)
-        .map_err(ProtocolError::F2z)?;
+        .map_err(ProtocolError::Bitz)?;
     Ok(hint)
 }
 
@@ -535,7 +535,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
 
 fn config_digest(config: &impl LigeritoStatementConfig) -> [u8; 32] {
     let mut h = Hasher::new();
-    h.update(b"f2z/multiswap/ligerito-config/v1");
+    h.update(b"bitz/multiswap/ligerito-config/v1");
     for v in [
         config.recursive_steps(),
         config.initial_log_msg_cols(),
@@ -584,7 +584,7 @@ mod tests {
         let assignment = MultiswapAssignment::new(&circuit).unwrap();
         let (pc, vc) = prepared.ligerito_configs();
         let hint =
-            commit_multiswap_witness(prepared.params(), assignment.f2z_bit_rows(), &pc).unwrap();
+            commit_multiswap_witness(prepared.params(), assignment.bitz_bit_rows(), &pc).unwrap();
         (prepared, assignment, hint, pc, vc)
     }
 
@@ -608,15 +608,15 @@ mod tests {
         let mut second = Blake3Transcript::new();
         let again =
             prove_multiswap_mod_r1cs(&mut second, &prepared, &assignment, &hint, &pc).unwrap();
-        assert_eq!(again.f2z().to_bytes(), proof.f2z().to_bytes());
+        assert_eq!(again.bitz().to_bytes(), proof.bitz().to_bytes());
         assert_eq!(again.mu_prime(), proof.mu_prime());
         assert_eq!(second.state_digest(), pt.state_digest());
 
         // A wrong integer lift is rejected before the reduction draw.
-        let (prefix, reduction, f2z) = proof.clone().into_parts();
+        let (prefix, reduction, bitz) = proof.clone().into_parts();
         let mut reduction = reduction.unwrap();
         reduction.mu_prime = reduction.mu_prime.wrapping_add(&field::Uint::ONE);
-        let tampered = MultiswapProof::from_parts(prefix, Some(reduction), f2z);
+        let tampered = MultiswapProof::from_parts(prefix, Some(reduction), bitz);
         assert!(matches!(
             verify_multiswap_mod_r1cs(
                 &mut Blake3Transcript::new(),
@@ -639,7 +639,7 @@ mod tests {
                 &hint,
                 &foreign.0
             ),
-            Err(ProtocolError::F2z(FlockRsError::CommitmentConfig))
+            Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
         ));
     }
 

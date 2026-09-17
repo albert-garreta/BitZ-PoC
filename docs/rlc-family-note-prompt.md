@@ -1,6 +1,6 @@
 # Session prompt — LaTeX note: batching F₂-linear families of integer-MLE claims via mod-q randomized weight functions
 
-You are in `/Users/albertgarretafontelles/f2z-pcs` (the F2Z repo — the `f2z-pcs`
+You are in `/Users/albertgarretafontelles/f2z-pcs` (the BitZ repo — the `f2z-pcs`
 skill applies). Invoke the `writing-crypto-papers` skill BEFORE drafting.
 Deliverable: a fresh, self-contained LaTeX note under `docs/rlc-family-note/`
 (`main.tex`, built with `latexmk`), in the notation and style of the parent
@@ -16,7 +16,7 @@ and record the gap as an explicit open problem in the note.
 
 ## Base scheme (recap; cite DESIGN.md / X-note §9 rather than re-proving)
 
-F2Z proves `MLE[INT(D)](r) = c ∈ F_q` for bit-data `D` (2^t·W row-bits ×
+BitZ proves `MLE[INT(D)](r) = c ∈ F_q` for bit-data `D` (2^t·W row-bits ×
 2^s columns, n = t + log₂W + s) committed under a char-2 commitment. Row
 weights `w_b = eq(b, r_rows) mod q ∈ [0, q)` are **already reduced mod-q
 representatives**; per-column integer folds `u_c = Σ_b w_b·D[b,c]` ride in

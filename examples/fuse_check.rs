@@ -1,18 +1,18 @@
 //! Historical kernel experiment; no production security claim.
 //! Byte-identity pin for the eq-factored pass-fusion experiment: dump one
-//! deterministic proof's bytes to a file — run under different `F2Z_EQF_*`
+//! deterministic proof's bytes to a file — run under different `BITZ_EQF_*`
 //! flag combinations and `cmp` the outputs (the flags are process-cached,
 //! so the comparison is cross-process).
 //!
 //! ```text
 //! cargo run --release --example fuse_check --features unchecked -- /tmp/base.bin
-//! F2Z_EQF_FUSE=1 cargo run --release --example fuse_check --features unchecked -- /tmp/fuse.bin
+//! BITZ_EQF_FUSE=1 cargo run --release --example fuse_check --features unchecked -- /tmp/fuse.bin
 //! cmp /tmp/base.bin /tmp/fuse.bin
 //! ```
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
-use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 
 const Q: u128 = (1u128 << 100) - 15;
 
@@ -54,7 +54,7 @@ fn main() {
                     % Q
             })
             .collect();
-        let mut pt = f2z::transcript::Blake3Transcript::new();
+        let mut pt = bitz::transcript::Blake3Transcript::new();
         let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
         all.extend_from_slice(&proof.to_bytes());
     }

@@ -266,7 +266,7 @@ mod reporting_tests {
         let sample = Sample {
             schema: "native-mul-sample/v2",
             workload: "u32",
-            backend: "f2z",
+            backend: "bitz",
             log_multiplications: 4,
             multiplications: 16,
             corpus_digest: "digest",
@@ -287,7 +287,7 @@ mod reporting_tests {
         assert_eq!(
             serde_json::from_slice::<Value>(&bytes).unwrap(),
             json!({
-                "schema":"native-mul-sample/v2","workload":"u32","backend":"f2z",
+                "schema":"native-mul-sample/v2","workload":"u32","backend":"bitz",
                 "log_multiplications":4,"multiplications":16,"corpus_digest":"digest",
                 "threads":1,"seed":7,"trial":{"kind":"sample","index":0},"setup_ms":8.0,
                 "config":{"opaque":true},"measurement_policy":"policy","proof_verified":true,
@@ -299,7 +299,7 @@ mod reporting_tests {
         let summary = Summary::Measured(MeasuredSummary {
             schema: "summary",
             workload: "u32",
-            backend: "f2z",
+            backend: "bitz",
             log_multiplications: 4,
             multiplications: 16,
             samples: 1,
@@ -322,13 +322,13 @@ mod reporting_tests {
         assert_eq!(
             serde_json::to_value(Summary::Ineligible(Ineligible {
                 workload: "u32",
-                backend: "f2z",
+                backend: "bitz",
                 log_multiplications: 4,
                 status: "ineligible",
                 reason: "budget".into()
             }))
             .unwrap(),
-            json!({"workload":"u32","backend":"f2z","log_multiplications":4,
+            json!({"workload":"u32","backend":"bitz","log_multiplications":4,
             "status":"ineligible","reason":"budget"})
         );
     }

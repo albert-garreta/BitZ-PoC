@@ -106,7 +106,7 @@ pub trait WideMulAcc: Sized {
         false
     }
 
-    /// Optional fused kernel for the pass-fusion path (`F2Z_EQF_FUSE`): the
+    /// Optional fused kernel for the pass-fusion path (`BITZ_EQF_FUSE`): the
     /// DEFERRED fold of the previous round fused with this round's
     /// single-pair message body, in one pass. `l`/`r` hold `4·half`
     /// unfolded entries; for `b < half` the kernel folds
@@ -132,7 +132,7 @@ pub trait WideMulAcc: Sized {
     }
 
     /// Optional kernel for the double-fold dense grid pass
-    /// (`F2Z_EQF_DOUBLE`'s `dense_grid_pass` body): per quad `b < quads`,
+    /// (`BITZ_EQF_DOUBLE`'s `dense_grid_pass` body): per quad `b < quads`,
     /// fold the `pending` deferred challenges (`d = pending.len() ≤ 2`)
     /// into the 4 logical values `lv[i] = fold(l, (b≪2)|i, pending)` (same
     /// for `r`), write them back to the buffer prefix when `d > 0` (the

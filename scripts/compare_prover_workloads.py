@@ -90,16 +90,16 @@ def main():
     (args.output/'manifest.json').write_text(json.dumps(dict(binaries=binaries, args={k:str(v) for k,v in vars(args).items()}, affinity=sorted(os.sched_getaffinity(0))), indent=2))
     cases = []
     if 'mul' in args.kinds:
-        cases += [('mul', 'mul_e2e_compare', f'{w}-n{n}', dict(F2Z_MUL_COMPARE_WORKLOADS=w, F2Z_BENCH_SHAPES=str(n)))
+        cases += [('mul', 'mul_e2e_compare', f'{w}-n{n}', dict(BITZ_MUL_COMPARE_WORKLOADS=w, BITZ_BENCH_SHAPES=str(n)))
                   for w in args.workloads for n in args.exponents]
     if 'u32' in args.kinds:
-        cases += [('u32', 'u32_mul', f'full-u32-w{w}-n{n}', dict(F2Z_MUL_WORD_BITS=str(w), F2Z_BENCH_SHAPES=str(n)))
+        cases += [('u32', 'u32_mul', f'full-u32-w{w}-n{n}', dict(BITZ_MUL_WORD_BITS=str(w), BITZ_BENCH_SHAPES=str(n)))
                   for w in [1, 8] for n in args.exponents]
     if 'sha' in args.kinds:
-        cases += [('sha', 'sha256_chain', f'sha-n{n}', dict(F2Z_BENCH_SHAPES=str(n))) for n in args.sha_exponents]
+        cases += [('sha', 'sha256_chain', f'sha-n{n}', dict(BITZ_BENCH_SHAPES=str(n))) for n in args.sha_exponents]
     if 'multiswap' in args.kinds:
-        cases += [('multiswap', 'multiswap', f'multiswap-b{b}', dict(F2Z_BENCH_SHAPES='0', F2Z_MULTISWAP_BATCH_COUNT=str(b), F2Z_BENCH_LAMBDA='114')) for b in args.batches]
-    clean = {k:v for k,v in os.environ.items() if not k.startswith(('F2Z_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
+        cases += [('multiswap', 'multiswap', f'multiswap-b{b}', dict(BITZ_BENCH_SHAPES='0', BITZ_MULTISWAP_BATCH_COUNT=str(b), BITZ_BENCH_LAMBDA='114')) for b in args.batches]
+    clean = {k:v for k,v in os.environ.items() if not k.startswith(('BITZ_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
     results = []
     for kind, bench, case, case_env in cases:
         for threads in args.threads:
@@ -111,11 +111,11 @@ def main():
                 for variant in (list(manifests) if block % 2 == 0 else list(manifests)[::-1]):
                     directory = (args.output/f'{case}-t{threads}-b{block}-{variant}').resolve()
                     directory.mkdir()
-                    env = dict(clean, F2Z_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
-                               RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads), F2Z_BENCH_SEED=str(args.seed),
-                               F2Z_BENCH_REPS=str(args.reps), F2Z_BENCH_LAMBDA='100', F2Z_BENCH_PASS='latency',
-                               F2Z_BENCH_PHASE_SAMPLES='1', F2Z_BENCH_PROOF_FINGERPRINT='1', F2Z_MUL_COMPARE_BACKENDS='f2z', F2Z_MUL_COMPARE_MEMORY='0',
-                               F2Z_MUL_COMPARE_OUTPUT_DIR=str(directory/'native'), F2Z_MULTISWAP_TRACE_PATH=str(directory/'multiswap.jsonl'))
+                    env = dict(clean, BITZ_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
+                               RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads), BITZ_BENCH_SEED=str(args.seed),
+                               BITZ_BENCH_REPS=str(args.reps), BITZ_BENCH_LAMBDA='100', BITZ_BENCH_PASS='latency',
+                               BITZ_BENCH_PHASE_SAMPLES='1', BITZ_BENCH_PROOF_FINGERPRINT='1', BITZ_MUL_COMPARE_BACKENDS='bitz', BITZ_MUL_COMPARE_MEMORY='0',
+                               BITZ_MUL_COMPARE_OUTPUT_DIR=str(directory/'native'), BITZ_MULTISWAP_TRACE_PATH=str(directory/'multiswap.jsonl'))
                     env.update(case_env)
                     env.update(item.split('=', 1) for item in getattr(args, variant + '_env'))
                     cpus = ','.join(map(str, sorted(os.sched_getaffinity(0))[:threads]))

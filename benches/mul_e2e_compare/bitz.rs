@@ -1,10 +1,10 @@
 use super::{Corpus, Timing, Workload};
-use f2z::{
+use bitz::{
     piop::spartan::{
         Lambda100, PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation,
         U32MulLayout, U32MulWitness, U64MulLayout, U64MulWitness, U128MulLayout, U128MulWitness,
         commit_u32_mul_witness, commit_u64_mul_witness, commit_u128_mul_witness,
-        f2z::U32MulLigerito, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
+        bitz::U32MulLigerito, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
         verify_u64_mul, verify_u128_mul,
     },
     transcript::Blake3Transcript,
@@ -13,13 +13,13 @@ use f2z::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-/// `F2Z_U64_SPLIT_SHIFT=k`: lower the u64 F2Z row side by `k` variables
+/// `BITZ_U64_SPLIT_SHIFT=k`: lower the u64 BitZ row side by `k` variables
 /// below the layout's default split (raise the column side by `k`). An
 /// explicit campaign knob: the runner clears the ambient value, sets it per
 /// campaign, records it, and checks every sample against it.
 fn u64_split_shift() -> i8 {
-    std::env::var("F2Z_U64_SPLIT_SHIFT")
-        .map(|value| value.parse().expect("F2Z_U64_SPLIT_SHIFT must be an i8"))
+    std::env::var("BITZ_U64_SPLIT_SHIFT")
+        .map(|value| value.parse().expect("BITZ_U64_SPLIT_SHIFT must be an i8"))
         .unwrap_or(0)
 }
 
@@ -67,7 +67,7 @@ impl Context {
         Self { corpus, relation, split_shift }
     }
     pub(super) fn config(&self) -> Value {
-        let mut config = json!({"profile":"Lambda100","target_bits":100,"piop":"Spartan over transcript-sampled prime","pcs":"F2Z/Ligerito","word_bits":1});
+        let mut config = json!({"profile":"Lambda100","target_bits":100,"piop":"Spartan over transcript-sampled prime","pcs":"BitZ/Ligerito","word_bits":1});
         if let Relation::U32(relation) = &self.relation {
             let security = relation.security();
             let params = relation.params();
@@ -104,10 +104,10 @@ impl Context {
             Relation::U64(p) => {
                 config["ligerito"] =
                     super::common::ligerito_report(p.ligerito_configuration(), p.security().ood);
-                let params = p.layout().f2z_params();
+                let params = p.layout().bitz_params();
                 config["u64_split_shift"] = json!(self.split_shift);
-                config["f2z_t"] = json!(params.row_vars);
-                config["f2z_s"] = json!(params.col_vars);
+                config["bitz_t"] = json!(params.row_vars);
+                config["bitz_s"] = json!(params.col_vars);
             }
             Relation::U128(p) => {
                 config["ligerito"] =
@@ -118,9 +118,9 @@ impl Context {
         config
     }
     pub(super) fn run(&self) -> Timing {
-        let recording = Recording::start(Vec::new()).expect("start F2Z trial");
+        let recording = Recording::start(Vec::new()).expect("start BitZ trial");
         let proof_bytes = self.prove_and_verify();
-        let raw = recording.intervals().expect("query F2Z trial");
+        let raw = recording.intervals().expect("query BitZ trial");
         let trial = super::trace_capture::TrialScopes::from_spans(&raw, "benchmark");
         let mut timing = Timing::from_trial(&trial, proof_bytes);
         for (label, name, tag) in [
@@ -131,11 +131,11 @@ impl Context {
             ("step5:open_prove", "opening", "opening-proof"),
         ] {
             let mut matching = raw.iter().filter(|s| s.label() == label);
-            let s = matching.next().unwrap_or_else(|| panic!("missing F2Z {label}"));
-            assert!(matching.next().is_none(), "duplicate F2Z {label}");
+            let s = matching.next().unwrap_or_else(|| panic!("missing BitZ {label}"));
+            assert!(matching.next().is_none(), "duplicate BitZ {label}");
             timing.add(name, tag, s.start_ns, s.end_ns);
         }
-        super::common::print_regression_phases(&::f2z::observability::totals(
+        super::common::print_regression_phases(&::bitz::observability::totals(
             raw.iter().filter(|s| s.end_ns <= trial.verification.start_ns),
         ));
         for span in raw.iter().filter(|s| s.label() == "mc:forest") {
@@ -149,7 +149,7 @@ impl Context {
         let total = tracing::info_span!("Witness to proof", component = "benchmark.witness-to-proof").entered();
         // Serialized proof size: the commitment root, the Spartan payload as
         // 16-byte field elements, the transmitted nonces outside the opening
-        // as 8-byte words, and the F2Z opening's exact codec bytes.
+        // as 8-byte words, and the BitZ opening's exact codec bytes.
         let proof_bytes = match &self.relation {
             Relation::U32(relation) => {
                 let witness = {
@@ -165,7 +165,7 @@ impl Context {
                 let online = tracing::info_span!("native-mul:online").entered();
                 let hint = {
                     let _s = tracing::info_span!("native-mul:commit").entered();
-                    commit_u32_mul_witness(relation, witness.f2z_bit_rows())
+                    commit_u32_mul_witness(relation, witness.bitz_bit_rows())
                         .expect("u32 commitment")
                 };
                 let mut transcript = Blake3Transcript::new();
@@ -188,9 +188,9 @@ impl Context {
                 let bytes = hint.commitment.root.len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
-                        - proof.f2z().grinding_nonces.len())
+                        - proof.bitz().grinding_nonces.len())
                         * 8
-                    + proof.f2z().to_bytes().len();
+                    + proof.bitz().to_bytes().len();
                 std::hint::black_box(proof);
                 bytes
             }
@@ -207,7 +207,7 @@ impl Context {
                 let online = tracing::info_span!("native-mul:online").entered();
                 let hint = {
                     let _s = tracing::info_span!("native-mul:commit").entered();
-                    commit_u64_mul_witness(relation, witness.f2z_bit_rows())
+                    commit_u64_mul_witness(relation, witness.bitz_bit_rows())
                         .expect("u64 commitment")
                 };
                 let mut transcript = Blake3Transcript::new();
@@ -243,7 +243,7 @@ impl Context {
                 let online = tracing::info_span!("native-mul:online").entered();
                 let hint = {
                     let _s = tracing::info_span!("native-mul:commit").entered();
-                    commit_u128_mul_witness(relation, witness.f2z_bit_rows())
+                    commit_u128_mul_witness(relation, witness.bitz_bit_rows())
                         .expect("u128 commitment")
                 };
                 let mut transcript = Blake3Transcript::new();
@@ -274,11 +274,11 @@ impl Context {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let split_shift = if corpus.workload == Workload::U64 { u64_split_shift() } else { 0 };
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
-    let started = tracing::info_span!("mul_e2e_compare/f2z:started").entered();
+    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started = tracing::info_span!("mul_e2e_compare/bitz:started").entered();
     if corpus.workload.is_wide() {
         let w = U128MulWitness::from_inputs(corpus.wide_inputs()).unwrap();
-        let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+        let ms = { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/bitz:started").expect("query completed operation") }.as_secs_f64() * 1e3;
         let rows = (0..corpus.len())
             .map(|i| {
                 [
@@ -289,12 +289,12 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
                 ]
             })
             .collect();
-        return super::WitnessAudit::check_wide(corpus, rows, ms, "F2Z integer assignment");
+        return super::WitnessAudit::check_wide(corpus, rows, ms, "BitZ integer assignment");
     }
     let (rows, generation_ms) = match corpus.workload {
         Workload::U32 => {
             let w = U32MulWitness::from_inputs(&corpus.narrow_inputs()).unwrap();
-            let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+            let ms = { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/bitz:started").expect("query completed operation") }.as_secs_f64() * 1e3;
             (
                 (0..corpus.len())
                     .map(|i| {
@@ -314,7 +314,7 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
             let w = U64MulWitness::from_inputs(corpus.inputs())
                 .and_then(|w| w.with_split_shift(split_shift))
                 .unwrap();
-            let ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/f2z:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+            let ms = { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/bitz:started").expect("query completed operation") }.as_secs_f64() * 1e3;
             (
                 (0..corpus.len())
                     .map(|i| {
@@ -331,21 +331,21 @@ pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
         }
         Workload::U128 => unreachable!(),
     };
-    super::WitnessAudit::check(corpus, rows, generation_ms, "F2Z integer assignment", false)
+    super::WitnessAudit::check(corpus, rows, generation_ms, "BitZ integer assignment", false)
 }
 
 #[cfg(test)]
 #[allow(unused_imports)]
 mod tests {
     #[test]
-    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises F2Z span metrics"]
-    fn f2z_trials_use_perfetto_without_the_legacy_profiler() {
+    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises BitZ span metrics"]
+    fn bitz_trials_use_perfetto_without_the_legacy_profiler() {
         use super::*;
         let _trace = super::super::common::test_tracing();
         use tracing_subscriber::prelude::*;
         let context = Context::setup(Arc::new(Corpus::new(Workload::U32, 15, 7)));
         let bytes = tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || context.prove_and_verify());
-        tracing::subscriber::with_default(tracing_subscriber::registry().with(f2z::observability::layer()), || {
+        tracing::subscriber::with_default(tracing_subscriber::registry().with(bitz::observability::layer()), || {
             for _ in 0..6 {
                 let timing = context.run();
                 timing.validate();
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(config["target_bits"], 100);
         assert_eq!(config["ood_present"], true);
         let identity = &config["ligerito"];
-        f2z::ligerito_flock::ResolvedLigerito::validate_report(identity).unwrap();
+        bitz::ligerito_flock::ResolvedLigerito::validate_report(identity).unwrap();
         assert_eq!(identity["target_bits"], 100);
         assert_eq!(identity["configuration"]["target_security_bits"], 100);
         assert_eq!(identity["configuration"]["levels"][0]["regime"], "johnson_ood");
@@ -407,7 +407,7 @@ mod tests {
             unreachable!()
         };
         let witness = U32MulWitness::from_inputs(&inputs).unwrap();
-        let hint = commit_u32_mul_witness(relation, witness.f2z_bit_rows()).unwrap();
+        let hint = commit_u32_mul_witness(relation, witness.bitz_bit_rows()).unwrap();
         let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint).unwrap();
         verify_u32_mul(
             &mut Blake3Transcript::new(),
@@ -429,7 +429,7 @@ mod tests {
                 rows[1].z ^= 1;
             }
             let bad = U32MulWitness::from_mod32_rows(&rows).unwrap();
-            let bad_hint = commit_u32_mul_witness(relation, bad.f2z_bit_rows()).unwrap();
+            let bad_hint = commit_u32_mul_witness(relation, bad.bitz_bit_rows()).unwrap();
             if let Ok(bad_proof) =
                 prove_u32_mul(&mut Blake3Transcript::new(), relation, &bad, &bad_hint)
             {

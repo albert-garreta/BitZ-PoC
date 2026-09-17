@@ -7,7 +7,7 @@ use crate::{
     merged_forest::{MergedForestProof, MergedLayer},
     piop::spartan::{
         SpartanField,
-        f2z::SpartanF2zField as Q,
+        bitz::SpartanBitzField as Q,
         sumcheck::{OuterSumcheckProof, SumcheckProof as QSumcheck},
         univariate_skip::{
             UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
@@ -163,7 +163,7 @@ impl HybridProof {
             w.gf(&layer.pair.0);
             w.gf(&layer.pair.1);
             // This protocol always uses the binary forest, regardless of
-            // environment variables controlling standalone F2Z schedules.
+            // environment variables controlling standalone BitZ schedules.
             assert!(layer.pair2.is_none());
         }
         w.len(self.sha.len());

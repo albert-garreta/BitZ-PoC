@@ -1,14 +1,14 @@
 > **Deprecated:** ZKPassport is retired from active SHA-chain/P-256 comparisons.
 > The commands below describe the historical integration; reproduce old results
 > from their recorded source revision. New campaigns use standard P-256 fixtures
-> and the [F2Z/Spartan2/Binius runner](../../docs/sha256-ecdsa-comparison.md).
+> and the [BitZ/Spartan2/Binius runner](../../docs/sha256-ecdsa-comparison.md).
 
 # Native non-ZK ZKPassport comparison
 
 The Rust worker in this directory calls `noir_rs` and the native Barretenberg
 5.0.0 library directly. There is no Node subprocess, WASM prover, or passport
 application logic in a measured sample. The standalone Cargo workspace keeps
-the pinned Noir toolchain out of the F2Z crate's normal dependency graph.
+the pinned Noir toolchain out of the BitZ crate's normal dependency graph.
 
 Use the sibling `../zk-passport-circuits` checkout on `f2z-benching`. Its
 `benchmarks/sha256-ecdsa` package contains the SHA chain and the P-256 circuit.
@@ -23,7 +23,7 @@ From the BitZ-pcs root, first build and validate the native runner:
 ```sh
 python3 benchmarks/zkpassport/build.py --test
 python3 scripts/run_sha256_ecdsa_compare.py \
-  --methods f2z-split zkpassport-honk --exponents 3 5 8 \
+  --methods bitz-split zkpassport-honk --exponents 3 5 8 \
   --targets 100 128 --threads 16 --reps 3 \
   --output bench_results/sha256-ecdsa-zkpassport-16t
 ```
@@ -34,14 +34,14 @@ per worker or Noir compilation, configurable with `--memory-gib` and `--timeout`
 Large circuits may exceed these limits; failed preparations, failed workers,
 and timeouts are recorded alongside successful samples. Methods run sequentially
 in fresh processes, with one warmup followed by `--reps` measured trials.
-Barretenberg runs once per exponent/thread/seed, independently of the F2Z
-economic-security target. This campaign uses F2Z Split mode.
+Barretenberg runs once per exponent/thread/seed, independently of the BitZ
+economic-security target. This campaign uses BitZ Split mode.
 
 Rerun the same command to resume completed work; add `--retry-failed` to retry
 failures. Changed binaries, circuit sources, artifacts, or fixtures require
 a new output directory. `--offline` requires Rust dependencies, native tools,
 Noir dependencies, and the circuit-size-specific SRS already cached.
-Existing F2Z/Spartan campaigns retain their defaults when `zkpassport-honk`
+Existing BitZ/Spartan campaigns retain their defaults when `zkpassport-honk`
 is not selected.
 
 The managed bootstrap supports Linux x86_64. It verifies SHA-256 hashes for
@@ -60,7 +60,7 @@ P-256 signature. SHA padding is constrained, giving exactly `2^i` compressions.
 The digest is computed inside the circuit. Public coordinates and scalars use
 canonical big-endian encodings; signatures have `0 < s <= n/2`.
 
-The existing F2Z worker exports a deterministic, versioned JSON fixture. Its
+The existing BitZ worker exports a deterministic, versioned JSON fixture. Its
 low-s normalization and native signature validation run before all measured
 trials. Both workers consume the same fixture and report its content ID.
 Application verification includes the same public-domain validation on both
@@ -95,7 +95,7 @@ over BN254. The private input annotation does not make this proof zero knowledge
 - `peak_rss_bytes`: the whole worker's peak resident memory, including setup
   and all trials. It is not a per-trial allocation measurement.
 
-F2Z's reported economic targets and the BN254 KZG security model use different
+BitZ's reported economic targets and the BN254 KZG security model use different
 accounting. The harness records them separately and does not assign a fabricated
 100-bit/128-bit target to Barretenberg.
 

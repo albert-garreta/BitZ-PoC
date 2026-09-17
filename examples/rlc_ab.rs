@@ -14,12 +14,12 @@
 //! extra profiled prove of `rlc3` and `vx3` dumps the phase tree per shape.
 //!
 //! ```text
-//! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+//! BITZ_AB_N="22 24 26" BITZ_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 //!   cargo run --release --example rlc_ab --features unchecked,span-metrics
 //! ```
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{
     RlcFamilyClaim, RlcSharedClaim, VirtualXorClaim, VirtualXorVerifyClaim,
     commit_rs_ligerito_rows, historical_sha_lig_configs,
     mle_eval_mod_q_lig_rlc_family_proof_size_bytes, mle_eval_mod_q_lig_xor_proof_size_bytes,
@@ -28,11 +28,11 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito_claims_only, verify_mle_eval_mod_q_ligerito_rlc_family,
     verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
 };
-use f2z::pcs::{
+use bitz::pcs::{
     FQ_BITS, FQ_MOD, IntegerMatrixLayout, Q100Element, ShaF2Layout, extract_virtual_xor_rows,
     smallest_generator, virtual_xor_params,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 /// n → the A/B layout: 4 UAIR columns (log_cols = 2) of 32-bit words
 /// (bit_vars = 5), the remaining n − 2 variables split t' vs s as evenly
@@ -64,12 +64,12 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
-    let ns: Vec<usize> = std::env::var("F2Z_AB_N")
+    let ns: Vec<usize> = std::env::var("BITZ_AB_N")
         .map(|v| v.split_whitespace().map(|x| x.parse().unwrap()).collect())
         .unwrap_or_else(|_| vec![22, 24]);
-    let reps: usize = std::env::var("F2Z_AB_REPS").map_or(5, |v| v.parse().unwrap());
+    let reps: usize = std::env::var("BITZ_AB_REPS").map_or(5, |v| v.parse().unwrap());
     let profile = std::env::var("OBLONG_PROFILE").is_ok_and(|v| v == "1");
 
     for &n in &ns {
@@ -155,11 +155,11 @@ fn main() {
                 .collect()
         };
 
-        // Optional single-claim comparisons (F2Z_AB_SINGLES=1): the same
+        // Optional single-claim comparisons (BITZ_AB_SINGLES=1): the same
         // lone claim through the family API (j=1, k=1), and a lone XOR
         // claim through both APIs (family j=2 k=1 form=11 — the elided
         // pure-XOR family — vs the vx extraction path).
-        let singles = std::env::var("F2Z_AB_SINGLES").is_ok_and(|v| v == "1");
+        let singles = std::env::var("BITZ_AB_SINGLES").is_ok_and(|v| v == "1");
         let c_xor = cs[2];
         let single_family_col = [family_cols[0]];
         let rlc1_claims = vec![RlcFamilyClaim {
@@ -178,7 +178,7 @@ fn main() {
             let mut t_vxx1 = Vec::with_capacity(reps);
             let mut t_single1 = Vec::with_capacity(reps);
             for _ in 0..reps {
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
@@ -196,7 +196,7 @@ fn main() {
                 t_single1.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -209,7 +209,7 @@ fn main() {
                 );
                 std::hint::black_box(&pr);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
@@ -227,7 +227,7 @@ fn main() {
                 t_rlc1.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -240,7 +240,7 @@ fn main() {
                 );
                 std::hint::black_box(&pr);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
@@ -258,7 +258,7 @@ fn main() {
                 t_vxx1.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -271,7 +271,7 @@ fn main() {
                 );
                 std::hint::black_box(&pr);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
@@ -289,7 +289,7 @@ fn main() {
                 t_rlcx1.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -360,10 +360,10 @@ fn main() {
             );
         }
 
-        // Optional j = 3 family A/B (F2Z_AB_J3=1): k = 4 claims on cols
+        // Optional j = 3 family A/B (BITZ_AB_J3=1): k = 4 claims on cols
         // {0},{1},{2},{0,1,2} — the cascade discharge (level-2 AND) path —
         // vs the batched-vx and independent baselines on the same statement.
-        if std::env::var("F2Z_AB_J3").is_ok_and(|v| v == "1") {
+        if std::env::var("BITZ_AB_J3").is_ok_and(|v| v == "1") {
             let family3 = [0usize, 1, 2];
             let forms3 = [0b001usize, 0b010, 0b100, 0b111];
             let col_lists3: Vec<Vec<usize>> = vec![vec![0], vec![1], vec![2], vec![0, 1, 2]];
@@ -421,7 +421,7 @@ fn main() {
             let mut t_ind4 = Vec::with_capacity(reps);
             let mut sz = (0usize, 0usize, 0usize);
             for rep in 0..reps {
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_rlc = {
@@ -433,7 +433,7 @@ fn main() {
                 t_rlc4.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -446,7 +446,7 @@ fn main() {
                 );
                 std::hint::black_box(&pr_rlc);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_vx = {
@@ -464,7 +464,7 @@ fn main() {
                 t_vx4.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -477,7 +477,7 @@ fn main() {
                 );
                 std::hint::black_box(&pr_vx);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new())
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
                     .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_inds: Vec<_> = (0..4)
@@ -497,7 +497,7 @@ fn main() {
                 t_ind4.push(
                     {
                         drop(t0);
-                        f2z::observability::duration(
+                        bitz::observability::duration(
                             &t0_recording
                                 .intervals()
                                 .expect("complete operation capture"),
@@ -545,7 +545,7 @@ fn main() {
             );
         }
 
-        // Optional SHARED-POINT maximal families (F2Z_AB_SHARED=1): the
+        // Optional SHARED-POINT maximal families (BITZ_AB_SHARED=1): the
         // full XOR-closure of j columns at ONE point — j = 2: k = 3,
         // j = 3: k = 7, j = 4: k = 15 — through (rlcS) the shared-point
         // API, (rlcG) the general family API on the same statement (k
@@ -553,11 +553,11 @@ fn main() {
         // rank-1 case build), (vx) the batched virtual-XOR path, and (ind)
         // k independent proofs. Verify medians per arm. The vx forest pads
         // k to 2^⌈log₂k⌉ tree-sets of 16 B leaves and is SKIPPED above an
-        // ~8 GB estimate (k = 15 at n = 28). `F2Z_AB_STMTS=S` averages
+        // ~8 GB estimate (k = 15 at n = 28). `BITZ_AB_STMTS=S` averages
         // over S statements (FS grinding luck is deterministic per
         // statement — material at n ≤ 24).
-        if std::env::var("F2Z_AB_SHARED").is_ok_and(|v| v == "1") {
-            let stmts: usize = std::env::var("F2Z_AB_STMTS").map_or(1, |v| v.parse().unwrap());
+        if std::env::var("BITZ_AB_SHARED").is_ok_and(|v| v == "1") {
+            let stmts: usize = std::env::var("BITZ_AB_STMTS").map_or(1, |v| v.parse().unwrap());
             for j in [2usize, 3, 4] {
                 let k = (1usize << j) - 1;
                 let family: Vec<usize> = (0..j).collect();
@@ -644,7 +644,7 @@ fn main() {
                     let mut t: Vec<Vec<f64>> = vec![Vec::with_capacity(reps); 8];
                     let mut sz = (0usize, 0usize, 0usize);
                     for rep in 0..reps {
-                        let t0_recording = f2z::observability::Recording::start(Vec::new())
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
                             .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_s = {
@@ -656,7 +656,7 @@ fn main() {
                         t[0].push(
                             {
                                 drop(t0);
-                                f2z::observability::duration(
+                                bitz::observability::duration(
                                     &t0_recording
                                         .intervals()
                                         .expect("complete operation capture"),
@@ -667,7 +667,7 @@ fn main() {
                             .as_secs_f64()
                                 * 1e3,
                         );
-                        let t0_recording = f2z::observability::Recording::start(Vec::new())
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
                             .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         {
@@ -689,7 +689,7 @@ fn main() {
                         t[4].push(
                             {
                                 drop(t0);
-                                f2z::observability::duration(
+                                bitz::observability::duration(
                                     &t0_recording
                                         .intervals()
                                         .expect("complete operation capture"),
@@ -701,7 +701,7 @@ fn main() {
                                 * 1e3,
                         );
 
-                        let t0_recording = f2z::observability::Recording::start(Vec::new())
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
                             .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_g = {
@@ -719,7 +719,7 @@ fn main() {
                         t[1].push(
                             {
                                 drop(t0);
-                                f2z::observability::duration(
+                                bitz::observability::duration(
                                     &t0_recording
                                         .intervals()
                                         .expect("complete operation capture"),
@@ -730,7 +730,7 @@ fn main() {
                             .as_secs_f64()
                                 * 1e3,
                         );
-                        let t0_recording = f2z::observability::Recording::start(Vec::new())
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
                             .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         {
@@ -751,7 +751,7 @@ fn main() {
                         t[5].push(
                             {
                                 drop(t0);
-                                f2z::observability::duration(
+                                bitz::observability::duration(
                                     &t0_recording
                                         .intervals()
                                         .expect("complete operation capture"),
@@ -764,7 +764,7 @@ fn main() {
                         );
 
                         let pr_vx = if run_vx {
-                            let t0_recording = f2z::observability::Recording::start(Vec::new())
+                            let t0_recording = bitz::observability::Recording::start(Vec::new())
                                 .expect("start operation capture");
                             let t0 = tracing::info_span!("rlc_ab:t0").entered();
                             let pr = {
@@ -776,7 +776,7 @@ fn main() {
                             t[2].push(
                                 {
                                     drop(t0);
-                                    f2z::observability::duration(
+                                    bitz::observability::duration(
                                         &t0_recording
                                             .intervals()
                                             .expect("complete operation capture"),
@@ -787,7 +787,7 @@ fn main() {
                                 .as_secs_f64()
                                     * 1e3,
                             );
-                            let t0_recording = f2z::observability::Recording::start(Vec::new())
+                            let t0_recording = bitz::observability::Recording::start(Vec::new())
                                 .expect("start operation capture");
                             let t0 = tracing::info_span!("rlc_ab:t0").entered();
                             {
@@ -807,7 +807,7 @@ fn main() {
                             t[6].push(
                                 {
                                     drop(t0);
-                                    f2z::observability::duration(
+                                    bitz::observability::duration(
                                         &t0_recording
                                             .intervals()
                                             .expect("complete operation capture"),
@@ -823,7 +823,7 @@ fn main() {
                             None
                         };
 
-                        let t0_recording = f2z::observability::Recording::start(Vec::new())
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
                             .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_inds: Vec<_> = (0..k)
@@ -843,7 +843,7 @@ fn main() {
                         t[3].push(
                             {
                                 drop(t0);
-                                f2z::observability::duration(
+                                bitz::observability::duration(
                                     &t0_recording
                                         .intervals()
                                         .expect("complete operation capture"),
@@ -854,7 +854,7 @@ fn main() {
                             .as_secs_f64()
                                 * 1e3,
                         );
-                        let t0_recording = f2z::observability::Recording::start(Vec::new())
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
                             .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         for (i, pr) in pr_inds.iter().enumerate() {
@@ -874,7 +874,7 @@ fn main() {
                         t[7].push(
                             {
                                 drop(t0);
-                                f2z::observability::duration(
+                                bitz::observability::duration(
                                     &t0_recording
                                         .intervals()
                                         .expect("complete operation capture"),
@@ -985,11 +985,11 @@ fn main() {
                         .collect();
                     let mut pt = Blake3Transcript::new();
                     let profile =
-                        f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                        bitz::observability::Recording::start(Vec::new()).expect("capture profile");
                     let pr = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                         &mut pt, &hint, &layout, &family, &rw_p, &cl_p, alpha, &pc,
                     );
-                    f2z::observability::write_profile(
+                    bitz::observability::write_profile(
                         std::io::stderr().lock(),
                         &format!("rlcS prove j{j} n={n}"),
                         &profile.intervals().expect("profile intervals"),
@@ -997,7 +997,7 @@ fn main() {
                     )
                     .expect("write profile");
                     let profile =
-                        f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                        bitz::observability::Recording::start(Vec::new()).expect("capture profile");
                     let mut vt = Blake3Transcript::new();
                     verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                         &mut vt,
@@ -1012,7 +1012,7 @@ fn main() {
                         &vc,
                     )
                     .expect("profiled rlcS verifies");
-                    f2z::observability::write_profile(
+                    bitz::observability::write_profile(
                         std::io::stderr().lock(),
                         &format!("rlcS verify j{j} n={n}"),
                         &profile.intervals().expect("profile intervals"),
@@ -1031,7 +1031,7 @@ fn main() {
         let mut sizes = (0usize, 0usize, 0usize); // rlc3, vx3, ind3
         for rep in 0..reps {
             let t0_recording =
-                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_single = {
                 let mut pt = Blake3Transcript::new();
@@ -1048,7 +1048,7 @@ fn main() {
             t_single.push(
                 {
                     drop(t0);
-                    f2z::observability::duration(
+                    bitz::observability::duration(
                         &t0_recording
                             .intervals()
                             .expect("complete operation capture"),
@@ -1062,7 +1062,7 @@ fn main() {
             std::hint::black_box(&pr_single);
 
             let t0_recording =
-                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_rlc = {
                 let mut pt = Blake3Transcript::new();
@@ -1079,7 +1079,7 @@ fn main() {
             t_rlc3.push(
                 {
                     drop(t0);
-                    f2z::observability::duration(
+                    bitz::observability::duration(
                         &t0_recording
                             .intervals()
                             .expect("complete operation capture"),
@@ -1093,7 +1093,7 @@ fn main() {
             std::hint::black_box(&pr_rlc);
 
             let t0_recording =
-                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_vx3 = {
                 let mut pt = Blake3Transcript::new();
@@ -1110,7 +1110,7 @@ fn main() {
             t_vx3.push(
                 {
                     drop(t0);
-                    f2z::observability::duration(
+                    bitz::observability::duration(
                         &t0_recording
                             .intervals()
                             .expect("complete operation capture"),
@@ -1124,7 +1124,7 @@ fn main() {
             std::hint::black_box(&pr_vx3);
 
             let t0_recording =
-                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_inds: Vec<_> = (0..3)
                 .map(|i| {
@@ -1143,7 +1143,7 @@ fn main() {
             t_ind3.push(
                 {
                     drop(t0);
-                    f2z::observability::duration(
+                    bitz::observability::duration(
                         &t0_recording
                             .intervals()
                             .expect("complete operation capture"),
@@ -1253,7 +1253,7 @@ fn main() {
         if profile {
             let mut pt = Blake3Transcript::new();
             let profile =
-                f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                bitz::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
                 &mut pt,
                 &hint,
@@ -1264,7 +1264,7 @@ fn main() {
                 &pc,
             );
             std::hint::black_box(&pr);
-            f2z::observability::write_profile(
+            bitz::observability::write_profile(
                 std::io::stderr().lock(),
                 &format!("rlc3 n={n}"),
                 &profile.intervals().expect("profile intervals"),
@@ -1273,7 +1273,7 @@ fn main() {
             .expect("write profile");
             let mut pt = Blake3Transcript::new();
             let profile =
-                f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                bitz::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_mle_eval_mod_q_ligerito_claims_only(
                 &mut pt,
                 &hint,
@@ -1284,7 +1284,7 @@ fn main() {
                 &pc,
             );
             std::hint::black_box(&pr);
-            f2z::observability::write_profile(
+            bitz::observability::write_profile(
                 std::io::stderr().lock(),
                 &format!("vx3 n={n}"),
                 &profile.intervals().expect("profile intervals"),

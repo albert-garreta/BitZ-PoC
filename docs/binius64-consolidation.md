@@ -21,7 +21,7 @@ Public inputs now contain only instance input/output words; circuit constants
 come from setup. The hybrid verifier independently constructs the eight final
 SHA state words, observes them in its transcript, checks the public-segment
 sumcheck, and checks the claimed wiring evaluation natively. Only the private
-trace evaluation remains for the joint sumcheck and shared F2Z opening.
+trace evaluation remains for the joint sumcheck and shared BitZ opening.
 
 The ordinary Binius prover still completes private ring switching and deferred
 BaseFold opening. Trace metadata keeps the `prepare_witness`, `commit_witness`

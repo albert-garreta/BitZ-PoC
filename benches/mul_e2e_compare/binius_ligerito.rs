@@ -1,16 +1,16 @@
 //! `binius64-ligerito`: Binius64's native multiplication circuit and PIOP
 //! (the same wires as the `binius64` backend), with every oracle committed
-//! and opened by the F2Z opener — Johnson-regime Ligerito with fold and query
+//! and opened by the BitZ opener — Johnson-regime Ligerito with fold and query
 //! grinding and Round 0, at the campaign's Binius rate
-//! (`F2Z_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2) — and the whole protocol
-//! gated at 100 bits under `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default;
+//! (`BITZ_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2) — and the whole protocol
+//! gated at 100 bits under `BITZ_BINIUS_LIGERITO_ACCOUNTING`: `union` (default;
 //! a union bound over every term) or `rbr` (the round-by-round minimum, the
-//! figure F2Z's own rows report).
+//! figure BitZ's own rows report).
 use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
 use super::{CapturedSpan, Corpus, Timing, Workload, binius};
 use binius_frontend::Circuit;
-use f2z::binius_ligerito::{Accounting, Prepared};
-use f2z::observability::Recording;
+use bitz::binius_ligerito::{Accounting, Prepared};
+use bitz::observability::Recording;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -24,10 +24,10 @@ pub(super) struct Context {
 impl Context {
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
         let (circuit, wires) = binius::compile(&corpus);
-        let rate = std::env::var("F2Z_BINIUS_LIGERITO_LOG_INV_RATE")
+        let rate = std::env::var("BITZ_BINIUS_LIGERITO_LOG_INV_RATE")
             .map(|s| {
                 s.parse()
-                    .expect("F2Z_BINIUS_LIGERITO_LOG_INV_RATE must be 1, 2, or 3")
+                    .expect("BITZ_BINIUS_LIGERITO_LOG_INV_RATE must be 1, 2, or 3")
             })
             .unwrap_or_else(|_| binius::log_inv_rate());
         let prepared = Prepared::with_options(circuit.constraint_system(), rate, accounting())
@@ -55,7 +55,7 @@ impl Context {
         let witness = self.prepared.opener(0);
         json!({
             "piop": piop,
-            "pcs": "F2Z opener: ring switching + Johnson-regime Ligerito with fold/query grinding and Round 0",
+            "pcs": "BitZ opener: ring switching + Johnson-regime Ligerito with fold/query grinding and Round 0",
             "log_inv_rate": self.prepared.log_inv_rate(),
             "regime": "johnson-ood",
             "accounting": security.accounting.name(),
@@ -200,7 +200,7 @@ mod tests {
         use super::*;
         use tracing_subscriber::prelude::*;
 
-        // The F2Z opener requires packed log >= 13.
+        // The BitZ opener requires packed log >= 13.
         let context = Context::setup(Arc::new(Corpus::new(Workload::U32, 11, 7)));
         let witness = binius::populate(&context.corpus, &context.circuit, &context.wires, false)
             .unwrap()
@@ -215,7 +215,7 @@ mod tests {
             });
         assert_eq!(memory_bytes, expected.len());
         tracing::subscriber::with_default(
-            tracing_subscriber::registry().with(f2z::observability::layer()),
+            tracing_subscriber::registry().with(bitz::observability::layer()),
             || {
                 let recording = Recording::start(Vec::new()).unwrap();
                 let proof = context.prepared.prove(&witness).unwrap().to_bytes();
@@ -247,11 +247,11 @@ mod tests {
     }
 }
 
-/// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`.
+/// `BITZ_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`.
 fn accounting() -> Accounting {
-    match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
+    match std::env::var("BITZ_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
         Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,
         Ok("rbr") | Ok("round-by-round") => Accounting::RoundByRound,
-        Ok(other) => panic!("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
+        Ok(other) => panic!("BITZ_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
     }
 }

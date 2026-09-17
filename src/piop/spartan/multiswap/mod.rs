@@ -1,20 +1,20 @@
-//! MultiSwap through F2Z: Limber's integer Mod-R1CS proved with a Spartan
-//! PIOP over a transcript-sampled prime and an F2Z bit-commitment opening.
+//! MultiSwap through BitZ: Limber's integer Mod-R1CS proved with a Spartan
+//! PIOP over a transcript-sampled prime and an BitZ bit-commitment opening.
 //!
 //! This module realizes, on Limber's own flagship benchmark circuit, the
-//! comparison F2Z targets: Limber commits limb-split integers with a wrapped
-//! PCS and range-checks every limb with LogUp-GKR; F2Z commits the same
+//! comparison BitZ targets: Limber commits limb-split integers with a wrapped
+//! PCS and range-checks every limb with LogUp-GKR; BitZ commits the same
 //! values as raw bits — a committed F2 bit is in `{0,1}` by construction —
 //! and binds their integer evaluations through the exponent-fold forest.
 //!
 //! Pipeline: [`circuit`] builds the wired 6209-row instance ported verbatim
 //! from `lucasxia01/limber-impl`; [`relation`] folds the per-row moduli into
 //! the output matrix and lays the witness and quotient values out as a
-//! `2^25`-bit F2Z tensor; [`prime`] samples the post-commitment 128-bit
+//! `2^25`-bit BitZ tensor; [`prime`] samples the post-commitment 128-bit
 //! fingerprint prime and the 113-bit Step 5.0 reduction prime; [`reduce`]
 //! implements Step 5.0 (the paper's large-field modulus reduction);
 //! [`proof`] runs the stock Spartan PIOP over the fingerprint field and
-//! discharges the reduced terminal claim with the runtime-prime F2Z
+//! discharges the reduced terminal claim with the runtime-prime BitZ
 //! opening.  The two-prime schedule reaches the documented 114-bit floors
 //! with a single `2^10`-hash grind.
 

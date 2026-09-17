@@ -5,7 +5,7 @@
 //! the circuit behind Table 1 of "Limber: Low Overhead SNARKs for Integers
 //! from Any PCS" (ePrint 2026/1635).  The constants, row/column allocation
 //! order, witness advice, and per-row modulus schedule are reproduced
-//! exactly so an F2Z proof of this relation is a proof of the same 6209-row
+//! exactly so an BitZ proof of this relation is a proof of the same 6209-row
 //! statement Limber benchmarks (`k = 0`, the only configuration Limber's
 //! authors mark quotable).
 //!
@@ -42,7 +42,7 @@ use thiserror::Error;
 ///
 /// Every value in the wired circuit is reduced modulo one of the circuit
 /// moduli (all `< 2^2048`) or is a quotient of a product of two such values
-/// by its modulus, so `2^2048` bounds both blocks.  The F2Z commitment
+/// by its modulus, so `2^2048` bounds both blocks.  The BitZ commitment
 /// stores exactly this many little-endian bits per assignment entry.
 pub const MULTISWAP_VALUE_BITS: usize = 2048;
 
@@ -67,7 +67,7 @@ const N_GROUP_MULS: usize = 2;
 /// Exponent bit length of the Fiat--Shamir prime challenge `l`.
 const ELL_BITS: usize = 352;
 
-const CIRCUIT_DIGEST_DOMAIN: &[u8] = b"f2z/multiswap/circuit-digest/v1";
+const CIRCUIT_DIGEST_DOMAIN: &[u8] = b"bitz/multiswap/circuit-digest/v1";
 
 /// Row/column dimension schedule of one wired MultiSwap instance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -684,7 +684,7 @@ impl MultiswapCircuit {
     /// unchanged for B=1; this envelope additionally binds roles and public IO.
     pub fn comparison_statement_digest(&self) -> [u8; 32] {
         let mut h = Hasher::new();
-        h.update(b"f2z-limber/multiswap-statement/v2");
+        h.update(b"bitz-limber/multiswap-statement/v2");
         h.update(&self.statement_digest());
         for v in [
             self.batch_count,

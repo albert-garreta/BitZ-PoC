@@ -1,4 +1,4 @@
-//! SHA-256 compression synthesis and its structured Spartan/F2Z adapter.
+//! SHA-256 compression synthesis and its structured Spartan/BitZ adapter.
 
 mod chain;
 mod constraints;
@@ -44,7 +44,7 @@ pub use prime::{
     SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
 };
 pub use proof::{
-    SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionProof, Sha256F2zError,
+    SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionProof, Sha256BitzError,
     commit_sha256_compression_witness, commit_sha256_compression_witness_with_config,
     prove_sha256_compressions, prove_sha256_compressions_with_config,
     prove_sha256_compressions_with_prefix_vars,

@@ -345,7 +345,7 @@ trusted `from_canonical_words` constructor and masked `from_canonical_ct` decodi
 with a fixed-bound scalar tail. Construction allocates the powers; `_into`
 allocates nothing. High input bits outside the declared width are ignored.
 
-F2Z and Flock use the same `Gf128` type and canonical codec. Runtime proof owners
+BitZ and Flock use the same `Gf128` type and canonical codec. Runtime proof owners
 retain one `FpCtx<2>` for their `Fp<2>` values; codecs require that context rather
 than reconstructing it from each element. `XorAccumulator::into_payload` exposes
 an unreduced binary product for explicit output representation conversion.

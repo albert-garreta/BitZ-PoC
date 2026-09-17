@@ -11,14 +11,14 @@
 //! with five measured repetitions. Override it with, for example:
 //!
 //! ```text
-//! F2Z_BENCH_SHAPES="15 17 19" F2Z_BENCH_REPS=7 \
+//! BITZ_BENCH_SHAPES="15 17 19" BITZ_BENCH_REPS=7 \
 //!   cargo bench --bench u32_mul_outer_skip
 //! ```
 //!
-//! `F2Z_BENCH_PASS=latency|memory|both` separates repeated timing trials from
+//! `BITZ_BENCH_PASS=latency|memory|both` separates repeated timing trials from
 //! the extra peak-heap proof. Memory measurement requires
 //! `--features bench-peak-memory`; keeping it in a separate invocation avoids
-//! allocator accounting in the latency run. `F2Z_BENCH_ORDER` rotates the
+//! allocator accounting in the latency run. `BITZ_BENCH_ORDER` rotates the
 //! first measured protocol across fresh processes.
 
 mod common;
@@ -31,12 +31,12 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use f2z::{
+use bitz::{
     piop::spartan::{
-        PreparedConstraintMatrices, R1csProductMles, SpartanF2zField, SpartanPiopProof,
+        PreparedConstraintMatrices, R1csProductMles, SpartanBitzField, SpartanPiopProof,
         U32MulWitness, UnivariateSkipSpartanPiopProof, prepare_u32_mul_relation,
         project_u32_mul_native_witness, prove_spartan_piop_u32_native,
-        prove_spartan_piop_u32_native_with_univariate_skip, spartan_f2z_field_config,
+        prove_spartan_piop_u32_native_with_univariate_skip, spartan_bitz_field_config,
         verify_spartan_proof, verify_spartan_univariate_skip_proof,
     },
     poly::mle::DenseMultilinearExtension,
@@ -349,7 +349,7 @@ fn phase_timings(
 }
 
 fn standard_proof_shape(
-    proof: &SpartanPiopProof<SpartanF2zField>,
+    proof: &SpartanPiopProof<SpartanBitzField>,
     row_vars: usize,
     column_vars: usize,
 ) -> ProofShape {
@@ -366,7 +366,7 @@ fn standard_proof_shape(
 }
 
 fn skip_proof_shape(
-    proof: &UnivariateSkipSpartanPiopProof<SpartanF2zField>,
+    proof: &UnivariateSkipSpartanPiopProof<SpartanBitzField>,
     row_vars: usize,
     column_vars: usize,
     skip_vars: usize,
@@ -397,13 +397,13 @@ fn skip_proof_shape(
 
 fn run_latency_trial(
     protocol: Protocol,
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &PreparedConstraintMatrices<SpartanBitzField, bool>,
     products: &R1csProductMles<u64>,
     assignment: &DenseMultilinearExtension<u64>,
 ) -> LatencyTrial {
     let sample_products = products.clone();
     let sample_assignment = assignment.clone();
-    let recording = f2z::observability::Recording::start(Vec::new()).expect("start outer-policy trial");
+    let recording = bitz::observability::Recording::start(Vec::new()).expect("start outer-policy trial");
 
     match protocol {
         Protocol::Standard => {
@@ -432,8 +432,8 @@ fn run_latency_trial(
             let intervals = recording.intervals().expect("query outer-policy trial");
             let prove_ms = common::span_ms(&intervals, "benchmark:proving");
             let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-            let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
-            let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
+            let prove_phases = bitz::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+            let verify_phases = bitz::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
             assert_eq!(claim, verified_claim);
 
             let phases = phase_timings(protocol, &prove_phases, &verify_phases);
@@ -474,8 +474,8 @@ fn run_latency_trial(
             let intervals = recording.intervals().expect("query outer-policy trial");
             let prove_ms = common::span_ms(&intervals, "benchmark:proving");
             let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-            let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
-            let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
+            let prove_phases = bitz::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+            let verify_phases = bitz::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
             assert_eq!(claim, verified_claim);
 
             let phases = phase_timings(protocol, &prove_phases, &verify_phases);
@@ -498,7 +498,7 @@ fn run_latency_trial(
 
 fn run_memory_trial(
     protocol: Protocol,
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &PreparedConstraintMatrices<SpartanBitzField, bool>,
     products: &R1csProductMles<u64>,
     assignment: &DenseMultilinearExtension<u64>,
 ) -> MemoryTrial {
@@ -626,7 +626,7 @@ fn print_latency_result(
     protocol: Protocol,
     exponent: usize,
     multiplications: usize,
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &PreparedConstraintMatrices<SpartanBitzField, bool>,
     integer_witness_values: usize,
     repetitions: usize,
     order: usize,
@@ -663,7 +663,7 @@ fn print_memory_result(
     protocol: Protocol,
     exponent: usize,
     multiplications: usize,
-    relation: &PreparedConstraintMatrices<SpartanF2zField, bool>,
+    relation: &PreparedConstraintMatrices<SpartanBitzField, bool>,
     integer_witness_values: usize,
     order: usize,
     shape_seed: u64,
@@ -713,7 +713,7 @@ fn bench_exponent(
     })
     .expect("valid u32 multiplication witness");
     let layout = *witness.layout();
-    let field_config = spartan_f2z_field_config();
+    let field_config = spartan_bitz_field_config();
     let relation = prepare_u32_mul_relation(layout, &field_config).expect("valid relation");
     let (assignment, products) = project_u32_mul_native_witness(&witness).into_parts();
 
@@ -774,12 +774,12 @@ fn main() {
     common::cli::EnvironmentCli::parse();
     let repetitions = common::reps(None, DEFAULT_REPETITIONS);
     let pass = BenchmarkPass::from_env();
-    let order = common::cli::env::<std::num::NonZeroUsize>("F2Z_BENCH_ORDER")
+    let order = common::cli::env::<std::num::NonZeroUsize>("BITZ_BENCH_ORDER")
         .map_or(1, std::num::NonZeroUsize::get);
     let root_seed = common::seed(None, 0x5533_326d_756c_0073);
 
     let exponents = exponents();
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     let threads = rayon_threads();

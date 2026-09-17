@@ -20,12 +20,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPS="${F2Z_SUITE_REPS:-5}"
+REPS="${BITZ_SUITE_REPS:-5}"
 ODD="15 17 19 21 23"           # the suite's odd exponents (u32-mod32)
-ODD_U64_F2Z="15 17 19 21"      # f2z u64: 23 would page (non-Binius cells are not run while paging)
+ODD_U64_BitZ="15 17 19 21"      # bitz u64: 23 would page (non-Binius cells are not run while paging)
 ODD_U64_BIN="15 17 19 21"      # binius u64: 21 pages, allowed with a raised guard; 23 is unreasonable
 ODD_U64_LIMBER="15 17 19"      # limber: 21 pages
-ODD_U128_F2Z="15 17 19 21"
+ODD_U128_BitZ="15 17 19 21"
 ODD_U128_BIN="15 17 19 21"     # binius u128 2^21 pages hard (~27 GB swap); raised guard, watchdog decides
 ODD_U128_LIG="15 17 19"        # opener at u128 2^21: paging slowness too large, skipped
 ODD_U128_LIMBER="15 17 19"
@@ -71,25 +71,25 @@ HY_WITNESS="15:7,16:8,17:9,18:10,19:11,20:12"
 hybrid_phase() { # phase-name shapes
   local name=$1 shapes=$2
   for T in 10 1; do
-    hybrid_sweep "$name-f2z-r2-t$T"  12 "$T" "$shapes" --mode hybrid
-    hybrid_sweep "$name-f2z-r8-t$T"  12 "$T" "$shapes" --mode hybrid --profile custom:3:4
-    hybrid_sweep "$name-bin-r1-t$T"  30 "$T" "$shapes" F2Z_HYBRID_BINIUS_LOG_INV_RATE=1 --mode all-binius
-    hybrid_sweep "$name-bin-r3-t$T"  30 "$T" "$shapes" F2Z_HYBRID_BINIUS_LOG_INV_RATE=3 --mode all-binius
-    hybrid_sweep "$name-lig-r1-t$T"  30 "$T" "$shapes" F2Z_BINIUS_LOG_INV_RATE=1 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr --mode binius-ligerito
-    hybrid_sweep "$name-lig-r3-t$T"  30 "$T" "$shapes" F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr --mode binius-ligerito
+    hybrid_sweep "$name-bitz-r2-t$T"  12 "$T" "$shapes" --mode hybrid
+    hybrid_sweep "$name-bitz-r8-t$T"  12 "$T" "$shapes" --mode hybrid --profile custom:3:4
+    hybrid_sweep "$name-bin-r1-t$T"  30 "$T" "$shapes" BITZ_HYBRID_BINIUS_LOG_INV_RATE=1 --mode all-binius
+    hybrid_sweep "$name-bin-r3-t$T"  30 "$T" "$shapes" BITZ_HYBRID_BINIUS_LOG_INV_RATE=3 --mode all-binius
+    hybrid_sweep "$name-lig-r1-t$T"  30 "$T" "$shapes" BITZ_BINIUS_LOG_INV_RATE=1 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr --mode binius-ligerito
+    hybrid_sweep "$name-lig-r3-t$T"  30 "$T" "$shapes" BITZ_BINIUS_LOG_INV_RATE=3 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr --mode binius-ligerito
   done
 }
 
 campaign() { # label swap_guard_gb shapes env...
   local label=$1 guard=$2 shapes=$3; shift 3
   python3 scripts/bench_gate.py run --label "$label" --swap-grow-gb "$guard" -- \
-    env "$@" F2Z_BENCH_REPS="$REPS" F2Z_BENCH_SHAPES="$shapes" \
-        F2Z_MUL_COMPARE_OUTPUT_DIR="PerfRuns/suite-$label" \
+    env "$@" BITZ_BENCH_REPS="$REPS" BITZ_BENCH_SHAPES="$shapes" \
+        BITZ_MUL_COMPARE_OUTPUT_DIR="PerfRuns/suite-$label" \
         bash scripts/run_native_mul_compare.sh
 }
 
 if has sha-ecdsa; then
-  # The complete SHA+ECDSA matrix (F2Z rho=1/2,1/8; Binius64 rho=1/2,1/8;
+  # The complete SHA+ECDSA matrix (BitZ rho=1/2,1/8; Binius64 rho=1/2,1/8;
   # opener rho=1/2,1/8 rbr) at threads 1 and 10, over the message sizes the
   # paper table groups by (2^4..2^7 compressions), one runner invocation.
   python3 scripts/bench_gate.py run --label sha-ecdsa --swap-grow-gb 12 -- \
@@ -105,32 +105,32 @@ if has hybrid-witness; then hybrid_phase hy-witness "$HY_WITNESS"; fi
 
 for T in 10 1; do
   if has u32; then
-    campaign "u32-f2z-r2-t$T"   10 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=f2z
-    campaign "u32-f2z-r8-t$T"   10 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=f2z F2Z_LIG_PROFILE=custom:3:4
-    campaign "u32-bin-r1-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=1
-    campaign "u32-bin-r3-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=3
-    campaign "u32-lig-r1-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=1 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr
-    campaign "u32-lig-r3-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr
-    campaign "u32-fri-t$T"      10 "$ODD" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=plonky3-fri
-    campaign "u32-limber-t$T"   10 "$ODD_LIMBER_U32" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_BACKENDS=limber
+    campaign "u32-bitz-r2-t$T"   10 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=bitz
+    campaign "u32-bitz-r8-t$T"   10 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=bitz BITZ_LIG_PROFILE=custom:3:4
+    campaign "u32-bin-r1-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_BINIUS_LOG_INV_RATE=1
+    campaign "u32-bin-r3-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_BINIUS_LOG_INV_RATE=3
+    campaign "u32-lig-r1-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=binius64-ligerito BITZ_BINIUS_LOG_INV_RATE=1 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr
+    campaign "u32-lig-r3-t$T"   30 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=binius64-ligerito BITZ_BINIUS_LOG_INV_RATE=3 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr
+    campaign "u32-fri-t$T"      10 "$ODD" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=plonky3-fri
+    campaign "u32-limber-t$T"   10 "$ODD_LIMBER_U32" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_BACKENDS=limber
   fi
   if has u64; then
-    campaign "u64-f2z-r2-t$T"   10 "$ODD_U64_F2Z" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=f2z
-    campaign "u64-f2z-r8-t$T"   10 "$ODD_U64_F2Z" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=f2z F2Z_LIG_PROFILE=custom:3:4
-    campaign "u64-bin-r1-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=1
-    campaign "u64-bin-r3-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=3
-    campaign "u64-lig-r1-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=1 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr
-    campaign "u64-lig-r3-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr
-    campaign "u64-limber-t$T"   10 "$ODD_U64_LIMBER" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u64 F2Z_MUL_COMPARE_BACKENDS=limber
+    campaign "u64-bitz-r2-t$T"   10 "$ODD_U64_BitZ" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=bitz
+    campaign "u64-bitz-r8-t$T"   10 "$ODD_U64_BitZ" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=bitz BITZ_LIG_PROFILE=custom:3:4
+    campaign "u64-bin-r1-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_BINIUS_LOG_INV_RATE=1
+    campaign "u64-bin-r3-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_BINIUS_LOG_INV_RATE=3
+    campaign "u64-lig-r1-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=binius64-ligerito BITZ_BINIUS_LOG_INV_RATE=1 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr
+    campaign "u64-lig-r3-t$T"   30 "$ODD_U64_BIN" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=binius64-ligerito BITZ_BINIUS_LOG_INV_RATE=3 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr
+    campaign "u64-limber-t$T"   10 "$ODD_U64_LIMBER" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u64 BITZ_MUL_COMPARE_BACKENDS=limber
   fi
   if has u128; then
-    campaign "u128-f2z-r2-t$T"  10 "$ODD_U128_F2Z" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=f2z
-    campaign "u128-f2z-r8-t$T"  10 "$ODD_U128_F2Z" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=f2z F2Z_LIG_PROFILE=custom:3:4
-    campaign "u128-bin-r1-t$T"  34 "$ODD_U128_BIN" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=1
-    campaign "u128-bin-r3-t$T"  34 "$ODD_U128_BIN" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_BINIUS_LOG_INV_RATE=3
-    campaign "u128-lig-r1-t$T"  30 "$ODD_U128_LIG" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=1 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr
-    campaign "u128-lig-r3-t$T"  30 "$ODD_U128_LIG" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=binius64-ligerito F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr
-    campaign "u128-limber-t$T"  10 "$ODD_U128_LIMBER" RAYON_NUM_THREADS="$T" F2Z_MUL_COMPARE_WORKLOADS=u128 F2Z_MUL_COMPARE_BACKENDS=limber
+    campaign "u128-bitz-r2-t$T"  10 "$ODD_U128_BitZ" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=bitz
+    campaign "u128-bitz-r8-t$T"  10 "$ODD_U128_BitZ" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=bitz BITZ_LIG_PROFILE=custom:3:4
+    campaign "u128-bin-r1-t$T"  34 "$ODD_U128_BIN" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_BINIUS_LOG_INV_RATE=1
+    campaign "u128-bin-r3-t$T"  34 "$ODD_U128_BIN" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_BINIUS_LOG_INV_RATE=3
+    campaign "u128-lig-r1-t$T"  30 "$ODD_U128_LIG" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=binius64-ligerito BITZ_BINIUS_LOG_INV_RATE=1 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr
+    campaign "u128-lig-r3-t$T"  30 "$ODD_U128_LIG" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=binius64-ligerito BITZ_BINIUS_LOG_INV_RATE=3 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr
+    campaign "u128-limber-t$T"  10 "$ODD_U128_LIMBER" RAYON_NUM_THREADS="$T" BITZ_MUL_COMPARE_WORKLOADS=u128 BITZ_MUL_COMPARE_BACKENDS=limber
   fi
 done
 

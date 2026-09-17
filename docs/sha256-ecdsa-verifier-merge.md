@@ -101,7 +101,7 @@ samples. Every proof is verified. Proof digests and wire sizes must match across
 both states and passes for each configuration.
 
 The campaign runs under `scripts/bench_gate.py` after builds and tests finish.
-The runner clears inherited F2Z, Rayon and Perfetto options and sets the same
+The runner clears inherited BitZ, Rayon and Perfetto options and sets the same
 explicit worker count, security target, seed and Ligerito profile for both states.
 
 Compact samples, source/binary hashes, allocation measurements, the exact runner,

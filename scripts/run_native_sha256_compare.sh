@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Native fixed-IV SHA-256 compression comparison across F2Z, Plonky3/WHIR,
+# Native fixed-IV SHA-256 compression comparison across BitZ, Plonky3/WHIR,
 # Binius64, and integer-mod Limber/Brakedown. Existing run
 # directories are never overwritten.
 
@@ -9,16 +9,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 PROFILER="${ZK_TRACE_SCRIPT:-$HOME/.ai-agent-army/skills/zk-proof-profiler/scripts/zk_trace.py}"
 
-EXPONENTS="${F2Z_SHA_COMPARE_EXPONENTS:-7 8 10 11 12 13 14 15 16}"
-REPETITIONS="${F2Z_SHA_COMPARE_REPS:-21}"
-PILOT_REPETITIONS="${F2Z_SHA_COMPARE_PILOT_REPS:-5}"
+EXPONENTS="${BITZ_SHA_COMPARE_EXPONENTS:-7 8 10 11 12 13 14 15 16}"
+REPETITIONS="${BITZ_SHA_COMPARE_REPS:-21}"
+PILOT_REPETITIONS="${BITZ_SHA_COMPARE_PILOT_REPS:-5}"
 THREADS="${RAYON_NUM_THREADS:-8}"
 NATIVE_RUSTFLAGS="${RUSTFLAGS:--Ctarget-cpu=native}"
-BACKENDS="${F2Z_SHA_COMPARE_BACKENDS:-f2z plonky3-whir binius64 limber}"
-LIMBER_ENGINE="${F2Z_SHA_COMPARE_LIMBER_ENGINE:-brakedown}"
+BACKENDS="${BITZ_SHA_COMPARE_BACKENDS:-bitz plonky3-whir binius64 limber}"
+LIMBER_ENGINE="${BITZ_SHA_COMPARE_LIMBER_ENGINE:-brakedown}"
 
 if [[ "$LIMBER_ENGINE" != brakedown ]]; then
-    echo "F2Z_SHA_COMPARE_LIMBER_ENGINE must be brakedown; Hyrax is excluded from this comparison." >&2
+    echo "BITZ_SHA_COMPARE_LIMBER_ENGINE must be brakedown; Hyrax is excluded from this comparison." >&2
     exit 2
 fi
 read -r -a SELECTED_BACKENDS <<< "${BACKENDS//,/ }"
@@ -28,13 +28,13 @@ if [[ ${#SELECTED_BACKENDS[@]} -eq 0 ]]; then
 fi
 for backend in "${SELECTED_BACKENDS[@]}"; do
     case "$backend" in
-        f2z|plonky3-whir|binius64|limber) ;;
-        *) echo "Unsupported SHA backend: $backend. Choose f2z, plonky3-whir, binius64, or limber (Brakedown)." >&2; exit 2 ;;
+        bitz|plonky3-whir|binius64|limber) ;;
+        *) echo "Unsupported SHA backend: $backend. Choose bitz, plonky3-whir, binius64, or limber (Brakedown)." >&2; exit 2 ;;
     esac
 done
 
 RUN_STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-RUN_DIR="${F2Z_SHA_COMPARE_RUN_DIR:-$REPO_ROOT/PerfRuns/${RUN_STAMP}-native-sha256-brakedown}"
+RUN_DIR="${BITZ_SHA_COMPARE_RUN_DIR:-$REPO_ROOT/PerfRuns/${RUN_STAMP}-native-sha256-brakedown}"
 ARTIFACT_DIR="$RUN_DIR/artifacts"
 TRACE_PATH="$ARTIFACT_DIR/trace.jsonl"
 REPORT_DIR="$RUN_DIR/reports/intervals"
@@ -58,14 +58,14 @@ echo "RUSTFLAGS: $NATIVE_RUSTFLAGS"
     cd -- "$REPO_ROOT"
     RUSTFLAGS="$NATIVE_RUSTFLAGS" \
     RAYON_NUM_THREADS="$THREADS" \
-    F2Z_SHA_COMPARE_THREADS="$THREADS" \
-    F2Z_SHA_COMPARE_EXPONENTS="$EXPONENTS" \
-    F2Z_SHA_COMPARE_BACKENDS="$BACKENDS" \
-    F2Z_SHA_COMPARE_LIMBER_ENGINE="$LIMBER_ENGINE" \
-    F2Z_SHA_COMPARE_REPS="$REPETITIONS" \
-    F2Z_SHA_COMPARE_PILOT_REPS="$PILOT_REPETITIONS" \
-    F2Z_SHA_COMPARE_OUTPUT_DIR="$ARTIFACT_DIR" \
-    F2Z_SHA_COMPARE_TRACE_PATH="$TRACE_PATH" \
+    BITZ_SHA_COMPARE_THREADS="$THREADS" \
+    BITZ_SHA_COMPARE_EXPONENTS="$EXPONENTS" \
+    BITZ_SHA_COMPARE_BACKENDS="$BACKENDS" \
+    BITZ_SHA_COMPARE_LIMBER_ENGINE="$LIMBER_ENGINE" \
+    BITZ_SHA_COMPARE_REPS="$REPETITIONS" \
+    BITZ_SHA_COMPARE_PILOT_REPS="$PILOT_REPETITIONS" \
+    BITZ_SHA_COMPARE_OUTPUT_DIR="$ARTIFACT_DIR" \
+    BITZ_SHA_COMPARE_TRACE_PATH="$TRACE_PATH" \
         cargo bench --bench sha256_e2e_compare \
         --features bench-internals,native-sha256-compare
 ) 2>&1 | tee "$RAW_LOG"

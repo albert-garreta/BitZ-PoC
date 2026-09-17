@@ -14,7 +14,7 @@ unsigned commits). Read FIRST, in this order:
    (`src/ligerito_flock.rs`, commits `8fbd155..cf2bebe`), the case-weight
    machinery in `src/pcs.rs` (`rlc_case_weights`, `rlc_tau_tables`,
    `rlc_active_channels`-side logic), the harness `examples/rlc_ab.rs`,
-   and the CLI mode `f2z <n> --family j2|j3|j4`.
+   and the CLI mode `bitz <n> --family j2|j3|j4`.
 
 ## The setting
 

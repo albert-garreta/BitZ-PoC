@@ -17,20 +17,20 @@ A's phase list, so the two agree.
 
 | bench | shape knob | setup lines | what `prove` excludes | phase split |
 |---|---|---|---|---|
-| `benches/u32_mul.rs` (857 L) | `F2Z_MUL_EXPONENTS`, `F2Z_BENCH_REPS`, `F2Z_BENCH_PASS`, `F2Z_SPARTAN_REDUCTION`, `F2Z_SPARTAN_OUTER_SKIP`, `F2Z_MUL_WORD_BITS`, `F2Z_BENCH_ORDER`, `F2Z_MUL_SEED` | **5**: witness / relation / projection / bit-pack / commitment (`:514–545`, printed `:735–738`) | witness gen, relation prep, bit-pack, commit, and a hoisted field projection that the default `delayed-barrett` path never performs | `prove split: Spartan | bitify | F2Z PCS | residual` (needs `OBLONG_PROFILE=1`) |
-| `benches/sha256_compressions.rs` (993 L) | `F2Z_SHA_LOG2S`, `F2Z_SHA_REPS`, `F2Z_SHA_SEED`, `F2Z_SHA_TRACE_PATH`, `OBLONG_PROFILE[_INTERVALS]` | **1**: `setup` inline on the R1CS line (`:826–842`) | nothing — witness gen **and** commit are inside the headline `end-to-end prove` (`run_once`, `:703–753`) | `proof internals: outer Spartan | claim factorization | virtual F2Z` |
-| `benches/multiswap.rs` (211 L) | none — hardcoded `MultiswapDims::multiswap(0)`; reads only `F2Z_MULTISWAP_REPS`; force-sets `OBLONG_PROFILE=1` at `:58` | **2**: `witness+shape build` / `relation setup`, both labelled one-time | witness gen + relation prep; bit-rows and commit are timed per-rep but reported *outside* `prove` | `prove phases: primes | projection | spartan | bitify | step5.0 lift+grind | f2z opening` — closest to what we want |
+| `benches/u32_mul.rs` (857 L) | `BITZ_MUL_EXPONENTS`, `BITZ_BENCH_REPS`, `BITZ_BENCH_PASS`, `BITZ_SPARTAN_REDUCTION`, `BITZ_SPARTAN_OUTER_SKIP`, `BITZ_MUL_WORD_BITS`, `BITZ_BENCH_ORDER`, `BITZ_MUL_SEED` | **5**: witness / relation / projection / bit-pack / commitment (`:514–545`, printed `:735–738`) | witness gen, relation prep, bit-pack, commit, and a hoisted field projection that the default `delayed-barrett` path never performs | `prove split: Spartan | bitify | BitZ PCS | residual` (needs `OBLONG_PROFILE=1`) |
+| `benches/sha256_compressions.rs` (993 L) | `BITZ_SHA_LOG2S`, `BITZ_SHA_REPS`, `BITZ_SHA_SEED`, `BITZ_SHA_TRACE_PATH`, `OBLONG_PROFILE[_INTERVALS]` | **1**: `setup` inline on the R1CS line (`:826–842`) | nothing — witness gen **and** commit are inside the headline `end-to-end prove` (`run_once`, `:703–753`) | `proof internals: outer Spartan | claim factorization | virtual BitZ` |
+| `benches/multiswap.rs` (211 L) | none — hardcoded `MultiswapDims::multiswap(0)`; reads only `BITZ_MULTISWAP_REPS`; force-sets `OBLONG_PROFILE=1` at `:58` | **2**: `witness+shape build` / `relation setup`, both labelled one-time | witness gen + relation prep; bit-rows and commit are timed per-rep but reported *outside* `prove` | `prove phases: primes | projection | spartan | bitify | step5.0 lift+grind | bitz opening` — closest to what we want |
 
 Other output surfaces to keep consistent (or explicitly exempt):
 `benches/pcs.rs` (PCS-only), `benches/cm_and.rs`, `benches/u32_mul_inner_policy.rs`,
 `benches/u32_mul_outer_skip.rs` (policy sweeps), `benches/field.rs`,
 `benches/eq_tables.rs` (micro-kernels), `examples/reference_measure.rs`,
-`src/bin/f2z.rs`.
+`src/bin/bitz.rs`.
 
 ### A.2 Required timing semantics (the user's decision — implement it, don't relitigate)
 
 **End-to-end prover time INCLUDES**: bit-packing, commitment, field projection,
-prime sampling + grinding, the PIOP, bitification, Step 5.0, and the F2Z
+prime sampling + grinding, the PIOP, bitification, Step 5.0, and the BitZ
 opening. Everything the prover does after it holds a witness.
 
 **End-to-end prover time EXCLUDES**: witness generation, and one-time public
@@ -69,7 +69,7 @@ and say so, rather than silently reordering to match the prose.
 
 Existing `crate::utils::prof::scope` labels are already close to this
 (`multiswap:relation_projection_prove`, `multiswap:integer_lift_prove`,
-`sha256-paper128:opening_prepare_prover`, `spartan-f2z:bitify_prover`, …).
+`sha256-paper128:opening_prepare_prover`, `spartan-bitz:bitify_prover`, …).
 Prefer **renaming/aliasing the scopes to a shared step vocabulary** over
 per-bench string matching in the benches. Scopes are thread-local and must stay
 on the control-flow thread (`src/utils/prof.rs:24–27`).
@@ -84,11 +84,11 @@ A shared bench-harness module (e.g. `benches/common/mod.rs` or a
   machine-readable `RESULT ...` key=value line across benches (the `RESULT`
   line is what feeds the paper's Experiments tables — `paper/main.tex:2526`,
   `paper/multiswap-table.tex` — so settle the key names once);
-- uniform env-var conventions. Today `F2Z_BENCH_REPS`, `F2Z_SHA_REPS` and
-  `F2Z_MULTISWAP_REPS` are three names for one concept, and `multiswap` has no
-  shape knob at all. Pick one scheme (suggest `F2Z_BENCH_REPS`,
-  `F2Z_BENCH_SHAPES`, `F2Z_BENCH_SEED`, `F2Z_BENCH_PASS`), keep the old names
-  as deprecated aliases, and **fail loudly on an unknown `F2Z_*` variable** so
+- uniform env-var conventions. Today `BITZ_BENCH_REPS`, `BITZ_SHA_REPS` and
+  `BITZ_MULTISWAP_REPS` are three names for one concept, and `multiswap` has no
+  shape knob at all. Pick one scheme (suggest `BITZ_BENCH_REPS`,
+  `BITZ_BENCH_SHAPES`, `BITZ_BENCH_SEED`, `BITZ_BENCH_PASS`), keep the old names
+  as deprecated aliases, and **fail loudly on an unknown `BITZ_*` variable** so
   a typo'd knob can never silently do nothing again.
 - Decide and state: which benches adopt the full schema (the three protocol
   benches, `pcs.rs`) versus which stay micro-benchmarks with only the shared
@@ -105,7 +105,7 @@ measured proof verified.
 
 - **u32_mul path**: no prime sampling at all. `FQ_MOD = 2^100 - 15`,
   `FQ_BITS = 100`, fixed (`src/pcs.rs:345–347`), fed through
-  `spartan_f2z_field_config()` (`src/piop/spartan/f2z.rs:180`). No grinding.
+  `spartan_bitz_field_config()` (`src/piop/spartan/bitz.rs:180`). No grinding.
 - **SHA path**: `Sha256PrimeProfile` (`src/piop/spartan/sha256/prime.rs`) —
   ONE prime, interval derived from batch size
   (`113.min(128 - log_compressions)` bits, capped by the no-wrap inequality
@@ -164,7 +164,7 @@ One shared profile type (name it, e.g. `IopSecurityProfile`) that supersedes
 
 1. **The u32_mul path gains a real sampled Step-2 prime.** It has none today
    (fixed `FQ_MOD = 2^100 - 15`, `src/pcs.rs:345`). Give it a transcript-derived
-   prime drawn after the F2Z commitment is bound (the Zaratan order already used
+   prime drawn after the BitZ commitment is bound (the Zaratan order already used
    by `Sha256PrimeProfile` and `MultiswapPrimeProfile`). The fixed modulus may
    survive only as an explicitly named legacy profile for reproducing old
    numbers — not as the default.
@@ -196,13 +196,13 @@ layers; the type is compile-time, the shape instantiation is not:
 - *Runtime instantiation against a shape*: the concrete interval endpoints and
   the validated parameter set, computed from the policy plus `t`, `W`, `n_1`,
   the defect bit-bound and the round count. This must stay runtime because the
-  bench shape is an env input (`F2Z_SHA_LOG2S`, `F2Z_BENCH_SHAPES`) and
+  bench shape is an env input (`BITZ_SHA_LOG2S`, `BITZ_BENCH_SHAPES`) and
   `Sha256PrimeProfile::new(log_compressions)` already derives
   `113.min(128 - log_compressions)` and the no-wrap cap from it. Making the
   shape const-generic too would force an enumerated shape set and kill the
   shape env knobs — do not do that.
 - The sampled prime `q` itself is necessarily runtime (transcript-derived), and
-  `SpartanF2zField = F128 = MontyField<2>` carries a runtime
+  `SpartanBitzField = F128 = MontyField<2>` carries a runtime
   `FixedMontyParams` built by `make_cfg`. Do **not** try to lift the modulus
   into a const-generic `ConstMontyForm`; only the *policy* is const.
 - Benches sweep `lambda` by instantiating several named profile types in one
@@ -262,7 +262,7 @@ binds; the prime draws and Ligerito will.
 
 Keep MultiSwap at 114 because that is Limber's own floor —
 `LAMBDA_BOUND2 = 117`, fingerprint `~2^-114`, as documented in
-`src/piop/spartan/multiswap/prime.rs:19–47`. Publishing an F2Z-at-100 number
+`src/piop/spartan/multiswap/prime.rs:19–47`. Publishing an BitZ-at-100 number
 against Limber-at-114 would be an unfair comparison and a reviewer would say
 so. The MultiSwap bench must pin `Limber114`, and the unified `RESULT` line
 must carry the `lambda` it was measured at so the table can state it.
@@ -292,7 +292,7 @@ in bench output and CLI plumbing.
 
 Removal size, to scope the work: ~121 references across 8 files —
 `src/ligerito_flock.rs` (87, the bulk), `src/pcs.rs` (17),
-`src/piop/spartan/f2z.rs` (7), `src/bin/f2z.rs`, `benches/u32_mul.rs`,
+`src/piop/spartan/bitz.rs` (7), `src/bin/bitz.rs`, `benches/u32_mul.rs`,
 `benches/pcs.rs`, `examples/reference_measure.rs`,
 `examples/proof_digest.rs` (2 each).
 
@@ -372,7 +372,7 @@ Two things to get right:
   shapes (n=28 commit measured 292 s ad-hoc vs tens of ms embedded).
 - **Build parity**: benches need `RUSTFLAGS="-C target-cpu=native"`,
   `--features unchecked`, and the release profile's `lto = true` +
-  `codegen-units = 1`. Without all of them F2Z measures 1.2–1.5x slow.
+  `codegen-units = 1`. Without all of them BitZ measures 1.2–1.5x slow.
 - Baseline test suite is ~289 lib tests; `completeness_random` x2 is known
   pre-broken at HEAD. Watch the `QUAD_ENV_LOCK` env-toggle test race.
 - Benchmarking protocol: idle-first, one shape per process at n >= 24, medians,

@@ -151,7 +151,7 @@ pub fn column_opening(gate_vars: usize, columns: usize) -> OpeningProtocol {
     )])
 }
 
-/// F2Z's first coordinate selects adjacent entries; Plonky3's last does.
+/// BitZ's first coordinate selects adjacent entries; Plonky3's last does.
 pub fn opening_point<F: Field>(lsb_first: &[F]) -> Point<F> {
     Point::new(lsb_first.iter().rev().copied().collect())
 }
@@ -216,7 +216,7 @@ mod tests {
             let mut assignment = vec![F::ONE, F::ZERO];
             assignment.extend(columns.into_iter().flatten());
             assignment.resize(16, F::ZERO);
-            // Independent adjacent-pair folding in F2Z's coordinate order.
+            // Independent adjacent-pair folding in BitZ's coordinate order.
             for r in [gate, b0, b1, b2] {
                 assignment = assignment
                     .chunks_exact(2)

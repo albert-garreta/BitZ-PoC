@@ -1,4 +1,4 @@
-//! Accepted F2Z PMULL sumcheck schedules, moved from the root binary field.
+//! Accepted BitZ PMULL sumcheck schedules, moved from the root binary field.
 //! This module is compiled only with NEON and AES/PMULL enabled.
 use crate::gf128::aarch64::{clmul128 as clmul_256, pmull_hi, pmull_lo, reduce_256};
 use core::arch::aarch64::{uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vst1q_u64};

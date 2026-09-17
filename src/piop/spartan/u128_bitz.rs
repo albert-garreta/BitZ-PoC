@@ -1,4 +1,4 @@
-//! The u128 multiplication relation `x · y = z` (`z < 2^256`) over F2Z.
+//! The u128 multiplication relation `x · y = z` (`z < 2^256`) over BitZ.
 //!
 //! The integer R1CS assignment has four blocks, `[e0 | x | y | z]`, with
 //! `x, y < 2^128` and `z < 2^256`, so the assignment MLE needs no padding
@@ -36,9 +36,9 @@ use super::{
 };
 
 /// Failures in layout validation, claim translation, or either proof system.
-pub type U128MulSpartanF2zError = ProtocolError;
+pub type U128MulSpartanBitzError = ProtocolError;
 
-/// The factorized claim bound between Spartan and F2Z.
+/// The factorized claim bound between Spartan and BitZ.
 pub type U128MulBitifiedClaim = protocol::BitifiedClaim;
 
 impl From<U128MulError> for ProtocolError {
@@ -47,21 +47,21 @@ impl From<U128MulError> for ProtocolError {
     }
 }
 
-const BINDING_DOMAIN: &[u8] = b"f2z/spartan-u128-f2z/assignment/v1-runtime";
+const BINDING_DOMAIN: &[u8] = b"bitz/spartan-u128-bitz/assignment/v1-runtime";
 const ASSIGNMENT_BLOCK_ORDER: &[u8] = b"e0|x|y|z";
 
 static U128_MUL_DOMAINS: Domains = Domains {
     statement_tag: b"u128-mul-statement",
-    prime_sampling: b"f2z/spartan-u128-mul/runtime-prime/v1",
-    initial_grinding: b"f2z/spartan-u128-mul/grinding/initial/v1",
-    piop_grinding: b"f2z/spartan-u128-mul/grinding/piop/v1",
-    terminal_grinding: b"f2z/spartan-u128-mul/grinding/terminal/v1",
-    bitified_claim: b"f2z/spartan-u128-f2z/bitified-claim/v1",
+    prime_sampling: b"bitz/spartan-u128-mul/runtime-prime/v1",
+    initial_grinding: b"bitz/spartan-u128-mul/grinding/initial/v1",
+    piop_grinding: b"bitz/spartan-u128-mul/grinding/piop/v1",
+    terminal_grinding: b"bitz/spartan-u128-mul/grinding/terminal/v1",
+    bitified_claim: b"bitz/spartan-u128-bitz/bitified-claim/v1",
     opening: ModQOpeningKind::U128Mul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",
-    scopes: crate::protocol_scopes!("u128-spartan-f2z"),
+    scopes: crate::protocol_scopes!("u128-spartan-bitz"),
 };
 
 /// The public statement facts the security-profile derivation consumes for
@@ -80,44 +80,44 @@ pub fn u128_mul_instance_facts(params: &IntegerMatrixLayout, row_vars: usize) ->
 }
 
 fn validate_layout_geometry(layout: &U128MulLayout) -> Result<(), ProtocolError> {
-    let params = layout.f2z_params();
+    let params = layout.bitz_params();
     if params.word_bits != 1
         || params.row_vars < LOG_PACKING
         || params.col_vars > layout.gate_vars()
         || params.row_vars.saturating_add(params.word_bits) > 126
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     let total_vars = params
         .row_vars
         .checked_add(params.col_vars)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     if total_vars
         != layout
             .gate_vars()
             .checked_add(U128_MUL_SLOT_VARS)
-            .ok_or(ProtocolError::InvalidF2zParameters)?
+            .ok_or(ProtocolError::InvalidBitzParameters)?
         || U128_MUL_BIT_SLOTS != 1_usize << U128_MUL_SLOT_VARS
         || U128_MUL_BIT_SLOTS != 2 * U128_MUL_OPERAND_BITS + U128_MUL_PRODUCT_BITS
         || layout.assignment_len() != U128_MUL_ASSIGNMENT_BLOCKS * layout.capacity()
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
 
     let row_count = checked_pow2(params.row_vars)?;
     let col_count = checked_pow2(params.col_vars)?;
     let cells = row_count
         .checked_mul(col_count)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     let expected_cells = U128_MUL_BIT_SLOTS
         .checked_mul(layout.capacity())
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     // `packed_variables` counts one packed variable per 128 bits: the nine
     // slot variables leave two extra packed variables on top of the gates.
     if cells != expected_cells
         || packed_variables(&params)? != layout.gate_vars() + (U128_MUL_SLOT_VARS - LOG_PACKING)
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     Ok(())
 }
@@ -132,7 +132,7 @@ impl RelationSpec for U128MulLayout {
     }
 
     fn committed_layout(&self) -> IntegerMatrixLayout {
-        self.f2z_params()
+        self.bitz_params()
     }
 
     fn gate_vars(&self) -> usize {
@@ -141,7 +141,7 @@ impl RelationSpec for U128MulLayout {
 
     fn instance_facts(&self) -> IopInstanceFacts {
         let row_vars = self.multiplications().next_power_of_two().trailing_zeros() as usize;
-        u128_mul_instance_facts(&self.f2z_params(), row_vars)
+        u128_mul_instance_facts(&self.bitz_params(), row_vars)
     }
 
     fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
@@ -193,7 +193,7 @@ impl RelationSpec for U128MulLayout {
         security: &IopSecurityParams,
         _ligerito: &LigProverConfig,
     ) -> Result<[u8; 32], ProtocolError> {
-        let p = self.f2z_params();
+        let p = self.bitz_params();
         let mut hasher = BindingHasher::new();
         hasher
             .bytes(BINDING_DOMAIN)
@@ -229,7 +229,7 @@ impl RelationSpec for U128MulLayout {
     }
 
     fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {
-        let p = self.f2z_params();
+        let p = self.bitz_params();
         hasher.usizes(&[
             self.multiplications(),
             self.capacity(),
@@ -291,7 +291,7 @@ pub type U128MulProof = Proof;
 pub fn commit_u128_mul_witness(
     prepared: &PreparedU128MulRelation,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, U128MulSpartanF2zError> {
+) -> Result<FlockCommitHint, U128MulSpartanBitzError> {
     protocol::commit(prepared, rows)
 }
 
@@ -301,7 +301,7 @@ pub fn prove_u128_mul<T: Transcript + Send>(
     prepared: &PreparedU128MulRelation,
     witness: &U128MulWitness,
     hint: &FlockCommitHint,
-) -> Result<U128MulProof, U128MulSpartanF2zError> {
+) -> Result<U128MulProof, U128MulSpartanBitzError> {
     protocol::prove(transcript, prepared, witness, hint)
 }
 
@@ -312,7 +312,7 @@ pub fn verify_u128_mul<T: Transcript + Send>(
     prepared: &PreparedU128MulRelation,
     commitment: &Commitment,
     proof: &U128MulProof,
-) -> Result<(), U128MulSpartanF2zError> {
+) -> Result<(), U128MulSpartanBitzError> {
     protocol::verify(transcript, prepared, commitment, proof)
 }
 
@@ -353,7 +353,7 @@ mod tests {
         let prepared = PreparedU128MulRelation::new(layout).unwrap();
         assert_eq!(prepared.security().lambda, 100);
         assert_eq!(prepared.params().row_vars, 9 + 15 - 7);
-        let hint = commit_u128_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = commit_u128_mul_witness(&prepared, witness.bitz_bit_rows()).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u128_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
@@ -369,7 +369,7 @@ mod tests {
 
         let mut second_transcript = Blake3Transcript::new();
         let second = prove_u128_mul(&mut second_transcript, &prepared, &witness, &hint).unwrap();
-        assert_eq!(proof.f2z().to_bytes(), second.f2z().to_bytes());
+        assert_eq!(proof.bitz().to_bytes(), second.bitz().to_bytes());
         assert_eq!(proof.piop_nonces(), second.piop_nonces());
     }
 
@@ -385,8 +385,8 @@ mod tests {
 
         // Flip one committed bit of the product's high half at gate 3; the
         // commitment no longer matches the honest assignment.
-        let mut rows = honest.f2z_bit_rows();
-        let (b, c) = layout.f2z_cell(U128_MUL_Z_SLOT_START + 200, 3).unwrap();
+        let mut rows = honest.bitz_bit_rows();
+        let (b, c) = layout.bitz_cell(U128_MUL_Z_SLOT_START + 200, 3).unwrap();
         rows[c][b / 64] ^= 1 << (b % 64);
         let hint = commit_u128_mul_witness(&prepared, rows).unwrap();
 
@@ -411,7 +411,7 @@ mod tests {
         let witness = witness(1 << 10, 2);
         assert!(matches!(
             PreparedU128MulRelation::new(*witness.layout()),
-            Err(U128MulSpartanF2zError::UnauditedF2zParameters)
+            Err(U128MulSpartanBitzError::UnauditedBitzParameters)
         ));
     }
 }

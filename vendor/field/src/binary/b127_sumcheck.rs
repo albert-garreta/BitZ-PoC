@@ -16,7 +16,7 @@ impl B127 {
     /// Value-exact vs the generic loop (same carryless products,
     /// XOR-combined; reduction is `F_2`-linear).
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_single_pair_round(
+    fn bitz_eqf_single_pair_round(
         l: &[Self],
         r: &[Self],
         w: &[Self],
@@ -110,7 +110,7 @@ impl B127 {
     /// Hand-fused TWO-pair round body (the fraction-GKR layer combine) —
     /// the GF128 kernel with the trinomial drain. Value-exact.
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_two_pair_round(
+    fn bitz_eqf_two_pair_round(
         l0: &[Self],
         r0: &[Self],
         l1: &[Self],
@@ -194,7 +194,7 @@ impl B127 {
     /// Fused in-place fold `v[b] ← v[2b] ⊕ ρ·(v[2b+1] ⊕ v[2b])`, two
     /// independent entries per iteration. Value-exact per entry.
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
+    fn bitz_eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
             neon::eqf_fold_in_place(v, rho, half);
@@ -242,7 +242,7 @@ fn array(v: (B127, B127, B127)) -> [B127; 3] {
 impl SumcheckKernels for B127Ops {
     fn eqf_single_pair_round(&self, l: &[B127], r: &[B127], w: &[B127], n: usize) -> [B127; 3] {
         pair(l.len(), r.len(), w.len(), n, 2);
-        array(B127::f2z_eqf_single_pair_round(l, r, w, n).unwrap())
+        array(B127::bitz_eqf_single_pair_round(l, r, w, n).unwrap())
     }
     fn eqf_two_pair_round(
         &self,
@@ -255,11 +255,11 @@ impl SumcheckKernels for B127Ops {
     ) -> [B127; 3] {
         pair(l0.len(), r0.len(), w.len(), n, 2);
         pair(l1.len(), r1.len(), w.len(), n, 2);
-        array(B127::f2z_eqf_two_pair_round(l0, r0, l1, r1, w, n).unwrap())
+        array(B127::bitz_eqf_two_pair_round(l0, r0, l1, r1, w, n).unwrap())
     }
     fn eqf_fold_in_place(&self, v: &mut [B127], rho: &B127, n: usize) {
         pair(v.len(), v.len(), n, n, 2);
-        B127::f2z_eqf_fold_in_place(v, rho, n);
+        B127::bitz_eqf_fold_in_place(v, rho, n);
     }
     fn eqf_fused_fold_round(
         &self,

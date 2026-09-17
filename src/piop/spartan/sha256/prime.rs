@@ -17,12 +17,12 @@ use crate::{
     transcript::traits::Transcript,
 };
 
-use super::super::SpartanF2zField;
+use super::super::SpartanBitzField;
 #[cfg(any(feature = "bench-internals", test))]
 use super::super::profile::{SoundnessAccounting, SoundnessTerm};
 
-const PRIME_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-sha256/runtime-prime/v1";
-const FIXED_PRIME_DOMAIN: &[u8] = b"f2z/spartan-sha256/fixed-prime/v1";
+const PRIME_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-sha256/runtime-prime/v1";
+const FIXED_PRIME_DOMAIN: &[u8] = b"bitz/spartan-sha256/fixed-prime/v1";
 
 /// Fixed 98-bit modulus used only by the controlled product-geometry sweep.
 /// It is the largest prime below `2^98`.
@@ -275,9 +275,9 @@ pub(super) fn sample_sha256_mod_q_context(
 }
 
 pub(super) fn validate_sha256_field_config(
-    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+    field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<(), Sha256PrimeError> {
-    let encoding = SpartanF2zField::canonical_modulus_encoding(field_config);
+    let encoding = SpartanBitzField::canonical_modulus_encoding(field_config);
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&encoding);
     let q = u128::from_le_bytes(bytes);

@@ -1138,7 +1138,7 @@ fn prove_native_prefix<T: Transcript>(
 
 // ---------------------------------------------------------------------------
 
-/// F2Z's validated R1CS relation promises rowwise zero residuals.
+/// BitZ's validated R1CS relation promises rowwise zero residuals.
 #[cfg(test)]
 pub(crate) fn prove_encoded_zerocheck(
     transcript: &mut impl Transcript,

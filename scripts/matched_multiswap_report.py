@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and report a matched F2Z/Limber MultiSwap campaign.
+"""Validate and report a matched BitZ/Limber MultiSwap campaign.
 
 The input manifest points at immutable ``zkperf.trace/v1`` JSONL files.  This
 module is deliberately dependency-free so a campaign can be checked and
@@ -28,8 +28,8 @@ CAMPAIGN_SCHEMA = "matched-multiswap-campaign/v1"
 REPORT_SCHEMA = "matched-multiswap-report/v1"
 OUTPUT_NAMES = ("summary.json", "metrics.csv", "intervals.html")
 WORKLOAD_ID = "multiswap-rsa-wired-cost-model-v1"
-STATEMENT_DOMAIN = "f2z/multiswap/circuit-digest/v1"
-ASSIGNMENT_DOMAIN = "f2z/multiswap/integer-assignment/v1"
+STATEMENT_DOMAIN = "bitz/multiswap/circuit-digest/v1"
+ASSIGNMENT_DOMAIN = "bitz/multiswap/integer-assignment/v1"
 
 CONTROLLED_PHASES = {
     "end-to-end",
@@ -164,9 +164,9 @@ def modeled_component_bits(security: dict[str, Any], implementation: str, padded
     def prime_count(bits: int, upper_coefficient: float) -> float:
         return bits + math.log2(1 / (bits * math.log(2)) - upper_coefficient / (2 * (bits - 1) * math.log(2)))
 
-    if implementation == "f2z-ligerito":
+    if implementation == "bitz-ligerito":
         if (security.get("reduction_prime_bits"), security.get("reduction_min"), security.get("reduction_max")) != (113, str(1 << 112), str((1 << 113) - 1)):
-            raise CampaignError("F2Z reduction sampling interval does not match")
+            raise CampaignError("BitZ reduction sampling interval does not match")
         return {
             "step2:projection-draw": prime_count(128, 1.26) - math.log2(8210 // 127),
             "step3:tau-draw": 127 - math.log2(n + 2),
@@ -224,7 +224,7 @@ def validate_matched_parameters(run: dict[str, Any], cell: dict[str, Any]) -> No
     for source in (inputs, contract):
         if type(source.get("public_input_count")) is not int or source["public_input_count"] != 0 or source.get("public_inputs") != []:
             raise CampaignError("paper fixture requires identical empty public inputs")
-    required = {"domain": "f2z-limber/multiswap-statement/v2", "value_bits": 2048,
+    required = {"domain": "bitz-limber/multiswap-statement/v2", "value_bits": 2048,
                 "integer_domain": "unsigned", "public_roles": ["matrices", "moduli"],
                 "private_roles": ["witness", "quotients"], "constant": 1,
                 "padding": "zero-witness,zero-quotients,modulus-two"}
@@ -255,10 +255,10 @@ def validate_matched_parameters(run: dict[str, Any], cell: dict[str, Any]) -> No
         raise CampaignError("achieved security does not equal the weakest reported component")
     if security.get("fingerprint_prime_bits") != 128 or security.get("fingerprint_min") != str(1 << 127) or security.get("fingerprint_max") != str((1 << 128)-1):
         raise CampaignError("fingerprint sampling interval does not match")
-    if cell["implementation"] == "f2z-ligerito":
+    if cell["implementation"] == "bitz-ligerito":
         required_terms = {"step2:projection-draw", "step3:tau-draw", "step3:piop-round", "step4:terminal-draw", "step5_0:reduction-draw", "step5_2:gkr-round", "step5_3:ring-switch", "step5_3:ligerito-tracked", "step5_3:gf128-floor-untracked"}
         if security.get("ligerito_target_bits") != target or security.get("reduction_grinding_bits") != target - 104:
-            raise CampaignError("F2Z opening/reduction settings do not match target")
+            raise CampaignError("BitZ opening/reduction settings do not match target")
         _blake3(security.get("ligerito_config_digest"), "Ligerito config digest")
     else:
         required_terms = {"fingerprint", "spartan-round", "spartan-batching", "integer-crt", "integer-challenges", "commitment-opening", "range-lookup", "range-gkr-round", "range-batching"}
@@ -279,13 +279,13 @@ def validate_matched_parameters(run: dict[str, Any], cell: dict[str, Any]) -> No
     for key in ("proof_bytes", "commitment_bytes", "peak_rss_bytes"):
         _positive_int(artifacts.get(key), key)
     size_kind = ("serialized commitment/opening plus analytical PIOP and bridge estimate"
-                 if cell["implementation"] == "f2z-ligerito" else
+                 if cell["implementation"] == "bitz-ligerito" else
                  "serialized commitment/opening plus analytical sumcheck estimate")
     if artifacts.get("proof_size_kind") != size_kind:
         raise CampaignError("incompatible proof size measurement definition")
     if artifacts.get("memory_boundary") != "process high-water RSS including setup and warmups; compiler excluded":
         raise CampaignError("incompatible memory measurement boundary")
-    sizes = ("piop_and_bridge_bytes", "pcs_opening_bytes") if cell["implementation"] == "f2z-ligerito" else ("opening_argument_bytes", "dynamic_sumcheck_bytes_estimate")
+    sizes = ("piop_and_bridge_bytes", "pcs_opening_bytes") if cell["implementation"] == "bitz-ligerito" else ("opening_argument_bytes", "dynamic_sumcheck_bytes_estimate")
     expected_size = artifacts["commitment_bytes"] + sum(_positive_int(artifacts.get(k), k, allow_zero=True) for k in sizes)
     if artifacts["proof_bytes"] != expected_size:
         raise CampaignError("proof size must include commitment and all proof components")
@@ -409,7 +409,7 @@ def read_manifest(path: Path) -> dict[str, Any]:
             raise CampaignError("cell security target differs from campaign")
         if "batch_counts" in workload and cell.get("batch_count") not in workload["batch_counts"]:
             raise CampaignError("cell batch count differs from campaign")
-        implementations = {"f2z-ligerito": ("f2z", "virtual-f2z"), "limber-hyrax": ("limber-hyrax", "hyrax"), "limber-brakedown": ("limber-brakedown", "brakedown")}
+        implementations = {"bitz-ligerito": ("bitz", "virtual-bitz"), "limber-hyrax": ("limber-hyrax", "hyrax"), "limber-brakedown": ("limber-brakedown", "brakedown")}
         mode = cell.get("thread_mode")
         implementation = cell.get("implementation")
         if implementation not in implementations or mode not in ("single", "performance"):
@@ -425,8 +425,8 @@ def read_manifest(path: Path) -> dict[str, Any]:
         (f"{workload_k}-{suffix}" if workload_k.startswith("b") else f"k{workload_k}-{suffix}")
         for workload_k in workload_groups(manifest)
         for suffix in (
-            "f2z-single",
-            "f2z-performance",
+            "bitz-single",
+            "bitz-performance",
             "limber-hyrax-single",
             "limber-hyrax-performance",
             "limber-brakedown-single",
@@ -966,7 +966,7 @@ def _metric_selected(metric: str, span: dict[str, Any], implementation: str) -> 
     operation = span["operation"]
     tags = set(span["phase_tags"])
     exact = {
-        "f2z-ligerito": {
+        "bitz-ligerito": {
             "witness": "multiswap-trace.witness_generation",
             "projection": "step2.project_prove",
             "commit": "multiswap-trace.commit",
@@ -1288,7 +1288,7 @@ def render_html(summary: dict[str, Any]) -> str:
     headline_groups = []
     for workload_k in workload_groups(summary):
         implementation_rank = {
-            "f2z-ligerito": 0,
+            "bitz-ligerito": 0,
             "limber-hyrax": 1,
             "limber-brakedown": 2,
         }
@@ -1417,7 +1417,7 @@ main{{max-width:1500px;margin:auto;padding:38px 32px 80px}} h1{{font-size:32px;m
 .tip{{display:none;position:absolute;z-index:10;left:min(32%,430px);top:44px;width:min(630px,65vw);padding:14px 16px;border:1px solid #cbd3e2;border-radius:10px;background:#111827;color:#f9fafb;box-shadow:0 18px 50px #0005}} .interval-row:hover .tip,.interval-row:focus .tip{{display:grid;gap:6px}} .tip>span{{color:#cfd6e4;font-size:12px}} .math{{overflow:auto;background:#ffffff12;border-radius:6px;padding:7px}} .math code{{color:#f7d6ec;white-space:pre-wrap}}
 @media(max-width:850px){{main{{padding:24px 14px}}.interval-row{{grid-template-columns:1fr 90px}}.track{{grid-column:1/-1}}.tip{{left:4%;width:92%}}}}
 </style></head><body><main>
-<h1>Matched F2Z / Limber MultiSwap campaign</h1>
+<h1>Matched BitZ / Limber MultiSwap campaign</h1>
 {draft_notice}
 <p class="muted">{html.escape(workload_name)} · one warmup excluded · median of {summary['sampling']['samples']} measured trials · Hyndman–Fan Type 7 P10–P90</p>
 <div class="notice"><strong>Interpretation boundary.</strong> {html.escape(disclosure)}</div>

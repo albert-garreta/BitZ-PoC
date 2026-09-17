@@ -1,11 +1,11 @@
 # The b127 field study — `GF(2^127)` vs the GHASH `GF(2^128)`
 
 **Status: field module landed (`src/poly/univariate/binary_b127.rs`), protocol
-unchanged — and the study's verdict is that it should stay unchanged.** F2Z's
+unchanged — and the study's verdict is that it should stay unchanged.** BitZ's
 exponent fold, forest, pre-sumcheck, ring-switch and flock opener all run over
 the GHASH field. This note records (1) why a protocol-level swap to
 `GF(2^127)` is architecturally blocked in the Ligerito pipeline, (2) the
-measured head-to-head against F2Z's own `GF(2^128)` pipeline on this repo's
+measured head-to-head against BitZ's own `GF(2^128)` pipeline on this repo's
 hot patterns — **b127 is equal-to-12 % slower on Apple M4**, the "~30 %
 faster" folklore being a statement about GHASH implementations with off-PMULL
 reductions — and (3) what would carry over if a b127 variant were ever built
@@ -197,7 +197,7 @@ against this baseline.
 | powers win-15, ns/elem (2^16–2^18) | 39.7–40.5 | 31.6–32.9 | **1.22×** |
 
 So the ~"30 % faster" claim **replicates against Reilabs' GHASH baseline**
-— which reduces GHASH in scalar `u128` ops. F2Z's pipelines are a different
+— which reduces GHASH in scalar `u128` ops. BitZ's pipelines are a different
 regime entirely: its GHASH multiplies ~2.1× faster than Reilabs' GHASH, and
 this b127 port ~1.6× faster than Reilabs' b127, on the same box. Once both
 reductions are engineered to their best, the ordering inverts: **fewer
@@ -215,7 +215,7 @@ Weighting the prover's phases by their kernels — forest layer products
 cascades (`eqf`, 0.92–0.96×), wide-dot accumulations (1.00× — delayed
 reduction already amortizes the reduction, neutralizing b127's one
 structural advantage exactly where it would matter most), α-power tables
-(0.88×) — a b127-fielded F2Z prover on this hardware would run
+(0.88×) — a b127-fielded BitZ prover on this hardware would run
 **~5–10 % slower**, before recalling that the swap is architecturally
 blocked (§2) and that the b127-compatible opener trades away Ligerito's
 proof sizes.
@@ -229,7 +229,7 @@ proof sizes.
    specialized square). It is the honest best-known b127 on this hardware.
 2. **The "b127 ≈ 30 % faster than GHASH" claim is a statement about GHASH
    implementations whose reduction runs off the PMULL ports.** Against
-   F2Z's PMULL-fold GHASH on Apple M4, b127 is 0.88–1.02× — equal at best
+   BitZ's PMULL-fold GHASH on Apple M4, b127 is 0.88–1.02× — equal at best
    (squares, wide-dot), ~10 % behind on the patterns that dominate the
    prover. A swap would cost ~5–10 % prover time here; it would pay only on
    CLMUL-port-constrained hardware. (Re-confirmed 2026-07-19 on a fresh

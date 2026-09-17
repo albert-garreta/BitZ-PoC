@@ -1,4 +1,4 @@
-//! F2Z's opener as a binary-field PCS on the same packed rows the Binius64
+//! BitZ's opener as a binary-field PCS on the same packed rows the Binius64
 //! BaseFold adapter commits: one `GF(2^128)` row per gate, the same bit-MLE
 //! claim at a transcript-derived point, opened by Round 0 + ring switching +
 //! Johnson-regime Ligerito at rate 1/2 with fold and query grinding. The
@@ -11,12 +11,12 @@
 
 use std::error::Error;
 
-use f2z::binary_pcs::{BinaryPcs, LOG_INV_RATE, MIN_PACKED_LOG, write_round0};
-use f2z::ligerito::LOG_PACKING;
-use f2z::poly::univariate::binary_gf128::Gf128 as Gf;
-use f2z::proof_codec::Writer;
-use f2z::transcript::Blake3Transcript;
-use f2z::transcript::traits::Transcript;
+use bitz::binary_pcs::{BinaryPcs, LOG_INV_RATE, MIN_PACKED_LOG, write_round0};
+use bitz::ligerito::LOG_PACKING;
+use bitz::poly::univariate::binary_gf128::Gf128 as Gf;
+use bitz::proof_codec::Writer;
+use bitz::transcript::Blake3Transcript;
+use bitz::transcript::traits::Transcript;
 use flock_core::field::Gf128;
 
 /// The whole-opener gate.
@@ -26,8 +26,8 @@ pub const PACKING_BITS: usize = 128;
 const MIN_COMPONENT_BITS: usize = 100;
 const MAX_COMPONENT_BITS: usize = 112;
 
-const DOMAIN_TAG: &[u8] = b"f2z/integer-pcs-compare/ligerito-binary/v1";
-const CLAIM_TAG: &[u8] = b"f2z/integer-pcs-compare/ligerito-binary/claim/v1";
+const DOMAIN_TAG: &[u8] = b"bitz/integer-pcs-compare/ligerito-binary/v1";
+const CLAIM_TAG: &[u8] = b"bitz/integer-pcs-compare/ligerito-binary/claim/v1";
 
 const ROOT_SCOPE: &str = "pcs-compare:verified_trial";
 const MATERIALIZE_SCOPE: &str = "pcs-compare:materialize";

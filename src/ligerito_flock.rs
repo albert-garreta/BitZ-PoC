@@ -536,7 +536,7 @@ pub fn lig_configs(
 /// [`LigeritoSecurityConfig::validate`] re-checks — and the whole config
 /// gated by `validate()` before it is returned. Nothing hand-picked.
 ///
-/// Used by the bench's `F2Z_LIG_PROFILE=custom:<r0>:<k0>` and by
+/// Used by the bench's `BITZ_LIG_PROFILE=custom:<r0>:<k0>` and by
 /// `examples/gen_lig_configs.rs` (which regenerates flock's embedded slim
 /// TOMLs at a chosen geometry).
 ///
@@ -1284,23 +1284,23 @@ fn checked_mod_q_shape(
 // ---------------------------------------------------------------------
 
 #[allow(dead_code)]
-const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-open/v1";
+const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/rs-open/v1";
 #[allow(dead_code)]
-const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval/v1";
+const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/rs-eval/v1";
 #[allow(dead_code)]
-const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/rs-eval-batch/v1";
+const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/rs-eval-batch/v1";
 #[allow(dead_code)]
-const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q/v1";
-const U32_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u32-mod-q-opening/v2";
-const U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u64-mod-q-opening/v1";
-const U128_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"f2z/spartan-f2z/u128-mod-q-opening/v1";
+const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/mod-q/v1";
+const U32_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"bitz/spartan-bitz/u32-mod-q-opening/v2";
+const U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"bitz/spartan-bitz/u64-mod-q-opening/v1";
+const U128_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"bitz/spartan-bitz/u128-mod-q-opening/v1";
 const BABY_BEAR_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] =
-    b"f2z/spartan-baby-bear-f2z/mod-q-opening/v2";
-const EXT_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/ext/early-ood/v2";
+    b"bitz/spartan-baby-bear-bitz/mod-q-opening/v2";
+const EXT_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/ext/early-ood/v2";
 #[allow(dead_code)]
-const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor/v1";
+const MOD_Q_XOR_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/mod-q-xor/v1";
 #[allow(dead_code)]
-const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"f2z/ligerito-flock/mod-q-xor-only/v1";
+const MOD_Q_XOR_ONLY_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/mod-q-xor-only/v1";
 
 /// Application relation whose statement domain binds a chunked-weight mod-q
 /// opening. The enum is crate-private so callers cannot supply arbitrary
@@ -1324,7 +1324,7 @@ impl ModQOpeningKind {
     }
 }
 
-const STATEMENT_FRAME_DOMAIN: &[u8] = b"f2z/ligerito-flock/statement-frame/v1";
+const STATEMENT_FRAME_DOMAIN: &[u8] = b"bitz/ligerito-flock/statement-frame/v1";
 const FIELD_BYTES: u8 = 1;
 const FIELD_U8: u8 = 2;
 const FIELD_U64: u8 = 3;
@@ -1679,11 +1679,11 @@ pub(crate) fn absorb_mod_q_weight_chunks_statement(
 }
 
 const STANDALONE_MOD_Q_STATEMENT_DOMAIN: &[u8] =
-    b"f2z/ligerito-flock/standalone-mod-q-statement/v1";
-const STANDALONE_MOD_Q_CLAIM_DOMAIN: &[u8] = b"f2z/ligerito-flock/standalone-mod-q-claim/v1";
+    b"bitz/ligerito-flock/standalone-mod-q-statement/v1";
+const STANDALONE_MOD_Q_CLAIM_DOMAIN: &[u8] = b"bitz/ligerito-flock/standalone-mod-q-claim/v1";
 
 /// Bind the public statement of a STANDALONE opening whose evaluation prime
-/// and point are sampled from the transcript AFTER this frame (the `f2z`
+/// and point are sampled from the transcript AFTER this frame (the `bitz`
 /// CLI and `benches/pcs.rs`): the commitment, the opener config, the tensor
 /// shape, the generator, the prime width and the Round-0 parameters. Sample
 /// `q` and the point next, then bind the claim with
@@ -2205,7 +2205,7 @@ where
 
 /// Dense in-pack marginal `s_v[j] = Σ_y eq_hi[y]·bit_j(P[y])`,
 /// chunk-parallel with per-chunk accumulators. Default: the
-/// method-of-four-Russians kernel ([`sv_fold_mfr`]); `F2Z_RS_FAST=0`
+/// method-of-four-Russians kernel ([`sv_fold_mfr`]); `BITZ_RS_FAST=0`
 /// restores the scalar bit scan (byte-identical either way).
 #[allow(clippy::arithmetic_side_effects)]
 fn dense_ring_sv(p_msg: &[Gf128], eq_hi: &[Gf]) -> Vec<Gf> {
@@ -2246,7 +2246,7 @@ fn dense_ring_sv(p_msg: &[Gf128], eq_hi: &[Gf]) -> Vec<Gf> {
 /// Overwrite `b[y] = Σ_l η_l·Φ_{r″}(eq_his[l][y])` — the η-combined
 /// Ligerito basis of the dense (main-chunk) claims — parallel over `y`.
 /// Default: η-premultiplied byte-table subset sums ([`phi_byte_tables`],
-/// 16 gathers/element, no per-element η multiply); `F2Z_RS_FAST=0` restores
+/// 16 gathers/element, no per-element η multiply); `BITZ_RS_FAST=0` restores
 /// the scalar bit scan (byte-identical either way).
 #[allow(clippy::arithmetic_side_effects)]
 fn fill_phi_basis(b: &mut [Gf128], eq_his: &[Vec<Gf>], etas: &[Gf], eq_r2: &[Gf]) {
@@ -2415,11 +2415,11 @@ pub struct OodRound {
 pub enum OodRoundGrinding {}
 
 impl GrindingDomain for OodRoundGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/core/ood-round-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/core/ood-round-grinding/v1";
 }
 
 /// Transcript frame binding the round's public parameters before the draw.
-const OOD_ROUND_DOMAIN: &[u8] = b"f2z/core/ood-round/v1";
+const OOD_ROUND_DOMAIN: &[u8] = b"bitz/core/ood-round/v1";
 
 /// `log₂` of the block the OOD kernels parallelize over.
 const OOD_BLOCK_LOG: usize = 12;
@@ -8692,11 +8692,11 @@ fn rlc_folds(
         .collect()
 }
 
-/// `F2Z_RLC_EAGER=1` forces the materialised-leaf forest on the RLC-family
+/// `BITZ_RLC_EAGER=1` forces the materialised-leaf forest on the RLC-family
 /// prover (A/B / diagnostic); unset, j ≤ 2 run the lazy bit-driven paths.
 /// Byte-identical proofs either way. Read once per prove call.
 fn rlc_eager_forced() -> bool {
-    std::env::var("F2Z_RLC_EAGER").is_ok_and(|v| v == "1")
+    std::env::var("BITZ_RLC_EAGER").is_ok_and(|v| v == "1")
 }
 
 /// Prover-side output of the discharge cascade.
@@ -9009,10 +9009,10 @@ fn prove_rlc_family_front(
     // exactly the base scheme's lazy forest; j = 3, 4 default to the
     // EAGER forest — measured faster than the Dense-JIT form at n = 24–28
     // (the 8/16-case leaf-ROUND kernels remain the open lever) —
-    // with `F2Z_RLC_J34_LAZY=1` opting into the low-peak-memory JIT form
+    // with `BITZ_RLC_J34_LAZY=1` opting into the low-peak-memory JIT form
     // ([`prove_merged_forest_lazy_rlc_general`], ~⅓ the peak).
     let lazy = !rlc_eager_forced();
-    let j34_lazy = std::env::var("F2Z_RLC_J34_LAZY").is_ok_and(|v| v == "1");
+    let j34_lazy = std::env::var("BITZ_RLC_J34_LAZY").is_ok_and(|v| v == "1");
     let packed_x1 = if lazy && j == 1 {
         Some(crate::ligerito::pack_columns_from_rows(&p_x, &x_rows[0]))
     } else {
@@ -10687,7 +10687,7 @@ fn read_ligerito_blob(
 }
 
 impl IntEvalRsLigModQProof {
-    /// Serialize the complete F2Z proof into the host proof stream: the
+    /// Serialize the complete BitZ proof into the host proof stream: the
     /// zinc-side parts field by field (merged forests, chunk folds `u`,
     /// pre-sumchecks, ring-switch `s_v` messages) via [`crate::proof_codec`],
     /// then the flock [`LigeritoProof`] as a length-prefixed `bincode` 1.3
@@ -10696,7 +10696,7 @@ impl IntEvalRsLigModQProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
-        w.bytes(b"F2ZM0002");
+        w.bytes(b"BITZM002");
         let lch = self.mfs.len();
         w.len(lch);
         for l in 0..lch {
@@ -10721,14 +10721,14 @@ impl IntEvalRsLigModQProof {
         w.into_vec()
     }
 
-    /// Deserialize the complete F2Z proof from the host proof stream.
+    /// Deserialize the complete BitZ proof from the host proof stream.
     /// Mirrors [`Self::to_bytes`]. The embedded `LigeritoProof` is decoded
     /// from its length-prefixed `bincode` blob.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::Reader;
         let mut r = Reader::new(bytes);
-        if r.take(8)? != b"F2ZM0002" {
+        if r.take(8)? != b"BITZM002" {
             return Err(crate::proof_codec::CodecError::NonCanonical);
         }
         let lch = r.len()?;
@@ -10856,7 +10856,7 @@ impl IntEvalRsLigExtProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
-        w.bytes(b"F2ZE0002");
+        w.bytes(b"BITZE002");
         w.len(self.mus.len());
         for m in &self.mus {
             let n = transmitted_us_len(m);
@@ -10886,7 +10886,7 @@ impl IntEvalRsLigExtProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
         let mut r = Reader::new(bytes);
-        if r.take(8)? != b"F2ZE0002" {
+        if r.take(8)? != b"BITZE002" {
             return Err(crate::proof_codec::CodecError::NonCanonical);
         }
         let n_mus = r.len()?;
@@ -10986,7 +10986,7 @@ impl IntEvalRsLigExtProof {
 // the BASE opening ([`prove_mle_eval_mod_q_ligerito`]'s reduction: per-chunk
 // eq ring-switch `s_v`, shared `r″`, η-batched Ligerito) after the same
 // v2 statement absorb, emitting the [`VirtualReductionProof::Eq`] reduction. The
-// switch `F2Z_VIRT_ID_FAST` (default ON, `=0` disables) is PROVER-side
+// switch `BITZ_VIRT_ID_FAST` (default ON, `=0` disables) is PROVER-side
 // only: on an eligible statement the verifier accepts either reduction (each
 // is an individually sound reduction of the same claim — with `h = f`
 // the eq-tensor weights are exactly the base path's); on any other
@@ -11195,21 +11195,21 @@ where
         && h_layout.col_vars == f_layout.col_vars
 }
 
-/// The identity fast-path switch (default ON; `F2Z_VIRT_ID_FAST=0`
+/// The identity fast-path switch (default ON; `BITZ_VIRT_ID_FAST=0`
 /// disables). PROVER-side only: it selects which reduction is produced on an
 /// eligible statement; the verifier accepts either reduction there (both are
 /// sound), so no cross-process agreement is needed. Read per call so
 /// tests can toggle it.
-/// The packed-source plane engine (`F2Z_VIRT_PLANES`, default on; `0`
+/// The packed-source plane engine (`BITZ_VIRT_PLANES`, default on; `0`
 /// restores the per-cell batching kernels — diagnostic / A-B measurement;
 /// byte-identical proofs either way). Read once per process.
 fn virt_planes() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_VIRT_PLANES").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_VIRT_PLANES").map_or(true, |v| v != "0"))
 }
 
 fn virt_id_fast() -> bool {
-    std::env::var("F2Z_VIRT_ID_FAST").map_or(true, |v| v != "0")
+    std::env::var("BITZ_VIRT_ID_FAST").map_or(true, |v| v != "0")
 }
 
 /// Digest-absorbs the virtual opening's complete statement before any
@@ -11236,7 +11236,7 @@ where
     // v3 additionally binds the full runtime modulus rather than only its
     // bit length.  Distinct primes with one bit length must never share a
     // subprotocol statement.
-    hash.update(b"f2z/mod-q-virtual-statement/v3");
+    hash.update(b"bitz/mod-q-virtual-statement/v3");
     hash.update(&commitment.root);
     for v in [
         commitment.params.m,
@@ -11567,7 +11567,7 @@ impl<'a, M: circuit::linear_map::binary::VirtualMap> VirtualOpeningWeights<'a, M
 
     /// The plane engine ([`crate::virt_batch`]) for a packed-source
     /// repetition whose shape pays for it; `None` keeps the per-cell
-    /// kernels. `F2Z_VIRT_PLANES=0` opts out (A/B; bit-identical messages
+    /// kernels. `BITZ_VIRT_PLANES=0` opts out (A/B; bit-identical messages
     /// either way).
     fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes<'_>> {
         self.packed_source_planes_with(true)
@@ -12840,7 +12840,7 @@ impl IntEvalRsLigVirtProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         use crate::proof_codec::Writer;
         let mut w = Writer::new();
-        w.bytes(b"F2ZV0002");
+        w.bytes(b"BITZV002");
         let lch = self.mfs.len();
         w.len(lch);
         for l in 0..lch {
@@ -12876,7 +12876,7 @@ impl IntEvalRsLigVirtProof {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, crate::proof_codec::CodecError> {
         use crate::proof_codec::{CodecError, Reader};
         let mut r = Reader::new(bytes);
-        if r.take(8)? != b"F2ZV0002" {
+        if r.take(8)? != b"BITZV002" {
             return Err(crate::proof_codec::CodecError::NonCanonical);
         }
         let lch = r.len()?;
@@ -13009,7 +13009,7 @@ mod tests {
         Gf::from_polynomial_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
     }
 
-    /// Serializes the test that MUTATES the process-global `F2Z_QUAD` env
+    /// Serializes the test that MUTATES the process-global `BITZ_QUAD` env
     /// var against quad-eligible (row_len ≥ 256) prove/verify pairs that
     /// must see a stable value across their whole run.
     use crate::utils::QUAD_ENV_LOCK;
@@ -13869,7 +13869,7 @@ mod tests {
     fn mle_eval_mod_q_ligerito_roundtrips() {
         // This test changes process-wide protocol dispatch settings. A mutex
         // cannot protect other tests that simply read those settings.
-        const CHILD: &str = "F2Z_QUAD_TEST_CHILD";
+        const CHILD: &str = "BITZ_QUAD_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
             let status = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
@@ -14057,12 +14057,12 @@ mod tests {
                 Err(FlockRsError::Common(IntEvalRsError::ChallengeNotGenerator)),
             );
 
-            // QUAD forest (`F2Z_QUAD=1` — arity-4 region layers, K
+            // QUAD forest (`BITZ_QUAD=1` — arity-4 region layers, K
             // challenges, its own transcript shape; both test shapes have
             // row_len ≥ 256, and (4, 8, 32) exercises the odd-depth
             // parity bridge): roundtrip, wrong-claim rejection, and the
             // codec round-trips the quad layers (pair2 flag).
-            unsafe { std::env::set_var("F2Z_QUAD", "1") };
+            unsafe { std::env::set_var("BITZ_QUAD", "1") };
             let mut pt = Blake3Transcript::new();
             let proof_q =
                 prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
@@ -14117,21 +14117,21 @@ mod tests {
             // cross stage + folded node conversion) are value-exact
             // re-associations: the proof stream must be byte-identical
             // to the naive bodies'.
-            unsafe { std::env::set_var("F2Z_QUAD_KERNEL", "0") };
+            unsafe { std::env::set_var("BITZ_QUAD_KERNEL", "0") };
             let mut pt = Blake3Transcript::new();
             let proof_q_naive =
                 prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
-            unsafe { std::env::remove_var("F2Z_QUAD_KERNEL") };
+            unsafe { std::env::remove_var("BITZ_QUAD_KERNEL") };
             assert_eq!(
                 proof_q.to_bytes(),
                 proof_q_naive.to_bytes(),
                 "quad kernel bodies must be transcript-identical (t={t},W={w})"
             );
-            // BOTTOM MERGE (`F2Z_QUAD=2` — the pair and leaf layers as
+            // BOTTOM MERGE (`BITZ_QUAD=2` — the pair and leaf layers as
             // ONE arity-4 bit-driven layer, `prove_quad_bottom_sumcheck`):
             // roundtrip, wrong-claim rejection, codec, and the v1/v2
             // plans are mutually incompatible (layer counts differ).
-            unsafe { std::env::set_var("F2Z_QUAD", "2") };
+            unsafe { std::env::set_var("BITZ_QUAD", "2") };
             let mut pt = Blake3Transcript::new();
             let proof_q2 =
                 prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
@@ -14200,7 +14200,7 @@ mod tests {
                 .is_err(),
                 "a v1 quad proof must be rejected under the v2 plan (t={t},W={w})"
             );
-            unsafe { std::env::remove_var("F2Z_QUAD") };
+            unsafe { std::env::remove_var("BITZ_QUAD") };
             // A quad proof must NOT pass the arity-2 dispatch (different
             // transcript shape — the quad layers' pair2 rejects).
             let mut vt = Blake3Transcript::new();
@@ -14731,7 +14731,7 @@ mod tests {
         }
     }
 
-    /// The complete F2Z proof object round-trips through the host byte stream
+    /// The complete BitZ proof object round-trips through the host byte stream
     /// (zinc parts field-by-field + a length-prefixed `bincode` `LigeritoProof`
     /// blob), and any single tampered byte is rejected — the stream fails to
     /// decode, or the reconstructed proof fails verification.
@@ -18290,7 +18290,7 @@ mod ood_round_tests {
         y
     }
 
-    /// The standalone protocol of the `f2z` CLI at one tiny shape: statement,
+    /// The standalone protocol of the `bitz` CLI at one tiny shape: statement,
     /// transcript-sampled prime and point, claim, then the opening with the
     /// requested Round-0 parameters.
     fn standalone_roundtrip(t: usize, s: usize, w: usize, ood: Option<OodRoundParams>) {

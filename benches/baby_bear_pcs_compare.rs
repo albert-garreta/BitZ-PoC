@@ -1,4 +1,4 @@
-//! Controlled comparison of the F2Z and Plonky3 WHIR PCS opening paths.
+//! Controlled comparison of the BitZ and Plonky3 WHIR PCS opening paths.
 //!
 //! Each backend receives the same deterministic integer witness
 //! `f = [e0 | A | B | C | K | 0 | 0 | 0]`, while deriving challenges in its
@@ -27,20 +27,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use baby_bear_pcs_compare::whir::{self, SecuritySummary, WhirAdapterError, WhirBackend};
 
-use f2z::observability::Interval;
-use f2z::pcs::FQ_MOD;
-use f2z::piop::spartan::baby_bear_f2z::{
-    PreparedBabyBearTerminalF2zOpening, baby_bear_terminal_claim_f2z_proof_bytes,
-    commit_baby_bear_terminal_f2z_witness, prepare_baby_bear_terminal_f2z_opening,
-    prove_baby_bear_terminal_claim_f2z, verify_baby_bear_terminal_claim_f2z,
+use bitz::observability::Interval;
+use bitz::pcs::FQ_MOD;
+use bitz::piop::spartan::baby_bear_bitz::{
+    PreparedBabyBearTerminalBitzOpening, baby_bear_terminal_claim_bitz_proof_bytes,
+    commit_baby_bear_terminal_bitz_witness, prepare_baby_bear_terminal_bitz_opening,
+    prove_baby_bear_terminal_claim_bitz, verify_baby_bear_terminal_claim_bitz,
 };
-use f2z::piop::spartan::{
-    BabyBearMulWitness, ScaledMleEvaluationClaim, SpartanF2zField, SpartanField,
+use bitz::piop::spartan::{
+    BabyBearMulWitness, ScaledMleEvaluationClaim, SpartanBitzField, SpartanField,
     commit_baby_bear_mul_witness, prepare_baby_bear_mul_relation, sample_baby_bear_operand_with,
-    spartan_f2z_field_config,
+    spartan_bitz_field_config,
 };
-use f2z::transcript::Blake3Transcript;
-use f2z::transcript::traits::Transcript;
+use bitz::transcript::Blake3Transcript;
+use bitz::transcript::traits::Transcript;
 use integer_pcs_compare::binius::{self, BiniusBackend};
 use integer_pcs_compare::ligerito::{self, LigeritoBackend};
 use p3_whir::parameters::WhirConfigError;
@@ -59,15 +59,15 @@ const CLAIM_SCOPE: &str = "pcs-compare:claim_setup";
 const OPENING_SCOPE: &str = "pcs-compare:opening";
 const VERIFY_SCOPE: &str = "pcs-compare:verification";
 
-const F2Z_IMPLEMENTATION: &str = "f2z";
+const BITZ_IMPLEMENTATION: &str = "bitz";
 const WHIR_IMPLEMENTATION: &str = "plonky3-whir";
 const BINIUS_IMPLEMENTATION: &str = "binius64-basefold";
-const LIGERITO_IMPLEMENTATION: &str = "f2z-ligerito-binary";
+const LIGERITO_IMPLEMENTATION: &str = "bitz-ligerito-binary";
 
 impl Backend {
     const fn seed_tag(self) -> u64 {
         match self {
-            Self::F2z => 0x4632_5a00_0000_0001,
+            Self::Bitz => 0x4632_5a00_0000_0001,
             Self::Whir => 0x5748_4952_0000_0001,
             Self::Binius => 0x4249_4e49_5553_0001,
             Self::Ligerito => 0x4c49_4745_0000_0001,
@@ -76,7 +76,7 @@ impl Backend {
 
     const fn challenge_extension_degree(self) -> Option<usize> {
         match self {
-            Self::F2z => None,
+            Self::Bitz => None,
             Self::Whir => Some(whir::CHALLENGE_EXTENSION_DEGREE),
             Self::Binius | Self::Ligerito => Some(128),
         }
@@ -84,7 +84,7 @@ impl Backend {
 
     const fn configured_max_pow_bits(self) -> Option<usize> {
         match self {
-            Self::F2z => None,
+            Self::Bitz => None,
             Self::Whir => Some(whir::MAX_POW_BITS),
             Self::Binius | Self::Ligerito => None,
         }
@@ -214,7 +214,7 @@ struct CampaignWriter {
 impl CampaignWriter {
     fn from_env() -> Self {
         Self {
-            path: std::env::var_os("F2Z_PCS_COMPARE_CAMPAIGN_PATH").map(PathBuf::from),
+            path: std::env::var_os("BITZ_PCS_COMPARE_CAMPAIGN_PATH").map(PathBuf::from),
         }
     }
 
@@ -235,7 +235,7 @@ impl CampaignWriter {
         }
         for exponent in MIN_EXPONENT..=MAX_EXPONENT {
             for backend in [
-                Backend::F2z,
+                Backend::Bitz,
                 Backend::Whir,
                 Backend::Binius,
                 Backend::Ligerito,
@@ -247,7 +247,7 @@ impl CampaignWriter {
                     cells.push(CampaignCell::not_requested(
                         backend,
                         exponent,
-                        "shape omitted by F2Z_BENCH_SHAPES",
+                        "shape omitted by BITZ_BENCH_SHAPES",
                     ));
                 }
             }
@@ -257,7 +257,7 @@ impl CampaignWriter {
             "schema": "baby-bear-pcs-compare-campaign/v2",
             "campaign_id": campaign_id,
             "trace_schema": "zkperf.trace/v1",
-            "trace_path": std::env::var("F2Z_PCS_COMPARE_TRACE_PATH").ok(),
+            "trace_path": std::env::var("BITZ_PCS_COMPARE_TRACE_PATH").ok(),
             "root_seed": format!("{root_seed:#018x}"),
             "warmups_per_runnable_cell": 1,
             "samples_per_runnable_cell": reps,
@@ -270,7 +270,7 @@ impl CampaignWriter {
                 "challenge_extension_degree": whir::CHALLENGE_EXTENSION_DEGREE,
                 "target_bits": whir::SECURITY_BITS,
                 "security_assumption": whir::SECURITY_ASSUMPTION_LABEL,
-                "folding_factor": std::env::var("F2Z_WHIR_FOLDING").ok(),
+                "folding_factor": std::env::var("BITZ_WHIR_FOLDING").ok(),
                 "default_folding_schedule": requested_exponents
                     .iter()
                     .map(|&exponent| json!({
@@ -295,8 +295,8 @@ impl CampaignWriter {
     }
 }
 
-struct F2zClaimFixture {
-    claim: ScaledMleEvaluationClaim<SpartanF2zField>,
+struct BitzClaimFixture {
+    claim: ScaledMleEvaluationClaim<SpartanBitzField>,
     prover_transcript: Blake3Transcript,
     verifier_transcript: Blake3Transcript,
 }
@@ -328,7 +328,7 @@ struct RunMetadata<'a> {
 
 impl TraceWriter {
     fn from_env(threads: usize, campaign_id: &str) -> Result<Self, Box<dyn Error>> {
-        let output: Box<dyn Write> = match std::env::var_os("F2Z_PCS_COMPARE_TRACE_PATH") {
+        let output: Box<dyn Write> = match std::env::var_os("BITZ_PCS_COMPARE_TRACE_PATH") {
             Some(path) => {
                 let path = Path::new(&path);
                 if let Some(parent) = path.parent().filter(|path| !path.as_os_str().is_empty()) {
@@ -339,21 +339,21 @@ impl TraceWriter {
             None => Box::new(BufWriter::new(io::stdout())),
         };
 
-        let git_rev = std::env::var("F2Z_PCS_COMPARE_GIT_REV")
+        let git_rev = std::env::var("BITZ_PCS_COMPARE_GIT_REV")
             .unwrap_or_else(|_| command_output("git", &["rev-parse", "HEAD"], "unknown"));
-        let git_dirty = std::env::var("F2Z_PCS_COMPARE_GIT_DIRTY")
+        let git_dirty = std::env::var("BITZ_PCS_COMPARE_GIT_DIRTY")
             .ok()
             .map(|value| {
                 common::cli::value(
-                    "F2Z_PCS_COMPARE_GIT_DIRTY",
+                    "BITZ_PCS_COMPARE_GIT_DIRTY",
                     &value,
                     clap::builder::BoolishValueParser::new(),
                 )
             })
             .unwrap_or_else(detect_git_dirty);
         let build_profile =
-            std::env::var("F2Z_PCS_COMPARE_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
-        let cpu = std::env::var("F2Z_PCS_COMPARE_CPU").unwrap_or_else(|_| {
+            std::env::var("BITZ_PCS_COMPARE_BUILD_PROFILE").unwrap_or_else(|_| "bench".to_owned());
+        let cpu = std::env::var("BITZ_PCS_COMPARE_CPU").unwrap_or_else(|_| {
             command_output("sysctl", &["-n", "machdep.cpu.brand_string"], "unknown CPU")
         });
 
@@ -398,17 +398,17 @@ impl TraceWriter {
         );
         let root_span_id = span_id(roots[0].id);
         let algorithm = match backend {
-            Backend::F2z => "BabyBear integer assignment / fixed-q F2Z opening",
+            Backend::Bitz => "BabyBear integer assignment / fixed-q BitZ opening",
             Backend::Whir => "BabyBear integer assignment / Plonky3 WHIR prescribed opening",
             Backend::Binius => {
                 "BabyBear integer assignment / Binius64 ring-switch + BaseFold opening"
             }
             Backend::Ligerito => {
-                "BabyBear integer assignment / F2Z opener: Round 0 + ring switch + Johnson-regime Ligerito"
+                "BabyBear integer assignment / BitZ opener: Round 0 + ring switch + Johnson-regime Ligerito"
             }
         };
         let field = match backend {
-            Backend::F2z => json!({
+            Backend::Bitz => json!({
                 "committed_encoding": "31 little-endian bits per A/B/C/K value",
                 "evaluation_field": "F_q",
                 "q": FQ_MOD.to_string(),
@@ -441,7 +441,7 @@ impl TraceWriter {
             "series_id": series_id,
             "root_span_id": root_span_id,
             "benchmark": {
-                "suite": "f2z-pcs",
+                "suite": "bitz-pcs",
                 "name": "baby-bear-pcs-compare",
                 "label": format!("{} at 2^{} BabyBear multiplications", backend.display(), metadata.exponent),
                 "algorithm": algorithm,
@@ -649,8 +649,8 @@ fn describe_span(
             "Complete verified terminal opening".to_owned(),
             "Verified trial".to_owned(),
             match backend {
-                Backend::F2z => vec![
-                    "\\operatorname{Verify}_{\\mathrm{F2Z}}(C_{\\mathrm{F2Z}},x,\\beta,D,V,\\pi_{\\mathrm{F2Z}})=1",
+                Backend::Bitz => vec![
+                    "\\operatorname{Verify}_{\\mathrm{BitZ}}(C_{\\mathrm{BitZ}},x,\\beta,D,V,\\pi_{\\mathrm{BitZ}})=1",
                 ],
                 Backend::Whir => vec![
                     "\\operatorname{Verify}_{\\mathrm{WHIR}}(C_{\\mathrm{WHIR}},x,\\mathbf{u},\\pi_{\\mathrm{WHIR}})=1",
@@ -669,7 +669,7 @@ fn describe_span(
             "Materialize backend-native commitment witness".to_owned(),
             "Materialize".to_owned(),
             match backend {
-                Backend::F2z => vec!["\\mathcal{B}=\\operatorname{Bit}_{31}(A,B,C,K)"],
+                Backend::Bitz => vec!["\\mathcal{B}=\\operatorname{Bit}_{31}(A,B,C,K)"],
                 Backend::Whir => vec!["U=(A,B,C,K)\\in\\mathbb{F}_p^{4\\times 2^g}"],
                 Backend::Binius | Backend::Ligerito => {
                     vec!["w_i=A_i+2^{31}B_i+2^{62}C_i+2^{93}K_i\\in\\mathbb F_2^{128}"]
@@ -681,9 +681,9 @@ fn describe_span(
             "Commit to the backend-native witness encoding".to_owned(),
             "Commit".to_owned(),
             match backend {
-                Backend::F2z => {
+                Backend::Bitz => {
                     vec![
-                        "C_{\\mathrm{F2Z}}\\leftarrow\\operatorname{Commit}_{\\mathrm{F2Z}}(\\mathcal{B})",
+                        "C_{\\mathrm{BitZ}}\\leftarrow\\operatorname{Commit}_{\\mathrm{BitZ}}(\\mathcal{B})",
                     ]
                 }
                 Backend::Whir => {
@@ -712,9 +712,9 @@ fn describe_span(
             "Prove the prescribed terminal opening".to_owned(),
             "Opening".to_owned(),
             match backend {
-                Backend::F2z => vec![
+                Backend::Bitz => vec![
                     "D\\,\\widetilde f(x,\\beta)=V",
-                    "\\pi_{\\mathrm{F2Z}}\\leftarrow\\operatorname{Open}_{\\mathrm{F2Z}}(C_{\\mathrm{F2Z}},x,\\beta,D,V)",
+                    "\\pi_{\\mathrm{BitZ}}\\leftarrow\\operatorname{Open}_{\\mathrm{BitZ}}(C_{\\mathrm{BitZ}},x,\\beta,D,V)",
                 ],
                 Backend::Whir => vec![
                     "u_j=\\widetilde U_j(x)\\quad(j\\in\\{A,B,C,K\\})",
@@ -735,8 +735,8 @@ fn describe_span(
             "Verify the prescribed terminal opening".to_owned(),
             "Verify".to_owned(),
             match backend {
-                Backend::F2z => vec![
-                    "\\operatorname{Verify}_{\\mathrm{F2Z}}(C_{\\mathrm{F2Z}},x,\\beta,D,V,\\pi_{\\mathrm{F2Z}})=1",
+                Backend::Bitz => vec![
+                    "\\operatorname{Verify}_{\\mathrm{BitZ}}(C_{\\mathrm{BitZ}},x,\\beta,D,V,\\pi_{\\mathrm{BitZ}})=1",
                 ],
                 Backend::Whir => vec![
                     "\\operatorname{Verify}_{\\mathrm{WHIR}}(C_{\\mathrm{WHIR}},x,\\mathbf{u},\\pi_{\\mathrm{WHIR}})=1",
@@ -850,7 +850,7 @@ fn sanitize_operation(label: &str) -> String {
 }
 
 fn campaign_id() -> String {
-    let raw = std::env::var("F2Z_PCS_COMPARE_CAMPAIGN_ID").unwrap_or_else(|_| {
+    let raw = std::env::var("BITZ_PCS_COMPARE_CAMPAIGN_ID").unwrap_or_else(|_| {
         let epoch_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock must be after the Unix epoch")
@@ -863,7 +863,7 @@ fn campaign_id() -> String {
                 .chars()
                 .all(|character| character.is_ascii_alphanumeric()
                     || matches!(character, '-' | '_' | '.')),
-        "F2Z_PCS_COMPARE_CAMPAIGN_ID must contain only ASCII letters, digits, '.', '-', or '_'"
+        "BITZ_PCS_COMPARE_CAMPAIGN_ID must contain only ASCII letters, digits, '.', '-', or '_'"
     );
     raw
 }
@@ -911,13 +911,13 @@ fn exponents() -> Vec<usize> {
 
 #[derive(clap::Parser)]
 struct OrderEnv {
-    #[arg(env = "F2Z_BENCH_ORDER", default_value = "alternate")]
+    #[arg(env = "BITZ_BENCH_ORDER", default_value = "alternate")]
     order: Order,
 }
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum Order {
     Alternate,
-    F2zFirst,
+    BitzFirst,
     WhirFirst,
     BiniusFirst,
 }
@@ -927,7 +927,7 @@ fn ordered_backends(selected: &[Backend], exponent: usize, order: Order) -> Vec<
         Order::Alternate => {
             if exponent.is_multiple_of(2) {
                 [
-                    Backend::F2z,
+                    Backend::Bitz,
                     Backend::Whir,
                     Backend::Binius,
                     Backend::Ligerito,
@@ -937,12 +937,12 @@ fn ordered_backends(selected: &[Backend], exponent: usize, order: Order) -> Vec<
                     Backend::Ligerito,
                     Backend::Binius,
                     Backend::Whir,
-                    Backend::F2z,
+                    Backend::Bitz,
                 ]
             }
         }
-        Order::F2zFirst => [
-            Backend::F2z,
+        Order::BitzFirst => [
+            Backend::Bitz,
             Backend::Whir,
             Backend::Binius,
             Backend::Ligerito,
@@ -951,13 +951,13 @@ fn ordered_backends(selected: &[Backend], exponent: usize, order: Order) -> Vec<
             Backend::Whir,
             Backend::Binius,
             Backend::Ligerito,
-            Backend::F2z,
+            Backend::Bitz,
         ],
         Order::BiniusFirst => [
             Backend::Binius,
             Backend::Ligerito,
             Backend::Whir,
-            Backend::F2z,
+            Backend::Bitz,
         ],
     };
     preference
@@ -1039,24 +1039,24 @@ fn selector_factors(beta: &[u128; 3], arith: &field::FpCtx<2>) -> [u128; 5] {
     ]
 }
 
-fn seed_f2z_claim_transcript(commitment_encoding: &[u8], seed: u64) -> Blake3Transcript {
+fn seed_bitz_claim_transcript(commitment_encoding: &[u8], seed: u64) -> Blake3Transcript {
     let mut transcript = Blake3Transcript::new();
-    transcript.absorb_slice(b"f2z/baby-bear-pcs-compare/terminal-claim/v1");
+    transcript.absorb_slice(b"bitz/baby-bear-pcs-compare/terminal-claim/v1");
     transcript.absorb_slice(&seed.to_le_bytes());
     transcript.absorb_slice(commitment_encoding);
     transcript
 }
 
-fn derive_f2z_claim(
+fn derive_bitz_claim(
     witness: &BabyBearMulWitness,
     mut transcript: Blake3Transcript,
     mut verifier_transcript: Blake3Transcript,
-) -> F2zClaimFixture {
-    let config = spartan_f2z_field_config();
+) -> BitzClaimFixture {
+    let config = spartan_bitz_field_config();
     let gate_vars = witness.layout().gate_vars();
     let draw = |transcript: &mut Blake3Transcript| {
         transcript.begin_sampling();
-        SpartanF2zField::sample_uniform(transcript, &config).expect("bounded public claim sampling")
+        SpartanBitzField::sample_uniform(transcript, &config).expect("bounded public claim sampling")
     };
     let point = (0..gate_vars + 3)
         .map(|_| draw(&mut transcript))
@@ -1068,9 +1068,9 @@ fn derive_f2z_claim(
     let verifier_scale = draw(&mut verifier_transcript);
     assert_eq!(
         verifier_point, point,
-        "verifier must replay the F2Z claim point"
+        "verifier must replay the BitZ claim point"
     );
-    assert_eq!(verifier_scale, scale, "verifier must replay the F2Z scale");
+    assert_eq!(verifier_scale, scale, "verifier must replay the BitZ scale");
     let canonical_point = point
         .iter()
         .map(|x| u128::from(config.to_integer(x)))
@@ -1099,21 +1099,21 @@ fn derive_f2z_claim(
     }
     let f_evaluation = arith.add_u128(arith.mul_u128(selectors[0], equality[0]), private);
     let value = arith.mul_u128(u128::from(config.to_integer(&scale)), f_evaluation);
-    let value = SpartanF2zField::from_with_cfg(value, &config);
+    let value = SpartanBitzField::from_with_cfg(value, &config);
     let claim = ScaledMleEvaluationClaim::new(point.into_boxed_slice(), scale, value);
-    F2zClaimFixture {
+    BitzClaimFixture {
         claim,
         prover_transcript: transcript,
         verifier_transcript,
     }
 }
 
-fn f2z_security(exponent: usize) -> Result<Value, Box<dyn Error>> {
+fn bitz_security(exponent: usize) -> Result<Value, Box<dyn Error>> {
     let resolved = common::ligerito_selection(100).resolve(exponent, 100)?;
     let config = resolved.prover();
     let total_query_openings = config.queries.iter().sum::<usize>();
     Ok(json!({
-        "profile": "fixed-q F2Z/Ligerito",
+        "profile": "fixed-q BitZ/Ligerito",
         "ligerito": common::ligerito_report(&resolved, resolved.round0(100)?),
         "target_bits": 100,
         "evaluation_modulus": FQ_MOD.to_string(),
@@ -1181,7 +1181,7 @@ fn binius_security(backend: &BiniusBackend) -> Value {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_f2z_series(
+fn run_bitz_series(
     writer: &mut TraceWriter,
     exponent: usize,
     shape_seed: u64,
@@ -1191,13 +1191,13 @@ fn run_f2z_series(
     reps: usize,
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let setup_started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("baby_bear_pcs_compare:setup_started").entered();
     let layout = *witness.layout();
     let preflight_hint =
-        f2z::piop::spartan::baby_bear_f2z::commit_baby_bear_mul_witness_with_ligerito(
+        bitz::piop::spartan::baby_bear_bitz::commit_baby_bear_mul_witness_with_ligerito(
             &layout,
-            witness.f2z_bit_rows(),
+            witness.bitz_bit_rows(),
             common::ligerito_selection(100),
         )?;
     let preflight_commitment = preflight_hint.commitment.clone();
@@ -1205,9 +1205,9 @@ fn run_f2z_series(
     // Flock's prover-data drop returns its largest codeword to a process-global
     // pool, so clear it before allocating the shape's relation matrices.
     flock_core::scratch::clear();
-    let matrices = prepare_baby_bear_mul_relation(layout, &spartan_f2z_field_config())?;
-    let prepared: PreparedBabyBearTerminalF2zOpening =
-        f2z::piop::spartan::baby_bear_f2z::prepare_baby_bear_terminal_f2z_opening_with_ligerito(
+    let matrices = prepare_baby_bear_mul_relation(layout, &spartan_bitz_field_config())?;
+    let prepared: PreparedBabyBearTerminalBitzOpening =
+        bitz::piop::spartan::baby_bear_bitz::prepare_baby_bear_terminal_bitz_opening_with_ligerito(
             &matrices,
             &layout,
             &preflight_commitment,
@@ -1216,7 +1216,7 @@ fn run_f2z_series(
     drop((matrices, preflight_commitment));
     let setup_ms = {
         drop(setup_started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &setup_started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -1226,24 +1226,24 @@ fn run_f2z_series(
     }
     .as_secs_f64()
         * 1e3;
-    let security = f2z_security(exponent)?;
-    eprintln!("  F2Z backend_setup_ms={setup_ms:.3}");
+    let security = bitz_security(exponent)?;
+    eprintln!("  BitZ backend_setup_ms={setup_ms:.3}");
 
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
-        let seed = trial_seed(shape_seed, Backend::F2z, trial);
-        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
+        let seed = trial_seed(shape_seed, Backend::Bitz, trial);
+        let recording = bitz::observability::Recording::start(Vec::new()).expect("start PCS trial");
         let (proof, claim_bytes, commitment_bytes, intervals) = {
             let root = tracing::info_span!(ROOT_SCOPE).entered();
             let rows = {
                 let _phase = tracing::info_span!(MATERIALIZE_SCOPE).entered();
-                witness.f2z_bit_rows()
+                witness.bitz_bit_rows()
             };
             let (hint, commitment_encoding, prover_transcript, verifier_transcript) = {
                 let _phase = tracing::info_span!(COMMIT_SCOPE).entered();
-                let hint = commit_baby_bear_terminal_f2z_witness(&prepared, rows)?;
+                let hint = commit_baby_bear_terminal_bitz_witness(&prepared, rows)?;
                 let commitment_encoding = bincode::serialize(&hint.commitment)?;
-                let prover_transcript = seed_f2z_claim_transcript(&commitment_encoding, seed);
-                let verifier_transcript = seed_f2z_claim_transcript(&commitment_encoding, seed);
+                let prover_transcript = seed_bitz_claim_transcript(&commitment_encoding, seed);
+                let verifier_transcript = seed_bitz_claim_transcript(&commitment_encoding, seed);
                 (
                     hint,
                     commitment_encoding,
@@ -1253,11 +1253,11 @@ fn run_f2z_series(
             };
             let mut fixture = {
                 let _phase = tracing::info_span!(CLAIM_SCOPE).entered();
-                derive_f2z_claim(witness, prover_transcript, verifier_transcript)
+                derive_bitz_claim(witness, prover_transcript, verifier_transcript)
             };
             let (proof, commitment) = {
                 let _phase = tracing::info_span!(OPENING_SCOPE).entered();
-                let proof = prove_baby_bear_terminal_claim_f2z(
+                let proof = prove_baby_bear_terminal_claim_bitz(
                     &mut fixture.prover_transcript,
                     &prepared,
                     &hint,
@@ -1269,7 +1269,7 @@ fn run_f2z_series(
             };
             {
                 let _phase = tracing::info_span!(VERIFY_SCOPE).entered();
-                verify_baby_bear_terminal_claim_f2z(
+                verify_baby_bear_terminal_claim_bitz(
                     &mut fixture.verifier_transcript,
                     &prepared,
                     &commitment,
@@ -1287,10 +1287,10 @@ fn run_f2z_series(
                 intervals,
             )
         };
-        let proof_bytes = baby_bear_terminal_claim_f2z_proof_bytes(&proof).len();
+        let proof_bytes = baby_bear_terminal_claim_bitz_proof_bytes(&proof).len();
         let artifacts = checked_artifacts(commitment_bytes, claim_bytes, proof_bytes)?;
         let metadata = RunMetadata {
-            backend: Backend::F2z,
+            backend: Backend::Bitz,
             exponent,
             shape_seed,
             trial_seed: seed,
@@ -1329,7 +1329,7 @@ fn run_whir_series(
     tuning: (usize, usize, usize),
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let setup_started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("baby_bear_pcs_compare:setup_started").entered();
     let (folding, log_inv_rate, max_pow_bits) = tuning;
     let backend = match WhirBackend::setup_with_params(
@@ -1368,7 +1368,7 @@ fn run_whir_series(
     }
     let setup_ms = {
         drop(setup_started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &setup_started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -1383,7 +1383,7 @@ fn run_whir_series(
 
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Whir, trial);
-        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
+        let recording = bitz::observability::Recording::start(Vec::new()).expect("start PCS trial");
         let (opened, claim_bytes, intervals) = {
             let root = tracing::info_span!(ROOT_SCOPE).entered();
             let materialized = {
@@ -1478,13 +1478,13 @@ fn run_binius_series(
     log_inv_rate: usize,
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let setup_started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("baby_bear_pcs_compare:setup_started").entered();
 
     let backend = BiniusBackend::setup(exponent, log_inv_rate);
     let setup_ms = {
         drop(setup_started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &setup_started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -1503,7 +1503,7 @@ fn run_binius_series(
 
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Binius, trial);
-        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
+        let recording = bitz::observability::Recording::start(Vec::new()).expect("start PCS trial");
         let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
         let intervals = recording.intervals().expect("query PCS trial");
         let artifacts = checked_artifacts(
@@ -1543,7 +1543,7 @@ fn run_binius_series(
 
 fn ligerito_security(backend: &LigeritoBackend) -> Value {
     json!({
-        "profile": "F2Z opener: Round 0 + ring switch + Johnson-regime Ligerito",
+        "profile": "BitZ opener: Round 0 + ring switch + Johnson-regime Ligerito",
         "target_bits": ligerito::SECURITY_BITS,
         "soundness_bound_model": "opener union bound (Round 0, ring switch, every Ligerito level's proximity folds, queries and OOD samples) at the pinned flock constants",
         "achieved_bits": backend.soundness_bits(),
@@ -1570,7 +1570,7 @@ fn run_ligerito_series(
     reps: usize,
 ) -> Result<CellOutcome, Box<dyn Error>> {
     let (backend, setup_started) =
-        f2z::observability::measure(tracing::info_span!("baby_bear_pcs_compare:backend"), || {
+        bitz::observability::measure(tracing::info_span!("baby_bear_pcs_compare:backend"), || {
             LigeritoBackend::setup(exponent)
         })
         .expect("measure completed operation");
@@ -1578,7 +1578,7 @@ fn run_ligerito_series(
     let setup_ms = setup_started.as_secs_f64() * 1e3;
     let security = ligerito_security(&backend);
     eprintln!(
-        "  F2Z Ligerito backend_setup_ms={setup_ms:.3} (rate 1/{}, {} level-0 queries, component {} bits, {:.2} bits achieved)",
+        "  BitZ Ligerito backend_setup_ms={setup_ms:.3} (rate 1/{}, {} level-0 queries, component {} bits, {:.2} bits achieved)",
         1usize << backend.log_inv_rate(),
         backend.n_test_queries(),
         backend.component_bits(),
@@ -1587,7 +1587,7 @@ fn run_ligerito_series(
 
     for trial in std::iter::once(Trial::Warmup).chain((0..reps).map(Trial::Sample)) {
         let seed = trial_seed(shape_seed, Backend::Ligerito, trial);
-        let recording = f2z::observability::Recording::start(Vec::new()).expect("start PCS trial");
+        let recording = bitz::observability::Recording::start(Vec::new()).expect("start PCS trial");
         let output = backend.run_trial(|| pack_binius_rows(witness), seed)?;
         let intervals = recording.intervals().expect("query PCS trial");
         let artifacts = checked_artifacts(
@@ -1638,7 +1638,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .contains(&Backend::Binius)
         .then(binius_log_inv_rate);
     let order = common::cli::environment::<OrderEnv>().order;
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
     let campaign_id = campaign_id();
     let campaign_writer = CampaignWriter::from_env();
@@ -1676,12 +1676,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     common::pcs_console::print_timing_definitions();
     for &exponent in &exponents {
-        for backend in [Backend::F2z, Backend::Whir, Backend::Binius] {
+        for backend in [Backend::Bitz, Backend::Whir, Backend::Binius] {
             if !selected.contains(&backend) {
                 campaign_cells.push(CampaignCell::not_requested(
                     backend,
                     exponent,
-                    "backend omitted by F2Z_PCS_COMPARE_BACKENDS",
+                    "backend omitted by BITZ_PCS_COMPARE_BACKENDS",
                 ));
             }
         }
@@ -1690,7 +1690,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let shape_seed = common::mul_witness::shape_seed(root_seed, exponent);
         let mut rng = StdRng::seed_from_u64(shape_seed);
         let witness_started_recording =
-            f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let witness_started =
             tracing::info_span!("baby_bear_pcs_compare:witness_started").entered();
         let witness = BabyBearMulWitness::from_fn(multiplications, |_| {
@@ -1700,7 +1700,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         })?;
         let witness_ms = {
             drop(witness_started);
-            f2z::observability::duration(
+            bitz::observability::duration(
                 &witness_started_recording
                     .intervals()
                     .expect("complete operation capture"),
@@ -1719,7 +1719,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         for backend in ordered_backends(&selected, exponent, order) {
             let outcome = match backend {
-                Backend::F2z => run_f2z_series(
+                Backend::Bitz => run_bitz_series(
                     &mut writer,
                     exponent,
                     shape_seed,
@@ -1785,12 +1785,12 @@ mod reporting_tests {
         let measured = CellOutcome::Measured {
             derived_max_pow_bits: None,
         }
-        .record(Backend::F2z, 4);
+        .record(Backend::Bitz, 4);
         let value = serde_json::to_value(measured).unwrap();
         assert_eq!(
             value,
             json!({
-                "implementation":Backend::F2z.id(),"log_multiplications":4,
+                "implementation":Backend::Bitz.id(),"log_multiplications":4,
                 "challenge_extension_degree":null,"configured_max_pow_bits":null,
                 "derived_max_pow_bits":null,"status":"measured"
             })
@@ -1806,7 +1806,7 @@ mod reporting_tests {
         assert_eq!(value["required_pow_bits"], 20);
         assert_eq!(value["budget"], 12);
         let absent =
-            serde_json::to_value(CampaignCell::not_requested(Backend::F2z, 4, "shape")).unwrap();
+            serde_json::to_value(CampaignCell::not_requested(Backend::Bitz, 4, "shape")).unwrap();
         assert_eq!(absent["status"], "not_requested");
         assert_eq!(absent["reason"], "shape");
         assert!(absent.get("budget").is_none());

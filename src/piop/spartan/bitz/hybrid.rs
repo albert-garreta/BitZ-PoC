@@ -11,7 +11,7 @@
 use super::super::{
     absorb_spartan_message,
     protocol::{
-        SpartanPrefixProof, SpartanProof, bitify, check_boundary, f2z_generator, prove_piop,
+        SpartanPrefixProof, SpartanProof, bitify, check_boundary, bitz_generator, prove_piop,
         sample_mod_q, validate_bit_rows, verify_piop,
     },
     univariate_skip::UnivariateSkipSpartanPiopProof,
@@ -32,7 +32,7 @@ pub(crate) struct PrefixProof {
     pub initial_nonce: u64,
     pub terminal_nonce: u64,
     pub piop_nonces: Vec<u64>,
-    pub spartan: UnivariateSkipSpartanPiopProof<SpartanF2zField>,
+    pub spartan: UnivariateSkipSpartanPiopProof<SpartanBitzField>,
     pub sums: Vec<u128>,
     pub forest: MergedForestProof,
 }
@@ -56,7 +56,7 @@ pub(crate) fn decoding_config(
 ) -> Result<
     (
         u128,
-        <SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+        <SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
     ),
     Error,
 > {
@@ -88,7 +88,7 @@ fn bind_sums(t: &mut Blake3Transcript, digest: &[u8; 32], sums: &[u128]) {
 fn endpoint(p: &crate::pcs::IntegerMatrixLayout, weights: &[u128], z: &[Gf], e: Gf) -> BinaryClaim {
     let tw = row_bit_vars(p);
     BinaryClaim {
-        low: row_bit_weights(p, weights, f2z_generator(), &z[..tw])
+        low: row_bit_weights(p, weights, bitz_generator(), &z[..tw])
             .into_iter()
             .collect(),
         high_point: z[tw..].iter().copied().collect(),
@@ -108,7 +108,7 @@ pub(crate) fn prove(
     if witness.layout() != layout {
         return Err(Error::Invalid("multiplication layout"));
     }
-    let p = layout.f2z_params();
+    let p = layout.bitz_params();
     validate_bit_rows(&p, rows)?;
     absorb_spartan_message(transcript, layout.domains().statement_tag, statement);
     let proved = prove_piop(transcript, prepared, witness, statement)?;
@@ -124,7 +124,7 @@ pub(crate) fn prove(
     )?;
     let weights = chunks.chunks();
     if weights.len() != 1 {
-        return Err(Error::Invalid("multiple F2Z chunks"));
+        return Err(Error::Invalid("multiple BitZ chunks"));
     }
     let fold_scope = tracing::info_span!("mo:fold_values").entered();
     let sums = fold_values_bits(&p, rows, &weights[0]);
@@ -134,7 +134,7 @@ pub(crate) fn prove(
     let packed_cols = pack_columns_from_rows(&p, rows);
     drop(pack_scope);
     let pow2_scope = tracing::info_span!("mo:pow2").entered();
-    let powers = chunk_pow2_table(&p, &weights[0], f2z_generator());
+    let powers = chunk_pow2_table(&p, &weights[0], bitz_generator());
     drop(pow2_scope);
     let forest_scope = tracing::info_span!("mo:forest").entered();
     let (_, forest, z, e) =
@@ -173,11 +173,11 @@ pub(crate) fn verify(
     proof: &PrefixProof,
 ) -> Result<BinaryClaim, Error> {
     let layout = prepared.layout();
-    let p = layout.f2z_params();
+    let p = layout.bitz_params();
     let actual_skip_vars = proof.spartan.outer.skip.skip_vars;
     let expected_skip_vars = U32_MUL_UNIVARIATE_SKIP_VARS as u8;
     if actual_skip_vars != expected_skip_vars {
-        return Err(SpartanF2zError::UnexpectedUnivariateSkipVariables {
+        return Err(SpartanBitzError::UnexpectedUnivariateSkipVariables {
             expected: expected_skip_vars,
             actual: actual_skip_vars,
         }
@@ -200,7 +200,7 @@ pub(crate) fn verify(
     let col_weights = bitify::column_weights(&verified.opening, arith)?;
     let weights = chunks.chunks();
     if weights.len() != 1 || proof.sums.len() != p.cols() {
-        return Err(Error::Invalid("F2Z sums shape"));
+        return Err(Error::Invalid("BitZ sums shape"));
     }
     // Every true integer fold lies below the group order. Check a tighter,
     // instance-derived bound on the sent integers before exponentiation.
@@ -219,7 +219,7 @@ pub(crate) fn verify(
         return Err(Error::Invalid("integer read-off"));
     }
     bind_sums(transcript, &verified.bridge_digest, &proof.sums);
-    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, f2z_generator().into(), 8);
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, bitz_generator().into(), 8);
     let roots: Vec<_> = proof
         .sums
         .iter()

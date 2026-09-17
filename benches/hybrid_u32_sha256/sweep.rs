@@ -38,7 +38,7 @@ fn child_identity(log: &str, mode: &str) -> Result<Option<serde_json::Value>, An
                 .validate()?;
         }
         "hybrid" | "separate" => {
-            f2z::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
+            bitz::ligerito_flock::ResolvedLigerito::validate_report(&report)?;
             let rate = report["configuration"]["levels"][0]["log_inv_rate"].as_u64();
             let target = report["target_bits"].as_u64().unwrap_or(0);
             let valid = if mode == "separate" {
@@ -151,7 +151,7 @@ fn formatted_rows(
                 row.witness_commit_ms, row.continuation_ms,
             ));
             display.push_str(&format!(
-                "  PIOP: {} ms (multiplication / Spartan: {} ms; SHA: {} ms)\n  IOP / PCS opening: {} ms (multiplication F2Z/GKR: {} ms; joint sumcheck: {} ms; shared opening: {} ms, of which Round 0: {} ms)\n",
+                "  PIOP: {} ms (multiplication / Spartan: {} ms; SHA: {} ms)\n  IOP / PCS opening: {} ms (multiplication BitZ/GKR: {} ms; joint sumcheck: {} ms; shared opening: {} ms, of which Round 0: {} ms)\n",
                 row.piop_ms,
                 row.mul_piop_ms,
                 row.sha_piop_ms,
@@ -225,12 +225,12 @@ pub fn run(
     output.write_text(
         "run.txt",
         &format!(
-            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\nprofile={}\nF2Z_HYBRID_BINIUS_LOG_INV_RATE={}\nF2Z_HYBRID_BINIUS_SECURITY_BITS={}\nF2Z_BINIUS_LOG_INV_RATE={}\nF2Z_BINIUS_LIGERITO_ACCOUNTING={}\n",
+            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\nprofile={}\nBITZ_HYBRID_BINIUS_LOG_INV_RATE={}\nBITZ_HYBRID_BINIUS_SECURITY_BITS={}\nBITZ_BINIUS_LOG_INV_RATE={}\nBITZ_BINIUS_LIGERITO_ACCOUNTING={}\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
             profile
                 .map(str::to_owned)
-                .or_else(|| std::env::var("F2Z_LIG_PROFILE").ok())
+                .or_else(|| std::env::var("BITZ_LIG_PROFILE").ok())
                 .unwrap_or_else(|| "custom:1:4".into()),
             binius.log_inv_rate,
             binius.security_bits,
@@ -257,7 +257,7 @@ pub fn run(
             let backend = match *mode {
                 "hybrid" => "BitZ multiplication + Binius SHA, shared opening",
                 "separate" => "BitZ multiplication + Binius SHA, separate proofs",
-                "binius-ligerito" => "Binius multiplication + SHA, F2Z opener",
+                "binius-ligerito" => "Binius multiplication + SHA, BitZ opener",
                 _ => "Binius multiplication + SHA",
             };
             println!(
@@ -298,7 +298,7 @@ pub fn run(
                     FileMode::Replace,
                     JsonStyle::Pretty,
                 )?;
-                f2z::ligerito_flock::ResolvedLigerito::encode_report(&report)
+                bitz::ligerito_flock::ResolvedLigerito::encode_report(&report)
             } else {
                 String::new()
             };
@@ -377,7 +377,7 @@ mod reporting_tests {
 
     #[test]
     fn binius_identity_accepts_selected_rates_and_accounting() {
-        use f2z::binius_ligerito::{Accounting, Prepared};
+        use bitz::binius_ligerito::{Accounting, Prepared};
         let native = super::super::Native::new(4096, 2, true, None).unwrap();
         for rate in 1..=3 {
             for accounting in [Accounting::UnionBound, Accounting::RoundByRound] {
@@ -397,7 +397,7 @@ mod reporting_tests {
 
     #[test]
     fn single_opener_modes_keep_their_original_identity_and_budget_validation() {
-        use f2z::ligerito_flock::{LigeritoSelection, OodRoundParams};
+        use bitz::ligerito_flock::{LigeritoSelection, OodRoundParams};
         assert!(child_identity("", "all-binius").unwrap().is_none());
         for (mode, bits) in [("hybrid", 106), ("separate", 112)] {
             let resolved = LigeritoSelection::JOHNSON.resolve(22, bits).unwrap();

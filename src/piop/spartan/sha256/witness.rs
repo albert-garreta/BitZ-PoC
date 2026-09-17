@@ -4,7 +4,7 @@
 //! integer assignment `h_bar` without evaluating or retaining any constraint
 //! matrix products. A batch shares one leading constant cell, places every
 //! instance immediately after the preceding instance, and pads only the final
-//! suffix of the complete F2Z domain.
+//! suffix of the complete BitZ domain.
 
 use std::array;
 
@@ -102,18 +102,18 @@ impl Sha256CompressionStatement {
 /// bits directly.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Sha256CompressionWitnessBatch {
-    /// Packed F2Z source rows with logical bit layout
+    /// Packed BitZ source rows with logical bit layout
     ///
     /// `source = [1 | f_0 | f_1 | ... | f_{N-1} | 0 ... 0]`.
     ///
     /// The leading constant is shared. Each `f_i` contributes exactly
     /// [`SHA256_F_INSTANCE_BITS`] adjacent cells, and only the complete
-    /// power-of-two domain has a trailing zero suffix. For F2Z parameters
+    /// power-of-two domain has a trailing zero suffix. For BitZ parameters
     /// `(t, s)`, flat sequence cell `j` is row `j mod 2^t` of column
     /// `j >> t`; the low `t` sequence bits are the packed-row coordinates.
     source_rows: Vec<Vec<u64>>,
 
-    /// Packed F2Z assignment rows with logical bit layout
+    /// Packed BitZ assignment rows with logical bit layout
     ///
     /// `assignment = [1 | h_0[1..] | h_1[1..] | ... | h_{N-1}[1..] | 0 ... 0]`.
     ///
@@ -201,7 +201,7 @@ impl Sha256CompressionWitnessBatch {
 /// Failures while generating or packing a SHA-256 compression batch.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum Sha256WitnessError {
-    /// Inputs and F2Z parameters do not describe one common packed batch.
+    /// Inputs and BitZ parameters do not describe one common packed batch.
     #[error("SHA-256 witness inputs do not match the batch geometry")]
     InvalidGeometry,
 
@@ -323,7 +323,7 @@ fn compression_input_bits(
 /// Each `f_i` contains [`COMPRESSION_INPUT_BITS`] input bits followed by
 /// [`COMPRESSION_HINT_BITS`] hint bits, for exactly
 /// [`SHA256_F_INSTANCE_BITS`] cells. Logical cells are packed least-significant
-/// bit first in the semantic sequence. The sequence index is also F2Z's
+/// bit first in the semantic sequence. The sequence index is also BitZ's
 /// physical column-major index: its low `t` bits select a packed row and its
 /// high `s` bits select a column.
 fn pack_source_rows<'a>(
@@ -343,7 +343,7 @@ fn pack_source_rows<'a>(
     rows
 }
 
-/// Packs the already-synthesized Bit assignments into the F2Z row/column
+/// Packs the already-synthesized Bit assignments into the BitZ row/column
 /// view without changing their flat logical order.
 ///
 /// [`Witgen`] has already materialized each augmented assignment
@@ -369,8 +369,8 @@ fn pack_derived_rows<'a>(
 
 /// Packs the proof-only tensor `D[local, instance] = h_instance[local]`.
 ///
-/// The low `t` instance bits are physical F2Z rows. Remaining high instance
-/// bits sit next to the local assignment column in the F2Z column coordinate.
+/// The low `t` instance bits are physical BitZ rows. Remaining high instance
+/// bits sit next to the local assignment column in the BitZ column coordinate.
 /// All logical copies of local column zero contain one, but the virtual map
 /// maps them back to the single committed source constant.
 fn pack_product_derived_rows(

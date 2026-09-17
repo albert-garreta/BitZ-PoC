@@ -1,4 +1,4 @@
-//! The u32 multiplication relation `x · y = product` over F2Z.
+//! The u32 multiplication relation `x · y = product` over BitZ.
 //!
 //! Spartan constrains the integer assignment
 //!
@@ -42,14 +42,14 @@ use super::{
     },
 };
 
-pub use super::protocol::{MIN_PRODUCTION_GATE_VARS, SpartanF2zField};
+pub use super::protocol::{MIN_PRODUCTION_GATE_VARS, SpartanBitzField};
 pub(crate) use super::protocol::{
     binding::{hash_code, profile_code},
     checked_pow2, packed_variables,
 };
 
 /// Failures in layout validation, claim translation, or either proof system.
-pub type SpartanF2zError = ProtocolError;
+pub type SpartanBitzError = ProtocolError;
 
 impl From<U32MulError> for ProtocolError {
     fn from(error: U32MulError) -> Self {
@@ -61,9 +61,9 @@ impl From<U32MulError> for ProtocolError {
 pub use crate::ligerito_flock::LigeritoSelection as U32MulLigerito;
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
-pub fn spartan_f2z_field_config() -> <SpartanF2zField as crate::piop::spartan::SpartanField>::Config
+pub fn spartan_bitz_field_config() -> <SpartanBitzField as crate::piop::spartan::SpartanField>::Config
 {
-    SpartanF2zField::make_cfg(&Uint::from(FQ_MOD)).expect("FQ_MOD is a valid odd prime modulus")
+    SpartanBitzField::make_cfg(&Uint::from(FQ_MOD)).expect("FQ_MOD is a valid odd prime modulus")
 }
 
 /// Number of little-endian row variables represented by the canonical
@@ -75,7 +75,7 @@ pub const U32_MUL_UNIVARIATE_SKIP_VARS: usize = 3;
 pub const U32_MUL_UNIVARIATE_SKIP_DEGREE: u32 = 2 * ((1_u32 << U32_MUL_UNIVARIATE_SKIP_VARS) - 1);
 
 const U32_MUL_BINDING_DOMAIN: &[u8] =
-    b"f2z/spartan-u32-mul/assignment/v3-runtime-skip-k3-profiled-ligerito";
+    b"bitz/spartan-u32-mul/assignment/v3-runtime-skip-k3-profiled-ligerito";
 
 /// The transcript domains of the u32 protocol. The per-draw PIOP grinding
 /// domain guards EVERY challenge the Spartan PIOP draws (τ coordinates,
@@ -84,16 +84,16 @@ const U32_MUL_BINDING_DOMAIN: &[u8] =
 /// round-by-round sound.
 static U32_MUL_DOMAINS: Domains = Domains {
     statement_tag: b"u32-statement",
-    prime_sampling: b"f2z/spartan-u32-mul/runtime-prime/v2",
-    initial_grinding: b"f2z/spartan-u32-mul/grinding/initial/v1",
-    piop_grinding: b"f2z/spartan-u32-mul/grinding/piop/v1",
-    terminal_grinding: b"f2z/spartan-u32-mul/grinding/terminal/v1",
-    bitified_claim: b"f2z/spartan-f2z/bitified-claim/v3",
+    prime_sampling: b"bitz/spartan-u32-mul/runtime-prime/v2",
+    initial_grinding: b"bitz/spartan-u32-mul/grinding/initial/v1",
+    piop_grinding: b"bitz/spartan-u32-mul/grinding/piop/v1",
+    terminal_grinding: b"bitz/spartan-u32-mul/grinding/terminal/v1",
+    bitified_claim: b"bitz/spartan-bitz/bitified-claim/v3",
     opening: ModQOpeningKind::U32Mul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",
-    scopes: crate::protocol_scopes!("spartan-f2z"),
+    scopes: crate::protocol_scopes!("spartan-bitz"),
 };
 
 /// The public statement facts the security-profile derivation consumes for
@@ -116,27 +116,27 @@ pub(crate) fn u32_mul_instance_facts(p: &IntegerMatrixLayout, row_vars: usize) -
 }
 
 fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), ProtocolError> {
-    let p = layout.f2z_params();
+    let p = layout.bitz_params();
     if !matches!(p.word_bits, 1 | 8)
         || p.row_vars < LOG_PACKING
         || p.col_vars > layout.gate_vars()
         || p.row_vars.saturating_add(p.word_bits) > 126
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     let total_vars = p
         .row_vars
         .checked_add(p.word_bits.trailing_zeros() as usize)
         .and_then(|value| value.checked_add(p.col_vars))
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     if total_vars
         != layout
             .gate_vars()
             .checked_add(7)
-            .ok_or(ProtocolError::InvalidF2zParameters)?
+            .ok_or(ProtocolError::InvalidBitzParameters)?
         || U32_MUL_BIT_SLOTS != 1_usize << 7
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
 
     let row_count = checked_pow2(p.row_vars)?;
@@ -144,12 +144,12 @@ fn validate_layout_geometry(layout: &U32MulLayout) -> Result<(), ProtocolError> 
     let committed_bits = row_count
         .checked_mul(col_count)
         .and_then(|cells| cells.checked_mul(p.word_bits))
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     let expected_bits = U32_MUL_BIT_SLOTS
         .checked_mul(layout.capacity())
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     if committed_bits != expected_bits || packed_variables(&p)? != layout.gate_vars() {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     Ok(())
 }
@@ -164,7 +164,7 @@ impl RelationSpec for U32MulLayout {
     }
 
     fn committed_layout(&self) -> IntegerMatrixLayout {
-        self.f2z_params()
+        self.bitz_params()
     }
 
     fn gate_vars(&self) -> usize {
@@ -172,7 +172,7 @@ impl RelationSpec for U32MulLayout {
     }
 
     fn instance_facts(&self) -> IopInstanceFacts {
-        u32_mul_instance_facts(&self.f2z_params(), U32MulLayout::gate_vars(self))
+        u32_mul_instance_facts(&self.bitz_params(), U32MulLayout::gate_vars(self))
     }
 
     fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
@@ -235,7 +235,7 @@ impl RelationSpec for U32MulLayout {
         security: &IopSecurityParams,
         ligerito: &LigProverConfig,
     ) -> Result<[u8; 32], ProtocolError> {
-        let p = self.f2z_params();
+        let p = self.bitz_params();
         let mut hasher = BindingHasher::new();
         hasher.bytes(U32_MUL_BINDING_DOMAIN).bytes(&commitment.root);
         hasher.commitment_params(&commitment.params)?;
@@ -282,7 +282,7 @@ impl RelationSpec for U32MulLayout {
     }
 
     fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {
-        let p = self.f2z_params();
+        let p = self.bitz_params();
         hasher.usizes(&[
             self.multiplications(),
             self.capacity(),
@@ -340,7 +340,7 @@ pub type U32MulProof = Proof;
 pub fn commit_u32_mul_witness(
     prepared: &PreparedU32MulRelation,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, SpartanF2zError> {
+) -> Result<FlockCommitHint, SpartanBitzError> {
     protocol::commit(prepared, rows)
 }
 
@@ -350,7 +350,7 @@ pub fn prove_u32_mul<T: Transcript + Send>(
     prepared: &PreparedU32MulRelation,
     witness: &U32MulWitness,
     hint: &FlockCommitHint,
-) -> Result<U32MulProof, SpartanF2zError> {
+) -> Result<U32MulProof, SpartanBitzError> {
     protocol::prove(transcript, prepared, witness, hint)
 }
 
@@ -361,23 +361,23 @@ pub fn verify_u32_mul<T: Transcript + Send>(
     prepared: &PreparedU32MulRelation,
     commitment: &Commitment,
     proof: &U32MulProof,
-) -> Result<(), SpartanF2zError> {
+) -> Result<(), SpartanBitzError> {
     protocol::verify(transcript, prepared, commitment, proof)
 }
 
-/// Public, setup-once context for benchmarking only the terminal F2Z opening
+/// Public, setup-once context for benchmarking only the terminal BitZ opening
 /// of a u32 multiplication assignment at the fixed comparison field.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub type PreparedU32TerminalF2zOpening = protocol::terminal::PreparedTerminalOpening<U32MulLayout>;
+pub type PreparedU32TerminalBitzOpening = protocol::terminal::PreparedTerminalOpening<U32MulLayout>;
 
 /// Prepares a fixed-q, PCS-only terminal-opening context.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn prepare_u32_terminal_f2z_opening(
+pub fn prepare_u32_terminal_bitz_opening(
     prepared: &PreparedU32MulRelation,
     commitment: &Commitment,
-) -> Result<PreparedU32TerminalF2zOpening, SpartanF2zError> {
+) -> Result<PreparedU32TerminalBitzOpening, SpartanBitzError> {
     protocol::terminal::prepare(
         prepared,
         commitment,
@@ -391,10 +391,10 @@ pub fn prepare_u32_terminal_f2z_opening(
 /// configuration retained by the PCS-only context.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn commit_u32_terminal_f2z_witness(
-    prepared: &PreparedU32TerminalF2zOpening,
+pub fn commit_u32_terminal_bitz_witness(
+    prepared: &PreparedU32TerminalBitzOpening,
     rows: Vec<Vec<u64>>,
-) -> Result<FlockCommitHint, SpartanF2zError> {
+) -> Result<FlockCommitHint, SpartanBitzError> {
     protocol::terminal::commit(prepared, rows)
 }
 
@@ -402,32 +402,32 @@ pub fn commit_u32_terminal_f2z_witness(
 /// work deliberately outside the benchmark boundary.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn prove_u32_terminal_claim_f2z<T: Transcript + Send>(
+pub fn prove_u32_terminal_claim_bitz<T: Transcript + Send>(
     transcript: &mut T,
-    prepared: &PreparedU32TerminalF2zOpening,
+    prepared: &PreparedU32TerminalBitzOpening,
     hint: &FlockCommitHint,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<SpartanF2zField>,
-) -> Result<IntEvalRsLigModQProof, SpartanF2zError> {
+    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<SpartanBitzField>,
+) -> Result<IntEvalRsLigModQProof, SpartanBitzError> {
     protocol::terminal::prove(transcript, prepared, hint, terminal_claim)
 }
 
 /// Verifies the PCS-only u32 terminal opening from public data alone.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn verify_u32_terminal_claim_f2z<T: Transcript + Send>(
+pub fn verify_u32_terminal_claim_bitz<T: Transcript + Send>(
     transcript: &mut T,
-    prepared: &PreparedU32TerminalF2zOpening,
+    prepared: &PreparedU32TerminalBitzOpening,
     commitment: &Commitment,
-    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<SpartanF2zField>,
+    terminal_claim: &super::matrix::ScaledMleEvaluationClaim<SpartanBitzField>,
     proof: &IntEvalRsLigModQProof,
-) -> Result<(), SpartanF2zError> {
+) -> Result<(), SpartanBitzError> {
     protocol::terminal::verify(transcript, prepared, commitment, terminal_claim, proof)
 }
 
-/// Canonical standalone F2Z opening payload bytes.
+/// Canonical standalone BitZ opening payload bytes.
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
-pub fn u32_terminal_claim_f2z_proof_bytes(proof: &IntEvalRsLigModQProof) -> Vec<u8> {
+pub fn u32_terminal_claim_bitz_proof_bytes(proof: &IntEvalRsLigModQProof) -> Vec<u8> {
     proof.to_bytes()
 }
 
@@ -441,14 +441,14 @@ mod tests {
             matrix::ScaledMleEvaluationClaim,
             profile::{Lambda100, Lambda128, Limber114, ProfileError},
             protocol::{SpartanProof, bitify},
-            u32_mul::U32MulF2zWidth,
+            u32_mul::U32MulBitzWidth,
         },
         transcript::Blake3Transcript,
     };
 
     fn skip_proof(
         proof: &U32MulProof,
-    ) -> &super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
+    ) -> &super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanBitzField> {
         proof
             .spartan()
             .univariate_skip()
@@ -457,7 +457,7 @@ mod tests {
 
     fn skip_proof_mut(
         proof: &mut U32MulProof,
-    ) -> &mut super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanF2zField> {
+    ) -> &mut super::super::univariate_skip::UnivariateSkipSpartanPiopProof<SpartanBitzField> {
         match &mut proof.prefix_mut().spartan {
             SpartanProof::UnivariateSkip(spartan) => spartan,
             SpartanProof::Plain(_) => panic!("the u32 kernel is the univariate skip"),
@@ -477,7 +477,7 @@ mod tests {
         // two prefix-sum terms.
         let multiplications = (1usize << 15) + 77;
         let witness =
-            U32MulWitness::from_fn_with_f2z_width(multiplications, U32MulF2zWidth::W1, |i| {
+            U32MulWitness::from_fn_with_bitz_width(multiplications, U32MulBitzWidth::W1, |i| {
                 let x = (i as u32).wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
                 let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
                 (x, y)
@@ -491,7 +491,7 @@ mod tests {
             multiplications
         );
 
-        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = commit_u32_mul_witness(&prepared, witness.bitz_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(
@@ -515,14 +515,14 @@ mod tests {
         // A wrong terminal matrix evaluation is caught downstream: perturb
         // the inner sumcheck's last round (which moves the final claim the
         // verifier's own matrix evaluation must scale into the opening).
-        let one = SpartanF2zField::from_with_cfg(1u64, &spartan_f2z_field_config());
+        let one = SpartanBitzField::from_with_cfg(1u64, &spartan_bitz_field_config());
         let mut tampered = proof.clone();
         {
             let spartan = skip_proof_mut(&mut tampered);
             let last = spartan.inner.round_polynomials.len() - 1;
-            spartan.inner.round_polynomials[last][1] = spartan_f2z_field_config()
+            spartan.inner.round_polynomials[last][1] = spartan_bitz_field_config()
                 .add(&(spartan.inner.round_polynomials[last][1]), &(&one));
-            spartan.inner.round_polynomials[last][2] = spartan_f2z_field_config()
+            spartan.inner.round_polynomials[last][2] = spartan_bitz_field_config()
                 .sub(&(spartan.inner.round_polynomials[last][2]), &(&one));
         }
         let mut verifier_transcript = Blake3Transcript::new();
@@ -547,30 +547,30 @@ mod tests {
                 selection,
             )
             .unwrap();
-            let hint = commit_u32_mul_witness(&p, witness.f2z_bit_rows()).unwrap();
+            let hint = commit_u32_mul_witness(&p, witness.bitz_bit_rows()).unwrap();
             let mut pt = Blake3Transcript::new();
             let mut proof = prove_u32_mul(&mut pt, &p, &witness, &hint).unwrap();
-            *proof.f2z_mut() = IntEvalRsLigModQProof::from_bytes(&proof.f2z().to_bytes()).unwrap();
+            *proof.bitz_mut() = IntEvalRsLigModQProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
             let check = |proof: &U32MulProof| {
                 verify_u32_mul(&mut Blake3Transcript::new(), &p, &hint.commitment, proof)
             };
             check(&proof).unwrap();
             let mut bad = proof.clone();
-            if let Some(round) = bad.f2z_mut().ood.as_mut() {
+            if let Some(round) = bad.bitz_mut().ood.as_mut() {
                 round.y = round.y + crate::poly::univariate::binary_gf128::Gf128::one();
             } else {
-                bad.f2z_mut().ood = Some(crate::ligerito_flock::OodRound {
+                bad.bitz_mut().ood = Some(crate::ligerito_flock::OodRound {
                     y: crate::poly::univariate::binary_gf128::Gf128::zero(),
                     nonce: None,
                 });
             }
             assert!(check(&bad).is_err());
-            if proof.f2z().ood.is_some() {
+            if proof.bitz().ood.is_some() {
                 let mut bad = proof.clone();
-                bad.f2z_mut().ood = None;
+                bad.bitz_mut().ood = None;
                 assert!(check(&bad).is_err());
                 let mut bad = proof.clone();
-                bad.f2z_mut().ood.as_mut().unwrap().nonce = Some(u64::MAX);
+                bad.bitz_mut().ood.as_mut().unwrap().nonce = Some(u64::MAX);
                 assert!(check(&bad).is_err());
             }
             let mut root = hint.commitment.clone();
@@ -601,14 +601,14 @@ mod tests {
     #[test]
     fn u32_mul_roundtrips_and_is_deterministic() {
         // Hold the shared env lock so tests that toggle transcript-shaping
-        // `F2Z_*` variables cannot flip them between our prove and verify.
+        // `BITZ_*` variables cannot flip them between our prove and verify.
         let _env = crate::utils::QUAD_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let multiplications = 1usize << 15;
         let witness =
-            U32MulWitness::from_fn_with_f2z_width(multiplications, U32MulF2zWidth::W1, |i| {
+            U32MulWitness::from_fn_with_bitz_width(multiplications, U32MulBitzWidth::W1, |i| {
                 let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
                 let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
                 (x, y)
@@ -624,10 +624,10 @@ mod tests {
         assert_eq!(security.piop_round_grinding_bits, 0);
         assert_eq!(security.forest_round_grinding_bits, 0);
         assert_eq!(
-            u32_mul_instance_facts(&layout.f2z_params(), layout.gate_vars()).piop_degree,
+            u32_mul_instance_facts(&layout.bitz_params(), layout.gate_vars()).piop_degree,
             U32_MUL_UNIVARIATE_SKIP_DEGREE
         );
-        let p = layout.f2z_params();
+        let p = layout.bitz_params();
         let width = (128 - security.projection_max.leading_zeros()) as usize;
         assert!(width <= 127 - p.row_vars - p.word_bits, "q_bits <= c_w");
         assert_eq!(
@@ -636,7 +636,7 @@ mod tests {
             "the runtime interval is one-chunk by construction"
         );
 
-        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = commit_u32_mul_witness(&prepared, witness.bitz_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert_eq!(
@@ -667,11 +667,11 @@ mod tests {
         // Determinism: a second prove is byte-identical.
         let mut second_transcript = Blake3Transcript::new();
         let second = prove_u32_mul(&mut second_transcript, &prepared, &witness, &hint).unwrap();
-        assert_eq!(second.f2z().to_bytes(), proof.f2z().to_bytes());
+        assert_eq!(second.bitz().to_bytes(), proof.bitz().to_bytes());
         assert_eq!(second.spartan(), proof.spartan());
 
         // Tampering with the Spartan claim is rejected.
-        let one = SpartanF2zField::from_with_cfg(1u64, &spartan_f2z_field_config());
+        let one = SpartanBitzField::from_with_cfg(1u64, &spartan_bitz_field_config());
         let reject = |mutate: &dyn Fn(&mut U32MulProof)| {
             let mut tampered = proof.clone();
             mutate(&mut tampered);
@@ -688,19 +688,19 @@ mod tests {
         };
         reject(&|proof| {
             let value = &mut skip_proof_mut(proof).outer.tail.az_mle_claim;
-            *value = spartan_f2z_field_config().add(value, &one);
+            *value = spartan_bitz_field_config().add(value, &one);
         });
         reject(&|proof| {
             let value = &mut skip_proof_mut(proof).outer.skip.finite_q_evaluations[0];
-            *value = spartan_f2z_field_config().add(value, &one);
+            *value = spartan_bitz_field_config().add(value, &one);
         });
         reject(&|proof| {
             let value = &mut skip_proof_mut(proof).outer.skip.q_at_infinity;
-            *value = spartan_f2z_field_config().add(value, &one);
+            *value = spartan_bitz_field_config().add(value, &one);
         });
         reject(&|proof| {
             let value = &mut skip_proof_mut(proof).outer.tail.sumcheck.round_polynomials[0][0];
-            *value = spartan_f2z_field_config().add(value, &one);
+            *value = spartan_bitz_field_config().add(value, &one);
         });
 
         // The verifier must not accept a proof-selected skip width under the
@@ -712,7 +712,7 @@ mod tests {
             let mut verifier_transcript = Blake3Transcript::new();
             assert!(matches!(
                 verify_u32_mul(&mut verifier_transcript, &prepared, &hint.commitment, &wrong_k),
-                Err(SpartanF2zError::UnexpectedUnivariateSkipVariables {
+                Err(SpartanBitzError::UnexpectedUnivariateSkipVariables {
                     expected: 3,
                     actual: rejected
                 }) if rejected == actual
@@ -727,8 +727,8 @@ mod tests {
         // Strategy-2 profiles are rejected up front.
         assert!(matches!(
             PreparedU32MulRelation::new_with_profile::<Limber114>(layout),
-            Err(SpartanF2zError::UnsupportedProfile)
-                | Err(SpartanF2zError::Profile(
+            Err(SpartanBitzError::UnsupportedProfile)
+                | Err(SpartanBitzError::Profile(
                     ProfileError::GrindingTooExpensive { .. }
                 ))
         ));
@@ -758,13 +758,13 @@ mod tests {
             ),
             "the Ligerito configuration must follow the profile target"
         );
-        let hint128 = commit_u32_mul_witness(&prepared128, witness.f2z_bit_rows()).unwrap();
+        let hint128 = commit_u32_mul_witness(&prepared128, witness.bitz_bit_rows()).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let proof128 =
             prove_u32_mul(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
         assert_eq!(prepared128.security().piop_round_grinding_bits, 22);
         assert_eq!(proof128.piop_nonces().len(), 43);
-        assert!(!proof128.f2z().grinding_nonces.is_empty());
+        assert!(!proof128.bitz().grinding_nonces.is_empty());
         let mut verifier_transcript = Blake3Transcript::new();
         verify_u32_mul(
             &mut verifier_transcript,
@@ -791,16 +791,16 @@ mod tests {
         point: &[Q100Element],
         scale: Q100Element,
         value: Q100Element,
-    ) -> ScaledMleEvaluationClaim<SpartanF2zField> {
-        let config = spartan_f2z_field_config();
+    ) -> ScaledMleEvaluationClaim<SpartanBitzField> {
+        let config = spartan_bitz_field_config();
         let point = point
             .iter()
-            .map(|coordinate| SpartanF2zField::from_with_cfg(coordinate.canonical_u128(), &config))
+            .map(|coordinate| SpartanBitzField::from_with_cfg(coordinate.canonical_u128(), &config))
             .collect::<Vec<_>>();
         ScaledMleEvaluationClaim::new(
             point.into_boxed_slice(),
-            SpartanF2zField::from_with_cfg(scale.canonical_u128(), &config),
-            SpartanF2zField::from_with_cfg(value.canonical_u128(), &config),
+            SpartanBitzField::from_with_cfg(scale.canonical_u128(), &config),
+            SpartanBitzField::from_with_cfg(value.canonical_u128(), &config),
         )
     }
 
@@ -820,12 +820,12 @@ mod tests {
     }
 
     fn bitify_test_claim(
-        claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+        claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
         layout: &U32MulLayout,
-    ) -> Result<bitify::BitifiedClaim, SpartanF2zError> {
+    ) -> Result<bitify::BitifiedClaim, SpartanBitzError> {
         bitify::bitify(
             claim,
-            layout.f2z_params(),
+            layout.bitz_params(),
             layout.gate_vars(),
             &layout.block_table(),
             protocol::ScaleSide::Rows,
@@ -836,7 +836,7 @@ mod tests {
     fn prepare_test_claim(
         opening: &bitify::BitifiedClaim,
         layout: &U32MulLayout,
-    ) -> Result<PreparedClaim, SpartanF2zError> {
+    ) -> Result<PreparedClaim, SpartanBitzError> {
         let arith = field::FpCtx::from_prime_u128(FQ_MOD);
         Ok(PreparedClaim {
             chunks: bitify::prepare_chunks(opening, &layout.block_table(), FQ_BITS, &arith)?,
@@ -870,14 +870,14 @@ mod tests {
 
     #[test]
     fn bitification_is_the_adjoint_of_integer_reconstruction() {
-        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
-            let witness = U32MulWitness::from_inputs_with_f2z_width(
+        for width in [U32MulBitzWidth::W1, U32MulBitzWidth::W8] {
+            let witness = U32MulWitness::from_inputs_with_bitz_width(
                 &[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)],
                 width,
             )
             .unwrap();
             let layout = witness.layout();
-            let p = layout.f2z_params();
+            let p = layout.bitz_params();
 
             // Non-Bit selector coordinates exercise all four assignment
             // blocks, rather than reducing this to a single block lookup.
@@ -921,7 +921,7 @@ mod tests {
             let opening = bitify_test_claim(&terminal, layout).unwrap();
             let prepared = prepare_test_claim(&opening, layout).unwrap();
 
-            let rows = witness.f2z_bit_rows();
+            let rows = witness.bitz_bit_rows();
             let mut read_off = Q100Element::from_u128(0);
             for b in 0..p.rows() {
                 for c in 0..p.cols() {
@@ -998,17 +998,17 @@ mod tests {
     #[test]
     fn malformed_claim_residue_is_rejected_before_canonical_projection() {
         let layout = U32MulLayout::new(3).unwrap();
-        let config = spartan_f2z_field_config();
+        let config = spartan_bitz_field_config();
         let malformed = field::FpCtx::from_prime_u128(u128::MAX - 158)
             .from_montgomery_integer(*config.modulus());
-        let zero = SpartanF2zField::from_with_cfg(0_u128, &config);
+        let zero = SpartanBitzField::from_with_cfg(0_u128, &config);
         let mut point = vec![zero.clone(); layout.gate_vars() + 2];
         point[0] = malformed;
         let claim = ScaledMleEvaluationClaim::new(point.into_boxed_slice(), zero.clone(), zero);
 
         assert!(matches!(
             bitify_test_claim(&claim, &layout),
-            Err(SpartanF2zError::ClaimFieldMismatch)
+            Err(SpartanBitzError::ClaimFieldMismatch)
         ));
     }
 
@@ -1017,17 +1017,17 @@ mod tests {
         let small = U32MulLayout::new(3).unwrap();
         assert!(matches!(
             PreparedU32MulRelation::new(small),
-            Err(SpartanF2zError::UnauditedF2zParameters)
+            Err(SpartanBitzError::UnauditedBitzParameters)
         ));
 
-        for width in [U32MulF2zWidth::W1, U32MulF2zWidth::W8] {
+        for width in [U32MulBitzWidth::W1, U32MulBitzWidth::W8] {
             let production =
-                U32MulLayout::new_with_f2z_width(1 << MIN_PRODUCTION_GATE_VARS, width).unwrap();
+                U32MulLayout::new_with_bitz_width(1 << MIN_PRODUCTION_GATE_VARS, width).unwrap();
             PreparedU32MulRelation::new(production)
                 .expect("the smallest validated profile is available");
 
-            let largest = U32MulLayout::new_with_f2z_width(1 << 25, width).unwrap();
-            let packed = packed_variables(&largest.f2z_params()).unwrap();
+            let largest = U32MulLayout::new_with_bitz_width(1 << 25, width).unwrap();
+            let packed = packed_variables(&largest.bitz_params()).unwrap();
             for target in [100, 128] {
                 U32MulLigerito::ValidatedUdr
                     .resolve(packed, target)
@@ -1044,11 +1044,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runs one production-sized W=8 Spartan/F2Z proof"]
+    #[ignore = "runs one production-sized W=8 Spartan/BitZ proof"]
     fn u32_mul_w8_proof_verifies() {
-        let witness = U32MulWitness::from_fn_with_f2z_width(
+        let witness = U32MulWitness::from_fn_with_bitz_width(
             1 << MIN_PRODUCTION_GATE_VARS,
-            U32MulF2zWidth::W8,
+            U32MulBitzWidth::W8,
             |index| {
                 let value = (index as u32).wrapping_mul(0x9E37_79B9);
                 (value, value.rotate_left(13) ^ 0xA5A5_5A5A)
@@ -1057,7 +1057,7 @@ mod tests {
         .unwrap();
         let layout = *witness.layout();
         let prepared = PreparedU32MulRelation::new(layout).unwrap();
-        let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).unwrap();
+        let hint = commit_u32_mul_witness(&prepared, witness.bitz_bit_rows()).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();
         let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).unwrap();

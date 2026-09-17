@@ -4,7 +4,7 @@ mod common;
 mod shared_fixture;
 
 use bincode::Options;
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
+use bitz::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use flock_core::pcs::commit::Commitment;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -25,7 +25,7 @@ enum Timing {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(long, value_parser = ["f2z-split", "f2z-all", "spartan-mc", "binius64", "binius64-ligerito"])]
+    #[arg(long, value_parser = ["bitz-split", "bitz-all", "spartan-mc", "binius64", "binius64-ligerito"])]
     method: String,
     #[arg(long)]
     r: usize,
@@ -129,14 +129,14 @@ fn setup<T, E: Into<Box<dyn Error>>>(
         let ms = start.elapsed().as_secs_f64() * 1000.;
         return Ok((value.map_err(Into::into)?, ms));
     }
-    let (value, duration) = f2z::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
+    let (value, duration) = bitz::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
     Ok((value.map_err(Into::into)?, duration.as_secs_f64() * 1000.))
 }
 
 /// Both backends use the same operation boundaries. Only Perfetto captures
 /// nested protocol phases; wall-clock measurements stay in this harness.
 struct TrialTiming {
-    recording: Option<f2z::observability::Recording<Vec<u8>>>,
+    recording: Option<bitz::observability::Recording<Vec<u8>>>,
     wall_ms: RefCell<HashMap<&'static str, f64>>,
 }
 
@@ -144,7 +144,7 @@ impl TrialTiming {
     fn start(timing: Timing) -> Result<Self> {
         Ok(Self {
             recording: if timing == Timing::Perfetto {
-                Some(f2z::observability::Recording::start(Vec::new())?)
+                Some(bitz::observability::Recording::start(Vec::new())?)
             } else {
                 None
             },
@@ -192,7 +192,7 @@ impl Drop for TimedScope<'_> {
 }
 
 struct TrialMeasurements {
-    intervals: Option<Vec<f2z::observability::Interval>>,
+    intervals: Option<Vec<bitz::observability::Interval>>,
     wall_ms: HashMap<&'static str, f64>,
 }
 
@@ -206,7 +206,7 @@ impl TrialMeasurements {
 
     fn phases(&self, name: &str) -> Result<Vec<(String, f64)>> {
         match &self.intervals {
-            Some(intervals) => Ok(f2z::observability::phase_totals(intervals, name)?),
+            Some(intervals) => Ok(bitz::observability::phase_totals(intervals, name)?),
             None => Ok(Vec::new()),
         }
     }
@@ -219,7 +219,7 @@ macro_rules! timed {
 }
 
 #[derive(Serialize, Deserialize)]
-struct F2zWire {
+struct BitzWire {
     commitment: Commitment,
     proof: Vec<u8>,
 }
@@ -256,7 +256,7 @@ struct Measurements<D> {
 }
 
 #[derive(Serialize)]
-struct F2zDetails {
+struct BitzDetails {
     proof_digest: String,
     prover_transcript: String,
     verifier_transcript: String,
@@ -285,11 +285,11 @@ struct SpartanPhases {
 
 impl SpartanPhases {
     fn from_intervals(
-        intervals: &[f2z::observability::Interval],
+        intervals: &[bitz::observability::Interval],
         folding: bool,
     ) -> std::io::Result<Self> {
         let millis = |label| {
-            f2z::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
+            bitz::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
         };
         let folding_ms = millis("spartan2.folding")?;
         Ok(Self {
@@ -340,7 +340,7 @@ fn result_record<'a, D>(
     row: Measurements<D>,
 ) -> ResultRecord<'a, D> {
     ResultRecord {
-        schema: "f2z/sha256-ecdsa-compare/v1",
+        schema: "bitz/sha256-ecdsa-compare/v1",
         timing: args.timing,
         method: &args.method,
         zk: false,
@@ -374,12 +374,12 @@ fn emit<D: Serialize>(args: &Args, fixture: &Fixture, trial: usize, row: Measure
             .expect("serialize SHA/ECDSA result")
     );
 }
-fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
+fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let statement = statement(fixture);
     // The campaign runner selects the opener rate per case through
-    // `F2Z_LIG_PROFILE`; record the request verbatim on every row.
+    // `BITZ_LIG_PROFILE`; record the request verbatim on every row.
     let ligerito_profile =
-        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
+        std::env::var("BITZ_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
     let (prepared, setup_ms) = setup(args.timing, || {
         prepare_sha256_ecdsa(args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
@@ -410,11 +410,11 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
         let proof_digest = blake3::hash(&proof_bytes).to_hex().to_string();
         let wire = bincode::DefaultOptions::new()
             .with_fixint_encoding()
-            .serialize(&F2zWire {
+            .serialize(&BitzWire {
                 commitment: hint.commitment.clone(),
                 proof: proof_bytes,
             })?;
-        let decoded: F2zWire = bincode::DefaultOptions::new()
+        let decoded: BitzWire = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_limit(wire.len() as u64)
             .reject_trailing_bytes()
@@ -464,9 +464,9 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 proof_material_bytes: wire.len(),
                 outer_ms: phase("ecdsa:outer_prove"),
                 inner_ms: phase("ecdsa:shared_inner_prove"),
-                opening_ms: phase("ecdsa:f2z_prove"),
+                opening_ms: phase("ecdsa:bitz_prove"),
                 folding_ms: None,
-                details: F2zDetails {
+                details: BitzDetails {
                     proof_digest,
                     prover_transcript: blake3::Hash::from(prover_transcript.state_digest()).to_hex().to_string(),
                     verifier_transcript: blake3::Hash::from(verifier_transcript.state_digest()).to_hex().to_string(),
@@ -568,7 +568,7 @@ fn main() -> Result<()> {
         return Err("require 3 <= r+c <= 16 and target 100/128".into());
     }
     if args.method == "binius64-ligerito" && args.target != 100 {
-        return Err("the F2Z opener gate is fixed at 100 bits".into());
+        return Err("the BitZ opener gate is fixed at 100 bits".into());
     }
     if let Some(path) = &args.export_fixture {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
@@ -576,12 +576,12 @@ fn main() -> Result<()> {
     }
     if args.method.starts_with("binius64") {
         if args.timing == Timing::WallClock {
-            return Err("--timing wall-clock supports f2z-split, f2z-all and spartan-mc".into());
+            return Err("--timing wall-clock supports bitz-split, bitz-all and spartan-mc".into());
         }
         return dispatch_binius(&args);
     }
     if args.timing == Timing::Perfetto {
-        f2z::observability::install()?;
+        bitz::observability::install()?;
     }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
@@ -589,8 +589,8 @@ fn main() -> Result<()> {
 
     let fixture = fixture(&args)?;
     match args.method.as_str() {
-        "f2z-split" => f2z(&args, &fixture, OuterMode::Split),
-        "f2z-all" => f2z(&args, &fixture, OuterMode::AllRows),
+        "bitz-split" => bitz(&args, &fixture, OuterMode::Split),
+        "bitz-all" => bitz(&args, &fixture, OuterMode::AllRows),
         "spartan-mc" => spartan(&args, &fixture),
         _ => unreachable!(),
     }
@@ -605,7 +605,7 @@ mod reporting_tests {
         let intervals: Vec<_> = ["matrix", "folding", "outer", "inner", "opening"]
             .into_iter()
             .enumerate()
-            .map(|(i, name)| f2z::observability::Interval {
+            .map(|(i, name)| bitz::observability::Interval {
                 id: i as u64,
                 parent: None,
                 track_id: 0,
@@ -636,7 +636,7 @@ mod reporting_tests {
     fn result_envelope_keeps_totals_nulls_and_trial_numbering() {
         let mut args = Args {
             cargo: Default::default(),
-            method: "f2z-split".into(),
+            method: "bitz-split".into(),
             r: 1,
             c: 2,
             target: 100,
@@ -664,7 +664,7 @@ mod reporting_tests {
             inner_ms: None,
             opening_ms: None,
             folding_ms: None,
-            details: F2zDetails {
+            details: BitzDetails {
                 proof_digest: "test-proof".into(),
                 prover_transcript: "test-prover".into(),
                 verifier_transcript: "test-verifier".into(),
@@ -702,7 +702,7 @@ mod cli_tests {
     use clap::{CommandFactory, Parser, error::ErrorKind};
 
     fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
-        Args::try_parse_from(["ecdsa", "--method", "f2z-split", "--r", "1", "--c", "2"]
+        Args::try_parse_from(["ecdsa", "--method", "bitz-split", "--r", "1", "--c", "2"]
             .into_iter().chain(extra.iter().copied()))
     }
 
@@ -720,7 +720,7 @@ mod cli_tests {
         assert_eq!(args.fixture.as_deref(), Some(std::path::Path::new("fixture.json")));
         assert_eq!(args.export_fixture.as_deref(), Some(std::path::Path::new("export.json")));
         assert_eq!(args.binius64_worker.as_deref(), Some(std::path::Path::new("worker")));
-        for method in ["f2z-all", "binius64"] {
+        for method in ["bitz-all", "binius64"] {
             assert_eq!(parse(&["--method", method]).unwrap().method, method);
         }
     }
@@ -737,7 +737,7 @@ mod cli_tests {
         ] {
             assert!(parse(extra).is_err(), "accepted {extra:?}");
         }
-        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "f2z-split", "--r", "1"]] {
+        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "bitz-split", "--r", "1"]] {
             assert!(Args::try_parse_from(argv).is_err());
         }
         assert_eq!(Args::try_parse_from(["ecdsa", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);

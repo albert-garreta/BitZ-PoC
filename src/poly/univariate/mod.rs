@@ -71,7 +71,7 @@ where
         acc
     }
 }
-/// F2Z pins the bit-packed `u64` representation (the optimized variant).
+/// BitZ pins the bit-packed `u64` representation (the optimized variant).
 pub mod binary {
     pub use crate::poly::univariate::binary_u64::{
         BinaryU64Poly as BinaryPoly, BinaryU64PolyInnerProduct as BinaryPolyInnerProduct,

@@ -23,7 +23,7 @@
 //! fingerprint term are crate constants and stay above 100.
 use super::trace_capture::TrialScopes;
 use super::{Corpus, Timing, Workload, captured};
-use f2z::observability::Recording;
+use bitz::observability::Recording;
 use limber::{
     imod_r1cs_modp::{IntModR1CSShapeModp, IntModR1CSWitnessModp},
     imod_spartan_modp::{
@@ -146,7 +146,7 @@ impl Wrapping {
     /// The exact product of two in-range operands as `(low w bits, high w)`.
     fn split(&self, x: u128, y: u128) -> (u128, u128) {
         if self.bits == 128 {
-            f2z::piop::spartan::mul_u128_full(x, y)
+            bitz::piop::spartan::mul_u128_full(x, y)
         } else {
             // Both operands are below `2^64` here, so the product fits `u128`.
             let product = x * y;
@@ -354,11 +354,11 @@ impl Context {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let program = Wrapping::compile(corpus);
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("mul_e2e_compare/limber:started").entered();
     let values = program.values(corpus);
     let rows = program.native_rows(&values).expect("integer constraints");
-    let generation_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/limber:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+    let generation_ms = { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "mul_e2e_compare/limber:started").expect("query completed operation") }.as_secs_f64() * 1e3;
     let representation = "Limber wrapping rows and quotients";
     if corpus.workload == Workload::U128 {
         return super::WitnessAudit::check_wide(corpus, rows, generation_ms, representation);

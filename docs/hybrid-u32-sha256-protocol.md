@@ -61,7 +61,7 @@ flowchart TD
 
 The public statement contains both commitment roots, circuit/workload parameters, and the final SHA chaining value. Multiplication operands `x, y`, modular results `z`, carries `w`, SHA message blocks, and intermediate chaining states are witness data. The standard SHA-256 initial state is fixed. The multiplication and SHA workloads are independent; multiplication results do not feed the SHA messages.
 
-Every multiplication proves **`x * y = z + 2^32 * w`, with all four values bounded to 32 bits**. Thus `z = x * y mod 2^32`, and `w` is the high 32-bit carry. The integer PIOP reuses its exact-product relation by defining `p = z + 2^32 * w`. The committed bit slots are `x[0..32]`, `y[0..32]`, `z[0..32]`, and `w[0..32]`; F2Z's fixed reconstruction binds the last 64 bits to `p`. This checks the supplied modular result and carry inside the proof. It does not rely on a host-side truncation being correct.
+Every multiplication proves **`x * y = z + 2^32 * w`, with all four values bounded to 32 bits**. Thus `z = x * y mod 2^32`, and `w` is the high 32-bit carry. The integer PIOP reuses its exact-product relation by defining `p = z + 2^32 * w`. The committed bit slots are `x[0..32]`, `y[0..32]`, `z[0..32]`, and `w[0..32]`; BitZ's fixed reconstruction binds the last 64 bits to `p`. This checks the supplied modular result and carry inside the proof. It does not rely on a host-side truncation being correct.
 
 The implementation is available behind the `hybrid` Cargo feature. It uses the protocol order above, including two-root initial authentication and the shared bit sumcheck before ring switching. The multiplication and SHA inputs remain independent.
 
@@ -85,11 +85,11 @@ RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 \
 
 The output files are the proof, `<proof>.statement.bin` (the public statement), and `<proof>.statement.txt` (a readable copy). Verification requires the first two files; it does not use the original operands or message blocks.
 
-The current protocol uses transcript domain `f2z/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5` and `BZSH` proof encoding version 5. Older versions are rejected. Version 5 binds the logical/physical source dimensions and mapping version, uses literal `initial_k=4`, and authenticates zero padding in both decoding regimes. It supports Johnson `custom:1:4` (rate 1/2) by default, Johnson `custom:3:4` (rate 1/8; both witnesses are then committed at rate 1/8 and the opener's component target is solved as the smallest in 100..=112 clearing the 100-bit composition gate, instead of the rate-1/2 constant 106), and matched UDR `udrg:1:4`.
+The current protocol uses transcript domain `bitz/hybrid-u32-mod32-sha256/non-zk/lanes4-padding/v5` and `BZSH` proof encoding version 5. Older versions are rejected. Version 5 binds the logical/physical source dimensions and mapping version, uses literal `initial_k=4`, and authenticates zero padding in both decoding regimes. It supports Johnson `custom:1:4` (rate 1/2) by default, Johnson `custom:3:4` (rate 1/8; both witnesses are then committed at rate 1/8 and the opener's component target is solved as the smallest in 100..=112 clearing the 100-bit composition gate, instead of the rate-1/2 constant 106), and matched UDR `udrg:1:4`.
 
 For logical packed-source logs `l0,l1`, let `L=max(l0,l1)`, `P=L-3`, `p_b=max(l_b,P)`, and `k_b=p_b-P`. Source `b` is padded to `2^p_b` words; physical index `i` maps to `((i >> k_b) << 4) + (b << 3) + (i mod 2^k_b)`. This forms sixteen virtual lanes. After ring-switch messages, a fresh challenge batches a zero-valued claim outside the logical supports into the authenticated opening using three equality bases.
 
-`--profile` overrides `F2Z_LIG_PROFILE` and affects only Ligerito. Verifying a UDR proof requires the same `--profile udrg:3:4` selection. Metadata is printed as `LIGERITO_CONFIG <JSON>` on stderr and saved as `<proof>.ligerito.json`; it includes the resolved configuration, fingerprint, target, OOD accounting and protocol identity.
+`--profile` overrides `BITZ_LIG_PROFILE` and affects only Ligerito. Verifying a UDR proof requires the same `--profile udrg:3:4` selection. Metadata is printed as `LIGERITO_CONFIG <JSON>` on stderr and saved as `<proof>.ligerito.json`; it includes the resolved configuration, fingerprint, target, OOD accounting and protocol identity.
 
 The agreed full workload is the default:
 
@@ -141,15 +141,15 @@ RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
   --sweep --shapes 15:7,16:8 --mode all --iterations 5
 ```
 
-Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 9–22 and SHA logs 1–16 (the hybrid prepares only the multiplication prefix — Spartan PIOP and F2Z GKR forest — and discharges its claim through the shared opener, so it is not held to the standalone u32 API's 2^15 floor; `separate` mode still is). Equal operation counts, `--shapes 9:9,10:10,...,14:14`, give SHA-dominated workloads: the packed SHA witness is 256x the multiplication witness, and 2^15 compressions already need about 25 GB. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
+Each `--shapes` pair is `MUL_LOG:SHA_LOG`: `15:7` means 32,768 multiplications and 128 chained compressions. Pairs run in the supplied order; they need not have equal witnesses. For example, `--shapes 20:7,20:8,20:9` holds multiplications at 1,048,576 while increasing compressions. Multiplication logs must be 9–22 and SHA logs 1–16 (the hybrid prepares only the multiplication prefix — Spartan PIOP and BitZ GKR forest — and discharges its claim through the shared opener, so it is not held to the standalone u32 API's 2^15 floor; `separate` mode still is). Equal operation counts, `--shapes 9:9,10:10,...,14:14`, give SHA-dominated workloads: the packed SHA witness is 256x the multiplication witness, and 2^15 compressions already need about 25 GB. Duplicate pairs and combinations of `--sweep` with single-run size/proof flags are rejected. The all-Binius mode processes the same operations, but its multiplication witness layout differs from the hybrid branch's layout. All modes keep the security settings described below.
 
-The sweep prints readable progress and sample results to stdout. Each sample identifies its backend and multiplication/SHA sizes, labels prover and verifier time, and reports proof size, peak RSS and successful verification. Hybrid samples also show witness/commitment time, PIOP time broken down by multiplication/Spartan and SHA, and IOP time broken down by multiplication F2Z/GKR, joint sumcheck and the shared opening. Setup is reported once per workload and excluded from prover time; peak RSS includes setup and is cumulative within that workload's process. The sweep creates a fresh `sweep-<timestamp>-<pid>/` under `benches/results/hybrid-u32-sha256/` containing:
+The sweep prints readable progress and sample results to stdout. Each sample identifies its backend and multiplication/SHA sizes, labels prover and verifier time, and reports proof size, peak RSS and successful verification. Hybrid samples also show witness/commitment time, PIOP time broken down by multiplication/Spartan and SHA, and IOP time broken down by multiplication BitZ/GKR, joint sumcheck and the shared opening. Setup is reported once per workload and excluded from prover time; peak RSS includes setup and is cumulative within that workload's process. The sweep creates a fresh `sweep-<timestamp>-<pid>/` under `benches/results/hybrid-u32-sha256/` containing:
 
 - `summary.csv`: all verified samples, with `multiplication_relation=u32_mod_2_32`, mode, operation counts, log sizes and timings. Exact proof sizes and separate-mode payload estimates use distinct columns; unavailable metrics are blank. Read this file for machine-readable output; stdout displays the labelled results.
 - `<mode>-m<MUL_LOG>-s<SHA_LOG>.csv` and `.log`: original samples and setup/stage diagnostics for each process.
 - `<mode>-m<MUL_LOG>-s<SHA_LOG>.ligerito.json`: validated Ligerito identity for hybrid/separate modes, also encoded in the `ligerito_hex` summary column. All-Binius has no Ligerito identity.
-- `<mode>-m<MUL_LOG>-s<SHA_LOG>.binius-ligerito.json`: the F2Z-opener identity of `binius-ligerito` cases (rate, accounting model, solved component target, per-oracle logs), also encoded in the `ligerito_hex` summary column.
-- `run.txt`: executable, multiplication relation, requested shapes, modes, iteration count, thread setting, security target, and the effective backend knobs — the opener profile, `F2Z_HYBRID_BINIUS_LOG_INV_RATE`, `F2Z_HYBRID_BINIUS_SECURITY_BITS`, `F2Z_BINIUS_LOG_INV_RATE` and `F2Z_BINIUS_LIGERITO_ACCOUNTING` — so runs at different rates, accounting models or thread counts can never be confused afterwards (`scripts/hybrid_table.py` validates them against its row keys).
+- `<mode>-m<MUL_LOG>-s<SHA_LOG>.binius-ligerito.json`: the BitZ-opener identity of `binius-ligerito` cases (rate, accounting model, solved component target, per-oracle logs), also encoded in the `ligerito_hex` summary column.
+- `run.txt`: executable, multiplication relation, requested shapes, modes, iteration count, thread setting, security target, and the effective backend knobs — the opener profile, `BITZ_HYBRID_BINIUS_LOG_INV_RATE`, `BITZ_HYBRID_BINIUS_SECURITY_BITS`, `BITZ_BINIUS_LOG_INV_RATE` and `BITZ_BINIUS_LIGERITO_ACCOUNTING` — so runs at different rates, accounting models or thread counts can never be confused afterwards (`scripts/hybrid_table.py` validates them against its row keys).
 
 The default `benches/results/` directory is ignored by Git. Use `--results-dir DIR` to choose a destination that does not already exist. A failed child stops the sweep, reports its log path and preserves completed results. Sweep code lives in [`benches/hybrid_u32_sha256/sweep.rs`](../benches/hybrid_u32_sha256/sweep.rs). The standalone CLI accepts the same sweep flags.
 
@@ -160,7 +160,7 @@ A version-1 smoke sweep on 2026-09-08 successfully generated and verified one hy
 ## Library API
 
 ```rust
-use f2z::hybrid::{Parameters, PreparedHybrid, U32MulMod32Row};
+use bitz::hybrid::{Parameters, PreparedHybrid, U32MulMod32Row};
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let parameters = Parameters {
@@ -191,7 +191,7 @@ Each block is sixteen words in SHA's standard word order; each word represents f
 
 ## Prover-side optimizations (2026-09-10)
 
-Four byte-identical prover changes on the F2Z side of the hybrid (proof
+Four byte-identical prover changes on the BitZ side of the hybrid (proof
 bytes, transcript and verifier unchanged; the 20:12 proof digest and the
 repository's transcript pins are the guards):
 
@@ -211,9 +211,9 @@ repository's transcript pins are the guards):
    the smallest hit of a range; the parallel search takes 1024-nonce chunks
    from a shared counter and stops at the running minimum instead of
    scanning whole 2^17-nonce waves (which doubled every grind below 17
-   bits). Both F2Z grinders use it: the Ligerito challenger
+   bits). Both BitZ grinders use it: the Ligerito challenger
    (`ZincChallenger::grind_pow`, 16-byte seed — fold, query and recursive
-   grinds of every F2Z opener, the Binius-with-F2Z-opener mode included)
+   grinds of every BitZ opener, the Binius-with-BitZ-opener mode included)
    and `piop::spartan::grinding` (32-byte seed — Spartan boundaries, forest
    rounds, Round 0). 20:12: 50 ms → 14 ms for the 21 grinds of the shared
    opener; 22:14: 222 ms → ~60 ms.
@@ -271,7 +271,7 @@ layout (7 of 16 lanes are zero at unbalanced shapes).
 - `src/hybrid/mod.rs`: prepared relation, committed witness, prover and verifier APIs.
 - `src/piop/spartan/u32_mul.rs`: explicit four-limb modular rows and their fixed reconstruction into the existing exact-product PIOP assignment.
 - `src/hybrid/mod32_binius.rs`: four range-checked Binius limbs and the exact multiplication/reconstruction constraint used by the all-Binius comparison.
-- `src/piop/spartan/f2z/hybrid.rs`: Spartan and the exponent GKR, stopped at a binary inner product; bounded integer read-off is checked by the verifier.
+- `src/piop/spartan/bitz/hybrid.rs`: Spartan and the exponent GKR, stopped at a binary inner product; bounded integer read-off is checked by the verifier.
 - `src/hybrid/sha.rs`: constrained sequential two-compression gadget, fixed IV and public final state; the Binius IOP prover runs on a `BufferPool` owned by the relation.
 - `src/hybrid/channel.rs`: Binius messages and challenges on the same BLAKE3 transcript as the integer branch.
 - `src/hybrid/sumcheck.rs`: shared degree-two sumcheck. The first seven rounds bind the bit index inside a packed word; their messages are linear functionals of per-block **bit marginals** `S[block][bit] = Σ_i high[i]·bit(word_{i,block})`, accumulated once per source with the method-of-four-Russians fold (no field element per original bit, no per-round scan of the packed words). Subsequent rounds fold tables over the virtual packed domain, recycled from the prepared circuit's scratch across proofs; each fold pass also emits the next round's message.
@@ -292,7 +292,7 @@ retain their original versions.
 
 ## Security target and scope
 
-The experiment is non-ZK. Its modeled composition gate requires at least 100 bits, including Round-0, integer-prefix, GKR, binary PIOP, batching, padding, ring-switch and Ligerito error terms. The integer component retains its 108-bit budget. The shared Ligerito opener uses `initial_k=4` in both regimes; at the default rate 1/2 its component target is the documented constant 106, and at rate 1/8 (`custom:3:4`) the smallest component target in 100..=112 clearing the composition gate is solved and recorded (`LIGERITO_CONFIG`'s `target_bits`). The commit rate of both witnesses always equals the opener's level-0 rate. Separate mode uses a 112-bit F2Z opener; separate/all-Binius native Binius configurations remain unchanged.
+The experiment is non-ZK. Its modeled composition gate requires at least 100 bits, including Round-0, integer-prefix, GKR, binary PIOP, batching, padding, ring-switch and Ligerito error terms. The integer component retains its 108-bit budget. The shared Ligerito opener uses `initial_k=4` in both regimes; at the default rate 1/2 its component target is the documented constant 106, and at rate 1/8 (`custom:3:4`) the smallest component target in 100..=112 clearing the composition gate is solved and recorded (`LIGERITO_CONFIG`'s `target_bits`). The commit rate of both witnesses always equals the opener's level-0 rate. Separate mode uses a 112-bit BitZ opener; separate/all-Binius native Binius configurations remain unchanged.
 
 Johnson's outer OOD uses `IopSecurityParams::adopt_ood_round`, including the existing 24-bit grinding cap. Native Ligerito fold/query grinding is reported separately. The fresh padding check contributes `(L+2)/2^128` to the modeled error budget. Roots, dimensions, final SHA state, mapping/protocol version and resolved configuration are bound before OOD and the PIOP challenges. UDR omits the OOD claims and retains the padding check.
 
@@ -319,7 +319,7 @@ RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode all-binius --iterati
 RAYON_NUM_THREADS=8 target/release/hybrid-u32-sha256 --mode binius-ligerito --iterations 5
 ```
 
-The `binius-ligerito` mode proves the all-Binius circuit (the same four-limb multiplication gadget and SHA chain) with Binius64's PIOP prefix and the F2Z opener (`src/binius_ligerito/`): every oracle the PIOP commits — the witness and the IntMul reduction's logup* pushforward — is a codeword under BLAKE3 at the selected rate — `F2Z_BINIUS_LOG_INV_RATE`, 1 = rate 1/2 (default) or 3 = rate 1/8, the same knob the mul benches read — pinned by Round 0 right after its root is bound, and opened by ring switching plus a Johnson-regime Ligerito continuation with fold and query grinding. `F2Z_BINIUS_LIGERITO_ACCOUNTING` selects the 100-bit gate model (`union` default, `rbr` = round-by-round; the bench-suite tables use `rbr`). Its setup line reports the gated figure with both accounting figures (`algebraic_security_bits`, `union_bound_bits`, `round_by_round_bits`), the opener's solved component target, rate and accounting, and a machine-readable `BINIUS_LIGERITO_CONFIG` identity line follows it; `F2Z_HYBRID_BINIUS_*` do not apply to this mode.
+The `binius-ligerito` mode proves the all-Binius circuit (the same four-limb multiplication gadget and SHA chain) with Binius64's PIOP prefix and the BitZ opener (`src/binius_ligerito/`): every oracle the PIOP commits — the witness and the IntMul reduction's logup* pushforward — is a codeword under BLAKE3 at the selected rate — `BITZ_BINIUS_LOG_INV_RATE`, 1 = rate 1/2 (default) or 3 = rate 1/8, the same knob the mul benches read — pinned by Round 0 right after its root is bound, and opened by ring switching plus a Johnson-regime Ligerito continuation with fold and query grinding. `BITZ_BINIUS_LIGERITO_ACCOUNTING` selects the 100-bit gate model (`union` default, `rbr` = round-by-round; the bench-suite tables use `rbr`). Its setup line reports the gated figure with both accounting figures (`algebraic_security_bits`, `union_bound_bits`, `round_by_round_bits`), the opener's solved component target, rate and accounting, and a machine-readable `BINIUS_LIGERITO_CONFIG` identity line follows it; `BITZ_HYBRID_BINIUS_*` do not apply to this mode.
 
 All modes generate the same deterministic operands and chained SHA blocks and use BLAKE3 Merkle hashing. Each mode generates its four-limb multiplication rows within the timed iteration. Hybrid and separate modes compile the supplied limbs through `p = z + 2^32 * w` into the integer PIOP. The separate mode uses the same integer component profile plus Binius SHA. The all-Binius mode allocates four witness wires, range-checks each to 32 bits, and checks the exact multiplication against `z XOR (w << 32)`; the disjoint limbs make this equal to `z + 2^32 * w`. It proves the same SHA chain. Binius FRI uses 112 bits, rather than its default 96-bit configuration, to leave composition slack.
 
@@ -330,10 +330,10 @@ Hybrid phase timings are measured on every sample without additional flags:
 - `mul_piop_ms`: multiplication constraint reduction through Spartan and bitification, including the prefix's transcript binding and grinding.
 - `sha_piop_ms`: Binius SHA constraint reduction to its binary claim.
 - `piop_ms`: the sum of those two constraint reductions.
-- `mul_opening_ms`: prepare the multiplication F2Z claim, fold bounded sums, and run GKR to obtain its binary claim.
+- `mul_opening_ms`: prepare the multiplication BitZ claim, fold bounded sums, and run GKR to obtain its binary claim.
 - `joint_sumcheck_ms`: combine the two binary claims through the shared bit sumcheck.
 - `shared_opening_ms`: Round 0 (virtual witness assembly, grinding, and the out-of-domain evaluation), ring switching, and Ligerito with authentication against both roots. `ood_round_ms` reports the Round-0 part on its own; it is included in `shared_opening_ms`, not added to it again.
-- `iop_ms`: the sum of `mul_opening_ms`, `joint_sumcheck_ms`, and `shared_opening_ms`. This counts F2Z/GKR as opening work, consistent with the existing standalone F2Z benchmarks. Initial commitments are counted in `witness_commit_ms` instead.
+- `iop_ms`: the sum of `mul_opening_ms`, `joint_sumcheck_ms`, and `shared_opening_ms`. This counts BitZ/GKR as opening work, consistent with the existing standalone BitZ benchmarks. Initial commitments are counted in `witness_commit_ms` instead.
 
 These are prover wall-clock times, including parallel work, and exclude setup and verification. `continuation_ms` encloses PIOP and IOP plus transcript initialization and logging overhead; `total_prover_ms` additionally includes witness generation, initial commitments and proof encoding. Nested profiling regions are not added again. The separate and all-Binius modes currently report total prover time; their phase columns in `summary.csv` are blank. Historical result files are unchanged and do not contain these new timing columns.
 

@@ -86,38 +86,38 @@ fn counts_seeds_lists_and_passes_preserve_supported_values() {
 
 #[derive(Parser)]
 struct Environment {
-    #[arg(long, env = "F2Z_CLI_TEST_REPS", default_value = "5", value_parser = cli::positive)]
+    #[arg(long, env = "BITZ_CLI_TEST_REPS", default_value = "5", value_parser = cli::positive)]
     reps: usize,
-    #[arg(long, env = "F2Z_CLI_TEST_SHAPES", default_value = "15 16", value_parser = cli::list::<u32>)]
+    #[arg(long, env = "BITZ_CLI_TEST_SHAPES", default_value = "15 16", value_parser = cli::list::<u32>)]
     shapes: cli::List<u32>,
 }
 
 #[test]
 fn environment_probe() {
-    let Ok(mode) = std::env::var("F2Z_CLI_TEST_CHILD") else {
+    let Ok(mode) = std::env::var("BITZ_CLI_TEST_CHILD") else {
         return;
     };
     if mode == "common" {
-        let reps = common::reps(Some("F2Z_SHA_REPS"), 3);
-        let seed = common::seed(Some("F2Z_SHA_SEED"), 7);
-        let shapes = common::shape_values(Some("F2Z_SHA_LOG2S"), str::parse::<usize>);
-        let profile = common::security_profile(f2z::piop::spartan::PrimePolicy::SingleDerived);
+        let reps = common::reps(Some("BITZ_SHA_REPS"), 3);
+        let seed = common::seed(Some("BITZ_SHA_SEED"), 7);
+        let shapes = common::shape_values(Some("BITZ_SHA_LOG2S"), str::parse::<usize>);
+        let profile = common::security_profile(bitz::piop::spartan::PrimePolicy::SingleDerived);
         println!(
             "COMMON {reps} {seed} {shapes:?} {:?}",
             profile.map(|p| p.name())
         );
     } else if mode == "value" {
-        let raw = std::env::var("F2Z_CLI_TEST_VALUE").unwrap();
-        let seed = cli::value("F2Z_CLI_TEST_VALUE", &raw, cli::seed);
+        let raw = std::env::var("BITZ_CLI_TEST_VALUE").unwrap();
+        let seed = cli::value("BITZ_CLI_TEST_VALUE", &raw, cli::seed);
         println!("CLI_VALUE {seed}");
     } else if mode == "pass" {
         println!("CLI_PASS {}", cli::BenchmarkPass::from_env().as_str());
     } else if mode == "shapes" {
-        let shapes = common::shape_values(Some("F2Z_SHA_LOG2S"),
+        let shapes = common::shape_values(Some("BITZ_SHA_LOG2S"),
             clap::builder::RangedU64ValueParser::<usize>::new().range(8..=25));
         println!("CLI_SHAPES {shapes:?}");
     } else {
-        let scalar = cli::env::<u32>("F2Z_CLI_TEST_SCALAR");
+        let scalar = cli::env::<u32>("BITZ_CLI_TEST_SCALAR");
         let config = cli::environment::<Environment>();
         println!("CLI_ENV {scalar:?} {} {:?}", config.reps, config.shapes);
     }
@@ -131,23 +131,23 @@ fn pass_feature_gate_and_shape_bounds_use_clap_errors() {
         ("both", cfg!(feature = "bench-peak-memory")),
         ("invalid", false),
     ] {
-        let out = child(&[("F2Z_CLI_TEST_CHILD", "pass"), ("F2Z_BENCH_PASS", value)]);
+        let out = child(&[("BITZ_CLI_TEST_CHILD", "pass"), ("BITZ_BENCH_PASS", value)]);
         assert_eq!(out.status.code(), Some(if accepted { 0 } else { 2 }));
         if !accepted {
             let error = String::from_utf8_lossy(&out.stderr);
-            assert!(error.contains("F2Z_BENCH_PASS"), "{error}");
+            assert!(error.contains("BITZ_BENCH_PASS"), "{error}");
             assert!(!error.contains("panicked"), "{error}");
             if value != "invalid" { assert!(error.contains("bench-peak-memory"), "{error}"); }
         }
     }
-    for variable in ["F2Z_BENCH_SHAPES", "F2Z_SHA_LOG2S"] {
-        let out = child(&[("F2Z_CLI_TEST_CHILD", "shapes"), (variable, "8, 25 +08")]);
+    for variable in ["BITZ_BENCH_SHAPES", "BITZ_SHA_LOG2S"] {
+        let out = child(&[("BITZ_CLI_TEST_CHILD", "shapes"), (variable, "8, 25 +08")]);
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         assert!(String::from_utf8_lossy(&out.stdout).contains("Some([8, 25, 8])"));
         for value in ["", " , ", "7", "26", "8 nope", "-1", "18446744073709551616"] {
-            let out = child(&[("F2Z_CLI_TEST_CHILD", "shapes"), (variable, value)]);
+            let out = child(&[("BITZ_CLI_TEST_CHILD", "shapes"), (variable, value)]);
             assert_eq!(out.status.code(), Some(2), "accepted {variable}={value}");
-            assert!(String::from_utf8_lossy(&out.stderr).contains("F2Z_BENCH_SHAPES"));
+            assert!(String::from_utf8_lossy(&out.stderr).contains("BITZ_BENCH_SHAPES"));
         }
     }
 }
@@ -156,7 +156,7 @@ fn child(env: &[(&str, &str)]) -> std::process::Output {
     std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "environment_probe", "--nocapture"])
         .env_clear()
-        .env("F2Z_CLI_TEST_CHILD", "environment")
+        .env("BITZ_CLI_TEST_CHILD", "environment")
         .envs(env.iter().copied())
         .output()
         .unwrap()
@@ -169,16 +169,16 @@ fn environment_defaults_values_and_errors_are_isolated() {
         (vec![], "CLI_ENV None 5 [15, 16]"),
         (
             vec![
-                ("F2Z_CLI_TEST_SCALAR", "7"),
-                ("F2Z_CLI_TEST_REPS", "3"),
-                ("F2Z_CLI_TEST_SHAPES", "15, 17 19"),
+                ("BITZ_CLI_TEST_SCALAR", "7"),
+                ("BITZ_CLI_TEST_REPS", "3"),
+                ("BITZ_CLI_TEST_SHAPES", "15, 17 19"),
             ],
             "CLI_ENV Some(7) 3 [15, 17, 19]",
         ),
         (
             vec![
-                ("F2Z_CLI_TEST_CHILD", "value"),
-                ("F2Z_CLI_TEST_VALUE", "0xff"),
+                ("BITZ_CLI_TEST_CHILD", "value"),
+                ("BITZ_CLI_TEST_VALUE", "0xff"),
             ],
             "CLI_VALUE 255",
         ),
@@ -192,20 +192,20 @@ fn environment_defaults_values_and_errors_are_isolated() {
         assert!(String::from_utf8_lossy(&output.stdout).contains(expected));
     }
     for (name, value, diagnostic) in [
-        ("F2Z_CLI_TEST_SCALAR", "oops", "F2Z_CLI_TEST_SCALAR"),
-        ("F2Z_CLI_TEST_REPS", "0", "F2Z_CLI_TEST_REPS"),
-        ("F2Z_CLI_TEST_SHAPES", "15 nope", "F2Z_CLI_TEST_SHAPES"),
+        ("BITZ_CLI_TEST_SCALAR", "oops", "BITZ_CLI_TEST_SCALAR"),
+        ("BITZ_CLI_TEST_REPS", "0", "BITZ_CLI_TEST_REPS"),
+        ("BITZ_CLI_TEST_SHAPES", "15 nope", "BITZ_CLI_TEST_SHAPES"),
     ] {
         let output = child(&[(name, value)]);
         assert_eq!(output.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&output.stderr).contains(diagnostic));
     }
     let output = child(&[
-        ("F2Z_CLI_TEST_CHILD", "value"),
-        ("F2Z_CLI_TEST_VALUE", "0x"),
+        ("BITZ_CLI_TEST_CHILD", "value"),
+        ("BITZ_CLI_TEST_VALUE", "0x"),
     ]);
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("F2Z_CLI_TEST_VALUE"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("BITZ_CLI_TEST_VALUE"));
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn legacy_aliases_keep_precedence_conflicts_and_warnings() {
         std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "environment_probe", "--nocapture"])
             .env_clear()
-            .env("F2Z_CLI_TEST_CHILD", "common")
+            .env("BITZ_CLI_TEST_CHILD", "common")
             .envs(settings.iter().copied())
             .output()
             .unwrap()
@@ -223,10 +223,10 @@ fn legacy_aliases_keep_precedence_conflicts_and_warnings() {
     assert!(default.status.success());
     assert!(String::from_utf8_lossy(&default.stdout).contains("COMMON 3 7 None None"));
     let aliases = child(&[
-        ("F2Z_SHA_REPS", "4"),
-        ("F2Z_SHA_SEED", "0Xff"),
-        ("F2Z_SHA_LOG2S", "15, 17 19"),
-        ("F2Z_BENCH_LAMBDA", " LaMbDa128 "),
+        ("BITZ_SHA_REPS", "4"),
+        ("BITZ_SHA_SEED", "0Xff"),
+        ("BITZ_SHA_LOG2S", "15, 17 19"),
+        ("BITZ_BENCH_LAMBDA", " LaMbDa128 "),
     ]);
     assert!(
         aliases.status.success(),
@@ -238,15 +238,15 @@ fn legacy_aliases_keep_precedence_conflicts_and_warnings() {
             .contains("COMMON 4 255 Some([15, 17, 19]) Some(\"lambda128\")")
     );
     assert!(String::from_utf8_lossy(&aliases.stderr).contains("deprecated"));
-    let equal = child(&[("F2Z_SHA_REPS", "4"), ("F2Z_BENCH_REPS", "4")]);
+    let equal = child(&[("BITZ_SHA_REPS", "4"), ("BITZ_BENCH_REPS", "4")]);
     assert!(equal.status.success());
     assert!(!String::from_utf8_lossy(&equal.stderr).contains("deprecated"));
     for settings in [
-        vec![("F2Z_SHA_REPS", "4"), ("F2Z_BENCH_REPS", "04")],
-        vec![("F2Z_SHA_SEED", "0xff"), ("F2Z_BENCH_SEED", "255")],
-        vec![("F2Z_SHA_LOG2S", "15 17"), ("F2Z_BENCH_SHAPES", "15,17")],
-        vec![("F2Z_BENCH_REPS", "0")],
-        vec![("F2Z_BENCH_LAMBDA", "114")],
+        vec![("BITZ_SHA_REPS", "4"), ("BITZ_BENCH_REPS", "04")],
+        vec![("BITZ_SHA_SEED", "0xff"), ("BITZ_BENCH_SEED", "255")],
+        vec![("BITZ_SHA_LOG2S", "15 17"), ("BITZ_BENCH_SHAPES", "15,17")],
+        vec![("BITZ_BENCH_REPS", "0")],
+        vec![("BITZ_BENCH_LAMBDA", "114")],
     ] {
         assert_eq!(
             child(&settings).status.code(),

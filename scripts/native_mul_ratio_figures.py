@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ratio figures (F2Z / x, x ∈ {Binius64, Plonky3 WHIR}) from a native-mul run.
+"""Ratio figures (BitZ / x, x ∈ {Binius64, Plonky3 WHIR}) from a native-mul run.
 
 Reads `PerfRuns/<stamp>-native-mul/{summary.json,samples.jsonl}` produced by
 `benches/mul_e2e_compare.rs` and writes, per metric, a standalone pgfplots
@@ -10,12 +10,12 @@ value and ratio:
               witness generation, i.e. commit + PIOP + PCS opening;
   verifier  — `verify_ms` medians;
   proof     — median `proof_bytes` over the measured samples.  The bench leaves
-              F2Z's `proof_bytes` unset, so supply them with
-              `--f2z-proof-bytes 15=157000,16=185764,...` (bytes per exponent,
-              e.g. from `f2z --mul <e> --profile udr`, the same relation and
+              BitZ's `proof_bytes` unset, so supply them with
+              `--bitz-proof-bytes 15=157000,16=185764,...` (bytes per exponent,
+              e.g. from `bitz --mul <e> --profile udr`, the same relation and
               opener the bench uses).
 
-Ratios below 1 mean F2Z is faster / smaller than x.
+Ratios below 1 mean BitZ is faster / smaller than x.
 """
 from __future__ import annotations
 
@@ -32,13 +32,13 @@ BACKENDS = {"binius64": "Binius64", "plonky3-whir": "Plonky3 WHIR"}
 # Categorical slots 1 and 2 of the validated reference palette (light surface).
 SERIES_COLORS = {"binius64": "2a78d6", "plonky3-whir": "eb6834"}
 METRICS = {
-    "prover": ("Prover time (incl.\\ commit), F2Z / $x$", "ms"),
-    "verifier": ("Verifier time, F2Z / $x$", "ms"),
-    "proof": ("Proof size, F2Z / $x$", "bytes"),
+    "prover": ("Prover time (incl.\\ commit), BitZ / $x$", "ms"),
+    "verifier": ("Verifier time, BitZ / $x$", "ms"),
+    "proof": ("Proof size, BitZ / $x$", "bytes"),
 }
 
 
-def load_run(run_dir: Path, f2z_proof_bytes: dict[int, int]) -> dict[str, dict[int, dict[str, float]]]:
+def load_run(run_dir: Path, bitz_proof_bytes: dict[int, int]) -> dict[str, dict[int, dict[str, float]]]:
     """{backend: {exponent: {prover, verifier, proof}}} (medians)."""
     data: dict[str, dict[int, dict[str, float]]] = defaultdict(dict)
     for row in json.loads((run_dir / "summary.json").read_text()):
@@ -59,9 +59,9 @@ def load_run(run_dir: Path, f2z_proof_bytes: dict[int, int]) -> dict[str, dict[i
             proof[(rec["backend"], rec["log_multiplications"])].append(pb)
     for (backend, exp), values in proof.items():
         data[backend][exp]["proof"] = statistics.median(values)
-    for exp, nbytes in f2z_proof_bytes.items():
-        if exp in data.get("f2z", {}):
-            data["f2z"][exp]["proof"] = float(nbytes)
+    for exp, nbytes in bitz_proof_bytes.items():
+        if exp in data.get("bitz", {}):
+            data["bitz"][exp]["proof"] = float(nbytes)
     return data
 
 
@@ -111,7 +111,7 @@ def figure_tex(metric: str, ylabel: str, series: dict[str, list[tuple[int, float
             f"      coordinates {{{coords}}}\n"
             f"      node[pos=1, anchor=west, xshift=4pt, font=\\scriptsize, text=black] {{{fmt_ratio(last_v)}$\\times$}};"
         )
-        legend.append(f"F2Z / {BACKENDS[key]}")
+        legend.append(f"BitZ / {BACKENDS[key]}")
     color_defs = "\n".join(
         f"\\definecolor{{s{k.replace('-', '')}}}{{HTML}}{{{c}}}" for k, c in SERIES_COLORS.items()
     )
@@ -144,7 +144,7 @@ def figure_tex(metric: str, ylabel: str, series: dict[str, list[tuple[int, float
     legend style={{draw=none, fill=none, font=\\footnotesize, cells={{anchor=west}}, at={{(0.5,-0.30)}}, anchor=north, legend columns=-1, /tikz/every even column/.append style={{column sep=0.7cm}}}},
     clip=false,
   ]
-    % parity: F2Z equal to x
+    % parity: BitZ equal to x
     \\addplot[axisgray, line width=0.5pt, forget plot, domain={lo - 0.35}:{hi + 0.35}, samples=2] {{1}}
       node[pos=0, anchor=north west, font=\\scriptsize, text=textmuted, inner sep=2pt] {{parity}};
 {chr(10).join(plots)}
@@ -160,29 +160,29 @@ def main() -> int:
     ap.add_argument("run_dir", type=Path, help="PerfRuns/<stamp>-native-mul directory")
     ap.add_argument("--out-dir", type=Path, default=Path("paper/figures"))
     ap.add_argument("--prefix", default="native-mul-ratio")
-    ap.add_argument("--f2z-proof-bytes", default="", help="e=bytes,e=bytes,... for F2Z (not recorded by the bench)")
+    ap.add_argument("--bitz-proof-bytes", default="", help="e=bytes,e=bytes,... for BitZ (not recorded by the bench)")
     ap.add_argument("--compile", action="store_true", help="run pdflatex on each figure (and pdftoppm previews if present)")
     args = ap.parse_args()
 
-    f2z_pb = {}
-    if args.f2z_proof_bytes:
-        for item in args.f2z_proof_bytes.split(","):
+    bitz_pb = {}
+    if args.bitz_proof_bytes:
+        for item in args.bitz_proof_bytes.split(","):
             e, b = item.split("=")
-            f2z_pb[int(e)] = int(b)
-    data = load_run(args.run_dir, f2z_pb)
-    if "f2z" not in data:
-        raise SystemExit("run has no f2z rows")
-    exps = sorted(data["f2z"])
+            bitz_pb[int(e)] = int(b)
+    data = load_run(args.run_dir, bitz_pb)
+    if "bitz" not in data:
+        raise SystemExit("run has no bitz rows")
+    exps = sorted(data["bitz"])
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     # CSV with every value and ratio.
     csv_path = args.out_dir / f"{args.prefix}s.csv"
     with csv_path.open("w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["metric", "unit", "log2_n", "f2z", "binius64", "plonky3-whir", "f2z_over_binius64", "f2z_over_plonky3-whir"])
+        w.writerow(["metric", "unit", "log2_n", "bitz", "binius64", "plonky3-whir", "bitz_over_binius64", "bitz_over_plonky3-whir"])
         for metric, (_, unit) in METRICS.items():
             for e in exps:
-                f = data["f2z"][e].get(metric)
+                f = data["bitz"][e].get(metric)
                 vals = [data.get(b, {}).get(e, {}).get(metric) for b in BACKENDS]
                 w.writerow([metric, unit, e, f] + vals + [None if (f is None or v is None) else f / v for v in vals])
 
@@ -192,7 +192,7 @@ def main() -> int:
         for key in BACKENDS:
             pts = []
             for e in exps:
-                f = data["f2z"][e].get(metric)
+                f = data["bitz"][e].get(metric)
                 v = data.get(key, {}).get(e, {}).get(metric)
                 if f is not None and v is not None:
                     pts.append((e, f / v))

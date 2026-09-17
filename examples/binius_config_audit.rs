@@ -64,7 +64,7 @@ fn audit(cs: &ConstraintSystem) -> Value {
             }));
         }
     }
-    let ligerito = match f2z::binius_ligerito::Prepared::new(cs) {
+    let ligerito = match bitz::binius_ligerito::Prepared::new(cs) {
         Ok(prepared) => ligerito_report(&prepared),
         Err(error) => json!({"supported":false, "error":error.to_string()}),
     };
@@ -75,7 +75,7 @@ fn audit(cs: &ConstraintSystem) -> Value {
     })
 }
 
-fn ligerito_report(prepared: &f2z::binius_ligerito::Prepared) -> Value {
+fn ligerito_report(prepared: &bitz::binius_ligerito::Prepared) -> Value {
     let security = prepared.security();
     let oracles: Vec<_> = prepared
         .oracle_specs()
@@ -93,7 +93,7 @@ fn ligerito_report(prepared: &f2z::binius_ligerito::Prepared) -> Value {
         .collect();
     json!({
                 "supported":true,
-                "log_inv_rate": f2z::binary_pcs::LOG_INV_RATE,
+                "log_inv_rate": bitz::binary_pcs::LOG_INV_RATE,
                 "target_bits": security.target_bits,
                 "algebraic_bits": security.algebraic_bits,
                 "component_bits": prepared.component_bits(),

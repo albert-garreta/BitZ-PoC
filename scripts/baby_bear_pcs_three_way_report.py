@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Combine matched F2Z, WHIR degree-4, and WHIR degree-5 PCS campaigns."""
+"""Combine matched BitZ, WHIR degree-4, and WHIR degree-5 PCS campaigns."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import Any, Sequence
 
 EXPONENTS = tuple(range(16, 25))
 PROFILES = (
-    ("f2z", "F2Z / Ligerito"),
+    ("bitz", "BitZ / Ligerito"),
     ("whir-d4", "WHIR degree-4 / unique decoding"),
     ("whir-d5", "WHIR degree-5 / Johnson bound"),
 )
@@ -107,9 +107,9 @@ def validate_security(
         or total != sum(schedule)
     ):
         raise ReportError(f"{profile} 2^{exponent} has invalid query accounting")
-    if profile == "f2z":
+    if profile == "bitz":
         if security.get("commitment_field") != "GF(2^128)":
-            raise ReportError(f"F2Z 2^{exponent} is not the GF(2^128) profile")
+            raise ReportError(f"BitZ 2^{exponent} is not the GF(2^128) profile")
     else:
         wanted_degree = 4 if profile == "whir-d4" else 5
         wanted_assumption = "UniqueDecoding" if wanted_degree == 4 else "JohnsonBound"
@@ -133,7 +133,7 @@ def build_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
             "profiles": {},
         }
         sources = {
-            "f2z": (primary_summary, primary_security, "f2z"),
+            "bitz": (primary_summary, primary_security, "bitz"),
             "whir-d4": (degree4_summary, degree4_security, "plonky3-whir"),
             "whir-d5": (primary_summary, primary_security, "plonky3-whir"),
         }
@@ -192,12 +192,12 @@ def render_markdown(rows: list[dict[str, Any]], sources: dict[str, str]) -> str:
     lines = [
         "# Baby Bear PCS — 100-bit query and performance comparison",
         "",
-        "Every comparison cell is **F2Z/Ligerito / WHIR degree-4 / WHIR degree-5**. "
+        "Every comparison cell is **BitZ/Ligerito / WHIR degree-4 / WHIR degree-5**. "
         "Bold is the lowest value. One warmup and five measured verified proofs per cell.",
         "",
         "## Query openings",
         "",
-        "| Multiplications | F2Z/Ligerito | WHIR d4 | WHIR d5 |",
+        "| Multiplications | BitZ/Ligerito | WHIR d4 | WHIR d5 |",
         "|---:|---:|---:|---:|",
     ]
     for row in rows:
@@ -284,14 +284,14 @@ code{{white-space:normal;word-break:break-all}}ul{{line-height:1.6}}.note{{font-
 </style></head><body><main>
 <h1>Baby Bear PCS — 100-bit query and performance comparison</h1>
 <p>Same deterministic integer witnesses, Apple M1 Max, 10 Rayon threads, native code generation, one warmup and five measured verified proofs per cell.</p>
-<p class="legend"><strong>Ordering:</strong> F2Z/Ligerito / WHIR degree-4 unique decoding / WHIR degree-5 Johnson bound. Bold marks the lowest value in each comparison.</p>
+<p class="legend"><strong>Ordering:</strong> BitZ/Ligerito / WHIR degree-4 unique decoding / WHIR degree-5 Johnson bound. Bold marks the lowest value in each comparison.</p>
 <h2>Instantiated query openings</h2>
 <p>Totals are derived from the exact protocol configuration instantiated for each proof. The smaller line shows the recursive or round-plus-final schedule.</p>
-<div class="wrap"><table><thead><tr><th>Multiplications</th><th>F2Z / Ligerito</th><th>WHIR degree-4</th><th>WHIR degree-5</th></tr></thead><tbody>{''.join(query_rows)}</tbody></table></div>
+<div class="wrap"><table><thead><tr><th>Multiplications</th><th>BitZ / Ligerito</th><th>WHIR degree-4</th><th>WHIR degree-5</th></tr></thead><tbody>{''.join(query_rows)}</tbody></table></div>
 <h2>Measured performance</h2>
 <p>Times are five-sample medians in milliseconds; proof size is the median serialized opening proof in bytes.</p>
 <div class="wrap"><table><thead><tr><th>Multiplications</th><th>PCS prover (ms)</th><th>Commit (ms)</th><th>Opening (ms)</th><th>Verify (ms)</th><th>Opening proof (B)</th></tr></thead><tbody>{''.join(performance_rows)}</tbody></table></div>
-<p class="note">Query counts are protocol-native openings, not equal-cost operations: Ligerito and WHIR authenticate different data along each query path. The degree-4 campaign ran immediately before the matched F2Z/degree-5 campaign, so timings are matched in configuration but not interleaved across all three implementations.</p>
+<p class="note">Query counts are protocol-native openings, not equal-cost operations: Ligerito and WHIR authenticate different data along each query path. The degree-4 campaign ran immediately before the matched BitZ/degree-5 campaign, so timings are matched in configuration but not interleaved across all three implementations.</p>
 <h2>Provenance</h2><ul>{source_items}</ul>
 </main></body></html>"""
 
@@ -329,8 +329,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     rows = build_rows(args)
     sources = {
-        "F2Z and WHIR degree-5 summary": str(args.primary_summary.resolve()),
-        "F2Z and WHIR degree-5 trace": str(args.primary_trace.resolve()),
+        "BitZ and WHIR degree-5 summary": str(args.primary_summary.resolve()),
+        "BitZ and WHIR degree-5 trace": str(args.primary_trace.resolve()),
         "WHIR degree-4 summary": str(args.degree4_summary.resolve()),
         "WHIR degree-4 trace": str(args.degree4_trace.resolve()),
     }

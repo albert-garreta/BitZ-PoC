@@ -1,6 +1,6 @@
 # Shared outer sumcheck
 
-The F2Z outer provers live in `src/sumcheck/outer`. They share one transcript
+The BitZ outer provers live in `src/sumcheck/outer`. They share one transcript
 state machine (`engine.rs`) and preserve `SumcheckProof<E, 4>`: four cubic
 coefficients are stored, absorbed, and serialized per ordinary round. Inner
 sumcheck remains `SumcheckProof<E, 3>`. Existing enclosing Spartan proof types
@@ -9,7 +9,7 @@ and wire encodings are unchanged.
 ## Public API
 
 ```rust
-use f2z::sumcheck::{outer::*, UngrindedRoundBoundary};
+use bitz::sumcheck::{outer::*, UngrindedRoundBoundary};
 use field::{create_prime_field, Uint};
 
 let field = create_prime_field(Uint::<2>::from((1u128 << 100) - 15));
@@ -124,15 +124,15 @@ outside this change.
 
 ## Validation and performance reference
 
-Baseline: `a3450385` (`Unify F2Z arithmetic under vendor/field`), release benchmark
+Baseline: `a3450385` (`Unify BitZ arithmetic under vendor/field`), release benchmark
 `u32_mul_outer_skip`, default parallel feature plus `span-metrics`, Apple Silicon.
-The frozen pre-refactor executable and logs were retained in `/tmp/f2z-outer-baseline`
-and `/tmp/f2z-outer-before.log` during development. Reproduce on a checkout of the
+The frozen pre-refactor executable and logs were retained in `/tmp/bitz-outer-baseline`
+and `/tmp/bitz-outer-before.log` during development. Reproduce on a checkout of the
 baseline and this change using the same toolchain, features, thread count, and
 Perfetto processor:
 
 ```sh
-F2Z_BENCH_SHAPES='15 17' F2Z_BENCH_REPS=5 \
+BITZ_BENCH_SHAPES='15 17' BITZ_BENCH_REPS=5 \
   PERFETTO_TRACE_PROCESSOR=/path/to/trace_processor_shell \
   cargo bench --bench u32_mul_outer_skip --features span-metrics
 ```

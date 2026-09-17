@@ -10,7 +10,7 @@ mod common;
 
 use std::hint::black_box;
 
-use f2z::{
+use bitz::{
     Gf128,
     pcs::{FQ_MOD, Q100Element, eq_le_table_fq},
     piop::sumcheck::eq_factored::suffix_tensor_arena_for_bench,
@@ -149,7 +149,7 @@ fn median(mut samples: Vec<u128>) -> u128 {
 /// accidentally counted as builder time.
 fn timed_ns<R>(body: &mut impl FnMut() -> R) -> u128 {
     let (result, started) =
-        f2z::observability::measure(tracing::info_span!("eq_tables:result"), || body())
+        bitz::observability::measure(tracing::info_span!("eq_tables:result"), || body())
             .expect("measure completed operation");
     let elapsed = started.as_nanos();
     black_box(result);
@@ -257,10 +257,10 @@ fn benchmark_fq(samples: usize) -> bool {
 
 fn main() {
     common::cli::EnvironmentCli::parse();
-    let samples = common::cli::env::<usize>("F2Z_EQ_TABLE_SAMPLES")
+    let samples = common::cli::env::<usize>("BITZ_EQ_TABLE_SAMPLES")
         .unwrap_or(DEFAULT_SAMPLES)
         .max(DEFAULT_SAMPLES);
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     println!(

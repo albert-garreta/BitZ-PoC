@@ -368,7 +368,7 @@ pub(crate) fn absorb_hs(transcript: &mut impl Transcript, s: &[Gf]) {
 }
 
 // ---------------------------------------------------------------------
-// Ring-switch fold kernels (flock-derived; `F2Z_RS_FAST`)
+// Ring-switch fold kernels (flock-derived; `BITZ_RS_FAST`)
 // ---------------------------------------------------------------------
 
 /// Fast ring-switch/basis kernels — the default: the `s_v` in-pack marginals
@@ -377,14 +377,14 @@ pub(crate) fn absorb_hs(transcript: &mut impl Transcript, s: &[Gf]) {
 /// byte-table subset-sum lookups (flock's `fold_b128_elems` shape) instead of
 /// data-dependent bit scans; the mod-q opener additionally fuses the Ligerito
 /// round-0 message into the basis pass and calls flock's
-/// `recursive_prover_with_basis_precomputed_round0`. `F2Z_RS_FAST=0` opts out
+/// `recursive_prover_with_basis_precomputed_round0`. `BITZ_RS_FAST=0` opts out
 /// (restores the scalar bit-scan paths and the plain prover entry point —
 /// diagnostic / A-B measurement). Byte-identical proofs either way (exact
 /// field-op reassociation only; pinned cross-process by
 /// `examples/fuse_check.rs`). Read once per process.
 pub(crate) fn rs_fast() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_RS_FAST").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_RS_FAST").map_or(true, |v| v != "0"))
 }
 
 /// 128-bit-word view of a packed-message element, so the fold kernels run
@@ -976,7 +976,7 @@ fn prove_fold_forest_fast(
 ///   entries shared by all `2^s` columns), then each column is an
 ///   unconditional table-add per nonzero nibble — no per-bit
 ///   trailing-zeros walk, no data-dependent shift;
-/// - **tz-walk** (`F2Z_FOLDV_LUT=0`): the original per-set-bit scan.
+/// - **tz-walk** (`BITZ_FOLDV_LUT=0`): the original per-set-bit scan.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn fold_values_bits(
     p: &IntegerMatrixLayout,
@@ -1062,12 +1062,12 @@ pub(crate) fn fold_values_bits(
         .collect()
 }
 
-/// [`fold_values_bits`] form choice: `F2Z_FOLDV_LUT=0` opts back into the
+/// [`fold_values_bits`] form choice: `BITZ_FOLDV_LUT=0` opts back into the
 /// per-set-bit trailing-zeros walk (diagnostic / A-B). Read once per
 /// process.
 fn foldv_lut() -> bool {
     static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("F2Z_FOLDV_LUT").map_or(true, |v| v != "0"))
+    *ENV.get_or_init(|| std::env::var("BITZ_FOLDV_LUT").map_or(true, |v| v != "0"))
 }
 
 /// One fused pass folding `K` weight sets at once: per column,
@@ -1394,7 +1394,7 @@ pub(crate) fn verify_int_eval_common(
 /// vs the generic per-point gather (identical per-slot products at the nodes
 /// `{0, 1, F::from(2)}`; reduction is `F₂`-linear and the outer sums are
 /// exact), so the emitted proof is byte-identical. Attached under
-/// [`rs_fast`] purely so `F2Z_RS_FAST=0` restores the generic path for A/B.
+/// [`rs_fast`] purely so `BITZ_RS_FAST=0` restores the generic path for A/B.
 #[cfg(test)]
 pub(crate) struct ProdPairWideEvaluator;
 

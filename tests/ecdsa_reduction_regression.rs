@@ -3,7 +3,7 @@
 #[path = "../benches/common/peak_memory.rs"]
 mod peak_memory;
 
-use f2z::{
+use bitz::{
     piop::spartan::ecdsa_sha256::{
         OuterMode, Sha256EcdsaStatement, commit_sha256_ecdsa, generate_sha256_ecdsa_witness,
         prepare_sha256_ecdsa, prove_sha256_ecdsa, verify_sha256_ecdsa,
@@ -63,24 +63,24 @@ fn proof_bytes_and_verifier_allocations() {
             // shared-codec or transcript changes.
             let (expected_digest, expected_challenge) = match (target, mode) {
                 (100, OuterMode::Split) => (
-                    "19cd2f6e59ddc4f9f9ca8a0b4753f0f4f03d4dfcd55b0ae923d1ef7c31e3d012",
-                    308552237714315817015783313396758004326,
+                    "dd7914e068445d04c621181c115c5a2129430418ef6e150325e43bcd6d69067a",
+                    161748810141005428170281968810474012494,
                 ),
                 (100, OuterMode::AllRows) => (
-                    "a70a9a5586911aff7afe065f10c76341d893b5a210f4cd79b4d14b834bdad99d",
-                    295269438920658387298075618801376680655,
+                    "ad33c0eb4ab212a52b581e7e5e46e00ed106101f59d2a69242fa318a4fda6682",
+                    242733522091643991383879358049197793165,
                 ),
                 (128, OuterMode::Split) => (
-                    "967e4baa20978bbdc32e133adda5fca5682f83fabacc0952afe2554702826572",
-                    82361047506537771361838764072169021363,
+                    "a600b6038c7226a643f27c2fc2d12543db3b60d94095e50f9153b408449d3911",
+                    237220613375296302577607028912355843102,
                 ),
                 (128, OuterMode::AllRows) => (
-                    "9a3c6d324ce88892d0141639b147592c8b2b9462182b306cf791729ad226015c",
-                    179707200661787963014989635211131011310,
+                    "e3f508c1632914e532dc3c7076643dc426f7be0124832a5cdd542dbb1070ba7c",
+                    18240983802203675248285318561107227572,
                 ),
                 _ => unreachable!(),
             };
-            if std::env::var_os("F2Z_RECORD_PINS").is_none() {
+            if std::env::var_os("BITZ_RECORD_PINS").is_none() {
                 assert_eq!(digest, expected_digest, "target={target} mode={mode:?}");
                 assert_eq!(challenge, expected_challenge);
             }

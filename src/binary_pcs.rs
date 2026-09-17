@@ -1,4 +1,4 @@
-//! The F2Z opener as a stand-alone binary-field polynomial commitment.
+//! The BitZ opener as a stand-alone binary-field polynomial commitment.
 //!
 //! Commit `2^{m_p}` packed `GF(2^128)` words as an interleaved Reed–Solomon
 //! codeword at rate 1/2 under a BLAKE3 Merkle tree, pin the committed word
@@ -9,7 +9,7 @@
 //! included, `η_ood`-batched with the Round-0 claim. This is the shared opener
 //! of [`crate::hybrid`] restricted to one root, packaged so that a foreign
 //! binary-field PIOP (Binius64's, see [`crate::binius_ligerito`]) can use the
-//! same commitment layer, proximity regime and grinding as F2Z itself.
+//! same commitment layer, proximity regime and grinding as BitZ itself.
 //!
 //! Every primitive is the audited one of [`crate::ligerito_flock`]; nothing
 //! here re-derives a bound. The security accounting ([`BinaryPcs::security_terms`])
@@ -42,7 +42,7 @@ use flock_core::{
 };
 
 /// Default Reed–Solomon inverse-rate exponent of the commitment and of the
-/// opener's level 0 (rate 1/2, F2Z's own default); [`BinaryPcs::with_rate`]
+/// opener's level 0 (rate 1/2, BitZ's own default); [`BinaryPcs::with_rate`]
 /// takes another. The commit rate MUST equal the level-0 configuration rate:
 /// the opener queries the committed codeword.
 pub const LOG_INV_RATE: usize = 1;

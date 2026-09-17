@@ -1,6 +1,6 @@
 # Native SHA-256 comparison
 
-The comparison has four backends: F2Z, Plonky3-WHIR, Binius64, and
+The comparison has four backends: BitZ, Plonky3-WHIR, Binius64, and
 Limber-Brakedown. Each proves the same independent fixed-IV compression
 relation, `H[i] = Compress(IV, M[i])`, including its complete PCS opening.
 The primary timer starts at native witness generation and stops when the proof
@@ -11,19 +11,19 @@ From the BitZ checkout:
 
 ```sh
 RAYON_NUM_THREADS=8 \
-F2Z_SHA_COMPARE_BACKENDS="f2z plonky3-whir binius64 limber" \
+BITZ_SHA_COMPARE_BACKENDS="bitz plonky3-whir binius64 limber" \
 bash scripts/run_native_sha256_compare.sh
 ```
 
 The default exponents are `7 8 10 11 12 13 14 15 16`, with one warmup and
 21 measured repetitions. The ordinary minimum is 128 compressions. The pilot
 defaults to the smallest requested exponent, with a floor of 7. To run just
-128 compressions, set `F2Z_SHA_COMPARE_EXPONENTS=7`.
+128 compressions, set `BITZ_SHA_COMPARE_EXPONENTS=7`.
 
 The `limber` slug always uses `T256DynPrimeBdEngine`, whose commitment backend
 is Brakedown. The pilot searches only Brakedown `k` values, and subprocesses use
-the same engine. `F2Z_SHA_COMPARE_LIMBER_K` fixes `k` and skips that search.
-The legacy engine setting accepts only `F2Z_SHA_COMPARE_LIMBER_ENGINE=brakedown`;
+the same engine. `BITZ_SHA_COMPARE_LIMBER_K` fixes `k` and skips that search.
+The legacy engine setting accepts only `BITZ_SHA_COMPARE_LIMBER_ENGINE=brakedown`;
 `hyrax` and the removed `spartan-hyrax` backend are rejected rather than remapped.
 The default engine setting alone does not disable `k` selection.
 

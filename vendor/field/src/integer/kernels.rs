@@ -1,4 +1,4 @@
-//! Fixed-width exact MAC schedules retained from F2Z production.
+//! Fixed-width exact MAC schedules retained from BitZ production.
 
 #[inline(always)]
 fn mac(accumulator: u64, lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {

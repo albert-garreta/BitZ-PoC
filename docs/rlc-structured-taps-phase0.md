@@ -334,7 +334,7 @@ Details pinned by the implementation (tag `0x45`,
   rings and extraction left on the table; rings were ~4 % of the vx6
   prove, so this is bytes more than time.
 
-**Measured** (same day; `F2Z_AB_SCHED=1`, 48 claims `off^t(x)` of one
+**Measured** (same day; `BITZ_AB_SCHED=1`, 48 claims `off^t(x)` of one
 σ-style source, values through the offset-folded extraction route,
 medians of 5): composed **39.2/94.8/279.7 ms** at n=22/24/26 with 2
 inner bodies — **22.1×/34.2×/— vs the batched path** (864.9/3242.3/
@@ -389,7 +389,7 @@ with verify 5× faster. Knee δ = 3–4 (δ=5 pays the 2^{t'+5} presum
 tables). The re-split moves the x tensor toward the fold-heavy
 proof-size-optimal geometry — the harness's even split was
 byte-suboptimal all along (`single` itself halves at δ=3). Env:
-`F2Z_TAPS_DELTA`; δ=0 bytes untouched; 104/104 green.
+`BITZ_TAPS_DELTA`; δ=0 bytes untouched; 104/104 green.
 
 ## 9. The post-floor search (2026-07-27, evening): what could beat
 one-body-per-claim, and why nothing at the PCS layer does
@@ -424,7 +424,7 @@ monomial. Every candidate generalization hits one of three walls:
    recorded `α^{(wΓ) mod q} ≠ (α^Γ)^w` wall, met from a new angle.
 
 **Measured coda — case-tabling the friendliest subcase.** The 4
-identity claims alone at the cols4 layout (`F2Z_AB_COLS4_FAM=1`,
+identity claims alone at the cols4 layout (`BITZ_AB_COLS4_FAM=1`,
 n=24/26, δ=0): blocked 0x42 (2+2 bodies) 95.0/282.1 ms; TWO j=2
 shared-point families (each ≈ 1.3 forests + ONE AND channel)
 103.7/275.5 ms = **1.09×/0.98× — a wash**; one j=4 family (11 AND

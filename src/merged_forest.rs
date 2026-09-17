@@ -63,7 +63,7 @@ pub struct MergedLayer {
     pub sc_x: Option<SumcheckProof<Gf>>,
     pub sc_c: SumcheckProof<Gf>,
     pub pair: (Gf, Gf),
-    /// QUAD layers (arity 4, `F2Z_QUAD=1`): the second half of the
+    /// QUAD layers (arity 4, `BITZ_QUAD=1`): the second half of the
     /// closing quad — `pair = (Q00, Q10)`, `pair2 = (Q01, Q11)`, the four
     /// quarter evaluations of level ℓ+2 at the exit point. `None` on
     /// arity-2 layers.
@@ -182,7 +182,7 @@ pub(crate) enum ForestLevels {
     Flat(Vec<Option<FlatDense<Gf>>>),
 }
 
-/// Flat-forest gate: `F2Z_FLAT_FOREST=0/1` forces the per-tree/flat
+/// Flat-forest gate: `BITZ_FLAT_FOREST=0/1` forces the per-tree/flat
 /// stored-level + driver path; unset (the default) engages flat exactly
 /// on the wide-shallow half (`s ≥ depth`) it was built for. Byte-identical
 /// either way — the layout changes storage, not values.
@@ -201,7 +201,7 @@ pub(crate) enum ForestLevels {
 /// Read once per process.
 fn flat_forest(s: usize, depth: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_FLAT_FOREST") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_FLAT_FOREST") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -304,7 +304,7 @@ fn build_levels_flat(
 
 /// Where a level-(d−2) value comes from: the precombined 16-case `T4`
 /// gather, or — probe I4 of `docs/lut-width-ideas.md`
-/// (`F2Z_T4_FACTORED=1`) — the same product recomputed from the 4-case
+/// (`BITZ_T4_FACTORED=1`) — the same product recomputed from the 4-case
 /// `te`/`to` tables (`T4[y≪4|(cE≪2)|cO] = te[(y≪2)|cE]·to[(y≪2)|cO]`, the
 /// build's own association): one multiply per value against two
 /// line-local streams with half the footprint, in place of a
@@ -327,7 +327,7 @@ impl T4Src<'_> {
     }
 }
 
-/// Factored-T4 knob: `F2Z_T4_FACTORED=0/1` forces precombined/factored
+/// Factored-T4 knob: `BITZ_T4_FACTORED=0/1` forces precombined/factored
 /// for the single-instance prover's `gen_top`/JIT consumers; unset (the
 /// default) picks by schedule — factored on L/2 and L/4 (where `T4` is
 /// then not built at all: −16·2^{d−2}·16 B footprint and the build
@@ -341,7 +341,7 @@ impl T4Src<'_> {
 /// Read once per process.
 fn t4_factored() -> Option<bool> {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| match std::env::var("F2Z_T4_FACTORED") {
+    *ENV.get_or_init(|| match std::env::var("BITZ_T4_FACTORED") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -496,20 +496,20 @@ fn leaf_bit_layer<'a>(
 }
 
 /// Fuse the JIT layers' round-1 message into their generation pass
-/// (default ON; `F2Z_JIT_R1=0` opts out — diagnostic / A-B measurement).
+/// (default ON; `BITZ_JIT_R1=0` opts out — diagnostic / A-B measurement).
 /// Byte-identical proofs either way. Read once per prove call.
 fn jit_round1_fuse() -> bool {
-    std::env::var("F2Z_JIT_R1").map_or(true, |v| v != "0")
+    std::env::var("BITZ_JIT_R1").map_or(true, |v| v != "0")
 }
 
 /// Whether the JIT generation pass fuses the double-fold GRID (rounds 1
-/// AND 2) rather than just round 1's coefficient triple — `F2Z_JIT_GRID=0`
+/// AND 2) rather than just round 1's coefficient triple — `BITZ_JIT_GRID=0`
 /// keeps the triple. Byte-identical either way; this is the trade of nine
 /// accumulators inside a gather-bound generation pass against one
 /// streaming round-2 pass in the driver.
 fn jit_grid() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_JIT_GRID").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_JIT_GRID").map_or(true, |v| v != "0"))
 }
 
 /// Per-position level-(d−2) reader off the bits + shared `T4` table — the
@@ -578,14 +578,14 @@ fn t4_parent_value(at: &T4At<'_>, y: usize, half: usize, prefetch: bool) -> Gf {
 /// JIT regeneration): the per-position 16-case line pick is
 /// data-dependent (committed bits), which defeats the hardware
 /// prefetcher, but the indices are cheaply recomputable ahead.
-/// `F2Z_T4_PRFM=0/1` forces off/on; unset (the default) turns on iff the
+/// `BITZ_T4_PRFM=0/1` forces off/on; unset (the default) turns on iff the
 /// shared `t4` table is ≥ 16 MiB (past the P-cluster L2 — the n ≥ 30
 /// regime; at n ≤ 28 the table is L2-resident and the recompute overhead
 /// loses, as measured for the stash-gather sites). Semantically inert.
 /// Env read once per process.
 fn t4_prfm(t4_bytes: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_T4_PRFM") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_T4_PRFM") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -1219,20 +1219,20 @@ fn forest_schedule() -> ForestSchedule {
 /// halve and the following dense cascades start one round smaller (small
 /// consistent win at DRAM-scale shapes on top of pass fusion; a wash at
 /// cache-adjacent shapes). Byte-identical either way (every variant is an
-/// exact char-2 identity, pinned against the eager forest). `F2Z_LUT3=0`
+/// exact char-2 identity, pinned against the eager forest). `BITZ_LUT3=0`
 /// opts out. Read once per prove call.
 pub(crate) fn forest_lut3() -> bool {
-    std::env::var("F2Z_LUT3").map_or(true, |v| v != "0")
+    std::env::var("BITZ_LUT3").map_or(true, |v| v != "0")
 }
 
 /// FOUR bit-driven leaf rounds (`Leaf4Bits` — probe I2 of
 /// `docs/lut-width-ideas.md`): the leaf residue halves again
 /// (`2^{d−4}`/side) with the shared-table footprint frozen at the 16-case
 /// level (round 3's fold ρ₃-reweights the stashed sets instead of
-/// building the width law's 256-case `F₃`). `F2Z_LUT4=1` opts in (needs
+/// building the width law's 256-case `F₃`). `BITZ_LUT4=1` opts in (needs
 /// depth ≥ 6, i.e. leaf k ≥ 5); default off pending measurement.
 pub(crate) fn forest_lut4() -> bool {
-    std::env::var("F2Z_LUT4").is_ok_and(|v| v == "1")
+    std::env::var("BITZ_LUT4").is_ok_and(|v| v == "1")
 }
 
 /// **Live-column elision** — the padding lever. A committed column whose
@@ -1251,9 +1251,9 @@ pub(crate) fn forest_lut4() -> bool {
 ///
 /// A witness of `N` cells padded to `2^n` therefore pays the forest only
 /// for `⌈N / 2^{t+log₂W}⌉` columns — the residual waste is under one
-/// column (0.05 % of `2^28` at `t = 17`). `F2Z_COL_ELIDE=0` opts out.
+/// column (0.05 % of `2^28` at `t = 17`). `BITZ_COL_ELIDE=0` opts out.
 pub(crate) fn col_elide() -> bool {
-    std::env::var("F2Z_COL_ELIDE").map_or(true, |v| v != "0")
+    std::env::var("BITZ_COL_ELIDE").map_or(true, |v| v != "0")
 }
 
 /// The number of leading columns the forest must actually build: the
@@ -1574,7 +1574,7 @@ fn prove_merged_forest_lazy_impl(
                     // the generation pass ALSO accumulates the layer's
                     // round-1 coefficients ([`dense_jit_fused_round1`]) so
                     // the driver's round-1 message pass never reads what was
-                    // just written (byte-identical; `F2Z_JIT_R1=0` opts out).
+                    // just written (byte-identical; `BITZ_JIT_R1=0` opts out).
                     let hh = q1 >> 1;
                     let cb = col_bits
                         .as_ref()
@@ -1601,7 +1601,7 @@ fn prove_merged_forest_lazy_impl(
                             });
                             (Vec::new(), Some(pre), Some(fs))
                         } else {
-                            // Diagnostic (`F2Z_JIT_R1=0`): plain flat generation,
+                            // Diagnostic (`BITZ_JIT_R1=0`): plain flat generation,
                             // no fused round 1 — same values, flat segments.
                             let nseg = live;
                             let mut l = gf_uninit(nseg * hh);
@@ -1671,7 +1671,7 @@ fn prove_merged_forest_lazy_impl(
                         flat,
                     })
                 } else if ell == depth - 2 {
-                    // Under `F2Z_LUT3` (depth ≥ 5, so k = d−2 ≥ 3) the pair
+                    // Under `BITZ_LUT3` (depth ≥ 5, so k = d−2 ≥ 3) the pair
                     // layer runs one more bit-driven round (Pair3Bits): its
                     // materialized residue halves. Both layers borrow the same
                     // immutable packed bits.
@@ -1710,7 +1710,7 @@ fn prove_merged_forest_lazy_impl(
                     })
                 } else if ell == depth - 1 {
                     // Two bit-driven rounds (k = d−1 = 3): dense buffers only
-                    // after round 2. Under `F2Z_LUT3` (depth ≥ 5, so k ≥ 4)
+                    // after round 2. Under `BITZ_LUT3` (depth ≥ 5, so k ≥ 4)
                     // three rounds (Leaf3Bits): the leaf residue halves.
                     Some(leaf_bit_layer(
                         col_bits.take().expect("leaf bits consumed once"),
@@ -1864,7 +1864,7 @@ fn prove_merged_forest_lazy_impl(
             })
         } else if ell == depth - 1 {
             // Three bit-driven rounds (k = d−1 ≥ 4): the leaf-round set
-            // is ≈ L/8 — four under `F2Z_LUT4` (depth ≥ 6): ≈ L/16.
+            // is ≈ L/8 — four under `BITZ_LUT4` (depth ≥ 6): ≈ L/16.
             let deep4 = depth >= 6 && forest_lut4();
             Some(BitLayer {
                 bufs: col_bits
@@ -1909,7 +1909,7 @@ fn prove_merged_forest_lazy_impl(
 }
 
 // =====================================================================
-// QUAD forest (`F2Z_QUAD=1`, EXPERIMENTAL): arity-4 GKR layers over the
+// QUAD forest (`BITZ_QUAD=1`, EXPERIMENTAL): arity-4 GKR layers over the
 // stored/JIT region — each layer proves `L_ℓ = Σ eq·Q00·Q10·Q01·Q11` over
 // the QUARTERS of level ℓ+2, certifying TWO product-tree levels per
 // degree-5 sumcheck. K challenges and K values throughout — sound for
@@ -1932,7 +1932,7 @@ use crate::piop::sumcheck::quad::{
     QuadBitGroup, QuadBottomTables, QuadGroup, prove_quad_bottom_sumcheck, prove_quad_eq_sumcheck,
 };
 
-/// Does the QUAD forest apply? `F2Z_QUAD=1`, the L/4 schedule (the quad
+/// Does the QUAD forest apply? `BITZ_QUAD=1`, the L/4 schedule (the quad
 /// plan builds its chain at level d−3), depth ≥ 8. Transcript-shape
 /// changing: prover and verifier BOTH dispatch through this — the env
 /// var is the experiment's out-of-band configuration. Read per call.
@@ -1941,7 +1941,7 @@ pub fn quad_active(p: &IntegerMatrixLayout) -> bool {
     if p.col_vars == 0 {
         return false;
     }
-    let knob = std::env::var("F2Z_QUAD").unwrap_or_default();
+    let knob = std::env::var("BITZ_QUAD").unwrap_or_default();
     let forced = knob == "force" || knob == "force2";
     if !(forced || knob == "1" || knob == "2") || forest_schedule() != ForestSchedule::L4 {
         return false;
@@ -1972,7 +1972,7 @@ pub fn quad_active(p: &IntegerMatrixLayout) -> bool {
 /// variables per pass is simply the better body and quad gives back more
 /// than it buys. The two are alternatives, not a stack.
 ///
-/// `F2Z_QUAD=force` overrides the gate — for re-measuring the crossover
+/// `BITZ_QUAD=force` overrides the gate — for re-measuring the crossover
 /// on a memory-fresh box, or after porting the double-fold into
 /// `quad.rs` (a 5×5 node grid, 25 wide accumulators against the arity-2
 /// case's 9), which is what would push this knee back up.
@@ -1983,10 +1983,10 @@ const QUAD_N_MAX: usize = 25;
 /// range (2026-08-20, paired in-window runs vs base, prove): n=24
 /// −25.3 % (v1 −18.5 %), n=26 −3..−9 % (v1 +3.4 %), n=28 −2..−6.3 %
 /// (3/3 pairs; v1 was a wash there). Beyond n=28 unmeasured (n ≥ 30
-/// needs a memory-fresh box) — `F2Z_QUAD=force2` to probe.
+/// needs a memory-fresh box) — `BITZ_QUAD=force2` to probe.
 const QUAD2_N_MAX: usize = 28;
 
-/// The BOTTOM-MERGE variant (`F2Z_QUAD=2` / `force2` — S1 of
+/// The BOTTOM-MERGE variant (`BITZ_QUAD=2` / `force2` — S1 of
 /// `docs/forest-speedup-ideas.md`, design in
 /// `docs/quad-bottom-merge-prompt.md`): the arity-2 pair and leaf layers
 /// are replaced by ONE arity-4 bit-driven layer (output d−2, consuming
@@ -1994,7 +1994,7 @@ const QUAD2_N_MAX: usize = 28;
 /// changing exactly like [`quad_active`] itself; prover and verifier
 /// both read it. Read per call.
 pub(crate) fn quad_v2() -> bool {
-    matches!(std::env::var("F2Z_QUAD").as_deref(), Ok("2") | Ok("force2"))
+    matches!(std::env::var("BITZ_QUAD").as_deref(), Ok("2") | Ok("force2"))
 }
 
 /// The quad layer plan for tree depth `d`: quads deliver claims at even
@@ -2465,7 +2465,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
     drop(t4);
 
     if quad_v2() {
-        // BOTTOM MERGE (`F2Z_QUAD=2`): the pair and leaf layers as ONE
+        // BOTTOM MERGE (`BITZ_QUAD=2`): the pair and leaf layers as ONE
         // arity-4 bit-driven layer — output d−2, consuming the leaves,
         // whose quarters are never materialised
         // ([`prove_quad_bottom_sumcheck`]). One phase A over d−2 vars
@@ -2827,7 +2827,7 @@ impl RlcT4At<'_> {
 /// shifted vs the bit-affine forest:
 ///
 /// * leaf layer (k = d−1) → [`GroupBufs::Pair3Bits`] (two bit-driven
-///   rounds; [`GroupBufs::Pair2Bits`] under `F2Z_LUT3=0`) over the
+///   rounds; [`GroupBufs::Pair2Bits`] under `BITZ_LUT3=0`) over the
 ///   [`Pair2TauSet`] `te[4y+c] = case_pow[y][c]`, `to` at `y + 2^{d−1}`;
 /// * level d−1 (16 cases over TOP-paired leaf positions) →
 ///   [`GroupBufs::T4Bits`] with `t4[(j≪4)|(cE≪2)|cO] = te[4j+cE]·to[4j+cO]`;
@@ -2986,7 +2986,7 @@ pub fn prove_merged_forest_lazy_rlc2(
             })
         } else if ell == depth - 1 {
             // The 4-case LEAF round (k = d−1 ≥ 3): Pair3Bits — two
-            // bit-driven rounds — by default; Pair2Bits under `F2Z_LUT3=0`.
+            // bit-driven rounds — by default; Pair2Bits under `BITZ_LUT3=0`.
             Some(BitLayer {
                 bufs: (0..num_trees)
                     .map(|c| {

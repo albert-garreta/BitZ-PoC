@@ -1,6 +1,6 @@
 //! Diagnostic encoding of every proof message, outside measured boundaries.
 //! This is deliberately not a new public wire format.
-use f2z::{
+use bitz::{
     piop::spartan::{
         protocol::{OpeningProof, Proof, SpartanProof, linear::LinearProof},
         sumcheck::{OuterSumcheckProof, SumcheckProof},
@@ -54,7 +54,7 @@ impl Encoder {
     }
 }
 fn enabled() -> bool {
-    std::env::var("F2Z_BENCH_PROOF_FINGERPRINT").is_ok_and(|v| v == "1")
+    std::env::var("BITZ_BENCH_PROOF_FINGERPRINT").is_ok_and(|v| v == "1")
 }
 pub fn nonlinear<O: OpeningProof>(proof: &Proof<O>, root: &[u8], transcript: &Blake3Transcript) {
     if !enabled() {
@@ -93,7 +93,7 @@ pub fn nonlinear<O: OpeningProof>(proof: &Proof<O>, root: &[u8], transcript: &Bl
     } else {
         out.word(0);
     }
-    out.bytes(&proof.f2z().to_bytes());
+    out.bytes(&proof.bitz().to_bytes());
     out.emit(transcript);
 }
 pub fn linear(proof: &LinearProof, root: &[u8], transcript: &Blake3Transcript) {
@@ -107,6 +107,6 @@ pub fn linear(proof: &LinearProof, root: &[u8], transcript: &Blake3Transcript) {
     out.rounds(proof.inner());
     out.nonces(proof.inner_nonces());
     out.word(proof.terminal_nonce());
-    out.bytes(&proof.f2z().to_bytes());
+    out.bytes(&proof.bitz().to_bytes());
     out.emit(transcript);
 }

@@ -1,8 +1,8 @@
 //! Historical kernel experiment; no production security claim.
-//! Paired in-process A/B: base (arity-2) forest vs `F2Z_QUAD=2` (bottom-merge
-//! quad plan) prover times at one shape. `F2Z_QUAD` is read per call (NOT
+//! Paired in-process A/B: base (arity-2) forest vs `BITZ_QUAD=2` (bottom-merge
+//! quad plan) prover times at one shape. `BITZ_QUAD` is read per call (NOT
 //! process-cached), so flipping it between proves inside one process is valid
-//! — unlike the `F2Z_EQF_*` family. Alternates arm order every pair to cancel
+//! — unlike the `BITZ_EQF_*` family. Alternates arm order every pair to cancel
 //! the order artifact; prints per-pair times and medians.
 //!
 //! ```text
@@ -11,9 +11,9 @@
 //! ```
 
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
-use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 
 const Q: u128 = (1u128 << 100) - 15;
 
@@ -23,7 +23,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
     let q_bits = 100usize;
     let shape = std::env::var("AB_SHAPE").unwrap_or_else(|_| "17:11".into());
@@ -67,12 +67,12 @@ fn main() {
 
     let prove_arm = |quad: bool| -> (f64, usize) {
         if quad {
-            unsafe { std::env::set_var("F2Z_QUAD", "2") };
+            unsafe { std::env::set_var("BITZ_QUAD", "2") };
         } else {
-            unsafe { std::env::remove_var("F2Z_QUAD") };
+            unsafe { std::env::remove_var("BITZ_QUAD") };
         }
-        let mut pt = f2z::transcript::Blake3Transcript::new();
-        let (proof, t0) = f2z::observability::measure(
+        let mut pt = bitz::transcript::Blake3Transcript::new();
+        let (proof, t0) = bitz::observability::measure(
             tracing::info_span!("quad_ab:proof"),
             || prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc),
         ).expect("measure completed operation");

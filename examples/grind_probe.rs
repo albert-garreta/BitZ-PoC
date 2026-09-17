@@ -12,7 +12,7 @@
 //! GRIND_BITS="18 19 20 21 22 23 24 25" GRIND_THREADS="1 10" GRIND_SAMPLES=200 \
 //!   RUSTFLAGS="-C target-cpu=native" cargo run --release --features span-metrics --example grind_probe
 //! ```
-use f2z::piop::spartan::grinding::{find_grinding_nonce, GrindingSeed};
+use bitz::piop::spartan::grinding::{find_grinding_nonce, GrindingSeed};
 
 fn env_list<T: std::str::FromStr>(name: &str, default: &[T]) -> Vec<T>
 where
@@ -29,12 +29,12 @@ where
 }
 
 fn seed_for(bits: u32, sample: usize) -> GrindingSeed {
-    let hash = blake3::hash(format!("f2z/grind_probe/v1/{bits}/{sample}").as_bytes());
+    let hash = blake3::hash(format!("bitz/grind_probe/v1/{bits}/{sample}").as_bytes());
     GrindingSeed::from_bytes(*hash.as_bytes())
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let bits_list = env_list::<u32>("GRIND_BITS", &[18, 19, 20, 21, 22, 23, 24, 25]);
     let threads_list = env_list::<usize>("GRIND_THREADS", &[1, 10]);
     let samples: usize = std::env::var("GRIND_SAMPLES").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
@@ -52,7 +52,7 @@ fn main() {
             let mut ns_per_attempt = Vec::with_capacity(samples);
             for i in 0..samples {
                 let seed = seed_for(bits, i);
-                let (nonce, t0) = f2z::observability::measure(
+                let (nonce, t0) = bitz::observability::measure(
                     tracing::info_span!("grind_probe:nonce"),
                     || pool.install(|| find_grinding_nonce(&seed, bits)).expect("grind"),
                 ).expect("measure completed operation");

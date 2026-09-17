@@ -32,7 +32,7 @@ class CampaignTests(unittest.TestCase):
                     self.assertEqual(campaign.peak_rss_bytes(linux, stderr), 1073741824)
 
     def setUp(self):
-        self.case = dict(method="f2z-split", log_compressions=3, r=None, c=None,
+        self.case = dict(method="bitz-split", log_compressions=3, r=None, c=None,
                          security_target=100, threads=1, seed=0)
         self.rows = []
         for sample in range(2):
@@ -43,9 +43,9 @@ class CampaignTests(unittest.TestCase):
                                   security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
-    def test_f2z_is_not_duplicated_per_chunking(self):
+    def test_bitz_is_not_duplicated_per_chunking(self):
         cases = list(campaign.cases([(0, 3), (1, 2), (3, 0)], campaign.METHODS, [100, 128], [1], [0]))
-        # f2z-split/f2z-all: 2 targets x 2 profiles each; spartan: 3 splits;
+        # bitz-split/bitz-all: 2 targets x 2 profiles each; spartan: 3 splits;
         # binius64: 2 targets x 2 rates; binius64-ligerito: fixed 100-bit gate x 2 rates.
         self.assertEqual(len(cases), 4 + 4 + 3 + 4 + 2)
         self.assertEqual(sum(c["method"] == "spartan-mc" for c in cases), 3)
@@ -56,11 +56,11 @@ class CampaignTests(unittest.TestCase):
         opener = [c for c in cases if c["method"] == "binius64-ligerito"]
         self.assertEqual({c["security_target"] for c in opener}, {100})
         self.assertEqual({c["log_inv_rate"] for c in opener}, {1, 3})
-        f2z = [c for c in cases if c["method"] == "f2z-split"]
-        self.assertEqual({c["ligerito_profile"] for c in f2z}, {"custom:1:4", "custom:3:4"})
+        bitz = [c for c in cases if c["method"] == "bitz-split"]
+        self.assertEqual({c["ligerito_profile"] for c in bitz}, {"custom:1:4", "custom:3:4"})
         self.assertNotIn("zkpassport-honk", campaign.METHODS)
         self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
-        self.assertEqual(campaign.DEFAULT_METHODS, ["f2z-split", "binius64", "binius64-ligerito"])
+        self.assertEqual(campaign.DEFAULT_METHODS, ["bitz-split", "binius64", "binius64-ligerito"])
 
     def test_validation_requires_complete_verified_matched_samples(self):
         self.assertTrue(campaign.validate_rows(self.rows, self.case, 1))
@@ -144,7 +144,7 @@ class CampaignTests(unittest.TestCase):
     def test_opener_rows_require_the_round_by_round_gate(self):
         case = dict(self.case, method="binius64-ligerito", log_inv_rate=1)
         rows = copy.deepcopy(self.rows)
-        good = {"model":"Binius64 PIOP with the F2Z opener", "pcs":"F2Z-Ligerito",
+        good = {"model":"Binius64 PIOP with the BitZ opener", "pcs":"BitZ-Ligerito",
                 "accounting":"round-by-round", "target_bits":100, "round_by_round_bits":100.4,
                 "union_bound_bits":97.2, "log_inv_rate":1}
         for row in rows:
@@ -162,7 +162,7 @@ class CampaignTests(unittest.TestCase):
             row["security_target"] = 128
         self.assertFalse(campaign.validate_rows(wrong_target, case_128, 1))
 
-    def test_f2z_cases_pin_profile_and_level_rate(self):
+    def test_bitz_cases_pin_profile_and_level_rate(self):
         case = dict(self.case, ligerito_profile="custom:3:4")
         rows = copy.deepcopy(self.rows)
         for row in rows:
@@ -194,7 +194,7 @@ class CampaignTests(unittest.TestCase):
     def test_summary_detects_cross_method_fixture_mismatch_and_retains_failure(self):
         with tempfile.TemporaryDirectory() as path:
             directory = Path(path)
-            for method, fixture_id in [("f2z-split", "a"*64), ("f2z-all", "b"*64)]:
+            for method, fixture_id in [("bitz-split", "a"*64), ("bitz-all", "b"*64)]:
                 rows = copy.deepcopy(self.rows)
                 for row in rows:
                     row.update(method=method, fixture_id=fixture_id)

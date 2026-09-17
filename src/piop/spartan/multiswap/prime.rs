@@ -4,7 +4,7 @@
 //! whole PIOP over a large fingerprint field and concentrate the (small)
 //! grinding budget on the single Step 5.0 modulus-reduction draw.
 //!
-//! **Fingerprint prime `Q`** — sampled from `[2^127, 2^128)` after the F2Z
+//! **Fingerprint prime `Q`** — sampled from `[2^127, 2^128)` after the BitZ
 //! commitment is bound into the transcript (the Zaratan order).  Spartan and
 //! the integer-to-field projection run over `F_Q`.
 //!
@@ -36,7 +36,7 @@
 //!   most `2^-104.2` per draw, topped up by
 //!   [`MultiswapPrimeProfile::reduction_grinding_bits`] = 10 bits of
 //!   proof-of-work to `2^-114.2`.
-//! - **F2Z opening at `q'`**: the exponent-fold GKR rounds live in
+//! - **BitZ opening at `q'`**: the exponent-fold GKR rounds live in
 //!   `GF(2^128)` (`<= 3/2^128` each) and the Ligerito/ring-switch layers use
 //!   the 128-bit paper profile with its own internal query grinding.
 //!
@@ -53,8 +53,8 @@ use crate::{
     transcript::traits::Transcript,
 };
 
-pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/fingerprint-prime/v2";
-pub(crate) const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-multiswap/reduction-prime/v2";
+pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/fingerprint-prime/v2";
+pub(crate) const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/reduction-prime/v2";
 
 use crate::piop::spartan::profile::{IopInstanceFacts, IopSecurityParams};
 
@@ -70,7 +70,7 @@ pub const MULTISWAP_DEFECT_LOG2_BOUND: u32 = 8210;
 pub const MULTISWAP_STEP50_MAGNITUDE_LOG2: u32 = 282;
 
 /// The public statement facts the security-profile derivation consumes for
-/// a MultiSwap instance with the given F2Z shape and τ arity.
+/// a MultiSwap instance with the given BitZ shape and τ arity.
 pub const fn multiswap_instance_facts(
     opening_t: u32,
     opening_word_bits: u32,

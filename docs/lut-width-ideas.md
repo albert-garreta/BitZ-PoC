@@ -74,7 +74,7 @@ plus muls.
 ### I1 — Finish the leaf-table factorization: 8 entries per slot (from 12/24)
 
 > **MEASURED 2026-08-19** (`LeafTables::Raw8`, landed with auto-pick
-> `half ≥ 2^17`, `F2Z_LEAF8=0/1` forces; l8, churned box, alternated
+> `half ≥ 2^17`, `BITZ_LEAF8=0/1` forces; l8, churned box, alternated
 > in-window pairs, `eqf:msg:leaf_r1` medians): n=28 **+18%** (31.4→37.2 ms),
 > n=29 **+15%** (72→82.5) — the split form's two picks are line-local and
 > L2-cheap, and 10 masked adds out-cost the 64 B/slot saved — but n=30
@@ -110,7 +110,7 @@ miss" says measure it at n ≥ 30.
 
 ### I2 — Never precombine a stash: factored rounds 4 and 5 (`Leaf4Bits`/`Leaf5Bits`)
 
-> **MEASURED 2026-08-20** (`Leaf4Bits` landed, opt-in `F2Z_LUT4=1`, depth
+> **MEASURED 2026-08-20** (`Leaf4Bits` landed, opt-in `BITZ_LUT4=1`, depth
 > ≥ 6; byte-identity pinned depths 6–9 × {L/4, l8, l2, fuse-off, LEAF8,
 > LUT3-off}): the mechanism works exactly as designed — the ρ₃ reweight
 > is ~free (sub-ms, shared), round 4 runs off bits at 13.5 ms + 18.2 ms
@@ -183,7 +183,7 @@ where tables outgrow L2.
 
 > **MEASURED 2026-08-20** (`T4Src`, landed default-ON for L/2+L/4 — where
 > `T4` is then never built at all — precombined kept on L/8;
-> `F2Z_T4_FACTORED=0/1` forces; alternated in-window pairs): L/4 `gen_top`
+> `BITZ_T4_FACTORED=0/1` forces; alternated in-window pairs): L/4 `gen_top`
 > **−23%** at n=28 (53.5→41.0 ms medians, far less volatile), build/bitgen
 > **−9..−12%** at n=29 (3/3 pairs each, and churn-immune: worst-case
 > bitgen 130 vs 215 ms under a swap event); l8 at n=30 the JIT wins −30%
@@ -195,7 +195,7 @@ where tables outgrow L2.
 > multiplies, on the default schedule.
 
 `T4` is gathered by `gen_top`, the JIT layer, and `T4Bits`; at n=30/32 it is
-32/128 MiB and every gather misses (the `F2Z_T4_PRFM` default flipping on at
+32/128 MiB and every gather misses (the `BITZ_T4_PRFM` default flipping on at
 ≥16 MiB is the tell). By identity (C):
 
 - **2-gather form**: `T4[y][c_E|c_O] = te[4y+c_E] · to[4y+c_O]` — 2 gathers
@@ -271,7 +271,7 @@ it stays worthwhile even if the time deltas of I2/I3 measure neutral.
 ## 5. Measurement plan
 
 Order by expected value per effort, A/B-flagged like the precedents
-(`F2Z_LEAF_A2_FACTORED` pattern), byte-identity pinned each step:
+(`BITZ_LEAF_A2_FACTORED` pattern), byte-identity pinned each step:
 
 1. **I1** (8-entry leaf tables): local change in `build_leaf_tables` +
    `leaf_a2_slot_add`-style consumption; measure leaf_r1 at n=26/28/30

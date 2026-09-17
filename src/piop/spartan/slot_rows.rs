@@ -2,11 +2,11 @@
 //!
 //! A slot-major witness commits 128 bit slots per gate. With `s` clear
 //! column coordinates and `h` high gate coordinates
-//! (`high_gate_count = 2^h`), F2Z row `c` holds the slots of every gate
+//! (`high_gate_count = 2^h`), BitZ row `c` holds the slots of every gate
 //! `(gate_high << s) | c` as `128 / W` lanes of `high_gate_count` `W`-bit
 //! cells: bit `j` of the cell at lane `word_slot`, position `gate_high` is
 //! slot `word_slot * W + j` of that gate — the layout of
-//! `BabyBearMulLayout::f2z_cell` and `U32MulLayout::f2z_bit_position`.
+//! `BabyBearMulLayout::bitz_cell` and `U32MulLayout::bitz_bit_position`.
 //!
 //! Writing the rows one bit at a time scatters `128 · gates`
 //! read-modify-writes across the rows (one cache line per bit). Here a

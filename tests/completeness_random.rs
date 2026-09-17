@@ -1,5 +1,5 @@
 //! Algebra-only randomized COMPLETENESS audit using historical configurations
-//! (including small unaudited shapes) of the F2Z mod-q PCS pipeline
+//! (including small unaudited shapes) of the BitZ mod-q PCS pipeline
 //! (`commit_rs_ligerito_rows` -> `prove_mle_eval_mod_q_ligerito` ->
 //! `verify_mle_eval_mod_q_ligerito`).
 //!
@@ -25,13 +25,13 @@ use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{
     IntEvalRsLigModQProof, commit_rs_flock_with, commit_rs_ligerito_rows,
     prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito,
 };
-use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
-use f2z::transcript::Blake3Transcript;
+use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use bitz::transcript::Blake3Transcript;
 
 // ---------------------------------------------------------------------
 // Independent modular arithmetic (q < 2^127; double-and-add modmul)
@@ -979,13 +979,13 @@ fn completeness_random_audit() {
     let seed = env_u64("AUDIT_SEED", 0xF2AC_0DE5_0000_0001);
     let bulk = env_u64("AUDIT_TRIALS", 150) as usize;
     println!("completeness audit seed = {seed:#018x}, bulk trials = {bulk}");
-    let f2z_env: Vec<String> = std::env::vars()
-        .filter(|(k, _)| k.starts_with("F2Z_"))
+    let bitz_env: Vec<String> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("BITZ_"))
         .map(|(k, v)| format!("{k}={v}"))
         .collect();
     println!(
-        "F2Z_* env flags present: {}",
-        if f2z_env.is_empty() { "none".into() } else { f2z_env.join(", ") }
+        "BITZ_* env flags present: {}",
+        if bitz_env.is_empty() { "none".into() } else { bitz_env.join(", ") }
     );
 
     let mut rng = Rng::new(seed);

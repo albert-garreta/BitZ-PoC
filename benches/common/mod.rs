@@ -1,5 +1,5 @@
 //! Shared harness for the protocol benches: one accounting model, one
-//! printer, one machine-readable `RESULT` line (`schema=f2z/1`).
+//! printer, one machine-readable `RESULT` line (`schema=bitz/1`).
 //!
 //! The full schema — timing semantics, the paper §2.1 step taxonomy, key
 //! names, and env-var conventions — is documented in `docs/bench-schema.md`.
@@ -8,7 +8,7 @@
 //! Summary of the semantics implemented here:
 //! - `prove_ms` is the **end-to-end prover**: everything after the prover
 //!   holds a witness (bit-packing, commitment, projection, prime sampling +
-//!   grinding, PIOP, bitification, Step 5.0, the F2Z opening).
+//!   grinding, PIOP, bitification, Step 5.0, the BitZ opening).
 //! - Witness generation and one-time public preprocessing are excluded and
 //!   reported separately (`witness_ms`, `setup_ms`).
 //! - Per-step splits come from the crate's umbrella tracing spans
@@ -32,7 +32,7 @@ pub fn test_tracing() -> (
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let lock = LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
     let subscriber = tracing::subscriber::set_default(
-        tracing_subscriber::registry().with(f2z::observability::layer()),
+        tracing_subscriber::registry().with(bitz::observability::layer()),
     );
     (subscriber, lock)
 }
@@ -53,7 +53,7 @@ pub mod whir_tuning;
 
 
 use clap::ValueEnum;
-use f2z::piop::spartan::{
+use bitz::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
     Sha128ReferenceSchedule,
 };
@@ -97,171 +97,171 @@ pub fn locked_git_revision(package: &str) -> String {
 // Environment: canonical knobs, deprecated aliases, strict unknown check
 // ---------------------------------------------------------------------
 
-/// Every `F2Z_*` variable any binary in this repo understands. An exported
-/// `F2Z_*` variable outside this list aborts the bench so a typo'd knob can
+/// Every `BITZ_*` variable any binary in this repo understands. An exported
+/// `BITZ_*` variable outside this list aborts the bench so a typo'd knob can
 /// never silently do nothing. Keep sorted; add new knobs here.
-pub const KNOWN_F2Z_ENV: &[&str] = &[
+pub const KNOWN_BITZ_ENV: &[&str] = &[
     // A/B example harness knobs (examples/taps_ab.rs, examples/rlc_ab.rs).
-    "F2Z_AB_B3FAM",
-    "F2Z_AB_B3OPEN",
-    "F2Z_AB_BLAKE3",
-    "F2Z_AB_COLLAPSE",
-    "F2Z_AB_COLS4",
-    "F2Z_AB_COLS4_FAM",
-    "F2Z_AB_FAM_DELTA",
-    "F2Z_AB_J3",
-    "F2Z_AB_MIX6",
-    "F2Z_AB_N",
-    "F2Z_AB_NO_FAMILY",
-    "F2Z_AB_OPEN8",
-    "F2Z_AB_OPEN_DELTA",
-    "F2Z_AB_REPS",
-    "F2Z_AB_ROUNDS",
-    "F2Z_AB_SCHED",
-    "F2Z_AB_SHARED",
-    "F2Z_AB_SINGLES",
-    "F2Z_AB_STMTS",
+    "BITZ_AB_B3FAM",
+    "BITZ_AB_B3OPEN",
+    "BITZ_AB_BLAKE3",
+    "BITZ_AB_COLLAPSE",
+    "BITZ_AB_COLS4",
+    "BITZ_AB_COLS4_FAM",
+    "BITZ_AB_FAM_DELTA",
+    "BITZ_AB_J3",
+    "BITZ_AB_MIX6",
+    "BITZ_AB_N",
+    "BITZ_AB_NO_FAMILY",
+    "BITZ_AB_OPEN8",
+    "BITZ_AB_OPEN_DELTA",
+    "BITZ_AB_REPS",
+    "BITZ_AB_ROUNDS",
+    "BITZ_AB_SCHED",
+    "BITZ_AB_SHARED",
+    "BITZ_AB_SINGLES",
+    "BITZ_AB_STMTS",
     // Deprecated aliases (kept working; see `reps`/`shapes`/`seed`).
-    "F2Z_BABY_BEAR_MUL_EXPONENTS",
-    "F2Z_BABY_BEAR_MUL_SEED",
+    "BITZ_BABY_BEAR_MUL_EXPONENTS",
+    "BITZ_BABY_BEAR_MUL_SEED",
     // Canonical bench knobs.
-    "F2Z_BENCH_EXT",
-    "F2Z_BENCH_FILL",
-    "F2Z_BENCH_LAMBDA",
-    "F2Z_MULTISWAP_BATCH_COUNT",
-    "F2Z_MULTISWAP_CHECK_ONLY",
-    "F2Z_BENCH_ORDER",
-    "F2Z_BENCH_PASS",
-    "F2Z_BENCH_QUIET",
-    "F2Z_BENCH_PHASE_SAMPLES",
-    "F2Z_BENCH_PROOF_FINGERPRINT",
-    "F2Z_BENCH_REPS",
-    "F2Z_BENCH_SEED",
-    "F2Z_BENCH_SHAPES",
-    "F2Z_CM_EXPONENTS",
-    "F2Z_CM_SEED",
+    "BITZ_BENCH_EXT",
+    "BITZ_BENCH_FILL",
+    "BITZ_BENCH_LAMBDA",
+    "BITZ_MULTISWAP_BATCH_COUNT",
+    "BITZ_MULTISWAP_CHECK_ONLY",
+    "BITZ_BENCH_ORDER",
+    "BITZ_BENCH_PASS",
+    "BITZ_BENCH_QUIET",
+    "BITZ_BENCH_PHASE_SAMPLES",
+    "BITZ_BENCH_PROOF_FINGERPRINT",
+    "BITZ_BENCH_REPS",
+    "BITZ_BENCH_SEED",
+    "BITZ_BENCH_SHAPES",
+    "BITZ_CM_EXPONENTS",
+    "BITZ_CM_SEED",
     // Prover-path toggles (transcript-preserving optimization knobs).
-    "F2Z_COL_ELIDE",
-    "F2Z_EQF_DOUBLE",
-    "F2Z_EQF_DOUBLE_MIN",
-    "F2Z_EQF_FUSE",
-    "F2Z_EQF_NOKERNEL",
-    "F2Z_GKR_DIRECT_CLOSE",
-    "F2Z_GKR_RECOVER",
-    "F2Z_EQ_TABLE_SAMPLES",
-    "F2Z_FIXED_SCALAR",
-    "F2Z_FLAT_FOREST",
-    "F2Z_FOLDV_LUT",
-    "F2Z_INNER_FIELD_ACCUM",
-    "F2Z_INNER_NATIVE_FOLD",
-    "F2Z_JIT_GRID",
-    "F2Z_JIT_R1",
-    "F2Z_LEAF8",
-    "F2Z_LEAF_A2_FACTORED",
-    "F2Z_LEAF_TILE",
-    "F2Z_LIG_PROFILE",
-    "F2Z_LUT3",
-    "F2Z_LUT4",
-    "F2Z_LUT_PRFM",
-    "F2Z_MATS_PRE",
-    "F2Z_MATS_TILE",
-    "F2Z_MATS_TILE_B",
-    "F2Z_MAT_GRID",
+    "BITZ_COL_ELIDE",
+    "BITZ_EQF_DOUBLE",
+    "BITZ_EQF_DOUBLE_MIN",
+    "BITZ_EQF_FUSE",
+    "BITZ_EQF_NOKERNEL",
+    "BITZ_GKR_DIRECT_CLOSE",
+    "BITZ_GKR_RECOVER",
+    "BITZ_EQ_TABLE_SAMPLES",
+    "BITZ_FIXED_SCALAR",
+    "BITZ_FLAT_FOREST",
+    "BITZ_FOLDV_LUT",
+    "BITZ_INNER_FIELD_ACCUM",
+    "BITZ_INNER_NATIVE_FOLD",
+    "BITZ_JIT_GRID",
+    "BITZ_JIT_R1",
+    "BITZ_LEAF8",
+    "BITZ_LEAF_A2_FACTORED",
+    "BITZ_LEAF_TILE",
+    "BITZ_LIG_PROFILE",
+    "BITZ_LUT3",
+    "BITZ_LUT4",
+    "BITZ_LUT_PRFM",
+    "BITZ_MATS_PRE",
+    "BITZ_MATS_TILE",
+    "BITZ_MATS_TILE_B",
+    "BITZ_MAT_GRID",
     // Matched MultiSwap/Mod-R1CS campaign trace metadata.
-    "F2Z_MULTISWAP_BUILD_PROFILE",
-    "F2Z_MULTISWAP_CAMPAIGN_ID",
-    "F2Z_MULTISWAP_CPU",
-    "F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST",
-    "F2Z_MULTISWAP_GIT_REV",
+    "BITZ_MULTISWAP_BUILD_PROFILE",
+    "BITZ_MULTISWAP_CAMPAIGN_ID",
+    "BITZ_MULTISWAP_CPU",
+    "BITZ_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST",
+    "BITZ_MULTISWAP_GIT_REV",
     // Deprecated alias.
-    "F2Z_MULTISWAP_REPS",
-    "F2Z_MULTISWAP_TRACE_PATH",
+    "BITZ_MULTISWAP_REPS",
+    "BITZ_MULTISWAP_TRACE_PATH",
     // Native multiplication comparison selectors.
-    "F2Z_MUL_COMPARE_BACKENDS",
-    "F2Z_MUL_COMPARE_MEMORY",
-    "F2Z_MUL_COMPARE_OUTPUT_DIR",
-    "F2Z_MUL_COMPARE_WORKLOADS",
-    "F2Z_MUL_WORD_BITS",
-    "F2Z_PAIR2_FACTORED",
-    "F2Z_PAR_CHUNK",
+    "BITZ_MUL_COMPARE_BACKENDS",
+    "BITZ_MUL_COMPARE_MEMORY",
+    "BITZ_MUL_COMPARE_OUTPUT_DIR",
+    "BITZ_MUL_COMPARE_WORKLOADS",
+    "BITZ_MUL_WORD_BITS",
+    "BITZ_PAIR2_FACTORED",
+    "BITZ_PAR_CHUNK",
     // Controlled BabyBear terminal-claim PCS comparison trace.
-    "F2Z_BINIUS_LOG_INV_RATE",
-    "F2Z_BINIUS_LIGERITO_LOG_INV_RATE",
-    "F2Z_PLONKY3_LOG_INV_RATE",
-    // Binius64-with-F2Z-opener rows: the 100-bit gate's accounting model
+    "BITZ_BINIUS_LOG_INV_RATE",
+    "BITZ_BINIUS_LIGERITO_LOG_INV_RATE",
+    "BITZ_PLONKY3_LOG_INV_RATE",
+    // Binius64-with-BitZ-opener rows: the 100-bit gate's accounting model
     // (`union` = union bound over every term, `rbr` = round-by-round minimum).
-    "F2Z_BINIUS_LIGERITO_ACCOUNTING",
-    // u64 native-mul comparison: lower the F2Z row side by k (see
-    // benches/mul_e2e_compare/f2z.rs::u64_split_shift).
-    "F2Z_U64_SPLIT_SHIFT",
-    "F2Z_PCS_COMPARE_BACKENDS",
-    "F2Z_PCS_COMPARE_BUILD_PROFILE",
-    "F2Z_PCS_COMPARE_CAMPAIGN_ID",
-    "F2Z_PCS_COMPARE_CAMPAIGN_PATH",
-    "F2Z_PCS_COMPARE_CPU",
-    "F2Z_PCS_COMPARE_GIT_DIRTY",
-    "F2Z_PCS_COMPARE_GIT_REV",
-    "F2Z_PCS_COMPARE_TRACE_PATH",
-    "F2Z_PCS_COMPARE_WHIR_DEGREE",
-    "F2Z_WHIR_FOLDING",
-    "F2Z_WHIR_LOG_INV_RATE",
-    "F2Z_WHIR_MAX_POW_BITS",
-    "F2Z_WHIR_CONFIG",
-    "F2Z_WHIR_TUNING_REPS",
-    "F2Z_QUAD",
-    "F2Z_QUAD_KERNEL",
-    "F2Z_RLC_EAGER",
-    "F2Z_RLC_J34_LAZY",
-    "F2Z_RS_FAST",
+    "BITZ_BINIUS_LIGERITO_ACCOUNTING",
+    // u64 native-mul comparison: lower the BitZ row side by k (see
+    // benches/mul_e2e_compare/bitz.rs::u64_split_shift).
+    "BITZ_U64_SPLIT_SHIFT",
+    "BITZ_PCS_COMPARE_BACKENDS",
+    "BITZ_PCS_COMPARE_BUILD_PROFILE",
+    "BITZ_PCS_COMPARE_CAMPAIGN_ID",
+    "BITZ_PCS_COMPARE_CAMPAIGN_PATH",
+    "BITZ_PCS_COMPARE_CPU",
+    "BITZ_PCS_COMPARE_GIT_DIRTY",
+    "BITZ_PCS_COMPARE_GIT_REV",
+    "BITZ_PCS_COMPARE_TRACE_PATH",
+    "BITZ_PCS_COMPARE_WHIR_DEGREE",
+    "BITZ_WHIR_FOLDING",
+    "BITZ_WHIR_LOG_INV_RATE",
+    "BITZ_WHIR_MAX_POW_BITS",
+    "BITZ_WHIR_CONFIG",
+    "BITZ_WHIR_TUNING_REPS",
+    "BITZ_QUAD",
+    "BITZ_QUAD_KERNEL",
+    "BITZ_RLC_EAGER",
+    "BITZ_RLC_J34_LAZY",
+    "BITZ_RS_FAST",
     // SHA trace-writer knobs.
-    "F2Z_SHA_BUILD_PROFILE",
-    "F2Z_SHA_CPU",
-    "F2Z_SHA_GIT_REV",
-    "F2Z_SHA_INNER_PREFIX_VARS",
-    "F2Z_SHA_LOG2S",
-    "F2Z_SHA_MNUMROWS_LOG2S",
-    "F2Z_SHA_OPENING_LAYOUT",
-    "F2Z_SHA_OPENING_T",
-    "F2Z_SHA_PRODUCT_TS",
-    "F2Z_SHA_REPS",
-    "F2Z_SHA_RESULT_PATH",
-    "F2Z_SHA_SEED",
-    "F2Z_SHA_TRACE_PATH",
-    "F2Z_T4_FACTORED",
-    "F2Z_T4_PRFM",
-    "F2Z_TAPS_DELTA",
-    "F2Z_TAPS_GRP",
-    "F2Z_TAPS_SEED",
-    "F2Z_VIRT_ID_FAST",
-    "F2Z_VIRT_PLANES",
+    "BITZ_SHA_BUILD_PROFILE",
+    "BITZ_SHA_CPU",
+    "BITZ_SHA_GIT_REV",
+    "BITZ_SHA_INNER_PREFIX_VARS",
+    "BITZ_SHA_LOG2S",
+    "BITZ_SHA_MNUMROWS_LOG2S",
+    "BITZ_SHA_OPENING_LAYOUT",
+    "BITZ_SHA_OPENING_T",
+    "BITZ_SHA_PRODUCT_TS",
+    "BITZ_SHA_REPS",
+    "BITZ_SHA_RESULT_PATH",
+    "BITZ_SHA_SEED",
+    "BITZ_SHA_TRACE_PATH",
+    "BITZ_T4_FACTORED",
+    "BITZ_T4_PRFM",
+    "BITZ_TAPS_DELTA",
+    "BITZ_TAPS_GRP",
+    "BITZ_TAPS_SEED",
+    "BITZ_VIRT_ID_FAST",
+    "BITZ_VIRT_PLANES",
 ];
 
-/// Aborts on any exported `F2Z_*` variable the repo does not know.
+/// Aborts on any exported `BITZ_*` variable the repo does not know.
 pub fn enforce_known_env() {
     let mut unknown: Vec<String> = std::env::vars_os()
         .filter_map(|(key, _)| key.into_string().ok())
-        .filter(|key| key.starts_with("F2Z_") && !KNOWN_F2Z_ENV.contains(&key.as_str()))
+        .filter(|key| key.starts_with("BITZ_") && !KNOWN_BITZ_ENV.contains(&key.as_str()))
         .collect();
     if unknown.is_empty() {
         return;
     }
     unknown.sort();
     eprintln!(
-        "error: unknown F2Z_* environment variable(s): {}",
+        "error: unknown BITZ_* environment variable(s): {}",
         unknown.join(", ")
     );
     eprintln!("       known knobs (docs/bench-schema.md):");
-    for chunk in KNOWN_F2Z_ENV.chunks(4) {
+    for chunk in KNOWN_BITZ_ENV.chunks(4) {
         eprintln!("         {}", chunk.join(" "));
     }
     std::process::exit(2);
 }
 
-/// `F2Z_BENCH_QUIET=1` mutes the harness's advisory `warning:` lines
+/// `BITZ_BENCH_QUIET=1` mutes the harness's advisory `warning:` lines
 /// (deprecated-alias notices, ignored-knob notices, build-configuration
 /// hints). Errors that abort a run are never muted.
 pub fn quiet() -> bool {
-    std::env::var("F2Z_BENCH_QUIET").is_ok_and(|v| v != "0")
+    std::env::var("BITZ_BENCH_QUIET").is_ok_and(|v| v != "0")
 }
 
 /// Prints `warning: <msg>` on stderr unless [`quiet`] is set. Every
@@ -303,8 +303,8 @@ fn env_with_alias(canonical: &str, alias: Option<&str>) -> Option<String> {
 
 /// Measured repetitions (one extra untimed warm-up is always run).
 pub fn reps(alias: Option<&str>, default: usize) -> usize {
-    env_with_alias("F2Z_BENCH_REPS", alias).map_or(default, |value| {
-        cli::value("F2Z_BENCH_REPS", &value, cli::positive)
+    env_with_alias("BITZ_BENCH_REPS", alias).map_or(default, |value| {
+        cli::value("BITZ_BENCH_REPS", &value, cli::positive)
     })
 }
 
@@ -314,24 +314,24 @@ where
     T: Clone + Send + Sync + 'static,
     P: clap::builder::TypedValueParser<Value = T>,
 {
-    env_with_alias("F2Z_BENCH_SHAPES", alias)
-        .map(|value| cli::values("F2Z_BENCH_SHAPES", &value, parser))
+    env_with_alias("BITZ_BENCH_SHAPES", alias)
+        .map(|value| cli::values("BITZ_BENCH_SHAPES", &value, parser))
 }
 
 /// Root seed (decimal or 0x-hex).
 pub fn seed(alias: Option<&str>, default: u64) -> u64 {
-    env_with_alias("F2Z_BENCH_SEED", alias).map_or(default, |value| {
-        cli::value("F2Z_BENCH_SEED", &value, cli::seed)
+    env_with_alias("BITZ_BENCH_SEED", alias).map_or(default, |value| {
+        cli::value("BITZ_BENCH_SEED", &value, cli::seed)
     })
 }
 
 // ---------------------------------------------------------------------
-// Security profile selection (`F2Z_BENCH_LAMBDA`)
+// Security profile selection (`BITZ_BENCH_LAMBDA`)
 // ---------------------------------------------------------------------
 
 /// The IOP security profile a run measures at — one of the compile-time
 /// policy types of `src/piop/spartan/profile.rs`, chosen at runtime by
-/// `F2Z_BENCH_LAMBDA` and dispatched to the monomorphized bench body by
+/// `BITZ_BENCH_LAMBDA` and dispatched to the monomorphized bench body by
 /// [`with_profile!`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 pub enum SecurityProfile {
@@ -381,7 +381,7 @@ impl SecurityProfile {
         }
     }
 
-    /// The shortest `F2Z_BENCH_LAMBDA` spelling of the profile: the target
+    /// The shortest `BITZ_BENCH_LAMBDA` spelling of the profile: the target
     /// bits where that is unambiguous, the full name otherwise.
     pub fn knob_value(self) -> String {
         self.to_possible_value().expect("selectable profile").get_name().to_owned()
@@ -410,7 +410,7 @@ const fn describe_policy(policy: PrimePolicy) -> &'static str {
     }
 }
 
-/// Reads `F2Z_BENCH_LAMBDA`: `100`, `128`, `114`, or a profile name
+/// Reads `BITZ_BENCH_LAMBDA`: `100`, `128`, `114`, or a profile name
 /// (`lambda100`, `lambda128`, `limber114`, `sha128-reference-schedule`).
 /// `None` = unset, and the bench keeps its own default. `policy` is the
 /// prime strategy the calling bench's relation instantiates; selecting a
@@ -418,13 +418,13 @@ const fn describe_policy(policy: PrimePolicy) -> &'static str {
 /// instead of failing later inside relation preparation. A value that
 /// names no profile aborts too (a typo can never silently do nothing).
 pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
-    let value = std::env::var("F2Z_BENCH_LAMBDA").ok()?;
-    let profile = cli::value("F2Z_BENCH_LAMBDA", &value, |value: &str| {
+    let value = std::env::var("BITZ_BENCH_LAMBDA").ok()?;
+    let profile = cli::value("BITZ_BENCH_LAMBDA", &value, |value: &str| {
         SecurityProfile::from_str(value.trim(), true)
     });
     if profile.prime_policy() != policy {
         eprintln!(
-            "error: F2Z_BENCH_LAMBDA={value} selects {}, a {} profile, but this bench's \
+            "error: BITZ_BENCH_LAMBDA={value} selects {}, a {} profile, but this bench's \
              relation instantiates {} profiles",
             profile.name(),
             describe_policy(profile.prime_policy()),
@@ -444,13 +444,13 @@ pub fn security_profile(policy: PrimePolicy) -> Option<SecurityProfile> {
 pub fn profile_banner(selected: Option<SecurityProfile>, default: SecurityProfile) -> String {
     match selected {
         Some(profile) => format!(
-            "{} (λ={}, F2Z_BENCH_LAMBDA={})",
+            "{} (λ={}, BITZ_BENCH_LAMBDA={})",
             profile.name(),
             profile.lambda(),
             profile.knob_value()
         ),
         None => format!(
-            "{} (λ={}, the default; F2Z_BENCH_LAMBDA selects another)",
+            "{} (λ={}, the default; BITZ_BENCH_LAMBDA selects another)",
             default.name(),
             default.lambda()
         ),
@@ -467,19 +467,19 @@ macro_rules! with_profile {
     ($profile:expr, $f:ident ( $($arg:expr),* $(,)? )) => {
         match $profile {
             $crate::common::SecurityProfile::Lambda100 => {
-                $f::<::f2z::piop::spartan::Lambda100>($($arg),*)
+                $f::<::bitz::piop::spartan::Lambda100>($($arg),*)
             }
             $crate::common::SecurityProfile::Lambda128 => {
-                $f::<::f2z::piop::spartan::Lambda128>($($arg),*)
+                $f::<::bitz::piop::spartan::Lambda128>($($arg),*)
             }
             $crate::common::SecurityProfile::Limber112 => {
-                $f::<::f2z::piop::spartan::Limber112>($($arg),*)
+                $f::<::bitz::piop::spartan::Limber112>($($arg),*)
             }
             $crate::common::SecurityProfile::Limber114 => {
-                $f::<::f2z::piop::spartan::Limber114>($($arg),*)
+                $f::<::bitz::piop::spartan::Limber114>($($arg),*)
             }
             $crate::common::SecurityProfile::Sha128ReferenceSchedule => {
-                $f::<::f2z::piop::spartan::Sha128ReferenceSchedule>($($arg),*)
+                $f::<::bitz::piop::spartan::Sha128ReferenceSchedule>($($arg),*)
             }
         }
     };
@@ -613,7 +613,7 @@ impl StepSamples {
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
     pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
-        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+        if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
             println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"prove", "total_ms":total_ms,
                 "commit_ms":commit_ms, "phases_seconds":phases}));
         }
@@ -633,7 +633,7 @@ impl StepSamples {
 
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
     pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
-        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+        if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
             println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"verify", "total_ms":total_ms,
                 "phases_seconds":phases}));
         }
@@ -724,7 +724,7 @@ pub struct StepMedians {
 pub struct ProofBytes {
     /// Spartan payload + grinding nonces + the Step 5.0 integer lift.
     pub piop: usize,
-    /// The serialized F2Z opening (`to_bytes` of the codec proof).
+    /// The serialized BitZ opening (`to_bytes` of the codec proof).
     pub open: usize,
 }
 
@@ -848,9 +848,9 @@ impl BenchReport {
 
     fn result_line_with_commitment(&self, commitment_bytes: usize) -> String {
         let schema = if self.extra.iter().any(|(key, _)| key == "ligerito_hex") {
-            "f2z/2"
+            "bitz/2"
         } else {
-            "f2z/1"
+            "bitz/1"
         };
         let mut line = format!(
             "RESULT schema={schema} bench={} shape={}",
@@ -938,47 +938,47 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
 /// Milliseconds elapsed since `start`.
 /// Milliseconds from a completed, uniquely named Perfetto operation.
 #[cfg(feature = "span-metrics")]
-pub fn span_ms(intervals: &[f2z::observability::Interval], label: &str) -> f64 {
-    f2z::observability::duration(intervals, label)
+pub fn span_ms(intervals: &[bitz::observability::Interval], label: &str) -> f64 {
+    bitz::observability::duration(intervals, label)
         .unwrap_or_else(|error| panic!("invalid benchmark measurement: {error}"))
         .as_secs_f64() * 1e3
 }
 
-/// Only F2Z callers consult this selector. Competing PCS configurations do not.
-pub fn ligerito_selection(target: usize) -> f2z::ligerito_flock::LigeritoSelection {
+/// Only BitZ callers consult this selector. Competing PCS configurations do not.
+pub fn ligerito_selection(target: usize) -> bitz::ligerito_flock::LigeritoSelection {
     ligerito_selection_or(
         target,
-        f2z::ligerito_flock::LigeritoSelection::for_target(target),
+        bitz::ligerito_flock::LigeritoSelection::for_target(target),
     )
 }
 
 pub fn ligerito_selection_or(
     target: usize,
-    default: f2z::ligerito_flock::LigeritoSelection,
-) -> f2z::ligerito_flock::LigeritoSelection {
-    match std::env::var("F2Z_LIG_PROFILE") {
-        Ok(request) => f2z::ligerito_flock::LigeritoSelection::parse(&request, target)
-            .expect("invalid F2Z_LIG_PROFILE"),
+    default: bitz::ligerito_flock::LigeritoSelection,
+) -> bitz::ligerito_flock::LigeritoSelection {
+    match std::env::var("BITZ_LIG_PROFILE") {
+        Ok(request) => bitz::ligerito_flock::LigeritoSelection::parse(&request, target)
+            .expect("invalid BITZ_LIG_PROFILE"),
         Err(std::env::VarError::NotPresent) => default,
-        Err(error) => panic!("invalid F2Z_LIG_PROFILE: {error}"),
+        Err(error) => panic!("invalid BITZ_LIG_PROFILE: {error}"),
     }
 }
 
 pub fn ligerito_report(
-    resolved: &f2z::ligerito_flock::ResolvedLigerito,
-    ood: Option<f2z::ligerito_flock::OodRoundParams>,
+    resolved: &bitz::ligerito_flock::ResolvedLigerito,
+    ood: Option<bitz::ligerito_flock::OodRoundParams>,
 ) -> serde_json::Value {
-    let request = std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| resolved.selection().name());
+    let request = std::env::var("BITZ_LIG_PROFILE").unwrap_or_else(|_| resolved.selection().name());
     resolved.report(&request, ood)
 }
 
 pub fn ligerito_identity(
-    resolved: &f2z::ligerito_flock::ResolvedLigerito,
-    ood: Option<f2z::ligerito_flock::OodRoundParams>,
+    resolved: &bitz::ligerito_flock::ResolvedLigerito,
+    ood: Option<bitz::ligerito_flock::OodRoundParams>,
 ) -> (String, String) {
     (
         "ligerito_hex".into(),
-        f2z::ligerito_flock::ResolvedLigerito::encode_report(&ligerito_report(resolved, ood)),
+        bitz::ligerito_flock::ResolvedLigerito::encode_report(&ligerito_report(resolved, ood)),
     )
 }
 

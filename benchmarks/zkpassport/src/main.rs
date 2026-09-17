@@ -386,7 +386,7 @@ fn main() -> Result<()> {
         println!(
             "{}",
             json!({
-                "schema":"f2z/sha256-ecdsa-compare/v1", "method":"zkpassport-honk", "verified":true,
+                "schema":"bitz/sha256-ecdsa-compare/v1", "method":"zkpassport-honk", "verified":true,
                 "trial":if trial==0 {"warmup"} else {"sample"}, "sample":trial,
                 "log_compressions":args.exponent,"compressions":1usize<<args.exponent,
                 "message_bytes":fixture.message.len(),"signatures":1,"statement_bytes":129,

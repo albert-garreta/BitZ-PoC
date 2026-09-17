@@ -1,8 +1,8 @@
-# A Blake3 arithmetization for F2Z — design note
+# A Blake3 arithmetization for BitZ — design note
 
 Session record, 2026-07-27 (the structured-taps optimization session,
 follow-up to the cols4 model). Goal: the best claim-set design for
-proving Blake3 compressions over the F2Z PCS (W = 1 bit-columns,
+proving Blake3 compressions over the BitZ PCS (W = 1 bit-columns,
 mod-q integer-MLE claims, the tap/collapse machinery of
 `docs/rlc-structured-taps-phase0.md`), designed from the machinery's
 measured cost model rather than from a translated circuit.
@@ -26,7 +26,7 @@ bodies, total, for every linear relation in the system.**
 **P-XOR (only F₂-XOR relations need structured wiring).** A relation
 that XORs differently-translated operands (`x ⊕ y = z` across
 rotations/offsets) cannot ride the linear layer (the integer
-cross-term `x⊕y = x+y−2·x∧y`), and F2Z has no product argument to
+cross-term `x⊕y = x+y−2·x∧y`), and BitZ has no product argument to
 bind the AND. Each distinct XOR-relation VECTOR costs exactly one
 0x42 body (extraction + translated-eq rings), and its operand wiring
 must be tap-shaped (translations on contiguous index fields). Cost:
@@ -190,7 +190,7 @@ Why the alternatives lose (measured/analyzed this session):
   claim costing what the rotation cost anyway — rotations are weight
   transforms/taps, never commit them;
 - Binius-style committed AND columns to linearize the XORs: needs a
-  product argument F2Z doesn't have; the XOR layer's 5 bodies are
+  product argument BitZ doesn't have; the XOR layer's 5 bodies are
   cheaper than importing one;
 - the stream family over the tap streams: the relation vectors sit
   on disjoint supports → channels multiply (the cols4 143-channel
@@ -218,7 +218,7 @@ Why the alternatives lose (measured/analyzed this session):
 
 ## 5. What the model preset measures
 
-`F2Z_AB_BLAKE3=1` (harness) models the design's claim SHAPE at
+`BITZ_AB_BLAKE3=1` (harness) models the design's claim SHAPE at
 scale — 8 committed columns, ONE commitment serving both layers
 (x_fold_extra is a claim-path parameter, not a commitment
 parameter), the 16-read plain layer through 0x46 (genuinely distinct

@@ -1,4 +1,4 @@
-//! Scalar schedule retained from F2Z's raw Montgomery context.
+//! Scalar schedule retained from BitZ's raw Montgomery context.
 #[cfg(not(target_arch = "aarch64"))]
 use crate::{CtMask, CtSelect};
 

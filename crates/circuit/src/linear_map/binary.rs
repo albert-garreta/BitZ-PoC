@@ -106,13 +106,13 @@ pub struct ChainedSourceTail<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PackedSourceOrder {
     /// `derived = local_row · instances + instance`: the low `log₂ instances`
-    /// bits of a derived index select the instance, so an F2Z split with
+    /// bits of a derived index select the instance, so an BitZ split with
     /// `t ≤ log₂ instances` puts instance bits on the rows and every local
     /// bit on the columns.
     LocalMajor,
     /// `derived = instance · local_stride + local_row` with
     /// `local_stride = local.rows().next_power_of_two()`: the low
-    /// `log₂ local_stride` bits select the local row, so an F2Z split with
+    /// `log₂ local_stride` bits select the local row, so an BitZ split with
     /// `t ≥ log₂ local_stride` puts every local bit (plus the low instance
     /// bits) on the rows and only high instance bits on the columns. The
     /// per-instance padding rows are structurally zero.
@@ -276,7 +276,7 @@ pub struct PackedRepeatedVirtualMap {
 /// In particular, local row zero is logically repeated for every instance,
 /// but every repetition maps back to the one shared committed source cell.
 /// This layout makes a product coefficient `u[instance] * d[local]` factor
-/// directly across the F2Z row and column coordinates.
+/// directly across the BitZ row and column coordinates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PackedSourceRepeatedVirtualMap {
     local: PreparedVirtualMap,
@@ -348,7 +348,7 @@ impl PackedSourceRepeatedVirtualMap {
         }
 
         let mut hash = Hasher::new();
-        hash.update(b"f2z/packed-source-repeated-virtual-map/v1");
+        hash.update(b"bitz/packed-source-repeated-virtual-map/v1");
         hash.update(&local.digest());
         for value in [instances, rows, cols, live_rows, live_cols, nnz] {
             hash.update(
@@ -675,7 +675,7 @@ impl ChainedPackedSourceMap {
             .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
 
         let mut hash = Hasher::new();
-        hash.update(b"f2z/chained-packed-source-map/v1");
+        hash.update(b"bitz/chained-packed-source-map/v1");
         for map in [&local, &prev, &first, &last] {
             hash.update(&map.digest());
         }
@@ -911,7 +911,7 @@ impl PackedRepeatedVirtualMap {
             .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
 
         let mut hash = Hasher::new();
-        hash.update(b"f2z/packed-repeated-virtual-map/v1");
+        hash.update(b"bitz/packed-repeated-virtual-map/v1");
         hash.update(&local.digest());
         for value in [instances, rows, cols, live_rows, live_cols, nnz] {
             hash.update(
@@ -1096,7 +1096,7 @@ impl RepeatedVirtualMap {
             .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
 
         let mut hash = Hasher::new();
-        hash.update(b"f2z/repeated-virtual-map/v1");
+        hash.update(b"bitz/repeated-virtual-map/v1");
         hash.update(&local.digest());
         for value in [instances, rows, cols, nnz] {
             hash.update(
@@ -1207,7 +1207,7 @@ fn compute_identity(matrix: &CscMatrix<ImplicitOnes>) -> bool {
 
 fn compute_digest(matrix: &CscMatrix<ImplicitOnes>) -> Result<[u8; 32], PreparedVirtualMapError> {
     let mut hash = Hasher::new();
-    hash.update(b"f2z/f2-cell-map/v1");
+    hash.update(b"bitz/f2-cell-map/v1");
     for value in [matrix.row_count(), matrix.column_count(), matrix.nnz()] {
         hash.update(
             &u64::try_from(value)

@@ -63,7 +63,7 @@ impl PublicSha256Air {
     /// verification never relies on a cached digest supplied by the prover.
     fn statement_digest(&self) -> blake3::Hash {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"f2z/bench/plonky3-sha256/public-statement/v1");
+        hasher.update(b"bitz/bench/plonky3-sha256/public-statement/v1");
         for word in SHA256_IV {
             hasher.update(&word.to_le_bytes());
         }
@@ -245,7 +245,7 @@ macro_rules! degree_backend {
 
             impl Context {
                 pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
-                    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
                     let started = tracing::info_span!("sha256_e2e_compare/plonky3:started").entered();
                     let stacked_num_variables =
                         log2_ceil_usize(corpus.cases.len() * NUM_SHA256_COLS);
@@ -273,7 +273,7 @@ macro_rules! degree_backend {
                         pk,
                         vk,
                         corpus: corpus.clone(),
-                        setup_ms: { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/plonky3:started").expect("query completed operation") }.as_secs_f64() * 1e3,
+                        setup_ms: { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/plonky3:started").expect("query completed operation") }.as_secs_f64() * 1e3,
                         security,
                     })
                 }

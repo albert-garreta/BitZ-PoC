@@ -21,14 +21,14 @@
 //! measured repetitions after one warm-up. Override with, for example:
 //!
 //! ```text
-//! F2Z_BENCH_SHAPES="10 12" F2Z_BENCH_REPS=1 \
+//! BITZ_BENCH_SHAPES="10 12" BITZ_BENCH_REPS=1 \
 //!   cargo bench --bench sha256_chain --features unchecked
 //! ```
 //!
-//! `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
+//! `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile (default `Lambda100`; the two-prime `Limber114` profile is
 //! MultiSwap-only and is rejected here). Blocks are pseudo-random from
-//! `F2Z_BENCH_SEED`; a real message is the same bench with its parsed,
+//! `BITZ_BENCH_SEED`; a real message is the same bench with its parsed,
 //! padded blocks.
 
 mod common;
@@ -40,7 +40,7 @@ use std::hint::black_box;
 
 use {
     circuit::linear_map::binary::VirtualMap,
-    f2z::{
+    bitz::{
         piop::spartan::{
             IopSecurityProfile, PreparedSha256ChainBatch, PrimePolicy,
             SHA256_CHAIN_F_INSTANCE_BITS, SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CONSTRAINTS,
@@ -63,17 +63,17 @@ struct RepTiming {
     prove_phases: Vec<(String, f64)>,
     verify_phases: Vec<(String, f64)>,
     piop_bytes: usize,
-    f2z_bytes: usize,
+    bitz_bytes: usize,
     forests: usize,
 }
 
 impl RepTiming {
     fn emit_trial(&self, trial: &str) {
-        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+        if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
             let gkr = self.prove_phases.iter().find(|(n,_)| n == "mc:forest").map_or(0.0, |(_,v)| 1000.0*v);
             println!("PROVER_TRIAL {}", serde_json::json!({"trial":trial,"verified":true,
                 "e2e_ms":self.e2e_ms,"prove_ms":self.prove_ms,"witness_ms":self.witness_ms,
-                "verify_ms":self.verify_ms,"gkr_ms":gkr,"proof_bytes":self.piop_bytes+self.f2z_bytes}));
+                "verify_ms":self.verify_ms,"gkr_ms":gkr,"proof_bytes":self.piop_bytes+self.bitz_bytes}));
         }
     }
 }
@@ -128,7 +128,7 @@ fn run_once(
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> RepTiming {
     let recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start SHA chain trial");
+        bitz::observability::Recording::start(Vec::new()).expect("start SHA chain trial");
 
     let e2e = tracing::info_span!("chain:witness_to_proof").entered();
     // Witness synthesis (the native chain, the per-compression circuit
@@ -160,7 +160,7 @@ fn run_once(
     .expect("SHA chain proof succeeds");
     drop(proving);
     drop(e2e);
-    let forests = proof.f2z().mfs.len();
+    let forests = proof.bitz().mfs.len();
     assert_eq!(
         forests, 1,
         "every chain proof uses exactly one merged forest"
@@ -184,8 +184,8 @@ fn run_once(
     let commit_ms = common::span_ms(&intervals, "chain:commit");
     let prove_ms = common::span_ms(&intervals, "chain:proving");
     let verify_ms = common::span_ms(&intervals, "chain:verification");
-    let prove_phases = f2z::observability::phase_totals(&intervals, "chain:proving").unwrap();
-    let verify_phases = f2z::observability::phase_totals(&intervals, "chain:verification").unwrap();
+    let prove_phases = bitz::observability::phase_totals(&intervals, "chain:proving").unwrap();
+    let verify_phases = bitz::observability::phase_totals(&intervals, "chain:verification").unwrap();
     black_box(&proof);
 
     RepTiming {
@@ -197,7 +197,7 @@ fn run_once(
         prove_phases,
         verify_phases,
         piop_bytes: proof.piop_bytes(),
-        f2z_bytes: proof.f2z().to_bytes().len(),
+        bitz_bytes: proof.bitz().to_bytes().len(),
         forests,
     }
 }
@@ -213,7 +213,7 @@ fn bench_shape<P: IopSecurityProfile>(
     let slug = format!("chain-2p{exponent}");
 
     let setup_started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_chain:setup_started").entered();
     let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent)
         .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
@@ -240,7 +240,7 @@ fn bench_shape<P: IopSecurityProfile>(
     let (pc, vc) = sha256_chain_configs(&prepared).expect("valid Ligerito config");
     let setup_ms = {
         drop(setup_started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &setup_started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -284,7 +284,7 @@ fn bench_shape<P: IopSecurityProfile>(
 
     let warm = run_once(&make_blocks(compressions, shape_seed), &prepared, &pc, &vc);
     println!(
-        "  opening layout: direct product opening on the chained map | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
+        "  opening layout: direct product opening on the chained map | BitZ rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
         opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
     );
     warm.emit_trial("warmup");
@@ -350,7 +350,7 @@ fn bench_shape<P: IopSecurityProfile>(
         verifier: verifier.medians(),
         proof: common::ProofBytes {
             piop: last.piop_bytes,
-            open: last.f2z_bytes,
+            open: last.bitz_bytes,
         },
     };
     report.print_human();
@@ -367,11 +367,11 @@ fn main() {
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
 
     let shapes = shapes();
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
 
     println!(
-        "SHA-256 chain: H_{{i+1}} = Compress(H_i, M_i) from the IV; source [1|block₀,hints₀|block₁,hints₁|…], chained map + direct product opening + virtual F2Z"
+        "SHA-256 chain: H_{{i+1}} = Compress(H_i, M_i) from the IV; source [1|block₀,hints₀|block₁,hints₁|…], chained map + direct product opening + virtual BitZ"
     );
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");

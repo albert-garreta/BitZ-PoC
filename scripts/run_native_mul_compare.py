@@ -23,16 +23,16 @@ TOOLCHAIN = "1.98.1"
 DEFAULT_SEED = 0x5533325043530064
 BUILD = {"rust_toolchain": TOOLCHAIN, "rustflags": "-C target-cpu=native", "threads": 10}
 CLEAR_ENV = ("CARGO_ENCODED_RUSTFLAGS", "DUMP", "CHAIN_BITS", "BDSPEC",
-             "F2Z_BENCH_LOCK", "F2Z_LIMBER_BDLAMBDA",
-             "BDROWLEN", "BDDIRECT", "BDSPLIT", "F2Z_BINIUS_LOG_INV_RATE", "F2Z_LIG_PROFILE",
-             "F2Z_U64_SPLIT_SHIFT", "F2Z_MUL_MEMORY_ONLY", "F2Z_BINIUS_LIGERITO_ACCOUNTING")
+             "BITZ_BENCH_LOCK", "BITZ_LIMBER_BDLAMBDA",
+             "BDROWLEN", "BDDIRECT", "BDSPLIT", "BITZ_BINIUS_LOG_INV_RATE", "BITZ_LIG_PROFILE",
+             "BITZ_U64_SPLIT_SHIFT", "BITZ_MUL_MEMORY_ONLY", "BITZ_BINIUS_LIGERITO_ACCOUNTING")
 LIGERITO_ACCOUNTING = {"union": "union-bound", "rbr": "round-by-round"}
 MEMORY_BOUNDARY = "fresh process: corpus generation, public setup, witness generation, commitment, proving, verification, and proof-size accounting; one verified proof, no warmup"
 
 
 def choices(env, name, default, allowed):
     values = env.get(name, default).replace(",", " ").split()
-    if name == "F2Z_MUL_COMPARE_WORKLOADS":
+    if name == "BITZ_MUL_COMPARE_WORKLOADS":
         values = ["u32-mod32" if value == "u32" else value for value in values]
     if not values or len(values) != len(set(values)) or any(value not in allowed for value in values):
         raise ValueError(f"{name} must select distinct entries from {', '.join(allowed)}")
@@ -40,71 +40,71 @@ def choices(env, name, default, allowed):
 
 
 def configuration(env):
-    workloads = choices(env, "F2Z_MUL_COMPARE_WORKLOADS", "u32-mod32", ("u32-mod32", "u64", "u128"))
-    backends = choices(env, "F2Z_MUL_COMPARE_BACKENDS", "f2z binius64 binius64-ligerito plonky3-fri limber",
-                       ("f2z", "binius64", "binius64-ligerito", "plonky3-fri", "plonky3-whir", "limber"))
-    if any(w != "u32-mod32" for w in workloads) and any(b not in ("f2z", "binius64", "binius64-ligerito", "limber") for b in backends):
-        raise ValueError("u64/u128 support only f2z, binius64, binius64-ligerito and limber; run the mod32 comparison separately")
-    exponents = [int(value) for value in env.get("F2Z_BENCH_SHAPES", "15").replace(",", " ").split()]
+    workloads = choices(env, "BITZ_MUL_COMPARE_WORKLOADS", "u32-mod32", ("u32-mod32", "u64", "u128"))
+    backends = choices(env, "BITZ_MUL_COMPARE_BACKENDS", "bitz binius64 binius64-ligerito plonky3-fri limber",
+                       ("bitz", "binius64", "binius64-ligerito", "plonky3-fri", "plonky3-whir", "limber"))
+    if any(w != "u32-mod32" for w in workloads) and any(b not in ("bitz", "binius64", "binius64-ligerito", "limber") for b in backends):
+        raise ValueError("u64/u128 support only bitz, binius64, binius64-ligerito and limber; run the mod32 comparison separately")
+    exponents = [int(value) for value in env.get("BITZ_BENCH_SHAPES", "15").replace(",", " ").split()]
     # Match the Rust address-space bound, not a particular machine's RAM.
     maximum = sys.maxsize.bit_length() + 1 - 11
     if "plonky3-fri" in backends:
         maximum = min(maximum, 29)  # Goldilocks two-adicity headroom; shapes tested through 2^29.
     if "limber" in backends:
         maximum = min(maximum, 24)
-    minimum = 15 if "f2z" in backends else 4
+    minimum = 15 if "bitz" in backends else 4
     if not exponents or len(exponents) != len(set(exponents)) or any(not minimum <= n <= maximum for n in exponents):
-        raise ValueError(f"F2Z_BENCH_SHAPES must contain distinct exponents in {minimum}..={maximum}")
-    reps = int(env.get("F2Z_BENCH_REPS", "5"))
+        raise ValueError(f"BITZ_BENCH_SHAPES must contain distinct exponents in {minimum}..={maximum}")
+    reps = int(env.get("BITZ_BENCH_REPS", "5"))
     threads = int(env.get("RAYON_NUM_THREADS", "10"))
-    seed_text = env.get("F2Z_BENCH_SEED", str(DEFAULT_SEED))
+    seed_text = env.get("BITZ_BENCH_SEED", str(DEFAULT_SEED))
     seed = int(seed_text, 16 if seed_text.lower().startswith("0x") else 10)
     if reps < 1 or threads < 1 or not 0 <= seed < 1 << 64:
         raise ValueError("repetitions must be positive, threads must be positive, and seed must fit u64")
-    memory = env.get("F2Z_MUL_COMPARE_MEMORY", "1")
+    memory = env.get("BITZ_MUL_COMPARE_MEMORY", "1")
     if memory not in ("0", "1"):
-        raise ValueError("F2Z_MUL_COMPARE_MEMORY must be 0 or 1")
-    # The F2Z opener profile is a campaign-wide choice, recorded like the
+        raise ValueError("BITZ_MUL_COMPARE_MEMORY must be 0 or 1")
+    # The BitZ opener profile is a campaign-wide choice, recorded like the
     # Binius rate: the paper carries one row per rate, so an ambient value
     # must never decide which one a run measured.
-    f2z_profile = env.get("F2Z_LIG_PROFILE")
-    if f2z_profile is not None and not any(f2z_profile.startswith(p) for p in ("custom:", "udr:", "udrg:")):
-        raise ValueError("F2Z_LIG_PROFILE must name an explicit profile such as custom:1:4 or custom:3:4")
-    # The u64 F2Z split shift is likewise campaign-wide and recorded: it moves
+    bitz_profile = env.get("BITZ_LIG_PROFILE")
+    if bitz_profile is not None and not any(bitz_profile.startswith(p) for p in ("custom:", "udr:", "udrg:")):
+        raise ValueError("BITZ_LIG_PROFILE must name an explicit profile such as custom:1:4 or custom:3:4")
+    # The u64 BitZ split shift is likewise campaign-wide and recorded: it moves
     # the row/column split of the u64 layout (t down, s up by the shift).
-    shift_text = env.get("F2Z_U64_SPLIT_SHIFT")
+    shift_text = env.get("BITZ_U64_SPLIT_SHIFT")
     u64_split_shift = None
     if shift_text is not None:
         u64_split_shift = int(shift_text)
         if not -4 <= u64_split_shift <= 4:
-            raise ValueError("F2Z_U64_SPLIT_SHIFT must be a small integer")
-    # The Binius64/F2Z-opener row's whole-protocol gate model (union bound or
+            raise ValueError("BITZ_U64_SPLIT_SHIFT must be a small integer")
+    # The Binius64/BitZ-opener row's whole-protocol gate model (union bound or
     # round-by-round minimum) is campaign-wide and recorded like the rate.
-    accounting = env.get("F2Z_BINIUS_LIGERITO_ACCOUNTING")
+    accounting = env.get("BITZ_BINIUS_LIGERITO_ACCOUNTING")
     if accounting is not None and accounting not in LIGERITO_ACCOUNTING:
-        raise ValueError("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr")
+        raise ValueError("BITZ_BINIUS_LIGERITO_ACCOUNTING must be union or rbr")
     # Limber's Brakedown column-open target: the suite pins 100 bits (the
     # uniform comparison target, 2026-09-13); its native 114-bit policy is
-    # selected explicitly with F2Z_LIMBER_BDLAMBDA=114. The crate's own
+    # selected explicitly with BITZ_LIMBER_BDLAMBDA=114. The crate's own
     # BDLAMBDA env must come from this recorded knob, never from the ambient
     # environment.
     if "BDLAMBDA" in env:
-        raise ValueError("set F2Z_LIMBER_BDLAMBDA instead of ambient BDLAMBDA so the campaign records it")
-    limber_bd_lambda = int(env.get("F2Z_LIMBER_BDLAMBDA", "100"))
+        raise ValueError("set BITZ_LIMBER_BDLAMBDA instead of ambient BDLAMBDA so the campaign records it")
+    limber_bd_lambda = int(env.get("BITZ_LIMBER_BDLAMBDA", "100"))
     if not 100 <= limber_bd_lambda <= 128:
-        raise ValueError("F2Z_LIMBER_BDLAMBDA must be a bit target in 100..=128")
-    rate = env.get("F2Z_BINIUS_LOG_INV_RATE")
+        raise ValueError("BITZ_LIMBER_BDLAMBDA must be a bit target in 100..=128")
+    rate = env.get("BITZ_BINIUS_LOG_INV_RATE")
     binius_rate = int(rate) if rate else None
     # The paper lists Binius64 at rate 1/2 and 1/8; an ambient value is still rejected.
     if binius_rate is not None and (binius_rate not in (1, 3) if "u32-mod32" in workloads else not 1 <= binius_rate <= 4):
-        raise ValueError("F2Z_BINIUS_LOG_INV_RATE must select rate 1/2 or 1/8 for mod32")
+        raise ValueError("BITZ_BINIUS_LOG_INV_RATE must select rate 1/2 or 1/8 for mod32")
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%fZ")
-    output = Path(env.get("F2Z_MUL_COMPARE_OUTPUT_DIR", str(ROOT / "PerfRuns" / f"{stamp}-native-mul")))
+    output = Path(env.get("BITZ_MUL_COMPARE_OUTPUT_DIR", str(ROOT / "PerfRuns" / f"{stamp}-native-mul")))
     if not output.is_absolute():
         output = ROOT / output
     return dict(workloads=workloads, backends=backends, exponents=exponents, reps=reps,
-                threads=threads, seed=seed, seed_explicit="F2Z_BENCH_SEED" in env, memory=memory == "1",
-                binius_rate=binius_rate, f2z_profile=f2z_profile, u64_split_shift=u64_split_shift,
+                threads=threads, seed=seed, seed_explicit="BITZ_BENCH_SEED" in env, memory=memory == "1",
+                binius_rate=binius_rate, bitz_profile=bitz_profile, u64_split_shift=u64_split_shift,
                 ligerito_accounting=accounting, limber_bd_lambda=limber_bd_lambda,
                 output=output.resolve())
 
@@ -126,22 +126,22 @@ def campaign_environment(environment, config):
     for key in CLEAR_ENV:
         env.pop(key, None)
     env.update(RUSTFLAGS=BUILD["rustflags"], RAYON_NUM_THREADS=str(config["threads"]),
-               F2Z_BENCH_REPS=str(config["reps"]),
-               F2Z_BENCH_SHAPES=" ".join(map(str, config["exponents"])),
-               F2Z_MUL_COMPARE_MEMORY=str(int(config["memory"])))
+               BITZ_BENCH_REPS=str(config["reps"]),
+               BITZ_BENCH_SHAPES=" ".join(map(str, config["exponents"])),
+               BITZ_MUL_COMPARE_MEMORY=str(int(config["memory"])))
     if config["binius_rate"] is not None:
-        env["F2Z_BINIUS_LOG_INV_RATE"] = str(config["binius_rate"])
-    if config["f2z_profile"] is not None:
-        env["F2Z_LIG_PROFILE"] = config["f2z_profile"]
+        env["BITZ_BINIUS_LOG_INV_RATE"] = str(config["binius_rate"])
+    if config["bitz_profile"] is not None:
+        env["BITZ_LIG_PROFILE"] = config["bitz_profile"]
     if config.get("u64_split_shift") is not None:
-        env["F2Z_U64_SPLIT_SHIFT"] = str(config["u64_split_shift"])
+        env["BITZ_U64_SPLIT_SHIFT"] = str(config["u64_split_shift"])
     if config.get("ligerito_accounting") is not None:
-        env["F2Z_BINIUS_LIGERITO_ACCOUNTING"] = config["ligerito_accounting"]
+        env["BITZ_BINIUS_LIGERITO_ACCOUNTING"] = config["ligerito_accounting"]
     env["BDLAMBDA"] = str(config["limber_bd_lambda"])
     if config["seed_explicit"]:
-        env["F2Z_BENCH_SEED"] = str(config["seed"])
+        env["BITZ_BENCH_SEED"] = str(config["seed"])
     else:
-        env.pop("F2Z_BENCH_SEED", None)
+        env.pop("BITZ_BENCH_SEED", None)
     return env
 
 
@@ -217,17 +217,17 @@ def validate_sample(row, config, exponent, backend, workload):
     for name in CORE_METRICS:
         finite_number(row.get("metrics", {}).get(name), name, positive=name == "proof_bytes")
     settings = row["config"]
-    if backend == "f2z":
+    if backend == "bitz":
         from ligerito_results import validate_ligerito
         report = validate_ligerito(settings.get("ligerito"), 100)
         cfg = report["configuration"]
-        requested = config["f2z_profile"]
+        requested = config["bitz_profile"]
         if requested is not None and report.get("resolved_profile") != requested:
-            raise ValueError("F2Z did not resolve the requested Ligerito profile")
+            raise ValueError("BitZ did not resolve the requested Ligerito profile")
         if cfg.get("initial_k") != 4:
-            raise ValueError("the comparison uses initial_k=4 at every F2Z rate")
+            raise ValueError("the comparison uses initial_k=4 at every BitZ rate")
         if workload == "u64" and settings.get("u64_split_shift", 0) != (config.get("u64_split_shift") or 0):
-            raise ValueError("u64 F2Z rows did not use the requested split shift")
+            raise ValueError("u64 BitZ rows did not use the requested split shift")
         if requested is None and workload == "u32-mod32" and cfg["levels"][0].get("log_inv_rate") != 1:
             raise ValueError("mod32 comparison requires matched Ligerito rate 1/2 and initial_k=4")
     if backend == "binius64" and (settings.get("fri_query_target_bits") != 100
@@ -235,10 +235,10 @@ def validate_sample(row, config, exponent, backend, workload):
         raise ValueError("Binius must use the canonical 100-bit query target at the requested rate")
     if backend == "binius64-ligerito":
         if settings.get("log_inv_rate") != (config["binius_rate"] or 1):
-            raise ValueError("the Binius64/F2Z-opener row must use the requested Binius rate")
+            raise ValueError("the Binius64/BitZ-opener row must use the requested Binius rate")
         wanted = LIGERITO_ACCOUNTING[config.get("ligerito_accounting") or "union"]
         if settings.get("accounting", "union-bound") != wanted:
-            raise ValueError("the Binius64/F2Z-opener row must use the requested accounting model")
+            raise ValueError("the Binius64/BitZ-opener row must use the requested accounting model")
     if backend == "binius64" and workload == "u32-mod32":
         n = 1 << exponent
         expected = {"and":n,"imul":n,"zero":3*n,"bmul":0}
@@ -345,8 +345,8 @@ def run_native(config, job, environment, machine):
     directory = config["output"] / job["directory"]
     directory.mkdir()
     env = campaign_environment(environment, config)
-    env.update(F2Z_MUL_COMPARE_WORKLOADS=" ".join(job["workloads"]),
-               F2Z_MUL_COMPARE_BACKENDS=" ".join(job["backends"]), F2Z_MUL_COMPARE_OUTPUT_DIR=str(directory))
+    env.update(BITZ_MUL_COMPARE_WORKLOADS=" ".join(job["workloads"]),
+               BITZ_MUL_COMPARE_BACKENDS=" ".join(job["backends"]), BITZ_MUL_COMPARE_OUTPUT_DIR=str(directory))
     command = ["cargo", f"+{TOOLCHAIN}", "bench", "--bench", "mul_e2e_compare",
                "--features", "bench-internals,native-mul-compare"]
     run_logged(command, ROOT, env, directory / "cargo-bench.log")
@@ -407,7 +407,7 @@ def main():
                         backends=config["backends"], exponents=config["exponents"], repetitions=config["reps"],
                         warmups=1, measurement_policy=POLICY, jobs=planned, build=BUILD | {"threads": config["threads"]},
                         binius_log_inv_rate=config["binius_rate"],
-                        f2z_ligerito_profile=config["f2z_profile"],
+                        bitz_ligerito_profile=config["bitz_profile"],
                         u64_split_shift=config.get("u64_split_shift"),
                         binius_ligerito_accounting=config.get("ligerito_accounting"),
                         limber_bd_lambda=config["limber_bd_lambda"])

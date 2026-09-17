@@ -1,31 +1,31 @@
 //! End-to-end benchmark for a batch of integer `u32 * u32 = u64` constraints.
 //!
 //! Spartan proves the integer-valued R1CS relation. Its terminal assignment-MLE
-//! claim is then discharged against the compact 32/32/64-bit witness with F2Z.
+//! claim is then discharged against the compact 32/32/64-bit witness with BitZ.
 //! Every measured proof is verified through the combined verifier.
 //!
 //! Output follows the unified schema (`docs/bench-schema.md`): the
 //! end-to-end prover (`prove_ms`) covers bit packing, commitment, the
 //! transcript-sampled Step-2 prime (commit-before-prime, Zaratan order),
-//! Spartan over that runtime field, bitification, and the F2Z opening,
+//! Spartan over that runtime field, bitification, and the BitZ opening,
 //! re-run per repetition. Witness generation and relation preparation are
-//! excluded from `prove_ms`; each trial reports witness-through-proof separately. `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule`
+//! excluded from `prove_ms`; each trial reports witness-through-proof separately. `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule`
 //! selects the security profile (default `Lambda100`; the two-prime
 //! `Limber114` profile is MultiSwap-only and is rejected here); the
 //! canonical Spartan outer reduction uses the K=3 univariate-prefix skip.
 //!
 //! Defaults to the production sweep `2^15, ..., 2^25` multiplications.
-//! Override with `F2Z_BENCH_SHAPES`:
+//! Override with `BITZ_BENCH_SHAPES`:
 //!
 //! ```text
-//! F2Z_BENCH_SHAPES="15 17 19" F2Z_BENCH_REPS=3 \
+//! BITZ_BENCH_SHAPES="15 17 19" BITZ_BENCH_REPS=3 \
 //!   cargo bench --bench u32_mul --features unchecked
 //! ```
 //!
-//! `F2Z_BENCH_SHAPES=15 F2Z_BENCH_REPS=1` is the smallest production smoke
+//! `BITZ_BENCH_SHAPES=15 BITZ_BENCH_REPS=1` is the smallest production smoke
 //! shape. The production reducer is delayed Barrett.
-//! `F2Z_MUL_WORD_BITS=1|8` selects the F2Z word width; the default is `1`.
-//! `F2Z_BENCH_PASS=latency|memory|both` separates the measured repetitions
+//! `BITZ_MUL_WORD_BITS=1|8` selects the BitZ word width; the default is `1`.
+//! `BITZ_BENCH_PASS=latency|memory|both` separates the measured repetitions
 //! from the extra peak-heap proof. Memory measurement requires the
 //! benchmark-only `bench-peak-memory` feature.
 
@@ -39,14 +39,14 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use f2z::ligerito_flock::FlockCommitHint;
-use f2z::pcs::mod_q_num_chunks;
-use f2z::piop::spartan::{
-    IopSecurityProfile, PreparedU32MulRelation, PrimePolicy, SpartanF2zError,
-    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulF2zWidth, U32MulLayout, U32MulProof, U32MulWitness,
+use bitz::ligerito_flock::FlockCommitHint;
+use bitz::pcs::mod_q_num_chunks;
+use bitz::piop::spartan::{
+    IopSecurityProfile, PreparedU32MulRelation, PrimePolicy, SpartanBitzError,
+    U32_MUL_UNIVARIATE_SKIP_VARS, U32MulBitzWidth, U32MulLayout, U32MulProof, U32MulWitness,
     commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[cfg(feature = "bench-peak-memory")]
@@ -124,13 +124,13 @@ fn peak_mib() -> f64 {
 
 use common::cli::BenchmarkPass;
 
-fn f2z_width() -> U32MulF2zWidth {
+fn bitz_width() -> U32MulBitzWidth {
     common::cli::value(
-        "F2Z_MUL_WORD_BITS",
-        std::env::var_os("F2Z_MUL_WORD_BITS").unwrap_or_else(|| "1".into()),
+        "BITZ_MUL_WORD_BITS",
+        std::env::var_os("BITZ_MUL_WORD_BITS").unwrap_or_else(|| "1".into()),
         |value: &str| match value.parse::<usize>() {
-            Ok(1) => Ok(U32MulF2zWidth::W1),
-            Ok(8) => Ok(U32MulF2zWidth::W8),
+            Ok(1) => Ok(U32MulBitzWidth::W1),
+            Ok(8) => Ok(U32MulBitzWidth::W8),
             _ => Err("expected 1 or 8"),
         },
     )
@@ -154,9 +154,9 @@ fn prove_e2e(
 ) -> (U32MulProof, FlockCommitHint) {
     let proving = tracing::info_span!("benchmark:proving").entered();
     let commit = tracing::info_span!("benchmark:commit").entered();
-    let bit_rows = witness.f2z_bit_rows();
+    let bit_rows = witness.bitz_bit_rows();
     let commitment_hint =
-        commit_u32_mul_witness(relation, bit_rows).expect("F2Z commitment succeeds");
+        commit_u32_mul_witness(relation, bit_rows).expect("BitZ commitment succeeds");
     drop(commit);
 
     let mut prover_transcript = Blake3Transcript::new();
@@ -166,9 +166,9 @@ fn prove_e2e(
     (proof, commitment_hint)
 }
 
-fn make_witness(count: usize, width: U32MulF2zWidth, seed: u64) -> U32MulWitness {
+fn make_witness(count: usize, width: U32MulBitzWidth, seed: u64) -> U32MulWitness {
     let mut rng = StdRng::seed_from_u64(seed);
-    U32MulWitness::from_fn_with_f2z_width(count, width, |_| (rng.random(), rng.random()))
+    U32MulWitness::from_fn_with_bitz_width(count, width, |_| (rng.random(), rng.random()))
         .expect("valid u32 witness")
 }
 
@@ -185,11 +185,11 @@ struct TrialTiming {
 fn run_trial(
     relation: &PreparedU32MulRelation,
     count: usize,
-    width: U32MulF2zWidth,
+    width: U32MulBitzWidth,
     seed: u64,
     trial: &str,
 ) -> TrialTiming {
-    let recording = f2z::observability::Recording::start(Vec::new()).expect("start u32 trial");
+    let recording = bitz::observability::Recording::start(Vec::new()).expect("start u32 trial");
     let e2e = tracing::info_span!("benchmark:witness_to_proof").entered();
     let witness =
         tracing::info_span!("benchmark:witness").in_scope(|| make_witness(count, width, seed));
@@ -205,18 +205,18 @@ fn run_trial(
     let commit_ms = common::span_ms(&intervals, "benchmark:commit");
     let prove_ms = common::span_ms(&intervals, "benchmark:proving");
     let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-    let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+    let prove_phases = bitz::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
     let verify_phases =
-        f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
-    if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+        bitz::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
+    if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
         let gkr = prove_phases
             .iter()
             .find(|(n, _)| n == "mc:forest")
             .map_or(0.0, |(_, v)| 1000.0 * v);
         let bytes = proof.spartan_payload_elements() * 16
-            + (proof.grinding_nonce_count(relation.security()) - proof.f2z().grinding_nonces.len())
+            + (proof.grinding_nonce_count(relation.security()) - proof.bitz().grinding_nonces.len())
                 * 8
-            + proof.f2z().to_bytes().len();
+            + proof.bitz().to_bytes().len();
         println!(
             "PROVER_TRIAL {}",
             serde_json::json!({"trial":trial,"verified":true,
@@ -242,7 +242,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     reps: usize,
     root_seed: u64,
     pass: BenchmarkPass,
-    f2z_width: U32MulF2zWidth,
+    bitz_width: U32MulBitzWidth,
     order: usize,
     threads: usize,
 ) {
@@ -251,20 +251,20 @@ fn bench_exponent<P: IopSecurityProfile>(
         .expect("multiplication domain fits usize");
     let shape_seed = root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     let layout =
-        U32MulLayout::new_with_f2z_width(multiplications, f2z_width).expect("valid layout");
-    let params = layout.f2z_params();
+        U32MulLayout::new_with_bitz_width(multiplications, bitz_width).expect("valid layout");
+    let params = layout.bitz_params();
 
     // One-time public preprocessing (excluded from prove): q-independent
     // exact matrices plus the instantiated runtime-prime security profile.
     let started_recording =
-        f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("u32_mul:started").entered();
     let relation = match PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(
         layout,
         common::ligerito_selection(P::LIGERITO_TARGET_BITS),
     ) {
         Ok(relation) => relation,
-        Err(error @ (SpartanF2zError::Profile(_) | SpartanF2zError::UnsupportedProfile)) => {
+        Err(error @ (SpartanBitzError::Profile(_) | SpartanBitzError::UnsupportedProfile)) => {
             println!();
             println!(
                 "u32_mul gates=2^{exponent} profile={}: SKIPPED - {error}",
@@ -276,7 +276,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     };
     let setup_ms = {
         drop(started);
-        f2z::observability::duration(
+        bitz::observability::duration(
             &started_recording
                 .intervals()
                 .expect("complete operation capture"),
@@ -292,10 +292,10 @@ fn bench_exponent<P: IopSecurityProfile>(
     );
     let profile_name = relation.security().profile_name;
     let q_bits = (u128::BITS - relation.security().projection_max.leading_zeros()) as usize;
-    let f2z_chunks = mod_q_num_chunks(&params, q_bits);
+    let bitz_chunks = mod_q_num_chunks(&params, q_bits);
 
     // First witness/commit/prove after setup, reported separately from samples.
-    let warm = run_trial(&relation, multiplications, f2z_width, shape_seed, "warmup");
+    let warm = run_trial(&relation, multiplications, bitz_width, shape_seed, "warmup");
     let witness_ms = warm.witness_ms;
     let (warm_proof, warm_hint) = (warm.proof, warm.hint);
     let ligerito_log_inv_rate = warm_hint.commitment.params.log_inv_rate;
@@ -319,9 +319,9 @@ fn bench_exponent<P: IopSecurityProfile>(
                 verify_ms,
                 prove_phases,
                 verify_phases,
-            } = run_trial(&relation, multiplications, f2z_width, shape_seed, "sample");
+            } = run_trial(&relation, multiplications, bitz_width, shape_seed, "sample");
             println!(
-                "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
+                "  SAMPLE pass=latency profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} bitz_t={} bitz_s={} bitz_chunks={bitz_chunks} exponent={exponent} sample={} multiplications={multiplications} commit_ms={commit_ms:.6} prove_ms={prove_ms:.6} verify_ms={verify_ms:.6} verified=true",
                 params.word_bits,
                 params.row_vars,
                 params.col_vars,
@@ -343,7 +343,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         // This proof runs only in the explicit memory pass used by the runner.
         // `both` retains the old direct `cargo bench` behavior for convenience.
 
-        let witness = make_witness(multiplications, f2z_width, shape_seed);
+        let witness = make_witness(multiplications, bitz_width, shape_seed);
         let live_before_prove = live_mib();
         reset_peak();
         let (peak_proof, peak_hint) = prove_e2e(&relation, &witness);
@@ -360,7 +360,7 @@ fn bench_exponent<P: IopSecurityProfile>(
         .expect("peak-memory proof verifies");
 
         println!(
-            "  MEMORY pass=memory profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} f2z_t={} f2z_s={} f2z_chunks={f2z_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
+            "  MEMORY pass=memory profile={profile_name} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} word_bits={} projection_bits={q_bits} bitz_t={} bitz_s={} bitz_chunks={bitz_chunks} exponent={exponent} multiplications={multiplications} peak_heap_mib={peak:.6} live_before_prove_mib={live_before_prove:.6} verified=true",
             params.word_bits, params.row_vars, params.col_vars,
         );
         memory_metrics = Some((live_before_prove, peak));
@@ -374,20 +374,20 @@ fn bench_exponent<P: IopSecurityProfile>(
         relation.security().lambda,
     );
     println!(
-        "  benchmark: pass={} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} t={} s={} chunks={f2z_chunks}",
+        "  benchmark: pass={} order={order} protocol={PROTOCOL_LABEL} skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS} strategy={STRATEGY_LABEL} t={} s={} chunks={bitz_chunks}",
         pass.as_str(),
         params.row_vars,
         params.col_vars,
     );
     println!(
-        "  R1CS: rows={} cols={} nnz={}  |  F2Z: t={} s={} W={} chunks={} bits={} ({:.2} MiB)",
+        "  R1CS: rows={} cols={} nnz={}  |  BitZ: t={} s={} W={} chunks={} bits={} ({:.2} MiB)",
         multiplications,
         4 * layout.capacity(),
         3 * multiplications,
         params.row_vars,
         params.col_vars,
         params.word_bits,
-        f2z_chunks,
+        bitz_chunks,
         128usize * layout.capacity(),
         (16usize * layout.capacity()) as f64 / (1024.0 * 1024.0),
     );
@@ -398,7 +398,7 @@ fn bench_exponent<P: IopSecurityProfile>(
     if let Some((prover, verifier, last_proof)) = latency {
         let spartan_elements = last_proof.spartan_payload_elements();
         let boundary_nonces = last_proof.grinding_nonce_count(relation.security())
-            - last_proof.f2z().grinding_nonces.len();
+            - last_proof.bitz().grinding_nonces.len();
         let report = common::BenchReport {
             bench: "u32_mul",
             shape: format!("2p{exponent}"),
@@ -415,9 +415,9 @@ fn bench_exponent<P: IopSecurityProfile>(
                 ("strategy".into(), STRATEGY_LABEL.into()),
                 ("word_bits".into(), params.word_bits.to_string()),
                 ("projection_bits".into(), q_bits.to_string()),
-                ("f2z_t".into(), params.row_vars.to_string()),
-                ("f2z_s".into(), params.col_vars.to_string()),
-                ("f2z_chunks".into(), f2z_chunks.to_string()),
+                ("bitz_t".into(), params.row_vars.to_string()),
+                ("bitz_s".into(), params.col_vars.to_string()),
+                ("bitz_chunks".into(), bitz_chunks.to_string()),
                 ("exponent".into(), exponent.to_string()),
                 ("order".into(), order.to_string()),
                 ("shape_seed".into(), format!("{shape_seed:#018x}")),
@@ -434,7 +434,7 @@ fn bench_exponent<P: IopSecurityProfile>(
             verifier: verifier.medians(),
             proof: common::ProofBytes {
                 piop: spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>(),
-                open: last_proof.f2z().to_bytes().len(),
+                open: last_proof.bitz().to_bytes().len(),
             },
         };
         report.print_human();
@@ -451,23 +451,23 @@ fn main() {
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
     let pass = BenchmarkPass::from_env();
-    let f2z_width = f2z_width();
-    let order = common::cli::env::<std::num::NonZeroUsize>("F2Z_BENCH_ORDER")
+    let bitz_width = bitz_width();
+    let order = common::cli::env::<std::num::NonZeroUsize>("BITZ_BENCH_ORDER")
         .map_or(1, std::num::NonZeroUsize::get);
     let seed = common::seed(None, 0x5533_326d_756c_0064);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
 
     let exponents = exponents();
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
 
-    println!("u32 × u32 → u64: Spartan PIOP + F2Z assignment opening");
+    println!("u32 × u32 → u64: Spartan PIOP + BitZ assignment opening");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
-        "repetitions: {reps}; root seed: {seed:#018x}; F2Z word bits: {}",
-        f2z_width.word_bits(),
+        "repetitions: {reps}; root seed: {seed:#018x}; BitZ word bits: {}",
+        bitz_width.word_bits(),
     );
     println!(
         "benchmark pass: {}; protocol: {PROTOCOL_LABEL} (skip_vars={U32_MUL_UNIVARIATE_SKIP_VARS}); strategy: {STRATEGY_LABEL}; order: {order}",
@@ -482,7 +482,7 @@ fn main() {
         flock_core::scratch::clear();
         common::with_profile!(
             profile,
-            bench_exponent(exponent, reps, seed, pass, f2z_width, order, threads)
+            bench_exponent(exponent, reps, seed, pass, bitz_width, order, threads)
         );
     }
     flock_core::scratch::clear();

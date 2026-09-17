@@ -1,4 +1,4 @@
-# The unified F2Z protocol runner
+# The unified BitZ protocol runner
 
 Every benchmark relation used to carry its own copy of the Fiat–Shamir
 protocol: statement binding, prime draw, grinding boundaries, Spartan
@@ -53,13 +53,13 @@ supplies everything marked *relation*; the runner owns the rest.
 
 | Relation | Spec | Mode | Kernel |
 |---|---|---|---|
-| u32×u32→u64 (`f2z.rs`) | `U32MulLayout` | direct | univariate skip K=3 |
-| u64×u64→u128 (`u64_f2z.rs`) | `U64MulLayout` | direct | plain |
-| u128×u128→u256 (`u128_f2z.rs`) | `U128MulLayout` | direct | plain |
-| BabyBear (`baby_bear_f2z.rs`) | `BabyBearMulLayout` | direct | plain |
+| u32×u32→u64 (`bitz.rs`) | `U32MulLayout` | direct | univariate skip K=3 |
+| u64×u64→u128 (`u64_bitz.rs`) | `U64MulLayout` | direct | plain |
+| u128×u128→u256 (`u128_bitz.rs`) | `U128MulLayout` | direct | plain |
+| BabyBear (`baby_bear_bitz.rs`) | `BabyBearMulLayout` | direct | plain |
 | RSA MultiSwap (`multiswap/proof.rs`) | `MultiswapSpec` | reduced (Strategy 2) | plain |
 | CM-AND (`cm.rs`) | `CmAndSpec` | virtual | plain |
-| Hybrid mod-2^32 × SHA (`f2z/hybrid.rs`) | `U32MulLayout` prefix | `prove_prefix` + the hybrid's own forest discharge | univariate skip K=3 |
+| Hybrid mod-2^32 × SHA (`bitz/hybrid.rs`) | `U32MulLayout` prefix | `prove_prefix` + the hybrid's own forest discharge | univariate skip K=3 |
 | SHA-256 compressions (`sha256/proof.rs`) | `Sha256CompressionSpec` | linear (product opening, or legacy inner sumcheck for non-power-of-two batches) | — |
 | SHA-256 chain (`sha256/chain.rs`) | `PreparedSha256ChainBatch` | linear (product opening) | — |
 | SHA-256 + P-256 ECDSA (`ecdsa_sha256/proof.rs`) | — | its own composite kernel (grinded outer sumcheck, batched matrix + linear rows in one inner sumcheck, opening with per-block flock grinding) on the shared boundaries | composite |
@@ -91,5 +91,5 @@ RUSTFLAGS="-C target-cpu=native" cargo test --release --features unchecked,bench
 RUSTFLAGS="-C target-cpu=native" cargo test --release --features hybrid,ecdsa,bench-internals --test transcript_state_pins
 ```
 
-`F2Z_RECORD_PINS=1` prints the pin tuples for re-recording after a
+`BITZ_RECORD_PINS=1` prints the pin tuples for re-recording after a
 deliberate transcript change.

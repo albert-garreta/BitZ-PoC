@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare F2Z, Binius64 and Binius64-Ligerito on identical raw SHA-256 chains."""
+"""Compare BitZ, Binius64 and Binius64-Ligerito on identical raw SHA-256 chains."""
 from __future__ import annotations
 
 import argparse
@@ -20,12 +20,12 @@ import time
 
 from ligerito_results import validate_ligerito
 from run_sha256_ecdsa_compare import address_space_limit, peak_rss_bytes
-from run_sha256_f2z_bench import command_text, cpu_name
+from run_sha256_bitz_bench import command_text, cpu_name
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "f2z/sha256-chain-compare/v1"
+SCHEMA = "bitz/sha256-chain-compare/v1"
 FIXTURE = "sha256-chain/public-blocks-standard-iv/v1"
-METHODS = ("f2z", "binius64", "binius64-ligerito")
+METHODS = ("bitz", "binius64", "binius64-ligerito")
 METRICS = ("setup_ms", "witness_ms", "commit_ms", "prove_ms", "e2e_prover_ms", "verify_ms", "proof_bytes")
 CASE_FIELDS = ("method", "log_compressions", "threads", "seed", "ligerito_profile", "log_inv_rate")
 
@@ -38,7 +38,7 @@ def parse_args(argv=None):
     parser.add_argument("--threads", nargs="+", type=int, default=[1, 10])
     parser.add_argument("--reps", type=int, default=5)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--f2z-profiles", nargs="+", choices=["custom:1:4", "custom:3:4"],
+    parser.add_argument("--bitz-profiles", nargs="+", choices=["custom:1:4", "custom:3:4"],
                         default=["custom:1:4", "custom:3:4"])
     parser.add_argument("--binius-rates", nargs="+", type=int, choices=[1, 3], default=[1, 3])
     parser.add_argument("--timeout", type=float, default=3600, help="seconds per worker, including setup and warmup")
@@ -47,7 +47,7 @@ def parse_args(argv=None):
     parser.add_argument("--binary", type=Path, help="use an already compiled sha256_chain_compare worker")
     parser.add_argument("--dry-run", action="store_true", help="print all cases without building, proving or writing files")
     args = parser.parse_args(argv)
-    for name in ("methods", "exponents", "threads", "f2z_profiles", "binius_rates"):
+    for name in ("methods", "exponents", "threads", "bitz_profiles", "binius_rates"):
         values = getattr(args, name)
         if len(values) != len(set(values)):
             parser.error(f"--{name.replace('_', '-')} must not contain duplicates")
@@ -62,7 +62,7 @@ def parse_args(argv=None):
 
 def cases(args):
     for exponent, threads, method in itertools.product(args.exponents, args.threads, args.methods):
-        profiles = args.f2z_profiles if method == "f2z" else [None]
+        profiles = args.bitz_profiles if method == "bitz" else [None]
         for profile in profiles:
             rates = [int(profile.split(":")[1])] if profile else args.binius_rates
             for rate in rates:
@@ -75,13 +75,13 @@ def worker_command(binary, case, reps):
                "--threads", str(case["threads"]), "--reps", str(reps), "--seed", str(case["seed"]),
                "--log-inv-rate", str(case["log_inv_rate"])]
     if case["ligerito_profile"]:
-        command += ["--f2z-profile", case["ligerito_profile"]]
+        command += ["--bitz-profile", case["ligerito_profile"]]
     return command
 
 
 def environment():
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith(("F2Z_", "F2_FOREST", "OBLONG_", "RAYON_")) and k != "CARGO_ENCODED_RUSTFLAGS"}
+           if not k.startswith(("BITZ_", "F2_FOREST", "OBLONG_", "RAYON_")) and k != "CARGO_ENCODED_RUSTFLAGS"}
     env.setdefault("RUSTFLAGS", "-C target-cpu=native")
     local = ROOT / ".tools/perfetto/trace_processor_shell"
     if "PERFETTO_TRACE_PROCESSOR" not in env and local.is_file():
@@ -132,7 +132,7 @@ def validate_rows(rows, case, reps, fixture):
                 or type(row["proof_bytes"]) is not int or row["proof_bytes"] <= 0):
             raise ValueError("inconsistent timing boundaries or proof size")
         security = row.get("security", {})
-        size_kind = ("analytical-piop-plus-serialized-pcs-and-commitment" if case["method"] == "f2z"
+        size_kind = ("analytical-piop-plus-serialized-pcs-and-commitment" if case["method"] == "bitz"
                      else "serialized-proof-including-commitments")
         phases = row.get("phases_ms")
         if (not isinstance(security, dict) or row.get("proof_size_kind") != size_kind
@@ -141,19 +141,19 @@ def validate_rows(rows, case, reps, fixture):
             raise ValueError("missing or invalid security, size or phase metadata")
         if security != rows[0].get("security"):
             raise ValueError("security parameters changed between trials")
-        if case["method"] == "f2z":
+        if case["method"] == "bitz":
             identity = validate_ligerito(security.get("ligerito"), 100)
             if (identity["requested_profile"] != case["ligerito_profile"]
                     or identity["configuration"]["levels"][0]["log_inv_rate"] != case["log_inv_rate"]
                     or not math.isfinite(security.get("economic_bits", float("nan")))
                     or security["economic_bits"] < 100 - 1e-6):
-                raise ValueError("F2Z profile/target mismatch")
+                raise ValueError("BitZ profile/target mismatch")
         elif security.get("log_inv_rate") != case["log_inv_rate"]:
             raise ValueError("Binius rate mismatch")
         elif case["method"] == "binius64":
             if security.get("pcs") != "BaseFold" or security.get("fri_query_target_bits") != 100:
                 raise ValueError("BaseFold target mismatch")
-        elif (security.get("pcs") != "F2Z-Ligerito" or security.get("accounting") != "round-by-round"
+        elif (security.get("pcs") != "BitZ-Ligerito" or security.get("accounting") != "round-by-round"
               or security.get("target_bits") != 100
               or not math.isfinite(security.get("algebraic_bits", float("nan")))
               or security["algebraic_bits"] < 100 - 1e-6):
@@ -255,7 +255,7 @@ def main(argv=None):
                     rustc=command_text("rustc", "-Vv"), cargo=command_text("cargo", "-V"),
                     features=["unchecked", "span-metrics", "binius64-bench"],
                     trace_processor=env.get("PERFETTO_TRACE_PROCESSOR", "trace_processor_shell"),
-                    security_note="100-bit F2Z economic, Binius FRI query, and Binius-Ligerito per-round targets use different accounting; inspect each row.",
+                    security_note="100-bit BitZ economic, Binius FRI query, and Binius-Ligerito per-round targets use different accounting; inspect each row.",
                     memory_note="Whole-worker peak RSS includes fixture construction, setup, warmup, proofs and verification; excludes compilation.",
                     timing_note="Prove includes commitment. E2E runs from witness generation through proof completion, excluding reusable setup and verification. Both Binius backends attribute witness packing to witness_ms.",
                     memory_cap_enforced=address_space_limit(args.memory_gib) is not None,

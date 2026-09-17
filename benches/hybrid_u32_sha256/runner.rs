@@ -7,11 +7,11 @@ use binius_hash::Blake3HashSuite;
 use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
-use f2z::{
+use bitz::{
     binius_ligerito::{Accounting, Prepared as BiniusLigerito},
     hybrid::{CompositionProfile, Parameters, PreparedHybrid, chaining_value},
     piop::spartan::{
-        f2z::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
+        bitz::{PreparedU32MulRelation, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul},
         u32_mul::{U32MulLayout, U32MulMod32Row, U32MulWitness},
     },
     transcript::Blake3Transcript,
@@ -36,19 +36,19 @@ type AnyError = Box<dyn Error>;
 fn select_ligerito(
     cli: Option<&str>,
     target: usize,
-) -> Result<f2z::ligerito_flock::LigeritoSelection, AnyError> {
+) -> Result<bitz::ligerito_flock::LigeritoSelection, AnyError> {
     match cli {
-        Some(request) => Ok(f2z::ligerito_flock::LigeritoSelection::parse(
+        Some(request) => Ok(bitz::ligerito_flock::LigeritoSelection::parse(
             request, target,
         )?),
-        None => Ok(f2z::ligerito_flock::LigeritoSelection::JOHNSON),
+        None => Ok(bitz::ligerito_flock::LigeritoSelection::JOHNSON),
     }
 }
 
 /// How the native Binius64 circuit is proved: Binius64's own ring switch +
 /// BaseFold/FRI, or its PIOP prefix with every oracle committed and opened by
-/// the F2Z opener (Johnson regime, grinding, Round 0; rate and accounting
-/// from `F2Z_BINIUS_LOG_INV_RATE` / `F2Z_BINIUS_LIGERITO_ACCOUNTING`, gated
+/// the BitZ opener (Johnson regime, grinding, Round 0; rate and accounting
+/// from `BITZ_BINIUS_LOG_INV_RATE` / `BITZ_BINIUS_LIGERITO_ACCOUNTING`, gated
 /// at 100 bits).
 enum NativeBackend {
     Binius {
@@ -71,7 +71,7 @@ impl Native {
     fn new(multiplications: usize, compressions: usize, ligerito: bool, binius: Option<BiniusConfig>) -> Result<Self, AnyError> {
         let builder = CircuitBuilder::new();
         let multiplications = (0..multiplications)
-            .map(|_| f2z::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
+            .map(|_| bitz::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
             .collect();
         let blocks: Vec<[Wire; 16]> = (0..compressions)
             .map(|_| std::array::from_fn(|_| builder.add_witness()))
@@ -250,7 +250,7 @@ struct Args {
     cargo: cli::CargoArgs,
     #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
     mode: String,
-    #[arg(long, env = "F2Z_LIG_PROFILE")]
+    #[arg(long, env = "BITZ_LIG_PROFILE")]
     profile: Option<String>,
     #[arg(long, value_parser = clap::value_parser!(u32).range(9..=22))]
     mul_log: Option<u32>,
@@ -273,28 +273,28 @@ struct Args {
 
 #[derive(clap::Parser, Clone, Copy)]
 struct BiniusConfig {
-    #[arg(long, env = "F2Z_HYBRID_BINIUS_LOG_INV_RATE", default_value = "1")]
+    #[arg(long, env = "BITZ_HYBRID_BINIUS_LOG_INV_RATE", default_value = "1")]
     log_inv_rate: usize,
-    #[arg(long, env = "F2Z_HYBRID_BINIUS_SECURITY_BITS", default_value = "112")]
+    #[arg(long, env = "BITZ_HYBRID_BINIUS_SECURITY_BITS", default_value = "112")]
     security_bits: usize,
 }
 
-/// F2Z-opener rate for `binius-ligerito` mode: `F2Z_BINIUS_LOG_INV_RATE`
+/// BitZ-opener rate for `binius-ligerito` mode: `BITZ_BINIUS_LOG_INV_RATE`
 /// (1 = rate 1/2, 3 = rate 1/8), the same knob the mul benches read.
 fn binius_ligerito_log_inv_rate() -> usize {
-    std::env::var("F2Z_BINIUS_LOG_INV_RATE")
+    std::env::var("BITZ_BINIUS_LOG_INV_RATE")
         .ok()
-        .map(|v| v.parse().expect("F2Z_BINIUS_LOG_INV_RATE must be an integer"))
-        .unwrap_or(f2z::binary_pcs::LOG_INV_RATE)
+        .map(|v| v.parse().expect("BITZ_BINIUS_LOG_INV_RATE must be an integer"))
+        .unwrap_or(bitz::binary_pcs::LOG_INV_RATE)
 }
 
-/// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`, exactly as
+/// `BITZ_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`, exactly as
 /// `benches/mul_e2e_compare` reads it.
 fn binius_ligerito_accounting() -> Accounting {
-    match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
+    match std::env::var("BITZ_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
         Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,
         Ok("rbr") | Ok("round-by-round") => Accounting::RoundByRound,
-        Ok(other) => panic!("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
+        Ok(other) => panic!("BITZ_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
     }
 }
 
@@ -315,7 +315,7 @@ pub fn run() -> Result<(), AnyError> {
     let ligerito = match mode.as_str() {
         "hybrid" => select_ligerito(profile.as_deref(), 106)?,
         "separate" => select_ligerito(profile.as_deref(), 112)?,
-        _ => f2z::ligerito_flock::LigeritoSelection::JOHNSON,
+        _ => bitz::ligerito_flock::LigeritoSelection::JOHNSON,
     };
     use tracing_subscriber::prelude::*;
     tracing_subscriber::registry()
@@ -335,7 +335,7 @@ pub fn run() -> Result<(), AnyError> {
             return Err("statement exceeds 1 KiB limit".into());
         }
         let statement_bytes = std::fs::read(statement_path)?;
-        let statement: f2z::hybrid::Statement = bincode::DefaultOptions::new()
+        let statement: bitz::hybrid::Statement = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_limit(1024)
             .reject_trailing_bytes()
@@ -412,7 +412,7 @@ pub fn run() -> Result<(), AnyError> {
             let witness = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
-                .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
+                .map(|&(x, y)| bitz::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
             // Hybrid fuses assignment synthesis into commit_mod32, so this is
             // the native row construction only; witness_commit_ms below is
@@ -545,7 +545,7 @@ pub fn run() -> Result<(), AnyError> {
             let witness_scope = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
                 .iter()
-                .map(|&(x, y)| f2z::hybrid::U32MulMod32Row::new(x, y))
+                .map(|&(x, y)| bitz::hybrid::U32MulMod32Row::new(x, y))
                 .collect();
             let witness = native.populate(if mode == "separate" { &[] } else { &rows }, &blocks)?;
             // Native witness generation: row construction plus the circuit's
@@ -554,7 +554,7 @@ pub fn run() -> Result<(), AnyError> {
             let bytes = native.prove(&witness)?;
             let mul = if let Some(relation) = &separate {
                 let witness = U32MulWitness::from_mod32_rows(&rows)?;
-                let hint = commit_u32_mul_witness(relation, witness.f2z_bit_rows())?;
+                let hint = commit_u32_mul_witness(relation, witness.bitz_bit_rows())?;
                 let proof = prove_u32_mul(&mut Blake3Transcript::new(), relation, &witness, &hint)?;
                 Some((hint, proof))
             } else {
@@ -562,16 +562,16 @@ pub fn run() -> Result<(), AnyError> {
             };
             drop(start);
             // The standalone u32 API has no enclosing wire codec. Its size
-            // here is the exact F2Z wire section plus raw Spartan/nonces;
+            // here is the exact BitZ wire section plus raw Spartan/nonces;
             // report this as a payload estimate rather than invent framing.
             let mut proof_bytes = bytes.len();
             if let Some((hint, proof)) = &mul {
                 let relation = separate.as_ref().expect("separate mode");
                 proof_bytes += hint.commitment.root.len()
-                    + proof.f2z().to_bytes().len()
+                    + proof.bitz().to_bytes().len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
-                        - proof.f2z().grinding_nonces.len())
+                        - proof.bitz().grinding_nonces.len())
                         * 8;
             }
             let verify = tracing::info_span!("benchmark:verification").entered();
@@ -663,7 +663,7 @@ mod cli_tests {
 
     #[test]
     fn profile_environment_probe() {
-        let Ok(mode) = std::env::var("F2Z_CLI_PROFILE_PROBE") else { return };
+        let Ok(mode) = std::env::var("BITZ_CLI_PROFILE_PROBE") else { return };
         let argv = if mode == "override" { vec!["hybrid", "--profile", "custom:1:4"] }
             else { vec!["hybrid"] };
         let args = Args::try_parse_from(argv).unwrap();
@@ -677,7 +677,7 @@ mod cli_tests {
         for (mode, expected) in [("fallback", "udrg:1:4"), ("override", "custom:1:4")] {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", test, "--nocapture"]).env_clear()
-                .env("F2Z_CLI_PROFILE_PROBE", mode).env("F2Z_LIG_PROFILE", "udrg:1:4")
+                .env("BITZ_CLI_PROFILE_PROBE", mode).env("BITZ_LIG_PROFILE", "udrg:1:4")
                 .output().unwrap();
             assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
             assert!(String::from_utf8_lossy(&output.stdout).contains(&format!("CLI_PROFILE {expected}")));

@@ -15,13 +15,13 @@ use rayon::prelude::*;
 
 use field::{CtMask, CtSelect};
 
-use crate::piop::spartan::{SpartanField, f2z::SpartanF2zField, grinding::GrindingDomain};
+use crate::piop::spartan::{SpartanField, bitz::SpartanBitzField, grinding::GrindingDomain};
 
 #[cfg(test)]
 use crate::sumcheck::SumcheckProof;
 use crate::sumcheck::{SumcheckError, arithmetic::merge_accumulators};
 
-type Field = SpartanF2zField;
+type Field = SpartanBitzField;
 type FieldConfig = field::FpCtx<2>;
 type LinearAccumulator = field::FpLinearAcc<2, 1>;
 type ProductAccumulator = <field::FpCtx<2> as BatchMulAcc<Field>>::Accumulator;
@@ -332,7 +332,7 @@ impl Sha256InnerSumcheckOutput {
 pub(crate) enum Sha256InnerGrinding {}
 
 impl GrindingDomain for Sha256InnerGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/spartan-sha256/grinding/inner/v1";
+    const DOMAIN: &'static [u8] = b"bitz/spartan-sha256/grinding/inner/v1";
 }
 
 fn validate_inputs<const K: usize, H: Sha256InnerBitSource + ?Sized>(
@@ -2026,7 +2026,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::{
-        piop::spartan::f2z::spartan_f2z_field_config,
+        piop::spartan::bitz::spartan_bitz_field_config,
         piop::spartan::sumcheck::{
             prove_inner_sumcheck_with_reducer, prove_inner_sumcheck_with_reducer_grinded,
         },
@@ -2069,7 +2069,7 @@ mod tests {
 
     #[test]
     fn factored_block_source_is_transcript_identical_across_shared_and_block_boundaries() {
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
 
@@ -2200,7 +2200,7 @@ mod tests {
             .build()
             .unwrap();
         pool.install(|| {
-            let field_cfg = spartan_f2z_field_config();
+            let field_cfg = spartan_bitz_field_config();
             let zero = Field::zero_with_cfg(&field_cfg);
             let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
             let instance_weights = (0..INSTANCES)
@@ -2311,7 +2311,7 @@ mod tests {
     fn assert_sha_width_factored_fold_matches_generic<const K: usize>() {
         const SHA_BLOCK_WIDTH: usize = 20_456;
 
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
@@ -2374,7 +2374,7 @@ mod tests {
         const NUM_VARS: usize = 8;
         const LIVE_LEN: usize = 13;
 
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
@@ -2449,7 +2449,7 @@ mod tests {
 
     #[test]
     fn fused_interleaved_fold_and_prepare_matches_separate_passes() {
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
 
@@ -2542,7 +2542,7 @@ mod tests {
     fn every_prefix_width_matches_ordinary_field_prover_with_and_without_grinding() {
         const NUM_VARS: usize = 7;
 
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
@@ -2631,7 +2631,7 @@ mod tests {
         const NUM_VARS: usize = 7;
         const LIVE_LEN: usize = 61;
 
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
@@ -2752,7 +2752,7 @@ mod tests {
         const LIVE_LEN: usize = 93;
         const ROW_BITS: usize = 19;
 
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let table_len = 1usize << NUM_VARS;
@@ -2848,7 +2848,7 @@ mod tests {
 
     #[test]
     fn noncanonical_structured_inputs_are_rejected_before_the_transcript() {
-        let cfg = spartan_f2z_field_config();
+        let cfg = spartan_bitz_field_config();
         let invalid = crate::piop::spartan::noncanonical_test_value(&cfg);
         for invalid_part in 0..3 {
             let mut high = [field(2, &cfg), field(3, &cfg)];
@@ -2891,7 +2891,7 @@ mod tests {
 
     #[test]
     fn noncanonical_callback_is_rejected_before_the_transcript() {
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let (_, h_words, initial_claim) = fixture(3, &field_cfg);
         let mut transcript = Blake3Transcript::new();
         let mut untouched = transcript.clone();
@@ -2926,7 +2926,7 @@ mod tests {
     fn k0_is_identical_to_the_existing_field_quadratic_prover() {
         const NUM_VARS: usize = 7;
 
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let one = Field::one_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
@@ -2986,7 +2986,7 @@ mod tests {
 
     #[test]
     fn first_round_is_pinned_to_the_word_lsb() {
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let zero = Field::zero_with_cfg(&field_cfg);
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let v_mle = DenseMultilinearExtension::from_evaluations_vec(
@@ -3025,7 +3025,7 @@ mod tests {
 
     #[test]
     fn zero_variable_and_fully_native_prefixes_match_k0() {
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
 
         let zero_var = prove_dense_test(
@@ -3076,7 +3076,7 @@ mod tests {
 
     #[test]
     fn invalid_prefix_or_noncanonical_padding_does_not_touch_transcript() {
-        let field_cfg = spartan_f2z_field_config();
+        let field_cfg = spartan_bitz_field_config();
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
         let (v_mle, h_words, initial_claim) = fixture(3, &field_cfg);
 

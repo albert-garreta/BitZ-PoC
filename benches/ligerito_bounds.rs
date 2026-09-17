@@ -1,4 +1,4 @@
-//! Controlled decoding-bound experiment within F2Z. No competing backend configuration is read.
+//! Controlled decoding-bound experiment within BitZ. No competing backend configuration is read.
 mod common;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 macro_rules! bail {
@@ -6,8 +6,8 @@ macro_rules! bail {
         return Err($message.into())
     };
 }
-use ::f2z::observability::{self, Recording};
-use ::f2z::{
+use ::bitz::observability::{self, Recording};
+use ::bitz::{
     ligerito_flock::{LigeritoSelection, ResolvedLigerito},
     piop::spartan::*,
     transcript::Blake3Transcript,
@@ -26,7 +26,7 @@ impl Experiment {
         &self,
         setup: SetupCapture,
         resolved: &ResolvedLigerito,
-        ood: Option<::f2z::ligerito_flock::OodRoundParams>,
+        ood: Option<::bitz::ligerito_flock::OodRoundParams>,
         corpus: &[u8],
         witness: impl Fn() -> Result<W>,
         commit: impl Fn(&W) -> Result<H>,
@@ -64,7 +64,7 @@ impl Experiment {
             let verify_ms = millis("bounds:verification")?;
             println!(
                 "{}",
-                json!({"schema":"f2z-ligerito-bound-comparison/v1", "case":self.case,
+                json!({"schema":"bitz-ligerito-bound-comparison/v1", "case":self.case,
                 "trial":if self.memory {"memory"} else if trial==0 {"warmup"} else {"sample"}, "index":trial,
                 "seed":SEED,"corpus_digest":corpus_digest,"threads":rayon::current_num_threads(),"measurement_policy":"one-setup/one-warmup/five-proofs/v1",
                 "ligerito":config,"setup_ms":setup_ms,"witness_ms":witness_ms,"commit_ms":commit_ms,
@@ -98,7 +98,7 @@ fn bytes(root: usize, opening: &[u8], analytic: usize) -> ProofSize {
 }
 fn inputs() -> Vec<(u128, u128)> {
     let mut h = blake3::Hasher::new();
-    h.update(b"f2z/ligerito-bound-inputs/v1");
+    h.update(b"bitz/ligerito-bound-inputs/v1");
     h.update(&SEED.to_le_bytes());
     let mut r = h.finalize_xof();
     (0..1 << 15)
@@ -137,7 +137,7 @@ fn main() -> Result<()> {
         case: args.case,
         memory: args.memory,
     };
-    ::f2z::observability::install().expect("install Perfetto subscriber");
+    ::bitz::observability::install().expect("install Perfetto subscriber");
     if rayon::current_num_threads() != 8 {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
@@ -159,7 +159,7 @@ fn main() -> Result<()> {
                 p.security().ood,
                 &bincode::serialize(&data)?,
                 || Ok($wit::from_inputs(&data)?),
-                |w| Ok($commit(&p, w.f2z_bit_rows())?),
+                |w| Ok($commit(&p, w.bitz_bit_rows())?),
                 |w, h| Ok($prove(&mut Blake3Transcript::new(), &p, w, h)?),
                 |_, h, proof| {
                     Ok($verify(
@@ -170,15 +170,15 @@ fn main() -> Result<()> {
                     )?)
                 },
                 |h, proof| {
-                    let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?;
+                    let b = proof.bitz().to_bytes();
+                    let decoded = ::bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
                         &b,
                         proof.spartan_payload_elements() * 16
                             + (proof.grinding_nonce_count(p.security())
-                                - proof.f2z().grinding_nonces.len())
+                                - proof.bitz().grinding_nonces.len())
                                 * 8,
                     ))
                 },
@@ -271,8 +271,8 @@ fn main() -> Result<()> {
                     )?)
                 },
                 |h, proof| {
-                    let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let b = proof.bitz().to_bytes();
+                    let decoded = ::bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
@@ -314,8 +314,8 @@ fn main() -> Result<()> {
                     )?)
                 },
                 |h, proof| {
-                    let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let b = proof.bitz().to_bytes();
+                    let decoded = ::bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
@@ -323,7 +323,7 @@ fn main() -> Result<()> {
         }
         "ecdsa-split" | "ecdsa-all" => ecdsa(&e, setup),
         "hybrid-15-7" | "hybrid-15-2" => {
-            use ::f2z::hybrid::*;
+            use ::bitz::hybrid::*;
             let sha_log = if e.case.ends_with('7') { 7 } else { 2 };
             let p = PreparedHybrid::new_with_ligerito(
                 Parameters {
@@ -348,7 +348,7 @@ fn main() -> Result<()> {
     }
 }
 fn ecdsa(e: &Experiment, setup: SetupCapture) -> Result<()> {
-    use ::f2z::piop::spartan::ecdsa_sha256::*;
+    use ::bitz::piop::spartan::ecdsa_sha256::*;
     use p256::ecdsa::{Signature, SigningKey, signature::Signer};
     let mode = if e.case.ends_with("split") {
         OuterMode::Split
@@ -413,7 +413,7 @@ fn ecdsa(e: &Experiment, setup: SetupCapture) -> Result<()> {
     )
 }
 fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
-    use ::f2z::{
+    use ::bitz::{
         ext_proj::*,
         ligerito_flock::*,
         pcs::{IntegerMatrixLayout, smallest_generator},
@@ -459,10 +459,10 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
         setup,
         &resolved,
         ood,
-        b"BLAKE3-XOF:f2z/ligerito-bound-pcs/v1:seed=0x5533325043530064:t11:s11:w1",
+        b"BLAKE3-XOF:bitz/ligerito-bound-pcs/v1:seed=0x5533325043530064:t11:s11:w1",
         || {
             let mut hasher = blake3::Hasher::new();
-            hasher.update(b"f2z/ligerito-bound-pcs/v1");
+            hasher.update(b"bitz/ligerito-bound-pcs/v1");
             hasher.update(&SEED.to_le_bytes());
             let mut r = hasher.finalize_xof();
             Ok((0..p.cols())

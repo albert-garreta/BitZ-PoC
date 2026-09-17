@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fs::File, io::BufReader, path::Path};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
-pub const SCHEMA: &str = "f2z/sha256-ecdsa-fixture/standard-p256/v1";
+pub const SCHEMA: &str = "bitz/sha256-ecdsa-fixture/standard-p256/v1";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -140,7 +140,7 @@ mod tests {
         bad.s = alternate_s.to_bytes().into();
         bad.id = bad.compute_id();
         bad.validate().unwrap();
-        bad.schema = "f2z/sha256-ecdsa-fixture/low-s/v1".into();
+        bad.schema = "bitz/sha256-ecdsa-fixture/low-s/v1".into();
         assert!(bad.validate().is_err());
     }
 }

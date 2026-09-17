@@ -1,4 +1,4 @@
-//! F2Z embedding of the MultiSwap integer Mod-R1CS.
+//! BitZ embedding of the MultiSwap integer Mod-R1CS.
 //!
 //! The per-row modulus term is folded into the output matrix: with the
 //! quotients placed in their own assignment block, `mods[r] * quos[r]` is the
@@ -14,7 +14,7 @@
 //! (it carries no committed bits and no matrix entries, so the opening
 //! forces it to zero).
 //!
-//! The F2Z commitment stores, for every gate, the
+//! The BitZ commitment stores, for every gate, the
 //! [`MULTISWAP_VALUE_BITS`]-bit little-endian decompositions of its witness
 //! and quotient entries: `2^12` bit slots per gate (witness bits first).
 //! With `s` low gate coordinates on the clear column axis and the remaining
@@ -78,7 +78,7 @@ pub enum MultiswapLayoutError {
     Matrix(#[from] SpartanMatrixError),
 }
 
-/// Shared shape of the block assignment and its compact F2Z bit tensor.
+/// Shared shape of the block assignment and its compact BitZ bit tensor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MultiswapLayout {
     capacity: usize,
@@ -143,8 +143,8 @@ impl MultiswapLayout {
         2 * self.capacity
     }
 
-    /// F2Z shape of the committed bit tensor.
-    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
+    /// BitZ shape of the committed bit tensor.
+    pub const fn bitz_params(&self) -> IntegerMatrixLayout {
         IntegerMatrixLayout {
             row_vars: MULTISWAP_SLOT_VARS + self.h,
             col_vars: self.s,
@@ -153,7 +153,7 @@ impl MultiswapLayout {
     }
 
     /// Maps `(bit_slot, gate)` to the folded row and clear column indices.
-    pub const fn f2z_bit_position(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
+    pub const fn bitz_bit_position(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
         if bit_slot >= MULTISWAP_SLOTS || gate >= self.capacity {
             return None;
         }
@@ -337,7 +337,7 @@ impl MultiswapIntegerRelation {
 }
 
 /// The q-independent committed witness: block assignment values and the
-/// packed F2Z bit rows.
+/// packed BitZ bit rows.
 #[derive(Clone, Debug)]
 pub struct MultiswapAssignment {
     layout: MultiswapLayout,
@@ -371,14 +371,14 @@ impl MultiswapAssignment {
         self.native().read(index)
     }
 
-    /// Builds the packed per-column F2Z bit rows.
+    /// Builds the packed per-column BitZ bit rows.
     ///
     /// Column `c` packs, little-endian within each `u64` word, the
     /// `2^t` folded-row bits of every gate with low coordinates `c`: bit
     /// slot `j` of gate `g` lands at folded row `(j << h) | (g >> s)`.
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
-        let p = self.layout.f2z_params();
+    pub fn bitz_bit_rows(&self) -> Vec<Vec<u64>> {
+        let p = self.layout.bitz_params();
         let words_per_column = p.rows() / u64::BITS as usize;
         let mut rows = vec![vec![0u64; words_per_column]; p.cols()];
         let column_mask = (1usize << self.layout.s) - 1;
@@ -558,7 +558,7 @@ mod tests {
     }
 
     fn test_config() -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
-        // The fixed F2Z evaluation prime is a convenient valid runtime field.
+        // The fixed BitZ evaluation prime is a convenient valid runtime field.
         Fp::<2>::make_cfg(&Uint::from(crate::pcs::FQ_MOD)).unwrap()
     }
 
@@ -621,7 +621,7 @@ mod tests {
     fn layout_keeps_one_chunk_geometry() {
         let (_, relation, _) = mini();
         let layout = *relation.layout();
-        let p = layout.f2z_params();
+        let p = layout.bitz_params();
         assert_eq!(p.word_bits, 1);
         assert!(p.row_vars <= 13);
         assert_eq!(
@@ -639,8 +639,8 @@ mod tests {
     fn bit_rows_reconstruct_the_assignment_values() {
         let (_, _, assignment) = mini();
         let layout = *assignment.layout();
-        let p = layout.f2z_params();
-        let rows = assignment.f2z_bit_rows();
+        let p = layout.bitz_params();
+        let rows = assignment.bitz_bit_rows();
         assert_eq!(rows.len(), p.cols());
         assert!(rows.iter().all(|row| row.len() == p.rows() / 64));
 
@@ -651,7 +651,7 @@ mod tests {
             ] {
                 let mut reconstructed = BigUint::zero();
                 for slot in 0..MULTISWAP_VALUE_BITS {
-                    let (row, column) = layout.f2z_bit_position(slot_start + slot, gate).unwrap();
+                    let (row, column) = layout.bitz_bit_position(slot_start + slot, gate).unwrap();
                     let bit = (rows[column][row / 64] >> (row % 64)) & 1;
                     if bit == 1 {
                         reconstructed.set_bit(slot as u64, true);

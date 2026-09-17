@@ -15,7 +15,7 @@ impl Temp {
     fn new() -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "f2z-output-{}-{}",
+            "bitz-output-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -144,7 +144,7 @@ fn csv_headers_empty_tables_and_escaping() {
 
 #[test]
 fn stdout_sink() {
-    if std::env::var_os("F2Z_OUTPUT_TEST_CHILD").is_some() {
+    if std::env::var_os("BITZ_OUTPUT_TEST_CHILD").is_some() {
         let mut stdout = JsonlWriter::new(std::io::stdout().lock());
         stdout.write(&json!({"stdout_test": true})).unwrap();
         stdout.finish().unwrap();
@@ -152,7 +152,7 @@ fn stdout_sink() {
     }
     let child = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "stdout_sink", "--nocapture"])
-        .env("F2Z_OUTPUT_TEST_CHILD", "1")
+        .env("BITZ_OUTPUT_TEST_CHILD", "1")
         .output()
         .unwrap();
     assert!(child.status.success());

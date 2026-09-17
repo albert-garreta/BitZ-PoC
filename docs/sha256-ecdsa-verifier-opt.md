@@ -28,9 +28,9 @@ throughout, prover within noise (its shared functions gain 1–4 ms).
 
 Measurement: A/B = the baseline binary and every intermediate state's binary
 built with the root release profile (fat LTO, one codegen unit,
-`-C target-cpu=native`), interleaved on the same fixture (`--method f2z-split
+`-C target-cpu=native`), interleaved on the same fixture (`--method bitz-split
 --r 7 --c 0 --target 100 --threads T --reps 5 --seed 0`, `RAYON_NUM_THREADS=T
-HARDWARE_CONCURRENCY=T F2Z_LIG_PROFILE=custom:1:4`), two passes, 20 s
+HARDWARE_CONCURRENCY=T BITZ_LIG_PROFILE=custom:1:4`), two passes, 20 s
 cool-downs, through `scripts/bench_gate.py`. Scopes are `verify_phases_seconds`
 of the bench rows (nested scopes are inclusive).
 
@@ -54,7 +54,7 @@ re-passed every gate; the clippy warning set of the tip equals master's.)
 1. **The P-256 map is the identity.** `p_map` (the F₂-linear map from the
    committed P-256 source bits to the assignment cells) has 1,215,663 rows,
    each with exactly the one entry on its diagonal: the constraint generator
-   calls `f2z` once per Boolean witness, in order. The tail's ring-switch
+   calls `bitz` once per Boolean witness, in order. The tail's ring-switch
    weights are therefore the eq-tensor values
    `E[row_offset + 257 + (j − f_offset)]` at the tail source columns, never a
    per-column fold. (The 257 alias columns — the constant and the 256 digest
@@ -318,29 +318,29 @@ the field-domain builders, so it is independent of every new piece);
 
 ## Which benches to rerun
 
-- **SHA-256 + ECDSA (`tab:sha256-ecdsa-f2z-opt`, suite phase `sha-ecdsa`)**: every
-  F2Z cell — both rates, both thread counts, every size. Verifier ≈ 4.4× lower,
+- **SHA-256 + ECDSA (`tab:sha256-ecdsa-bitz-opt`, suite phase `sha-ecdsa`)**: every
+  BitZ cell — both rates, both thread counts, every size. Verifier ≈ 4.4× lower,
   prover −2 % at 1 thread and −9 % at 10 threads. The Binius rows are
   unchanged.
 - **Native SHA-256 comparison (`sha256_compressions` / `sha256_chain`,
-  `run_native_sha256_compare.sh`)**, if it returns to the paper: the F2Z rows —
+  `run_native_sha256_compare.sh`)**, if it returns to the paper: the BitZ rows —
   verifier −67 % at 1 thread and −42 % at 10 threads (2^10), prover unchanged
   at 1 thread and −8 % at 10 threads.
-- **Integer multiplication (`tab:f2z-u32-mul`, `tab:native-mul-u64`,
+- **Integer multiplication (`tab:bitz-u32-mul`, `tab:native-mul-u64`,
   `tab:native-mul-u128`), hybrid (`tab:hybrid-sha256-mul`, equal counts),
-  MultiSwap (F2Z row), raw performance (`tab:f2z-raw-performance`)**: the base
+  MultiSwap (BitZ row), raw performance (`tab:bitz-raw-performance`)**: the base
   opener or a repeated/generic map, so only the eq-table gate applies —
   the 10-thread columns move (verifier −10 % class at u32 2^21; the MultiSwap
   10-thread verifier, 11.9 ms against 8.8 at 1 thread, is the same dispatch
-  overhead), the 1-thread columns do not. Rerun the 10-thread F2Z cells.
-- Binius64 native rows and the Binius64-with-F2Z-opener rows do not run any
+  overhead), the 1-thread columns do not. Rerun the 10-thread BitZ cells.
+- Binius64 native rows and the Binius64-with-BitZ-opener rows do not run any
   changed code except the eq-table builder inside the opener's verifier; not
   re-measured, expected within noise.
 
 ## Tried and dropped: the tape's Montgomery kernel
 
 Replacing the vendored tape's two-limb FIOS Montgomery product by the
-schoolbook-product-plus-two-REDC-rounds form of F2Z's raw kernel (the only
+schoolbook-product-plus-two-REDC-rounds form of BitZ's raw kernel (the only
 other candidate inside the 0.9 ms forward pass: 33,645 non-unit edges,
 17,647 roots, 12,575 scalar inputs and 4,844 power sums over 53,837 sum
 nodes, per the tape's shape) measured as a wash — `coefficient_evaluate`
@@ -441,7 +441,7 @@ and re-measured (2^10, λ = 100, fat LTO, interleaved 2 × 5, ms; 1 thr | 10 thr
 |---|---:|---:|
 | chained SHA-256 (`sha256_chain`) | 41.35 → **12.38** \| 13.54 → **8.20** | 158.6 → 157.5 \| 70.0 → 64.7 |
 | independent SHA-256 (`sha256_compressions`) | 48.97 → **16.32** \| 17.54 → **10.20** | 371.8 → 367.7 \| 111.1 → 102.2 |
-| u32 multiplication (`f2z --mul 21`, base opener, no virtual map) | 10.01 → 9.86 \| 5.99 → **5.33** | 1664 → 1654 \| 399 → 394 |
+| u32 multiplication (`bitz --mul 21`, base opener, no virtual map) | 10.01 → 9.86 \| 5.99 → **5.33** | 1664 → 1654 \| 399 → 394 |
 
 The SHA benches take the plane engines for their basis (their maps are
 packed-source repetitions): `mqv:vaprime` 37.2 → 7.6 ms at 2^10 in the
@@ -502,11 +502,11 @@ comparison was not rerun (user decision).
 
 | table | what was rerun | where | result |
 |---|---|---|---|
-| `tab:sha256-ecdsa-f2z-opt` | every cell (F2Z both rates, Binius rows; 1 and 10 threads; 2^4..2^7; reps 3) | `bench_results/suite-sha256-ecdsa-20260914-vopt` | F2Z verifier 2^7: 4.48 \| 4.14 ms (Binius UDR 12.7 \| 6.27); prover 85.8 \| 41.4 |
-| `tab:f2z-u32-mul`, `-u64`, `-u128` | the 10-thread F2Z cells (both rates), two passes with 90 s cool-downs, `--pick-least-disturbed` across the passes, `--allow-source-drift f2z` for the 1-thread rows from the previous suite | `PerfRuns/suite-u{32,64,128}-f2z-r{2,8}-t10-vopt{,2}` | 10-thread verifiers −10…−25 % (u32 2^23 9.12 → 8.26; u64 2^21 5.90 → 4.96; u128 2^21 12.5 → 11.7); top-size 10-thread provers within the 3–8 % drift |
-| `tab:hybrid-sha256-mul`, equal counts | the 10-thread F2Z rows (both rates), 120 s cool-down before each sweep | `PerfRuns/suite-hy-{witness,counts}-f2z-r{2,8}-t10-vopt2` | verifier −4…−12 %, prover −2…−8 % at small shapes, top shapes within drift |
-| MultiSwap (F2Z row) | README historical setup, 1 and 10 threads | `bench_results/multiswap-historical-20260914-vopt` | 241 \| 91 ms prover, 8.77 \| 10.98 ms verifier (was 240 \| 96, 8.8 \| 11.9); proof 268,940 B |
-| `tab:f2z-raw-performance` | the full sweep 2^20..2^30, 1 and 10 threads | `bench_results/raw-performance-20260914-vopt` | 10-thread verifier −10…−35 % (2^21 4.55 → 2.94; 2^30 10.3 → 9.37); 1-thread cells within drift |
+| `tab:sha256-ecdsa-bitz-opt` | every cell (BitZ both rates, Binius rows; 1 and 10 threads; 2^4..2^7; reps 3) | `bench_results/suite-sha256-ecdsa-20260914-vopt` | BitZ verifier 2^7: 4.48 \| 4.14 ms (Binius UDR 12.7 \| 6.27); prover 85.8 \| 41.4 |
+| `tab:bitz-u32-mul`, `-u64`, `-u128` | the 10-thread BitZ cells (both rates), two passes with 90 s cool-downs, `--pick-least-disturbed` across the passes, `--allow-source-drift bitz` for the 1-thread rows from the previous suite | `PerfRuns/suite-u{32,64,128}-bitz-r{2,8}-t10-vopt{,2}` | 10-thread verifiers −10…−25 % (u32 2^23 9.12 → 8.26; u64 2^21 5.90 → 4.96; u128 2^21 12.5 → 11.7); top-size 10-thread provers within the 3–8 % drift |
+| `tab:hybrid-sha256-mul`, equal counts | the 10-thread BitZ rows (both rates), 120 s cool-down before each sweep | `PerfRuns/suite-hy-{witness,counts}-bitz-r{2,8}-t10-vopt2` | verifier −4…−12 %, prover −2…−8 % at small shapes, top shapes within drift |
+| MultiSwap (BitZ row) | README historical setup, 1 and 10 threads | `bench_results/multiswap-historical-20260914-vopt` | 241 \| 91 ms prover, 8.77 \| 10.98 ms verifier (was 240 \| 96, 8.8 \| 11.9); proof 268,940 B |
+| `tab:bitz-raw-performance` | the full sweep 2^20..2^30, 1 and 10 threads | `bench_results/raw-performance-20260914-vopt` | 10-thread verifier −10…−35 % (2^21 4.55 → 2.94; 2^30 10.3 → 9.37); 1-thread cells within drift |
 
 Two measurement lessons recorded for the next campaign: (1) a campaign that
 starts right after a build runs hot on this fanless box — the first hybrid
@@ -514,5 +514,5 @@ pass and the first u128 pass came out 1.5–2× slow at the top shapes; a 120 s
 idle cool-down after the build (and between campaigns) fixed it; (2) cargo
 keys local-crate artifacts by package id, so a second worktree built into a
 shared target directory silently reuses the first's binary — every state was
-rebuilt after `cargo clean --release -p f2z -p circuit`, and the bench rows'
+rebuilt after `cargo clean --release -p bitz -p circuit`, and the bench rows'
 proof digests were checked.

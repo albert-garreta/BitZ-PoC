@@ -361,7 +361,7 @@ enum LeafTables<F> {
     },
 }
 
-/// Leaf-table form choice: `F2Z_LEAF8=0/1` forces split/[`Raw8`]; unset
+/// Leaf-table form choice: `BITZ_LEAF8=0/1` forces split/[`Raw8`]; unset
 /// (the default) picks by footprint — Raw8 iff `half ≥ 2^17`, i.e. once
 /// even the 12-entry split set (`192·half` B) is ~25 MB, well past the
 /// P-cluster L2. Measured (l8, churned box, alternated in-window pairs,
@@ -373,7 +373,7 @@ enum LeafTables<F> {
 /// Read once per process.
 fn leaf8(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LEAF8") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_LEAF8") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -395,7 +395,7 @@ enum LeafA2<F> {
     Factored(Vec<F>),
 }
 
-/// ΔΔ-table form choice: `F2Z_LEAF_A2_FACTORED=0/1` forces
+/// ΔΔ-table form choice: `BITZ_LEAF_A2_FACTORED=0/1` forces
 /// precombined/factored; unset (the default) picks by footprint —
 /// factored iff `half ≥ 2^15`, i.e. once the precombined leaf tables
 /// (`384·half` bytes) reach ~12.6 MB and stop co-residing in the
@@ -407,7 +407,7 @@ enum LeafA2<F> {
 /// way. Env read once per process.
 fn leaf_a2_factored(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LEAF_A2_FACTORED") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_LEAF_A2_FACTORED") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -449,7 +449,7 @@ where
 /// line-within-window picks are data-dependent (committed bits), which
 /// defeats the hardware prefetcher, but the indices are cheaply
 /// recomputable ahead from the sequential bit words.
-/// `F2Z_LUT_PRFM=0/1` forces off/on; unset (the default) picks by round
+/// `BITZ_LUT_PRFM=0/1` forces off/on; unset (the default) picks by round
 /// size — on iff `half ≥ 2^14` (these sites run at rounds 2–3, so this
 /// is the n=30-class boundary: stashes `2·32·half·16 B ≥ 16.8 MB`, past
 /// the P-cluster L2). Measured (fresh box, alternated in-window pairs):
@@ -460,7 +460,7 @@ where
 /// construction. Env read once per process.
 fn lut_prfm(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LUT_PRFM") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_LUT_PRFM") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -693,24 +693,24 @@ where
 /// finalization), `None` for any other group (the caller computes those
 /// with the per-group body). Engages only on the single-tau-set shape
 /// (the forest); multi-set callers keep the tree-outer form.
-/// `F2Z_LEAF_TILE=0` opts out (read once per process).
+/// `BITZ_LEAF_TILE=0` opts out (read once per process).
 fn leaf_tile_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_LEAF_TILE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_LEAF_TILE").map_or(true, |v| v != "0"))
 }
 
-/// The shared-stash fold precombine (`F2Z_MATS_PRE=0` opts out): scale the
+/// The shared-stash fold precombine (`BITZ_MATS_PRE=0` opts out): scale the
 /// 3-bit value stashes by the round's fold weights ONCE — even 16-case
 /// chunks ×(1+ρ), odd ×ρ, the Leaf4 round-3 factorization — so the
 /// materialising folds push two-pick XORs with no per-entry multiply
 /// (`(1+ρ)v₀ + ρv₁ = v₀ + ρ(v₀+v₁)` exactly, char-2 distributivity).
 fn mats_pre_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_MATS_PRE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_MATS_PRE").map_or(true, |v| v != "0"))
 }
 
 /// Slot-tiled materialising folds over the reweighted stashes:
-/// `F2Z_MATS_TILE=0/1` forces the per-group/tiled path; unset (the
+/// `BITZ_MATS_TILE=0/1` forces the per-group/tiled path; unset (the
 /// default) engages the tile only at `half ≥ 2^12` (the mats rounds run
 /// at `half = 2^{d−4}`, so d ≥ 16). The tile's per-(group, block) costs
 /// (write-chunk granularity, wide-partial grid reductions, bits reloads
@@ -722,7 +722,7 @@ fn mats_pre_enabled() -> bool {
 /// window). Byte-identical either way. See [`mats_fold_tiled`].
 fn mats_tile_engaged(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_MATS_TILE") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_MATS_TILE") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -730,7 +730,7 @@ fn mats_tile_engaged(half: usize) -> bool {
     env.unwrap_or(half >= 1 << 12)
 }
 
-/// Slot-block width for [`mats_fold_tiled`]: `F2Z_MATS_TILE_B` fixes it;
+/// Slot-block width for [`mats_fold_tiled`]: `BITZ_MATS_TILE_B` fixes it;
 /// the default is `max(64, half/16)` — a constant 16 blocks, which the
 /// 2026-08-21 sweep measured monotonically better than smaller blocks
 /// (per-(group, block) overheads — write-chunk granularity, accumulator
@@ -739,7 +739,7 @@ fn mats_tile_engaged(half: usize) -> bool {
 fn mats_tile_b(half: usize) -> usize {
     static B: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     let env = *B.get_or_init(|| {
-        std::env::var("F2Z_MATS_TILE_B")
+        std::env::var("BITZ_MATS_TILE_B")
             .ok()
             .and_then(|v| v.parse().ok())
     });
@@ -1044,7 +1044,7 @@ where
 /// Round-1 message tables for one [`Pair2TauSet`], two interchangeable
 /// forms (byte-identical sums either way):
 ///
-/// **`Precombined`** (opt-out, `F2Z_PAIR2_FACTORED=0`) — case-LUT form (16
+/// **`Precombined`** (opt-out, `BITZ_PAIR2_FACTORED=0`) — case-LUT form (16
 /// entries per slot each; slot `b` pairs positions `2b, 2b+1`):
 /// - `t_a0[b≪4 | (cE0≪2|cO0)]` = `w_b·TE_{2b}[cE0]·TO_{2b}[cO0]` (the
 ///   `Σ w·L0·R0` term),
@@ -1082,12 +1082,12 @@ enum Pair2Tables<F> {
 
 /// Factored [`Pair2Tables`] — the default: 4× less table footprint on the
 /// 16-case rounds, measured faster at DRAM-scale forest shapes.
-/// `F2Z_PAIR2_FACTORED=0` opts out (restores the precombined 16-case
+/// `BITZ_PAIR2_FACTORED=0` opts out (restores the precombined 16-case
 /// tables — diagnostic / A-B measurement). Byte-identical proofs either
 /// way. Read once per process.
 fn pair2_factored() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_PAIR2_FACTORED").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_PAIR2_FACTORED").map_or(true, |v| v != "0"))
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -1558,11 +1558,11 @@ fn t4bits_idx(lbits: &[u64], rbits: &[u64], j: usize, q1: usize) -> usize {
 /// instead of fold-read + message-read; measured ~10 % prove at n=26–28).
 /// Byte-identical: the same field values in the same transcript order —
 /// only the physical pass structure changes. Gated on all-Dense-single-pair
-/// groups (the forest's shape). `F2Z_EQF_FUSE=0` opts out (restores the
+/// groups (the forest's shape). `BITZ_EQF_FUSE=0` opts out (restores the
 /// eager two-pass fold path).
 fn eqf_fuse_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_EQF_FUSE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_EQF_FUSE").map_or(true, |v| v != "0"))
 }
 
 /// **Double-fold**: bind TWO variables per pass over the dense buffers.
@@ -1575,25 +1575,25 @@ fn eqf_fuse_enabled() -> bool {
 /// arrives precomputed and the grid can only start at round 2), at
 /// 13 multiplies per 4 slots instead of 15. Byte-identical — the same
 /// messages in the same transcript order, and every accumulation is
-/// `F₂`-linear in the reduction. `F2Z_EQF_DOUBLE=0` opts out. Read once
+/// `F₂`-linear in the reduction. `BITZ_EQF_DOUBLE=0` opts out. Read once
 /// per process.
 /// Mat+grid fusion (S2 of `docs/forest-speedup-ideas.md`): a
 /// materialising fold accumulates the next round-pair's bivariate grid
 /// over the values it writes (cache-hot, quad by quad), and deposits it —
 /// so the fresh dense buffers' first actual read is round j+3's pass,
 /// the same one-generation-pass shape `PreRound::Grid` gives the JIT
-/// layers. `F2Z_MAT_GRID=0` opts out (the first dense round then re-reads
+/// layers. `BITZ_MAT_GRID=0` opts out (the first dense round then re-reads
 /// the just-written buffers from DRAM). Byte-identical either way: the
 /// deposited grid is the exact per-quad accumulation the dense grid pass
 /// would compute over the same values. Read once per process.
 fn mat_grid_enabled() -> bool {
     static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("F2Z_MAT_GRID").map_or(true, |v| v != "0"))
+    *ENV.get_or_init(|| std::env::var("BITZ_MAT_GRID").map_or(true, |v| v != "0"))
 }
 
 pub(crate) fn eqf_double() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_EQF_DOUBLE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_EQF_DOUBLE").map_or(true, |v| v != "0"))
 }
 
 /// Double-fold engagement floor on the round's `half`: below it the round
@@ -1603,14 +1603,14 @@ pub(crate) fn eqf_double() -> bool {
 /// tiny halves with many groups (the wide-shallow forest tail) the
 /// bookkeeping exceeds the saved pass. Both paths are byte-identical per
 /// round (the 9-combo flag pin), so a per-round mix is transcript-safe.
-/// `F2Z_EQF_DOUBLE_MIN` overrides; default 64 — the measured minimum of
+/// `BITZ_EQF_DOUBLE_MIN` overrides; default 64 — the measured minimum of
 /// the in-window sweep at n=30 15:15 (0/16/64/256/1024 → 5729/5228/4944/
 /// 5383/6623 ms prove, 2026-08-27): higher floors start discarding the
 /// double-fold where it genuinely wins. Read once per process.
 fn eqf_double_min_half() -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     let env = *ENV.get_or_init(|| {
-        std::env::var("F2Z_EQF_DOUBLE_MIN")
+        std::env::var("BITZ_EQF_DOUBLE_MIN")
             .ok()
             .and_then(|v| v.parse().ok())
     });
@@ -1622,19 +1622,19 @@ fn eqf_double_min_half() -> usize {
 /// loops — isolates pass-structure gains from kernel quality in A/B runs.
 fn eqf_nokernel() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
+    *ON.get_or_init(|| std::env::var_os("BITZ_EQF_NOKERNEL").is_some())
 }
 
-/// Aggregate only needed coefficients. `F2Z_GKR_DIRECT_CLOSE=0` opts out.
+/// Aggregate only needed coefficients. `BITZ_GKR_DIRECT_CLOSE=0` opts out.
 fn direct_close_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_GKR_DIRECT_CLOSE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_GKR_DIRECT_CLOSE").map_or(true, |v| v != "0"))
 }
 
-/// Recover the linear coefficient when supported. `F2Z_GKR_RECOVER=0` opts out.
+/// Recover the linear coefficient when supported. `BITZ_GKR_RECOVER=0` opts out.
 fn coefficient_recovery_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_GKR_RECOVER").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_GKR_RECOVER").map_or(true, |v| v != "0"))
 }
 
 /// Batch the two public-coordinate inverses without storing a per-round
@@ -1951,7 +1951,7 @@ where
 
 /// Task granularity for the per-group parallel passes: >= ~512
 /// element-pairs per task so late-round tiny bodies don't drown in rayon
-/// dispatch overhead. `F2Z_PAR_CHUNK=<d>` additionally floors the chunk
+/// dispatch overhead. `BITZ_PAR_CHUNK=<d>` additionally floors the chunk
 /// at groups/(d*threads) — coarser equal-work tasks that shed the
 /// per-item split/steal checks (diagnostic knob; read once). MEASURED
 /// 2026-08-21 at n = 28, paired in-window: d = 4 is a wash-to-loss
@@ -1964,7 +1964,7 @@ pub(crate) fn par_min_len(groups: usize, half: usize) -> usize {
     let by_work = (512usize / half.max(1)).max(1);
     static DIV: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     let d = *DIV.get_or_init(|| {
-        std::env::var("F2Z_PAR_CHUNK")
+        std::env::var("BITZ_PAR_CHUNK")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(0)
@@ -4227,7 +4227,7 @@ where
                 (GroupBufs::T4Bits { .. }, _) => "eqf:fold:t4mat",
             };
             // Slot-tiled materialising fold over the reweighted stash
-            // ([`mats_fold_tiled`], probe gate `F2Z_MATS_TILE`): engaged
+            // ([`mats_fold_tiled`], probe gate `BITZ_MATS_TILE`): engaged
             // only when every group is the round's uniform single-set
             // 3-bit shape; any other mix falls back to the per-group
             // fold below.
@@ -4323,7 +4323,7 @@ where
                 }
                 grids
             } else if let Some(fs) = flat.as_mut() {
-                // Unfused flat fold (`F2Z_EQF_FUSE=0` only — fused rounds
+                // Unfused flat fold (`BITZ_EQF_FUSE=0` only — fused rounds
                 // defer their folds into the next pass): fold each
                 // segment's live prefix in place, exactly the Dense
                 // in-place fold without the truncation.

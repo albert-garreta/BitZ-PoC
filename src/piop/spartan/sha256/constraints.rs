@@ -33,7 +33,7 @@ use {
 
 use super::super::{
     SpartanField, SpartanMatrixError,
-    f2z::SpartanF2zField,
+    bitz::SpartanBitzField,
     profile::{IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
 };
 use super::prime::{
@@ -167,7 +167,7 @@ pub enum Sha256ConstraintError {
 
 /// A q-independent SHA-256 compression relation prepared for a packed batch.
 ///
-/// How the synthesized SHA assignment is laid out for the F2Z opening.
+/// How the synthesized SHA assignment is laid out for the BitZ opening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Sha256OpeningLayout {
     /// The production choice. Power-of-two batches of at least 128 open the
@@ -181,7 +181,7 @@ pub enum Sha256OpeningLayout {
     /// balanced split capped at one forest.
     Default,
     /// Run the inner sumcheck and split the flat assignment domain as
-    /// `2^row_vars` F2Z rows × `2^(vars - row_vars)` columns. Splits above
+    /// `2^row_vars` BitZ rows × `2^(vars - row_vars)` columns. Splits above
     /// the one-forest cap are allowed: the opening then carries one merged
     /// forest per mod-q weight chunk, while the read-off vector sent in the
     /// clear shrinks to `2^(vars - row_vars)` integers per chunk. The
@@ -190,7 +190,7 @@ pub enum Sha256OpeningLayout {
     InnerSumcheck { row_vars: usize },
     /// Keep the direct product opening (no inner sumcheck) but lay the
     /// product tensor out instance-major, so the 15 local bits plus the low
-    /// `row_vars - 15` instance bits form the `2^row_vars` F2Z rows and only
+    /// `row_vars - 15` instance bits form the `2^row_vars` BitZ rows and only
     /// the remaining high instance bits form the columns. The rank-one
     /// coefficient `eq(instance) · d[local]` factors across that split too.
     /// Power-of-two batches only; `15 ≤ row_vars ≤ 15 + k`; splits above the
@@ -251,7 +251,7 @@ impl PreparedSha256CompressionBatch {
         self.opening_layout
     }
 
-    /// F2Z geometry the opening runs against: the product view under the
+    /// BitZ geometry the opening runs against: the product view under the
     /// direct product opening, the packed assignment otherwise.
     pub fn opening_params(&self) -> &IntegerMatrixLayout {
         self.product_p_h.as_ref().unwrap_or(&self.h_layout)
@@ -271,7 +271,7 @@ impl PreparedSha256CompressionBatch {
     #[allow(dead_code)]
     pub(crate) fn project_linear_relation(
         &self,
-        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+        field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
     ) -> Result<PreparedSha256LinearRelation, Sha256ConstraintError> {
         self.local.linear_relation.project(field_config)
     }
@@ -335,7 +335,7 @@ impl PreparedSha256CompressionBatch {
         self.product_map.as_ref()
     }
 
-    /// F2Z geometry of the proof-only product assignment view.
+    /// BitZ geometry of the proof-only product assignment view.
     pub const fn product_assignment_params(&self) -> Option<&IntegerMatrixLayout> {
         self.product_p_h.as_ref()
     }
@@ -358,12 +358,12 @@ impl PreparedSha256CompressionBatch {
         self.log_instance_capacity
     }
 
-    /// F2Z geometry of the committed Bit source rows.
+    /// BitZ geometry of the committed Bit source rows.
     pub const fn source_params(&self) -> &IntegerMatrixLayout {
         &self.f_layout
     }
 
-    /// F2Z geometry of the synthesized Bit assignment rows.
+    /// BitZ geometry of the synthesized Bit assignment rows.
     pub const fn assignment_params(&self) -> &IntegerMatrixLayout {
         &self.h_layout
     }
@@ -429,7 +429,7 @@ impl Sha256LinearRelation {
     #[allow(dead_code)]
     pub(crate) fn project(
         &self,
-        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+        field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
     ) -> Result<PreparedSha256LinearRelation, Sha256ConstraintError> {
         validate_sha256_field_config(field_config)?;
         let matrix = project_signed_matrix(&self.native_matrix, field_config)?;
@@ -443,13 +443,13 @@ impl Sha256LinearRelation {
 /// Runtime-field projection of the exact SHA linear relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedSha256LinearRelation {
-    matrix: CscMatrix<Box<[SpartanF2zField]>>,
-    field_config: <SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
+    matrix: CscMatrix<Box<[SpartanBitzField]>>,
+    field_config: <SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
 }
 
 impl PreparedSha256LinearRelation {
     /// Projected matrix in canonical CSC form.
-    pub(crate) const fn matrix(&self) -> &CscMatrix<Box<[SpartanF2zField]>> {
+    pub(crate) const fn matrix(&self) -> &CscMatrix<Box<[SpartanBitzField]>> {
         &self.matrix
     }
 
@@ -457,7 +457,7 @@ impl PreparedSha256LinearRelation {
     #[allow(dead_code)]
     pub(crate) const fn config(
         &self,
-    ) -> &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config {
+    ) -> &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config {
         &self.field_config
     }
 }
@@ -504,7 +504,7 @@ pub fn prepare_sha256_compression_batch_with_profile<P: IopSecurityProfile>(
 }
 
 /// [`prepare_sha256_compression_batch_with_profile`] with an explicit
-/// assignment layout for the F2Z opening (see [`Sha256OpeningLayout`]).
+/// assignment layout for the BitZ opening (see [`Sha256OpeningLayout`]).
 pub fn prepare_sha256_compression_batch_with_profile_and_layout<P: IopSecurityProfile>(
     log_compressions: usize,
     layout: Sha256OpeningLayout,
@@ -885,9 +885,9 @@ pub(super) fn packed_domain_vars(
     Ok(domain.ilog2() as usize)
 }
 
-/// Splits one flat binary domain across F2Z rows and columns. The semantic
+/// Splits one flat binary domain across BitZ rows and columns. The semantic
 /// sequence stays `[1 | instance_0 | instance_1 | ... | trailing zeros]` and
-/// is stored in F2Z's physical order: low `t` bits select a packed row and
+/// is stored in BitZ's physical order: low `t` bits select a packed row and
 /// high `s` bits select a column. The inner sumcheck uses that same index
 /// order, so its terminal equality factors directly into `2^t` row weights
 /// and `2^s` column weights. Keeping both factors near `2^(vars/2)` avoids
@@ -906,7 +906,7 @@ pub(super) const fn balanced_binary_params(vars: usize) -> IntegerMatrixLayout {
 }
 
 /// Splits the derived SHA assignment so every supported runtime-prime weight
-/// fits in one F2Z chunk. The current SHA profiles use at most 113-bit primes;
+/// fits in one BitZ chunk. The current SHA profiles use at most 113-bit primes;
 /// with Bit cells, `t <= 127 - 113 - 1 = 13` makes the generic fold bound
 /// strictly smaller than `2^127`. Shapes already balanced below that cap keep
 /// their balanced layout.
@@ -1053,8 +1053,8 @@ pub(super) fn convert_native_integer_rows(
 #[allow(dead_code)]
 fn project_signed_matrix(
     matrix: &CscMatrix<Box<[i64]>>,
-    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<CscMatrix<Box<[SpartanF2zField]>>, SpartanMatrixError> {
+    field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
+) -> Result<CscMatrix<Box<[SpartanBitzField]>>, SpartanMatrixError> {
     let field = crate::piop::spartan::raw_monty::field_context(field_config);
     let columns = matrix
         .columns()
@@ -1090,7 +1090,7 @@ fn integer_relation_digest(
     map: &PreparedVirtualMap,
 ) -> Result<[u8; 32], Sha256ConstraintError> {
     let mut hash = Hasher::new();
-    hash.update(b"f2z/sha256/flat-linear-relation/v3");
+    hash.update(b"bitz/sha256/flat-linear-relation/v3");
     hash.update(&map.digest());
     hash.update(b"C");
     for value in [matrix.row_count(), matrix.column_count(), matrix.nnz()] {
@@ -1521,12 +1521,12 @@ mod tests {
         assert_eq!(fixed.matrix().row_count(), SHA256_CONSTRAINTS);
         assert_eq!(fixed.matrix().column_count(), SHA256_H_BAR_LIVE_BITS);
         assert_eq!(
-            SpartanF2zField::canonical_modulus_encoding(fixed.config()),
-            SpartanF2zField::canonical_modulus_encoding(&fixed_config)
+            SpartanBitzField::canonical_modulus_encoding(fixed.config()),
+            SpartanBitzField::canonical_modulus_encoding(&fixed_config)
         );
         assert_eq!(
-            SpartanF2zField::canonical_modulus_encoding(other.config()),
-            SpartanF2zField::canonical_modulus_encoding(&other_config)
+            SpartanBitzField::canonical_modulus_encoding(other.config()),
+            SpartanBitzField::canonical_modulus_encoding(&other_config)
         );
 
         for ((raw_column, fixed_column), other_column) in prepared

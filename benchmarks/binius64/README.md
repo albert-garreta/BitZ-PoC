@@ -1,14 +1,14 @@
 # Binius64 SHA-chain/P-256 comparison
 
-This isolated worker proves the same standard P-256 statement as F2Z and
+This isolated worker proves the same standard P-256 statement as BitZ and
 Spartan2, through either opener: Binius64's own ring switch + BaseFold
-(`--method binius64`, `--log-inv-rate 1|3` selects rate 1/2 or 1/8) or the F2Z
+(`--method binius64`, `--log-inv-rate 1|3` selects rate 1/2 or 1/8) or the BitZ
 opener over the identical circuit and witness (`--method binius64-ligerito` /
-`--opener f2z`; `f2z::binius_ligerito::Prepared`, round-by-round 100-bit gate;
+`--opener bitz`; `bitz::binius_ligerito::Prepared`, round-by-round 100-bit gate;
 the P-256 gadget's select gates lower to 45k BMUL constraints, covered by the
 adapter's BinMul reduction term).
 It uses the immutable Git revision in this workspace's manifest and
-lockfile, with its own Rust toolchain; the parent `f2z` crate is a path
+lockfile, with its own Rust toolchain; the parent `bitz` crate is a path
 dependency pinned to the identical fork revision (its git revision and dirty
 flag are baked into `--build-info`), and the release profile matches the parent
 crate (fat LTO, one codegen unit) so neither opener's kernels are handicapped.
@@ -25,17 +25,17 @@ Albert's benchmark commit is preserved as `9e880ff4` after rebasing onto upstrea
 
 ## Run
 
-From the F2Z repository root:
+From the BitZ repository root:
 
 ```sh
 python3 scripts/run_sha256_ecdsa_compare.py \
-  --methods f2z-split binius64 binius64-ligerito \
+  --methods bitz-split binius64 binius64-ligerito \
   --spartan-splits 3:0 --targets 100 --threads 1 10 --reps 3 \
   --output bench_results/sha256-ecdsa-binius
 ```
 
 Binius-family cases run at both rates by default (`--binius-rates 1 3`), the
-F2Z rows at both Ligerito profiles (`--f2z-profiles custom:1:4 custom:3:4`).
+BitZ rows at both Ligerito profiles (`--bitz-profiles custom:1:4 custom:3:4`).
 
 The worker is optional. Default methods do not build or download its dependencies.
 Use `--offline` after dependencies and the pinned toolchain have been installed.

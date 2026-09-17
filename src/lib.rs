@@ -1,6 +1,6 @@
-//! # F2Z — an integer-MLE-evaluation PCS over an `F_2` commitment
+//! # BitZ — an integer-MLE-evaluation PCS over an `F_2` commitment
 //!
-//! F2Z proves `MLE[INT(D)](r) = y ∈ F_q` for data `D` committed over a
+//! BitZ proves `MLE[INT(D)](r) = y ∈ F_q` for data `D` committed over a
 //! cheap characteristic-2 (`F_2`) code, by folding the row variables **in
 //! the exponent** of `K = GF(2^128)` (`α^{v_c} = ∏_b α^{w_b·D[(b,c)]}`,
 //! certified by a GKR grand-product forest that touches the commitment only
@@ -48,7 +48,7 @@
 //! verifier's `M`-dependent cost is `O(L·nnz + #cols)` field ops. When `M`
 //! is the identity on a shared row layout the opening
 //! routes to the plain base path instead (the identity fast path,
-//! `F2Z_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
+//! `BITZ_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
 //! [`piop::spartan::cm`] wires a full R1CS through this path — the
 //! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
@@ -81,7 +81,7 @@ pub use ligerito_flock::{
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
 // Round 0 of the paper's `c:core_iop` (the out-of-domain sample) and the
-// standalone statement binding the `f2z` CLI / bench use around it.
+// standalone statement binding the `bitz` CLI / bench use around it.
 pub use ligerito_flock::{
     OodRound, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
     ood_round_bits, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood, sha_lig_ood_params,

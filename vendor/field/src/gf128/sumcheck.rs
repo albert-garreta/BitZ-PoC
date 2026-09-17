@@ -23,7 +23,7 @@ impl Gf128 {
     /// accumulator at the end — identical field elements to the generic
     /// loop.
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_single_pair_round(
+    fn bitz_eqf_single_pair_round(
         l: &[Self],
         r: &[Self],
         w: &[Self],
@@ -126,7 +126,7 @@ impl Gf128 {
     /// Value-exact: `w·(A + B) = w·A + w·B`, the same carryless products
     /// XOR-combined, reduced once per accumulator at the end.
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_two_pair_round(
+    fn bitz_eqf_two_pair_round(
         l0: &[Self],
         r0: &[Self],
         l1: &[Self],
@@ -213,7 +213,7 @@ impl Gf128 {
     /// stores, and writes at `b, b+1` never overtake the reads at
     /// `2b..2b+4`). Value-exact per entry.
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
+    fn bitz_eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
         // NEON-resident pipeline; value-exact vs the word pipeline below.
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
@@ -262,7 +262,7 @@ impl Gf128 {
     /// writes, and the message products are the single-pair body's,
     /// XOR-combined and reduced once per accumulator at the end.
     #[allow(clippy::arithmetic_side_effects)]
-    fn f2z_eqf_fused_fold_round(
+    fn bitz_eqf_fused_fold_round(
         l: &mut [Self],
         r: &mut [Self],
         rho: &Self,
@@ -324,7 +324,7 @@ impl Gf128 {
     /// node grids, and nine wide products stay vector-resident per quad.
     /// Value-exact vs the generic pass (pinned by
     /// `grid_kernel_matches_generic_pass`).
-    fn f2z_eqf_grid_pass(
+    fn bitz_eqf_grid_pass(
         l: &mut [Self],
         r: &mut [Self],
         pending: &[Self],
@@ -367,7 +367,7 @@ fn array(v: (Gf128, Gf128, Gf128)) -> [Gf128; 3] {
 impl SumcheckKernels for Gf128Ops {
     fn eqf_single_pair_round(&self, l: &[Gf128], r: &[Gf128], w: &[Gf128], n: usize) -> [Gf128; 3] {
         pair(l.len(), r.len(), w.len(), n, 2);
-        array(Gf128::f2z_eqf_single_pair_round(l, r, w, n).unwrap())
+        array(Gf128::bitz_eqf_single_pair_round(l, r, w, n).unwrap())
     }
     fn eqf_two_pair_round(
         &self,
@@ -380,11 +380,11 @@ impl SumcheckKernels for Gf128Ops {
     ) -> [Gf128; 3] {
         pair(l0.len(), r0.len(), w.len(), n, 2);
         pair(l1.len(), r1.len(), w.len(), n, 2);
-        array(Gf128::f2z_eqf_two_pair_round(l0, r0, l1, r1, w, n).unwrap())
+        array(Gf128::bitz_eqf_two_pair_round(l0, r0, l1, r1, w, n).unwrap())
     }
     fn eqf_fold_in_place(&self, v: &mut [Gf128], rho: &Gf128, n: usize) {
         pair(v.len(), v.len(), n, n, 2);
-        Gf128::f2z_eqf_fold_in_place(v, rho, n);
+        Gf128::bitz_eqf_fold_in_place(v, rho, n);
     }
     fn eqf_fused_fold_round(
         &self,
@@ -395,7 +395,7 @@ impl SumcheckKernels for Gf128Ops {
         n: usize,
     ) -> [Gf128; 3] {
         pair(l.len(), r.len(), w.len(), n, 4);
-        array(Gf128::f2z_eqf_fused_fold_round(l, r, rho, w, n).unwrap())
+        array(Gf128::bitz_eqf_fused_fold_round(l, r, rho, w, n).unwrap())
     }
     fn eqf_grid_pass(
         &self,
@@ -407,7 +407,7 @@ impl SumcheckKernels for Gf128Ops {
     ) -> [Gf128; 9] {
         assert!(p.len() <= 2, "at most two deferred folds");
         pair(l.len(), r.len(), s.len(), n, 4 << p.len());
-        Gf128::f2z_eqf_grid_pass(l, r, p, s, n)
+        Gf128::bitz_eqf_grid_pass(l, r, p, s, n)
             .unwrap_or_else(|| crate::batch::grid_pass(self, l, r, p, s, n))
     }
 }

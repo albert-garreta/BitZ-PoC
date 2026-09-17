@@ -1,4 +1,4 @@
-//! Compile-time opening modes for combined Spartan–F2Z proofs.
+//! Compile-time opening modes for combined Spartan–BitZ proofs.
 
 use core::marker::PhantomData;
 
@@ -13,7 +13,7 @@ mod private {
     pub trait Sealed {}
 }
 
-/// Selects the F2Z proof type paired with a Spartan proof.
+/// Selects the BitZ proof type paired with a Spartan proof.
 pub trait OpeningMode: private::Sealed {
     /// Opening proof valid for this mode.
     type Proof;
@@ -23,7 +23,7 @@ pub trait OpeningMode: private::Sealed {
 #[derive(Clone, Copy, Debug)]
 pub enum Direct {}
 
-/// Spartan constrains synthesized `h`; F2Z opens it through `h = M f`.
+/// Spartan constrains synthesized `h`; BitZ opens it through `h = M f`.
 #[derive(Clone, Copy, Debug)]
 pub enum Virtualized {}
 
@@ -40,18 +40,18 @@ impl OpeningMode for Virtualized {
 
 /// A Spartan proof and an opening proof whose mode agrees at compile time.
 #[derive(Clone)]
-pub struct SpartanF2zProof<S, M: OpeningMode> {
+pub struct SpartanBitzProof<S, M: OpeningMode> {
     spartan: S,
-    f2z: M::Proof,
+    bitz: M::Proof,
     _mode: PhantomData<fn() -> M>,
 }
 
-impl<S, M: OpeningMode> SpartanF2zProof<S, M> {
+impl<S, M: OpeningMode> SpartanBitzProof<S, M> {
     /// Pairs proof components belonging to the same compile-time mode.
-    pub const fn new(spartan: S, f2z: M::Proof) -> Self {
+    pub const fn new(spartan: S, bitz: M::Proof) -> Self {
         Self {
             spartan,
-            f2z,
+            bitz,
             _mode: PhantomData,
         }
     }
@@ -61,19 +61,19 @@ impl<S, M: OpeningMode> SpartanF2zProof<S, M> {
         &self.spartan
     }
 
-    /// Direct or virtualized F2Z opening component.
-    pub const fn f2z(&self) -> &M::Proof {
-        &self.f2z
+    /// Direct or virtualized BitZ opening component.
+    pub const fn bitz(&self) -> &M::Proof {
+        &self.bitz
     }
 
     /// Borrows both proof components.
     pub const fn components(&self) -> (&S, &M::Proof) {
-        (&self.spartan, &self.f2z)
+        (&self.spartan, &self.bitz)
     }
 
     /// Moves out both proof components.
     pub fn into_components(self) -> (S, M::Proof) {
-        (self.spartan, self.f2z)
+        (self.spartan, self.bitz)
     }
 }
 

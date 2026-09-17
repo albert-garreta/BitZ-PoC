@@ -25,17 +25,17 @@ from pathlib import Path
 
 from native_mul_results import SAMPLE_SCHEMA, finite_number, require_compatible, validate_summary
 
-# Table rows are (scheme key, LaTeX label), the 2026-09-13 suite: F2Z and
-# Binius64 once per rate (scheme keys `f2z@<log_inv_rate>` and
-# `binius64@<log_inv_rate>`), the Binius64/F2Z-opener rows under the
+# Table rows are (scheme key, LaTeX label), the 2026-09-13 suite: BitZ and
+# Binius64 once per rate (scheme keys `bitz@<log_inv_rate>` and
+# `binius64@<log_inv_rate>`), the Binius64/BitZ-opener rows under the
 # ROUND-BY-ROUND accounting only (`binius64-ligerito-rbr@<log_inv_rate>`;
 # union-bound runs are rejected, re-measure with
-# F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr), Plonky3-FRI at rate 1/2 and Limber at
+# BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr), Plonky3-FRI at rate 1/2 and Limber at
 # the pinned 100-bit Brakedown target. Naming per the user's directive: no
-# \cite after a scheme name, and the F2Z rows are \ftwoz-SNARK.
+# \cite after a scheme name, and the BitZ rows are \ftwoz-SNARK.
 SCHEMES = [
-    ("f2z@1", "\\ftwoz-SNARK, rate $1/2$"),
-    ("f2z@3", "\\ftwoz-SNARK, rate $1/8$"),
+    ("bitz@1", "\\ftwoz-SNARK, rate $1/2$"),
+    ("bitz@3", "\\ftwoz-SNARK, rate $1/8$"),
     ("binius64@1", "Binius (UDR), rate $1/2$"),
     ("binius64@3", "Binius (UDR), rate $1/8$"),
     ("binius64-ligerito-rbr@1", "Binius (Johnson), rate $1/2$"),
@@ -48,26 +48,26 @@ SCHEMES = [
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
 
-def f2z_rate(r: dict) -> int:
-    """Level-0 inverse-rate exponent of the F2Z opener this row recorded."""
+def bitz_rate(r: dict) -> int:
+    """Level-0 inverse-rate exponent of the BitZ opener this row recorded."""
     levels = ((r.get("config", {}).get("ligerito") or {}).get("configuration") or {}).get("levels") or []
     if not levels:
-        raise ValueError("F2Z row records no Ligerito configuration")
+        raise ValueError("BitZ row records no Ligerito configuration")
     return int(levels[0]["log_inv_rate"])
 
 
-def f2z_caption(rows):
-    """Describe every recorded F2Z Ligerito policy, one clause per rate."""
+def bitz_caption(rows):
+    """Describe every recorded BitZ Ligerito policy, one clause per rate."""
     from ligerito_results import validate_ligerito
     policies = {}
     for row in rows:
-        if row["backend"] != "f2z":
+        if row["backend"] != "bitz":
             continue
         report = validate_ligerito(row.get("config", {}).get("ligerito"), 100)
-        key = f2z_rate(row)
+        key = bitz_rate(row)
         policy = (report["resolved_profile"], report["regime"], report["outer_ood"])
         if policies.setdefault(key, policy) != policy:
-            raise ValueError("cannot combine different Ligerito policies at one F2Z rate")
+            raise ValueError("cannot combine different Ligerito policies at one BitZ rate")
     if not policies:
         return r"\ftwoz-SNARK (integer R1CS)"
     clauses = []
@@ -75,27 +75,27 @@ def f2z_caption(rows):
         bound = "Johnson" if regime == "johnson" else "unique decoding radius"
         evaluation = "early Round-0 OOD" if ood else "without OOD"
         clauses.append(rf"at rate $1/{1 << rate}$ is {bound}, {profile}, {evaluation}")
-    shifts = {int(row["config"].get("u64_split_shift", 0)) for row in rows if row["backend"] == "f2z"}
+    shifts = {int(row["config"].get("u64_split_shift", 0)) for row in rows if row["backend"] == "bitz"}
     shift_note = ""
     if shifts - {0}:
         if len(shifts) != 1:
-            raise ValueError("cannot combine different u64 split shifts in one F2Z table series")
+            raise ValueError("cannot combine different u64 split shifts in one BitZ table series")
         k = shifts.pop()
-        shift_note = (f"; the F2Z row side is lowered by ${k}$ variable{'s' if k != 1 else ''} below the "
+        shift_note = (f"; the BitZ row side is lowered by ${k}$ variable{'s' if k != 1 else ''} below the "
                       f"default split at every size (one more column variable each, so the read-off is "
                       f"${1 << k}\\times$ longer)")
     return r"\ftwoz-SNARK (integer R1CS, Lambda100; Ligerito " + "; ".join(clauses) + shift_note + ")"
 
 
 def scheme_key(r: dict) -> str:
-    """Row key: the backend slug, with F2Z and Binius64 split by their rate."""
+    """Row key: the backend slug, with BitZ and Binius64 split by their rate."""
     if r["backend"] == "binius64":
         return f"binius64@{int(r['config'].get('log_inv_rate', 1))}"
     if r["backend"] == "binius64-ligerito":
         rbr = r["config"].get("accounting", "union-bound") == "round-by-round"
         return f"binius64-ligerito{'-rbr' if rbr else ''}@{int(r['config'].get('log_inv_rate', 1))}"
-    if r["backend"] == "f2z":
-        return f"f2z@{f2z_rate(r)}"
+    if r["backend"] == "bitz":
+        return f"bitz@{bitz_rate(r)}"
     return r["backend"]
 
 
@@ -106,7 +106,7 @@ def scheme_name(key: str) -> str:
     if key in names:
         return names[key]
     family, _, rate = key.partition("@")
-    prefix = {"f2z": "\\ftwoz-SNARK at ", "binius64": "Binius (UDR) at ",
+    prefix = {"bitz": "\\ftwoz-SNARK at ", "binius64": "Binius (UDR) at ",
               "binius64-ligerito-rbr": "Binius (Johnson) at "}[family]
     return prefix + ("rate $1/%d$" % (1 << int(rate)) if rate else "any rate")
 PLACEHOLDER = "--"
@@ -257,7 +257,7 @@ def main() -> int:
         if slug not in known:
             raise ValueError(
                 f"unknown table scheme {slug!r} at 2^{e}/{t} threads — the suite renders the round-by-round "
-                "opener rows only; re-measure union-bound binius64-ligerito runs with F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr")
+                "opener rows only; re-measure union-bound binius64-ligerito runs with BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr")
     identities = {}
     source_by_backend = {}
     machines = [row["provenance"]["machine"] for row in by.values()]
@@ -334,7 +334,7 @@ def main() -> int:
 
     out = []
     w = out.append
-    w("% Native end-to-end u32-multiplication comparison (F2Z vs Binius64 vs Plonky3/FRI) — GENERATED FILE, do not edit by hand.")
+    w("% Native end-to-end u32-multiplication comparison (BitZ vs Binius64 vs Plonky3/FRI) — GENERATED FILE, do not edit by hand.")
     w(f"% Generated by scripts/native_mul_table.py on {date} (UTC) at {commit} from {run_list} (benches/mul_e2e_compare.rs,")
     w("%   see README.md, Integer multiplication; later run directories override earlier ones per scheme and size).")
     if size_dirs:
@@ -509,7 +509,7 @@ def main() -> int:
         "u128": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): ",
     }[args.workload]
     # Binius64's opener geometry as the runs recorded it (rate override
-    # F2Z_BINIUS_LOG_INV_RATE; the query count follows from the rate).
+    # BITZ_BINIUS_LOG_INV_RATE; the query count follows from the rate).
     binius_keys = [slug for slug, _ in schemes if slug.startswith("binius64@")]
     binius_rate_text = ""
     if binius_keys:
@@ -591,7 +591,7 @@ def main() -> int:
                      f"from the transcript, the range-check term at least ${logup:.0f}$ bits; rows of "
                      f"${one('row_len')}$ columns, and the generic multi-row opening path)")
     scheme_notes = {
-        "f2z": f2z_caption(rows),
+        "bitz": bitz_caption(rows),
         "zinc-plus": zinc_note,
         "binius64": binius_note,
         "binius64-ligerito-rbr": ligerito_family_note("binius64-ligerito-rbr"),

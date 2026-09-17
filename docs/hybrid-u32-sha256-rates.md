@@ -7,10 +7,10 @@ are proved:
 
 | mode | multiplication | SHA-256 | proof |
 | --- | --- | --- | --- |
-| `hybrid` | BitZ/F2Z | Binius64 | one, shared opening |
-| `separate` | BitZ/F2Z | Binius64 | two independent proofs |
+| `hybrid` | BitZ/BitZ | Binius64 | one, shared opening |
+| `separate` | BitZ/BitZ | Binius64 | two independent proofs |
 | `all-binius` | Binius64 | Binius64 | one (ring switch + BaseFold/FRI) |
-| `binius-ligerito` | Binius64 | Binius64 | one (the all-Binius circuit and PIOP, every oracle committed at rate 1/8 and opened by the F2Z opener: Round 0, ring switch, Johnson-regime Ligerito with grinding; whole-protocol union bound gated at 100 bits) |
+| `binius-ligerito` | Binius64 | Binius64 | one (the all-Binius circuit and PIOP, every oracle committed at rate 1/8 and opened by the BitZ opener: Round 0, ring switch, Johnson-regime Ligerito with grinding; whole-protocol union bound gated at 100 bits) |
 
 ## Equal operation counts, N = M — 2026-09-11
 
@@ -126,7 +126,7 @@ grinds) vs BaseFold 21 (no grinding).
   Binius64 IOP prover on the same circuit, and at N = M it is 37–46% of the
   hybrid prover; the multiplication side (Spartan + GKR forest) is 2–10%. The
   equal-witness table's prover advantage (1.6–2.3x at 2^15–2^20, 6x at 2^21
-  where all-binius paged) comes from the multiplication branch — F2Z's
+  where all-binius paged) comes from the multiplication branch — BitZ's
   Spartan/GKR against Binius64's four-limb gadget — which is 1/256 of the
   witness here.
 - **Prover**: parity within 8% up to 2^12 (the hybrid is faster at 2^9 and
@@ -151,11 +151,11 @@ grinds) vs BaseFold 21 (no grinding).
 
 **Superseded 2026-09-10: the shared opener now commits both branches at rate
 1/2 (`opening::LOG_INV_RATE = 1`, Johnson regime, Round 0 unchanged), the rate
-F2Z uses in every bench; the rate-1/8 numbers below are historical.**
+BitZ uses in every bench; the rate-1/8 numbers below are historical.**
 
-## F2Z-side prover optimizations — 2026-09-10 (byte-identical)
+## BitZ-side prover optimizations — 2026-09-10 (byte-identical)
 
-Prover-only changes on the F2Z side of the hybrid (see the "Prover-side
+Prover-only changes on the BitZ side of the hybrid (see the "Prover-side
 optimizations" section of the [protocol guide](hybrid-u32-sha256-protocol.md)):
 bit marginals for the joint sumcheck's packed rounds; an eight-nonce NEON
 BLAKE3 kernel plus a dynamic smallest-nonce scan for EVERY proof-of-work grind
@@ -166,7 +166,7 @@ transcripts and the verifier are unchanged (same proof digests,
 `tests/transcript_pins` 7/7).
 
 **Final sweep, same box state as the morning campaign** (run
-`PerfRuns/2026-09-10T11-46-57Z-hybrid-f2z-opt-final`, 11 verified iterations
+`PerfRuns/2026-09-10T11-46-57Z-hybrid-bitz-opt-final`, 11 verified iterations
 per case, one process per case, `RAYON_NUM_THREADS=8`, medians; the untouched
 phases — forest, Binius SHA PIOP, commit, verifier, peak RSS — agree with the
 morning run within 3% at every shape, which is the same-state check). The
@@ -196,7 +196,7 @@ previous table from its run directory exactly).
 
 ## Historical hybrid v3: Johnson-regime opener at rate 1/8 with Round 0
 
-The shared F2Z/Ligerito opening was 91–92% of the v2 hybrid proof, and it lost
+The shared BitZ/Ligerito opening was 91–92% of the v2 hybrid proof, and it lost
 on parameters alone: `Geometry::params` committed at rate 1/2 and the opener ran
 in the unique-decoding regime, paying the whole target in codeword queries with
 no query grinding (270 queries at 0.42 bits each). Protocol v3 commits both
@@ -316,8 +316,8 @@ union bound. Measured at setup (`algebraic_security_bits` in each `.log`):
   GKR and SHA challenges.
 - **Transcript and wire format.** v3 is incompatible with v2: the statement
   digest absorbs the (changed) opener configuration, the transcript domain is
-  `f2z/hybrid-u32-mod32-sha256/non-zk/v3` / `hybrid/statement/v3`, Round 0's
-  frame `f2z/core/ood-round/v1` and its grinding precede the multiplication
+  `bitz/hybrid-u32-mod32-sha256/non-zk/v3` / `hybrid/statement/v3`, Round 0's
+  frame `bitz/core/ood-round/v1` and its grinding precede the multiplication
   prefix, and the codec magic is `BZSH\x03` with the Round-0 value and nonce
   first (the decoder replays Round 0 before deriving the prefix prime). The
   hybrid had no golden transcript pin; none of the repository's pins
@@ -345,9 +345,9 @@ optimization, and is left to the user.
 ## Baseline (protocol v2 hybrid): Binius64 at rate 1/2 and 1/8
 
 Binius64's FRI inverse rate was previously hardcoded to `1/2`. It is now
-`F2Z_HYBRID_BINIUS_LOG_INV_RATE` (default `1`; `3` selects rate 1/8), matching
+`BITZ_HYBRID_BINIUS_LOG_INV_RATE` (default `1`; `3` selects rate 1/8), matching
 the knob the native-multiplication tables use, and
-`F2Z_HYBRID_BINIUS_SECURITY_BITS` (default `112`) exposes the FRI component
+`BITZ_HYBRID_BINIUS_SECURITY_BITS` (default `112`) exposes the FRI component
 target. Both apply to the native Binius circuit, i.e. to `all-binius` and to
 the Binius half of `separate`; `hybrid`'s internal geometry is set in
 `src/hybrid/`.
@@ -389,7 +389,7 @@ recorded zero.
 
 ## Binius64's FRI query target: 112 vs 100 vs 96 bits (rate 1/8)
 
-`F2Z_HYBRID_BINIUS_SECURITY_BITS` defaulted to a local choice of 112. Binius64's
+`BITZ_HYBRID_BINIUS_SECURITY_BITS` defaulted to a local choice of 112. Binius64's
 own default is `SECURITY_BITS = 96` (`vendor/binius64/crates/verifier/src/verify.rs`)
 and the repository's other Binius64 harnesses use 100. Same machine, thread
 count, build (executable hash `27d5fbd09e617036`), inputs and methodology as
@@ -429,7 +429,7 @@ Proof sizes are deterministic and unaffected.
   combined soundness error of the complete protocol." `security_bits` feeds
   `calculate_n_test_queries(security_bits, log_inv_rate)` and nothing else;
   the binary PIOPs, the ring switch and the sumchecks are not budgeted against
-  it. F2Z's hybrid instead reports a union bound over every term of the whole
+  it. BitZ's hybrid instead reports a union bound over every term of the whole
   composition (`prepared.security()`, gated at 100 bits with the per-component
   targets set ABOVE 100 so the union lands at 100). A Binius64 row at "96" or
   "100" and a hybrid row at "100" are therefore NOT commensurable: the Binius64

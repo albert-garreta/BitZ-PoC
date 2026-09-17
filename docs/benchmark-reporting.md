@@ -131,9 +131,9 @@ artifacts (next to `trace.jsonl` when SHA uses a custom trace path). Files are
 create-new, never overwritten. Open them locally in <https://ui.perfetto.dev>.
 
 ```sh
-RAYON_NUM_THREADS=2 F2Z_BENCH_SHAPES=4 F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_MUL_COMPARE_MEMORY=0 \
-F2Z_MUL_COMPARE_OUTPUT_DIR=/tmp/my-new-perfetto-run \
+RAYON_NUM_THREADS=2 BITZ_BENCH_SHAPES=4 BITZ_BENCH_REPS=5 \
+BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_MUL_COMPARE_MEMORY=0 \
+BITZ_MUL_COMPARE_OUTPUT_DIR=/tmp/my-new-perfetto-run \
 cargo bench --bench mul_e2e_compare \
   --features bench-internals,native-mul-compare,bench-perfetto
 ```
@@ -179,11 +179,11 @@ exclude warmups, and union the selected intervals before aggregating across tria
 
 The diagnostic integration has these remaining limitations:
 
-- F2Z's metrics and the setup/campaign timers remain on their legacy timing
+- BitZ's metrics and the setup/campaign timers remain on their legacy timing
   paths. Binius64, Binius64-Ligerito, Plonky3 and Limber now query bounded
   in-memory recordings for their native multiplication/SHA JSON/CSV metrics. Capture
   changes overhead; do not compare timings across the migration as a speedup.
-- Only existing `tracing` instrumentation is exported. F2Z's `prof::scope` and
+- Only existing `tracing` instrumentation is exported. BitZ's `prof::scope` and
   manual phase timers are not translated into synthetic spans.
 - `benchmark_trial` is an orchestration envelope, not `witness_to_proof_ms`.
   Multiplication includes verification and metric extraction; SHA also includes
@@ -261,7 +261,7 @@ column intentionally counts only the witness commitment. Do not equate them.
 
 The initial migration removed the Binius64-Ligerito phase and trial-boundary
 clocks. The subsequent native-adapter migration also removed the live collector.
-One-time setup timers and F2Z's `prof::scope` calls still require migration;
+One-time setup timers and BitZ's `prof::scope` calls still require migration;
 memory reporting remains separate from timing.
 Instrumentation overhead changes, so this is not a performance claim.
 
@@ -313,14 +313,14 @@ larger `benchmark_trial` orchestration span.
 
 ### Perfetto-backed numeric metrics
 
-The shared `f2z::observability` module owns recording and native queries. All
+The shared `bitz::observability` module owns recording and native queries. All
 Binius64, Binius64-Ligerito, Plonky3 and Limber native multiplication/SHA runners
 use it, without `TraceCapture` or `CaptureLayer`. `trace_capture.rs` now contains
 only reporting projections over native intervals; no timestamps, mutexes,
-subscriber callbacks or collector state remain there. F2Z is still awaiting migration.
+subscriber callbacks or collector state remain there. BitZ is still awaiting migration.
 
 ```rust,ignore
-let recording = f2z::observability::Recording::start(Vec::new())?;
+let recording = bitz::observability::Recording::start(Vec::new())?;
 let result = tracing::info_span!("operation", component = "example.operation")
     .in_scope(|| operation())?;
 let intervals = recording.intervals()?;

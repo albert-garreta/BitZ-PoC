@@ -2,7 +2,7 @@
 """Turn a Zinc+ u32 campaign into a run directory the paper exporter reads.
 
 Zinc+ is measured by its own bench inside a pinned zinc-plus checkout
-(`protocol/benches/f2z_u32_mod32.rs`, rate 1/4), not by
+(`protocol/benches/bitz_u32_mod32.rs`, rate 1/4), not by
 `benches/mul_e2e_compare.rs`, because the two crates pin incompatible
 `crypto-bigint` releases. The bench proves the same corpus as every other
 scheme in the table -- it derives the operands from
@@ -11,7 +11,7 @@ table's row digest from the limbs it actually proved -- so its rows can be
 compared directly once they are written in the campaign schema.
 
     python3 scripts/zinc_plus_summary.py bench_results/zinc-plus-u32-20260914 \
-        --machine-from PerfRuns/suite-u32-f2z-r2-t1 --out PerfRuns/zinc-plus-u32
+        --machine-from PerfRuns/suite-u32-bitz-r2-t1 --out PerfRuns/zinc-plus-u32
 
 The machine block is copied from a run of the same campaign (the exporter
 refuses to mix measurement machines, and this campaign ran on the machine

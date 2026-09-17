@@ -1,4 +1,4 @@
-//! Full phase-tree dump of one CM-AND prove + verify (the virtual F2Z
+//! Full phase-tree dump of one CM-AND prove + verify (the virtual BitZ
 //! pipeline), for hot-path diagnosis:
 //!
 //! ```text
@@ -10,11 +10,11 @@
 //! for the verify, plus wall-clock totals and the proof size.
 
 
-use f2z::piop::spartan::{
-    CmAndWitness, SpartanF2zField, commit_cm_and_witness, prepare_cm_and_relation,
-    project_cm_and_witness, prove_cm_and_f2z, spartan_f2z_field_config, verify_cm_and_f2z,
+use bitz::piop::spartan::{
+    CmAndWitness, SpartanBitzField, commit_cm_and_witness, prepare_cm_and_relation,
+    project_cm_and_witness, prove_cm_and_bitz, spartan_bitz_field_config, verify_cm_and_bitz,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 fn splitmix(x: u64) -> u64 {
     let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -24,14 +24,14 @@ fn splitmix(x: u64) -> u64 {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let _ = flock_core::init_perf_thread_pool();
     let log2_gates: usize = std::env::args()
         .nth(1)
         .and_then(|a| a.parse().ok())
         .unwrap_or(15);
     let gates = 1usize << log2_gates;
-    let config = spartan_f2z_field_config();
+    let config = spartan_bitz_field_config();
 
     let witness = CmAndWitness::from_fn(gates, |i| {
         let r = splitmix(0xCAFE ^ i as u64);
@@ -43,39 +43,39 @@ fn main() {
     let hint = commit_cm_and_witness(&layout, witness.f_bit_rows()).unwrap();
 
     // Warm-up (excluded), also the correctness check.
-    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture warmup");
-    let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
+    let profile = bitz::observability::Recording::start(Vec::new()).expect("capture warmup");
+    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).unwrap();
+    let proof = prove_cm_and_bitz(&mut pt, &relation, projected, &hint).unwrap();
     let mut vt = Blake3Transcript::new();
-    verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).unwrap();
-    f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe warmup", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
+    verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).unwrap();
+    bitz::observability::write_profile(std::io::stderr().lock(), "cm_probe warmup", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
     drop(proof);
 
-    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture prove");
-    let projected = project_cm_and_witness::<SpartanF2zField>(&witness, &config).unwrap();
+    let profile = bitz::observability::Recording::start(Vec::new()).expect("capture prove");
+    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("cm_probe:started").entered();
-    let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).unwrap();
+    let proof = prove_cm_and_bitz(&mut pt, &relation, projected, &hint).unwrap();
     eprintln!(
         "== PROVE 2^{log2_gates} gates: {:.2} ms ==",
-        { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3
+        { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3
     );
-    f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe prove", &profile.intervals().expect("prover intervals"), None).expect("write profile");
+    bitz::observability::write_profile(std::io::stderr().lock(), "cm_probe prove", &profile.intervals().expect("prover intervals"), None).expect("write profile");
 
-    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture verify");
+    let profile = bitz::observability::Recording::start(Vec::new()).expect("capture verify");
     let mut vt = Blake3Transcript::new();
-    let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("cm_probe:started").entered();
-    verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).unwrap();
+    verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).unwrap();
     eprintln!(
         "== VERIFY: {:.2} ms ==",
-        { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3
+        { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3
     );
-    f2z::observability::write_profile(std::io::stderr().lock(), "cm_probe verify", &profile.intervals().expect("verifier intervals"), None).expect("write profile");
+    bitz::observability::write_profile(std::io::stderr().lock(), "cm_probe verify", &profile.intervals().expect("verifier intervals"), None).expect("write profile");
 
-    eprintln!("proof: virtual F2Z {} B", proof.f2z().to_bytes().len());
-    let digest = blake3::hash(&proof.f2z().to_bytes());
-    eprintln!("f2z proof digest: {}", digest.to_hex());
+    eprintln!("proof: virtual BitZ {} B", proof.bitz().to_bytes().len());
+    let digest = blake3::hash(&proof.bitz().to_bytes());
+    eprintln!("bitz proof digest: {}", digest.to_hex());
 }

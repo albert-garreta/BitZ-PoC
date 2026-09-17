@@ -53,7 +53,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--exponents', type=int, nargs='+', default=[7, 10])
     parser.add_argument('--threads', type=int, nargs='+', default=[1, 10])
-    parser.add_argument('--methods', nargs='+', default=['f2z-split'])
+    parser.add_argument('--methods', nargs='+', default=['bitz-split'])
     parser.add_argument('--blocks', type=int, default=6)
     parser.add_argument('--reps', type=int, default=5)
     parser.add_argument('--seed', type=int, default=0)
@@ -67,7 +67,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = {k: getattr(args, k).resolve(strict=True) for k in ['baseline', 'candidate']}
     clean_env = {k: v for k, v in os.environ.items()
-                 if not k.startswith(('F2Z_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
+                 if not k.startswith(('BITZ_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
     manifest = dict(binaries={k: dict(path=str(v), sha256=hashlib.sha256(v.read_bytes()).hexdigest())
                               for k, v in binaries.items()},
                     args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
@@ -84,12 +84,12 @@ def main():
         for block in range(args.blocks):
             for variant in (list(binaries) if block % 2 == 0 else list(binaries)[::-1]):
                 name = f'{method}-i{exponent}-t{threads}-target{target}-seed{seed}-b{block}-{variant}'
-                env = dict(clean_env, F2Z_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
+                env = dict(clean_env, BITZ_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
                            RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads))
                 # The target-100 tuning profile is not valid at 128 bits.
                 # Use the benchmark's validated default for target 128.
                 if target == 128:
-                    env.pop('F2Z_LIG_PROFILE')
+                    env.pop('BITZ_LIG_PROFILE')
                 env.update(dict(item.split('=', 1) for item in getattr(args, variant + '_env')))
                 available = sorted(os.sched_getaffinity(0))
                 cpus = ','.join(map(str, available[:threads]))

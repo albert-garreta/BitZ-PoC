@@ -4,7 +4,7 @@
 //! Spartan proves the integer-valued R1CS relation over a transcript-sampled
 //! Step-2 prime (the paper path; commit-before-prime, Zaratan order), and the
 //! terminal assignment-MLE claim is discharged against the compact
-//! 31/31/31/31-bit witness with F2Z. Every measured proof is verified.
+//! 31/31/31/31-bit witness with BitZ. Every measured proof is verified.
 //!
 //! Output follows the unified schema (`docs/bench-schema.md`), and every
 //! shape is measured TWICE on the same witness — once per security target:
@@ -12,38 +12,38 @@
 //! per-PIOP-draw, and forest/GKR grinding all armed; every term this crate
 //! controls ≥ 128 bits, the GF(2^128) floor reported as binding). A target
 //! whose derived grinding exceeds the economic cap at a shape prints a
-//! skip line instead of a row. `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule`
+//! skip line instead of a row. `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule`
 //! restricts a run to ONE profile (one row per shape; the two-prime
 //! `Limber114` profile is MultiSwap-only and is rejected here).
 //!
-//! Defaults to the sweep `2^15, ..., 2^25`. Override with `F2Z_BENCH_SHAPES`
-//! (deprecated alias `F2Z_BABY_BEAR_MUL_EXPONENTS`):
+//! Defaults to the sweep `2^15, ..., 2^25`. Override with `BITZ_BENCH_SHAPES`
+//! (deprecated alias `BITZ_BABY_BEAR_MUL_EXPONENTS`):
 //!
 //! ```text
-//! F2Z_BENCH_SHAPES="15 17 19" F2Z_BENCH_REPS=3 \
+//! BITZ_BENCH_SHAPES="15 17 19" BITZ_BENCH_REPS=3 \
 //!   cargo bench --bench baby_bear_mul --features unchecked
 //! ```
 //!
 //! Arithmetic uses the single delayed Barrett production path.
 //! NOTE: the pre-schema output (and its `bench-peak-memory` pass) that
 //! `scripts/baby_bear_mul_bench_report.py` parses is available at commit
-//! b7713d8; the script has not been ported to `schema=f2z/1`.
+//! b7713d8; the script has not been ported to `schema=bitz/1`.
 
 mod common;
 
 use std::hint::black_box;
 
-use f2z::piop::spartan::{
-    BABY_BEAR_MODULUS, BabyBearMulWitness, BabyBearSpartanF2zError, IopSecurityProfile, Lambda100,
+use bitz::piop::spartan::{
+    BABY_BEAR_MODULUS, BabyBearMulWitness, BabyBearSpartanBitzError, IopSecurityProfile, Lambda100,
     Lambda128, PreparedBabyBearMulRelation, PrimePolicy,
     commit_baby_bear_mul_paper_witness, prove_baby_bear_mul_paper, sample_baby_bear_operand_with,
     verify_baby_bear_mul_paper,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 fn exponents() -> Vec<usize> {
-    common::shape_values(Some("F2Z_BABY_BEAR_MUL_EXPONENTS"), clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
+    common::shape_values(Some("BITZ_BABY_BEAR_MUL_EXPONENTS"), clap::builder::RangedU64ValueParser::<usize>::new().range(15..))
         .unwrap_or_else(|| (15..=25).collect())
 }
 
@@ -59,16 +59,16 @@ fn bench_profile<P: IopSecurityProfile>(
 ) {
     let multiplications = 1usize << exponent;
     let layout = *witness.layout();
-    let params = layout.f2z_params();
+    let params = layout.bitz_params();
 
     // One-time public preprocessing under this profile (excluded from
     // prove): raw exact matrices + the instantiated security parameters.
-    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("baby_bear_mul:setup_started").entered();
     let prepared = match PreparedBabyBearMulRelation::new_with_profile_and_ligerito::<P>(layout, common::ligerito_selection(P::LIGERITO_TARGET_BITS)) {
         Ok(prepared) => prepared,
-        Err(error @ (BabyBearSpartanF2zError::Profile(_)
-        | BabyBearSpartanF2zError::UnsupportedProfile)) => {
+        Err(error @ (BabyBearSpartanBitzError::Profile(_)
+        | BabyBearSpartanBitzError::UnsupportedProfile)) => {
             println!();
             println!(
                 "baby_bear_mul gates=2^{exponent} profile={}: SKIPPED - {error}",
@@ -78,7 +78,7 @@ fn bench_profile<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
-    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "baby_bear_mul:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
+    let setup_ms = { drop(setup_started); bitz::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "baby_bear_mul:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
     println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration(), prepared.security().ood));
     let security = prepared.security().clone();
 
@@ -103,7 +103,7 @@ fn bench_profile<P: IopSecurityProfile>(
 
     // Excluded warm-up; also the first end-to-end correctness check.
     let warm_hint =
-        commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+        commit_baby_bear_mul_paper_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut warm_transcript = Blake3Transcript::new();
     let warm_proof =
         prove_baby_bear_mul_paper(&mut warm_transcript, &prepared, witness, &warm_hint)
@@ -117,11 +117,11 @@ fn bench_profile<P: IopSecurityProfile>(
     let mut verifier = common::StepSamples::default();
     let mut last = None;
     for _ in 0..reps {
-        let recording = f2z::observability::Recording::start(Vec::new()).expect("start BabyBear trial");
+        let recording = bitz::observability::Recording::start(Vec::new()).expect("start BabyBear trial");
         let proving = tracing::info_span!("benchmark:proving").entered();
         let commit = tracing::info_span!("benchmark:commit").entered();
         let hint =
-            commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+            commit_baby_bear_mul_paper_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
         drop(commit);
         let mut prover_transcript = Blake3Transcript::new();
         let proof =
@@ -138,8 +138,8 @@ fn bench_profile<P: IopSecurityProfile>(
         let commit_ms = common::span_ms(&intervals, "benchmark:commit");
         let prove_ms = common::span_ms(&intervals, "benchmark:proving");
         let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-        let prove_phases = f2z::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
-        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
+        let prove_phases = bitz::observability::phase_totals(&intervals, "benchmark:proving").unwrap();
+        let verify_phases = bitz::observability::phase_totals(&intervals, "benchmark:verification").unwrap();
 
         black_box(&proof);
         prover.record_prove(prove_ms, commit_ms, &prove_phases);
@@ -150,7 +150,7 @@ fn bench_profile<P: IopSecurityProfile>(
 
     let spartan_elements = proof.spartan_payload_elements();
     let boundary_nonces =
-        proof.grinding_nonce_count(&security) - proof.f2z().grinding_nonces.len();
+        proof.grinding_nonce_count(&security) - proof.bitz().grinding_nonces.len();
     let report = common::BenchReport {
         bench: "baby_bear_mul",
         shape: format!("2p{exponent}"),
@@ -160,11 +160,11 @@ fn bench_profile<P: IopSecurityProfile>(
             ("multiplications".into(), multiplications.to_string()),
             ("arithmetic".into(), "delayed-barrett".into()),
             ("baby_bear_modulus".into(), BABY_BEAR_MODULUS.to_string()),
-            ("f2z_t".into(), params.row_vars.to_string()),
-            ("f2z_s".into(), params.col_vars.to_string()),
+            ("bitz_t".into(), params.row_vars.to_string()),
+            ("bitz_s".into(), params.col_vars.to_string()),
             (
                 "forest_grinding_nonces".into(),
-                proof.f2z().grinding_nonces.len().to_string(),
+                proof.bitz().grinding_nonces.len().to_string(),
             ),
             ("shape_seed".into(), format!("{shape_seed:#018x}")),
         ],
@@ -180,7 +180,7 @@ fn bench_profile<P: IopSecurityProfile>(
         verifier: verifier.medians(),
         proof: common::ProofBytes {
             piop: spartan_elements * 16 + 8 * boundary_nonces,
-            open: proof.f2z().to_bytes().len(),
+            open: proof.bitz().to_bytes().len(),
         },
     };
     report.print_human();
@@ -189,14 +189,14 @@ fn bench_profile<P: IopSecurityProfile>(
 fn main() {
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
-    let seed = common::seed(Some("F2Z_BABY_BEAR_MUL_SEED"), 0x6262_6d75_6c5f_0031);
+    let seed = common::seed(Some("BITZ_BABY_BEAR_MUL_SEED"), 0x6262_6d75_6c5f_0031);
     let selected = common::security_profile(PrimePolicy::SingleDerived);
 
     let exponents = exponents();
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
 
-    println!("BabyBear a*b = c + p*k: paper-path Spartan PIOP + F2Z assignment opening");
+    println!("BabyBear a*b = c + p*k: paper-path Spartan PIOP + BitZ assignment opening");
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
@@ -204,13 +204,13 @@ fn main() {
         "delayed-barrett",
         match selected {
             Some(profile) => format!(
-                "one row per shape: {} (λ={}, F2Z_BENCH_LAMBDA={})",
+                "one row per shape: {} (λ={}, BITZ_BENCH_LAMBDA={})",
                 profile.name(),
                 profile.lambda(),
                 profile.knob_value()
             ),
             None => "two rows per shape (Lambda100 + Lambda128, one shared witness; \
-                     F2Z_BENCH_LAMBDA selects one)"
+                     BITZ_BENCH_LAMBDA selects one)"
                 .to_owned(),
         },
     );
@@ -223,7 +223,7 @@ fn main() {
 
         // Witness generation (excluded from prove); shared by both profiles
         // so the two rows are directly comparable.
-        let (witness, started) = f2z::observability::measure(
+        let (witness, started) = bitz::observability::measure(
             tracing::info_span!("baby_bear_mul:witness"),
             || BabyBearMulWitness::from_fn(multiplications, |_| {
             (

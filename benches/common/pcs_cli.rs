@@ -11,37 +11,37 @@ pub fn enum_list<T: ValueEnum>(value: &str) -> Result<Vec<T>, String> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum Backend {
-    F2z,
+    Bitz,
     #[value(name = "plonky3-whir", alias = "whir")]
     Whir,
     #[value(name = "binius64-basefold", aliases = ["binius", "binius64"])]
     Binius,
-    #[value(name = "f2z-ligerito-binary", aliases = ["ligerito", "f2z-ligerito"])]
+    #[value(name = "bitz-ligerito-binary", aliases = ["ligerito", "bitz-ligerito"])]
     Ligerito,
 }
 
 impl Backend {
     pub const fn id(self) -> &'static str {
         match self {
-            Self::F2z => "f2z",
+            Self::Bitz => "bitz",
             Self::Whir => "plonky3-whir",
             Self::Binius => "binius64-basefold",
-            Self::Ligerito => "f2z-ligerito-binary",
+            Self::Ligerito => "bitz-ligerito-binary",
         }
     }
     pub const fn display(self) -> &'static str {
         match self {
-            Self::F2z => "F2Z",
+            Self::Bitz => "BitZ",
             Self::Whir => "Plonky3 WHIR",
             Self::Binius => "Binius64 BaseFold",
-            Self::Ligerito => "F2Z Ligerito (binary claim)",
+            Self::Ligerito => "BitZ Ligerito (binary claim)",
         }
     }
 }
 
 #[derive(Parser)]
 struct Backends {
-    #[arg(env = "F2Z_PCS_COMPARE_BACKENDS", default_value = "f2z plonky3-whir binius64-basefold f2z-ligerito-binary", value_parser = enum_list::<Backend>)]
+    #[arg(env = "BITZ_PCS_COMPARE_BACKENDS", default_value = "bitz plonky3-whir binius64-basefold bitz-ligerito-binary", value_parser = enum_list::<Backend>)]
     selected: cli::List<Backend>,
 }
 
@@ -57,11 +57,11 @@ pub fn selected_backends() -> Vec<Backend> {
 
 #[derive(Parser)]
 pub struct Whir {
-    #[arg(env = "F2Z_WHIR_FOLDING", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(2..=12))]
+    #[arg(env = "BITZ_WHIR_FOLDING", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(2..=12))]
     folding: Option<usize>,
-    #[arg(env = "F2Z_WHIR_LOG_INV_RATE", default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=8))]
+    #[arg(env = "BITZ_WHIR_LOG_INV_RATE", default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=8))]
     log_inv_rate: usize,
-    #[arg(env = "F2Z_WHIR_MAX_POW_BITS", default_value_t = 12, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..106))]
+    #[arg(env = "BITZ_WHIR_MAX_POW_BITS", default_value_t = 12, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..106))]
     max_pow_bits: usize,
 }
 
@@ -81,7 +81,7 @@ impl Whir {
 
 #[derive(Parser)]
 struct Binius {
-    #[arg(env = "F2Z_BINIUS_LOG_INV_RATE", default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=4))]
+    #[arg(env = "BITZ_BINIUS_LOG_INV_RATE", default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=4))]
     log_inv_rate: usize,
 }
 

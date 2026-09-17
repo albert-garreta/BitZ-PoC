@@ -80,7 +80,7 @@ pub struct IopInstanceFacts {
     /// `log₂` of the Step-5.1 lift arity `n₁`: the no-wrap bound is
     /// `(2^a + 1)(q - 1) <= 2^128 - 1`.
     pub lift_arity_log2: u32,
-    /// Row variables `t` of the tensor the F2Z opening runs against.
+    /// Row variables `t` of the tensor the BitZ opening runs against.
     pub opening_t: u32,
     /// Word width `W` of that tensor.
     pub opening_word_bits: u32,
@@ -184,7 +184,7 @@ pub struct IopSecurityParams {
     pub ring_switch_grinding_bits: u32,
     /// Ligerito/WHIR round-by-round target.
     pub ligerito_target_bits: usize,
-    /// Round 0 (the out-of-domain sample) of the F2Z opening: `Some` when
+    /// Round 0 (the out-of-domain sample) of the BitZ opening: `Some` when
     /// the selected opener runs beyond unique decoding (its list must be
     /// pinned before the first forest challenge), `None` in the
     /// unique-decoding regime. Set by [`IopSecurityParams::adopt_ood_round`]
@@ -195,7 +195,7 @@ pub struct IopSecurityParams {
 }
 
 impl IopSecurityParams {
-    /// Accounts for Round 0 of the F2Z opening once the opener is known.
+    /// Accounts for Round 0 of the BitZ opening once the opener is known.
     /// `ood_bits` is the theorem's collision bound in bits
     /// ([`crate::ligerito_flock::ood_round_bits`]): `None` (unique
     /// decoding) leaves the round off; otherwise the grinding topping it up

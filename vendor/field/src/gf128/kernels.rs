@@ -75,7 +75,7 @@ pub fn clmul_64x64(a: u64, b: u64) -> [u64; 2] {
     }
 }
 
-/// Karatsuba product, retaining the F2Z word kernel for callers consuming
+/// Karatsuba product, retaining the BitZ word kernel for callers consuming
 /// exact polynomial words rather than an architecture accumulator.
 #[inline]
 pub fn clmul_128x128(a: &[u64; 2], b: &[u64; 2]) -> [u64; 4] {

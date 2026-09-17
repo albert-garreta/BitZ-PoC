@@ -66,7 +66,7 @@ implementations have been consolidated into typed static primes and the generic
 FixedBasePow provider; their historical source remains in the baseline archive.
 
 `src/gf128/sumcheck.rs`, `src/gf128/kernels/sumcheck_aarch64.rs` and
-`src/binary/b127_sumcheck.rs` retain F2Z's fused equality-weighted round and fold
+`src/binary/b127_sumcheck.rs` retain BitZ's fused equality-weighted round and fold
 kernels. `src/binary/projection.rs` retains the four-lane NEON packed projection
-from F2Z's `binary_gf128.rs` at `6271724d`, using fixed public bounds and masked
+from BitZ's `binary_gf128.rs` at `6271724d`, using fixed public bounds and masked
 private bits. Historical comparison copies are archived outside version control.

@@ -1,4 +1,4 @@
-F2Z is a polynomial commitment scheme for **integer data committed over a
+BitZ is a polynomial commitment scheme for **integer data committed over a
 cheap characteristic-2 code**: it proves
 
 ```
@@ -41,13 +41,13 @@ opening has been removed.
 ## Usage
 
 ```rust,ignore
-use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{
     IntEvalRsLigModQProof, LigConfig, commit_rs_flock_with, lig_configs,
     prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 // Instance shape: 2^t × 2^s cells of `word_bits`-bit integers.
 let p = IntegerMatrixLayout { row_vars: 10, col_vars: 6, word_bits: 1 };
@@ -124,9 +124,9 @@ Pinned by `mod_q_ligerito_padded_witness_trims_us`.
 - **`crypto-primitives`** — vendored at `vendor/crypto-primitives`
   (NethermindEth, Apache-2.0; see `vendor/crypto-primitives/VENDORED.md` for
   the pinned revision and the crypto-bigint 0.7.5 / rand 0.10 port).
-- **`circuit`** — backend-independent SHA-256/F2Z circuit synthesis copied
+- **`circuit`** — backend-independent SHA-256/BitZ circuit synthesis copied
   into `crates/circuit`, with its matrix-field support in `crates/field`.
-  A fresh checkout therefore needs no sibling `f2z-benchmark` repository;
+  A fresh checkout therefore needs no sibling `bitz-benchmark` repository;
   provenance and the pinned upstream revision are recorded in
   `crates/circuit/VENDORED.md`.
 - `crypto-bigint 0.7.5`, `crypto-primes`, `blake3`, `rayon`.
@@ -158,9 +158,9 @@ For profilers (`sample`/`samply`/Instruments), `--profile profiling` builds
 release codegen plus DWARF in its own target subdirectory, so alternating
 profile/measure runs never invalidates the release cache.
 
-### CLI runner (`f2z`)
+### CLI runner (`bitz`)
 
-`src/bin/f2z.rs` is a one-shot commit / prove / verify runner for a single
+`src/bin/bitz.rs` is a one-shot commit / prove / verify runner for a single
 shape — the runnable sibling of `benches/pcs.rs` (it's the package's only
 binary, so plain `cargo run` targets it):
 
@@ -170,23 +170,23 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     28 17 11 --threads 1 --reps 5 --profile slim
 ```
 
-`f2z <n> [<t> <s> [<W>]] [--threads N] [--reps R] [--profile P] [--word-bits W]`:
+`bitz <n> [<t> <s> [<W>]] [--threads N] [--reps R] [--profile P] [--word-bits W]`:
 
 - `n` — cell-index MLE variables, `n = t + s` (`2^n · W` committed bits).
   Omitting `t s` uses the reference split `t ≈ 0.6n` (clamped to the
   packing constraint `t + log₂W ≥ 7`; a note is printed if the shape
   forces `L > 1` chunks). `W` as a fourth positional sets the cell width
   (power of two, default 1; equivalent to `--word-bits`) — e.g. the
-  reference W=32 shape: `f2z 12 4 8 32`.
+  reference W=32 shape: `bitz 12 4 8 32`.
 - `--family j2|j3|j4` — run the EXPERIMENTAL mod-q **RLC claim family**
   at this `n` instead of the single-claim opening (`j2` = the XOR triple,
   k=3 claims on `m₁, m₂, m₁⊕m₂`; `j3` = k=4 with the 3-way XOR; `j4` =
   k=5). W is fixed at 1 and the shape is the measured A/B layout (4 UAIR
   columns, x-tensor split `t' ≈ s` — comparable with the 2026-07-26/27
   RLC notes); `t s W` positionals do not apply; every rep is verified.
-  E.g. `f2z 26 --family j2 --reps 5`. The full A/B against the
+  E.g. `bitz 26 --family j2 --reps 5`. The full A/B against the
   virtual-XOR and independent baselines stays in `examples/rlc_ab.rs`
-  (`F2Z_AB_N`/`F2Z_AB_REPS`, plus `F2Z_AB_SINGLES=1` and `F2Z_AB_J3=1`
+  (`BITZ_AB_N`/`BITZ_AB_REPS`, plus `BITZ_AB_SINGLES=1` and `BITZ_AB_J3=1`
   modes).
 - `--taps vx|family|collapse|rotxor` — run the EXPERIMENTAL
   **structured-taps** paths at this `n` (32-bit words along the ENTRY
@@ -200,10 +200,10 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   rotations, a word-offset of the pair, single-column rotations —
   through the same collapse (`TapPointClaim` now carries an XOR column
   set; 4 inner claims; measured 79.5/199.4 ms at n=22/24, ≈ 2–3× ONE
-  claim for all 8). Every rep is verified. E.g. `f2z 24 --taps rotxor
+  claim for all 8). Every rep is verified. E.g. `bitz 24 --taps rotxor
   --reps 5`. The full A/B (with independent baselines, phase trees, seeds)
-  stays in `examples/taps_ab.rs` (`F2Z_AB_N`/`F2Z_AB_REPS`/
-  `F2Z_TAPS_SEED`, `F2Z_AB_COLLAPSE=1` for the collapse demo,
+  stays in `examples/taps_ab.rs` (`BITZ_AB_N`/`BITZ_AB_REPS`/
+  `BITZ_TAPS_SEED`, `BITZ_AB_COLLAPSE=1` for the collapse demo,
   `OBLONG_PROFILE=1` for phase trees).
 - `--threads N` / `-j N` — rayon pool size (`1` = single-threaded;
   default all cores / `RAYON_NUM_THREADS`).
@@ -223,8 +223,8 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   ring switch incl. its sumcheck = `mc:presum_tbls mc:presum_run mq:rings
   mq:bcomb`; Ligerito = `mq:lig`), a `security:` line (the Ligerito
   config's round-by-round target/achieved bits — flock's notion, the
-  minimum over levels and terms — plus the F2Z-side round errors) and one
-  machine-readable `RESULT schema=f2z-cli/1 …` line (`docs/bench-schema.md`).
+  minimum over levels and terms — plus the BitZ-side round errors) and one
+  machine-readable `RESULT schema=bitz-cli/1 …` line (`docs/bench-schema.md`).
 - `--sweep <lo>-<hi>` (or `20,24,28`, or `20-24,28`) — the **paper-table
   mode**: runs the single-claim path once per `n`, each in a FRESH child
   process (one shape per process — the bench protocol), streams the
@@ -247,13 +247,13 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   validator-gated CLI profiles (`custom`/`udr`/`udrg`) use BLAKE3 Merkle
   trees like every Spartan path (flock's slim template says sha256; the
   embedded `fast`/`slim`/`secure` profiles keep their template's hash);
-  the `f2z:` header and the RESULT `lig_hash=` key say which.
+  the `bitz:` header and the RESULT `lig_hash=` key say which.
 - `--mul <e>` — the **u32 × u32 → u64 multiplication SNARK** for `2^e`
   multiplications (`e ≥ 15`): the `piop::spartan` paper path (one R1CS
   row per multiplication over ℤ, transcript-sampled Step-2 prime, native
-  Spartan with the K=3 univariate skip, bitification, F2Z opening of the
+  Spartan with the K=3 univariate skip, bitification, BitZ opening of the
   128 committed bits per multiplication), at `--lambda 100|128` (default
-  100), F2Z cell width `--word-bits 1|8`, and the Ligerito opener
+  100), BitZ cell width `--word-bits 1|8`, and the Ligerito opener
   `--profile custom:<r>:<k>` (default `custom:3:4` — the raw-performance
   table's Johnson geometry, so both paper tables share one opener) or
   `--profile udr` (the relation's own validated-UDR default at rate 1/2,
@@ -261,10 +261,10 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
   seed as the bench. Prints the paper step split (Step 1 commit, 2
   projection, 3 PIOP, 4 bitification, 5 opening = grand products / ring
   switch / Ligerito), a `security:` line (profile target, achieved bits,
-  binding term) and one `RESULT schema=f2z-cli-mul/1` line. Here `prove`
+  binding term) and one `RESULT schema=bitz-cli-mul/1` line. Here `prove`
   is END TO END and INCLUDES the commitment (bench-schema semantics).
 - `--mul-sweep <lo>-<hi>` — the paper-table mode for `--mul` (one fresh
-  child per `e`, default table `paper/u32-mul-table.tex`). F2Z runs at
+  child per `e`, default table `paper/u32-mul-table.tex`). BitZ runs at
   `n = e + 7`, so on a 16 GB box stop at `e = 22` (`e = 23` peaks near
   8 GB). The paper's multiplication table:
 
@@ -282,7 +282,7 @@ live-heap high-water notion as the bench), and the proof-size split
 (shown here for `--profile fast`):
 
 ```text
-f2z: n=24 (t=15, s=9, W=1, m_p=17, chunks=1) | lig=fast@r1/2k4 | threads=10 | int guards: unchecked
+bitz: n=24 (t=15, s=9, W=1, m_p=17, chunks=1) | lig=fast@r1/2k4 | threads=10 | int guards: unchecked
 commit:       2.27 ms   peak    12.10 MB
 prove:       62.78 ms   peak    85.01 MB   (median of 3, verified)
 verify:       2.43 ms
@@ -309,15 +309,15 @@ proof at n=18.
 
 **Unified output schema.** The protocol benches (`multiswap`,
 `sha256_compressions`, `u32_mul`, `pcs`, `lambda_sweep`) share one
-accounting model and one machine-readable `RESULT schema=f2z/1 …` line —
+accounting model and one machine-readable `RESULT schema=bitz/1 …` line —
 see `docs/bench-schema.md`. The end-to-end prover includes bit-packing,
 commitment, prime sampling + grinding, the PIOP, bitification, Step 5.0,
-and the F2Z opening; witness generation and one-time preprocessing are
+and the BitZ opening; witness generation and one-time preprocessing are
 excluded and reported separately. Each bench prints per-step prover and
 verifier breakdowns keyed to the paper's §2.1 steps, summing to their
 totals with an explicit residual. Canonical env knobs are
-`F2Z_BENCH_REPS` / `F2Z_BENCH_SHAPES` / `F2Z_BENCH_SEED` (old per-bench
-names remain as deprecated aliases), and **any unknown `F2Z_*` variable
+`BITZ_BENCH_REPS` / `BITZ_BENCH_SHAPES` / `BITZ_BENCH_SEED` (old per-bench
+names remain as deprecated aliases), and **any unknown `BITZ_*` variable
 aborts the bench** with the known-knob list.
 
 **Security profiles.** The IOP security level is a compile-time profile
@@ -331,13 +331,13 @@ only as an explicit comparison profile and pinned by `tests/transcript_pins.rs`)
 width and grinding difficulty is *derived* from the target plus the shape
 facts, and each instantiation carries a per-term soundness accounting
 (`achieved bits` + the binding term), printed by the benches.
-`F2Z_BENCH_LAMBDA=100|114|128|sha128-reference-schedule` selects the
+`BITZ_BENCH_LAMBDA=100|114|128|sha128-reference-schedule` selects the
 profile a run measures at — every protocol bench honours it (the
 profiles stay compile-time types; the knob picks which monomorphized body
 runs), and a profile the bench's prime strategy cannot instantiate aborts
 with the admissible list. The `lambda_sweep` bench proves one SHA witness
 under all three SHA profiles — the 100-vs-128 prover-time/proof-size
-tradeoff table — or under the one `F2Z_BENCH_LAMBDA` names.
+tradeoff table — or under the one `BITZ_BENCH_LAMBDA` names.
 
 `benches/pcs.rs` (plain `harness = false` binary, no criterion) reports, per
 shape: commit / prove / verify wall-clock (medians), serialized proof size,
@@ -353,12 +353,12 @@ headline timing).
 ```sh
 RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 # specific shapes (t:s:W triples) and rep count:
-F2Z_BENCH_SHAPES="10:6:1 14:8:1" F2Z_BENCH_REPS=5 \
+BITZ_BENCH_SHAPES="10:6:1 14:8:1" BITZ_BENCH_REPS=5 \
   RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 # a witness that is NOT a power of two: fill fraction φ ∈ (0, 1] — the
 # trailing (1−φ) of the columns are left all zero, i.e. the padding a
-# witness of N = φ·2^n cells carries (see `F2Z_COL_ELIDE` below):
-F2Z_BENCH_FILL=0.55 F2Z_BENCH_SHAPES="17:11:1" F2Z_BENCH_REPS=3 \
+# witness of N = φ·2^n cells carries (see `BITZ_COL_ELIDE` below):
+BITZ_BENCH_FILL=0.55 BITZ_BENCH_SHAPES="17:11:1" BITZ_BENCH_REPS=3 \
   RUSTFLAGS="-C target-cpu=native" cargo bench --bench pcs --features unchecked
 ```
 
@@ -373,14 +373,14 @@ shapes; `--big` appends n=30–32 (memory-healthy box required), `-j 1`
 single-threads, `-h` for all knobs. Output lands in `bench_results/`.
 
 Prover knobs (every configuration produces byte-identical proofs):
-`F2Z_EQF_FUSE=0` disables pass fusion (restores the eager two-pass fold);
-`F2Z_LUT3=0` disables the deeper L/4 LUT prefixes; `F2Z_EQF_NOKERNEL=1`
+`BITZ_EQF_FUSE=0` disables pass fusion (restores the eager two-pass fold);
+`BITZ_LUT3=0` disables the deeper L/4 LUT prefixes; `BITZ_EQF_NOKERNEL=1`
 forces the generic (non-NEON) round/fold kernels (diagnostic);
-`F2Z_PAIR2_FACTORED=0` restores the precombined 16-case LUT round tables
+`BITZ_PAIR2_FACTORED=0` restores the precombined 16-case LUT round tables
 (the factored default trades two extra wide multiplies per slot for 4×
 less table footprint — measured −9–15 % prove at n = 28, see the dated
 note under the reference numbers); `F2_FOREST_SCHEDULE=l8` opts into the
-L/8 forest memory schedule; `F2Z_COL_ELIDE=0` disables **live-column
+L/8 forest memory schedule; `BITZ_COL_ELIDE=0` disables **live-column
 elision** — the default builds only the leading columns that carry data
 and collapses the trailing all-zero ones (a zero-padded witness's padding,
 since the column index is the high-order MLE index) into ONE synthetic
@@ -395,7 +395,7 @@ elision granularity is one column, so the residual padding waste is under
 `2^{t+log₂W}` cells (0.05 % of `2^28` at t = 17). Pinned byte-identical by
 `col_elision_matches_full`.
 
-`F2Z_LIG_PROFILE` (bench-only, changes the proof: `slim` default / `fast`
+`BITZ_LIG_PROFILE` (bench-only, changes the proof: `slim` default / `fast`
 / `secure` / `r8` = ad-hoc UDR rate-1/8 probe /
 `custom:<log_inv_rate>:<initial_k>`) selects the Ligerito profile; the
 shape header prints the resolved geometry (`lig=slim@r1/8k4`) — see the
@@ -406,7 +406,7 @@ Performance parity with upstream: the release profile carries the upstream
 lose cross-unit inlining — measured ~1.2–1.5× slower), and `--features
 unchecked` mirrors the upstream bench convention (plain integer ops; the
 default build keeps overflow guards). At a matched shape (n=22, t=13, s=9,
-single mod-q claim, same box, interleaved runs) F2Z proves in **20.9 ms** vs
+single mod-q claim, same box, interleaved runs) BitZ proves in **20.9 ms** vs
 the upstream 2-col Base arm's **18.2–18.8 ms** — within ~1.1×, the residual
 being harness and layout differences rather than the PCS.
 
@@ -414,8 +414,8 @@ being harness and layout differences rather than the PCS.
 
 Apple M4 (16 GB); `t ≈ 0.6n` splits, W=1, one mod-q claim; medians,
 idle-fronted, one shape per process at n ≥ 24, 45–90 s cooldowns between
-shapes; the **pass-fusion + deeper-LUT defaults** (`F2Z_EQF_FUSE` /
-`F2Z_LUT3`, opt-out `=0`) and the **fast profile at its current (rate
+shapes; the **pass-fusion + deeper-LUT defaults** (`BITZ_EQF_FUSE` /
+`BITZ_LUT3`, opt-out `=0`) and the **fast profile at its current (rate
 1/2, k=4) generation** (n ≥ 22; n < 22 is the ad-hoc config). `schedule`
 is the forest memory schedule (`F2_FOREST_SCHEDULE=l8` opt-in, required
 at n ≥ 31 on 16 GB). The `forest` / `open` phase columns come from ONE
@@ -500,9 +500,9 @@ wall-clock), so only time and peak differ:
 The MT→ST prove ratio grows with n (~1.6× at n=22 to ~3.6× at n=28) as the
 forest fold parallelizes better at scale; verify and proof size are
 unchanged. The n=20→22 `config` step (adhoc r1/4 → k=4 r1/2) is the
-`sha_lig_configs` `m ≥ 22` boundary. Reproduce: `F2Z_BENCH_SHAPES="10:6:1
-12:6:1 13:7:1 14:8:1 15:9:1 16:10:1 17:11:1" F2Z_BENCH_REPS=3
-F2Z_LIG_PROFILE=custom:1:4 OBLONG_PROFILE=1 RUSTFLAGS="-C target-cpu=native"
+`sha_lig_configs` `m ≥ 22` boundary. Reproduce: `BITZ_BENCH_SHAPES="10:6:1
+12:6:1 13:7:1 14:8:1 15:9:1 16:10:1 17:11:1" BITZ_BENCH_REPS=3
+BITZ_LIG_PROFILE=custom:1:4 OBLONG_PROFILE=1 RUSTFLAGS="-C target-cpu=native"
 cargo bench --bench pcs --no-default-features --features unchecked`.
 
 **Packed-rows commit.** The harnesses generate the instance straight into
@@ -519,7 +519,7 @@ The 16-case LUT rounds of the two bottom forest layers (`Pair3Bits` round
 rounds (53 + 46 ms of a 626 ms profiled prove, line-level flamegraph
 attribution). The default now keeps only the suffix-weighted `w·te` array
 and recombines against the set's raw `to` per slot — three wide multiplies
-instead of one, 4× less table footprint (`F2Z_PAIR2_FACTORED=0` opts out)
+instead of one, 4× less table footprint (`BITZ_PAIR2_FACTORED=0` opts out)
 — and the three LUT→Dense materialising folds use the canonical
 one-multiply fold `v0 + ρ(v0 + v1)` in place of `(1+ρ)v0 + ρv1` (exact
 distributivity, same canonical bits). Byte-identical proofs (in-process
@@ -549,7 +549,7 @@ basis-fill pass (deferred-reduction accumulators) and enters flock through
 `recursive_prover_with_basis_precomputed_round0`, skipping flock's own
 full `(f, b)` read pass; and the pre-sumcheck's `R·m` rounds got a
 wide-accumulating `RoundPolyEvaluator` (the crate's first use of that
-hook). `F2Z_RS_FAST=0` opts out of all of it. Byte-identical proofs
+hook). `BITZ_RS_FAST=0` opts out of all of it. Byte-identical proofs
 (kernel unit tests vs the scalar scans; cross-process `fuse_check`
 old-vs-new). Measured (alternated in-window A/B pairs, `prof_probe`,
 n=28 t=17 s=11): `mq:bcomb` 17.3 → 4.5 ms (**−74 %**), `mq:rings`
@@ -560,7 +560,7 @@ slice of a forest-dominated prove). The batched and virtual-XOR paths
 inherit the kernels through the shared helpers.
 
 **Forest bucket ranking + the leaf ΔΔ-table experiment (2026-07-26).**
-A full n=28 phase tree (`prof_probe`, post-`F2Z_RS_FAST`, 558 ms prove)
+A full n=28 phase tree (`prof_probe`, post-`BITZ_RS_FAST`, 558 ms prove)
 ranks the 466 ms forest: fused dense rounds `eqf:fmsg` 118.6 ms (at the
 measured kernel floor), `mf:bitgen` 53.5 ms and `mf:build_levels` 49.0 ms
 (streaming transposes/gathers over the bit store), `eqf:msg:leaf_r1`
@@ -570,7 +570,7 @@ measured kernel floor), `mf:bitgen` 53.5 ms and `mf:build_levels` 49.0 ms
 GROWS table bytes (4+4-case → 16-case per pair is 2× the `t_a0`/`t_a1`
 bytes), i.e. the wrong direction under the bytes-rule lesson — so the
 byte-SHRINKING variant was built instead (`LeafA2::Factored`,
-`F2Z_LEAF_A2_FACTORED=1`): store the four raw ΔΔ cross products per slot
+`BITZ_LEAF_A2_FACTORED=1`): store the four raw ΔΔ cross products per slot
 (halves total leaf-table bytes `24·2^k → 12·2^k`, one sequential 64 B
 line per slot) and select via four branchless masked adds in a two-temp
 tree. **Measured SLOWER at L2-resident shapes** — n=26, 3 alternated
@@ -591,7 +591,7 @@ end-to-end), and the factored arm is far less volatile (±3 ms vs
 (−13–18 %), prove ≈ −0.5–1 %. The default is now **size-gated**:
 factored iff `half ≥ 2^15` (precombined tables ≥ ~12.6 MB — the
 P-cluster-L2 co-residency edge; n=26 and below stay precombined, where
-factored loses ~1.2 ms). `F2Z_LEAF_A2_FACTORED=0/1` forces either arm.
+factored loses ~1.2 ms). `BITZ_LEAF_A2_FACTORED=0/1` forces either arm.
 
 **Software prefetch on the stash-gather rounds (2026-07-26).** The
 `pair3_r2`/`leaf3_r3` message bodies and the two materialising folds
@@ -608,7 +608,7 @@ in-window pairs): n=30 — `fold:leaf3mat` 197 → 147 ms, `fold:pair3mat`
 1–8 ms per scope (stashes 8.4 MB and below are L2-shallow; the index
 recompute + LSU pressure beat the latency hidden). Default is therefore
 **size-gated**: on iff the round's `half ≥ 2^14` (the n=30-class
-boundary, stashes ≥ 16.8 MB); `F2Z_LUT_PRFM=0/1` forces either arm.
+boundary, stashes ≥ 16.8 MB); `BITZ_LUT_PRFM=0/1` forces either arm.
 Combined with the factored leaf tables, the n=30 prove on this box went
 2871 → 2394 ms (**−17 %**) this session; the README reference table's
 n=30 row († k=6 generation) predates both changes AND the k=4 configs —
@@ -628,7 +628,7 @@ arms): `build_levels` 310 → 261 ms median (−16 %), `bitgen` 325 → 252 ms
 (−22 %), **prove 2471 → 2341 ms median (−5.3 %)**. Default is
 size-gated: on iff the `t4` table is ≥ 16 MiB (n ≥ 30; at n=28 the
 8.4 MB table is L2-resident and forcing it on measures slightly worse);
-`F2Z_T4_PRFM=0/1` forces either arm. Byte-identical (hint-only; pinned
+`BITZ_T4_PRFM=0/1` forces either arm. Byte-identical (hint-only; pinned
 via `fuse_check` with all three prefetch/table knobs forced). Session
 cumulative at n=30: **2871 → ~2340 ms (−18.5 %)**.
 
@@ -690,9 +690,9 @@ multiplies and the post-fold values are 4-case (`{0,1,ρ,1+ρ}`-structured
 discharge to ~0.3–0.5 forest-equivalents and land the triple at
 ~1.5–1.9× single; (2) chunk-internal parallelism for one-group dense
 eq-factored instances; (3) the generic prover's fold passes are
-3-way-parallel only. Levers: `F2Z_RLC_EAGER=1` (materialized-leaf
-forest: +29 % forest phase at n=24), `F2Z_RS_FAST=0` (generic discharge
-evaluator), `F2Z_LUT3=0` (Pair2 leaf round). The j=1 corollary (k
+3-way-parallel only. Levers: `BITZ_RLC_EAGER=1` (materialized-leaf
+forest: +29 % forest phase at n=24), `BITZ_RS_FAST=0` (generic discharge
+evaluator), `BITZ_LUT3=0` (Pair2 leaf round). The j=1 corollary (k
 same-column claims at different row points, 2-case forest, NO discharge)
 and the j=3/k=4 family are implemented and tested; j ≥ 3 falls back to
 the eager forest (the 8/16-case leaf-round kernels are the open lever).
@@ -765,7 +765,7 @@ presum groups, discharge participation (per-chunk for j=2's two-phase
 form, per-(chunk, S) pairs for j ≥ 3), the ω set and the rings all
 follow the active sets; every family column must appear in ≥ 1 form.
 Pure-XOR families (k=1 and multi-point) now roundtrip. Also measured
-(`F2Z_AB_SINGLES=1`): a LONE claim gains nothing from the family API —
+(`BITZ_AB_SINGLES=1`): a LONE claim gains nothing from the family API —
 `rlc1` ≈ `vx-single` (33.8 vs 33.3 ms at n=24; 72.7 vs 76.3 at n=26)
 and a lone XOR claim is CHEAPER via the vx extraction path (74.5 vs
 97.5 ms at n=26 — extract-once + 1-bit-affine forest beats the 4-case
@@ -790,11 +790,11 @@ to the EAGER forest — a Dense-JIT lazy form over shared case/product
 tables (`prove_merged_forest_lazy_rlc_general`, byte-identical, pinned)
 was built and measured SLOWER at n = 24–28 (−6 % at n=26, −9 % at a
 churned n=28: the per-value regeneration closures cost more than the
-saved materialisation), so it is the `F2Z_RLC_J34_LAZY=1` low-peak-memory
+saved materialisation), so it is the `BITZ_RLC_J34_LAZY=1` low-peak-memory
 arm (~⅓ the peak) and the 8/16-case leaf-ROUND kernels remain the open
 lever. Measured (same protocol/box; j=3 k=4 family — claims on
 {0},{1},{2},{0,1,2} — vs the batched-vx and independent baselines,
-`F2Z_AB_J3=1`; single = one vx claim at the same shape):
+`BITZ_AB_J3=1`; single = one vx claim at the same shape):
 
 | n | single | rlc4 | vx4 | ind4 | proofs (rlc4/vx4/ind4) |
 |----|--------|------|-----|------|------------------------|
@@ -834,7 +834,7 @@ pinned); rank-1 case build `rlc_gamma_cases` +
 downstream of the γ draw both entries share one core (front/core split —
 the general path is byte-stable, 86/86 green both guard modes, clippy at
 parity). CLI presets `--family j2s|j3s|j4s` (k = 3/7/15); harness
-`F2Z_AB_SHARED=1` (+ `F2Z_AB_STMTS=S` statement averaging). Measured
+`BITZ_AB_SHARED=1` (+ `BITZ_AB_STMTS=S` statement averaging). Measured
 (same box/layout/protocol as the tables above; n = 22/24 = MEAN over 3
 statements of medians-of-5 — FS grinding luck is deterministic PER
 STATEMENT and the n=22 j2 row swung 21–52 ms across statements; n = 26
@@ -994,7 +994,7 @@ through the deployed claims-only path
 0x44; the verifier derives each branch value from the proof's own
 forest-bound folds and checks their sum against `T = Σ γᵢcᵢ` —
 soundness 1/q + the inner errors, no new proof fields). Measured
-(`F2Z_AB_COLLAPSE=1`, the instance's 13 deduped streams as 13
+(`BITZ_AB_COLLAPSE=1`, the instance's 13 deduped streams as 13
 individual claims at one point; medians of 5): clp = **53.5/177.3/603
 ms** at n=22/24/26 (4 inner claims) vs the batched tap path's
 215/609/3674 (13 claims pad to 16 tree-sets — the pad wall bites again
@@ -1030,7 +1030,7 @@ workloads make every round a word-offset of ONE mixed combination, so
 k rounds = 2 inner bodies total vs k padded forest bodies batched.
 The outer offset's envelope stands alone (`off < 2^{s−g}`; it does
 NOT compound with the source taps' offsets), so 48 rounds fit from
-n = 22 (s = 11) at the harness split. Measured (`F2Z_AB_SCHED=1`,
+n = 22 (s = 11) at the harness split. Measured (`BITZ_AB_SCHED=1`,
 48 claims `off^t(x)` of one σ-style source `ROT^7 a_0 ⊕ ROT^18 a_0 ⊕
 SHIFT^3 a_0 ⊕ off^1 a_1`; claim values through the offset-FOLDED
 extraction route, so every verified rep cross-checks the transform
@@ -1048,7 +1048,7 @@ batched tap-claims path on the folded lists, 48 → 64 tree-sets):
 claims land at **1.0–1.9× the cost of ONE claim** (single: 25.5/94.4/
 146.0 ms) with per-claim proof bytes 3.9–9.3 KB; prover peak stays at
 the single-proof footprint (26/95/366 MB vs the batched path's
-64-set wall). CLI preset: `f2z <n> --taps sched` (rounds clip to the
+64-set wall). CLI preset: `bitz <n> --taps sched` (rounds clip to the
 shape's envelope). Known v1 slack: the two branch bodies of one
 source duplicate their rings and extraction (identical tap lists —
 the ring `s_v` depends on the exit point, not the row weights); rings
@@ -1081,7 +1081,7 @@ wider merges pay the cache regime (the 4+2 split cost +27 % at n=28)
 (`TAP_CLAIM_BLOCK_CAP = 2`, structural, part of the proof shape;
 k ≤ 2 keeps pre-blocking bytes, so `single` and the 2-body composed
 schedule proofs are unchanged). The k=6 instance, before → after
-(same-box medians of 5, `F2Z_AB_NO_FAMILY=1` unlocks n=28):
+(same-box medians of 5, `BITZ_AB_NO_FAMILY=1` unlocks n=28):
 
 | n | vx6 padded (8 sets) | vx6 blocked (2+2+2) | ind6 | single |
 |----|--------------------|---------------------|------|--------|
@@ -1137,15 +1137,15 @@ Across n at δ=3 (cmp): 26.7 / 133 / 8.4 at n=22 (δ=0: 39.1/189/18.9)
 and 225.5 / 222 / 13.6 at n=26 (δ=0: 275.6/448/58.5; δ=4:
 222.7/205/11.6 — the proof **halves**). The knee is δ = 3–4; δ = 5
 gives −3 KB more for the 2^{t'+5} table growth (86.7 ms). Env:
-`F2Z_TAPS_DELTA` on `taps_ab` (family auto-skipped) and
-`f2z --taps vx|sched`. Tests: +3 (extraction re-split vs manual
+`BITZ_TAPS_DELTA` on `taps_ab` (family auto-skipped) and
+`bitz --taps vx|sched`. Tests: +3 (extraction re-split vs manual
 regroup, 0x42 δ=1/2 roundtrips with fold-shrink asserts, composed
 δ=2 roundtrip + envelope rejection); 104/104 green both guard modes;
 δ=0 proof bytes untouched.
 
 **Structured taps: the cols4 config + the batched-path optimization
 pass (2026-07-27, follow-up).** New 4-column instance (`--taps
-cols4`, `F2Z_AB_COLS4=1`; the first `log_cols = 2` taps layout —
+cols4`, `BITZ_AB_COLS4=1`; the first `log_cols = 2` taps layout —
 the machinery was already generic): identity claims on a₁..a₄ plus
 the XOR-mixed pairs `ROT¹(a₁)⊕off¹(a₂)` and `ROT²(a₃)⊕off¹(a₄)`,
 one shared point, through the blocked batched tap path (2+2+2;
@@ -1199,7 +1199,7 @@ rounds) — body count itself is information-forced for XOR-mixed
 claims of distinct shapes.
 
 **Structured taps: 64-bit words (2026-07-27, follow-up) — the width
-is free.** The group width is now a parameter: `F2Z_TAPS_GRP=6` on
+is free.** The group width is now a parameter: `BITZ_TAPS_GRP=6` on
 the harness and `--taps-grp 6` on the CLI run the SAME cols4 and
 2-column vx instances on 64-bit entry-axis words (g = 6). As the
 machinery predicts (translated-eq chains are O(g), the carry-class
@@ -1224,7 +1224,7 @@ virtualize the defined columns, compose the checks.** The
 8-role-vector family (a,b,c,d,a',b',c',d' with d' = ROT¹⁶(d⊕a'),
 b' = ROT¹²(b⊕c'), off¹(d) = ROT⁸(d'⊕off¹a), off¹(b) = ROT⁷(b'⊕off¹c);
 all eight opened at shared points), measured two ways
-(`F2Z_AB_B3FAM=1`). OPT: commit SIX (d', b' virtual — relations 1–2
+(`BITZ_AB_B3FAM=1`). OPT: commit SIX (d', b' virtual — relations 1–2
 become definitions and vanish), open the eight through ONE 0x44
 collapse (6 identity sets + {d,a'} at ROT¹⁶ — plain bodies, no
 rings; δ = 4 since 2⁴ | 16) with the ROT¹² opening routed through
@@ -1278,7 +1278,7 @@ runs, 67 MB free at start): **fam6 950.3 ms = 0.92× of opt** on the
 steadier run (1031.4/1034.2 opt/naive) and 0.72× under peak churn —
 fam6's j2-lazy working set is churn-IMMUNE (951.6/950.3 across
 runs while every other arm swung ~25 %); fam4 needs
-`F2Z_RLC_J34_LAZY=1` at this scale (1982.8 eager → 1414.4 lazy) and
+`BITZ_RLC_J34_LAZY=1` at this scale (1982.8 eager → 1414.4 lazy) and
 still loses (the j3 channel + case-width cost). Bytes at n=28: opt
 539 KB, fam6 1134, fam4 937 — the δ0 fold gap unchanged. Verdict:
 the 6-body family structure WINS prover time from n=28 up at δ0
@@ -1293,7 +1293,7 @@ was missing was PROOF of a correct re-split: the new cross-split
 consistency test pins it (product-form weights `colw0 = f ⊗ g`,
 `rw_δ = rw0 ⊗ f`: the δ path must prove the SAME claimed values as
 the flat reading; j = 2 and j = 3 with the level-2 cascade, δ = 1, 2,
-tampers rejected; 109/109 green). Harness: `F2Z_AB_FAM_DELTA`.
+tampers rejected; 109/109 green). Harness: `BITZ_AB_FAM_DELTA`.
 Measured (fam6, δ4 vs δ0): time ~flat at n = 24–26 (147.5 vs 151.0;
 306.0 vs 310.6 — the tree-count gain cancels against the presum/
 discharge round growth), **−10 % at n = 29** (1728.3 vs 1915.2,
@@ -1333,7 +1333,7 @@ prove / 1.28× bytes**. Updated openings routing: 0x44 below n ≈ 26;
 the MERGED pair-family proof above.
 
 **Openings-only b3 arms (2026-07-28): the family crossover survives
-without the checks.** `F2Z_AB_B3OPEN=1` — commit SIX (d', b'
+without the checks.** `BITZ_AB_B3OPEN=1` — commit SIX (d', b'
 virtual), open all eight with NO relation bodies (v(d'), v(b') as
 the pair-XOR forms at the relabeled point): `vx8` = ONE 0x44
 sub-proof, 8 plain bodies incl. the two ident-op XOR sets (no rings,
@@ -1361,11 +1361,11 @@ pair-families above (when XOR-image openings are in the set at all;
 pure identity sets stay 0x44 at every n unless bodies ≫ 8).
 
 **Openings-only measurement (2026-07-28; the outer protocol owns
-constraint checking).** `F2Z_AB_OPEN8=1`: 8 committed columns, 8
+constraint checking).** `BITZ_AB_OPEN8=1`: 8 committed columns, 8
 identity MLE openings at ONE shared point through a single 0x44
 sub-proof (8 plain bodies, one Ligerito tail, δ = 4 via
-`F2Z_AB_OPEN_DELTA`), against the base prover's one-claim floor on
-the same 2^n bits (`f2z <n> --profile fast`, same window):
+`BITZ_AB_OPEN_DELTA`), against the base prover's one-claim floor on
+the same 2^n bits (`bitz <n> --profile fast`, same window):
 
 | n | base (1 opening) | OPEN8 (8 openings) | ratio | marginal/opening |
 |----|------------------|--------------------|-------|------------------|
@@ -1387,9 +1387,9 @@ math for this family: one word = one G, 56 G-words per compression
 n=22/24/26/28/29); fam6 at n=29 ≈ **46 µs per compression** for the
 xor-rot layer + openings.
 
-### RS rate study: lower-rate profiles (`F2Z_LIG_PROFILE`)
+### RS rate study: lower-rate profiles (`BITZ_LIG_PROFILE`)
 
-The bench's `F2Z_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
+The bench's `BITZ_LIG_PROFILE=slim` selects flock's embedded SLIM profile —
 fewer queries plus 16-bit per-level grinding at the same 100-bit
 `johnson_ood` target as the default FAST (base rate 1/2). The slim
 profile's base rate is whatever the flock checkout's current generation
@@ -1424,7 +1424,7 @@ vs the fast sweep's; the intrinsic overhead from the open+commit deltas is
 falls back to the ad-hoc rate-1/4 config, so n < 22 is profile-invariant.
 
 **RS rate 1/8, four ways (n ≤ 28).** Two rate-1/8 configurations were
-measured: `F2Z_LIG_PROFILE=r8` (the ad-hoc UDR generator at
+measured: `BITZ_LIG_PROFILE=r8` (the ad-hoc UDR generator at
 `log_inv_rate = 3`, embedded-matching `initial_k = 6` — the
 small-`initial_k` ad-hoc geometry is the catastrophic-commit trap; ~121
 L0 queries, UNAUDITED probe) and the regenerated **Johnson slim at rate
@@ -1460,7 +1460,7 @@ ad-hoc config):
 | 26 | 17.2 ms | 150 ms | 28.8 ms | 162 ms | 2.90 ms | 150.7 KiB | 373 MB |
 | 28 | 65.7 ms | 558 ms | 97.7 ms | 666 ms | 3.60 ms | 187.0 KiB | 1.46 GB |
 
-**Pushing proof size further: `F2Z_LIG_PROFILE=custom:<log_inv_rate>:<initial_k>`.**
+**Pushing proof size further: `BITZ_LIG_PROFILE=custom:<log_inv_rate>:<initial_k>`.**
 The bench can build Johnson configs at any (base rate, L0 interleaving)
 geometry — ladder per `scripts/soundness.py`'s rule, queries/grinding/OOD
 solved against flock's own `paper_predicted_*` formulas and gated by
@@ -1531,7 +1531,7 @@ every `α ∉ {0,1}` generates. The measured verdict (M4, interleaved-rep
 harness): **b127 is 0.88–1.02× — equal at best, ~10 % behind on the
 prover-dominant patterns**. The "~30 % faster than GHASH" folklore
 replicates only against scalar-reduction GHASH baselines (Reilabs' own
-bench: 1.22× on this box); against F2Z's PMULL-fold GHASH the trade
+bench: 1.22× on this box); against BitZ's PMULL-fold GHASH the trade
 "fewer PMULLs, more shifts" loses — Apple's PMULL throughput makes the
 GHASH fold nearly free. A protocol-level swap is in any case
 architecturally blocked at the ring-switch (`[K:F₂] = 2^7` packing) and
@@ -1572,7 +1572,7 @@ so the statement scales — prover RAM is the only wall.
 - **flock Merkle leaf/node domain separation (upstream-flagged, pre-production).**
   flock's `merkle` module does *not* domain-separate leaf vs internal-node
   hashing — its own module note flags it as a "micro-benchmark module, not
-  production code". F2Z inherits flock's commitment/Merkle verbatim; treat the
+  production code". BitZ inherits flock's commitment/Merkle verbatim; treat the
   current Merkle binding accordingly until flock ships the fix.
 - The verifier requires `α` to generate `GF(2^128)^×` (checked against the known
   factorization of `2^128 − 1`); the per-chunk fold magnitude must stay below

@@ -1,6 +1,6 @@
 # Integration status — 2026-09-15
 
-F2Z, circuit, and local Flock now consume `vendor/field` for production arithmetic.
+BitZ, circuit, and local Flock now consume `vendor/field` for production arithmetic.
 The production graph with `ecdsa` contains none of `crypto-primitives`, its macros,
 `crypto-bigint`, `crypto-primes`, `num-bigint`, or `num-integer`.
 `vendor/crypto-primitives` and its archived test dependency are removed.
@@ -31,7 +31,7 @@ Limber, Binius64, Plonky3, Spartan2 and ZKPassport arithmetic is outside this sc
 - General modular arithmetic, prepared division, signed/native mixed MAC,
   canonical-output folds and fixed-schedule private inversion live in `field`.
   Allocation-free `_into` methods and allocating convenience methods coexist.
-- F2Z and Flock use the same `Gf8`/`Gf128`; F2Z's `B127` and wide binary
+- BitZ and Flock use the same `Gf8`/`Gf128`; BitZ's `B127` and wide binary
   polynomials also use shared types. GHASH order and AES embeddings are preserved.
   Numeric embedding into characteristic two is parity, separately from explicit
   polynomial-bit construction.
@@ -39,7 +39,7 @@ Limber, Binius64, Plonky3, Spartan2 and ZKPassport arithmetic is outside this sc
   fused rounds, tails and private architecture accumulators are retained in the
   shared crate. Every x86 feature required by a kernel is gated. The four-lane
   packed projection is retained as `PreparedGf128Projection`; obsolete uncalled
-  projection helpers were deleted from F2Z, with original source archived.
+  projection helpers were deleted from BitZ, with original source archived.
 - u32 keeps borrowed native data. u64/u128 consume native operands and exact
   split products through mixed first-round kernels. u128 x/y/z segments remain
   borrowed. First folds write the representation needed by the next stage.
@@ -63,7 +63,7 @@ Root polynomial contracts, transcript adapters and sumcheck orchestration remain
 consumer abstractions. Their operations delegate to shared arithmetic. The
 sumcheck test hook also admits an independent bigint oracle; it is not a second
 production backend. Storage, matrix layouts, NTT plans, Wengert plans, packed
-readers, grinding boundaries and `U32MulF2zWidth` remain consumer-owned.
+readers, grinding boundaries and `U32MulBitzWidth` remain consumer-owned.
 
 ## Protocol boundaries
 
@@ -74,7 +74,7 @@ reused. Internal rejection reads do not add grinding boundaries. Trusted runtime
 constructors use debug-only primality checks; untrusted configuration validation
 and protocol replay remain checked. There is no compile-time Miller–Rabin.
 
-Spartan transcript domains use v2; ECDSA encoding uses `F2ZSE003` and hybrid
+Spartan transcript domains use v2; ECDSA encoding uses `BITZSE03` and hybrid
 encoding uses version 6. Protocol parameters, field definitions and opening modes
 are unchanged. Transcript fixtures are regenerated only from proofs that verify.
 No new whole-proof security theorem is claimed.

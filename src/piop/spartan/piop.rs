@@ -43,20 +43,20 @@ use super::{
 /// Version two identifies the target-native transcript fork: it uses BLAKE3
 /// statement digests, runtime field configurations, exact challenge sampling,
 /// and an explicit assignment-oracle binding.
-pub const SPARTAN_PIOP_DOMAIN: &[u8] = b"f2z/spartan/piop/v2";
+pub const SPARTAN_PIOP_DOMAIN: &[u8] = b"bitz/spartan/piop/v2";
 
 /// Domain separator for the known-zero univariate-skip PIOP.
 ///
 /// The standard `v2` schedule deliberately retains its original domain and
 /// transcript bytes.  A distinct domain prevents either proof shape from
 /// being replayed as the other.
-pub const SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN: &[u8] = b"f2z/spartan/piop/univariate-skip/v1";
+pub const SPARTAN_UNIVARIATE_SKIP_PIOP_DOMAIN: &[u8] = b"bitz/spartan/piop/univariate-skip/v1";
 
 /// Domain separator for the assignment-oracle commitment in the PIOP
 /// statement.
-pub const SPARTAN_ASSIGNMENT_ORACLE_DOMAIN: &[u8] = b"f2z/spartan/assignment-oracle/v1";
+pub const SPARTAN_ASSIGNMENT_ORACLE_DOMAIN: &[u8] = b"bitz/spartan/assignment-oracle/v1";
 
-const NONSUCCINCT_ASSIGNMENT_DIGEST_DOMAIN: &[u8] = b"f2z/spartan/full-assignment-digest/v1";
+const NONSUCCINCT_ASSIGNMENT_DIGEST_DOMAIN: &[u8] = b"bitz/spartan/full-assignment-digest/v1";
 
 /// The cubic outer and quadratic inner sumcheck proofs.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -934,7 +934,7 @@ where
 /// and discharges it against a complete assignment table.
 ///
 /// This is intentionally nonsuccinct. It is the native integration seam to be
-/// replaced by the F2Z PCS opening protocol later.
+/// replaced by the BitZ PCS opening protocol later.
 pub fn verify_spartan_with_mle_claim<F, C>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<F, C>,

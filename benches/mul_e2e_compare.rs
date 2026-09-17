@@ -9,8 +9,8 @@ mod common;
 static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
 use common::output::{BenchmarkOutput, FileMode, JsonStyle};
-#[path = "mul_e2e_compare/f2z.rs"]
-mod f2z_backend;
+#[path = "mul_e2e_compare/bitz.rs"]
+mod bitz_backend;
 #[path = "mul_e2e_compare/limber.rs"]
 mod limber;
 #[path = "mul_e2e_compare/memory.rs"]
@@ -83,7 +83,7 @@ impl Workload {
     /// low and high 128-bit halves of the exact 256-bit product.
     fn wide_row(self, x: u128, y: u128) -> [u128; 4] {
         assert!(self.is_wide(), "{} operands are u64 values", self.slug());
-        let (lo, hi) = f2z::piop::spartan::mul_u128_full(x, y);
+        let (lo, hi) = bitz::piop::spartan::mul_u128_full(x, y);
         [x, y, lo, hi]
     }
     /// The four native witness values of one gate: operands, then the
@@ -159,7 +159,7 @@ impl Corpus {
         narrow(self.inputs())
     }
     fn from_wide_inputs(workload: Workload, inputs: Vec<(u128, u128)>) -> Self {
-        use f2z::piop::spartan::U128MulWitness;
+        use bitz::piop::spartan::U128MulWitness;
         assert!(
             workload.is_wide(),
             "{} operands are u64 values",
@@ -175,7 +175,7 @@ impl Corpus {
         }
     }
     fn from_inputs(workload: Workload, inputs: Vec<(u64, u64)>) -> Self {
-        use f2z::piop::spartan::U64MulWitness;
+        use bitz::piop::spartan::U64MulWitness;
         let digest = match workload {
             Workload::U32 => mod32::digest_rows(
                 inputs.iter().map(|&(a, b)| {
@@ -355,7 +355,7 @@ fn captured<'a>(raw: &'a [CapturedSpan], name: &str, lo: u64, hi: u64) -> &'a Ca
 }
 
 enum Context {
-    F2z(f2z_backend::Context),
+    Bitz(bitz_backend::Context),
     Binius(binius::Context),
     BiniusLigerito(binius_ligerito::Context),
     Plonky3Fri(plonky3::Context),
@@ -369,7 +369,7 @@ impl Context {
         params: Option<common::whir_tuning::Params>,
     ) -> Self {
         match backend {
-            Backend::F2z => Self::F2z(f2z_backend::Context::setup(corpus)),
+            Backend::Bitz => Self::Bitz(bitz_backend::Context::setup(corpus)),
             Backend::Binius => Self::Binius(binius::Context::setup(corpus)),
             Backend::BiniusLigerito => Self::BiniusLigerito(binius_ligerito::Context::setup(corpus)),
             Backend::Plonky3Fri => Self::Plonky3Fri(plonky3::Context::setup(corpus)),
@@ -382,7 +382,7 @@ impl Context {
     }
     fn run(&self) -> Timing {
         match self {
-            Self::F2z(c) => c.run(),
+            Self::Bitz(c) => c.run(),
             Self::Binius(c) => c.run(),
             Self::BiniusLigerito(c) => c.run(),
             Self::Plonky3Fri(c) => c.run(),
@@ -392,7 +392,7 @@ impl Context {
     }
     fn config(&self) -> Value {
         match self {
-            Self::F2z(c) => c.config(),
+            Self::Bitz(c) => c.config(),
             Self::Binius(c) => c.config(),
             Self::BiniusLigerito(c) => c.config(),
             Self::Plonky3Fri(c) => c.config(),
@@ -421,7 +421,7 @@ fn check_backend_support(workloads: &[Workload], backends: &[Backend]) {
         for backend in backends {
             assert!(
                 workload.supports(*backend),
-                "the {} adapter has no {} workload; select F2Z_MUL_COMPARE_BACKENDS=\"f2z binius64\" for it",
+                "the {} adapter has no {} workload; select BITZ_MUL_COMPARE_BACKENDS=\"bitz binius64\" for it",
                 backend.slug(), workload.slug()
             );
         }
@@ -430,7 +430,7 @@ fn check_backend_support(workloads: &[Workload], backends: &[Backend]) {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 enum Backend {
-    F2z,
+    Bitz,
     #[value(name = "binius64")]
     Binius,
     #[value(name = "binius64-ligerito")]
@@ -443,7 +443,7 @@ enum Backend {
 impl Backend {
     fn slug(self) -> &'static str {
         match self {
-            Self::F2z => "f2z", Self::Binius => "binius64",
+            Self::Bitz => "bitz", Self::Binius => "binius64",
             Self::BiniusLigerito => "binius64-ligerito", Self::Plonky3Fri => "plonky3-fri",
             Self::Plonky3Whir => "plonky3-whir", Self::Limber => "limber",
         }
@@ -452,15 +452,15 @@ impl Backend {
 
 #[derive(clap::Parser)]
 struct CompareEnv {
-    #[arg(env = "F2Z_BENCH_REPS", default_value_t = 5, value_parser = common::cli::positive)]
+    #[arg(env = "BITZ_BENCH_REPS", default_value_t = 5, value_parser = common::cli::positive)]
     reps: usize,
-    #[arg(env = "F2Z_BENCH_SEED", value_parser = common::cli::seed)]
+    #[arg(env = "BITZ_BENCH_SEED", value_parser = common::cli::seed)]
     seed: Option<u64>,
-    #[arg(env = "F2Z_MUL_COMPARE_WORKLOADS", default_value = "u32-mod32", value_parser = common::pcs_cli::enum_list::<Workload>)]
+    #[arg(env = "BITZ_MUL_COMPARE_WORKLOADS", default_value = "u32-mod32", value_parser = common::pcs_cli::enum_list::<Workload>)]
     workloads: common::cli::List<Workload>,
-    #[arg(env = "F2Z_MUL_COMPARE_BACKENDS", default_value = "f2z binius64 binius64-ligerito plonky3-fri", value_parser = common::pcs_cli::enum_list::<Backend>)]
+    #[arg(env = "BITZ_MUL_COMPARE_BACKENDS", default_value = "bitz binius64 binius64-ligerito plonky3-fri", value_parser = common::pcs_cli::enum_list::<Backend>)]
     backends: common::cli::List<Backend>,
-    #[arg(env = "F2Z_MUL_COMPARE_OUTPUT_DIR")]
+    #[arg(env = "BITZ_MUL_COMPARE_OUTPUT_DIR")]
     output: Option<PathBuf>,
 }
 
@@ -477,7 +477,7 @@ impl CompareEnv {
         args
     }
     fn proof_exponents(&self) -> Vec<usize> {
-        let minimum = if self.backends.contains(&Backend::F2z) { 15 } else { 4 };
+        let minimum = if self.backends.contains(&Backend::Bitz) { 15 } else { 4 };
         let exponents = common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(minimum..=max_exponent() as u64))
             .unwrap_or_else(|| vec![15]);
         for (index, &n) in exponents.iter().enumerate() {
@@ -503,7 +503,7 @@ struct Args {
 
 #[derive(clap::Parser)]
 struct MemoryEnv {
-    #[arg(env = "F2Z_MUL_COMPARE_MEMORY", default_value = "1", value_parser = ["0", "1"])]
+    #[arg(env = "BITZ_MUL_COMPARE_MEMORY", default_value = "1", value_parser = ["0", "1"])]
     enabled: String,
 }
 
@@ -520,7 +520,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let CompareEnv { workloads, backends, output, reps, seed } = config;
     let measure_memory = common::cli::environment::<MemoryEnv>().enabled == "1";
     let threads = common::init();
-    f2z::observability::install()?;
+    bitz::observability::install()?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
@@ -623,18 +623,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Check the actual native materialization before accepting any proof timings.
                 let audit = audit_backend(selected_backend, &corpus);
                 assert_eq!(audit.digest, corpus.digest);
-                let (context, started) = f2z::observability::measure(
+                let (context, started) = bitz::observability::measure(
                     tracing::info_span!("mul_e2e_compare:context"),
                     || Context::setup(selected_backend, Arc::clone(&corpus), whir_params),
                 ).expect("measure completed operation");
                 let setup_ms = started.as_secs_f64() * 1e3;
                 let mut config = context.config();
                 config["proof_size_encoding"] = json!(match backend {
-                    "f2z" =>
-                        "commitment root + fixed-width PIOP payload/nonces + canonical F2Z opening",
+                    "bitz" =>
+                        "commitment root + fixed-width PIOP payload/nonces + canonical BitZ opening",
                     "binius64" => "native transcript bytes (includes commitment)",
                     "binius64-ligerito" =>
-                        "PIOP messages + oracle roots/Round 0 + canonical F2Z openings (includes commitment)",
+                        "PIOP messages + oracle roots/Round 0 + canonical BitZ openings (includes commitment)",
                     "plonky3-fri" | "plonky3-whir" => "postcard proof bytes (includes commitment)",
                     "limber" =>
                         "serialized commitments and Brakedown batch opening + counted fixed-width PIOP payload",
@@ -809,7 +809,7 @@ mod tests {
         let _trace = super::common::test_tracing();
         use tracing_subscriber::prelude::*;
         tracing::subscriber::with_default(
-            tracing_subscriber::registry().with(f2z::observability::layer()),
+            tracing_subscriber::registry().with(bitz::observability::layer()),
             || {
                 for backend in [Backend::Binius, Backend::Plonky3Fri, Backend::Plonky3Whir, Backend::Limber] {
                     let context = Context::setup(
@@ -841,10 +841,10 @@ mod tests {
         );
     }
     /// BLAKE3 digest of the canonical 2^15 u128 corpus (`U128_SEED`), pinned
-    /// when the workload was added.
+    /// after the BitZ digest-domain migration.
     #[allow(dead_code)] // `cargo bench` sets cfg(test) without running the #[test] callers.
     const U128_CORPUS_2P15_DIGEST: &str =
-        "0964e84115dfbfa7e8046a548ac4d30a3edbffdd279a0c44dde201b659a54879";
+        "fa3e356f388db00bd24d2dbfce9c1ec4affd8dd97e013d59ac54e256fafe9808";
     #[test]
     fn proof_sizes_survive_sample_and_summary_export() {
         let measured: Vec<_> = [1024, 4096, 2048]
@@ -893,6 +893,14 @@ mod tests {
         t.add("opening", "opening-proof", 20, 50);
         assert_eq!(t.union_ms(|_| true), 40.0 / 1e6);
     }
+    fn assert_corpus_pin(actual: &str, expected: &str) {
+        if std::env::var_os("BITZ_RECORD_PINS").is_some() {
+            println!("CORPUS_PIN old={expected} hash={actual}");
+        } else {
+            assert_eq!(actual, expected, "canonical witness digest changed");
+        }
+    }
+
     #[test]
     fn deterministic_corpus_matches_saved_pcs_witnesses() {
         let a = Corpus::new(Workload::U32, 4, 7);
@@ -902,14 +910,14 @@ mod tests {
         assert_eq!(a.digest, Corpus::new(Workload::U64, 4, 7).digest);
         assert_ne!(a.digest, Corpus::new(Workload::U64, 4, 8).digest);
         assert!(a.inputs().iter().any(|&(x, _)| x > u64::from(u32::MAX)));
-        assert_eq!(
-            Corpus::new(
+        assert_corpus_pin(
+            &Corpus::new(
                 Workload::U64,
                 15,
                 common::mul_witness::shape_seed(common::mul_witness::U64_SEED, 15)
             )
             .digest,
-            "7cd5974fd9a40005cbc916f667a078e3717ddb7f4a0cf107557ca8e3ce646425"
+            "5529b093d079fe59ba87688d2a7b83860f692a9020f2126ab292543916e7db9c"
         );
         let a = Corpus::new(Workload::U128, 4, 7);
         assert_eq!(a.digest, Corpus::new(Workload::U128, 4, 7).digest);
@@ -919,8 +927,8 @@ mod tests {
                 .iter()
                 .any(|&(x, _)| x > u128::from(u64::MAX))
         );
-        assert_eq!(
-            Corpus::new(
+        assert_corpus_pin(
+            &Corpus::new(
                 Workload::U128,
                 15,
                 common::mul_witness::shape_seed(common::mul_witness::U128_SEED, 15)
@@ -947,13 +955,13 @@ impl WitnessAudit {
         generation_ms: f64,
         representation: &'static str,
     ) -> Self {
-        use f2z::piop::spartan::U128MulLayout;
+        use bitz::piop::spartan::U128MulLayout;
         let inputs = corpus.wide_inputs();
         assert_eq!(rows.len(), inputs.len(), "native witness row count");
         let layout = U128MulLayout::new(rows.len()).expect("canonical u128 layout");
         let capacity = layout.capacity();
         let mut hash = blake3::Hasher::new();
-        hash.update(b"f2z/u128-mul-compare/integer-witness/v1");
+        hash.update(b"bitz/u128-mul-compare/integer-witness/v1");
         hash.update(&(layout.assignment_len() as u64).to_le_bytes());
         let mut entries = vec![(0_u128, 0_u128); layout.assignment_len()];
         entries[0] = (1, 0);
@@ -1009,7 +1017,7 @@ impl WitnessAudit {
             };
         }
         assert_eq!(corpus.workload, Workload::U64);
-        let layout = f2z::piop::spartan::U64MulLayout::new(n).expect("canonical u64 layout");
+        let layout = bitz::piop::spartan::U64MulLayout::new(n).expect("canonical u64 layout");
         let (capacity, assignment_len) = (layout.capacity(), layout.assignment_len());
         let mut assignment = vec![0u64; assignment_len];
         assignment[0] = 1;
@@ -1027,7 +1035,7 @@ impl WitnessAudit {
                 assignment[4 * capacity + i] = q;
             }
         }
-        let domain: &[u8] = b"f2z/u64-mul-compare/integer-witness/v1";
+        let domain: &[u8] = b"bitz/u64-mul-compare/integer-witness/v1";
         let mut hash = blake3::Hasher::new();
         hash.update(domain);
         hash.update(&(assignment.len() as u64).to_le_bytes());
@@ -1046,7 +1054,7 @@ impl WitnessAudit {
 }
 fn audit_backend(backend: Backend, corpus: &Corpus) -> WitnessAudit {
     match backend {
-        Backend::F2z => f2z_backend::audit(corpus),
+        Backend::Bitz => bitz_backend::audit(corpus),
         // The same Binius64 circuit and witness filler; only the opener differs.
         Backend::Binius | Backend::BiniusLigerito => binius::audit(corpus),
         Backend::Plonky3Fri | Backend::Plonky3Whir => mod32_air::audit(corpus),
@@ -1060,7 +1068,7 @@ pub(crate) fn witness_main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CompareEnv::read();
     let exponents = config.witness_exponents();
     let CompareEnv { workloads, backends, output, reps, seed } = config;
-    f2z::observability::install()?;
+    bitz::observability::install()?;
     let threads = common::init();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
@@ -1163,7 +1171,7 @@ mod witness_tests {
         for workload in [Workload::U32, Workload::U64, Workload::U128] {
             let corpus = edge_corpus(workload);
             for backend in [
-                Backend::F2z,
+                Backend::Bitz,
                 Backend::Binius,
                 Backend::BiniusLigerito,
                 Backend::Plonky3Fri,
@@ -1205,11 +1213,11 @@ mod ligerito_isolation_tests {
     // Separate processes avoid racing other tests over process-global settings.
     #[test]
     fn configuration_probe() {
-        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() {
+        if std::env::var_os("BITZ_TEST_CONFIGURATION_PROBE").is_none() {
             return;
         }
         let corpus = Arc::new(Corpus::new(Workload::U32, 15, 7));
-        let f2z = f2z_backend::Context::setup(Arc::clone(&corpus)).config();
+        let bitz = bitz_backend::Context::setup(Arc::clone(&corpus)).config();
         let small = Arc::new(edge_corpus(Workload::U32));
         let binius = binius::Context::setup(Arc::clone(&small)).config();
         let fri = plonky3::Context::setup(Arc::clone(&small)).config();
@@ -1219,7 +1227,7 @@ mod ligerito_isolation_tests {
                 .config();
         println!(
             "CONFIG_PROBE {}",
-            json!({"f2z":f2z,"binius":binius,"fri":fri,"whir":whir})
+            json!({"bitz":bitz,"binius":binius,"fri":fri,"whir":whir})
         );
     }
 
@@ -1232,8 +1240,8 @@ mod ligerito_isolation_tests {
                     "benchmark::ligerito_isolation_tests::configuration_probe",
                     "--nocapture",
                 ])
-                .env("F2Z_TEST_CONFIGURATION_PROBE", "1")
-                .env("F2Z_LIG_PROFILE", profile)
+                .env("BITZ_TEST_CONFIGURATION_PROBE", "1")
+                .env("BITZ_LIG_PROFILE", profile)
                 .env("RAYON_NUM_THREADS", "2")
                 .output()
                 .unwrap();
@@ -1254,8 +1262,8 @@ mod ligerito_isolation_tests {
         let johnson = probe("custom:1:4");
         let udr = probe("udrg:1:4");
         assert_ne!(
-            johnson["f2z"]["ligerito"]["configuration_fingerprint"],
-            udr["f2z"]["ligerito"]["configuration_fingerprint"]
+            johnson["bitz"]["ligerito"]["configuration_fingerprint"],
+            udr["bitz"]["ligerito"]["configuration_fingerprint"]
         );
         for backend in ["binius", "fri", "whir"] {
             assert_eq!(johnson[backend], udr[backend], "{backend}");
@@ -1274,8 +1282,8 @@ mod cli_tests {
         CompareEnv::command().debug_assert();
         MemoryEnv::command().debug_assert();
         assert!(Args::try_parse_from(["mul", "--bench"]).unwrap().measure_memory.is_none());
-        assert_eq!(Args::try_parse_from(["mul", "--measure-memory", "f2z", "u32", "15", "0", "null"]).unwrap().measure_memory.unwrap().len(), 5);
-        assert!(Args::try_parse_from(["mul", "--measure-memory", "f2z", "u32", "15", "0"]).is_err());
+        assert_eq!(Args::try_parse_from(["mul", "--measure-memory", "bitz", "u32", "15", "0", "null"]).unwrap().measure_memory.unwrap().len(), 5);
+        assert!(Args::try_parse_from(["mul", "--measure-memory", "bitz", "u32", "15", "0"]).is_err());
         assert_eq!(common::pcs_cli::enum_list::<Workload>("u32 u32-mod32").unwrap(), [Workload::U32, Workload::U32]);
     }
 }
@@ -1287,7 +1295,7 @@ mod cli_environment_tests {
 
     #[test]
     fn configuration_probe() {
-        let Ok(mode) = std::env::var("F2Z_MUL_CLI_TEST_MODE") else { return };
+        let Ok(mode) = std::env::var("BITZ_MUL_CLI_TEST_MODE") else { return };
         let config = CompareEnv::read();
         let exponents = if mode == "proof" { config.proof_exponents() } else { config.witness_exponents() };
         let memory = (mode == "proof").then(|| common::cli::environment::<MemoryEnv>().enabled == "1");
@@ -1300,7 +1308,7 @@ mod cli_environment_tests {
         let test = concat!(module_path!(), "::configuration_probe");
         std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
-            .env_clear().env("F2Z_MUL_CLI_TEST_MODE", mode).envs(settings.iter().copied())
+            .env_clear().env("BITZ_MUL_CLI_TEST_MODE", mode).envs(settings.iter().copied())
             .output().unwrap()
     }
 
@@ -1322,37 +1330,37 @@ mod cli_environment_tests {
         assert_eq!(proof["memory"], true);
         assert_eq!(witness["memory"], Value::Null);
         assert_eq!(proof["workloads"], json!(["u32-mod32"]));
-        assert_eq!(proof["backends"], json!(["f2z","binius64","binius64-ligerito","plonky3-fri"]));
+        assert_eq!(proof["backends"], json!(["bitz","binius64","binius64-ligerito","plonky3-fri"]));
         assert_eq!(witness["backends"], proof["backends"]);
         for shapes in ["4", "14", "15 15"] {
-            assert!(!child("proof", &[("F2Z_BENCH_SHAPES", shapes)]).status.success());
-            assert!(child("witness", &[("F2Z_BENCH_SHAPES", shapes)]).status.success());
+            assert!(!child("proof", &[("BITZ_BENCH_SHAPES", shapes)]).status.success());
+            assert!(child("witness", &[("BITZ_BENCH_SHAPES", shapes)]).status.success());
         }
-        assert_eq!(config("proof", &[("F2Z_BENCH_SHAPES", "4"),
-            ("F2Z_MUL_COMPARE_BACKENDS", "binius64")])["exponents"], json!([4]));
+        assert_eq!(config("proof", &[("BITZ_BENCH_SHAPES", "4"),
+            ("BITZ_MUL_COMPARE_BACKENDS", "binius64")])["exponents"], json!([4]));
         let upper = max_exponent().to_string();
         let above = (max_exponent() + 1).to_string();
         for mode in ["proof", "witness"] {
-            assert!(child(mode, &[("F2Z_BENCH_SHAPES", &upper)]).status.success());
-            for bad in ["3", &above] { assert!(!child(mode, &[("F2Z_BENCH_SHAPES", bad)]).status.success()); }
+            assert!(child(mode, &[("BITZ_BENCH_SHAPES", &upper)]).status.success());
+            for bad in ["3", &above] { assert!(!child(mode, &[("BITZ_BENCH_SHAPES", bad)]).status.success()); }
         }
     }
 
     #[test]
     fn campaign_overrides_alias_duplicates_and_memory_switch() {
-        let config = config("proof", &[("F2Z_MUL_COMPARE_WORKLOADS", "u64 u128"),
-            ("F2Z_MUL_COMPARE_BACKENDS", "f2z binius64"), ("F2Z_BENCH_REPS", "3"),
-            ("F2Z_BENCH_SEED", "0Xff"), ("F2Z_MUL_COMPARE_MEMORY", "0")]);
+        let config = config("proof", &[("BITZ_MUL_COMPARE_WORKLOADS", "u64 u128"),
+            ("BITZ_MUL_COMPARE_BACKENDS", "bitz binius64"), ("BITZ_BENCH_REPS", "3"),
+            ("BITZ_BENCH_SEED", "0Xff"), ("BITZ_MUL_COMPARE_MEMORY", "0")]);
         assert_eq!(config["workloads"], json!(["u64","u128"]));
         assert_eq!(config["reps"], 3);
         assert_eq!(config["seed"], 255);
         assert_eq!(config["memory"], false);
         for settings in [
-            vec![("F2Z_MUL_COMPARE_WORKLOADS", "u32 u32-mod32")],
-            vec![("F2Z_MUL_COMPARE_BACKENDS", "f2z f2z")],
-            vec![("F2Z_MUL_COMPARE_WORKLOADS", "u64"), ("F2Z_MUL_COMPARE_BACKENDS", "plonky3-fri")],
-            vec![("F2Z_BENCH_REPS", "0")], vec![("F2Z_MUL_COMPARE_MEMORY", "true")],
+            vec![("BITZ_MUL_COMPARE_WORKLOADS", "u32 u32-mod32")],
+            vec![("BITZ_MUL_COMPARE_BACKENDS", "bitz bitz")],
+            vec![("BITZ_MUL_COMPARE_WORKLOADS", "u64"), ("BITZ_MUL_COMPARE_BACKENDS", "plonky3-fri")],
+            vec![("BITZ_BENCH_REPS", "0")], vec![("BITZ_MUL_COMPARE_MEMORY", "true")],
         ] { assert!(!child("proof", &settings).status.success(), "accepted {settings:?}"); }
-        assert!(child("witness", &[("F2Z_MUL_COMPARE_MEMORY", "unused")]).status.success());
+        assert!(child("witness", &[("BITZ_MUL_COMPARE_MEMORY", "unused")]).status.success());
     }
 }

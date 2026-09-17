@@ -1,4 +1,4 @@
-//! Binius64's PIOP discharged through the F2Z opener: the `binius64-ligerito`
+//! Binius64's PIOP discharged through the BitZ opener: the `binius64-ligerito`
 //! scheme of the comparison benchmarks.
 //!
 //! Binius64 proves its constraint system exactly as upstream does — the
@@ -6,16 +6,16 @@
 //! reductions on a BLAKE3 Fiat–Shamir transcript — up to the witness
 //! evaluation claim its own ring switch would consume
 //! (`IOPProver::prove_to_evaluation`, exposed by the vendored fork).
-//! Everything below that line is F2Z's: every oracle the PIOP commits is an
+//! Everything below that line is BitZ's: every oracle the PIOP commits is an
 //! interleaved Reed–Solomon codeword under BLAKE3 (rate 1/2 by default,
 //! [`Prepared::with_rate`] takes another), pinned by Round 0 right after its
 //! root is bound; the witness evaluation claim is discharged
-//! by F2Z's ring switch and a Johnson-regime Ligerito opening with fold and
+//! by BitZ's ring switch and a Johnson-regime Ligerito opening with fold and
 //! query grinding; every other oracle relation the PIOP queued (the IntMul
 //! reduction's logup* pushforward, when the circuit multiplies) is discharged
 //! by its own Ligerito opening. The whole protocol is gated at 100 bits under
 //! one of two [`Accounting`] models — a union bound over every error term, or
-//! the round-by-round minimum (every term on its own, the figure F2Z's own
+//! the round-by-round minimum (every term on its own, the figure BitZ's own
 //! rows report) — rather than by Binius64's query-phase target.
 pub(crate) mod channel;
 
@@ -49,10 +49,10 @@ pub const TARGET_BITS: u32 = 100;
 /// fold grind.
 pub const MIN_COMPONENT_BITS: usize = 100;
 pub const MAX_COMPONENT_BITS: usize = 112;
-const PROTOCOL: &[u8] = b"f2z/binius64-ligerito/non-zk/v1";
-const EVALUATION_DOMAIN: &[u8] = b"f2z/binius64-ligerito/evaluation/v1";
-const RELATIONS_DOMAIN: &[u8] = b"f2z/binius64-ligerito/relations/v1";
-const FORK_DOMAIN: &[u8] = b"f2z/binius64-ligerito/opening-fork/v1";
+const PROTOCOL: &[u8] = b"bitz/binius64-ligerito/non-zk/v1";
+const EVALUATION_DOMAIN: &[u8] = b"bitz/binius64-ligerito/evaluation/v1";
+const RELATIONS_DOMAIN: &[u8] = b"bitz/binius64-ligerito/relations/v1";
+const FORK_DOMAIN: &[u8] = b"bitz/binius64-ligerito/opening-fork/v1";
 /// Fork tag of the witness bit-MLE opening; relation group `i` uses `1 + i`.
 const WITNESS_FORK: u64 = 0;
 const MAGIC: &[u8; 8] = b"BLIG\x01\0\0\0";
@@ -100,7 +100,7 @@ pub enum Accounting {
     /// term about `log2(#terms)` bits above the gate.
     UnionBound,
     /// `-log2` of the LARGEST term: the round-by-round minimum, the figure
-    /// F2Z's own rows report (`SoundnessAccounting::achieved_bits`); every
+    /// BitZ's own rows report (`SoundnessAccounting::achieved_bits`); every
     /// term must clear the gate on its own.
     RoundByRound,
 }
@@ -765,7 +765,7 @@ mod tests {
         (builder.build(), wires)
     }
 
-    /// Expected products computed with F2Z's own GF(2^128) — the same GHASH
+    /// Expected products computed with BitZ's own GF(2^128) — the same GHASH
     /// field and the same `(lo, hi)` coefficient words as the BMUL gate.
     fn bmul_witness(circuit: &Circuit, wires: &[[Wire; 6]], corrupt: bool) -> Option<ValueVec> {
         let mut filler = circuit.new_witness_filler();
@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn bmul_circuit_round_trips_through_the_f2z_opener() {
+    fn bmul_circuit_round_trips_through_the_bitz_opener() {
         let (circuit, wires) = bmul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         // BinMul commits no extra oracle: the witness is the only one.
@@ -852,7 +852,7 @@ mod tests {
     }
 
     #[test]
-    fn multiplication_circuit_round_trips_through_the_f2z_opener() {
+    fn multiplication_circuit_round_trips_through_the_bitz_opener() {
         let (circuit, wires) = mul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         assert_eq!(
@@ -956,7 +956,7 @@ mod tests {
 
     /// The IntMul reduction's queued pushforward relation must mean the same
     /// thing on both sides: `⟨basis, oracle⟩ = claim` on the prover, and the
-    /// verifier's transparent closure must be the basis MLE in F2Z's
+    /// verifier's transparent closure must be the basis MLE in BitZ's
     /// coordinate convention.
     #[test]
     fn pushforward_relation_is_consistent_across_prover_and_verifier() {

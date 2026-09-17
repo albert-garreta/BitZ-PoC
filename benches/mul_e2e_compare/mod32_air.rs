@@ -90,7 +90,7 @@ pub(super) fn generate(corpus: &Corpus) -> RowMajorMatrix<Val> {
     RowMajorMatrix::new(values, TRACE_WIDTH)
 }
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
-    let (trace, started) = f2z::observability::measure(
+    let (trace, started) = bitz::observability::measure(
         tracing::info_span!("mul_e2e_compare/mod32_air:trace"),
         || generate(corpus),
     ).expect("measure completed operation");

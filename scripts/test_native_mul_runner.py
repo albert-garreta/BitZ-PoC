@@ -31,7 +31,7 @@ def config(**overrides):
     # The recorded fixture predates the suite's 100-bit Brakedown pin, so the
     # test config reproduces the native 114-bit target it was measured at.
     return dict(reps=2, threads=8, seed=runner.DEFAULT_SEED, seed_explicit=False, memory=False,
-                binius_rate=None, f2z_profile=None, workloads=["u32-mod32"], backends=["limber"],
+                binius_rate=None, bitz_profile=None, workloads=["u32-mod32"], backends=["limber"],
                 exponents=[15], limber_bd_lambda=114, **overrides)
 
 
@@ -81,39 +81,39 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(all(key not in env for key in runner.CLEAR_ENV))
         self.assertEqual(env["RUSTFLAGS"], "-C target-cpu=native")
         self.assertEqual(env["RAYON_NUM_THREADS"], "8")
-        self.assertNotIn("F2Z_BENCH_SEED",env)
+        self.assertNotIn("BITZ_BENCH_SEED",env)
         # The Limber Brakedown target is pinned through the recorded knob:
         # default 100, explicit override recorded, ambient BDLAMBDA rejected.
         self.assertEqual(env["BDLAMBDA"], "114")
-        limber = dict(F2Z_MUL_COMPARE_BACKENDS="limber")
+        limber = dict(BITZ_MUL_COMPARE_BACKENDS="limber")
         self.assertEqual(runner.configuration(limber)["limber_bd_lambda"], 100)
-        self.assertEqual(runner.configuration(limber | {"F2Z_LIMBER_BDLAMBDA":"114"})["limber_bd_lambda"], 114)
-        for bad in ({"BDLAMBDA":"114"}, {"F2Z_LIMBER_BDLAMBDA":"90"}, {"F2Z_LIMBER_BDLAMBDA":"abc"}):
+        self.assertEqual(runner.configuration(limber | {"BITZ_LIMBER_BDLAMBDA":"114"})["limber_bd_lambda"], 114)
+        for bad in ({"BDLAMBDA":"114"}, {"BITZ_LIMBER_BDLAMBDA":"90"}, {"BITZ_LIMBER_BDLAMBDA":"abc"}):
             with self.assertRaises(ValueError):
                 runner.configuration(limber | bad)
         # The requested rate is carried; an ambient one never survives.
         wide = config(); wide["binius_rate"] = 3; wide["workloads"] = ["u128"]
-        self.assertEqual(runner.campaign_environment({"F2Z_BINIUS_LOG_INV_RATE":"9"},wide)["F2Z_BINIUS_LOG_INV_RATE"],"3")
-        rates = dict(F2Z_MUL_COMPARE_BACKENDS="binius64")
+        self.assertEqual(runner.campaign_environment({"BITZ_BINIUS_LOG_INV_RATE":"9"},wide)["BITZ_BINIUS_LOG_INV_RATE"],"3")
+        rates = dict(BITZ_MUL_COMPARE_BACKENDS="binius64")
         self.assertIsNone(runner.configuration(rates)["binius_rate"])
-        self.assertEqual(runner.configuration(rates | {"F2Z_BINIUS_LOG_INV_RATE":"3"})["binius_rate"],3)
-        with self.assertRaises(ValueError): runner.configuration(rates | {"F2Z_BINIUS_LOG_INV_RATE":"2"})
+        self.assertEqual(runner.configuration(rates | {"BITZ_BINIUS_LOG_INV_RATE":"3"})["binius_rate"],3)
+        with self.assertRaises(ValueError): runner.configuration(rates | {"BITZ_BINIUS_LOG_INV_RATE":"2"})
         row = copy.deepcopy(FIXTURE) | dict(backend="binius64")
         row["config"] = dict(fri_query_target_bits=100, log_inv_rate=3, word_constraints=dict(and_=0))
         with self.assertRaises(ValueError):
             runner.validate_sample(row,config(),15,"binius64","u32-mod32")
         for workload in ("u64", "u128"):
             maximum = sys.maxsize.bit_length() + 1 - 11
-            env = dict(F2Z_MUL_COMPARE_WORKLOADS=workload,F2Z_MUL_COMPARE_BACKENDS="f2z binius64",F2Z_BENCH_SHAPES=f"15 {maximum}")
+            env = dict(BITZ_MUL_COMPARE_WORKLOADS=workload,BITZ_MUL_COMPARE_BACKENDS="bitz binius64",BITZ_BENCH_SHAPES=f"15 {maximum}")
             self.assertEqual(runner.configuration(env)["exponents"],[15,maximum])
-            with self.assertRaises(ValueError): runner.configuration(env | {"F2Z_BENCH_SHAPES":str(maximum+1)})
-        env = dict(F2Z_MUL_COMPARE_BACKENDS="f2z")
-        self.assertEqual(runner.configuration(env | {"F2Z_MUL_COMPARE_WORKLOADS":"u32"})["workloads"],["u32-mod32"])
-        for extra in (dict(F2Z_MUL_COMPARE_WORKLOADS="u32 u32-mod32"),dict(F2Z_MUL_COMPARE_WORKLOADS="babybear"),dict(F2Z_MUL_COMPARE_BACKENDS="unknown"),dict(RAYON_NUM_THREADS="0")):
+            with self.assertRaises(ValueError): runner.configuration(env | {"BITZ_BENCH_SHAPES":str(maximum+1)})
+        env = dict(BITZ_MUL_COMPARE_BACKENDS="bitz")
+        self.assertEqual(runner.configuration(env | {"BITZ_MUL_COMPARE_WORKLOADS":"u32"})["workloads"],["u32-mod32"])
+        for extra in (dict(BITZ_MUL_COMPARE_WORKLOADS="u32 u32-mod32"),dict(BITZ_MUL_COMPARE_WORKLOADS="babybear"),dict(BITZ_MUL_COMPARE_BACKENDS="unknown"),dict(RAYON_NUM_THREADS="0")):
             with self.assertRaises(ValueError): runner.configuration(env | extra)
 
     def test_whir_opt_in_security_and_replay_identity(self):
-        cfg = runner.configuration(dict(F2Z_MUL_COMPARE_BACKENDS="plonky3-fri plonky3-whir", RAYON_NUM_THREADS="1"))
+        cfg = runner.configuration(dict(BITZ_MUL_COMPARE_BACKENDS="plonky3-fri plonky3-whir", RAYON_NUM_THREADS="1"))
         self.assertEqual(cfg["threads"], 1)
         self.assertEqual(runner.campaign_environment({}, cfg)["RAYON_NUM_THREADS"], "1")
         row = copy.deepcopy(FIXTURE)
@@ -169,9 +169,9 @@ class RunnerTests(unittest.TestCase):
             bindir=root/"bin"; bindir.mkdir(); commands=root/"commands.jsonl"
             cargo=bindir/"cargo"
             cargo.write_text("#!"+sys.executable+"\n" + "import json,os,sys\n" +
-                "with open(os.environ['COMMANDS'],'a') as f: f.write(json.dumps(dict(args=sys.argv[1:],cwd=os.getcwd(),flags=os.environ.get('RUSTFLAGS'),threads=os.environ.get('RAYON_NUM_THREADS'),encoded=os.environ.get('CARGO_ENCODED_RUSTFLAGS'),backends=os.environ.get('F2Z_MUL_COMPARE_BACKENDS'))) + '\\n')\n" +
+                "with open(os.environ['COMMANDS'],'a') as f: f.write(json.dumps(dict(args=sys.argv[1:],cwd=os.getcwd(),flags=os.environ.get('RUSTFLAGS'),threads=os.environ.get('RAYON_NUM_THREADS'),encoded=os.environ.get('CARGO_ENCODED_RUSTFLAGS'),backends=os.environ.get('BITZ_MUL_COMPARE_BACKENDS'))) + '\\n')\n" +
                 "if os.environ.get('FAIL_CARGO'): sys.exit(7)\n" +
-                "out=__import__('pathlib').Path(os.environ['F2Z_MUL_COMPARE_OUTPUT_DIR'])\n" +
+                "out=__import__('pathlib').Path(os.environ['BITZ_MUL_COMPARE_OUTPUT_DIR'])\n" +
                 "rows=json.loads("+repr(json.dumps(samples()))+")\n" +
                 "out.joinpath('samples.jsonl').write_text('\\n'.join(json.dumps(r) for r in rows))\n" +
                 "memory=rows[0] | dict(peak_rss_bytes=123456,boundary="+repr(runner.MEMORY_BOUNDARY)+")\n" +
@@ -180,11 +180,11 @@ class RunnerTests(unittest.TestCase):
             git=bindir/"git";git.write_text('#!/bin/sh\nif [ "$1" = rev-parse ]; then printf "%s\\n" test-revision; fi\n');git.chmod(0o755)
             sysctl=bindir/"sysctl";sysctl.write_text('#!/bin/sh\nprintf "%s\\n" fixture-cpu\n');sysctl.chmod(0o755)
             output=root/"results"
-            env={k:v for k,v in os.environ.items() if not k.startswith(("F2Z_","CARGO_")) and k != "BDLAMBDA"}
+            env={k:v for k,v in os.environ.items() if not k.startswith(("BITZ_","CARGO_")) and k != "BDLAMBDA"}
             env.update(PATH=str(bindir)+os.pathsep+env["PATH"],COMMANDS=str(commands),
-                       RAYON_NUM_THREADS="8",F2Z_BENCH_REPS="2",F2Z_MUL_COMPARE_BACKENDS="limber",
-                       F2Z_LIMBER_BDLAMBDA="114",  # the mock rows are the recorded 114-bit fixture
-                       F2Z_MUL_COMPARE_OUTPUT_DIR=str(output),CARGO_ENCODED_RUSTFLAGS="remove",PYTHONDONTWRITEBYTECODE="1")
+                       RAYON_NUM_THREADS="8",BITZ_BENCH_REPS="2",BITZ_MUL_COMPARE_BACKENDS="limber",
+                       BITZ_LIMBER_BDLAMBDA="114",  # the mock rows are the recorded 114-bit fixture
+                       BITZ_MUL_COMPARE_OUTPUT_DIR=str(output),CARGO_ENCODED_RUSTFLAGS="remove",PYTHONDONTWRITEBYTECODE="1")
             command=["bash",str(runner.ROOT/"scripts/run_native_mul_compare.sh")]
             run=subprocess.run(command,env=env,capture_output=True,text=True)
             self.assertEqual(run.returncode,0,run.stdout+run.stderr)
@@ -200,7 +200,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(summary["samples"],2);self.assertEqual(summary["multiplications"],32768)
             self.assertEqual(summary["peak_rss_bytes"],123456)
             self.assertEqual(json.loads((output/"campaign.json").read_text())["status"],"complete")
-            failed=root/"failed";env.update(FAIL_CARGO="1",F2Z_MUL_COMPARE_OUTPUT_DIR=str(failed))
+            failed=root/"failed";env.update(FAIL_CARGO="1",BITZ_MUL_COMPARE_OUTPUT_DIR=str(failed))
             run=subprocess.run(command,env=env,capture_output=True,text=True)
             self.assertNotEqual(run.returncode,0)
             self.assertEqual(json.loads((failed/"campaign.json").read_text())["status"],"failed")

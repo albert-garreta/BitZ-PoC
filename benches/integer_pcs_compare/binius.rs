@@ -40,7 +40,7 @@ pub const DEFAULT_LOG_INV_RATE: usize = 1;
 pub const COMMITMENT_BYTES: usize = 32;
 pub const PACKING_BITS: usize = 128;
 
-const DOMAIN_TAG: &[u8] = b"f2z/integer-pcs-compare/binius64/v1";
+const DOMAIN_TAG: &[u8] = b"bitz/integer-pcs-compare/binius64/v1";
 
 const ROOT_SCOPE: &str = "pcs-compare:verified_trial";
 const MATERIALIZE_SCOPE: &str = "pcs-compare:materialize";

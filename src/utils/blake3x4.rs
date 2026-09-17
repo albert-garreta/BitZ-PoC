@@ -1,6 +1,6 @@
 //! Batched BLAKE3 single-block compression for proof-of-work nonce scans.
 //!
-//! Every F2Z grind tests `blake3(prefix ‖ nonce_le)` for consecutive nonces
+//! Every BitZ grind tests `blake3(prefix ‖ nonce_le)` for consecutive nonces
 //! — the Ligerito challenger's 16-byte seed, the Spartan/forest/Round-0
 //! boundaries' 32-byte seed — one message of at most 64 bytes per attempt,
 //! so one compression each. The `blake3` crate runs single compressions
@@ -66,7 +66,7 @@ pub(crate) fn leading_zero_bits(bytes: &[u8]) -> u32 {
 /// The smallest nonce in `start..end` whose `blake3(prefix ‖ nonce_le)`
 /// has at least `bits` leading zero bits, scanning in increasing order.
 /// `prefix` is at most [`MAX_PREFIX_LEN`] bytes; the NEON lanes take a
-/// prefix of whole 32-bit words (every F2Z seed), as do the AVX2 lanes; other inputs scan
+/// prefix of whole 32-bit words (every BitZ seed), as do the AVX2 lanes; other inputs scan
 /// through the reference hash.
 pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) -> Option<u64> {
     assert!(

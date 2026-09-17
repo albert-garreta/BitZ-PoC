@@ -11,21 +11,21 @@
 //! ```
 
 use blake3::Hasher;
-use f2z::piop::spartan::multiswap::{
+use bitz::piop::spartan::multiswap::{
     MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
     verify_multiswap_mod_r1cs,
 };
-use f2z::piop::spartan::{
-    PreparedU32MulRelation, U32MulF2zWidth, U32MulWitness, commit_u32_mul_witness, prove_u32_mul,
+use bitz::piop::spartan::{
+    PreparedU32MulRelation, U32MulBitzWidth, U32MulWitness, commit_u32_mul_witness, prove_u32_mul,
     verify_u32_mul,
 };
-use f2z::piop::spartan::{
+use bitz::piop::spartan::{
     Sha256CompressionStatement, commit_sha256_compression_witness,
     generate_sha256_compression_witnesses, prepare_sha256_compression_batch,
     prove_sha256_compressions, verify_sha256_compressions,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 fn digest_hex(parts: &[&[u8]]) -> String {
     let mut hasher = Hasher::new();
@@ -42,7 +42,7 @@ fn multiswap_digest() -> String {
     let prepared = PreparedMultiswapRelation::new(&circuit).expect("prepare");
     let assignment = MultiswapAssignment::new(&circuit).expect("assignment");
     let (pc, vc) = multiswap_lig_configs(prepared.params()).expect("configs");
-    let rows = assignment.f2z_bit_rows();
+    let rows = assignment.bitz_bit_rows();
     let hint = commit_multiswap_witness(prepared.params(), rows, &pc).expect("commit");
 
     let mut prover_transcript = Blake3Transcript::new();
@@ -60,7 +60,7 @@ fn multiswap_digest() -> String {
     .expect("verify");
 
     // Every transcript-visible proof component, framed.
-    let f2z_bytes = proof.f2z().to_bytes();
+    let bitz_bytes = proof.bitz().to_bytes();
     let mut mu_prime = [0u8; 40];
     field::CanonicalCodec::encode_into(
         &field::IntegerOps,
@@ -71,7 +71,7 @@ fn multiswap_digest() -> String {
     let spartan = format!("{:?}", proof.spartan());
     digest_hex(&[
         &hint.commitment.root,
-        &f2z_bytes,
+        &bitz_bytes,
         &mu_prime,
         &nonce,
         spartan.as_bytes(),
@@ -117,7 +117,7 @@ fn sha256_digest() -> String {
     )
     .expect("verify");
 
-    let f2z_bytes = proof.f2z().to_bytes();
+    let bitz_bytes = proof.bitz().to_bytes();
     let inner = format!("{:?}", proof.inner());
     let nonces: Vec<u8> = proof
         .inner_nonces()
@@ -126,11 +126,11 @@ fn sha256_digest() -> String {
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    digest_hex(&[&hint.commitment.root, &f2z_bytes, inner.as_bytes(), &nonces])
+    digest_hex(&[&hint.commitment.root, &bitz_bytes, inner.as_bytes(), &nonces])
 }
 
 fn u32_mul_digest() -> String {
-    let witness = U32MulWitness::from_fn_with_f2z_width(1usize << 15, U32MulF2zWidth::W1, |i| {
+    let witness = U32MulWitness::from_fn_with_bitz_width(1usize << 15, U32MulBitzWidth::W1, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
         (x, y)
@@ -138,7 +138,7 @@ fn u32_mul_digest() -> String {
     .expect("witness");
     let layout = *witness.layout();
     let prepared = PreparedU32MulRelation::new(layout).expect("prepare");
-    let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let hint = commit_u32_mul_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut prover_transcript = Blake3Transcript::new();
     let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
@@ -149,9 +149,9 @@ fn u32_mul_digest() -> String {
         &proof,
     )
     .expect("verify");
-    let f2z_bytes = proof.f2z().to_bytes();
+    let bitz_bytes = proof.bitz().to_bytes();
     let spartan = format!("{:?}", proof.spartan());
-    digest_hex(&[&hint.commitment.root, &f2z_bytes, spartan.as_bytes()])
+    digest_hex(&[&hint.commitment.root, &bitz_bytes, spartan.as_bytes()])
 }
 
 fn main() {

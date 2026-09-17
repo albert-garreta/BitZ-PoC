@@ -1,7 +1,7 @@
 //! One padded SHA-256 message and one P-256 verification, sharing a bit oracle.
 //!
 //! Linear rows bypass the nonlinear outer sumcheck and join its matrix claims
-//! in one packed inner sumcheck. The terminal scaled claim is opened via F2Z.
+//! in one packed inner sumcheck. The terminal scaled claim is opened via BitZ.
 
 mod codec;
 mod inner_reduction;
@@ -20,7 +20,7 @@ pub use relation::{OuterMode, PreparedSha256Ecdsa, Sha256EcdsaStatement, prepare
 pub use security::{ChallengeSecurity, Sha256EcdsaSecurity};
 pub use witness::{Sha256EcdsaWitness, generate_sha256_ecdsa_witness};
 
-use crate::piop::spartan::f2z::SpartanF2zField as F;
+use crate::piop::spartan::bitz::SpartanBitzField as F;
 
 #[cfg(test)]
 #[cfg(test)]

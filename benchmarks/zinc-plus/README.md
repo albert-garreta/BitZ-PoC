@@ -1,6 +1,6 @@
 # Zinc+ row of the u32 multiplication table
 
-`f2z_u32_mod32.rs` is a bench for [zinc-plus](https://github.com/NethermindEth/zinc-plus)
+`bitz_u32_mod32.rs` is a bench for [zinc-plus](https://github.com/NethermindEth/zinc-plus)
 at `origin/main-beta` (609c18c). It proves this repository's u32 mod-2^32
 corpus — the operands of `native-mul/mod32/inputs/v1` — as one integer
 constraint per multiplication, `x·y = z + 2^32·w`, over eight int columns of

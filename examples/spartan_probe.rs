@@ -9,13 +9,13 @@
 //! ```
 
 
-use f2z::piop::spartan::{
+use bitz::piop::spartan::{
     BabyBearMulWitness, PreparedBabyBearMulRelation, PreparedU32MulRelation,
     U32MulWitness, commit_baby_bear_mul_paper_witness,
     commit_u32_mul_witness, prove_baby_bear_mul_paper, prove_u32_mul,
     sample_baby_bear_operand_with, verify_baby_bear_mul_paper, verify_u32_mul,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 fn env_usize(name: &str, default: usize) -> usize {
@@ -26,7 +26,7 @@ fn env_usize(name: &str, default: usize) -> usize {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let _ = flock_core::init_perf_thread_pool();
     let exponent = env_usize("PROBE_EXP", 20);
     let reps = env_usize("PROBE_REPS", 1);
@@ -45,14 +45,14 @@ fn main() {
                     .expect("witness");
             let relation = PreparedU32MulRelation::new(*witness.layout()).expect("relation");
             for rep in 0..=reps {
-                let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
-                let (hint, started) = f2z::observability::measure(
+                let profile = bitz::observability::Recording::start(Vec::new()).expect("capture profile");
+                let (hint, started) = bitz::observability::measure(
                     tracing::info_span!("spartan_probe:hint"),
-                    || commit_u32_mul_witness(&relation, witness.f2z_bit_rows()).expect("commit"),
+                    || commit_u32_mul_witness(&relation, witness.bitz_bit_rows()).expect("commit"),
                 ).expect("measure completed operation");
                 let commit_ms = started.as_secs_f64() * 1e3;
                 let mut transcript = Blake3Transcript::new();
-                let (proof, started) = f2z::observability::measure(
+                let (proof, started) = bitz::observability::measure(
                     tracing::info_span!("spartan_probe:proof"),
                     || prove_u32_mul(&mut transcript, &relation, &witness, &hint).expect("prove"),
                 ).expect("measure completed operation");
@@ -68,7 +68,7 @@ fn main() {
                         "u32 2^{exponent} prove #{rep} (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
                     )
                 };
-                f2z::observability::write_profile(std::io::stderr().lock(), &header, &profile.intervals().expect("profile intervals"), None).expect("write profile");
+                bitz::observability::write_profile(std::io::stderr().lock(), &header, &profile.intervals().expect("profile intervals"), None).expect("write profile");
             }
         }
         "bb" => {
@@ -82,15 +82,15 @@ fn main() {
             let layout = *witness.layout();
             let prepared = PreparedBabyBearMulRelation::new(layout).expect("relation");
             for rep in 0..=reps {
-                let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
-                let (hint, started) = f2z::observability::measure(
+                let profile = bitz::observability::Recording::start(Vec::new()).expect("capture profile");
+                let (hint, started) = bitz::observability::measure(
                     tracing::info_span!("spartan_probe:hint"),
-                    || commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows())
+                    || commit_baby_bear_mul_paper_witness(&prepared, witness.bitz_bit_rows())
                     .expect("commit"),
                 ).expect("measure completed operation");
                 let commit_ms = started.as_secs_f64() * 1e3;
                 let mut transcript = Blake3Transcript::new();
-                let (proof, started) = f2z::observability::measure(
+                let (proof, started) = bitz::observability::measure(
                     tracing::info_span!("spartan_probe:proof"),
                     || prove_baby_bear_mul_paper(
                     &mut transcript,
@@ -113,7 +113,7 @@ fn main() {
                         "bb 2^{exponent} prove #{rep} (commit {commit_ms:.1} ms, prove {prove_ms:.1} ms)"
                     )
                 };
-                f2z::observability::write_profile(std::io::stderr().lock(), &header, &profile.intervals().expect("profile intervals"), None).expect("write profile");
+                bitz::observability::write_profile(std::io::stderr().lock(), &header, &profile.intervals().expect("profile intervals"), None).expect("write profile");
             }
         }
         other => panic!("PROBE_KIND must be u32 or bb, got {other}"),

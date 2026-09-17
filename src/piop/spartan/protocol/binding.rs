@@ -10,7 +10,7 @@ use flock_core::{
     },
 };
 
-use super::{ProtocolError, SpartanF2zField};
+use super::{ProtocolError, SpartanBitzField};
 
 /// Stable one-byte code of a flock Ligerito profile.
 pub const fn profile_code(profile: LigeritoProfile) -> u8 {
@@ -95,7 +95,7 @@ impl BindingHasher {
     }
 
     /// A canonical 16-byte field element.
-    pub fn element(&mut self, value: &SpartanF2zField, field: &super::FieldConfig) -> &mut Self {
+    pub fn element(&mut self, value: &SpartanBitzField, field: &super::FieldConfig) -> &mut Self {
         let encoding = u128::from(field.to_integer(value)).to_le_bytes();
         self.hasher.update(&encoding);
         self

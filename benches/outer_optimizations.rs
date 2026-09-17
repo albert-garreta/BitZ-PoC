@@ -4,7 +4,7 @@
 //! OUTER_PROTOCOLS="ordinary zero skip-1 skip-2 skip-3 skip-4" OUTER_REPS=21
 //! RAYON_NUM_THREADS controls the pool. Use bench-peak-memory only for a separate
 //! memory pass; allocator instrumentation must not be used for latency claims.
-use f2z::{
+use bitz::{
     piop::spartan::SpartanField,
     sumcheck::{UngrindedRoundBoundary, outer::*},
     transcript::Blake3Transcript,
@@ -54,12 +54,12 @@ fn bench_inputs<A, C>(
             let before = metrics(true);
             let start = Instant::now();
             let (out, prefix) = if let Some(prepared) = &prepared {
-                let out = f2z::sumcheck::outer::prove_outer_zerocheck_with_skip(
+                let out = bitz::sumcheck::outer::prove_outer_zerocheck_with_skip(
                     field,
                     &mut transcript,
                     prepared,
                     &tau[k..],
-                    f2z::sumcheck::outer::OuterSlices {
+                    bitz::sumcheck::outer::OuterSlices {
                         ax: a,
                         bx: b,
                         cx: c,
@@ -71,12 +71,12 @@ fn bench_inputs<A, C>(
                 (out.tail, Some(out.prefix))
             } else {
                 let out = if protocol == "ordinary" {
-                    f2z::sumcheck::outer::prove_outer_sumcheck(
+                    bitz::sumcheck::outer::prove_outer_sumcheck(
                         field,
                         &mut transcript,
-                        f2z::sumcheck::outer::OuterClaim::Sum(field.zero()),
+                        bitz::sumcheck::outer::OuterClaim::Sum(field.zero()),
                         &tau,
-                        f2z::sumcheck::outer::OuterSlices {
+                        bitz::sumcheck::outer::OuterSlices {
                             ax: a,
                             bx: b,
                             cx: c,
@@ -86,12 +86,12 @@ fn bench_inputs<A, C>(
                     )
                     .unwrap()
                 } else {
-                    f2z::sumcheck::outer::prove_outer_sumcheck(
+                    bitz::sumcheck::outer::prove_outer_sumcheck(
                         field,
                         &mut transcript,
-                        f2z::sumcheck::outer::OuterClaim::RowwiseZero,
+                        bitz::sumcheck::outer::OuterClaim::RowwiseZero,
                         &tau,
-                        f2z::sumcheck::outer::OuterSlices {
+                        bitz::sumcheck::outer::OuterSlices {
                             ax: a,
                             bx: b,
                             cx: c,

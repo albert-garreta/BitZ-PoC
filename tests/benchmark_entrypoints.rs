@@ -64,9 +64,9 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             directory.path(),
             &args,
             &[
-                ("F2Z_BENCH_REPS", "invalid"),
-                ("F2Z_SHA_COMPARE_REPS", "invalid"),
-                ("F2Z_HYBRID_BINIUS_LOG_INV_RATE", "invalid"),
+                ("BITZ_BENCH_REPS", "invalid"),
+                ("BITZ_SHA_COMPARE_REPS", "invalid"),
+                ("BITZ_HYBRID_BINIUS_LOG_INV_RATE", "invalid"),
                 ("PERFETTO_TRACE_PROCESSOR", "/missing"),
             ],
         );
@@ -103,23 +103,23 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         );
     }
     for (name, variable) in [
-        ("pcs", "F2Z_BENCH_REPS"),
-        ("field", "F2Z_BENCH_REPS"),
-        ("eq_tables", "F2Z_EQ_TABLE_SAMPLES"),
-        ("cm_and", "F2Z_BENCH_REPS"),
-        ("u32_mul", "F2Z_BENCH_REPS"),
-        ("baby_bear_mul", "F2Z_BENCH_REPS"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_REPS"),
-        ("multiswap", "F2Z_BENCH_REPS"),
-        ("lambda_sweep", "F2Z_BENCH_REPS"),
-        ("sha256_compressions", "F2Z_BENCH_REPS"),
-        ("sha256_chain", "F2Z_BENCH_REPS"),
-        ("sha256_product_layout", "F2Z_BENCH_REPS"),
-        ("sha256_e2e_compare", "F2Z_SHA_COMPARE_REPS"),
-        ("mul_e2e_compare", "F2Z_BENCH_REPS"),
-        ("mul_witness_compare", "F2Z_BENCH_REPS"),
-        ("u32_pcs_compare", "F2Z_BENCH_REPS"),
-        ("baby_bear_pcs_compare", "F2Z_BENCH_REPS"),
+        ("pcs", "BITZ_BENCH_REPS"),
+        ("field", "BITZ_BENCH_REPS"),
+        ("eq_tables", "BITZ_EQ_TABLE_SAMPLES"),
+        ("cm_and", "BITZ_BENCH_REPS"),
+        ("u32_mul", "BITZ_BENCH_REPS"),
+        ("baby_bear_mul", "BITZ_BENCH_REPS"),
+        ("u32_mul_outer_skip", "BITZ_BENCH_REPS"),
+        ("multiswap", "BITZ_BENCH_REPS"),
+        ("lambda_sweep", "BITZ_BENCH_REPS"),
+        ("sha256_compressions", "BITZ_BENCH_REPS"),
+        ("sha256_chain", "BITZ_BENCH_REPS"),
+        ("sha256_product_layout", "BITZ_BENCH_REPS"),
+        ("sha256_e2e_compare", "BITZ_SHA_COMPARE_REPS"),
+        ("mul_e2e_compare", "BITZ_BENCH_REPS"),
+        ("mul_witness_compare", "BITZ_BENCH_REPS"),
+        ("u32_pcs_compare", "BITZ_BENCH_REPS"),
+        ("baby_bear_pcs_compare", "BITZ_BENCH_REPS"),
     ] {
         let out = run(
             &executables[name],
@@ -139,34 +139,34 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         );
     }
     for (name, variable, value) in [
-        ("u32_mul", "F2Z_BENCH_PASS", "memory"),
-        ("u32_mul", "F2Z_BENCH_PASS", "both"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_PASS", "memory"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_PASS", "both"),
-        ("u32_mul", "F2Z_BENCH_ORDER", "0"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_ORDER", "0"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_REPS", "0"),
-        ("u32_mul", "F2Z_MUL_WORD_BITS", "2"),
-        ("u32_mul", "F2Z_BENCH_SHAPES", "14"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_SHAPES", "26"),
-        ("baby_bear_mul", "F2Z_BABY_BEAR_MUL_EXPONENTS", "14"),
-        ("cm_and", "F2Z_CM_EXPONENTS", "14"),
-        ("sha256_chain", "F2Z_BENCH_SHAPES", "6"),
-        ("lambda_sweep", "F2Z_BENCH_SHAPES", "17"),
-        ("u32_pcs_compare", "F2Z_BENCH_SHAPES", "0"),
-        ("baby_bear_pcs_compare", "F2Z_BENCH_SHAPES", "0"),
-        ("pcs", "F2Z_BENCH_FILL", "0"),
-        ("pcs", "F2Z_BENCH_FILL", "1.1"),
-        ("pcs", "F2Z_BENCH_FILL", "NaN"),
-        ("pcs", "F2Z_BENCH_FILL", "inf"),
-        ("sha256_compressions", "F2Z_SHA_INNER_PREFIX_VARS", "5"),
-        ("sha256_compressions", "F2Z_SHA_PRODUCT_TS", "29"),
-        ("sha256_compressions", "F2Z_SHA_MNUMROWS_LOG2S", "17"),
-        ("sha256_compressions", "F2Z_SHA_LOG2S", "3"),
-        ("sha256_e2e_compare", "F2Z_SHA_COMPARE_EXPONENTS", "6"),
-        ("sha256_e2e_compare", "F2Z_BENCH_SHAPES", "17"),
-        ("mul_e2e_compare", "F2Z_BENCH_SHAPES", "14"),
-        ("mul_witness_compare", "F2Z_BENCH_SHAPES", "3"),
+        ("u32_mul", "BITZ_BENCH_PASS", "memory"),
+        ("u32_mul", "BITZ_BENCH_PASS", "both"),
+        ("u32_mul_outer_skip", "BITZ_BENCH_PASS", "memory"),
+        ("u32_mul_outer_skip", "BITZ_BENCH_PASS", "both"),
+        ("u32_mul", "BITZ_BENCH_ORDER", "0"),
+        ("u32_mul_outer_skip", "BITZ_BENCH_ORDER", "0"),
+        ("u32_mul_outer_skip", "BITZ_BENCH_REPS", "0"),
+        ("u32_mul", "BITZ_MUL_WORD_BITS", "2"),
+        ("u32_mul", "BITZ_BENCH_SHAPES", "14"),
+        ("u32_mul_outer_skip", "BITZ_BENCH_SHAPES", "26"),
+        ("baby_bear_mul", "BITZ_BABY_BEAR_MUL_EXPONENTS", "14"),
+        ("cm_and", "BITZ_CM_EXPONENTS", "14"),
+        ("sha256_chain", "BITZ_BENCH_SHAPES", "6"),
+        ("lambda_sweep", "BITZ_BENCH_SHAPES", "17"),
+        ("u32_pcs_compare", "BITZ_BENCH_SHAPES", "0"),
+        ("baby_bear_pcs_compare", "BITZ_BENCH_SHAPES", "0"),
+        ("pcs", "BITZ_BENCH_FILL", "0"),
+        ("pcs", "BITZ_BENCH_FILL", "1.1"),
+        ("pcs", "BITZ_BENCH_FILL", "NaN"),
+        ("pcs", "BITZ_BENCH_FILL", "inf"),
+        ("sha256_compressions", "BITZ_SHA_INNER_PREFIX_VARS", "5"),
+        ("sha256_compressions", "BITZ_SHA_PRODUCT_TS", "29"),
+        ("sha256_compressions", "BITZ_SHA_MNUMROWS_LOG2S", "17"),
+        ("sha256_compressions", "BITZ_SHA_LOG2S", "3"),
+        ("sha256_e2e_compare", "BITZ_SHA_COMPARE_EXPONENTS", "6"),
+        ("sha256_e2e_compare", "BITZ_BENCH_SHAPES", "17"),
+        ("mul_e2e_compare", "BITZ_BENCH_SHAPES", "14"),
+        ("mul_witness_compare", "BITZ_BENCH_SHAPES", "3"),
     ] {
         let out = run(
             &executables[name],
@@ -181,7 +181,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             "{name} {variable}={value}: {error}"
         );
         assert!(
-            error.contains("F2Z_BENCH_SHAPES") || error.contains(variable),
+            error.contains("BITZ_BENCH_SHAPES") || error.contains(variable),
             "{name}: {error}"
         );
         assert!(!error.contains("panicked"), "{name}: {error}");
@@ -229,7 +229,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         !run(
             &executables["mul_e2e_compare"],
             directory.path(),
-            &["--measure-memory", "f2z", "u32", "15", "0", "invalid-json"],
+            &["--measure-memory", "bitz", "u32", "15", "0", "invalid-json"],
             &[]
         )
         .status
@@ -240,7 +240,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             &executables["sha256_e2e_compare"],
             directory.path(),
             &[],
-            &[("F2Z_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")]
+            &[("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")]
         )
         .status
         .success()
@@ -249,7 +249,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("sha256_ecdsa", vec!["3", "split", "100", "0"]),
         (
             "sha256_ecdsa_compare",
-            vec!["--method", "f2z-split", "--r", "1", "--c", "1"],
+            vec!["--method", "bitz-split", "--r", "1", "--c", "1"],
         ),
         ("ligerito_bounds", vec!["unknown", "custom:1:4"]),
     ] {
@@ -265,7 +265,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         directory.path(),
         &[
             "--method",
-            "f2z-split",
+            "bitz-split",
             "--r",
             "1",
             "--c",

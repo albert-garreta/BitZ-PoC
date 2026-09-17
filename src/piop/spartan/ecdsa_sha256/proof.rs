@@ -27,10 +27,10 @@ use {
         pcs::ModQWeightChunks,
         piop::spartan::{
             SpartanField, absorb_spartan_message,
-            f2z::SpartanF2zField as F,
+            bitz::SpartanBitzField as F,
             grinding::GrindingDomain,
             matrix::eq_table,
-            protocol::{check_boundary, f2z_generator, grind_boundary},
+            protocol::{check_boundary, bitz_generator, grind_boundary},
             sha256::inner_sumcheck::ColumnMajorPackedBits,
             squeeze_field,
             sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
@@ -42,7 +42,7 @@ use {
 
 enum OuterGrinding {}
 impl GrindingDomain for OuterGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/sha256-ecdsa/outer/v1";
+    const DOMAIN: &'static [u8] = b"bitz/sha256-ecdsa/outer/v1";
 }
 
 /// A single source commitment supports both PIOP reductions and the final opening.
@@ -84,7 +84,7 @@ fn bind_statement<T: Transcript>(
     if statement.log_compressions as usize != prepared.log_n {
         return Err(error("statement layout mismatch"));
     }
-    absorb_spartan_message(t, b"protocol", b"f2z/sha256-ecdsa/split-inner/early-ood/v2");
+    absorb_spartan_message(t, b"protocol", b"bitz/sha256-ecdsa/split-inner/early-ood/v2");
     absorb_spartan_message(t, b"relation", &prepared.local.digest);
     absorb_spartan_message(t, b"map", &prepared.map.digest());
     absorb_spartan_message(t, b"statement", &statement.bytes());
@@ -302,7 +302,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         nonces: GrindingNonces::Prove(&mut flock_nonces),
     };
     let opening = {
-        let _scope = tracing::info_span!("ecdsa:f2z_prove").entered();
+        let _scope = tracing::info_span!("ecdsa:bitz_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security(
             t,
             hint,
@@ -313,7 +313,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             &chunks,
             modulus,
             113,
-            f2z_generator(),
+            bitz_generator(),
             security.forest,
             ood,
             pc,
@@ -458,13 +458,13 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         &chunks,
         modulus,
         113,
-        f2z_generator(),
+        bitz_generator(),
         security.forest,
         ood,
         vc,
         cols.len(),
         |values, width, count| {
-            // This profile has one 113-bit chunk; the F2Z preflight enforces the
+            // This profile has one 113-bit chunk; the BitZ preflight enforces the
             // fold magnitudes before this canonical mod-q read-off is accepted.
             if count != 1 || values.len() < cols.len() || width < 113 {
                 return false;
@@ -479,8 +479,8 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     .map_err(|e| error(format!("{e:?}")))
 }
 
-const INITIAL_GRINDING_DOMAIN: &[u8] = b"f2z/sha256-ecdsa/initial/v1";
-const BATCH_GRINDING_DOMAIN: &[u8] = b"f2z/sha256-ecdsa/batch/v1";
+const INITIAL_GRINDING_DOMAIN: &[u8] = b"bitz/sha256-ecdsa/initial/v1";
+const BATCH_GRINDING_DOMAIN: &[u8] = b"bitz/sha256-ecdsa/batch/v1";
 
 /// The shared protocol boundary (skipped at difficulty 0 with the canonical
 /// zero nonce): ground by the prover, checked by the verifier.

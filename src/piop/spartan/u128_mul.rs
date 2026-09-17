@@ -52,7 +52,7 @@ const WORDS_PER_GATE: usize = U128_MUL_BIT_SLOTS / 64;
 
 /// Four assignment blocks: `[e0 | x | y | z]`.
 pub(super) const U128_MUL_ASSIGNMENT_BLOCKS: usize = 4;
-// Keep even small relation fixtures in the geometry accepted by the F2Z row
+// Keep even small relation fixtures in the geometry accepted by the BitZ row
 // packer. The combined production proof applies its stricter 2^15 minimum.
 const MIN_CAPACITY: usize = 1 << 8;
 
@@ -89,7 +89,7 @@ pub enum U128MulError {
     SpartanMatrix(#[from] SpartanMatrixError),
 }
 
-/// Shared shape of the integer assignment and its compact F2Z bit witness.
+/// Shared shape of the integer assignment and its compact BitZ bit witness.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct U128MulLayout {
     multiplications: usize,
@@ -101,7 +101,7 @@ impl U128MulLayout {
     /// Creates a layout for `multiplications` live rows.
     ///
     /// The gate capacity is `max(256, multiplications).next_power_of_two()`.
-    /// The combined Spartan/F2Z production API additionally requires at least
+    /// The combined Spartan/BitZ production API additionally requires at least
     /// `2^15` slots so it can use a validator-gated Ligerito profile.
     pub fn new(multiplications: usize) -> Result<Self, U128MulError> {
         if multiplications == 0 {
@@ -152,13 +152,13 @@ impl U128MulLayout {
         self.gate_vars + 2
     }
 
-    /// F2Z shape for the slot-major 128/128/256-bit witness.
+    /// BitZ shape for the slot-major 128/128/256-bit witness.
     ///
     /// If `g = log2(capacity)`, the low `s = floor(g/2)` gate coordinates
-    /// become F2Z columns. The remaining gate coordinates and the nine
+    /// become BitZ columns. The remaining gate coordinates and the nine
     /// physical slot coordinates become folded row variables, so the
     /// committed tensor has `g + 9` variables.
-    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
+    pub const fn bitz_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
         IntegerMatrixLayout {
             row_vars: U128_MUL_SLOT_VARS + self.gate_vars - s,
@@ -167,10 +167,10 @@ impl U128MulLayout {
         }
     }
 
-    /// Maps `(bit_slot, gate)` to the F2Z row-major cell `(b, c)`.
+    /// Maps `(bit_slot, gate)` to the BitZ row-major cell `(b, c)`.
     ///
     /// `params.cell_index(b, c) == bit_slot * capacity + gate`.
-    pub const fn f2z_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
+    pub const fn bitz_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
         if bit_slot >= U128_MUL_BIT_SLOTS || gate >= self.capacity {
             return None;
         }
@@ -293,7 +293,7 @@ impl U128MulWitness {
         [x0, x1, y0, y1, z0, z1, z2, z3]
     }
 
-    /// Builds the compact F2Z rows without materializing a cell tensor.
+    /// Builds the compact BitZ rows without materializing a cell tensor.
     ///
     /// Row `c` is 512 lanes of `high_gate_count` bits: bit `gate_high` of
     /// lane `slot` is slot `slot` of gate `(gate_high << s) | c`. Whenever a
@@ -301,8 +301,8 @@ impl U128MulWitness {
     /// by the block transposes of [`super::slot_rows`]; smaller layouts take
     /// the bitwise path. Both produce identical rows.
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
-        let params = self.layout.f2z_params();
+    pub fn bitz_bit_rows(&self) -> Vec<Vec<u64>> {
+        let params = self.layout.bitz_params();
         let words_per_row = params.rows() / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
 
@@ -333,7 +333,7 @@ impl U128MulWitness {
                     }
                     let (b, c) = self
                         .layout
-                        .f2z_cell(word * 64 + bit, gate)
+                        .bitz_cell(word * 64 + bit, gate)
                         .expect("witness bit coordinates are in bounds");
                     rows[c][b / u64::BITS as usize] |= 1_u64 << (b % u64::BITS as usize);
                 }
@@ -474,7 +474,7 @@ mod tests {
     use num_bigint::BigUint;
 
     use super::*;
-    use crate::piop::spartan::{SpartanF2zField, spartan_f2z_field_config};
+    use crate::piop::spartan::{SpartanBitzField, spartan_bitz_field_config};
 
     fn inputs(n: usize) -> Vec<(u128, u128)> {
         let mut state = 0x9e37_79b9_7f4a_7c15_u64;
@@ -515,7 +515,7 @@ mod tests {
         assert_eq!(layout.gate_vars(), 10);
         assert_eq!(layout.assignment_len(), 4 * 1024);
         assert_eq!(layout.assignment_vars(), 12);
-        let p = layout.f2z_params();
+        let p = layout.bitz_params();
         assert_eq!((p.row_vars, p.col_vars, p.word_bits), (9 + 5, 5, 1));
         assert_eq!(p.rows() * p.cols(), U128_MUL_BIT_SLOTS * layout.capacity());
         assert_eq!(U128_MUL_BIT_SLOTS, 1 << U128_MUL_SLOT_VARS);
@@ -530,14 +530,14 @@ mod tests {
         let witness = U128MulWitness::from_inputs(&inputs).unwrap();
         let layout = *witness.layout();
         assert_eq!(layout.gate_vars(), 12);
-        let rows = witness.f2z_bit_rows();
-        let params = layout.f2z_params();
+        let rows = witness.bitz_bit_rows();
+        let params = layout.bitz_params();
         let mut reference = vec![vec![0_u64; params.rows() / 64]; params.cols()];
         witness.write_bit_rows_bitwise(&mut reference);
         assert_eq!(rows, reference);
 
         let bit = |slot: usize, gate: usize| {
-            let (b, c) = layout.f2z_cell(slot, gate).unwrap();
+            let (b, c) = layout.bitz_cell(slot, gate).unwrap();
             (rows[c][b / 64] >> (b % 64)) & 1
         };
         for (gate, &(x, y)) in inputs.iter().enumerate().take(200) {
@@ -582,9 +582,9 @@ mod tests {
     fn projection_satisfies_the_relation_in_the_field() {
         let inputs = inputs(300);
         let witness = U128MulWitness::from_inputs(&inputs).unwrap();
-        let config = spartan_f2z_field_config();
+        let config = spartan_bitz_field_config();
         let (assignment, products) =
-            project_u128_mul_witness::<SpartanF2zField>(&witness, &config).unwrap();
+            project_u128_mul_witness::<SpartanBitzField>(&witness, &config).unwrap();
         assert_eq!(
             assignment.evaluations.len(),
             witness.layout().assignment_len()
@@ -600,7 +600,7 @@ mod tests {
             );
         }
         let prepared =
-            prepare_u128_mul_relation::<SpartanF2zField>(*witness.layout(), &config).unwrap();
+            prepare_u128_mul_relation::<SpartanBitzField>(*witness.layout(), &config).unwrap();
         assert_eq!(prepared.matrices().row_count(), 300);
     }
 }

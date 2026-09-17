@@ -4,14 +4,14 @@ use crate::{
     ligerito_flock::IntEvalRsLigVirtProof,
     piop::spartan::{
         SpartanField,
-        f2z::SpartanF2zField as F,
+        bitz::SpartanBitzField as F,
         sumcheck::{OuterSumcheckProof, SumcheckProof},
     },
     proof_codec::{Reader, Writer},
 };
 use field::Uint;
 
-const MAGIC: &[u8] = b"F2ZSE003";
+const MAGIC: &[u8] = b"BITZSE03";
 
 impl Sha256EcdsaProof {
     pub fn to_bytes(&self) -> Vec<u8> {

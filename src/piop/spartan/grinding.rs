@@ -27,9 +27,9 @@ use crate::utils::blake3x4::smallest_pow_nonce;
 use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 
 /// Transcript frame for every Spartan grinding boundary.
-const GRINDING_TRANSCRIPT_DOMAIN: &[u8] = b"f2z/spartan/fiat-shamir-grinding/v1";
+const GRINDING_TRANSCRIPT_DOMAIN: &[u8] = b"bitz/spartan/fiat-shamir-grinding/v1";
 /// Frame separating the canonical nonce from the seed-derivation inputs.
-const GRINDING_NONCE_DOMAIN: &[u8] = b"f2z/spartan/fiat-shamir-grinding/nonce/v1";
+const GRINDING_NONCE_DOMAIN: &[u8] = b"bitz/spartan/fiat-shamir-grinding/nonce/v1";
 
 /// BLAKE3 outputs 256 bits, so no larger difficulty can be satisfied.
 pub const MAX_GRINDING_BITS: u32 = 256;
@@ -304,7 +304,7 @@ fn grinding_nonce_is_valid_unchecked(seed: &GrindingSeed, nonce: u64, bits: u32)
 pub enum ForestRoundGrinding {}
 
 impl GrindingDomain for ForestRoundGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/forest/round-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/forest/round-grinding/v1";
 }
 
 /// Prover-side transcript adapter: before every challenge drawn through
