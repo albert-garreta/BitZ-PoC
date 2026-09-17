@@ -382,7 +382,7 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
         let local_row_weights = eq_table(local_point, config).map_err(SpartanError::from)?;
         let beta = {
             let _scope = tracing::info_span!("sha256:local_relation_collapse").entered();
-            collapse_local_linear_columns(self.prepared, &local_row_weights, reducer, config)
+            collapse_local_linear_columns(self.prepared, &local_row_weights, reducer)
                 .map_err(SpartanError::from)?
         };
         ProductLinearBatching::new(
@@ -1263,13 +1263,12 @@ fn collapse_local_linear_columns(
     prepared: &PreparedSha256CompressionBatch,
     local_row_weights: &[SpartanF2zField],
     reducer: &field::FpCtx<2>,
-    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<Vec<SpartanF2zField>, SumcheckError> {
     let relation = prepared.linear_relation().native_matrix();
     if relation.column_count() != SHA256_H_BAR_LIVE_BITS {
         return Err(SumcheckError::InvalidProductDimensions);
     }
-    collapse_native_linear_columns(relation, local_row_weights, reducer, field_config)
+    collapse_native_linear_columns(relation, local_row_weights, reducer)
 }
 
 /// [`collapse_local_linear_columns`] over any native signed local relation
@@ -1278,48 +1277,15 @@ pub(super) fn collapse_native_linear_columns(
     relation: &crate::sparse_matrix::SparseMatrix<i64>,
     local_row_weights: &[SpartanF2zField],
     reducer: &field::FpCtx<2>,
-    field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<Vec<SpartanF2zField>, SumcheckError> {
     let expected_rows = 1usize << local_constraint_vars();
     if relation.row_count() != SHA256_CONSTRAINTS || local_row_weights.len() != expected_rows {
         return Err(SumcheckError::InvalidProductDimensions);
     }
 
-    let zero = SpartanF2zField::zero_with_cfg(field_config);
-    let collapse_column = |local_column: usize| {
-        let column = relation
-            .column(local_column)
-            .ok_or(SumcheckError::InvalidProductDimensions)?;
-        let mut accumulator = field::FpLinearAcc::<2, 1>::default();
-        for (local_row, coefficient) in column {
-            let weight = local_row_weights
-                .get(local_row)
-                .ok_or(SumcheckError::InvalidProductDimensions)?;
-            let negative_weight;
-            let selected_weight = if *coefficient < 0 {
-                negative_weight = field_config.sub(&(zero.clone()), &(weight));
-                &negative_weight
-            } else {
-                weight
-            };
-            <field::FpCtx<2> as field::BatchMulAcc<SpartanF2zField, u64>>::mul_acc(
-                reducer,
-                &mut accumulator,
-                selected_weight,
-                &coefficient.unsigned_abs(),
-            );
-        }
-        Ok(field::Reduce::reduce(reducer, accumulator))
-    };
-
-    #[cfg(feature = "parallel")]
-    if relation.column_count() >= 1 << 12 && rayon::current_num_threads() > 1 {
-        return (0..relation.column_count())
-            .into_par_iter()
-            .map(collapse_column)
-            .collect();
-    }
-    (0..relation.column_count()).map(collapse_column).collect()
+    crate::sumcheck::bridge::repeated::collapse_signed_columns(
+        relation, local_row_weights, reducer,
+    )
 }
 
 #[cfg(test)]
@@ -3109,7 +3075,7 @@ mod tests {
         let local_row_weights = eq_table(&local_row_point, &field_config).unwrap();
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_config).unwrap();
         let beta =
-            collapse_local_linear_columns(&prepared, &local_row_weights, &reducer, &field_config)
+            collapse_local_linear_columns(&prepared, &local_row_weights, &reducer)
                 .unwrap();
         let projected = prepared.project_linear_relation(&field_config).unwrap();
 
@@ -3142,7 +3108,7 @@ mod tests {
         let local_row_weights = eq_table(&local_row_point, &field_config).unwrap();
         let reducer = crate::utils::delayed_reduction::prepare_field(&field_config).unwrap();
         let beta =
-            collapse_local_linear_columns(&prepared, &local_row_weights, &reducer, &field_config)
+            collapse_local_linear_columns(&prepared, &local_row_weights, &reducer)
                 .unwrap();
         let instance_point = [SpartanF2zField::from_with_cfg(13_u64, &field_config)];
         let slot_weights = (0..SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS)

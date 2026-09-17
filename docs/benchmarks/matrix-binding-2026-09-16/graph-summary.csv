@@ -1,0 +1,17 @@
+workload,threads,phase,baseline_us,current_us,change_percent
+sha,1,prepare,12.375,1.958,-84.178
+sha,1,bind_reused,2516.791,1966.125,-21.88
+sha,1,terminal_reused,1825.167,1540.417,-15.601
+sha,1,prepare_bind,2764.625,2193.458,-20.66
+sha,4,prepare,12.125,1.958,-83.852
+sha,4,bind_reused,909.5,771.875,-15.132
+sha,4,terminal_reused,1818.833,1541.084,-15.271
+sha,4,prepare_bind,1170.0,1025.25,-12.372
+p256,1,prepare,28.0,21.708,-22.471
+p256,1,bind_reused,4715.791,3044.166,-35.447
+p256,1,terminal_reused,1546.917,1095.042,-29.211
+p256,1,prepare_bind,5122.334,3471.542,-32.227
+p256,4,prepare,25.417,21.667,-14.754
+p256,4,bind_reused,1435.334,993.875,-30.757
+p256,4,terminal_reused,1545.542,1092.542,-29.31
+p256,4,prepare_bind,1905.834,1444.458,-24.209

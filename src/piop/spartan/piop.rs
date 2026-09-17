@@ -1,7 +1,11 @@
 //! Composition of Spartan's outer and inner sumchecks.
 use crate::sumcheck::{
     UngrindedRoundBoundary,
-    inner::{native::prepare_inner_inputs, prove_inner_sumcheck},
+    inner::prove_inner_sumcheck,
+    bridge::{
+        PreparedBinding,
+        native::{NativeBinding, RowFunctional},
+    },
     outer::{
         self, EqualityFactors, OuterArithmetic, OuterClaim, OuterRows,
         arithmetic::{NativeProducts, factors_from_raw},
@@ -27,7 +31,7 @@ use super::{
         SpartanMatrixCoefficient, SpartanMatrixError, make_equality_factors,
     },
     raw_monty::{
-        NativeConstantPrefix, RawMontyCoefficient, RawWitness, RowFunctional,
+        NativeConstantPrefix, RawMontyCoefficient, RawWitness,
         make_equality_factors_raw,
     },
     squeeze_field,
@@ -394,13 +398,9 @@ where
         &field_config,
     );
     let inner = {
-        let (values, weights) = prepare_inner_inputs(
-            &ctx,
-            matrices,
-            RowFunctional::Point(&outer.eval_points),
-            ctx.raw(&rho),
-            witness,
-        );
+        let weights = NativeBinding::new(&ctx, matrices, rho)
+            .bind_rows(&RowFunctional::Point(&outer.eval_points))?;
+        let values = witness;
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         prove_inner_sumcheck(
             &ctx,
@@ -671,13 +671,9 @@ where
     let inner = {
         let witness = RawWitness::Field(ctx.raw_vec(&assignment.evaluations));
         drop(assignment);
-        let (values, weights) = prepare_inner_inputs(
-            &ctx,
-            matrices,
-            RowFunctional::Point(&outer.eval_points),
-            ctx.raw(&rho),
-            witness,
-        );
+        let weights = NativeBinding::new(&ctx, matrices, rho)
+            .bind_rows(&RowFunctional::Point(&outer.eval_points))?;
+        let values = witness;
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         prove_inner_sumcheck(
             &ctx,
@@ -760,13 +756,9 @@ where
     );
     let inner = {
         let row_factors = row_binding.row_factors(matrices.num_row_vars(), field_config)?;
-        let (values, weights) = prepare_inner_inputs(
-            &ctx,
-            matrices,
-            RowFunctional::Prefix(&row_factors),
-            ctx.raw(&rho),
-            witness,
-        );
+        let weights = NativeBinding::new(&ctx, matrices, rho)
+            .bind_rows(&RowFunctional::Prefix(&row_factors))?;
+        let values = witness;
         let _scope = tracing::info_span!("spartan:inner_sumcheck").entered();
         prove_inner_sumcheck(
             &ctx,

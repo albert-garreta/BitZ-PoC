@@ -68,14 +68,12 @@ where
     where
         Self: Sized,
     {
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation = field_config.add(
-                &(evaluation),
-                &(&coefficient.scale(&row_weights[row], field_config)),
-            );
-        }
-        evaluation
+        circuit::linear_map::contraction::column_dot(
+            column,
+            zero.clone(),
+            |row, coefficient| coefficient.scale(&row_weights[row], field_config),
+            |a, b| field_config.add(&a, &b),
+        )
     }
 }
 
@@ -799,62 +797,7 @@ where
         row_weights: &[F],
         rho: &F,
     ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
-        debug_assert_eq!(row_weights.len(), 1usize << self.num_row_vars);
-
-        let zero = F::zero_with_cfg(&self.field_config);
-        let rho_squared = (&self.field_config).mul(rho, rho);
-
-        // Column-parallel over the live columns (each column's value is
-        // independent, and its inner sums are untouched — identical
-        // values in identical order to the sequential zip).
-        let live_columns = self
-            .matrices
-            .a()
-            .column_count()
-            .min(self.matrices.b().column_count())
-            .min(self.matrices.c().column_count());
-        let column_evaluation = |index: usize| -> F {
-            let a_column = self.matrices.a().column(index).expect("live column");
-            let b_column = self.matrices.b().column(index).expect("live column");
-            let c_column = self.matrices.c().column(index).expect("live column");
-            let mut evaluation =
-                sparse_column_dot(a_column, row_weights, &zero, &self.field_config);
-            if !b_column.is_empty() {
-                let b_evaluation =
-                    sparse_column_dot(b_column, row_weights, &zero, &self.field_config);
-                evaluation = self.field_config.add(
-                    &(evaluation),
-                    &(&(&self.field_config).mul(rho, &b_evaluation)),
-                );
-            }
-            if !c_column.is_empty() {
-                let c_evaluation =
-                    sparse_column_dot(c_column, row_weights, &zero, &self.field_config);
-                evaluation = self.field_config.add(
-                    &(evaluation),
-                    &(&(&self.field_config).mul(&rho_squared, &c_evaluation)),
-                );
-            }
-            evaluation
-        };
-        #[cfg(feature = "parallel")]
-        let mut evaluations: Vec<F> =
-            if live_columns >= (1 << 12) && rayon::current_num_threads() > 1 {
-                (0..live_columns)
-                    .into_par_iter()
-                    .map(column_evaluation)
-                    .collect()
-            } else {
-                (0..live_columns).map(column_evaluation).collect()
-            };
-        #[cfg(not(feature = "parallel"))]
-        let mut evaluations: Vec<F> = (0..live_columns).map(column_evaluation).collect();
-        evaluations.resize(domain_size(self.num_column_vars)?, zero);
-
-        Ok(DenseMultilinearExtension {
-            evaluations,
-            num_vars: self.num_column_vars,
-        })
+        crate::sumcheck::bridge::dense::bind_rows(self, row_weights, rho)
     }
 
     /// Constructs the dense batched column MLE from a three-factor

@@ -213,7 +213,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         grinding_nonce: initial_nonce,
     } = derive_initial_challenges(t, prepared, &security, None)?;
     crate::utils::delayed_reduction::prepare_field(&cfg).map_err(error)?;
-    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, &cfg);
     let (outer, outer_nonces) = {
         let _scope = tracing::info_span!("ecdsa:outer_prove").entered();
         let rows = witness.outer_integer_rows(prepared);
@@ -386,7 +386,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     )?;
     let (matrix_batch_challenge, linear_row_point, linear_batch_weight) =
         sample_inner_batch_challenges(transcript, prepared, &cfg)?;
-    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, modulus, &cfg);
+    let mut mod_q_coefficients = ModQCoefficients::from_relation(prepared, &cfg);
     let inner_claim = InnerSumcheckClaim::from_outer_claims(
         prepared,
         statement,

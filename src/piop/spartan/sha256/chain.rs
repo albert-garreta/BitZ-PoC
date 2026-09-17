@@ -1034,7 +1034,6 @@ impl LinearRelationSpec for PreparedSha256ChainBatch {
                 self.native_matrix(),
                 &local_row_weights,
                 reducer,
-                config,
             )
             .map_err(SpartanError::from)?
         };

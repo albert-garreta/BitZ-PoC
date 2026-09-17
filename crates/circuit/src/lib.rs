@@ -17,6 +17,7 @@ pub mod constraints;
 #[cfg(feature = "full")]
 pub mod ecdsa_sha256;
 pub mod integer_storage;
+pub mod linear_map;
 pub mod matrix_products;
 #[cfg(feature = "full")]
 pub mod matrix_sparse;
@@ -30,7 +31,7 @@ pub mod sha256;
 pub mod stats;
 pub mod witgen;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full"))]
 mod projection_tests;
 
 /// An error raised while evaluating a witness hint.
