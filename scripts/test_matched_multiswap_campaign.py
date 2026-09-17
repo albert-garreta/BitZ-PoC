@@ -303,14 +303,14 @@ class Matched112Tests(unittest.TestCase):
     @classmethod
     def valid_run(cls, implementation="bitz-ligerito", batch=1):
         captured = json.loads((Path(__file__).parent / f"fixtures/multiswap{cls.security_bits}-preflight.json").read_text())
-        metadata = next(row for row in captured if row["backend"].replace("f2z-", "bitz-", 1) == implementation and row["batch_count"] == batch)
+        metadata = next(row for row in captured if row["backend"] == implementation and row["batch_count"] == batch)
         run = _records("fixture", implementation, DIGEST, 1, 0)[0]
         cell={"implementation":implementation,"workload_k":0,"batch_count":batch,"security_bits":cls.security_bits}
         inp=run["parameters"]["input"]
         inp.update(live_rows=6209*batch,live_columns=6204*batch,padded_rows=8192*batch,padded_columns=8192*batch,batch_count=batch,public_input_count=0,public_inputs=[])
-        # Reuse captured security parameters, with a synthetic contract in the new namespace.
+        # Reuse fixture security parameters and domain, with a synthetic statement digest.
         inp["statement_contract"] = dict(metadata["statement_contract"],
-            domain="bitz-limber/multiswap-statement/v2", digest_blake3=DIGEST)
+            digest_blake3=DIGEST)
         run["parameters"]["security"]=metadata["security"]
         run["artifacts"]={"proof_bytes":100,"commitment_bytes":10,"piop_and_bridge_bytes":30,"pcs_opening_bytes":60,"peak_rss_bytes":1000,"proof_size_kind":"serialized commitment/opening plus analytical PIOP and bridge estimate","memory_boundary":"process high-water RSS including setup and warmups; compiler excluded"}
         if implementation != "bitz-ligerito":
