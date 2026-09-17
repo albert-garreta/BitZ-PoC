@@ -1,5 +1,10 @@
 # GKR and PCS ownership optimization measurements
 
+For the subsequent analytic-constant and compact-coefficient changes, see the
+[September 16 follow-up report](gkr-four-optimization-results.md). It records
+the retained changes, rejected kernel/workspace experiments, and the limits of
+the shortened final validation. Results from the two campaigns are not additive.
+
 Baseline: `50684158ab8721632cba71b0886a3311f37404c0`. The changes preserve
 the protocol, transcript order, proof encoding, grinding, and verifier policy.
 This work prioritizes prover latency; it retains useful column layouts,
