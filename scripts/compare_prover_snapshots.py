@@ -61,6 +61,10 @@ def main():
                 name = f'{method}-i{exponent}-t{threads}-target{target}-seed{seed}-b{block}-{variant}'
                 env = dict(clean_env, F2Z_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
                            RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads))
+                # The target-100 tuning profile is not valid at 128 bits.
+                # Use the benchmark's validated default for target 128.
+                if target == 128:
+                    env.pop('F2Z_LIG_PROFILE')
                 env.update(dict(item.split('=', 1) for item in getattr(args, variant + '_env')))
                 available = sorted(os.sched_getaffinity(0))
                 cpus = ','.join(map(str, available[:threads]))
