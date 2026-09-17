@@ -58,8 +58,8 @@ use rayon::prelude::*;
 
 use crate::{
     ligerito::{
-        LOG_PACKING, PackedBits, phi_bit_sum, phi_byte_tables, phi_byte_tables_into, phi_from_words,
-        transpose_8x8_bits,
+        LOG_PACKING, PackedBits, phi_bit_sum, phi_byte_tables, phi_byte_tables_into,
+        phi_from_words, transpose_8x8_bits,
     },
     poly::univariate::binary_gf128::Gf128 as Gf,
     utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter, wide_mul::WideMulAcc},
@@ -728,7 +728,7 @@ impl PackedSourcePlanes {
 // ---------------------------------------------------------------------
 
 /// The verifier's ρ-batched basis of an IDENTITY compact tail
-/// ([`crate::f2map::ChainedSourceTail`] whose local map is the identity):
+/// ([`circuit::linear_map::binary::ChainedSourceTail`] whose local map is the identity):
 /// source column `j ∈ [source_start, source_start + len)` carries the
 /// derived-row weight of row `r(j) = row_start + (j − source_start)`,
 ///
@@ -802,10 +802,8 @@ impl AffineTailPlanes {
             .map(|table| cfg_iter!(table).map(|&value| dual_unpack(value)).collect())
             .collect();
         // The planes of every aligned block: planes[l][m][a].
-        let planes: Vec<Vec<[[u64; 2]; PACK]>> = unpacked
-            .iter()
-            .map(|table| aligned_planes(table))
-            .collect();
+        let planes: Vec<Vec<[[u64; 2]; PACK]>> =
+            unpacked.iter().map(|table| aligned_planes(table)).collect();
         let r_tables = planes
             .iter()
             .map(|planes_l| {
@@ -1124,10 +1122,13 @@ struct CachedCoefficients {
 impl<const ENTRIES: usize> CoefficientCache<ENTRIES> {
     fn new(chunks: usize) -> Self {
         Self {
-            entries: vec![CachedCoefficients {
-                key: None,
-                fixed: [kernel::fixed(&Gf::zero()); PACK],
-            }; ENTRIES * chunks],
+            entries: vec![
+                CachedCoefficients {
+                    key: None,
+                    fixed: [kernel::fixed(&Gf::zero()); PACK],
+                };
+                ENTRIES * chunks
+            ],
             scratch: vec![Gf::zero(); PACK],
         }
     }

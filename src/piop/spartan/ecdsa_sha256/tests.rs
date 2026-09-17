@@ -1,7 +1,7 @@
 use super::*;
-use crate::f2map::VirtualMap;
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
+use circuit::linear_map::binary::VirtualMap;
 use field::Uint;
 use num_bigint::{BigInt, BigUint};
 use sha2::{Digest, Sha256};

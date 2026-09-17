@@ -1,67 +1,13 @@
 //! Matched, standalone linear-map qualification. Run latency and allocation
 //! measurements separately; `bench-memory` instruments allocation only.
-use circuit::matrix_wengert::{ForwardColumns, WengertGenerator, WengertTape};
+use circuit::linear_map::circuit::{WengertGenerator, WengertTape};
+use circuit::linear_map::{BilinearEval, ColumnValues, LeftMul};
 use field::{FpCtx, ModRingCtx, RingOps, Uint};
 use std::{hint::black_box, time::Instant};
 
 #[cfg(feature = "bench-memory")]
-mod allocations {
-    use std::{
-        alloc::{GlobalAlloc, Layout, System},
-        sync::atomic::{AtomicUsize, Ordering::Relaxed},
-    };
-    pub struct Counted;
-    pub static LIVE: AtomicUsize = AtomicUsize::new(0);
-    pub static PEAK: AtomicUsize = AtomicUsize::new(0);
-    pub static COUNT: AtomicUsize = AtomicUsize::new(0);
-    pub static BYTES: AtomicUsize = AtomicUsize::new(0);
-    fn add(n: usize) {
-        COUNT.fetch_add(1, Relaxed);
-        BYTES.fetch_add(n, Relaxed);
-        let live = LIVE.fetch_add(n, Relaxed) + n;
-        PEAK.fetch_max(live, Relaxed);
-    }
-    unsafe impl GlobalAlloc for Counted {
-        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
-            let p = unsafe { System.alloc(l) };
-            if !p.is_null() {
-                add(l.size());
-            }
-            p
-        }
-        unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-            let p = unsafe { System.alloc_zeroed(l) };
-            if !p.is_null() {
-                add(l.size());
-            }
-            p
-        }
-        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
-            LIVE.fetch_sub(l.size(), Relaxed);
-            unsafe { System.dealloc(p, l) }
-        }
-        unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
-            let q = unsafe { System.realloc(p, l, n) };
-            if !q.is_null() {
-                LIVE.fetch_sub(l.size(), Relaxed);
-                add(n);
-            }
-            q
-        }
-    }
-    pub fn measure(f: impl FnOnce()) -> (usize, usize, usize) {
-        let start = LIVE.load(Relaxed);
-        PEAK.store(start, Relaxed);
-        COUNT.store(0, Relaxed);
-        BYTES.store(0, Relaxed);
-        f();
-        (
-            COUNT.load(Relaxed),
-            BYTES.load(Relaxed),
-            PEAK.load(Relaxed).saturating_sub(start),
-        )
-    }
-}
+#[path = "support/allocations.rs"]
+mod allocations;
 #[cfg(feature = "bench-memory")]
 #[global_allocator]
 static ALLOC: allocations::Counted = allocations::Counted;
@@ -90,6 +36,7 @@ struct Columns {
     suffix: Vec<field::Fp<2>>,
     powers: Vec<field::Fp<2>>,
     offset: usize,
+    count: usize,
 }
 impl Columns {
     fn new(field: FpCtx<2>, count: usize, offset: usize) -> Self {
@@ -126,22 +73,22 @@ impl Columns {
             suffix,
             powers,
             offset,
+            count,
         }
     }
 }
-impl ForwardColumns for Columns {
-    fn scalar(&self, column: usize) -> [u64; 2] {
-        let i = self.offset + column;
-        *self
-            .field
-            .mul(
-                &self.low[i % self.low.len()],
-                &self.high[i / self.low.len()],
-            )
-            .as_montgomery_integer()
-            .as_words()
+impl ColumnValues<field::Fp<2>> for Columns {
+    fn len(&self) -> usize {
+        self.count
     }
-    fn power_sum(&self, first: usize, len: usize) -> [u64; 2] {
+    fn scalar(&self, column: usize) -> field::Fp<2> {
+        let i = self.offset + column;
+        self.field.mul(
+            &self.low[i % self.low.len()],
+            &self.high[i / self.low.len()],
+        )
+    }
+    fn power_sum(&self, first: usize, len: usize) -> field::Fp<2> {
         let mut i = self.offset + first;
         let end = i + len;
         let mut sum = self.field.zero();
@@ -163,7 +110,7 @@ impl ForwardColumns for Columns {
             base = self.field.mul(&base, &self.powers[hi - lo]);
             i += hi - lo;
         }
-        *sum.as_montgomery_integer().as_words()
+        sum
     }
 }
 fn measure(name: &str, samples: usize, mut f: impl FnMut()) {
@@ -228,8 +175,28 @@ fn main() {
         if p256 { 20_457 * 8 } else { 0 },
     );
     drop(encoder);
+    let weights: Vec<_> = weights
+        .into_iter()
+        .flatten()
+        .map(|words| {
+            columns
+                .field
+                .from_montgomery_integer(Uint::from_words(words))
+        })
+        .collect();
+    let mut output = columns.field.zero_vec(tape.column_count());
     let mut adjoint = tape.prepare(&modulus).unwrap();
     let mut forward = tape.prepare(&modulus).unwrap();
+    adjoint.mul_left_into(&weights, &mut output).unwrap();
+    let dot = output
+        .iter()
+        .enumerate()
+        .fold(columns.field.zero(), |sum, (j, value)| {
+            columns
+                .field
+                .add(&sum, &columns.field.mul(value, &columns.scalar(j)))
+        });
+    assert_eq!(forward.evaluate_bilinear(&weights, &columns).unwrap(), dot);
     println!(
         "phase,{},{}",
         if cfg!(feature = "bench-memory") {
@@ -247,18 +214,23 @@ fn main() {
         black_box(tape.prepare(black_box(&modulus)).unwrap());
     });
     measure("bind_reused", samples, || {
-        black_box(adjoint.apply_weighted(black_box(&weights)).unwrap());
+        adjoint
+            .mul_left_into(black_box(&weights), black_box(&mut output))
+            .unwrap();
+        black_box(&output);
     });
     measure("terminal_reused", samples, || {
         black_box(
             forward
-                .apply_forward_weighted(black_box(&weights), black_box(&columns))
+                .evaluate_bilinear(black_box(&weights), black_box(&columns))
                 .unwrap(),
         );
     });
     measure("prepare_bind", samples, || {
         let mut p = tape.prepare(black_box(&modulus)).unwrap();
-        black_box(p.apply_weighted(black_box(&weights)).unwrap());
+        let mut output = columns.field.zero_vec(tape.column_count());
+        p.mul_left_into(black_box(&weights), &mut output).unwrap();
+        black_box(output);
     });
     eprintln!(
         "topology_bytes={},adjoint_workspace_bytes={},forward_workspace_bytes={}",

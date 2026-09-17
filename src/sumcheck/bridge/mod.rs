@@ -3,22 +3,27 @@
 use field::RingOps;
 pub(crate) mod native;
 pub(crate) mod repeated;
-pub(crate) type BindingError = crate::sumcheck::SumcheckError;
+use crate::sumcheck::SumcheckError;
 
 /// Prepared arithmetic and reusable workspace; every result owns its values.
-pub(crate) trait PreparedBinding<F: RingOps, R: ?Sized> {
+pub(crate) trait PreparedBinding<F: RingOps> {
     type Bound;
-    fn bind_rows(&mut self, rows: &R) -> Result<Self::Bound, BindingError>;
-    fn bind_rows_into(&mut self, rows: &R, out: &mut Self::Bound) -> Result<(), BindingError>;
-    /// Direct bilinear evaluation. Must not construct the column coefficient table.
-    fn evaluate_bound(
+    fn bind_rows(&mut self, rows: &[F::Elem]) -> Result<Self::Bound, SumcheckError>;
+    fn bind_rows_into(
         &mut self,
-        rows: &R,
+        rows: &[F::Elem],
+        out: &mut Self::Bound,
+    ) -> Result<(), SumcheckError>;
+    /// Direct bilinear evaluation. Must not construct the column coefficient table.
+    fn evaluate_at(
+        &mut self,
+        rows: &[F::Elem],
         column_point: &[F::Elem],
-    ) -> Result<F::Elem, BindingError>;
+    ) -> Result<F::Elem, SumcheckError>;
 }
 #[cfg(feature = "ecdsa")]
 pub(crate) mod composite;
 pub(crate) mod dense;
+pub(crate) mod structured;
 #[cfg(test)]
 mod tests;

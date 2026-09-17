@@ -1,5 +1,5 @@
 //! Prepared public binary linear maps and their canonical topology.
-use super::sparse::{CscTopology, SparseMatrix};
+use super::sparse::{CscMatrix, ImplicitOnes};
 use blake3::Hasher;
 use core::slice;
 use std::vec as alloc_vec;
@@ -122,14 +122,14 @@ pub enum PackedSourceOrder {
 /// A validated binary CSC matrix with transcript metadata cached once.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedVirtualMap {
-    matrix: CscTopology,
+    matrix: CscMatrix<ImplicitOnes>,
     digest: [u8; 32],
     identity: bool,
 }
 
 impl PreparedVirtualMap {
     /// Validates a true-only binary CSC matrix and prepares its metadata.
-    pub fn new(matrix: SparseMatrix<bool>) -> Result<Self, PreparedVirtualMapError> {
+    pub fn new(matrix: CscMatrix<Box<[bool]>>) -> Result<Self, PreparedVirtualMapError> {
         for (column, entries) in matrix.columns().enumerate() {
             for (row, coefficient) in entries {
                 if !*coefficient {
@@ -138,12 +138,16 @@ impl PreparedVirtualMap {
             }
         }
 
-        let (matrix, _) = matrix.into_parts();
-        Self::from_topology(matrix)
+        let nnz = matrix.nnz();
+        Self::from_implicit(
+            matrix
+                .with_coefficients(ImplicitOnes::new(nnz))
+                .expect("unchanged entry count"),
+        )
     }
 
     /// Prepare an implicit-one map without allocating any coefficient array.
-    pub fn from_topology(matrix: CscTopology) -> Result<Self, PreparedVirtualMapError> {
+    pub fn from_implicit(matrix: CscMatrix<ImplicitOnes>) -> Result<Self, PreparedVirtualMapError> {
         let digest = compute_digest(&matrix)?;
         let identity = compute_identity(&matrix);
         Ok(Self {
@@ -154,22 +158,22 @@ impl PreparedVirtualMap {
     }
 
     /// The sole sparse topology backing this prepared map.
-    pub const fn matrix(&self) -> &CscTopology {
+    pub const fn matrix(&self) -> &CscMatrix<ImplicitOnes> {
         &self.matrix
     }
 
     /// Number of derived cells on the `h` side.
-    pub const fn rows(&self) -> usize {
+    pub fn rows(&self) -> usize {
         self.matrix.row_count()
     }
 
     /// Number of committed source cells on the `f` side.
-    pub const fn cols(&self) -> usize {
+    pub fn cols(&self) -> usize {
         self.matrix.column_count()
     }
 
     /// Number of stored one-coefficients.
-    pub const fn nnz(&self) -> usize {
+    pub fn nnz(&self) -> usize {
         self.matrix.nnz()
     }
 
@@ -208,7 +212,7 @@ impl VirtualMap for PreparedVirtualMap {
     }
 
     fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
-        Some(self.matrix.column(column)?.row_indices().iter().copied())
+        Some(self.matrix.column(column)?.indices().iter().copied())
     }
 }
 
@@ -533,7 +537,7 @@ impl VirtualMap for PackedSourceRepeatedVirtualMap {
                 Some(offset / (self.local.cols() - 1)),
             )
         };
-        let local_rows = self.local.matrix().column(local_column)?.row_indices();
+        let local_rows = self.local.matrix().column(local_column)?.indices();
         let remaining = local_rows.len() * instance.map_or(self.instances, |_| 1);
         Some(PackedSourceColumnRows {
             local_rows,
@@ -646,7 +650,7 @@ impl ChainedPackedSourceMap {
         // must not cancel any of them.
         for boundary in [&first, &last] {
             for (own, extra) in local.matrix().columns().zip(boundary.matrix().columns()) {
-                if sorted_intersect(own.row_indices(), extra.row_indices()) {
+                if sorted_intersect(own.indices(), extra.indices()) {
                     return Err(PreparedVirtualMapError::InvalidRepetition);
                 }
             }
@@ -811,16 +815,12 @@ impl VirtualMap for ChainedPackedSourceMap {
         let push_rows =
             |derived: &mut Vec<usize>, map: &PreparedVirtualMap, local_column, instance| {
                 if let Some(rows) = map.matrix().column(local_column) {
-                    derived.extend(
-                        rows.row_indices()
-                            .iter()
-                            .map(|&row| row * instances + instance),
-                    );
+                    derived.extend(rows.indices().iter().map(|&row| row * instances + instance));
                 }
             };
         if column == 0 {
             if let Some(rows) = self.local.matrix().column(0) {
-                for &row in rows.row_indices() {
+                for &row in rows.indices() {
                     derived.extend((0..instances).map(|instance| row * instances + instance));
                 }
             }
@@ -892,7 +892,7 @@ impl PackedRepeatedVirtualMap {
             .column(0)
             .ok_or(PreparedVirtualMapError::InvalidRepetition)?;
         let constant_nnz = constant_column
-            .row_indices()
+            .indices()
             .iter()
             .try_fold(0usize, |count, &row| {
                 count.checked_add(if row == 0 { 1 } else { instances })
@@ -1054,7 +1054,7 @@ impl VirtualMap for PackedRepeatedVirtualMap {
                 Some(offset / (self.local.cols() - 1)),
             )
         };
-        let local_rows = self.local.matrix().column(local_column)?.row_indices();
+        let local_rows = self.local.matrix().column(local_column)?.indices();
         let remaining = match instance {
             Some(_) => local_rows.len(),
             None => local_rows
@@ -1183,12 +1183,7 @@ impl VirtualMap for RepeatedVirtualMap {
             Some(bits) => (column >> bits, column & (self.instances - 1)),
             None => (column / self.instances, column % self.instances),
         };
-        let rows = self
-            .local
-            .matrix()
-            .column(local_column)?
-            .row_indices()
-            .iter();
+        let rows = self.local.matrix().column(local_column)?.indices().iter();
         Some(RepeatedColumnRows {
             rows,
             instance,
@@ -1201,7 +1196,7 @@ impl VirtualMap for RepeatedVirtualMap {
     }
 }
 
-fn compute_identity(matrix: &CscTopology) -> bool {
+fn compute_identity(matrix: &CscMatrix<ImplicitOnes>) -> bool {
     matrix.row_count() == matrix.column_count()
         && matrix.nnz() == matrix.row_count()
         && matrix
@@ -1210,7 +1205,7 @@ fn compute_identity(matrix: &CscTopology) -> bool {
             .all(|(column, entries)| matches!(entries.single(), Some((row, true)) if row == column))
 }
 
-fn compute_digest(matrix: &CscTopology) -> Result<[u8; 32], PreparedVirtualMapError> {
+fn compute_digest(matrix: &CscMatrix<ImplicitOnes>) -> Result<[u8; 32], PreparedVirtualMapError> {
     let mut hash = Hasher::new();
     hash.update(b"f2z/f2-cell-map/v1");
     for value in [matrix.row_count(), matrix.column_count(), matrix.nnz()] {
@@ -1242,17 +1237,17 @@ fn compute_digest(matrix: &CscTopology) -> Result<[u8; 32], PreparedVirtualMapEr
 
 #[cfg(test)]
 mod tests {
-    use crate::linear_map::SparseMatrix;
+    use crate::linear_map::CscMatrix;
 
     use super::*;
 
     fn prepared(rows: usize, columns: Vec<Vec<(usize, bool)>>) -> PreparedVirtualMap {
-        PreparedVirtualMap::new(SparseMatrix::try_from_columns(rows, columns).unwrap()).unwrap()
+        PreparedVirtualMap::new(CscMatrix::try_from_columns(rows, columns).unwrap()).unwrap()
     }
 
     #[test]
     fn rejects_explicit_false_coefficients() {
-        let matrix = SparseMatrix::try_from_columns(2, vec![vec![(1, false)]]).unwrap();
+        let matrix = CscMatrix::try_from_columns(2, vec![vec![(1, false)]]).unwrap();
         assert_eq!(
             PreparedVirtualMap::new(matrix),
             Err(PreparedVirtualMapError::ExplicitFalse { row: 1, column: 0 })

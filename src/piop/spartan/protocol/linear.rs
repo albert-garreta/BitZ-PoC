@@ -29,17 +29,19 @@ use flock_core::pcs::{
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
 
-use crate::{
-    f2map::VirtualMap,
-    ligerito::packed_vars,
-    ligerito_flock::{
-        FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
-        bind_prover_ood, bind_verifier_ood,
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
-        verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+use {
+    crate::{
+        ligerito::packed_vars,
+        ligerito_flock::{
+            FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
+            bind_prover_ood, bind_verifier_ood,
+            prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+            verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+        },
+        pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
+        transcript::traits::Transcript,
     },
-    pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 use super::{

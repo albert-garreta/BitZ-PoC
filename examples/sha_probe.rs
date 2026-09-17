@@ -9,16 +9,18 @@
 //!   cargo run --release --example sha_probe --features unchecked,span-metrics
 //! ```
 
-
-use f2z::{
-    f2map::VirtualMap,
-    piop::spartan::{
-        SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionInput, Sha256CompressionStatement,
-        commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
-        prepare_sha256_compression_batch, prove_sha256_compressions_with_prefix_vars_and_config,
-        sha256_compression_configs, verify_sha256_compressions_with_config,
+use {
+    circuit::linear_map::binary::VirtualMap,
+    f2z::{
+        piop::spartan::{
+            SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionInput, Sha256CompressionStatement,
+            commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
+            prepare_sha256_compression_batch,
+            prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
+            verify_sha256_compressions_with_config,
+        },
+        transcript::Blake3Transcript,
     },
-    transcript::Blake3Transcript,
 };
 
 struct SplitMix64(u64);
@@ -62,7 +64,6 @@ fn main() {
     let verify = std::env::var("PROBE_VERIFY").map_or(true, |v| v != "0");
     let _ = flock_core::init_perf_thread_pool();
 
-
     let prepared = prepare_sha256_compression_batch(exponent).expect("valid SHA relation");
     let (pc, vc) = sha256_compression_configs(&prepared).expect("valid Ligerito config");
     let compressions = prepared.instances();
@@ -91,28 +92,34 @@ fn main() {
             .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
             .collect::<Vec<_>>();
 
-        let (hint, started) = f2z::observability::measure(
-            tracing::info_span!("sha_probe:hint"),
-            || commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
-            .expect("SHA source commitment succeeds"),
-        ).expect("measure completed operation");
+        let (hint, started) =
+            f2z::observability::measure(tracing::info_span!("sha_probe:hint"), || {
+                commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
+                    .expect("SHA source commitment succeeds")
+            })
+            .expect("measure completed operation");
         let commit_ms = started.as_secs_f64() * 1e3;
         let mut transcript = Blake3Transcript::new();
-        let (proof, started) = f2z::observability::measure(
-            tracing::info_span!("sha_probe:proof"),
-            || prove_sha256_compressions_with_prefix_vars_and_config(
-            &mut transcript,
-            &prepared,
-            &statements,
-            &witness,
-            &hint,
-            SHA256_DEFAULT_INNER_PREFIX_VARS,
-            &pc,
-        )
-        .expect("SHA proof succeeds"),
-        ).expect("measure completed operation");
+        let (proof, started) =
+            f2z::observability::measure(tracing::info_span!("sha_probe:proof"), || {
+                prove_sha256_compressions_with_prefix_vars_and_config(
+                    &mut transcript,
+                    &prepared,
+                    &statements,
+                    &witness,
+                    &hint,
+                    SHA256_DEFAULT_INNER_PREFIX_VARS,
+                    &pc,
+                )
+                .expect("SHA proof succeeds")
+            })
+            .expect("measure completed operation");
         let prove_ms = started.as_secs_f64() * 1e3;
-        let label = if rep == 0 { "warmup".to_owned() } else { format!("rep {rep}") };
+        let label = if rep == 0 {
+            "warmup".to_owned()
+        } else {
+            format!("rep {rep}")
+        };
         let f2z_bytes = proof.f2z().to_bytes();
         println!(
             "{label}: commit {commit_ms:.2} ms | prove {prove_ms:.2} ms | forests {} | proof bytes {} | f2z digest {}",
@@ -120,15 +127,42 @@ fn main() {
             f2z_bytes.len(),
             blake3::hash(&f2z_bytes).to_hex(),
         );
-        f2z::observability::write_profile(std::io::stderr().lock(), &format!("sha 2^{exponent} {label}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
+        f2z::observability::write_profile(
+            std::io::stderr().lock(),
+            &format!("sha 2^{exponent} {label}"),
+            &profile.intervals().expect("profile intervals"),
+            None,
+        )
+        .expect("write profile");
         if verify && rep == reps {
             let mut vt = Blake3Transcript::new();
-            let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let started_recording =
+                f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
             let started = tracing::info_span!("sha_probe:started").entered();
-            verify_sha256_compressions_with_config(&mut vt, &prepared, &statements, &hint.commitment, &proof, &vc)
-                .expect("SHA proof verifies");
-            println!("verify {:.2} ms", { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3);
-
+            verify_sha256_compressions_with_config(
+                &mut vt,
+                &prepared,
+                &statements,
+                &hint.commitment,
+                &proof,
+                &vc,
+            )
+            .expect("SHA proof verifies");
+            println!(
+                "verify {:.2} ms",
+                {
+                    drop(started);
+                    f2z::observability::duration(
+                        &started_recording
+                            .intervals()
+                            .expect("complete operation capture"),
+                        "sha_probe:started",
+                    )
+                    .expect("query completed operation")
+                }
+                .as_secs_f64()
+                    * 1e3
+            );
         }
     }
 }

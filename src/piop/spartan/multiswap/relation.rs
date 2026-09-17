@@ -28,6 +28,7 @@ use super::super::raw_monty::NativeLimbWitness;
 use crate::piop::spartan::{R1csProductMles, build_assignment_mle, build_product_mles};
 #[cfg(test)]
 use crate::poly::mle::DenseMultilinearExtension;
+use circuit::linear_map::CscMatrix;
 use field::CtOrd;
 #[cfg(test)]
 use field::RingOps;
@@ -44,7 +45,6 @@ use crate::pcs::IntegerMatrixLayout;
 
 use super::super::{
     ConstraintMatrices, PreparedConstraintMatrices, SpartanField, SpartanMatrixError,
-    matrix::SparseMatrix,
 };
 use super::circuit::{IntegerCoo, MULTISWAP_VALUE_BITS, MultiswapCircuit};
 
@@ -326,7 +326,7 @@ impl MultiswapIntegerRelation {
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
-            SparseMatrix::try_from_columns(self.live_rows, columns)
+            CscMatrix::try_from_columns(self.live_rows, columns)
         };
         let a = project_matrix(&self.a).map_err(SpartanMatrixError::from)?;
         let b = project_matrix(&self.b).map_err(SpartanMatrixError::from)?;

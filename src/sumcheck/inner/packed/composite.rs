@@ -21,14 +21,12 @@ impl InnerSumcheckMleSource for CompositeMultilinearExtension<'_, Field> {
             return Err(SumcheckError::InvalidProductDimensions);
         }
         validate_factored_mle(self.repeated(), cfg)?;
-        for value in self
-            .tail_evaluations()
-            .iter()
-            .chain([self.origin_adjustment()])
-        {
-            validate_field_value(value, cfg)?;
-        }
-        Ok(())
+        validate_field_values(
+            self.tail_evaluations()
+                .iter()
+                .chain([self.origin_adjustment()]),
+            cfg,
+        )
     }
     fn build_prefix_accumulators<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         &self,

@@ -1,12 +1,15 @@
 //! Encoded Montgomery storage and native kernels for the Spartan inner prover.
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
-#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
+#[cfg(test)]
+use crate::sumcheck::bridge::PreparedBinding;
 pub use crate::sumcheck::outer::arithmetic::NativeWideProducts;
 #[cfg(test)]
 pub use crate::sumcheck::outer::arithmetic::RawProducts;
 pub(crate) use crate::sumcheck::outer::arithmetic::*;
 use crate::utils::delayed_reduction::EncodedMac;
+#[cfg(test)]
+use circuit::linear_map::CscMatrix;
 #[cfg(test)]
 use field::Uint;
 use field::{Fp, RingOps};
@@ -21,10 +24,7 @@ use crate::piop::spartan::sumcheck::R1csProductMles;
 #[cfg(test)]
 use crate::piop::spartan::{
     baby_bear_mul::BabyBearMulCoefficient,
-    matrix::{
-        PreparedConstraintMatrices,
-        SpartanMatrixCoefficient,
-    },
+    matrix::{PreparedConstraintMatrices, SpartanMatrixCoefficient},
     u64_mul::U64MulCoefficient,
 };
 
@@ -60,7 +60,6 @@ const PARALLEL_MIN_ITEMS: usize = 1 << 12;
 /// Output elements per parallel block in the fused fold kernels (even, so a
 /// block always holds whole output pairs).
 pub(crate) const FOLD_BLOCK: usize = 1 << 11;
-
 
 #[cfg(feature = "parallel")]
 #[inline]
@@ -186,12 +185,12 @@ pub(crate) fn raw_shared(value: field::Fp<2>) -> Raw {
 /// `eq(boolean_index, point)` in little-endian index order, the raw twin of
 /// `matrix::eq_table`: the same doubling recurrence, entry for entry.
 pub(crate) fn eq_table_raw(ctx: &field::FpCtx<2>, point: &[Raw]) -> Vec<Raw> {
-    let mut table=Vec::new();
-    eq_table_raw_into(ctx,point,&mut table);
+    let mut table = Vec::new();
+    eq_table_raw_into(ctx, point, &mut table);
     table
 }
-pub(crate) fn eq_table_raw_into(ctx:&field::FpCtx<2>,point:&[Raw],table:&mut Vec<Raw>) {
-    table.resize(1usize<<point.len(),0);
+pub(crate) fn eq_table_raw_into(ctx: &field::FpCtx<2>, point: &[Raw], table: &mut Vec<Raw>) {
+    table.resize(1usize << point.len(), 0);
 
     table[0] = ctx.one_raw();
     for (coordinate, &challenge) in point.iter().enumerate() {
@@ -740,10 +739,7 @@ mod tests {
     use super::*;
     use crate::piop::spartan::{
         baby_bear_mul::{BabyBearMulLayout, baby_bear_mul_constraint_matrices},
-        matrix::{
-            ConstraintMatrices, ConstraintMatricesSkeleton, SparseMatrix, eq_table,
-            make_equality_factors,
-        },
+        matrix::{ConstraintMatrices, ConstraintMatricesSkeleton, eq_table, make_equality_factors},
         squeeze_field,
         sumcheck::{
             prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
@@ -1313,7 +1309,7 @@ mod tests {
                     row
                 })
                 .collect();
-            SparseMatrix::try_from_rows(columns, entries).unwrap()
+            CscMatrix::try_from_rows(columns, entries).unwrap()
         };
         ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap()
     }
@@ -1328,9 +1324,12 @@ mod tests {
     {
         let row_point = random_fields(rng, cfg, matrices.num_row_vars());
         let rho = random_field(rng, cfg);
-        let expected = matrices.bind_and_batch(&row_point, &rho).unwrap();
+        let expected = crate::piop::spartan::matrix::eq_table_prover(&row_point, matrices.config())
+            .map_err(crate::sumcheck::SumcheckError::from)
+            .and_then(|weights| matrices.binding(&rho).bind_rows(&weights))
+            .unwrap();
         let row_weights = eq_table_raw(ctx, &ctx.raw_vec(&row_point));
-        let actual = bind_and_batch_raw(ctx, matrices, &row_weights, ctx.raw(&rho));
+        let actual = reference_native_binding(ctx, matrices, &row_weights, ctx.raw(&rho));
         assert_eq!(actual, ctx.raw_vec(&expected.evaluations));
 
         for skip_vars in 1..=4usize {
@@ -1343,10 +1342,8 @@ mod tests {
                 tail_point: random_fields(rng, cfg, matrices.num_row_vars() - skip_vars),
             };
             let factors = binding.row_factors(matrices.num_row_vars(), cfg).unwrap();
-            let expected = matrices
-                .bind_and_batch_with_prefix_univariate_factors(&factors, &rho)
-                .unwrap();
-            let actual = bind_and_batch_prefix_raw(ctx, matrices, &factors, ctx.raw(&rho));
+            let expected = matrices.structured().bind_prefix(&factors, &rho).unwrap();
+            let actual = reference_prefix_binding(ctx, matrices, &factors, ctx.raw(&rho));
             assert_eq!(
                 actual,
                 ctx.raw_vec(&expected.evaluations),
@@ -1699,14 +1696,14 @@ mod tests {
 
         // A run starting at column zero: one block spanning the domain.
         let rows = 5;
-        let identity = SparseMatrix::try_from_rows(
+        let identity = CscMatrix::try_from_rows(
             8,
             (0..rows)
                 .map(|row| vec![(row, Field::one_with_cfg(&cfg))])
                 .collect(),
         )
         .unwrap();
-        let empty = SparseMatrix::<Field>::try_from_rows(8, vec![Vec::new(); rows]).unwrap();
+        let empty = CscMatrix::<Box<[Field]>>::try_from_rows(8, vec![Vec::new(); rows]).unwrap();
         let prepared = PreparedConstraintMatrices::<Field, Field>::new(
             ConstraintMatrices::new(identity, empty.clone(), empty).unwrap(),
             &cfg,

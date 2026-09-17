@@ -33,7 +33,7 @@
 //! ## F₂-virtualization
 //!
 //! Claims about a DERIVED vector `h = M·f` (a public canonical CSC
-//! [`F₂`-linear map][f2map::PreparedVirtualMap] of the committed bits) are
+//! [`F₂`-linear map][circuit::linear_map::binary::PreparedVirtualMap] of the committed bits) are
 //! opened against the commitment to `f` alone —
 //! [`ligerito_flock::prove_mle_eval_mod_q_ligerito_virtual`] /
 //! [`ligerito_flock::verify_mle_eval_mod_q_ligerito_virtual`]: the
@@ -70,7 +70,7 @@ pub mod pcs;
 pub mod piop;
 pub mod poly;
 pub mod proof_codec;
-pub mod sparse_matrix;
+
 pub mod taps;
 pub mod transcript;
 pub mod utils;
@@ -117,7 +117,7 @@ pub use ligerito_flock::{
 // EXPERIMENTAL — the single-tap shared-point collapse: k single-tap
 // claims at one point become ≤ #columns × 2 plain single-column claims
 // (weight transform; no streams, channels, or translated-eq rings).
-pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
+pub use circuit::linear_map::binary::{PreparedVirtualMap, PreparedVirtualMapError};
 pub use ligerito_flock::{
     TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
     verify_mle_eval_mod_q_ligerito_tap_collapse,
@@ -125,7 +125,7 @@ pub use ligerito_flock::{
 pub use pcs::IntegerMatrixLayout;
 pub use poly::univariate::binary_b127::B127;
 pub use poly::univariate::binary_gf128::Gf128;
-pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
+
 pub use taps::{TapOp, extract_virtual_tap_rows};
 
 pub mod sumcheck;

@@ -10,6 +10,8 @@ const OUTPUT_CHUNK: usize = 1 << 12;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum LinearMapError {
+    #[error("integer output width {output_limbs} limbs is insufficient for segment {segment}")]
+    IntegerWidth { output_limbs: usize, segment: usize },
     #[error("linear map expects {expected} {kind} values, received {actual}")]
     Length {
         kind: &'static str,
@@ -221,6 +223,7 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
             parallel: None,
         }
     }
+    #[cfg(test)]
     pub(super) fn set_parallel(&mut self, parallel: Option<bool>) {
         self.parallel = parallel;
     }
@@ -234,14 +237,6 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
             + (self.adjoints.len() + self.forward_values.len() + self.powers.len())
                 * std::mem::size_of::<F::Elem>()
     }
-    pub fn adjoint_into(
-        &mut self,
-        output_weights: &[F::Elem],
-        out: &mut [F::Elem],
-    ) -> Result<(), LinearMapError> {
-        self.adjoint_map_into(output_weights.len(), |i| output_weights[i], out)
-    }
-
     /// Mᵀw using directly borrowed or mapped seeds, without a staging vector.
     pub fn adjoint_map_into(
         &mut self,
@@ -406,13 +401,6 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
         Ok(())
     }
 
-    pub fn evaluate_bilinear(
-        &mut self,
-        weights: &[F::Elem],
-        columns: &impl ColumnValues<F::Elem>,
-    ) -> Result<F::Elem, LinearMapError> {
-        self.evaluate_bilinear_map(weights.len(), |i| weights[i], columns)
-    }
     pub fn evaluate_bilinear_map(
         &mut self,
         seed_count: usize,
@@ -421,85 +409,21 @@ impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
     ) -> Result<F::Elem, LinearMapError> {
         length("output weights", self.graph.output_count, seed_count)?;
         length("columns", self.graph.inputs.len(), columns.len())?;
-        let Self {
-            graph,
-            field,
-            coefficients,
-            forward_values: values,
-            parallel,
-            ..
-        } = self;
-        let field = &*field;
+        evaluate_forward(
+            self.graph,
+            &self.field,
+            &self.coefficients,
+            &mut self.forward_values,
+            self.parallel,
+            columns,
+        );
+        let graph = self.graph;
+        let field = &self.field;
+        let values = &self.forward_values;
         let arithmetic = Arithmetic {
             field,
-            coefficients,
+            coefficients: &self.coefficients,
         };
-        if values.is_empty() {
-            *values = field.zero_vec(graph.node_count());
-        }
-        // Packed columns are private: their entire contribution is supplied by
-        // power_sum. Skip their ranges instead of scanning each scalar slot.
-        let mut next_column = 0;
-        for group in &graph.groups {
-            for column in next_column..group.first as usize {
-                let node = graph.inputs[column];
-                if node != NONE {
-                    values[node as usize] = columns.scalar(column);
-                }
-            }
-            next_column = group.first as usize + group.len as usize;
-            if group.full != NONE {
-                values[group.full as usize] = if group.len == 1 {
-                    columns.scalar(group.first as usize)
-                } else {
-                    columns.power_sum(group.first as usize, group.len as usize)
-                };
-            }
-            if group.low != NONE {
-                values[group.low as usize] = if group.low_len == 1 {
-                    columns.scalar(group.first as usize)
-                } else {
-                    columns.power_sum(group.first as usize, group.low_len as usize)
-                };
-            }
-        }
-        for column in next_column..graph.inputs.len() {
-            let node = graph.inputs[column];
-            if node != NONE {
-                values[node as usize] = columns.scalar(column);
-            }
-        }
-        for range in graph.levels.windows(2).rev() {
-            let (start, end) = (range[0], range[1]);
-            let (before, later) = values.split_at_mut(end);
-            let current = &mut before[start..end];
-            let evaluate = |i: usize, slot: &mut F::Elem| {
-                let n = start + i;
-                let terms = &graph.forward
-                    [graph.forward_offsets[n] as usize..graph.forward_offsets[n + 1] as usize];
-                if terms.is_empty() {
-                    return;
-                }
-                let mut result = None;
-                for t in terms {
-                    let value = arithmetic.scale(later[t.node as usize - end], t.coefficient);
-                    result = Some(result.map_or(value, |s| field.add(&s, &value)));
-                }
-                *slot = result.unwrap_or_else(|| field.zero());
-            };
-            if parallel
-                .unwrap_or(current.len() >= PARALLEL_LEVEL && rayon::current_num_threads() > 1)
-            {
-                current
-                    .par_iter_mut()
-                    .enumerate()
-                    .for_each(|(i, v)| evaluate(i, v));
-            } else {
-                for (i, v) in current.iter_mut().enumerate() {
-                    evaluate(i, v);
-                }
-            }
-        }
         let mut result = field.zero();
         for (n, &value) in values.iter().enumerate() {
             for root in
@@ -580,5 +504,138 @@ where
             capacity,
         };
         self.adjoint_kernel(seed_count, seed, out, write, &kernel)
+    }
+}
+
+fn evaluate_forward<F: RingOps + Sync>(
+    graph: &CompiledGraph,
+    field: &F,
+    coefficients: &[F::Elem],
+    values: &mut Vec<F::Elem>,
+    parallel: Option<bool>,
+    columns: &impl ColumnValues<F::Elem>,
+) {
+    let arithmetic = Arithmetic {
+        field,
+        coefficients,
+    };
+    if values.is_empty() {
+        *values = field.zero_vec(graph.node_count());
+    }
+    // Packed columns are private: their entire contribution is supplied by
+    // power_sum. Skip their ranges instead of scanning each scalar slot.
+    let mut next_column = 0;
+    for group in &graph.groups {
+        for column in next_column..group.first as usize {
+            let node = graph.inputs[column];
+            if node != NONE {
+                values[node as usize] = columns.scalar(column);
+            }
+        }
+        next_column = group.first as usize + group.len as usize;
+        if group.full != NONE {
+            values[group.full as usize] = if group.len == 1 {
+                columns.scalar(group.first as usize)
+            } else {
+                columns.power_sum(group.first as usize, group.len as usize)
+            };
+        }
+        if group.low != NONE {
+            values[group.low as usize] = if group.low_len == 1 {
+                columns.scalar(group.first as usize)
+            } else {
+                columns.power_sum(group.first as usize, group.low_len as usize)
+            };
+        }
+    }
+    for column in next_column..graph.inputs.len() {
+        let node = graph.inputs[column];
+        if node != NONE {
+            values[node as usize] = columns.scalar(column);
+        }
+    }
+    for range in graph.levels.windows(2).rev() {
+        let (start, end) = (range[0], range[1]);
+        let (before, later) = values.split_at_mut(end);
+        let current = &mut before[start..end];
+        let evaluate = |i: usize, slot: &mut F::Elem| {
+            let n = start + i;
+            let terms = &graph.forward
+                [graph.forward_offsets[n] as usize..graph.forward_offsets[n + 1] as usize];
+            if terms.is_empty() {
+                return;
+            }
+            let mut result = None;
+            for t in terms {
+                let value = arithmetic.scale(later[t.node as usize - end], t.coefficient);
+                result = Some(result.map_or(value, |s| field.add(&s, &value)));
+            }
+            *slot = result.unwrap_or_else(|| field.zero());
+        };
+        if parallel.unwrap_or(current.len() >= PARALLEL_LEVEL && rayon::current_num_threads() > 1) {
+            current
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, v)| evaluate(i, v));
+        } else {
+            for (i, v) in current.iter_mut().enumerate() {
+                evaluate(i, v);
+            }
+        }
+    }
+}
+impl<F: RingOps + Sync> super::LeftMul<F::Elem> for PreparedWengert<'_, F> {
+    type Output = F::Elem;
+    fn mul_left_into(
+        &mut self,
+        weights: &[F::Elem],
+        out: &mut [F::Elem],
+    ) -> Result<(), LinearMapError> {
+        self.adjoint_map_into(weights.len(), |i| weights[i], out)
+    }
+}
+impl<F: RingOps + Sync> super::RightMul<F::Elem> for PreparedWengert<'_, F> {
+    type Output = F::Elem;
+    fn mul_right_into(
+        &mut self,
+        values: &[F::Elem],
+        out: &mut [F::Elem],
+    ) -> Result<(), LinearMapError> {
+        length("column values", self.graph.inputs.len(), values.len())?;
+        length("output rows", self.graph.output_count, out.len())?;
+        let columns = DenseColumns::new(&self.field, values);
+        evaluate_forward(
+            self.graph,
+            &self.field,
+            &self.coefficients,
+            &mut self.forward_values,
+            self.parallel,
+            &columns,
+        );
+        out.fill(self.field.zero());
+        let arithmetic = Arithmetic {
+            field: &self.field,
+            coefficients: &self.coefficients,
+        };
+        for (n, &value) in self.forward_values.iter().enumerate() {
+            for root in &self.graph.roots
+                [self.graph.root_offsets[n] as usize..self.graph.root_offsets[n + 1] as usize]
+            {
+                let slot = &mut out[root.output as usize];
+                *slot = self
+                    .field
+                    .add(slot, &arithmetic.scale(value, root.coefficient));
+            }
+        }
+        Ok(())
+    }
+}
+impl<F: RingOps + Sync> super::BilinearEval<F> for PreparedWengert<'_, F> {
+    fn evaluate_bilinear(
+        &mut self,
+        weights: &[F::Elem],
+        columns: &impl ColumnValues<F::Elem>,
+    ) -> Result<F::Elem, LinearMapError> {
+        self.evaluate_bilinear_map(weights.len(), |i| weights[i], columns)
     }
 }

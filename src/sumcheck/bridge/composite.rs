@@ -1,17 +1,14 @@
 //! A repeated local factor followed by a corrected circuit tail. This owner
 //! is shared by binding and the existing structured inner-sumcheck MLE adapter.
-use super::BindingError;
-use crate::piop::spartan::{f2z::SpartanF2zField as F, matrix::make_equality_factors};
+use crate::piop::spartan::matrix::make_equality_factors;
 use crate::poly::mle::{
     CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
 };
-use crate::sumcheck::inner::native::{
-    Raw, RawFieldStorage, make_equality_factors_raw, raw_to_words,
-};
-use circuit::matrix_wengert::ForwardColumns;
+use crate::sumcheck::SumcheckError;
+use crate::sumcheck::inner::native::{RawFieldStorage, make_equality_factors_raw, raw_to_words};
+use circuit::linear_map::ColumnValues;
 use field::RingOps;
-type Config = field::FpCtx<2>;
-type Result<T> = std::result::Result<T, BindingError>;
+
 /// Owned public matrix MLE. Field elements already store Montgomery evaluations.
 /// For `N` SHA instances and `H` local wires, its Bit table is
 /// `[sha_local_evaluations ⊗ instance_weights, p256_evaluations]`:
@@ -23,23 +20,27 @@ pub(crate) struct CompositeCoefficients {
     /// Assignment domain size is `2^num_vars`, including zero padding.
     pub(crate) num_vars: usize,
     /// `N = 2^log_compressions` instance weights.
-    pub(crate) instance_weights: Vec<F>,
+    pub(crate) instance_weights: Vec<field::Fp<2>>,
     /// `H = SHA_H = 20,457` local evaluations.
-    pub(crate) sha_local_evaluations: Vec<F>,
+    pub(crate) sha_local_evaluations: Vec<field::Fp<2>>,
     /// `P = 1,215,663` evaluations for the current P-256 circuit.
-    pub(crate) p256_evaluations: Vec<F>,
+    pub(crate) p256_evaluations: Vec<field::Fp<2>>,
     /// Weight of the equation `witness[0] = 1`.
-    pub(crate) constant_weight: F,
+    pub(crate) constant_weight: field::Fp<2>,
     /// `N · H`, the first P-256 assignment index.
     pub(crate) p256_assignment_offset: usize,
     /// Geometric runs of `p256_evaluations` (from the tape's power groups, split
     /// around the public-bit cells): `(start, len, base)` with
     /// `p256_evaluations[start + k] = base · 2^k`. Prover-side structure only.
-    pub(crate) tail_runs: Vec<(usize, usize, F)>,
+    pub(crate) tail_runs: Vec<(usize, usize, field::Fp<2>)>,
 }
 
 impl CompositeCoefficients {
-    pub(crate) fn as_mle(&self, cfg: &Config) -> Result<CompositeMultilinearExtension<'_, F>> {
+    pub(crate) fn as_mle(
+        &self,
+        cfg: &field::FpCtx<2>,
+    ) -> Result<CompositeMultilinearExtension<'_, field::Fp<2>>, crate::sumcheck::SumcheckError>
+    {
         CompositeMultilinearExtension::from_parts(
             self.num_vars,
             &self.sha_local_evaluations,
@@ -49,13 +50,17 @@ impl CompositeCoefficients {
             cfg,
         )
         .and_then(|mle| mle.with_tail_runs(&self.tail_runs))
-        .map_err(|_| BindingError::InvalidProductDimensions)
+        .map_err(|_| SumcheckError::InvalidProductDimensions)
     }
 
-    pub(crate) fn evaluate(&self, assignment_point: &[F], cfg: &Config) -> Result<F> {
+    pub(crate) fn evaluate(
+        &self,
+        assignment_point: &[field::Fp<2>],
+        cfg: &field::FpCtx<2>,
+    ) -> Result<field::Fp<2>, crate::sumcheck::SumcheckError> {
         let _scope = tracing::info_span!("ecdsa:coefficient_evaluate").entered();
         if self.num_vars != assignment_point.len() {
-            return Err(BindingError::InvalidProductDimensions);
+            return Err(SumcheckError::InvalidProductDimensions);
         }
         let equality = equality_weights(assignment_point, cfg)?;
         let mut value = evaluate_sha_factors(
@@ -93,19 +98,25 @@ impl CompositeCoefficients {
 pub(crate) struct TailEqualityColumns {
     equality: RawEqualityWeights,
     offset: usize,
+    len: usize,
     /// `Q[t] = low[t] + 2 · Q[t + 1]`, `Q[L] = 0`.
-    suffix: Vec<Raw>,
+    suffix: Vec<u128>,
     /// `2^k` in Montgomery form for `k ≤ L`.
-    pow2: Vec<Raw>,
+    pow2: Vec<u128>,
 }
 
 impl TailEqualityColumns {
     /// The equality tables of `point`, split at half the point (as
     /// `make_equality_factors` splits them).
-    pub(crate) fn new(ctx: &field::FpCtx<2>, offset: usize, point: &[F]) -> Self {
+    pub(crate) fn new(
+        ctx: &field::FpCtx<2>,
+        offset: usize,
+        len: usize,
+        point: &[field::Fp<2>],
+    ) -> Self {
         let equality = RawEqualityWeights::new(ctx, point);
         let block = equality.low.len();
-        let mut suffix = vec![0 as Raw; block + 1];
+        let mut suffix = vec![0 as u128; block + 1];
         for t in (0..block).rev() {
             let doubled = ctx.add_raw(suffix[t + 1], suffix[t + 1]);
             suffix[t] = ctx.add_raw(equality.low[t], doubled);
@@ -118,6 +129,7 @@ impl TailEqualityColumns {
         Self {
             equality,
             offset,
+            len,
             suffix,
             pow2,
         }
@@ -125,21 +137,27 @@ impl TailEqualityColumns {
 
     /// `eq(point, index)` over the whole assignment domain.
     #[inline]
-    pub(crate) fn eq_at(&self, index: usize) -> Raw {
+    pub(crate) fn eq_at(&self, index: usize) -> u128 {
         self.equality.at(index)
     }
 }
 
-impl ForwardColumns for TailEqualityColumns {
-    fn scalar(&self, column: usize) -> [u64; 2] {
-        raw_to_words(self.eq_at(self.offset + column))
+impl ColumnValues<field::Fp<2>> for TailEqualityColumns {
+    fn len(&self) -> usize {
+        self.len
+    }
+    fn scalar(&self, column: usize) -> field::Fp<2> {
+        crate::sumcheck::inner::native::shared_raw(
+            &self.equality.ctx,
+            self.eq_at(self.offset + column),
+        )
     }
 
-    fn power_sum(&self, first: usize, len: usize) -> [u64; 2] {
+    fn power_sum(&self, first: usize, len: usize) -> field::Fp<2> {
         let equality = &self.equality;
         let ctx = &equality.ctx;
         let block = equality.low.len();
-        let mut sum = 0 as Raw;
+        let mut sum = 0 as u128;
         let mut base = self.pow2[0];
         let mut index = self.offset + first;
         let end = index + len;
@@ -155,7 +173,7 @@ impl ForwardColumns for TailEqualityColumns {
             base = ctx.mul_raw(base, self.pow2[hi - lo]);
             index += hi - lo;
         }
-        raw_to_words(sum)
+        crate::sumcheck::inner::native::shared_raw(ctx, sum)
     }
 }
 
@@ -164,14 +182,14 @@ impl ForwardColumns for TailEqualityColumns {
 /// them, so every weight is the same residue one raw product later.
 pub(crate) struct RawEqualityWeights {
     ctx: field::FpCtx<2>,
-    low: Vec<Raw>,
-    high: Vec<Raw>,
+    low: Vec<u128>,
+    high: Vec<u128>,
     shift: u32,
     mask: usize,
 }
 
 impl RawEqualityWeights {
-    pub(crate) fn new(ctx: &field::FpCtx<2>, point: &[F]) -> Self {
+    pub(crate) fn new(ctx: &field::FpCtx<2>, point: &[field::Fp<2>]) -> Self {
         let (low, high) = make_equality_factors_raw(ctx, point);
         let block = low.len();
         Self {
@@ -184,21 +202,21 @@ impl RawEqualityWeights {
     }
 
     #[inline]
-    pub(crate) fn at(&self, index: usize) -> Raw {
+    pub(crate) fn at(&self, index: usize) -> u128 {
         self.ctx
             .mul_raw(self.low[index & self.mask], self.high[index >> self.shift])
     }
 
     /// `Σ_j values[j] · eq(j)`, with the high factor applied once per block:
     /// `Σ_h high[h] · Σ_l low[l] · values[h·L + l]`.
-    pub(crate) fn dot(&self, values: &[Raw]) -> Raw {
+    pub(crate) fn dot(&self, values: &[u128]) -> u128 {
         let ctx = &self.ctx;
-        let mut sum = 0 as Raw;
+        let mut sum = 0 as u128;
         for (h, block) in values.chunks(self.low.len()).enumerate() {
             let inner = block
                 .iter()
                 .zip(&self.low)
-                .fold(0 as Raw, |acc, (&value, &low)| {
+                .fold(0 as u128, |acc, (&value, &low)| {
                     ctx.add_raw(acc, ctx.mul_raw(value, low))
                 });
             sum = ctx.add_raw(sum, ctx.mul_raw(inner, self.high[h]));
@@ -207,9 +225,12 @@ impl RawEqualityWeights {
     }
 }
 
-pub(crate) fn equality_weights(point: &[F], cfg: &Config) -> Result<EqualityWeights<F>> {
+pub(crate) fn equality_weights(
+    point: &[field::Fp<2>],
+    cfg: &field::FpCtx<2>,
+) -> Result<EqualityWeights<field::Fp<2>>, crate::sumcheck::SumcheckError> {
     let (low, high) =
-        make_equality_factors(point, cfg).map_err(|_| BindingError::InvalidProductDimensions)?;
+        make_equality_factors(point, cfg).map_err(|_| SumcheckError::InvalidProductDimensions)?;
     Ok(EqualityWeights::from_tables(
         low.evaluations,
         high.evaluations,
@@ -218,14 +239,14 @@ pub(crate) fn equality_weights(point: &[F], cfg: &Config) -> Result<EqualityWeig
 }
 
 pub(crate) fn evaluate_sha_factors(
-    instances: &[F],
-    sha: &[F],
-    point: &[F],
-    cfg: &Config,
-) -> Result<F> {
+    instances: &[field::Fp<2>],
+    sha: &[field::Fp<2>],
+    point: &[field::Fp<2>],
+    cfg: &field::FpCtx<2>,
+) -> Result<field::Fp<2>, crate::sumcheck::SumcheckError> {
     FactoredMultilinearExtension::from_factors(point.len(), sha, instances, cfg)
         .and_then(|mle| mle.evaluate(point, cfg))
-        .map_err(|_| BindingError::InvalidProductDimensions)
+        .map_err(|_| SumcheckError::InvalidProductDimensions)
 }
 
 /// `Σ_j tail[j] · eq(point, offset + j)` where `tail` is geometric on `runs`
@@ -237,19 +258,19 @@ pub(crate) fn evaluate_sha_factors(
 /// so the runs cost a few multiplications each; columns outside every run pay
 /// two multiplications.
 pub(crate) fn evaluate_tail_by_runs(
-    cfg: &Config,
+    cfg: &field::FpCtx<2>,
     ctx: &field::FpCtx<2>,
     offset: usize,
-    tail: &[F],
-    runs: &[(usize, usize, F)],
-    equality: &EqualityWeights<F>,
-) -> F {
+    tail: &[field::Fp<2>],
+    runs: &[(usize, usize, field::Fp<2>)],
+    equality: &EqualityWeights<field::Fp<2>>,
+) -> field::Fp<2> {
     let (low, high) = (ctx.raw_vec(equality.low()), ctx.raw_vec(equality.high()));
     let block = low.len();
     let shift = block.ilog2();
     let mask = block - 1;
     // Q[t] = low[t] + 2 · Q[t + 1], Q[block] = 0.
-    let mut suffix = vec![0 as Raw; block + 1];
+    let mut suffix = vec![0 as u128; block + 1];
     for t in (0..block).rev() {
         let doubled = ctx.add_raw(suffix[t + 1], suffix[t + 1]);
         suffix[t] = ctx.add_raw(low[t], doubled);
@@ -260,9 +281,9 @@ pub(crate) fn evaluate_tail_by_runs(
     for k in 0..block {
         pow2.push(ctx.add_raw(pow2[k], pow2[k]));
     }
-    let mut sum = 0 as Raw;
+    let mut sum = 0 as u128;
     let mut cursor = 0usize;
-    let scalar = |sum: &mut Raw, from: usize, to: usize| {
+    let scalar = |sum: &mut u128, from: usize, to: usize| {
         for column in from..to {
             let index = offset + column;
             let weight = ctx.mul_raw(low[index & mask], high[index >> shift]);
@@ -292,25 +313,25 @@ pub(crate) fn evaluate_tail_by_runs(
 /// Challenge-dependent seeds, already factored by the relation adapter. Public
 /// corrections may alias and are added, never overwritten.
 pub(crate) struct CompositeRows<'a> {
-    pub instances: &'a [Raw],
-    pub local: &'a [Raw],
-    pub tail_rows: &'a [Raw],
+    pub instances: &'a [u128],
+    pub local: &'a [u128],
+    pub tail_rows: &'a [u128],
     pub correction_columns: &'a [usize],
-    pub corrections: &'a [Raw],
-    pub constant: Raw,
+    pub corrections: &'a [u128],
+    pub constant: u128,
 }
 pub(crate) struct CompositeBinding<'a, 't> {
-    pub field: &'a Config,
-    pub tape: &'a mut circuit::matrix_wengert::PreparedWengertEvaluator<'t>,
+    pub field: &'a field::FpCtx<2>,
+    pub tape: &'a mut circuit::linear_map::circuit::PreparedWengertEvaluator<'t>,
     pub num_vars: usize,
     pub tail_offset: usize,
     pub tail_columns: usize,
 }
 impl CompositeBinding<'_, '_> {
-    fn validate(&self, rows: &CompositeRows<'_>) -> Result<()> {
+    fn validate(&self, rows: &CompositeRows<'_>) -> Result<(), crate::sumcheck::SumcheckError> {
         let domain = 1usize
             .checked_shl(self.num_vars as u32)
-            .ok_or(BindingError::InvalidProductDimensions)?;
+            .ok_or(SumcheckError::InvalidProductDimensions)?;
         if !rows.instances.len().is_power_of_two()
             || rows.instances.len().checked_mul(rows.local.len()) != Some(self.tail_offset)
             || self
@@ -325,14 +346,16 @@ impl CompositeBinding<'_, '_> {
             || rows.tail_rows.len() != 3 * self.tape.row_count()
             || self.tail_columns != self.tape.column_count()
         {
-            return Err(BindingError::InvalidProductDimensions);
+            return Err(SumcheckError::InvalidProductDimensions);
         }
         Ok(())
     }
 }
-impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, '_> {
-    type Bound = CompositeCoefficients;
-    fn bind_rows(&mut self, rows: &CompositeRows<'_>) -> Result<Self::Bound> {
+impl CompositeBinding<'_, '_> {
+    pub(crate) fn bind_rows(
+        &mut self,
+        rows: &CompositeRows<'_>,
+    ) -> Result<CompositeCoefficients, crate::sumcheck::SumcheckError> {
         let mut out = CompositeCoefficients {
             ctx: self.field.clone(),
             num_vars: self.num_vars,
@@ -346,7 +369,11 @@ impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, 
         self.bind_rows_into(rows, &mut out)?;
         Ok(out)
     }
-    fn bind_rows_into(&mut self, rows: &CompositeRows<'_>, out: &mut Self::Bound) -> Result<()> {
+    pub(crate) fn bind_rows_into(
+        &mut self,
+        rows: &CompositeRows<'_>,
+        out: &mut CompositeCoefficients,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
         self.validate(rows)?;
         let field = self.field;
         if out.p256_evaluations.capacity() == 0 {
@@ -360,7 +387,7 @@ impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, 
                 |r, k| raw_to_words(rows.tail_rows[3 * r + k]),
                 &mut out.p256_evaluations,
             )
-            .map_err(|_| BindingError::InvalidProductDimensions)?;
+            .map_err(|_| SumcheckError::InvalidProductDimensions)?;
         out.tail_runs = split_runs(field, self.tape.power_runs(), rows.correction_columns);
         for (&column, &value) in rows.correction_columns.iter().zip(rows.corrections) {
             out.p256_evaluations[column] = field.add(
@@ -368,7 +395,7 @@ impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, 
                 &crate::sumcheck::inner::native::shared_raw(field, value),
             );
         }
-        let fill = |src: &[Raw], dst: &mut Vec<F>| {
+        let fill = |src: &[u128], dst: &mut Vec<field::Fp<2>>| {
             dst.clear();
             dst.extend(
                 src.iter()
@@ -383,15 +410,19 @@ impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, 
         out.constant_weight = crate::sumcheck::inner::native::shared_raw(field, rows.constant);
         Ok(())
     }
-    fn evaluate_bound(&mut self, rows: &CompositeRows<'_>, point: &[F]) -> Result<F> {
+    pub(crate) fn evaluate_at(
+        &mut self,
+        rows: &CompositeRows<'_>,
+        point: &[field::Fp<2>],
+    ) -> Result<field::Fp<2>, crate::sumcheck::SumcheckError> {
         self.validate(rows)?;
         if point.len() != self.num_vars {
-            return Err(BindingError::InvalidProductDimensions);
+            return Err(SumcheckError::InvalidProductDimensions);
         }
         let field = self.field;
         let columns = {
             let _s = tracing::info_span!("ecdsa:ce_columns").entered();
-            TailEqualityColumns::new(field, self.tail_offset, point)
+            TailEqualityColumns::new(field, self.tail_offset, self.tail_columns, point)
         };
         let mut value = {
             let _s = tracing::info_span!("ecdsa:ce_sha_eval").entered();
@@ -409,9 +440,9 @@ impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, 
                     |r, k| raw_to_words(rows.tail_rows[3 * r + k]),
                     &columns,
                 )
-                .map_err(|_| BindingError::InvalidProductDimensions)?
+                .map_err(|_| SumcheckError::InvalidProductDimensions)?
         };
-        value = field.add_raw(value, crate::sumcheck::inner::native::words_to_raw(&tail));
+        value = field.add_raw(value, field.raw(&tail));
         for (&column, &weight) in rows.correction_columns.iter().zip(rows.corrections) {
             value = field.add_raw(
                 value,
@@ -425,10 +456,10 @@ impl super::PreparedBinding<Config, CompositeRows<'_>> for CompositeBinding<'_, 
 /// Split geometric runs around corrections. Repeated/cancelling correction
 /// indices are harmless: each exceptional coordinate is removed exactly once.
 pub(crate) fn split_runs(
-    field: &Config,
-    runs: Vec<circuit::matrix_wengert::PowerRun>,
+    field: &field::FpCtx<2>,
+    runs: Vec<circuit::linear_map::circuit::PowerRun>,
     exceptions: &[usize],
-) -> Vec<(usize, usize, F)> {
+) -> Vec<(usize, usize, field::Fp<2>)> {
     let mut exceptions = exceptions.to_vec();
     exceptions.sort_unstable();
     exceptions.dedup();

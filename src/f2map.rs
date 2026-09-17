@@ -1,5 +1,4 @@
 //! Public binary maps shared with matrix binding.
-pub use circuit::linear_map::binary::*;
 use crate::pcs::IntegerMatrixLayout;
 
 /// Number of bit cells in an integer-evaluation shape.

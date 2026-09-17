@@ -20,11 +20,11 @@ pub mod integer_storage;
 pub mod linear_map;
 pub mod matrix_products;
 #[cfg(feature = "full")]
-pub mod matrix_sparse;
+#[cfg(test)]
+mod matrix_reference;
 #[cfg(feature = "full")]
 pub mod matrix_transpose;
 #[cfg(feature = "full")]
-pub mod matrix_wengert;
 #[cfg(feature = "full")]
 pub mod p256;
 pub mod sha256;

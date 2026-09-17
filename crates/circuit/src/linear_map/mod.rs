@@ -6,14 +6,21 @@ pub mod circuit;
 mod coefficients;
 mod compile;
 mod evaluate;
+mod integer;
+mod operations;
+mod prepared_field;
 mod sparse;
+pub use integer::{PreparedIntegerColumns, PreparedIntegerRows};
+pub use operations::{BilinearEval, LeftMul, RightMul};
+pub use prepared_field::{DirectCoefficients, PreparedCoefficients, PreparedColumns, PreparedRows};
 #[cfg(test)]
 mod tests;
 pub use builder::{NodeId, OutputId, PackedInputs, WengertBuilder};
 pub use coefficients::{CoefficientStore, FieldCoefficients, StoreCoefficient};
 pub use evaluate::{ColumnValues, DenseColumns, LinearMapError, PowerRun, PreparedWengert};
 pub use sparse::{
-    BinaryColumn, CscTopology, SparseColumn, SparseColumnIter, SparseMatrix, SparseMatrixError,
+    CscMatrix, CsrBuilder, CsrMatrix, ImplicitOnes, IndexedCoefficients, PermuteCoefficients,
+    SparseEntries, SparseIndex, SparseMatrixError, SparseSegment,
 };
 
 /// A compiled linear operator. Only integer-backed coefficients are reusable

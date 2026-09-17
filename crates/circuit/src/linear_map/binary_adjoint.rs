@@ -1,7 +1,7 @@
 //! Binary-map adjoints shared with virtual openings. No transcript, packing,
 //! dual-basis, or Flock types enter this layer. Equality construction is supplied
 //! by the polynomial layer so coordinate conventions have a single owner.
-use field::{Gf128 as Gf, PreparedGf128Mul};
+use field::{Gf128, PreparedGf128Mul};
 const LOG_PACKING: usize = 7;
 
 /// The η-combined per-derived-cell transpose coefficients
@@ -10,8 +10,8 @@ const LOG_PACKING: usize = 7;
 /// once — one product per (cell, chunk), exactly the old `mqv:wcoef`
 /// formula, now evaluated on demand instead of materialized.
 pub struct BinaryRowWeights {
-    pub eq_rs: Vec<Vec<Gf>>,
-    pub scaled_zc: Vec<Vec<Gf>>,
+    pub eq_rs: Vec<Vec<Gf128>>,
+    pub scaled_zc: Vec<Vec<Gf128>>,
     pub t_wh: usize,
     pub h_mask: usize,
 }
@@ -19,16 +19,16 @@ pub struct BinaryRowWeights {
 impl BinaryRowWeights {
     #[allow(clippy::arithmetic_side_effects)]
     pub fn new(
-        points: &[Vec<Gf>],
-        etas: &[Gf],
+        points: &[Vec<Gf128>],
+        etas: &[Gf128],
         t_wh: usize,
-        build_eq_x_r_vec: impl Fn(&[Gf], &()) -> Result<Vec<Gf>, ()>,
+        build_eq_x_r_vec: impl Fn(&[Gf128], &()) -> Result<Vec<Gf128>, ()>,
     ) -> Self {
-        let eq_rs: Vec<Vec<Gf>> = points
+        let eq_rs: Vec<Vec<Gf128>> = points
             .iter()
             .map(|pt| build_eq_x_r_vec(&pt[..t_wh], &()).expect("t_wh >= 1"))
             .collect();
-        let scaled_zc: Vec<Vec<Gf>> = points
+        let scaled_zc: Vec<Vec<Gf128>> = points
             .iter()
             .zip(etas.iter())
             .map(|(pt, &eta)| {
@@ -53,7 +53,7 @@ impl BinaryRowWeights {
 
     #[allow(clippy::arithmetic_side_effects)]
     #[inline]
-    pub fn coeff(&self, r: usize) -> Gf {
+    pub fn coeff(&self, r: usize) -> Gf128 {
         let (c, b) = (r >> self.t_wh, r & self.h_mask);
         // Polynomial reduction is linear over F2. XOR the degree-at-most-254
         // products first; their sum fits the same width for any chunk count.
@@ -70,13 +70,13 @@ impl BinaryRowWeights {
 /// weight vector nor a coefficient table is materialized.
 #[allow(clippy::arithmetic_side_effects)]
 #[inline]
-pub fn virtual_column_weight<M>(map: &M, column: usize, coeffs: &BinaryRowWeights) -> Gf
+pub fn virtual_column_weight<M>(map: &M, column: usize, coeffs: &BinaryRowWeights) -> Gf128
 where
     M: super::binary::VirtualMap,
 {
     map.column_rows(column)
         .expect("source column in bounds")
-        .fold(Gf::zero(), |acc, row| acc + coeffs.coeff(row))
+        .fold(Gf128::zero(), |acc, row| acc + coeffs.coeff(row))
 }
 
 /// Per-prove column-weight engine for the batching passes: fills whole
@@ -114,7 +114,7 @@ pub struct ExtraWeightTerm {
     pub eq_inst: Vec<Vec<PreparedGf128Mul>>,
     /// Per chunk: the eta-scaled local-row equality sums of this term's
     /// local map (index 0 = the constant column, `1..=w` the cells).
-    pub s: Vec<Vec<Gf>>,
+    pub s: Vec<Vec<Gf128>>,
     /// Nonconstant local offsets `[col_lo, col_hi)` (`0..w`) that carry
     /// any entry; runs outside are skipped.
     pub col_lo: usize,
@@ -126,7 +126,7 @@ impl ExtraWeightTerm {
     /// targets.len())` of instance `instance`.
     #[allow(clippy::arithmetic_side_effects)]
     #[inline]
-    fn accumulate(&self, instance: usize, local_offset: usize, targets: &mut [Gf]) {
+    fn accumulate(&self, instance: usize, local_offset: usize, targets: &mut [Gf128]) {
         if instance < self.inst_lo || instance >= self.inst_hi {
             return;
         }
@@ -143,7 +143,7 @@ impl ExtraWeightTerm {
                 .iter_mut()
                 .zip(source)
             {
-                *target += Gf::from(fixed.mul(&value.into()));
+                *target += fixed.mul(&value);
             }
         }
     }
@@ -174,7 +174,7 @@ impl AffineTailWeights {
     }
 
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn add_pack(&self, pack: usize, out: &mut [Gf; 128]) {
+    pub fn add_pack(&self, pack: usize, out: &mut [Gf128; 128]) {
         let base = pack << LOG_PACKING;
         let lo = base.max(self.source_start);
         let hi = (base + 128).min(self.end());
@@ -188,14 +188,14 @@ impl AffineTailWeights {
 
 pub struct DenseWeightCorrection {
     pub start: usize,
-    pub weights: Vec<Gf>,
+    pub weights: Vec<Gf128>,
 }
 
 impl DenseWeightCorrection {
     pub fn end(&self) -> usize {
         self.start + self.weights.len()
     }
-    pub fn add_pack(&self, pack: usize, out: &mut [Gf; 128]) {
+    pub fn add_pack(&self, pack: usize, out: &mut [Gf128; 128]) {
         let base = pack << LOG_PACKING;
         let lo = base.max(self.start);
         let hi = (base + 128).min(self.end());
@@ -217,10 +217,10 @@ pub enum BinaryAdjoint<'a, M: super::binary::VirtualMap> {
         /// `k`: the instance coordinates are the low `k` bits.
         instance_bits: usize,
         /// Per chunk `l`: eq table over `pt_l[..k]` (`2^k` entries).
-        eq_inst: Vec<Vec<Gf>>,
+        eq_inst: Vec<Vec<Gf128>>,
         /// Per chunk `l`: `η_l`-scaled local-column sums of the eq table
         /// over `pt_l[k..]`.
-        s: Vec<Vec<Gf>>,
+        s: Vec<Vec<Gf128>>,
         _map: core::marker::PhantomData<&'a M>,
     },
     /// Factored tensor tables for an instance-major packed source with one
@@ -237,14 +237,14 @@ pub enum BinaryAdjoint<'a, M: super::binary::VirtualMap> {
         eq_inst: Vec<Vec<PreparedGf128Mul>>,
         /// The same instance equality tables as plain field elements (the
         /// plane engine's instance factors).
-        eq_inst_gf: Vec<Vec<Gf>>,
+        eq_inst_gf: Vec<Vec<Gf128>>,
         /// Number of instances (`2^k`).
         instances: usize,
         /// Per chunk and local column: the eta-scaled local-row equality sum.
-        s: Vec<Vec<Gf>>,
+        s: Vec<Vec<Gf128>>,
         /// Weight of the one source constant shared by every instance
         /// (including every boundary term's constant-column part).
-        constant_weight: Gf,
+        constant_weight: Gf128,
         /// Cross-instance and boundary terms of a chained repetition
         /// (empty for a plain repetition). They are folded into
         /// [`Self::pack_weights`]; the plane engine covers only the plain
@@ -270,8 +270,8 @@ fn packed_source_point_split<'p>(
     order: super::binary::PackedSourceOrder,
     instance_bits: usize,
     local_bits: usize,
-    point: &'p [Gf],
-) -> (&'p [Gf], &'p [Gf]) {
+    point: &'p [Gf128],
+) -> (&'p [Gf128], &'p [Gf128]) {
     match order {
         super::binary::PackedSourceOrder::LocalMajor => {
             (&point[..instance_bits], &point[instance_bits..])
@@ -286,11 +286,11 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
     #[allow(clippy::arithmetic_side_effects)]
     pub fn new_with_tail(
         map: &'a M,
-        points: &[Vec<Gf>],
-        etas: &[Gf],
+        points: &[Vec<Gf128>],
+        etas: &[Gf128],
         t_wh: usize,
         factored_tail: bool,
-        build_eq_x_r_vec: impl Fn(&[Gf], &()) -> Result<Vec<Gf>, ()>,
+        build_eq_x_r_vec: impl Fn(&[Gf128], &()) -> Result<Vec<Gf128>, ()>,
         parallel: bool,
     ) -> Self {
         if let Some(parts) = map.chained_packed_source()
@@ -303,7 +303,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
             let k = instances.trailing_zeros() as usize;
             let local_width = parts.local.cols() - 1;
             let point_fits =
-                |pt: &Vec<Gf>| k < pt.len() && (1usize << (pt.len() - k)) >= parts.local.rows();
+                |pt: &Vec<Gf128>| k < pt.len() && (1usize << (pt.len() - k)) >= parts.local.rows();
             if let Some(live_cols) = local_width
                 .checked_mul(instances)
                 .and_then(|width| width.checked_add(1))
@@ -311,15 +311,15 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 && points.iter().all(point_fits)
             {
                 debug_assert!(parts.local.rows() * instances <= map.rows());
-                let eq_inst_gf: Vec<Vec<Gf>> = points
+                let eq_inst_gf: Vec<Vec<Gf128>> = points
                     .iter()
                     .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
                     .collect();
-                let eq_loc: Vec<Vec<Gf>> = points
+                let eq_loc: Vec<Vec<Gf128>> = points
                     .iter()
                     .map(|pt| build_eq_x_r_vec(&pt[k..], &()).expect("local coords non-empty"))
                     .collect();
-                let scaled_sums = |local: &super::binary::PreparedVirtualMap| -> Vec<Vec<Gf>> {
+                let scaled_sums = |local: &super::binary::PreparedVirtualMap| -> Vec<Vec<Gf128>> {
                     eq_loc
                         .iter()
                         .zip(etas.iter())
@@ -329,9 +329,9 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                                 .columns()
                                 .map(|column| {
                                     let sum = column
-                                        .row_indices()
+                                        .indices()
                                         .iter()
-                                        .fold(Gf::zero(), |acc, &lr| acc + eq_loc_l[lr]);
+                                        .fold(Gf128::zero(), |acc, &lr| acc + eq_loc_l[lr]);
                                     eta * sum
                                 })
                                 .collect()
@@ -381,14 +381,14 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 // Column zero: the plain part sums each chunk's instance
                 // table to one; every boundary term adds its own
                 // instance-weighted constant-column sum.
-                let mut constant_weight = s.iter().fold(Gf::zero(), |acc, s_l| acc + s_l[0]);
+                let mut constant_weight = s.iter().fold(Gf128::zero(), |acc, s_l| acc + s_l[0]);
                 for term in &terms {
                     for (eq_l, s_l) in term.eq_inst.iter().zip(term.s.iter()) {
-                        if s_l[0] == Gf::zero() {
+                        if s_l[0] == Gf128::zero() {
                             continue;
                         }
                         for fixed in eq_l {
-                            constant_weight += Gf::from(fixed.mul(&s_l[0].into()));
+                            constant_weight += fixed.mul(&s_l[0]);
                         }
                     }
                 }
@@ -406,15 +406,15 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                         if tail.map.is_identity() {
                             return coeffs.coeff(tail.row_offset + column);
                         }
-                        matrix.column(column).map_or(Gf::zero(), |col| {
-                            col.row_indices().iter().fold(Gf::zero(), |sum, &r| {
+                        matrix.column(column).map_or(Gf128::zero(), |col| {
+                            col.indices().iter().fold(Gf128::zero(), |sum, &r| {
                                 sum + coeffs.coeff(tail.row_offset + r)
                             })
                         })
                     };
-                    let mut aliases = std::collections::BTreeMap::<usize, Gf>::new();
+                    let mut aliases = std::collections::BTreeMap::<usize, Gf128>::new();
                     for (tail_column, &source_column) in tail.aliases.iter().enumerate() {
-                        *aliases.entry(source_column).or_insert(Gf::zero()) +=
+                        *aliases.entry(source_column).or_insert(Gf128::zero()) +=
                             column_weight(tail_column);
                     }
                     for (column, weight) in aliases {
@@ -422,7 +422,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                             .last_mut()
                             .filter(|last: &&mut DenseWeightCorrection| column <= last.end() + 128)
                         {
-                            last.weights.resize(column - last.start + 1, Gf::zero());
+                            last.weights.resize(column - last.start + 1, Gf128::zero());
                             last.weights[column - last.start] += weight;
                         } else {
                             corrections.push(DenseWeightCorrection {
@@ -445,8 +445,10 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                         corrections.push(DenseWeightCorrection {
                             start: tail.source_offset,
                             weights: {
-                                let mut values =
-                                    vec![Gf::zero(); matrix.columns().len() - tail.aliases.len()];
+                                let mut values = vec![
+                                    Gf128::zero();
+                                    matrix.columns().len() - tail.aliases.len()
+                                ];
                                 super::contraction::columns_into(&mut values, parallel, |i| {
                                     column_weight(i + tail.aliases.len())
                                 });
@@ -485,7 +487,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
             // instance). The factorization below is otherwise identical.
             let order = map.packed_source_order();
             let local_bits = local.rows().next_power_of_two().trailing_zeros() as usize;
-            let point_fits = |pt: &Vec<Gf>| match order {
+            let point_fits = |pt: &Vec<Gf128>| match order {
                 super::binary::PackedSourceOrder::LocalMajor => {
                     k < pt.len() && (1usize << (pt.len() - k)) >= local.rows()
                 }
@@ -501,7 +503,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 // coordinates. Keep the structural boundary with the
                 // factorized representation so those packs evaluate to zero.
                 debug_assert!(local.rows() * instances <= map.rows());
-                let eq_inst_gf: Vec<Vec<Gf>> = points
+                let eq_inst_gf: Vec<Vec<Gf128>> = points
                     .iter()
                     .map(|pt| {
                         build_eq_x_r_vec(packed_source_point_split(order, k, local_bits, pt).0, &())
@@ -518,7 +520,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                             .collect()
                     })
                     .collect();
-                let s: Vec<Vec<Gf>> = points
+                let s: Vec<Vec<Gf128>> = points
                     .iter()
                     .zip(etas.iter())
                     .map(|(pt, &eta)| {
@@ -532,9 +534,9 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                             .columns()
                             .map(|column| {
                                 let sum = column
-                                    .row_indices()
+                                    .indices()
                                     .iter()
-                                    .fold(Gf::zero(), |acc, &lr| acc + eq_loc[lr]);
+                                    .fold(Gf128::zero(), |acc, &lr| acc + eq_loc[lr]);
                                 eta * sum
                             })
                             .collect()
@@ -543,7 +545,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 // Column zero is shared by every repetition. The instance
                 // equality table sums to one, so its factored weight is just
                 // the sum of the local constant-column terms.
-                let constant_weight = s.iter().fold(Gf::zero(), |acc, s_l| acc + s_l[0]);
+                let constant_weight = s.iter().fold(Gf128::zero(), |acc, s_l| acc + s_l[0]);
                 return Self::PackedSourceRepeated {
                     columns: map.cols(),
                     local_width,
@@ -568,11 +570,11 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
             if points.iter().all(|pt| k < pt.len()) {
                 debug_assert_eq!(local.rows() << k, map.rows());
                 debug_assert_eq!(local.cols() << k, map.cols());
-                let eq_inst: Vec<Vec<Gf>> = points
+                let eq_inst: Vec<Vec<Gf128>> = points
                     .iter()
                     .map(|pt| build_eq_x_r_vec(&pt[..k], &()).expect("k >= 1"))
                     .collect();
-                let s: Vec<Vec<Gf>> = points
+                let s: Vec<Vec<Gf128>> = points
                     .iter()
                     .zip(etas.iter())
                     .map(|(pt, &eta)| {
@@ -583,9 +585,9 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                             .columns()
                             .map(|column| {
                                 let sum = column
-                                    .row_indices()
+                                    .indices()
                                     .iter()
-                                    .fold(Gf::zero(), |acc, &lr| acc + eq_loc[lr]);
+                                    .fold(Gf128::zero(), |acc, &lr| acc + eq_loc[lr]);
                                 eta * sum
                             })
                             .collect()
@@ -616,7 +618,11 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
     /// Stream any source-column range, preserving optimized aligned packs.
     /// An unaligned boundary uses at most 254 scalar evaluations. No weight
     /// table or per-range allocation is required, including for factored tails.
-    pub fn fill_range(&self, first: usize, out: &mut [Gf]) -> Result<bool, super::LinearMapError> {
+    pub fn fill_range(
+        &self,
+        first: usize,
+        out: &mut [Gf128],
+    ) -> Result<bool, super::LinearMapError> {
         let end = first
             .checked_add(out.len())
             .ok_or(super::LinearMapError::Length {
@@ -644,13 +650,13 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
             } else {
                 let value = self.scalar_weight(column);
                 out[offset] = value;
-                live |= value != Gf::zero();
+                live |= value != Gf128::zero();
                 offset += 1;
             }
         }
         Ok(live)
     }
-    fn scalar_weight(&self, column: usize) -> Gf {
+    fn scalar_weight(&self, column: usize) -> Gf128 {
         match self {
             Self::Generic { map, coeffs } => virtual_column_weight(*map, column, coeffs),
             Self::Repeated {
@@ -660,7 +666,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 ..
             } => {
                 let mask = (1usize << instance_bits) - 1;
-                eq_inst.iter().zip(s).fold(Gf::zero(), |sum, (e, s)| {
+                eq_inst.iter().zip(s).fold(Gf128::zero(), |sum, (e, s)| {
                     sum + e[column & mask] * s[column >> instance_bits]
                 })
             }
@@ -675,7 +681,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 affine_tail,
                 ..
             } => {
-                let mut value = Gf::zero();
+                let mut value = Gf128::zero();
                 if column == 0 {
                     value = *constant_weight;
                 } else if column < *live_cols {
@@ -710,7 +716,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
     /// zero weight contributes nothing to either batching pass.
     #[allow(clippy::arithmetic_side_effects)]
     #[inline]
-    pub fn pack_weights(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
+    pub fn pack_weights(&self, pack: usize, out: &mut [Gf128; 128]) -> bool {
         let base = pack << LOG_PACKING;
         match self {
             Self::Repeated {
@@ -724,11 +730,11 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                     // scaled sums (pass-fixed multipliers).
                     let lc = base >> k;
                     let inst0 = base & ((1usize << k) - 1);
-                    out.fill(Gf::zero());
+                    out.fill(Gf128::zero());
                     let mut live = false;
                     for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
                         let s_lc = s_l[lc];
-                        if s_lc == Gf::zero() {
+                        if s_lc == Gf128::zero() {
                             continue;
                         }
                         live = true;
@@ -736,7 +742,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                         for (target, &weight) in
                             out.iter_mut().zip(eq_inst_l[inst0..inst0 + 128].iter())
                         {
-                            *target += Gf::from(fixed.mul(&weight.into()));
+                            *target += fixed.mul(&weight);
                         }
                     }
                     live
@@ -746,11 +752,11 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                     for (slot, target) in out.iter_mut().enumerate() {
                         let column = base | slot;
                         let (lc, inst) = (column >> k, column & mask);
-                        let mut acc = Gf::zero();
+                        let mut acc = Gf128::zero();
                         for (eq_inst_l, s_l) in eq_inst.iter().zip(s.iter()) {
                             acc += eq_inst_l[inst] * s_l[lc];
                         }
-                        live |= acc != Gf::zero();
+                        live |= acc != Gf128::zero();
                         *target = acc;
                     }
                     live
@@ -767,7 +773,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 affine_tail,
                 ..
             } => {
-                out.fill(Gf::zero());
+                out.fill(Gf128::zero());
                 let end = (base + 128).min(*live_cols);
                 let mut column = base;
                 if column == 0 {
@@ -788,7 +794,7 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                         let fixed = &eq_inst_l[instance];
                         let source = &s_l[1 + local_offset..1 + local_offset + run_len];
                         for (target, &value) in targets.iter_mut().zip(source) {
-                            *target += Gf::from(fixed.mul(&value.into()));
+                            *target += fixed.mul(&value);
                         }
                     }
                     for term in extra {
@@ -802,13 +808,13 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
                 if let Some(tail) = affine_tail {
                     tail.add_pack(pack, out);
                 }
-                out.iter().any(|weight| *weight != Gf::zero())
+                out.iter().any(|weight| *weight != Gf128::zero())
             }
             Self::Generic { map, coeffs } => {
                 let mut live = false;
                 for (slot, target) in out.iter_mut().enumerate() {
                     let weight = virtual_column_weight(*map, base | slot, coeffs);
-                    live |= weight != Gf::zero();
+                    live |= weight != Gf128::zero();
                     *target = weight;
                 }
                 live
@@ -856,8 +862,8 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
     /// The chained terms and compact tail's share of this pack's weights.
     /// Returns `false` when it is all zero.
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn pack_weights_extra(&self, pack: usize, out: &mut [Gf; 128]) -> bool {
-        out.fill(Gf::zero());
+    pub fn pack_weights_extra(&self, pack: usize, out: &mut [Gf128; 128]) -> bool {
+        out.fill(Gf128::zero());
         let Self::PackedSourceRepeated {
             local_width,
             live_cols,
@@ -885,6 +891,6 @@ impl<'a, M: super::binary::VirtualMap> BinaryAdjoint<'a, M> {
         for correction in corrections {
             correction.add_pack(pack, out);
         }
-        out.iter().any(|weight| *weight != Gf::zero())
+        out.iter().any(|weight| *weight != Gf128::zero())
     }
 }

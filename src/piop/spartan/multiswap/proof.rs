@@ -32,22 +32,27 @@
 
 use crate::piop::spartan::SpartanField as _;
 use blake3::Hasher;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
 
-use crate::{
-    f2map::{PreparedVirtualMap, PreparedVirtualMapError, RepeatedVirtualMap, cell_count},
-    ligerito::packed_vars,
-    ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
-        ModQOpeningKind, validated_udr_lig_configs_with,
+use {
+    crate::{
+        f2map::cell_count,
+        ligerito::packed_vars,
+        ligerito_flock::{
+            FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
+            ModQOpeningKind, validated_udr_lig_configs_with,
+        },
+        pcs::IntegerMatrixLayout,
+        transcript::traits::Transcript,
     },
-    pcs::IntegerMatrixLayout,
-    sparse_matrix::SparseMatrix,
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::{
+        PreparedVirtualMap, PreparedVirtualMapError, RepeatedVirtualMap,
+    },
 };
 
 use super::super::{
@@ -142,12 +147,12 @@ impl MultiswapSpec {
             .map(|index| vec![(index, true)])
             .collect::<Vec<_>>();
         let local = PreparedVirtualMap::new(
-            SparseMatrix::try_from_columns(IDENTITY_LOCAL_ROWS, identity_columns)
+            CscMatrix::try_from_columns(IDENTITY_LOCAL_ROWS, identity_columns)
                 .expect("the identity block is a valid CSC matrix"),
         )?;
         let cells_per_block = cells / IDENTITY_LOCAL_ROWS;
         let map = RepeatedVirtualMap::new(local, cells_per_block)?;
-        debug_assert!(crate::f2map::VirtualMap::is_identity(&map));
+        debug_assert!(circuit::linear_map::binary::VirtualMap::is_identity(&map));
         Ok(Self {
             relation,
             map,
@@ -312,7 +317,7 @@ impl RelationSpec for MultiswapSpec {
             .u128_le(security.projection_max)
             .u128_le(reduction.min)
             .u128_le(reduction.max)
-            .bytes(&crate::f2map::VirtualMap::digest(&self.map));
+            .bytes(&circuit::linear_map::binary::VirtualMap::digest(&self.map));
         Ok(hasher.finalize())
     }
 

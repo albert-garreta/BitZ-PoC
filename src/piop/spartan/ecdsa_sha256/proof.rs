@@ -16,29 +16,31 @@ use super::{
     security::Sha256EcdsaSecurity,
     witness::Sha256EcdsaWitness,
 };
-use crate::{
-    ext_proj::sample_prime_in_interval,
-    f2map::VirtualMap,
-    ligerito::packed_vars,
-    ligerito_flock::{
-        FlockCommitHint, IntEvalRsLigVirtProof, commit_rs_ligerito_rows,
-        grinding::{GrindingContext, GrindingNonces},
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
-        validate_ligerito_commitment,
-        verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
+use {
+    crate::{
+        ext_proj::sample_prime_in_interval,
+        ligerito::packed_vars,
+        ligerito_flock::{
+            FlockCommitHint, IntEvalRsLigVirtProof, commit_rs_ligerito_rows,
+            grinding::{GrindingContext, GrindingNonces},
+            prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
+            validate_ligerito_commitment,
+            verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
+        },
+        pcs::ModQWeightChunks,
+        piop::spartan::{
+            SpartanField, absorb_spartan_message,
+            f2z::SpartanF2zField as F,
+            grinding::GrindingDomain,
+            matrix::eq_table,
+            protocol::{check_boundary, f2z_generator, grind_boundary},
+            sha256::inner_sumcheck::ColumnMajorPackedBits,
+            squeeze_field,
+            sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
+        },
+        transcript::traits::Transcript,
     },
-    pcs::ModQWeightChunks,
-    piop::spartan::{
-        SpartanField, absorb_spartan_message,
-        f2z::SpartanF2zField as F,
-        grinding::GrindingDomain,
-        matrix::eq_table,
-        protocol::{check_boundary, f2z_generator, grind_boundary},
-        sha256::inner_sumcheck::ColumnMajorPackedBits,
-        squeeze_field,
-        sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
-    },
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 enum OuterGrinding {}

@@ -9,22 +9,21 @@ use field::RingOps;
 #[cfg(test)]
 use super::reduce_integer_mod_q;
 use super::{
-    Config, Result, error,
+    error,
     relation::{OuterMode, PreparedSha256Ecdsa, SHA_H, Sha256EcdsaStatement},
 };
-use crate::{
-    piop::spartan::{
-        f2z::SpartanF2zField as F,
-        matrix::eq_table,
-        raw_monty::{Raw, raw_to_words, words_to_raw},
-        sumcheck::OuterSumcheckProof,
-    },
+use crate::piop::spartan::{
+    matrix::eq_table,
+    raw_monty::{raw_to_words, words_to_raw},
+    sumcheck::OuterSumcheckProof,
 };
-use circuit::matrix_wengert::PreparedWengertEvaluator;
-use crate::sumcheck::bridge::PreparedBinding;
-use crate::sumcheck::bridge::composite::{CompositeBinding,CompositeRows,CompositeCoefficients as BatchedMatrixMle,RawEqualityWeights,equality_weights};
+use circuit::linear_map::circuit::PreparedWengertEvaluator;
+
+use crate::sumcheck::bridge::composite::{
+    CompositeBinding, CompositeCoefficients, CompositeRows, RawEqualityWeights, equality_weights,
+};
 #[cfg(test)]
-use crate::sumcheck::bridge::composite::{evaluate_tail_by_runs,evaluate_sha_factors};
+use crate::sumcheck::bridge::composite::{evaluate_sha_factors, evaluate_tail_by_runs};
 
 #[cfg(test)]
 use field::Uint;
@@ -32,15 +31,15 @@ use field::Uint;
 /// Compact description of the equation checked by the inner sumcheck.
 pub(super) struct InnerSumcheckClaim {
     /// Final row-evaluation point returned by the outer sumcheck.
-    outer_row_point: Vec<F>,
+    outer_row_point: Vec<field::Fp<2>>,
     /// Challenge `c` combining the A/B/C claims with weights `1, c, c²`.
-    matrix_batch_challenge: F,
+    matrix_batch_challenge: field::Fp<2>,
     /// Point defining equality weights for the linear and public-input equations.
-    linear_row_point: Vec<F>,
+    linear_row_point: Vec<field::Fp<2>>,
     /// Scales the linear/public batch when adding it to the matrix batch.
-    linear_batch_weight: F,
+    linear_batch_weight: field::Fp<2>,
     /// Claimed `Σ_i batched_matrix[i] · witness[i]` over assignment indices.
-    claimed_sum: F,
+    claimed_sum: field::Fp<2>,
 }
 
 /// Distinct integer matrix coefficients reduced modulo the sampled prime, and
@@ -49,9 +48,9 @@ pub(super) struct ModQCoefficients<'a> {
     /// Arithmetic modulo the transcript-sampled prime.
     ctx: field::FpCtx<2>,
     /// One Montgomery residue per distinct `LocalRelation::coefficients` entry.
-    residues: Vec<Raw>,
+    residues: Vec<u128>,
     /// `r · (A + xB + x²C)` over the P-256 tail through the circuit's DAG. Its
-    /// Montgomery form is the same shared two-limb representation as [`Raw`].
+    /// Montgomery form is the same shared two-limb representation as [`u128`].
     tape: PreparedWengertEvaluator<'a>,
 }
 
@@ -60,13 +59,13 @@ impl InnerSumcheckClaim {
     pub(super) fn from_outer_claims(
         relation: &PreparedSha256Ecdsa,
         statement: &Sha256EcdsaStatement,
-        outer: &OuterSumcheckProof<F>,
-        outer_row_point: Vec<F>,
-        matrix_batch_challenge: F,
-        linear_row_point: Vec<F>,
-        linear_batch_weight: F,
-        cfg: &Config,
-    ) -> Result<Self> {
+        outer: &OuterSumcheckProof<field::Fp<2>>,
+        outer_row_point: Vec<field::Fp<2>>,
+        matrix_batch_challenge: field::Fp<2>,
+        linear_row_point: Vec<field::Fp<2>>,
+        linear_batch_weight: field::Fp<2>,
+        cfg: &field::FpCtx<2>,
+    ) -> Result<Self, super::Sha256EcdsaError> {
         if outer_row_point.len() != relation.outer_sumcheck_num_vars()
             || linear_row_point.len() != relation.linear_vars()
         {
@@ -111,16 +110,13 @@ impl InnerSumcheckClaim {
         })
     }
 
-    pub(super) fn claimed_sum(&self) -> &F {
+    pub(super) fn claimed_sum(&self) -> &field::Fp<2> {
         &self.claimed_sum
     }
 }
 
 impl<'a> ModQCoefficients<'a> {
-    pub(super) fn from_relation(
-        relation: &'a PreparedSha256Ecdsa,
-        cfg: &Config,
-    ) -> Self {
+    pub(super) fn from_relation(relation: &'a PreparedSha256Ecdsa, cfg: &field::FpCtx<2>) -> Self {
         let _scope = tracing::info_span!("ecdsa:matrix_projection").entered();
         let ctx = crate::piop::spartan::raw_monty::field_context(cfg);
         let projection = field::PreparedSignedProjection::new(
@@ -146,19 +142,21 @@ impl<'a> ModQCoefficients<'a> {
 
     /// `Σ_row Σ_m weight[3·row + m] · M_m[row]` over every P-256 tail column, by
     /// the reverse-mode tape. Both sides use the shared two-limb Montgomery
-    /// form with `R = 2^128`, so the words convert to [`Raw`] without arithmetic.
+    /// form with `R = 2^128`, so the words convert to [`u128`] without arithmetic.
     #[cfg(test)]
     fn tape_tail(
         &mut self,
         relation: &PreparedSha256Ecdsa,
-        matrix_rows: &[Raw],
-    ) -> Result<Vec<F>> {
-        let mut output = self.ctx.zero_vec(relation.local.tail.columns());
-        self.tape.adjoint_map_into(
-            matrix_rows.len() / 3,
-            |row, kind| raw_to_words(matrix_rows[3 * row + kind]),
-            &mut output,
-        ).map_err(|e| error(format!("P-256 tape: {e}")))?;
+        matrix_rows: &[u128],
+    ) -> Result<Vec<field::Fp<2>>, super::Sha256EcdsaError> {
+        let mut output = self.ctx.zero_vec(relation.local.tail.column_count());
+        self.tape
+            .adjoint_map_into(
+                matrix_rows.len() / 3,
+                |row, kind| raw_to_words(matrix_rows[3 * row + kind]),
+                &mut output,
+            )
+            .map_err(|e| error(format!("P-256 tape: {e}")))?;
         Ok(output)
     }
 
@@ -169,10 +167,10 @@ impl<'a> ModQCoefficients<'a> {
     fn tail_runs(
         &self,
         relation: &PreparedSha256Ecdsa,
-        cfg: &Config,
+        cfg: &field::FpCtx<2>,
         split_public: bool,
-    ) -> Vec<(usize, usize, F)> {
-        let two = F::from_with_cfg(2u64, cfg);
+    ) -> Vec<(usize, usize, field::Fp<2>)> {
+        let two = field::Fp::<2>::from_with_cfg(2u64, cfg);
         let mut exceptions: Vec<usize> = if split_public {
             relation.local.public_h.to_vec()
         } else {
@@ -227,19 +225,25 @@ impl<'a> ModQCoefficients<'a> {
         &mut self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        cfg: &Config,
-    ) -> Result<BatchedMatrixMle> {
+        cfg: &field::FpCtx<2>,
+    ) -> Result<CompositeCoefficients, super::Sha256EcdsaError> {
         let _scope = tracing::info_span!("ecdsa:coefficient_combine").entered();
         let weights = self.build_row_weights(relation, claim);
-        let (instances,local)=self.build_sha_factors(relation,claim,cfg)?;
-        Ok(CompositeBinding{
-            field:&self.ctx,tape:&mut self.tape,
-            num_vars:relation.h_layout.row_vars+relation.h_layout.col_vars,
-            tail_offset:relation.map.h_offset,tail_columns:relation.local.tail.columns(),
-        }.bind_rows(&CompositeRows{
-            instances:&instances,local:&local,tail_rows:&weights.matrix_rows,
-            correction_columns:&relation.local.public_h,corrections:&weights.public_bits,
-            constant:weights.constant,
+        let (instances, local) = self.build_sha_factors(relation, claim, cfg)?;
+        Ok(CompositeBinding {
+            field: &self.ctx,
+            tape: &mut self.tape,
+            num_vars: relation.h_layout.row_vars + relation.h_layout.col_vars,
+            tail_offset: relation.map.h_offset,
+            tail_columns: relation.local.tail.column_count(),
+        }
+        .bind_rows(&CompositeRows {
+            instances: &instances,
+            local: &local,
+            tail_rows: &weights.matrix_rows,
+            correction_columns: &relation.local.public_h,
+            corrections: &weights.public_bits,
+            constant: weights.constant,
         })?)
     }
 
@@ -255,9 +259,9 @@ impl<'a> ModQCoefficients<'a> {
         &mut self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        assignment_point: &[F],
-        cfg: &Config,
-    ) -> Result<F> {
+        assignment_point: &[field::Fp<2>],
+        cfg: &field::FpCtx<2>,
+    ) -> Result<field::Fp<2>, super::Sha256EcdsaError> {
         let _scope = tracing::info_span!("ecdsa:coefficient_evaluate").entered();
         check_assignment_point(
             relation.h_layout.row_vars + relation.h_layout.col_vars,
@@ -272,15 +276,24 @@ impl<'a> ModQCoefficients<'a> {
             let _scope = tracing::info_span!("ecdsa:ce_sha_factors").entered();
             self.build_sha_factors(relation, claim, cfg)?
         };
-        Ok(CompositeBinding{
-            field:ctx,tape:&mut self.tape,
-            num_vars:relation.h_layout.row_vars+relation.h_layout.col_vars,
-            tail_offset:relation.map.h_offset,tail_columns:relation.local.tail.columns(),
-        }.evaluate_bound(&CompositeRows{
-            instances:&instances,local:&sha,tail_rows:&weights.matrix_rows,
-            correction_columns:&relation.local.public_h,corrections:&weights.public_bits,
-            constant:weights.constant,
-        },assignment_point)?)
+        Ok(CompositeBinding {
+            field: ctx,
+            tape: &mut self.tape,
+            num_vars: relation.h_layout.row_vars + relation.h_layout.col_vars,
+            tail_offset: relation.map.h_offset,
+            tail_columns: relation.local.tail.column_count(),
+        }
+        .evaluate_at(
+            &CompositeRows {
+                instances: &instances,
+                local: &sha,
+                tail_rows: &weights.matrix_rows,
+                correction_columns: &relation.local.public_h,
+                corrections: &weights.public_bits,
+                constant: weights.constant,
+            },
+            assignment_point,
+        )?)
     }
 
     /// The reverse-mode evaluation the forward pass replaced: the tape's
@@ -291,9 +304,9 @@ impl<'a> ModQCoefficients<'a> {
         &mut self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        assignment_point: &[F],
-        cfg: &Config,
-    ) -> Result<F> {
+        assignment_point: &[field::Fp<2>],
+        cfg: &field::FpCtx<2>,
+    ) -> Result<field::Fp<2>, super::Sha256EcdsaError> {
         check_assignment_point(
             relation.h_layout.row_vars + relation.h_layout.col_vars,
             assignment_point,
@@ -359,8 +372,8 @@ impl<'a> ModQCoefficients<'a> {
         let batch = ctx.raw(&claim.matrix_batch_challenge);
         let batch_squared = ctx.mul_raw(batch, batch);
         let linear_batch = ctx.raw(&claim.linear_batch_weight);
-        let mut matrix_rows = vec![0 as Raw; 3 * relation.local.rows()];
-        let matrix_weights = |slots: &mut [Raw], weight| {
+        let mut matrix_rows = vec![0 as u128; 3 * relation.local.rows()];
+        let matrix_weights = |slots: &mut [u128], weight| {
             slots[0] = weight;
             slots[1] = ctx.mul_raw(weight, batch);
             slots[2] = ctx.mul_raw(weight, batch_squared);
@@ -403,15 +416,15 @@ impl<'a> ModQCoefficients<'a> {
         &self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        cfg: &Config,
-    ) -> Result<RowWeightsField> {
+        cfg: &field::FpCtx<2>,
+    ) -> Result<RowWeightsField, super::Sha256EcdsaError> {
         let ctx = &self.ctx;
         let linear = equality_weights(&claim.linear_row_point, cfg)?;
         let outer = equality_weights(&claim.outer_row_point, cfg)?;
         let batch = ctx.raw(&claim.matrix_batch_challenge);
         let batch_squared = ctx.mul_raw(batch, batch);
-        let mut matrix_rows = vec![0 as Raw; 3 * relation.local.rows()];
-        let matrix_weights = |slots: &mut [Raw], weight| {
+        let mut matrix_rows = vec![0 as u128; 3 * relation.local.rows()];
+        let matrix_weights = |slots: &mut [u128], weight| {
             slots[0] = weight;
             slots[1] = ctx.mul_raw(weight, batch);
             slots[2] = ctx.mul_raw(weight, batch_squared);
@@ -461,7 +474,11 @@ impl<'a> ModQCoefficients<'a> {
     /// The arbitrary-precision projection of the distinct coefficients the
     /// native word reduction replaced; kept as the test oracle.
     #[cfg(test)]
-    fn bigint_residues(relation: &PreparedSha256Ecdsa, modulus: u128, cfg: &Config) -> Vec<Raw> {
+    fn bigint_residues(
+        relation: &PreparedSha256Ecdsa,
+        modulus: u128,
+        cfg: &field::FpCtx<2>,
+    ) -> Vec<u128> {
         let ctx = crate::piop::spartan::raw_monty::field_context(cfg);
         relation
             .local
@@ -483,14 +500,16 @@ impl<'a> ModQCoefficients<'a> {
     fn p256_column_weight(
         &self,
         relation: &PreparedSha256Ecdsa,
-        row_weights: &[Raw],
+        row_weights: &[u128],
         column: usize,
-    ) -> Raw {
+    ) -> u128 {
         relation
             .local
             .tail
             .column(column)
-            .fold(0 as Raw, |sum, (slot, coefficient)| {
+            .unwrap()
+            .indexed_entries()
+            .fold(0 as u128, |sum, (slot, coefficient)| {
                 self.ctx.add_raw(
                     sum,
                     self.ctx
@@ -506,8 +525,8 @@ impl<'a> ModQCoefficients<'a> {
         &self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        cfg: &Config,
-    ) -> Result<(Vec<Raw>, Vec<Raw>)> {
+        cfg: &field::FpCtx<2>,
+    ) -> Result<(Vec<u128>, Vec<u128>), super::Sha256EcdsaError> {
         let ctx = &self.ctx;
         let batch = ctx.raw(&claim.matrix_batch_challenge);
         let (point, multiplier) = match relation.mode {
@@ -516,10 +535,10 @@ impl<'a> ModQCoefficients<'a> {
         };
         let instances = ctx.raw_vec(&eq_table(&point[..relation.log_n], cfg).map_err(error)?);
         let local_weights = RawEqualityWeights::new(ctx, &point[relation.log_n..]);
-        let mut sha = vec![0 as Raw; SHA_H];
-        for row in 0..relation.local.sha_c.rows() {
+        let mut sha = vec![0 as u128; SHA_H];
+        for row in 0..relation.local.sha_c.row_count() {
             let weight = ctx.mul_raw(local_weights.at(row), multiplier);
-            for (column, coefficient) in relation.local.sha_c.row(row) {
+            for (column, coefficient) in relation.local.sha_c.row(row).unwrap().indexed_entries() {
                 sha[column] =
                     ctx.add_raw(sha[column], ctx.mul_raw(weight, self.residues[coefficient]));
             }
@@ -533,8 +552,8 @@ impl<'a> ModQCoefficients<'a> {
         &self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,
-        cfg: &Config,
-    ) -> Result<(Vec<F>, Vec<F>)> {
+        cfg: &field::FpCtx<2>,
+    ) -> Result<(Vec<field::Fp<2>>, Vec<field::Fp<2>>), super::Sha256EcdsaError> {
         let squared_challenge = cfg.mul(
             &(claim.matrix_batch_challenge.clone()),
             &(&claim.matrix_batch_challenge),
@@ -546,12 +565,12 @@ impl<'a> ModQCoefficients<'a> {
         let instances = eq_table(&point[..relation.log_n], cfg).map_err(error)?;
         let local_weights = equality_weights(&point[relation.log_n..], cfg)?;
         let multiplier = self.ctx.raw(multiplier);
-        let mut sha = vec![0 as Raw; SHA_H];
-        for row in 0..relation.local.sha_c.rows() {
+        let mut sha = vec![0 as u128; SHA_H];
+        for row in 0..relation.local.sha_c.row_count() {
             let weight = self
                 .ctx
                 .mul_raw(self.ctx.raw(&local_weights.at(row)), multiplier);
-            for (column, coefficient) in relation.local.sha_c.row(row) {
+            for (column, coefficient) in relation.local.sha_c.row(row).unwrap().indexed_entries() {
                 sha[column] = self.ctx.add_raw(
                     sha[column],
                     self.ctx.mul_raw(weight, self.residues[coefficient]),
@@ -569,24 +588,27 @@ impl<'a> ModQCoefficients<'a> {
 
 struct RowWeights {
     /// Slot `3 * row + matrix` for A/B/C.
-    matrix_rows: Vec<Raw>,
-    public_bits: Vec<Raw>,
-    constant: Raw,
+    matrix_rows: Vec<u128>,
+    public_bits: Vec<u128>,
+    constant: u128,
 }
 
 /// The field-domain oracle's form of [`RowWeights`].
 #[cfg(test)]
 struct RowWeightsField {
-    matrix_rows: Vec<Raw>,
-    public_bits: Vec<Raw>,
-    constant: F,
+    matrix_rows: Vec<u128>,
+    public_bits: Vec<u128>,
+    constant: field::Fp<2>,
 }
 
 fn public_row_start(relation: &PreparedSha256Ecdsa) -> usize {
     256 * relation.compressions() + relation.local.linear.len()
 }
 
-fn check_assignment_point(num_vars: usize, point: &[F]) -> Result<()> {
+fn check_assignment_point(
+    num_vars: usize,
+    point: &[field::Fp<2>],
+) -> Result<(), super::Sha256EcdsaError> {
     if point.len() != num_vars {
         return Err(error("assignment point dimension mismatch"));
     }
@@ -619,7 +641,7 @@ mod tests {
     #[test]
     fn coefficient_residues_match_bigint_projection() {
         for modulus in [sampled_prime(), (1u128 << 127) - 1] {
-            let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
                 let coefficients = ModQCoefficients::from_relation(&relation, &cfg);
@@ -637,8 +659,8 @@ mod tests {
     #[test]
     fn tape_tail_matches_column_gather() {
         let modulus = (1u128 << 127) - 1; // the Mersenne prime M127: two limbs, odd, wider than the sampled primes
-        let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
-        let f = |n| F::from_with_cfg(n, &cfg);
+        let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+        let f = |n| field::Fp::<2>::from_with_cfg(n, &cfg);
         let (statement, _) = fixture();
         for mode in [OuterMode::Split, OuterMode::AllRows] {
             let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
@@ -670,13 +692,16 @@ mod tests {
             let tape = coefficients
                 .tape_tail(&relation, &weights.matrix_rows)
                 .unwrap();
-            assert_eq!(tape.len(), relation.local.tail.columns());
-            let gather: Vec<Raw> = (0..relation.local.tail.columns())
+            assert_eq!(tape.len(), relation.local.tail.column_count());
+            let gather: Vec<u128> = (0..relation.local.tail.column_count())
                 .map(|column| {
                     coefficients.p256_column_weight(&relation, &weights.matrix_rows, column)
                 })
                 .collect();
-            let first_mismatch = tape.iter().zip(&gather).position(|(a, b)| coefficients.ctx.raw(a) != *b);
+            let first_mismatch = tape
+                .iter()
+                .zip(&gather)
+                .position(|(a, b)| coefficients.ctx.raw(a) != *b);
             assert_eq!(first_mismatch, None, "{mode:?}");
         }
     }
@@ -686,8 +711,8 @@ mod tests {
     #[test]
     fn tail_runs_describe_the_materialized_tail() {
         let modulus = (1u128 << 127) - 1;
-        let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
-        let f = |n| F::from_with_cfg(n, &cfg);
+        let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+        let f = |n| field::Fp::<2>::from_with_cfg(n, &cfg);
         let (statement, _) = fixture();
         for mode in [OuterMode::Split, OuterMode::AllRows] {
             let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
@@ -755,7 +780,7 @@ mod tests {
     fn raw_factor_builders_match_field_builders() {
         let (statement, _) = fixture();
         for modulus in [sampled_prime(), (1u128 << 127) - 1] {
-            let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
             let mut state = 0x1357_9BDF_2468_ACE0_u64 ^ modulus as u64;
             let mut random = move || {
                 state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -766,7 +791,7 @@ mod tests {
             };
             let mut element = || {
                 let value = (u128::from(random()) << 64) | u128::from(random());
-                F::from_with_cfg(value % modulus, &cfg)
+                field::Fp::<2>::from_with_cfg(value % modulus, &cfg)
             };
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
@@ -818,14 +843,14 @@ mod tests {
                 assert_eq!(ctx.raw_vec(&sha_field), sha, "{mode:?} sha");
                 // The grouped raw dot is the factored MLE's evaluation.
                 let vars = relation.h_layout.row_vars + relation.h_layout.col_vars;
-                let point: Vec<F> = (0..vars).map(|_| element()).collect();
+                let point: Vec<field::Fp<2>> = (0..vars).map(|_| element()).collect();
                 let expected =
                     evaluate_sha_factors(&instances_field, &sha_field, &point, &cfg).unwrap();
                 let eq_instances = ctx.raw_vec(&eq_table(&point[..relation.log_n], &cfg).unwrap());
                 let dot_instances = instances
                     .iter()
                     .zip(&eq_instances)
-                    .fold(0 as Raw, |sum, (&v, &w)| {
+                    .fold(0 as u128, |sum, (&v, &w)| {
                         ctx.add_raw(sum, ctx.mul_raw(v, w))
                     });
                 let local = RawEqualityWeights::new(ctx, &point[relation.log_n..]);
@@ -849,7 +874,7 @@ mod tests {
     fn forward_matrix_evaluation_matches_reverse() {
         let (statement, _) = fixture();
         for modulus in [sampled_prime(), (1u128 << 127) - 1] {
-            let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
             let mut state = 0x5DEE_CE66_D1B4_E8A3_u64 ^ modulus as u64;
             let mut random = move || {
                 state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -860,7 +885,7 @@ mod tests {
             };
             let mut element = || {
                 let value = (u128::from(random()) << 64) | u128::from(random());
-                F::from_with_cfg(value % modulus, &cfg)
+                field::Fp::<2>::from_with_cfg(value % modulus, &cfg)
             };
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
@@ -887,9 +912,8 @@ mod tests {
                     )
                     .unwrap();
                     let vars = relation.h_layout.row_vars + relation.h_layout.col_vars;
-                    let point: Vec<F> = (0..vars).map(|_| element()).collect();
-                    let mut coefficients =
-                        ModQCoefficients::from_relation(&relation, &cfg);
+                    let point: Vec<field::Fp<2>> = (0..vars).map(|_| element()).collect();
+                    let mut coefficients = ModQCoefficients::from_relation(&relation, &cfg);
                     let forward = coefficients
                         .evaluate_batched_matrix_mle(&relation, &claim, &point, &cfg)
                         .unwrap();
@@ -906,8 +930,8 @@ mod tests {
     fn streamed_matrix_evaluation_matches_prepared_mle() {
         // The verifier's modulus class (the native word kernels need q > 2^64).
         let modulus = sampled_prime();
-        let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
-        let f = |n| F::from_with_cfg(n, &cfg);
+        let cfg = field::Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+        let f = |n| field::Fp::<2>::from_with_cfg(n, &cfg);
         let (statement, _) = fixture();
         for mode in [OuterMode::Split, OuterMode::AllRows] {
             let relation = prepare_sha256_ecdsa(3, 100, mode).unwrap();
@@ -949,7 +973,7 @@ mod tests {
             );
             assert_eq!(mle.evaluate(&point, &cfg).unwrap(), cached);
             let tail_start = relation.map.h_offset;
-            let tail_end = tail_start + relation.local.tail.columns();
+            let tail_end = tail_start + relation.local.tail.column_count();
             for index in [
                 0,
                 tail_start - 1,

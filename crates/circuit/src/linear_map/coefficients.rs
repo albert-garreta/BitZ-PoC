@@ -1,5 +1,5 @@
 //! Coefficient storage is independent of graph topology and execution fields.
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::integer_storage::IntegerTable;
 use field::{IntegerEmbedding, RingOps, Z, ZRef};
@@ -13,6 +13,16 @@ pub trait CoefficientStore {
         self.len() == 0
     }
     fn get(&self, index: usize) -> Self::Ref<'_>;
+    /// Preparation visits storage slots once, even when many entries share a coefficient.
+    fn distinct_len(&self) -> usize {
+        self.len()
+    }
+    fn distinct_coefficient(&self, index: usize) -> Self::Ref<'_> {
+        self.get(index)
+    }
+    fn coefficient_index(&self, entry: usize) -> usize {
+        entry
+    }
     /// Optionally discard unused slots, returning old-to-new indices. Storage
     /// owns this policy; compilation never compares or hashes coefficients.
     fn compact(&mut self, _used: &[bool]) -> Option<Vec<usize>> {
@@ -22,6 +32,61 @@ pub trait CoefficientStore {
 
 pub trait StoreCoefficient<C>: CoefficientStore {
     fn store(&mut self, coefficient: C) -> usize;
+}
+
+impl<C> CoefficientStore for Box<[C]> {
+    type Ref<'a>
+        = &'a C
+    where
+        C: 'a;
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+    fn get(&self, index: usize) -> &C {
+        &self[index]
+    }
+}
+impl<S: CoefficientStore + ?Sized> CoefficientStore for Arc<S> {
+    type Ref<'a>
+        = S::Ref<'a>
+    where
+        Self: 'a;
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+    fn get(&self, index: usize) -> Self::Ref<'_> {
+        (**self).get(index)
+    }
+    fn distinct_len(&self) -> usize {
+        (**self).distinct_len()
+    }
+    fn distinct_coefficient(&self, index: usize) -> Self::Ref<'_> {
+        (**self).distinct_coefficient(index)
+    }
+    fn coefficient_index(&self, entry: usize) -> usize {
+        (**self).coefficient_index(entry)
+    }
+}
+impl<S: CoefficientStore + ?Sized> CoefficientStore for &S {
+    type Ref<'a>
+        = S::Ref<'a>
+    where
+        Self: 'a;
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+    fn get(&self, index: usize) -> Self::Ref<'_> {
+        (**self).get(index)
+    }
+    fn distinct_len(&self) -> usize {
+        (**self).distinct_len()
+    }
+    fn distinct_coefficient(&self, index: usize) -> Self::Ref<'_> {
+        (**self).distinct_coefficient(index)
+    }
+    fn coefficient_index(&self, entry: usize) -> usize {
+        (**self).coefficient_index(entry)
+    }
 }
 
 impl<C> CoefficientStore for Vec<C> {

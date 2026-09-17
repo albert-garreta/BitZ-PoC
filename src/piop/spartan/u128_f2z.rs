@@ -125,7 +125,7 @@ fn validate_layout_geometry(layout: &U128MulLayout) -> Result<(), ProtocolError>
 impl RelationSpec for U128MulLayout {
     type Coefficient = bool;
     type Witness = U128MulWitness;
-    type Map = crate::f2map::RepeatedVirtualMap;
+    type Map = circuit::linear_map::binary::RepeatedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &U128_MUL_DOMAINS

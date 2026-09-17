@@ -7,10 +7,11 @@ use crate::piop::spartan::{
     },
     u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
 };
+use crate::sumcheck::bridge::PreparedBinding;
 #[cfg(feature = "parallel")]
 use crate::sumcheck::inner::native::parallel;
 use crate::sumcheck::inner::native::{
-    BlockScales, Field, NativeWeights, Raw, RawFieldStorage, eq_table_raw_into,
+    BlockScales, NativeWeights, RawFieldStorage, eq_table_raw_into,
 };
 use circuit::linear_map::ColumnValues;
 #[cfg(feature = "parallel")]
@@ -19,7 +20,7 @@ use rayon::prelude::*;
 pub(crate) fn block_scales_raw<C: RawMontyCoefficient>(
     ctx: &field::FpCtx<2>,
     layout: &BlockSelectorLayout<C>,
-    rho: Raw,
+    rho: u128,
     num_column_vars: usize,
 ) -> BlockScales {
     let blocks = (1usize << num_column_vars) / layout.block_len;
@@ -64,7 +65,7 @@ pub trait RawMontyCoefficient: Sync {
     fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared;
 
     /// `self · value`.
-    fn raw_scale(&self, prepared: &Self::Prepared, value: Raw, ctx: &field::FpCtx<2>) -> Raw;
+    fn raw_scale(&self, prepared: &Self::Prepared, value: u128, ctx: &field::FpCtx<2>) -> u128;
 }
 
 impl RawMontyCoefficient for bool {
@@ -73,32 +74,32 @@ impl RawMontyCoefficient for bool {
     fn prepare_raw(_ctx: &field::FpCtx<2>) -> Self::Prepared {}
 
     #[inline(always)]
-    fn raw_scale(&self, _prepared: &(), value: Raw, _ctx: &field::FpCtx<2>) -> Raw {
+    fn raw_scale(&self, _prepared: &(), value: u128, _ctx: &field::FpCtx<2>) -> u128 {
         if *self { value } else { 0 }
     }
 }
 
-impl RawMontyCoefficient for Field {
+impl RawMontyCoefficient for field::Fp<2> {
     type Prepared = ();
 
     fn prepare_raw(_ctx: &field::FpCtx<2>) -> Self::Prepared {}
 
     #[inline(always)]
-    fn raw_scale(&self, _prepared: &(), value: Raw, ctx: &field::FpCtx<2>) -> Raw {
+    fn raw_scale(&self, _prepared: &(), value: u128, ctx: &field::FpCtx<2>) -> u128 {
         ctx.mul_raw(ctx.raw(self), value)
     }
 }
 
 impl RawMontyCoefficient for U64MulCoefficient {
     /// The public limb base `2^64` as a residue of the runtime field.
-    type Prepared = Raw;
+    type Prepared = u128;
 
     fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared {
         ctx.native_residue_u128(U64_MUL_LIMB_BASE)
     }
 
     #[inline(always)]
-    fn raw_scale(&self, limb_base: &Raw, value: Raw, ctx: &field::FpCtx<2>) -> Raw {
+    fn raw_scale(&self, limb_base: &u128, value: u128, ctx: &field::FpCtx<2>) -> u128 {
         match self {
             Self::One => value,
             Self::LimbBase => ctx.mul_raw(*limb_base, value),
@@ -108,14 +109,14 @@ impl RawMontyCoefficient for U64MulCoefficient {
 
 impl RawMontyCoefficient for BabyBearMulCoefficient {
     /// The embedded BabyBear modulus as a residue of the runtime field.
-    type Prepared = Raw;
+    type Prepared = u128;
 
     fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared {
         ctx.native_residue(BABY_BEAR_MODULUS)
     }
 
     #[inline(always)]
-    fn raw_scale(&self, modulus: &Raw, value: Raw, ctx: &field::FpCtx<2>) -> Raw {
+    fn raw_scale(&self, modulus: &u128, value: u128, ctx: &field::FpCtx<2>) -> u128 {
         match self {
             Self::One => value,
             Self::Modulus => ctx.mul_raw(*modulus, value),
@@ -124,31 +125,30 @@ impl RawMontyCoefficient for BabyBearMulCoefficient {
 }
 
 /// `D(j) = Σ_i row_weights[i] (A[i,j] + ρ B[i,j] + ρ² C[i,j])` over the padded
-/// column domain: the raw twin of
-/// `PreparedConstraintMatrices::bind_and_batch_with_validated_row_weights`.
+/// column domain, used by differential tests.
 #[cfg(test)]
-pub(crate) fn bind_and_batch_raw<C>(
+pub(crate) fn reference_native_binding<C>(
     ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    row_weights: &[Raw],
-    rho: Raw,
-) -> Vec<Raw>
+    matrices: &PreparedConstraintMatrices<field::Fp<2>, C>,
+    row_weights: &[u128],
+    rho: u128,
+) -> Vec<u128>
 where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient,
 {
     let mut evaluations = Vec::new();
-    bind_and_batch_raw_into(ctx, matrices, row_weights, rho, &mut evaluations);
+    contract_native_columns(ctx, matrices, row_weights, rho, &mut evaluations);
     evaluations
 }
 
-fn bind_and_batch_raw_into<C>(
+fn contract_native_columns<C>(
     ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    row_weights: &[Raw],
-    rho: Raw,
-    evaluations: &mut Vec<Raw>,
+    matrices: &PreparedConstraintMatrices<field::Fp<2>, C>,
+    row_weights: &[u128],
+    rho: u128,
+    evaluations: &mut Vec<u128>,
 ) where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient,
 {
     debug_assert_eq!(row_weights.len(), 1usize << matrices.num_row_vars());
     let rho_squared = ctx.mul_raw(rho, rho);
@@ -159,48 +159,22 @@ fn bind_and_batch_raw_into<C>(
         .column_count()
         .min(m.b().column_count())
         .min(m.c().column_count());
-    let (a_offsets, a_rows, a_coefficients) = (
-        m.a().column_offsets(),
-        m.a().row_indices(),
-        m.a().coefficients(),
-    );
-    let (b_offsets, b_rows, b_coefficients) = (
-        m.b().column_offsets(),
-        m.b().row_indices(),
-        m.b().coefficients(),
-    );
-    let (c_offsets, c_rows, c_coefficients) = (
-        m.c().column_offsets(),
-        m.c().row_indices(),
-        m.c().coefficients(),
-    );
-    let dot = |offsets: &[usize], rows: &[usize], coefficients: &[C], column: usize| -> Raw {
-        let mut evaluation = 0;
-        for entry in offsets[column]..offsets[column + 1] {
-            evaluation = ctx.add_raw(
-                evaluation,
-                coefficients[entry].raw_scale(&prepared, row_weights[rows[entry]], ctx),
-            );
-        }
-        evaluation
+    let dot = |source: &circuit::linear_map::CscMatrix<Box<[C]>>, column| {
+        circuit::linear_map::contraction::segment_dot(
+            source.column(column).unwrap(),
+            0,
+            |row, c| c.raw_scale(&prepared, row_weights[row], ctx),
+            |a, b| ctx.add_raw(a, b),
+        )
     };
-    // Whole column ranges per block: sequential walks over the three CSC
-    // offset arrays instead of three bounds-checked column lookups per entry.
-    let evaluate = |column: usize| {
-        let mut evaluation = dot(a_offsets, a_rows, a_coefficients, column);
-        if b_offsets[column + 1] > b_offsets[column] {
-            evaluation = ctx.add_raw(
-                evaluation,
-                ctx.mul_raw(rho, dot(b_offsets, b_rows, b_coefficients, column)),
-            );
+    let evaluate = |column| {
+        let mut sum = dot(m.a(), column);
+        for (source, scale) in [(m.b(), rho), (m.c(), rho_squared)] {
+            if !source.column(column).unwrap().is_empty() {
+                sum = ctx.add_raw(sum, ctx.mul_raw(scale, dot(source, column)));
+            }
         }
-        if c_offsets[column + 1] > c_offsets[column] {
-            evaluation = ctx.add_raw(
-                evaluation,
-                ctx.mul_raw(rho_squared, dot(c_offsets, c_rows, c_coefficients, column)),
-            );
-        }
-        evaluation
+        sum
     };
     evaluations.resize(1usize << matrices.num_column_vars(), 0);
     evaluations[live_columns..].fill(0);
@@ -212,13 +186,13 @@ fn bind_and_batch_raw_into<C>(
 #[derive(Clone, Copy)]
 pub(crate) enum RowFunctional<'a> {
     /// `eq(·, point)` over the padded row domain (the standard outer).
-    Point(&'a [Field]),
+    Point(&'a [field::Fp<2>]),
     /// The prefix-univariate factors (the univariate-skip outer).
-    Prefix(&'a PrefixUnivariateRowFactors<Field>),
+    Prefix(&'a PrefixUnivariateRowFactors<field::Fp<2>>),
     /// Explicit weights over the complete logical row domain.
-    Explicit(&'a [Field]),
+    Explicit(&'a [field::Fp<2>]),
     /// Independently weighted A, B, C rows; no common rho factor is applied.
-    Independent([&'a [Field]; 3]),
+    Independent([&'a [field::Fp<2>]; 3]),
 }
 
 /// Materializes the prefix-univariate row weights `prefix[s] · tail(x)` in
@@ -226,16 +200,16 @@ pub(crate) enum RowFunctional<'a> {
 /// `PrefixUnivariateRowFactors::materialize`.
 pub(crate) fn prefix_row_weights_raw(
     ctx: &field::FpCtx<2>,
-    factors: &PrefixUnivariateRowFactors<Field>,
-) -> Vec<Raw> {
+    factors: &PrefixUnivariateRowFactors<field::Fp<2>>,
+) -> Vec<u128> {
     let mut weights = Vec::new();
     prefix_row_weights_raw_into(ctx, factors, &mut weights);
     weights
 }
 fn prefix_row_weights_raw_into(
     ctx: &field::FpCtx<2>,
-    factors: &PrefixUnivariateRowFactors<Field>,
-    weights: &mut Vec<Raw>,
+    factors: &PrefixUnivariateRowFactors<field::Fp<2>>,
+    weights: &mut Vec<u128>,
 ) {
     let parts = factors.parts();
     let prefix = ctx.raw_vec(parts.prefix);
@@ -245,7 +219,7 @@ fn prefix_row_weights_raw_into(
     let low_mask = tail_low.len() - 1;
     let total_rows = 1usize << parts.num_row_vars;
     weights.resize(total_rows, 0);
-    let fill = |suffix: usize, block: &mut [Raw]| {
+    let fill = |suffix: usize, block: &mut [u128]| {
         let tail = ctx.mul_raw(
             tail_low[suffix & low_mask],
             tail_high[suffix >> parts.tail_low_vars],
@@ -267,32 +241,32 @@ fn prefix_row_weights_raw_into(
     }
 }
 
-/// The raw twin of `bind_and_batch_with_prefix_univariate_factors`: disjoint
+/// Disjoint
 /// unit-selector matrices are filled one prefix block at a time, in parallel,
 /// without materializing the row-weight tensor; other layouts materialize
 /// the weights and bind generically.
 #[cfg(test)]
-pub(crate) fn bind_and_batch_prefix_raw<C>(
+pub(crate) fn reference_prefix_binding<C>(
     ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    factors: &PrefixUnivariateRowFactors<Field>,
-    rho: Raw,
-) -> Vec<Raw>
+    matrices: &PreparedConstraintMatrices<field::Fp<2>, C>,
+    factors: &PrefixUnivariateRowFactors<field::Fp<2>>,
+    rho: u128,
+) -> Vec<u128>
 where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient,
 {
     let mut evaluations = Vec::new();
-    bind_and_batch_prefix_raw_into(ctx, matrices, factors, rho, &mut evaluations);
+    contract_prefix_selectors(ctx, matrices, factors, rho, &mut evaluations);
     evaluations
 }
-fn bind_and_batch_prefix_raw_into<C>(
+fn contract_prefix_selectors<C>(
     ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    factors: &PrefixUnivariateRowFactors<Field>,
-    rho: Raw,
-    evaluations: &mut Vec<Raw>,
+    matrices: &PreparedConstraintMatrices<field::Fp<2>, C>,
+    factors: &PrefixUnivariateRowFactors<field::Fp<2>>,
+    rho: u128,
+    evaluations: &mut Vec<u128>,
 ) where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient,
 {
     let parts = factors.parts();
     let prefix = ctx.raw_vec(parts.prefix);
@@ -300,7 +274,7 @@ fn bind_and_batch_prefix_raw_into<C>(
     let tail_high = ctx.raw_vec(parts.tail_high);
     let block_len = 1usize << parts.skip_vars;
     let low_mask = tail_low.len() - 1;
-    let tail_weight = |suffix: usize| -> Raw {
+    let tail_weight = |suffix: usize| -> u128 {
         ctx.mul_raw(
             tail_low[suffix & low_mask],
             tail_high[suffix >> parts.tail_low_vars],
@@ -317,7 +291,7 @@ fn bind_and_batch_prefix_raw_into<C>(
     });
     let Some([rows, a_offset, b_offset, c_offset]) = layout else {
         let weights = prefix_row_weights_raw(ctx, factors);
-        bind_and_batch_raw_into(ctx, matrices, &weights, rho, evaluations);
+        contract_native_columns(ctx, matrices, &weights, rho, evaluations);
         return;
     };
 
@@ -330,7 +304,7 @@ fn bind_and_batch_prefix_raw_into<C>(
     let (first, rest) = evaluations[order[0].0..].split_at_mut(rows);
     let (second, rest) = rest[order[1].0 - order[0].0 - rows..].split_at_mut(rows);
     let third = &mut rest[order[2].0 - order[1].0 - rows..][..rows];
-    let mut regions: [Option<&mut [Raw]>; 3] = [None, None, None];
+    let mut regions: [Option<&mut [u128]>; 3] = [None, None, None];
     regions[order[0].1] = Some(first);
     regions[order[1].1] = Some(second);
     regions[order[2].1] = Some(third);
@@ -338,7 +312,7 @@ fn bind_and_batch_prefix_raw_into<C>(
         unreachable!("every selector region is assigned exactly once");
     };
 
-    let fill = |suffix: usize, a: &mut [Raw], b: &mut [Raw], c: &mut [Raw]| {
+    let fill = |suffix: usize, a: &mut [u128], b: &mut [u128], c: &mut [u128]| {
         let tail = tail_weight(suffix);
         for (((a, b), c), &prefix_weight) in a.iter_mut().zip(b).zip(c).zip(&prefix) {
             let weight = ctx.mul_raw(prefix_weight, tail);
@@ -372,18 +346,18 @@ fn bind_and_batch_prefix_raw_into<C>(
 /// Retains the caller's field and the validated sparse/selector relation.
 pub(crate) struct NativeBinding<'a, C> {
     field: &'a field::FpCtx<2>,
-    matrices: &'a PreparedConstraintMatrices<Field, C>,
-    rho: Field,
-    row_workspace: Vec<Raw>,
+    matrices: &'a PreparedConstraintMatrices<field::Fp<2>, C>,
+    rho: field::Fp<2>,
+    row_workspace: Vec<u128>,
 }
 impl<'a, C> NativeBinding<'a, C>
 where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient,
 {
     pub(crate) fn new(
         field: &'a field::FpCtx<2>,
-        matrices: &'a PreparedConstraintMatrices<Field, C>,
-        rho: Field,
+        matrices: &'a PreparedConstraintMatrices<field::Fp<2>, C>,
+        rho: field::Fp<2>,
     ) -> Self {
         Self {
             field,
@@ -392,7 +366,7 @@ where
             row_workspace: Vec::new(),
         }
     }
-    fn validate(&self, rows: &RowFunctional<'_>) -> Result<(), super::BindingError> {
+    fn validate(&self, rows: &RowFunctional<'_>) -> Result<(), crate::sumcheck::SumcheckError> {
         let vars = self.matrices.num_row_vars();
         let valid = match rows {
             RowFunctional::Point(p) => p.len() == vars,
@@ -403,31 +377,30 @@ where
         if valid {
             Ok(())
         } else {
-            Err(super::BindingError::InvalidProductDimensions)
+            Err(crate::sumcheck::SumcheckError::InvalidProductDimensions)
         }
     }
 }
-impl<C> super::PreparedBinding<field::FpCtx<2>, RowFunctional<'_>> for NativeBinding<'_, C>
+impl<C> NativeBinding<'_, C>
 where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient,
 {
-    type Bound = NativeWeights;
-    fn bind_rows(
+    pub(crate) fn bind_structured_rows(
         &mut self,
         rows: &RowFunctional<'_>,
-    ) -> Result<NativeWeights, super::BindingError> {
+    ) -> Result<NativeWeights, crate::sumcheck::SumcheckError> {
         let mut out = NativeWeights::Dense {
             matrix: Vec::new(),
             live: 0,
         };
-        self.bind_rows_into(rows, &mut out)?;
+        self.bind_structured_rows_into(rows, &mut out)?;
         Ok(out)
     }
-    fn bind_rows_into(
+    pub(crate) fn bind_structured_rows_into(
         &mut self,
         rows: &RowFunctional<'_>,
         out: &mut NativeWeights,
-    ) -> Result<(), super::BindingError> {
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
         self.validate(rows)?;
         let ctx = self.field;
         let live = self.matrices.matrices().column_count();
@@ -507,31 +480,35 @@ where
             *dst_live = live;
             if let RowFunctional::Prefix(factors) = rows {
                 // Preserve the disjoint-selector streaming kernel.
-                bind_and_batch_prefix_raw_into(ctx, self.matrices, factors, rho, matrix);
+                contract_prefix_selectors(ctx, self.matrices, factors, rho, matrix);
             } else {
                 fill_weights(ctx, rows, &mut self.row_workspace);
-                bind_and_batch_raw_into(ctx, self.matrices, &self.row_workspace, rho, matrix);
+                contract_native_columns(ctx, self.matrices, &self.row_workspace, rho, matrix);
             }
         }
         Ok(())
     }
-    fn evaluate_bound(
+    pub(crate) fn evaluate_structured_at(
         &mut self,
         rows: &RowFunctional<'_>,
-        point: &[Field],
-    ) -> Result<Field, super::BindingError> {
+        point: &[field::Fp<2>],
+    ) -> Result<field::Fp<2>, crate::sumcheck::SumcheckError> {
         self.validate(rows)?;
         let result = match rows {
-            RowFunctional::Point(p) => self.matrices.evaluate_batched(p, &self.rho, point),
+            RowFunctional::Point(p) => self
+                .matrices
+                .structured()
+                .evaluate_equality(p, &self.rho, point)
+                .map_err(crate::sumcheck::SumcheckError::from),
             RowFunctional::Prefix(p) => self
                 .matrices
-                .evaluate_batched_with_prefix_univariate_factors(p, &self.rho, point),
-            RowFunctional::Explicit(w) => self
-                .matrices
-                .evaluate_batched_with_row_weights(w, &self.rho, point),
+                .structured()
+                .evaluate_prefix(p, &self.rho, point)
+                .map_err(crate::sumcheck::SumcheckError::from),
+            RowFunctional::Explicit(w) => self.matrices.binding(&self.rho).evaluate_at(w, point),
             RowFunctional::Independent(weights) => {
                 if point.len() != self.matrices.num_column_vars() {
-                    return Err(super::BindingError::InvalidProductDimensions);
+                    return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
                 }
                 let columns = super::dense::EqualityColumns::new(
                     self.field,
@@ -562,11 +539,11 @@ where
                 ));
             }
         };
-        result.map_err(|_| super::BindingError::InvalidProductDimensions)
+        result.map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)
     }
 }
 
-fn fill_weights(ctx: &field::FpCtx<2>, rows: &RowFunctional<'_>, out: &mut Vec<Raw>) {
+fn fill_weights(ctx: &field::FpCtx<2>, rows: &RowFunctional<'_>, out: &mut Vec<u128>) {
     match rows {
         RowFunctional::Point(p) => eq_table_raw_into(ctx, &ctx.raw_vec(p), out),
         RowFunctional::Prefix(p) => prefix_row_weights_raw_into(ctx, p, out),
@@ -575,5 +552,31 @@ fn fill_weights(ctx: &field::FpCtx<2>, rows: &RowFunctional<'_>, out: &mut Vec<R
             out.extend(w.iter().map(|v| ctx.raw(v)));
         }
         RowFunctional::Independent(_) => unreachable!("independent rows are contracted separately"),
+    }
+}
+
+impl<C: SpartanMatrixCoefficient<field::Fp<2>> + RawMontyCoefficient>
+    super::PreparedBinding<field::FpCtx<2>> for NativeBinding<'_, C>
+{
+    type Bound = NativeWeights;
+    fn bind_rows(
+        &mut self,
+        rows: &[field::Fp<2>],
+    ) -> Result<NativeWeights, crate::sumcheck::SumcheckError> {
+        self.bind_structured_rows(&RowFunctional::Explicit(rows))
+    }
+    fn bind_rows_into(
+        &mut self,
+        rows: &[field::Fp<2>],
+        out: &mut NativeWeights,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        self.bind_structured_rows_into(&RowFunctional::Explicit(rows), out)
+    }
+    fn evaluate_at(
+        &mut self,
+        rows: &[field::Fp<2>],
+        point: &[field::Fp<2>],
+    ) -> Result<field::Fp<2>, crate::sumcheck::SumcheckError> {
+        self.evaluate_structured_at(&RowFunctional::Explicit(rows), point)
     }
 }

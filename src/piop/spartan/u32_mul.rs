@@ -8,6 +8,7 @@
 //! by the committed bit representation.
 
 use crate::piop::spartan::SpartanField as _;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 #[cfg(test)]
 use field::{Fp, Uint};
@@ -16,7 +17,7 @@ use thiserror::Error;
 use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 
 use super::{
-    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SparseMatrix, SpartanField,
+    ConstraintMatrices, PreparedConstraintMatrices, R1csProductMles, SpartanField,
     SpartanMatrixError, SpartanRelationBackend,
     slot_rows::{pack_slot_major_rows_w1, pack_slot_major_rows_w8},
 };
@@ -649,7 +650,7 @@ fn selector_matrix<C: Clone>(
     layout: &U32MulLayout,
     block: usize,
     one: &C,
-) -> Result<SparseMatrix<C>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[C]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let offset = block * layout.capacity;
@@ -668,7 +669,7 @@ fn selector_matrix<C: Clone>(
     let row_indices = (0..rows).collect();
     let coefficients = (0..rows).map(|_| one.clone()).collect();
 
-    Ok(SparseMatrix::try_from_csc_parts(
+    Ok(CscMatrix::try_from_csc_parts(
         rows,
         column_offsets,
         row_indices,
@@ -985,7 +986,7 @@ mod tests {
                 matrices.b().column(2 * capacity + row).unwrap(),
                 matrices.c().column(3 * capacity + row).unwrap(),
             ] {
-                assert_eq!(column.row_indices(), &[row]);
+                assert_eq!(column.indices(), &[row]);
                 assert_eq!(column.coefficients(), &[1]);
             }
         }
@@ -1083,7 +1084,7 @@ mod tests {
             (relation.matrices().b().column(2 * capacity + 1).unwrap(), 1),
             (relation.matrices().c().column(3 * capacity + 2).unwrap(), 2),
         ] {
-            assert_eq!(column.row_indices(), &[row]);
+            assert_eq!(column.indices(), &[row]);
             assert_eq!(column.coefficients(), &[true]);
         }
     }

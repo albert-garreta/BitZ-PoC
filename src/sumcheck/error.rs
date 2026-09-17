@@ -4,6 +4,8 @@ use thiserror::Error;
 /// Failures produced while reducing or checking a sumcheck claim.
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 pub enum SumcheckError {
+    #[error(transparent)]
+    Matrix(#[from] crate::piop::spartan::matrix::SpartanMatrixError),
     #[error("field challenge sampling exhausted its rejection budget")]
     SamplingExhausted,
     #[error("univariate skip nodes collide in this field")]

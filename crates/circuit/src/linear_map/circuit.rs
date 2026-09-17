@@ -7,6 +7,7 @@
 //! `r * (A + x B + x^2 C) * w`. Nodes at one depth write disjoint adjoints, so
 //! sufficiently wide depths are evaluated in parallel without atomics.
 
+use super::{BilinearEval, ColumnValues, LeftMul, RightMul};
 use field::ModRingCtx;
 
 use num_traits::{CheckedAdd, CheckedMul, CheckedNeg};
@@ -505,6 +506,7 @@ impl WengertTape {
         );
         PreparedWengertEvaluator {
             core,
+            #[cfg(test)]
             output: Vec::new(),
             constraints: self.constraints,
         }
@@ -518,6 +520,7 @@ impl WengertTape {
         }
         Ok(self.prepare_field(&create_prime_field(*modulus.modulus())))
     }
+    #[cfg(test)]
     pub fn apply(
         &self,
         challenges: &[[u64; 2]],
@@ -528,6 +531,7 @@ impl WengertTape {
         self.apply_into(challenges, x, modulus, &mut out)?;
         Ok(out)
     }
+    #[cfg(test)]
     pub fn apply_into(
         &self,
         challenges: &[[u64; 2]],
@@ -537,6 +541,7 @@ impl WengertTape {
     ) -> Result<(), WengertApplyError> {
         self.apply_inner(challenges, x, modulus, out, None)
     }
+    #[cfg(test)]
     fn apply_inner(
         &self,
         challenges: &[[u64; 2]],
@@ -606,19 +611,23 @@ impl RingOps for CircuitField {
 /// New bindings write typed output directly through `adjoint_map_into`.
 pub struct PreparedWengertEvaluator<'a> {
     core: super::PreparedWengert<'a, CircuitField>,
+    #[cfg(test)]
     output: Vec<[u64; 2]>,
     constraints: usize,
 }
 
-pub trait ForwardColumns: Sync {
+#[cfg(test)]
+trait ForwardColumns: Sync {
     fn scalar(&self, column: usize) -> [u64; 2];
     fn power_sum(&self, first: usize, len: usize) -> [u64; 2];
 }
+#[cfg(test)]
 struct Columns<'a, V> {
     source: &'a V,
     field: &'a FpCtx<2>,
     len: usize,
 }
+#[cfg(test)]
 impl<V: ForwardColumns> super::ColumnValues<field::Fp<2>> for Columns<'_, V> {
     fn len(&self) -> usize {
         self.len
@@ -633,6 +642,9 @@ impl<V: ForwardColumns> super::ColumnValues<field::Fp<2>> for Columns<'_, V> {
     }
 }
 impl PreparedWengertEvaluator<'_> {
+    pub fn field(&self) -> &FpCtx<2> {
+        &self.core.field.0
+    }
     pub fn row_count(&self) -> usize {
         self.constraints
     }
@@ -655,8 +667,12 @@ impl PreparedWengertEvaluator<'_> {
             .as_words()
     }
     pub fn workspace_bytes(&self) -> usize {
-        self.core.workspace_bytes() + self.output.len() * 16
+        let bytes = self.core.workspace_bytes();
+        #[cfg(test)]
+        let bytes = bytes + self.output.len() * 16;
+        bytes
     }
+    #[cfg(test)]
     fn check(&self, n: usize) -> Result<(), WengertApplyError> {
         if n == self.constraints {
             Ok(())
@@ -667,6 +683,7 @@ impl PreparedWengertEvaluator<'_> {
             })
         }
     }
+    #[cfg(test)]
     pub fn apply(
         &mut self,
         weights: &[[u64; 2]],
@@ -691,6 +708,7 @@ impl PreparedWengertEvaluator<'_> {
             .collect::<Vec<_>>();
         self.apply_weighted(&triples)
     }
+    #[cfg(test)]
     pub fn apply_weighted(
         &mut self,
         weights: &[[[u64; 2]; 3]],
@@ -721,34 +739,38 @@ impl PreparedWengertEvaluator<'_> {
             out,
         )
     }
+    #[cfg(test)]
     pub fn apply_forward_weighted<V: ForwardColumns>(
         &mut self,
         weights: &[[[u64; 2]; 3]],
         columns: &V,
     ) -> Result<[u64; 2], WengertApplyError> {
         self.check(weights.len())?;
-        Ok(self
-            .evaluate_bilinear_map(weights.len(), |r, k| weights[r][k], columns)
-            .expect("validated graph dimensions"))
+        let field = self.core.field.0.clone();
+        let columns = Columns {
+            source: columns,
+            field: &field,
+            len: self.column_count(),
+        };
+        let result = self
+            .evaluate_bilinear_map(weights.len(), |r, k| weights[r][k], &columns)
+            .expect("validated graph dimensions");
+        Ok(*result.as_montgomery_integer().as_words())
     }
-    pub fn evaluate_bilinear_map<V: ForwardColumns>(
+    /// Mapped row seeds avoid allocating triples in protocol adapters.
+    #[doc(hidden)]
+    pub fn evaluate_bilinear_map(
         &mut self,
         row_count: usize,
         weights: impl Fn(usize, usize) -> [u64; 2] + Sync,
-        columns: &V,
-    ) -> Result<[u64; 2], super::LinearMapError> {
+        columns: &impl ColumnValues<field::Fp<2>>,
+    ) -> Result<field::Fp<2>, super::LinearMapError> {
         let f = self.core.field.clone();
-        let columns = Columns {
-            source: columns,
-            field: &f,
-            len: self.core.graph.inputs.len(),
-        };
-        let v = self.core.evaluate_bilinear_map(
+        self.core.evaluate_bilinear_map(
             3 * row_count,
             |i| f.from_montgomery_integer(Uint::from_words(weights(i / 3, i % 3))),
-            &columns,
-        )?;
-        Ok(*v.as_montgomery_integer().as_words())
+            columns,
+        )
     }
     pub fn power_runs(&self) -> Vec<PowerRun> {
         self.core
@@ -772,6 +794,7 @@ pub struct PowerRun {
 /// The input/output words may be canonical residues or Montgomery encodings;
 /// addition and scaling by a Montgomery coefficient preserve that representation.
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn mul_representatives(
     left: [u64; 2],
     coefficient: [u64; 2],
@@ -786,6 +809,7 @@ pub(crate) fn mul_representatives(
 }
 
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn add_representatives(left: [u64; 2], right: [u64; 2], field: &FpCtx<2>) -> [u64; 2] {
     *field
         .add(
@@ -797,6 +821,7 @@ pub(crate) fn add_representatives(left: [u64; 2], right: [u64; 2], field: &FpCtx
 }
 
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn neg_representative(value: [u64; 2], field: &FpCtx<2>) -> [u64; 2] {
     *field
         .neg(&field.from_montgomery_integer(Uint::from_words(value)))
@@ -1076,7 +1101,13 @@ mod tests {
         let mut output = vec![BigInt::zero(); matrices.a.column_count()];
         for (row, challenge) in challenges.iter().enumerate() {
             let challenge = as_bigint(*challenge);
-            for (column, coefficient) in matrices.a.row_entries(row) {
+            for (column, coefficient) in matrices
+                .a
+                .row(row)
+                .unwrap()
+                .iter()
+                .map(|(column, coefficient)| (column, coefficient.as_words()))
+            {
                 let coefficient = BigInt::from_signed_bytes_le(
                     &coefficient
                         .iter()
@@ -1085,7 +1116,13 @@ mod tests {
                 );
                 output[column] += &challenge * coefficient;
             }
-            for (column, coefficient) in matrices.b.row_entries(row) {
+            for (column, coefficient) in matrices
+                .b
+                .row(row)
+                .unwrap()
+                .iter()
+                .map(|(column, coefficient)| (column, coefficient.as_words()))
+            {
                 let coefficient = BigInt::from_signed_bytes_le(
                     &coefficient
                         .iter()
@@ -1094,7 +1131,13 @@ mod tests {
                 );
                 output[column] += &challenge * &x * coefficient;
             }
-            for (column, coefficient) in matrices.c.row_entries(row) {
+            for (column, coefficient) in matrices
+                .c
+                .row(row)
+                .unwrap()
+                .iter()
+                .map(|(column, coefficient)| (column, coefficient.as_words()))
+            {
                 let coefficient = BigInt::from_signed_bytes_le(
                     &coefficient
                         .iter()
@@ -1468,5 +1511,35 @@ mod tests {
             [[0, 0], [7, 0], [0, 0]]
         );
         assert_eq!(tape.node_count(), 1);
+    }
+}
+
+impl LeftMul<field::Fp<2>> for PreparedWengertEvaluator<'_> {
+    type Output = field::Fp<2>;
+    fn mul_left_into(
+        &mut self,
+        weights: &[field::Fp<2>],
+        out: &mut [field::Fp<2>],
+    ) -> Result<(), super::LinearMapError> {
+        self.core.mul_left_into(weights, out)
+    }
+}
+impl RightMul<field::Fp<2>> for PreparedWengertEvaluator<'_> {
+    type Output = field::Fp<2>;
+    fn mul_right_into(
+        &mut self,
+        values: &[field::Fp<2>],
+        out: &mut [field::Fp<2>],
+    ) -> Result<(), super::LinearMapError> {
+        self.core.mul_right_into(values, out)
+    }
+}
+impl BilinearEval<FpCtx<2>> for PreparedWengertEvaluator<'_> {
+    fn evaluate_bilinear(
+        &mut self,
+        weights: &[field::Fp<2>],
+        columns: &impl ColumnValues<field::Fp<2>>,
+    ) -> Result<field::Fp<2>, super::LinearMapError> {
+        self.core.evaluate_bilinear(weights, columns)
     }
 }

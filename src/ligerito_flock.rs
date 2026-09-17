@@ -30,6 +30,9 @@
 //! validator-gated Ligerito security configs ([`sha_lig_configs`]); the
 //! `RsOpenConfig::num_queries` knob does not apply on this backend.
 
+#[cfg(test)]
+use circuit::linear_map::CscMatrix;
+
 use anyhow::Context;
 use flock_core::challenger::Challenger;
 mod configuration;
@@ -58,8 +61,8 @@ use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcript;
 use circuit::linear_map::binary_adjoint::{
-    BinaryAdjoint as VirtColumnWeights, BinaryRowWeights as VirtRowCoeffs,
-    virtual_column_weight, DenseWeightCorrection, AffineTailWeights,
+    AffineTailWeights, BinaryAdjoint, BinaryRowWeights, DenseWeightCorrection,
+    virtual_column_weight,
 };
 
 use crate::ligerito::{
@@ -4047,7 +4050,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual<M>(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     prove_mle_eval_mod_q_ligerito_virtual_with_ood(
         transcript,
@@ -4082,7 +4085,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual<R, M>(
 ) -> Result<(), FlockRsError>
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     verify_mle_eval_mod_q_ligerito_virtual_with_ood(
         transcript,
@@ -10926,7 +10929,7 @@ impl IntEvalRsLigExtProof {
 // F₂-VIRTUALIZATION (paper `s:to_f2_virtual` / `s:virtualization`,
 // construction `c:virtual_iop`): open a mod-q claim about the DERIVED
 // vector `h = M·f` over `F₂` against the commitment to `f` alone. `M` is
-// a public sparse [`PreparedVirtualMap`](crate::f2map::PreparedVirtualMap)
+// a public sparse [`PreparedVirtualMap`](circuit::linear_map::binary::PreparedVirtualMap)
 // between the two bit-cell grids; `h` is
 // never committed.
 //
@@ -11073,7 +11076,7 @@ struct AdjointBatchVerifierReduction<'proof, 'map, M> {
 
 impl<M> ModQLigVerifierReduction for AdjointBatchVerifierReduction<'_, '_, M>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     fn validate_shape(&self, _chunk_count: usize) -> Result<(), FlockRsError> {
         Ok(())
@@ -11120,7 +11123,7 @@ where
 
         let weights = {
             let _g = tracing::info_span!("mqv:vwprep").entered();
-            VirtColumnWeights::new_factored_tail(self.map, points, &etas, self.derived_row_bits)
+            BinaryAdjoint::new_factored_tail(self.map, points, &etas, self.derived_row_bits)
         };
         let a_prime = {
             let _g = tracing::info_span!("mqv:vaprime").entered();
@@ -11142,7 +11145,7 @@ enum VirtualVerifierReduction<'proof, 'map, M> {
 
 impl<M> ModQLigVerifierReduction for VirtualVerifierReduction<'_, '_, M>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     fn validate_shape(&self, chunk_count: usize) -> Result<(), FlockRsError> {
         match self {
@@ -11183,7 +11186,7 @@ pub fn virtual_id_fast_eligible<M>(
     f_layout: &IntegerMatrixLayout,
 ) -> bool
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     use crate::f2map::cell_row_bits;
     map.is_identity()
@@ -11225,7 +11228,7 @@ fn absorb_virtual_statement<M, S>(
     alpha: Gf,
 ) -> BoundModQStatement
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     let mut hash = blake3::Hasher::new();
@@ -11299,7 +11302,7 @@ fn virtual_row_coefficients_match_direct_equality_weights() {
             .map(|point| build_eq_x_r_vec(point, &()).unwrap())
             .collect();
         for row_bits in [1, 4, BITS] {
-            let actual = VirtRowCoeffs::new(&points, &etas, row_bits, binary_equality);
+            let actual = BinaryRowWeights::new(&points, &etas, row_bits, binary_equality);
             for row in 0..1usize << BITS {
                 let expected = full
                     .iter()
@@ -11366,9 +11369,9 @@ fn hs_scatter_block16(s: &mut [Gf; 128], wits: &[[u64; 2]; 16], vals: &[Gf; 16])
 #[cfg(all(test, feature = "ecdsa"))]
 #[test]
 fn chained_compact_tail_weights_and_planes_match_generic() {
-    use crate::{
-        f2map::VirtualMap,
-        piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+    use {
+        crate::piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+        circuit::linear_map::binary::VirtualMap,
     };
     let prepared = prepare_sha256_ecdsa(7, 100, OuterMode::Split).unwrap();
     let map = prepared.map();
@@ -11385,15 +11388,19 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
         Gf::from_polynomial_words([73, 13]),
         Gf::from_polynomial_words([89, 37]),
     ];
-    let weights =
-        VirtColumnWeights::new(map, &points, &etas, prepared.assignment_params().row_vars);
+    let weights = BinaryAdjoint::new(map, &points, &etas, prepared.assignment_params().row_vars);
     assert!(matches!(
         &weights,
-        VirtColumnWeights::PackedSourceRepeated { corrections, .. } if !corrections.is_empty()
+        BinaryAdjoint::PackedSourceRepeated { corrections, .. } if !corrections.is_empty()
     ));
-    let generic = VirtColumnWeights::Generic {
+    let generic = BinaryAdjoint::Generic {
         map,
-        coeffs: VirtRowCoeffs::new(&points, &etas, prepared.assignment_params().row_vars, binary_equality),
+        coeffs: BinaryRowWeights::new(
+            &points,
+            &etas,
+            prepared.assignment_params().row_vars,
+            binary_equality,
+        ),
     };
     let mut actual = [Gf::zero(); 128];
     let mut expected = actual;
@@ -11430,9 +11437,9 @@ fn chained_compact_tail_weights_and_planes_match_generic() {
 #[cfg(all(test, feature = "ecdsa"))]
 #[test]
 fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
-    use crate::{
-        f2map::VirtualMap,
-        piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+    use {
+        crate::piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa},
+        circuit::linear_map::binary::VirtualMap,
     };
     let splitmix = |x: u64| {
         let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -11461,12 +11468,12 @@ fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
                 })
                 .collect();
             let etas: Vec<Gf> = (0..chunks as u64).map(|l| sample(0x9B00 + l)).collect();
-            let dense = VirtColumnWeights::new(map, &points, &etas, t_wh);
-            let factored = VirtColumnWeights::new_factored_tail(map, &points, &etas, t_wh);
+            let dense = BinaryAdjoint::new(map, &points, &etas, t_wh);
+            let factored = BinaryAdjoint::new_factored_tail(map, &points, &etas, t_wh);
             assert!(
                 matches!(
                     factored,
-                    VirtColumnWeights::PackedSourceRepeated {
+                    BinaryAdjoint::PackedSourceRepeated {
                         affine_tail: Some(_),
                         ..
                     }
@@ -11501,23 +11508,42 @@ fn verifier_basis_matches_streamed_basis_on_the_ecdsa_map() {
     }
 }
 
-trait VirtualOpeningWeights<'a, M: crate::f2map::VirtualMap>: Sized {
+trait VirtualOpeningWeights<'a, M: circuit::linear_map::binary::VirtualMap>: Sized {
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self;
     fn new_factored_tail(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self;
     fn packed_source_planes(&self) -> Option<crate::virt_batch::PackedSourcePlanes>;
-    fn packed_source_planes_with(&self, plane_major: bool) -> Option<crate::virt_batch::PackedSourcePlanes>;
-    fn add_extra_hs(&self, hs: &mut [Gf;128], p_msg: &[Gf128], a_cols: &[Gf;128]);
-    fn extra_a_prime_deltas(&self, phi_tables: &[Gf]) -> Vec<(usize,Gf)>;
-    fn add_extra_a_prime(&self, basis: &mut [Gf], round0:&mut(Gf,Gf), rho:&[Gf],p_msg:&[Gf128]);
+    fn packed_source_planes_with(
+        &self,
+        plane_major: bool,
+    ) -> Option<crate::virt_batch::PackedSourcePlanes>;
+    fn add_extra_hs(&self, hs: &mut [Gf; 128], p_msg: &[Gf128], a_cols: &[Gf; 128]);
+    fn extra_a_prime_deltas(&self, phi_tables: &[Gf]) -> Vec<(usize, Gf)>;
+    fn add_extra_a_prime(
+        &self,
+        basis: &mut [Gf],
+        round0: &mut (Gf, Gf),
+        rho: &[Gf],
+        p_msg: &[Gf128],
+    );
 }
-fn binary_equality(point:&[Gf],cfg:&())->Result<Vec<Gf>,()> {
-    crate::poly::utils::build_eq_x_r_vec(point,cfg).map_err(|_|())
+fn binary_equality(point: &[Gf], cfg: &()) -> Result<Vec<Gf>, ()> {
+    crate::poly::utils::build_eq_x_r_vec(point, cfg).map_err(|_| ())
 }
-impl<'a,M:crate::f2map::VirtualMap> VirtualOpeningWeights<'a,M> for VirtColumnWeights<'a,M> {
+impl<'a, M: circuit::linear_map::binary::VirtualMap> VirtualOpeningWeights<'a, M>
+    for BinaryAdjoint<'a, M>
+{
     /// The weights with every compact-tail column folded (the prover's form:
     /// its batching message reads the tail weights per cell).
     fn new(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
-        Self::new_with_tail(map, points, etas, t_wh, false, binary_equality, cfg!(feature="parallel"))
+        Self::new_with_tail(
+            map,
+            points,
+            etas,
+            t_wh,
+            false,
+            binary_equality,
+            cfg!(feature = "parallel"),
+        )
     }
 
     /// The verifier's form: an identity compact tail stays factored
@@ -11527,7 +11553,15 @@ impl<'a,M:crate::f2map::VirtualMap> VirtualOpeningWeights<'a,M> for VirtColumnWe
     /// as in [`Self::new`] (pinned by
     /// `verifier_basis_matches_streamed_basis_on_the_ecdsa_map`).
     fn new_factored_tail(map: &'a M, points: &[Vec<Gf>], etas: &[Gf], t_wh: usize) -> Self {
-        Self::new_with_tail(map, points, etas, t_wh, true, binary_equality, cfg!(feature="parallel"))
+        Self::new_with_tail(
+            map,
+            points,
+            etas,
+            t_wh,
+            true,
+            binary_equality,
+            cfg!(feature = "parallel"),
+        )
     }
 
     /// The plane engine ([`crate::virt_batch`]) for a packed-source
@@ -11691,7 +11725,9 @@ impl<'a,M:crate::f2map::VirtualMap> VirtualOpeningWeights<'a,M> for VirtColumnWe
         }
     }
 }
-trait TailOpeningPlanes {fn planes(&self)->AffineTailPlanes;}
+trait TailOpeningPlanes {
+    fn planes(&self) -> AffineTailPlanes;
+}
 impl TailOpeningPlanes for circuit::linear_map::binary_adjoint::AffineTailWeights {
     fn planes(&self) -> AffineTailPlanes {
         AffineTailPlanes::new(
@@ -11709,12 +11745,12 @@ impl TailOpeningPlanes for circuit::linear_map::binary_adjoint::AffineTailWeight
 #[allow(clippy::arithmetic_side_effects)]
 fn virtual_hs_fold<M>(
     map: &M,
-    weights: &VirtColumnWeights<'_, M>,
+    weights: &BinaryAdjoint<'_, M>,
     p_msg: &[Gf128],
     a_cols: &[Gf; 128],
 ) -> Box<[Gf; 128]>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     // Keep the per-chunk 128-element accumulator comfortably below the
     // production source vector: at the 2^16 SHA batch this bounds the merge
@@ -11774,19 +11810,19 @@ where
 #[allow(clippy::arithmetic_side_effects)]
 fn virtual_a_prime<M>(
     map: &M,
-    weights: &VirtColumnWeights<'_, M>,
+    weights: &BinaryAdjoint<'_, M>,
     rho: &[Gf],
     a_cols: &[Gf; 128],
     n_packs: usize,
 ) -> Vec<Gf>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     debug_assert_eq!(map.cols(), n_packs << LOG_PACKING);
     let phi_tables = phi_byte_tables(rho, Gf::one());
     let mut result = vec![Gf::ZERO; n_packs];
     let live_packs = match weights {
-        VirtColumnWeights::PackedSourceRepeated {
+        BinaryAdjoint::PackedSourceRepeated {
             live_cols,
             corrections,
             affine_tail,
@@ -11800,7 +11836,7 @@ where
             .min(n_packs),
         _ => n_packs,
     };
-    let dense_packed_source = matches!(weights, VirtColumnWeights::PackedSourceRepeated { .. });
+    let dense_packed_source = matches!(weights, BinaryAdjoint::PackedSourceRepeated { .. });
     cfg_iter_mut!(&mut result[..live_packs])
         .enumerate()
         .for_each(|(pack, output)| {
@@ -11848,12 +11884,12 @@ const VERIFIER_TASK_PACKS: usize = 1 << 8;
 /// shape, or the plane engine opted out, takes [`virtual_a_prime`] itself.
 fn verifier_a_prime<M>(
     map: &M,
-    weights: &VirtColumnWeights<'_, M>,
+    weights: &BinaryAdjoint<'_, M>,
     rho: &[Gf],
     n_packs: usize,
 ) -> Vec<Gf>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     let planes = {
         let _g = tracing::info_span!("mqv:vplanes").entered();
@@ -11878,7 +11914,7 @@ where
             VERIFIER_TASK_PACKS,
         );
     }
-    if let VirtColumnWeights::PackedSourceRepeated {
+    if let BinaryAdjoint::PackedSourceRepeated {
         affine_tail: Some(tail),
         ..
     } = weights
@@ -11907,7 +11943,7 @@ struct AdjointBatchProverReduction<'a, M> {
 
 impl<M> ModQLigProverReduction for AdjointBatchProverReduction<'_, M>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     type Proof = Box<[Gf; 128]>;
 
@@ -11922,7 +11958,7 @@ where
         let etas: Vec<Gf> = grinder.get_field_challenges(points.len(), &());
         let weights = {
             let _g = tracing::info_span!("mqv:wprep").entered();
-            VirtColumnWeights::new(self.map, points, &etas, self.derived_row_bits)
+            BinaryAdjoint::new(self.map, points, &etas, self.derived_row_bits)
         };
         let a_cols = crate::dual_basis::dual_basis_cols();
         debug_assert_eq!(hint.p_msg.len(), 1usize << self.source_packed_vars);
@@ -12015,7 +12051,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_with_ood<M>(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits");
@@ -12059,7 +12095,7 @@ pub fn prove_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q(q, q_bits, row_weights_q)?;
     let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
@@ -12105,7 +12141,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<M
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
     checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
@@ -12151,7 +12187,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<M
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigVirtProof, FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
@@ -12193,7 +12229,7 @@ fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus<M, S>(
     pc: &LigProverConfig,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security(
@@ -12234,7 +12270,7 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modul
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> IntEvalRsLigVirtProof
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)
@@ -12381,7 +12417,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_with_ood<R, M>(
 ) -> Result<(), FlockRsError>
 where
     R: Copy + PartialEq + From<u128> + core::ops::Add<Output = R> + core::ops::Mul<Output = R>,
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     let chunks = ModQWeightChunks::from_dense(h_layout, row_weights_q, q_bits)
         .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
@@ -12431,7 +12467,7 @@ pub fn verify_mle_eval_mod_q_ligerito_virtual_runtime<M>(
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q(q, q_bits, row_weights_q)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
@@ -12486,7 +12522,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime<
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
 {
     validate_runtime_q_source(q, q_bits, chunks)?;
     checked_mod_q_weight_chunks_geometry(h_layout, chunks, q_bits)?;
@@ -12540,7 +12576,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime<
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
     validate_runtime_q_source(q, q_bits, source)?;
@@ -12591,7 +12627,7 @@ fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off<M, S, 
     read_off_accepts: C,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
     C: Fn(&[u128], usize, usize) -> bool,
 {
@@ -12638,7 +12674,7 @@ pub(crate) fn verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), FlockRsError>
 where
-    M: crate::f2map::VirtualMap,
+    M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
     C: Fn(&[u128], usize, usize) -> bool,
 {
@@ -12934,11 +12970,11 @@ mod tests {
     /// Test-only wrapper that forces the ordinary virtual tail for an identity
     /// matrix, so source-parity coverage exercises the one-limb-at-a-time
     /// general path as well as the identity shortcut used in production.
-    struct GeneralPathMap(crate::f2map::PreparedVirtualMap);
+    struct GeneralPathMap(circuit::linear_map::binary::PreparedVirtualMap);
 
-    impl crate::f2map::VirtualMap for GeneralPathMap {
+    impl circuit::linear_map::binary::VirtualMap for GeneralPathMap {
         type ColumnRows<'a>
-            = <crate::f2map::PreparedVirtualMap as crate::f2map::VirtualMap>::ColumnRows<'a>
+            = <circuit::linear_map::binary::PreparedVirtualMap as circuit::linear_map::binary::VirtualMap>::ColumnRows<'a>
         where
             Self: 'a;
 
@@ -12963,7 +12999,7 @@ mod tests {
         }
 
         fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
-            crate::f2map::VirtualMap::column_rows(&self.0, column)
+            circuit::linear_map::binary::VirtualMap::column_rows(&self.0, column)
         }
     }
 
@@ -13021,10 +13057,12 @@ mod tests {
     /// under the fixed 100-bit test modulus.
     #[test]
     fn virtual_runtime_dense_and_weight_chunks_are_transcript_identical() {
-        use crate::{
-            f2map::{PreparedVirtualMap, cell_count},
-            pcs::{FQ_BITS, FQ_MOD, GeneratedModQWeightSource, fq_add, fq_mul},
-            sparse_matrix::SparseMatrix,
+        use {
+            crate::{
+                f2map::cell_count,
+                pcs::{FQ_BITS, FQ_MOD, GeneratedModQWeightSource, fq_add, fq_mul},
+            },
+            circuit::linear_map::binary::PreparedVirtualMap,
         };
 
         let _env = QUAD_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -13047,17 +13085,13 @@ mod tests {
         let hint = commit_rs_ligerito(&p, &data, &pc);
         let cells = cell_count(&p);
         let map = GeneralPathMap(
-            PreparedVirtualMap::new(
-                SparseMatrix::try_from_binary_csc(
-                    cells,
-                    (0..=cells).collect(),
-                    (0..cells).collect(),
-                )
-                .unwrap(),
+            PreparedVirtualMap::from_implicit(
+                CscMatrix::try_from_binary_csc(cells, (0..=cells).collect(), (0..cells).collect())
+                    .unwrap(),
             )
             .unwrap(),
         );
-        assert!(!crate::f2map::VirtualMap::is_identity(&map));
+        assert!(!circuit::linear_map::binary::VirtualMap::is_identity(&map));
 
         let row_weights = (0..p.rows())
             .map(|row| {
@@ -13221,8 +13255,7 @@ mod tests {
     /// implies an all-zero pack.
     #[test]
     fn virtual_pack_weights_match_generic() {
-        use crate::f2map::{PreparedVirtualMap, RepeatedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{PreparedVirtualMap, RepeatedVirtualMap};
 
         let local_rows = 32usize;
         let local_cols = 16usize;
@@ -13244,12 +13277,13 @@ mod tests {
             })
             .collect();
         let local =
-            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+            PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap();
 
         for instances in [16usize, 256] {
             let repeated = RepeatedVirtualMap::new(local.clone(), instances).unwrap();
-            let vars = crate::f2map::VirtualMap::rows(&repeated).trailing_zeros() as usize;
+            let vars =
+                circuit::linear_map::binary::VirtualMap::rows(&repeated).trailing_zeros() as usize;
             let t_wh = vars / 2;
             let points: Vec<Vec<Gf>> = (0..2u64)
                 .map(|l| {
@@ -13259,16 +13293,16 @@ mod tests {
                 })
                 .collect();
             let etas = vec![sample(0xE1), sample(0xE2)];
-            let structured = VirtColumnWeights::new(&repeated, &points, &etas, t_wh);
+            let structured = BinaryAdjoint::new(&repeated, &points, &etas, t_wh);
             assert!(
-                matches!(structured, VirtColumnWeights::Repeated { .. }),
+                matches!(structured, BinaryAdjoint::Repeated { .. }),
                 "power-of-two repetition must take the factored path"
             );
-            let generic = VirtColumnWeights::Generic {
+            let generic = BinaryAdjoint::Generic {
                 map: &repeated,
-                coeffs: VirtRowCoeffs::new(&points, &etas, t_wh, binary_equality),
+                coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
             };
-            let n_packs = crate::f2map::VirtualMap::cols(&repeated) >> LOG_PACKING;
+            let n_packs = circuit::linear_map::binary::VirtualMap::cols(&repeated) >> LOG_PACKING;
             assert!(n_packs >= 2);
             for pack in 0..n_packs {
                 let mut fast = [Gf::zero(); 128];
@@ -13289,8 +13323,7 @@ mod tests {
     /// match the generic CSC walk across instance boundaries and padding.
     #[test]
     fn virtual_packed_source_weights_match_generic() {
-        use crate::f2map::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
 
         let local_rows = 29usize;
         let local_cols = 16usize; // 15-wide instance runs cross 128-cell packs.
@@ -13312,10 +13345,10 @@ mod tests {
             })
             .collect();
         let local =
-            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+            PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap();
 
-        use crate::f2map::PackedSourceOrder;
+        use circuit::linear_map::binary::PackedSourceOrder;
         for (instances, order) in [
             (4usize, PackedSourceOrder::LocalMajor),
             (256, PackedSourceOrder::LocalMajor),
@@ -13347,14 +13380,14 @@ mod tests {
                     })
                     .collect();
                 let etas = vec![sample(0xEA), sample(0xEB)];
-                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+                let structured = BinaryAdjoint::new(&map, &points, &etas, t_wh);
                 assert!(
-                    matches!(structured, VirtColumnWeights::PackedSourceRepeated { .. }),
+                    matches!(structured, BinaryAdjoint::PackedSourceRepeated { .. }),
                     "packed source repetition must take its factored path ({order:?})"
                 );
-                let generic = VirtColumnWeights::Generic {
+                let generic = BinaryAdjoint::Generic {
                     map: &map,
-                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh, binary_equality),
+                    coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
                 };
                 let n_packs = cols >> LOG_PACKING;
                 for pack in 0..n_packs {
@@ -13420,8 +13453,8 @@ mod tests {
     /// widths) local layouts, one and two chunks, padded suffixes.
     #[test]
     fn virtual_planes_match_cellwise() {
-        use crate::f2map::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{PackedSourceRepeatedVirtualMap, PreparedVirtualMap};
+
         use crate::virt_batch::PackedSourcePlanes;
 
         for (local_rows, local_width, instances) in [
@@ -13448,10 +13481,9 @@ mod tests {
                     rows.into_iter().map(|row| (row, true)).collect()
                 })
                 .collect();
-            let local = PreparedVirtualMap::new(
-                SparseMatrix::try_from_columns(local_rows, columns).unwrap(),
-            )
-            .unwrap();
+            let local =
+                PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
+                    .unwrap();
             let rows = (local_rows * instances).next_power_of_two();
             let live_cols = 1 + local_width * instances;
             let cols = live_cols.next_power_of_two().max(128);
@@ -13472,8 +13504,8 @@ mod tests {
                     })
                     .collect();
                 let etas: Vec<Gf> = (0..chunks as u64).map(|c| sample(0xE0 + c)).collect();
-                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
-                let VirtColumnWeights::PackedSourceRepeated {
+                let structured = BinaryAdjoint::new(&map, &points, &etas, t_wh);
+                let BinaryAdjoint::PackedSourceRepeated {
                     eq_inst_gf,
                     s,
                     constant_weight,
@@ -13489,9 +13521,9 @@ mod tests {
                     s,
                     *constant_weight,
                 );
-                let generic = VirtColumnWeights::Generic {
+                let generic = BinaryAdjoint::Generic {
                     map: &map,
-                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh, binary_equality),
+                    coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
                 };
                 let p_msg: Vec<Gf128> = (0..n_packs)
                     .map(|pack| sample(0xB100 + pack as u64))
@@ -13529,15 +13561,15 @@ mod tests {
     /// extra terms, and the per-pack kernels) all equal the generic CSC walk.
     #[test]
     fn virtual_chained_weights_match_generic() {
-        use crate::f2map::{ChainedPackedSourceMap, PreparedVirtualMap};
-        use crate::sparse_matrix::SparseMatrix;
+        use circuit::linear_map::binary::{ChainedPackedSourceMap, PreparedVirtualMap};
+
         use crate::virt_batch::PackedSourcePlanes;
 
         let local_rows = 40usize;
         let width = 600usize; // ≥ 512: the plane engine is eligible.
         let local_cols = width + 1;
         let prepared = |columns: Vec<Vec<(usize, bool)>>| {
-            PreparedVirtualMap::new(SparseMatrix::try_from_columns(local_rows, columns).unwrap())
+            PreparedVirtualMap::new(CscMatrix::try_from_columns(local_rows, columns).unwrap())
                 .unwrap()
         };
         let rows_of = |seed: usize, count: usize, lo: usize, hi: usize| -> Vec<(usize, bool)> {
@@ -13627,8 +13659,8 @@ mod tests {
                     })
                     .collect();
                 let etas: Vec<Gf> = (0..chunks as u64).map(|c| sample(0xE8 + c)).collect();
-                let structured = VirtColumnWeights::new(&map, &points, &etas, t_wh);
-                let VirtColumnWeights::PackedSourceRepeated {
+                let structured = BinaryAdjoint::new(&map, &points, &etas, t_wh);
+                let BinaryAdjoint::PackedSourceRepeated {
                     eq_inst_gf,
                     s,
                     constant_weight,
@@ -13641,9 +13673,9 @@ mod tests {
                 // `first` reads only the constant column: its weight lives
                 // in `constant_weight`, so only `prev` and `last` remain.
                 assert_eq!(extra.len(), 2, "prev and last");
-                let generic = VirtColumnWeights::Generic {
+                let generic = BinaryAdjoint::Generic {
                     map: &map,
-                    coeffs: VirtRowCoeffs::new(&points, &etas, t_wh, binary_equality),
+                    coeffs: BinaryRowWeights::new(&points, &etas, t_wh, binary_equality),
                 };
                 for pack in 0..n_packs {
                     let mut fast = [Gf::zero(); 128];
@@ -13712,9 +13744,9 @@ mod tests {
 
     #[test]
     fn virtual_hs_and_a_prime_match_cellwise() {
-        use crate::{
-            f2map::{PreparedVirtualMap, cell_count, cell_row_bits},
-            sparse_matrix::SparseMatrix,
+        use {
+            crate::f2map::{cell_count, cell_row_bits},
+            circuit::linear_map::binary::PreparedVirtualMap,
         };
 
         let f_layout = IntegerMatrixLayout {
@@ -13743,7 +13775,7 @@ mod tests {
                 l
             })
             .collect();
-        let matrix = SparseMatrix::try_from_rows(
+        let matrix = CscMatrix::try_from_rows(
             n_f,
             lists
                 .into_iter()
@@ -13761,8 +13793,8 @@ mod tests {
             })
             .collect();
         let etas = vec![sample(0xA1), sample(0xA2)];
-        let coeffs = VirtRowCoeffs::new(&points, &etas, t_wh, binary_equality);
-        let weights = VirtColumnWeights::new(&map, &points, &etas, t_wh);
+        let coeffs = BinaryRowWeights::new(&points, &etas, t_wh, binary_equality);
+        let weights = BinaryAdjoint::new(&map, &points, &etas, t_wh);
         let a_cols = crate::dual_basis::dual_basis_cols();
         let n_packs = n_f >> LOG_PACKING;
         let p_msg: Vec<Gf128> = (0..n_packs).map(|y| sample(0xB000 + y as u64)).collect();
@@ -13770,7 +13802,7 @@ mod tests {
         // Materialized weights (the old `mqv:wcoef` + `mqv:wtbl`).
         let mut w_tbl = vec![Gf::zero(); n_f];
         for (j, column) in map.matrix().columns().enumerate() {
-            for &row in column.row_indices() {
+            for &row in column.indices() {
                 w_tbl[j] += coeffs.coeff(row);
             }
         }
