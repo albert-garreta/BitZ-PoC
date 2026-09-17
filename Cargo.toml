@@ -3,7 +3,6 @@ name = "bitz"
 version = "0.1.0"
 edition = "2024"
 description = "BitZ: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^128) exponent-fold GKR forest, opened with a flock-backed ring-switch + recursive Ligerito PCS"
-repository = "https://github.com/NethermindEth/f2z"
 
 [dependencies]
 field = { path = "vendor/field" }
@@ -33,7 +32,7 @@ serde = { version = "1", features = ["derive"] }
 circuit = { path = "crates/circuit", default-features = false }
 
 # Optional Plonky3 stack used by the PCS and native SHA-256 comparisons.
-# Pin all P3 crates to one commit from the fork's f2z-benching branch.
+# Pin all P3 crates to the same benchmark fork revision.
 p3-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-baby-bear = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
@@ -63,7 +62,7 @@ limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "836c50f2
 spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "d3e686ebc4554cabfbe6282ef3c91baba00f755f", default-features = false, features = ["sha256-ecdsa"], optional = true }
 
 # Optional Binius64 stack for the PCS and native SHA-256 comparisons.
-# Pin every crate to the same commit from the fork's f2z-benching branch.
+# Pin every crate to the same benchmark fork revision.
 binius-compute = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-circuits = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-core = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
