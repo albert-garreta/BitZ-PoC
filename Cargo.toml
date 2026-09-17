@@ -317,16 +317,8 @@ name = "spartan_probe"
 required-features = ["span-metrics", "parallel"]
 
 [[example]]
-name = "sha_probe"
-required-features = ["span-metrics", "parallel"]
-
-[[example]]
 name = "prof_probe"
 required-features = ["span-metrics"]
-
-[[example]]
-name = "gkr_capture"
-required-features = ["span-metrics", "parallel", "ecdsa"]
 
 [features]
 default = ["parallel"]

@@ -3,6 +3,14 @@
 /bench_results/
 /benches/results/
 
+# Generated benchmark results.
+/benchmarks/results/**/*.json
+/benchmarks/results/**/*.jsonl
+/benchmarks/results/**/*.csv
+/PerfRuns/
+/src/sumcheck/performance.csv
+/paper/figures/native-mul-ratios.csv
+
 # Generated arithmetic validation and benchmark artifacts.
 /vendor/field/validation/
 /experiments/
@@ -30,11 +38,3 @@ scripts/__pycache__
 /vendor/field/target/
 
 /vendor/flock-mod/target/
-
-# Curated matrix-binding API and qualification records.
-!docs/
-/docs/*
-!/docs/matrix-binding.md
-!/docs/benchmarks/
-/docs/benchmarks/*
-!/docs/benchmarks/matrix-binding-2026-09-16/

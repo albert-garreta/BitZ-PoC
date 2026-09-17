@@ -1,9 +1,0 @@
-{
-  "corrections": [
-    "Allow F2Z_BINIUS_LIGERITO_LOG_INV_RATE and F2Z_PLONKY3_LOG_INV_RATE in benches/common/mod.rs",
-    "Add --bin f2z to the full-width CLI commands",
-    "Enable the f2z binary required feature span-metrics alongside unchecked for full-width CLI commands"
-  ],
-  "allowlist_sha256": "34fddc8ca6072351e2c592d224155412c654849ffa0c40d51d801da998cd91e8",
-  "original_rate_validation_remains_applicable": true
-}

@@ -1,7 +1,0 @@
-{
-  "status": "pass",
-  "family": "binius-focused",
-  "series": 48,
-  "metric_medians_checked": 336,
-  "comparison": "Canonical trace union medians agree with original sample-metric medians; warmups excluded."
-}
