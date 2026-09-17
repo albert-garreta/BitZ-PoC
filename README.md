@@ -93,6 +93,9 @@ for custom sizes, timing definitions, proof files and security accounting.
 
 ## Reproducing the paper's benchmarks
 
+Run all commands below from the repository root. Dependency checkouts use
+sibling directories such as `../limber-impl`.
+
 Cross-system comparisons measure complete native proofs: witness generation,
 commitment, constraint proving, PCS opening, and verification.
 
@@ -115,7 +118,7 @@ SHA-256 checksum, and reuses an existing matching installation. It requires
 This block runs SHA-256/P-256, SHA-256 chain comparisons, multiplication comparisons,
 the BitZ full-product u32 sweep, and matched MultiSwap sequentially. It uses
 Python 3.11 or newer and an existing Limber checkout at the pinned revision.
-Adjust the BitZ and Limber directory paths for your machine.
+The examples use `../limber-impl`; set `LIMBER_DIR` if your Limber checkout is elsewhere.
 
 These commands run directly, without the benchmark gate. MultiSwap's
 `--draft` runs proofs, verification, and repository comparison checks while
@@ -126,8 +129,6 @@ The block stops on failure and saves logs and reports under one fresh
 ```bash
 bash <<'BASH'
 set -euo pipefail
-
-cd "$(git rev-parse --show-toplevel)"
 
 # Setup
 rustup toolchain install 1.98.1
@@ -143,7 +144,7 @@ export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H
 echo "Results: $RUN_DIR"
 
 # Use the existing pinned Limber checkout.
-LIMBER_DIR=/tmp/limber-matched114
+LIMBER_DIR=../limber-impl
 test "$(git -C "$LIMBER_DIR" rev-parse HEAD)" = \
   "836c50f23e674098dcfbe42a4873f583d4e0fe3f"
 
@@ -234,11 +235,13 @@ exactly), runs every (scheme, size, threads) cell in a fresh process under
 see `docs/fields-witch-compare.md` for the measured comparison.
 
 ```sh
-git clone https://github.com/morgana-proofs/fields-witch "$HOME/fields-witch"   # measured at 30cca8c
-(cd "$HOME/fields-witch" && CARGO_TARGET_DIR="$HOME/fields-witch/target" \
+git clone https://github.com/morgana-proofs/fields-witch ../fields-witch   # measured at 30cca8c
+(cd ../fields-witch && CARGO_TARGET_DIR=target \
     RUSTFLAGS="-C target-cpu=native" cargo build --release --examples)
 RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked --bin bitz
-python3 scripts/run_fields_witch_compare.py --sizes 14,16,18,20,22 --threads 1,8 --reps 5 \
+python3 scripts/run_fields_witch_compare.py \
+    --fw-bin ../fields-witch/target/release/examples/protocol_profile \
+    --sizes 14,16,18,20,22 --threads 1,8 --reps 5 \
     --word-rows 20:32,20:64 --latex paper/fields-witch-table.tex
 ```
 
@@ -276,7 +279,7 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
 
 *Full-proving comparison between different schemes*
 ```sh
-LIMBER_REPO="$HOME/code/limber-impl" \
+LIMBER_REPO=../limber-impl \
 RAYON_NUM_THREADS=8 \
 BITZ_BENCH_SHAPES="15 16 17 18 19 20" \
 BITZ_BENCH_REPS=5 \
@@ -347,14 +350,14 @@ native 128-bit integer target and 117-bit integer challenge bound target.
 Run these commands from the repository root. MultiSwap uses the same published
 Limber revision as `Cargo.toml`: `836c50f23e674098dcfbe42a4873f583d4e0fe3f`.
 Prepare its checkout once, using a destination that does not already exist;
-skip this step if `/tmp/limber-matched114` is already at that revision:
+skip this step if `../limber-impl` is already at that revision:
 
 ```sh
-python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
+python3 scripts/prepare_matched_limber.py ../limber-impl
 ```
 
 This clones the pinned revision directly and prepares its benchmark hash domains.
-The runner defaults to `/tmp/limber-matched114`; `--limber-root` selects another
+Use `--limber-root ../limber-impl` for the sibling
 checkout, whose revision must match the Cargo dependency pin. The setup and
 campaign scripts require Python 3.11 or newer.
 
@@ -372,7 +375,7 @@ configuration (**30 configurations**):
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py \
   --draft \
-  --limber-root /tmp/limber-matched114 \
+  --limber-root ../limber-impl \
   --security-bits 114 \
   --batch-counts 1,2,4,8,16 \
   --all-threads 16 \
@@ -404,8 +407,7 @@ below predate this matched campaign.
 
 ### SHA-256 
 ```sh
-cd "$(git rev-parse --show-toplevel)"
-CARGO_TARGET_DIR=$PWD/target RUSTFLAGS="-C target-cpu=native" \
+CARGO_TARGET_DIR=target RUSTFLAGS="-C target-cpu=native" \
 RAYON_NUM_THREADS=8 \
 BITZ_SHA_COMPARE_EXPONENTS="4 5 6 7 9 10 11 12" \
 BITZ_SHA_COMPARE_REPS=5 \
@@ -631,20 +633,17 @@ decoded-proof verification, complete proof sizes, and resumable campaigns.
 
 Run **BitZ Split and Spartan** for `2^4` through `2^11` total SHA-256
 compressions, including padding, with one ECDSA verification per proof.
-The command below uses this machine's current Cargo cache. On another machine,
-omit the `CARGO_HOME` assignment and `--offline` to fetch the dependencies,
-including the published Spartan revision pinned by this repo.
+Cargo fetches missing dependencies, including the published Spartan revision
+pinned by this repository. Add `--offline` when all dependencies are cached.
 
 ```sh
-CARGO_HOME=/tmp/bitz-sha-cargo-home \
 python3 scripts/run_sha256_ecdsa_compare.py \
   --output bench_results/bitz-split-spartan-i4-i11 \
   --methods bitz-split spartan-mc \
   --spartan-splits 0:4 0:5 0:6 0:7 0:8 0:9 0:10 0:11 \
   --targets 100 \
   --threads 1 32 \
-  --reps 3 \
-  --offline
+  --reps 3
 ```
 
 `--spartan-splits r:c` controls **Spartan's chunking only**: `2^r`
@@ -745,12 +744,14 @@ BITZ_BENCH_SHAPES="15 16 17 18 19 20" BITZ_BENCH_REPS=5 \
 bash scripts/run_native_mul_compare.sh
 ```
 
-For each size, it invokes this command in Limber's repository, once for
-warmup and all samples, plus a separate invocation for isolated peak RSS:
+For each size, the runner invokes Limber for warmup and all samples, plus a
+separate invocation for isolated peak RSS. The equivalent standalone command,
+run from this repository root, is:
 
 ```sh
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
+cargo +1.98.1 run --manifest-path ../limber-impl/Cargo.toml \
+  --release --example int_mult -- --bits 32 --log-gates 15
 ```
 
 At L=15 all backends prove **32,768 independent gates**; Limber allocates
