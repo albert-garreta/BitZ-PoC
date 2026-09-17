@@ -1,5 +1,15 @@
 # SHA-256/P-256 prover optimization roadmap
 
+The newer sumcheck campaign uses `4c03f2c1` as its baseline. See
+[GKR sumcheck qualification](gkr-sumcheck-optimization-results.md) for coefficient
+recovery, closing reductions, and rejected grid/suffix/parallel experiments.
+The candidate is preserved on `gkr-cofactor-experiment-20260917` (`db82a93b`).
+Its 24-block primary interval shows 1.7–3.3% less warmed GKR time, which does
+not establish the required 2% minimum; a 34-case screen also flags a small-SHA
+whole-prover slowdown. Proving peak heap is unchanged. The production source
+retains `4c03f2c1`; no new default was accepted. The figures below describe the
+earlier campaign.
+
 The current work prioritizes proving speed while preserving public APIs, proof
 format, transcript operations, and security settings. Baseline: `8598a1a6`;
 the six subsequent ownership refactorings remain intact.
