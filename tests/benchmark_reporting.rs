@@ -11,8 +11,8 @@ mod bounds;
 mod ecdsa;
 #[path = "../benches/multiswap.rs"]
 mod multiswap;
-#[path = "../benches/baby_bear_pcs_compare.rs"]
-mod pcs;
+#[path = "../benches/mul/mod.rs"]
+mod mul;
 
 #[path = "../benches/hybrid_u32_sha256/runner.rs"]
 mod hybrid;

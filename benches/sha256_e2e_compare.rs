@@ -2556,7 +2556,7 @@ fn binius_tamper_self_test() {
 struct Config {
     #[arg(env = "F2Z_SHA_COMPARE_EXPONENTS")]
     exponents: Option<String>,
-    #[arg(env = "F2Z_SHA_COMPARE_BACKENDS", default_value = "f2z plonky3-whir binius64 binius64-ligerito limber", value_parser = common::pcs_cli::enum_list::<Backend>)]
+    #[arg(env = "F2Z_SHA_COMPARE_BACKENDS", default_value = "f2z plonky3-whir binius64 binius64-ligerito limber", value_parser = common::cli::enum_list::<Backend>)]
     backends: common::cli::List<Backend>,
     #[arg(env = "F2Z_SHA_COMPARE_REPS", default_value_t = DEFAULT_REPS, value_parser = common::cli::positive)]
     reps: usize,
@@ -3213,7 +3213,7 @@ mod cli_tests {
         Config::command().debug_assert();
         Plonky3Env::command().debug_assert();
         PreflightEnv::command().debug_assert();
-        assert_eq!(common::pcs_cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
+        assert_eq!(common::cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
         let args = Plonky3Env { extension_degree: None, folding: None, starting_log_inv_rate: None, max_pow_bits: None };
         assert!(!args.is_explicit());
         assert_eq!(args.params().extension_degree, 5);

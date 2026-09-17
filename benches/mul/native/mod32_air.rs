@@ -90,11 +90,9 @@ pub(super) fn generate(corpus: &Corpus) -> RowMajorMatrix<Val> {
     RowMajorMatrix::new(values, TRACE_WIDTH)
 }
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
-    let (trace, started) = f2z::observability::measure(
-        tracing::info_span!("mul_e2e_compare/mod32_air:trace"),
-        || generate(corpus),
-    ).expect("measure completed operation");
-    let generation_ms = started.as_secs_f64() * 1e3;
+    let started = std::time::Instant::now();
+    let trace = generate(corpus);
+    let generation_ms = started.elapsed().as_secs_f64() * 1000.;
     let rows = trace
         .values
         .chunks_exact(TRACE_WIDTH)

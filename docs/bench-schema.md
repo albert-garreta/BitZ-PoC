@@ -78,7 +78,7 @@ no free text. Common keys in fixed order; bench-specific keys sit between
 `shape=` and `lambda=`.
 
 ```
-RESULT schema=f2z/2 ligerito_hex=<hex-json> bench=<multiswap|sha256|u32_mul|pcs|...> shape=<token>
+RESULT schema=f2z/2 ligerito_hex=<hex-json> bench=<multiswap|sha256|pcs|...> shape=<token>
   [bench-specific keys]
   lambda=<bits|na> lambda_achieved=<bits|na> lambda_bind=<term|na>
   threads=<n> reps=<n> warmups=1 seed=<0x…|na>
@@ -169,15 +169,11 @@ if their measurement configurations were identical.
 - **Full schema** (uniform block + RESULT line + step scopes):
   `multiswap`, `sha256_compressions`, `sha256_chain` (`bench=sha256_chain`,
   `shape=chain-2p<k>`; extra keys `compressions`, `message_bytes`,
-  `mnum_rows` = the product tensor's cells), `u32_mul`, `baby_bear_mul` (two rows
-  per shape: `profile=lambda100` and `profile=lambda128` on one witness,
-  or the one row `F2Z_BENCH_LAMBDA` selects), `lambda_sweep` (all three
-  SHA profiles, or the one `F2Z_BENCH_LAMBDA` selects), `pcs` (PCS-only:
-  steps 2/3/4/5.0 are `na`).
-- **Micro/policy benches — exempt** (own output, strict-env check only):
-  `field`, `eq_tables`, `u32_mul_outer_skip`,
-  `cm_and`. (`scripts/baby_bear_mul_bench_report.py` still targets the
-  pre-schema BabyBear output — commit b7713d8; porting it is open.)
+  `mnum_rows` = the product tensor's cells), `lambda_sweep` (all three
+  SHA profiles, or the one `F2Z_BENCH_LAMBDA` selects), `pcs` (PCS-only).
+- **Multiplication:** `mul_f2z` and `mul_compare` use the distinct current
+  `mul-bench/v1` manifest/raw-sample format; see [the guide](native-mul-compare.md).
+- **Micro/policy benches — exempt:** `field`, `eq_tables`, `cm_and`.
 - `examples/reference_measure.rs`: unchanged output, documented here as
   exempt.
 - `src/bin/f2z.rs` (the CLI): its human-readable output is exempt, but the
@@ -211,7 +207,7 @@ if their measurement configurations were identical.
   `proof_nonlig_bytes + proof_lig_bytes = proof_bytes` (host-codec framing
   counts as non-Ligerito). Renaming any key bumps the schema tag.
   The CLI's `--mul <e>` mode (the u32 × u32 → u64 SNARK, same witnesses as
-  the `u32_mul` bench) ends with `RESULT schema=f2z-cli-mul/2`, parsed by
+  the `mul_f2z proof --workload u32-full` benchmark) ends with `RESULT schema=f2z-cli-mul/2`, parsed by
   `--mul-sweep` into `paper/u32-mul-table.tex`. Keys: `e multiplications n
   t s W chunks profile lambda lambda_achieved lambda_bind lig_target_bits
   q_lo_log2 q_bits lig_log_inv_rate lig_initial_k lig_regime lig_hash threads

@@ -169,3 +169,10 @@ impl BenchmarkPass {
         }
     }
 }
+
+pub fn enum_list<T: clap::ValueEnum>(value: &str) -> Result<Vec<T>, String> {
+    list::<String>(value)?
+        .into_iter()
+        .map(|value| T::from_str(&value, false))
+        .collect()
+}

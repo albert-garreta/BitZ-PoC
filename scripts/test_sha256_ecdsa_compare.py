@@ -2,6 +2,7 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import resource
 import unittest
 from unittest.mock import patch
 
@@ -16,10 +17,10 @@ class CampaignTests(unittest.TestCase):
                 self.assertIsNone(campaign.address_space_limit(4))
         with patch.object(campaign.sys, "platform", "linux"):
             limit = campaign.address_space_limit(4)
-            with patch.object(campaign.resource, "setrlimit") as setrlimit:
+            with patch.object(resource, "setrlimit") as setrlimit:
                 limit()
             size = 4 * 1024**3
-            setrlimit.assert_called_once_with(campaign.resource.RLIMIT_AS, (size, size))
+            setrlimit.assert_called_once_with(resource.RLIMIT_AS, (size, size))
 
     def test_peak_memory_units_on_linux_and_macos(self):
         with tempfile.TemporaryDirectory() as path:

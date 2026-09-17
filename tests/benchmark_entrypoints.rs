@@ -20,7 +20,7 @@ fn run(executable: &Path, directory: &Path, args: &[&str], env: &[(&str, &str)])
 fn every_entrypoint_handles_help_and_errors_before_work() {
     let build = Command::new(env!("CARGO")).current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["build", "--benches", "--bin", "hybrid-u32-sha256", "--profile", "dev",
-            "--features", "span-metrics,bench-internals,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid",
+            "--features", "span-metrics,bench-internals,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid,bench-peak-memory",
             "--message-format=json", "--offline"])
         .stderr(Stdio::inherit()).output().unwrap();
     assert!(build.status.success(), "benchmark build failed");
@@ -40,7 +40,8 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             ))
         })
         .collect();
-    assert_eq!(executables.len(), 22);
+    assert!(executables.contains_key("mul_f2z") && executables.contains_key("mul_compare"));
+    assert!(!executables.contains_key("mul_e2e_compare"));
     let directory = tempfile::tempdir().unwrap();
     for (name, executable) in &executables {
         let args = match name.as_str() {
@@ -87,7 +88,8 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
                 | "ligerito_bounds"
                 | "hybrid_u32_sha256"
                 | "hybrid-u32-sha256"
-                | "mul_e2e_compare"
+                | "mul_f2z"
+                | "mul_compare"
         ) {
             assert!(
                 !help.contains("--reps") && !help.contains("--shapes"),
@@ -107,19 +109,12 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("field", "F2Z_BENCH_REPS"),
         ("eq_tables", "F2Z_EQ_TABLE_SAMPLES"),
         ("cm_and", "F2Z_BENCH_REPS"),
-        ("u32_mul", "F2Z_BENCH_REPS"),
-        ("baby_bear_mul", "F2Z_BENCH_REPS"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_REPS"),
         ("multiswap", "F2Z_BENCH_REPS"),
         ("lambda_sweep", "F2Z_BENCH_REPS"),
         ("sha256_compressions", "F2Z_BENCH_REPS"),
         ("sha256_chain", "F2Z_BENCH_REPS"),
         ("sha256_product_layout", "F2Z_BENCH_REPS"),
         ("sha256_e2e_compare", "F2Z_SHA_COMPARE_REPS"),
-        ("mul_e2e_compare", "F2Z_BENCH_REPS"),
-        ("mul_witness_compare", "F2Z_BENCH_REPS"),
-        ("u32_pcs_compare", "F2Z_BENCH_REPS"),
-        ("baby_bear_pcs_compare", "F2Z_BENCH_REPS"),
     ] {
         let out = run(
             &executables[name],
@@ -139,22 +134,9 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         );
     }
     for (name, variable, value) in [
-        ("u32_mul", "F2Z_BENCH_PASS", "memory"),
-        ("u32_mul", "F2Z_BENCH_PASS", "both"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_PASS", "memory"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_PASS", "both"),
-        ("u32_mul", "F2Z_BENCH_ORDER", "0"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_ORDER", "0"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_REPS", "0"),
-        ("u32_mul", "F2Z_MUL_WORD_BITS", "2"),
-        ("u32_mul", "F2Z_BENCH_SHAPES", "14"),
-        ("u32_mul_outer_skip", "F2Z_BENCH_SHAPES", "26"),
-        ("baby_bear_mul", "F2Z_BABY_BEAR_MUL_EXPONENTS", "14"),
         ("cm_and", "F2Z_CM_EXPONENTS", "14"),
         ("sha256_chain", "F2Z_BENCH_SHAPES", "6"),
         ("lambda_sweep", "F2Z_BENCH_SHAPES", "17"),
-        ("u32_pcs_compare", "F2Z_BENCH_SHAPES", "0"),
-        ("baby_bear_pcs_compare", "F2Z_BENCH_SHAPES", "0"),
         ("pcs", "F2Z_BENCH_FILL", "0"),
         ("pcs", "F2Z_BENCH_FILL", "1.1"),
         ("pcs", "F2Z_BENCH_FILL", "NaN"),
@@ -165,8 +147,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("sha256_compressions", "F2Z_SHA_LOG2S", "3"),
         ("sha256_e2e_compare", "F2Z_SHA_COMPARE_EXPONENTS", "6"),
         ("sha256_e2e_compare", "F2Z_BENCH_SHAPES", "17"),
-        ("mul_e2e_compare", "F2Z_BENCH_SHAPES", "14"),
-        ("mul_witness_compare", "F2Z_BENCH_SHAPES", "3"),
     ] {
         let out = run(
             &executables[name],
@@ -227,9 +207,9 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
     }
     assert!(
         !run(
-            &executables["mul_e2e_compare"],
+            &executables["mul_compare"],
             directory.path(),
-            &["--measure-memory", "f2z", "u32", "15", "0", "invalid-json"],
+            &["proof", "--workload", "u64", "--w", "0"],
             &[]
         )
         .status

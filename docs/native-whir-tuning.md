@@ -27,7 +27,7 @@ schedules are derived by the pinned WHIR implementation for these rates.
 Only security-eligible candidates run. One verified preliminary trial selects
 up to four fastest candidates. Each finalist receives one warmup and five tuning
 trials, and the lowest median wins. Ties use parameter ordering. Set
-`F2Z_WHIR_TUNING_REPS` to change the finalist repetition count. The winner stays
+`--tuning-reps` for multiplication (`F2Z_WHIR_TUNING_REPS` for SHA) to change the finalist repetition count. The winner stays
 fixed for that case's warmup and fresh measured repetitions. Every repetition
 regenerates the witness and verifies its complete proof.
 
@@ -38,7 +38,8 @@ interval. The existing online-prover and verification metrics remain separate.
 The multiplication RSS child uses the same selected parameters and records
 whole-case memory, including setup and verification.
 
-Each case saves `whir-<workload>-<exponent>.json`, including every candidate's
+Multiplication stores tuning evidence in its campaign manifest; SHA saves
+`whir-<workload>-<exponent>.json`. Both include every candidate's
 eligibility, preliminary/finalist timings, selected parameters, security report,
 and total tuning time. A case without an eligible candidate saves its reason
 instead of producing a measurement. Unexpected prover, verifier, or subprocess
@@ -70,52 +71,27 @@ policies and labels, including Binius's query-phase-only guarantee.
 
 ## Running and replaying
 
-Linux and macOS use the same runners. Choose a thread count explicitly when
-comparing runs. `environment.json` records machine, compiler, flags, dependency
-lock digest, and thread information. A missing CPU probe is `unknown` rather
-than an invented machine label. External HTML rendering is optional through
-`ZK_TRACE_SCRIPT`; the benchmarks themselves need no private profiler checkout.
+Multiplication uses the canonical Cargo benchmark flags:
 
 ```sh
-RAYON_NUM_THREADS=8 F2Z_BENCH_SHAPES="15 16" \
-F2Z_MUL_COMPARE_BACKENDS=plonky3-whir \
-bash scripts/run_native_mul_compare.sh
+cargo bench --bench mul_compare --features native-mul-compare,bench-internals -- \
+  proof --workload u32-mod32 --backends plonky3-whir --log-n 15,16 --threads 8
 
-RAYON_NUM_THREADS=8 F2Z_SHA_COMPARE_EXPONENTS="10 11" \
-F2Z_SHA_COMPARE_BACKENDS=plonky3-whir \
-bash scripts/run_native_sha256_compare.sh
+cargo bench --bench mul_compare --features native-mul-compare,bench-internals -- \
+  proof --workload u32-mod32 --backends plonky3-whir --log-n 15 --threads 8 \
+  --whir-degree 5 --whir-folding 4 --whir-pow 12 --log-inv-rate 1 --memory rss
 ```
 
-Explicit replay bypasses tuning and rechecks security for the requested case:
+Without explicit WHIR parameters, the latency worker selects an eligible
+configuration using verified tuning trials. `--tuning-reps` controls finalist
+repetitions. The manifest stores the selection and tuning evidence; the RSS
+worker replays the exact selection and never tunes. Heap runs require explicit
+parameters and a separate instrumented binary. See the
+[multiplication guide](native-mul-compare.md) for the current result format.
+
+The independent SHA comparison retains its own experiment-specific interface:
 
 ```sh
-F2Z_WHIR_CONFIG=/absolute/path/to/whir-u32-mod32-15.json \
-F2Z_MUL_COMPARE_WORKLOADS=u32-mod32 F2Z_MUL_COMPARE_BACKENDS=plonky3-whir \
-RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
+RAYON_NUM_THREADS=8 F2Z_SHA_COMPARE_EXPONENTS=7 \
+F2Z_SHA_COMPARE_BACKENDS=plonky3-whir bash scripts/run_native_sha256_compare.sh
 ```
-
-`F2Z_WHIR_CONFIG` accepts either a saved tuning record or a JSON parameter object
-with `extension_degree`, `folding`, `starting_log_inv_rate`, and `max_pow_bits`.
-The optional `max_round_log_inv_rate` field selects the round-rate cap; omitting
-it retains the native schedule.
-SHA's existing explicit `F2Z_SHA_COMPARE_P3_*` overrides also bypass tuning;
-the shared replay file takes precedence. Its legacy pilot switch controls the
-other backends' pilot phases; ordinary WHIR runs still tune at each size.
-
-Fresh output files are required. Compare the saved configurations and machines
-alongside timings; separately tuned runs can choose different parameters.
-
-## Validation
-
-```sh
-RUSTFLAGS=-Ctarget-cpu=native cargo test --release \
-  --test native_mul_compare --test native_sha256_compare \
-  --features bench-internals,native-mul-compare,native-sha256-compare
-```
-
-The release tests exercise real proof rejection for wrong multiplication
-outputs/carries and out-of-range operand limbs, as well as altered WHIR/PIOP
-proof fields.
-SHA tests prove and verify the full AIR and reject changed public inputs,
-outputs, ordering, and malformed encodings. Tuner tests cover eligibility,
-fresh invocation selection, and security checks against modified query counts.

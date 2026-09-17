@@ -36,11 +36,15 @@ pub(super) struct Context {
     verifier: Verifier<StdHashSuite>,
 }
 impl Context {
+    #[cfg(test)]
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
+        Self::setup_at_rate(corpus, 1)
+    }
+    pub(super) fn setup_at_rate(corpus: Arc<Corpus>, rate: usize) -> Self {
         let (circuit, wires) = compile(&corpus);
         let verifier = Verifier::<StdHashSuite>::setup_with_security_bits(
             circuit.constraint_system().clone(),
-            log_inv_rate(),
+            rate,
             100,
         )
         .expect("Binius setup");
@@ -230,15 +234,6 @@ mod tests {
 /// A lower rate needs fewer test queries (smaller proof) at the cost of a
 /// larger encoding. The `binius64-ligerito` backend reads the same knob for
 /// its F2Z opener, so one campaign value sets the rate of both Binius rows.
-pub(super) fn log_inv_rate() -> usize {
-    std::env::var("F2Z_BINIUS_LOG_INV_RATE")
-        .map(|value| {
-            value
-                .parse()
-                .expect("F2Z_BINIUS_LOG_INV_RATE must be a usize")
-        })
-        .unwrap_or(1)
-}
 
 pub(super) fn compile(corpus: &Corpus) -> (Circuit, Vec<Wires>) {
     let builder = CircuitBuilder::new();
@@ -351,12 +346,9 @@ fn limbs(value: u128) -> [u64; 2] {
 
 pub(super) fn audit(corpus: &Corpus) -> super::WitnessAudit {
     let (circuit, wires) = compile(corpus);
-    let (filler, started) =
-        f2z::observability::measure(tracing::info_span!("mul_e2e_compare/binius:filler"), || {
-            populate(corpus, &circuit, &wires, false).expect("Binius materialization")
-        })
-        .expect("measure completed operation");
-    let generation_ms = started.as_secs_f64() * 1e3;
+    let started = std::time::Instant::now();
+    let filler = populate(corpus, &circuit, &wires, false).expect("Binius materialization");
+    let generation_ms = started.elapsed().as_secs_f64() * 1000.;
     if corpus.workload.is_wide() {
         let read = |limbs: &[Wire]| {
             limbs.iter().rev().fold(0_u128, |acc, &limb| {

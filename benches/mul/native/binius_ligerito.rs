@@ -1,11 +1,5 @@
-//! `binius64-ligerito`: Binius64's native multiplication circuit and PIOP
-//! (the same wires as the `binius64` backend), with every oracle committed
-//! and opened by the F2Z opener — Johnson-regime Ligerito with fold and query
-//! grinding and Round 0, at the campaign's Binius rate
-//! (`F2Z_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2) — and the whole protocol
-//! gated at 100 bits under `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default;
-//! a union bound over every term) or `rbr` (the round-by-round minimum, the
-//! figure F2Z's own rows report).
+//! Binius64 multiplication and PIOP with the F2Z opener, at the CLI-selected
+//! rate and a whole-protocol union-bound target of 100 bits.
 use super::trace_capture::{BiniusLigeritoPhases, TrialScopes};
 use super::{CapturedSpan, Corpus, Timing, Workload, binius};
 use binius_frontend::Circuit;
@@ -22,22 +16,19 @@ pub(super) struct Context {
 }
 
 impl Context {
-    pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
+    pub(super) fn setup_at_rate(
+        corpus: Arc<Corpus>,
+        rate: usize,
+    ) -> Result<Self, f2z::binius_ligerito::Error> {
         let (circuit, wires) = binius::compile(&corpus);
-        let rate = std::env::var("F2Z_BINIUS_LIGERITO_LOG_INV_RATE")
-            .map(|s| {
-                s.parse()
-                    .expect("F2Z_BINIUS_LIGERITO_LOG_INV_RATE must be 1, 2, or 3")
-            })
-            .unwrap_or_else(|_| binius::log_inv_rate());
-        let prepared = Prepared::with_options(circuit.constraint_system(), rate, accounting())
-            .expect("binius64-ligerito setup");
-        Self {
+        let prepared =
+            Prepared::with_options(circuit.constraint_system(), rate, Accounting::UnionBound)?;
+        Ok(Self {
             corpus,
             circuit,
             wires,
             prepared,
-        }
+        })
     }
 
     pub(super) fn config(&self) -> Value {
@@ -201,7 +192,8 @@ mod tests {
         use tracing_subscriber::prelude::*;
 
         // The F2Z opener requires packed log >= 13.
-        let context = Context::setup(Arc::new(Corpus::new(Workload::U32, 11, 7)));
+        let context =
+            Context::setup_at_rate(Arc::new(Corpus::new(Workload::U32, 11, 7)), 1).unwrap();
         let witness = binius::populate(&context.corpus, &context.circuit, &context.wires, false)
             .unwrap()
             .into_value_vec();
@@ -244,14 +236,5 @@ mod tests {
                 }
             },
         );
-    }
-}
-
-/// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`.
-fn accounting() -> Accounting {
-    match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
-        Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,
-        Ok("rbr") | Ok("round-by-round") => Accounting::RoundByRound,
-        Ok(other) => panic!("F2Z_BINIUS_LIGERITO_ACCOUNTING must be union or rbr, not {other:?}"),
     }
 }

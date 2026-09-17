@@ -47,10 +47,8 @@ file opener remains outside `benches/common/output.rs`.
 | `benches/multiswap.rs` | Optional JSONL trace | Create new; create parents |
 | `benches/sha256_compressions.rs` | Optional JSONL trace and text samples/summary | Replace; create parents |
 | `benches/sha256_product_layout.rs` | Optional status file | Append existing |
-| `benches/mul_e2e_compare.rs` (also witness benchmark) | Trace, samples, memory samples, summary, metrics CSV, witness checks/summary | Create new; create output directory |
 | `benches/sha256_e2e_compare.rs` | Trace, summary, metrics CSV | Trace create new; summary/CSV replace; create directories |
-| `benches/baby_bear_pcs_compare.rs` | Trace or stdout; campaign manifest | Create new; create parents |
-| `benches/u32_pcs_compare.rs` | Trace or stdout | Create new; create parents |
+| `benches/mul_f2z.rs`, `benches/mul_compare.rs` | Manifest, raw samples, worker logs | Create new campaign artifacts; Python owns reports |
 | `benches/common/whir_tuning.rs` | Tuning records | Create new |
 | `benches/support/sha256_ecdsa_fixture.rs` | Validated compact JSON fixtures, including worker exports | Replace; no implicit parents |
 | `benches/hybrid_u32_sha256/runner.rs` (also hybrid binary) | Proof bytes, binary/text statement, configuration JSON; CSV on stdout | Replace; no implicit parents |
@@ -125,18 +123,11 @@ JSON/JSONL/CSV files, subprocess log capture and combined CSV output.
 
 ## Opt-in Perfetto interval capture
 
-Add the `bench-perfetto` feature to native multiplication or native SHA comparison
-builds. Each warmup/measured trial writes a separate `.pftrace` next to the normal
-artifacts (next to `trace.jsonl` when SHA uses a custom trace path). Files are
-create-new, never overwritten. Open them locally in <https://ui.perfetto.dev>.
-
-```sh
-RAYON_NUM_THREADS=2 F2Z_BENCH_SHAPES=4 F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_BACKENDS=binius64 F2Z_MUL_COMPARE_MEMORY=0 \
-F2Z_MUL_COMPARE_OUTPUT_DIR=/tmp/my-new-perfetto-run \
-cargo bench --bench mul_e2e_compare \
-  --features bench-internals,native-mul-compare,bench-perfetto
-```
+Native multiplication records per-trial phase totals in `samples.jsonl`; see
+[the multiplication interface](native-mul-compare.md). For native SHA comparison,
+`bench-perfetto` also saves diagnostic `.pftrace` files beside the normal
+artifacts (or beside a custom trace path). Open them locally in
+<https://ui.perfetto.dev>.
 
 `src/observability.rs` configures `tracing-perfetto-sdk` with an in-process
 Perfetto session. It composes with the existing subscriber; it does not install

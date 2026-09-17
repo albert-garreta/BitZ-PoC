@@ -1,11 +1,6 @@
 //! Controlled decoding-bound experiment within F2Z. No competing backend configuration is read.
 use ::f2z::ligerito_flock::IntEvalRsLigModQProof;
 use ::f2z::ligerito_flock::IntEvalRsLigVirtProof;
-use ::f2z::piop::spartan::MulRow;
-use ::f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout;
-use ::f2z::piop::spartan::mul::{MulLayout, MulWitness};
-use ::f2z::piop::spartan::protocol;
-use ::f2z::piop::spartan::protocol::PreparedRelation;
 
 mod common;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -124,7 +119,7 @@ fn inputs() -> Vec<(u128, u128)> {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(value_parser = ["u32-mod32", "u32-full", "u64", "u128", "baby-bear", "sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
+    #[arg(value_parser = ["sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
     case: String,
     profile: String,
     #[arg(long)]
@@ -154,91 +149,7 @@ fn main() -> Result<()> {
         Recording::start(Vec::new())?,
         tracing::info_span!("bounds:setup").entered(),
     );
-    macro_rules! multiplication {
-        ($rel:ty,$layout:ty,$wit:ty,$commit:path,$prove:path,$verify:path,$data:expr) => {{
-            let data = $data;
-            let p = <$rel>::new_with_profile_and_ligerito::<Lambda100>(
-                <$layout>::new(data.len())?,
-                e.selection,
-            )?;
-            e.run(
-                setup,
-                p.ligerito_configuration(),
-                p.security().ood,
-                &bincode::serialize(&data)?,
-                || Ok(<$wit>::from_inputs(&data)?),
-                |w| Ok($commit(&p, w.f2z_bit_rows())?),
-                |w, h| Ok($prove(&mut Blake3Transcript::new(), &p, w, h)?),
-                |_, h, proof| {
-                    Ok($verify(
-                        &mut Blake3Transcript::new(),
-                        &p,
-                        &h.commitment,
-                        proof,
-                    )?)
-                },
-                |h, proof| {
-                    let b = proof.f2z().to_bytes();
-                    let decoded = IntEvalRsLigModQProof::from_bytes(&b)?;
-                    assert_eq!(decoded.to_bytes(), b);
-                    Ok(bytes(
-                        h.commitment.root.len(),
-                        &b,
-                        proof.spartan_payload_elements() * 16
-                            + (proof.grinding_nonce_count(p.security())
-                                - proof.opening_grinding_nonces().len())
-                                * 8,
-                    ))
-                },
-            )
-        }};
-    }
     match e.case.as_str() {
-        "u32-mod32" | "u32-full" => multiplication!(
-            PreparedRelation<MulLayout<u32>>,
-            MulLayout<u32>,
-            MulWitness<u32>,
-            protocol::commit,
-            protocol::prove,
-            protocol::verify,
-            input
-                .iter()
-                .map(|&(x, y)| (x as u32, y as u32))
-                .collect::<Vec<_>>()
-        ),
-        "u64" => multiplication!(
-            PreparedRelation<MulLayout<u64>>,
-            MulLayout<u64>,
-            MulWitness<u64>,
-            protocol::commit,
-            protocol::prove,
-            protocol::verify,
-            input
-                .iter()
-                .map(|&(x, y)| (x as u64, y as u64))
-                .collect::<Vec<_>>()
-        ),
-        "u128" => multiplication!(
-            PreparedRelation<MulLayout<u128>>,
-            MulLayout<u128>,
-            MulWitness<u128>,
-            protocol::commit,
-            protocol::prove,
-            protocol::verify,
-            input
-        ),
-        "baby-bear" => multiplication!(
-            PreparedRelation<BabyBearMulLayout>,
-            BabyBearMulLayout,
-            BabyBearMulWitness,
-            protocol::commit,
-            protocol::prove,
-            protocol::verify,
-            input
-                .iter()
-                .map(|&(x, y)| ((x % 2013265921) as u32, (y % 2013265921) as u32))
-                .collect::<Vec<_>>()
-        ),
         "sha-compression" => {
             let p = sha256::prepare_sha256_compression_batch(7)?.with_ligerito(e.selection)?;
             let source: Vec<_> = (0..128)
@@ -599,14 +510,14 @@ mod cli_tests {
     fn positional_cases_memory_and_cargo_flag() {
         Args::command().debug_assert();
         let latency =
-            Args::try_parse_from(["bounds", "u32-mod32", "custom:1:4", "--bench"]).unwrap();
+            Args::try_parse_from(["bounds", "sha-compression", "custom:1:4", "--bench"]).unwrap();
         assert_eq!(
             (
                 latency.case.as_str(),
                 latency.profile.as_str(),
                 latency.memory
             ),
-            ("u32-mod32", "custom:1:4", false)
+            ("sha-compression", "custom:1:4", false)
         );
         let memory =
             Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();

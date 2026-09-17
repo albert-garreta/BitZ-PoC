@@ -39,7 +39,6 @@ pub fn test_tracing() -> (
 pub mod heap_run;
 pub mod mul_witness;
 pub mod output;
-pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
@@ -121,8 +120,6 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_AB_SINGLES",
     "F2Z_AB_STMTS",
     // Deprecated aliases (kept working; see `reps`/`shapes`/`seed`).
-    "F2Z_BABY_BEAR_MUL_EXPONENTS",
-    "F2Z_BABY_BEAR_MUL_SEED",
     // Canonical bench knobs.
     "F2Z_BENCH_EXT",
     "F2Z_BENCH_FILL",
@@ -171,33 +168,14 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     // Deprecated alias.
     "F2Z_MULTISWAP_REPS",
     "F2Z_MULTISWAP_TRACE_PATH",
-    // Native multiplication comparison selectors.
-    "F2Z_MUL_COMPARE_BACKENDS",
-    "F2Z_MUL_COMPARE_MEMORY",
-    "F2Z_MUL_COMPARE_OUTPUT_DIR",
-    "F2Z_MUL_COMPARE_WORKLOADS",
-    "F2Z_MUL_WORD_BITS",
     "F2Z_PAIR2_FACTORED",
     "F2Z_PAR_CHUNK",
-    // Controlled BabyBear terminal-claim PCS comparison trace.
     "F2Z_BINIUS_LOG_INV_RATE",
     "F2Z_BINIUS_LIGERITO_LOG_INV_RATE",
     "F2Z_PLONKY3_LOG_INV_RATE",
     // Binius64-with-F2Z-opener rows: the 100-bit gate's accounting model
     // (`union` = union bound over every term, `rbr` = round-by-round minimum).
     "F2Z_BINIUS_LIGERITO_ACCOUNTING",
-    // u64 native-mul comparison: lower the F2Z row side by k (see
-    // benches/mul_e2e_compare/f2z.rs::u64_split_shift).
-    "F2Z_U64_SPLIT_SHIFT",
-    "F2Z_PCS_COMPARE_BACKENDS",
-    "F2Z_PCS_COMPARE_BUILD_PROFILE",
-    "F2Z_PCS_COMPARE_CAMPAIGN_ID",
-    "F2Z_PCS_COMPARE_CAMPAIGN_PATH",
-    "F2Z_PCS_COMPARE_CPU",
-    "F2Z_PCS_COMPARE_GIT_DIRTY",
-    "F2Z_PCS_COMPARE_GIT_REV",
-    "F2Z_PCS_COMPARE_TRACE_PATH",
-    "F2Z_PCS_COMPARE_WHIR_DEGREE",
     "F2Z_WHIR_FOLDING",
     "F2Z_WHIR_LOG_INV_RATE",
     "F2Z_WHIR_MAX_POW_BITS",

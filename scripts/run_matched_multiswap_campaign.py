@@ -8,6 +8,7 @@ execution plan without creating files or compiling benchmarks.
 """
 
 from __future__ import annotations
+from bench_support import cpu_name as _cpu_name, command_text, filtered_environment, stream_logged
 
 import argparse
 import hashlib
@@ -33,19 +34,7 @@ WORKLOAD_DISCLOSURE = (
 
 
 def _capture(command: list[str], cwd: Path | None = None) -> str | None:
-    try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    value = result.stdout.strip()
-    return value or None
+    return command_text(*command, cwd=cwd, missing=None) or None
 
 
 def detect_performance_cores() -> tuple[int, str]:
@@ -94,23 +83,6 @@ def _git_metadata(root: Path) -> dict[str, Any]:
         "diff_sha256": hashlib.sha256(diff).hexdigest(),
         "untracked_sha256": untracked_hashes,
     }
-
-
-def _cpu_name() -> str:
-    hardware = _capture(["system_profiler", "SPHardwareDataType"])
-    if hardware:
-        match = re.search(r"^\s*Chip:\s*(.+)$", hardware, re.MULTILINE)
-        if match:
-            return match.group(1).strip()
-    brand = _capture(["sysctl", "-n", "machdep.cpu.brand_string"])
-    if brand:
-        return brand
-    cpuinfo = Path("/proc/cpuinfo")
-    if cpuinfo.is_file():
-        match = re.search(r"^model name\s*:\s*(.+)$", cpuinfo.read_text(), re.MULTILINE)
-        if match:
-            return match.group(1)
-    return platform.processor() or platform.machine()
 
 
 def build_cells(
@@ -357,21 +329,7 @@ def _run_logged(cell: dict[str, Any], run_dir: Path) -> None:
     with log_path.open("w", encoding="utf-8") as log:
         log.write(f"$ {_display_command(cell)}\n\n")
         log.flush()
-        process = subprocess.Popen(
-            cell["command"],
-            cwd=cell["cwd"],
-            env=process_environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            log.write(line)
-        return_code = process.wait()
+        return_code = stream_logged(cell["command"], cwd=cell["cwd"], env=process_environment, log=log)
     if return_code:
         raise report.CampaignError(
             f"cell {cell['cell_id']} exited with status {return_code}; see {log_path}"
@@ -383,9 +341,7 @@ def _run_logged(cell: dict[str, Any], run_dir: Path) -> None:
 def benchmark_environment(overrides: dict[str, str]) -> dict[str, str]:
     prefixes = ("F2Z_", "F2_FOREST", "MATCHED_", "MS", "BD", "LOGUP_", "INT_EVAL_", "OBLONG_")
     knobs = {"IMOD_K", "GKRSKIP", "CHAIN_BITS", "SEGGLOG", "M127", "PSIZE", "PSDUMP", "KSWEEP", "CARGO_ENCODED_RUSTFLAGS"}
-    environment = {k: v for k, v in os.environ.items() if not k.startswith(prefixes) and k not in knobs}
-    environment.update(overrides)
-    return environment
+    return filtered_environment(os.environ, prefixes, knobs, overrides)
 
 
 def preflight_profiler(profiler: Path | None) -> dict[str, Any]:

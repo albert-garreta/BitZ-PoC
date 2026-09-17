@@ -133,50 +133,11 @@ harness = false
 # Exponents via F2Z_CM_EXPONENTS; reps via F2Z_BENCH_REPS.
 
 [[bench]]
-name = "u32_mul"
-required-features = ["span-metrics"]
-harness = false
-# Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
-# assignment claim discharged against the compact F2 witness by F2Z. The
-# canonical protocol is commit-before-prime with a transcript-sampled Step-2
-# prime, Lambda100 profile (F2Z_BENCH_LAMBDA selects another), and K=3
-# univariate-prefix skip. Unified output schema (docs/bench-schema.md).
-# Exponents via F2Z_BENCH_SHAPES; reps via F2Z_BENCH_REPS.
-
-[[bench]]
-name = "baby_bear_mul"
-required-features = ["span-metrics"]
-harness = false
-# Independent BabyBear multiplications (a*b = c + p*k) through the PAPER
-# path (transcript-sampled Step-2 prime), TWO rows per shape on one
-# witness: Lambda100 and Lambda128 (or the one F2Z_BENCH_LAMBDA selects).
-# Unified output schema (docs/bench-schema.md). Exponents via
-# F2Z_BENCH_SHAPES (alias F2Z_BABY_BEAR_MUL_EXPONENTS); reps via
-# F2Z_BENCH_REPS.
-
-[[bench]]
-name = "baby_bear_pcs_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
-
-[[bench]]
-name = "u32_pcs_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
-
-[[bench]]
 name = "eq_tables"
 harness = false
 required-features = ["span-metrics", "bench-internals"]
 # Controlled legacy-versus-current equality-table builder benchmark.
 # Widths 8, 12, and 16; alternating median samples and explicit PR 1 gates.
-
-[[bench]]
-name = "u32_mul_outer_skip"
-required-features = ["span-metrics"]
-harness = false
-# Controlled PIOP-only comparison of the standard outer sumcheck against
-# known-zero univariate prefix skips K=1,2,3,4 (the canonical adapter uses K=3).
 
 [[bench]]
 name = "multiswap"
@@ -235,15 +196,6 @@ required-features = ["span-metrics", "hybrid"]
 # Chained SHA-256 plus x*y = z + 2^32*w with four u32 limbs.
 # Counts and repetitions via --mul-log, --sha-log, and --iterations.
 
-[[bench]]
-name = "mul_e2e_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
-
-[[bench]]
-name = "mul_witness_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
 
 [[test]]
 name = "native_mul_compare"
@@ -388,7 +340,7 @@ native-mul-compare = [
     "dep:p3-multi-stark",
     "binius64-bench",
     # Limber's own wrapping-multiplication rows, proved in process through
-    # its Brakedown Mod-PCS engine (benches/mul_e2e_compare/limber.rs).
+    # its Brakedown Mod-PCS engine (benches/mul/native/limber.rs).
     "dep:limber",
 ]
 native-sha256-compare = [
@@ -479,11 +431,15 @@ harness = false
 required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]
 
 [[bench]]
-name = "outer_optimizations"
+name = "mul_f2z"
 harness = false
-required-features = ["parallel"]
+required-features = ["span-metrics", "bench-internals"]
 
 [[bench]]
-name = "outer_regression"
+name = "mul_compare"
 harness = false
-required-features = ["parallel", "bench-internals"]
+required-features = ["native-mul-compare", "bench-internals"]
+
+[[test]]
+name = "mul_bench"
+required-features = ["span-metrics", "bench-internals"]

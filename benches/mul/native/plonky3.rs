@@ -44,17 +44,10 @@ type Challenger = DuplexChallenger<Val, Perm, 8, 4>;
 type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, ValMmcs, ChallengeMmcs>;
 type Config = StarkConfig<Pcs, Challenge, Challenger>;
 
-fn configuration(trace_len: usize) -> (Config, StarkSecurityParams, usize) {
-    let rate = std::env::var("F2Z_PLONKY3_LOG_INV_RATE")
-        .map(|s| {
-            s.parse()
-                .expect("F2Z_PLONKY3_LOG_INV_RATE must be 1, 2, or 3")
-        })
-        .unwrap_or(LOG_BLOWUP);
-    configuration_at_rate(trace_len, rate)
-}
-
-fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkSecurityParams, usize) {
+fn configuration_at_rate(
+    trace_len: usize,
+    log_blowup: usize,
+) -> (Config, StarkSecurityParams, usize) {
     assert!(
         (1..=3).contains(&log_blowup),
         "log inverse rate must be 1, 2, or 3"
@@ -106,7 +99,11 @@ fn configuration_at_rate(trace_len: usize, log_blowup: usize) -> (Config, StarkS
     let (fri, security) = assemble(num_queries);
     require_security(ProvenSecurity::compute(&security, trace_len));
     let pcs = Pcs::new(Radix2DitParallel::default(), mmcs, fri);
-    (Config::new(pcs, Challenger::new(perm)), security, num_queries)
+    (
+        Config::new(pcs, Challenger::new(perm)),
+        security,
+        num_queries,
+    )
 }
 fn require_security(security: ProvenSecurity) {
     assert!(
@@ -122,13 +119,17 @@ pub(super) struct Context {
     num_queries: usize,
 }
 impl Context {
+    #[cfg(test)]
     pub(super) fn setup(corpus: Arc<Corpus>) -> Self {
+        Self::setup_at_rate(corpus, 1)
+    }
+    pub(super) fn setup_at_rate(corpus: Arc<Corpus>, rate: usize) -> Self {
         assert_eq!(
             corpus.workload,
             Workload::U32,
             "Plonky3-FRI supports u32 only"
         );
-        let (config, security, num_queries) = configuration(corpus.len());
+        let (config, security, num_queries) = configuration_at_rate(corpus.len(), rate);
         Self {
             corpus,
             config,

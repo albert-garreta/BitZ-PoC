@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Persist a fresh-process SHA-256/ECDSA campaign, including failed configurations."""
+from bench_support import source_metadata, file_hash, run_process, address_space_limit, write_json
 import argparse
 import csv
-import hashlib
 import json
 import os
 from pathlib import Path
-import platform
-import resource
-import signal
 import statistics
-import subprocess
 import time
 
 
@@ -58,29 +54,19 @@ def main():
             or any(i not in range(3, 17) for i in args.exponents)):
         parser.error("positive reps/threads and exponents 3..16 required")
     args.output.mkdir(parents=True, exist_ok=True)
-    with binary.open("rb") as stream:
-        binary_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+    binary_hash = file_hash(binary)
     manifest_path = args.output / "manifest.json"
     if manifest_path.exists() and json.loads(manifest_path.read_text())["binary_sha256"] != binary_hash:
         parser.error("output contains results from a different binary; choose a new output directory")
     if not manifest_path.exists():
         root = Path(__file__).resolve().parents[1]
-        revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
-        diff = subprocess.run(["git", "diff", "HEAD"], cwd=root, capture_output=True, check=True).stdout
         fingerprint = (binary.parent.parent / ".fingerprint"
                        / binary.name.replace("sha256_ecdsa-", "f2z-", 1)
                        / "test-bench-sha256_ecdsa.json")
         build = json.loads(fingerprint.read_text()) if fingerprint.exists() else {}
         build = {key: build[key] for key in ["rustc", "features", "rustflags", "compile_kind"] if key in build}
-        cpu = platform.processor() or platform.machine()
-        if Path("/proc/cpuinfo").exists():
-            cpu = next((line.partition(":")[2].strip()
-                        for line in Path("/proc/cpuinfo").read_text().splitlines()
-                        if line.startswith("model name")), cpu)
-        manifest_path.write_text(json.dumps(dict(binary=str(binary), binary_sha256=binary_hash,
-                                               revision=revision, tracked_diff_sha256=hashlib.sha256(diff).hexdigest(),
-                                               platform=platform.platform(), cpu=cpu,
-                                               build=build, logical_cpus=os.cpu_count()), indent=2)+"\n")
+        write_json(manifest_path, dict(binary=str(binary), binary_sha256=binary_hash,
+                                       **source_metadata(root), build=build))
     failed = False
     for exponent in args.exponents:
         for target in args.targets:
@@ -103,16 +89,9 @@ def main():
                     status = "failed"
                     returncode = None
                     with (args.output / f"{name}.stdout").open("w") as stdout, (args.output / f"{name}.stderr").open("w") as stderr:
-                        def memory_limit():
-                            limit = args.memory_gib * 1024**3
-                            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-                        process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr,
-                                                   start_new_session=True, preexec_fn=memory_limit)
-                        try:
-                            returncode = process.wait(timeout=args.timeout)
-                        except subprocess.TimeoutExpired:
-                            os.killpg(process.pid, signal.SIGKILL)
-                            process.wait()
+                        returncode, timed_out = run_process(command, env=env, stdout=stdout, stderr=stderr,
+                                                            preexec_fn=address_space_limit(args.memory_gib), timeout=args.timeout)
+                        if timed_out:
                             status = "timeout"
                     rows = []
                     for line in (args.output / f"{name}.stdout").read_text().splitlines():
@@ -135,7 +114,7 @@ def main():
                     result = dict(status=status, returncode=returncode, seconds=time.monotonic()-started,
                                   exponent=exponent, mode=mode, target=target, threads=threads,
                                   peak_rss_bytes=rss, rows=rows)
-                    result_path.write_text(json.dumps(result, indent=2)+"\n")
+                    write_json(result_path, result)
                     failed |= status != "complete"
                     write_summary(args.output)
                     print(f"{name}: {status} ({result['seconds']:.1f}s)", flush=True)

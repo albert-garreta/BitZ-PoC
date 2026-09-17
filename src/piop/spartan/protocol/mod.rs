@@ -2640,7 +2640,7 @@ pub mod terminal {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
         }
         let col_weights = bitify::column_weights(&opening, &prime)?;
-        crate::ligerito_flock::verify_mle_eval_mod_q_ligerito_with_weight_chunks(
+        verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
             transcript,
             prepared.spec.domains().opening,
             commitment,
@@ -2651,6 +2651,7 @@ pub mod terminal {
             &bridge_digest,
             f2z_generator(),
             opening.claimed,
+            FQ_MOD,
             FQ_BITS,
             prepared.spec.opener_grinding_bits(&prepared.security),
             ood,

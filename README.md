@@ -127,67 +127,22 @@ regenerates the paper table from a finished run.
 
 ### Integer multiplication
 
-*BitZ performance step-by-step*
-
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:1:4 --cooldown 20
+cargo bench --bench mul_f2z --features span-metrics,bench-internals -- \
+  proof --workload u32-full,u64,u128 --log-n 15..=20 --w 1,3,8 \
+  --split=0,1 --threads 1,8 --reps 5 --out results/f2z --dry-run
+
+cargo bench --bench mul_compare --features native-mul-compare,bench-internals -- \
+  proof --workload u32-mod32,u64,u128 --backends all --log-n 15..=20 \
+  --threads 1,8 --skip-unsupported --out results/compare
+
+python3 scripts/mul_report.py results/compare --out reports/compare
 ```
 
-*Full-proving comparison between different schemes*
-```sh
-LIMBER_REPO="$HOME/code/limber-impl" \
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 plonky3-fri limber" \
-bash scripts/run_native_mul_compare.sh
-```
-
-
-*64-bit multiplication* (`x · y = z_lo + 2^64 · z_hi` for random 64-bit `x, y`; the `u64` workload
-runs on BitZ and Binius64, see `docs/native-mul-compare.md`):
-```sh
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u64" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64" \
-bash scripts/run_native_mul_compare.sh
-```
-
-*128-bit multiplication* (`x · y = z` for random 128-bit `x, y` and the exact
-256-bit `z`; the `u128` workload runs on BitZ and Binius64 only; Binius64 uses its
-[`textbook_mul` bignum circuit](https://github.com/binius-zk/binius64/blob/e0ddeb91d3826457322e3b7434a8ca0625f2f56e/crates/circuits/src/bignum/mul.rs#L27-L42). BitZ runs to
-2^21 here; Binius64's bignum prover exceeds the machine's 16 GB from 2^18, so run
-it separately on 2^15–2^17, once at its default rate 1/2 and once at rate 1/8
-with `F2Z_BINIUS_LOG_INV_RATE=3`, since the paper's tables list both):
-
-```sh
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17 18 19 20 21" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u128" \
-F2Z_MUL_COMPARE_BACKENDS="f2z" \
-bash scripts/run_native_mul_compare.sh
-RAYON_NUM_THREADS=8 \
-F2Z_BENCH_SHAPES="15 16 17" \
-F2Z_BENCH_REPS=5 \
-F2Z_MUL_COMPARE_WORKLOADS="u128" \
-F2Z_MUL_COMPARE_BACKENDS="binius64" \
-F2Z_BINIUS_LOG_INV_RATE=3 \
-bash scripts/run_native_mul_compare.sh
-```
-
-Every warmup and measured trial generates and verifies the complete proof.
-The default `u32-mod32` workload (`u32` is an alias) compares **independent
-multiplications modulo 2^32** on F2Z, Binius64, Plonky3-FRI and
-Limber-Brakedown, with identical inputs. Limber uses the `int_mult` example
-on your fork's `f2z-benching` branch in the sibling checkout. The old
-multiplication Limber adapter has been removed.
-See the [native multiplication benchmark guide](docs/native-mul-compare.md)
-for setup, security targets, measurement boundaries, and table generation.
+Remove `--dry-run` to execute the F2Z sweep. Both targets also support `witness`
+and `pcs`; F2Z retains `piop`, `outer`, and `bounds` experiments. See the
+[multiplication benchmark guide](docs/native-mul-compare.md) for defaults,
+configuration, measurement boundaries, memory passes, and the current result format.
 
 ### RSA MultiSwap — matched 114-bit comparison
 
@@ -537,63 +492,14 @@ See the [native ZKPassport benchmark guide](benchmarks/zkpassport/README.md)
 for measurement boundaries, offline operation, and the retained upstream
 Noir constraint-coverage diagnostic.
 
-### u32×u32 -> u64 — λ=100; exponents ≥ 15:
-```sh
-F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --bench u32_mul --features unchecked
-```
-
-### Babybear mult — λ=100; exponents ≥ 15 (unset `F2Z_BENCH_LAMBDA` = a λ=100 and a λ=128 row per shape):
-```sh
-F2Z_BENCH_LAMBDA=100 F2Z_BENCH_SHAPES="15 20" F2Z_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --bench baby_bear_mul --features unchecked
-```
-
-### Independent multiplication modulo 2^32: four backends
-
-Prepare the sibling `limber-impl` checkout on your fork's `f2z-benching`
-branch with the independent Brakedown `examples/int_mult.rs`. Run the smoke
-case (2^15 operations, one in-process warmup, five verified samples):
+### Multiplication and BabyBear
 
 ```sh
-bash scripts/run_native_mul_compare.sh
+cargo bench --bench mul_f2z --features span-metrics,bench-internals -- \
+  proof --workload baby-bear --log-n 15,20 --f2z-profile 100,128 --threads 8
 ```
 
-The runner enforces Rust 1.98.1, native CPU compilation and eight threads.
-Set `LIMBER_REPO` if the fork is elsewhere. For a five-sample sweep:
-
-```sh
-F2Z_BENCH_SHAPES="15 16 17 18 19 20" F2Z_BENCH_REPS=5 \
-bash scripts/run_native_mul_compare.sh
-```
-
-For each size, it invokes this command in Limber's repository, once for
-warmup and all samples, plus a separate invocation for isolated peak RSS:
-
-```sh
-RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.98.1 run --release --example int_mult -- --bits 32 --log-gates 15
-```
-
-At L=15 all backends prove **32,768 independent gates**; Limber allocates
-131,072 padded witness slots. `u32` aliases `u32-mod32`; BabyBear is absent
-from this comparison. F2Z uses Lambda100 and defaults to Johnson `custom:1:4`
-and Round-0 OOD. Binius and Plonky3 use their documented 100-bit targets;
-Limber retains its native approximately 114-bit policy.
-
-Each run writes unified `summary.json`, `samples.jsonl`, `metrics.csv` and
-`campaign.json` under `PerfRuns/`, including source fingerprints and effective
-parameters. Generate a table with:
-
-```sh
-python3 scripts/native_mul_table.py PerfRuns/<run-directory> --out paper/native-mul-table.tex
-```
-
-The exporter rejects incompatible workloads, configurations, corpora,
-measurement policies and machines. Historical chain, Hyrax, WHIR and
-full-product rows remain separate. The [benchmark guide](docs/native-mul-compare.md)
-documents timing and proof-size conventions, tested revisions, validation,
-wider workloads, and deferred work.
+All multiplication benchmarks and reports use the [two-target interface](docs/native-mul-compare.md).
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `F2Z_BENCH_LAMBDA` for one of them):
 ```sh
