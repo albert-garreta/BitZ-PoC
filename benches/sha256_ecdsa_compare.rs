@@ -155,6 +155,8 @@ struct Measurements<D> {
 #[derive(Serialize)]
 struct F2zDetails {
     proof_digest: String,
+    prover_transcript: String,
+    verifier_transcript: String,
     ligerito_profile: String,
     phases_seconds: Vec<(String, f64)>,
     verify_phases_seconds: Vec<(String, f64)>,
@@ -285,9 +287,10 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             .in_scope(|| generate_sha256_ecdsa_witness(&prepared, &statement, &fixture.message))?;
         let hint = tracing::info_span!("benchmark:commit")
             .in_scope(|| commit_sha256_ecdsa(&prepared, &witness))?;
+        let mut prover_transcript = Blake3Transcript::new();
         let proof = tracing::info_span!("benchmark:protocol").in_scope(|| {
             prove_sha256_ecdsa(
-                &mut Blake3Transcript::new(),
+                &mut prover_transcript,
                 &prepared,
                 &statement,
                 &witness,
@@ -313,10 +316,11 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             .deserialize(&wire)?;
         let decoded_proof = Sha256EcdsaProof::from_bytes(&decoded.proof)?;
         drop(codec);
+        let mut verifier_transcript = Blake3Transcript::new();
         tracing::info_span!("benchmark:verification").in_scope(|| {
             fixture.validate_statement()?;
             verify_sha256_ecdsa(
-                &mut Blake3Transcript::new(),
+                &mut verifier_transcript,
                 &prepared,
                 &statement,
                 &decoded.commitment,
@@ -359,6 +363,8 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 folding_ms: None,
                 details: F2zDetails {
                     proof_digest,
+                    prover_transcript: blake3::Hash::from(prover_transcript.state_digest()).to_hex().to_string(),
+                    verifier_transcript: blake3::Hash::from(verifier_transcript.state_digest()).to_hex().to_string(),
                     ligerito_profile: ligerito_profile.clone(),
                     phases_seconds: phases,
                     verify_phases_seconds: verify_phases,
@@ -547,6 +553,8 @@ mod reporting_tests {
             folding_ms: None,
             details: F2zDetails {
                 proof_digest: "test-proof".into(),
+                prover_transcript: "test-prover".into(),
+                verifier_transcript: "test-verifier".into(),
                 ligerito_profile: "custom:1:4".into(),
                 phases_seconds: vec![("commit".into(), 0.003)],
                 verify_phases_seconds: vec![],

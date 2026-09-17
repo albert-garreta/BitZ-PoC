@@ -17,10 +17,21 @@ import subprocess
 
 
 def paired_interval(ratios):
+    if len(ratios) < 2 or any(not math.isfinite(r) or r <= 0 for r in ratios):
+        raise ValueError('paired intervals require at least two positive finite ratios')
     rng = random.Random(0)
     logs = [math.log(x) for x in ratios]
     draws = sorted(math.exp(statistics.mean(rng.choices(logs, k=len(logs)))) for _ in range(10000))
     return [draws[249], draws[9749]]
+
+
+def classify_interval(interval, maximum=1.0):
+    """Uncertainty is not evidence of nonregression. No tolerated slowdown."""
+    if interval[1] <= maximum:
+        return 'pass'
+    if interval[0] > 1.0:
+        return 'regression'
+    return 'inconclusive'
 
 
 def main():
@@ -39,6 +50,7 @@ def main():
     parser.add_argument('--baseline-env', action='append', default=[])
     parser.add_argument('--candidate-env', action='append', default=[])
     parser.add_argument('--schedule', choices=['l2','l4','l8'], default='l4')
+    parser.add_argument('--require-transcripts', action='store_true')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = {k: getattr(args, k).resolve(strict=True) for k in ['baseline', 'candidate']}
@@ -56,6 +68,7 @@ def main():
         cold = {k: [] for k in binaries}
         blocks = {k: [] for k in binaries}
         digest = None
+        transcripts = None
         for block in range(args.blocks):
             for variant in (list(binaries) if block % 2 == 0 else list(binaries)[::-1]):
                 name = f'{method}-i{exponent}-t{threads}-target{target}-seed{seed}-b{block}-{variant}'
@@ -80,11 +93,16 @@ def main():
                 for row in rows:
                     digest = digest or row['proof_digest']
                     assert row['proof_digest'] == digest, f'proof bytes changed: {name}'
+                    state = [row.get(key) for key in ['prover_transcript', 'verifier_transcript']]
+                    if args.require_transcripts:
+                        assert all(state), f'missing transcript fingerprints: {name}'
+                    transcripts = transcripts or state
+                    assert state == transcripts, f'transcript changed: {name}'
                 for row in rows:
                     phases = dict(row['phases_seconds'])
                     row['gkr_ms'] = 1000 * phases['mc:forest']
                     row['grid_ms'] = 1000 * phases.get('eqf:grid', 0)
-                metrics = ['witness_to_proof_ms', 'prove_ms', 'gkr_ms', 'grid_ms', 'verify_ms']
+                metrics = ['e2e_prover_ms', 'prove_ms', 'gkr_ms', 'grid_ms', 'verify_ms']
                 first = [r for r in rows if r['trial'] == 'warmup']
                 assert len(first) == 1, name
                 cold[variant].extend(first)
@@ -94,7 +112,7 @@ def main():
                 samples[variant].extend(rows)
                 blocks[variant].append(medians)
                 print(name, {m: round(v, 3) for m, v in medians.items()}, flush=True)
-        summary = dict(method=method, exponent=exponent, threads=threads, target=target, seed=seed, proof_digest=digest, metrics={})
+        summary = dict(method=method, exponent=exponent, threads=threads, target=target, seed=seed, proof_digest=digest, transcripts=transcripts, metrics={})
         for metric in metrics + ['cold_' + m for m in metrics]:
             source = cold if metric.startswith('cold_') else samples
             field = metric.removeprefix('cold_')
@@ -103,6 +121,8 @@ def main():
                 baseline_ms=statistics.median(r[field] for r in source['baseline']),
                 candidate_ms=statistics.median(r[field] for r in source['candidate']),
                 paired_ratios=ratios, ratio_ci95=paired_interval(ratios) if ratios else None)
+            if ratios:
+                summary['metrics'][metric]['nonregression'] = classify_interval(paired_interval(ratios))
         summaries.append(summary)
         (args.output / 'summary.json').write_text(json.dumps(summaries, indent=2)+'\n')
     return 0

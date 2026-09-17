@@ -13,7 +13,7 @@ import resource
 import shlex
 import statistics
 import subprocess
-from compare_prover_snapshots import paired_interval
+from compare_prover_snapshots import paired_interval, classify_interval
 
 
 def jsonl(path):
@@ -73,7 +73,7 @@ def main():
     parser.add_argument('--workloads', nargs='+', choices=['u32-mod32', 'u64', 'u128'], default=['u32-mod32', 'u64', 'u128'])
     parser.add_argument('--exponents', type=int, nargs='+', default=[15, 19])
     parser.add_argument('--threads', type=int, nargs='+', default=[1, 10])
-    parser.add_argument('--batches', type=int, nargs='+', default=[1, 4, 8])
+    parser.add_argument('--batches', type=int, nargs='+', default=[1, 2, 4, 8])
     parser.add_argument('--sha-exponents', type=int, nargs='+', default=[7, 10, 12])
     parser.add_argument('--blocks', type=int, default=6)
     parser.add_argument('--reps', type=int, default=5)
@@ -87,7 +87,7 @@ def main():
     manifests = {v: json.loads(getattr(args, v).read_text()) for v in ['baseline', 'candidate']}
     binaries = {v: {name: dict(path=str(Path(path).resolve()), sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest())
                     for name, path in manifest.items()} for v, manifest in manifests.items()}
-    (args.output/'manifest.json').write_text(json.dumps(dict(binaries=binaries, args={k:str(v) for k,v in vars(args).items()}), indent=2))
+    (args.output/'manifest.json').write_text(json.dumps(dict(binaries=binaries, args={k:str(v) for k,v in vars(args).items()}, affinity=sorted(os.sched_getaffinity(0))), indent=2))
     cases = []
     if 'mul' in args.kinds:
         cases += [('mul', 'mul_e2e_compare', f'{w}-n{n}', dict(F2Z_MUL_COMPARE_WORKLOADS=w, F2Z_BENCH_SHAPES=str(n)))
@@ -162,7 +162,8 @@ def main():
             for metric in sorted(common_metrics):
                 ratios = [b[metric]/a[metric] for a,b in zip(blocks['baseline'],blocks['candidate'])]
                 result['metrics'][metric] = dict(baseline_ms=statistics.median(b[metric] for b in blocks['baseline']),
-                    candidate_ms=statistics.median(b[metric] for b in blocks['candidate']), paired_ratios=ratios, ratio_ci95=paired_interval(ratios))
+                    candidate_ms=statistics.median(b[metric] for b in blocks['candidate']), paired_ratios=ratios, ratio_ci95=paired_interval(ratios),
+                    nonregression=classify_interval(paired_interval(ratios)))
             results.append(result)
             (args.output/'summary.json').write_text(json.dumps(results, indent=2))
 
