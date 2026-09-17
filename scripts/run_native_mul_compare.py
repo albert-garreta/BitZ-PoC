@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from local_provenance import vendor_snapshots
 import csv
 from datetime import datetime, timezone
 import hashlib
@@ -192,7 +193,7 @@ def provenance(repo, machine, profile, threads):
             digest.update(name.encode() + b"\0" + full.read_bytes() + b"\0")
     status = git("status", "--porcelain").decode().splitlines()
     dirty = any(not line[3:].startswith("PerfRuns/") for line in status)
-    return dict(repository=str(repo), git_revision=revision, git_dirty=dirty,
+    return dict(vendor_snapshots=vendor_snapshots(repo), repository=str(repo), git_revision=revision, git_dirty=dirty,
                 source_sha256=digest.hexdigest(),
                 cargo_lock_sha256=hashlib.sha256((repo / "Cargo.lock").read_bytes()).hexdigest(),
                 build=BUILD | {"profile": profile, "threads": threads}, machine=machine)

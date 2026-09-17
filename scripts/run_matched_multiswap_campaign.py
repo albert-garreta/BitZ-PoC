@@ -10,6 +10,7 @@ execution plan without creating files or compiling benchmarks.
 from __future__ import annotations
 
 import argparse
+from local_provenance import vendor_snapshots
 import hashlib
 import json
 import os
@@ -663,6 +664,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             k_values=k_values,
             expected_digests=expected_digests,
         )
+        manifest["vendor_snapshots"] = vendor_snapshots(bitz_root)
         manifest["security"] = {"target_bits": args.security_bits, "model": "per-check-round-minimum/v1"}
         manifest["validation"] = {
             "mode": "draft" if args.draft else "canonical",

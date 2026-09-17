@@ -21,8 +21,8 @@ before the knobs were recorded are rejected rather than mislabeled.
 Output: one row group per shape (N multiplications, M compressions),
 sub-grouped by thread count, one row per scheme; bold = best of the schemes in
 that (shape, threads) group and column; dagger = the case paged.
-`--variant witness` (M = N/256, paper/hybrid-table.tex) or
-`--variant counts` (M = N, paper/hybrid-table-equal-counts.tex).
+`--variant witness` (M = N/256, outputs/tables/hybrid-table.tex) or
+`--variant counts` (M = N, outputs/tables/hybrid-table-equal-counts.tex).
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ VARIANTS = {
     # Equal packed witnesses: one packed 128-bit word per multiplication,
     # 256 per compression, so M = N/256.
     "witness": {
-        "output": "paper/hybrid-table.tex",
+        "output": "outputs/tables/hybrid-table.tex",
         "label": "tab:hybrid-sha256-mul",
         "title": "Hybrid u32-multiplication + chained SHA-256 comparison",
         "caption": r"End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches)."
@@ -65,7 +65,7 @@ VARIANTS = {
     # Equal operation counts: N = M, the SHA-256 branch's packed witness is
     # 256 times the multiplication branch's.
     "counts": {
-        "output": "paper/hybrid-table-equal-counts.tex",
+        "output": "outputs/tables/hybrid-table-equal-counts.tex",
         "label": "tab:hybrid-sha256-mul-equal-counts",
         "title": "Hybrid u32-multiplication + chained SHA-256 comparison at equal operation counts N = M",
         "caption": r"End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N$ chained SHA-256 compressions (equal operation counts; the packed SHA-256 witness is $256\times$ the multiplication witness, so the workload is dominated by the compressions)."
@@ -240,7 +240,7 @@ def main() -> None:
         help="one sweep directory per (scheme, threads), e.g. hybrid@1:10=PerfRuns/run-a",
     )
     parser.add_argument("--variant", choices=sorted(VARIANTS), default="witness", help="which table: equal packed witnesses (M = N/256) or equal operation counts (N = M)")
-    parser.add_argument("--output", type=Path, help="defaults to the variant's file under paper/")
+    parser.add_argument("--output", type=Path, help="defaults to the variant's file under outputs/tables/")
     args = parser.parse_args()
     if not args.row:
         parser.error("at least one --row MODE@RATE:THREADS=DIR is required")

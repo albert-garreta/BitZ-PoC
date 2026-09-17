@@ -1,0 +1,31 @@
+# Independent local repositories; root Git history is retained for review.
+
+[limber]
+path = "vendor/limber"
+upstream_commit = "0629e674662937344e39986bf08bb8387b67a424"
+snapshot_commit = "165d63778cfb28d5746652e337890d271a342b3b"
+changes = "Benchmark instrumentation and matched MultiSwap/security parameters. Removed an upstream-committed executable from every historical tree; upstream source files and commit topology are unchanged. Lockfile packaging with the original official upstream halo2curves Git pin. Matched benchmark digest domains; selected upstream contributor metadata normalized."
+original_upstream_commit = "959575409f38a0894dab2f2a7b7125c8aa424b78"
+
+[plonky3]
+path = "vendor/plonky3"
+upstream_commit = "59be31386d5ab81b87dbceb0b83bf797f9eefaec"
+snapshot_commit = "dbf8141f93ffeabe60b02bb3b2257914cb57adb5"
+changes = "Multiplication and hash benchmarks with phase instrumentation. Relative local dependency paths and lockfile packaging. Removed the external zkhash development dependency and its BN254 Poseidon2 reference-comparison test."
+
+[binius64]
+path = "vendor/binius64"
+upstream_commit = "c28940ae693c3999fd225cc6142f43d07d1100bb"
+snapshot_commit = "15d1f308809f8f891d2fba07324f0ac9714c0c57"
+changes = "Matched SHA-chain/P-256 and multiplication benchmarks. Relative local dependency paths and lockfile packaging."
+
+[flock-mod]
+path = "vendor/flock-mod"
+upstream_commit = "e636760f8dae78306f804554fb4244993758b011"
+snapshot_commit = "4521f83e33006d0690dde89ea3752e8e27fed578"
+changes = "Ligerito custom profiles, interleaved oracle support and shared local field kernels. Relative local dependency paths and lockfile packaging."
+
+[halo2curves]
+git = "https://github.com/privacy-ethereum/halo2curves.git"
+upstream_commit = "02c235f0bb52800c28d9c3370400b5435dbe2220"
+changes = "Unmodified upstream dependency fetched by Cargo for Limber's curve arithmetic and mixed-add API."

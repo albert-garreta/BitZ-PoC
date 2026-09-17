@@ -1422,7 +1422,7 @@ fn prove_merged_forest_lazy_impl(
     // Vec<[Gf; 16]> and flatten in place: a parallel `.flatten()` here
     // treats every 16-entry row as its own nested parallel iterator and
     // the collect goes unindexed — measured ~836× slower than the same
-    // arithmetic serially (upstream zinc-plus fix `e19b0e1`, 2026-07-16).
+    // arithmetic serially (upstream zinc-plus arithmetic fix).
     // Under [`t4_factored`] the consumers recompute te·to themselves, so
     // the table is only built where the T4Bits round needs it precombined
     // (the L/8 schedule).

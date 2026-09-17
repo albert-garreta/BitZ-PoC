@@ -81,7 +81,7 @@
 //!   `--threads/--reps/--profile/--word-bits`; one shape per process is the
 //!   bench protocol), stream each child's output, parse its `RESULT` line,
 //!   print a summary, and write the LaTeX table to `--latex <path>` (default
-//!   `paper/raw-performance-table.tex` in the crate; the file records the
+//!   `outputs/tables/raw-performance-table.tex` in the crate; the file records the
 //!   exact command, machine, date, commit, and every RESULT line, so it is
 //!   its own provenance). `t s` positionals do not apply (each `n` uses the
 //!   reference split). `--cooldown <s>` idles between children so the OS
@@ -110,7 +110,7 @@
 //!   `prove`.
 //! - `--mul-sweep <lo>-<hi>` — the paper-table mode for `--mul`: one fresh
 //!   child process per `e`, then the LaTeX table (default
-//!   `paper/u32-mul-table.tex`; `--latex <path>` overrides). On a 16 GB box
+//!   `outputs/tables/u32-mul-table.tex`; `--latex <path>` overrides). On a 16 GB box
 //!   `e ≤ 22` (BitZ n = e + 7 ≤ 29); `e = 23` peaks near 8 GB. Example:
 //!   `bitz --mul-sweep 15-22 --threads 8 --reps 5`
 //!
@@ -495,11 +495,11 @@ fn usage() -> ! {
          [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
        bitz --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
          (paper-table mode: one fresh process per n, then the LaTeX table is written —\n\
-          default paper/raw-performance-table.tex in the crate; t/s do not apply)\n\
+          default outputs/tables/raw-performance-table.tex in the crate; t/s do not apply)\n\
        bitz --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr] [--word-bits 1|8]\n\
          (2^e u32×u32→u64 multiplications through the Spartan PIOP + BitZ opening; e ≥ 15)\n\
        bitz --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--word-bits W] [--cooldown S] [--latex <path>]\n\
-         (paper-table mode for --mul; default paper/u32-mul-table.tex)\n\
+         (paper-table mode for --mul; default outputs/tables/u32-mul-table.tex)\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
           XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
@@ -1744,11 +1744,11 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
     }
 }
 
-/// Default table location: `paper/<name>` in the crate (`\input{<stem>}`
-/// from `paper/main.tex`).
+/// Default table location: `outputs/tables/<name>` in the crate.
 fn default_latex_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("paper")
+        .join("outputs")
+        .join("tables")
         .join(name)
 }
 
@@ -2035,6 +2035,9 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     };
 
     let mut out = String::new();
+    for line in include_str!("../../provenance.toml").lines() {
+        let _ = writeln!(out, "% vendor provenance: {line}");
+    }
     let _ = writeln!(
         out,
         "% Raw-performance table of BitZ (c:core_iop) — GENERATED FILE, do not edit by hand."
@@ -2062,7 +2065,7 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     );
     let _ = writeln!(
         out,
-        "% Include with \\input{{raw-performance-table}} (relative to paper/)."
+        "% Include with \\input{{raw-performance-table}} (relative to outputs/tables/)."
     );
     let _ = writeln!(
         out,
@@ -3887,6 +3890,9 @@ fn write_mul_latex_table(
     let cell_words = 128usize >> log_w; // committed cells per multiplication
 
     let mut out = String::new();
+    for line in include_str!("../../provenance.toml").lines() {
+        let _ = writeln!(out, "% vendor provenance: {line}");
+    }
     let _ = writeln!(
         out,
         "% Integer-multiplication table of BitZ (c:iop_pimsat on u32 × u32 → u64) — GENERATED FILE, do not edit by hand."
@@ -3910,7 +3916,7 @@ fn write_mul_latex_table(
     );
     let _ = writeln!(
         out,
-        "% Include with \\input{{u32-mul-table}} (relative to paper/)."
+        "% Include with \\input{{u32-mul-table}} (relative to outputs/tables/)."
     );
     let _ = writeln!(
         out,

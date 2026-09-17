@@ -158,7 +158,7 @@ def figure_tex(metric: str, ylabel: str, series: dict[str, list[tuple[int, float
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir", type=Path, help="PerfRuns/<stamp>-native-mul directory")
-    ap.add_argument("--out-dir", type=Path, default=Path("paper/figures"))
+    ap.add_argument("--out-dir", type=Path, default=Path("outputs/figures"))
     ap.add_argument("--prefix", default="native-mul-ratio")
     ap.add_argument("--bitz-proof-bytes", default="", help="e=bytes,e=bytes,... for BitZ (not recorded by the bench)")
     ap.add_argument("--compile", action="store_true", help="run pdflatex on each figure (and pdftoppm previews if present)")

@@ -1,2 +1,0 @@
-error: target `f2z` in package `f2z` requires the features: `span-metrics`
-Consider enabling them by passing, e.g., `--features="span-metrics"`

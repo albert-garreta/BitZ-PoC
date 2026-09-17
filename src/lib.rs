@@ -7,8 +7,7 @@
 //! through `K`-linear queries) and reading the column combination off in the
 //! clear over `F_q`. Construction due to Lev Soukhanov (char2-fieldswitch §9);
 //! this crate is the standalone extraction of the most-optimized
-//! implementation from the `zinc-plus` repository (branch
-//! `f2-int-unified-ligerito`).
+//! implementation from the `zinc-plus` repository.
 //!
 //! ## Opener
 //!

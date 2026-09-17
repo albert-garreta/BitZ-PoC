@@ -10,7 +10,7 @@
 /benchmarks/results/**/*.csv
 /PerfRuns/
 /src/sumcheck/performance.csv
-/paper/figures/native-mul-ratios.csv
+/outputs/figures/native-mul-ratios.csv
 
 # Generated arithmetic validation and benchmark artifacts.
 /vendor/field/validation/
@@ -42,3 +42,9 @@ __pycache__/
 /vendor/field/target/
 
 /vendor/flock-mod/target/
+
+# Independent benchmark repositories (their histories live in vendor).
+/vendor/limber/
+/vendor/plonky3/
+/vendor/binius64/
+/vendor/flock-mod/

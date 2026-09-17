@@ -4,7 +4,7 @@
 Reads the `summary.json` of one or more `PerfRuns/<stamp>-native-mul` run
 directories (later directories override earlier ones for the same scheme, size
 and thread count, so a follow-up run of the large sizes extends a first run)
-and writes a self-documenting `paper/native-mul-table.tex` in the SHA+ECDSA
+and writes a self-documenting `outputs/tables/native-mul-table.tex` in the SHA+ECDSA
 table's format: one row group per size N, sub-grouped by thread count (1 then
 10), one row per scheme, with the medians of witness generation, the complete
 prover (commit included) and the complete verifier, plus complete proof size
@@ -43,7 +43,6 @@ SCHEMES = [
     ("plonky3-fri", "Plonky3 (FRI), rate $1/2$"),
     ("plonky3-whir", "Plonky3 (WHIR)"),
     ("limber", "Limber (Brakedown)"),
-    ("zinc-plus", "Zinc+, rate $1/4$"),
 ]
 BINIUS_QUERIES = {1: 241, 2: 148, 3: 121, 4: 110}  # 100-bit FRI query counts per log inverse rate
 
@@ -101,8 +100,7 @@ def scheme_key(r: dict) -> str:
 
 def scheme_name(key: str) -> str:
     """Short scheme name for caption sentences."""
-    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber",
-             "zinc-plus": "Zinc+"}
+    names = {"plonky3-fri": "Plonky3-FRI", "plonky3-whir": "Plonky3-WHIR", "limber": "Limber"}
     if key in names:
         return names[key]
     family, _, rate = key.partition("@")
@@ -173,7 +171,7 @@ def probe(cmd: list[str], default: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
-    ap.add_argument("--out", type=Path, default=None, help="default: paper/native-mul-table.tex (u32) or paper/native-mul-<workload>-table.tex")
+    ap.add_argument("--out", type=Path, default=None, help="default: outputs/tables/native-mul-table.tex (u32) or outputs/tables/native-mul-<workload>-table.tex")
     ap.add_argument("--exponents", default="", help="comma list or lo-hi; default: every size in the run")
     ap.add_argument("--workload", default="u32-mod32", choices=["u32-mod32", "u32", "u64", "u128"])
     ap.add_argument("--memory-bound", default="", metavar="BACKEND:EXP[,...]",
@@ -216,7 +214,7 @@ def main() -> int:
     if unsupported and not args.unsupported_reason:
         ap.error("--unsupported needs --unsupported-reason")
     if args.out is None:
-        args.out = Path("paper/native-mul-table.tex" if args.workload == "u32-mod32" else f"paper/native-mul-{args.workload}-table.tex")
+        args.out = Path("outputs/tables/native-mul-table.tex" if args.workload == "u32-mod32" else f"outputs/tables/native-mul-{args.workload}-table.tex")
 
     drift_allowed = {b for b in args.allow_source_drift.split(",") if b}
     drifted = {}
@@ -570,29 +568,8 @@ def main() -> int:
         limber_note = ("Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown; "
                        f"Brakedown column-open target ${targets.pop()}$ bits, its native IntEval $128$-bit, "
                        "challenge $117$-bit and $2^{-114}$ fingerprint terms unchanged)")
-    zinc_rows = [r for r in rows if r["backend"] == "zinc-plus"]
-    zinc_note = "Zinc+ (Zip+/IPRS commitments over $\\FF_{65537}$)"
-    if zinc_rows:
-        cfgs = [r["config"] for r in zinc_rows]
-
-        def one(name):
-            """A configuration value every Zinc+ row agrees on."""
-            values = {c[name] for c in cfgs}
-            if len(values) != 1:
-                raise ValueError(f"Zinc+ rows disagree on {name}: {sorted(values)}")
-            return values.pop()
-
-        logup = min(c["logup_bits"] for c in cfgs)
-        zinc_note = ("Zinc+ (one integer constraint $xy = z + 2^{32} w$ per multiplication over "
-                     f"${one('columns')}$ int columns of ${one('limb_bits')}$-bit limbs, every column "
-                     "range-checked by a GKR-LogUp word lookup; Zip+/IPRS over $\\FF_{65537}$ at rate "
-                     f"$1/{one('inverse_rate')}$ with ${one('column_openings')}$ column openings for "
-                     f"${one('target_bits')}$ bits, the projecting prime ${one('prime_bits')}$-bit and drawn "
-                     f"from the transcript, the range-check term at least ${logup:.0f}$ bits; rows of "
-                     f"${one('row_len')}$ columns, and the generic multi-row opening path)")
     scheme_notes = {
         "bitz": bitz_caption(rows),
-        "zinc-plus": zinc_note,
         "binius64": binius_note,
         "binius64-ligerito-rbr": ligerito_family_note("binius64-ligerito-rbr"),
         "plonky3-fri": fri_note,

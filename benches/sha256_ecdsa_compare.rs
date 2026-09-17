@@ -25,7 +25,7 @@ enum Timing {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(long, value_parser = ["bitz-split", "bitz-all", "spartan-mc", "binius64", "binius64-ligerito"])]
+    #[arg(long, value_parser = ["bitz-split", "bitz-all", "binius64", "binius64-ligerito"])]
     method: String,
     #[arg(long)]
     r: usize,
@@ -224,16 +224,8 @@ struct BitzWire {
     proof: Vec<u8>,
 }
 
-fn spartan_revision() -> Option<&'static str> {
-    let package = include_str!("../Cargo.lock")
-        .split("[[package]]")
-        .find(|p| p.lines().any(|line| line == "name = \"spartan2\""))?;
-    package
-        .lines()
-        .find_map(|l| l.strip_prefix("source = \"git+"))?
-        .trim_end_matches('"')
-        .rsplit_once('#')
-        .map(|(_, rev)| rev)
+fn bitz_revision() -> Option<&'static str> {
+    Some(env!("BITZ_REVISION"))
 }
 
 #[derive(Serialize)]
@@ -268,43 +260,6 @@ struct BitzDetails {
 }
 
 #[derive(Serialize)]
-struct SpartanDetails<P> {
-    phases_ms: P,
-    security: Value,
-    circuit: Value,
-}
-
-#[derive(Serialize)]
-struct SpartanPhases {
-    matrix_ms: f64,
-    folding_ms: f64,
-    outer_ms: f64,
-    inner_ms: f64,
-    opening_ms: f64,
-}
-
-impl SpartanPhases {
-    fn from_intervals(
-        intervals: &[bitz::observability::Interval],
-        folding: bool,
-    ) -> std::io::Result<Self> {
-        let millis = |label| {
-            bitz::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
-        };
-        let folding_ms = millis("spartan2.folding")?;
-        Ok(Self {
-            matrix_ms: millis("spartan2.matrix")?,
-            // A single-step proof has a preparation span but no folding rounds.
-            // Keep the existing JSON representation for that case.
-            folding_ms: if folding { folding_ms } else { 0.0 },
-            outer_ms: millis("spartan2.outer")?,
-            inner_ms: millis("spartan2.inner")?,
-            opening_ms: millis("spartan2.opening")?,
-        })
-    }
-}
-
-#[derive(Serialize)]
 struct ResultRecord<'a, D> {
     schema: &'static str,
     timing: Timing,
@@ -325,7 +280,7 @@ struct ResultRecord<'a, D> {
     fixture_id: &'a str,
     statement_bytes: usize,
     statement: &'static str,
-    spartan_revision: Option<&'static str>,
+    bitz_revision: Option<&'static str>,
     verified: bool,
     prove_ms: f64,
     witness_to_proof_ms: f64,
@@ -351,15 +306,15 @@ fn result_record<'a, D>(
         compressions: 1usize << args.exponent(),
         message_bytes: fixture.message.len(),
         signatures: 1,
-        r: (args.method == "spartan-mc").then_some(args.r),
-        c: (args.method == "spartan-mc").then_some(args.c),
-        security_target: (args.method != "spartan-mc").then_some(args.target),
+        r: None,
+        c: None,
+        security_target: Some(args.target),
         threads: args.threads,
         seed: args.seed,
         fixture_id: &fixture.id,
         statement_bytes: 129,
         statement: "public-key-signature; witness-message",
-        spartan_revision: spartan_revision(),
+        bitz_revision: bitz_revision(),
         verified: true,
         prove_ms: row.commit_ms + row.protocol_ms,
         witness_to_proof_ms: row.witness_ms + row.commit_ms + row.protocol_ms,
@@ -486,81 +441,6 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     Ok(())
 }
 
-fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
-    use spartan2::sha256_ecdsa::{Prepared, Proof, Statement};
-    let s = fixture;
-    let statement = Statement {
-        log_compressions: s.log_compressions,
-        qx: s.qx,
-        qy: s.qy,
-        r: s.r,
-        s: s.s,
-    };
-    let (prepared, setup_ms) = setup(args.timing, || Prepared::setup(args.r, args.c))?;
-    for trial in 0..=args.reps {
-        let recording = TrialTiming::start(args.timing)?;
-        let e2e = timed!(recording, "benchmark:e2e");
-        let witness = timed!(recording, "benchmark:witness")
-            .in_scope(|| prepared.generate_witness(&statement, &fixture.message))?;
-        let committed =
-            timed!(recording, "benchmark:commit").in_scope(|| prepared.commit(witness))?;
-        let proof = timed!(recording, "benchmark:protocol")
-            .in_scope(|| prepared.prove(&statement, &committed))?;
-        drop(e2e);
-        let codec = timed!(recording, "benchmark:codec");
-        let bytes = proof.to_bytes()?;
-        let decoded = Proof::from_bytes(&bytes)?;
-        drop(codec);
-        timed!(recording, "benchmark:verification").in_scope(|| -> Result<()> {
-            fixture.validate_statement()?;
-            prepared.verify(&statement, &decoded)?;
-            Ok(())
-        })?;
-        let timings = recording.finish()?;
-        let phases = timings.intervals.as_ref()
-            .map(|intervals| SpartanPhases::from_intervals(intervals, args.c != 0))
-            .transpose()?;
-        let witness_ms = timings.ms("benchmark:witness");
-        let commit_ms = timings.ms("benchmark:commit");
-        let protocol_ms = timings.ms("benchmark:protocol");
-        let e2e_prover_ms = timings.ms("benchmark:e2e");
-        let codec_ms = timings.ms("benchmark:codec");
-        let verify_ms = timings.ms("benchmark:verification");
-        emit(
-            args,
-            fixture,
-            trial,
-            Measurements {
-                setup_ms,
-                witness_ms,
-                commit_ms,
-                e2e_prover_ms,
-                protocol_ms,
-                verify_ms,
-                codec_ms,
-                proof_object_bytes: bytes.len(),
-                proof_material_bytes: bytes.len(),
-                outer_ms: phases.as_ref().map(|p| p.outer_ms),
-                inner_ms: phases.as_ref().map(|p| p.inner_ms),
-                opening_ms: phases.as_ref().map(|p| p.opening_ms),
-                folding_ms: if args.c == 0 {
-                    None
-                } else {
-                    phases.as_ref().map(|p| p.folding_ms)
-                },
-                details: SpartanDetails {
-                    phases_ms: phases,
-                    circuit: json!({"sha": prepared.sizes()[0], "p256": prepared.sizes()[1]}),
-                    security: json!({"model": "discrete-log-and-fiat-shamir", "group": "T256", "constraint_field": "P256-Fp",
-                    "transcript": "Keccak256", "pcs": "Hyrax-direct", "hyrax_columns": 2048,
-                    "nominal_group_security_bits": 128, "statistical_bits_lower_bound": null}),
-                },
-            },
-        );
-    }
-    Ok(())
-}
-
 fn main() -> Result<()> {
     let args = <Args as clap::Parser>::parse();
     let exponent = args.r.checked_add(args.c).ok_or("exponent overflow")?;
@@ -576,7 +456,7 @@ fn main() -> Result<()> {
     }
     if args.method.starts_with("binius64") {
         if args.timing == Timing::WallClock {
-            return Err("--timing wall-clock supports bitz-split, bitz-all and spartan-mc".into());
+            return Err("--timing wall-clock supports bitz-split, bitz-all".into());
         }
         return dispatch_binius(&args);
     }
@@ -591,7 +471,6 @@ fn main() -> Result<()> {
     match args.method.as_str() {
         "bitz-split" => bitz(&args, &fixture, OuterMode::Split),
         "bitz-all" => bitz(&args, &fixture, OuterMode::AllRows),
-        "spartan-mc" => spartan(&args, &fixture),
         _ => unreachable!(),
     }
 }
@@ -599,38 +478,6 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
-
-    #[test]
-    fn spartan_phases_preserve_numeric_fields_and_single_step_folding_zero() {
-        let intervals: Vec<_> = ["matrix", "folding", "outer", "inner", "opening"]
-            .into_iter()
-            .enumerate()
-            .map(|(i, name)| bitz::observability::Interval {
-                id: i as u64,
-                parent: None,
-                track_id: 0,
-                depth: 0,
-                name: name.into(),
-                component: Some(format!("spartan2.{name}")),
-                start_ns: i as u64 * 10_000_000,
-                end_ns: i as u64 * 10_000_000 + (i as u64 + 1) * 1_000_000,
-            })
-            .collect();
-        for folding in [false, true] {
-            let phases = SpartanPhases::from_intervals(&intervals, folding).unwrap();
-            assert_eq!(
-                serde_json::to_value(phases).unwrap(),
-                json!({
-                    "matrix_ms": 1.0, "folding_ms": if folding { 2.0 } else { 0.0 },
-                    "outer_ms": 3.0, "inner_ms": 4.0, "opening_ms": 5.0,
-                })
-            );
-        }
-        assert!(SpartanPhases::from_intervals(&intervals[..4], true).is_err());
-        let mut duplicate = intervals.clone();
-        duplicate.push(intervals[0].clone());
-        assert!(SpartanPhases::from_intervals(&duplicate, true).is_err());
-    }
 
     #[test]
     fn result_envelope_keeps_totals_nulls_and_trial_numbering() {
@@ -686,13 +533,13 @@ mod reporting_tests {
         assert_eq!(warmup["phases_seconds"], json!([["commit", 0.003]]));
         assert!(warmup.get("phases_ms").is_none());
         assert!(warmup["proof_object_bytes"].is_u64());
-        args.method = "spartan-mc".into();
+        args.method = "bitz-all".into();
         let sample = serde_json::to_value(result_record(&args, &fixture, 1, row())).unwrap();
         assert_eq!(sample["trial"], "sample");
         assert_eq!(sample["sample"], 1);
-        assert_eq!(sample["r"], 1);
-        assert_eq!(sample["c"], 2);
-        assert!(sample.get("security_target").unwrap().is_null());
+        assert!(sample["r"].is_null());
+        assert!(sample["c"].is_null());
+        assert_eq!(sample["security_target"], 100);
     }
 }
 
@@ -712,11 +559,11 @@ mod cli_tests {
         let defaults = parse(&["--bench"]).unwrap();
         assert_eq!((defaults.exponent(), defaults.target, defaults.threads, defaults.reps, defaults.seed),
             (3, 100, 1, 3, 0));
-        let args = parse(&["--method", "spartan-mc", "--r", "14", "--c", "2", "--target", "128",
+        let args = parse(&["--method", "bitz-all", "--r", "14", "--c", "2", "--target", "128",
             "--threads", "8", "--reps", "5", "--seed", "42", "--fixture", "fixture.json",
             "--export-fixture", "export.json", "--binius64-worker", "worker"]).unwrap();
         assert_eq!((args.method.as_str(), args.exponent(), args.target, args.threads, args.reps, args.seed),
-            ("spartan-mc", 16, 128, 8, 5, 42));
+            ("bitz-all", 16, 128, 8, 5, 42));
         assert_eq!(args.fixture.as_deref(), Some(std::path::Path::new("fixture.json")));
         assert_eq!(args.export_fixture.as_deref(), Some(std::path::Path::new("export.json")));
         assert_eq!(args.binius64_worker.as_deref(), Some(std::path::Path::new("worker")));

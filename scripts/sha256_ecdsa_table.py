@@ -3,7 +3,7 @@
 
 Reads the `*.result.json` records of one or more campaign output directories
 (later directories override earlier ones for the same case) and writes a
-self-documenting `paper/sha256-ecdsa-table.tex`: one row group per
+self-documenting `outputs/tables/sha256-ecdsa-table.tex`: one row group per
 (security target, thread count), one row per scheme, with the medians of
 witness generation, the complete prover (commitment included) and the complete
 verifier, plus the complete proof material and the worker's peak memory.
@@ -135,7 +135,7 @@ def opener_security(row: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
-    ap.add_argument("--out", type=Path, default=Path("paper/sha256-ecdsa-table.tex"))
+    ap.add_argument("--out", type=Path, default=Path("outputs/tables/sha256-ecdsa-table.tex"))
     ap.add_argument("--label", default="tab:sha256-ecdsa")
     args = ap.parse_args()
 

@@ -142,7 +142,7 @@ if has multiswap; then
   python3 scripts/bench_gate.py run --label multiswap-t10 --swap-grow-gb 10 -- \
     python3 scripts/run_matched_multiswap_campaign.py \
       --draft \
-      --limber-root /tmp/limber-matched114 \
+      --limber-root vendor/limber \
       --security-bits 114 \
       --batch-counts 1,2,4,8,16 \
       --all-threads 10 \
@@ -154,11 +154,11 @@ fi
 # Export (after the campaigns; adjust --paging/--unsupported to what the runs
 # actually recorded — the runner logs and memory.jsonl say which cells paged):
 #   python3 scripts/native_mul_table.py PerfRuns/suite-u32-*-t10 PerfRuns/suite-u32-*-t1 \
-#     --workload u32-mod32 --exponents 15,17,19,21,23 --out paper/native-mul-table.tex
+#     --workload u32-mod32 --exponents 15,17,19,21,23 --out outputs/tables/native-mul-table.tex
 #   python3 scripts/native_mul_table.py PerfRuns/suite-u64-*-t10 PerfRuns/suite-u64-*-t1 \
-#     --workload u64 --out paper/native-mul-u64-table.tex
+#     --workload u64 --out outputs/tables/native-mul-u64-table.tex
 #   python3 scripts/native_mul_table.py PerfRuns/suite-u128-*-t10 PerfRuns/suite-u128-*-t1 \
 #     --workload u128 --unsupported binius64:23 \
 #     --unsupported-reason "Binius64's MAX_VALUES_PER_SEGMENT refuses the size" \
-#     --out paper/native-mul-u128-table.tex
+#     --out outputs/tables/native-mul-u128-table.tex
 echo "suite queue done"

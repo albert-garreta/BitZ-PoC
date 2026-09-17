@@ -301,7 +301,7 @@ impl Context {
         json!({"piop":"Plonky3 multi-stark AIR zerocheck/sumcheck","pcs":"WHIR",
             "encoding":"Reed-Solomon", "opening_claim":"prescribed multilinear evaluation",
             "base_field":base_field,"params":params,"security":self.security(),
-            "revision":super::common::locked_git_revision("p3-whir")})
+            "revision":super::common::local_vendor_revision("p3-whir")})
     }
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check out the published Limber revision pinned in BitZ's Cargo.toml."""
+"""Inspect the local Limber snapshot included in this workspace."""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,7 @@ import subprocess
 import tomllib
 import tempfile
 
-DEFAULT_DESTINATION = Path("/tmp/limber-matched114")
+DEFAULT_DESTINATION = Path(__file__).resolve().parents[1] / "vendor/limber"
 
 
 def limber_dependency(bitz_root: Path) -> dict[str, object]:
@@ -51,18 +51,16 @@ def migrate_multiswap_domains(limber_root: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path, nargs="?", default=DEFAULT_DESTINATION)
-    parser.add_argument("--source", help="Git URL or existing local clone (default: Cargo.toml dependency)")
     args = parser.parse_args()
     destination = args.destination.resolve()
-    if destination.exists():
-        parser.error("destination already exists; choose an unused checkout path")
-    dependency = limber_dependency(Path(__file__).resolve().parents[1])
-    source = args.source or dependency["git"]
-    subprocess.run(["git", "clone", "--no-checkout", source, str(destination)], check=True)
-    subprocess.run(["git", "checkout", "--detach", dependency["rev"]], cwd=destination, check=True)
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination, text=True).strip()
+    if not (destination / ".git").is_dir():
+        parser.error("Limber repository missing; restore vendor/limber including its .git directory")
+    revision = subprocess.check_output(["git", "-C", str(destination), "rev-parse", "HEAD"], text=True).strip()
+    provenance = tomllib.loads((Path(__file__).resolve().parents[1] / "provenance.toml").read_text())
+    if revision != provenance["limber"]["snapshot_commit"]:
+        parser.error("Limber revision differs from provenance.toml")
     domains = migrate_multiswap_domains(destination)
-    print(json.dumps({"path": str(destination), "source": source, "git_revision": revision,
+    print(json.dumps({"path": str(destination), "git_revision": revision,
                       "benchmark_domains": domains}, indent=2))
 
 

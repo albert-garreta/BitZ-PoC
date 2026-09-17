@@ -281,7 +281,7 @@ impl CampaignWriter {
                 "starting_log_inverse_rate": whir::STARTING_LOG_INV_RATE,
                 "max_pow_bits": whir::MAX_POW_BITS,
                 "hiding": false,
-                "plonky3_revision": common::locked_git_revision("p3-whir"),
+                "plonky3_revision": common::local_vendor_revision("p3-whir"),
             },
             "cells": cells,
         });
@@ -500,7 +500,7 @@ impl TraceWriter {
                 "campaign_id": self.campaign_id,
                 "root_boundary": "materialization through verified terminal opening; setup and logical witness generation excluded",
                 "timeline": "observed half-open intervals",
-                "plonky3_revision": common::locked_git_revision("p3-whir"),
+                "plonky3_revision": common::local_vendor_revision("p3-whir"),
             },
         });
         self.output.write(&run)?;
@@ -1162,7 +1162,7 @@ fn whir_security(summary: &SecuritySummary) -> Value {
         "starting_log_inverse_rate": summary.starting_log_inverse_rate,
         "hiding": false,
         "hash": "Poseidon2BabyBear<16>",
-        "plonky3_revision": common::locked_git_revision("p3-whir"),
+        "plonky3_revision": common::local_vendor_revision("p3-whir"),
     })
 }
 

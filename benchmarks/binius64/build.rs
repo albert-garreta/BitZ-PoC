@@ -1,25 +1,20 @@
+#[path = "../../scripts/git_revision.rs"]
+mod git_revision;
 use sha2::{Digest, Sha256};
 use std::{env, fs, path::PathBuf, process::Command};
 
 fn main() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let lock = fs::read_to_string(root.join("Cargo.lock")).expect("worker lockfile");
-    let revision = lock
-        .split("[[package]]")
-        .find(|p| p.lines().any(|l| l == "name = \"binius-circuits\""))
-        .and_then(|p| p.lines().find(|l| l.starts_with("source = \"git+")))
-        .and_then(|line| {
-            line.trim_end_matches('"')
-                .rsplit_once('#')
-                .map(|(_, rev)| rev)
-        })
-        .unwrap_or("unpublished");
+    let revision = git_revision::revision(&root.join("../../vendor/binius64"));
     let mut source = Sha256::new();
     for path in [
         "Cargo.toml",
         "rust-toolchain.toml",
         "build.rs",
         "build.py",
+        "../../scripts/git_revision.rs",
+        "../../provenance.toml",
         "src/main.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
         "../../benches/common/output.rs",
@@ -42,6 +37,7 @@ fn main() {
     let bitz_root = root.join("../..");
     let git = |args: &[&str]| {
         Command::new("git")
+            .arg("--no-optional-locks")
             .arg("-C")
             .arg(&bitz_root)
             .args(args)
@@ -50,9 +46,7 @@ fn main() {
             .filter(|out| out.status.success())
             .and_then(|out| String::from_utf8(out.stdout).ok())
     };
-    let bitz_revision = git(&["rev-parse", "HEAD"])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".into());
+    let bitz_revision = git_revision::revision(&bitz_root);
     let bitz_dirty = git(&["status", "--porcelain", "--untracked-files=no"])
         .map(|s| if s.trim().is_empty() { "clean" } else { "dirty" })
         .unwrap_or("unknown");
