@@ -207,10 +207,17 @@ Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arit
          SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/8$ & \textbf{67.9} & \textbf{26.0} & \textbf{4.02} & \textbf{3.61} & \textbf{92} & \textbf{0.793} \\
          \quad ($8$\,KB message) & Binius64~\cite{binius64}, rate $1/2$ & 168 & 63.0 & 12.7 & 6.37 & 394 & 0.941 \\
         \quad  ($2^7$ compressions) & Binius64, rate $1/8$ & 219 & 74.0 & 12.7 & 6.29 & 289 & 1.03 \\
+          & Zinc+ & 4707 & 970 & 319 & 115 & 2432 & 2.03 \\
          \addlinespace
          $2^{20}$ mult.\ mod $2^{32}$ & \ftwoz-SNARK, rate $1/8$ & \textbf{1533} & \textbf{359} & \textbf{53.6} & \textbf{15.9} & \textbf{177} & \textbf{5.49} \\
          and $2^{12}$ SHA-256 & Binius64, rate $1/2$ & 1995 & 617 & 87.5 & 27.3 & 569 & 12.7 \\
           & Binius64, rate $1/8$ & 2417 & 710 & 85.8 & 26.0 & 387 & 12.7 \\
+         \addlinespace
+         $2^{19}$ multiplications & \ftwoz-SNARK, rate $1/8$ & \textbf{455} & \textbf{114} & \textbf{7.15} & \textbf{3.48} & \textbf{116} & \textbf{0.557} \\
+         of $32$-bit integers & Binius64, rate $1/2$ & 863 & 277 & 20.4 & 9.46 & 472 & 3.67 \\
+           & Binius64, rate $1/8$ & 1052 & 319 & 19.9 & 8.99 & 330 & 3.93 \\
+           & Limber & 4418 & 1348 & 192 & 147 & 12193 & 3.66 \\
+           & Zinc+ & 2847 & 757 & 31.5 & 14.4 & 1791 & 1.23 \\
        \bottomrule
        \end{tabular}
      \caption{  Performance of \ftwoz \ on  different  computations of practical interest that are costly to arithmetize over finite fields. 
@@ -3436,9 +3443,12 @@ We do not benchmark against Zinc+\cite{zincplus} because at these amounts of has
      & Binius (UDR), rate $1/8$ & 9.96 & 219 & 74.0 & 12.7 & 6.29 & 289 & 1.03 \\
      & Binius (Johnson), rate $1/2$ & 9.73 & 179 & 66.9 & 14.0 & 7.77 & 376 & 1.00 \\
      & Binius (Johnson), rate $1/8$ & 9.77 & 231 & 77.6 & 13.6 & 7.16 & 200 & 1.06 \\
+     & Zinc+ & -- & 4707 & 970 & 319 & 115 & 2432 & 2.03 \\
     \bottomrule
   \end{tabular}
-   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
+   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.
+  % [AI-drafted (Claude Opus 5), 2026-09-18: the Zinc+ rows and this sentence, from the author's measurements; please review]
+  The Zinc+ proof compresses to $915$\,KB with \texttt{zstd}.}
   \label{tab:sha256-ecdsa-f2z-opt}
 \end{table}
 
