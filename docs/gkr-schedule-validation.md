@@ -10,6 +10,7 @@ The rules are evaluated in order:
 
 | Condition | Schedule |
 |---|---|
+| macOS AArch64, single-claim, one worker, `d = 13`, `12 <= s <= 14` | L2 |
 | `d >= 13`, `n >= 25`, and either more than four workers or `d <= s + 1` | L8 |
 | Single-claim, at most four workers, and `d >= s` | L2 |
 | Remaining geometries and paths | L4 |
@@ -20,6 +21,25 @@ multi-claim L2 path. The large-forest rule includes the measured multiswap
 shapes. Small, wide SHA forests stay on L4. These thresholds describe this
 measurement campaign; they are not a promise that any schedule is fastest on
 every processor or input shape.
+
+The Apple Silicon exception comes from the MultiSwap recovery investigation
+on an M1 Max. The original AMD-qualified L8 choice added a PCS opening cost at
+one worker. Alternating diagnostic processes (one warmup and five verified
+proofs each) compared all three schedules: two process blocks for batches 1
+and 4, and three for batch 2. L2 was the fastest at all three batch counts and
+also used less peak RSS than L4 in these diagnostics. The L2 choice retains
+more intermediate values than L8 and increase peak RSS, so explicit L8 remains
+available for memory-constrained runs. Proof and transcript fingerprints were
+identical across schedules.
+
+The exception uses only public geometry, platform, and worker count. It does
+not change the x86 policy, multi-claim policy, multi-worker cases, or explicit
+schedule requests. Unmeasured Apple geometries retain the existing policy.
+The raw diagnostics are retained in
+`bench_results/multiswap-recovery-20260918/schedule-diagnostic*/`; fresh matched
+confirmation against `ac0aa44c` and `c4866868` is retained separately under
+`bench_results/multiswap-schedule-recovery-20260918/`. The original AMD
+measurements below remain historical evidence for that platform.
 
 ## Measurement method
 

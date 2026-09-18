@@ -66,6 +66,17 @@ pub fn resolve_schedule(
         (SchedulePolicy::L8, _) if depth < 5 => Err(UnsupportedSchedule::ShallowL8 { depth }),
         (SchedulePolicy::L2, _) => Ok(ForestSchedule::L2),
         (SchedulePolicy::L8, _) => Ok(ForestSchedule::L8),
+        // The AMD-qualified L8 crossover does not hold on Apple Silicon with
+        // one worker at these measured geometries. Keep the faster stored
+        // levels there; explicit requests and other geometries are unchanged.
+        (SchedulePolicy::Auto, ForestPath::Single)
+            if cfg!(all(target_arch = "aarch64", target_os = "macos"))
+                && threads == 1
+                && depth == 13
+                && (12..=14).contains(&layout.col_vars) =>
+        {
+            Ok(ForestSchedule::L2)
+        }
         // Large, sufficiently deep forests benefit from the smaller stored chain.
         // With few workers, tall forests instead benefit from storing more levels.
         (SchedulePolicy::Auto, _)
@@ -158,7 +169,7 @@ mod tests {
             (15, 7, 4, 8, ForestPath::Single, ForestSchedule::L4),
             (7, 15, 1, 1, ForestPath::Single, ForestSchedule::L4),
             (12, 15, 1, 10, ForestPath::Single, ForestSchedule::L4),
-            (13, 12, 1, 1, ForestPath::Single, ForestSchedule::L8),
+            (13, 12, 1, 8, ForestPath::Single, ForestSchedule::L8),
             (13, 14, 1, 10, ForestPath::Single, ForestSchedule::L8),
             (15, 7, 1, 1, ForestPath::Multi, ForestSchedule::L4),
         ] {
@@ -176,6 +187,45 @@ mod tests {
                 resolve_schedule(SchedulePolicy::L4, &layout, path, threads),
                 Ok(ForestSchedule::L4)
             );
+        }
+    }
+
+    #[test]
+    fn apple_single_worker_crossover_is_limited_to_measured_geometry() {
+        let apple = cfg!(all(target_arch = "aarch64", target_os = "macos"));
+        for (rows, cols, bits, threads, path, apple_schedule) in [
+            (13, 12, 1, 1, ForestPath::Single, ForestSchedule::L2),
+            (13, 13, 1, 1, ForestPath::Single, ForestSchedule::L2),
+            (13, 14, 1, 1, ForestPath::Single, ForestSchedule::L2),
+            (10, 13, 8, 1, ForestPath::Single, ForestSchedule::L2),
+            (13, 15, 1, 1, ForestPath::Single, ForestSchedule::L8),
+            (14, 13, 1, 1, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 2, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 8, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 1, ForestPath::Multi, ForestSchedule::L8),
+        ] {
+            let layout = IntegerMatrixLayout {
+                row_vars: rows,
+                col_vars: cols,
+                word_bits: bits,
+            };
+            assert_eq!(
+                resolve_schedule(SchedulePolicy::Auto, &layout, path, threads),
+                Ok(if apple {
+                    apple_schedule
+                } else {
+                    ForestSchedule::L8
+                })
+            );
+            for (policy, expected) in [
+                (SchedulePolicy::L4, ForestSchedule::L4),
+                (SchedulePolicy::L8, ForestSchedule::L8),
+            ] {
+                assert_eq!(
+                    resolve_schedule(policy, &layout, path, threads),
+                    Ok(expected)
+                );
+            }
         }
     }
 
