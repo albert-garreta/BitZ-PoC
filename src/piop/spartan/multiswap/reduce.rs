@@ -55,39 +55,78 @@ pub fn step50_integer_lift(
         "packed column has the wrong public length"
     );
 
-    let column_term = |(column, words): (usize, &Vec<u64>)| -> Uint<5> {
-        // The loop and its addresses depend only on the public shape. In
-        // particular, zero words and zero weights execute the same work.
-        let mut low = 0u128;
-        let mut high = 0u64;
-        for (row, &weight) in row_weights.iter().enumerate() {
-            let bit = CtMask::from_lsb(words[row / 64] >> (row % 64));
-            let selected = u64::ct_select(&0, &(weight as u64), bit) as u128
-                | ((u64::ct_select(&0, &((weight >> 64) as u64), bit) as u128) << 64);
-            let (sum, carry) = low.overflowing_add(selected);
-            low = sum;
-            high += u64::from(carry);
-        }
-        let sum = Uint::from_words([low as u64, (low >> 64) as u64, high]);
-        let product = IntegerOps.mul_wide(&sum, &Uint::<2>::from(col_weights[column]));
-        // An exact 3-by-2-limb product occupies exactly five limbs.
-        *product.checked_resize_ct::<5>().value()
+    let _scope = tracing::info_span!("step5_0:integer_lift").entered();
+    let digits: Vec<[u32; 4]> = row_weights
+        .iter()
+        .map(|&weight| core::array::from_fn(|i| (weight >> (32 * i)) as u32))
+        .collect();
+    let tile_term = |(tile, columns): (usize, &[Vec<u64>])| {
+        lift_column_tile(
+            columns,
+            &digits,
+            &col_weights[tile * LIFT_COLUMNS..][..columns.len()],
+        )
     };
-
     #[cfg(feature = "parallel")]
     {
-        rows.par_iter()
+        rows.par_chunks(LIFT_COLUMNS)
             .enumerate()
-            .map(column_term)
+            .map(tile_term)
             .reduce(|| Uint::ZERO, |left, right| left.wrapping_add(&right))
     }
     #[cfg(not(feature = "parallel"))]
     {
-        rows.iter()
+        rows.chunks(LIFT_COLUMNS)
             .enumerate()
-            .map(column_term)
+            .map(tile_term)
             .fold(Uint::ZERO, |left, right| left.wrapping_add(&right))
     }
+}
+
+const LIFT_COLUMNS: usize = 4;
+const LIFT_ROWS: usize = 4096;
+
+/// Each digit sum is at most 4096*(2^32-1). Carry propagation therefore
+/// fits in u64; only completed chunks are merged into the exact Uint<3>.
+fn lift_column_tile(columns: &[Vec<u64>], weights: &[[u32; 4]], col_weights: &[u128]) -> Uint<5> {
+    let mut sums = [Uint::<3>::ZERO; LIFT_COLUMNS];
+    for (chunk_index, chunk) in weights.chunks(LIFT_ROWS).enumerate() {
+        let mut digits = [[0u64; 4]; LIFT_COLUMNS];
+        for (word_index, word_weights) in chunk.chunks(64).enumerate() {
+            let index = chunk_index * (LIFT_ROWS / 64) + word_index;
+            let words: [u64; LIFT_COLUMNS] = core::array::from_fn(|column| {
+                // The final tile's length is public.
+                columns.get(column).map_or(0, |words| words[index])
+            });
+            for (bit, weight) in word_weights.iter().enumerate() {
+                for (sum, &word) in digits.iter_mut().zip(&words) {
+                    // Preserve the mask through LLVM's branch reconstruction.
+                    let mask = u64::ct_select(&0, &u64::MAX, CtMask::from_lsb(word >> bit));
+                    for (acc, &digit) in sum.iter_mut().zip(weight) {
+                        *acc += u64::from(digit) & mask;
+                    }
+                }
+            }
+        }
+        for (sum, digit) in sums.iter_mut().zip(digits) {
+            let a = digit[0];
+            let b = digit[1] + (a >> 32);
+            let c = digit[2] + (b >> 32);
+            let d = digit[3] + (c >> 32);
+            let chunk_sum = Uint::from_words([
+                (a & 0xffff_ffff) | (b << 32),
+                (c & 0xffff_ffff) | (d << 32),
+                d >> 32,
+            ]);
+            *sum = sum.wrapping_add(&chunk_sum);
+        }
+    }
+    sums.iter()
+        .zip(col_weights)
+        .fold(Uint::ZERO, |total, (sum, &weight)| {
+            let product = IntegerOps.mul_wide(sum, &Uint::<2>::from(weight));
+            total.wrapping_add(product.checked_resize_ct::<5>().value())
+        })
 }
 
 /// Exclusive magnitude bound `cells * q^2`, with the same five-limb bound.
@@ -168,6 +207,52 @@ mod tests {
             }
         }
         total
+    }
+
+    #[test]
+    fn digit_lift_matches_oracle_at_all_boundaries() {
+        for row_count in [0usize, 1, 63, 64, 65, 4095, 4096, 4097, 8192] {
+            for column_count in [0, 1, 3, 4, 5] {
+                let rw: Vec<_> = (0..row_count)
+                    .map(|i| match i % 4 {
+                        0 => u128::MAX,
+                        1 => 0,
+                        2 => 1 << 127,
+                        _ => (i as u128).wrapping_mul(0x9e37_79b9_7f4a_7c15_f39c_c060_5ced_c835),
+                    })
+                    .collect();
+                let cw: Vec<_> = (0..column_count).map(|i| u128::MAX - i as u128).collect();
+                for pattern in [0, u64::MAX, 0xaaaa_5555_8123_4567] {
+                    let bits = vec![vec![pattern; row_count.div_ceil(64)]; column_count];
+                    let expected = dense_lift(&bits, &rw, &cw);
+                    assert_eq!(
+                        oracle(&step50_integer_lift(&bits, &rw, &cw)),
+                        expected,
+                        "rows={row_count}, columns={column_count}, pattern={pattern}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn digit_lift_is_identical_across_worker_counts() {
+        let rw: Vec<_> = (0..8193u128).map(|i| u128::MAX - i).collect();
+        let cw = vec![u128::MAX; 9];
+        let bits = vec![vec![0x1234_5678_9abc_def0; rw.len().div_ceil(64)]; cw.len()];
+        let prove = || step50_integer_lift(&bits, &rw, &cw);
+        let serial = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(prove);
+        let parallel = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap()
+            .install(prove);
+        assert_eq!(serial, parallel);
     }
 
     #[test]
