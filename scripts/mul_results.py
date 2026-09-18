@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
-import statistics
+from bench_statistics import percentile, sample_statistics
 
 SCHEMA = "mul-bench/v1"
 
@@ -26,15 +26,6 @@ def finite_number(value, name):
     return value
 
 
-def percentile(values, probability):
-    """Type-7 percentile, including the endpoints."""
-    if not values or not 0 <= probability <= 1:
-        raise ValueError("percentile requires samples and a probability in [0, 1]")
-    values = sorted(values)
-    position = (len(values) - 1) * probability
-    index = math.floor(position)
-    fraction = position - index
-    return values[index] + fraction * (values[min(index + 1, len(values) - 1)] - values[index])
 
 
 @dataclass
@@ -76,10 +67,19 @@ def load(directory: Path) -> list[Case]:
             raise ValueError("incomplete case identity")
         if descriptor["backend"] == "f2z" and descriptor["mode"] not in ("outer", "piop"):
             config = descriptor.get("f2z", {})
-            if not all(k in config for k in ("w", "split", "profile", "bound", "ligerito")):
+            if not all(k in config for k in ("w", "split", "profile", "bound", "ligerito", "gkr_schedule")):
                 raise ValueError("incomplete F2Z configuration")
             if descriptor["mode"] != "witness" and not all(config.get(k) for k in ("profile", "bound", "ligerito")):
                 raise ValueError("missing F2Z proof configuration")
+        if config := descriptor.get("f2z"):
+            schedule = config.get("gkr_schedule")
+            if descriptor["mode"] == "witness":
+                if schedule is not None:
+                    raise ValueError("witness generation cannot have a GKR schedule")
+            elif schedule not in ("auto", "l2", "l4", "l8"):
+                raise ValueError("missing or invalid GKR schedule policy")
+        if type(job.get("proof_fingerprints")) is not bool:
+            raise ValueError("missing fingerprint policy")
         integer(job.get("reps"), "reps", 1)
         integer(job.get("warmups"), "warmups")
         if job.get("memory") not in ("none", "rss", "heap"):
@@ -93,6 +93,25 @@ def load(directory: Path) -> list[Case]:
         if status == "measured" and (not effective.get("boundary") or not
                 (effective.get("corpus_digest") or effective.get("fixture_digest"))):
             raise ValueError("missing measured configuration or corpus identity")
+        if status == "measured" and descriptor.get("f2z", {}).get("gkr_schedule"):
+            schedules = effective.get("gkr_schedules")
+            if not isinstance(schedules, list) or not schedules:
+                raise ValueError("missing resolved GKR schedules")
+            keys = set()
+            for resolved in schedules:
+                key = canonical({k:v for k,v in resolved.items() if k != "schedule"})
+                if key in keys or resolved.get("schedule") not in ("l2", "l4", "l8") or resolved.get("path") not in ("single", "multi"):
+                    raise ValueError("invalid or duplicate resolved GKR schedule")
+                keys.add(key)
+                if resolved["threads"] != descriptor["threads"] or (resolved["path"] == "multi" and resolved["schedule"] == "l2"):
+                    raise ValueError("inconsistent resolved GKR schedule")
+                for name in ("row_vars", "col_vars", "word_bits", "threads"):
+                    integer(resolved.get(name), name, 1 if name in ("word_bits", "threads") else 0)
+                width = resolved["word_bits"]
+                if width & (width - 1):
+                    raise ValueError("physical GKR word width must be a power of two")
+                if config["gkr_schedule"] != "auto" and resolved["schedule"] != config["gkr_schedule"]:
+                    raise ValueError("explicit GKR schedule was substituted")
         cases[identifier] = Case(directory, job, effective, provenance, status,
                                  entry.get("reason"), [])
         identities.add(canonical(descriptor))
@@ -144,11 +163,22 @@ def load(directory: Path) -> list[Case]:
             raise ValueError(f"{identifier}: unknown measurement boundary")
         for record in case.records:
             if record["kind"] in ("sample", "warmup"):
+                fingerprint = record.get("fingerprint")
+                if job["proof_fingerprints"]:
+                    if not isinstance(fingerprint, dict) or set(fingerprint) != {"proof", "transcript"} or any(
+                        not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value)
+                        for value in fingerprint.values()
+                    ):
+                        raise ValueError("missing or invalid proof fingerprint")
+                elif fingerprint is not None:
+                    raise ValueError("unexpected proof fingerprint")
                 if not required <= record["metrics"].keys():
                     raise ValueError(f"{identifier}: missing required metrics: {required - record['metrics'].keys()}")
                 if "proof_bytes" in required and record["metrics"]["proof_bytes"] <= 0:
                     raise ValueError(f"{identifier}: missing verified proof size")
             if record["kind"] in ("rss", "heap"):
+                if record.get("fingerprint") is not None:
+                    raise ValueError("memory workers cannot generate fingerprints")
                 metric = "peak_rss_bytes" if record["kind"] == "rss" else "peak_heap_bytes"
                 if set(record["metrics"]) != {metric} or record["metrics"][metric] <= 0:
                     raise ValueError(f"{identifier}: invalid memory record")
@@ -176,9 +206,7 @@ def aggregate(cases):
         if measurements:
             for metric in measurements[0]:
                 values = [m[metric] for m in measurements]
-                stats[metric] = dict(median=statistics.median(values),
-                                     p05=percentile(values, .05), p95=percentile(values, .95),
-                                     minimum=min(values), maximum=max(values), count=len(values))
+                stats[metric] = sample_statistics(values)
         memory = {k: v for r in case.records if r["kind"] in ("rss", "heap")
                   for k, v in r["metrics"].items()}
         rows.append(dict(source=str(case.source), case_id=case.job["id"],

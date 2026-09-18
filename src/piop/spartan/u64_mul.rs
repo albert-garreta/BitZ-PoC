@@ -15,12 +15,12 @@
 
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::mul::{MulError, MulLayout, MulWitness};
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use std::borrow::Cow;
 
 use crate::{
     poly::mle::DenseMultilinearExtension,
-    sparse_matrix::SparseColumn,
     utils::{cfg_iter, cfg_iter_mut},
 };
 
@@ -112,26 +112,6 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for U64MulCoefficient {
                 scaled
             }
         }
-    }
-
-    fn column_dot(
-        column: SparseColumn<'_, Self>,
-        row_weights: &[SpartanF2zField],
-        zero: &SpartanF2zField,
-        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> SpartanF2zField {
-        if let Some((row, coefficient)) = column.single() {
-            return coefficient.scale(&row_weights[row], field_config);
-        }
-
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation = field_config.add(
-                &(evaluation),
-                &(&coefficient.scale(&row_weights[row], field_config)),
-            );
-        }
-        evaluation
     }
 }
 
@@ -286,7 +266,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::SparseMatrix;
 
     use super::*;
     use crate::piop::spartan::spartan_f2z_field_config;
@@ -405,7 +384,7 @@ mod tests {
         assert_eq!(matrices.a().row_count(), 300);
         assert_eq!(matrices.a().column_count(), layout.assignment_len());
         for row in [0, 1, 299] {
-            let single = |m: &SparseMatrix<U64MulCoefficient>, column: usize| {
+            let single = |m: &CscMatrix<Box<[U64MulCoefficient]>>, column: usize| {
                 let (row, coefficient) = m
                     .column(column)
                     .expect("column in range")

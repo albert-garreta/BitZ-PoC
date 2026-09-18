@@ -5,28 +5,30 @@
 //! tensor repetition over the instance coordinate.
 
 use crate::piop::spartan::SpartanField as _;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 #[cfg(test)]
 use field::{Fp, Uint};
 use std::sync::OnceLock;
 
 use blake3::Hasher;
-use circuit::constraints::SparseIntegerMatrix as CircuitSparseMatrix;
 use circuit::{
     constraints::ConstraintGenerator,
     sha256::{COMPRESSION_INPUT_BITS, compression_circuit},
 };
+use circuit::{integer_storage::IntegerTable, linear_map::CsrMatrix};
 use field::{CheckedArithmetic, IntegerEmbedding};
 use thiserror::Error;
 
-use crate::{
-    f2map::{
+use {
+    crate::{
+        ligerito::LOG_PACKING,
+        pcs::{IntegerMatrixLayout, mod_q_num_chunks},
+    },
+    circuit::linear_map::binary::{
         PackedRepeatedVirtualMap, PackedSourceOrder, PackedSourceRepeatedVirtualMap,
         PreparedVirtualMap, PreparedVirtualMapError,
     },
-    ligerito::LOG_PACKING,
-    pcs::{IntegerMatrixLayout, mod_q_num_chunks},
-    sparse_matrix::SparseMatrix,
 };
 
 use super::super::{
@@ -390,18 +392,18 @@ impl PreparedSha256CompressionBatch {
 /// domain or assignment domain is padded for the compatibility R1CS prover.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Sha256LinearRelation {
-    native_matrix: SparseMatrix<i64>,
+    native_matrix: CscMatrix<Box<[i64]>>,
 }
 
 impl Sha256LinearRelation {
     /// Exact signed matrix in canonical CSC form.
     #[allow(dead_code)]
-    pub(crate) const fn matrix(&self) -> &SparseMatrix<i64> {
+    pub(crate) const fn matrix(&self) -> &CscMatrix<Box<[i64]>> {
         &self.native_matrix
     }
 
     /// Exact coefficients in the native type used by the small-value prover.
-    pub(crate) const fn native_matrix(&self) -> &SparseMatrix<i64> {
+    pub(crate) const fn native_matrix(&self) -> &CscMatrix<Box<[i64]>> {
         &self.native_matrix
     }
 
@@ -441,13 +443,13 @@ impl Sha256LinearRelation {
 /// Runtime-field projection of the exact SHA linear relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedSha256LinearRelation {
-    matrix: SparseMatrix<SpartanF2zField>,
+    matrix: CscMatrix<Box<[SpartanF2zField]>>,
     field_config: <SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
 }
 
 impl PreparedSha256LinearRelation {
     /// Projected matrix in canonical CSC form.
-    pub(crate) const fn matrix(&self) -> &SparseMatrix<SpartanF2zField> {
+    pub(crate) const fn matrix(&self) -> &CscMatrix<Box<[SpartanF2zField]>> {
         &self.matrix
     }
 
@@ -972,13 +974,13 @@ fn build_integer_local_relation() -> Result<IntegerLocalRelation, Sha256Constrai
     assert_eq!(generated.c.column_count(), SHA256_H_BAR_LIVE_BITS);
     assert_eq!(circuit_matrix_nnz(&generated.a), 0);
     assert_eq!(circuit_matrix_nnz(&generated.b), 0);
-    assert_eq!(generated.m.rows()[0].positions(), &[0]);
+    assert_eq!(generated.m.row(0).unwrap().indices(), &[0]);
 
     for word_slot in 0..SHA256_PUBLIC_WORDS {
         for bit in 0..SHA256_PUBLIC_WORD_BITS {
             let h_column = sha256_public_h_column(word_slot, bit);
             let f_column = sha256_public_f_column(word_slot, bit);
-            assert_eq!(generated.m.rows()[h_column].positions(), &[f_column]);
+            assert_eq!(generated.m.row(h_column).unwrap().indices(), &[f_column]);
 
             if word_slot >= 24 {
                 let output_bit = &output[(word_slot - 24) * SHA256_PUBLIC_WORD_BITS + bit];
@@ -990,23 +992,22 @@ fn build_integer_local_relation() -> Result<IntegerLocalRelation, Sha256Constrai
     }
 
     let native_rows = convert_native_integer_rows(&generated.c)?;
-    let native_matrix = SparseMatrix::try_from_rows(SHA256_H_BAR_LIVE_BITS, native_rows)
+    let native_matrix = CscMatrix::try_from_rows(SHA256_H_BAR_LIVE_BITS, native_rows)
         .map_err(SpartanMatrixError::from)?;
     let linear_relation = Sha256LinearRelation { native_matrix };
 
     let map_rows = generated
         .m
         .rows()
-        .iter()
         .map(|row| {
-            row.positions()
+            row.indices()
                 .iter()
                 .copied()
                 .map(|column| (column, true))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let map = SparseMatrix::try_from_rows(SHA256_F_BAR_LIVE_BITS, map_rows)
+    let map = CscMatrix::try_from_rows(SHA256_F_BAR_LIVE_BITS, map_rows)
         .map_err(SpartanMatrixError::from)?;
     let map = PreparedVirtualMap::new(map)?;
     let max_boolean_residual_bound =
@@ -1021,17 +1022,20 @@ fn build_integer_local_relation() -> Result<IntegerLocalRelation, Sha256Constrai
     })
 }
 
-pub(super) fn circuit_matrix_nnz(matrix: &CircuitSparseMatrix) -> usize {
-    matrix.rows().iter().map(|row| row.entries().len()).sum()
+pub(super) fn circuit_matrix_nnz(matrix: &CsrMatrix<IntegerTable>) -> usize {
+    matrix.nnz()
 }
 
 pub(super) fn convert_native_integer_rows(
-    matrix: &CircuitSparseMatrix,
+    matrix: &CsrMatrix<IntegerTable>,
 ) -> Result<Vec<Vec<(usize, i64)>>, Sha256ConstraintError> {
     (0..matrix.row_count())
         .map(|row| {
             matrix
-                .row_entries(row)
+                .row(row)
+                .unwrap()
+                .iter()
+                .map(|(column, coefficient)| (column, coefficient.as_words()))
                 .map(|(column, words)| {
                     let value = words[0] as i64;
                     let extension = if value < 0 { u64::MAX } else { 0 };
@@ -1048,9 +1052,9 @@ pub(super) fn convert_native_integer_rows(
 
 #[allow(dead_code)]
 fn project_signed_matrix(
-    matrix: &SparseMatrix<i64>,
+    matrix: &CscMatrix<Box<[i64]>>,
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<SparseMatrix<SpartanF2zField>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[SpartanF2zField]>>, SpartanMatrixError> {
     let field = crate::piop::spartan::raw_monty::field_context(field_config);
     let columns = matrix
         .columns()
@@ -1061,10 +1065,10 @@ fn project_signed_matrix(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    SparseMatrix::try_from_columns(matrix.row_count(), columns).map_err(SpartanMatrixError::from)
+    CscMatrix::try_from_columns(matrix.row_count(), columns).map_err(SpartanMatrixError::from)
 }
 
-pub(super) fn max_boolean_linear_residual_bound(matrix: &SparseMatrix<i64>) -> field::Uint<2> {
+pub(super) fn max_boolean_linear_residual_bound(matrix: &CscMatrix<Box<[i64]>>) -> field::Uint<2> {
     let mut sums = vec![field::Uint::<2>::ZERO; matrix.row_count()];
     for column in matrix.columns() {
         for (row, coefficient) in column {
@@ -1082,7 +1086,7 @@ pub(super) fn max_boolean_linear_residual_bound(matrix: &SparseMatrix<i64>) -> f
 }
 
 fn integer_relation_digest(
-    matrix: &SparseMatrix<i64>,
+    matrix: &CscMatrix<Box<[i64]>>,
     map: &PreparedVirtualMap,
 ) -> Result<[u8; 32], Sha256ConstraintError> {
     let mut hash = Hasher::new();
@@ -1114,9 +1118,9 @@ pub(super) fn hash_usize(hash: &mut Hasher, value: usize) -> Result<(), Sha256Co
 #[cfg(test)]
 mod tests {
 
-    use crate::f2map::VirtualMap;
     use crate::pcs::FQ_MOD;
     use crate::piop::spartan::profile::PrimePolicy;
+    use circuit::linear_map::binary::VirtualMap;
 
     use super::*;
 
@@ -1177,7 +1181,7 @@ mod tests {
         assert_eq!(generated.c.row_count(), SHA256_CONSTRAINTS);
         assert_eq!(generated.c.column_count(), SHA256_H_BAR_LIVE_BITS);
 
-        let exact_c = SparseMatrix::try_from_rows(
+        let exact_c = CscMatrix::try_from_rows(
             generated.c.column_count(),
             convert_native_integer_rows(&generated.c).unwrap(),
         )
@@ -1249,7 +1253,7 @@ mod tests {
                 .matrix()
                 .column(local_column)
                 .unwrap()
-                .row_indices()
+                .indices()
                 .to_vec();
             for instance in 0..instances {
                 let global_column = 1 + instance * SHA256_F_INSTANCE_BITS + local_column - 1;
@@ -1276,7 +1280,7 @@ mod tests {
             .matrix()
             .column(0)
             .unwrap()
-            .row_indices()
+            .indices()
             .iter()
             .flat_map(|&row| {
                 if row == 0 {
@@ -1492,7 +1496,7 @@ mod tests {
         let map = prepared.map();
         let mut sources_by_h = vec![Vec::new(); map.local().matrix().row_count()];
         for (f_column, column) in map.local().matrix().columns().enumerate() {
-            for &h_column in column.row_indices() {
+            for &h_column in column.indices() {
                 sources_by_h[h_column].push(f_column);
             }
         }
@@ -1532,8 +1536,8 @@ mod tests {
             .zip(fixed.matrix().columns())
             .zip(other.matrix().columns())
         {
-            assert_eq!(raw_column.row_indices(), fixed_column.row_indices());
-            assert_eq!(raw_column.row_indices(), other_column.row_indices());
+            assert_eq!(raw_column.indices(), fixed_column.indices());
+            assert_eq!(raw_column.indices(), other_column.indices());
             for ((raw, fixed), other) in raw_column
                 .coefficients()
                 .iter()

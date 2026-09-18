@@ -39,6 +39,8 @@ pub struct Sample {
     pub index: usize,
     pub verified: bool,
     pub metrics: Metrics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<crate::common::proof_fingerprint::ProofFingerprint>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Run {
@@ -77,6 +79,7 @@ impl Run {
             },
             verified: true,
             metrics,
+            fingerprint: None,
         });
     }
     pub fn begin_memory(&self) {
@@ -131,6 +134,7 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
     if job.memory == Memory::None {
         f2z::observability::install()?;
     }
+    f2z::merged_forest::schedule::start_recording();
     let mut run = Run::new(job);
     if let Err(error) = execute(&mut run, compare) {
         if run.job.skip_unsupported && error.is::<Unsupported>() {
@@ -138,6 +142,17 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
             return write_json(&path.with_extension("result.json"), &run);
         }
         return Err(error);
+    }
+    let schedules = f2z::merged_forest::schedule::take_records();
+    if run
+        .job
+        .case
+        .f2z
+        .as_ref()
+        .is_some_and(|f| f.gkr_schedule.is_some())
+    {
+        ensure!(!schedules.is_empty(), "missing resolved GKR schedules");
+        run.effective["gkr_schedules"] = serde_json::to_value(schedules)?;
     }
     if !run.latency() {
         let bytes = match run.job.memory {
@@ -162,6 +177,7 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
             .into(),
             index: 0,
             verified: true,
+            fingerprint: None,
             metrics: Metrics::from([(
                 if run.job.memory == Memory::Rss {
                     "peak_rss_bytes"
@@ -198,13 +214,17 @@ fn child(job: &Job, dir: &Path) -> Result<Run> {
     command
         .arg("--worker")
         .arg(&request)
-        .env("RAYON_NUM_THREADS", job.case.threads.to_string());
+        .env("RAYON_NUM_THREADS", job.case.threads.to_string())
+        .env("HARDWARE_CONCURRENCY", job.case.threads.to_string());
     // Only CLI settings control experiments, including dependency environment knobs.
     for (key, _) in std::env::vars_os() {
         let s = key.to_string_lossy();
-        if s.starts_with("F2Z_") || s.starts_with("BD") {
+        if s.starts_with("F2Z_") || s.starts_with("F2_") || s.starts_with("BD") {
             command.env_remove(key);
         }
+    }
+    if let Some(schedule) = job.case.f2z.as_ref().and_then(|f| f.gkr_schedule) {
+        command.env("F2_FOREST_SCHEDULE", schedule.name());
     }
     if let Some(bits) = job.case.limber_bits {
         command.env("BDLAMBDA", bits.to_string());
@@ -364,14 +384,6 @@ pub fn main(compare: bool) -> Result<()> {
         }
         fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
     }
-    ensure!(
-        manifest["cases"]
-            .as_array()
-            .expect("cases")
-            .iter()
-            .any(|c| c["status"] == "measured"),
-        "no runnable cases after preflight"
-    );
     manifest["status"] = json!("complete");
     fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
     eprintln!("Results: {}", out.display());

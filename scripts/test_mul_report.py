@@ -12,9 +12,9 @@ def fixture(directory, configurations=(1,)):
     for i, width in enumerate(configurations):
         identifier = f"case-{i}"
         case = dict(mode="proof", workload="u64", backend="f2z", log_n=15, seed=7, threads=1,
-                    f2z=dict(w=width, split=0, profile=100, bound="johnson", ligerito="custom:1:4"))
-        entries.append(dict(job=dict(id=identifier, case=case, reps=2, warmups=1, memory="rss", skip=None),
-                            status="measured", effective=dict(boundary="standalone-proving", corpus_digest="abc")))
+                    f2z=dict(gkr_schedule="auto", w=width, split=0, profile=100, bound="johnson", ligerito="custom:1:4"))
+        entries.append(dict(job=dict(proof_fingerprints=False, id=identifier, case=case, reps=2, warmups=1, memory="rss", skip=None),
+                            status="measured", effective=dict(boundary="standalone-proving", corpus_digest="abc", gkr_schedules=[dict(path="single",row_vars=18,col_vars=2,word_bits=1,threads=1,schedule="l4")])))
         for kind, index, value in [("warmup", 0, 10000), ("sample", 0, 10), ("sample", 1, 20)]:
             records.append(dict(case_id=identifier, kind=kind, index=index, verified=True,
                                 metrics=dict(online_prover_ms=value, commit_ms=1, verify_ms=2, proof_bytes=1024)))
@@ -49,6 +49,7 @@ class Reports(unittest.TestCase):
     def test_complete_identity_separates_packing_profile_split_threads(self):
         manifest, records = fixture(self.path, (1, 3, 8, 5))
         manifest["cases"][1]["job"]["case"]["threads"] = 8
+        manifest["cases"][1]["effective"]["gkr_schedules"][0]["threads"] = 8
         manifest["cases"][2]["job"]["case"]["f2z"]["profile"] = 128
         manifest["cases"][3]["job"]["case"]["f2z"]["split"] = 1
         self.rewrite(manifest, records)
@@ -116,6 +117,48 @@ class Reports(unittest.TestCase):
         manifest["cases"].append(copy.deepcopy(manifest["cases"][0]))
         self.rewrite(manifest, records)
         with self.assertRaises(ValueError):
+            load(self.path)
+
+class ScheduleRecords(unittest.TestCase):
+    setUp = Reports.setUp
+    rewrite = Reports.rewrite
+    def test_missing_substituted_or_duplicate_resolution_rejected(self):
+        manifest, records = fixture(self.path)
+        for bad in ([], [dict(path="multi",row_vars=18,col_vars=2,word_bits=1,threads=1,schedule="l2")]):
+            changed = copy.deepcopy(manifest)
+            changed['cases'][0]['effective']['gkr_schedules'] = bad
+            self.rewrite(changed, records)
+            with self.assertRaises(ValueError):
+                load(self.path)
+        changed = copy.deepcopy(manifest)
+        changed['cases'][0]['job']['case']['f2z']['gkr_schedule'] = 'l2'
+        self.rewrite(changed, records)
+        with self.assertRaisesRegex(ValueError,'substituted'):
+            load(self.path)
+
+    def test_requested_fingerprints_are_required_and_memory_excludes_them(self):
+        manifest, records = fixture(self.path)
+        manifest['cases'][0]['job']['proof_fingerprints'] = True
+        self.rewrite(manifest,records)
+        with self.assertRaisesRegex(ValueError,'fingerprint'):
+            load(self.path)
+        fingerprint = dict(proof='a'*64,transcript='b'*64)
+        for r in records:
+            if r['kind'] != 'rss':
+                r['fingerprint'] = fingerprint
+        self.rewrite(manifest,records)
+        self.assertEqual(len(load(self.path)),1)
+        records[-1]['fingerprint'] = fingerprint
+        self.rewrite(manifest,records)
+        with self.assertRaisesRegex(ValueError,'memory workers'):
+            load(self.path)
+
+    def test_conflicting_schedules_for_one_geometry_are_rejected(self):
+        manifest, records = fixture(self.path)
+        resolutions = manifest['cases'][0]['effective']['gkr_schedules']
+        resolutions.append(dict(resolutions[0], schedule='l2'))
+        self.rewrite(manifest, records)
+        with self.assertRaisesRegex(ValueError, 'duplicate resolved'):
             load(self.path)
 
 

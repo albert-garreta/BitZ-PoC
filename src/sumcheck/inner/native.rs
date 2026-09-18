@@ -1,14 +1,17 @@
 //! Encoded Montgomery storage and native kernels for the Spartan inner prover.
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
-#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 #[cfg(test)]
 use crate::piop::spartan::mul::MulLayout;
+#[cfg(test)]
+use crate::sumcheck::bridge::PreparedBinding;
 pub use crate::sumcheck::outer::arithmetic::NativeWideProducts;
 #[cfg(test)]
 pub use crate::sumcheck::outer::arithmetic::RawProducts;
 pub(crate) use crate::sumcheck::outer::arithmetic::*;
 use crate::utils::delayed_reduction::EncodedMac;
+#[cfg(test)]
+use circuit::linear_map::CscMatrix;
 #[cfg(test)]
 use field::Uint;
 use field::{Fp, RingOps};
@@ -20,17 +23,20 @@ use rayon::prelude::*;
 #[cfg(test)]
 use crate::piop::spartan::sumcheck::R1csProductMles;
 
+#[cfg(test)]
 use crate::piop::spartan::{
-    baby_bear_mul::{BABY_BEAR_MODULUS, BabyBearMulCoefficient},
-    matrix::{
-        BlockSelectorLayout, PrefixUnivariateRowFactors, PreparedConstraintMatrices,
-        SpartanMatrixCoefficient,
-    },
-    u64_mul::{U64_MUL_LIMB_BASE, U64MulCoefficient},
+    baby_bear_mul::BabyBearMulCoefficient,
+    matrix::{PreparedConstraintMatrices, SpartanMatrixCoefficient},
+    u64_mul::U64MulCoefficient,
 };
 
 pub(crate) use crate::sumcheck::arithmetic::merge_accumulators as merge_product_pair;
 use crate::sumcheck::{SumcheckError, arithmetic::merge_accumulators};
+
+// Compatibility exports while callers migrate to the matrix bridge.
+pub use crate::sumcheck::bridge::native::RawMontyCoefficient;
+#[cfg(test)]
+use crate::sumcheck::bridge::native::*;
 
 mod folded;
 
@@ -56,9 +62,6 @@ const PARALLEL_MIN_ITEMS: usize = 1 << 12;
 /// Output elements per parallel block in the fused fold kernels (even, so a
 /// block always holds whole output pairs).
 pub(crate) const FOLD_BLOCK: usize = 1 << 11;
-
-/// Columns per parallel block in the matrix binding kernel.
-const BIND_BLOCK: usize = 1 << 12;
 
 #[cfg(feature = "parallel")]
 #[inline]
@@ -184,7 +187,13 @@ pub(crate) fn raw_shared(value: field::Fp<2>) -> Raw {
 /// `eq(boolean_index, point)` in little-endian index order, the raw twin of
 /// `matrix::eq_table`: the same doubling recurrence, entry for entry.
 pub(crate) fn eq_table_raw(ctx: &field::FpCtx<2>, point: &[Raw]) -> Vec<Raw> {
-    let mut table = vec![0 as Raw; 1usize << point.len()];
+    let mut table = Vec::new();
+    eq_table_raw_into(ctx, point, &mut table);
+    table
+}
+pub(crate) fn eq_table_raw_into(ctx: &field::FpCtx<2>, point: &[Raw], table: &mut Vec<Raw>) {
+    table.resize(1usize << point.len(), 0);
+
     table[0] = ctx.one_raw();
     for (coordinate, &challenge) in point.iter().enumerate() {
         let half = 1usize << coordinate;
@@ -206,7 +215,6 @@ pub(crate) fn eq_table_raw(ctx: &field::FpCtx<2>, point: &[Raw]) -> Vec<Raw> {
             expand(zero_child, one_child);
         }
     }
-    table
 }
 
 /// The low- and high-coordinate equality factors of `matrix::make_equality_factors`,
@@ -636,41 +644,6 @@ pub struct BlockScales {
     pub scales: Vec<Option<Raw>>,
 }
 
-/// Aggregates a [`BlockSelectorLayout`] into per-block scales for `ρ`.
-pub(crate) fn block_scales_raw<C: RawMontyCoefficient>(
-    ctx: &field::FpCtx<2>,
-    layout: &BlockSelectorLayout<C>,
-    rho: Raw,
-    num_column_vars: usize,
-) -> BlockScales {
-    let blocks = (1usize << num_column_vars) / layout.block_len;
-    let prepared = C::prepare_raw(ctx);
-    let mut scales = vec![None; blocks];
-    let factors = [ctx.one_raw(), rho, ctx.mul_raw(rho, rho)];
-    for (runs, factor) in [
-        (&layout.a, factors[0]),
-        (&layout.b, factors[1]),
-        (&layout.c, factors[2]),
-    ] {
-        for run in runs {
-            let scale = ctx.mul_raw(
-                factor,
-                run.coefficient.raw_scale(&prepared, ctx.one_raw(), ctx),
-            );
-            let slot = &mut scales[run.start / layout.block_len];
-            *slot = Some(match *slot {
-                Some(existing) => ctx.add_raw(existing, scale),
-                None => scale,
-            });
-        }
-    }
-    BlockScales {
-        block_len: layout.block_len,
-        rows: layout.rows,
-        scales,
-    }
-}
-
 /// Folds one table at `challenge` (no accumulation).
 fn fold_table_raw(ctx: &field::FpCtx<2>, input: &[Raw], output: &mut [Raw], challenge: Raw) {
     debug_assert_eq!(input.len(), 2 * output.len());
@@ -799,331 +772,6 @@ enum BlockValues<'a> {
     Limbs(&'a [field::Uint<32>]),
 }
 
-// ---------------------------------------------------------------------------
-// Matrix binding
-// ---------------------------------------------------------------------------
-
-/// Coefficient scaling on raw residues: the prover-side twin of
-/// [`SpartanMatrixCoefficient::scale`], with per-proof constants prepared once
-/// instead of per matrix entry.
-pub trait RawMontyCoefficient: Sync {
-    /// Constants derived from the field context once per binding.
-    type Prepared: Sync;
-
-    fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared;
-
-    /// `self · value`.
-    fn raw_scale(&self, prepared: &Self::Prepared, value: Raw, ctx: &field::FpCtx<2>) -> Raw;
-}
-
-impl RawMontyCoefficient for bool {
-    type Prepared = ();
-
-    fn prepare_raw(_ctx: &field::FpCtx<2>) -> Self::Prepared {}
-
-    #[inline(always)]
-    fn raw_scale(&self, _prepared: &(), value: Raw, _ctx: &field::FpCtx<2>) -> Raw {
-        if *self { value } else { 0 }
-    }
-}
-
-impl RawMontyCoefficient for Field {
-    type Prepared = ();
-
-    fn prepare_raw(_ctx: &field::FpCtx<2>) -> Self::Prepared {}
-
-    #[inline(always)]
-    fn raw_scale(&self, _prepared: &(), value: Raw, ctx: &field::FpCtx<2>) -> Raw {
-        ctx.mul_raw(ctx.raw(self), value)
-    }
-}
-
-impl RawMontyCoefficient for U64MulCoefficient {
-    /// The public limb base `2^64` as a residue of the runtime field.
-    type Prepared = Raw;
-
-    fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared {
-        ctx.native_residue_u128(U64_MUL_LIMB_BASE)
-    }
-
-    #[inline(always)]
-    fn raw_scale(&self, limb_base: &Raw, value: Raw, ctx: &field::FpCtx<2>) -> Raw {
-        match self {
-            Self::One => value,
-            Self::LimbBase => ctx.mul_raw(*limb_base, value),
-        }
-    }
-}
-
-impl RawMontyCoefficient for BabyBearMulCoefficient {
-    /// The embedded BabyBear modulus as a residue of the runtime field.
-    type Prepared = Raw;
-
-    fn prepare_raw(ctx: &field::FpCtx<2>) -> Self::Prepared {
-        ctx.native_residue(BABY_BEAR_MODULUS)
-    }
-
-    #[inline(always)]
-    fn raw_scale(&self, modulus: &Raw, value: Raw, ctx: &field::FpCtx<2>) -> Raw {
-        match self {
-            Self::One => value,
-            Self::Modulus => ctx.mul_raw(*modulus, value),
-        }
-    }
-}
-
-/// `D(j) = Σ_i row_weights[i] (A[i,j] + ρ B[i,j] + ρ² C[i,j])` over the padded
-/// column domain: the raw twin of
-/// `PreparedConstraintMatrices::bind_and_batch_with_validated_row_weights`.
-pub(crate) fn bind_and_batch_raw<C>(
-    ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    row_weights: &[Raw],
-    rho: Raw,
-) -> Vec<Raw>
-where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
-{
-    debug_assert_eq!(row_weights.len(), 1usize << matrices.num_row_vars());
-    let rho_squared = ctx.mul_raw(rho, rho);
-    let prepared = C::prepare_raw(ctx);
-    let m = matrices.matrices();
-    let live_columns = m
-        .a()
-        .column_count()
-        .min(m.b().column_count())
-        .min(m.c().column_count());
-    let (a_offsets, a_rows, a_coefficients) = (
-        m.a().column_offsets(),
-        m.a().row_indices(),
-        m.a().coefficients(),
-    );
-    let (b_offsets, b_rows, b_coefficients) = (
-        m.b().column_offsets(),
-        m.b().row_indices(),
-        m.b().coefficients(),
-    );
-    let (c_offsets, c_rows, c_coefficients) = (
-        m.c().column_offsets(),
-        m.c().row_indices(),
-        m.c().coefficients(),
-    );
-    let dot = |offsets: &[usize], rows: &[usize], coefficients: &[C], column: usize| -> Raw {
-        let mut evaluation = 0;
-        for entry in offsets[column]..offsets[column + 1] {
-            evaluation = ctx.add_raw(
-                evaluation,
-                coefficients[entry].raw_scale(&prepared, row_weights[rows[entry]], ctx),
-            );
-        }
-        evaluation
-    };
-    // Whole column ranges per block: sequential walks over the three CSC
-    // offset arrays instead of three bounds-checked column lookups per entry.
-    let block = |first_column: usize, output: &mut [Raw]| {
-        for (offset, slot) in output.iter_mut().enumerate() {
-            let column = first_column + offset;
-            let mut evaluation = dot(a_offsets, a_rows, a_coefficients, column);
-            if b_offsets[column + 1] > b_offsets[column] {
-                evaluation = ctx.add_raw(
-                    evaluation,
-                    ctx.mul_raw(rho, dot(b_offsets, b_rows, b_coefficients, column)),
-                );
-            }
-            if c_offsets[column + 1] > c_offsets[column] {
-                evaluation = ctx.add_raw(
-                    evaluation,
-                    ctx.mul_raw(rho_squared, dot(c_offsets, c_rows, c_coefficients, column)),
-                );
-            }
-            *slot = evaluation;
-        }
-    };
-    let mut evaluations = vec![0 as Raw; 1usize << matrices.num_column_vars()];
-    let live = &mut evaluations[..live_columns];
-    #[cfg(feature = "parallel")]
-    if parallel(live_columns) {
-        live.par_chunks_mut(BIND_BLOCK)
-            .enumerate()
-            .for_each(|(index, output)| block(index * BIND_BLOCK, output));
-        return evaluations;
-    }
-    block(0, live);
-    evaluations
-}
-
-/// The row functional binding the matrices for the inner sumcheck.
-pub(crate) enum RowFunctional<'a> {
-    /// `eq(·, point)` over the padded row domain (the standard outer).
-    Point(&'a [Field]),
-    /// The prefix-univariate factors (the univariate-skip outer).
-    Prefix(&'a PrefixUnivariateRowFactors<Field>),
-}
-
-/// Bind/batch matrix coefficients while retaining block-selector structure.
-pub(crate) fn prepare_inner_inputs<'a, C>(
-    ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    functional: RowFunctional<'_>,
-    rho: Raw,
-    witness: RawWitness<'a>,
-) -> (RawWitness<'a>, NativeWeights)
-where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
-{
-    let _scope = tracing::info_span!("spartan:bind_and_batch").entered();
-    let num_vars = matrices.num_column_vars();
-    let live = matrices.matrices().column_count();
-    let weights = if let Some(layout) = matrices.block_selector().filter(|l| l.block_len >= 2) {
-        let weights = match functional {
-            RowFunctional::Point(point) => eq_table_raw(ctx, &ctx.raw_vec(point)),
-            RowFunctional::Prefix(factors) => prefix_row_weights_raw(ctx, factors),
-        };
-        NativeWeights::Blocks {
-            weights,
-            scales: block_scales_raw(ctx, layout, rho, num_vars),
-            live,
-            num_vars,
-        }
-    } else {
-        let matrix = match functional {
-            RowFunctional::Point(point) => {
-                bind_and_batch_raw(ctx, matrices, &eq_table_raw(ctx, &ctx.raw_vec(point)), rho)
-            }
-            RowFunctional::Prefix(factors) => {
-                bind_and_batch_prefix_raw(ctx, matrices, factors, rho)
-            }
-        };
-        NativeWeights::Dense { matrix, live }
-    };
-    (witness, weights)
-}
-
-/// Materializes the prefix-univariate row weights `prefix[s] · tail(x)` in
-/// canonical row order (`s + 2^K x`), the raw twin of
-/// `PrefixUnivariateRowFactors::materialize`.
-pub(crate) fn prefix_row_weights_raw(
-    ctx: &field::FpCtx<2>,
-    factors: &PrefixUnivariateRowFactors<Field>,
-) -> Vec<Raw> {
-    let parts = factors.parts();
-    let prefix = ctx.raw_vec(parts.prefix);
-    let tail_low = ctx.raw_vec(parts.tail_low);
-    let tail_high = ctx.raw_vec(parts.tail_high);
-    let block_len = 1usize << parts.skip_vars;
-    let low_mask = tail_low.len() - 1;
-    let total_rows = 1usize << parts.num_row_vars;
-    let mut weights = vec![0 as Raw; total_rows];
-    let fill = |suffix: usize, block: &mut [Raw]| {
-        let tail = ctx.mul_raw(
-            tail_low[suffix & low_mask],
-            tail_high[suffix >> parts.tail_low_vars],
-        );
-        for (weight, &prefix_weight) in block.iter_mut().zip(&prefix) {
-            *weight = ctx.mul_raw(prefix_weight, tail);
-        }
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(total_rows) {
-        weights
-            .par_chunks_mut(block_len)
-            .enumerate()
-            .for_each(|(suffix, block)| fill(suffix, block));
-        return weights;
-    }
-    for (suffix, block) in weights.chunks_mut(block_len).enumerate() {
-        fill(suffix, block);
-    }
-    weights
-}
-
-/// The raw twin of `bind_and_batch_with_prefix_univariate_factors`: disjoint
-/// unit-selector matrices are filled one prefix block at a time, in parallel,
-/// without materializing the row-weight tensor; other layouts materialize
-/// the weights and bind generically.
-pub(crate) fn bind_and_batch_prefix_raw<C>(
-    ctx: &field::FpCtx<2>,
-    matrices: &PreparedConstraintMatrices<Field, C>,
-    factors: &PrefixUnivariateRowFactors<Field>,
-    rho: Raw,
-) -> Vec<Raw>
-where
-    C: SpartanMatrixCoefficient<Field> + RawMontyCoefficient,
-{
-    let parts = factors.parts();
-    let prefix = ctx.raw_vec(parts.prefix);
-    let tail_low = ctx.raw_vec(parts.tail_low);
-    let tail_high = ctx.raw_vec(parts.tail_high);
-    let block_len = 1usize << parts.skip_vars;
-    let low_mask = tail_low.len() - 1;
-    let tail_weight = |suffix: usize| -> Raw {
-        ctx.mul_raw(
-            tail_low[suffix & low_mask],
-            tail_high[suffix >> parts.tail_low_vars],
-        )
-    };
-    let domain = 1usize << matrices.num_column_vars();
-
-    let layout = matrices.selector_layout().filter(|[rows, a, b, c]| {
-        let mut offsets = [*a, *b, *c];
-        offsets.sort_unstable();
-        offsets[0] + rows <= offsets[1]
-            && offsets[1] + rows <= offsets[2]
-            && offsets[2] + rows <= domain
-    });
-    let Some([rows, a_offset, b_offset, c_offset]) = layout else {
-        let weights = prefix_row_weights_raw(ctx, factors);
-        return bind_and_batch_raw(ctx, matrices, &weights, rho);
-    };
-
-    let rho_squared = ctx.mul_raw(rho, rho);
-    let mut evaluations = vec![0 as Raw; domain];
-    // Carve the three disjoint selector regions out of the table.
-    let mut order = [(a_offset, 0usize), (b_offset, 1), (c_offset, 2)];
-    order.sort_unstable();
-    let (first, rest) = evaluations[order[0].0..].split_at_mut(rows);
-    let (second, rest) = rest[order[1].0 - order[0].0 - rows..].split_at_mut(rows);
-    let third = &mut rest[order[2].0 - order[1].0 - rows..][..rows];
-    let mut regions: [Option<&mut [Raw]>; 3] = [None, None, None];
-    regions[order[0].1] = Some(first);
-    regions[order[1].1] = Some(second);
-    regions[order[2].1] = Some(third);
-    let [Some(a_region), Some(b_region), Some(c_region)] = regions else {
-        unreachable!("every selector region is assigned exactly once");
-    };
-
-    let fill = |suffix: usize, a: &mut [Raw], b: &mut [Raw], c: &mut [Raw]| {
-        let tail = tail_weight(suffix);
-        for (((a, b), c), &prefix_weight) in a.iter_mut().zip(b).zip(c).zip(&prefix) {
-            let weight = ctx.mul_raw(prefix_weight, tail);
-            *a = weight;
-            *b = ctx.mul_raw(rho, weight);
-            *c = ctx.mul_raw(rho_squared, weight);
-        }
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(rows) {
-        (
-            a_region.par_chunks_mut(block_len),
-            b_region.par_chunks_mut(block_len),
-            c_region.par_chunks_mut(block_len),
-        )
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(suffix, (a, b, c))| fill(suffix, a, b, c));
-        return evaluations;
-    }
-    for (suffix, ((a, b), c)) in a_region
-        .chunks_mut(block_len)
-        .zip(b_region.chunks_mut(block_len))
-        .zip(c_region.chunks_mut(block_len))
-        .enumerate()
-    {
-        fill(suffix, a, b, c);
-    }
-    evaluations
-}
-
 #[cfg(test)]
 mod tests {
     use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -1131,10 +779,7 @@ mod tests {
     use super::*;
     use crate::piop::spartan::{
         baby_bear_mul::{BabyBearMulLayout, baby_bear_mul_constraint_matrices},
-        matrix::{
-            ConstraintMatrices, ConstraintMatricesSkeleton, SparseMatrix, eq_table,
-            make_equality_factors,
-        },
+        matrix::{ConstraintMatrices, ConstraintMatricesSkeleton, eq_table, make_equality_factors},
         squeeze_field,
         sumcheck::{
             prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
@@ -1704,7 +1349,7 @@ mod tests {
                     row
                 })
                 .collect();
-            SparseMatrix::try_from_rows(columns, entries).unwrap()
+            CscMatrix::try_from_rows(columns, entries).unwrap()
         };
         ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap()
     }
@@ -1719,9 +1364,12 @@ mod tests {
     {
         let row_point = random_fields(rng, cfg, matrices.num_row_vars());
         let rho = random_field(rng, cfg);
-        let expected = matrices.bind_and_batch(&row_point, &rho).unwrap();
+        let expected = crate::piop::spartan::matrix::eq_table_prover(&row_point, matrices.config())
+            .map_err(crate::sumcheck::SumcheckError::from)
+            .and_then(|weights| matrices.binding(&rho).bind_rows(&weights))
+            .unwrap();
         let row_weights = eq_table_raw(ctx, &ctx.raw_vec(&row_point));
-        let actual = bind_and_batch_raw(ctx, matrices, &row_weights, ctx.raw(&rho));
+        let actual = reference_native_binding(ctx, matrices, &row_weights, ctx.raw(&rho));
         assert_eq!(actual, ctx.raw_vec(&expected.evaluations));
 
         for skip_vars in 1..=4usize {
@@ -1734,10 +1382,8 @@ mod tests {
                 tail_point: random_fields(rng, cfg, matrices.num_row_vars() - skip_vars),
             };
             let factors = binding.row_factors(matrices.num_row_vars(), cfg).unwrap();
-            let expected = matrices
-                .bind_and_batch_with_prefix_univariate_factors(&factors, &rho)
-                .unwrap();
-            let actual = bind_and_batch_prefix_raw(ctx, matrices, &factors, ctx.raw(&rho));
+            let expected = matrices.structured().bind_prefix(&factors, &rho).unwrap();
+            let actual = reference_prefix_binding(ctx, matrices, &factors, ctx.raw(&rho));
             assert_eq!(
                 actual,
                 ctx.raw_vec(&expected.evaluations),
@@ -2090,14 +1736,14 @@ mod tests {
 
         // A run starting at column zero: one block spanning the domain.
         let rows = 5;
-        let identity = SparseMatrix::try_from_rows(
+        let identity = CscMatrix::try_from_rows(
             8,
             (0..rows)
                 .map(|row| vec![(row, Field::one_with_cfg(&cfg))])
                 .collect(),
         )
         .unwrap();
-        let empty = SparseMatrix::<Field>::try_from_rows(8, vec![Vec::new(); rows]).unwrap();
+        let empty = CscMatrix::<Box<[Field]>>::try_from_rows(8, vec![Vec::new(); rows]).unwrap();
         let prepared = PreparedConstraintMatrices::<Field, Field>::new(
             ConstraintMatrices::new(identity, empty.clone(), empty).unwrap(),
             &cfg,

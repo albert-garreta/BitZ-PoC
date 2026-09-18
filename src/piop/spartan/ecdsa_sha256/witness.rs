@@ -22,7 +22,7 @@ use crate::{pcs::IntegerMatrixLayout, sumcheck::outer::OuterRows};
 
 /// Packed source and virtual assignment, with exact P-256 row operands.
 pub struct Sha256EcdsaWitness {
-    pub(crate) f_rows: Vec<Vec<u64>>,
+    pub(crate) f_rows: std::sync::Arc<Vec<Vec<u64>>>,
     pub(crate) h_rows: Vec<Vec<u64>>,
     pub(crate) products: IntegerProducts,
     pub(crate) statement: Sha256EcdsaStatement,
@@ -262,16 +262,23 @@ fn masked_word(witness: &PackedWitness, index: usize) -> u64 {
     }
 }
 
-/// Splits the flat packed cells `(c << t) + row` into the per-column rows.
-fn split_columns(flat: Vec<u64>, p: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
-    let words = p.rows() / 64;
-    #[cfg(feature = "parallel")]
-    {
-        flat.par_chunks(words).map(<[u64]>::to_vec).collect()
-    }
-    #[cfg(not(feature = "parallel"))]
-    {
-        flat.chunks(words).map(<[u64]>::to_vec).collect()
+/// Copy across column boundaries directly into the final packed storage.
+fn copy_column_bits(
+    rows: &mut [Vec<u64>],
+    row_vars: usize,
+    mut dst: usize,
+    src: &[u64],
+    mut src_off: usize,
+    mut len: usize,
+) {
+    let row_bits = 1usize << row_vars;
+    while len != 0 {
+        let offset = dst & (row_bits - 1);
+        let take = len.min(row_bits - offset);
+        copy_bits(&mut rows[dst >> row_vars], offset, src, src_off, take);
+        dst += take;
+        src_off += take;
+        len -= take;
     }
 }
 
@@ -284,21 +291,29 @@ fn pack_source(
     p_f: &PackedWitness,
 ) -> Vec<Vec<u64>> {
     let p = &prepared.f_layout;
-    let mut flat = vec![0u64; p.cols() * p.rows() / 64];
-    flat[0] = 1;
+    let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
+    rows[0][0] = 1;
     for (instance, shard) in shards.iter().enumerate() {
         let dst = 1 + instance * SHA_F;
-        copy_bits(&mut flat, dst, shard.0.words(), 0, 512);
-        copy_bits(&mut flat, dst + 512, shard.0.words(), 768, SHA_F - 512);
+        copy_column_bits(&mut rows, p.row_vars, dst, shard.0.words(), 0, 512);
+        copy_column_bits(
+            &mut rows,
+            p.row_vars,
+            dst + 512,
+            shard.0.words(),
+            768,
+            SHA_F - 512,
+        );
     }
-    copy_bits(
-        &mut flat,
+    copy_column_bits(
+        &mut rows,
+        p.row_vars,
         prepared.map.f_offset,
         p_f.words(),
         P_INPUT_ALIAS - 1,
         p_f.bit_len() - (P_INPUT_ALIAS - 1),
     );
-    split_columns(flat, p)
+    rows
 }
 
 /// The assignment rows `h[instance + N·local]`: every 64 consecutive cells are
@@ -321,36 +336,46 @@ fn pack_assignment(
             }
         });
     }
-    let mut flat = vec![0u64; p.cols() * p.rows() / 64];
+    let words = p.rows() / 64;
     let instance_blocks = n / 64;
-    let (sha, tail) = flat.split_at_mut(prepared.map.h_offset / 64);
-    // Local block `lb` (locals 64·lb ..) owns the contiguous words
-    // [64·lb·instance_blocks, 64·(lb+1)·instance_blocks).
-    let fill = |(lb, chunk): (usize, &mut [u64])| {
-        let locals = chunk.len() / instance_blocks;
+    let tile_words = 64 * instance_blocks;
+    // A job owns whole columns and whole transpose tiles. In particular,
+    // a tile spanning several columns is transposed once, not per column.
+    let columns_per_job = tile_words.div_ceil(words);
+    let job_words = columns_per_job * words;
+    let sha_words = prepared.map.h_offset / 64;
+    let fill = |job: usize| {
+        let count = columns_per_job.min(p.cols() - job * columns_per_job);
+        let mut columns = vec![vec![0u64; words]; count];
+        let start = job * job_words;
+        let end = start + columns.len() * words;
         let mut tile = [0u64; 64];
-        for block in 0..instance_blocks {
-            for (i, word) in tile.iter_mut().enumerate() {
-                *word = masked_word(&shards[64 * block + i].1, lb);
-            }
-            transpose64(&mut tile);
-            for (local, word) in tile[..locals].iter().enumerate() {
-                chunk[local * instance_blocks + block] = *word;
+        for tile_start in (start..end.min(sha_words)).step_by(tile_words) {
+            let lb = tile_start / tile_words;
+            let locals = ((end.min(sha_words) - tile_start) / instance_blocks).min(64);
+            for block in 0..instance_blocks {
+                for (i, word) in tile.iter_mut().enumerate() {
+                    *word = masked_word(&shards[64 * block + i].1, lb);
+                }
+                transpose64(&mut tile);
+                for (local, word) in tile[..locals].iter().enumerate() {
+                    let dst = tile_start - start + local * instance_blocks + block;
+                    columns[dst / words][dst % words] = *word;
+                }
             }
         }
+        for dst in start.max(sha_words)..end.min(sha_words + p_h.words().len()) {
+            columns[(dst - start) / words][(dst - start) % words] =
+                masked_word(p_h, dst - sha_words);
+        }
+        columns
     };
+    let jobs = p.cols().div_ceil(columns_per_job);
     #[cfg(feature = "parallel")]
-    sha.par_chunks_mut(64 * instance_blocks)
-        .enumerate()
-        .for_each(fill);
+    let groups: Vec<_> = (0..jobs).into_par_iter().map(fill).collect();
     #[cfg(not(feature = "parallel"))]
-    sha.chunks_mut(64 * instance_blocks)
-        .enumerate()
-        .for_each(fill);
-    for (index, word) in tail.iter_mut().enumerate().take(p_h.words().len()) {
-        *word = masked_word(p_h, index);
-    }
-    split_columns(flat, p)
+    let groups: Vec<_> = (0..jobs).map(fill).collect();
+    groups.into_iter().flatten().collect()
 }
 
 /// Computes the SHA trace and all hint values. Signing is not part of this API.
@@ -440,7 +465,7 @@ pub fn generate_sha256_ecdsa_witness(
     let f_rows = pack_source(prepared, &shards, &p_f);
     let h_rows = pack_assignment(prepared, &shards, &p_h);
     Ok(Sha256EcdsaWitness {
-        f_rows,
+        f_rows: f_rows.into(),
         h_rows,
         products,
         statement: statement.clone(),
@@ -450,6 +475,26 @@ pub fn generate_sha256_ecdsa_witness(
 #[cfg(test)]
 mod packing_tests {
     use super::copy_bits;
+
+    #[test]
+    fn column_copies_match_bitwise_oracle_across_boundaries() {
+        let source = [0x0102_0304_0506_0708u64, u64::MAX, 0xAA55_AA55_AA55_AA55, 0];
+        for dst in [0, 1, 63, 64, 127, 128, 129] {
+            for src in [0, 1, 63] {
+                for len in [0, 1, 63, 64, 127, 129, 190] {
+                    let mut rows = vec![vec![0u64; 2]; 4];
+                    super::copy_column_bits(&mut rows, 7, dst, &source, src, len);
+                    let actual: Vec<_> = rows.into_iter().flatten().collect();
+                    let mut expected = vec![0u64; 8];
+                    for bit in 0..len {
+                        let value = source[(src + bit) / 64] >> ((src + bit) % 64) & 1;
+                        expected[(dst + bit) / 64] |= value << ((dst + bit) % 64);
+                    }
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+    }
 
     #[test]
     fn unaligned_copies_match_individual_bits() {

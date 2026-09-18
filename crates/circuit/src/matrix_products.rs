@@ -129,7 +129,9 @@ mod tests {
     use num_traits::Signed;
 
     use super::*;
-    use crate::constraints::{ConstraintGenerator, ConstraintMatrices, SparseIntegerMatrix};
+    use crate::constraints::{ConstraintGenerator, ConstraintMatrices};
+    use crate::integer_storage::IntegerTable;
+    use crate::linear_map::CsrMatrix;
     use crate::sha256::{SHA256_2KB_MESSAGE_BITS, SHA256_2KB_WITNESS_BITS, sha256_2kb_circuit};
     use crate::witgen::{PackedWitness, ProductWitgen};
 
@@ -142,12 +144,15 @@ mod tests {
     }
 
     fn direct_row(
-        matrix: &SparseIntegerMatrix,
+        matrix: &CsrMatrix<IntegerTable>,
         row: usize,
         integer_witness: &PackedWitness,
     ) -> BigInt {
         matrix
-            .row_entries(row)
+            .row(row)
+            .unwrap()
+            .iter()
+            .map(|(column, coefficient)| (column, coefficient.as_words()))
             .filter(|(column, _)| integer_witness.bit(*column))
             .map(|(_, coefficient)| stored_bigint(coefficient))
             .sum()

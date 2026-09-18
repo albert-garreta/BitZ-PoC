@@ -358,7 +358,7 @@ impl BinaryPcs {
         let target = target + eta * round0.0.y;
         ligerito::recursive_prover_with_basis(
             &self.pc,
-            packed.to_vec(),
+            packed,
             basis,
             target,
             &data.codeword,

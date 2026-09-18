@@ -38,7 +38,7 @@ use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 use crate::transcript::traits::Transcript;
 
-use crate::utils::{cfg_into_iter, cfg_iter, cfg_iter_mut};
+use crate::utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -113,24 +113,67 @@ pub fn row_bit_weights(
     alpha: Gf,
     rho: &[Gf],
 ) -> Vec<Gf> {
-    let log_w = p.word_bits.trailing_zeros() as usize;
-    let mask = p.word_bits.wrapping_sub(1);
-    let eq = build_eq_x_r_vec(rho, &()).expect("shared reduction point is non-empty");
+    let mut weights = build_eq_x_r_vec(rho, &()).expect("shared reduction point is non-empty");
     // The `2^t` ~q_bits-wide exponentiations dominate this table (it is the
     // verifier's O(2^t) step and was 18% of the mod-q PROVE at nv=16):
     // fixed-base comb (≈8× fewer mults than square-and-multiply) + parallel.
     let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
-    let bases: Vec<Gf> = cfg_iter!(row_weights)
-        .map(|&w| Gf::from(comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64]))))
-        .collect();
     let one = Gf::one();
-    cfg_into_iter!(0..eq.len())
-        .map(|i| {
-            let b = i >> log_w;
-            let j = i & mask;
-            eq[i] * (gf_pow(bases[b], 1u128 << j) - one)
-        })
-        .collect()
+    cfg_chunks_mut!(weights, p.word_bits)
+        .enumerate()
+        .for_each(|(b, slots)| {
+            let w = row_weights[b];
+            let mut power = comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64]));
+            // Reuse the equality table as output and the previous bit's
+            // power: alpha^(w*2^(j+1)) = (alpha^(w*2^j))^2.
+            let last = slots.len() - 1;
+            for (j, slot) in slots.iter_mut().enumerate() {
+                *slot *= power - one;
+                if j != last {
+                    power = power.square();
+                }
+            }
+        });
+    weights
+}
+
+#[cfg(test)]
+mod row_bit_weight_tests {
+    use super::*;
+
+    #[test]
+    fn fused_weights_match_independent_powers() {
+        for word_bits in [1usize, 2, 8, 32, 128] {
+            let p = IntegerMatrixLayout {
+                row_vars: 4,
+                col_vars: 1,
+                word_bits,
+            };
+            let row_weights: Vec<_> = (0..p.rows())
+                .map(|b| match b {
+                    0 => 0,
+                    1 => 1,
+                    2 => u128::MAX,
+                    _ => (b as u128).wrapping_mul(0xa3b1_770d_41af_89c2_8211_7759_1234_0fab),
+                })
+                .collect();
+            let rho: Vec<_> = (0..p.row_vars + word_bits.trailing_zeros() as usize)
+                .map(|i| Gf::from([i as u64 + 13, i as u64 + 31]))
+                .collect();
+            let eq = build_eq_x_r_vec(&rho, &()).unwrap();
+            for alpha in [Gf::zero(), Gf::one(), Gf::from([0x99887766, 0x12345678])] {
+                let bases: Vec<_> = row_weights.iter().map(|&w| gf_pow(alpha, w)).collect();
+                let expected: Vec<_> = eq
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &e)| {
+                        e * (gf_pow(bases[i / word_bits], 1u128 << (i % word_bits)) - Gf::one())
+                    })
+                    .collect();
+                assert_eq!(row_bit_weights(&p, &row_weights, alpha, &rho), expected);
+            }
+        }
+    }
 }
 
 /// `max_c v_c` — the magnitude that must stay below `ord(α)` (≈ `2^128`) for the
@@ -1046,7 +1089,7 @@ pub(crate) struct VirtualWordBound {
     map_digest: [u8; 32],
 }
 impl VirtualWordBound {
-    pub(crate) fn new<M: crate::f2map::VirtualMap>(
+    pub(crate) fn new<M: circuit::linear_map::binary::VirtualMap>(
         layout: IntegerMatrixLayout,
         value_bits: usize,
         map: &M,
@@ -1071,7 +1114,7 @@ impl VirtualWordBound {
         }
         // Structural support, never the supplied witness, establishes this bound.
         if map
-            .output_word_bits(&layout)
+            .output_word_bits(layout.word_bits)
             .is_none_or(|bound| bound > value_bits)
         {
             for column in 0..map.cols() {
@@ -1094,7 +1137,7 @@ impl VirtualWordBound {
     pub(crate) fn matches_layout(&self, p: &IntegerMatrixLayout) -> bool {
         self.layout == *p
     }
-    pub(crate) fn matches_map<M: crate::f2map::VirtualMap>(
+    pub(crate) fn matches_map<M: circuit::linear_map::binary::VirtualMap>(
         &self,
         p: &IntegerMatrixLayout,
         map: &M,
@@ -1243,7 +1286,7 @@ where
 }
 
 impl ModQWeightChunks {
-    pub(crate) fn from_dense_padded<M: crate::f2map::VirtualMap>(
+    pub(crate) fn from_dense_padded<M: circuit::linear_map::binary::VirtualMap>(
         p: &IntegerMatrixLayout,
         weights: &[u128],
         q_bits: usize,
@@ -1794,7 +1837,7 @@ mod rlc_tests {
 
     #[test]
     fn padded_weights_require_structural_support_and_bind_exact_map() {
-        use crate::{f2map::PreparedVirtualMap, sparse_matrix::SparseMatrix};
+        use circuit::linear_map::{CscMatrix, binary::PreparedVirtualMap};
         let p = IntegerMatrixLayout {
             row_vars: 2,
             col_vars: 0,
@@ -1802,7 +1845,7 @@ mod rlc_tests {
         };
         let map = |row| {
             PreparedVirtualMap::new(
-                SparseMatrix::try_from_columns(512, vec![vec![(row, true)]]).unwrap(),
+                CscMatrix::try_from_columns(512, vec![vec![(row, true)]]).unwrap(),
             )
             .unwrap()
         };

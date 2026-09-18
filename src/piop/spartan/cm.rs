@@ -34,6 +34,7 @@ use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
 
 use crate::piop::spartan::SpartanField as _;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 #[cfg(test)]
 use field::{Fp, Uint};
@@ -44,23 +45,26 @@ use flock_core::pcs::{
 };
 use thiserror::Error;
 
-use crate::{
-    f2map::{PreparedVirtualMap, PreparedVirtualMapError, cell_count},
-    ligerito::{LOG_PACKING, packed_vars},
-    ligerito_flock::{
-        FlockCommitHint, LigeritoSelection, ModQOpeningKind, commit_rs_ligerito_rows,
-        sha_lig_configs,
+use {
+    crate::{
+        f2map::cell_count,
+        ligerito::{LOG_PACKING, packed_vars},
+        ligerito_flock::{
+            FlockCommitHint, LigeritoSelection, ModQOpeningKind, commit_rs_ligerito_rows,
+            sha_lig_configs,
+        },
+        pcs::IntegerMatrixLayout,
+        transcript::traits::Transcript,
     },
-    pcs::IntegerMatrixLayout,
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::{PreparedVirtualMap, PreparedVirtualMapError},
 };
 
 use super::{
     EvaluatedSpartanAssignment, SpartanField,
     f2z::{MIN_PRODUCTION_GATE_VARS, SpartanF2zField},
     matrix::{
-        ConstraintMatrices, PreparedConstraintMatrices, SparseMatrix, SpartanMatrixError,
-        build_assignment_mle, build_product_mles,
+        ConstraintMatrices, PreparedConstraintMatrices, SpartanMatrixError, build_assignment_mle,
+        build_product_mles,
     },
     profile::{IopInstanceFacts, IopSecurityParams, Lambda100},
     protocol::{
@@ -260,9 +264,9 @@ pub fn cm_and_map(layout: &CmAndLayout) -> Result<PreparedVirtualMap, CmAndError
     }
     debug_assert_eq!(row_indices.len(), nnz);
 
-    let matrix = SparseMatrix::try_from_binary_csc(cells, column_offsets, row_indices)
+    let matrix = CscMatrix::try_from_binary_csc(cells, column_offsets, row_indices)
         .map_err(SpartanMatrixError::from)?;
-    Ok(PreparedVirtualMap::new(matrix)?)
+    Ok(PreparedVirtualMap::from_implicit(matrix)?)
 }
 /// Exact integer assignment for a batch of AND gates:
 /// `z = [const | x | y | z | w]`, only `z[0]` nonzero in the constant
@@ -435,7 +439,7 @@ impl RelationSpec for CmAndSpec {
         let mut minus_two = minus_one.clone();
         minus_two = field_config.sub(&(minus_two), &(&one));
 
-        let empty = SparseMatrix::try_from_rows(columns, vec![Vec::new(); live])
+        let empty = CscMatrix::try_from_rows(columns, vec![Vec::new(); live])
             .map_err(SpartanMatrixError::from)
             .map_err(CmAndError::from)?;
         let c_rows: Vec<Vec<(usize, SpartanF2zField)>> = (0..live)
@@ -448,7 +452,7 @@ impl RelationSpec for CmAndSpec {
                 ]
             })
             .collect();
-        let c = SparseMatrix::try_from_rows(columns, c_rows)
+        let c = CscMatrix::try_from_rows(columns, c_rows)
             .map_err(SpartanMatrixError::from)
             .map_err(CmAndError::from)?;
         let matrices = PreparedConstraintMatrices::new(
@@ -945,17 +949,14 @@ mod tests {
             let column = map.matrix().column(source).unwrap();
             let bit = slot % CM_AND_WORD_BITS;
             assert_eq!(
-                column.row_indices(),
+                column.indices(),
                 &[source, layout.flat_cell(CM_AND_W_SLOT + bit, gate)]
             );
         }
         // Source z columns feed only their identity row.
         for (slot, gate) in [(64usize, 0usize), (81, 2), (95, 255)] {
             let source = layout.flat_cell(slot, gate);
-            assert_eq!(
-                map.matrix().column(source).unwrap().row_indices(),
-                &[source]
-            );
+            assert_eq!(map.matrix().column(source).unwrap().indices(), &[source]);
         }
         // Padded source w slots are structurally dead.
         for (bit, gate) in [(0usize, 0usize), (17, 2), (31, 255)] {

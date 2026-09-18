@@ -8,7 +8,7 @@ out-of-domain sample). It is available in the supported benchmarks listed below.
 
 | bench | scheme id | what it measures |
 | --- | --- | --- |
-| `benches/mul_e2e_compare` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
+| `benches/mul_compare.rs` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
 | `benches/sha256_e2e_compare` | `binius64-ligerito` | Binius64's two-lane SHA-256 circuit, end to end |
 | `benches/hybrid_u32_sha256` | mode `binius-ligerito` | the all-Binius circuit (four-limb mod-2^32 gadget + chained SHA) |
 | `mul_compare pcs --workload u32-full,baby-bear` | `f2z-ligerito-binary` | PCS only: the Binius64 packed rows and the identical bit-MLE claim, opened by the F2Z opener instead of BaseFold |

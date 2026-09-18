@@ -1,8 +1,0 @@
-{
-  "benches/common/mod.rs": "34fddc8ca6072351e2c592d224155412c654849ffa0c40d51d801da998cd91e8",
-  "benches/mul_e2e_compare/binius.rs": "35bd238b3ef66ffecf098535fd915e06c99a118e5fbfea64c72d4ed0d808515f",
-  "benches/mul_e2e_compare/binius_ligerito.rs": "d5d03a97e3e927529d051ecd43102cdc65a06db7b1734c8b7e5ded776103d2a3",
-  "src/binary_pcs.rs": "50cd9236119620aa539190449ac8095368274728307b147ee746c3d077afef10",
-  "src/binius_ligerito/mod.rs": "4bb255b7094742b91af57a3a91e48cb9f41f9c971aaebf0e44c887f178d71463",
-  "benches/mul_e2e_compare/plonky3.rs": "3226b43191617ff98e35dfffbf3a8503cae41099c2433d17cf9c0cf1897e41be"
-}

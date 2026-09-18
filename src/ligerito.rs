@@ -1536,7 +1536,7 @@ pub(crate) fn prove_int_eval_merged_bounded(
     MultiDegreeSumcheckProof<Gf>,
     Vec<Gf>,
 ) {
-    use crate::merged_forest::prove_merged_forest_lazy;
+    use crate::merged_forest::prove_merged_forest_lazy_from_rows;
     use crate::pcs::chunk_pow2_table;
     let t_w = row_bit_vars(p);
     let owned;
@@ -1555,7 +1555,13 @@ pub(crate) fn prove_int_eval_merged_bounded(
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
         if crate::merged_forest::quad_active(p) {
-            crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
+            crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
+                transcript,
+                p,
+                Some(rows),
+                packed_cols,
+                &pow2,
+            )
         } else {
             // A zero-padded witness ends in all-zero columns; those trees
             // are constant 1 and never get built (byte-identical proof).
@@ -1563,7 +1569,7 @@ pub(crate) fn prove_int_eval_merged_bounded(
                 let _g = tracing::info_span!("mc:live_cols").entered();
                 crate::merged_forest::live_cols(p, rows)
             };
-            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2, live)
+            prove_merged_forest_lazy_from_rows(transcript, p, rows, packed_cols, &pow2, live)
         }
     };
     drop(pow2);
@@ -1627,12 +1633,15 @@ pub(crate) fn prove_x_claims_batched_common(
     claim_rows: &[&[Vec<u64>]],
     claim_weights: &[&[u128]],
     alpha: Gf,
-) -> (
-    crate::merged_forest::MergedForestProof,
-    Vec<Vec<u128>>,
-    MultiDegreeSumcheckProof<Gf>,
-    Vec<Gf>,
-) {
+) -> Result<
+    (
+        crate::merged_forest::MergedForestProof,
+        Vec<Vec<u128>>,
+        MultiDegreeSumcheckProof<Gf>,
+        Vec<Gf>,
+    ),
+    crate::merged_forest::schedule::UnsupportedSchedule,
+> {
     use crate::merged_forest::prove_merged_forest_lazy_multi;
     use crate::pcs::chunk_pow2_table;
     let n_real = claim_rows.len();
@@ -1684,7 +1693,7 @@ pub(crate) fn prove_x_claims_batched_common(
     }
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
-        prove_merged_forest_lazy_multi(transcript, p, &pairs)
+        prove_merged_forest_lazy_multi(transcript, p, &pairs)?
     };
     let us: Vec<Vec<u128>> = {
         let _g = tracing::info_span!("mc:fold_v").entered();
@@ -1746,7 +1755,7 @@ pub(crate) fn prove_x_claims_batched_common(
 
     // Shared residual point: every claim's M-hat_n(r*, z_clear) = mu_n.
     let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
-    (mf, us, presum, point)
+    Ok((mf, us, presum, point))
 }
 
 /// Verifier of [`prove_x_claims_batched_common`]: recompute the `N·2^s`

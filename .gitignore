@@ -3,6 +3,14 @@
 /bench_results/
 /benches/results/
 
+# Generated benchmark results.
+/benchmarks/results/**/*.json
+/benchmarks/results/**/*.jsonl
+/benchmarks/results/**/*.csv
+/PerfRuns/
+/src/sumcheck/performance.csv
+/paper/figures/native-mul-ratios.csv
+
 # Generated arithmetic validation and benchmark artifacts.
 /vendor/field/validation/
 /experiments/

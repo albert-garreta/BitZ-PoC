@@ -255,7 +255,8 @@ where
         let online = Instant::now();
         let hint = protocol::commit(&prepared, pack(w))?;
         let commit_ms = online.elapsed().as_secs_f64() * 1000.;
-        let proof = protocol::prove(&mut Blake3Transcript::new(), &prepared, w, &hint)?;
+        let mut transcript = Blake3Transcript::new();
+        let proof = protocol::prove(&mut transcript, &prepared, w, &hint)?;
         let online_ms = online.elapsed().as_secs_f64() * 1000.;
         drop(proving);
         let total_ms = start.elapsed().as_secs_f64() * 1000.;
@@ -323,8 +324,16 @@ where
             };
             anyhow::ensure!(encoded == roundtrip, "opening codec roundtrip");
         }
+        let fingerprint = (run.latency() && run.job.proof_fingerprints).then(|| {
+            crate::common::proof_fingerprint::nonlinear_fingerprint(
+                &proof,
+                &hint.commitment.root,
+                &transcript,
+            )
+        });
         std::hint::black_box(proof);
         run.sample(i, metrics);
+        run.samples.last_mut().expect("recorded sample").fingerprint = fingerprint;
     }
     Ok(())
 }

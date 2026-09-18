@@ -34,13 +34,27 @@ fn comprehensive_f2z_expansion_and_worker_roundtrip() {
         "--reps",
         "5",
         "--dry-run",
+        "--skip-unsupported",
         "--bench",
     ]);
     let jobs = args.expand(false).unwrap();
     assert_eq!(jobs.len(), 3 * 6 * 3 * 2 * 2 * 2);
     for job in jobs {
         assert_eq!(job.case.mode, Mode::Proof);
-        assert!(job.skip.is_none());
+        if job.case.workload == mul::config::Workload::U32Full
+            && job.case.log_n == 15
+            && job
+                .case
+                .f2z
+                .as_ref()
+                .is_some_and(|f| f.w == 8 && f.profile == Some(128))
+        {
+            assert!(
+                job.skip
+                    .as_ref()
+                    .is_some_and(|s| s.contains("projection-draw"))
+            );
+        }
         let decoded: mul::config::Job =
             serde_json::from_str(&serde_json::to_string(&job).unwrap()).unwrap();
         assert_eq!(decoded.case, job.case);
@@ -50,6 +64,7 @@ fn comprehensive_f2z_expansion_and_worker_roundtrip() {
 fn f2z_axes_do_not_duplicate_competitors() {
     let jobs = parse(&[
         "proof",
+        "--skip-unsupported",
         "--workload",
         "u64",
         "--backends",
@@ -124,9 +139,16 @@ fn capabilities_reject_or_record_without_hiding_malformed_arguments() {
 }
 #[test]
 fn mode_defaults_and_packing_constraints() {
-    let jobs = parse(&["proof", "--workload", "baby-bear", "--threads", "1"])
-        .expand(false)
-        .unwrap();
+    let jobs = parse(&[
+        "proof",
+        "--workload",
+        "baby-bear",
+        "--threads",
+        "1",
+        "--skip-unsupported",
+    ])
+    .expand(false)
+    .unwrap();
     assert_eq!(jobs.len(), 22);
     assert_eq!(jobs[0].case.log_n, 15);
     assert_eq!(jobs.last().unwrap().case.log_n, 25);
@@ -278,4 +300,63 @@ fn accounting_is_part_of_only_the_applicable_case() {
             .iter()
             .all(|j| j.case.binius_ligerito_accounting.is_none())
     );
+}
+
+#[test]
+fn schedules_expand_only_where_gkr_runs() {
+    use f2z::merged_forest::schedule::SchedulePolicy;
+    let jobs = parse(&[
+        "proof",
+        "--workload",
+        "u64",
+        "--log-n",
+        "15",
+        "--threads",
+        "1",
+        "--backends",
+        "f2z,binius64",
+        "--gkr-schedule",
+        "auto,l2,l4,l8",
+        "--proof-fingerprints",
+    ])
+    .expand(true)
+    .unwrap();
+    assert_eq!(jobs.len(), 5);
+    assert_eq!(jobs.iter().filter(|j| j.proof_fingerprints).count(), 4);
+    assert_eq!(
+        jobs[0].case.f2z.as_ref().unwrap().gkr_schedule,
+        Some(SchedulePolicy::Auto)
+    );
+    let witness = parse(&["witness", "--threads", "1", "--gkr-schedule", "l2,l4,l8"])
+        .expand(false)
+        .unwrap();
+    assert_eq!(witness.len(), 1);
+    assert_eq!(witness[0].case.f2z.as_ref().unwrap().gkr_schedule, None);
+    for value in ["", "l2,l2", "fastest"] {
+        assert!(Args::try_parse_from(["mul", "--gkr-schedule", value]).is_err());
+    }
+}
+
+#[test]
+fn unachievable_security_profile_is_a_preflight_skip_only_when_requested() {
+    let flags = [
+        "proof",
+        "--workload",
+        "u32-full",
+        "--log-n",
+        "15",
+        "--threads",
+        "1",
+        "--w",
+        "1,8",
+        "--f2z-profile",
+        "128",
+    ];
+    assert!(parse(&flags).expand(false).is_err());
+    let mut args = parse(&flags);
+    args.skip_unsupported = true;
+    let jobs = args.expand(false).unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert!(jobs[0].skip.is_none());
+    assert!(jobs[1].skip.as_ref().unwrap().contains("projection-draw"));
 }

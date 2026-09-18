@@ -1053,6 +1053,7 @@ fn run_once(
         .expect("verify");
     }
     drop(root_scope);
+    common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
     // Provenance scans are deliberately outside all reported timing
     // boundaries; they validate the trial but are not protocol work.
     assert_eq!(prepared.statement_digest(), &circuit.statement_digest());
@@ -1091,6 +1092,7 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
+    common::start_gkr_recording();
     #[cfg(feature = "bench-peak-memory")]
     let _heap_report = common::heap_run::Report::start();
 
@@ -1268,6 +1270,7 @@ fn main() {
         },
     };
     report.print_human_with_commitment(commitment_bytes);
+    common::print_gkr_schedules();
 }
 
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {

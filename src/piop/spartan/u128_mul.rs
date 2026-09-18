@@ -15,6 +15,7 @@
 
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::mul::{MulError, MulLayout, MulWitness};
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 
 use crate::{
@@ -170,7 +171,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::SparseMatrix;
     use num_bigint::BigUint;
 
     use super::*;
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(matrices.a().row_count(), 300);
         assert_eq!(matrices.a().column_count(), layout.assignment_len());
         for row in [0, 1, 299] {
-            let single = |m: &SparseMatrix<bool>, column: usize| {
+            let single = |m: &CscMatrix<Box<[bool]>>, column: usize| {
                 let (row, coefficient) = m
                     .column(column)
                     .expect("column in range")

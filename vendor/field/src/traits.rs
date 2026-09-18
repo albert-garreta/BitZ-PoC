@@ -281,3 +281,27 @@ pub trait FoldPairs<Src, Dst>: RingOps {
         }
     }
 }
+
+// Prepared linear maps may retain a borrowed provider. Borrowing must preserve
+// its exact accumulator type and its prepared reduction, just as RingOps does.
+impl<C: BatchMulAcc<L, R> + ?Sized, L, R> BatchMulAcc<L, R> for &C {
+    type Accumulator = C::Accumulator;
+    fn mul_acc(&self, acc: &mut Self::Accumulator, lhs: &L, rhs: &R) {
+        (**self).mul_acc(acc, lhs, rhs)
+    }
+    fn batch_mul_acc(&self, lhs: &[L], rhs: &[R]) -> Self::Accumulator {
+        (**self).batch_mul_acc(lhs, rhs)
+    }
+    fn batch_mul_acc_map(&self, len: usize, term: impl FnMut(usize) -> (L, R)) -> Self::Accumulator {
+        (**self).batch_mul_acc_map(len, term)
+    }
+}
+impl<C: Reduce<I> + Sync + ?Sized, I> Reduce<I> for &C {
+    type Output = C::Output;
+    fn reduce(&self, input: I) -> Self::Output {
+        (**self).reduce(input)
+    }
+    fn prepare_reduce(&self, max_terms: usize) -> impl Fn(I) -> Self::Output + Send + Sync + '_ {
+        (**self).prepare_reduce(max_terms)
+    }
+}

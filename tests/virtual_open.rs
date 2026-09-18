@@ -11,7 +11,7 @@
 //! and a step-3-consistent one), a non-generator α, a substituted map,
 //! and a wrong geometry.
 
-use f2z::f2map::{PreparedVirtualMap, cell_count, cell_row_bits};
+use circuit::linear_map::CscMatrix;
 use f2z::ligerito::IntEvalRsError;
 use f2z::ligerito::{LOG_PACKING, RsOpenError, packed_vars};
 use f2z::ligerito_flock::{
@@ -20,8 +20,11 @@ use f2z::ligerito_flock::{
     verify_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito_virtual,
 };
 use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
-use f2z::sparse_matrix::SparseMatrix;
 use f2z::transcript::{Blake3Transcript, traits::Transcript};
+use {
+    circuit::linear_map::binary::PreparedVirtualMap,
+    f2z::f2map::{cell_count, cell_row_bits},
+};
 
 const Q: u128 = (1u128 << 100) - 15;
 const Q_BITS: usize = 100;
@@ -84,7 +87,7 @@ fn bit_at(rows: &[Vec<u64>], t_w: usize, flat: usize) -> u64 {
 /// A deterministic sparse map: derived cell `i` = XOR of up to three
 /// pseudo-random source cells; every seventh row is empty.
 fn prepared_from_rows(rows: usize, columns: usize, lists: Vec<Vec<usize>>) -> PreparedVirtualMap {
-    let matrix = SparseMatrix::try_from_rows(
+    let matrix = CscMatrix::<Box<[_]>>::try_from_rows(
         columns,
         lists
             .into_iter()
@@ -128,7 +131,7 @@ fn apply_map(
         if bit_at(f_rows, t_wf, source) == 0 {
             continue;
         }
-        for &derived in column.row_indices() {
+        for &derived in column.indices() {
             let (c, b) = (derived >> t_wh, derived & ((1 << t_wh) - 1));
             h_rows[c][b >> 6] ^= 1u64 << (b & 63);
         }
@@ -139,7 +142,7 @@ fn apply_map(
 fn row_lists(map: &PreparedVirtualMap) -> Vec<Vec<usize>> {
     let mut rows = vec![Vec::new(); map.rows()];
     for (source, column) in map.matrix().columns().enumerate() {
-        for &derived in column.row_indices() {
+        for &derived in column.indices() {
             rows[derived].push(source);
         }
     }
@@ -713,8 +716,8 @@ fn virtual_open_identity_fast_path() {
     .unwrap();
     let rows_f = f_rows(&p, 0x1D_FA57);
     let n = cell_count(&p);
-    let map = PreparedVirtualMap::new(
-        SparseMatrix::try_from_binary_csc(n, (0..=n).collect(), (0..n).collect()).unwrap(),
+    let map = PreparedVirtualMap::from_implicit(
+        CscMatrix::try_from_binary_csc(n, (0..=n).collect(), (0..n).collect()).unwrap(),
     )
     .unwrap();
     assert!(map.is_identity());

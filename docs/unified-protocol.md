@@ -206,6 +206,6 @@ its terminal claim, excluding commitment and opening. `F2Z_QUALIFICATION_PACK_ON
 witness construction followed by packing, without proving. This allows checks
 just above a power of two, where demand-zero padding matters.
 
-`mul_e2e_compare` shares one typed witness-to-proof routine across all three
+`mul_compare` shares one typed witness-to-proof routine across all three
 native types. `F2Z_MUL_WORD_BITS` selects W for that benchmark and `u32_mul`.
 The paper-table CLI retains its existing W=1/8 selection.

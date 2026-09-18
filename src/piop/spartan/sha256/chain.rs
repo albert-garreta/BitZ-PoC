@@ -21,6 +21,7 @@ use crate::piop::spartan::protocol::ProtocolError;
 use crate::piop::spartan::protocol::linear::LinearProof;
 
 use crate::piop::spartan::SpartanField as _;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use std::{
     array,
@@ -44,14 +45,17 @@ use flock_core::pcs::{
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::{
-    f2map::{ChainedPackedSourceMap, ChainedPackedSourceParts, PreparedVirtualMap, VirtualMap},
-    ligerito::{LOG_PACKING, packed_vars},
-    ligerito_flock::{FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito},
-    pcs::{IntegerMatrixLayout, mod_q_num_chunks},
-    poly::mle::FactoredMultilinearExtension,
-    sparse_matrix::SparseMatrix,
-    transcript::traits::Transcript,
+use {
+    crate::{
+        ligerito::{LOG_PACKING, packed_vars},
+        ligerito_flock::{FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito},
+        pcs::{IntegerMatrixLayout, mod_q_num_chunks},
+        poly::mle::FactoredMultilinearExtension,
+        transcript::traits::Transcript,
+    },
+    circuit::linear_map::binary::{
+        ChainedPackedSourceMap, ChainedPackedSourceParts, PreparedVirtualMap, VirtualMap,
+    },
 };
 
 use super::super::{
@@ -77,10 +81,10 @@ use super::{
     inner_sumcheck::Sha256InnerBitSource,
     prime::{Sha256PrimeProfile, sample_sha256_mod_q_context, sha256_instance_facts},
     proof::{
-        RawMontgomery, collapse_native_linear_columns, commit_source_rows_with_config,
-        compact_eq_table, field_from_raw, hash_ligerito_config, hash_security_params, hash_usize,
-        instance_vars, local_constraint_vars, map_fixes_constant_assignment_local, validate_rows,
-        validate_shared_constant, validate_source_params, weighted_byte_tables,
+        commit_source_rows_with_config, compact_eq_table, field_from_raw, hash_ligerito_config,
+        hash_security_params, hash_usize, instance_vars, local_constraint_vars,
+        map_fixes_constant_assignment_local, validate_rows, validate_shared_constant,
+        validate_source_params, weighted_byte_tables,
     },
     witness::{Sha256WitnessError, empty_packed_rows, set_flat_packed_bit},
 };
@@ -229,7 +233,7 @@ impl Sha256ChainStatement {
 /// public initial state baked into `first`.
 #[derive(Debug)]
 struct ChainLocalRelation {
-    native_matrix: SparseMatrix<i64>,
+    native_matrix: CscMatrix<Box<[i64]>>,
     local: PreparedVirtualMap,
     prev: PreparedVirtualMap,
     first: PreparedVirtualMap,
@@ -274,16 +278,16 @@ fn build_chain_local_relation(
     assert_eq!(generated.c.column_count(), SHA256_H_BAR_LIVE_BITS);
     assert_eq!(circuit_matrix_nnz(&generated.a), 0);
     assert_eq!(circuit_matrix_nnz(&generated.b), 0);
-    assert_eq!(generated.m.rows()[0].positions(), &[0]);
+    assert_eq!(generated.m.row(0).unwrap().indices(), &[0]);
 
     let rows = SHA256_CHAIN_H_BAR_LIVE_BITS;
     let mut local_rows: Vec<Vec<(usize, bool)>> = vec![Vec::new(); rows];
     let mut prev_rows: Vec<Vec<(usize, bool)>> = vec![Vec::new(); rows];
     let mut first_rows: Vec<Vec<(usize, bool)>> = vec![Vec::new(); rows];
     let mut last_rows: Vec<Vec<(usize, bool)>> = vec![Vec::new(); rows];
-    for (h_row, row) in generated.m.rows().iter().enumerate() {
+    for (h_row, row) in generated.m.rows().enumerate() {
         let mut initial_parity = false;
-        for &f_column in row.positions() {
+        for &f_column in row.indices() {
             if f_column < STATE_F_COLUMN_BASE {
                 local_rows[h_row].push((f_column, true));
             } else if f_column < STATE_F_COLUMN_END {
@@ -307,7 +311,7 @@ fn build_chain_local_relation(
     }
     let prepared =
         |entries: Vec<Vec<(usize, bool)>>| -> Result<PreparedVirtualMap, Sha256ConstraintError> {
-            let matrix = SparseMatrix::try_from_rows(SHA256_CHAIN_F_BAR_LIVE_BITS, entries)
+            let matrix = CscMatrix::try_from_rows(SHA256_CHAIN_F_BAR_LIVE_BITS, entries)
                 .map_err(SpartanMatrixError::from)?;
             Ok(PreparedVirtualMap::new(matrix)?)
         };
@@ -317,7 +321,7 @@ fn build_chain_local_relation(
     let last = prepared(last_rows)?;
 
     let native_rows = convert_native_integer_rows(&generated.c)?;
-    let native_matrix = SparseMatrix::try_from_rows(SHA256_CHAIN_H_BAR_LIVE_BITS, native_rows)
+    let native_matrix = CscMatrix::try_from_rows(SHA256_CHAIN_H_BAR_LIVE_BITS, native_rows)
         .map_err(SpartanMatrixError::from)?;
     let max_boolean_residual_bound = max_boolean_linear_residual_bound(&native_matrix);
     let digest = chain_relation_digest(
@@ -339,7 +343,7 @@ fn build_chain_local_relation(
 }
 
 fn chain_relation_digest(
-    matrix: &SparseMatrix<i64>,
+    matrix: &CscMatrix<Box<[i64]>>,
     maps: &[&PreparedVirtualMap; 4],
     initial_state: [u32; 8],
 ) -> Result<[u8; 32], Sha256ConstraintError> {
@@ -454,7 +458,7 @@ impl PreparedSha256ChainBatch {
     }
 
     /// The exact native constraint matrix over the widened local assignment.
-    pub(super) fn native_matrix(&self) -> &SparseMatrix<i64> {
+    pub(super) fn native_matrix(&self) -> &CscMatrix<Box<[i64]>> {
         &self.local.native_matrix
     }
 }
@@ -1028,11 +1032,10 @@ impl LinearRelationSpec for PreparedSha256ChainBatch {
         let local_row_weights = eq_table(local_point, config).map_err(SpartanError::from)?;
         let beta = {
             let _scope = tracing::info_span!("sha256:local_relation_collapse").entered();
-            collapse_native_linear_columns(
+            crate::sumcheck::bridge::repeated::collapse_signed_columns(
                 self.native_matrix(),
                 &local_row_weights,
                 reducer,
-                config,
             )
             .map_err(SpartanError::from)?
         };
@@ -1203,7 +1206,7 @@ fn chain_product_opening_claim(
     batching: &ChainProductBatching,
     h_layout: &IntegerMatrixLayout,
     field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<(Vec<RawMontgomery>, Vec<u128>, u128), ProtocolError> {
+) -> Result<(Vec<u128>, Vec<u128>, u128), ProtocolError> {
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
@@ -1326,7 +1329,7 @@ fn chain_map_fixes_public_statement(parts: &ChainedPackedSourceParts<'_>) -> boo
         (parts.last, false, true),
     ] {
         for (f_column, entries) in map.matrix().columns().enumerate() {
-            for &h_column in entries.row_indices() {
+            for &h_column in entries.indices() {
                 let Some(slot) = slot_of(h_column) else {
                     continue;
                 };
@@ -1479,8 +1482,7 @@ mod tests {
                 .into_matrices()
                 .m
                 .rows()
-                .iter()
-                .map(|row| row.positions().len())
+                .map(|row| row.indices().len())
                 .sum::<usize>()
         });
         // Instance 0 reads the initial state through the constant column only.
@@ -1498,7 +1500,7 @@ mod tests {
         for terminal in 0..SHA256_CHAIN_TERMINAL_BITS {
             let column = chain_output_f_column(terminal / 32, terminal % 32);
             assert_eq!(
-                relation.last.matrix().column(column).unwrap().row_indices(),
+                relation.last.matrix().column(column).unwrap().indices(),
                 &[SHA256_H_BAR_LIVE_BITS + terminal]
             );
         }

@@ -12,7 +12,7 @@ cargo bench --bench mul_f2z --features span-metrics,bench-internals -- \
 cargo bench --bench mul_f2z --features span-metrics,bench-internals -- \
   proof --workload u32-full,u64,u128 --log-n 15..=20 \
   --w 1,3,8 --split=0,1 --threads 1,8 --f2z-profile 100,128 \
-  --reps 5 --out results/f2z --dry-run
+  --reps 5 --skip-unsupported --out results/f2z --dry-run
 
 cargo bench --bench mul_compare --features native-mul-compare,bench-internals -- \
   proof --workload u32-mod32,u64,u128 --backends all --log-n 15..=20 \
@@ -21,9 +21,15 @@ cargo bench --bench mul_compare --features native-mul-compare,bench-internals --
 
 Remove `--dry-run` to execute. Numeric sweep axes accept scalars, comma-separated
 lists, and inclusive ranges, including negative split shifts (`--split=-1..=1`).
-Repeated values, unknown names, malformed values, and an empty runnable sweep
-are errors. Cases execute sequentially in fresh processes with explicit thread
+Repeated values, unknown names, malformed values, and a sweep with no runnable
+cases are errors. Unsupported configurations fail preflight unless
+`--skip-unsupported` records them alongside the runnable cases. Cases execute sequentially in fresh processes with explicit thread
 counts. F2Z axes never multiply the competitor cases.
+
+Preflight includes security-profile feasibility. For example, u32-full at
+log-n=15, W=8, profile 128 exceeds the projection grinding cap. Large BabyBear
+128-bit cases can also exceed it. These are recorded skips when requested; a
+proof or verification failure always stops the campaign.
 
 `RUSTFLAGS`, Cargo profiles, and features remain ordinary build settings. For
 example, prefix a command with `RUSTFLAGS="-C target-cpu=native"`. Latency phase
@@ -159,3 +165,35 @@ even medians average the middle pair and percentiles use Type 7. PCS totals are
 calculated per trial before aggregation. Proof sizes come from verified runs;
 there are no manual overrides or readers for historical formats. Existing
 historical result files are left untouched.
+
+### GKR schedules and diagnostics
+
+`--gkr-schedule auto` selects a deterministic storage schedule from public geometry,
+claim path, and thread count. Explicit `l2`, `l4`, and `l8` values accept comma-separated
+sweeps. The schedule axis applies only to F2Z experiments that run GKR; it does not
+multiply witness-only or competitor cases. The manifest records the requested policy
+and every distinct resolved forest geometry/schedule in `effective.gkr_schedules`.
+RSS and heap workers use the same policy and must reproduce those resolutions.
+The measured selection rule and its limits are documented in
+[gkr-schedule-validation.md](gkr-schedule-validation.md).
+
+```sh
+cargo bench --bench mul_f2z --features span-metrics,bench-internals -- \
+  proof --workload u32-full,u64,u128 --log-n 15,19 --threads 1,8 \
+  --gkr-schedule l2,l4,l8 --proof-fingerprints --out results/schedules
+```
+
+`--proof-fingerprints` attaches proof-message and transcript digests to verified proof
+samples and warmups. Hashing runs outside measured boundaries and is disabled in
+memory workers. GKR time is the existing `prove/mc:forest_ms` phase total. Warmups
+remain excluded from ordinary report statistics; comparison tools may report the
+first proof separately.
+
+`compare_prover_workloads.py` asks the Rust targets to expand multiplication cases
+with `--dry-run`, then alternates frozen revision executables. It uses the same
+validated campaign loader as `mul_report.py`; it does not support historical
+multiplication log formats. Standalone proving and witness-to-proof comparisons
+retain distinct timing boundaries.
+
+Memory campaigns use the Rust workers described above and the same `mul_report.py`
+loader. The obsolete capture-example memory runner has been removed.

@@ -80,7 +80,7 @@ pub struct EqInnerGroup<F> {
 }
 
 /// Buffer payload of one group in the mixed-entry driver.
-pub enum GroupBufs<F> {
+pub enum GroupBufs<'a, F> {
     /// Materialised `(L, R)` pair vectors — the general case.
     Dense(Vec<(Vec<F>, Vec<F>)>),
     /// Single-pair Dense group whose `(L, R)` live in the driver's shared
@@ -101,8 +101,8 @@ pub enum GroupBufs<F> {
     /// `ρ·τ`-style tables. The leaf values themselves are never built.
     /// Bits are packed 64 per `u64`, position `i` at word `i/64`, bit `i%64`.
     LeafBits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected product layer** (char-2 forests, single pair, one
@@ -120,8 +120,8 @@ pub enum GroupBufs<F> {
     /// built — combined with generating the NEXT level down from bits,
     /// the whole level `d−1` is skipped.
     Pair2Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, TWO bit-driven rounds** (char-2 forests,
@@ -142,8 +142,8 @@ pub enum GroupBufs<F> {
     /// the groups of a set (`O(2^k)` per set, amortised over the trees);
     /// every step is an exact char-2 identity, byte-identical to `Dense`.
     Leaf2Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, THREE bit-driven rounds** (`k ≥ 4`):
@@ -158,8 +158,8 @@ pub enum GroupBufs<F> {
     /// pay). Dense buffers materialise only at round 3's fold
     /// (`2^{k−3}`/side — the leaf-round set drops to L/8).
     Leaf3Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, FOUR bit-driven rounds** (`k ≥ 5` — probe
@@ -176,8 +176,8 @@ pub enum GroupBufs<F> {
     /// buffers materialise only at round 4's fold (`2^{k−4}`/side — the
     /// leaf residue halves again vs [`Leaf3Bits`](GroupBufs::Leaf3Bits)).
     Leaf4Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected product layer, TWO bit-driven rounds** (`k ≥ 3`):
@@ -188,8 +188,8 @@ pub enum GroupBufs<F> {
     /// O-side at bit offset `2^k`); round 2 reads values inline and its
     /// fold materialises `Dense` (`2^{k−2}`/side).
     Pair3Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected 4-leaf-product layer** (`k ≥ 2`, one level ABOVE
@@ -202,8 +202,8 @@ pub enum GroupBufs<F> {
     /// values inline; its fold materialises `Dense` (`2^{k−1}`/side) —
     /// the layer's stored/JIT input level is never needed.
     T4Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
 }
@@ -239,10 +239,10 @@ impl<F> PreRound<F> {
 }
 
 /// One group of the mixed-entry driver ([`prove_eq_inner_sumcheck_mixed`]).
-pub struct EqInnerGroupMixed<F> {
-    pub q: Vec<F>,
+pub struct EqInnerGroupMixed<'a, F: Clone> {
+    pub q: std::borrow::Cow<'a, [F]>,
     pub scale: F,
-    pub bufs: GroupBufs<F>,
+    pub bufs: GroupBufs<'a, F>,
 }
 
 /// Shared flat storage for all-[`GroupBufs::Flat`] single-pair groups:
@@ -876,7 +876,7 @@ where
 
 #[allow(clippy::arithmetic_side_effects)]
 fn leaf_round1_tiled<F>(
-    bufs: &[GroupBufs<F>],
+    bufs: &[GroupBufs<'_, F>],
     leaf_tables: &[LeafTables<F>],
     half: usize,
     zero: &F,
@@ -921,7 +921,7 @@ where
                 lbits,
                 rbits,
                 tau_set,
-            } if *tau_set == 0 => Some((lbits.as_slice(), rbits.as_slice())),
+            } if *tau_set == 0 => Some((*lbits, *rbits)),
             _ => None,
         })
         .collect();
@@ -1147,7 +1147,7 @@ where
 /// field values as the precombined tables (see [`Pair2Tables`]).
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-fn pair2_factored_body<F>(
+fn pair2_factored_body_impl<F, const RECOVER: bool>(
     wte: &[F],
     to: &[F],
     half: usize,
@@ -1167,7 +1167,9 @@ where
         let t0 = &to[(b << 3) | co0];
         let t1 = &to[(b << 3) | 4 | co1];
         F::wide_add_assign(&mut a0w, &F::mul_wide(u0, t0));
-        F::wide_add_assign(&mut t11w, &F::mul_wide(u1, t1));
+        if !RECOVER {
+            F::wide_add_assign(&mut t11w, &F::mul_wide(u1, t1));
+        }
         let du = u0.clone() + u1;
         let dt = t0.clone() + t1;
         F::wide_add_assign(&mut a2w, &F::mul_wide(&du, &dt));
@@ -1175,8 +1177,31 @@ where
     let a0 = F::from_wide(a0w);
     let t11 = F::from_wide(t11w);
     let a2 = F::from_wide(a2w);
-    let a1 = t11 + &a0 + &a2;
+    let a1 = if RECOVER {
+        zero.clone()
+    } else {
+        t11 + &a0 + &a2
+    };
     (a0, a1, a2)
+}
+
+#[inline(always)]
+fn pair2_factored_body<F>(
+    wte: &[F],
+    to: &[F],
+    half: usize,
+    zero: &F,
+    recover: bool,
+    cases: impl Fn(usize) -> (usize, usize, usize, usize),
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    if recover {
+        pair2_factored_body_impl::<F, true>(wte, to, half, zero, cases)
+    } else {
+        pair2_factored_body_impl::<F, false>(wte, to, half, zero, cases)
+    }
 }
 
 /// Round-1 fold tables for one [`Pair2TauSet`]: the folded round-2 entry is
@@ -1263,7 +1288,7 @@ where
 /// round-3 buffers (exact identities; the wide accumulation order matches
 /// the dense body's).
 #[allow(clippy::arithmetic_side_effects)]
-fn leaf3_round3_msg<F>(
+fn leaf3_round3_msg<F, const RECOVER: bool>(
     vs: &Pair2FoldTables<F>,
     lbits: &[u64],
     rbits: &[u64],
@@ -1302,15 +1327,76 @@ where
         let l0w = w.clone() * l0;
         let l1w = w.clone() * l1;
         let wc0 = F::mul_wide(&l0w, r0);
-        let w11 = F::mul_wide(&l1w, r1);
         let dr = r1.clone() - r0;
-        let dl = l1w - &l0w;
+        let dl = l1w.clone() - &l0w;
         let wc2 = F::mul_wide(&dl, &dr);
         F::wide_add_assign(&mut a0, &wc0);
         F::wide_add_assign(&mut a2, &wc2);
-        F::wide_add_assign(&mut a1, &w11);
-        F::wide_sub_assign(&mut a1, &wc0);
-        F::wide_sub_assign(&mut a1, &wc2);
+        if !RECOVER {
+            F::wide_add_assign(&mut a1, &F::mul_wide(&l1w, r1));
+            F::wide_sub_assign(&mut a1, &wc0);
+            F::wide_sub_assign(&mut a1, &wc2);
+        }
+    }
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+}
+
+fn pair3_round2_msg<F, const RECOVER: bool>(
+    vs: &Pair2FoldTables<F>,
+    lbits: &[u64],
+    rbits: &[u64],
+    half: usize,
+    suffix_t: &[F],
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let h_off = half << 2; // 2^k — absolute O-side bit offset
+    let prfm = lut_prfm(half);
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        if prfm && b + PRFM_DIST < half {
+            let bp = b + PRFM_DIST;
+            let pe2 = bp << 2;
+            let nl2 = ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+            let nr2 = ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+            let po2 = pe2 + h_off;
+            let ml2 = ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+            let mr2 = ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+            let ep = bp << 1;
+            prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
+            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2));
+            prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
+            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2));
+        }
+        let pe = b << 2;
+        let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+        let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+        let po = pe + h_off;
+        let ml = ((lbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+        let mr = ((rbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+        let e = b << 1;
+        let l0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
+        let l1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
+        let r0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
+        let r1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
+        let w = &suffix_t[b];
+        let l0w = w.clone() * l0;
+        let l1w = w.clone() * l1;
+        let wc0 = F::mul_wide(&l0w, r0);
+        let dr = r1.clone() - r0;
+        let dl = l1w.clone() - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        if !RECOVER {
+            F::wide_add_assign(&mut a1, &F::mul_wide(&l1w, r1));
+            F::wide_sub_assign(&mut a1, &wc0);
+            F::wide_sub_assign(&mut a1, &wc2);
+        }
     }
     (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
 }
@@ -1537,6 +1623,115 @@ fn eqf_double_min_half() -> usize {
 fn eqf_nokernel() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
+}
+
+/// Aggregate only needed coefficients. `F2Z_GKR_DIRECT_CLOSE=0` opts out.
+fn direct_close_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_GKR_DIRECT_CLOSE").map_or(true, |v| v != "0"))
+}
+
+/// Recover the linear coefficient when supported. `F2Z_GKR_RECOVER=0` opts out.
+fn coefficient_recovery_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F2Z_GKR_RECOVER").map_or(true, |v| v != "0"))
+}
+
+/// Batch the two public-coordinate inverses without storing a per-round
+/// vector. Zero coordinates and unsupported fields keep the baseline kernel.
+fn recovery_inverses<F: InnerTransparentField + WideMulAcc>(
+    a: Option<&F>,
+    b: Option<&F>,
+) -> [Option<F>; 2] {
+    if let (Some(a), Some(b)) = (a, b) {
+        if let Some(inverse) = (a.clone() * b).eqf_inverse() {
+            return [Some(inverse.clone() * b), Some(inverse * a)];
+        }
+    }
+    [a.and_then(F::eqf_inverse), b.and_then(F::eqf_inverse)]
+}
+
+fn close_coefficients<F>(
+    hs: &[(F, F, F)],
+    scales: &[F],
+    zero: &F,
+    initial: bool,
+    recover: bool,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + Send + Sync,
+{
+    if direct_close_enabled() {
+        let _span = tracing::info_span!("eqf:direct_close").entered();
+        return match (initial, recover) {
+            (true, _) => close_selected::<F, true, true>(hs, scales, zero),
+            (false, true) => close_selected::<F, true, false>(hs, scales, zero),
+            (false, false) => close_selected::<F, false, true>(hs, scales, zero),
+        };
+    }
+    let identity = || (zero.clone(), zero.clone(), zero.clone());
+    let chunks = cfg_chunks!(hs, 1 << 10)
+        .zip(cfg_chunks!(scales, 1 << 10))
+        .map(|(hc, ac)| {
+            let mut p = identity();
+            for (h, a) in hc.iter().zip(ac) {
+                p.0 += a.clone() * &h.0;
+                p.1 += a.clone() * &h.1;
+                p.2 += a.clone() * &h.2;
+            }
+            p
+        });
+    let add = |mut a: (F, F, F), b: (F, F, F)| {
+        a.0 += &b.0;
+        a.1 += &b.1;
+        a.2 += &b.2;
+        a
+    };
+    chunks.collect::<Vec<_>>().into_iter().fold(identity(), add)
+}
+
+fn close_selected<F, const CONSTANT: bool, const LINEAR: bool>(
+    hs: &[(F, F, F)],
+    scales: &[F],
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + Send + Sync,
+{
+    let identity = || (zero.clone(), zero.clone(), zero.clone());
+    if hs.len() <= 1024 {
+        let mut out = identity();
+        for (h, a) in hs.iter().zip(scales) {
+            if CONSTANT {
+                out.0 += a.clone() * &h.0;
+            }
+            if LINEAR {
+                out.1 += a.clone() * &h.1;
+            }
+            out.2 += a.clone() * &h.2;
+        }
+        return out;
+    }
+    let chunks = cfg_chunks!(hs, 1 << 10)
+        .zip(cfg_chunks!(scales, 1 << 10))
+        .map(|(hc, ac)| {
+            let mut out = identity();
+            for (h, a) in hc.iter().zip(ac) {
+                if CONSTANT {
+                    out.0 += a.clone() * &h.0;
+                }
+                if LINEAR {
+                    out.1 += a.clone() * &h.1;
+                }
+                out.2 += a.clone() * &h.2;
+            }
+            out
+        });
+    let add = |a: (F, F, F), b: (F, F, F)| (a.0 + &b.0, a.1 + &b.1, a.2 + &b.2);
+    #[cfg(feature = "parallel")]
+    return chunks.reduce(identity, add);
+    #[cfg(not(feature = "parallel"))]
+    chunks.fold(identity(), add)
 }
 
 /// Flat storage for the per-round suffix tensors `V_1, …, V_k`.
@@ -2129,7 +2324,7 @@ where
     let mixed = groups
         .into_iter()
         .map(|g| EqInnerGroupMixed {
-            q: g.q,
+            q: g.q.into(),
             scale: g.scale,
             bufs: GroupBufs::Dense(g.pairs),
         })
@@ -2153,7 +2348,7 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2186,7 +2381,7 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed_gruen<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2300,11 +2495,11 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
-    mut pre_round1: Option<PreRound<F>>,
+    pre_round1: Option<PreRound<F>>,
     flat: Option<FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
@@ -2315,6 +2510,57 @@ where
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
+    prove_eq_inner_sumcheck_mixed_prepared(
+        transcript,
+        SharedPointInput {
+            groups,
+            constant_weight: F::zero_with_cfg(field_cfg),
+        },
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        pre_round1,
+        flat,
+        gruen,
+        field_cfg,
+        None,
+    )
+}
+
+/// Real groups plus an analytic all-ones contribution at their shared point.
+/// A nonzero constant is supported only by the shared-point Gruen format.
+pub(crate) struct SharedPointInput<'a, F: Clone> {
+    pub(crate) groups: Vec<EqInnerGroupMixed<'a, F>>,
+    pub(crate) constant_weight: F,
+}
+
+/// Internal forest entry with suffixes constructed for this layer's shared point.
+pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
+    transcript: &mut impl Transcript,
+    input: SharedPointInput<'_, F>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    mut pre_round1: Option<PreRound<F>>,
+    flat: Option<FlatDense<F>>,
+    gruen: bool,
+    field_cfg: &F::Config,
+    prepared_suffix: Option<SuffixTensorArena<F>>,
+) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
+    let SharedPointInput {
+        groups,
+        constant_weight,
+    } = input;
+    assert!(
+        gruen || constant_weight == F::zero_with_cfg(field_cfg),
+        "analytic constants require the shared-point Gruen format"
+    );
     // Flat single-pair storage (the wide-shallow forest layout): all
     // groups are `Flat` markers over ONE shared store, group 0 carries the
     // shared point and the rest leave `q` empty (no clones). Semantically
@@ -2508,7 +2754,11 @@ where
     }
     let suffix: Vec<SuffixTensorArena<F>> = {
         let _g = tracing::info_span!("eqf:suffix").entered();
-        if shared_q {
+        if let Some(arena) = prepared_suffix {
+            assert!(shared_q, "prepared suffixes require a shared point");
+            assert_eq!(arena.len(), k, "prepared suffix dimension");
+            vec![arena]
+        } else if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
         } else {
             cfg_iter!(groups)
@@ -2521,13 +2771,12 @@ where
             .iter()
             .all(|arena| arena.len() == k && arena.is_empty() == (k == 0))
     );
-    // Destructure once — the groups are consumed here anyway, so the
-    // per-group `q` vectors move instead of cloning (2^s clones per layer
-    // otherwise; byte-identical).
+    // Consume the groups so each equality point keeps its owned or borrowed
+    // storage without cloning.
     let num_groups = groups.len();
-    let mut qs: Vec<Vec<F>> = Vec::with_capacity(num_groups);
+    let mut qs: Vec<std::borrow::Cow<'_, [F]>> = Vec::with_capacity(num_groups);
     let mut scales: Vec<F> = Vec::with_capacity(num_groups);
-    let mut bufs: Vec<GroupBufs<F>> = Vec::with_capacity(num_groups);
+    let mut bufs: Vec<GroupBufs<'_, F>> = Vec::with_capacity(num_groups);
     for g in groups {
         qs.push(g.q);
         scales.push(g.scale);
@@ -2563,17 +2812,18 @@ where
                 })
                 .collect()
         };
-        let claimed_sum = scales
-            .iter()
-            .zip(&final_evals)
-            .fold(zero, |sum, (scale, pairs)| {
-                let group_sum = pairs
-                    .iter()
-                    .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
-                        acc + &(left.clone() * right)
-                    });
-                sum + &(scale.clone() * &group_sum)
-            });
+        let claimed_sum =
+            scales
+                .iter()
+                .zip(&final_evals)
+                .fold(constant_weight.clone(), |sum, (scale, pairs)| {
+                    let group_sum = pairs
+                        .iter()
+                        .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
+                            acc + &(left.clone() * right)
+                        });
+                    sum + &(scale.clone() * &group_sum)
+                });
         return (
             SumcheckProof {
                 messages: Vec::new(),
@@ -2588,6 +2838,27 @@ where
     let mut randomness: Vec<F> = Vec::with_capacity(k);
     let mut messages: Vec<ProverMsg<F>> = Vec::with_capacity(k);
     let mut claimed_sum = zero.clone();
+    let recover = gruen
+        && coefficient_recovery_enabled()
+        && (has_pair3 || has_leaf2 || has_leaf3 || has_leaf4);
+    let inverses = if recover {
+        recovery_inverses(
+            qs[0].get(1),
+            if has_leaf3 || has_leaf4 {
+                qs[0].get(2)
+            } else {
+                None
+            },
+        )
+    } else {
+        [None, None]
+    };
+    let last_recovery_round = inverses
+        .iter()
+        .rposition(Option::is_some)
+        .map_or(0, |i| i + 2);
+    let mut running_claim = zero.clone();
+    let mut constant_prefix = constant_weight.clone();
     // Leaf2Bits round-2 state: the ρ₁-dependent per-position 4-case VALUE
     // tables (one [`Pair2TauSet`] per tau set), stashed at round 1's fold —
     // they are exactly that fold's [`LeafFoldTables`].
@@ -2615,6 +2886,27 @@ where
         // Buffers at round j have 2^{k−j+1} entries (leaf-bit groups define
         // theirs implicitly at the same size).
         let half = 1usize << (k - j);
+
+        let recovery_inverse = match j {
+            2 => inverses[0].as_ref(),
+            3 => inverses[1].as_ref(),
+            _ => None,
+        }
+        .filter(|_| {
+            bufs.iter().all(|b| {
+                matches!(
+                    (b, j),
+                    (
+                        GroupBufs::Pair3Bits { .. }
+                            | GroupBufs::Leaf2Bits { .. }
+                            | GroupBufs::Leaf3Bits { .. }
+                            | GroupBufs::Leaf4Bits { .. },
+                        2
+                    ) | (GroupBufs::Leaf3Bits { .. } | GroupBufs::Leaf4Bits { .. }, 3)
+                )
+            })
+        });
+        let recover_linear = recovery_inverse.is_some();
 
         // Shared leaf tables for round 1 (one per tau set; every group of a
         // set only XOR-selects from them).
@@ -2670,7 +2962,8 @@ where
         // skipped multiply saves — and was removed.) Parallel **across
         // groups**, with a minimum batch so tiny late-round bodies amortise
         // the rayon dispatch.
-        let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F) {
+        let recovery_span = recover_linear.then(|| tracing::info_span!("eqf:recover").entered());
+        let compute_h = |t: usize, bufs: &[GroupBufs<'_, F>]| -> (F, F, F) {
             let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
             match &bufs[t] {
                 GroupBufs::Flat => {
@@ -2749,6 +3042,7 @@ where
                             &pair_tau_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| pair2_cases(lbits, rbits, b, h_off),
                         ),
                         Pair2Tables::Precombined {
@@ -2817,6 +3111,7 @@ where
                             &leaf2_value_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| leaf2_cases(lbits, rbits, b),
                         ),
                         Pair2Tables::Precombined {
@@ -2863,6 +3158,7 @@ where
                             &leaf2_value_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| leaf2_cases(lbits, rbits, b),
                         ),
                         Pair2Tables::Precombined {
@@ -2899,7 +3195,12 @@ where
                     // only skipped bytes pay). Same field values as the
                     // dense round over materialised round-3 buffers.
                     debug_assert_eq!(j, 3, "leaf3-bit groups are consumed in round 3");
-                    leaf3_round3_msg(
+                    let message = if recover_linear {
+                        leaf3_round3_msg::<F, true>
+                    } else {
+                        leaf3_round3_msg::<F, false>
+                    };
+                    message(
                         &leaf3_value_sets[*tau_set],
                         lbits,
                         rbits,
@@ -2929,6 +3230,7 @@ where
                             &leaf2_value_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| leaf2_cases(lbits, rbits, b),
                         ),
                         Pair2Tables::Precombined {
@@ -2961,7 +3263,12 @@ where
                 } if j == 3 => {
                     // Round 3: the Leaf3Bits body over the same stashed
                     // sets (still un-reweighted at message time).
-                    leaf3_round3_msg(
+                    let message = if recover_linear {
+                        leaf3_round3_msg::<F, true>
+                    } else {
+                        leaf3_round3_msg::<F, false>
+                    };
+                    message(
                         &leaf3_value_sets[*tau_set],
                         lbits,
                         rbits,
@@ -3001,6 +3308,7 @@ where
                             &pair_tau_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| pair2_cases(lbits, rbits, b, h_off),
                         ),
                         Pair2Tables::Precombined {
@@ -3035,53 +3343,19 @@ where
                     // (entry keys = interleaved l/r bit pairs; one aligned
                     // nibble per array per side per slot).
                     debug_assert_eq!(j, 2, "pair3-bit groups are consumed in round 2");
-                    let vs = &pair3_value_sets[*tau_set];
-                    let h_off = half << 2; // 2^k — absolute O-side bit offset
-                    let prfm = lut_prfm(half);
-                    let mut a0 = F::wide_zero(&zero);
-                    let mut a1 = F::wide_zero(&zero);
-                    let mut a2 = F::wide_zero(&zero);
-                    for b in 0..half {
-                        if prfm && b + PRFM_DIST < half {
-                            let bp = b + PRFM_DIST;
-                            let pe2 = bp << 2;
-                            let nl2 = ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
-                            let nr2 = ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
-                            let po2 = pe2 + h_off;
-                            let ml2 = ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
-                            let mr2 = ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
-                            let ep = bp << 1;
-                            prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
-                            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2));
-                            prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
-                            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2));
-                        }
-                        let pe = b << 2;
-                        let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                        let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                        let po = pe + h_off;
-                        let ml = ((lbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                        let mr = ((rbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                        let e = b << 1;
-                        let l0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
-                        let l1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
-                        let r0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
-                        let r1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
-                        let w = &suffix_t[b];
-                        let l0w = w.clone() * l0;
-                        let l1w = w.clone() * l1;
-                        let wc0 = F::mul_wide(&l0w, r0);
-                        let w11 = F::mul_wide(&l1w, r1);
-                        let dr = r1.clone() - r0;
-                        let dl = l1w - &l0w;
-                        let wc2 = F::mul_wide(&dl, &dr);
-                        F::wide_add_assign(&mut a0, &wc0);
-                        F::wide_add_assign(&mut a2, &wc2);
-                        F::wide_add_assign(&mut a1, &w11);
-                        F::wide_sub_assign(&mut a1, &wc0);
-                        F::wide_sub_assign(&mut a1, &wc2);
-                    }
-                    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+                    let message = if recover_linear {
+                        pair3_round2_msg::<F, true>
+                    } else {
+                        pair3_round2_msg::<F, false>
+                    };
+                    message(
+                        &pair3_value_sets[*tau_set],
+                        lbits,
+                        rbits,
+                        half,
+                        suffix_t,
+                        &zero,
+                    )
                 }
                 GroupBufs::T4Bits {
                     lbits,
@@ -3177,7 +3451,7 @@ where
                     )
                 })
             } else {
-                let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
+                let pass = |t: usize, gb: &mut GroupBufs<'_, F>| -> [F; 9] {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("double-fold requires all-Dense single-pair groups")
@@ -3228,7 +3502,7 @@ where
                     )
                 })
             } else {
-                let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                let pass = |t: usize, gb: &mut GroupBufs<'_, F>| -> (F, F, F) {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("deferred folds require all-Dense single-pair groups")
@@ -3293,7 +3567,7 @@ where
                     )
                 })
             } else {
-                let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                let fused = |t: usize, gb: &mut GroupBufs<'_, F>| -> (F, F, F) {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("fused rounds require all-Dense single-pair groups")
@@ -3410,6 +3684,7 @@ where
             }
         };
 
+        drop(recovery_span);
         let _g_close = tracing::info_span!("eqf:close").entered();
         let tail = if gruen {
             // Gruen format (shared q, asserted): the round polynomial is
@@ -3422,25 +3697,20 @@ where
             // Chunked Σ_t A_t·H_t (parallel at forest widths): field
             // addition is associative, so the chunk re-association is
             // value-identical — same message, byte-identical transcript.
-            let mut ch = (zero.clone(), zero.clone(), zero.clone());
-            let partials: Vec<(F, F, F)> = cfg_chunks!(hs, 1 << 10)
-                .zip(cfg_chunks!(a_scalars, 1 << 10))
-                .map(|(hc, ac)| {
-                    let mut p = (zero.clone(), zero.clone(), zero.clone());
-                    for (h, a) in hc.iter().zip(ac.iter()) {
-                        p.0 += a.clone() * &h.0;
-                        p.1 += a.clone() * &h.1;
-                        p.2 += a.clone() * &h.2;
-                    }
-                    p
-                })
-                .collect();
-            for p in partials {
-                ch.0 += &p.0;
-                ch.1 += &p.1;
-                ch.2 += &p.2;
+            let mut ch = close_coefficients(&hs, &a_scalars, &zero, j == 1, recover_linear);
+            if let Some(inverse) = recovery_inverse {
+                // The claim includes padding; the real groups' constant
+                // coefficient does not. Only the aggregate has a known claim.
+                ch.1 =
+                    (running_claim.clone() - &(ch.0.clone() + &constant_prefix)) * inverse - &ch.2;
             }
             if j == 1 {
+                // The all-ones group has H(X)=1: it contributes C only to
+                // the initial claim. Later C*A_j is the constant coefficient
+                // reconstructed from that claim by the verifier. Gruen sends
+                // only the two nonconstant coefficients, so no prefix buffer
+                // or per-round multiplication for the constant is needed.
+                ch.0 += &constant_weight;
                 claimed_sum = ch.0.clone() + &(qj.clone() * &(ch.1.clone() + &ch.2));
             }
             vec![ch.1, ch.2]
@@ -3481,6 +3751,18 @@ where
 
         let rho: F = transcript.get_field_challenge(field_cfg);
         transcript.absorb_random_field(&rho, &mut buf);
+        if j < last_recovery_round {
+            if j == 1 {
+                running_claim = claimed_sum.clone();
+            }
+            let tail = &messages.last().expect("round message").0.tail_evaluations;
+            let qj = &qs[0][j - 1];
+            let a0 = running_claim.clone() - &(qj.clone() * &(tail[0].clone() + &tail[1]));
+            let eq = (one.clone() - qj) * &(one.clone() - &rho) + &(qj.clone() * &rho);
+            running_claim = eq.clone()
+                * &(a0 + &(rho.clone() * &(tail[0].clone() + &(rho.clone() * &tail[1]))));
+            constant_prefix = constant_prefix * &eq;
+        }
         // A grid produced this round is spent by the next one, at ρ_j.
         if grid.is_some() {
             grid_rho = Some(rho.clone());
@@ -3573,7 +3855,7 @@ where
             let mat_grid_now = mat_grid_enabled() && eqf_double() && j + 2 < k;
             // Fold every group's L,R at ρ. Parallel **across groups**; the
             // per-vector fold is sequential (the groups are the big dimension).
-            let fold_group = |gb: &mut GroupBufs<F>| -> Option<[F; 9]> {
+            let fold_group = |gb: &mut GroupBufs<'_, F>| -> Option<[F; 9]> {
                 match gb {
                     GroupBufs::Flat => {
                         unreachable!("Flat groups fold through the driver's flat fold branch")
@@ -3969,12 +4251,12 @@ where
                                     lbits,
                                     rbits,
                                     tau_set: 0,
-                                } if j == 2 => Some((lbits.as_slice(), rbits.as_slice())),
+                                } if j == 2 => Some((*lbits, *rbits)),
                                 GroupBufs::Leaf3Bits {
                                     lbits,
                                     rbits,
                                     tau_set: 0,
-                                } if j == 3 => Some((lbits.as_slice(), rbits.as_slice())),
+                                } if j == 3 => Some((*lbits, *rbits)),
                                 _ => None,
                             })
                             .collect()
@@ -3982,6 +4264,8 @@ where
                         None
                     };
                     views.map(|views| {
+                        #[cfg(feature = "bench-internals")]
+                        let _activation = tracing::info_span!("eqf:mats_tile_active").entered();
                         if j == 2 {
                             let h_off = half << 2; // 2^k at j = 2
                             mats_fold_tiled(
@@ -4067,6 +4351,8 @@ where
                 out
             };
             if mat_grid_now && !mat_grids.is_empty() && mat_grids.iter().all(Option::is_some) {
+                #[cfg(feature = "bench-internals")]
+                let _activation = tracing::info_span!("eqf:mat_grid_deposit").entered();
                 // Every group's materialising fold produced the next
                 // round-pair's grid — deposit it; `grid_rho` stays unset
                 // until the NEXT round's challenge (the deposited-grid
@@ -4222,6 +4508,313 @@ mod tests {
                     })
             })
             .collect()
+    }
+
+    #[test]
+    fn recovery_batched_inverses_preserve_zero_fallback() {
+        let zero = Gf::zero();
+        let one = Gf::one();
+        let nontrivial = sample(91);
+        let coordinates = [None, Some(&zero), Some(&one), Some(&nontrivial)];
+        for a in coordinates {
+            for b in coordinates {
+                assert_eq!(
+                    recovery_inverses(a, b),
+                    [a.and_then(Gf::eqf_inverse), b.and_then(Gf::eqf_inverse)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_kernels_match_three_coefficient_reference() {
+        for half in [1usize, 2, 8, 64, 512] {
+            let vs = Pair2FoldTables {
+                f_e: (0..half * 32).map(|i| sample(i as u64)).collect(),
+                f_o: (0..half * 32).map(|i| sample(i as u64 + 9000)).collect(),
+            };
+            let bits = |salt: u64| {
+                (0..(half * 8).div_ceil(64))
+                    .map(|i| (i as u64 + salt).wrapping_mul(0x98761234abcdef01))
+                    .collect::<Vec<_>>()
+            };
+            let l = bits(23);
+            let r = bits(71);
+            let w: Vec<_> = (0..half).map(|i| sample(i as u64 + 17)).collect();
+            for (full, reduced) in [
+                (
+                    leaf3_round3_msg::<_, false>(&vs, &l, &r, half, &w, &Gf::zero()),
+                    leaf3_round3_msg::<_, true>(&vs, &l, &r, half, &w, &Gf::zero()),
+                ),
+                (
+                    pair3_round2_msg::<_, false>(&vs, &l, &r, half, &w, &Gf::zero()),
+                    pair3_round2_msg::<_, true>(&vs, &l, &r, half, &w, &Gf::zero()),
+                ),
+            ] {
+                assert_eq!((full.0, full.2), (reduced.0, reduced.2));
+                assert_eq!(reduced.1, Gf::zero());
+                for q in [Gf::one(), sample(19)] {
+                    for padding in [Gf::zero(), sample(27)] {
+                        let claim = full.0 + padding + q * (full.1 + full.2);
+                        let linear =
+                            (claim - reduced.0 - padding) * q.eqf_inverse().unwrap() - reduced.2;
+                        assert_eq!(linear, full.1);
+                    }
+                }
+            }
+        }
+        assert_eq!(Gf::zero().eqf_inverse(), None);
+    }
+
+    #[test]
+    fn recovery_leaf_groups_match_independent_dense_proof() {
+        use crate::transcript::Blake3Transcript;
+        for k in [5, 7, 10] {
+            let n = 1usize << k;
+            let bits: Vec<_> = (0..3)
+                .map(|group| {
+                    (0..n.div_ceil(64))
+                        .map(|i| (i as u64 + 1 + group * 29).wrapping_mul(0x98761234abcdef01))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            let tables: Vec<_> = (0..2)
+                .map(|set| {
+                    (
+                        (0..n)
+                            .map(|i| sample(i as u64 + set * 193))
+                            .collect::<Vec<_>>(),
+                        (0..n)
+                            .map(|i| sample(i as u64 + set * 211 + 999))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect();
+            for edge in 0..3 {
+                let q: Vec<_> = (0..k)
+                    .map(|i| match edge {
+                        0 => Gf::zero(),
+                        1 => Gf::one(),
+                        _ => sample(i as u64 + 33),
+                    })
+                    .collect();
+                let make = |dense| {
+                    (0..2)
+                        .map(|t| {
+                            let lbits = bits[t].as_slice();
+                            let rbits = bits[t + 1].as_slice();
+                            let bufs = if dense {
+                                let expand = |bits: &[u64], tau: &[Gf]| {
+                                    (0..n)
+                                        .map(|i| {
+                                            Gf::one()
+                                                + Gf::from_polynomial_words([
+                                                    (bits[i / 64] >> (i % 64)) & 1,
+                                                    0,
+                                                ]) * tau[i]
+                                        })
+                                        .collect()
+                                };
+                                GroupBufs::Dense(vec![(
+                                    expand(lbits, &tables[t].0),
+                                    expand(rbits, &tables[t].1),
+                                )])
+                            } else if t == 0 {
+                                GroupBufs::Leaf3Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: t,
+                                }
+                            } else {
+                                GroupBufs::Leaf4Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: t,
+                                }
+                            };
+                            EqInnerGroupMixed {
+                                q: q.as_slice().into(),
+                                scale: sample(t as u64 + 1),
+                                bufs,
+                            }
+                        })
+                        .collect()
+                };
+                let prove = |dense, transcript: &mut Blake3Transcript| {
+                    prove_eq_inner_sumcheck_mixed_prepared(
+                        transcript,
+                        SharedPointInput {
+                            groups: make(dense),
+                            constant_weight: sample(102),
+                        },
+                        &tables,
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        true,
+                        &(),
+                        None,
+                    )
+                };
+                let mut reference_t = Blake3Transcript::new();
+                let mut actual_t = Blake3Transcript::new();
+                let reference = prove(true, &mut reference_t);
+                let actual = prove(false, &mut actual_t);
+                assert_eq!(actual, reference, "k={k}, edge={edge}");
+                assert_eq!(actual_t.state_digest(), reference_t.state_digest());
+            }
+        }
+    }
+
+    #[test]
+    fn analytic_constants_with_zero_equality_prefix() {
+        #[derive(Default)]
+        struct Fixed {
+            one: bool,
+            absorbed: Vec<u8>,
+        }
+        impl Transcript for Fixed {
+            fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
+                let mut bytes = vec![0; T::NUM_BYTES];
+                if self.one && !bytes.is_empty() {
+                    bytes[0] = 1;
+                }
+                T::read_transcription_bytes_exact(&bytes)
+            }
+            fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+                output.fill(0);
+            }
+            fn absorb_inner(&mut self, bytes: &[u8]) {
+                self.absorbed.extend_from_slice(bytes);
+            }
+        }
+        for k in 1..=6 {
+            for one in [false, true] {
+                let q = vec![if one { Gf::zero() } else { Gf::one() }; k];
+                let mk = |constant| EqInnerGroupMixed {
+                    q: q.as_slice().into(),
+                    scale: sample(777),
+                    bufs: GroupBufs::Dense(vec![(
+                        (0..1 << k)
+                            .map(|i| if constant { Gf::one() } else { sample(i) })
+                            .collect(),
+                        (0..1 << k)
+                            .map(|i| if constant { Gf::one() } else { sample(i + 100) })
+                            .collect(),
+                    )]),
+                };
+                let mut dense_t = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let dense = prove_eq_inner_sumcheck_mixed_gruen(
+                    &mut dense_t,
+                    vec![mk(false), mk(true)],
+                    &[],
+                    &[],
+                    &[],
+                    &(),
+                );
+                let mut analytic_t = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let analytic = prove_eq_inner_sumcheck_mixed_prepared(
+                    &mut analytic_t,
+                    SharedPointInput {
+                        groups: vec![mk(false)],
+                        constant_weight: sample(777),
+                    },
+                    &[],
+                    &[],
+                    &[],
+                    None,
+                    None,
+                    true,
+                    &(),
+                    None,
+                );
+                assert_eq!(dense.0, analytic.0);
+                assert_eq!(dense.1, analytic.1);
+                assert_eq!(dense_t.absorbed, analytic_t.absorbed);
+                let mut vt = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let sub = verify_eq_inner_sumcheck_gruen(&mut vt, &q, &analytic.0, &()).unwrap();
+                assert_eq!(sub.expected_evaluation, Gf::zero());
+            }
+        }
+    }
+
+    #[test]
+    fn analytic_constants_match_dense_transcript() {
+        use crate::transcript::Blake3Transcript;
+        for k in 0..=7 {
+            for edge in 0..3 {
+                let q: Vec<Gf> = (0..k)
+                    .map(|i| match edge {
+                        0 => Gf::zero(),
+                        1 => Gf::one(),
+                        _ => sample(90 + i as u64),
+                    })
+                    .collect();
+                for c in [Gf::zero(), Gf::one(), sample(777)] {
+                    let n = 1 << k;
+                    let mk = || EqInnerGroupMixed {
+                        q: q.as_slice().into(),
+                        scale: sample(42),
+                        bufs: GroupBufs::Dense(vec![(
+                            (0..n).map(|i| sample(i as u64)).collect(),
+                            (0..n).map(|i| sample(1000 + i as u64)).collect(),
+                        )]),
+                    };
+                    let constant = EqInnerGroupMixed {
+                        q: q.as_slice().into(),
+                        scale: c,
+                        bufs: GroupBufs::Dense(vec![(vec![Gf::one(); n], vec![Gf::one(); n])]),
+                    };
+                    let mut td = Blake3Transcript::new();
+                    let dense = prove_eq_inner_sumcheck_mixed_gruen(
+                        &mut td,
+                        vec![mk(), constant],
+                        &[],
+                        &[],
+                        &[],
+                        &(),
+                    );
+                    let mut ta = Blake3Transcript::new();
+                    let analytic = prove_eq_inner_sumcheck_mixed_prepared(
+                        &mut ta,
+                        SharedPointInput {
+                            groups: vec![mk()],
+                            constant_weight: c,
+                        },
+                        &[],
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        true,
+                        &(),
+                        None,
+                    );
+                    assert_eq!(analytic.0, dense.0, "k={k}, edge={edge}");
+                    assert_eq!(analytic.1, dense.1);
+                    assert_eq!(analytic.2, dense.2[..1]);
+                    assert_eq!(ta.state_digest(), td.state_digest());
+                    let mut tv = Blake3Transcript::new();
+                    let sub =
+                        verify_eq_inner_sumcheck_gruen(&mut tv, &q, &analytic.0, &()).unwrap();
+                    let eq = analytic.1.iter().zip(&q).fold(Gf::one(), |acc, (&r, &q)| {
+                        acc * ((Gf::one() + r) * (Gf::one() + q) + r * q)
+                    });
+                    let (l, r) = analytic.2[0][0];
+                    assert_eq!(sub.expected_evaluation, eq * (sample(42) * l * r + c));
+                }
+            }
+        }
     }
 
     #[test]
@@ -4405,10 +4998,10 @@ mod tests {
                     (scale, pairs)
                 })
                 .collect();
-            let groups: Vec<EqInnerGroupMixed<Gf>> = dense
+            let groups: Vec<EqInnerGroupMixed<'_, Gf>> = dense
                 .iter()
                 .map(|(scale, pairs)| EqInnerGroupMixed {
-                    q: q.clone(),
+                    q: q.clone().into(),
                     scale: *scale,
                     bufs: GroupBufs::Dense(pairs.clone()),
                 })

@@ -25,6 +25,13 @@ class Support(unittest.TestCase):
         filtered = support.environment(env)
         self.assertEqual(filtered, {k: v for k, v in env.items() if k != "SECRET_TOKEN"})
 
+    def test_experiment_filter_keeps_cargo_settings(self):
+        env = dict(RUSTFLAGS="-C target-cpu=native", CARGO_ENCODED_RUSTFLAGS="-C\x1fopt-level=3",
+                   CARGO_TARGET_DIR="/tmp/target", F2_FOREST_SCHEDULE="l2", F2Z_GKR_RECOVER="0",
+                   RAYON_NUM_THREADS="8", HARDWARE_CONCURRENCY="8", BDLAMBDA="128", PATH="/bin")
+        self.assertEqual(support.clean_environment(env), {k: env[k] for k in
+                         ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_TARGET_DIR", "PATH")})
+
     def test_failed_and_timed_out_processes_keep_logs_and_are_reaped(self):
         with tempfile.TemporaryDirectory() as temp:
             log = Path(temp) / "worker.log"

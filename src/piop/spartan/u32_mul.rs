@@ -403,7 +403,7 @@ mod tests {
                 matrices.b().column(2 * capacity + row).unwrap(),
                 matrices.c().column(3 * capacity + row).unwrap(),
             ] {
-                assert_eq!(column.row_indices(), &[row]);
+                assert_eq!(column.indices(), &[row]);
                 assert_eq!(column.coefficients(), &[1]);
             }
         }
@@ -502,7 +502,7 @@ mod tests {
             (relation.matrices().b().column(2 * capacity + 1).unwrap(), 1),
             (relation.matrices().c().column(3 * capacity + 2).unwrap(), 2),
         ] {
-            assert_eq!(column.row_indices(), &[row]);
+            assert_eq!(column.indices(), &[row]);
             assert_eq!(column.coefficients(), &[true]);
         }
     }

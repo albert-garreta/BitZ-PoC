@@ -169,7 +169,7 @@ fn fixed_q_assignment_binding(
 impl RelationSpec for BabyBearMulLayout {
     type Coefficient = BabyBearMulCoefficient;
     type Witness = BabyBearMulWitness;
-    type Map = crate::f2map::RepeatedVirtualMap;
+    type Map = circuit::linear_map::binary::RepeatedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &BABY_BEAR_DOMAINS

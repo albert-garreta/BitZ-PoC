@@ -573,7 +573,7 @@ impl MulWitness<u128> {
 pub(super) fn selector_matrix<T: MulWord, C: Clone>(
     layout: &MulLayout<T>,
     blocks: &[(usize, C)],
-) -> Result<super::SparseMatrix<C>, SpartanMatrixError> {
+) -> Result<circuit::linear_map::CscMatrix<Box<[C]>>, SpartanMatrixError> {
     let rows = layout.multiplications;
     let mut offsets = vec![0; layout.assignment_len() + 1];
     let mut indices = Vec::with_capacity(rows * blocks.len());
@@ -591,7 +591,7 @@ pub(super) fn selector_matrix<T: MulWord, C: Clone>(
         previous = offset + rows + 1;
     }
     offsets[previous..].fill(indices.len());
-    Ok(super::SparseMatrix::try_from_csc_parts(
+    Ok(circuit::linear_map::CscMatrix::try_from_csc_parts(
         rows,
         offsets,
         indices,
@@ -599,7 +599,7 @@ pub(super) fn selector_matrix<T: MulWord, C: Clone>(
     )?)
 }
 
-impl<T: MulWord> crate::f2map::VirtualMap for MulLayout<T> {
+impl<T: MulWord> circuit::linear_map::binary::VirtualMap for MulLayout<T> {
     type ColumnRows<'a>
         = std::option::IntoIter<usize>
     where
@@ -624,8 +624,8 @@ impl<T: MulWord> crate::f2map::VirtualMap for MulLayout<T> {
     fn is_identity(&self) -> bool {
         self.uses_direct_opening()
     }
-    fn output_word_bits(&self, p: &IntegerMatrixLayout) -> Option<usize> {
-        (*p == self.f2z_params()).then_some(self.word_bits)
+    fn output_word_bits(&self, word_stride: usize) -> Option<usize> {
+        (word_stride == self.word_bits.next_power_of_two()).then_some(self.word_bits)
     }
     fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
         if column >= self.cols() {
@@ -668,7 +668,7 @@ impl<T: MulWord> MulLayout<T> {
     ) -> Result<(), super::protocol::ProtocolError> {
         if !self.uses_direct_opening() {
             h.bytes(b"packed-multiplication/v1")
-                .bytes(&crate::f2map::VirtualMap::digest(self));
+                .bytes(&circuit::linear_map::binary::VirtualMap::digest(self));
             h.usize(self.word_bits)?;
         }
         Ok(())
@@ -681,7 +681,7 @@ impl<T: MulWord> MulLayout<T> {
         h.bytes(b"f2z/packed-multiplication/claim/v1")
             .bytes(frame.binding)
             .bytes(frame.matrices_digest)
-            .bytes(&crate::f2map::VirtualMap::digest(self));
+            .bytes(&circuit::linear_map::binary::VirtualMap::digest(self));
         h.u128_le(frame.field.modulus_u128());
         h.usize(frame.terminal_claim.point().len())?;
         for x in frame.terminal_claim.point() {
@@ -704,10 +704,10 @@ impl<T: MulWord> MulLayout<T> {
 mod tests {
     use super::*;
     use crate::{
-        f2map::VirtualMap,
         piop::spartan::protocol::{self, PreparedRelation, RelationSpec},
         transcript::Blake3Transcript,
     };
+    use circuit::linear_map::binary::VirtualMap;
 
     fn check_packing<T: MulWord>(n: usize, width: usize, row: MulRow<T>) {
         let layout = MulLayout::<T>::new_with_word_bits(n, width).unwrap();

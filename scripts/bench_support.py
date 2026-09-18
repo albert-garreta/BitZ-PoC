@@ -143,3 +143,17 @@ def stream_logged(command, *, cwd, env, log, output=sys.stdout):
         output.flush()
         log.write(line)
     return process.wait()
+
+
+def clean_environment(env):
+    """Keep build settings; discard inherited experiment and thread controls."""
+    return {k:v for k,v in env.items() if not k.startswith(("F2Z_", "F2_", "RAYON_", "BD"))
+            and k != "HARDWARE_CONCURRENCY"}
+
+
+def run_checked(command, **kwargs):
+    code, timed_out = run_process(command, **kwargs)
+    if timed_out:
+        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
+    if code:
+        raise subprocess.CalledProcessError(code, command)

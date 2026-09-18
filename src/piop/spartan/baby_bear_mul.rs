@@ -19,18 +19,18 @@
 //! the exact quotient identity.
 
 use crate::piop::spartan::SpartanField as _;
+use crate::sumcheck::bridge::PreparedBinding;
+use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use std::borrow::Cow;
 
 use thiserror::Error;
 
-use crate::{
-    pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension, sparse_matrix::SparseColumn,
-};
+use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 
 use super::{
     ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
-    SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
+    SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
     build_assignment_mle, build_product_mles, slot_rows::pack_slot_major_rows_w1,
 };
 
@@ -145,26 +145,6 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
                 scaled
             }
         }
-    }
-
-    fn column_dot(
-        column: SparseColumn<'_, Self>,
-        row_weights: &[SpartanF2zField],
-        zero: &SpartanF2zField,
-        field_config: &<SpartanF2zField as crate::piop::spartan::SpartanField>::Config,
-    ) -> SpartanF2zField {
-        if let Some((row, coefficient)) = column.single() {
-            return coefficient.scale(&row_weights[row], field_config);
-        }
-
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation = field_config.add(
-                &(evaluation),
-                &(&coefficient.scale(&row_weights[row], field_config)),
-            );
-        }
-        evaluation
     }
 }
 
@@ -592,7 +572,7 @@ fn selector_matrix(
     layout: &BabyBearMulLayout,
     block: usize,
     coefficient: BabyBearMulCoefficient,
-) -> Result<SparseMatrix<BabyBearMulCoefficient>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[BabyBearMulCoefficient]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let offset = block * layout.capacity;
@@ -607,13 +587,13 @@ fn selector_matrix(
     column_offsets[offset + rows + 1..].fill(rows);
     let entries = (0..rows).map(|row| (row, coefficient)).collect::<Vec<_>>();
 
-    Ok(SparseMatrix::try_from_csc(rows, column_offsets, entries)?)
+    Ok(CscMatrix::try_from_csc(rows, column_offsets, entries)?)
 }
 
 #[allow(clippy::arithmetic_side_effects)]
 fn output_matrix(
     layout: &BabyBearMulLayout,
-) -> Result<SparseMatrix<BabyBearMulCoefficient>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[BabyBearMulCoefficient]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let c_offset = 3 * layout.capacity;
@@ -638,7 +618,7 @@ fn output_matrix(
     let mut entries = Vec::with_capacity(2 * rows);
     entries.extend((0..rows).map(|row| (row, BabyBearMulCoefficient::One)));
     entries.extend((0..rows).map(|row| (row, BabyBearMulCoefficient::Modulus)));
-    Ok(SparseMatrix::try_from_csc(rows, column_offsets, entries)?)
+    Ok(CscMatrix::try_from_csc(rows, column_offsets, entries)?)
 }
 
 /// Generates and prepares the compact BabyBear matrices over the Spartan/F2Z
@@ -755,7 +735,7 @@ mod tests {
 
     #[allow(clippy::arithmetic_side_effects)]
     fn multiply_compact_matrix(
-        matrix: &SparseMatrix<BabyBearMulCoefficient>,
+        matrix: &CscMatrix<Box<[BabyBearMulCoefficient]>>,
         assignment: &[u64],
     ) -> Vec<u64> {
         assert_eq!(matrix.column_count(), assignment.len());
@@ -1261,9 +1241,9 @@ mod tests {
             })
             .collect();
         let field_matrices = ConstraintMatrices::new(
-            SparseMatrix::try_from_rows(layout.assignment_len(), a_rows).unwrap(),
-            SparseMatrix::try_from_rows(layout.assignment_len(), b_rows).unwrap(),
-            SparseMatrix::try_from_rows(layout.assignment_len(), c_rows).unwrap(),
+            CscMatrix::try_from_rows(layout.assignment_len(), a_rows).unwrap(),
+            CscMatrix::try_from_rows(layout.assignment_len(), b_rows).unwrap(),
+            CscMatrix::try_from_rows(layout.assignment_len(), c_rows).unwrap(),
         )
         .unwrap();
         let field_prepared =
@@ -1280,15 +1260,25 @@ mod tests {
             .map(|coordinate| field(coordinate as u64 + 7, &config))
             .collect::<Vec<_>>();
         let rho = field(19, &config);
-        let compact_bound = compact_prepared.bind_and_batch(&row_point, &rho).unwrap();
-        let field_bound = field_prepared.bind_and_batch(&row_point, &rho).unwrap();
+        let compact_bound =
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, compact_prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| compact_prepared.binding(&rho).bind_rows(&weights))
+                .unwrap();
+        let field_bound =
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, field_prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| field_prepared.binding(&rho).bind_rows(&weights))
+                .unwrap();
         assert_eq!(compact_bound, field_bound);
         assert_eq!(
             compact_prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap(),
             field_prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap()
         );
     }

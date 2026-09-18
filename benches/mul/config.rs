@@ -1,6 +1,7 @@
 use anyhow::{Result, ensure};
 type List<T> = Vec<T>;
 use clap::{Parser, ValueEnum};
+use f2z::merged_forest::schedule::SchedulePolicy;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -66,6 +67,17 @@ fn workloads(s: &str) -> Result<Vec<Workload>, String> {
     }
     Ok(values)
 }
+fn schedules(value: &str) -> Result<Vec<SchedulePolicy>, String> {
+    let mut result = Vec::new();
+    for part in value.split(',') {
+        let policy = part.parse()?;
+        if result.contains(&policy) {
+            return Err(format!("duplicate GKR schedule {part}"));
+        }
+        result.push(policy);
+    }
+    Ok(result)
+}
 #[derive(Parser, Debug)]
 #[command(about = "Verified multiplication benchmarks; all experiment settings are flags")]
 pub struct Args {
@@ -120,6 +132,10 @@ pub struct Args {
     pub limber_bits: usize,
     #[arg(long, value_enum, default_value = "none")]
     pub memory: Memory,
+    #[arg(long, default_value = "auto", value_parser = schedules)]
+    pub gkr_schedule: Option<List<SchedulePolicy>>,
+    #[arg(long)]
+    pub proof_fingerprints: bool,
     #[arg(long)]
     pub out: Option<PathBuf>,
     #[arg(long)]
@@ -133,6 +149,7 @@ pub struct Args {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct F2zConfig {
+    pub gkr_schedule: Option<SchedulePolicy>,
     pub w: usize,
     pub split: i8,
     pub profile: Option<usize>,
@@ -172,6 +189,7 @@ pub struct Case {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
+    pub proof_fingerprints: bool,
     pub id: String,
     pub case: Case,
     pub reps: usize,
@@ -208,6 +226,10 @@ impl Args {
         ensure!(
             self.limber_bits > 0 && self.limber_bits <= 128,
             "invalid Limber target"
+        );
+        ensure!(
+            !self.proof_fingerprints || matches!(self.mode, Mode::Proof | Mode::Bounds),
+            "--proof-fingerprints requires proof or bounds"
         );
         let bounds: Vec<_> = self.bound.split(',').collect();
         ensure!(
@@ -411,6 +433,7 @@ impl Args {
                                                     match *bound {"johnson"=>f2z::ligerito_flock::LigeritoSelection::JOHNSON,"unique"=>f2z::ligerito_flock::LigeritoSelection::MATCHED_UDR,_=>f2z::ligerito_flock::LigeritoSelection::CustomUdr{log_inv_rate:1,initial_k:4,fold_grinding:false}}
                                                 };
                                                 let f = Some(F2zConfig {
+                                                    gkr_schedule: None,
                                                     w: w as usize,
                                                     split: split as i8,
                                                     profile: (self.mode != Mode::Witness)
@@ -443,6 +466,27 @@ impl Args {
                         } else {
                             vec![None]
                         };
+                        let configurations: Vec<_> = configurations
+                            .into_iter()
+                            .flat_map(|f| {
+                                if let Some(f) = &f {
+                                    if self.mode != Mode::Witness {
+                                        return self
+                                            .gkr_schedule
+                                            .as_deref()
+                                            .unwrap_or(&[SchedulePolicy::Auto])
+                                            .iter()
+                                            .map(|&policy| {
+                                                let mut f = f.clone();
+                                                f.gkr_schedule = Some(policy);
+                                                Some(f)
+                                            })
+                                            .collect::<Vec<_>>();
+                                    }
+                                }
+                                vec![f]
+                            })
+                            .collect();
                         for f2z in configurations {
                             let variants: Vec<_> = if matches!(self.mode, Mode::Outer | Mode::Piop)
                             {
@@ -526,6 +570,9 @@ impl Args {
                                     "duplicate case: {case:?}"
                                 );
                                 jobs.push(Job {
+                                    proof_fingerprints: self.proof_fingerprints
+                                        && backend == "f2z"
+                                        && matches!(self.mode, Mode::Proof | Mode::Bounds),
                                     id: format!("case-{:05}", jobs.len()),
                                     case,
                                     reps: self.reps.unwrap_or(if self.mode == Mode::Pcs {
@@ -633,22 +680,45 @@ impl Case {
         use f2z::piop::spartan::mul::MulLayout;
         let f = self.f2z.as_ref()?;
         let n = 1usize << self.log_n;
-        if self.workload == Workload::BabyBear {
-            if let Err(error) = f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout::new(n) {
-                return Some(error.to_string());
+        fn check<S: f2z::piop::spartan::protocol::RelationSpec>(
+            spec: S,
+            mode: Mode,
+            config: &F2zConfig,
+            threads: usize,
+        ) -> Result<(), String> {
+            use f2z::piop::spartan::{Lambda100, Lambda128, protocol::instantiate_profile};
+            if mode == Mode::Witness {
+                return Ok(());
             }
+            if let Some(policy) = config.gkr_schedule {
+                use f2z::merged_forest::schedule::{ForestPath, resolve_schedule};
+                resolve_schedule(policy, &spec.opening_layout(), ForestPath::Single, threads)
+                    .map_err(|e| e.to_string())?;
+            }
+            if config.profile == Some(128) {
+                instantiate_profile::<Lambda128, _>(&spec)
+            } else {
+                instantiate_profile::<Lambda100, _>(&spec)
+            }
+            .map(|_| ())
+            .map_err(|e| e.to_string())
         }
         let result = match self.workload {
             Workload::U32Full | Workload::U32Mod32 => MulLayout::<u32>::new_with_word_bits(n, f.w)
                 .and_then(|l| l.with_split_shift(f.split))
-                .map(|_| ()),
+                .map_err(|e| e.to_string())
+                .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::U64 => MulLayout::<u64>::new_with_word_bits(n, f.w)
                 .and_then(|l| l.with_split_shift(f.split))
-                .map(|_| ()),
+                .map_err(|e| e.to_string())
+                .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::U128 => MulLayout::<u128>::new_with_word_bits(n, f.w)
                 .and_then(|l| l.with_split_shift(f.split))
-                .map(|_| ()),
-            Workload::BabyBear => Ok(()),
+                .map_err(|e| e.to_string())
+                .and_then(|l| check(l, self.mode, f, self.threads)),
+            Workload::BabyBear => f2z::piop::spartan::baby_bear_mul::BabyBearMulLayout::new(n)
+                .map_err(|e| e.to_string())
+                .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::Field => return None,
         };
         if let Err(error) = result {

@@ -288,7 +288,7 @@ fn binius_ligerito_log_inv_rate() -> usize {
 }
 
 /// `F2Z_BINIUS_LIGERITO_ACCOUNTING`: `union` (default) or `rbr`, exactly as
-/// `benches/mul_e2e_compare` reads it.
+/// `benches/mul_compare.rs` reads it.
 fn binius_ligerito_accounting() -> Accounting {
     match std::env::var("F2Z_BINIUS_LIGERITO_ACCOUNTING").as_deref() {
         Err(_) | Ok("union") | Ok("union-bound") => Accounting::UnionBound,

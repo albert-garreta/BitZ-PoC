@@ -1,9 +1,8 @@
 //! Shared harness for the protocol benches: one accounting model, one
 //! printer, one machine-readable `RESULT` line (`schema=f2z/1`).
 //!
-//! The full schema — timing semantics, the paper §2.1 step taxonomy, key
-//! names, and env-var conventions — is documented in `docs/bench-schema.md`.
-//! Keep that file and this module in lockstep.
+//! Multiplication campaigns use the separate manifest/sample format described
+//! in `docs/native-mul-compare.md`. This module retains the other benches’ console output.
 //!
 //! Summary of the semantics implemented here:
 //! - `prove_ms` is the **end-to-end prover**: everything after the prover
@@ -20,6 +19,24 @@
 
 pub mod cli;
 pub mod environment;
+pub mod proof_fingerprint;
+
+/// Record actual forest choices for the application benchmarks as well as multiplication.
+pub fn start_gkr_recording() {
+    #[cfg(feature = "bench-internals")]
+    f2z::merged_forest::schedule::start_recording();
+}
+
+pub fn print_gkr_schedules() {
+    #[cfg(feature = "bench-internals")]
+    println!(
+        "GKR_SCHEDULES {}",
+        serde_json::json!({
+            "requested": std::env::var("F2_FOREST_SCHEDULE").unwrap_or_else(|_| "auto".into()),
+            "resolved": f2z::merged_forest::schedule::take_records(),
+        })
+    );
+}
 
 /// Serialize native SDK sessions in tests and explicitly supply their subscriber.
 #[cfg(all(test, feature = "span-metrics"))]
@@ -48,7 +65,6 @@ pub mod perfetto;
 pub mod plonky3;
 #[cfg(any(feature = "native-mul-compare", feature = "plonky3-sha256-bench"))]
 pub mod whir_tuning;
-
 
 use clap::ValueEnum;
 use f2z::piop::spartan::{
@@ -129,6 +145,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_BENCH_ORDER",
     "F2Z_BENCH_PASS",
     "F2Z_BENCH_QUIET",
+    "F2Z_BENCH_PHASE_SAMPLES",
+    "F2Z_BENCH_PROOF_FINGERPRINT",
     "F2Z_BENCH_REPS",
     "F2Z_BENCH_SEED",
     "F2Z_BENCH_SHAPES",
@@ -140,6 +158,8 @@ pub const KNOWN_F2Z_ENV: &[&str] = &[
     "F2Z_EQF_DOUBLE_MIN",
     "F2Z_EQF_FUSE",
     "F2Z_EQF_NOKERNEL",
+    "F2Z_GKR_DIRECT_CLOSE",
+    "F2Z_GKR_RECOVER",
     "F2Z_EQ_TABLE_SAMPLES",
     "F2Z_FIXED_SCALAR",
     "F2Z_FLAT_FOREST",
@@ -223,7 +243,7 @@ pub fn enforce_known_env() {
         "error: unknown F2Z_* environment variable(s): {}",
         unknown.join(", ")
     );
-    eprintln!("       known knobs (docs/bench-schema.md):");
+    eprintln!("       known benchmark knobs:");
     for chunk in KNOWN_F2Z_ENV.chunks(4) {
         eprintln!("         {}", chunk.join(" "));
     }
@@ -357,7 +377,10 @@ impl SecurityProfile {
     /// The shortest `F2Z_BENCH_LAMBDA` spelling of the profile: the target
     /// bits where that is unambiguous, the full name otherwise.
     pub fn knob_value(self) -> String {
-        self.to_possible_value().expect("selectable profile").get_name().to_owned()
+        self.to_possible_value()
+            .expect("selectable profile")
+            .get_name()
+            .to_owned()
     }
 
     fn admissible(policy: PrimePolicy) -> String {
@@ -586,6 +609,13 @@ impl StepSamples {
     /// Step 1 (bit-pack + commit) wall time, and the profiler totals drained
     /// after the prove call.
     pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
+        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            println!(
+                "PHASE_SAMPLE {}",
+                serde_json::json!({"kind":"prove", "total_ms":total_ms,
+                "commit_ms":commit_ms, "phases_seconds":phases})
+            );
+        }
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
         self.record_scopes(
@@ -602,6 +632,13 @@ impl StepSamples {
 
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
     pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
+        if std::env::var("F2Z_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            println!(
+                "PHASE_SAMPLE {}",
+                serde_json::json!({"kind":"verify", "total_ms":total_ms,
+                "phases_seconds":phases})
+            );
+        }
         self.total.push(total_ms);
         self.commit.push(None);
         self.record_scopes(
@@ -806,7 +843,7 @@ impl BenchReport {
         println!("  {}", self.result_line_with_commitment(commitment_bytes));
     }
 
-    /// The machine-readable line (`docs/bench-schema.md`).
+    /// The machine-readable console line.
     pub fn result_line(&self) -> String {
         self.result_line_with_commitment(0)
     }
@@ -906,7 +943,8 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
 pub fn span_ms(intervals: &[f2z::observability::Interval], label: &str) -> f64 {
     f2z::observability::duration(intervals, label)
         .unwrap_or_else(|error| panic!("invalid benchmark measurement: {error}"))
-        .as_secs_f64() * 1e3
+        .as_secs_f64()
+        * 1e3
 }
 
 /// Only F2Z callers consult this selector. Competing PCS configurations do not.
@@ -950,5 +988,8 @@ pub fn ligerito_identity(
 /// Per-trial detail timings, emitted after the captured proof/verification scopes.
 /// Retain each label separately so improvements cannot hide a slower inner sumcheck.
 pub fn print_regression_phases(phases: &[(String, f64)]) {
-    println!("REGRESSION_PHASES {}", serde_json::to_string(phases).expect("phase JSON"));
+    println!(
+        "REGRESSION_PHASES {}",
+        serde_json::to_string(phases).expect("phase JSON")
+    );
 }

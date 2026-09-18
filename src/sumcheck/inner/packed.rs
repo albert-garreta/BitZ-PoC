@@ -287,6 +287,8 @@ impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
 
 mod composite;
+#[cfg(feature = "ecdsa")]
+pub(crate) use composite::CompactCompositeMle;
 mod state;
 pub use state::PackedInput;
 
@@ -355,22 +357,32 @@ fn validate_inputs<const K: usize, H: Sha256InnerBitSource + ?Sized>(
 
 #[inline]
 fn validate_field_value(value: &Field, field_cfg: &FieldConfig) -> Result<(), SumcheckError> {
-    value
-        .validate_element(&Field::canonical_modulus_encoding(field_cfg))
-        .map_err(|_| SumcheckError::NonCanonicalFieldElement)
+    validate_field_values(std::iter::once(value), field_cfg)
+}
+
+fn validate_field_values<'a>(
+    values: impl IntoIterator<Item = &'a Field>,
+    field_cfg: &FieldConfig,
+) -> Result<(), SumcheckError> {
+    let modulus = Field::canonical_modulus_encoding(field_cfg);
+    for value in values {
+        value
+            .validate_element(&modulus)
+            .map_err(|_| SumcheckError::NonCanonicalFieldElement)?;
+    }
+    Ok(())
 }
 
 fn validate_factored_mle(
     mle: &FactoredMultilinearExtension<'_, Field>,
     field_cfg: &FieldConfig,
 ) -> Result<(), SumcheckError> {
-    for value in std::iter::once(mle.leading_value())
-        .chain(mle.outer_factor())
-        .chain(mle.inner_factor())
-    {
-        validate_field_value(value, field_cfg)?;
-    }
-    Ok(())
+    validate_field_values(
+        std::iter::once(mle.leading_value())
+            .chain(mle.outer_factor())
+            .chain(mle.inner_factor()),
+        field_cfg,
+    )
 }
 
 struct PrefixBuildState {
@@ -1958,7 +1970,6 @@ fn linear_multiply_accumulate(
     reducer.mul_acc(accumulator, lhs, rhs);
 }
 
-#[cfg(feature = "parallel")]
 #[inline]
 fn linear_merge(accumulator: &mut LinearAccumulator, other: LinearAccumulator) {
     accumulator.merge_assign(&other);
@@ -2831,6 +2842,49 @@ mod tests {
             assert_eq!(
                 lazy_transcript.get_challenge::<u128>(),
                 packed_transcript.get_challenge::<u128>()
+            );
+        }
+    }
+
+    #[test]
+    fn noncanonical_structured_inputs_are_rejected_before_the_transcript() {
+        let cfg = spartan_f2z_field_config();
+        let invalid = crate::piop::spartan::noncanonical_test_value(&cfg);
+        for invalid_part in 0..3 {
+            let mut high = [field(2, &cfg), field(3, &cfg)];
+            let low = [field(5, &cfg), field(7, &cfg)];
+            let mut tail = [field(11, &cfg), field(13, &cfg)];
+            let mut origin = cfg.zero();
+            match invalid_part {
+                0 => high[1] = invalid,
+                1 => tail[1] = invalid,
+                _ => origin = invalid,
+            }
+            let coefficients = crate::poly::mle::CompositeMultilinearExtension::from_parts(
+                3, &high, &low, &tail, origin, &cfg,
+            )
+            .unwrap();
+            let bits = vec![0u64];
+            let mut transcript = Blake3Transcript::new();
+            let mut untouched = transcript.clone();
+            let mut boundary = crate::sumcheck::boundary::ProverGrindingRoundBoundary::<
+                Sha256InnerGrinding,
+            >::with_round_offset(0, 0);
+            let result = crate::sumcheck::inner::prove_inner_sumcheck(
+                &cfg,
+                &mut transcript,
+                cfg.zero(),
+                PackedInput::new(&coefficients, &bits, 3, 6, 2),
+                (),
+                &mut boundary,
+            );
+            assert!(matches!(
+                result,
+                Err(SumcheckError::NonCanonicalFieldElement)
+            ));
+            assert_eq!(
+                transcript.get_challenge::<u128>(),
+                untouched.get_challenge::<u128>()
             );
         }
     }

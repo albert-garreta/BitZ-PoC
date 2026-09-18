@@ -8,3 +8,4 @@ pub use boundary::{RoundBoundaryPolicy, UngrindedRoundBoundary};
 pub use error::SumcheckError;
 pub use proof::SumcheckProof;
 pub mod arithmetic;
+pub(crate) mod bridge;
