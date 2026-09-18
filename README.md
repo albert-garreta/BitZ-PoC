@@ -36,6 +36,14 @@ installs the pinned Rust toolchains and Perfetto if needed, and creates a fresh
 results directory under `bench_results/`. Use `--output DIR` to choose another
 new directory. `CARGO_TARGET_DIR` is preserved for build-cache reuse.
 
+Cargo exports `BITZ_REVISION` and `BITZ_DIRTY` from the build script when it
+launches benchmarks. The shared validator in `benches/common/mod.rs` accepts
+these metadata variables while still rejecting unknown `BITZ_*` knobs. This
+fix applies to both the wrapper and the individual commands below. If an older
+build reports `unknown BITZ_* environment variable(s): BITZ_DIRTY, BITZ_REVISION`,
+rerun with the updated harness; unsetting them in the shell alone cannot fix it
+because Cargo adds them again.
+
 `--dry-run` only prints commands; it does not compile, verify dependencies, or
 execute benchmarks. `--smoke` uses one size and one measured sample per campaign,
 retaining the listed backends, rates, and thread counts. It also exercises the
@@ -199,6 +207,12 @@ cargo +1.98.1 run --release --locked --bin bitz \
 This uses the local `vendor/limber` snapshot. `MSCFG=paper` is a workload name
 and does not require a manuscript directory. `--draft` runs proofs and the
 local comparison checks while marking canonical trace validation as pending.
+
+Matched reports use the same minimal-byte v1 circuit digest and batch statement
+contract for BitZ and Limber. BitZ's fixed-width v2 proof digest is kept separate;
+the benchmark computes comparison digests from the actual public matrices and
+moduli. This fixes the `canonical digest mismatch` caused by reporting the v2
+hash as v1. Rerun affected campaigns into a fresh directory to regenerate traces.
 
 ```bash
 python3 scripts/run_matched_multiswap_campaign.py \

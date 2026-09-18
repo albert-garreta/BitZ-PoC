@@ -353,7 +353,7 @@ impl TraceWriter {
             );
         }
 
-        let constraint_digest = hex_bytes(circuit.statement_digest());
+        let constraint_digest = hex_bytes(circuit.canonical_statement_digest());
         assert_eq!(
             prepared.statement_digest(),
             &circuit.statement_digest(),
@@ -1135,7 +1135,7 @@ fn main() {
     let setup_ns = u64::try_from(setup_elapsed.as_nanos()).unwrap_or(u64::MAX);
     let setup_ms = setup_elapsed.as_secs_f64() * 1e3;
 
-    let constraint_digest = hex_bytes(circuit.statement_digest());
+    let constraint_digest = hex_bytes(circuit.canonical_statement_digest());
     if let Some(expected) = &env.expected_constraint_digest {
         assert_eq!(
             expected, &constraint_digest,
@@ -1271,7 +1271,7 @@ fn main() {
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {
     json!({
         "domain": "bitz-limber/multiswap-statement/v2",
-        "digest_blake3": hex_bytes(circuit.comparison_statement_digest()),
+        "digest_blake3": hex_bytes(circuit.canonical_comparison_statement_digest()),
         "batch_count": circuit.batch_count(), "public_input_count": 0, "public_inputs": [],
         "value_bits": MULTISWAP_VALUE_BITS, "integer_domain": "unsigned",
         "public_roles": ["matrices", "moduli"], "private_roles": ["witness", "quotients"],

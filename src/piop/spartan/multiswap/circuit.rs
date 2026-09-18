@@ -811,12 +811,22 @@ impl MultiswapCircuit {
         self.dims.num_real_cols() * self.batch_count
     }
 
-    /// Backend-independent statement contract. The legacy matrix digest stays
-    /// unchanged for B=1; this envelope additionally binds roles and public IO.
+    /// BitZ protocol statement contract, including roles and public IO.
     pub fn comparison_statement_digest(&self) -> [u8; 32] {
+        self.comparison_digest_with_statement(self.statement_digest())
+    }
+
+    /// Backend-independent contract for matched benchmark reports.
+    /// Uses the minimal-byte matrix encoding shared with Limber, independently
+    /// of the fixed-width encoding used by the BitZ proof transcript.
+    pub fn canonical_comparison_statement_digest(&self) -> [u8; 32] {
+        self.comparison_digest_with_statement(self.canonical_statement_digest())
+    }
+
+    fn comparison_digest_with_statement(&self, statement: [u8; 32]) -> [u8; 32] {
         let mut h = Hasher::new();
         h.update(b"bitz-limber/multiswap-statement/v2");
-        h.update(&self.statement_digest());
+        h.update(&statement);
         for v in [
             self.batch_count,
             0,
@@ -948,14 +958,35 @@ impl MultiswapCircuit {
         self
     }
 
-    /// Canonical BLAKE3 digest of the complete integer statement.
+    /// BitZ protocol BLAKE3 digest of the complete integer statement (v2).
     ///
     /// Binds the dimension schedule, padded shape, all three COO matrices,
     /// and the per-row moduli with length-prefixed frames.  The witness and
-    /// quotients are deliberately excluded.
+    /// quotients are deliberately excluded. Integers retain their storage width.
     pub fn statement_digest(&self) -> [u8; 32] {
+        self.statement_digest_with_encoding(CIRCUIT_DIGEST_DOMAIN, false)
+    }
+
+    /// Canonical v1 digest for comparison with Limber's integer statement.
+    /// Public coefficients and moduli use minimal unsigned little-endian bytes,
+    /// with zero encoded as one zero byte, matching BigUint::to_bytes_le.
+    /// This diagnostic encoding is not used by the BitZ proof transcript.
+    pub fn canonical_statement_digest(&self) -> [u8; 32] {
+        self.statement_digest_with_encoding(b"bitz/multiswap/circuit-digest/v1", true)
+    }
+
+    fn statement_digest_with_encoding(&self, domain: &[u8], minimal: bool) -> [u8; 32] {
+        let encode = |words: &[u64]| {
+            let mut bytes: Vec<_> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+            if minimal {
+                // Only public statement values are formatted here.
+                let len = bytes.iter().rposition(|&byte| byte != 0).map_or(1, |i| i + 1);
+                bytes.truncate(len);
+            }
+            bytes
+        };
         let mut hasher = Hasher::new();
-        hasher.update(CIRCUIT_DIGEST_DOMAIN);
+        hasher.update(domain);
         for value in [
             self.dims.k,
             self.dims.ell_bits,
@@ -978,14 +1009,14 @@ impl MultiswapCircuit {
             for (row, column, value) in entries.iter() {
                 hasher.update(&(row as u64).to_le_bytes());
                 hasher.update(&(column as u64).to_le_bytes());
-                let bytes: Vec<_> = value.iter().flat_map(|word| word.to_le_bytes()).collect();
+                let bytes = encode(value);
                 hasher.update(&(bytes.len() as u64).to_le_bytes());
                 hasher.update(&bytes);
             }
         }
         hasher.update(&(self.mods.len() as u64).to_le_bytes());
         for modulus in self.mods.iter() {
-            let bytes: Vec<_> = modulus.iter().flat_map(|word| word.to_le_bytes()).collect();
+            let bytes = encode(modulus);
             hasher.update(&(bytes.len() as u64).to_le_bytes());
             hasher.update(&bytes);
         }
@@ -1018,6 +1049,23 @@ mod tests {
             };
             let actual = MultiswapCircuit::build(dims).unwrap();
             let expected = reference::MultiswapCircuit::build(old_dims).unwrap();
+            assert_eq!(actual.canonical_statement_digest(), expected.statement_digest());
+            assert_eq!(
+                actual.canonical_comparison_statement_digest(),
+                expected.comparison_statement_digest()
+            );
+            if full {
+                assert_eq!(
+                    blake3::Hash::from(actual.statement_digest()).to_hex().as_str(),
+                    "7b2a94147cfb9a0604c45f1ab13dacdefffb6474e26fffc8e376b147227523bf",
+                    "preserve the existing BitZ protocol digest"
+                );
+                assert_eq!(
+                    blake3::Hash::from(actual.canonical_statement_digest()).to_hex().as_str(),
+                    "23e2a82b4c5aac1d8e7dcfd558c5a22e85b51efa20000a9fb1f0e1791a50a5da",
+                    "match the independently recorded Limber digest"
+                );
+            }
             assert_eq!(actual.num_cons(), expected.num_cons());
             assert_eq!(actual.num_vars(), expected.num_vars());
             for (got, want) in actual.witness().iter().zip(expected.witness()) {
@@ -1043,6 +1091,22 @@ mod tests {
                 assert!(got.iter().any(|(_, _, v)| v.len() == 1));
             }
         }
+    }
+
+    #[test]
+    fn canonical_batch_digests_match_limber_encoding_and_bind_public_statement() {
+        let mut actual = MultiswapCircuit::build_batch(MultiswapDims::multiswap(0), 2).unwrap();
+        let expected = reference::MultiswapCircuit::build_batch(
+            reference::MultiswapDims::multiswap(0), 2,
+        ).unwrap();
+        assert_eq!(actual.canonical_statement_digest(), expected.statement_digest());
+        let contract = actual.canonical_comparison_statement_digest();
+        assert_eq!(contract, expected.comparison_statement_digest());
+        let last = actual.live_rows() - 1;
+        actual.quos[last] = actual.quos[last].wrapping_add(&Uint::ONE);
+        assert_eq!(contract, actual.canonical_comparison_statement_digest());
+        actual.mods.set(last, modulus_ell().wrapping_add(&Uint::ONE));
+        assert_ne!(contract, actual.canonical_comparison_statement_digest());
     }
 
     #[test]

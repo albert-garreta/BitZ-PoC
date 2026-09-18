@@ -17,6 +17,8 @@ Requires Python 3.11+, rustup, and the materialized release workspace.
 Vendor source is verified first. Rust toolchains and Perfetto are installed
 if needed. Existing output directories are never reused. CARGO_TARGET_DIR
 is preserved so an existing build cache can be used.
+Cargo's BITZ_REVISION and BITZ_DIRTY build metadata are accepted by the shared
+benchmark validator; unknown BITZ_* knobs still fail validation.
 The default outer swap-growth guard is 34 GiB. Multiplication uses --no-gate
 inside this wrapper to avoid acquiring the same lock twice.
 EOF
@@ -77,6 +79,9 @@ fi
 
 # These seven campaigns set their own experiment controls. Inherited SHA shape
 # aliases, for example, can conflict with the layout sweep in step 7.
+# Cargo re-exports BITZ_REVISION and BITZ_DIRTY from the build script after this
+# cleanup. benches/common/mod.rs allows both metadata variables, so the fix
+# covers every Cargo-launched benchmark, including standalone README commands.
 while IFS= read -r benchmark_env_name; do
   case "$benchmark_env_name" in
     BITZ_BENCH_LOCK) ;;
@@ -155,6 +160,8 @@ logged "$RUN_DIR/u32-full-product.log" cargo +1.98.1 run --release --locked --bi
   --latex "$RUN_DIR/u32-full-product.tex"
 
 printf '\n[5/7] MultiSwap\n'
+# The BitZ harness emits Limber-compatible canonical comparison digests while
+# preserving its v2 proof transcript hashes. Keep the runner's digest checks on.
 logged "$RUN_DIR/multiswap.log" python3 scripts/run_matched_multiswap_campaign.py \
   --draft --limber-root "$ROOT/vendor/limber" --security-bits 114 --batch-counts "$MULTISWAP_BATCHES" \
   --all-threads 10 --warmups 1 --samples "$MULTISWAP_SAMPLES" --rustflags="-C target-cpu=native" \

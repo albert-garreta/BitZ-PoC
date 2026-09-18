@@ -15,6 +15,44 @@ use sha256_compressions::common;
 use clap::{CommandFactory, Parser, ValueEnum, error::ErrorKind};
 
 #[test]
+fn build_metadata_is_accepted_but_unknown_knobs_are_rejected() {
+    if std::env::var_os("BENCH_KNOWN_ENV_PROBE").is_some() {
+        common::enforce_known_env();
+        return;
+    }
+    for typo in [false, true] {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "build_metadata_is_accepted_but_unknown_knobs_are_rejected",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("BENCH_KNOWN_ENV_PROBE", "1")
+            .env("BITZ_REVISION", env!("BITZ_REVISION"))
+            .env("BITZ_DIRTY", env!("BITZ_DIRTY"))
+            .env("BITZ_BENCH_REPS", "1");
+        if typo {
+            command.env("BITZ_BENCH_REPZ", "1");
+        }
+        let output = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(if typo { 2 } else { 0 }),
+            "{stderr}"
+        );
+        if typo {
+            assert!(
+                stderr.contains("unknown BITZ_* environment variable(s): BITZ_BENCH_REPZ"),
+                "{stderr}"
+            );
+        }
+    }
+}
+
+#[test]
 fn cargo_flag_help_and_unknown_options() {
     cli::EnvironmentCli::command().debug_assert();
     assert!(cli::EnvironmentCli::try_parse_from(["bench", "--bench"]).is_ok());
