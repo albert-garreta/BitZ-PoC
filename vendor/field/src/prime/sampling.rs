@@ -145,14 +145,70 @@ pub(crate) fn sample_below<const L: usize>(
 }
 
 fn pow_public<const L: usize>(field: &FpCtx<L>, base: &Fp<L>, exponent: &Uint<L>) -> Fp<L> {
+    // Sliding windows save multiplications in every Miller–Rabin round. Both
+    // the exponent and the table index are public in this sampling interface.
+    let mut remaining = bit_length_public(exponent);
+    if remaining == 0 {
+        return field.one();
+    }
+    let squared = field.square(base);
+    let mut odd_powers = [*base; 8];
+    for i in 1..odd_powers.len() {
+        odd_powers[i] = field.mul(&odd_powers[i - 1], &squared);
+    }
     let mut result = field.one();
-    for i in (0..bit_length_public(exponent)).rev() {
-        result = field.square(&result);
-        if exponent.bit(i).as_u64() != 0 {
-            result = field.mul(&result, base);
+    while remaining > 0 {
+        if exponent.bit(remaining - 1).as_u64() == 0 {
+            result = field.square(&result);
+            remaining -= 1;
+            continue;
         }
+        let mut low = remaining.saturating_sub(4);
+        while exponent.bit(low).as_u64() == 0 {
+            low += 1;
+        }
+        let mut window = 0;
+        for i in (low..remaining).rev() {
+            result = field.square(&result);
+            window = (window << 1) | exponent.bit(i).as_u64() as usize;
+        }
+        result = field.mul(&result, &odd_powers[window >> 1]);
+        remaining = low;
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_windows_match_binary_exponentiation() {
+        // Include windows crossing the limb boundary and long runs of zeros.
+        let field = FpCtx {
+            parameters: PrimeParameters::new(Uint::<2>::from_words([
+                u64::MAX,
+                0x7fff_ffff_ffff_ffff,
+            ])),
+        };
+        for words in [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [u64::MAX, u64::MAX],
+            [0x8000_0000_0000_0001, 0x8000_0000_0000_0001],
+            [0x1234_5678_9abc_def0, 0x0fed_cba9_8765_4321],
+        ] {
+            let exponent = Uint::from_words(words);
+            for value in [0, 1, 2, 17, u64::MAX] {
+                let base = field.from_integer(&Uint::<2>::from_u64(value));
+                assert_eq!(
+                    pow_public(&field, &base, &exponent),
+                    field.pow_ct(&base, &exponent)
+                );
+            }
+        }
+    }
 }
 
 fn small_prime_result<const L: usize>(candidate: &Uint<L>) -> Option<bool> {

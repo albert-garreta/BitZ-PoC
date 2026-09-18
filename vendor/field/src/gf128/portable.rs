@@ -1,20 +1,53 @@
 //! Scalar carryless-multiply pipeline for `GF(2^128)`.
 //!
 //! Two jobs: the production path on targets without a carryless-multiply
-//! instruction, and the oracle the SIMD kernels are tested against. Written for
-//! obviousness, not speed.
+//! instruction, and the oracle the SIMD kernels are tested against.
 
 use super::REDUCTION;
 
 /// Carryless product of two 64-bit polynomials, as `(low, high)` halves of the
 /// 128-bit result.
+#[inline]
+#[cfg(target_pointer_width = "64")]
 pub fn clmul64(a: u64, b: u64) -> (u64, u64) {
-    let mut lo = 0u64;
-    let mut hi = 0u64;
+    const M: u64 = 0x1111_1111_1111_1111;
+    const W: u128 = 0x1111_1111_1111_1111_1111_1111_1111_1111;
+    // Separate coefficients into four residue classes. Integer multiplication
+    // counts polynomial terms in four-bit lanes; masking keeps their parity.
+    // Remove b's top nibble so each count is at most 15: a count of 16 would
+    // carry into the next lane and corrupt its parity.
+    let low_b = b & 0x0fff_ffff_ffff_ffff;
+    let a0 = (a & M) as u128;
+    let a1 = (a & (M << 1)) as u128;
+    let a2 = (a & (M << 2)) as u128;
+    let a3 = (a & (M << 3)) as u128;
+    let b0 = (low_b & M) as u128;
+    let b1 = (low_b & (M << 1)) as u128;
+    let b2 = (low_b & (M << 2)) as u128;
+    let b3 = (low_b & (M << 3)) as u128;
+    let z0 = (a0 * b0) ^ (a1 * b3) ^ (a2 * b2) ^ (a3 * b1);
+    let z1 = (a0 * b1) ^ (a1 * b0) ^ (a2 * b3) ^ (a3 * b2);
+    let z2 = (a0 * b2) ^ (a1 * b1) ^ (a2 * b0) ^ (a3 * b3);
+    let z3 = (a0 * b3) ^ (a1 * b2) ^ (a2 * b1) ^ (a3 * b0);
+    let mut product = (z0 & W) | (z1 & (W << 1)) | (z2 & (W << 2)) | (z3 & (W << 3));
+    // Restore the four omitted coefficients with a fixed schedule. The barrier
+    // prevents the compiler from turning the selection into an operand branch.
+    for i in 60..64 {
+        let mask = 0u128.wrapping_sub(core::hint::black_box((b >> i) & 1) as u128);
+        product ^= ((a as u128) << i) & mask;
+    }
+    (product as u64, (product >> 64) as u64)
+}
+
+// On smaller targets, wide integer multiplication may call a data-dependent
+// runtime helper. Retain the fixed bit scan instead of relying on that helper.
+#[cfg(not(target_pointer_width = "64"))]
+pub fn clmul64(a: u64, b: u64) -> (u64, u64) {
+    let mut lo = 0;
+    let mut hi = 0;
     for i in 0..64 {
         let mask = 0u64.wrapping_sub(core::hint::black_box((b >> i) & 1));
         lo ^= (a << i) & mask;
-        // The branch depends only on the public loop index.
         if i > 0 {
             hi ^= (a >> (64 - i)) & mask;
         }
@@ -22,14 +55,14 @@ pub fn clmul64(a: u64, b: u64) -> (u64, u64) {
     (lo, hi)
 }
 
-/// Schoolbook 128x128 carryless product, as four words in ascending
+/// Karatsuba 128x128 carryless product, as four words in ascending
 /// significance.
+#[inline]
 pub fn clmul128(a: [u64; 2], b: [u64; 2]) -> [u64; 4] {
     let (l0, l1) = clmul64(a[0], b[0]);
     let (h0, h1) = clmul64(a[1], b[1]);
-    let (m0, m1) = clmul64(a[0], b[1]);
-    let (n0, n1) = clmul64(a[1], b[0]);
-    [l0, l1 ^ m0 ^ n0, h0 ^ m1 ^ n1, h1]
+    let (m0, m1) = clmul64(a[0] ^ a[1], b[0] ^ b[1]);
+    [l0, l1 ^ m0 ^ l0 ^ h0, h0 ^ m1 ^ l1 ^ h1, h1]
 }
 
 /// `w * g` where `g = X^7 + X^2 + X + 1`, as `(low, high)` 64-bit halves.
@@ -64,9 +97,7 @@ pub fn mul(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
 /// `a0^2 + a1^2*X^128`.
 #[inline]
 pub fn square(a: [u64; 2]) -> [u64; 2] {
-    let (l0, l1) = clmul64(a[0], a[0]);
-    let (h0, h1) = clmul64(a[1], a[1]);
-    reduce([l0, l1, h0, h1])
+    reduce(wide_square(a))
 }
 
 #[inline]
@@ -86,9 +117,21 @@ pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
     value
 }
 pub(crate) fn wide_square(a: [u64; 2]) -> Wide {
-    let low = clmul64(a[0], a[0]);
-    let high = clmul64(a[1], a[1]);
-    [low.0, low.1, high.0, high.1]
+    // Squaring inserts one zero between adjacent coefficients.
+    fn spread(word: u32) -> u64 {
+        let mut x = word as u64;
+        x = (x | (x << 16)) & 0x0000_ffff_0000_ffff;
+        x = (x | (x << 8)) & 0x00ff_00ff_00ff_00ff;
+        x = (x | (x << 4)) & 0x0f0f_0f0f_0f0f_0f0f;
+        x = (x | (x << 2)) & 0x3333_3333_3333_3333;
+        (x | (x << 1)) & 0x5555_5555_5555_5555
+    }
+    [
+        spread(a[0] as u32),
+        spread((a[0] >> 32) as u32),
+        spread(a[1] as u32),
+        spread((a[1] >> 32) as u32),
+    ]
 }
 
 pub fn wide_zero() -> Wide {
@@ -201,6 +244,36 @@ mod tests {
     }
 
     #[test]
+    fn dense_products_and_top_nibbles_match_the_definition() {
+        // Exercise maximal lane counts and every restored top-nibble pattern.
+        for nibble in 0..16u64 {
+            let b = 0x0fff_ffff_ffff_ffff | (nibble << 60);
+            for a in [u64::MAX, 0x1111_1111_1111_1111, 0x8888_8888_8888_8888] {
+                assert_eq!(clmul64(a, b), clmul64_by_definition(a, b));
+                assert_eq!(clmul64(b, a), clmul64_by_definition(b, a));
+            }
+        }
+    }
+
+    #[test]
+    fn clmul128_matches_polynomial_convolution() {
+        let mut rng = Pcg64::seed_from_u64(104);
+        for _ in 0..256 {
+            let a = [rng.next_u64(), rng.next_u64()];
+            let b = [rng.next_u64(), rng.next_u64()];
+            let mut expected = [0; 4];
+            for i in 0..2 {
+                for j in 0..2 {
+                    let (lo, hi) = clmul64_by_definition(a[i], b[j]);
+                    expected[i + j] ^= lo;
+                    expected[i + j + 1] ^= hi;
+                }
+            }
+            assert_eq!(clmul128(a, b), expected);
+        }
+    }
+
+    #[test]
     fn reduce_matches_long_division() {
         let mut rng = Pcg64::seed_from_u64(102);
         // Every single-bit input in turn, so each of the 128 foldable positions
@@ -221,9 +294,8 @@ mod tests {
         }
     }
 
-    /// The two-product shortcut is valid only because the cross terms cancel in
-    /// characteristic 2; checked against the four-product path directly, not
-    /// through whichever kernel is active.
+    /// Bit spreading is checked against polynomial multiplication, independent
+    /// of whichever hardware kernel is active.
     #[test]
     fn square_matches_the_general_multiply() {
         let mut rng = Pcg64::seed_from_u64(103);

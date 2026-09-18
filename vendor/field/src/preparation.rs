@@ -64,8 +64,8 @@ impl<const L: usize> PreparedOddInverse<L> {
     /// coefficient on each binary-GCD step. Both backends use the declared width.
     #[cfg(target_pointer_width = "64")]
     pub fn inverse_ct(&self, value: &Uint<L>) -> CtValue<Uint<L>> {
-        let inverse = crypto_bigint::Uint::from_words(*value.as_words())
-            .invert_odd_mod(&self.modulus);
+        let inverse =
+            crypto_bigint::Uint::from_words(*value.as_words()).invert_odd_mod(&self.modulus);
         let valid = CtMask::from_lsb(inverse.is_some().to_u8() as u64);
         let value = inverse.unwrap_or(crypto_bigint::Uint::ZERO);
         CtValue::new(Uint::from_words(value.to_words()), valid)
@@ -195,6 +195,28 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
         let PowerTable::Public { rows, window, .. } = &self.table else {
             return self.pow_ct(exponent);
         };
+        if E == 2 && *window == 8 {
+            // The verifier's 128-bit public weights use byte windows. A
+            // balanced product exposes independent field multiplications instead
+            // of putting every table lookup on one long dependency chain.
+            // Keep the original factor order, including the identity at digit 0.
+            let mut products = [self.field.one(); 8];
+            for (i, product) in products.iter_mut().enumerate() {
+                let word = exponent.0[i / 4];
+                let shift = (i % 4) * 16;
+                let low = ((word >> shift) & 255) as usize;
+                let high = ((word >> (shift + 8)) & 255) as usize;
+                *product = self.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
+            }
+            let mut count = products.len();
+            while count > 1 {
+                for i in 0..count / 2 {
+                    products[i] = self.field.mul(&products[2 * i], &products[2 * i + 1]);
+                }
+                count /= 2;
+            }
+            return products[0];
+        }
         let mut value = self.field.one();
         for (i, row) in rows.iter().enumerate() {
             let bit = i * window;
