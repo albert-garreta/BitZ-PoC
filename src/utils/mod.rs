@@ -1,4 +1,5 @@
 pub(crate) mod blake3x4;
+pub(crate) mod bit_packing;
 pub mod delayed_reduction;
 pub mod from_ref;
 pub mod inner_product;

@@ -32,6 +32,8 @@ use circuit::linear_map::CscMatrix;
 use field::CtOrd;
 #[cfg(test)]
 use field::RingOps;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use circuit::integer_storage::UnsignedIntegerTable;
 use field::{Fp, FpCtx, IntegerEmbedding, Uint, UintRef};
@@ -381,33 +383,35 @@ impl MultiswapAssignment {
         let p = self.layout.bitz_params();
         let words_per_column = p.rows() / u64::BITS as usize;
         let mut rows = vec![vec![0u64; words_per_column]; p.cols()];
-        let column_mask = (1usize << self.layout.s) - 1;
-        let h = self.layout.h;
-
-        let mut write_value = |gate: usize, slot_start: usize, value: &Uint<32>| {
-            let column = &mut rows[gate & column_mask];
-            let gate_high = gate >> self.layout.s;
-            // Fixed 2048-bit work: no zero skip or set-bit iteration on a witness.
-            for (limb_index, &limb) in value.as_words().iter().enumerate() {
-                for bit in 0..64 {
-                    let slot = slot_start + limb_index * 64 + bit;
-                    let row = (slot << h) | gate_high;
-                    column[row / 64] |= ((limb >> bit) & 1) << (row % 64);
+        // Valid MultiSwap layouts have exactly one high gate coordinate.
+        debug_assert_eq!(self.layout.h, 1);
+        let columns = p.cols();
+        let write_column = |(column, output): (usize, &mut Vec<u64>)| {
+            for (slot_start, block_start) in [
+                (MULTISWAP_W_SLOT_START, self.layout.witness_block_start()),
+                (
+                    MULTISWAP_QUOS_SLOT_START,
+                    self.layout.quotient_block_start(),
+                ),
+            ] {
+                let even = self.value(block_start + column);
+                let odd = self.value(block_start + column + columns);
+                let offset = 2 * slot_start / 64;
+                for (limb, (&a, &b)) in even.as_words().iter().zip(odd.as_words()).enumerate() {
+                    let pair = crate::utils::bit_packing::interleave_words(a, b);
+                    output[offset + 2 * limb..offset + 2 * limb + 2].copy_from_slice(&pair);
                 }
             }
         };
-        for gate in 0..self.layout.capacity {
-            write_value(
-                gate,
-                MULTISWAP_W_SLOT_START,
-                &self.value(self.layout.witness_block_start() + gate),
-            );
-            write_value(
-                gate,
-                MULTISWAP_QUOS_SLOT_START,
-                &self.value(self.layout.quotient_block_start() + gate),
-            );
+        #[cfg(feature = "parallel")]
+        if columns >= 512 && rayon::current_num_threads() > 1 {
+            rows.par_iter_mut()
+                .enumerate()
+                .with_min_len(64)
+                .for_each(write_column);
+            return rows;
         }
+        rows.iter_mut().enumerate().for_each(write_column);
         rows
     }
 
@@ -669,6 +673,77 @@ mod tests {
                     )
                 );
             }
+        }
+    }
+
+    fn synthetic_assignment(capacity: usize) -> MultiswapAssignment {
+        let gate_vars = capacity.trailing_zeros() as usize;
+        let values = |length| {
+            (0..length)
+                .map(|gate| {
+                    Uint::from_words(core::array::from_fn(|limb| match gate % 5 {
+                        0 => 0,
+                        1 => u64::MAX,
+                        2 => 0xaaaa_5555_aaaa_5555,
+                        3 => 1u64 << (limb % 64),
+                        _ => (gate as u64)
+                            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                            .rotate_left(limb as u32),
+                    }))
+                })
+                .collect()
+        };
+        MultiswapAssignment {
+            layout: MultiswapLayout {
+                capacity,
+                gate_vars,
+                s: gate_vars - 1,
+                h: 1,
+            },
+            witness: values(capacity - 1),
+            quotients: values(capacity / 2 + 1),
+        }
+    }
+
+    #[test]
+    fn word_packing_preserves_patterns_and_structural_padding() {
+        let assignment = synthetic_assignment(16);
+        let layout = assignment.layout();
+        let rows = assignment.bitz_bit_rows();
+        for gate in 0..layout.capacity() {
+            for (slot_start, block_start) in [
+                (MULTISWAP_W_SLOT_START, layout.witness_block_start()),
+                (MULTISWAP_QUOS_SLOT_START, layout.quotient_block_start()),
+            ] {
+                let value = assignment.value(block_start + gate);
+                for bit in 0..MULTISWAP_VALUE_BITS {
+                    let (row, column) = layout.bitz_bit_position(slot_start + bit, gate).unwrap();
+                    assert_eq!(
+                        (rows[column][row / 64] >> (row % 64)) & 1,
+                        (value.as_words()[bit / 64] >> (bit % 64)) & 1
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn word_packing_matches_across_parallel_threshold() {
+        let serial = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let parallel = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap();
+        for columns in [256, 512, 1024, 4096, 8192] {
+            let assignment = synthetic_assignment(2 * columns);
+            assert_eq!(
+                serial.install(|| assignment.bitz_bit_rows()),
+                parallel.install(|| assignment.bitz_bit_rows())
+            );
         }
     }
 
