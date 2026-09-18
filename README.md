@@ -228,7 +228,28 @@ python3 scripts/run_matched_multiswap_campaign.py \
   2>&1 | tee "$RUN_DIR/multiswap.log"
 ```
 
-### 6. Hybrid SHA-256 chain + multiplication modulo 2^32
+### 6. SHA-256 layout parameter sweep over s and t
+
+The `sha256_product_layout` benchmark holds the workload at `2^14` SHA-256
+compressions and sweeps the layout split with `s + t = 29`. By default, it runs
+`t = 7..27` (`s = 29 - t`), with one warmup and 21 measured samples per split.
+The `t = 28` case is skipped because its projected peak memory exceeds 60 GiB.
+This is a controlled fixed-prime layout experiment.
+
+```bash
+RUSTFLAGS="-C target-cpu=native" \
+RAYON_NUM_THREADS=10 \
+cargo +1.98.1 bench --locked \
+  --bench sha256_product_layout \
+  --features unchecked,span-metrics,bench-internals
+```
+
+To select particular splits and change the sample count, prepend
+`BITZ_SHA_PRODUCT_TS="13 17" BITZ_BENCH_REPS=5` to the command. This selects
+`(t, s) = (13, 16)` and `(17, 12)`, with five measured samples per split.
+Add `--no-run` to the Cargo command to compile without executing the sweep.
+
+### 7. Hybrid SHA-256 chain + multiplication modulo 2^32
 
 This is the paper's **“Modular multiplications and bit operations”** experiment
 (table label `tab:hybrid-sha256-mul`). It proves `N` relations
@@ -323,27 +344,6 @@ mkdir -p "$HYBRID_ROOT"
 This is a separate workload from the paper's equal-witness table. Each sweep's
 result directory must not already exist. It will contain `summary.csv`,
 `run.txt`, and per-case CSV/log files.
-
-### 7. SHA-256 layout parameter sweep over s and t
-
-The `sha256_product_layout` benchmark holds the workload at `2^14` SHA-256
-compressions and sweeps the layout split with `s + t = 29`. By default, it runs
-`t = 7..27` (`s = 29 - t`), with one warmup and 21 measured samples per split.
-The `t = 28` case is skipped because its projected peak memory exceeds 60 GiB.
-This is a controlled fixed-prime layout experiment.
-
-```bash
-RUSTFLAGS="-C target-cpu=native" \
-RAYON_NUM_THREADS=10 \
-cargo +1.98.1 bench --locked \
-  --bench sha256_product_layout \
-  --features unchecked,span-metrics,bench-internals
-```
-
-To select particular splits and change the sample count, prepend
-`BITZ_SHA_PRODUCT_TS="13 17" BITZ_BENCH_REPS=5` to the command. This selects
-`(t, s) = (13, 16)` and `(17, 12)`, with five measured samples per split.
-Add `--no-run` to the Cargo command to compile without executing the sweep.
 
 ### Tables and figures
 

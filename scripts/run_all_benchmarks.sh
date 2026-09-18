@@ -78,7 +78,7 @@ if [[ "$NO_GATE" == 0 && "$INSIDE_GATE" == 0 ]]; then
 fi
 
 # These seven campaigns set their own experiment controls. Inherited SHA shape
-# aliases, for example, can conflict with the layout sweep in step 7.
+# aliases, for example, can conflict with the layout sweep in step 6.
 # Cargo re-exports BITZ_REVISION and BITZ_DIRTY from the build script after this
 # cleanup. benches/common/mod.rs allows both metadata variables, so the fix
 # covers every Cargo-launched benchmark, including standalone README commands.
@@ -167,7 +167,12 @@ logged "$RUN_DIR/multiswap.log" python3 scripts/run_matched_multiswap_campaign.p
   --all-threads 10 --warmups 1 --samples "$MULTISWAP_SAMPLES" --rustflags="-C target-cpu=native" \
   --output-dir "$RUN_DIR/multiswap"
 
-printf '\n[6/7] Hybrid SHA-256 + multiplication\n'
+printf '\n[6/7] SHA-256 layout parameter sweep\n'
+logged "$RUN_DIR/sha256-layout.log" env ${LAYOUT_ENV[@]+"${LAYOUT_ENV[@]}"} \
+  RAYON_NUM_THREADS=10 BITZ_SHA_RESULT_PATH="$RUN_DIR/sha256-layout.csv" \
+  cargo +1.98.1 bench --locked --bench sha256_product_layout --features unchecked,span-metrics,bench-internals
+
+printf '\n[7/7] Hybrid SHA-256 + multiplication\n'
 HYBRID_BUILD=(cargo +1.98.1 bench --locked --no-run --bench hybrid_u32_sha256 --features hybrid --message-format=json)
 if [[ "$DRY_RUN" == 1 ]]; then
   print_command "${HYBRID_BUILD[@]}"
@@ -229,11 +234,6 @@ hybrid_campaign() {
 }
 hybrid_campaign witness
 if [[ "$SMOKE" == 1 ]]; then HYBRID_SHAPES="9:9"; hybrid_campaign counts; fi
-
-printf '\n[7/7] SHA-256 layout parameter sweep\n'
-logged "$RUN_DIR/sha256-layout.log" env ${LAYOUT_ENV[@]+"${LAYOUT_ENV[@]}"} \
-  RAYON_NUM_THREADS=10 BITZ_SHA_RESULT_PATH="$RUN_DIR/sha256-layout.csv" \
-  cargo +1.98.1 bench --locked --bench sha256_product_layout --features unchecked,span-metrics,bench-internals
 
 if [[ "$DRY_RUN" == 1 ]]; then
   printf '\nDry-run complete; no campaigns were executed.\n'
