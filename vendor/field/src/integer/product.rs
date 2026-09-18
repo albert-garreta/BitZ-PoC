@@ -91,6 +91,38 @@ pub struct ZAccumulator<const A: usize, const B: usize>(pub(crate) UintAccumulat
 pub struct IntegerOps;
 
 impl IntegerOps {
+    /// Full-width square, computing each off-diagonal limb product once.
+    /// All loop bounds depend only on the declared width.
+    pub fn square_wide<const L: usize>(&self, value: &Uint<L>) -> UintProduct<L, L> {
+        let mut out = UintProduct::ZERO;
+        for i in 0..L {
+            let mut carry = 0u128;
+            for j in i + 1..L {
+                let sum = value.0[i] as u128 * value.0[j] as u128 + out.word(i + j) as u128 + carry;
+                out.set_word(i + j, sum as u64);
+                carry = sum >> 64;
+            }
+            out.set_word(i + L, carry as u64);
+        }
+        // 2 * sum(i<j, a_i*a_j*B^(i+j)) fits 2L limbs.
+        let mut carry = 0;
+        for i in 0..2 * L {
+            let word = out.word(i);
+            out.set_word(i, (word << 1) | carry);
+            carry = word >> 63;
+        }
+        let mut carry = 0u128;
+        for i in 0..L {
+            let square = value.0[i] as u128 * value.0[i] as u128;
+            let lo = out.word(2 * i) as u128 + (square as u64) as u128 + carry;
+            out.set_word(2 * i, lo as u64);
+            let hi = out.word(2 * i + 1) as u128 + (square >> 64) + (lo >> 64);
+            out.set_word(2 * i + 1, hi as u64);
+            carry = hi >> 64;
+        }
+        out
+    }
+
     /// Signed product modulo 2^(64*OUT), with a schedule fixed by the widths.
     /// This is an exact signed product when the caller's public bounds place
     /// the result in `Z<OUT>`; otherwise it has wrapping semantics.

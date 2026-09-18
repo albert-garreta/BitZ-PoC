@@ -32,7 +32,7 @@
 //! prime divisors in the `[2^112, 2^113)` reduction interval.
 
 use field::RingOps;
-use field::{CanonicalCodec, CtMask, CtOrd, CtSelect, IntegerOps, PreparedDivisor, Uint, WideMul};
+use field::{CanonicalCodec, CtOrd, IntegerOps, PreparedDivisor, Uint, WideMul};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -86,6 +86,9 @@ pub fn step50_integer_lift(
 const LIFT_COLUMNS: usize = 4;
 const LIFT_ROWS: usize = 4096;
 
+#[path = "lift_digits.rs"]
+mod lift_digits;
+
 /// Each digit sum is at most 4096*(2^32-1). Carry propagation therefore
 /// fits in u64; only completed chunks are merged into the exact Uint<3>.
 fn lift_column_tile(columns: &[Vec<u64>], weights: &[[u32; 4]], col_weights: &[u128]) -> Uint<5> {
@@ -98,15 +101,7 @@ fn lift_column_tile(columns: &[Vec<u64>], weights: &[[u32; 4]], col_weights: &[u
                 // The final tile's length is public.
                 columns.get(column).map_or(0, |words| words[index])
             });
-            for (bit, weight) in word_weights.iter().enumerate() {
-                for (sum, &word) in digits.iter_mut().zip(&words) {
-                    // Preserve the mask through LLVM's branch reconstruction.
-                    let mask = u64::ct_select(&0, &u64::MAX, CtMask::from_lsb(word >> bit));
-                    for (acc, &digit) in sum.iter_mut().zip(weight) {
-                        *acc += u64::from(digit) & mask;
-                    }
-                }
-            }
+            lift_digits::accumulate_word(&mut digits, words, word_weights);
         }
         for (sum, digit) in sums.iter_mut().zip(digits) {
             let a = digit[0];

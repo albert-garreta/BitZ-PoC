@@ -400,6 +400,15 @@ impl TraceWriter {
         } else {
             "configured multi-worker Rayon pool; no affinity pinning"
         };
+        let schedule_policy = bitz::merged_forest::schedule::SchedulePolicy::from_env()
+            .expect("valid F2_FOREST_SCHEDULE");
+        let forest_schedule = bitz::merged_forest::schedule::resolve_schedule(
+            schedule_policy,
+            prepared.params(),
+            bitz::merged_forest::schedule::ForestPath::Single,
+            self.threads,
+        )
+        .expect("single forest schedule");
         let run = json!({
             "schema": "zkperf.trace/v1",
             "record": "run",
@@ -500,7 +509,8 @@ impl TraceWriter {
                 "bitz_virt_id_fast": env_setting("BITZ_VIRT_ID_FAST", "default:on"),
                 "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
                 "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
-                "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
+                "f2_forest_schedule_requested": schedule_policy.name(),
+                "f2_forest_schedule": forest_schedule.name(),
                 "arithmetic": "delayed-barrett",
             },
         });

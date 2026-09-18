@@ -110,8 +110,12 @@ fn div_product<const L: usize>(
     b: &Uint<L>,
     divisor: &PreparedDivisor<L>,
 ) -> (Uint<32>, Uint<L>) {
-    let product = IntegerOps.mul_wide(a, b);
-    let (q, r) = divisor.div_rem_product_ct(&product);
+    let result = divisor.mul_div_rem_reduced_ct(a, b);
+    debug_assert!(
+        result.validity().declassify(),
+        "generator operands are reduced"
+    );
+    let (q, r) = *result.value();
     // Both operands are reduced: their product divided by the modulus is
     // below that modulus, hence below 2^(64 L). No secret overflow branch.
     let q = q.checked_resize_ct::<32>();
@@ -123,6 +127,21 @@ fn div_value<const L: usize>(
     divisor: &PreparedDivisor<L>,
 ) -> (Uint<32>, Uint<L>) {
     divisor.div_rem_ct(value)
+}
+
+fn div_square<const L: usize>(
+    value: &Uint<L>,
+    divisor: &PreparedDivisor<L>,
+) -> (Uint<32>, Uint<L>) {
+    let result = divisor.square_div_rem_reduced_ct(value);
+    debug_assert!(
+        result.validity().declassify(),
+        "generator operand is reduced"
+    );
+    let (q, r) = *result.value();
+    let q = q.checked_resize_ct::<32>();
+    debug_assert!(q.validity().declassify());
+    (*q.value(), r)
 }
 
 use thiserror::Error;
@@ -378,6 +397,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
     base: &Uint<L>,
     exponent: &Uint<E>,
     n: &Uint<L>,
+    divisor: &PreparedDivisor<L>,
     ell_bits: usize,
     row_base: usize,
     col_base: usize,
@@ -391,7 +411,6 @@ fn build_exp_circuit<const L: usize, const E: usize>(
 ) -> usize {
     let one = Uint::<1>::ONE;
     let g_minus_1 = base.wrapping_sub(&Uint::ONE);
-    let divisor = PreparedDivisor::new(*n).expect("public nonzero chain modulus");
 
     let bit_col = |j: usize| col_base + j;
     let exp_col = col_base + ell_bits;
@@ -419,7 +438,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
         };
 
         // Square row.
-        let (sq_q, sq_val) = div_product(&acc_val, &acc_val, &divisor);
+        let (sq_q, sq_val) = div_square(&acc_val, divisor);
         w[sq_col(j)] = sq_val.zero_extend();
         quos[row] = sq_q;
 
@@ -432,7 +451,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
 
         // Conditional-multiply row.
         let b_val = Uint::ct_select(&Uint::ONE, base, CtMask::from_lsb(bits[j] as u64));
-        let (cm_q, acc_next) = div_product(&sq_val, &b_val, &divisor);
+        let (cm_q, acc_next) = div_product(&sq_val, &b_val, divisor);
         w[acc_col(j)] = acc_next.zero_extend();
         quos[row] = cm_q;
 
@@ -502,6 +521,9 @@ fn build_generic_rows<const L: usize>(
     w: &mut [Uint<32>],
     quos: &mut [Uint<32>],
 ) {
+    if count == 0 {
+        return;
+    }
     let divisor = PreparedDivisor::new(*modulus).expect("public row modulus");
     for r in start..start + count {
         let av = modulus.wrapping_sub(&Uint::from_u64(r as u64 % 17 + 1));
@@ -527,9 +549,16 @@ impl MultiswapCircuit {
         let n = modulus_n();
         let ell = modulus_ell();
         let p_hash = modulus_p_hash();
-        let n_divisor = PreparedDivisor::new(n).expect("public RSA modulus");
-        let hash_divisor = PreparedDivisor::new(p_hash).expect("public hash modulus");
-        let ell_divisor = PreparedDivisor::new(ell).expect("public exponent modulus");
+        let (n_divisor, hash_divisor, ell_divisor) = {
+            let _scope =
+                tracing::info_span!("multiswap:prepare_divisors", tag_witness_generation = true)
+                    .entered();
+            (
+                PreparedDivisor::new(n).expect("public RSA modulus"),
+                PreparedDivisor::new(p_hash).expect("public hash modulus"),
+                PreparedDivisor::new(ell).expect("public exponent modulus"),
+            )
+        };
         let bases = exp_bases();
         let exponents = exp_exponents(dims.ell_bits);
 
@@ -545,11 +574,14 @@ impl MultiswapCircuit {
         let mut quos = vec![Uint::<32>::ZERO; num_cons];
         let one = Uint::<1>::ONE;
 
+        let rsa_scope =
+            tracing::info_span!("multiswap:rsa_chains", tag_witness_generation = true).entered();
         for i in 0..dims.n_group_exps {
             build_exp_circuit(
                 &bases[i],
                 &exponents[i],
                 &n,
+                &n_divisor,
                 dims.ell_bits,
                 i * dims.rows_per_exp(),
                 i * dims.cols_per_exp(),
@@ -562,6 +594,7 @@ impl MultiswapCircuit {
                 &mut quos,
             );
         }
+        drop(rsa_scope);
 
         let mut row = dims.n_group_exps * dims.rows_per_exp();
         let mut col = dims.n_group_exps * dims.cols_per_exp();
@@ -587,10 +620,12 @@ impl MultiswapCircuit {
         let hp_inputs = hp_chain_inputs(dims.hp_exp_bits);
         let mut hp_out_cols = [0usize; 4];
         for i in 0..dims.hp_exps {
+            let divisor = PreparedDivisor::new(hp_ms[i]).expect("public chain modulus");
             build_exp_circuit(
                 &hp_inputs[i].0,
                 &hp_inputs[i].1,
                 &hp_ms[i],
+                &divisor,
                 dims.hp_exp_bits,
                 row,
                 col,
@@ -626,8 +661,8 @@ impl MultiswapCircuit {
         let mut x_col = seed_col;
         for _ in 0..(dims.poseidon_rows / 3) {
             let x = read::<4>(&w[x_col]);
-            let (q2, x2) = div_product(&x, &x, &hash_divisor);
-            let (q4, x4) = div_product(&x2, &x2, &hash_divisor);
+            let (q2, x2) = div_square(&x, &hash_divisor);
+            let (q4, x4) = div_square(&x2, &hash_divisor);
             let (q5, x5) = div_product(&x4, &x, &hash_divisor);
             w[col] = x2.zero_extend();
             a_entries.push((row, x_col, one.clone()));
