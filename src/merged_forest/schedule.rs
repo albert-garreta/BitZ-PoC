@@ -27,6 +27,13 @@ impl std::str::FromStr for SchedulePolicy {
     }
 }
 impl SchedulePolicy {
+    /// The shared environment policy used by the prover and benchmark metadata.
+    pub fn from_env() -> Result<Self, String> {
+        std::env::var("F2_FOREST_SCHEDULE")
+            .unwrap_or_else(|_| "auto".into())
+            .parse()
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -51,8 +58,8 @@ pub enum UnsupportedSchedule {
     ShallowL8 { depth: usize },
 }
 
-/// A single shared policy for all forest entry points. The automatic fallback
-/// is confirmed by the complete-prover comparisons in docs/gkr-schedule-validation.md.
+/// A single shared policy for all forest entry points. Measurement coverage and
+/// the full-product correction are documented in docs/gkr-full-product-regression.md.
 pub fn resolve_schedule(
     policy: SchedulePolicy,
     layout: &IntegerMatrixLayout,
@@ -61,22 +68,19 @@ pub fn resolve_schedule(
 ) -> Result<ForestSchedule, UnsupportedSchedule> {
     let depth = layout.row_vars + layout.word_bits.ilog2() as usize;
     let size = depth + layout.col_vars;
+    if policy == SchedulePolicy::Auto
+        && path == ForestPath::Single
+        && cfg!(all(target_arch = "aarch64", target_os = "macos"))
+    {
+        if let Some(schedule) = apple_single_schedule(layout, depth, threads) {
+            return Ok(schedule);
+        }
+    }
     match (policy, path) {
         (SchedulePolicy::L2, ForestPath::Multi) => Err(UnsupportedSchedule::MultiL2),
         (SchedulePolicy::L8, _) if depth < 5 => Err(UnsupportedSchedule::ShallowL8 { depth }),
         (SchedulePolicy::L2, _) => Ok(ForestSchedule::L2),
         (SchedulePolicy::L8, _) => Ok(ForestSchedule::L8),
-        // The AMD-qualified L8 crossover does not hold on Apple Silicon with
-        // one worker at these measured geometries. Keep the faster stored
-        // levels there; explicit requests and other geometries are unchanged.
-        (SchedulePolicy::Auto, ForestPath::Single)
-            if cfg!(all(target_arch = "aarch64", target_os = "macos"))
-                && threads == 1
-                && depth == 13
-                && (12..=14).contains(&layout.col_vars) =>
-        {
-            Ok(ForestSchedule::L2)
-        }
         // Large, sufficiently deep forests benefit from the smaller stored chain.
         // With few workers, tall forests instead benefit from storing more levels.
         (SchedulePolicy::Auto, _)
@@ -90,14 +94,38 @@ pub fn resolve_schedule(
         (SchedulePolicy::Auto | SchedulePolicy::L4, _) => Ok(ForestSchedule::L4),
     }
 }
+
+/// Measured M1 Max crossovers, using only public geometry and worker count.
+/// Retain the existing one-worker cases for wider words; the new cases were
+/// measured with one-bit words. Other worker counts keep the shared fallback.
+fn apple_single_schedule(
+    layout: &IntegerMatrixLayout,
+    depth: usize,
+    threads: usize,
+) -> Option<ForestSchedule> {
+    // Full-product 2^20..=2^22, W=1, ten workers: L8 recomputation outweighs
+    // its memory savings on M1 Max. Keep this exception to measured shapes.
+    if threads == 10
+        && layout.word_bits == 1
+        && matches!((depth, layout.col_vars), (17, 10) | (18, 10 | 11))
+    {
+        return Some(ForestSchedule::L4);
+    }
+    if depth != 13 {
+        return None;
+    }
+    match (threads, layout.word_bits, layout.col_vars) {
+        (1, _, 12..=14) | (1, 1, 15..=16) | (10, 1, 12) => Some(ForestSchedule::L2),
+        (10, 1, 13..=16) => Some(ForestSchedule::L4),
+        _ => None,
+    }
+}
+
 pub(super) fn configured(
     p: &IntegerMatrixLayout,
     path: ForestPath,
 ) -> Result<ForestSchedule, UnsupportedSchedule> {
-    let policy = std::env::var("F2_FOREST_SCHEDULE")
-        .unwrap_or_else(|_| "auto".into())
-        .parse()
-        .expect("valid F2_FOREST_SCHEDULE");
+    let policy = SchedulePolicy::from_env().expect("valid F2_FOREST_SCHEDULE");
     #[cfg(feature = "parallel")]
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
@@ -161,6 +189,7 @@ mod tests {
     use super::*;
     #[test]
     fn automatic_policy_covers_measured_crossovers_and_multi_eligibility() {
+        let apple = cfg!(all(target_arch = "aarch64", target_os = "macos"));
         for (row_vars, col_vars, word_bits, threads, path, expected) in [
             (15, 7, 1, 1, ForestPath::Single, ForestSchedule::L2),
             (12, 7, 8, 1, ForestPath::Single, ForestSchedule::L2),
@@ -170,7 +199,18 @@ mod tests {
             (7, 15, 1, 1, ForestPath::Single, ForestSchedule::L4),
             (12, 15, 1, 10, ForestPath::Single, ForestSchedule::L4),
             (13, 12, 1, 8, ForestPath::Single, ForestSchedule::L8),
-            (13, 14, 1, 10, ForestPath::Single, ForestSchedule::L8),
+            (
+                13,
+                14,
+                1,
+                10,
+                ForestPath::Single,
+                if apple {
+                    ForestSchedule::L4
+                } else {
+                    ForestSchedule::L8
+                },
+            ),
             (15, 7, 1, 1, ForestPath::Multi, ForestSchedule::L4),
         ] {
             let layout = IntegerMatrixLayout {
@@ -191,18 +231,32 @@ mod tests {
     }
 
     #[test]
-    fn apple_single_worker_crossover_is_limited_to_measured_geometry() {
+    fn apple_crossovers_are_limited_to_measured_geometry() {
         let apple = cfg!(all(target_arch = "aarch64", target_os = "macos"));
         for (rows, cols, bits, threads, path, apple_schedule) in [
             (13, 12, 1, 1, ForestPath::Single, ForestSchedule::L2),
             (13, 13, 1, 1, ForestPath::Single, ForestSchedule::L2),
             (13, 14, 1, 1, ForestPath::Single, ForestSchedule::L2),
             (10, 13, 8, 1, ForestPath::Single, ForestSchedule::L2),
-            (13, 15, 1, 1, ForestPath::Single, ForestSchedule::L8),
+            (13, 15, 1, 1, ForestPath::Single, ForestSchedule::L2),
+            (13, 16, 1, 1, ForestPath::Single, ForestSchedule::L2),
+            (13, 12, 1, 10, ForestPath::Single, ForestSchedule::L2),
+            (13, 13, 1, 10, ForestPath::Single, ForestSchedule::L4),
+            (13, 14, 1, 10, ForestPath::Single, ForestSchedule::L4),
+            (13, 15, 1, 10, ForestPath::Single, ForestSchedule::L4),
+            (13, 16, 1, 10, ForestPath::Single, ForestSchedule::L4),
+            (13, 17, 1, 1, ForestPath::Single, ForestSchedule::L8),
+            (13, 17, 1, 10, ForestPath::Single, ForestSchedule::L8),
+            (10, 15, 8, 1, ForestPath::Single, ForestSchedule::L8),
+            (10, 13, 8, 10, ForestPath::Single, ForestSchedule::L8),
             (14, 13, 1, 1, ForestPath::Single, ForestSchedule::L8),
+            (14, 13, 1, 10, ForestPath::Single, ForestSchedule::L8),
             (13, 13, 1, 2, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 4, ForestPath::Single, ForestSchedule::L8),
             (13, 13, 1, 8, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 11, ForestPath::Single, ForestSchedule::L8),
             (13, 13, 1, 1, ForestPath::Multi, ForestSchedule::L8),
+            (13, 13, 1, 10, ForestPath::Multi, ForestSchedule::L8),
         ] {
             let layout = IntegerMatrixLayout {
                 row_vars: rows,
@@ -259,5 +313,50 @@ mod tests {
             Err(UnsupportedSchedule::ShallowL8 { depth: 4 })
         );
         assert!("typo".parse::<SchedulePolicy>().is_err());
+    }
+
+    #[test]
+    fn apple_full_product_exception_preserves_other_shapes_and_overrides() {
+        // Exhaust the neighboring shapes, word widths, worker counts and paths:
+        // the full-product exception must not become a general L8 replacement.
+        for rows in 14..=19 {
+            for cols in 9..=12 {
+                for bits in [1, 8] {
+                    for threads in [1, 4, 8, 10, 11] {
+                        for path in [ForestPath::Single, ForestPath::Multi] {
+                            let layout = IntegerMatrixLayout {
+                                row_vars: rows,
+                                col_vars: cols,
+                                word_bits: bits,
+                            };
+                            let depth = rows + bits.ilog2() as usize;
+                            let measured = cfg!(all(target_arch = "aarch64", target_os = "macos"))
+                                && path == ForestPath::Single
+                                && threads == 10
+                                && bits == 1
+                                && matches!((rows, cols), (17, 10) | (18, 10 | 11));
+                            let expected = if measured {
+                                ForestSchedule::L4
+                            } else if depth + cols >= 25 && threads > 4 {
+                                ForestSchedule::L8
+                            } else if path == ForestPath::Single && threads <= 4 {
+                                ForestSchedule::L2
+                            } else {
+                                ForestSchedule::L4
+                            };
+                            assert_eq!(
+                                resolve_schedule(SchedulePolicy::Auto, &layout, path, threads),
+                                Ok(expected),
+                                "{layout:?}, {path:?}, threads={threads}"
+                            );
+                            assert_eq!(
+                                resolve_schedule(SchedulePolicy::L8, &layout, path, threads),
+                                Ok(ForestSchedule::L8)
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
