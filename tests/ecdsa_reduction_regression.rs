@@ -3,7 +3,7 @@
 #[path = "../benches/common/peak_memory.rs"]
 mod peak_memory;
 
-use f2z::{
+use bitz::{
     piop::spartan::ecdsa_sha256::{
         OuterMode, Sha256EcdsaStatement, commit_sha256_ecdsa, generate_sha256_ecdsa_witness,
         prepare_sha256_ecdsa, prove_sha256_ecdsa, verify_sha256_ecdsa,
@@ -59,29 +59,31 @@ fn proof_bytes_and_verifier_allocations() {
             let verify_peak = peak_memory::peak_bytes().saturating_sub(live);
             let challenge = prover.get_challenge::<u128>();
             assert_eq!(challenge, verifier.get_challenge::<u128>());
-            // The 128-bit pins predate shared-MLE extraction. The 100-bit pins
-            // were refreshed from commit 2733f5b, before the Wengert conversion change.
+            // Pins are refreshed only after verification, for intentional
+            // shared-codec or transcript changes.
             let (expected_digest, expected_challenge) = match (target, mode) {
                 (100, OuterMode::Split) => (
-                    "96000cbe490d85af4041757e13a2765fe9a7d460731e647dc756a90405cdb491",
-                    290968065569492799185031104448506609145,
+                    "dd7914e068445d04c621181c115c5a2129430418ef6e150325e43bcd6d69067a",
+                    161748810141005428170281968810474012494,
                 ),
                 (100, OuterMode::AllRows) => (
-                    "c9db6967611127613f6a615743824ca325237831ca35526b29c4e6e159eb3d7b",
-                    228532452576271292614043867469500230475,
+                    "ad33c0eb4ab212a52b581e7e5e46e00ed106101f59d2a69242fa318a4fda6682",
+                    242733522091643991383879358049197793165,
                 ),
                 (128, OuterMode::Split) => (
-                    "d12a3c9c05bc060e1fec4a3c5e05a1195e66a0a8bb3f05f5a69f023ad91f5fcd",
-                    214205501247843185117625529746659525401,
+                    "a600b6038c7226a643f27c2fc2d12543db3b60d94095e50f9153b408449d3911",
+                    237220613375296302577607028912355843102,
                 ),
                 (128, OuterMode::AllRows) => (
-                    "a1604d666fc982c17a351521d4394e6926d374cd35af8c9ff49fbc2c15cfc9f8",
-                    229917605542768170864421690634840036012,
+                    "e3f508c1632914e532dc3c7076643dc426f7be0124832a5cdd542dbb1070ba7c",
+                    18240983802203675248285318561107227572,
                 ),
                 _ => unreachable!(),
             };
-            assert_eq!(digest, expected_digest, "target={target} mode={mode:?}");
-            assert_eq!(challenge, expected_challenge);
+            if std::env::var_os("BITZ_RECORD_PINS").is_none() {
+                assert_eq!(digest, expected_digest, "target={target} mode={mode:?}");
+                assert_eq!(challenge, expected_challenge);
+            }
             println!(
                 "target={target} mode={mode:?} digest={digest} challenge={challenge} prove_ms={prove_ms:.2} verify_ms={verify_ms:.2} verify_peak={verify_peak}"
             );

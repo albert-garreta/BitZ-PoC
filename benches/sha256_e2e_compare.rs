@@ -37,8 +37,9 @@ use binius_verifier::{
     config::StdChallenger,
     transcript::{ProverTranscript, VerifierTranscript},
 };
-use f2z::binius_ligerito::Prepared as BiniusLigerito;
-use f2z::{
+use bitz::binius_ligerito::Prepared as BiniusLigerito;
+use bitz::{
+    observability::Interval,
     piop::spartan::{
         PreparedSha256CompressionBatch, SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionInput,
         Sha256CompressionStatement, SpartanField, commit_sha256_compression_witness_with_config,
@@ -47,7 +48,6 @@ use f2z::{
         verify_sha256_compressions_with_config,
     },
     transcript::Blake3Transcript,
-    observability::Interval,
 };
 use serde_json::{Value, json};
 
@@ -56,7 +56,7 @@ const DEFAULT_EXPONENTS: &[usize] = &[7, 8, 10, 11, 12, 13, 14, 15, 16];
 const DEFAULT_REPS: usize = 21;
 const DEFAULT_PILOT_REPS: usize = 5;
 const BINIUS_SECURITY_BITS: usize = 100;
-const F2Z_COMMITMENT_BYTES: usize = 32;
+const BITZ_COMMITMENT_BYTES: usize = 32;
 const SHA256_IV: [u32; 8] = [
     0x6a09_e667,
     0xbb67_ae85,
@@ -70,11 +70,11 @@ const SHA256_IV: [u32; 8] = [
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 enum Backend {
-    F2z,
+    Bitz,
     Plonky3Whir,
     #[value(name = "binius64")]
     Binius,
-    /// Binius64's circuit and PIOP with the F2Z opener (rate 1/2, Johnson
+    /// Binius64's circuit and PIOP with the BitZ opener (rate 1/2, Johnson
     /// regime, grinding, Round 0; whole-protocol union bound at 100 bits).
     #[value(name = "binius64-ligerito")]
     BiniusLigerito,
@@ -82,7 +82,7 @@ enum Backend {
 }
 
 const ALL_BACKENDS: [Backend; 5] = [
-    Backend::F2z,
+    Backend::Bitz,
     Backend::Plonky3Whir,
     Backend::Binius,
     Backend::BiniusLigerito,
@@ -92,7 +92,7 @@ const ALL_BACKENDS: [Backend; 5] = [
 impl Backend {
     const fn name(self) -> &'static str {
         match self {
-            Self::F2z => "F2Z",
+            Self::Bitz => "BitZ",
             Self::Plonky3Whir => "Plonky3-WHIR",
             Self::Binius => "Binius64",
             Self::BiniusLigerito => "Binius64-Ligerito",
@@ -102,7 +102,7 @@ impl Backend {
 
     const fn slug(self) -> &'static str {
         match self {
-            Self::F2z => "f2z",
+            Self::Bitz => "bitz",
             Self::Plonky3Whir => "plonky3-whir",
             Self::Binius => "binius64",
             Self::BiniusLigerito => "binius64-ligerito",
@@ -297,7 +297,7 @@ impl BackendAggregate {
     }
 }
 
-struct F2zContext {
+struct BitzContext {
     prepared: PreparedSha256CompressionBatch,
     statements: Vec<Sha256CompressionStatement>,
     inputs: Vec<Sha256CompressionInput>,
@@ -307,15 +307,15 @@ struct F2zContext {
     inner_prefix_vars: usize,
 }
 
-impl F2zContext {
+impl BitzContext {
     fn setup(exponent: usize, corpus: &Corpus, inner_prefix_vars: usize) -> Self {
-        let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let started = tracing::info_span!("sha256_e2e_compare:started").entered();
         let prepared = prepare_sha256_compression_batch(exponent)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
             .expect("valid SHA batch");
-        let (pc, vc) = sha256_compression_configs(&prepared).expect("valid F2Z PCS config");
-        let setup_ms = { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare:started").expect("query completed operation") }.as_secs_f64() * 1e3;
+        let (pc, vc) = sha256_compression_configs(&prepared).expect("valid BitZ PCS config");
+        let setup_ms = { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare:started").expect("query completed operation") }.as_secs_f64() * 1e3;
         Self {
             prepared,
             statements: corpus.statements(),
@@ -328,14 +328,14 @@ impl F2zContext {
     }
 
     fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
-        let recording = common::perfetto::Recording::start(Vec::new()).expect("start F2Z trial");
+        let recording = common::perfetto::Recording::start(Vec::new()).expect("start BitZ trial");
         let root = tracing::info_span!("sha256-compare:verified_trial").entered();
         let witness_to_proof = tracing::info_span!("sha256-compare:witness_to_proof").entered();
 
         let witness = {
             let _scope = tracing::info_span!("sha256-compare:witness_generation").entered();
             generate_sha256_compression_witnesses(&self.prepared, &self.inputs)
-                .expect("F2Z witness generation succeeds")
+                .expect("BitZ witness generation succeeds")
         };
         assert_eq!(
             witness.outputs(),
@@ -343,7 +343,7 @@ impl F2zContext {
                 .iter()
                 .map(|statement| statement.claimed_output)
                 .collect::<Vec<_>>(),
-            "F2Z and reference SHA outputs differ"
+            "BitZ and reference SHA outputs differ"
         );
 
         let total = tracing::info_span!("sha256-compare:total_prover").entered();
@@ -351,7 +351,7 @@ impl F2zContext {
         let hint = {
             let _scope = tracing::info_span!("sha256-compare:commit").entered();
             commit_sha256_compression_witness_with_config(&self.prepared, &witness, &self.pc)
-                .expect("F2Z commitment succeeds")
+                .expect("BitZ commitment succeeds")
         };
         let mut prover_transcript = Blake3Transcript::new();
         let proof = {
@@ -365,7 +365,7 @@ impl F2zContext {
                 self.inner_prefix_vars,
                 &self.pc,
             )
-            .expect("F2Z proof succeeds")
+            .expect("BitZ proof succeeds")
         };
         drop(total);
         drop(witness_to_proof);
@@ -381,10 +381,10 @@ impl F2zContext {
                 &proof,
                 &self.vc,
             )
-            .expect("F2Z proof verifies");
+            .expect("BitZ proof verifies");
         }
         drop(root);
-        let raw = recording.intervals().expect("query F2Z trial");
+        let raw = recording.intervals().expect("query BitZ trial");
 
         let piop_bytes = 3
             * proof.inner().round_polynomials.len()
@@ -392,12 +392,12 @@ impl F2zContext {
                 .inner()
                 .round_polynomials
                 .first()
-                .map_or(0, |round| round[0].canonical_element_encoding().len())
+                .map_or(0, |_| field::Fp::<2>::canonical_encoding_width())
             + 8 * (proof.inner_nonces().len() + 2);
-        let proof_bytes = F2Z_COMMITMENT_BYTES + piop_bytes + proof.f2z().to_bytes().len();
+        let proof_bytes = BITZ_COMMITMENT_BYTES + piop_bytes + proof.bitz().to_bytes().len();
         black_box((&proof, &hint));
 
-        let spans = f2z_semantic_spans(&raw);
+        let spans = bitz_semantic_spans(&raw);
         (TrialMetrics::from_spans(&spans, proof_bytes), spans)
     }
 }
@@ -429,7 +429,7 @@ impl BiniusContext {
     fn setup(corpus: &Corpus, log_inv_rate: usize) -> Self {
         let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
 
-        let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let setup_started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let setup_started = tracing::info_span!("sha256_e2e_compare:setup_started").entered();
         let verifier = BiniusVerifier::<StdHashSuite>::setup_with_security_bits(
             circuit.constraint_system().clone(),
@@ -445,7 +445,7 @@ impl BiniusContext {
         );
         let prover = BiniusProver::setup(verifier.clone()).expect("Binius prover setup succeeds");
         drop(setup_started);
-        let setup_ms = f2z::observability::duration(&setup_started_recording.intervals().expect("setup capture"), "sha256_e2e_compare:setup_started").expect("setup duration").as_secs_f64() * 1e3;
+        let setup_ms = bitz::observability::duration(&setup_started_recording.intervals().expect("setup capture"), "sha256_e2e_compare:setup_started").expect("setup duration").as_secs_f64() * 1e3;
         Self {
             circuit,
             wires,
@@ -541,7 +541,7 @@ impl BiniusContext {
 /// compressions, public blocks and outputs.
 fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
     assert!(corpus.cases.len().is_multiple_of(2));
-    let build_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let build_started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let build_started = tracing::info_span!("sha256_e2e_compare:build_started").entered();
     let builder = CircuitBuilder::new();
     let pairs = (0..corpus.cases.len() / 2)
@@ -565,14 +565,14 @@ fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
         .collect();
     let circuit = builder.build();
     drop(build_started);
-    let circuit_build_ms = f2z::observability::duration(&build_started_recording.intervals().expect("circuit capture"), "sha256_e2e_compare:build_started").expect("circuit duration").as_secs_f64() * 1e3;
+    let circuit_build_ms = bitz::observability::duration(&build_started_recording.intervals().expect("circuit capture"), "sha256_e2e_compare:build_started").expect("circuit duration").as_secs_f64() * 1e3;
     (circuit, BiniusWires { pairs }, circuit_build_ms)
 }
 
 /// Binius64's SHA-256 circuit and PIOP prefix, with the witness committed
-/// and opened by the F2Z opener: rate 1/2, Johnson-regime Ligerito with fold
+/// and opened by the BitZ opener: rate 1/2, Johnson-regime Ligerito with fold
 /// and query grinding and Round 0, gated at 100 bits by a whole-protocol
-/// union bound (the yardstick of the F2Z row).
+/// union bound (the yardstick of the BitZ row).
 struct BiniusLigeritoContext {
     circuit: Circuit,
     wires: BiniusWires,
@@ -585,11 +585,12 @@ struct BiniusLigeritoContext {
 impl BiniusLigeritoContext {
     fn setup(corpus: &Corpus) -> Self {
         let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
-        let (prepared, setup_started) = f2z::observability::measure(
-            tracing::info_span!("sha256_e2e_compare:prepared"),
-            || BiniusLigerito::new(circuit.constraint_system())
-            .expect("binius64-ligerito setup reaches the 100-bit gate"),
-        ).expect("measure completed operation");
+        let (prepared, setup_started) =
+            bitz::observability::measure(tracing::info_span!("sha256_e2e_compare:prepared"), || {
+                BiniusLigerito::new(circuit.constraint_system())
+                    .expect("binius64-ligerito setup reaches the 100-bit gate")
+            })
+            .expect("measure completed operation");
         let setup_ms = setup_started.as_secs_f64() * 1e3;
         Self {
             circuit,
@@ -779,7 +780,7 @@ fn binius_ligerito_semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
             "binius-ligerito-commit",
             Some("binius-ligerito-total-prover"),
             "binius-ligerito.commit",
-            "Commit the packed witness (F2Z opener)",
+            "Commit the packed witness (BitZ opener)",
             "Commit",
             "commit",
             vec!["commit", "pcs", "proving"],
@@ -849,7 +850,7 @@ fn pack_lanes(low: u32, high: u32) -> u64 {
     u64::from(low) | (u64::from(high) << 32)
 }
 
-fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
+fn bitz_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
     let by_order = raw
         .iter()
         .map(|span| (span.id, span))
@@ -866,7 +867,7 @@ fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
         }
         false
     };
-    let id = |order| format!("f2z-{order}");
+    let id = |order| format!("bitz-{order}");
     let mut spans = raw
         .iter()
         .map(|span| {
@@ -953,7 +954,7 @@ fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
                     "Verify detail",
                     vec![],
                 ),
-                _ if label_under(span, "sha256:f2z_prove")
+                _ if label_under(span, "sha256:bitz_prove")
                     || label_under(span, "sha256:opening_prepare_prover") =>
                 {
                     (
@@ -961,7 +962,7 @@ fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
                         vec!["opening-proof", "pcs", "proving"],
                         None,
                         false,
-                        "F2Z PCS",
+                        "BitZ PCS",
                         vec![r"\widetilde f(r)=v"],
                     )
                 }
@@ -1000,20 +1001,20 @@ fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
     let proof = raw
         .iter()
         .find(|span| span.label() == "sha256-compare:proof")
-        .expect("F2Z proof span exists");
+        .expect("BitZ proof span exists");
     let opening_start = raw
         .iter()
         .filter(|span| {
-            span.label().contains("opening_prepare_prover") || span.label() == "sha256:f2z_prove"
+            span.label().contains("opening_prepare_prover") || span.label() == "sha256:bitz_prove"
         })
         .map(|span| span.start_ns)
         .min()
-        .expect("F2Z opening boundary exists");
+        .expect("BitZ opening boundary exists");
     spans.push(SemanticSpan {
-        id: "f2z-piop-union".to_owned(),
+        id: "bitz-piop-union".to_owned(),
         parent: Some(id(proof.id)),
-        operation: "f2z.piop".to_owned(),
-        name: "F2Z Spartan PIOP".to_owned(),
+        operation: "bitz.piop".to_owned(),
+        name: "BitZ Spartan PIOP".to_owned(),
         short_name: "PIOP".to_owned(),
         primary_phase: "constraint-proof",
         phase_tags: vec!["constraint-proof", "proving"],
@@ -1025,11 +1026,11 @@ fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
         math_latex: vec![r"\sum_{x\in\{0,1\}^m}\operatorname{eq}(r,x)(A z)(x)(B z)(x)=(C z)(x)"],
     });
     spans.push(SemanticSpan {
-        id: "f2z-opening-union".to_owned(),
+        id: "bitz-opening-union".to_owned(),
         parent: Some(id(proof.id)),
-        operation: "f2z.pcs-opening".to_owned(),
-        name: "F2Z PCS opening".to_owned(),
-        short_name: "F2Z opening".to_owned(),
+        operation: "bitz.pcs-opening".to_owned(),
+        name: "BitZ PCS opening".to_owned(),
+        short_name: "BitZ opening".to_owned(),
         primary_phase: "opening-proof",
         phase_tags: vec!["opening-proof", "pcs", "proving"],
         start_ns: opening_start,
@@ -1039,7 +1040,7 @@ fn f2z_semantic_spans(raw: &[Interval]) -> Vec<SemanticSpan> {
         primary_sequence: true,
         math_latex: vec![
             r"\widetilde f(r)=v",
-            r"\operatorname{Open}_{\mathrm{F2Z/Ligerito}}(C_f,r,v)",
+            r"\operatorname{Open}_{\mathrm{BitZ/Ligerito}}(C_f,r,v)",
         ],
     });
     spans
@@ -1316,11 +1317,11 @@ fn binius_semantic_spans(raw: &[CapturedSpan]) -> Vec<SemanticSpan> {
 struct TraceWriter {
     output: JsonlWriter<BufWriter<File>>,
     path: PathBuf,
-    f2z_git: String,
+    bitz_git: String,
     binius_git: String,
     plonky3_git: String,
     limber_git: String,
-    f2z_dirty: bool,
+    bitz_dirty: bool,
     environment: Value,
     threads: usize,
     campaign_id: String,
@@ -1352,11 +1353,11 @@ impl TraceWriter {
         Self {
             output,
             path,
-            f2z_git: command_output("git", &["rev-parse", "--short", "HEAD"], "unknown"),
+            bitz_git: command_output("git", &["rev-parse", "--short", "HEAD"], "unknown"),
             binius_git: common::locked_git_revision("binius-verifier").to_owned(),
             plonky3_git: common::locked_git_revision("p3-whir").to_owned(),
             limber_git: common::locked_git_revision("limber").to_owned(),
-            f2z_dirty: git_dirty("."),
+            bitz_dirty: git_dirty("."),
             environment: common::environment::metadata(threads),
             threads,
             campaign_id: format!(
@@ -1387,13 +1388,13 @@ impl TraceWriter {
             metadata.trial.slug()
         );
         let git_rev = match metadata.backend {
-            Backend::F2z => &self.f2z_git,
+            Backend::Bitz => &self.bitz_git,
             Backend::Plonky3Whir => &self.plonky3_git,
             Backend::Binius | Backend::BiniusLigerito => &self.binius_git,
             Backend::Limber => &self.limber_git,
         };
         let git_dirty = match metadata.backend {
-            Backend::F2z => self.f2z_dirty,
+            Backend::Bitz => self.bitz_dirty,
             // External backends are built from the locked Git sources.
             _ => false,
         };
@@ -1432,7 +1433,7 @@ impl TraceWriter {
                     "input_state": "standard SHA-256 IV (fixed)",
                 },
                 "security": match metadata.backend {
-                    Backend::F2z => metadata.security.clone().expect("resolved F2Z Ligerito policy"),
+                    Backend::Bitz => metadata.security.clone().expect("resolved BitZ Ligerito policy"),
                     Backend::Plonky3Whir => metadata.security.clone().expect("WHIR security report"),
                     Backend::Binius => json!({
                         "profile": "100-bit FRI query-phase target",
@@ -1442,7 +1443,7 @@ impl TraceWriter {
                         "claim": "FRI query phase only; not a complete protocol union bound",
                     }),
                     Backend::BiniusLigerito => json!({
-                        "profile": "F2Z opener: Johnson-regime Ligerito with fold/query grinding and Round 0",
+                        "profile": "BitZ opener: Johnson-regime Ligerito with fold/query grinding and Round 0",
                         "target_bits": 100,
                         "level0_query_count": metadata.query_count,
                         "log_inv_rate": metadata.log_inv_rate,
@@ -1572,7 +1573,7 @@ fn run_binius_ligerito_trial(
                 corpus: &context.corpus,
                 setup_ms: context.setup_ms,
                 circuit_build_ms: Some(context.circuit_build_ms),
-                log_inv_rate: Some(f2z::binary_pcs::LOG_INV_RATE),
+                log_inv_rate: Some(bitz::binary_pcs::LOG_INV_RATE),
                 query_count: Some(context.prepared.opener(0).level0_queries()),
                 config_label: &config_label,
                 security: None,
@@ -1583,8 +1584,8 @@ fn run_binius_ligerito_trial(
     metrics
 }
 
-fn run_f2z_trial(
-    context: &F2zContext,
+fn run_bitz_trial(
+    context: &BitzContext,
     corpus: &Corpus,
     exponent: usize,
     trial: Trial,
@@ -1595,7 +1596,7 @@ fn run_f2z_trial(
         let config_label = format!("lambda100-prefix{}", context.inner_prefix_vars);
         trace.write_run(
             RunMetadata {
-                backend: Backend::F2z,
+                backend: Backend::Bitz,
                 exponent,
                 trial,
                 corpus,
@@ -1696,12 +1697,12 @@ fn choose_binius_rate(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
     selected
 }
 
-fn choose_f2z_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
-    println!("\nF2Z inner-prefix pilot at 2^{exponent} (Lambda100):");
+fn choose_bitz_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
+    println!("\nBitZ inner-prefix pilot at 2^{exponent} (Lambda100):");
     let mut candidates = Vec::new();
     for prefix in 0..=4 {
-        let context = F2zContext::setup(exponent, corpus, prefix);
-        black_box(run_f2z_trial(
+        let context = BitzContext::setup(exponent, corpus, prefix);
+        black_box(run_bitz_trial(
             &context,
             corpus,
             exponent,
@@ -1710,7 +1711,7 @@ fn choose_f2z_prefix(corpus: &Corpus, exponent: usize, reps: usize) -> usize {
         ));
         let samples = (0..reps)
             .map(|sample| {
-                run_f2z_trial(&context, corpus, exponent, Trial::Pilot(sample), None)
+                run_bitz_trial(&context, corpus, exponent, Trial::Pilot(sample), None)
                     .total_prover_ms
             })
             .collect::<Vec<_>>();
@@ -1728,9 +1729,7 @@ fn choose_plonky3_params(
     overrides: &Plonky3Env,
 ) -> Result<(plonky3_backend::Params, whir_tuning::TuningReport), String> {
     let explicit =
-        whir_tuning::replay()?.or_else(|| {
-            overrides.is_explicit().then(|| overrides.params())
-        });
+        whir_tuning::replay()?.or_else(|| overrides.is_explicit().then(|| overrides.params()));
     whir_tuning::tune(
         &[4, 5],
         explicit,
@@ -1820,35 +1819,35 @@ fn preflight_backend(
     let status = std::env::current_exe()
         .and_then(|executable| {
             Command::new(executable)
-                .env("F2Z_SHA_COMPARE_PREFLIGHT_CHILD", backend.slug())
-                .env("F2Z_SHA_COMPARE_PREFLIGHT_EXPONENT", exponent.to_string())
+                .env("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", backend.slug())
+                .env("BITZ_SHA_COMPARE_PREFLIGHT_EXPONENT", exponent.to_string())
                 .env(
-                    "F2Z_SHA_COMPARE_F2Z_PREFIX",
-                    selected.f2z_prefix.to_string(),
+                    "BITZ_SHA_COMPARE_BITZ_PREFIX",
+                    selected.bitz_prefix.to_string(),
                 )
                 .env(
-                    "F2Z_SHA_COMPARE_LOG_INV_RATE",
+                    "BITZ_SHA_COMPARE_LOG_INV_RATE",
                     selected.binius_rate.to_string(),
                 )
                 .env(
-                    "F2Z_SHA_COMPARE_P3_EXTENSION_DEGREE",
+                    "BITZ_SHA_COMPARE_P3_EXTENSION_DEGREE",
                     selected.plonky3.extension_degree.to_string(),
                 )
                 .env(
-                    "F2Z_SHA_COMPARE_P3_FOLDING",
+                    "BITZ_SHA_COMPARE_P3_FOLDING",
                     selected.plonky3.folding.to_string(),
                 )
                 .env(
-                    "F2Z_SHA_COMPARE_P3_LOG_INV_RATE",
+                    "BITZ_SHA_COMPARE_P3_LOG_INV_RATE",
                     selected.plonky3.starting_log_inv_rate.to_string(),
                 )
                 .env(
-                    "F2Z_SHA_COMPARE_P3_MAX_POW_BITS",
+                    "BITZ_SHA_COMPARE_P3_MAX_POW_BITS",
                     selected.plonky3.max_pow_bits.to_string(),
                 )
-                .env("F2Z_SHA_COMPARE_LIMBER_ENGINE", "brakedown")
-                .env("F2Z_SHA_COMPARE_LIMBER_K", selected.limber.k.to_string())
-                .env("F2Z_SHA_COMPARE_SEED", seed.to_string())
+                .env("BITZ_SHA_COMPARE_LIMBER_ENGINE", "brakedown")
+                .env("BITZ_SHA_COMPARE_LIMBER_K", selected.limber.k.to_string())
+                .env("BITZ_SHA_COMPARE_SEED", seed.to_string())
                 .status()
         })
         .expect("launch isolated preflight child");
@@ -1862,14 +1861,14 @@ fn preflight_backend(
 #[derive(Clone, Copy)]
 
 struct SelectedConfigs {
-    f2z_prefix: usize,
+    bitz_prefix: usize,
     binius_rate: usize,
     plonky3: plonky3_backend::Params,
     limber: integer_limber_backend::Params,
 }
 
 struct SizeContexts {
-    f2z: Option<F2zContext>,
+    bitz: Option<BitzContext>,
     plonky3: Option<plonky3_backend::Context>,
     binius: Option<BiniusContext>,
     binius_ligerito: Option<BiniusLigeritoContext>,
@@ -1913,8 +1912,8 @@ fn run_native_trial(
     )
     .entered();
     let metrics = match backend {
-        Backend::F2z => run_f2z_trial(
-            contexts.f2z.as_ref().expect("F2Z context"),
+        Backend::Bitz => run_bitz_trial(
+            contexts.bitz.as_ref().expect("BitZ context"),
             corpus,
             exponent,
             trial,
@@ -2014,8 +2013,8 @@ fn run_campaign(
         };
         let selected = &selected;
         let contexts = SizeContexts {
-            f2z: enabled(Backend::F2z)
-                .then(|| F2zContext::setup(exponent, &corpus, selected.f2z_prefix)),
+            bitz: enabled(Backend::Bitz)
+                .then(|| BitzContext::setup(exponent, &corpus, selected.bitz_prefix)),
             plonky3,
             binius: enabled(Backend::Binius)
                 .then(|| BiniusContext::setup(&corpus, selected.binius_rate)),
@@ -2068,9 +2067,9 @@ fn run_campaign(
         }
         for backend in active {
             let (setup_ms, config) = match backend {
-                Backend::F2z => (
-                    contexts.f2z.as_ref().unwrap().setup_ms,
-                    format!("lambda100-prefix{}", selected.f2z_prefix),
+                Backend::Bitz => (
+                    contexts.bitz.as_ref().unwrap().setup_ms,
+                    format!("lambda100-prefix{}", selected.bitz_prefix),
                 ),
                 Backend::Plonky3Whir => (
                     contexts.plonky3.as_ref().unwrap().setup_ms(),
@@ -2146,7 +2145,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
     }
 
     println!(
-        "\nCombined medians (F2Z / Plonky3-WHIR / Binius64 / Binius64-Ligerito / Limber-Brakedown):"
+        "\nCombined medians (BitZ / Plonky3-WHIR / Binius64 / Binius64-Ligerito / Limber-Brakedown):"
     );
     println!(
         "| N | witness ms | commit ms | PIOP ms | IOP ms | online ms | witness->proof ms | throughput /s | verifier ms | proof bytes | setup ms |"
@@ -2209,7 +2208,7 @@ fn print_tables(aggregates: &[BackendAggregate]) {
         );
     }
     println!(
-        "Security labels: F2Z Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Binius64-Ligerito 100-bit whole-protocol union bound (F2Z opener, rate 1/2, Johnson regime, grinding, Round 0); integer Limber uses Brakedown with its native 114-bit column-opening target. These are the existing classical security estimates, not quantum-bit guarantees."
+        "Security labels: BitZ Lambda100; Plonky3 analyzed WHIR >=100 bits; Binius 100-bit FRI query-phase target only; Binius64-Ligerito 100-bit whole-protocol union bound (BitZ opener, rate 1/2, Johnson regime, grinding, Round 0); integer Limber uses Brakedown with its native 114-bit column-opening target. These are the existing classical security estimates, not quantum-bit guarantees."
     );
 }
 
@@ -2441,16 +2440,16 @@ fn security_api_self_test() {
     );
 }
 
-fn f2z_public_tamper_self_test() {
+fn bitz_public_tamper_self_test() {
     // The smallest supported batch exercises the same public-statement
     // transcript binding as every measured size without slowing startup.
     let corpus = Corpus::new(1 << 7, DEFAULT_ROOT_SEED ^ 0x4632_5a5f_5441_4d50);
-    let context = F2zContext::setup(7, &corpus, SHA256_DEFAULT_INNER_PREFIX_VARS);
+    let context = BitzContext::setup(7, &corpus, SHA256_DEFAULT_INNER_PREFIX_VARS);
     let witness = generate_sha256_compression_witnesses(&context.prepared, &context.inputs)
-        .expect("F2Z tamper-test witness");
+        .expect("BitZ tamper-test witness");
     let hint =
         commit_sha256_compression_witness_with_config(&context.prepared, &witness, &context.pc)
-            .expect("F2Z tamper-test commitment");
+            .expect("BitZ tamper-test commitment");
     let mut prover_transcript = Blake3Transcript::new();
     let proof = prove_sha256_compressions_with_prefix_vars_and_config(
         &mut prover_transcript,
@@ -2461,7 +2460,7 @@ fn f2z_public_tamper_self_test() {
         SHA256_DEFAULT_INNER_PREFIX_VARS,
         &context.pc,
     )
-    .expect("F2Z tamper-test proof");
+    .expect("BitZ tamper-test proof");
 
     for class in 0..2 {
         let mut statements = context.statements.clone();
@@ -2481,7 +2480,7 @@ fn f2z_public_tamper_self_test() {
                 &context.vc,
             )
             .is_err(),
-            "tampering with an F2Z public block or output must fail"
+            "tampering with an BitZ public block or output must fail"
         );
     }
 }
@@ -2555,35 +2554,35 @@ fn binius_tamper_self_test() {
 
 #[derive(clap::Parser)]
 struct Config {
-    #[arg(env = "F2Z_SHA_COMPARE_EXPONENTS")]
+    #[arg(env = "BITZ_SHA_COMPARE_EXPONENTS")]
     exponents: Option<String>,
-    #[arg(env = "F2Z_SHA_COMPARE_BACKENDS", default_value = "f2z plonky3-whir binius64 binius64-ligerito limber", value_parser = common::pcs_cli::enum_list::<Backend>)]
+    #[arg(env = "BITZ_SHA_COMPARE_BACKENDS", default_value = "bitz plonky3-whir binius64 binius64-ligerito limber", value_parser = common::cli::enum_list::<Backend>)]
     backends: common::cli::List<Backend>,
-    #[arg(env = "F2Z_SHA_COMPARE_REPS", default_value_t = DEFAULT_REPS, value_parser = common::cli::positive)]
+    #[arg(env = "BITZ_SHA_COMPARE_REPS", default_value_t = DEFAULT_REPS, value_parser = common::cli::positive)]
     reps: usize,
-    #[arg(env = "F2Z_SHA_COMPARE_PILOT_REPS", default_value_t = DEFAULT_PILOT_REPS)]
+    #[arg(env = "BITZ_SHA_COMPARE_PILOT_REPS", default_value_t = DEFAULT_PILOT_REPS)]
     pilot_reps: usize,
-    #[arg(env = "F2Z_SHA_COMPARE_SEED", default_value_t = DEFAULT_ROOT_SEED)]
+    #[arg(env = "BITZ_SHA_COMPARE_SEED", default_value_t = DEFAULT_ROOT_SEED)]
     seed: u64,
-    #[arg(env = "F2Z_SHA_COMPARE_ALLOW_SMALL", default_value = "false", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    #[arg(env = "BITZ_SHA_COMPARE_ALLOW_SMALL", default_value = "false", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     allow_small: bool,
-    #[arg(env = "F2Z_SHA_COMPARE_SELF_TESTS", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    #[arg(env = "BITZ_SHA_COMPARE_SELF_TESTS", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     self_tests: bool,
-    #[arg(env = "F2Z_SHA_COMPARE_PILOT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    #[arg(env = "BITZ_SHA_COMPARE_PILOT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     pilot: bool,
-    #[arg(env = "F2Z_SHA_COMPARE_HEAVY_PREFLIGHT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    #[arg(env = "BITZ_SHA_COMPARE_HEAVY_PREFLIGHT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     heavy_preflight: bool,
-    #[arg(env = "F2Z_SHA_COMPARE_PREFLIGHT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    #[arg(env = "BITZ_SHA_COMPARE_PREFLIGHT", default_value = "true", action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     preflight: bool,
-    #[arg(env = "F2Z_SHA_COMPARE_PILOT_EXPONENT", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(7..=16))]
+    #[arg(env = "BITZ_SHA_COMPARE_PILOT_EXPONENT", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(7..=16))]
     pilot_exponent: Option<usize>,
-    #[arg(env = "F2Z_SHA_COMPARE_F2Z_PREFIX", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..=4))]
-    f2z_prefix: Option<usize>,
-    #[arg(env = "F2Z_SHA_COMPARE_LOG_INV_RATE", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=3))]
+    #[arg(env = "BITZ_SHA_COMPARE_BITZ_PREFIX", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(0..=4))]
+    bitz_prefix: Option<usize>,
+    #[arg(env = "BITZ_SHA_COMPARE_LOG_INV_RATE", value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=3))]
     binius_rate: Option<usize>,
-    #[arg(env = "F2Z_SHA_COMPARE_OUTPUT_DIR")]
+    #[arg(env = "BITZ_SHA_COMPARE_OUTPUT_DIR")]
     output_dir: Option<PathBuf>,
-    #[arg(env = "F2Z_SHA_COMPARE_TRACE_PATH")]
+    #[arg(env = "BITZ_SHA_COMPARE_TRACE_PATH")]
     trace_path: Option<PathBuf>,
 }
 
@@ -2593,7 +2592,7 @@ impl Config {
             .range(if self.allow_small { 0 } else { 7 }..=16);
         // This benchmark's historical knob takes precedence over the shared knob.
         let mut exponents = self.exponents.as_deref()
-            .map(|value| common::cli::values("F2Z_SHA_COMPARE_EXPONENTS", value, parser.clone()))
+            .map(|value| common::cli::values("BITZ_SHA_COMPARE_EXPONENTS", value, parser.clone()))
             .or_else(|| common::shape_values(None, parser))
             .unwrap_or_else(|| DEFAULT_EXPONENTS.to_vec());
         exponents.sort_unstable();
@@ -2604,7 +2603,7 @@ impl Config {
 
 #[derive(clap::Parser)]
 struct PreflightEnv {
-    #[arg(env = "F2Z_SHA_COMPARE_PREFLIGHT_CHILD")]
+    #[arg(env = "BITZ_SHA_COMPARE_PREFLIGHT_CHILD")]
     backend: Option<Backend>,
 }
 
@@ -2614,13 +2613,13 @@ fn env_usize(name: &'static str, default: usize) -> usize {
 
 #[derive(clap::Parser)]
 struct Plonky3Env {
-    #[arg(env = "F2Z_SHA_COMPARE_P3_EXTENSION_DEGREE")]
+    #[arg(env = "BITZ_SHA_COMPARE_P3_EXTENSION_DEGREE")]
     extension_degree: Option<usize>,
-    #[arg(env = "F2Z_SHA_COMPARE_P3_FOLDING")]
+    #[arg(env = "BITZ_SHA_COMPARE_P3_FOLDING")]
     folding: Option<usize>,
-    #[arg(env = "F2Z_SHA_COMPARE_P3_LOG_INV_RATE")]
+    #[arg(env = "BITZ_SHA_COMPARE_P3_LOG_INV_RATE")]
     starting_log_inv_rate: Option<usize>,
-    #[arg(env = "F2Z_SHA_COMPARE_P3_MAX_POW_BITS")]
+    #[arg(env = "BITZ_SHA_COMPARE_P3_MAX_POW_BITS")]
     max_pow_bits: Option<usize>,
 }
 
@@ -2635,16 +2634,22 @@ impl Plonky3Env {
         }
     }
     fn is_explicit(&self) -> bool {
-        [self.extension_degree, self.folding, self.starting_log_inv_rate, self.max_pow_bits]
-            .iter().any(Option::is_some)
+        [
+            self.extension_degree,
+            self.folding,
+            self.starting_log_inv_rate,
+            self.max_pow_bits,
+        ]
+        .iter()
+        .any(Option::is_some)
     }
 }
 
 #[derive(clap::Parser)]
 struct LimberEnv {
-    #[arg(env = "F2Z_SHA_COMPARE_LIMBER_ENGINE", default_value = "brakedown", value_parser = ["brakedown"])]
+    #[arg(env = "BITZ_SHA_COMPARE_LIMBER_ENGINE", default_value = "brakedown", value_parser = ["brakedown"])]
     engine: String,
-    #[arg(env = "F2Z_SHA_COMPARE_LIMBER_K")]
+    #[arg(env = "BITZ_SHA_COMPARE_LIMBER_K")]
     k: Option<usize>,
 }
 
@@ -2725,34 +2730,39 @@ impl SplitMix64 {
 }
 
 fn init() -> usize {
-    let expected_threads = common::cli::env::<usize>("F2Z_SHA_COMPARE_THREADS");
+    let expected_threads = common::cli::env::<usize>("BITZ_SHA_COMPARE_THREADS");
     let _ = flock_core::init_perf_thread_pool();
     let threads = rayon::current_num_threads();
     if let Some(expected_threads) = expected_threads {
         assert_eq!(threads, expected_threads,
             "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison");
     }
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     threads
 }
 
 fn run_preflight(backend: Backend) {
-    let exponent = env_usize("F2Z_SHA_COMPARE_PREFLIGHT_EXPONENT", 16);
-    let seed = common::cli::env::<u64>("F2Z_SHA_COMPARE_SEED").unwrap_or(DEFAULT_ROOT_SEED);
-    let prefix = (backend == Backend::F2z).then(|| env_usize("F2Z_SHA_COMPARE_F2Z_PREFIX", SHA256_DEFAULT_INNER_PREFIX_VARS));
-    let rate = (backend == Backend::Binius).then(|| env_usize("F2Z_SHA_COMPARE_LOG_INV_RATE", 1));
+    let exponent = env_usize("BITZ_SHA_COMPARE_PREFLIGHT_EXPONENT", 16);
+    let seed = common::cli::env::<u64>("BITZ_SHA_COMPARE_SEED").unwrap_or(DEFAULT_ROOT_SEED);
+    let prefix = (backend == Backend::Bitz).then(|| {
+        env_usize(
+            "BITZ_SHA_COMPARE_BITZ_PREFIX",
+            SHA256_DEFAULT_INNER_PREFIX_VARS,
+        )
+    });
+    let rate = (backend == Backend::Binius).then(|| env_usize("BITZ_SHA_COMPARE_LOG_INV_RATE", 1));
     let plonky3 = (backend == Backend::Plonky3Whir).then(|| common::cli::environment::<Plonky3Env>().params());
     let (limber_params, _) = env_limber_params();
     init();
     let corpus = Corpus::new(1 << exponent, shape_seed(seed, exponent));
     let metrics = match backend {
-        Backend::F2z => {
-            let context = F2zContext::setup(
+        Backend::Bitz => {
+            let context = BitzContext::setup(
                 exponent,
                 &corpus,
                 prefix.unwrap(),
             );
-            run_f2z_trial(&context, &corpus, exponent, Trial::Preflight, None)
+            run_bitz_trial(&context, &corpus, exponent, Trial::Preflight, None)
         }
         Backend::Plonky3Whir => {
             let params = plonky3.unwrap();
@@ -2837,8 +2847,8 @@ fn main() {
 
     if config.self_tests {
         security_api_self_test();
-        if requested.contains(&Backend::F2z) {
-            f2z_public_tamper_self_test();
+        if requested.contains(&Backend::Bitz) {
+            bitz_public_tamper_self_test();
         }
         if requested.contains(&Backend::Binius) {
             binius_tamper_self_test();
@@ -2860,12 +2870,12 @@ fn main() {
         )
     });
 
-    let f2z_prefix = if let Some(prefix) = config.f2z_prefix {
+    let bitz_prefix = if let Some(prefix) = config.bitz_prefix {
         prefix
-    } else if requested.contains(&Backend::F2z)
+    } else if requested.contains(&Backend::Bitz)
         && let Some(pilot) = &pilot
     {
-        choose_f2z_prefix(pilot, pilot_exponent, pilot_reps)
+        choose_bitz_prefix(pilot, pilot_exponent, pilot_reps)
     } else {
         SHA256_DEFAULT_INNER_PREFIX_VARS
     };
@@ -2883,7 +2893,7 @@ fn main() {
     // WHIR is selected separately at each measured size inside run_campaign.
     if requested.contains(&Backend::Limber) && config.heavy_preflight {
         let preliminary = SelectedConfigs {
-            f2z_prefix,
+            bitz_prefix,
             binius_rate,
             plonky3,
             limber: limber_params,
@@ -2901,14 +2911,14 @@ fn main() {
         limber_params
     };
     let selected = SelectedConfigs {
-        f2z_prefix,
+        bitz_prefix,
         binius_rate,
         plonky3,
         limber,
     };
     println!(
-        "configs: F2Z prefix={}; Binius rate={} ({} FRI queries); WHIR tunes at each size (explicit default {}); Limber {}",
-        selected.f2z_prefix,
+        "configs: BitZ prefix={}; Binius rate={} ({} FRI queries); WHIR tunes at each size (explicit default {}); Limber {}",
+        selected.bitz_prefix,
         selected.binius_rate,
         calculate_n_test_queries(BINIUS_SECURITY_BITS, selected.binius_rate),
         selected.plonky3.label(),
@@ -2946,7 +2956,7 @@ mod native_whir_tests {
         use super::*;
         use tracing_subscriber::prelude::*;
         tracing::subscriber::with_default(
-            tracing_subscriber::registry().with(f2z::observability::layer()),
+            tracing_subscriber::registry().with(bitz::observability::layer()),
             || {
                 let corpus = Corpus::new(2, DEFAULT_ROOT_SEED);
                 let binius = BiniusContext::setup(&corpus, 1);
@@ -2990,7 +3000,7 @@ mod native_whir_tests {
         assert_eq!(
             super::ALL_BACKENDS.map(super::Backend::slug),
             [
-                "f2z",
+                "bitz",
                 "plonky3-whir",
                 "binius64",
                 "binius64-ligerito",
@@ -3017,7 +3027,7 @@ mod ligerito_isolation_tests {
     #[test]
     fn limber_configuration_probe() {
         let _trace = super::common::test_tracing();
-        if std::env::var_os("F2Z_TEST_CONFIGURATION_PROBE").is_none() {
+        if std::env::var_os("BITZ_TEST_CONFIGURATION_PROBE").is_none() {
             return;
         }
         println!(
@@ -3034,8 +3044,8 @@ mod ligerito_isolation_tests {
                     "benchmark::ligerito_isolation_tests::limber_configuration_probe",
                     "--nocapture",
                 ])
-                .env("F2Z_TEST_CONFIGURATION_PROBE", "1")
-                .env("F2Z_LIG_PROFILE", profile)
+                .env("BITZ_TEST_CONFIGURATION_PROBE", "1")
+                .env("BITZ_LIG_PROFILE", profile)
                 .output()
                 .unwrap();
             assert!(
@@ -3133,7 +3143,7 @@ mod reporting_tests {
         let header = "backend,compression_exponent,compressions,configuration,sample_index,witness_ms,commit_ms,piop_ms,iop_ms,online_prover_ms,witness_to_proof_ms,throughput_compressions_per_s,verifier_ms,proof_bytes,setup_ms\n";
         assert_eq!(csv.get_ref(), header.as_bytes());
         csv.serialize(CsvRow {
-            backend: "f2z",
+            backend: "bitz",
             compression_exponent: 3,
             compressions: 8,
             configuration: "comma,quote\"\nline",
@@ -3153,14 +3163,14 @@ mod reporting_tests {
         assert_eq!(
             String::from_utf8(csv.into_inner().unwrap()).unwrap(),
             format!(
-                "{header}f2z,3,8,\"comma,quote\"\"\nline\",0,1.234567892,2.000000000,3.000000000,4.000000000,9.000000000,10.000000000,800.000000000,5.000000000,1024,6\n"
+                "{header}bitz,3,8,\"comma,quote\"\"\nline\",0,1.234567892,2.000000000,3.000000000,4.000000000,9.000000000,10.000000000,800.000000000,5.000000000,1024,6\n"
             )
         );
     }
     #[test]
     fn summary_keeps_metric_names_nulls_and_integer_bytes() {
         let aggregate = BackendAggregate {
-            backend: Backend::F2z,
+            backend: Backend::Bitz,
             exponent: 3,
             setup_ms: 1.0,
             config: "config".into(),
@@ -3203,7 +3213,7 @@ mod cli_tests {
         Config::command().debug_assert();
         Plonky3Env::command().debug_assert();
         PreflightEnv::command().debug_assert();
-        assert_eq!(common::pcs_cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
+        assert_eq!(common::cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
         let args = Plonky3Env { extension_degree: None, folding: None, starting_log_inv_rate: None, max_pow_bits: None };
         assert!(!args.is_explicit());
         assert_eq!(args.params().extension_degree, 5);
@@ -3219,7 +3229,9 @@ mod cli_environment_tests {
 
     #[test]
     fn configuration_probe() {
-        let Ok(mode) = std::env::var("F2Z_SHA_CLI_TEST_MODE") else { return };
+        let Ok(mode) = std::env::var("BITZ_SHA_CLI_TEST_MODE") else {
+            return;
+        };
         let value = if mode == "preflight" {
             let preflight = common::cli::environment::<PreflightEnv>();
             let p3 = common::cli::environment::<Plonky3Env>();
@@ -3237,7 +3249,7 @@ mod cli_environment_tests {
         let test = concat!(module_path!(), "::configuration_probe");
         std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
-            .env_clear().env("F2Z_SHA_CLI_TEST_MODE", mode).envs(settings.iter().copied())
+            .env_clear().env("BITZ_SHA_CLI_TEST_MODE", mode).envs(settings.iter().copied())
             .output().unwrap()
     }
 
@@ -3251,25 +3263,67 @@ mod cli_environment_tests {
     #[test]
     fn campaign_precedence_deduplication_and_small_shape_opt_in() {
         let defaults = config("campaign", &[]);
-        assert_eq!(defaults, json!({"exponents":[7,8,10,11,12,13,14,15,16],"reps":21,
-            "pilot_reps":5,"self_tests":true,"pilot":true,"preflight":true}));
-        assert_eq!(config("campaign", &[("F2Z_BENCH_SHAPES", "9 7 9")])["exponents"], json!([7,9]));
-        assert_eq!(config("campaign", &[("F2Z_BENCH_SHAPES", "6,0 16"),
-            ("F2Z_SHA_COMPARE_ALLOW_SMALL", "true")])["exponents"], json!([0,6,16]));
-        assert_eq!(config("campaign", &[("F2Z_SHA_COMPARE_EXPONENTS", "8,7 8"),
-            ("F2Z_BENCH_SHAPES", "ignored-invalid")])["exponents"], json!([7,8]));
-        let small = config("campaign", &[("F2Z_SHA_COMPARE_ALLOW_SMALL", "1"),
-            ("F2Z_SHA_COMPARE_EXPONENTS", "0 6 16"), ("F2Z_SHA_COMPARE_SELF_TESTS", "0"),
-            ("F2Z_SHA_COMPARE_PILOT", "false"), ("F2Z_SHA_COMPARE_PREFLIGHT", "off")]);
-        assert_eq!(small["exponents"], json!([0,6,16]));
-        for flag in ["self_tests", "pilot", "preflight"] { assert_eq!(small[flag], false); }
-        for settings in [vec![("F2Z_SHA_COMPARE_EXPONENTS", "6")],
-            vec![("F2Z_BENCH_SHAPES", "6")],
-            vec![("F2Z_SHA_COMPARE_EXPONENTS", "")],
-            vec![("F2Z_SHA_COMPARE_EXPONENTS", "17"), ("F2Z_SHA_COMPARE_ALLOW_SMALL", "1")],
-            vec![("F2Z_BENCH_SHAPES", "17"), ("F2Z_SHA_COMPARE_ALLOW_SMALL", "1")],
-            vec![("F2Z_SHA_COMPARE_EXPONENTS", "bad"), ("F2Z_BENCH_SHAPES", "7")],
-            vec![("F2Z_SHA_COMPARE_REPS", "0")]] {
+        assert_eq!(
+            defaults,
+            json!({"exponents":[7,8,10,11,12,13,14,15,16],"reps":21,
+            "pilot_reps":5,"self_tests":true,"pilot":true,"preflight":true})
+        );
+        assert_eq!(
+            config("campaign", &[("BITZ_BENCH_SHAPES", "9 7 9")])["exponents"],
+            json!([7, 9])
+        );
+        assert_eq!(
+            config(
+                "campaign",
+                &[
+                    ("BITZ_BENCH_SHAPES", "6,0 16"),
+                    ("BITZ_SHA_COMPARE_ALLOW_SMALL", "true")
+                ]
+            )["exponents"],
+            json!([0, 6, 16])
+        );
+        assert_eq!(
+            config(
+                "campaign",
+                &[
+                    ("BITZ_SHA_COMPARE_EXPONENTS", "8,7 8"),
+                    ("BITZ_BENCH_SHAPES", "ignored-invalid")
+                ]
+            )["exponents"],
+            json!([7, 8])
+        );
+        let small = config(
+            "campaign",
+            &[
+                ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
+                ("BITZ_SHA_COMPARE_EXPONENTS", "0 6 16"),
+                ("BITZ_SHA_COMPARE_SELF_TESTS", "0"),
+                ("BITZ_SHA_COMPARE_PILOT", "false"),
+                ("BITZ_SHA_COMPARE_PREFLIGHT", "off"),
+            ],
+        );
+        assert_eq!(small["exponents"], json!([0, 6, 16]));
+        for flag in ["self_tests", "pilot", "preflight"] {
+            assert_eq!(small[flag], false);
+        }
+        for settings in [
+            vec![("BITZ_SHA_COMPARE_EXPONENTS", "6")],
+            vec![("BITZ_BENCH_SHAPES", "6")],
+            vec![("BITZ_SHA_COMPARE_EXPONENTS", "")],
+            vec![
+                ("BITZ_SHA_COMPARE_EXPONENTS", "17"),
+                ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
+            ],
+            vec![
+                ("BITZ_BENCH_SHAPES", "17"),
+                ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
+            ],
+            vec![
+                ("BITZ_SHA_COMPARE_EXPONENTS", "bad"),
+                ("BITZ_BENCH_SHAPES", "7"),
+            ],
+            vec![("BITZ_SHA_COMPARE_REPS", "0")],
+        ] {
             let out = child("campaign", &settings);
             let error = String::from_utf8_lossy(&out.stderr);
             assert_eq!(out.status.code(), Some(2), "{settings:?}: {error}");
@@ -3280,14 +3334,28 @@ mod cli_environment_tests {
 
     #[test]
     fn preflight_selector_and_explicit_tuning_stay_independent_of_campaign_values() {
-        assert_eq!(config("preflight", &[]), json!({"backend":null,"limber_k":9,"p3_explicit":false,"p3_folding":4}));
-        assert_eq!(config("preflight", &[("F2Z_SHA_COMPARE_PREFLIGHT_CHILD", "binius64-ligerito"),
-            ("F2Z_SHA_COMPARE_LIMBER_K", "11"), ("F2Z_SHA_COMPARE_P3_FOLDING", "4"),
-            ("F2Z_SHA_COMPARE_EXPONENTS", "unused"), ("F2Z_SHA_COMPARE_REPS", "0")]),
-            json!({"backend":"binius64-ligerito","limber_k":11,"p3_explicit":true,"p3_folding":4}));
-        for settings in [vec![("F2Z_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")],
-            vec![("F2Z_SHA_COMPARE_LIMBER_ENGINE", "hyrax")],
-            vec![("F2Z_SHA_COMPARE_P3_FOLDING", "bad")]] {
+        assert_eq!(
+            config("preflight", &[]),
+            json!({"backend":null,"limber_k":9,"p3_explicit":false,"p3_folding":4})
+        );
+        assert_eq!(
+            config(
+                "preflight",
+                &[
+                    ("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "binius64-ligerito"),
+                    ("BITZ_SHA_COMPARE_LIMBER_K", "11"),
+                    ("BITZ_SHA_COMPARE_P3_FOLDING", "4"),
+                    ("BITZ_SHA_COMPARE_EXPONENTS", "unused"),
+                    ("BITZ_SHA_COMPARE_REPS", "0")
+                ]
+            ),
+            json!({"backend":"binius64-ligerito","limber_k":11,"p3_explicit":true,"p3_folding":4})
+        );
+        for settings in [
+            vec![("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")],
+            vec![("BITZ_SHA_COMPARE_LIMBER_ENGINE", "hyrax")],
+            vec![("BITZ_SHA_COMPARE_P3_FOLDING", "bad")],
+        ] {
             assert_eq!(child("preflight", &settings).status.code(), Some(2));
         }
     }

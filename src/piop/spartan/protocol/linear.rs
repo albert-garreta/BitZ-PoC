@@ -18,36 +18,41 @@
 //! 4. (legacy) the inner sumcheck; the opening claim frame;
 //! 5. the virtual opening of the derived grid.
 
+use crate::sumcheck::boundary::ProverGrindingRoundBoundary;
+use crate::sumcheck::inner::{
+    packed::{PackedInput, Sha256InnerGrinding},
+    prove_inner_sumcheck,
+};
+use field::RingOps;
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
 };
 
-use crate::{
-    f2map::VirtualMap,
-    ligerito::packed_vars,
-    ligerito_flock::{
-        FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
-        bind_prover_ood, bind_verifier_ood,
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
-        verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+use {
+    crate::{
+        ligerito::packed_vars,
+        ligerito_flock::{
+            FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
+            bind_prover_ood, bind_verifier_ood,
+            prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+            verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
+        },
+        pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
+        transcript::traits::Transcript,
     },
-    pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 use super::{
     super::{
         absorb_spartan_message,
-        sha256::inner_sumcheck::{
-            SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource,
-            prove_sha256_inner_sumcheck_factored, verify_sha256_inner_sumcheck,
-        },
+        sha256::inner_sumcheck::{SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource},
         squeeze_field,
-        sumcheck::{OptimizedSumcheckReducer, SumcheckProof},
+        sumcheck::SumcheckProof,
     },
-    BindingHasher, FieldConfig, ProtocolError, RuntimePrime, SpartanF2zField, check_boundary,
-    f2z_generator, grind_boundary,
+    BindingHasher, FieldConfig, ProtocolError, SpartanBitzField, check_boundary, bitz_generator,
+    grind_boundary,
 };
 use crate::piop::spartan::profile::IopSecurityParams;
 use crate::poly::mle::FactoredMultilinearExtension;
@@ -73,18 +78,18 @@ pub(crate) struct LinearDomains {
 /// `μ`, the factored coefficient table `V` of the legacy inner sumcheck,
 /// and its closed-form evaluation.
 pub(crate) trait LinearBatching {
-    fn initial_claim(&self) -> &SpartanF2zField;
+    fn initial_claim(&self) -> &SpartanBitzField;
 
     fn factored_matrix_mle(
         &self,
         config: &FieldConfig,
-    ) -> Result<FactoredMultilinearExtension<'_, SpartanF2zField>, ProtocolError>;
+    ) -> Result<FactoredMultilinearExtension<'_, SpartanBitzField>, ProtocolError>;
 
     fn evaluate(
         &self,
-        point: &[SpartanF2zField],
+        point: &[SpartanBitzField],
         config: &FieldConfig,
-    ) -> Result<SpartanF2zField, ProtocolError>;
+    ) -> Result<SpartanBitzField, ProtocolError>;
 }
 
 /// The rank-one functional the virtual opening discharges: the canonical
@@ -101,7 +106,8 @@ fn weight_source<'a>(
     layout: &IntegerMatrixLayout,
     q_bits: usize,
     claim: &'a OpeningClaim<'a>,
-) -> Result<GeneratedModQWeightSource<&'a (dyn Fn(usize) -> Option<u128> + Sync + 'a)>, ProtocolError> {
+) -> Result<GeneratedModQWeightSource<&'a (dyn Fn(usize) -> Option<u128> + Sync + 'a)>, ProtocolError>
+{
     GeneratedModQWeightSource::new(layout, q_bits, &*claim.rows)
         .map_err(|()| ProtocolError::InvalidGeometry)
 }
@@ -150,7 +156,10 @@ pub(crate) trait LinearRelationSpec: Sync {
         config: &dyn LigeritoStatementConfig,
     ) -> Result<(Vec<(&'static [u8], Vec<u8>)>, [u8; 32]), ProtocolError>;
 
-    fn runtime_prime<T: Transcript>(&self, transcript: &mut T) -> Result<RuntimePrime, ProtocolError>;
+    fn runtime_prime<T: Transcript>(
+        &self,
+        transcript: &mut T,
+    ) -> Result<field::FpCtx<2>, ProtocolError>;
 
     /// The frames bound after the prime draw.
     fn runtime_relation_frames(&self, config: &FieldConfig) -> Vec<(&'static [u8], Vec<u8>)>;
@@ -159,12 +168,12 @@ pub(crate) trait LinearRelationSpec: Sync {
     fn batching(
         &self,
         statement: &Self::Statement,
-        local_point: &[SpartanF2zField],
-        instance_point: &[SpartanF2zField],
-        slot_weights: Vec<SpartanF2zField>,
-        public_io_batch: SpartanF2zField,
-        constant_one: SpartanF2zField,
-        reducer: &OptimizedSumcheckReducer,
+        local_point: &[SpartanBitzField],
+        instance_point: &[SpartanBitzField],
+        slot_weights: Vec<SpartanBitzField>,
+        public_io_batch: SpartanBitzField,
+        constant_one: SpartanBitzField,
+        reducer: &field::FpCtx<2>,
         config: &FieldConfig,
     ) -> Result<Self::Batching, ProtocolError>;
 
@@ -172,16 +181,16 @@ pub(crate) trait LinearRelationSpec: Sync {
     fn product_claim<'a>(
         &'a self,
         batching: &'a Self::Batching,
-        prime: &'a RuntimePrime,
+        prime: &'a field::FpCtx<2>,
     ) -> Result<OpeningClaim<'a>, ProtocolError>;
 
     /// The legacy path's claim from the inner sumcheck's terminal point.
     fn inner_claim<'a>(
         &'a self,
-        point: &[SpartanF2zField],
-        coefficient_evaluation: &SpartanF2zField,
-        final_claim: SpartanF2zField,
-        prime: &'a RuntimePrime,
+        point: &[SpartanBitzField],
+        coefficient_evaluation: &SpartanBitzField,
+        final_claim: SpartanBitzField,
+        prime: &'a field::FpCtx<2>,
     ) -> Result<OpeningClaim<'a>, ProtocolError>;
 
     /// The assignment grid bits the legacy inner sumcheck multiplies by.
@@ -199,10 +208,10 @@ pub(crate) trait LinearRelationSpec: Sync {
 #[derive(Clone)]
 pub struct LinearProof {
     initial_nonce: u64,
-    inner: SumcheckProof<SpartanF2zField, 3>,
+    inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
-    f2z: IntEvalRsLigVirtProof,
+    bitz: IntEvalRsLigVirtProof,
 }
 
 impl LinearProof {
@@ -210,7 +219,7 @@ impl LinearProof {
         self.initial_nonce
     }
 
-    pub const fn inner(&self) -> &SumcheckProof<SpartanF2zField, 3> {
+    pub const fn inner(&self) -> &SumcheckProof<SpartanBitzField, 3> {
         &self.inner
     }
 
@@ -222,8 +231,8 @@ impl LinearProof {
         self.terminal_nonce
     }
 
-    pub const fn f2z(&self) -> &IntEvalRsLigVirtProof {
-        &self.f2z
+    pub const fn bitz(&self) -> &IntEvalRsLigVirtProof {
+        &self.bitz
     }
 
     /// PIOP payload bytes: the two boundary nonces, the inner round
@@ -236,7 +245,7 @@ impl LinearProof {
         &mut self.initial_nonce
     }
 
-    pub fn inner_mut(&mut self) -> &mut SumcheckProof<SpartanF2zField, 3> {
+    pub fn inner_mut(&mut self) -> &mut SumcheckProof<SpartanBitzField, 3> {
         &mut self.inner
     }
 
@@ -248,8 +257,8 @@ impl LinearProof {
         &mut self.terminal_nonce
     }
 
-    pub fn f2z_mut(&mut self) -> &mut IntEvalRsLigVirtProof {
-        &mut self.f2z
+    pub fn bitz_mut(&mut self) -> &mut IntEvalRsLigVirtProof {
+        &mut self.bitz
     }
 }
 
@@ -276,34 +285,41 @@ fn challenge_point<T: Transcript>(
     domain: &[u8],
     vars: usize,
     config: &FieldConfig,
-) -> Vec<SpartanF2zField> {
+) -> Result<Vec<SpartanBitzField>, ProtocolError> {
     absorb_spartan_message(transcript, b"challenge-domain", domain);
-    (0..vars).map(|_| squeeze_field(transcript, config)).collect()
+    Ok((0..vars)
+        .map(|_| squeeze_field(transcript, config))
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
 /// The batching challenges after the terminal boundary.
 struct BatchChallenges {
-    constant_one: SpartanF2zField,
-    slot_weights: Vec<SpartanF2zField>,
-    public_io_batch: SpartanF2zField,
+    constant_one: SpartanBitzField,
+    slot_weights: Vec<SpartanBitzField>,
+    public_io_batch: SpartanBitzField,
 }
 
 fn batch_challenges<T: Transcript, S: LinearRelationSpec>(
     transcript: &mut T,
     spec: &S,
     config: &FieldConfig,
-) -> BatchChallenges {
+) -> Result<BatchChallenges, ProtocolError> {
     let domains = spec.domains();
-    let constant_one = challenge_point(transcript, domains.constant_one, 1, config)
+    let constant_one = challenge_point(transcript, domains.constant_one, 1, config)?
         .pop()
         .expect("one challenge");
-    let mut public = challenge_point(transcript, domains.public_io, spec.public_io_count() + 1, config);
+    let mut public = challenge_point(
+        transcript,
+        domains.public_io,
+        spec.public_io_count() + 1,
+        config,
+    )?;
     let public_io_batch = public.pop().expect("the batch weight");
-    BatchChallenges {
+    Ok(BatchChallenges {
         constant_one,
         slot_weights: public,
         public_io_batch,
-    }
+    })
 }
 
 /// The opening-claim digest:
@@ -313,12 +329,13 @@ fn batch_challenges<T: Transcript, S: LinearRelationSpec>(
 fn claim_digest(
     domains: &LinearDomains,
     binding: &[u8; 32],
-    local_point: &[SpartanF2zField],
-    instance_point: &[SpartanF2zField],
-    assignment: Option<(&[SpartanF2zField], &SpartanF2zField)>,
+    local_point: &[SpartanBitzField],
+    instance_point: &[SpartanBitzField],
+    assignment: Option<(&[SpartanBitzField], &SpartanBitzField)>,
     challenges: &BatchChallenges,
     claim: &OpeningClaim<'_>,
     rows: &impl ModQWeightSource,
+    field_config: &FieldConfig,
 ) -> Result<[u8; 32], ProtocolError> {
     let mut hasher = BindingHasher::new();
     hasher.bytes(domains.claim_domain);
@@ -331,22 +348,22 @@ fn claim_digest(
     for point in [local_point, instance_point] {
         hasher.usize(point.len())?;
         for coordinate in point {
-            hasher.element(coordinate);
+            hasher.element(coordinate, field_config);
         }
     }
     if let Some((point, evaluation)) = assignment {
         hasher.usize(point.len())?;
         for coordinate in point {
-            hasher.element(coordinate);
+            hasher.element(coordinate, field_config);
         }
-        hasher.element(evaluation);
+        hasher.element(evaluation, field_config);
     }
-    hasher.element(&challenges.constant_one);
+    hasher.element(&challenges.constant_one, field_config);
     hasher.usize(challenges.slot_weights.len())?;
     for coordinate in &challenges.slot_weights {
-        hasher.element(coordinate);
+        hasher.element(coordinate, field_config);
     }
-    hasher.element(&challenges.public_io_batch);
+    hasher.element(&challenges.public_io_batch, field_config);
     hasher.usize(rows.row_count())?;
     for row in 0..rows.row_count() {
         let weight = rows
@@ -382,7 +399,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         });
     }
     crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, pc)
-        .map_err(ProtocolError::F2z)?;
+        .map_err(ProtocolError::Bitz)?;
     let f_layout = spec.source_layout();
     if hint.commitment.params.m != f_layout.row_vars + f_layout.col_vars {
         return Err(ProtocolError::InvalidGeometry);
@@ -405,31 +422,45 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
     let step2_scope = tracing::info_span!("step2:project_prove").entered();
     let initial_nonce = {
         let _scope = tracing::info_span!("sha256:initial_grinding_prove").entered();
-        grind_boundary(transcript, domains.initial_grinding, security.initial_grinding_bits)?
+        grind_boundary(
+            transcript,
+            domains.initial_grinding,
+            security.initial_grinding_bits,
+        )?
     };
     let prime = {
         let _scope = tracing::info_span!("sha256:runtime_prime_sample_prover").entered();
         spec.runtime_prime(transcript)?
     };
-    absorb_frames(transcript, &spec.runtime_relation_frames(&prime.config));
+    absorb_frames(transcript, &spec.runtime_relation_frames(&prime));
     drop(step2_scope);
 
     // Collapse the local rows and form the product-structured residual.
     // Power-of-two batches open it directly; partial batches use the legacy
     // assignment-domain sumcheck below. There is no nonlinear outer sumcheck.
     let step3_scope = tracing::info_span!("step3:piop_prove").entered();
-    let config = &prime.config;
-    let local_point = challenge_point(transcript, domains.local_point, spec.local_vars(), config);
-    let instance_point =
-        challenge_point(transcript, domains.instance_point, spec.instance_vars(), config);
+    let config = &prime;
+    let local_point = challenge_point(transcript, domains.local_point, spec.local_vars(), config)?;
+    let instance_point = challenge_point(
+        transcript,
+        domains.instance_point,
+        spec.instance_vars(),
+        config,
+    )?;
     let terminal_nonce = {
         let _scope = tracing::info_span!("sha256:public_batch_grinding_prove").entered();
-        grind_boundary(transcript, domains.terminal_grinding, security.terminal_grinding_bits)?
+        grind_boundary(
+            transcript,
+            domains.terminal_grinding,
+            security.terminal_grinding_bits,
+        )?
     };
-    let challenges = batch_challenges(transcript, spec, config);
+    let challenges = batch_challenges(transcript, spec, config)?;
     let reducer = {
         let _scope = tracing::info_span!("sha256:reducer_init_prover").entered();
-        OptimizedSumcheckReducer::new(config).map_err(super::super::piop::SpartanError::from)?
+        crate::utils::delayed_reduction::prepare_field(config)
+            .map_err(super::super::sumcheck::SumcheckError::from)
+            .map_err(super::super::piop::SpartanError::from)?
     };
     let batching = {
         let _scope = tracing::info_span!("sha256:product_batch_prepare_prover").entered();
@@ -462,24 +493,41 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             None,
         )
     } else {
-        let inner = {
+        let (inner, inner_nonces) = {
             let _scope = tracing::info_span!("sha256:spartan_inner_prove").entered();
             let factored = batching.factored_matrix_mle(config)?;
             let bits = spec.inner_bits(witness)?;
-            prove_sha256_inner_sumcheck_factored(
-                transcript,
-                batching.initial_claim().clone(),
-                spec.opened_layout().row_vars + spec.opened_layout().col_vars,
-                &factored,
-                &*bits,
-                options.prefix_vars,
-                config,
-                &reducer,
-                security.piop_round_grinding_bits,
-            )
+            {
+                let coefficients = &factored;
+                let mut boundary =
+                    ProverGrindingRoundBoundary::<Sha256InnerGrinding>::with_round_offset(
+                        security.piop_round_grinding_bits,
+                        0,
+                    );
+                prove_inner_sumcheck(
+                    config,
+                    transcript,
+                    batching.initial_claim().clone(),
+                    PackedInput::new(
+                        coefficients,
+                        &*bits,
+                        spec.opened_layout().row_vars + spec.opened_layout().col_vars,
+                        coefficients.live_len(),
+                        options.prefix_vars,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .map(|out| (out, boundary.into_nonces()))
+            }
             .map_err(super::super::piop::SpartanError::from)?
         };
-        if inner.final_claim != inner.v_evaluation.clone() * &inner.h_evaluation {
+        if inner.final_claim
+            != config.mul(
+                &(inner.terminal_evaluations[0].clone()),
+                &(&inner.terminal_evaluations[1]),
+            )
+        {
             return Err(ProtocolError::InvalidInnerTerminalClaim);
         }
         drop(step3_scope);
@@ -487,21 +535,21 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         let claim = {
             let _scope = tracing::info_span!("sha256:opening_prepare_prover").entered();
             spec.inner_claim(
-                &inner.eval_points,
-                &inner.v_evaluation,
+                &inner.point,
+                &inner.terminal_evaluations[0],
                 inner.final_claim.clone(),
                 &prime,
             )?
         };
         drop(step4_scope);
         (
-            inner.sumcheck_proof,
-            inner.round_nonces,
+            inner.proof,
+            inner_nonces,
             claim,
-            Some((inner.eval_points, inner.v_evaluation)),
+            Some((inner.point, inner.terminal_evaluations[0])),
         )
     };
-    let rows = weight_source(spec.opened_layout(), prime.q_bits, &claim)?;
+    let rows = weight_source(spec.opened_layout(), prime.modulus_bits(), &claim)?;
     {
         let _step4 = tracing::info_span!("step4:bitify_prove").entered();
         let _scope = tracing::info_span!("sha256:opening_claim_absorb_prover").entered();
@@ -516,13 +564,14 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             &challenges,
             &claim,
             &rows,
+            &config,
         )?;
         absorb_spartan_message(transcript, domains.claim_tag, &digest);
     }
 
-    let f2z = {
+    let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = tracing::info_span!("sha256:f2z_prove").entered();
+        let _scope = tracing::info_span!("sha256:bitz_prove").entered();
         prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
             transcript,
             hint,
@@ -531,14 +580,14 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             f_layout,
             spec.map(),
             &rows,
-            prime.q,
-            prime.q_bits,
-            f2z_generator(),
+            prime.modulus_u128(),
+            prime.modulus_bits(),
+            bitz_generator(),
             security.forest_round_grinding_bits,
             ood,
             pc,
         )
-        .map_err(ProtocolError::F2z)?
+        .map_err(ProtocolError::Bitz)?
     };
 
     Ok(LinearProof {
@@ -546,7 +595,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         inner,
         inner_nonces,
         terminal_nonce,
-        f2z,
+        bitz,
     })
 }
 
@@ -562,7 +611,8 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
 ) -> Result<(), ProtocolError> {
     spec.validate_statement(statement)?;
     spec.validate_opener_config(vc)?;
-    crate::ligerito_flock::validate_ligerito_commitment(commitment, vc).map_err(ProtocolError::F2z)?;
+    crate::ligerito_flock::validate_ligerito_commitment(commitment, vc)
+        .map_err(ProtocolError::Bitz)?;
     let f_layout = spec.source_layout();
     let opened = spec.opened_layout();
     let product_layout = spec.product_layout();
@@ -591,9 +641,9 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         transcript,
         packed_vars(f_layout),
         security.ood,
-        proof.f2z.ood.as_ref(),
+        proof.bitz.ood.as_ref(),
     )
-    .map_err(ProtocolError::F2z)?;
+    .map_err(ProtocolError::Bitz)?;
 
     let step2_scope = tracing::info_span!("step2:project_verify").entered();
     {
@@ -609,14 +659,18 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         let _scope = tracing::info_span!("sha256:runtime_prime_sample_verifier").entered();
         spec.runtime_prime(transcript)?
     };
-    absorb_frames(transcript, &spec.runtime_relation_frames(&prime.config));
+    absorb_frames(transcript, &spec.runtime_relation_frames(&prime));
     drop(step2_scope);
 
     let step3_scope = tracing::info_span!("step3:piop_verify").entered();
-    let config = &prime.config;
-    let local_point = challenge_point(transcript, domains.local_point, spec.local_vars(), config);
-    let instance_point =
-        challenge_point(transcript, domains.instance_point, spec.instance_vars(), config);
+    let config = &prime;
+    let local_point = challenge_point(transcript, domains.local_point, spec.local_vars(), config)?;
+    let instance_point = challenge_point(
+        transcript,
+        domains.instance_point,
+        spec.instance_vars(),
+        config,
+    )?;
     {
         let _scope = tracing::info_span!("sha256:public_batch_grinding_verify").entered();
         check_boundary(
@@ -626,10 +680,12 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
             proof.terminal_nonce,
         )?;
     }
-    let challenges = batch_challenges(transcript, spec, config);
+    let challenges = batch_challenges(transcript, spec, config)?;
     let reducer = {
         let _scope = tracing::info_span!("sha256:reducer_init_verifier").entered();
-        OptimizedSumcheckReducer::new(config).map_err(super::super::piop::SpartanError::from)?
+        crate::utils::delayed_reduction::prepare_field(config)
+            .map_err(super::super::sumcheck::SumcheckError::from)
+            .map_err(super::super::piop::SpartanError::from)?
     };
     let batching = {
         let _scope = tracing::info_span!("sha256:product_batch_prepare_verifier").entered();
@@ -653,27 +709,33 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     } else {
         let (assignment_point, inner_claim) = {
             let _scope = tracing::info_span!("sha256:spartan_inner_verify").entered();
-            verify_sha256_inner_sumcheck(
-                transcript,
-                batching.initial_claim().clone(),
-                &proof.inner,
-                &proof.inner_nonces,
-                opened.row_vars + opened.col_vars,
-                config,
-                security.piop_round_grinding_bits,
-            )
-            .map_err(super::super::piop::SpartanError::from)?
+            proof
+                .inner
+                .verify_grinded::<Sha256InnerGrinding>(
+                    transcript,
+                    batching.initial_claim().clone(),
+                    opened.row_vars + opened.col_vars,
+                    config,
+                    &proof.inner_nonces,
+                    security.piop_round_grinding_bits,
+                )
+                .map_err(super::super::piop::SpartanError::from)?
         };
         drop(step3_scope);
         let _step4 = tracing::info_span!("step4:bitify_verify").entered();
         let collapsed_evaluation = batching.evaluate(&assignment_point, config)?;
         let claim = {
             let _scope = tracing::info_span!("sha256:opening_prepare_verifier").entered();
-            spec.inner_claim(&assignment_point, &collapsed_evaluation, inner_claim, &prime)?
+            spec.inner_claim(
+                &assignment_point,
+                &collapsed_evaluation,
+                inner_claim,
+                &prime,
+            )?
         };
         (claim, Some((assignment_point, collapsed_evaluation)))
     };
-    let rows = weight_source(opened, prime.q_bits, &claim)?;
+    let rows = weight_source(opened, prime.modulus_bits(), &claim)?;
     {
         let _step4 = tracing::info_span!("step4:bitify_verify").entered();
         let _scope = tracing::info_span!("sha256:opening_claim_absorb_verifier").entered();
@@ -688,28 +750,29 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
             &challenges,
             &claim,
             &rows,
+            &config,
         )?;
         absorb_spartan_message(transcript, domains.claim_tag, &digest);
     }
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = tracing::info_span!("sha256:f2z_verify").entered();
+    let _scope = tracing::info_span!("sha256:bitz_verify").entered();
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
         transcript,
         commitment,
-        &proof.f2z,
+        &proof.bitz,
         opened,
         f_layout,
         spec.map(),
         &rows,
         &claim.cols,
-        f2z_generator(),
+        bitz_generator(),
         claim.claimed,
-        prime.q,
-        prime.q_bits,
+        prime.modulus_u128(),
+        prime.modulus_bits(),
         security.forest_round_grinding_bits,
         ood,
         vc,
     )
-    .map_err(ProtocolError::F2z)
+    .map_err(ProtocolError::Bitz)
 }

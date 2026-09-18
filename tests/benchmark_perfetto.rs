@@ -98,8 +98,8 @@ fn shared_output_preserves_creation_policy() {
 #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the real native query engine"]
 fn shared_protocol_spans_preserve_relation_labels_and_parentage() {
     let _lock = TEST_LOCK.lock().unwrap();
-    let u32_scopes = f2z::protocol_scopes!("u32-spartan-f2z");
-    let u64_scopes = f2z::protocol_scopes!("u64-spartan-f2z");
+    let u32_scopes = bitz::protocol_scopes!("u32-spartan-bitz");
+    let u64_scopes = bitz::protocol_scopes!("u64-spartan-bitz");
     let intervals = tracing::subscriber::with_default(
         tracing_subscriber::registry().with(perfetto::layer()),
         || {
@@ -113,8 +113,8 @@ fn shared_protocol_spans_preserve_relation_labels_and_parentage() {
     );
     let parent = perfetto::span(&intervals, "step3:piop_prove").unwrap();
     for label in [
-        "u32-spartan-f2z:spartan_prove",
-        "u64-spartan-f2z:spartan_prove",
+        "u32-spartan-bitz:spartan_prove",
+        "u64-spartan-bitz:spartan_prove",
     ] {
         let child = perfetto::span(&intervals, label).unwrap();
         assert_eq!(child.parent, Some(parent.id));

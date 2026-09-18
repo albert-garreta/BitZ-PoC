@@ -43,7 +43,7 @@ n≥30 regime where gathers leave the roofline.
 
 ### S1 — The QUAD bottom-merge (the one big open structural lever)
 
-> **MEASURED 2026-08-20, LANDED as `F2Z_QUAD=2`** (opt-in — it changes
+> **MEASURED 2026-08-20, LANDED as `BITZ_QUAD=2`** (opt-in — it changes
 > the transcript, like the whole quad lane; `force2` bypasses the knee):
 > `prove_quad_bottom_sumcheck` runs the merged layer's rounds 1–3 off the
 > committed bits (round 1: te/to gathers + one new unweighted 16-case ΔΔ
@@ -59,7 +59,7 @@ n≥30 regime where gathers leave the roofline.
 > bottom exactly as projected, and the quad knee moves from n≤25 to
 > n≤28 (`QUAD2_N_MAX`). Beyond n=28: fresh box. Carried limits: L/4
 > only, peak unchanged (JIT-level-bound), α full-order throughout.
-`docs/quad-bottom-merge-prompt.md`, gate `F2Z_QUAD=2`. Merge the leaf and
+`docs/quad-bottom-merge-prompt.md`, gate `BITZ_QUAD=2`. Merge the leaf and
 pair layers into ONE arity-4, degree-5 layer whose phase A runs k = d−2
 rounds instead of (d−1) + (d−2) — the 152 ms LUT block (messages + mats) is
 the target, and it is **byte/gather-bound, not mul-bound**, so the
@@ -71,7 +71,7 @@ highest-value open item in the repo for prover time at deployed shapes.
 
 ### S2 — Mat+grid fusion (port a landed pattern)
 
-> **MEASURED 2026-08-20, LANDED DEFAULT-ON** (`F2Z_MAT_GRID=0` opts out):
+> **MEASURED 2026-08-20, LANDED DEFAULT-ON** (`BITZ_MAT_GRID=0` opts out):
 > the materialising folds accumulate the next round-pair's grid over
 > just-written quads (cache-hot readback) and deposit it; a new
 > deposited-grid message branch reads it with no pass, so the fresh
@@ -93,7 +93,7 @@ low risk; byte-identical by the same order-free-XOR argument.
 
 ### S3 — 4-Russians the integer fold (`fold_v`, 27 ms)
 
-> **MEASURED 2026-08-20, LANDED DEFAULT-ON** (`F2Z_FOLDV_LUT=0` opts out):
+> **MEASURED 2026-08-20, LANDED DEFAULT-ON** (`BITZ_FOLDV_LUT=0` opts out):
 > `mc:fold_v` 24.7–34.5 → **5.8–6.1 ms** at n=28 (~4.5×, −4–6% of prove)
 > and run-to-run volatility collapses (±0.3 ms vs ±10). The multi-set
 > (`fold_cols_multi_k`, extension path) keeps the tz-walk for now — its K
@@ -111,7 +111,7 @@ one shared nibble stream, K tables).
 
 ### S4 — Mats stash precombine + slot tile (landed 2026-08-21)
 
-> **MEASURED, LANDED DEFAULT-ON** (`F2Z_MATS_PRE=0` / `F2Z_MATS_TILE=0`
+> **MEASURED, LANDED DEFAULT-ON** (`BITZ_MATS_PRE=0` / `BITZ_MATS_TILE=0`
 > opt out; commit 26c22c4). Two stages on pair3mat/leaf3mat:
 > (1) reweight the shared stash ONCE per mat round (even 16-case chunks
 > ×(1+ρ), odd ×ρ — the Leaf4 round-3 factorization) so every written
@@ -223,7 +223,7 @@ skip-the-1 paths (mispredict-bound): all measured dead upstream.
 1. **S3** (4-Russians fold_v) — smallest, self-contained, −3–4% prove.
 2. **S2** (mat+grid fusion) — landed pattern, −3–5% forest.
 3. **S1** (bottom-merge) — the big one; budget a real session against
-   `docs/quad-bottom-merge-prompt.md`; gate `F2Z_QUAD=2`, byte-identity
+   `docs/quad-bottom-merge-prompt.md`; gate `BITZ_QUAD=2`, byte-identity
    exempt (transcript changes — it's a protocol variant, needs its own
    verifier arm like the quad experiment had).
 4. **H1 probe** (SME2 binary outer product feasibility) — one day, kills

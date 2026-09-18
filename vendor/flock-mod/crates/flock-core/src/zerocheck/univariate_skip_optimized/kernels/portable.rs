@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "aarch64"))]
-use super::super::F128;
-use super::super::{F8, InvNttTableByteSingleGf8, N_CHUNKS};
-use crate::field::gf2_8::gf8_reduce;
+use super::super::Gf128;
+use super::super::{Gf8, InvNttTableByteSingleGf8, N_CHUNKS};
+use crate::field::gf8_kernels::gf8_reduce;
 
 /// Scalar bit transpose for C.
 ///
@@ -32,8 +32,8 @@ pub(in super::super) fn shift_reduce_inner_ab_scalar(
     chunk_byte_base: usize,
     b_med: usize,
     out: &mut [u8; 64],
-    a_col: &mut [F8],
-    b_col: &mut [F8],
+    a_col: &mut [Gf8],
+    b_col: &mut [Gf8],
 ) {
     let mut acc = [0u16; 64];
     let byte_base_b = chunk_byte_base + b_med * N_CHUNKS * 8;
@@ -57,14 +57,14 @@ pub(super) fn accumulate_convert(
     chunk_ab_bytes: &[[u8; 64]; 16],
     chunk_c_bytes: &[[u8; 64]; 16],
     n_b_med: usize,
-    convert: &[F128],
-    eq_lo_val: F128,
-    partial_ab: &mut [F128; 64],
-    partial_c: &mut [F128; 64],
+    convert: &[Gf128],
+    eq_lo_val: Gf128,
+    partial_ab: &mut [Gf128; 64],
+    partial_c: &mut [Gf128; 64],
 ) {
     for lane in 0..64 {
-        let mut converted_ab = F128::ZERO;
-        let mut converted_c = F128::ZERO;
+        let mut converted_ab = Gf128::ZERO;
+        let mut converted_c = Gf128::ZERO;
         for b_med in 0..n_b_med {
             let table_base = b_med * 256;
             converted_ab += convert[table_base + chunk_ab_bytes[b_med][lane] as usize];
@@ -81,6 +81,9 @@ pub(super) fn accumulate_convert(
     all(
         target_arch = "x86_64",
         target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
         target_feature = "vpclmulqdq"
     )
 )))]
@@ -88,16 +91,16 @@ pub(super) fn accumulate_convert_with_s_hat_v(
     chunk_ab_bytes: &[[u8; 64]; 16],
     chunk_c_bytes: &[[u8; 64]; 16],
     n_b_med: usize,
-    convert: &[F128],
-    eq_lo_val: F128,
-    partial_ab: &mut [F128; 64],
-    partial_c_0: &mut [F128; 64],
-    partial_c_1: &mut [F128; 64],
+    convert: &[Gf128],
+    eq_lo_val: Gf128,
+    partial_ab: &mut [Gf128; 64],
+    partial_c_0: &mut [Gf128; 64],
+    partial_c_1: &mut [Gf128; 64],
 ) {
     for lane in 0..64 {
-        let mut converted_ab = F128::ZERO;
-        let mut converted_c_0 = F128::ZERO;
-        let mut converted_c_1 = F128::ZERO;
+        let mut converted_ab = Gf128::ZERO;
+        let mut converted_c_0 = Gf128::ZERO;
+        let mut converted_c_1 = Gf128::ZERO;
         for b_med in 0..n_b_med {
             let table_base = b_med * 256;
             let c = chunk_c_bytes[b_med][lane] as usize;

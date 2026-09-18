@@ -40,7 +40,7 @@
 //! - Padding: empty A, B.
 
 use flock_core::challenger::Challenger;
-use flock_core::field::F128;
+use flock_core::field::Gf128;
 use flock_core::lincheck::LincheckCircuit;
 use flock_core::pcs::{Commitment, PcsParams};
 use flock_core::proof::R1csClaim;
@@ -254,7 +254,7 @@ fn build_block_witness_into(
 pub fn generate_witness_with_ab_packed_and_lincheck(
     initial_states: &[State],
     n_blocks_log: usize,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>) {
+) -> (Vec<Gf128>, Vec<Gf128>, Vec<Gf128>, Vec<u8>) {
     let n_blocks = initial_states.len().div_ceil(N_SUB);
     let zero: State = [false; STATE_BITS];
     let triples: Vec<[State; N_SUB]> = (0..n_blocks)
@@ -296,7 +296,7 @@ pub fn generate_witness_with_ab_packed_and_lincheck(
 /// Accumulate sub-keccak `i`'s contribution to `comb` (everything except the
 /// shared const self-loop, which [`KeccakLincheckCircuit::fold_alpha_batched`]
 /// adds once).
-fn accumulate_subkeccak(i: usize, alpha: F128, eq_inner: &[F128], comb: &mut [F128]) {
+fn accumulate_subkeccak(i: usize, alpha: Gf128, eq_inner: &[Gf128], comb: &mut [Gf128]) {
     // ---- state_0 input self-loops: A = [row], B = [Z_CONST].
     for j in 0..STATE_BITS {
         let row = z_pos_state(i, 0, j);
@@ -306,8 +306,8 @@ fn accumulate_subkeccak(i: usize, alpha: F128, eq_inner: &[F128], comb: &mut [F1
     }
 
     // ---- state_24 pin rows: A = L_24[j], B = [Z_CONST].
-    let mut vec_pin: Vec<F128> = vec![F128::ZERO; STATE_BITS];
-    let mut sum_eq_pin = F128::ZERO;
+    let mut vec_pin: Vec<Gf128> = vec![Gf128::ZERO; STATE_BITS];
+    let mut sum_eq_pin = Gf128::ZERO;
     for j in 0..STATE_BITS {
         let row = z_pos_state(i, 24, j);
         let e = eq_inner[row];
@@ -317,16 +317,16 @@ fn accumulate_subkeccak(i: usize, alpha: F128, eq_inner: &[F128], comb: &mut [F1
     comb[Z_CONST] += sum_eq_pin; // B-side from pin's B = [Z_CONST]
 
     // ---- t-AND rows: per-round χ marginals on state_r positions.
-    // Rounds are independent (each writes only chi_*[r]); F128 addition is
+    // Rounds are independent (each writes only chi_*[r]); Gf128 addition is
     // XOR (exactly associative/commutative), so the parallel reduction is
     // bit-identical to the serial loop.
     use rayon::prelude::*;
-    let chi: Vec<(Vec<F128>, Vec<F128>, F128)> = (0..N_T)
+    let chi: Vec<(Vec<Gf128>, Vec<Gf128>, Gf128)> = (0..N_T)
         .into_par_iter()
         .map(|r| {
-            let mut ca = vec![F128::ZERO; STATE_BITS];
-            let mut cb = vec![F128::ZERO; STATE_BITS];
-            let mut se = F128::ZERO;
+            let mut ca = vec![Gf128::ZERO; STATE_BITS];
+            let mut cb = vec![Gf128::ZERO; STATE_BITS];
+            let mut se = Gf128::ZERO;
             for zpos in 0..64 {
                 for y in 0..5 {
                     for x in 0..5 {
@@ -345,9 +345,9 @@ fn accumulate_subkeccak(i: usize, alpha: F128, eq_inner: &[F128], comb: &mut [F1
             (ca, cb, se)
         })
         .collect();
-    let mut chi_a: Vec<Vec<F128>> = Vec::with_capacity(N_T);
-    let mut chi_b: Vec<Vec<F128>> = Vec::with_capacity(N_T);
-    let mut sum_eq_t = F128::ZERO;
+    let mut chi_a: Vec<Vec<Gf128>> = Vec::with_capacity(N_T);
+    let mut chi_b: Vec<Vec<Gf128>> = Vec::with_capacity(N_T);
+    let mut sum_eq_t = Gf128::ZERO;
     for (ca, cb, se) in chi {
         chi_a.push(ca);
         chi_b.push(cb);
@@ -357,8 +357,8 @@ fn accumulate_subkeccak(i: usize, alpha: F128, eq_inner: &[F128], comb: &mut [F1
 
     // ---- Round-constant accumulation. After loop rc = RC_24.
     let mut rc = [false; STATE_BITS];
-    let mut rc_a = F128::ZERO;
-    let mut rc_b = F128::ZERO;
+    let mut rc_a = Gf128::ZERO;
+    let mut rc_b = Gf128::ZERO;
     for r in 0..N_T {
         for s in 0..STATE_BITS {
             if rc[s] {
@@ -374,7 +374,7 @@ fn accumulate_subkeccak(i: usize, alpha: F128, eq_inner: &[F128], comb: &mut [F1
             }
         }
     }
-    let mut rc_pin = F128::ZERO;
+    let mut rc_pin = Gf128::ZERO;
     for s in 0..STATE_BITS {
         if rc[s] {
             rc_pin += vec_pin[s];
@@ -446,18 +446,18 @@ impl LincheckCircuit for KeccakLincheckCircuit {
         Some(Z_CONST)
     }
 
-    fn fold_alpha_batched(&self, alpha: F128, eq_inner: &[F128]) -> Vec<F128> {
+    fn fold_alpha_batched(&self, alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
         use rayon::prelude::*;
         assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
 
         // The three sub-keccaks are independent (disjoint column regions
         // apart from comb[Z_CONST], which accumulates) — run each into a
-        // private comb and merge. F128 addition is XOR, so the regrouping
+        // private comb and merge. Gf128 addition is XOR, so the regrouping
         // is bit-identical to the serial accumulation.
-        let mut combs: Vec<Vec<F128>> = (0..N_SUB)
+        let mut combs: Vec<Vec<Gf128>> = (0..N_SUB)
             .into_par_iter()
             .map(|i| {
-                let mut comb = vec![F128::ZERO; K];
+                let mut comb = vec![Gf128::ZERO; K];
                 accumulate_subkeccak(i, alpha, eq_inner, &mut comb);
                 comb
             })
@@ -742,19 +742,19 @@ mod tests {
         let mut b_u64 = vec![0u64; U64_PER_BLOCK];
         build_block_witness_into(&triple, &mut z_u64, &mut a_u64, &mut b_u64);
 
-        let alpha = F128 {
+        let alpha = Gf128 {
             lo: rng.next_u64(),
             hi: rng.next_u64(),
         };
-        let eq_inner: Vec<F128> = (0..K)
-            .map(|_| F128 {
+        let eq_inner: Vec<Gf128> = (0..K)
+            .map(|_| Gf128 {
                 lo: rng.next_u64(),
                 hi: rng.next_u64(),
             })
             .collect();
 
-        let mut v_a = F128::ZERO;
-        let mut v_b = F128::ZERO;
+        let mut v_a = Gf128::ZERO;
+        let mut v_b = Gf128::ZERO;
         for i in 0..K {
             let u = i / 64;
             let bit = i % 64;
@@ -769,7 +769,7 @@ mod tests {
 
         let comb = KeccakLincheckCircuit.fold_alpha_batched(alpha, &eq_inner);
 
-        let mut got = F128::ZERO;
+        let mut got = Gf128::ZERO;
         for c in 0..K {
             let u = c / 64;
             let bit = c % 64;
@@ -923,9 +923,9 @@ mod tests {
         let inputs: Vec<State> = vec![[false; STATE_BITS]; n_keccaks];
         let (mut z, mut a, mut b, mut zlc) =
             generate_witness_with_ab_packed_and_lincheck(&inputs, setup.n_blocks_log());
-        z.iter_mut().for_each(|v| *v = F128::ZERO);
-        a.iter_mut().for_each(|v| *v = F128::ZERO);
-        b.iter_mut().for_each(|v| *v = F128::ZERO);
+        z.iter_mut().for_each(|v| *v = Gf128::ZERO);
+        a.iter_mut().for_each(|v| *v = Gf128::ZERO);
+        b.iter_mut().for_each(|v| *v = Gf128::ZERO);
         zlc.iter_mut().for_each(|v| *v = 0);
 
         let mut ch_p = FsChallenger::new(b"poc");

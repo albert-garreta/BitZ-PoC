@@ -6,8 +6,8 @@
 //! per shape; every profiled proof is verified.
 //!
 //! ```text
-//! PROBE_SHAPES="14:14" RAYON_NUM_THREADS=8 F2Z_HYBRID_BINIUS_LOG_INV_RATE=3 \
-//!   F2Z_HYBRID_BINIUS_SECURITY_BITS=100 RUSTFLAGS="-C target-cpu=native" \
+//! PROBE_SHAPES="14:14" RAYON_NUM_THREADS=8 BITZ_HYBRID_BINIUS_LOG_INV_RATE=3 \
+//!   BITZ_HYBRID_BINIUS_SECURITY_BITS=100 RUSTFLAGS="-C target-cpu=native" \
 //!   cargo run --release --example binius_probe --features hybrid,span-metrics
 //! ```
 use binius_circuits::sha256::compress::{State, sha256_compress_2x_seq};
@@ -17,7 +17,8 @@ use binius_hash::Blake3HashSuite;
 use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript, fiat_shamir::HasherChallenger};
 use binius_verifier::Verifier;
-use f2z::hybrid::{U32MulMod32Row, chaining_value};
+use bitz::hybrid::chaining_value;
+use bitz::piop::spartan::MulRow;
 
 type Challenger = HasherChallenger<blake3::Hasher>;
 
@@ -26,7 +27,7 @@ fn env_usize(name: &str, default: usize) -> usize {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let shapes: Vec<(u32, u32)> = std::env::var("PROBE_SHAPES")
         .map(|v| {
             v.split_whitespace()
@@ -38,17 +39,17 @@ fn main() {
         })
         .unwrap_or_else(|_| vec![(14, 14)]);
     let reps = env_usize("PROBE_REPS", 1);
-    let log_inv_rate = env_usize("F2Z_HYBRID_BINIUS_LOG_INV_RATE", 3);
-    let security_bits = env_usize("F2Z_HYBRID_BINIUS_SECURITY_BITS", 100);
+    let log_inv_rate = env_usize("BITZ_HYBRID_BINIUS_LOG_INV_RATE", 3);
+    let security_bits = env_usize("BITZ_HYBRID_BINIUS_SECURITY_BITS", 100);
     for (mul_log, sha_log) in shapes {
         let multiplications = 1usize << mul_log;
         let compressions = 1usize << sha_log;
-        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t0 = tracing::info_span!("binius_probe:t0").entered();
         // The `all-binius` circuit of the bench runner.
         let builder = CircuitBuilder::new();
         let mul_wires: Vec<_> = (0..multiplications)
-            .map(|_| f2z::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
+            .map(|_| bitz::hybrid::mod32_binius::add_u32_mul_mod32(&builder))
             .collect();
         let block_wires: Vec<[_; 16]> = (0..compressions)
             .map(|_| std::array::from_fn(|_| builder.add_witness()))
@@ -72,7 +73,7 @@ fn main() {
         let prover = Prover::<OptimalPackedB128, Blake3HashSuite>::setup(verifier.clone()).expect("prover setup");
         eprintln!(
             "setup {mul_log}:{sha_log} {:.0} ms (log_inv_rate={log_inv_rate}, security_bits={security_bits})",
-            { drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "binius_probe:t0").expect("query completed operation") }.as_secs_f64() * 1e3
+            { drop(t0); bitz::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "binius_probe:t0").expect("query completed operation") }.as_secs_f64() * 1e3
         );
         let inputs: Vec<_> = (0..multiplications as u32)
             .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
@@ -81,12 +82,16 @@ fn main() {
             .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
             .collect();
         for rep in 0..=reps {
-            let start_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let start_recording =
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let start = tracing::info_span!("binius_probe:start").entered();
-            let rows: Vec<_> = inputs.iter().map(|&(x, y)| U32MulMod32Row::new(x, y)).collect();
+            let rows: Vec<_> = inputs
+                .iter()
+                .map(|&(x, y)| MulRow::<u32>::new(x, y))
+                .collect();
             let mut filler = circuit.new_witness_filler();
             for (wires, row) in mul_wires.iter().zip(&rows) {
-                for (&wire, value) in wires.iter().zip([row.x, row.y, row.z, row.w]) {
+                for (&wire, value) in wires.iter().zip([row.x, row.y, row.lo, row.hi]) {
                     filler[wire] = Word(value as u64);
                 }
             }
@@ -100,8 +105,8 @@ fn main() {
             }
             circuit.populate_wire_witness(&mut filler).expect("witness");
             let witness = filler.into_value_vec();
-            let witness_ms = { drop(start); f2z::observability::duration(&start_recording.intervals().expect("complete operation capture"), "binius_probe:start").expect("query completed operation") }.as_secs_f64() * 1e3;
-            let t1_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let witness_ms = { drop(start); bitz::observability::duration(&start_recording.intervals().expect("complete operation capture"), "binius_probe:start").expect("query completed operation") }.as_secs_f64() * 1e3;
+            let t1_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t1 = tracing::info_span!("binius_probe:t1").entered();
             let label = if rep == 0 { "warmup (discard)".to_string() } else { format!("rep {rep}") };
             eprintln!("--- {mul_log}:{sha_log} {label}: prove spans follow");
@@ -110,16 +115,16 @@ fn main() {
             let bytes = t.finalize();
             drop(t1);
             let prove_intervals = t1_recording.intervals().expect("complete prove capture");
-            let prove_ms = f2z::observability::duration(&prove_intervals, "binius_probe:t1")
+            let prove_ms = bitz::observability::duration(&prove_intervals, "binius_probe:t1")
                 .expect("query completed prove").as_secs_f64() * 1e3;
-            f2z::observability::write_profile(std::io::stderr().lock(), &label, &prove_intervals, None)
+            bitz::observability::write_profile(std::io::stderr().lock(), &label, &prove_intervals, None)
                 .expect("write prove profile");
-            let t2_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t2_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t2 = tracing::info_span!("binius_probe:t2").entered();
             let mut vt = VerifierTranscript::new(Challenger::default(), bytes.clone());
             verifier.verify(witness.inout(), &mut vt).expect("verify");
             vt.finalize().expect("finalize");
-            let verify_ms = { drop(t2); f2z::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "binius_probe:t2").expect("query completed operation") }.as_secs_f64() * 1e3;
+            let verify_ms = { drop(t2); bitz::observability::duration(&t2_recording.intervals().expect("complete operation capture"), "binius_probe:t2").expect("query completed operation") }.as_secs_f64() * 1e3;
             eprintln!(
                 "=== {mul_log}:{sha_log} {label}: witness {witness_ms:.1} ms + prove {prove_ms:.1} ms = {:.1} ms, verify {verify_ms:.1} ms, proof {} B",
                 witness_ms + prove_ms,

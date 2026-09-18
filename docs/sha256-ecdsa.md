@@ -1,6 +1,6 @@
-# SHA-256 and ECDSA through one F2Z commitment
+# SHA-256 and ECDSA through one BitZ commitment
 
-Enable `ecdsa` to use `f2z::piop::spartan::ecdsa_sha256`. The statement is one
+Enable `ecdsa` to use `bitz::piop::spartan::ecdsa_sha256`. The statement is one
 P-256 public key, one signature, and the compression exponent. Coordinates and
 signature scalars are fixed 32-byte big-endian words. The message, digest, and
 inverse hints belong to the witness. This adapter does not add zero knowledge.
@@ -46,7 +46,7 @@ D = A(rx,.) + rho B(rx,.) + rho² C(rx,.) + gamma Lᵀeq(sigma,.)
 <D,h> = a* + rho b* + rho² c* + gamma <eq(sigma,.),b>
 ```
 
-Its terminal claim retains the scale: `D(ry) * h(ry) = value`. The F2Z opening
+Its terminal claim retains the scale: `D(ry) * h(ry) = value`. The BitZ opening
 uses `D(ry)*eq(ry,.)` as its linear weights and ends in the existing virtual
 adjoint/dual-basis bit opening. No division by a possibly zero scale is needed.
 SHA's coefficients and map remain factored; the ECDSA tail is a compact
@@ -57,7 +57,7 @@ row challenges. Over the sampled field, if an outer terminal claim disagrees
 with the corresponding matrix evaluation, or a linear constraint fails, the
 shared identity is a nonzero polynomial in `rho`, `sigma`, and `gamma`. Sampling those challenges
 after the outer triple prevents the prover from choosing that triple to cancel
-a linear defect. The shared inner sumcheck and F2Z opening then bind the identity
+a linear defect. The shared inner sumcheck and BitZ opening then bind the identity
 to the same assignment. The separate affine check `h[0]=1` is essential here.
 
 `AllRows` is a comparison mode: all original SHA and P-256 rows enter the outer
@@ -107,7 +107,7 @@ both are configurable. Rerunning resumes missing cases; `--retry-failed`
 also retries recorded failures.
 
 Use the same compiler flags throughout a comparison. In particular, native CPU
-features enable the x86 carry-less multiplication implementation used by F2Z.
+features enable the x86 carry-less multiplication implementation used by BitZ.
 The CSV summary reports median sample times; the JSON files retain individual
 samples and nested phase timings. Nested timers overlap and should not be added
 to recover total proving time. `ecdsa:boundary_grinding_prove` reports the

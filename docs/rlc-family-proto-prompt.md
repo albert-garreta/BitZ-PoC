@@ -1,4 +1,4 @@
-# Session prompt — prototype: mod-q RLC batching of F₂-linear claim families in F2Z
+# Session prompt — prototype: mod-q RLC batching of F₂-linear claim families in BitZ
 
 You are in `/Users/albertgarretafontelles/f2z-pcs` (the `f2z-pcs` skill
 applies: build/test/bench conventions, measurement protocol, commit style —
@@ -86,7 +86,7 @@ is the point — and add a j=3 family test (e.g. k=4 with a₄ = a₁⊕a₂⊕a
   `T4At`-style per-position accessor over interleaved bit streams +
   per-case τ tables gets the bottom rounds; dense upper layers unchanged.
   Respect the size-gated table/prefetch lessons already in the tree
-  (`F2Z_LEAF_A2_FACTORED`, `F2Z_LUT_PRFM`, `F2Z_T4_PRFM` — 2026-07-26
+  (`BITZ_LEAF_A2_FACTORED`, `BITZ_LUT_PRFM`, `BITZ_T4_PRFM` — 2026-07-26
   README notes): at big shapes, bytes and data-dependent gathers rule.
 - Bit-LUT early rounds for the discharge if it shows up in the profile.
 

@@ -17,11 +17,11 @@ pins) + the full test suite.
 ## Where things stand
 
 Two byte-identical prover-only passes landed 2026-08-21 (commits `dc31e0f`,
-`0f205b6` on master; flock pin `ed4c0cd` on branch `f2z-k4-port` in
-`~/flock-f2z-port` — visibility-only). n=28 quiet-window bench medians went
+`0f205b6` on master; flock pin `ed4c0cd` on branch `bitz-k4-port` in
+`~/flock-bitz-port` — visibility-only). n=28 quiet-window bench medians went
 **471 → 432 ms**; n=26 ~150 → ~133 ms. Pinned fnv: n=28 `17:11:1` default
 env = `3291626d5b455262`; n=26 `16:10:1` = `4c99cf18d0239216`. 120 tests
-green. Full ledger: memory file `f2z-n28-prover-pass.md`; idea maps:
+green. Full ledger: memory file `bitz-n28-prover-pass.md`; idea maps:
 `docs/forest-speedup-ideas.md`, `docs/lut-width-ideas.md` (their closed
 ledgers are binding — do not relitigate).
 
@@ -29,7 +29,7 @@ What landed: parallel PoW grind (smallest-nonce waves in
 `ZincChallenger::grind_pow`), round-1 lookahead wired through
 `fill_phi_basis_round0`, parallel `extract_column_bit_halves`,
 `xi_combined_rows_packed` (group-outer byte tables off `hint.packed_cols`),
-slot-tiled leaf round 1 (`leaf_round1_tiled`, `F2Z_LEAF_TILE=0` opts out)
+slot-tiled leaf round 1 (`leaf_round1_tiled`, `BITZ_LEAF_TILE=0` opts out)
 with the Precombined ΔΔ form resurrected by L1 tiling
 (`build_leaf_tables` tile hint), `par_clone_f128` at all prover
 `hint.p_msg` copies, parallel fold-table builds, `par_min_len` helper.
@@ -53,7 +53,7 @@ verifier-locked framing).
   mul- or write-mixed — same prediction.
 - Measured dead ends: `array::from_fn`→literals in the mats (+5.6% —
   codegen pessimization; profiler frames there are latency artifacts),
-  coarse rayon chunks (`F2Z_PAR_CHUNK`, +1.4%), 6 threads (+15%),
+  coarse rayon chunks (`BITZ_PAR_CHUNK`, +1.4%), 6 threads (+15%),
   post-loop NEON mats deposit (interleave hides under gathers; leaf3mat
   30→54), batching flock's per-element observes (transcript `absorb_slice`
   is 0x6…0x7 framed — verifier-locked).
@@ -78,7 +78,7 @@ verifier-locked framing).
   --example prof_probe --features unchecked` (scope tree; uses the FAST
   lig config — open-side numbers differ from the bench default);
   `LIG_PROVE_TRACE=1` (flock's open-phase timers); bench:
-  `env F2Z_BENCH_SHAPES=17:11:1 F2Z_BENCH_REPS=9 RUSTFLAGS="-C
+  `env BITZ_BENCH_SHAPES=17:11:1 BITZ_BENCH_REPS=9 RUSTFLAGS="-C
   target-cpu=native" cargo bench --bench pcs --features unchecked`.
 - zsh traps: `env $cfg` does not word-split (use `${=cfg}`); a bare word
   starting with `=` breaks; `grep -c` with zero matches exits 1 and kills
@@ -101,7 +101,7 @@ verifier-locked framing).
    the PMULL loop. One day; kills or opens the hardware lane for the
    ~200M fixed-operand muls (grid 87 ms etc.).
 3. **n≥30 on a memory-fresh box**: verify the leaf tile at n=29 (it
-   forces Precombined there — unmeasured; `F2Z_LEAF_TILE=0` if it loses;
+   forces Precombined there — unmeasured; `BITZ_LEAF_TILE=0` if it loses;
    n=30's Raw8 disengages it), then I3 generator bodies / I5 at the n=30
    leaf round, then I6/L-16.
 4. Small: leaf-tile block-size tuning (`tb` = 128 precombined / 256
@@ -113,4 +113,4 @@ verifier-locked framing).
 
 Work autonomously, keep the byte-identity pins green after every change,
 commit finished increments with explicit pathspecs, and append findings to
-the memory file (`f2z-n28-prover-pass.md`) including dead ends.
+the memory file (`bitz-n28-prover-pass.md`) including dead ends.

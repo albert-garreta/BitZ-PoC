@@ -10,14 +10,15 @@ use crate::piop::sumcheck::{
     prover::{NatEvaluatedPolyWithoutConstant, ProverMsg},
     verifier::VerifierState,
 };
-use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
+use crate::poly::coefficient::PolynomialField;
+
+use crate::poly::{EvaluationError, mle::DenseMultilinearExtension, utils::ArithErrors};
+use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcribable, Transcript};
+use crate::utils::{inner_transparent_field::InnerTransparentField, mul};
 use num_traits::Zero;
 use prover::ProverState;
 use std::marker::PhantomData;
 use thiserror::Error;
-use crate::poly::{EvaluationError, mle::DenseMultilinearExtension, utils::ArithErrors};
-use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcribable, Transcript};
-use crate::utils::{inner_transparent_field::InnerTransparentField, mul};
 
 /// Sumcheck for products of multilinear polynomial.
 pub struct MLSumcheck<F>(PhantomData<F>);
@@ -31,7 +32,7 @@ pub struct SumcheckProof<F> {
     pub claimed_sum: F,
 }
 
-impl<F: PrimeField> GenTranscribable for SumcheckProof<F>
+impl<F: PolynomialField> GenTranscribable for SumcheckProof<F>
 where
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
@@ -88,7 +89,7 @@ where
     }
 }
 
-impl<F: PrimeField> Transcribable for SumcheckProof<F>
+impl<F: PolynomialField> Transcribable for SumcheckProof<F>
 where
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
@@ -109,7 +110,7 @@ where
     }
 }
 
-impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
+impl<F: PolynomialField> MLSumcheck<F> {
     /// Sumcheck prover main entry point.
     ///
     /// This function executes the Prover side of the Sumcheck protocol.
@@ -177,8 +178,8 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
         }
 
         let mut buf = vec![0; F::Inner::NUM_BYTES];
-        let nvars_field = F::from_with_cfg(nvars as u64, config);
-        let degree_field = F::from_with_cfg(degree as u64, config);
+        let nvars_field = F::interpolation_node(nvars as u64, config);
+        let degree_field = F::interpolation_node(degree as u64, config);
 
         transcript.absorb_random_field(&nvars_field, &mut buf);
         transcript.absorb_random_field(&degree_field, &mut buf);
@@ -283,8 +284,8 @@ impl<F: FromPrimitiveWithConfig> MLSumcheck<F> {
 
         let (nvars_field, degree_field): (F, F) = {
             (
-                F::from_with_cfg(num_vars as u64, config),
-                F::from_with_cfg(degree as u64, config),
+                F::interpolation_node(num_vars as u64, config),
+                F::interpolation_node(degree as u64, config),
             )
         };
         transcript.absorb_random_field(&nvars_field, &mut buf);

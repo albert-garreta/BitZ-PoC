@@ -1,21 +1,17 @@
 //! Materialization and multiplication of the transposed Boolean matrix.
 //!
 //! [`MTransposeGenerator`] builds a compact row-major representation of `M^T`
-//! from circuit structure alone. [`MaterializedMTranspose`] computes `r * M`
+//! from circuit structure alone. [`CscMatrix`] computes `r * M`
 //! as parallel, disjoint column gathers over the GHASH field.
 
-use std::error::Error;
-use std::fmt::{self, Display};
-use std::mem::size_of;
+use crate::linear_map::{CscMatrix, ImplicitOnes};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use field::F128;
-use rayon::prelude::*;
+#[cfg(test)]
+use field::Gf128;
 
 use crate::witgen::Z;
 use crate::{BoolWitness, Circuit, HintResult, PackedBits, ScalarBits, WitnessContext};
-
-const PARALLEL_MATRIX_NNZ_THRESHOLD: usize = 1 << 15;
 
 const MATRIX_INLINE_SUPPORT: usize = 4;
 const MATRIX_ARENA_SUPPORT: u8 = u8::MAX;
@@ -239,149 +235,19 @@ impl MTransposeRecorder {
             .push(u32::try_from(self.column_indices.len()).expect("too many nonzeros in M"));
     }
 
-    pub(crate) fn finish(self) -> MaterializedMTranspose {
-        let column_count = self.witness_count + 1;
-        let row_count = self.row_offsets.len() - 1;
-        let mut column_offsets = vec![0_u32; column_count + 1];
-        for &column in &self.column_indices {
-            column_offsets[column as usize + 1] = column_offsets[column as usize + 1]
-                .checked_add(1)
-                .expect("too many nonzeros in one M column");
-        }
-        for column in 0..column_count {
-            column_offsets[column + 1] = column_offsets[column + 1]
-                .checked_add(column_offsets[column])
-                .expect("too many nonzeros in M");
-        }
-
-        let mut cursors = column_offsets[..column_count].to_vec();
-        let mut row_indices = vec![0_u32; self.column_indices.len()];
-        for row in 0..row_count {
-            let start = self.row_offsets[row] as usize;
-            let end = self.row_offsets[row + 1] as usize;
-            for &column in &self.column_indices[start..end] {
-                let cursor = &mut cursors[column as usize];
-                row_indices[*cursor as usize] = u32::try_from(row).expect("too many rows in M");
-                *cursor += 1;
-            }
-        }
-
-        MaterializedMTranspose {
-            row_count,
-            column_offsets: column_offsets.into_boxed_slice(),
-            row_indices: row_indices.into_boxed_slice(),
-        }
-    }
-}
-
-/// A compact row-major representation of `M^T` over F2 (equivalently, CSC for `M`).
-#[derive(Debug)]
-pub struct MaterializedMTranspose {
-    row_count: usize,
-    column_offsets: Box<[u32]>,
-    row_indices: Box<[u32]>,
-}
-
-impl MaterializedMTranspose {
-    /// Number of rows in `M`, including its implicit constant row.
-    pub const fn row_count(&self) -> usize {
-        self.row_count
-    }
-
-    /// Number of columns in `M`, including its implicit constant column.
-    pub const fn column_count(&self) -> usize {
-        self.column_offsets.len() - 1
-    }
-
-    /// Number of nonzero entries in `M`.
-    pub const fn nonzero_count(&self) -> usize {
-        self.row_indices.len()
-    }
-
-    /// Bytes occupied by the fixed-width CSC payload.
-    pub const fn payload_bytes(&self) -> usize {
-        self.column_offsets.len() * size_of::<u32>() + self.row_indices.len() * size_of::<u32>()
-    }
-
-    /// Computes `r * M` and allocates the result vector.
-    pub fn apply(&self, challenges: &[F128]) -> Result<Vec<F128>, MatrixApplyError> {
-        let mut output = Vec::new();
-        self.apply_into(challenges, &mut output)?;
-        Ok(output)
-    }
-
-    /// Computes `r * M` into a reusable result allocation.
-    pub fn apply_into(
-        &self,
-        challenges: &[F128],
-        output: &mut Vec<F128>,
-    ) -> Result<(), MatrixApplyError> {
-        self.apply_inner(challenges, output, None)
-    }
-
-    fn apply_inner(
-        &self,
-        challenges: &[F128],
-        output: &mut Vec<F128>,
-        force_parallel: Option<bool>,
-    ) -> Result<(), MatrixApplyError> {
-        if challenges.len() != self.row_count {
-            return Err(MatrixApplyError {
-                expected: self.row_count,
-                actual: challenges.len(),
-            });
-        }
-        output.resize(self.column_count(), F128::new(0, 0));
-
-        let evaluate = |column: usize| {
-            let start = self.column_offsets[column] as usize;
-            let end = self.column_offsets[column + 1] as usize;
-            let mut lo = 0_u64;
-            let mut hi = 0_u64;
-            for &row in &self.row_indices[start..end] {
-                let challenge = challenges[row as usize];
-                lo ^= challenge.lo;
-                hi ^= challenge.hi;
-            }
-            F128::new(lo, hi)
-        };
-        let parallel = force_parallel.unwrap_or_else(|| {
-            rayon::current_num_threads() > 1
-                && self.row_indices.len() >= PARALLEL_MATRIX_NNZ_THRESHOLD
-        });
-        if parallel {
-            output
-                .par_iter_mut()
-                .enumerate()
-                .for_each(|(column, value)| *value = evaluate(column));
-        } else {
-            output
-                .iter_mut()
-                .enumerate()
-                .for_each(|(column, value)| *value = evaluate(column));
-        }
-        Ok(())
-    }
-}
-
-/// A challenge-vector dimension mismatch while applying materialized `M^T`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MatrixApplyError {
-    pub expected: usize,
-    pub actual: usize,
-}
-
-impl Display for MatrixApplyError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "challenge vector has length {}, expected {}",
-            self.actual, self.expected
+    pub(crate) fn finish(self) -> CscMatrix<ImplicitOnes, u32> {
+        let nnz = self.column_indices.len();
+        crate::linear_map::CsrMatrix::try_from_parts(
+            self.witness_count + 1,
+            self.row_offsets,
+            self.column_indices,
+            ImplicitOnes::new(nnz),
         )
+        .expect("canonical recorded binary rows")
+        .into_csc()
+        .expect("compact recorded indices")
     }
 }
-
-impl Error for MatrixApplyError {}
 
 /// Materializes compact `M^T` from a circuit's static Boolean structure.
 #[derive(Debug)]
@@ -414,7 +280,7 @@ impl MTransposeGenerator {
     }
 
     /// Finishes the compact transposed Boolean matrix.
-    pub fn finish(self) -> MaterializedMTranspose {
+    pub fn finish(self) -> CscMatrix<ImplicitOnes, u32> {
         self.recorder.finish()
     }
 }
@@ -425,7 +291,7 @@ impl Circuit for MTransposeGenerator {
     type Z<const LIMBS: usize> = Z<LIMBS>;
 
     fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
-        Z::from_le_words(words)
+        crate::witgen::integer_from_words(words)
     }
 
     fn xor(&mut self, lhs: MatrixBit, rhs: MatrixBit) -> MatrixBit {
@@ -445,12 +311,12 @@ impl Circuit for MTransposeGenerator {
         ScalarBits(std::array::from_fn(|_| self.recorder.allocate_witness()))
     }
 
-    fn f2z<const LIMBS: usize>(&mut self, value: MatrixBit) -> Z<LIMBS> {
+    fn bitz<const LIMBS: usize>(&mut self, value: MatrixBit) -> Z<LIMBS> {
         self.recorder.push_row(&value);
         Z::from(u64::from(value.constant_term()))
     }
 
-    fn f2z_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
         &mut self,
         bits_le: &<MatrixBit as BoolWitness>::Repr<N, M>,
     ) -> (Z<LIMBS>, Z<LIMBS>) {
@@ -460,7 +326,10 @@ impl Circuit for MTransposeGenerator {
             self.recorder.push_row(bit);
             bit.constant_term()
         });
-        (Z::from_le_bits(&values), Z::from_le_bits(&values[..LOW]))
+        (
+            crate::witgen::integer_from_bits(&values),
+            crate::witgen::integer_from_bits(&values[..LOW]),
+        )
     }
 
     fn assert_r1c<const LIMBS: usize>(&mut self, _: Z<LIMBS>, _: Z<LIMBS>, _: Z<LIMBS>) {}
@@ -484,8 +353,8 @@ mod tests {
     fn example_circuit<CS: Circuit>(circuit: &mut CS, inputs: &[CS::Bool; 3]) {
         let xy = circuit.xor(inputs[0].clone(), inputs[1].clone());
         let not_xy = circuit.xor(xy.clone(), CS::Bool::from(true));
-        let _ = circuit.f2z::<1>(xy);
-        let _ = circuit.f2z::<1>(not_xy);
+        let _ = circuit.bitz::<1>(xy);
+        let _ = circuit.bitz::<1>(not_xy);
 
         let captured = inputs[2].clone();
         let hinted = circuit.hint::<1, 2, 1, _>(move |context| {
@@ -499,14 +368,14 @@ mod tests {
                 1,
             >>::bit(&hinted, 0);
         let mixed = circuit.xor(hinted_zero, inputs[0].clone());
-        let _ = circuit.f2z::<1>(mixed);
-        let _: (CS::Z<1>, CS::Z<1>) = circuit.f2z_unsigned::<1, 2, 1, 1>(&hinted);
+        let _ = circuit.bitz::<1>(mixed);
+        let _: (CS::Z<1>, CS::Z<1>) = circuit.bitz_unsigned::<1, 2, 1, 1>(&hinted);
     }
 
-    fn challenges(count: usize) -> Vec<F128> {
+    fn challenges(count: usize) -> Vec<Gf128> {
         (0..count)
             .map(|index| {
-                F128::new(
+                Gf128::new(
                     (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
                     (index as u64).wrapping_mul(0xd1b5_4a32_d192_ed03) ^ 0xa5a5,
                 )
@@ -527,16 +396,16 @@ mod tests {
         let matrices = generator.into_matrices();
         let r = challenges(matrices.m.row_count());
 
-        let mut expected = vec![F128::new(0, 0); matrices.m.column_count()];
-        for (row, challenge) in matrices.m.rows().iter().zip(&r) {
-            for &column in row.positions() {
+        let mut expected = vec![Gf128::new(0, 0); matrices.m.column_count()];
+        for (row, challenge) in matrices.m.rows().zip(&r) {
+            for &column in row.indices() {
                 expected[column] += *challenge;
             }
         }
 
         assert_eq!(transpose.row_count(), matrices.m.row_count());
         assert_eq!(transpose.column_count(), matrices.m.column_count());
-        assert_eq!(transpose.apply(&r).unwrap(), expected);
+        assert_eq!(transpose.mul_left(&r).unwrap(), expected);
     }
 
     #[test]
@@ -551,8 +420,8 @@ mod tests {
             COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS + 1
         );
         assert_eq!(transpose.row_count(), 20_457);
-        assert_eq!(transpose.nonzero_count(), 42_361);
-        assert!(transpose.payload_bytes() < 194 * 1024);
+        assert_eq!(transpose.nnz(), 42_361);
+        assert!(transpose.topology_bytes() < 194 * 1024);
     }
 
     #[test]
@@ -567,14 +436,12 @@ mod tests {
         }
         let transpose = recorder.finish();
         let r = challenges(transpose.row_count());
-        let mut sequential = Vec::new();
-        let mut parallel = Vec::new();
+        let mut sequential = vec![Gf128::new(0, 0); transpose.column_count()];
+        let mut parallel = vec![Gf128::new(0, 0); transpose.column_count()];
         transpose
-            .apply_inner(&r, &mut sequential, Some(false))
+            .mul_left_kernel(&r, &mut sequential, false)
             .unwrap();
-        transpose
-            .apply_inner(&r, &mut parallel, Some(true))
-            .unwrap();
+        transpose.mul_left_kernel(&r, &mut parallel, true).unwrap();
         assert_eq!(parallel, sequential);
     }
 
@@ -587,11 +454,11 @@ mod tests {
         }
         recorder.push_row(&expression);
         let transpose = recorder.finish();
-        let challenge = F128::new(7, 11);
-        let product = transpose.apply(&[F128::new(3, 5), challenge]).unwrap();
+        let challenge = Gf128::new(7, 11);
+        let product = transpose.mul_left(&[Gf128::new(3, 5), challenge]).unwrap();
 
-        assert_eq!(transpose.nonzero_count(), 7);
-        assert_eq!(product[0], F128::new(3, 5));
+        assert_eq!(transpose.nnz(), 7);
+        assert_eq!(product[0], Gf128::new(3, 5));
         assert!(product[1..].iter().all(|value| *value == challenge));
     }
 
@@ -599,8 +466,9 @@ mod tests {
     fn apply_rejects_the_wrong_challenge_length() {
         let transpose = MTransposeRecorder::with_witnesses(0).finish();
         assert_eq!(
-            transpose.apply(&[]),
-            Err(MatrixApplyError {
+            transpose.mul_left(&[]),
+            Err(crate::linear_map::LinearMapError::Length {
+                kind: "row weights",
                 expected: 1,
                 actual: 0,
             })

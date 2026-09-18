@@ -162,7 +162,7 @@ impl<'a, 'b, T: Transcript + Send> GrindingChallenger<'a, 'b, T> {
         };
         self.valid &= block.native_bits == native;
         // This protocol domain separator stays fixed across Rust type renames.
-        self.inner.observe_label(b"f2z/flock/atomic/v1");
+        self.inner.observe_label(b"bitz/flock/atomic/v1");
         self.inner.observe_bytes(&(self.next as u64).to_le_bytes());
         self.inner.observe_label(block.label.as_bytes());
         self.inner.observe_bytes(&block.bits.to_le_bytes());
@@ -193,11 +193,11 @@ impl<T: Transcript + Send> Challenger for GrindingChallenger<'_, '_, T> {
         self.active = false;
         self.inner.observe_label(label);
     }
-    fn observe_f128(&mut self, value: F128) {
+    fn observe_f128(&mut self, value: Gf128) {
         self.active = false;
         self.inner.observe_f128(value);
     }
-    fn observe_f128_slice(&mut self, values: &[F128]) {
+    fn observe_f128_slice(&mut self, values: &[Gf128]) {
         self.active = false;
         self.inner.observe_f128_slice(values);
     }
@@ -205,7 +205,7 @@ impl<T: Transcript + Send> Challenger for GrindingChallenger<'_, '_, T> {
         self.active = false;
         self.inner.observe_bytes(bytes);
     }
-    fn sample_f128(&mut self) -> F128 {
+    fn sample_f128(&mut self) -> Gf128 {
         if !self.active {
             let bits = self.begin(None);
             if bits > 0 {

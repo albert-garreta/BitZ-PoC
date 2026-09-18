@@ -8,14 +8,14 @@
 //!   cargo run --release --example prof_probe --features unchecked,span-metrics
 //! ```
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
-use f2z::pcs::{IntegerMatrixLayout, smallest_generator};
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 
 const Q: u128 = (1u128 << 100) - 15;
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
     let q_bits = 100usize;
     let shapes: Vec<(usize, usize)> = std::env::var("PROBE_SHAPES")
@@ -68,22 +68,22 @@ fn main() {
 
         // Warm-up (profile discarded).
         {
-            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture warmup");
-            let mut pt = f2z::transcript::Blake3Transcript::new();
+            let profile = bitz::observability::Recording::start(Vec::new()).expect("capture warmup");
+            let mut pt = bitz::transcript::Blake3Transcript::new();
             let pr = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
             std::hint::black_box(&pr);
-            f2z::observability::write_profile(std::io::stderr().lock(), "warmup (discard)", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
+            bitz::observability::write_profile(std::io::stderr().lock(), "warmup (discard)", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
         }
         // Profiled prove.
-        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t0 = tracing::info_span!("prof_probe:t0").entered();
-        let mut pt = f2z::transcript::Blake3Transcript::new();
+        let mut pt = bitz::transcript::Blake3Transcript::new();
         let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
         drop(t0);
         let intervals = t0_recording.intervals().expect("profile intervals");
-        let ms = f2z::observability::duration(&intervals, "prof_probe:t0").expect("prover duration").as_secs_f64() * 1e3;
+        let ms = bitz::observability::duration(&intervals, "prof_probe:t0").expect("prover duration").as_secs_f64() * 1e3;
         std::hint::black_box(&proof);
-        f2z::observability::write_profile(std::io::stderr().lock(), &format!(
+        bitz::observability::write_profile(std::io::stderr().lock(), &format!(
             "n={} (t={t}, s={s}, W=1) — prove {ms:.1} ms",
             t + s
         ), &intervals, None).expect("write profile");

@@ -1,5 +1,5 @@
 //! **Quad (arity-4) eq-factored sumcheck** for the merged forest's QUAD
-//! layers (EXPERIMENTAL, `F2Z_QUAD=1`): proves
+//! layers (EXPERIMENTAL, `BITZ_QUAD=1`): proves
 //! `Σ_x Σ_t eq(x; q)·scale_t·A_t(x)·B_t(x)·C_t(x)·D_t(x)` — one GKR layer
 //! certifying TWO product-tree levels at once (the four multiplicands are
 //! the quarters of level ℓ+2). Round polynomials have degree 5 (six
@@ -21,7 +21,7 @@
 use crate::piop::sumcheck::eq_factored::{
     Pair2FoldTables, Pair2TauSet, build_leaf_fold_tables, build_pair2_fold_tables, leaf3_idx,
 };
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcript;
 use crate::utils::wide_mul::WideMulAcc;
 
@@ -47,12 +47,7 @@ pub struct QuadGroup {
 /// two pairs, weighted by `w` into the wide accumulators.
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-fn quad_slot(
-    w: &Gf,
-    a: [Gf; 4],
-    d: [Gf; 4],
-    acc: &mut [<Gf as WideMulAcc>::Wide; 5],
-) {
+fn quad_slot(w: &Gf, a: [Gf; 4], d: [Gf; 4], acc: &mut [<Gf as WideMulAcc>::Wide; 5]) {
     // (a1 + cδ1)(a2 + cδ2) = p0 + p1 c + p2 c².
     let p0 = a[0] * a[1];
     let p2 = d[0] * d[1];
@@ -73,7 +68,7 @@ fn quad_slot(
     Gf::wide_add_assign(&mut acc[4], &Gf::mul_wide(w, &h4));
 }
 
-/// Restructured slot body — the DEFAULT (`F2Z_QUAD_KERNEL=0` restores
+/// Restructured slot body — the DEFAULT (`BITZ_QUAD_KERNEL=0` restores
 /// [`quad_slot`], diagnostic / A-B): the suffix weight is pre-folded into
 /// the FIRST pair's operands (`w·a₀`, `w·d₀` — associativity moves it
 /// inside the product), the two pair-Karatsubas emit reduced quadratic
@@ -86,12 +81,7 @@ fn quad_slot(
 /// ~125.
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-fn quad_slot_k(
-    w: &Gf,
-    a: [Gf; 4],
-    d: [Gf; 4],
-    acc: &mut [<Gf as WideMulAcc>::Wide; 5],
-) {
+fn quad_slot_k(w: &Gf, a: [Gf; 4], d: [Gf; 4], acc: &mut [<Gf as WideMulAcc>::Wide; 5]) {
     // First pair, w-prefolded: p = (w·A₀)·A₁ coefficients in the round var.
     let wa0 = *w * a[0];
     let wd0 = *w * d[0];
@@ -136,11 +126,11 @@ fn quad_cross_k(p: [Gf; 3], q: [Gf; 3], acc: &mut [<Gf as WideMulAcc>::Wide; 5])
     Gf::wide_add_assign(&mut acc[4], &m2);
 }
 
-/// The restructured-body knob: default ON; `F2Z_QUAD_KERNEL=0` restores
+/// The restructured-body knob: default ON; `BITZ_QUAD_KERNEL=0` restores
 /// the naive slot/node bodies. Read per prove call (NOT once per
 /// process) so the byte-identity pin can toggle it in one test process.
 fn quad_kernel_on() -> bool {
-    std::env::var("F2Z_QUAD_KERNEL").map_or(true, |v| v != "0")
+    std::env::var("BITZ_QUAD_KERNEL").map_or(true, |v| v != "0")
 }
 
 /// One round's message/transcript close, shared by the quad drivers:
@@ -178,8 +168,7 @@ fn quad_round_close(
         // instead of ~42.
         for (t, h) in hs.iter().enumerate() {
             let a_t = a_scalars[t];
-            let ah: [Gf; 5] =
-                [a_t * h[0], a_t * h[1], a_t * h[2], a_t * h[3], a_t * h[4]];
+            let ah: [Gf; 5] = [a_t * h[0], a_t * h[1], a_t * h[2], a_t * h[3], a_t * h[4]];
             m_nodes[0] += ah[0];
             m_nodes[1] += ah[0] + ah[1] + ah[2] + ah[3] + ah[4];
             for (c, slot) in m_nodes.iter_mut().enumerate().skip(2) {
@@ -241,15 +230,17 @@ pub fn prove_quad_eq_sumcheck(
 ) -> (SumcheckProof<Gf>, Vec<Gf>, Vec<[Gf; 4]>) {
     let k = groups.first().map_or(0, |g| g.q.len());
     assert!(k >= 1, "quad sumcheck needs >= 1 variable");
-    debug_assert!(groups
-        .iter()
-        .all(|g| g.q == groups[0].q && g.bufs.iter().all(|v| v.len() == 1 << k)));
+    debug_assert!(
+        groups
+            .iter()
+            .all(|g| g.q == groups[0].q && g.bufs.iter().all(|v| v.len() == 1 << k))
+    );
     let zero = Gf::zero();
     let one = Gf::one();
     let kernel = quad_kernel_on();
     // Six Lagrange nodes 0..=5 (bit-pattern convention) + their power rows
     // for the coefficient → node conversion.
-    let nodes: Vec<Gf> = (0u64..6).map(Gf::from).collect();
+    let nodes: Vec<Gf> = (0u128..6).map(Gf::from_polynomial_bits).collect();
     let node_pows: Vec<[Gf; 5]> = nodes
         .iter()
         .map(|&c| {
@@ -264,8 +255,8 @@ pub fn prove_quad_eq_sumcheck(
     let mut bufs: Vec<[Vec<Gf>; 4]> = groups.into_iter().map(|g| g.bufs).collect();
 
     let mut buf = vec![0u8; 16];
-    transcript.absorb_random_field(&Gf::from(k as u64), &mut buf);
-    transcript.absorb_random_field(&Gf::from(5u64), &mut buf);
+    transcript.absorb_random_field(&Gf::from_polynomial_bits(k as u128), &mut buf);
+    transcript.absorb_random_field(&Gf::from_polynomial_bits(5), &mut buf);
 
     let mut randomness: Vec<Gf> = Vec::with_capacity(k);
     let mut messages: Vec<ProverMsg<Gf>> = Vec::with_capacity(k);
@@ -319,7 +310,10 @@ pub fn prove_quad_eq_sumcheck(
             #[cfg(feature = "parallel")]
             {
                 let min_len = crate::piop::sumcheck::eq_factored::par_min_len(bufs.len(), half);
-                bufs.par_iter_mut().with_min_len(min_len).map(fused).collect()
+                bufs.par_iter_mut()
+                    .with_min_len(min_len)
+                    .map(fused)
+                    .collect()
             }
             #[cfg(not(feature = "parallel"))]
             {
@@ -394,14 +388,21 @@ pub fn prove_quad_eq_sumcheck(
                 })
                 .collect();
             randomness.push(rho);
-            return (SumcheckProof { messages, claimed_sum }, randomness, finals);
+            return (
+                SumcheckProof {
+                    messages,
+                    claimed_sum,
+                },
+                randomness,
+                finals,
+            );
         }
     }
     unreachable!("the final round returns")
 }
 
 // ========================================================================
-// The BOTTOM quad layer (`F2Z_QUAD=2`): the arity-2 plan's pair and leaf
+// The BOTTOM quad layer (`BITZ_QUAD=2`): the arity-2 plan's pair and leaf
 // layers merged into ONE arity-4 bit-driven layer — output d−2, consuming
 // the LEAVES, whose four quarter multiplicands are never materialised.
 // ========================================================================
@@ -409,10 +410,10 @@ pub fn prove_quad_eq_sumcheck(
 /// One tree's inputs to the bottom quad layer: the midpoint-split
 /// committed bit halves — the same per-tree arrays the arity-2 cascades
 /// read (`lbits[i]` selects leaf `i`, `rbits[i]` leaf `i + 2^{d−1}`).
-pub struct QuadBitGroup {
+pub struct QuadBitGroup<'a> {
     pub scale: Gf,
-    pub lbits: Vec<u64>,
-    pub rbits: Vec<u64>,
+    pub lbits: &'a [u64],
+    pub rbits: &'a [u64],
 }
 
 /// The tree-shared tables of the bottom layer: `te`/`to` (round 1's
@@ -467,20 +468,27 @@ pub fn prove_quad_bottom_sumcheck(
     tables: &QuadBottomTables<'_>,
 ) -> (SumcheckProof<Gf>, Vec<Gf>, Vec<[Gf; 4]>) {
     let k = q_pt.len();
-    assert!(k >= 4, "the bottom quad needs k >= 4 (three bit-driven rounds, then a dense fold)");
+    assert!(
+        k >= 4,
+        "the bottom quad needs k >= 4 (three bit-driven rounds, then a dense fold)"
+    );
     let q1b = 1usize << k; // quarter size = the O-side bit offset
     let hdd = 1usize << (k - 1); // t_dd's O-side pair base
     let zero = Gf::zero();
     let one = Gf::one();
     let kernel = quad_kernel_on();
     let words = (2 * q1b).div_ceil(64);
-    debug_assert!(groups.iter().all(|g| g.lbits.len() == words && g.rbits.len() == words));
+    debug_assert!(
+        groups
+            .iter()
+            .all(|g| g.lbits.len() == words && g.rbits.len() == words)
+    );
     debug_assert_eq!(tables.te.len(), q1b << 2);
     debug_assert_eq!(tables.to.len(), q1b << 2);
     debug_assert_eq!(tables.t_dd.len(), q1b << 4);
     debug_assert_eq!(tables.tau_l.len(), q1b << 1);
     debug_assert_eq!(tables.tau_r.len(), q1b << 1);
-    let nodes: Vec<Gf> = (0u64..6).map(Gf::from).collect();
+    let nodes: Vec<Gf> = (0u128..6).map(Gf::from_polynomial_bits).collect();
     let node_pows: Vec<[Gf; 5]> = nodes
         .iter()
         .map(|&c| {
@@ -492,8 +500,8 @@ pub fn prove_quad_bottom_sumcheck(
     let mut a_scalars: Vec<Gf> = groups.iter().map(|g| g.scale).collect();
 
     let mut buf = vec![0u8; 16];
-    transcript.absorb_random_field(&Gf::from(k as u64), &mut buf);
-    transcript.absorb_random_field(&Gf::from(5u64), &mut buf);
+    transcript.absorb_random_field(&Gf::from_polynomial_bits(k as u128), &mut buf);
+    transcript.absorb_random_field(&Gf::from_polynomial_bits(5), &mut buf);
 
     let mut randomness: Vec<Gf> = Vec::with_capacity(k);
     let mut messages: Vec<ProverMsg<Gf>> = Vec::with_capacity(k);
@@ -515,9 +523,12 @@ pub fn prove_quad_bottom_sumcheck(
         ($body:expr, $half:expr) => {{
             #[cfg(feature = "parallel")]
             {
-                let min_len =
-                    crate::piop::sumcheck::eq_factored::par_min_len(groups.len(), $half);
-                groups.par_iter().with_min_len(min_len).map($body).collect::<Vec<[Gf; 5]>>()
+                let min_len = crate::piop::sumcheck::eq_factored::par_min_len(groups.len(), $half);
+                groups
+                    .par_iter()
+                    .with_min_len(min_len)
+                    .map($body)
+                    .collect::<Vec<[Gf; 5]>>()
             }
             #[cfg(not(feature = "parallel"))]
             {
@@ -555,8 +566,17 @@ pub fn prove_quad_bottom_sumcheck(
         };
         let hs = par_hs!(r1, half1);
         let rho = quad_round_close(
-            transcript, &hs, &mut a_scalars, &q_pt[0], &nodes, &node_pows, kernel, true,
-            &mut claimed_sum, &mut messages, &mut buf,
+            transcript,
+            &hs,
+            &mut a_scalars,
+            &q_pt[0],
+            &nodes,
+            &node_pows,
+            kernel,
+            true,
+            &mut claimed_sum,
+            &mut messages,
+            &mut buf,
         );
         randomness.push(rho);
     }
@@ -564,7 +584,10 @@ pub fn prove_quad_bottom_sumcheck(
     // τ-sliced per quarter (Q00/Q10 through t_l, Q01/Q11 through t_r).
     let f1 = {
         let ft = build_leaf_fold_tables(&randomness[0], &one, tables.tau_l, tables.tau_r);
-        Pair2TauSet { te: ft.t_l, to: ft.t_r }
+        Pair2TauSet {
+            te: ft.t_l,
+            to: ft.t_r,
+        }
     };
 
     // ---- round 2: (a, δ) per multiplicand off F₁ (nibble windows) ----
@@ -580,8 +603,7 @@ pub fn prove_quad_bottom_sumcheck(
                 let n01 = bit4(&g.rbits, s << 2);
                 let n10 = bit4(&g.lbits, q1b + (s << 2));
                 let n11 = bit4(&g.rbits, q1b + (s << 2));
-                let val =
-                    |t: &[Gf], base: usize, ei: usize, c: usize| t[((base + ei) << 2) | c];
+                let val = |t: &[Gf], base: usize, ei: usize, c: usize| t[((base + ei) << 2) | c];
                 // Slot order [Q00, Q01, Q10, Q11]: pairs (0,1) = E, (2,3) = O.
                 let a0 = val(&f1.te, 0, e, n00 & 3);
                 let v0 = val(&f1.te, 0, e | 1, n00 >> 2);
@@ -603,8 +625,17 @@ pub fn prove_quad_bottom_sumcheck(
         };
         let hs = par_hs!(r2, half2);
         let rho = quad_round_close(
-            transcript, &hs, &mut a_scalars, &q_pt[1], &nodes, &node_pows, kernel, false,
-            &mut claimed_sum, &mut messages, &mut buf,
+            transcript,
+            &hs,
+            &mut a_scalars,
+            &q_pt[1],
+            &nodes,
+            &node_pows,
+            kernel,
+            false,
+            &mut claimed_sum,
+            &mut messages,
+            &mut buf,
         );
         randomness.push(rho);
     }
@@ -648,8 +679,17 @@ pub fn prove_quad_bottom_sumcheck(
         };
         let hs = par_hs!(r3, half3);
         let rho = quad_round_close(
-            transcript, &hs, &mut a_scalars, &q_pt[2], &nodes, &node_pows, kernel, false,
-            &mut claimed_sum, &mut messages, &mut buf,
+            transcript,
+            &hs,
+            &mut a_scalars,
+            &q_pt[2],
+            &nodes,
+            &node_pows,
+            kernel,
+            false,
+            &mut claimed_sum,
+            &mut messages,
+            &mut buf,
         );
         randomness.push(rho);
     }
@@ -677,7 +717,11 @@ pub fn prove_quad_bottom_sumcheck(
     #[cfg(feature = "parallel")]
     let mut bufs: Vec<[Vec<Gf>; 4]> = {
         let min_len = crate::piop::sumcheck::eq_factored::par_min_len(groups.len(), half3);
-        groups.par_iter().with_min_len(min_len).map(mat_group).collect()
+        groups
+            .par_iter()
+            .with_min_len(min_len)
+            .map(mat_group)
+            .collect()
     };
     #[cfg(not(feature = "parallel"))]
     let mut bufs: Vec<[Vec<Gf>; 4]> = groups.iter().map(mat_group).collect();
@@ -722,7 +766,10 @@ pub fn prove_quad_bottom_sumcheck(
             #[cfg(feature = "parallel")]
             {
                 let min_len = crate::piop::sumcheck::eq_factored::par_min_len(bufs.len(), half);
-                bufs.par_iter_mut().with_min_len(min_len).map(fused).collect()
+                bufs.par_iter_mut()
+                    .with_min_len(min_len)
+                    .map(fused)
+                    .collect()
             }
             #[cfg(not(feature = "parallel"))]
             {
@@ -759,8 +806,17 @@ pub fn prove_quad_bottom_sumcheck(
             }
         };
         let rho = quad_round_close(
-            transcript, &hs, &mut a_scalars, &q_pt[j - 1], &nodes, &node_pows, kernel, false,
-            &mut claimed_sum, &mut messages, &mut buf,
+            transcript,
+            &hs,
+            &mut a_scalars,
+            &q_pt[j - 1],
+            &nodes,
+            &node_pows,
+            kernel,
+            false,
+            &mut claimed_sum,
+            &mut messages,
+            &mut buf,
         );
         if j < k {
             pending_rho = Some(rho);
@@ -776,7 +832,14 @@ pub fn prove_quad_bottom_sumcheck(
                 })
                 .collect();
             randomness.push(rho);
-            return (SumcheckProof { messages, claimed_sum }, randomness, finals);
+            return (
+                SumcheckProof {
+                    messages,
+                    claimed_sum,
+                },
+                randomness,
+                finals,
+            );
         }
     }
     unreachable!("the final round returns")
@@ -790,7 +853,7 @@ mod tests {
 
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
-        Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+        Gf::from_polynomial_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
     }
 
     /// The bottom driver is transcript-, challenge- and finals-identical
@@ -837,7 +900,7 @@ mod tests {
             let mkbits = |seed: u64| -> Vec<u64> {
                 (0..words)
                     .map(|w| {
-                        let x = sample(seed + w as u64).words()[0];
+                        let x = sample(seed + w as u64).as_words()[0];
                         if q2b < 64 { x & ((1u64 << q2b) - 1) } else { x }
                     })
                     .collect()
@@ -846,15 +909,25 @@ mod tests {
 
             let mut groups_ref = Vec::new();
             let mut groups_bot = Vec::new();
-            for t in 0..ngroups {
-                let lbits = mkbits(0xD000 + 97 * t as u64);
-                let rbits = mkbits(0xE000 + 131 * t as u64);
+            let bits: Vec<_> = (0..ngroups)
+                .map(|t| {
+                    (
+                        mkbits(0xD000 + 97 * t as u64),
+                        mkbits(0xE000 + 131 * t as u64),
+                    )
+                })
+                .collect();
+            for (t, (lbits, rbits)) in bits.iter().enumerate() {
                 let scale = sample(0xF000 + t as u64);
                 let quarter = |bits: &[u64], tau: &[Gf], base: usize| -> Vec<Gf> {
                     (0..q1b)
                         .map(|y| {
                             let i = base + y;
-                            if (bits[i >> 6] >> (i & 63)) & 1 == 1 { one + tau[i] } else { one }
+                            if (bits[i >> 6] >> (i & 63)) & 1 == 1 {
+                                one + tau[i]
+                            } else {
+                                one
+                            }
                         })
                         .collect()
                 };
@@ -867,7 +940,11 @@ mod tests {
                     scale,
                     bufs: [q00, q10, q01, q11],
                 });
-                groups_bot.push(QuadBitGroup { scale, lbits, rbits });
+                groups_bot.push(QuadBitGroup {
+                    scale,
+                    lbits,
+                    rbits,
+                });
             }
 
             let mut t_ref = Blake3Transcript::new();
@@ -885,7 +962,10 @@ mod tests {
 
             assert_eq!(r_ref, r_bot, "challenges diverge at k={k}");
             assert_eq!(f_ref, f_bot, "finals diverge at k={k}");
-            assert_eq!(p_ref.claimed_sum, p_bot.claimed_sum, "claimed sums diverge at k={k}");
+            assert_eq!(
+                p_ref.claimed_sum, p_bot.claimed_sum,
+                "claimed sums diverge at k={k}"
+            );
             assert_eq!(p_ref.messages.len(), p_bot.messages.len());
             // Equal transcript states ⇒ equal subsequent draws.
             let c_ref: Gf = t_ref.get_field_challenge(&());

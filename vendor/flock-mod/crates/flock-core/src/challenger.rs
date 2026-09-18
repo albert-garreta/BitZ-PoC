@@ -23,7 +23,7 @@
 //!   ([`crate::pcs::commit::PcsParams::merkle_hash`]) — set both to the same
 //!   value if you want the whole system resting on a single primitive.
 
-use crate::field::F128;
+use crate::field::Gf128;
 use crate::hash::HashKind;
 use sha2::{Digest, Sha256};
 
@@ -39,11 +39,11 @@ pub trait Challenger: Send {
         // default no-op — RandomChallenger inherits this.
     }
 
-    /// Absorb a single F128 prover message.
-    fn observe_f128(&mut self, value: F128);
+    /// Absorb a single Gf128 prover message.
+    fn observe_f128(&mut self, value: Gf128);
 
-    /// Absorb a slice of F128 prover messages (e.g. the round-1 vector).
-    fn observe_f128_slice(&mut self, values: &[F128]) {
+    /// Absorb a slice of Gf128 prover messages (e.g. the round-1 vector).
+    fn observe_f128_slice(&mut self, values: &[Gf128]) {
         for v in values {
             self.observe_f128(*v);
         }
@@ -54,11 +54,11 @@ pub trait Challenger: Send {
         // default no-op — RandomChallenger inherits this.
     }
 
-    /// Produce one F128 challenge.
-    fn sample_f128(&mut self) -> F128;
+    /// Produce one Gf128 challenge.
+    fn sample_f128(&mut self) -> Gf128;
 
-    /// Produce `n` F128 challenges, in order.
-    fn sample_f128_vec(&mut self, n: usize) -> Vec<F128> {
+    /// Produce `n` Gf128 challenges, in order.
+    fn sample_f128_vec(&mut self, n: usize) -> Vec<Gf128> {
         (0..n).map(|_| self.sample_f128()).collect()
     }
 
@@ -124,14 +124,14 @@ impl RandomChallenger {
 #[cfg(any(test, feature = "unsound-challenger"))]
 impl Challenger for RandomChallenger {
     #[inline]
-    fn observe_f128(&mut self, _value: F128) {
+    fn observe_f128(&mut self, _value: Gf128) {
         // intentional no-op: random challenger is independent of prover state
     }
 
-    fn sample_f128(&mut self) -> F128 {
+    fn sample_f128(&mut self) -> Gf128 {
         let lo = splitmix64(&mut self.state);
         let hi = splitmix64(&mut self.state);
-        F128 { lo, hi }
+        Gf128 { lo, hi }
     }
 }
 
@@ -276,7 +276,7 @@ impl FsChallenger {
     }
 
     #[inline]
-    fn absorb_f128(&mut self, v: F128) {
+    fn absorb_f128(&mut self, v: Gf128) {
         self.absorb(&v.lo.to_le_bytes());
         self.absorb(&v.hi.to_le_bytes());
     }
@@ -340,12 +340,12 @@ impl Challenger for FsChallenger {
         self.absorb(label);
     }
 
-    fn observe_f128(&mut self, value: F128) {
+    fn observe_f128(&mut self, value: Gf128) {
         self.absorb(&[OP_OBSERVE, KIND_SCALAR]);
         self.absorb_f128(value);
     }
 
-    fn observe_f128_slice(&mut self, values: &[F128]) {
+    fn observe_f128_slice(&mut self, values: &[Gf128]) {
         self.absorb(&[OP_OBSERVE, KIND_SLICE]);
         self.absorb(&(values.len() as u64).to_le_bytes());
         for v in values {
@@ -359,7 +359,7 @@ impl Challenger for FsChallenger {
         self.absorb(bytes);
     }
 
-    fn sample_f128(&mut self) -> F128 {
+    fn sample_f128(&mut self) -> Gf128 {
         #[cfg(feature = "hash-count")]
         fs_count::SQUEEZES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.absorb(&[OP_SQUEEZE, KIND_SCALAR]);
@@ -369,10 +369,10 @@ impl Challenger for FsChallenger {
         self.absorb(&buf);
         let lo = u64::from_le_bytes(buf[..8].try_into().unwrap());
         let hi = u64::from_le_bytes(buf[8..].try_into().unwrap());
-        F128 { lo, hi }
+        Gf128 { lo, hi }
     }
 
-    fn sample_f128_vec(&mut self, n: usize) -> Vec<F128> {
+    fn sample_f128_vec(&mut self, n: usize) -> Vec<Gf128> {
         #[cfg(feature = "hash-count")]
         fs_count::SQUEEZES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.absorb(&[OP_SQUEEZE, KIND_SLICE]);
@@ -383,7 +383,7 @@ impl Challenger for FsChallenger {
         buf.as_chunks::<16>()
             .0
             .iter()
-            .map(|c| F128 {
+            .map(|c| Gf128 {
                 lo: u64::from_le_bytes(c[..8].try_into().unwrap()),
                 hi: u64::from_le_bytes(c[8..].try_into().unwrap()),
             })
@@ -753,7 +753,7 @@ mod tests {
         let script = |ch: &mut FsChallenger| {
             ch.observe_label(b"phase");
             ch.observe_bytes(b"root");
-            ch.observe_f128(F128::ONE);
+            ch.observe_f128(Gf128::ONE);
             ch.sample_f128_vec(4)
         };
         let mut sha = FsChallenger::with_hash(b"d", HashKind::Sha256);
@@ -892,11 +892,11 @@ mod tests {
         // Observing arbitrary messages does not change the sampled values.
         let mut c1 = RandomChallenger::new(7);
         let mut c2 = RandomChallenger::new(7);
-        c2.observe_f128(F128 {
+        c2.observe_f128(Gf128 {
             lo: 0xDEADBEEF,
             hi: 0xCAFEBABE,
         });
-        c2.observe_f128_slice(&[F128::ONE, F128::ZERO]);
+        c2.observe_f128_slice(&[Gf128::ONE, Gf128::ZERO]);
         c2.observe_label(b"ignored");
         c2.observe_bytes(b"also ignored");
         for _ in 0..8 {
@@ -909,7 +909,7 @@ mod tests {
         let mut c1 = RandomChallenger::new(99);
         let mut c2 = RandomChallenger::new(99);
         let batch = c1.sample_f128_vec(5);
-        let individual: Vec<F128> = (0..5).map(|_| c2.sample_f128()).collect();
+        let individual: Vec<Gf128> = (0..5).map(|_| c2.sample_f128()).collect();
         assert_eq!(batch, individual);
     }
 
@@ -920,7 +920,7 @@ mod tests {
         for kind in KINDS {
             let mut c1 = FsChallenger::with_hash(b"flock-test", kind);
             let mut c2 = FsChallenger::with_hash(b"flock-test", kind);
-            let msg = F128 {
+            let msg = Gf128 {
                 lo: 0x1234,
                 hi: 0x5678,
             };
@@ -946,8 +946,8 @@ mod tests {
         for kind in KINDS {
             let mut c1 = FsChallenger::with_hash(b"flock", kind);
             let mut c2 = FsChallenger::with_hash(b"flock", kind);
-            c1.observe_f128(F128::ONE);
-            c2.observe_f128(F128::ZERO);
+            c1.observe_f128(Gf128::ONE);
+            c2.observe_f128(Gf128::ZERO);
             assert_ne!(c1.sample_f128(), c2.sample_f128());
         }
     }
@@ -968,7 +968,7 @@ mod tests {
         for kind in KINDS {
             // observe_f128_slice(&[v]) must NOT produce the same state as
             // observe_f128(v) — the length prefix and kind tag must defeat this.
-            let v = F128 { lo: 0xAB, hi: 0xCD };
+            let v = Gf128 { lo: 0xAB, hi: 0xCD };
             let mut c1 = FsChallenger::with_hash(b"flock", kind);
             let mut c2 = FsChallenger::with_hash(b"flock", kind);
             c1.observe_f128(v);
@@ -980,8 +980,8 @@ mod tests {
     #[test]
     fn fs_challenger_two_scalars_dont_collide_with_one_slice_of_two() {
         for kind in KINDS {
-            let a = F128 { lo: 1, hi: 2 };
-            let b = F128 { lo: 3, hi: 4 };
+            let a = Gf128 { lo: 1, hi: 2 };
+            let b = Gf128 { lo: 3, hi: 4 };
             let mut c1 = FsChallenger::with_hash(b"flock", kind);
             let mut c2 = FsChallenger::with_hash(b"flock", kind);
             c1.observe_f128(a);
@@ -1011,8 +1011,8 @@ mod tests {
             let mut c2 = FsChallenger::with_hash(b"flock", kind);
             let _ = c1.sample_f128();
             // c2 skips the sample.
-            c1.observe_f128(F128::ONE);
-            c2.observe_f128(F128::ONE);
+            c1.observe_f128(Gf128::ONE);
+            c2.observe_f128(Gf128::ONE);
             assert_ne!(c1.sample_f128(), c2.sample_f128());
         }
     }

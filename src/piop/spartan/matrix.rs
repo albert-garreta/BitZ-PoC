@@ -5,6 +5,12 @@
 //! supply the three matrices `A`, `B`, and `C`, their row products, and the
 //! complete assignment consumed by those matrices.
 
+#[cfg(test)]
+use crate::sumcheck::bridge::PreparedBinding;
+use circuit::linear_map::SparseMatrixError;
+use field::RingOps;
+#[cfg(test)]
+use field::{Fp, IntegerEmbedding, Uint};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -15,23 +21,86 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use super::spliced_digest::{SplicedDigestBuilder, SplicedStreamDigest};
-use crate::{
-    poly::mle::DenseMultilinearExtension,
-    sparse_matrix::{SparseColumn, SparseMatrixError},
-};
+use crate::poly::mle::DenseMultilinearExtension;
 
 /// Domain tag of the prepared-statement digest (`v2`), shared verbatim by
 /// the entry-wise walk and the skeleton's cached stream.
-const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"f2z/spartan/constraint-matrices/v2";
+const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"bitz/spartan/constraint-matrices/v2";
 
-pub use crate::sparse_matrix::SparseMatrix;
+use circuit::linear_map::CscMatrix;
 
 use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
+
+/// Form field row operands from the complete padded Montgomery assignment.
+/// Traversal depends only on public sparse structure, never on witness values.
+pub(crate) fn products_from_montgomery_assignment<C>(
+    matrices: &PreparedConstraintMatrices<field::Fp<2>, C>,
+    assignment: &[u128],
+) -> Result<crate::sumcheck::outer::OuterInputs<field::Fp<2>>, super::SpartanError>
+where
+    C: SpartanMatrixCoefficient<field::Fp<2>>,
+{
+    use super::raw_monty::{raw_shared, shared_raw};
+    use field::{CtEq, CtOrd};
+    let _scope = tracing::info_span!("sp:field_assignment_products").entered();
+    let field = matrices.config();
+    let logical = matrices.matrices().column_count();
+    if assignment.len() != 1usize << matrices.num_column_vars() {
+        return Err(super::SpartanError::InvalidAssignmentDimensions);
+    }
+    let modulus = field.modulus();
+    let valid = assignment.iter().fold(field::CtMask::TRUE, |valid, value| {
+        valid & field::Uint::<2>::from(*value).ct_lt(modulus)
+    });
+    if !valid.declassify() {
+        return Err(super::SpartanError::FieldConfigurationMismatch);
+    }
+    if !field::Uint::<2>::from(assignment[0])
+        .ct_eq(&field::Uint::<2>::from(raw_shared(field.one())))
+        .declassify()
+    {
+        return Err(SpartanMatrixError::InvalidAssignmentConstant.into());
+    }
+    if assignment[logical..]
+        .iter()
+        .fold(0, |any, &value| any | value)
+        != 0
+    {
+        return Err(super::SpartanError::InvalidAssignmentPadding);
+    }
+    let product = |matrix: &CscMatrix<Box<[C]>>| {
+        let mut out = vec![field.zero(); 1usize << matrices.num_row_vars()];
+        let offsets = matrix.column_offsets();
+        for column in 0..matrix.column_count() {
+            let value = shared_raw(field, assignment[column]);
+            for index in offsets[column]..offsets[column + 1] {
+                let row = matrix.row_indices()[index];
+                let term = matrix.coefficients()[index].scale(&value, field);
+                out[row] = field.add(&out[row], &term);
+            }
+        }
+        out
+    };
+    let m = matrices.matrices();
+    #[cfg(feature = "parallel")]
+    if m.a().nnz() + m.b().nnz() + m.c().nnz() >= 4096 && rayon::current_num_threads() > 1 {
+        let (ax, (bx, cx)) = rayon::join(
+            || product(m.a()),
+            || rayon::join(|| product(m.b()), || product(m.c())),
+        );
+        return Ok(crate::sumcheck::outer::OuterInputs { ax, bx, cx });
+    }
+    Ok(crate::sumcheck::outer::OuterInputs {
+        ax: product(m.a()),
+        bx: product(m.b()),
+        cx: product(m.c()),
+    })
+}
 
 /// A sparse R1CS coefficient that can act on values in `F`.
 ///
 /// The coefficient's canonical encoding is always the encoding of the
-/// corresponding element of `F`. Consequently, a Boolean matrix containing
+/// corresponding element of `F`. Consequently, a Bit matrix containing
 /// `true` has the same prepared-statement digest as a field-valued matrix
 /// containing `F::one_with_cfg(field_config)` at the same coordinates.
 pub trait SpartanMatrixCoefficient<F>: Clone + Send + Sync
@@ -53,23 +122,6 @@ where
 
     /// Multiplies a field value by this coefficient.
     fn scale(&self, value: &F, field_config: &F::Config) -> F;
-
-    /// Computes one CSC column's dot product with field-valued row weights.
-    fn column_dot(
-        column: SparseColumn<'_, Self>,
-        row_weights: &[F],
-        zero: &F,
-        field_config: &F::Config,
-    ) -> F
-    where
-        Self: Sized,
-    {
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[row], field_config);
-        }
-        evaluation
-    }
 }
 
 impl<F> SpartanMatrixCoefficient<F> for F
@@ -86,14 +138,14 @@ where
 
     fn canonical_field_encoding<'a>(
         &'a self,
-        _field_config: &F::Config,
+        field_config: &F::Config,
         _field_one_encoding: &'a [u8],
     ) -> Cow<'a, [u8]> {
-        Cow::Owned(self.canonical_element_encoding())
+        Cow::Owned(self.canonical_element_encoding(field_config))
     }
 
-    fn scale(&self, value: &F, _field_config: &F::Config) -> F {
-        mul(value, self)
+    fn scale(&self, value: &F, field_config: &F::Config) -> F {
+        (field_config).mul(value, self)
     }
 }
 
@@ -117,7 +169,7 @@ where
         if *self {
             Cow::Borrowed(field_one_encoding)
         } else {
-            Cow::Owned(F::zero_with_cfg(field_config).canonical_element_encoding())
+            Cow::Owned(F::zero_with_cfg(field_config).canonical_element_encoding(field_config))
         }
     }
 
@@ -127,23 +179,6 @@ where
         } else {
             F::zero_with_cfg(field_config)
         }
-    }
-
-    fn column_dot(
-        column: SparseColumn<'_, Self>,
-        row_weights: &[F],
-        zero: &F,
-        field_config: &F::Config,
-    ) -> F {
-        if let Some((row, true)) = column.single() {
-            return row_weights[row].clone();
-        }
-
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[row], field_config);
-        }
-        evaluation
     }
 }
 
@@ -184,14 +219,14 @@ where
 pub enum SpartanMatrixError {
     /// The generic CSC matrix is malformed.
     #[error(transparent)]
-    SparseMatrix(#[from] SparseMatrixError),
+    CscMatrix(#[from] SparseMatrixError),
 
     /// `A`, `B`, and `C` do not describe one common R1CS shape.
     #[error("A, B, and C must have identical, nonempty dimensions")]
     InvalidR1csShape,
 
-    /// A table length cannot be rounded up to a Boolean-hypercube domain.
-    #[error("the requested Boolean-hypercube domain is too large")]
+    /// A table length cannot be rounded up to a Bit-hypercube domain.
+    #[error("the requested Bit-hypercube domain is too large")]
     DomainTooLarge,
 
     /// A supplied value belongs to a different runtime field configuration.
@@ -316,7 +351,12 @@ where
     }
 
     /// Visits every logical row in little-endian `s + 2^K*x` order.
-    fn for_each_row(&self, logical_rows: usize, mut consume: impl FnMut(usize, F)) {
+    pub(crate) fn for_each_row(
+        &self,
+        logical_rows: usize,
+        mut consume: impl FnMut(usize, F),
+        field_config: &F::Config,
+    ) {
         debug_assert!(logical_rows <= 1usize << self.num_row_vars);
         let block_len = 1usize << self.skip_vars;
         let low_mask = self.tail_low.len() - 1;
@@ -325,13 +365,14 @@ where
         for suffix in 0..suffixes {
             let low_index = suffix & low_mask;
             let high_index = suffix >> self.tail_low_vars;
-            let tail_weight = mul(&self.tail_low[low_index], &self.tail_high[high_index]);
+            let tail_weight =
+                (field_config).mul(&self.tail_low[low_index], &self.tail_high[high_index]);
             let row_start = suffix * block_len;
             let active = block_len.min(logical_rows - row_start);
             for prefix_index in 0..active {
                 consume(
                     row_start + prefix_index,
-                    mul(&self.prefix[prefix_index], &tail_weight),
+                    (field_config).mul(&self.prefix[prefix_index], &tail_weight),
                 );
             }
         }
@@ -351,12 +392,16 @@ where
     }
 
     /// Reference/fallback materialization in canonical row order.
-    pub(crate) fn materialize(&self) -> Vec<F> {
+    pub(crate) fn materialize(&self, field_config: &F::Config) -> Vec<F> {
         let mut weights = Vec::with_capacity(1usize << self.num_row_vars);
-        self.for_each_row(1usize << self.num_row_vars, |row, weight| {
-            debug_assert_eq!(row, weights.len());
-            weights.push(weight);
-        });
+        self.for_each_row(
+            1usize << self.num_row_vars,
+            |row, weight| {
+                debug_assert_eq!(row, weights.len());
+                weights.push(weight);
+            },
+            &field_config,
+        );
         weights
     }
 }
@@ -393,17 +438,17 @@ pub(crate) struct ProductRowFunctional<'a, F> {
 /// The three field-valued matrices defining an R1CS relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstraintMatrices<F> {
-    a: SparseMatrix<F>,
-    b: SparseMatrix<F>,
-    c: SparseMatrix<F>,
+    a: CscMatrix<Box<[F]>>,
+    b: CscMatrix<Box<[F]>>,
+    c: CscMatrix<Box<[F]>>,
 }
 
 impl<F> ConstraintMatrices<F> {
     /// Validates that `A`, `B`, and `C` share one nonempty shape.
     pub fn new(
-        a: SparseMatrix<F>,
-        b: SparseMatrix<F>,
-        c: SparseMatrix<F>,
+        a: CscMatrix<Box<[F]>>,
+        b: CscMatrix<Box<[F]>>,
+        c: CscMatrix<Box<[F]>>,
     ) -> Result<Self, SpartanMatrixError> {
         let rows = a.row_count();
         let columns = a.column_count();
@@ -421,17 +466,17 @@ impl<F> ConstraintMatrices<F> {
     }
 
     /// Left R1CS matrix.
-    pub const fn a(&self) -> &SparseMatrix<F> {
+    pub const fn a(&self) -> &CscMatrix<Box<[F]>> {
         &self.a
     }
 
     /// Right R1CS matrix.
-    pub const fn b(&self) -> &SparseMatrix<F> {
+    pub const fn b(&self) -> &CscMatrix<Box<[F]>> {
         &self.b
     }
 
     /// Output R1CS matrix.
-    pub const fn c(&self) -> &SparseMatrix<F> {
+    pub const fn c(&self) -> &CscMatrix<Box<[F]>> {
         &self.c
     }
 
@@ -477,7 +522,7 @@ pub(crate) struct SelectorRun<C> {
 /// binds and folds without materializing `D`. The verifier evaluates the
 /// batched matrices at its terminal point through the same structure in
 /// time logarithmic in the relation size
-/// ([`PreparedConstraintMatrices::evaluate_batched_with_product_row_functional`]).
+/// ([`crate::sumcheck::bridge::structured::StructuredBinding::evaluate_product`]).
 #[derive(Clone, Debug)]
 pub(crate) struct BlockSelectorLayout<C> {
     /// Logical row count, the length of every run.
@@ -612,7 +657,8 @@ where
         let digest = constraint_matrix_digest(&matrices, field_config, &field_modulus_encoding)?;
         let selector_triplet =
             detect_disjoint_unit_selector_triplet::<F, C>(&matrices, field_config);
-        let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
+        let field_one_encoding =
+            F::one_with_cfg(field_config).canonical_element_encoding(field_config);
         let block_selector =
             detect_block_selector_layout_with(&matrices, num_column_vars, |left: &C, right: &C| {
                 left.canonical_field_encoding(field_config, &field_one_encoding)
@@ -696,6 +742,17 @@ where
         self.num_column_vars
     }
 
+    pub(crate) fn binding<'a>(
+        &'a self,
+        rho: &'a F,
+    ) -> crate::sumcheck::bridge::dense::DenseBinding<'a, F, C> {
+        crate::sumcheck::bridge::dense::DenseBinding::new(self, rho)
+    }
+    pub(crate) fn structured(
+        &self,
+    ) -> crate::sumcheck::bridge::structured::StructuredBinding<'_, F, C> {
+        crate::sumcheck::bridge::structured::StructuredBinding::new(self)
+    }
     /// The detected disjoint unit-selector layout as
     /// `[rows, a_offset, b_offset, c_offset]`, for the raw prover-side
     /// binding kernel; `None` for every other matrix layout.
@@ -715,484 +772,6 @@ where
     /// prover-side structured inner sumcheck.
     pub(crate) fn block_selector(&self) -> Option<&BlockSelectorLayout<C>> {
         self.block_selector.as_deref()
-    }
-
-    /// Constructs the dense column MLE
-    ///
-    /// `D(j) = sum_i eq(i, row_point) (A[i,j] + rho B[i,j] + rho^2 C[i,j])`.
-    ///
-    /// The resulting table is indexed in little-endian column-coordinate
-    /// order and padded with trailing zeros.
-    pub fn bind_and_batch(
-        &self,
-        row_point: &[F],
-        rho: &F,
-    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
-        if row_point.len() != self.num_row_vars {
-            return Err(SpartanMatrixError::InvalidRowPointLength {
-                expected: self.num_row_vars,
-                actual: row_point.len(),
-            });
-        }
-        validate_elements_field(row_point, &self.field_modulus_encoding)?;
-        validate_element_field(rho, &self.field_modulus_encoding)?;
-
-        let row_weights = eq_table_prover(row_point, &self.field_config)?;
-        self.bind_and_batch_with_validated_row_weights(&row_weights, rho)
-    }
-
-    /// Constructs the dense column MLE from an explicit field-valued row
-    /// functional:
-    ///
-    /// `D(j) = sum_i row_weights[i] (A[i,j] + rho B[i,j] + rho^2 C[i,j])`.
-    ///
-    /// `row_weights` covers the complete padded row domain in little-endian
-    /// index order. Weights for padding rows are accepted but have no effect
-    /// because the sparse matrices contain only logical rows.
-    #[allow(dead_code)]
-    pub(crate) fn bind_and_batch_with_row_weights(
-        &self,
-        row_weights: &[F],
-        rho: &F,
-    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
-        let expected_row_weights = domain_size(self.num_row_vars)?;
-        if row_weights.len() != expected_row_weights {
-            return Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: expected_row_weights,
-                actual: row_weights.len(),
-            });
-        }
-        validate_elements_field(row_weights, &self.field_modulus_encoding)?;
-        validate_element_field(rho, &self.field_modulus_encoding)?;
-
-        self.bind_and_batch_with_validated_row_weights(row_weights, rho)
-    }
-
-    /// Binding core for row weights already derived from transcript-validated
-    /// points under this matrix configuration.
-    ///
-    /// Keeping this separate avoids rescanning and re-encoding every entry of
-    /// the exponentially sized equality table on the standard prover path.
-    pub(crate) fn bind_and_batch_with_validated_row_weights(
-        &self,
-        row_weights: &[F],
-        rho: &F,
-    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
-        debug_assert_eq!(row_weights.len(), 1usize << self.num_row_vars);
-
-        let zero = F::zero_with_cfg(&self.field_config);
-        let rho_squared = mul(rho, rho);
-
-        // Column-parallel over the live columns (each column's value is
-        // independent, and its inner sums are untouched — identical
-        // values in identical order to the sequential zip).
-        let live_columns = self
-            .matrices
-            .a()
-            .column_count()
-            .min(self.matrices.b().column_count())
-            .min(self.matrices.c().column_count());
-        let column_evaluation = |index: usize| -> F {
-            let a_column = self.matrices.a().column(index).expect("live column");
-            let b_column = self.matrices.b().column(index).expect("live column");
-            let c_column = self.matrices.c().column(index).expect("live column");
-            let mut evaluation =
-                sparse_column_dot(a_column, row_weights, &zero, &self.field_config);
-            if !b_column.is_empty() {
-                let b_evaluation =
-                    sparse_column_dot(b_column, row_weights, &zero, &self.field_config);
-                evaluation += &mul(rho, &b_evaluation);
-            }
-            if !c_column.is_empty() {
-                let c_evaluation =
-                    sparse_column_dot(c_column, row_weights, &zero, &self.field_config);
-                evaluation += &mul(&rho_squared, &c_evaluation);
-            }
-            evaluation
-        };
-        #[cfg(feature = "parallel")]
-        let mut evaluations: Vec<F> =
-            if live_columns >= (1 << 12) && rayon::current_num_threads() > 1 {
-                (0..live_columns)
-                    .into_par_iter()
-                    .map(column_evaluation)
-                    .collect()
-            } else {
-                (0..live_columns).map(column_evaluation).collect()
-            };
-        #[cfg(not(feature = "parallel"))]
-        let mut evaluations: Vec<F> = (0..live_columns).map(column_evaluation).collect();
-        evaluations.resize(domain_size(self.num_column_vars)?, zero);
-
-        Ok(DenseMultilinearExtension {
-            evaluations,
-            num_vars: self.num_column_vars,
-        })
-    }
-
-    /// Constructs the dense batched column MLE from a three-factor
-    /// prefix-univariate row functional.
-    ///
-    /// Disjoint unit-selector matrices are streamed a row block at a time, so
-    /// the complete row-weight tensor is never allocated. Other matrix layouts
-    /// retain the existing materialized implementation as a correctness- and
-    /// latency-preserving fallback.
-    pub(crate) fn bind_and_batch_with_prefix_univariate_factors(
-        &self,
-        factors: &PrefixUnivariateRowFactors<F>,
-        rho: &F,
-    ) -> Result<DenseMultilinearExtension<F>, SpartanMatrixError> {
-        if factors.num_row_vars != self.num_row_vars {
-            return Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: domain_size(self.num_row_vars)?,
-                actual: domain_size(factors.num_row_vars)?,
-            });
-        }
-
-        let Some(layout) = self.selector_triplet else {
-            let row_weights = factors.materialize();
-            return self.bind_and_batch_with_validated_row_weights(&row_weights, rho);
-        };
-
-        let zero = F::zero_with_cfg(&self.field_config);
-        let rho_squared = mul(rho, rho);
-        let mut evaluations = vec![zero; domain_size(self.num_column_vars)?];
-        factors.for_each_row(layout.rows, |row, weight| {
-            evaluations[layout.a_offset + row] = weight.clone();
-            evaluations[layout.b_offset + row] = mul(rho, &weight);
-            evaluations[layout.c_offset + row] = mul(&rho_squared, &weight);
-        });
-
-        Ok(DenseMultilinearExtension {
-            evaluations,
-            num_vars: self.num_column_vars,
-        })
-    }
-
-    /// Directly evaluates
-    ///
-    /// `A(row_point, column_point) + rho B(row_point, column_point)
-    /// + rho^2 C(row_point, column_point)`.
-    ///
-    /// This deliberately does not construct or evaluate the dense table from
-    /// [`Self::bind_and_batch`], keeping the verifier path independent of the
-    /// prover's materialization kernel.
-    pub fn evaluate_batched(
-        &self,
-        row_point: &[F],
-        rho: &F,
-        column_point: &[F],
-    ) -> Result<F, SpartanMatrixError> {
-        if row_point.len() != self.num_row_vars {
-            return Err(SpartanMatrixError::InvalidRowPointLength {
-                expected: self.num_row_vars,
-                actual: row_point.len(),
-            });
-        }
-        if column_point.len() != self.num_column_vars {
-            return Err(SpartanMatrixError::InvalidColumnPointLength {
-                expected: self.num_column_vars,
-                actual: column_point.len(),
-            });
-        }
-        validate_elements_field(row_point, &self.field_modulus_encoding)?;
-        validate_elements_field(column_point, &self.field_modulus_encoding)?;
-        validate_element_field(rho, &self.field_modulus_encoding)?;
-
-        if self.block_selector.is_some() {
-            // The equality functional is the `K = 0` product functional:
-            // succinct on a block-selector layout, and never a `2^num_row_vars`
-            // table plus an `O(nnz)` walk.
-            let one = F::one_with_cfg(&self.field_config);
-            let functional = ProductRowFunctional {
-                skip_vars: 0,
-                prefix: std::slice::from_ref(&one),
-                tail_point: row_point,
-            };
-            return self.evaluate_batched_with_product_row_functional(&functional, rho, column_point);
-        }
-
-        let row_weights = eq_table(row_point, &self.field_config)?;
-        self.evaluate_batched_with_validated_row_weights(&row_weights, rho, column_point)
-    }
-
-    /// Evaluates the batched matrices against a product-form row functional
-    /// `W` ([`ProductRowFunctional`]):
-    ///
-    /// `Σ_i W(i) (A(i, column_point) + ρ B(i, column_point) + ρ² C(i, column_point))`.
-    ///
-    /// On a validated [`BlockSelectorLayout`] this runs in
-    /// `O(2^K + num_row_vars + num_column_vars + runs)` field operations
-    /// ([`Self::evaluate_block_selector_layout`]); on any other matrix shape
-    /// it is the streamed or materialized sparse evaluation of the same
-    /// value. Every input is validated against the prepared field before
-    /// use.
-    pub(crate) fn evaluate_batched_with_product_row_functional(
-        &self,
-        functional: &ProductRowFunctional<'_, F>,
-        rho: &F,
-        column_point: &[F],
-    ) -> Result<F, SpartanMatrixError> {
-        let skip_vars = functional.skip_vars;
-        if skip_vars > self.num_row_vars {
-            return Err(SpartanMatrixError::InvalidRowPointLength {
-                expected: self.num_row_vars,
-                actual: skip_vars,
-            });
-        }
-        let expected_prefix = domain_size(skip_vars)?;
-        if functional.prefix.len() != expected_prefix {
-            return Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: expected_prefix,
-                actual: functional.prefix.len(),
-            });
-        }
-        let tail_vars = self.num_row_vars - skip_vars;
-        if functional.tail_point.len() != tail_vars {
-            return Err(SpartanMatrixError::InvalidRowPointLength {
-                expected: tail_vars,
-                actual: functional.tail_point.len(),
-            });
-        }
-        if column_point.len() != self.num_column_vars {
-            return Err(SpartanMatrixError::InvalidColumnPointLength {
-                expected: self.num_column_vars,
-                actual: column_point.len(),
-            });
-        }
-        validate_elements_field(functional.prefix, &self.field_modulus_encoding)?;
-        validate_elements_field(functional.tail_point, &self.field_modulus_encoding)?;
-        validate_elements_field(column_point, &self.field_modulus_encoding)?;
-        validate_element_field(rho, &self.field_modulus_encoding)?;
-
-        if let Some(layout) = self.block_selector.as_deref() {
-            return self.evaluate_block_selector_layout(layout, functional, rho, column_point);
-        }
-
-        // Generic matrices: the sparse reference evaluation under the
-        // materialized (or, for disjoint unit selectors, streamed) weights.
-        if skip_vars == 0 {
-            let row_weights = eq_table(functional.tail_point, &self.field_config)?;
-            return self.evaluate_batched_with_validated_row_weights(
-                &row_weights,
-                rho,
-                column_point,
-            );
-        }
-        let (tail_low, tail_high) = make_equality_factors(functional.tail_point, &self.field_config)?;
-        let factors = PrefixUnivariateRowFactors::new(
-            skip_vars,
-            functional.prefix.to_vec(),
-            tail_low,
-            tail_high,
-            self.num_row_vars,
-        )?;
-        self.evaluate_batched_with_prefix_univariate_factors(&factors, rho, column_point)
-    }
-
-    /// The succinct evaluation behind
-    /// [`Self::evaluate_batched_with_product_row_functional`] on a validated
-    /// [`BlockSelectorLayout`].
-    ///
-    /// Every matrix is `Σ_runs coefficient · Sel(start)` with
-    /// `Sel(start)[i, start + i] = 1` for `i < rows`, where `start` is a
-    /// multiple of the power-of-two `block_len ≥ rows` and
-    /// `start + rows ≤ columns ≤ 2^num_column_vars` (the detector's
-    /// invariants, re-checked here). With `n = num_row_vars` we have
-    /// `rows ≤ 2^n ≤ block_len = 2^ℓ`, so the column index `start + i` of a
-    /// run entry has bits `[0, n)` equal to `i`, bits `[n, ℓ)` zero and bits
-    /// `[ℓ, num_column_vars)` equal to `start >> ℓ`. For the little-endian
-    /// equality table at `y = column_point` this gives
-    ///
-    /// `eq(y, start + i) = eq(y[..n], i) · Π_{k ∈ [n, ℓ)} (1 − y_k) · eq(y[ℓ..], start >> ℓ)`
-    ///
-    /// and the batched evaluation factors as
-    ///
-    /// `S · Z · Σ_{M ∈ {A, B, C}} f_M · Σ_{runs of M} coefficient · eq(y[ℓ..], start >> ℓ)`
-    ///
-    /// with `S = Σ_{i < rows} W(i) eq(y[..n], i)` ([`product_row_prefix_sum`]),
-    /// `Z = Π_{k ∈ [n, ℓ)} (1 − y_k)` and `(f_A, f_B, f_C) = (1, ρ, ρ²)`. The
-    /// result is the same field element as the sparse evaluation.
-    fn evaluate_block_selector_layout(
-        &self,
-        layout: &BlockSelectorLayout<C>,
-        functional: &ProductRowFunctional<'_, F>,
-        rho: &F,
-        column_point: &[F],
-    ) -> Result<F, SpartanMatrixError> {
-        let field_config = &self.field_config;
-        let num_row_vars = self.num_row_vars;
-        let rows = layout.rows;
-        let block_len = layout.block_len;
-        let columns = self.matrices.column_count();
-        let log_block_len = block_len.trailing_zeros() as usize;
-        if rows == 0
-            || rows != self.matrices.row_count()
-            || !block_len.is_power_of_two()
-            || rows > block_len
-            || domain_size(num_row_vars)? > block_len
-            || log_block_len > self.num_column_vars
-            || column_point.len() != self.num_column_vars
-        {
-            return Err(SpartanMatrixError::InvalidMleOperation);
-        }
-
-        let one = F::one_with_cfg(field_config);
-        let zero = F::zero_with_cfg(field_config);
-        let (low_point, rest) = column_point.split_at(num_row_vars);
-        let (padding_point, high_point) = rest.split_at(log_block_len - num_row_vars);
-
-        let row_sum = product_row_prefix_sum(functional, rows, low_point, field_config)?;
-        let mut padding = one.clone();
-        for coordinate in padding_point {
-            padding = mul(&padding, &sub(&one, coordinate));
-        }
-
-        let run_sum = |runs: &[SelectorRun<C>]| -> Result<F, SpartanMatrixError> {
-            let mut sum = zero.clone();
-            for run in runs {
-                if run.start % block_len != 0
-                    || run
-                        .start
-                        .checked_add(rows)
-                        .is_none_or(|end| end > columns)
-                {
-                    return Err(SpartanMatrixError::InvalidMleOperation);
-                }
-                let block_weight =
-                    eq_at_boolean_index(high_point, run.start >> log_block_len, field_config)?;
-                sum += &run.coefficient.scale(&block_weight, field_config);
-            }
-            Ok(sum)
-        };
-        let mut batched = run_sum(&layout.a)?;
-        batched += &mul(rho, &run_sum(&layout.b)?);
-        batched += &mul(&mul(rho, rho), &run_sum(&layout.c)?);
-        Ok(mul(&mul(&row_sum, &padding), &batched))
-    }
-
-    /// Directly evaluates the batched matrices against an explicit
-    /// field-valued row functional and a multilinear column point:
-    ///
-    /// `sum_i row_weights[i] (A(i, column_point)
-    ///     + rho B(i, column_point) + rho^2 C(i, column_point))`.
-    ///
-    /// `row_weights` covers the complete padded row domain in little-endian
-    /// index order.
-    #[allow(dead_code)]
-    pub(crate) fn evaluate_batched_with_row_weights(
-        &self,
-        row_weights: &[F],
-        rho: &F,
-        column_point: &[F],
-    ) -> Result<F, SpartanMatrixError> {
-        let expected_row_weights = domain_size(self.num_row_vars)?;
-        if row_weights.len() != expected_row_weights {
-            return Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: expected_row_weights,
-                actual: row_weights.len(),
-            });
-        }
-        if column_point.len() != self.num_column_vars {
-            return Err(SpartanMatrixError::InvalidColumnPointLength {
-                expected: self.num_column_vars,
-                actual: column_point.len(),
-            });
-        }
-        validate_elements_field(row_weights, &self.field_modulus_encoding)?;
-        validate_elements_field(column_point, &self.field_modulus_encoding)?;
-        validate_element_field(rho, &self.field_modulus_encoding)?;
-
-        self.evaluate_batched_with_validated_row_weights(row_weights, rho, column_point)
-    }
-
-    /// Evaluation core for row weights and challenges already validated under
-    /// this matrix configuration.
-    pub(crate) fn evaluate_batched_with_validated_row_weights(
-        &self,
-        row_weights: &[F],
-        rho: &F,
-        column_point: &[F],
-    ) -> Result<F, SpartanMatrixError> {
-        debug_assert_eq!(row_weights.len(), 1usize << self.num_row_vars);
-        debug_assert_eq!(column_point.len(), self.num_column_vars);
-
-        let column_weights = eq_table(column_point, &self.field_config)?;
-        let zero = F::zero_with_cfg(&self.field_config);
-        let rho_squared = mul(rho, rho);
-        let mut evaluation = evaluate_sparse_matrix(
-            self.matrices.a(),
-            row_weights,
-            &column_weights,
-            &zero,
-            &self.field_config,
-        );
-        let b_evaluation = evaluate_sparse_matrix(
-            self.matrices.b(),
-            row_weights,
-            &column_weights,
-            &zero,
-            &self.field_config,
-        );
-        let c_evaluation = evaluate_sparse_matrix(
-            self.matrices.c(),
-            row_weights,
-            &column_weights,
-            &zero,
-            &self.field_config,
-        );
-        evaluation += &mul(rho, &b_evaluation);
-        evaluation += &mul(&rho_squared, &c_evaluation);
-
-        Ok(evaluation)
-    }
-
-    /// Evaluates the batched matrices against a three-factor
-    /// prefix-univariate row functional without constructing its tensor
-    /// product when the prepared selector layout supports row streaming.
-    pub(crate) fn evaluate_batched_with_prefix_univariate_factors(
-        &self,
-        factors: &PrefixUnivariateRowFactors<F>,
-        rho: &F,
-        column_point: &[F],
-    ) -> Result<F, SpartanMatrixError> {
-        if factors.num_row_vars != self.num_row_vars {
-            return Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: domain_size(self.num_row_vars)?,
-                actual: domain_size(factors.num_row_vars)?,
-            });
-        }
-        if column_point.len() != self.num_column_vars {
-            return Err(SpartanMatrixError::InvalidColumnPointLength {
-                expected: self.num_column_vars,
-                actual: column_point.len(),
-            });
-        }
-
-        let Some(layout) = self.selector_triplet else {
-            let row_weights = factors.materialize();
-            return self.evaluate_batched_with_validated_row_weights(
-                &row_weights,
-                rho,
-                column_point,
-            );
-        };
-
-        let column_weights = eq_table(column_point, &self.field_config)?;
-        let zero = F::zero_with_cfg(&self.field_config);
-        let mut a_evaluation = zero.clone();
-        let mut b_evaluation = zero.clone();
-        let mut c_evaluation = zero;
-        factors.for_each_row(layout.rows, |row, weight| {
-            a_evaluation += &mul(&weight, &column_weights[layout.a_offset + row]);
-            b_evaluation += &mul(&weight, &column_weights[layout.b_offset + row]);
-            c_evaluation += &mul(&weight, &column_weights[layout.c_offset + row]);
-        });
-
-        let rho_squared = mul(rho, rho);
-        a_evaluation += &mul(rho, &b_evaluation);
-        a_evaluation += &mul(&rho_squared, &c_evaluation);
-        Ok(a_evaluation)
     }
 }
 
@@ -1225,7 +804,7 @@ where
     padded_mle(assignment, field_config)
 }
 
-/// Convenience conversion for a Boolean assignment beginning with `true`.
+/// Convenience conversion for a Bit assignment beginning with `true`.
 pub fn build_boolean_assignment_mle<F>(
     assignment: &[bool],
     expected_columns: usize,
@@ -1305,14 +884,14 @@ where
     for (left_i, right_i) in left.iter().zip(right) {
         // (1 - left_i) + right_i (2 left_i - 1)
         let mut twice_left_minus_one = left_i.clone();
-        twice_left_minus_one += left_i;
-        twice_left_minus_one -= &one;
-        twice_left_minus_one *= right_i;
+        twice_left_minus_one = field_config.add(&(twice_left_minus_one), &(left_i));
+        twice_left_minus_one = field_config.sub(&(twice_left_minus_one), &(&one));
+        twice_left_minus_one = field_config.mul(&(twice_left_minus_one), &(right_i));
 
         let mut coordinate = one.clone();
-        coordinate -= left_i;
-        coordinate += &twice_left_minus_one;
-        value *= &coordinate;
+        coordinate = field_config.sub(&(coordinate), &(left_i));
+        coordinate = field_config.add(&(coordinate), &(&twice_left_minus_one));
+        value = field_config.mul(&(value), &(&coordinate));
     }
     Ok(value)
 }
@@ -1337,8 +916,8 @@ where
         let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
         for (zero_child, one_child) in zero_children.iter_mut().zip(one_children) {
             let parent = zero_child.clone();
-            *one_child = mul(&parent, challenge);
-            *zero_child = sub(&parent, one_child);
+            *one_child = (field_config).mul(&parent, challenge);
+            *zero_child = (field_config).sub(&parent, one_child);
         }
     }
 
@@ -1349,7 +928,10 @@ where
 /// (each level's pair expansions are independent; the products — and
 /// therefore the table — are identical to the sequential build). The
 /// verifier's evaluation path keeps the plain [`eq_table`].
-fn eq_table_prover<F>(point: &[F], field_config: &F::Config) -> Result<Vec<F>, SpartanMatrixError>
+pub(crate) fn eq_table_prover<F>(
+    point: &[F],
+    field_config: &F::Config,
+) -> Result<Vec<F>, SpartanMatrixError>
 where
     F: SpartanField,
 {
@@ -1365,8 +947,8 @@ where
         let (zero_children, one_children) = table[..2 * half].split_at_mut(half);
         let expand = |zero_child: &mut F, one_child: &mut F| {
             let parent = zero_child.clone();
-            *one_child = mul(&parent, challenge);
-            *zero_child = sub(&parent, one_child);
+            *one_child = (field_config).mul(&parent, challenge);
+            *zero_child = (field_config).sub(&parent, one_child);
         };
         #[cfg(feature = "parallel")]
         if half >= (1 << 13) && rayon::current_num_threads() > 1 {
@@ -1450,7 +1032,7 @@ where
     /// Directly discharges the claim against a complete evaluation table.
     ///
     /// This is the witness-aware path used until the assignment opening is
-    /// connected to the F2Z PCS.
+    /// connected to the BitZ PCS.
     pub fn nonsuccinct_verify(
         &self,
         polynomial: &DenseMultilinearExtension<F>,
@@ -1460,7 +1042,7 @@ where
         validate_element_field(&self.scale, &modulus_encoding)?;
         validate_element_field(&self.value, &modulus_encoding)?;
         let evaluation = evaluate_mle(polynomial, &self.point, field_config)?;
-        if mul(&self.scale, &evaluation) != self.value {
+        if (field_config).mul(&self.scale, &evaluation) != self.value {
             return Err(MleClaimError::InvalidEvaluation);
         }
         Ok(())
@@ -1481,8 +1063,8 @@ where
 ///
 /// where `y_lo = point[..K]`, `y_hi = point[K..]`, `t = tail_point`, and the
 /// second term is present only for `R > 0` (then `Q < 2^{n − K}` is a
-/// Boolean index of the tail domain).
-fn product_row_prefix_sum<F>(
+/// Bit index of the tail domain).
+pub(crate) fn product_row_prefix_sum<F>(
     functional: &ProductRowFunctional<'_, F>,
     rows: usize,
     point: &[F],
@@ -1509,28 +1091,31 @@ where
     let prefix_sum = |count: usize| -> F {
         let mut sum = zero.clone();
         for (weight, equality) in functional.prefix[..count].iter().zip(&low_table[..count]) {
-            sum += &mul(weight, equality);
+            sum = field_config.add(&(sum), &(&(field_config).mul(weight, equality)));
         }
         sum
     };
 
     let full_blocks = rows >> skip_vars;
     let partial_rows = rows & (block_len - 1);
-    let mut sum = mul(
+    let mut sum = (field_config).mul(
         &hypercube_prefix_sum(functional.tail_point, high_point, full_blocks, field_config)?,
         &prefix_sum(block_len),
     );
     if partial_rows != 0 {
-        let block_weight = mul(
+        let block_weight = (field_config).mul(
             &eq_at_boolean_index(functional.tail_point, full_blocks, field_config)?,
             &eq_at_boolean_index(high_point, full_blocks, field_config)?,
         );
-        sum += &mul(&block_weight, &prefix_sum(partial_rows));
+        sum = field_config.add(
+            &(sum),
+            &(&(field_config).mul(&block_weight, &prefix_sum(partial_rows))),
+        );
     }
     Ok(sum)
 }
 
-/// `Σ_{x < count} eq(left, x) · eq(right, x)` over the `m`-variable Boolean
+/// `Σ_{x < count} eq(left, x) · eq(right, x)` over the `m`-variable Bit
 /// hypercube (`m = left.len()`, `count ≤ 2^m`), in `O(m)` field operations.
 ///
 /// For `count = 2^m` the sum is `eq(left, right)`. Otherwise every `x < count`
@@ -1558,17 +1143,19 @@ where
     let match_one = left
         .iter()
         .zip(right)
-        .map(|(l, r)| mul(l, r))
+        .map(|(l, r)| (field_config).mul(l, r))
         .collect::<Vec<_>>();
     let match_zero = left
         .iter()
         .zip(right)
-        .map(|(l, r)| mul(&sub(&one, l), &sub(&one, r)))
+        .map(|(l, r)| {
+            (field_config).mul(&(field_config).sub(&one, l), &(field_config).sub(&one, r))
+        })
         .collect::<Vec<_>>();
     if count == domain {
         let mut value = one;
         for (m1, m0) in match_one.iter().zip(&match_zero) {
-            value = mul(&value, &add(m1, m0));
+            value = (field_config).mul(&value, &(field_config).add(m1, m0));
         }
         return Ok(value);
     }
@@ -1578,16 +1165,22 @@ where
     free_prefix.push(one.clone());
     for (m1, m0) in match_one.iter().zip(&match_zero) {
         let last = free_prefix.last().expect("seeded with one");
-        free_prefix.push(mul(last, &add(m1, m0)));
+        free_prefix.push((field_config).mul(last, &(field_config).add(m1, m0)));
     }
     let mut sum = F::zero_with_cfg(field_config);
     let mut high_match = one;
     for k in (0..vars).rev() {
         if (count >> k) & 1 == 1 {
-            sum += &mul(&mul(&high_match, &match_zero[k]), &free_prefix[k]);
-            high_match = mul(&high_match, &match_one[k]);
+            sum = field_config.add(
+                &(sum),
+                &(&(field_config).mul(
+                    &(field_config).mul(&high_match, &match_zero[k]),
+                    &free_prefix[k],
+                )),
+            );
+            high_match = (field_config).mul(&high_match, &match_one[k]);
         } else {
-            high_match = mul(&high_match, &match_zero[k]);
+            high_match = (field_config).mul(&high_match, &match_zero[k]);
         }
     }
     Ok(sum)
@@ -1595,7 +1188,7 @@ where
 
 /// `eq(point, index) = Π_k (index_k ? point_k : 1 − point_k)`: entry `index`
 /// of [`eq_table`] without the table (`index < 2^{point.len()}`).
-fn eq_at_boolean_index<F>(
+pub(crate) fn eq_at_boolean_index<F>(
     point: &[F],
     index: usize,
     field_config: &F::Config,
@@ -1612,9 +1205,9 @@ where
         let factor = if (index >> k) & 1 == 1 {
             coordinate.clone()
         } else {
-            sub(&one, coordinate)
+            (field_config).sub(&one, coordinate)
         };
-        value = mul(&value, &factor);
+        value = (field_config).mul(&value, &factor);
     }
     Ok(value)
 }
@@ -1664,8 +1257,9 @@ where
         let next_len = active_len / 2;
         for index in 0..next_len {
             let left = evaluations[2 * index].clone();
-            let difference = sub(&evaluations[2 * index + 1], &left);
-            evaluations[index] = add(&left, &mul(challenge, &difference));
+            let difference = (field_config).sub(&evaluations[2 * index + 1], &left);
+            evaluations[index] =
+                (field_config).add(&left, &(field_config).mul(challenge, &difference));
         }
         active_len = next_len;
     }
@@ -1676,94 +1270,9 @@ where
         .ok_or(SpartanMatrixError::InvalidMleOperation)
 }
 
-fn sparse_column_dot<F, C>(
-    column: SparseColumn<'_, C>,
-    row_weights: &[F],
-    zero: &F,
-    field_config: &F::Config,
-) -> F
-where
-    F: SpartanField,
-    C: SpartanMatrixCoefficient<F>,
-{
-    C::column_dot(column, row_weights, zero, field_config)
-}
-
-fn evaluate_sparse_matrix<F, C>(
-    matrix: &SparseMatrix<C>,
-    row_weights: &[F],
-    column_weights: &[F],
-    zero: &F,
-    field_config: &F::Config,
-) -> F
-where
-    F: SpartanField,
-    C: SpartanMatrixCoefficient<F>,
-{
-    let mut evaluation = zero.clone();
-    for (column, entries) in matrix.columns().enumerate() {
-        if !entries.is_empty() {
-            let column_evaluation = sparse_column_dot(entries, row_weights, zero, field_config);
-            evaluation += &mul(&column_weights[column], &column_evaluation);
-        }
-    }
-    evaluation
-}
-
-struct CanonicalRows<'a, F> {
-    row_offsets: Box<[usize]>,
-    entries: Box<[(usize, &'a F)]>,
-}
-
-impl<'a, F> CanonicalRows<'a, F> {
-    fn new(matrix: &'a SparseMatrix<F>) -> Self {
-        let mut row_offsets = vec![0; matrix.row_count() + 1];
-        for column in matrix.columns() {
-            for (row, _) in column {
-                row_offsets[row + 1] += 1;
-            }
-        }
-
-        let mut entry_count = 0;
-        for row_end in row_offsets.iter_mut().skip(1) {
-            entry_count += *row_end;
-            *row_end = entry_count;
-        }
-        debug_assert_eq!(entry_count, matrix.nnz());
-
-        let mut next_entry = row_offsets[..matrix.row_count()].to_vec();
-        // Seed the flat output with a valid reference so the counting-sort
-        // scatter needs neither `F: Clone` nor unsafe uninitialized storage.
-        // The final cursor check guarantees that every slot was overwritten.
-        let mut entries = matrix
-            .coefficients()
-            .first()
-            .map_or_else(Vec::new, |coefficient| vec![(0, coefficient); matrix.nnz()]);
-        for (column, column_entries) in matrix.columns().enumerate() {
-            for (row, coefficient) in column_entries {
-                let position = next_entry[row];
-                entries[position] = (column, coefficient);
-                next_entry[row] += 1;
-            }
-        }
-        debug_assert_eq!(next_entry.as_slice(), &row_offsets[1..]);
-
-        Self {
-            row_offsets: row_offsets.into_boxed_slice(),
-            entries: entries.into_boxed_slice(),
-        }
-    }
-
-    fn rows(&self) -> impl ExactSizeIterator<Item = &[(usize, &'a F)]> + '_ {
-        self.row_offsets
-            .windows(2)
-            .map(|bounds| &self.entries[bounds[0]..bounds[1]])
-    }
-}
-
 fn validate_matrix_coefficients<F, C>(
     matrix_name: &'static str,
-    rows: &CanonicalRows<'_, C>,
+    rows: &circuit::linear_map::CsrMatrix<Box<[&C]>>,
     modulus_encoding: &[u8],
 ) -> Result<(), SpartanMatrixError>
 where
@@ -1777,7 +1286,7 @@ where
                 return Err(SpartanMatrixError::ExplicitZeroCoefficient {
                     matrix: matrix_name,
                     row: row_index,
-                    column: *column,
+                    column,
                 });
             }
         }
@@ -1785,7 +1294,7 @@ where
     Ok(())
 }
 
-fn validate_elements_field<F>(
+pub(crate) fn validate_elements_field<F>(
     values: &[F],
     modulus_encoding: &[u8],
 ) -> Result<(), SpartanMatrixError>
@@ -1798,14 +1307,14 @@ where
     Ok(())
 }
 
-fn validate_element_field<F>(value: &F, modulus_encoding: &[u8]) -> Result<(), SpartanMatrixError>
+pub(crate) fn validate_element_field<F>(
+    value: &F,
+    modulus_encoding: &[u8],
+) -> Result<(), SpartanMatrixError>
 where
     F: SpartanField,
 {
-    if F::canonical_modulus_encoding(value.cfg()) != modulus_encoding {
-        return Err(SpartanMatrixError::FieldConfigurationMismatch);
-    }
-    value.validate_element()?;
+    value.validate_element(modulus_encoding)?;
     Ok(())
 }
 
@@ -1823,7 +1332,7 @@ fn detect_block_selector_layout_with<C: Clone>(
         return None;
     }
 
-    let mut runs_of = |matrix: &SparseMatrix<C>| -> Option<Vec<SelectorRun<C>>> {
+    let mut runs_of = |matrix: &CscMatrix<Box<[C]>>| -> Option<Vec<SelectorRun<C>>> {
         if !matrix.nnz().is_multiple_of(rows) {
             return None;
         }
@@ -1897,7 +1406,7 @@ where
     F: SpartanField,
     C: SpartanMatrixCoefficient<F>,
 {
-    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
+    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding(field_config);
     detect_disjoint_unit_selector_triplet_with(matrices, |coefficient: &C| {
         coefficient
             .canonical_field_encoding(field_config, &field_one_encoding)
@@ -1932,7 +1441,7 @@ fn detect_disjoint_unit_selector_triplet_with<C>(
 }
 
 fn contiguous_unit_selector_offset_with<C>(
-    matrix: &SparseMatrix<C>,
+    matrix: &CscMatrix<Box<[C]>>,
     is_unit: impl Fn(&C) -> bool,
 ) -> Option<usize> {
     let rows = matrix.row_count();
@@ -1981,7 +1490,7 @@ where
     hash_bytes(&mut hash, field_modulus_encoding)?;
     hash_usize(&mut hash, matrices.row_count())?;
     hash_usize(&mut hash, matrices.column_count())?;
-    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding();
+    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding(field_config);
 
     for (matrix_name, label, matrix) in [
         ("A", b'A', matrices.a()),
@@ -1991,13 +1500,13 @@ where
         // Construct and drop one flat row-major view at a time. Preparation
         // therefore uses O(rows + nnz(matrix)) auxiliary memory, not three
         // nested row-vector transposes held simultaneously.
-        let rows = CanonicalRows::new(matrix);
+        let rows = matrix.borrowed_csr()?;
         validate_matrix_coefficients::<F, C>(matrix_name, &rows, field_modulus_encoding)?;
         hash.update(&[label]);
         for row in rows.rows() {
             hash_usize(&mut hash, row.len())?;
             for (column, coefficient) in row {
-                hash_usize(&mut hash, *column)?;
+                hash_usize(&mut hash, column)?;
                 let encoding =
                     coefficient.canonical_field_encoding(field_config, &field_one_encoding);
                 hash_bytes(&mut hash, encoding.as_ref())?;
@@ -2044,7 +1553,7 @@ where
         ("B", b'B', matrices.b()),
         ("C", b'C', matrices.c()),
     ] {
-        let rows = CanonicalRows::new(matrix);
+        let rows = matrix.borrowed_csr()?;
         builder.push(&[label]);
         for (row_index, row) in rows.rows().enumerate() {
             push_usize(builder, row.len())?;
@@ -2053,10 +1562,10 @@ where
                     return Err(SpartanMatrixError::ExplicitZeroCoefficient {
                         matrix: matrix_name,
                         row: row_index,
-                        column: *column,
+                        column,
                     });
                 }
-                push_usize(builder, *column)?;
+                push_usize(builder, column)?;
                 encoding.clear();
                 coefficient.write_modulus_independent_encoding(&mut encoding);
                 push_usize(builder, encoding.len())?;
@@ -2087,59 +1596,96 @@ fn padded_num_vars(logical_len: usize) -> Result<usize, SpartanMatrixError> {
         .ok_or(SpartanMatrixError::DomainTooLarge)
 }
 
-fn domain_size(num_vars: usize) -> Result<usize, SpartanMatrixError> {
+pub(crate) fn domain_size(num_vars: usize) -> Result<usize, SpartanMatrixError> {
     1usize
         .checked_shl(u32::try_from(num_vars).map_err(|_| SpartanMatrixError::DomainTooLarge)?)
         .ok_or(SpartanMatrixError::DomainTooLarge)
 }
 
-#[inline]
-fn add<F>(left: &F, right: &F) -> F
-where
-    F: SpartanField,
-{
-    let mut result = left.clone();
-    result += right;
-    result
-}
-
-#[inline]
-fn sub<F>(left: &F, right: &F) -> F
-where
-    F: SpartanField,
-{
-    let mut result = left.clone();
-    result -= right;
-    result
-}
-
-#[inline]
-fn mul<F>(left: &F, right: &F) -> F
-where
-    F: SpartanField,
-{
-    let mut result = left.clone();
-    result *= right;
-    result
-}
-
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{
-        FromWithConfig, PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint,
-    };
 
     use super::*;
 
     const TEST_MODULUS: u128 = (1_u128 << 100) - 15;
     const OTHER_TEST_MODULUS: u128 = (1_u128 << 127) - 1;
 
-    fn config() -> <F128 as PrimeField>::Config {
-        F128::make_cfg(&Uint::from(TEST_MODULUS)).expect("odd test modulus")
+    fn config() -> <Fp<2> as crate::piop::spartan::SpartanField>::Config {
+        Fp::<2>::make_cfg(&Uint::from(TEST_MODULUS)).expect("odd test modulus")
     }
 
-    fn field(value: u64, config: &<F128 as PrimeField>::Config) -> F128 {
-        F128::from_with_cfg(value, config)
+    fn field(value: u64, config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config) -> Fp<2> {
+        Fp::<2>::from_with_cfg(value, config)
+    }
+
+    #[test]
+    fn montgomery_products_support_generic_coefficients_and_validate_assignment() {
+        use super::super::raw_monty::raw_shared;
+        let field = Fp::<2>::make_cfg(&Uint::from(crate::pcs::FQ_MOD)).unwrap();
+        let columns = vec![
+            vec![(0, true)],
+            vec![(1, true)],
+            vec![(2, true)],
+            vec![],
+            vec![(0, true)],
+        ];
+        let bool_matrix = CscMatrix::try_from_columns(3, columns.clone()).unwrap();
+        let field_matrix = CscMatrix::try_from_columns(
+            3,
+            columns
+                .into_iter()
+                .map(|column| {
+                    column
+                        .into_iter()
+                        .map(|(row, _)| (row, field.one()))
+                        .collect()
+                })
+                .collect(),
+        )
+        .unwrap();
+        let boolean = PreparedConstraintMatrices::<Fp<2>, bool>::new(
+            ConstraintMatrices::new(bool_matrix.clone(), bool_matrix.clone(), bool_matrix).unwrap(),
+            &field,
+        )
+        .unwrap();
+        let ordinary = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(field_matrix.clone(), field_matrix.clone(), field_matrix)
+                .unwrap(),
+            &field,
+        )
+        .unwrap();
+        let mut values = vec![0; 8];
+        for (i, value) in values[..5].iter_mut().enumerate() {
+            *value = raw_shared(field.from_integer(&Uint::<1>::from_u64((i + 1) as u64)));
+        }
+        let a = products_from_montgomery_assignment(&boolean, &values).unwrap();
+        let b = products_from_montgomery_assignment(&ordinary, &values).unwrap();
+        assert_eq!(a.ax, b.ax);
+        assert_eq!(a.bx, b.bx);
+        assert_eq!(a.cx, b.cx);
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values[..7]),
+            Err(super::super::SpartanError::InvalidAssignmentDimensions)
+        ));
+        values[7] = values[0];
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values),
+            Err(super::super::SpartanError::InvalidAssignmentPadding)
+        ));
+        values[7] = 0;
+        values[0] = 0;
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values),
+            Err(super::super::SpartanError::Matrix(
+                SpartanMatrixError::InvalidAssignmentConstant
+            ))
+        ));
+        values[0] = raw_shared(field.one());
+        values[1] = u128::from(*field.modulus());
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values),
+            Err(super::super::SpartanError::FieldConfigurationMismatch)
+        ));
     }
 
     fn columns_from_rows<F: Clone>(
@@ -2156,14 +1702,18 @@ mod tests {
     }
 
     fn legacy_row_major_digest(
-        rows: [&[Vec<(usize, F128)>]; 3],
+        rows: [&[Vec<(usize, Fp<2>)>]; 3],
         row_count: usize,
         column_count: usize,
-        field_config: &<F128 as PrimeField>::Config,
+        field_config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
     ) -> [u8; 32] {
         let mut hash = Hasher::new();
-        hash.update(b"f2z/spartan/constraint-matrices/v2");
-        hash_bytes(&mut hash, &F128::canonical_modulus_encoding(field_config)).unwrap();
+        hash.update(b"bitz/spartan/constraint-matrices/v2");
+        hash_bytes(
+            &mut hash,
+            &Fp::<2>::canonical_modulus_encoding(field_config),
+        )
+        .unwrap();
         hash_usize(&mut hash, row_count).unwrap();
         hash_usize(&mut hash, column_count).unwrap();
 
@@ -2173,7 +1723,11 @@ mod tests {
                 hash_usize(&mut hash, row.len()).unwrap();
                 for (column, coefficient) in row {
                     hash_usize(&mut hash, *column).unwrap();
-                    hash_bytes(&mut hash, &coefficient.canonical_element_encoding()).unwrap();
+                    hash_bytes(
+                        &mut hash,
+                        &coefficient.canonical_element_encoding(field_config),
+                    )
+                    .unwrap();
                 }
             }
         }
@@ -2188,7 +1742,7 @@ mod tests {
         let three = field(3, &config);
         let five = field(5, &config);
         let seven = field(7, &config);
-        let matrix = SparseMatrix::try_from_rows(
+        let matrix = CscMatrix::<Box<[_]>>::try_from_rows(
             5,
             vec![
                 vec![(0, two.clone()), (3, three.clone())],
@@ -2204,14 +1758,14 @@ mod tests {
         assert_eq!(matrix.nnz(), 4);
         assert_eq!(matrix.columns().len(), 5);
         let column = matrix.column(0).unwrap();
-        assert_eq!(column.row_indices(), &[0, 2]);
+        assert_eq!(column.indices(), &[0, 2]);
         assert_eq!(column.coefficients(), &[two, five]);
         assert!(matrix.column(1).unwrap().is_empty());
         let column = matrix.column(2).unwrap();
-        assert_eq!(column.row_indices(), &[2]);
+        assert_eq!(column.indices(), &[2]);
         assert_eq!(column.coefficients(), &[seven]);
         let column = matrix.column(3).unwrap();
-        assert_eq!(column.row_indices(), &[0]);
+        assert_eq!(column.indices(), &[0]);
         assert_eq!(column.coefficients(), &[three]);
         assert!(matrix.column(4).unwrap().is_empty());
         assert!(matrix.column(5).is_none());
@@ -2227,10 +1781,11 @@ mod tests {
             vec![(0, field(5, &config)), (2, field(7, &config))],
             vec![],
         ];
-        let from_rows = SparseMatrix::try_from_rows(5, rows.clone()).unwrap();
+        let from_rows = CscMatrix::<Box<[_]>>::try_from_rows(5, rows.clone()).unwrap();
         let from_columns =
-            SparseMatrix::try_from_columns(rows.len(), columns_from_rows(5, &rows)).unwrap();
-        let from_csc = SparseMatrix::try_from_csc(
+            CscMatrix::<Box<[_]>>::try_from_columns(rows.len(), columns_from_rows(5, &rows))
+                .unwrap();
+        let from_csc = CscMatrix::<Box<[_]>>::try_from_csc(
             rows.len(),
             vec![0, 2, 2, 3, 4, 4],
             vec![
@@ -2252,7 +1807,7 @@ mod tests {
         let value = || field(1, &config);
 
         assert_eq!(
-            SparseMatrix::try_from_rows(2, vec![vec![(1, value()), (1, value())]]),
+            CscMatrix::<Box<[_]>>::try_from_rows(2, vec![vec![(1, value()), (1, value())]]),
             Err(SparseMatrixError::ColumnsNotStrictlyIncreasing {
                 row: 0,
                 previous: 1,
@@ -2260,7 +1815,7 @@ mod tests {
             })
         );
         assert_eq!(
-            SparseMatrix::try_from_rows(2, vec![vec![(2, value())]]),
+            CscMatrix::<Box<[_]>>::try_from_rows(2, vec![vec![(2, value())]]),
             Err(SparseMatrixError::ColumnOutOfBounds {
                 row: 0,
                 column: 2,
@@ -2268,7 +1823,10 @@ mod tests {
             })
         );
         assert_eq!(
-            SparseMatrix::try_from_columns(2, vec![vec![(1, value()), (0, value())], vec![]]),
+            CscMatrix::<Box<[_]>>::try_from_columns(
+                2,
+                vec![vec![(1, value()), (0, value())], vec![]]
+            ),
             Err(SparseMatrixError::RowsNotStrictlyIncreasing {
                 column: 0,
                 previous: 1,
@@ -2276,7 +1834,7 @@ mod tests {
             })
         );
         assert_eq!(
-            SparseMatrix::try_from_columns(2, vec![vec![], vec![(2, value())]]),
+            CscMatrix::<Box<[_]>>::try_from_columns(2, vec![vec![], vec![(2, value())]]),
             Err(SparseMatrixError::RowOutOfBounds {
                 column: 1,
                 row: 2,
@@ -2284,23 +1842,23 @@ mod tests {
             })
         );
         assert_eq!(
-            SparseMatrix::<F128>::try_from_csc(2, vec![], vec![]),
+            CscMatrix::<Box<[Fp<2>]>>::try_from_csc(2, vec![], vec![]),
             Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
-            SparseMatrix::<F128>::try_from_csc(2, vec![1], vec![]),
+            CscMatrix::<Box<[Fp<2>]>>::try_from_csc(2, vec![1], vec![]),
             Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
-            SparseMatrix::try_from_csc(2, vec![0, 2], vec![(0, value())]),
+            CscMatrix::<Box<[_]>>::try_from_csc(2, vec![0, 2], vec![(0, value())]),
             Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
-            SparseMatrix::<F128>::try_from_csc(2, vec![0, 1, 0], vec![]),
+            CscMatrix::<Box<[Fp<2>]>>::try_from_csc(2, vec![0, 1, 0], vec![]),
             Err(SparseMatrixError::InvalidCscOffsets)
         );
         assert_eq!(
-            SparseMatrix::try_from_csc(2, vec![0, 2], vec![(1, value()), (0, value())]),
+            CscMatrix::<Box<[_]>>::try_from_csc(2, vec![0, 2], vec![(1, value()), (0, value())]),
             Err(SparseMatrixError::RowsNotStrictlyIncreasing {
                 column: 0,
                 previous: 1,
@@ -2308,7 +1866,7 @@ mod tests {
             })
         );
         assert_eq!(
-            SparseMatrix::try_from_csc(2, vec![0, 1], vec![(2, value())]),
+            CscMatrix::<Box<[_]>>::try_from_csc(2, vec![0, 1], vec![(2, value())]),
             Err(SparseMatrixError::RowOutOfBounds {
                 column: 0,
                 row: 2,
@@ -2322,16 +1880,16 @@ mod tests {
         let config = config();
         let r0 = field(2, &config);
         let r1 = field(7, &config);
-        let one = F128::one_with_cfg(&config);
+        let one = Fp::<2>::one_with_cfg(&config);
         let table = eq_table(&[r0.clone(), r1.clone()], &config).unwrap();
 
         assert_eq!(
             table,
             vec![
-                mul(&sub(&one, &r0), &sub(&one, &r1)),
-                mul(&r0, &sub(&one, &r1)),
-                mul(&sub(&one, &r0), &r1),
-                mul(&r0, &r1),
+                (config).mul(&(config).sub(&one, &r0), &(config).sub(&one, &r1)),
+                (config).mul(&r0, &(config).sub(&one, &r1)),
+                (config).mul(&(config).sub(&one, &r0), &r1),
+                (config).mul(&r0, &r1),
             ]
         );
 
@@ -2365,7 +1923,7 @@ mod tests {
     #[test]
     fn bound_table_and_independent_sparse_evaluation_agree() {
         let config = config();
-        let a = SparseMatrix::try_from_rows(
+        let a = CscMatrix::<Box<[_]>>::try_from_rows(
             3,
             vec![
                 vec![(0, field(2, &config)), (2, field(3, &config))],
@@ -2373,12 +1931,12 @@ mod tests {
             ],
         )
         .unwrap();
-        let b = SparseMatrix::try_from_rows(
+        let b = CscMatrix::<Box<[_]>>::try_from_rows(
             3,
             vec![vec![(1, field(7, &config))], vec![(2, field(11, &config))]],
         )
         .unwrap();
-        let c = SparseMatrix::try_from_rows(
+        let c = CscMatrix::<Box<[_]>>::try_from_rows(
             3,
             vec![vec![(0, field(13, &config))], vec![(0, field(17, &config))]],
         )
@@ -2390,10 +1948,14 @@ mod tests {
         let column_point = [field(23, &config), field(29, &config)];
         let rho = field(31, &config);
 
-        let bound = prepared.bind_and_batch(&row_point, &rho).unwrap();
+        let bound = crate::piop::spartan::matrix::eq_table_prover(&row_point, prepared.config())
+            .map_err(crate::sumcheck::SumcheckError::from)
+            .and_then(|weights| prepared.binding(&rho).bind_rows(&weights))
+            .unwrap();
         let dense_evaluation = evaluate_mle(&bound, &column_point, &config).unwrap();
         let sparse_evaluation = prepared
-            .evaluate_batched(&row_point, &rho, &column_point)
+            .structured()
+            .evaluate_equality(&row_point, &rho, &column_point)
             .unwrap();
         assert_eq!(dense_evaluation, sparse_evaluation);
     }
@@ -2401,7 +1963,7 @@ mod tests {
     #[test]
     fn explicit_equality_row_weights_match_point_based_matrix_operations() {
         let config = config();
-        let a = SparseMatrix::try_from_rows(
+        let a = CscMatrix::<Box<[_]>>::try_from_rows(
             3,
             vec![
                 vec![(0, field(2, &config)), (2, field(3, &config))],
@@ -2410,7 +1972,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let b = SparseMatrix::try_from_rows(
+        let b = CscMatrix::<Box<[_]>>::try_from_rows(
             3,
             vec![
                 vec![(1, field(11, &config))],
@@ -2419,7 +1981,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let c = SparseMatrix::try_from_rows(
+        let c = CscMatrix::<Box<[_]>>::try_from_rows(
             3,
             vec![
                 vec![(0, field(17, &config))],
@@ -2437,30 +1999,33 @@ mod tests {
         let rho = field(41, &config);
 
         assert_eq!(
-            prepared.bind_and_batch(&row_point, &rho).unwrap(),
-            prepared
-                .bind_and_batch_with_row_weights(&row_weights, &rho)
-                .unwrap()
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| prepared.binding(&rho).bind_rows(&weights))
+                .unwrap(),
+            prepared.binding(&rho).bind_rows(&row_weights).unwrap()
         );
         assert_eq!(
             prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap(),
             prepared
-                .evaluate_batched_with_row_weights(&row_weights, &rho, &column_point)
+                .binding(&rho)
+                .evaluate_at(&row_weights, &column_point)
                 .unwrap()
         );
     }
 
     fn from_skeleton_and_new_agree_semantically(
         matrices: &ConstraintMatrices<bool>,
-        config: &<F128 as PrimeField>::Config,
+        config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
     ) {
-        let skeleton = ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
+        let skeleton = ConstraintMatricesSkeleton::<Fp<2>, bool>::new(matrices.clone()).unwrap();
         let from_skeleton =
-            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, config).unwrap();
+            PreparedConstraintMatrices::<Fp<2>, bool>::from_skeleton(&skeleton, config).unwrap();
         let from_new =
-            PreparedConstraintMatrices::<F128, bool>::new(matrices.clone(), config).unwrap();
+            PreparedConstraintMatrices::<Fp<2>, bool>::new(matrices.clone(), config).unwrap();
 
         assert_eq!(
             from_skeleton.digest(),
@@ -2475,7 +2040,7 @@ mod tests {
             from_new.field_modulus_encoding()
         );
         // The two constructors detect the identical selector layout: for
-        // Boolean coefficients `is_unit` and the encoding comparison agree
+        // Bit coefficients `is_unit` and the encoding comparison agree
         // under every valid configuration.
         match (from_skeleton.selector_triplet, from_new.selector_triplet) {
             (None, None) => {}
@@ -2489,22 +2054,30 @@ mod tests {
         }
 
         let rho = field(47, config);
-        let row_point: Vec<F128> = (0..from_new.num_row_vars())
+        let row_point: Vec<Fp<2>> = (0..from_new.num_row_vars())
             .map(|index| field(3 + index as u64, config))
             .collect();
-        let column_point: Vec<F128> = (0..from_new.num_column_vars())
+        let column_point: Vec<Fp<2>> = (0..from_new.num_column_vars())
             .map(|index| field(29 + index as u64, config))
             .collect();
         assert_eq!(
-            from_skeleton.bind_and_batch(&row_point, &rho).unwrap(),
-            from_new.bind_and_batch(&row_point, &rho).unwrap()
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, from_skeleton.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| from_skeleton.binding(&rho).bind_rows(&weights))
+                .unwrap(),
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, from_new.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| from_new.binding(&rho).bind_rows(&weights))
+                .unwrap()
         );
         assert_eq!(
             from_skeleton
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap(),
             from_new
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap()
         );
     }
@@ -2515,7 +2088,7 @@ mod tests {
         let rows = 6;
         let columns = 32;
         let selector = |offset: usize| {
-            SparseMatrix::try_from_rows(
+            CscMatrix::<Box<[_]>>::try_from_rows(
                 columns,
                 (0..rows).map(|row| vec![(offset + row, true)]).collect(),
             )
@@ -2524,8 +2097,9 @@ mod tests {
         let selectors = ConstraintMatrices::new(selector(8), selector(16), selector(24)).unwrap();
         from_skeleton_and_new_agree_semantically(&selectors, &config);
 
-        let generic =
-            |entries: Vec<Vec<(usize, bool)>>| SparseMatrix::try_from_rows(8, entries).unwrap();
+        let generic = |entries: Vec<Vec<(usize, bool)>>| {
+            CscMatrix::<Box<[_]>>::try_from_rows(8, entries).unwrap()
+        };
         let irregular = ConstraintMatrices::new(
             generic(vec![vec![(0, true), (7, true)], vec![(3, true)]]),
             generic(vec![vec![(1, true)], vec![(2, true), (5, true)]]),
@@ -2539,36 +2113,39 @@ mod tests {
     fn skeleton_replay_reproduces_direct_digest_per_modulus() {
         let config = config();
         let other_config =
-            F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).expect("odd test modulus");
+            Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).expect("odd test modulus");
         let matrix = |column: usize| {
-            SparseMatrix::try_from_rows(8, vec![vec![(column, true)], vec![(column + 1, true)]])
-                .unwrap()
+            CscMatrix::<Box<[_]>>::try_from_rows(
+                8,
+                vec![vec![(column, true)], vec![(column + 1, true)]],
+            )
+            .unwrap()
         };
         let matrices = ConstraintMatrices::new(matrix(0), matrix(1), matrix(2)).unwrap();
-        let skeleton = ConstraintMatricesSkeleton::<F128, bool>::new(matrices.clone()).unwrap();
+        let skeleton = ConstraintMatricesSkeleton::<Fp<2>, bool>::new(matrices.clone()).unwrap();
 
         for field_config in [&config, &other_config] {
             let replayed =
-                PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, field_config)
+                PreparedConstraintMatrices::<Fp<2>, bool>::from_skeleton(&skeleton, field_config)
                     .unwrap();
             let direct =
-                PreparedConstraintMatrices::<F128, bool>::new(matrices.clone(), field_config)
+                PreparedConstraintMatrices::<Fp<2>, bool>::new(matrices.clone(), field_config)
                     .unwrap();
             assert_eq!(replayed.digest(), direct.digest());
         }
 
         // The digest still separates moduli and topologies.
         let at_config =
-            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, &config).unwrap();
+            PreparedConstraintMatrices::<Fp<2>, bool>::from_skeleton(&skeleton, &config).unwrap();
         let at_other =
-            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&skeleton, &other_config)
+            PreparedConstraintMatrices::<Fp<2>, bool>::from_skeleton(&skeleton, &other_config)
                 .unwrap();
         assert_ne!(at_config.digest(), at_other.digest());
 
         let moved = ConstraintMatrices::new(matrix(0), matrix(1), matrix(3)).unwrap();
-        let moved_skeleton = ConstraintMatricesSkeleton::<F128, bool>::new(moved).unwrap();
+        let moved_skeleton = ConstraintMatricesSkeleton::<Fp<2>, bool>::new(moved).unwrap();
         let moved_prepared =
-            PreparedConstraintMatrices::<F128, bool>::from_skeleton(&moved_skeleton, &config)
+            PreparedConstraintMatrices::<Fp<2>, bool>::from_skeleton(&moved_skeleton, &config)
                 .unwrap();
         assert_ne!(at_config.digest(), moved_prepared.digest());
     }
@@ -2578,16 +2155,19 @@ mod tests {
         let config = config();
         let with_zero = || {
             let unit =
-                SparseMatrix::try_from_rows(4, vec![vec![(0, true)], vec![(1, true)]]).unwrap();
-            let zeroed =
-                SparseMatrix::try_from_rows(4, vec![vec![(0, true)], vec![(2, false), (3, true)]])
+                CscMatrix::<Box<[_]>>::try_from_rows(4, vec![vec![(0, true)], vec![(1, true)]])
                     .unwrap();
+            let zeroed = CscMatrix::<Box<[_]>>::try_from_rows(
+                4,
+                vec![vec![(0, true)], vec![(2, false), (3, true)]],
+            )
+            .unwrap();
             ConstraintMatrices::new(unit.clone(), zeroed, unit).unwrap()
         };
         let skeleton_error =
-            ConstraintMatricesSkeleton::<F128, bool>::new(with_zero()).unwrap_err();
+            ConstraintMatricesSkeleton::<Fp<2>, bool>::new(with_zero()).unwrap_err();
         let direct_error =
-            PreparedConstraintMatrices::<F128, bool>::new(with_zero(), &config).unwrap_err();
+            PreparedConstraintMatrices::<Fp<2>, bool>::new(with_zero(), &config).unwrap_err();
         assert_eq!(
             skeleton_error,
             SpartanMatrixError::ExplicitZeroCoefficient {
@@ -2605,13 +2185,13 @@ mod tests {
         let rows = 6;
         let columns = 32;
         let selector = |offset: usize| {
-            SparseMatrix::try_from_rows(
+            CscMatrix::<Box<[_]>>::try_from_rows(
                 columns,
                 (0..rows).map(|row| vec![(offset + row, true)]).collect(),
             )
             .unwrap()
         };
-        let prepared = PreparedConstraintMatrices::<F128, bool>::new(
+        let prepared = PreparedConstraintMatrices::<Fp<2>, bool>::new(
             ConstraintMatrices::new(selector(8), selector(16), selector(24)).unwrap(),
             &config,
         )
@@ -2631,7 +2211,7 @@ mod tests {
             prepared.num_row_vars(),
         )
         .unwrap();
-        let row_weights = factors.materialize();
+        let row_weights = factors.materialize(&config);
         let rho = field(47, &config);
         let column_point = [
             field(53, &config),
@@ -2642,19 +2222,17 @@ mod tests {
         ];
 
         assert_eq!(
-            prepared
-                .bind_and_batch_with_prefix_univariate_factors(&factors, &rho)
-                .unwrap(),
-            prepared
-                .bind_and_batch_with_validated_row_weights(&row_weights, &rho)
-                .unwrap()
+            prepared.structured().bind_prefix(&factors, &rho).unwrap(),
+            prepared.binding(&rho).bind_rows(&row_weights).unwrap()
         );
         assert_eq!(
             prepared
-                .evaluate_batched_with_prefix_univariate_factors(&factors, &rho, &column_point,)
+                .structured()
+                .evaluate_prefix(&factors, &rho, &column_point)
                 .unwrap(),
             prepared
-                .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point,)
+                .binding(&rho)
+                .evaluate_at(&row_weights, &column_point)
                 .unwrap()
         );
     }
@@ -2663,7 +2241,7 @@ mod tests {
     fn prefix_univariate_factors_preserve_generic_matrix_fallback() {
         let config = config();
         let matrix = || {
-            SparseMatrix::try_from_rows(
+            CscMatrix::<Box<[_]>>::try_from_rows(
                 8,
                 vec![
                     vec![(0, field(2, &config)), (7, field(3, &config))],
@@ -2691,24 +2269,22 @@ mod tests {
             prepared.num_row_vars(),
         )
         .unwrap();
-        let row_weights = factors.materialize();
+        let row_weights = factors.materialize(&config);
         let rho = field(19, &config);
         let column_point = [field(23, &config), field(29, &config), field(31, &config)];
 
         assert_eq!(
-            prepared
-                .bind_and_batch_with_prefix_univariate_factors(&factors, &rho)
-                .unwrap(),
-            prepared
-                .bind_and_batch_with_validated_row_weights(&row_weights, &rho)
-                .unwrap()
+            prepared.structured().bind_prefix(&factors, &rho).unwrap(),
+            prepared.binding(&rho).bind_rows(&row_weights).unwrap()
         );
         assert_eq!(
             prepared
-                .evaluate_batched_with_prefix_univariate_factors(&factors, &rho, &column_point,)
+                .structured()
+                .evaluate_prefix(&factors, &rho, &column_point)
                 .unwrap(),
             prepared
-                .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point,)
+                .binding(&rho)
+                .evaluate_at(&row_weights, &column_point)
                 .unwrap()
         );
     }
@@ -2722,22 +2298,22 @@ mod tests {
     /// row-major form for `rows` live rows.
     fn block_selector_families(
         rows: usize,
-        config: &<F128 as PrimeField>::Config,
-    ) -> Vec<(&'static str, usize, [Vec<Vec<(usize, F128)>>; 3])> {
+        config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> Vec<(&'static str, usize, [Vec<Vec<(usize, Fp<2>)>>; 3])> {
         let cap = rows.next_power_of_two();
         let wide = 4 * cap;
         let one = field(1, config);
-        let mut minus_one = F128::zero_with_cfg(config);
-        minus_one -= &one;
+        let mut minus_one = Fp::<2>::zero_with_cfg(config);
+        minus_one = config.sub(&(minus_one), &(&one));
         let mut minus_two = minus_one.clone();
-        minus_two -= &one;
+        minus_two = config.sub(&(minus_two), &(&one));
         let baby_bear = field(2_013_265_921, config);
-        let run = |start: usize, coefficient: &F128| -> Vec<Vec<(usize, F128)>> {
+        let run = |start: usize, coefficient: &Fp<2>| -> Vec<Vec<(usize, Fp<2>)>> {
             (0..rows)
                 .map(|row| vec![(start + row, coefficient.clone())])
                 .collect()
         };
-        let merge = |runs: Vec<Vec<Vec<(usize, F128)>>>| -> Vec<Vec<(usize, F128)>> {
+        let merge = |runs: Vec<Vec<Vec<(usize, Fp<2>)>>>| -> Vec<Vec<(usize, Fp<2>)>> {
             (0..rows)
                 .map(|row| {
                     runs.iter()
@@ -2782,7 +2358,10 @@ mod tests {
                 [
                     run(0, &field(3, config)),
                     run(cap, &field(5, config)),
-                    merge(vec![run(0, &field(7, config)), run(2 * cap, &field(11, config))]),
+                    merge(vec![
+                        run(0, &field(7, config)),
+                        run(2 * cap, &field(11, config)),
+                    ]),
                 ],
             ),
             (
@@ -2800,10 +2379,10 @@ mod tests {
 
     fn prepared_from_rows(
         columns: usize,
-        [a, b, c]: [Vec<Vec<(usize, F128)>>; 3],
-        config: &<F128 as PrimeField>::Config,
-    ) -> PreparedConstraintMatrices<F128, F128> {
-        let matrix = |rows| SparseMatrix::try_from_rows(columns, rows).unwrap();
+        [a, b, c]: [Vec<Vec<(usize, Fp<2>)>>; 3],
+        config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> PreparedConstraintMatrices<Fp<2>, Fp<2>> {
+        let matrix = |rows| CscMatrix::<Box<[_]>>::try_from_rows(columns, rows).unwrap();
         PreparedConstraintMatrices::new(
             ConstraintMatrices::new(matrix(a), matrix(b), matrix(c)).unwrap(),
             config,
@@ -2815,15 +2394,15 @@ mod tests {
     /// matrices' little-endian row order: the reference the verifier's
     /// closed form is pinned to.
     fn materialized_product_functional(
-        functional: &ProductRowFunctional<'_, F128>,
+        functional: &ProductRowFunctional<'_, Fp<2>>,
         num_row_vars: usize,
-        config: &<F128 as PrimeField>::Config,
-    ) -> Vec<F128> {
+        config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config,
+    ) -> Vec<Fp<2>> {
         if functional.skip_vars == 0 {
             let table = eq_table(functional.tail_point, config).unwrap();
             return table
                 .iter()
-                .map(|weight| mul(&functional.prefix[0], weight))
+                .map(|weight| (config).mul(&functional.prefix[0], weight))
                 .collect();
         }
         let (tail_low, tail_high) = make_equality_factors(functional.tail_point, config).unwrap();
@@ -2835,7 +2414,7 @@ mod tests {
             num_row_vars,
         )
         .unwrap()
-        .materialize()
+        .materialize(&config)
     }
 
     #[test]
@@ -2880,19 +2459,13 @@ mod tests {
                     let row_weights =
                         materialized_product_functional(&functional, num_row_vars, &config);
                     let expected = prepared
-                        .evaluate_batched_with_validated_row_weights(
-                            &row_weights,
-                            &rho,
-                            &column_point,
-                        )
+                        .binding(&rho)
+                        .evaluate_at(&row_weights, &column_point)
                         .unwrap();
                     assert_eq!(
                         prepared
-                            .evaluate_batched_with_product_row_functional(
-                                &functional,
-                                &rho,
-                                &column_point
-                            )
+                            .structured()
+                            .evaluate_product(&functional, &rho, &column_point)
                             .unwrap(),
                         expected,
                         "{name} rows={rows} skip_vars={skip_vars}"
@@ -2900,7 +2473,8 @@ mod tests {
                     if skip_vars == 0 {
                         assert_eq!(
                             prepared
-                                .evaluate_batched(&tail_point, &rho, &column_point)
+                                .structured()
+                                .evaluate_equality(&tail_point, &rho, &column_point)
                                 .unwrap(),
                             expected,
                             "{name} rows={rows}: evaluate_batched"
@@ -2923,7 +2497,7 @@ mod tests {
         // Not a block-selector layout: a column with two entries and a row
         // with none.
         let matrix = |scale: u64| {
-            SparseMatrix::try_from_rows(
+            CscMatrix::<Box<[_]>>::try_from_rows(
                 8,
                 vec![
                     vec![(0, field(2 * scale, &config)), (7, field(3, &config))],
@@ -2964,10 +2538,12 @@ mod tests {
             let row_weights = materialized_product_functional(&functional, num_row_vars, &config);
             assert_eq!(
                 prepared
-                    .evaluate_batched_with_product_row_functional(&functional, &rho, &column_point)
+                    .structured()
+                    .evaluate_product(&functional, &rho, &column_point)
                     .unwrap(),
                 prepared
-                    .evaluate_batched_with_validated_row_weights(&row_weights, &rho, &column_point)
+                    .binding(&rho)
+                    .evaluate_at(&row_weights, &column_point)
                     .unwrap(),
                 "skip_vars={skip_vars}"
             );
@@ -2978,7 +2554,7 @@ mod tests {
     fn product_row_functional_rejects_malformed_inputs() {
         let config = config();
         let other_config =
-            F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).expect("odd test modulus");
+            Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).expect("odd test modulus");
         let rows = 6;
         let (name, columns, matrices) = block_selector_families(rows, &config).swap_remove(0);
         assert_eq!(name, "u32");
@@ -3003,7 +2579,8 @@ mod tests {
             tail_point: &tail_point,
         };
         prepared
-            .evaluate_batched_with_product_row_functional(&functional, &rho, &column_point)
+            .structured()
+            .evaluate_product(&functional, &rho, &column_point)
             .unwrap();
 
         // Prefix length must be exactly 2^skip_vars.
@@ -3012,8 +2589,13 @@ mod tests {
             ..functional
         };
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
-            Err(SpartanMatrixError::InvalidRowWeightsLength { expected: 4, actual: 3 })
+            prepared
+                .structured()
+                .evaluate_product(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidRowWeightsLength {
+                expected: 4,
+                actual: 3
+            })
         ));
         // Tail length must be exactly num_row_vars - skip_vars.
         let bad = ProductRowFunctional {
@@ -3021,48 +2603,61 @@ mod tests {
             ..functional
         };
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
-            Err(SpartanMatrixError::InvalidRowPointLength { expected: 1, actual: 0 })
+            prepared
+                .structured()
+                .evaluate_product(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidRowPointLength {
+                expected: 1,
+                actual: 0
+            })
         ));
         // skip_vars beyond the row domain.
-        let wide_prefix = (0..16).map(|value| field(value, &config)).collect::<Vec<_>>();
+        let wide_prefix = (0..16)
+            .map(|value| field(value, &config))
+            .collect::<Vec<_>>();
         let bad = ProductRowFunctional {
             skip_vars: 4,
             prefix: &wide_prefix,
             tail_point: &[],
         };
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
-            Err(SpartanMatrixError::InvalidRowPointLength { expected: 3, actual: 4 })
+            prepared
+                .structured()
+                .evaluate_product(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidRowPointLength {
+                expected: 3,
+                actual: 4
+            })
         ));
         // Column point of the wrong width.
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(
-                &functional,
-                &rho,
-                &column_point[..4]
-            ),
-            Err(SpartanMatrixError::InvalidColumnPointLength { expected: 5, actual: 4 })
+            prepared
+                .structured()
+                .evaluate_product(&functional, &rho, &column_point[..4]),
+            Err(SpartanMatrixError::InvalidColumnPointLength {
+                expected: 5,
+                actual: 4
+            })
         ));
         // Elements from another field configuration, anywhere.
-        let foreign = field(5, &other_config);
+        let foreign = crate::piop::spartan::noncanonical_test_value(&config);
         let mut foreign_column = column_point.clone();
         foreign_column[2] = foreign.clone();
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(
-                &functional,
-                &rho,
-                &foreign_column
-            ),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            prepared
+                .structured()
+                .evaluate_product(&functional, &rho, &foreign_column),
+            Err(SpartanMatrixError::InvalidFieldConfiguration(
+                SpartanFieldError::NonCanonicalElement
+            ))
         ));
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(
-                &functional,
-                &foreign,
-                &column_point
-            ),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            prepared
+                .structured()
+                .evaluate_product(&functional, &foreign, &column_point),
+            Err(SpartanMatrixError::InvalidFieldConfiguration(
+                SpartanFieldError::NonCanonicalElement
+            ))
         ));
         let foreign_tail = [foreign.clone()];
         let bad = ProductRowFunctional {
@@ -3070,8 +2665,12 @@ mod tests {
             ..functional
         };
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            prepared
+                .structured()
+                .evaluate_product(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidFieldConfiguration(
+                SpartanFieldError::NonCanonicalElement
+            ))
         ));
         let mut foreign_prefix = prefix.clone();
         foreign_prefix[1] = foreign;
@@ -3080,8 +2679,12 @@ mod tests {
             ..functional
         };
         assert!(matches!(
-            prepared.evaluate_batched_with_product_row_functional(&bad, &rho, &column_point),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            prepared
+                .structured()
+                .evaluate_product(&bad, &rho, &column_point),
+            Err(SpartanMatrixError::InvalidFieldConfiguration(
+                SpartanFieldError::NonCanonicalElement
+            ))
         ));
     }
 
@@ -3108,7 +2711,7 @@ mod tests {
                 );
             }
             assert!(eq_at_boolean_index(&left, left_table.len(), &config).is_err());
-            let mut running = F128::zero_with_cfg(&config);
+            let mut running = Fp::<2>::zero_with_cfg(&config);
             for count in 0..=left_table.len() {
                 assert_eq!(
                     hypercube_prefix_sum(&left, &right, count, &config).unwrap(),
@@ -3116,7 +2719,10 @@ mod tests {
                     "vars={vars} count={count}"
                 );
                 if count < left_table.len() {
-                    running += &mul(&left_table[count], &right_table[count]);
+                    running = config.add(
+                        &(running),
+                        &(&(config).mul(&left_table[count], &right_table[count])),
+                    );
                 }
             }
             assert_eq!(
@@ -3130,10 +2736,13 @@ mod tests {
     #[test]
     fn explicit_row_weight_operations_validate_length_and_field() {
         let config = config();
-        let other_config = F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+        let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
         let matrix = || {
-            SparseMatrix::try_from_rows(1, vec![vec![(0, field(1, &config))], vec![], vec![]])
-                .unwrap()
+            CscMatrix::<Box<[_]>>::try_from_rows(
+                1,
+                vec![vec![(0, field(1, &config))], vec![], vec![]],
+            )
+            .unwrap()
         };
         let prepared = PreparedConstraintMatrices::new(
             ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap(),
@@ -3141,40 +2750,56 @@ mod tests {
         )
         .unwrap();
         let rho = field(2, &config);
-        let column_point: [F128; 0] = [];
+        let column_point: [Fp<2>; 0] = [];
         let short_weights = vec![field(3, &config); 3];
 
         assert_eq!(
-            prepared.bind_and_batch_with_row_weights(&short_weights, &rho),
-            Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: 4,
-                actual: 3,
-            })
+            prepared.binding(&rho).bind_rows(&short_weights),
+            Err(crate::sumcheck::SumcheckError::Matrix(
+                SpartanMatrixError::InvalidRowWeightsLength {
+                    expected: 4,
+                    actual: 3,
+                }
+            ))
         );
         assert_eq!(
-            prepared.evaluate_batched_with_row_weights(&short_weights, &rho, &column_point,),
-            Err(SpartanMatrixError::InvalidRowWeightsLength {
-                expected: 4,
-                actual: 3,
-            })
+            prepared
+                .binding(&rho)
+                .evaluate_at(&short_weights, &column_point),
+            Err(crate::sumcheck::SumcheckError::Matrix(
+                SpartanMatrixError::InvalidRowWeightsLength {
+                    expected: 4,
+                    actual: 3,
+                }
+            ))
         );
 
-        let foreign_weights = vec![field(3, &other_config); 4];
+        let foreign_weights = vec![crate::piop::spartan::noncanonical_test_value(&config); 4];
         assert_eq!(
-            prepared.bind_and_batch_with_row_weights(&foreign_weights, &rho),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            prepared.binding(&rho).bind_rows(&foreign_weights),
+            Err(crate::sumcheck::SumcheckError::Matrix(
+                SpartanMatrixError::InvalidFieldConfiguration(
+                    SpartanFieldError::NonCanonicalElement
+                )
+            ))
         );
         assert_eq!(
-            prepared.evaluate_batched_with_row_weights(&foreign_weights, &rho, &column_point,),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            prepared
+                .binding(&rho)
+                .evaluate_at(&foreign_weights, &column_point),
+            Err(crate::sumcheck::SumcheckError::Matrix(
+                SpartanMatrixError::InvalidFieldConfiguration(
+                    SpartanFieldError::NonCanonicalElement
+                )
+            ))
         );
     }
 
     #[test]
     fn boolean_one_coefficients_match_field_one_statement_and_evaluation() {
         let config = config();
-        let one = F128::one_with_cfg(&config);
-        let field_matrix = SparseMatrix::try_from_rows(
+        let one = Fp::<2>::one_with_cfg(&config);
+        let field_matrix = CscMatrix::<Box<[_]>>::try_from_rows(
             4,
             vec![
                 vec![(0, one.clone()), (3, one.clone())],
@@ -3183,7 +2808,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let boolean_matrix = SparseMatrix::try_from_rows(
+        let boolean_matrix = CscMatrix::<Box<[_]>>::try_from_rows(
             4,
             vec![vec![(0, true), (3, true)], vec![(1, true)], vec![(2, true)]],
         )
@@ -3194,7 +2819,7 @@ mod tests {
             &config,
         )
         .unwrap();
-        let boolean_prepared = PreparedConstraintMatrices::<F128, bool>::new(
+        let boolean_prepared = PreparedConstraintMatrices::<Fp<2>, bool>::new(
             ConstraintMatrices::new(
                 boolean_matrix.clone(),
                 boolean_matrix.clone(),
@@ -3211,15 +2836,23 @@ mod tests {
         let column_point = [field(13, &config), field(17, &config)];
         let rho = field(19, &config);
         assert_eq!(
-            field_prepared.bind_and_batch(&row_point, &rho).unwrap(),
-            boolean_prepared.bind_and_batch(&row_point, &rho).unwrap()
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, field_prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| field_prepared.binding(&rho).bind_rows(&weights))
+                .unwrap(),
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, boolean_prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| boolean_prepared.binding(&rho).bind_rows(&weights))
+                .unwrap()
         );
         assert_eq!(
             field_prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap(),
             boolean_prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap()
         );
     }
@@ -3235,8 +2868,8 @@ mod tests {
             vec![(2, true)],
             vec![(3, true), ((1 << 12) - 1, true)],
         ];
-        let one = F128::one_with_cfg(&config);
-        let field_rows: Vec<Vec<(usize, F128)>> = boolean_rows
+        let one = Fp::<2>::one_with_cfg(&config);
+        let field_rows: Vec<Vec<(usize, Fp<2>)>> = boolean_rows
             .iter()
             .map(|row| {
                 row.iter()
@@ -3245,15 +2878,15 @@ mod tests {
             })
             .collect();
         let boolean_matrix =
-            || SparseMatrix::try_from_rows(column_count, boolean_rows.clone()).unwrap();
+            || CscMatrix::<Box<[_]>>::try_from_rows(column_count, boolean_rows.clone()).unwrap();
         let field_matrix =
-            || SparseMatrix::try_from_rows(column_count, field_rows.clone()).unwrap();
-        let boolean_prepared = PreparedConstraintMatrices::<F128, bool>::new(
+            || CscMatrix::<Box<[_]>>::try_from_rows(column_count, field_rows.clone()).unwrap();
+        let boolean_prepared = PreparedConstraintMatrices::<Fp<2>, bool>::new(
             ConstraintMatrices::new(boolean_matrix(), boolean_matrix(), boolean_matrix()).unwrap(),
             &config,
         )
         .unwrap();
-        let field_prepared = PreparedConstraintMatrices::<F128>::new(
+        let field_prepared = PreparedConstraintMatrices::<Fp<2>>::new(
             ConstraintMatrices::new(field_matrix(), field_matrix(), field_matrix()).unwrap(),
             &config,
         )
@@ -3270,16 +2903,32 @@ mod tests {
             .unwrap();
 
         let sequential_boolean = sequential_pool
-            .install(|| boolean_prepared.bind_and_batch(&row_point, &rho))
+            .install(|| {
+                crate::piop::spartan::matrix::eq_table_prover(&row_point, boolean_prepared.config())
+                    .map_err(crate::sumcheck::SumcheckError::from)
+                    .and_then(|weights| boolean_prepared.binding(&rho).bind_rows(&weights))
+            })
             .unwrap();
         let parallel_boolean = parallel_pool
-            .install(|| boolean_prepared.bind_and_batch(&row_point, &rho))
+            .install(|| {
+                crate::piop::spartan::matrix::eq_table_prover(&row_point, boolean_prepared.config())
+                    .map_err(crate::sumcheck::SumcheckError::from)
+                    .and_then(|weights| boolean_prepared.binding(&rho).bind_rows(&weights))
+            })
             .unwrap();
         let sequential_field = sequential_pool
-            .install(|| field_prepared.bind_and_batch(&row_point, &rho))
+            .install(|| {
+                crate::piop::spartan::matrix::eq_table_prover(&row_point, field_prepared.config())
+                    .map_err(crate::sumcheck::SumcheckError::from)
+                    .and_then(|weights| field_prepared.binding(&rho).bind_rows(&weights))
+            })
             .unwrap();
         let parallel_field = parallel_pool
-            .install(|| field_prepared.bind_and_batch(&row_point, &rho))
+            .install(|| {
+                crate::piop::spartan::matrix::eq_table_prover(&row_point, field_prepared.config())
+                    .map_err(crate::sumcheck::SumcheckError::from)
+                    .and_then(|weights| field_prepared.binding(&rho).bind_rows(&weights))
+            })
             .unwrap();
 
         assert_eq!(parallel_boolean, sequential_boolean);
@@ -3288,20 +2937,20 @@ mod tests {
         assert!(
             parallel_boolean.evaluations[column_count..]
                 .iter()
-                .all(|value| <F128 as PrimeField>::is_zero(value))
+                .all(|value| <Fp<2> as crate::piop::spartan::SpartanField>::is_zero(value))
         );
     }
 
     #[test]
     fn prepared_boolean_statement_rejects_explicit_false_coefficients() {
         let config = config();
-        let false_matrix = SparseMatrix::try_from_rows(1, vec![vec![(0, false)]]).unwrap();
-        let true_matrix = SparseMatrix::try_from_rows(1, vec![vec![(0, true)]]).unwrap();
+        let false_matrix = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, false)]]).unwrap();
+        let true_matrix = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, true)]]).unwrap();
         let matrices =
             ConstraintMatrices::new(false_matrix, true_matrix.clone(), true_matrix).unwrap();
 
         assert!(matches!(
-            PreparedConstraintMatrices::<F128, bool>::new(matrices, &config),
+            PreparedConstraintMatrices::<Fp<2>, bool>::new(matrices, &config),
             Err(SpartanMatrixError::ExplicitZeroCoefficient {
                 matrix: "A",
                 row: 0,
@@ -3315,7 +2964,7 @@ mod tests {
         let config = config();
         let row_count = 3;
         let column_count = 6;
-        let zero = F128::zero_with_cfg(&config);
+        let zero = Fp::<2>::zero_with_cfg(&config);
 
         let a_rows = vec![
             vec![(0, field(2, &config)), (4, field(3, &config))],
@@ -3333,20 +2982,20 @@ mod tests {
             vec![(3, field(17, &config))],
         ];
         let matrices = ConstraintMatrices::new(
-            SparseMatrix::try_from_rows(column_count, a_rows.clone()).unwrap(),
-            SparseMatrix::try_from_rows(column_count, b_rows.clone()).unwrap(),
-            SparseMatrix::try_from_rows(column_count, c_rows.clone()).unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_rows(column_count, a_rows.clone()).unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_rows(column_count, b_rows.clone()).unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_rows(column_count, c_rows.clone()).unwrap(),
         )
         .unwrap();
         let prepared = PreparedConstraintMatrices::new(matrices, &config).unwrap();
         let row_point = [field(19, &config), field(23, &config)];
         let column_point = [field(29, &config), field(31, &config), field(37, &config)];
         let rho = field(41, &config);
-        let rho_squared = mul(&rho, &rho);
+        let rho_squared = (config).mul(&rho, &rho);
         let row_weights = eq_table(&row_point, &config).unwrap();
         let column_weights = eq_table(&column_point, &config).unwrap();
 
-        let coefficient_at = |rows: &[Vec<(usize, F128)>], row: usize, column: usize| {
+        let coefficient_at = |rows: &[Vec<(usize, Fp<2>)>], row: usize, column: usize| {
             rows[row]
                 .iter()
                 .find_map(|(entry_column, coefficient)| {
@@ -3359,29 +3008,43 @@ mod tests {
             let mut column_evaluation = zero.clone();
             for row in 0..row_count {
                 let mut batched_coefficient = coefficient_at(&a_rows, row, column);
-                batched_coefficient += &mul(&rho, &coefficient_at(&b_rows, row, column));
-                batched_coefficient += &mul(&rho_squared, &coefficient_at(&c_rows, row, column));
-                column_evaluation += &mul(&row_weights[row], &batched_coefficient);
+                batched_coefficient = config.add(
+                    &(batched_coefficient),
+                    &(&(config).mul(&rho, &coefficient_at(&b_rows, row, column))),
+                );
+                batched_coefficient = config.add(
+                    &(batched_coefficient),
+                    &(&(config).mul(&rho_squared, &coefficient_at(&c_rows, row, column))),
+                );
+                column_evaluation = config.add(
+                    &(column_evaluation),
+                    &(&(config).mul(&row_weights[row], &batched_coefficient)),
+                );
             }
             expected_bound.push(column_evaluation);
         }
         expected_bound.resize(8, zero.clone());
 
-        let bound = prepared.bind_and_batch(&row_point, &rho).unwrap();
+        let bound = crate::piop::spartan::matrix::eq_table_prover(&row_point, prepared.config())
+            .map_err(crate::sumcheck::SumcheckError::from)
+            .and_then(|weights| prepared.binding(&rho).bind_rows(&weights))
+            .unwrap();
         assert_eq!(bound.num_vars, 3);
         assert_eq!(bound.evaluations, expected_bound);
         assert_eq!(bound.evaluations[5], zero);
 
         let expected_evaluation = expected_bound.iter().zip(&column_weights).fold(
-            F128::zero_with_cfg(&config),
+            Fp::<2>::zero_with_cfg(&config),
             |mut evaluation, (bound_value, column_weight)| {
-                evaluation += &mul(bound_value, column_weight);
+                evaluation =
+                    config.add(&(evaluation), &(&(config).mul(bound_value, column_weight)));
                 evaluation
             },
         );
         assert_eq!(
             prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap(),
             expected_evaluation
         );
@@ -3412,18 +3075,27 @@ mod tests {
         let row_count = a_rows.len();
 
         let from_rows = ConstraintMatrices::new(
-            SparseMatrix::try_from_rows(column_count, a_rows.clone()).unwrap(),
-            SparseMatrix::try_from_rows(column_count, b_rows.clone()).unwrap(),
-            SparseMatrix::try_from_rows(column_count, c_rows.clone()).unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_rows(column_count, a_rows.clone()).unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_rows(column_count, b_rows.clone()).unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_rows(column_count, c_rows.clone()).unwrap(),
         )
         .unwrap();
         let from_columns = ConstraintMatrices::new(
-            SparseMatrix::try_from_columns(row_count, columns_from_rows(column_count, &a_rows))
-                .unwrap(),
-            SparseMatrix::try_from_columns(row_count, columns_from_rows(column_count, &b_rows))
-                .unwrap(),
-            SparseMatrix::try_from_columns(row_count, columns_from_rows(column_count, &c_rows))
-                .unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_columns(
+                row_count,
+                columns_from_rows(column_count, &a_rows),
+            )
+            .unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_columns(
+                row_count,
+                columns_from_rows(column_count, &b_rows),
+            )
+            .unwrap(),
+            CscMatrix::<Box<[_]>>::try_from_columns(
+                row_count,
+                columns_from_rows(column_count, &c_rows),
+            )
+            .unwrap(),
         )
         .unwrap();
 
@@ -3442,14 +3114,19 @@ mod tests {
     #[test]
     fn csc_validation_preserves_canonical_row_major_error_order() {
         let config = config();
-        let zero = F128::zero_with_cfg(&config);
-        let one = F128::one_with_cfg(&config);
+        let zero = Fp::<2>::zero_with_cfg(&config);
+        let one = Fp::<2>::one_with_cfg(&config);
         // CSC visits (row 1, column 0) before (row 0, column 1), but the
         // statement's canonical validation order remains row-major.
-        let a = SparseMatrix::try_from_columns(2, vec![vec![(1, zero.clone())], vec![(0, zero)]])
-            .unwrap();
-        let valid =
-            || SparseMatrix::try_from_columns(2, vec![vec![(0, one.clone())], Vec::new()]).unwrap();
+        let a = CscMatrix::<Box<[_]>>::try_from_columns(
+            2,
+            vec![vec![(1, zero.clone())], vec![(0, zero)]],
+        )
+        .unwrap();
+        let valid = || {
+            CscMatrix::<Box<[_]>>::try_from_columns(2, vec![vec![(0, one.clone())], Vec::new()])
+                .unwrap()
+        };
 
         assert!(matches!(
             PreparedConstraintMatrices::new(
@@ -3467,8 +3144,8 @@ mod tests {
     #[test]
     fn checked_builders_pad_only_at_the_end() {
         let config = config();
-        let one = F128::one_with_cfg(&config);
-        let zero = F128::zero_with_cfg(&config);
+        let one = Fp::<2>::one_with_cfg(&config);
+        let zero = Fp::<2>::zero_with_cfg(&config);
         let assignment = [one.clone(), field(2, &config), field(3, &config)];
         let assignment_mle = build_assignment_mle(&assignment, 3, &config).unwrap();
         assert_eq!(assignment_mle.num_vars, 2);
@@ -3519,11 +3196,11 @@ mod tests {
         let claim = ScaledMleEvaluationClaim::new(
             point.to_vec().into_boxed_slice(),
             scale.clone(),
-            mul(&scale, &evaluation),
+            (config).mul(&scale, &evaluation),
         );
         claim.nonsuccinct_verify(&polynomial, &config).unwrap();
 
-        let zero = F128::zero_with_cfg(&config);
+        let zero = Fp::<2>::zero_with_cfg(&config);
         let zero_scaled =
             ScaledMleEvaluationClaim::new(point.to_vec().into_boxed_slice(), zero.clone(), zero);
         zero_scaled
@@ -3534,28 +3211,31 @@ mod tests {
     #[test]
     fn prepared_statement_rejects_coefficients_from_another_modulus() {
         let config = config();
-        let other_config = F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
-        let foreign = field(1, &other_config);
+        let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+        let foreign = crate::piop::spartan::noncanonical_test_value(&config);
         let local = field(1, &config);
-        let a = SparseMatrix::try_from_rows(1, vec![vec![(0, foreign)]]).unwrap();
-        let b = SparseMatrix::try_from_rows(1, vec![vec![(0, local.clone())]]).unwrap();
-        let c = SparseMatrix::try_from_rows(1, vec![vec![(0, local)]]).unwrap();
+        let a = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, foreign)]]).unwrap();
+        let b = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, local.clone())]]).unwrap();
+        let c = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, local)]]).unwrap();
         let matrices = ConstraintMatrices::new(a, b, c).unwrap();
 
         assert!(matches!(
             PreparedConstraintMatrices::new(matrices, &config),
-            Err(SpartanMatrixError::FieldConfigurationMismatch)
+            Err(SpartanMatrixError::InvalidFieldConfiguration(
+                SpartanFieldError::NonCanonicalElement
+            ))
         ));
     }
 
     #[test]
     fn prepared_digest_binds_the_runtime_modulus() {
         let config = config();
-        let other_config = F128::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+        let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
 
-        let prepare = |config: &<F128 as PrimeField>::Config| {
-            let matrix =
-                || SparseMatrix::try_from_rows(1, vec![vec![(0, field(1, config))]]).unwrap();
+        let prepare = |config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config| {
+            let matrix = || {
+                CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, field(1, config))]]).unwrap()
+            };
             PreparedConstraintMatrices::new(
                 ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap(),
                 config,
@@ -3574,21 +3254,19 @@ mod tests {
 
     #[test]
     fn prepared_statement_rejects_unsafe_runtime_fields() {
-        let matrices = |config: &<F128 as PrimeField>::Config| {
-            let matrix =
-                || SparseMatrix::try_from_rows(1, vec![vec![(0, field(1, config))]]).unwrap();
+        let matrices = |config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config| {
+            let matrix = || {
+                CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, field(1, config))]]).unwrap()
+            };
             ConstraintMatrices::new(matrix(), matrix(), matrix()).unwrap()
         };
 
-        let composite = F128::make_cfg(&Uint::from((1_u128 << 100) - 17)).unwrap();
-        assert!(matches!(
-            PreparedConstraintMatrices::new(matrices(&composite), &composite),
-            Err(SpartanMatrixError::InvalidFieldConfiguration(
-                SpartanFieldError::CompositeModulus
-            ))
-        ));
+        assert_eq!(
+            Fp::<2>::make_cfg(&Uint::from((1_u128 << 100) - 17)),
+            Err(SpartanFieldError::CompositeModulus)
+        );
 
-        let undersized = F128::make_cfg(&Uint::from(97_u128)).unwrap();
+        let undersized = Fp::<2>::make_cfg(&Uint::from(97_u128)).unwrap();
         assert!(matches!(
             PreparedConstraintMatrices::new(matrices(&undersized), &undersized),
             Err(SpartanMatrixError::InvalidFieldConfiguration(
@@ -3600,11 +3278,11 @@ mod tests {
     #[test]
     fn prepared_statement_rejects_explicit_sparse_zeroes() {
         let config = config();
-        let zero = F128::zero_with_cfg(&config);
-        let one = F128::one_with_cfg(&config);
-        let a = SparseMatrix::try_from_rows(1, vec![vec![(0, zero)]]).unwrap();
-        let b = SparseMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
-        let c = SparseMatrix::try_from_rows(1, vec![vec![(0, one)]]).unwrap();
+        let zero = Fp::<2>::zero_with_cfg(&config);
+        let one = Fp::<2>::one_with_cfg(&config);
+        let a = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, zero)]]).unwrap();
+        let b = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
+        let c = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, one)]]).unwrap();
 
         assert!(matches!(
             PreparedConstraintMatrices::new(ConstraintMatrices::new(a, b, c).unwrap(), &config),
@@ -3619,11 +3297,12 @@ mod tests {
     #[test]
     fn prepared_statement_rejects_unchecked_noncanonical_residues() {
         let config = config();
-        let malformed = F128::new_unchecked(Uint::from(u128::MAX), &config);
-        let one = F128::one_with_cfg(&config);
-        let a = SparseMatrix::try_from_rows(1, vec![vec![(0, malformed)]]).unwrap();
-        let b = SparseMatrix::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
-        let c = SparseMatrix::try_from_rows(1, vec![vec![(0, one)]]).unwrap();
+        let malformed = field::FpCtx::from_prime_u128(u128::MAX - 158)
+            .from_montgomery_integer(*config.modulus());
+        let one = Fp::<2>::one_with_cfg(&config);
+        let a = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, malformed)]]).unwrap();
+        let b = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, one.clone())]]).unwrap();
+        let c = CscMatrix::<Box<[_]>>::try_from_rows(1, vec![vec![(0, one)]]).unwrap();
 
         assert!(matches!(
             PreparedConstraintMatrices::new(ConstraintMatrices::new(a, b, c).unwrap(), &config),

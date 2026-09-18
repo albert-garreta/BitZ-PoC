@@ -162,7 +162,7 @@ query of column + Merkle path = 40–150 KiB to open a 32 KiB vector).
 - Weight builders for the tiled `2^k` and collapsed read-off weights
   (mod-q reduction of `w′_c·2^{c_w l}·2^k` — build with `fq_mul`, no
   crypto-bigint).
-- Bench knob `F2Z_USUP=1` selecting the variant; header prints it; the
+- Bench knob `BITZ_USUP=1` selecting the variant; header prints it; the
   `split:` line must itemize the new populations.
 
 ## M2 — validation + recording
@@ -178,7 +178,7 @@ query of column + Merkle path = 40–150 KiB to open a 32 KiB vector).
 - Bench the reference shapes (idle box, one shape per process, medians);
   update README proof-size tables ONLY for the flagged variant (add a
   column/section — do not touch default rows), extend DESIGN.md §soundness,
-  and append an F2Z pointer entry (outcome + numbers, pass or fail) to the
+  and append an BitZ pointer entry (outcome + numbers, pass or fail) to the
   zinc-plus `f2-int-sha` ledger.
 
 ## Constraints and traps (house rules — do not relearn these)

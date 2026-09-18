@@ -11,7 +11,7 @@ use super::{Oracle, b128_to_f128};
 use crate::{
     binary_pcs::{BinaryPcs, Round0Prover, Round0Verifier},
     ligerito_flock::OodRound,
-    poly::univariate::binary_gf128::BinaryFieldGF128 as Gf,
+    poly::univariate::binary_gf128::Gf128 as Gf,
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use binius_compute::Allocator;
@@ -26,9 +26,9 @@ use binius_ip::channel::{
 use binius_ip_prover::channel::{IPProverChannel, WordIPProverChannel};
 use binius_math::{FieldSlice, FieldVec};
 use binius_verifier::config::B128;
-use flock_core::{field::F128, merkle::Hash, pcs::commit::ProverData};
+use flock_core::{field::Gf128, merkle::Hash, pcs::commit::ProverData};
 
-const ORACLE_DOMAIN: &[u8] = b"f2z/binius64-ligerito/oracle/v1";
+const ORACLE_DOMAIN: &[u8] = b"bitz/binius64-ligerito/oracle/v1";
 
 /// Bind an oracle's root, in commitment order, before Round 0 draws `ζ`.
 fn absorb_root(t: &mut Blake3Transcript, index: usize, root: &Hash) {
@@ -43,7 +43,7 @@ fn observe(t: &mut Blake3Transcript, v: B128) {
 
 fn challenge(t: &mut Blake3Transcript) -> B128 {
     let x: Gf = t.get_field_challenge(&());
-    B128::new(u128::from(x.words()[0]) | (u128::from(x.words()[1]) << 64))
+    B128::new(u128::from(x.as_words()[0]) | (u128::from(x.as_words()[1]) << 64))
 }
 
 fn observe_words(t: &mut Blake3Transcript, words: &[Word]) {
@@ -65,7 +65,7 @@ fn sample_bits(t: &mut Blake3Transcript, bits: usize) -> Word {
 
 /// One committed oracle on the prover side.
 pub(super) struct ProverOracle {
-    pub packed: Vec<F128>,
+    pub packed: Vec<Gf128>,
     pub data: ProverData,
     pub root: Hash,
     pub round0: Round0Prover,
@@ -74,7 +74,7 @@ pub(super) struct ProverOracle {
 /// One queued relation `⟨basis, oracle⟩ = claim`.
 pub(super) struct ProverRelation {
     pub oracle: Oracle,
-    pub basis: Vec<F128>,
+    pub basis: Vec<Gf128>,
     pub claim: B128,
 }
 
@@ -141,7 +141,7 @@ impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for Pro
             tag_commit = true,
         )
         .in_scope(|| {
-            let packed: Vec<F128> = buffer.iter_scalars().map(b128_to_f128).collect();
+            let packed: Vec<Gf128> = buffer.iter_scalars().map(b128_to_f128).collect();
             let (commitment, data) = pcs
                 .commit(&packed)
                 .expect("the oracle length matches its specification");
@@ -168,8 +168,12 @@ impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for Pro
     }
     fn prove_oracle_relation(&mut self, oracle: Oracle, transparent: FieldVec<P, A>, claim: B128) {
         let packed = &self.oracles[oracle].packed;
-        let basis: Vec<F128> = transparent.iter_scalars().map(b128_to_f128).collect();
-        assert_eq!(basis.len(), packed.len(), "transparent basis covers the oracle");
+        let basis: Vec<Gf128> = transparent.iter_scalars().map(b128_to_f128).collect();
+        assert_eq!(
+            basis.len(),
+            packed.len(),
+            "transparent basis covers the oracle"
+        );
         self.relations.push(ProverRelation {
             oracle,
             basis,

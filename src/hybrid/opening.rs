@@ -18,22 +18,21 @@ use crate::{
     ligerito::{RingSwitchProof, residual_b_evals, ring_switch_prove_with, ring_switch_verify},
     ligerito_flock::{
         OodProverClaim, OodRound, OodRoundParams, OodVerifierClaim, ZincChallenger, add_ood_basis,
-        f128_to_gf, gf_to_f128, ood_residual_evals,
-        prove_ood_round_packed, verify_ood_round,
+        ood_residual_evals, prove_ood_round_packed, verify_ood_round,
     },
     piop::spartan::profile::{IopSecurityProfile, MAX_DERIVED_GRINDING_BITS},
     transcript::{Blake3Transcript, traits::Transcript},
 };
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 use flock_core::{
-    field::F128 as F,
+    field::Gf128 as F,
     merkle::{self, Hash},
     pcs::{
         commit::{PcsParams, ProverData},
         ligerito::{self, LigeritoProof, RecursiveProof},
     },
 };
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Default Reed–Solomon inverse-rate exponent of the shared opener
 /// (rate 1/2). The effective rate is the prepared Ligerito selection's
@@ -100,7 +99,9 @@ impl Geometry {
                 F::ONE + point[7 + j]
             };
         }
-        for &r in &point[11 + high..] { padding *= F::ONE + r; }
+        for &r in &point[11 + high..] {
+            padding *= F::ONE + r;
+        }
         (original, padding)
     }
     /// Commitment parameters of one branch, committing at `log_inv_rate` —
@@ -129,7 +130,11 @@ impl Geometry {
             let mut scale = eta;
             for coordinate in (k..4).chain(4 + high..self.packed_log()) {
                 let bit = coordinate == 3 && branch == 1;
-                scale *= if bit { r[coordinate] } else { Gf::one() + r[coordinate] };
+                scale *= if bit {
+                    r[coordinate]
+                } else {
+                    Gf::one() + r[coordinate]
+                };
                 clamped[coordinate] = if bit { Gf::one() } else { Gf::zero() };
             }
             bases.push((clamped, scale));
@@ -186,24 +191,36 @@ pub(super) fn verify_ood(
     match (params, round) {
         (None, None) => Ok(None),
         (Some(params), Some(round)) => verify_ood_round(t, geometry.packed_log(), params, round)
-            .map(Some).map_err(|_| Error::Invalid("Round 0 (out-of-domain sample)")),
-        _ => Err(Error::Invalid("Round-0 presence disagrees with Ligerito regime")),
+            .map(Some)
+            .map_err(|_| Error::Invalid("Round 0 (out-of-domain sample)")),
+        _ => Err(Error::Invalid(
+            "Round-0 presence disagrees with Ligerito regime",
+        )),
     }
 }
 
-pub(super) fn ood_parameters(resolved: &crate::ligerito_flock::ResolvedLigerito) -> Result<Option<(f64, OodRoundParams)>, Error> {
-    resolved.ood_bits().map(|bits| {
-        let grinding_bits = (CompositionProfile::LAMBDA as f64 - bits).ceil().max(0.) as u32;
-        if grinding_bits > MAX_DERIVED_GRINDING_BITS {
-            return Err(Error::Config("Round 0 exceeds the derived grinding cap".into()));
-        }
-        Ok((bits, OodRoundParams { grinding_bits }))
-    }).transpose()
+pub(super) fn ood_parameters(
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+) -> Result<Option<(f64, OodRoundParams)>, Error> {
+    resolved
+        .ood_bits()
+        .map(|bits| {
+            let grinding_bits = (CompositionProfile::LAMBDA as f64 - bits).ceil().max(0.) as u32;
+            if grinding_bits > MAX_DERIVED_GRINDING_BITS {
+                return Err(Error::Config(
+                    "Round 0 exceeds the derived grinding cap".into(),
+                ));
+            }
+            Ok((bits, OodRoundParams { grinding_bits }))
+        })
+        .transpose()
 }
 
 fn sample_padding(t: &mut Blake3Transcript, geometry: &Geometry) -> Vec<(Vec<Gf>, Gf)> {
     t.absorb_slice(b"hybrid/zero-padding/three-equality-bases/v1");
-    let point = (0..geometry.packed_log()).map(|_| t.get_field_challenge(&())).collect();
+    let point = (0..geometry.packed_log())
+        .map(|_| t.get_field_challenge(&()))
+        .collect();
     let eta = t.get_field_challenge(&());
     geometry.padding_bases(point, eta)
 }
@@ -223,7 +240,7 @@ pub(super) fn prove(
     // reads them in place and writes the basis in flock's element type (no
     // 2^m-element conversion pass either way).
     let (ring, mut basis, mut target) =
-        ring_switch_prove_with(t, &packed, &point[7..], gf_to_f128);
+        ring_switch_prove_with(t, &packed, &point[7..], |value| value);
     drop(ring_scope);
     let basis_scope = tracing::info_span!("op:extra_bases").entered();
     // Batch the Round-0 claim into the same opening: one draw adds
@@ -246,7 +263,7 @@ pub(super) fn prove(
         &pc,
         packed,
         basis,
-        gf_to_f128(target),
+        (target),
         *statement,
         |positions, lanes, queries| {
             let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
@@ -287,7 +304,7 @@ pub(super) fn verify(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &Proof,
 ) -> Result<(), Error> {
-    let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, f128_to_gf(value), &point[..7])
+    let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, (value), &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
     let eta_ood: Option<Gf> = ood.map(|claim| {
         let eta: Gf = t.get_field_challenge(&());
@@ -321,18 +338,28 @@ pub(super) fn verify(
         &vc,
         &proof.ligerito,
         geometry.packed_log(),
-        gf_to_f128(target),
+        (target),
         statement,
         |prefix, log_y| {
-            let prefix_gf: Vec<_> = prefix.iter().copied().map(f128_to_gf).collect();
+            let prefix_gf: Vec<_> = prefix.iter().copied().collect();
             let mut out = residual_b_evals(&prefix_gf, log_y, &point[7..], &eq_r2);
             if let (Some(ood), Some(eta)) = (ood, eta_ood) {
-                for (slot, term) in out.iter_mut().zip(ood_residual_evals(prefix, log_y, &ood.point, eta)) { *slot += term; }
+                for (slot, term) in out
+                    .iter_mut()
+                    .zip(ood_residual_evals(prefix, log_y, &ood.point, eta))
+                {
+                    *slot += term;
+                }
             }
             for (point, scale) in &padding {
-                for (slot, term) in out.iter_mut().zip(ood_residual_evals(prefix, log_y, point, *scale)) { *slot += term; }
+                for (slot, term) in out
+                    .iter_mut()
+                    .zip(ood_residual_evals(prefix, log_y, point, *scale))
+                {
+                    *slot += term;
+                }
             }
-            out.into_iter().map(gf_to_f128).collect()
+            out.into_iter().collect()
         },
         |positions, lanes, queries, opening| {
             if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {

@@ -1,9 +1,9 @@
 //! Union-bound accounting for the supported composition shapes.
+use crate::piop::spartan::mul::MulLayout;
+use crate::piop::spartan::protocol::PreparedRelationPrefix;
+
 use super::{Error, opening::Geometry};
-use crate::piop::spartan::{
-    f2z::U32MulPrefixRelation,
-    profile::{IopSecurityProfile, PrimePolicy},
-};
+use crate::piop::spartan::profile::{IopSecurityProfile, PrimePolicy};
 
 /// Slack for the complete composition: the standalone 100-bit per-round
 /// preset cannot be reused as a 100-bit whole-protocol guarantee.
@@ -74,7 +74,7 @@ impl SecurityReport {
 }
 
 pub(super) fn account(
-    mul: &U32MulPrefixRelation,
+    mul: &PreparedRelationPrefix<MulLayout<u32>>,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
@@ -89,7 +89,7 @@ pub(super) fn account(
 /// The union-bound accounting WITHOUT the 100-bit gate, so a caller solving
 /// the smallest clearing component target can probe candidates.
 pub(super) fn account_terms(
-    mul: &U32MulPrefixRelation,
+    mul: &PreparedRelationPrefix<MulLayout<u32>>,
     sha: &binius_verifier::IOPVerifier,
     geometry: &Geometry,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
@@ -104,7 +104,10 @@ pub(super) fn account_terms(
     // claim; that is too late for the forest and PIOP challenges drawn in
     // between, so this explicit sample replaces that implicit binding.
     if let Some((ood_bits, ood)) = super::opening::ood_parameters(resolved)? {
-        add("step0:ood-draw", 2f64.powf(-(ood_bits + f64::from(ood.grinding_bits))));
+        add(
+            "step0:ood-draw",
+            2f64.powf(-(ood_bits + f64::from(ood.grinding_bits))),
+        );
     }
     let gate_log = mul.layout().gate_vars();
     for term in &mul.security().accounting.terms {
@@ -132,7 +135,7 @@ pub(super) fn account_terms(
         + cs.log_zero_constraints().unwrap_or(0)
         + 64;
     // AND's univariate degree is <=126 (64-bit word domain), with three
-    // skipped Boolean coordinates. The subsequent zerocheck/shift rounds
+    // skipped Bit coordinates. The subsequent zerocheck/shift rounds
     // have degree <=3. 4096 per coordinate bounds the initial identity
     // tests, skipped rounds, all operand batches and their sumchecks.
     // This also covers public-segment ring switching and its degree-two
@@ -147,7 +150,10 @@ pub(super) fn account_terms(
         (2 * geometry.bit_log() + 2) as f64 * k_inv,
     );
     add("ring switching", 128.0 * k_inv);
-    add("logical support padding", (geometry.packed_log() + 1) as f64 * k_inv);
+    add(
+        "logical support padding",
+        (geometry.packed_log() + 1) as f64 * k_inv,
+    );
     let config = resolved.security();
     config.validate().map_err(Error::Config)?;
     for (index, level) in config.levels.iter().enumerate() {

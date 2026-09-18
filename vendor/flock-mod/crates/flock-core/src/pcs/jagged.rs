@@ -1,7 +1,7 @@
 //! Jagged polynomial commitment — the sparse→dense reduction (standalone core).
 //!
 //! Implements the "basic jagged" reduction of Hemo–Jue–Rabinovich–Roh–Rothblum
-//! ("Jagged Polynomial Commitments", 2025/917) over `F128`. A *jagged function*
+//! ("Jagged Polynomial Commitments", 2025/917) over `Gf128`. A *jagged function*
 //! `p : {0,1}^n × {0,1}^k → F` is a `2^n × 2^k` table in which column `y` is
 //! nonzero only below its height `h_y`. Its nonzero entries are flattened, in
 //! column-major order, into a single *dense* multilinear `q : {0,1}^m → F`
@@ -10,7 +10,7 @@
 //! which a downstream multilinear PCS would discharge.
 //!
 //! This is the **packing-agnostic kernel**: it operates on an abstract dense
-//! `F128` multilinear `q`, the cumulative column heights, and points
+//! `Gf128` multilinear `q`, the cumulative column heights, and points
 //! `(z_r, z_c)`. It does *not* wire into ring-switch / ligerito / the
 //! arithmetization — that composition is deliberately deferred.
 //!
@@ -41,7 +41,7 @@
 //! `c = t_{y-1}`, `d = t_y` are the (boolean, constant) cumulative heights.
 
 use crate::challenger::Challenger;
-use crate::field::F128;
+use crate::field::Gf128;
 use crate::lincheck::build_eq_table;
 
 /// Configuration of a jagged function: the (zero-padded to `2^k`) column
@@ -106,21 +106,21 @@ impl JaggedParams {
 /// Bit `layer` of the field "point" `z`: the coordinate `z[layer]` if present,
 /// else `ZERO` (the variable is pinned to 0 — i.e. zero-padded).
 #[inline]
-fn point_bit(z: &[F128], layer: usize) -> F128 {
+fn point_bit(z: &[Gf128], layer: usize) -> Gf128 {
     if layer < z.len() {
         z[layer]
     } else {
-        F128::ZERO
+        Gf128::ZERO
     }
 }
 
 /// Bit `layer` of the integer `t`, as a field element.
 #[inline]
-fn int_bit(t: u64, layer: usize) -> F128 {
+fn int_bit(t: u64, layer: usize) -> Gf128 {
     if (t >> layer) & 1 == 1 {
-        F128::ONE
+        Gf128::ONE
     } else {
-        F128::ZERO
+        Gf128::ZERO
     }
 }
 
@@ -154,12 +154,12 @@ const STATE_SUCCESS: usize = 2; // carry=0, comparison=1
 /// Multilinear extension `ĝ(z_r, z_i, t_c, t_next)` of the branching program,
 /// with the heights `t_c, t_next` as boolean constants. Holmgren–Rothblum
 /// layer-by-layer DP over the 4 reachable states; `O(m)` field ops.
-fn g_hat_eval(z_row: &[F128], z_index: &[F128], t_c: u64, t_next: u64, m: usize) -> F128 {
+fn g_hat_eval(z_row: &[Gf128], z_index: &[Gf128], t_c: u64, t_next: u64, m: usize) -> Gf128 {
     // dp[s] = weight, over already-processed (upper) layers, of reaching the
     // accepting sink from state `s`. Seed the accepting state, peel layers from
     // MSB down to LSB, and read off the initial state.
-    let mut dp = [F128::ZERO; 4];
-    dp[STATE_SUCCESS] = F128::ONE;
+    let mut dp = [Gf128::ZERO; 4];
+    dp[STATE_SUCCESS] = Gf128::ONE;
     for layer in (0..=m).rev() {
         let eq16 = build_eq_table(&[
             point_bit(z_row, layer),
@@ -167,9 +167,9 @@ fn g_hat_eval(z_row: &[F128], z_index: &[F128], t_c: u64, t_next: u64, m: usize)
             int_bit(t_c, layer),
             int_bit(t_next, layer),
         ]);
-        let mut new_dp = [F128::ZERO; 4];
+        let mut new_dp = [Gf128::ZERO; 4];
         for (s, slot) in new_dp.iter_mut().enumerate() {
-            let mut acc = F128::ZERO;
+            let mut acc = Gf128::ZERO;
             for (idx, &w) in eq16.iter().enumerate() {
                 // idx bit 0 = row, 1 = index, 2 = curr (t_c), 3 = next (t_next).
                 let row = idx & 1 != 0;
@@ -190,13 +190,13 @@ fn g_hat_eval(z_row: &[F128], z_index: &[F128], t_c: u64, t_next: u64, m: usize)
 /// Evaluate `f̂_t(z_r, z_c, z_i)` at an arbitrary field point, via the
 /// branching-program assembly `Σ_y eq(z_c, y)·ĝ(z_r, z_i, t_{y-1}, t_y)`
 /// (paper Claim 3.2.1). Cost `O(m · 2^k)`.
-pub fn f_hat_t(params: &JaggedParams, z_row: &[F128], z_col: &[F128], z_index: &[F128]) -> F128 {
+pub fn f_hat_t(params: &JaggedParams, z_row: &[Gf128], z_col: &[Gf128], z_index: &[Gf128]) -> Gf128 {
     assert_eq!(z_row.len(), params.n);
     assert_eq!(z_col.len(), params.k);
     assert_eq!(z_index.len(), params.m);
     let eq_col = build_eq_table(z_col);
     let cols = 1usize << params.k;
-    let mut acc = F128::ZERO;
+    let mut acc = Gf128::ZERO;
     for c in 0..cols {
         let g = g_hat_eval(
             z_row,
@@ -215,16 +215,16 @@ pub fn f_hat_t(params: &JaggedParams, z_row: &[F128], z_col: &[F128], z_index: &
 /// the running claim. `q_eval` is the final dense claim `α = q̂(i*)`.
 #[derive(Clone, Debug)]
 pub struct JaggedSumcheckProof {
-    pub rounds: Vec<(F128, F128)>,
-    pub q_eval: F128,
+    pub rounds: Vec<(Gf128, Gf128)>,
+    pub q_eval: Gf128,
 }
 
 /// The dense evaluation claim that the jagged reduction produces: prove
 /// `q̂(point) = alpha` with a downstream multilinear PCS.
 #[derive(Clone, Debug)]
 pub struct DenseClaim {
-    pub point: Vec<F128>,
-    pub alpha: F128,
+    pub point: Vec<Gf128>,
+    pub alpha: Gf128,
 }
 
 /// Generate the second sumcheck multilinear `B[i] = eq(row_t(i), z_row) ·
@@ -238,10 +238,10 @@ pub struct DenseClaim {
 /// element, so there is no per-element binary search.
 fn generate_f_and_claim(
     params: &JaggedParams,
-    q: &[F128],
-    z_row: &[F128],
-    z_col: &[F128],
-) -> (Vec<F128>, F128) {
+    q: &[Gf128],
+    z_row: &[Gf128],
+    z_col: &[Gf128],
+) -> (Vec<Gf128>, Gf128) {
     use rayon::prelude::*;
     let len = 1usize << params.m;
     let area = params.area() as usize;
@@ -262,11 +262,11 @@ fn generate_f_and_claim(
             let mut col = prefix
                 .partition_point(|&t| t <= g0 as u64)
                 .saturating_sub(1);
-            let mut acc = F128::ZERO;
+            let mut acc = Gf128::ZERO;
             for (local, slot) in b_chunk.iter_mut().enumerate() {
                 let i = g0 + local;
                 if i >= area {
-                    *slot = F128::ZERO;
+                    *slot = Gf128::ZERO;
                     continue;
                 }
                 while (i as u64) >= prefix[col + 1] {
@@ -279,7 +279,7 @@ fn generate_f_and_claim(
             }
             acc
         })
-        .reduce(|| F128::ZERO, |x, y| x + y);
+        .reduce(|| Gf128::ZERO, |x, y| x + y);
     (b, v)
 }
 
@@ -290,11 +290,11 @@ fn generate_f_and_claim(
 /// `v = p̂(z_row, z_col)`.
 pub fn prove<C: Challenger>(
     params: &JaggedParams,
-    q: &[F128],
-    z_row: &[F128],
-    z_col: &[F128],
+    q: &[Gf128],
+    z_row: &[Gf128],
+    z_col: &[Gf128],
     challenger: &mut C,
-) -> (JaggedSumcheckProof, F128) {
+) -> (JaggedSumcheckProof, Gf128) {
     let m = params.m;
     let len = 1usize << m;
     assert_eq!(q.len(), len, "q must have 2^m entries");
@@ -310,7 +310,7 @@ pub fn prove<C: Challenger>(
     // Product-of-two-multilinears sumcheck, binding the low index bit each
     // round — parallel and fused: each fold pass also computes the next round's
     // message, halving passes over the (bandwidth-bound) witness. We ping-pong
-    // between `a/bb` and the scratch `sa/sb`. F128 addition is XOR, so the
+    // between `a/bb` and the scratch `sa/sb`. Gf128 addition is XOR, so the
     // parallel tree reduction is bit-identical to a serial fold.
     let mut a = q.to_vec();
     let mut bb = b;
@@ -350,9 +350,9 @@ pub fn prove<C: Challenger>(
 /// dense claim `q̂(i*) = alpha`. Returns `None` if the proof is rejected.
 pub fn verify<C: Challenger>(
     params: &JaggedParams,
-    z_row: &[F128],
-    z_col: &[F128],
-    claim_v: F128,
+    z_row: &[Gf128],
+    z_col: &[Gf128],
+    claim_v: Gf128,
     proof: &JaggedSumcheckProof,
     challenger: &mut C,
 ) -> Option<DenseClaim> {
@@ -388,7 +388,7 @@ pub fn verify<C: Challenger>(
 /// polynomial `G` is given by `G(1) = g_one`, leading coeff `G(∞) = g_inf`, and
 /// `G(0) = claim + G(1)` (since `claim = G(0) + G(1)`). Returns `G(r)`.
 #[inline]
-fn fold_round_claim(claim: F128, g_one: F128, g_inf: F128, r: F128) -> F128 {
+fn fold_round_claim(claim: Gf128, g_one: Gf128, g_inf: Gf128, r: Gf128) -> Gf128 {
     let g0 = claim + g_one; // char-2: G(0) = claim - G(1)
     // G(X) = g0 + (G(1) + g0 + g_inf)·X + g_inf·X²
     g0 + (g_one + g0 + g_inf) * r + g_inf * (r * r)
@@ -400,10 +400,10 @@ fn fold_round_claim(claim: F128, g_one: F128, g_inf: F128, r: F128) -> F128 {
 /// serial-vs-parallel benchmark.
 #[allow(dead_code)]
 #[inline]
-fn round_msg(a: &[F128], b: &[F128]) -> (F128, F128) {
+fn round_msg(a: &[Gf128], b: &[Gf128]) -> (Gf128, Gf128) {
     let half = a.len() / 2;
-    let mut g_one = F128::ZERO;
-    let mut g_inf = F128::ZERO;
+    let mut g_one = Gf128::ZERO;
+    let mut g_inf = Gf128::ZERO;
     for x in 0..half {
         let (a0, a1) = (a[2 * x], a[2 * x + 1]);
         let (b0, b1) = (b[2 * x], b[2 * x + 1]);
@@ -425,14 +425,14 @@ fn round_msg(a: &[F128], b: &[F128]) -> (F128, F128) {
 /// building block for the eventual rayon-parallel kernel, where the
 /// bandwidth saving from fewer passes should dominate. See `runtime_m25`.
 #[allow(dead_code)]
-fn fold_and_round_fused(a: &mut Vec<F128>, b: &mut Vec<F128>, r: F128) -> (F128, F128) {
+fn fold_and_round_fused(a: &mut Vec<Gf128>, b: &mut Vec<Gf128>, r: Gf128) -> (Gf128, Gf128) {
     let n = a.len();
     debug_assert!(n >= 4 && n.is_power_of_two());
     debug_assert_eq!(b.len(), n);
     let half = n / 2;
     let pairs = half / 2; // output pairs == input quads
-    let mut g_one = F128::ZERO;
-    let mut g_inf = F128::ZERO;
+    let mut g_one = Gf128::ZERO;
+    let mut g_inf = Gf128::ZERO;
     for xp in 0..pairs {
         let base = 4 * xp;
         // Fold the two input pairs feeding output pair (2xp, 2xp+1). Read all
@@ -454,21 +454,21 @@ fn fold_and_round_fused(a: &mut Vec<F128>, b: &mut Vec<F128>, r: F128) -> (F128,
     (g_one, g_inf)
 }
 
-/// Parallel degree-2 round message `(G(1), G(∞))`. F128 addition is XOR, so the
+/// Parallel degree-2 round message `(G(1), G(∞))`. Gf128 addition is XOR, so the
 /// tree reduction is bit-identical to the serial left fold.
 ///
 /// Iterates contiguous slice chunks with `chunks_exact(2)` rather than indexing
 /// `a[2*x]`: eliminating the per-element bounds checks lifts the reduction from
 /// ~2.6× to ~6× parallel scaling (hits the memory-bandwidth ceiling). See
 /// `scaling_diag`.
-fn round_msg_par(a: &[F128], b: &[F128]) -> (F128, F128) {
+fn round_msg_par(a: &[Gf128], b: &[Gf128]) -> (Gf128, Gf128) {
     use rayon::prelude::*;
     const C: usize = 1 << 14;
     a.par_chunks(C)
         .zip(b.par_chunks(C))
         .map(|(ac, bc)| {
-            let mut g1 = F128::ZERO;
-            let mut gi = F128::ZERO;
+            let mut g1 = Gf128::ZERO;
+            let mut gi = Gf128::ZERO;
             for (ap, bp) in ac
                 .as_chunks::<2>()
                 .0
@@ -480,12 +480,12 @@ fn round_msg_par(a: &[F128], b: &[F128]) -> (F128, F128) {
             }
             (g1, gi)
         })
-        .reduce(|| (F128::ZERO, F128::ZERO), |(p, q), (s, t)| (p + s, q + t))
+        .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(p, q), (s, t)| (p + s, q + t))
 }
 
 /// Parallel out-of-place fold (no message), `ao/bo` length `a.len()/2`. Used for
 /// the final round (size 2 → 1), where there is no successor message.
-fn fold_oop_par(a: &[F128], b: &[F128], r: F128, ao: &mut [F128], bo: &mut [F128]) {
+fn fold_oop_par(a: &[Gf128], b: &[Gf128], r: Gf128, ao: &mut [Gf128], bo: &mut [Gf128]) {
     use rayon::prelude::*;
     ao.par_iter_mut()
         .zip(bo.par_iter_mut())
@@ -501,12 +501,12 @@ fn fold_oop_par(a: &[F128], b: &[F128], r: F128, ao: &mut [F128], bo: &mut [F128
 /// bandwidth-bound parallel regime the halved pass count is a ~1.4× win (the
 /// serial penalty from the fold→message dependency is hidden across cores).
 fn fold_and_round_oop_par(
-    a: &[F128],
-    b: &[F128],
-    r: F128,
-    ao: &mut [F128],
-    bo: &mut [F128],
-) -> (F128, F128) {
+    a: &[Gf128],
+    b: &[Gf128],
+    r: Gf128,
+    ao: &mut [Gf128],
+    bo: &mut [Gf128],
+) -> (Gf128, Gf128) {
     use rayon::prelude::*;
     debug_assert_eq!(a.len(), 2 * ao.len());
     debug_assert!(a.len() >= 4);
@@ -519,8 +519,8 @@ fn fold_and_round_oop_par(
         .zip(a.par_chunks(2 * CO))
         .zip(b.par_chunks(2 * CO))
         .map(|(((oa, ob), ain), bin)| {
-            let mut g1 = F128::ZERO;
-            let mut gi = F128::ZERO;
+            let mut g1 = Gf128::ZERO;
+            let mut gi = Gf128::ZERO;
             for (((op, opb), aq), bq) in oa
                 .as_chunks_mut::<2>()
                 .0
@@ -542,7 +542,7 @@ fn fold_and_round_oop_par(
             }
             (g1, gi)
         })
-        .reduce(|| (F128::ZERO, F128::ZERO), |(p, q), (s, t)| (p + s, q + t))
+        .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(p, q), (s, t)| (p + s, q + t))
 }
 
 #[cfg(test)]
@@ -551,7 +551,7 @@ mod tests {
     use crate::challenger::{FsChallenger, RandomChallenger};
     use crate::zerocheck::multilinear::fold_in_place_pair;
 
-    fn sample_vec(ch: &mut RandomChallenger, n: usize) -> Vec<F128> {
+    fn sample_vec(ch: &mut RandomChallenger, n: usize) -> Vec<Gf128> {
         (0..n).map(|_| ch.sample_f128()).collect()
     }
 
@@ -559,14 +559,14 @@ mod tests {
     /// `f̂_t` (paper Eq. 4 summed over the bijection). `O(area · (n+k+m))`.
     fn f_hat_t_bruteforce(
         params: &JaggedParams,
-        z_row: &[F128],
-        z_col: &[F128],
-        z_index: &[F128],
-    ) -> F128 {
+        z_row: &[Gf128],
+        z_col: &[Gf128],
+        z_index: &[Gf128],
+    ) -> Gf128 {
         let eq_row = build_eq_table(z_row);
         let eq_col = build_eq_table(z_col);
         let eq_idx = build_eq_table(z_index);
-        let mut acc = F128::ZERO;
+        let mut acc = Gf128::ZERO;
         for i in 0..params.area() {
             let (row, col) = params.unrank(i);
             acc += eq_row[row] * eq_col[col] * eq_idx[i as usize];
@@ -575,12 +575,12 @@ mod tests {
     }
 
     /// `q̂(point)` directly = ⟨q, eq(point, ·)⟩.
-    fn mle_eval(q: &[F128], point: &[F128]) -> F128 {
+    fn mle_eval(q: &[Gf128], point: &[Gf128]) -> Gf128 {
         let eq = build_eq_table(point);
         q.iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |s, x| s + x)
+            .fold(Gf128::ZERO, |s, x| s + x)
     }
 
     /// A small random jagged config + dense data, with total area < 2^m.
@@ -589,7 +589,7 @@ mod tests {
         n: usize,
         k: usize,
         m: usize,
-    ) -> (JaggedParams, Vec<F128>) {
+    ) -> (JaggedParams, Vec<Gf128>) {
         let cols = 1usize << k;
         let cap = 1u64 << m;
         let max_h = 1u64 << n;
@@ -604,7 +604,7 @@ mod tests {
         }
         let params = JaggedParams::from_heights(&heights, n, m);
         // Dense q: random in [0, area), zero past it.
-        let mut q = vec![F128::ZERO; 1usize << m];
+        let mut q = vec![Gf128::ZERO; 1usize << m];
         for qi in q.iter_mut().take(params.area() as usize) {
             *qi = ch.sample_f128();
         }
@@ -637,7 +637,7 @@ mod tests {
         let eq_row = build_eq_table(&z_row);
         let eq_col = build_eq_table(&z_col);
         for i in 0..params.area() {
-            let z_idx: Vec<F128> = (0..params.m).map(|bit| int_bit(i, bit)).collect();
+            let z_idx: Vec<Gf128> = (0..params.m).map(|bit| int_bit(i, bit)).collect();
             let got = f_hat_t(&params, &z_row, &z_col, &z_idx);
             let (row, col) = params.unrank(i);
             let want = eq_row[row] * eq_col[col];
@@ -678,7 +678,7 @@ mod tests {
         let (proof, v) = prove(&params, &q, &z_row, &z_col, &mut pch);
 
         let mut vch = FsChallenger::new(b"flock-jagged-test");
-        let bad = v + F128::ONE;
+        let bad = v + Gf128::ONE;
         assert!(
             verify(&params, &z_row, &z_col, bad, &proof, &mut vch).is_none(),
             "verifier must reject a wrong claim value"
@@ -686,7 +686,7 @@ mod tests {
     }
 
     /// Runtime check at the realistic Option-B size: an m=32-bit trace packed
-    /// into F128 (128 bits each) is a dense `q` of `2^25` field elements, so the
+    /// into Gf128 (128 bits each) is a dense `q` of `2^25` field elements, so the
     /// jagged sumcheck runs over 25 variables. Mirrors `prove`, split into the
     /// `f̂_t`-sequence generation and the sumcheck rounds.
     ///
@@ -698,7 +698,7 @@ mod tests {
 
         // Match the full-prover profile (P-core pool) for an apples-to-apples ratio.
         let _ = crate::init_perf_thread_pool();
-        let (n, k, m) = (13usize, 12usize, 25usize); // 2^25 dense F128 elements
+        let (n, k, m) = (13usize, 12usize, 25usize); // 2^25 dense Gf128 elements
         let cols = 1usize << k;
         let height = (1u64 << m) / cols as u64; // uniform; total area = 2^m
         let params = JaggedParams::from_heights(&vec![height; cols], n, m);
@@ -706,9 +706,9 @@ mod tests {
 
         // Cheap deterministic dense data (field-mul cost is data-independent).
         let len = 1usize << m;
-        let mut q = vec![F128::ZERO; len];
+        let mut q = vec![Gf128::ZERO; len];
         for (i, qi) in q.iter_mut().enumerate() {
-            *qi = F128 {
+            *qi = Gf128 {
                 lo: i as u64,
                 hi: (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
             };
@@ -717,21 +717,21 @@ mod tests {
         let z_row = sample_vec(&mut rc, n);
         let z_col = sample_vec(&mut rc, k);
 
-        let mb = (len * std::mem::size_of::<F128>()) as f64 / (1024.0 * 1024.0);
-        eprintln!("\n[jagged runtime] m={m} ({len} F128 = {mb:.0} MB), n={n}, k={k}, cols={cols}");
+        let mb = (len * std::mem::size_of::<Gf128>()) as f64 / (1024.0 * 1024.0);
+        eprintln!("\n[jagged runtime] m={m} ({len} Gf128 = {mb:.0} MB), n={n}, k={k}, cols={cols}");
 
         const REPS: usize = 3;
 
         // --- Phase 1: B-vector + claim generation, serial vs parallel-fused. ---
         let mut t_gen_ser = std::time::Duration::MAX;
         let mut t_gen_par = std::time::Duration::MAX;
-        let (mut b, mut v) = (Vec::new(), F128::ZERO);
+        let (mut b, mut v) = (Vec::new(), Gf128::ZERO);
         for _ in 0..REPS {
             // Serial reference: column-major build + separate v reduction.
             let t0 = Instant::now();
             let eq_row = build_eq_table(&z_row);
             let eq_col = build_eq_table(&z_col);
-            let mut bs = vec![F128::ZERO; len];
+            let mut bs = vec![Gf128::ZERO; len];
             for col in 0..cols {
                 let start = params.col_prefix_sums[col] as usize;
                 let end = params.col_prefix_sums[col + 1] as usize;
@@ -740,7 +740,7 @@ mod tests {
                     *slot = eq_row[row] * ec;
                 }
             }
-            let mut vs = F128::ZERO;
+            let mut vs = Gf128::ZERO;
             for (qi, bi) in q.iter().zip(bs.iter()) {
                 vs += *qi * *bi;
             }
@@ -796,8 +796,8 @@ mod tests {
         let run_par = |fused: bool| -> std::time::Duration {
             let mut a = q.clone(); // len N
             let mut bb = b.clone();
-            let mut sa = vec![F128::ZERO; len / 2];
-            let mut sb = vec![F128::ZERO; len / 2];
+            let mut sa = vec![Gf128::ZERO; len / 2];
+            let mut sb = vec![Gf128::ZERO; len / 2];
             let mut cur = len;
             let mut ch = FsChallenger::new(b"flock-jagged-bench");
             ch.observe_label(b"flock-jagged-v0");
@@ -805,7 +805,7 @@ mod tests {
             let (mut g1, mut gi) = if fused {
                 round_msg_par(&a[..cur], &bb[..cur])
             } else {
-                (F128::ZERO, F128::ZERO)
+                (Gf128::ZERO, Gf128::ZERO)
             };
             for _ in 0..m {
                 let half = cur / 2;
@@ -850,7 +850,7 @@ mod tests {
         }
 
         // --- Verifier f̂_t eval at a random final point. ---
-        let point: Vec<F128> = (0..m).map(|_| rc.sample_f128()).collect();
+        let point: Vec<Gf128> = (0..m).map(|_| rc.sample_f128()).collect();
         let t2 = Instant::now();
         let beta = f_hat_t(&params, &z_row, &z_col, &point);
         std::hint::black_box(beta);
@@ -904,14 +904,14 @@ mod tests {
         let m = 25usize;
         let len = 1usize << m;
         let half = len / 2;
-        let a: Vec<F128> = (0..len)
-            .map(|i| F128 {
+        let a: Vec<Gf128> = (0..len)
+            .map(|i| Gf128 {
                 lo: i as u64,
                 hi: i as u64,
             })
             .collect();
         let b = a.clone();
-        let r = F128 {
+        let r = Gf128 {
             lo: 0x9E37,
             hi: 0x1234,
         };
@@ -998,14 +998,14 @@ mod tests {
                 .into_par_iter()
                 .with_min_len(CHUNK)
                 .fold(
-                    || (F128::ZERO, F128::ZERO),
+                    || (Gf128::ZERO, Gf128::ZERO),
                     |(g1, gi), x| {
                         let (a0, a1) = (a[2 * x], a[2 * x + 1]);
                         let (b0, b1) = (b[2 * x], b[2 * x + 1]);
                         (g1 + a1 * b1, gi + (a0 + a1) * (b0 + b1))
                     },
                 )
-                .reduce(|| (F128::ZERO, F128::ZERO), |(p, q), (s, t)| (p + s, q + t));
+                .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(p, q), (s, t)| (p + s, q + t));
             std::hint::black_box(acc);
         });
         let rd_bytes = len * 16 * 2; // read all of a and b
@@ -1024,8 +1024,8 @@ mod tests {
                 .par_chunks(2 * CHUNK)
                 .zip(b.par_chunks(2 * CHUNK))
                 .map(|(ac, bc)| {
-                    let mut g1 = F128::ZERO;
-                    let mut gi = F128::ZERO;
+                    let mut g1 = Gf128::ZERO;
+                    let mut gi = Gf128::ZERO;
                     for (ap, bp) in ac
                         .as_chunks::<2>()
                         .0
@@ -1037,7 +1037,7 @@ mod tests {
                     }
                     (g1, gi)
                 })
-                .reduce(|| (F128::ZERO, F128::ZERO), |(p, q), (s, t)| (p + s, q + t));
+                .reduce(|| (Gf128::ZERO, Gf128::ZERO), |(p, q), (s, t)| (p + s, q + t));
             std::hint::black_box(acc);
         });
         eprintln!(
@@ -1108,7 +1108,7 @@ mod tests {
 
         let mut pch = FsChallenger::new(b"flock-jagged-test");
         let (mut proof, v) = prove(&params, &q, &z_row, &z_col, &mut pch);
-        proof.q_eval += F128::ONE;
+        proof.q_eval += Gf128::ONE;
 
         let mut vch = FsChallenger::new(b"flock-jagged-test");
         assert!(

@@ -41,7 +41,7 @@ pub use constants::{BASE_MESSAGE_BITS, PRODUCT_MESSAGE_BITS};
 pub use evaluator::{
     EvaluationPoint, ProductFunctional, evaluate_product_functional, product_evaluation_functional,
 };
-pub use field::F128;
+pub use field::Gf128;
 pub use messages::{BaseMessage, ProductMessage};
 pub use product::product_code_message;
 pub use rand_core::RngCore;

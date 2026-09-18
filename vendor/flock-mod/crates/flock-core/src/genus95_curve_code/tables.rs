@@ -13,7 +13,7 @@ use super::sage_data::{
 };
 
 #[cfg(test)]
-use super::field::{F128, F128Ext};
+use super::field::{Gf128, F128Ext};
 
 /// A coefficient that is a ratio of two GF(2) polynomials in `x`, each stored as
 /// a degree-bitmask.  Only used by the test that checks sampled points satisfy
@@ -28,7 +28,7 @@ pub(crate) struct RationalMask {
 
 #[cfg(test)]
 impl RationalMask {
-    pub(crate) fn eval<const N: usize>(self, x_powers: &[F128; N]) -> Option<F128> {
+    pub(crate) fn eval<const N: usize>(self, x_powers: &[Gf128; N]) -> Option<Gf128> {
         let numerator = super::evaluator::eval_poly_mask(self.numerator, x_powers);
         if self.denominator == 1 {
             return Some(numerator);

@@ -1,1 +1,0 @@
-method,rate,samples,setup_ms,witness_ms,commit_ms,prove_ms,witness_to_proof_ms,verify_ms,proof_material_bytes,peak_rss_bytes,source

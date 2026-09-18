@@ -1,15 +1,15 @@
 #!/bin/bash
 # Historical human-output CSV helper (no production identity validation).
 # Use the versioned RESULT/LIGERITO_CONFIG output for new production tables.
-# Run the f2z PCS bench suite (benches/pcs.rs) one shape per process — the
+# Run the bitz PCS bench suite (benches/pcs.rs) one shape per process — the
 # measurement protocol — and write one CSV row per (profile, shape).
 #
 # Usage:
 #   scripts/bench_csv.sh [-o out.csv] [-p profiles] [-s "t:s:W ..."]
 #                        [-r reps] [-j threads] [-g gap_seconds] [--big] [--phases]
 #
-#   -o        output CSV (default bench_results/f2z-<timestamp>.csv)
-#   -p        comma-separated profile list for F2Z_LIG_PROFILE
+#   -o        output CSV (default bench_results/bitz-<timestamp>.csv)
+#   -p        comma-separated profile list for BITZ_LIG_PROFILE
 #             (default: "" = the bench default; e.g. "fast,slim,slim3,custom:4:4")
 #   -s        space-separated t:s:W shapes (default: the validated n=20..28 list)
 #   -r        timing reps per shape (default 3)
@@ -52,7 +52,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ "$BIG" = 1 ] && SHAPES="$SHAPES 18:12:1 19:12:1@l8 19:13:1@l8"
-[ -z "$OUT" ] && OUT="bench_results/f2z-$(date '+%Y%m%d-%H%M%S').csv"
+[ -z "$OUT" ] && OUT="bench_results/bitz-$(date '+%Y%m%d-%H%M%S').csv"
 mkdir -p "$(dirname "$OUT")"
 
 export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
@@ -76,8 +76,8 @@ for prof in "${PROFS[@]}"; do
     s="$shape"
     case "$shape" in *@l8) sched="l8"; s="${shape%@l8}" ;; esac
     echo ">> profile=$plabel shape=$s ${sched:+sched=l8}" >&2
-    out=$(env ${penv:+F2Z_LIG_PROFILE="$penv"} ${sched:+F2_FOREST_SCHEDULE=l8} \
-      F2Z_BENCH_SHAPES="$s" F2Z_BENCH_REPS="$REPS" \
+    out=$(env ${penv:+BITZ_LIG_PROFILE="$penv"} ${sched:+F2_FOREST_SCHEDULE=l8} \
+      BITZ_BENCH_SHAPES="$s" BITZ_BENCH_REPS="$REPS" \
       cargo bench --bench pcs --features unchecked,span-metrics 2>/dev/null)
     echo "$out" | awk -v ts="$(date '+%Y-%m-%dT%H:%M:%S')" -v prof="$plabel" \
         -v threads="$threads_label" -v reps="$REPS" '

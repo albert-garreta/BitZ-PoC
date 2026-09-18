@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an isolated Limber revision with the matched-comparison patch."""
+"""Check out the published Limber revision pinned in BitZ's Cargo.toml."""
 from __future__ import annotations
 
 import argparse
@@ -7,34 +7,63 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import tomllib
+import tempfile
 
-BASE_REVISION = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0"
-UPSTREAM = "https://github.com/wu-s-john/limber-impl.git"
+DEFAULT_DESTINATION = Path("/tmp/limber-matched114")
+
+
+def limber_dependency(bitz_root: Path) -> dict[str, object]:
+    with (bitz_root / "Cargo.toml").open("rb") as manifest:
+        return tomllib.load(manifest)["dependencies"]["limber"]
+
+
+def migrate_multiswap_domains(limber_root: Path) -> dict[str, object]:
+    """Align the dependency benchmark's three digest domains with BitZ."""
+    path = limber_root / "benches/multiswap_modp.rs"
+    original = path.read_bytes()
+    source = original.decode()
+    domains = (
+        ("f2z/multiswap/circuit-digest/v1", "bitz/multiswap/circuit-digest/v1"),
+        ("f2z/multiswap/integer-assignment/v1", "bitz/multiswap/integer-assignment/v1"),
+        ("f2z-limber/multiswap-statement/v2", "bitz-limber/multiswap-statement/v2"),
+    )
+    for previous, current in domains:
+        if previous not in source and current not in source:
+            raise ValueError(f"Limber benchmark lacks matched digest domain {current}")
+        source = source.replace(previous, current)
+    encoded = source.encode()
+    if encoded != original:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".bitz-domains-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(encoded)
+        try:
+            temporary.chmod(path.stat().st_mode)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {"namespace": "bitz", "path": "benches/multiswap_modp.rs",
+            "changed": encoded != original,
+            "input_sha256": hashlib.sha256(original).hexdigest(),
+            "sha256": hashlib.sha256(encoded).hexdigest()}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("destination", type=Path)
-    parser.add_argument("--source", default=UPSTREAM, help="Git URL or existing local clone")
+    parser.add_argument("destination", type=Path, nargs="?", default=DEFAULT_DESTINATION)
+    parser.add_argument("--source", help="Git URL or existing local clone (default: Cargo.toml dependency)")
     args = parser.parse_args()
     destination = args.destination.resolve()
     if destination.exists():
         parser.error("destination already exists; choose an unused checkout path")
-    patch = Path(__file__).resolve().parents[1] / "patches/limber-multiswap.patch"
-    subprocess.run(["git", "clone", "--no-checkout", args.source, str(destination)], check=True)
-    subprocess.run(["git", "checkout", "-b", "codex/multiswap-matched", BASE_REVISION], cwd=destination, check=True)
-    subprocess.run(["git", "apply", "--check", str(patch)], cwd=destination, check=True)
-    subprocess.run(["git", "apply", str(patch)], cwd=destination, check=True)
-    patch_sha256 = hashlib.sha256(patch.read_bytes()).hexdigest()
-    subprocess.run(["git", "add", "--all"], cwd=destination, check=True)
-    subprocess.run([
-        "git", "-c", "user.name=Codex", "-c", "user.email=codex@openai.com", "commit", "--no-gpg-sign",
-        "-m", "Match MultiSwap batches and integer commitment security targets",
-        "-m", f"Base: {BASE_REVISION}\nPatch-SHA256: {patch_sha256}",
-    ], cwd=destination, check=True)
+    dependency = limber_dependency(Path(__file__).resolve().parents[1])
+    source = args.source or dependency["git"]
+    subprocess.run(["git", "clone", "--no-checkout", source, str(destination)], check=True)
+    subprocess.run(["git", "checkout", "--detach", dependency["rev"]], cwd=destination, check=True)
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination, text=True).strip()
-    print(json.dumps({"path": str(destination), "base_revision": BASE_REVISION,
-                      "patch_sha256": patch_sha256, "git_revision": revision}, indent=2))
+    domains = migrate_multiswap_domains(destination)
+    print(json.dumps({"path": str(destination), "source": source, "git_revision": revision,
+                      "benchmark_domains": domains}, indent=2))
 
 
 if __name__ == "__main__":

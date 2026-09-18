@@ -1,22 +1,17 @@
 [package]
-name = "f2z"
+name = "bitz"
 version = "0.1.0"
 edition = "2024"
-description = "F2Z: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^128) exponent-fold GKR forest, opened with a flock-backed ring-switch + recursive Ligerito PCS"
-repository = "https://github.com/NethermindEth/f2z"
+description = "BitZ: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^128) exponent-fold GKR forest, opened with a flock-backed ring-switch + recursive Ligerito PCS"
 
 [dependencies]
+field = { path = "vendor/field" }
 clap = { version = "4", features = ["derive", "env", "string"], optional = true }
 anyhow = "1"
-crypto-primitives = { path = "vendor/crypto-primitives", features = ["std", "crypto_bigint", "rand"] }
-crypto-bigint = "=0.7.5"
-crypto-primes = "=0.7.2"
 derive_more = { version = "2.1.1", features = ["full"] }
 blake3 = { version = "1.8", features = ["rayon"] }
 itertools = "0.14"
 num-traits = "0.2"
-num-bigint = "0.4"
-num-integer = "0.1"
 thiserror = "2.0"
 rayon = { version = "1.10", optional = true }
 rand = "0.10"
@@ -32,12 +27,12 @@ flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "e
 bincode = "1.3"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 serde = { version = "1", features = ["derive"] }
-# Backend-independent SHA-256/F2Z circuit synthesis, copied into this
+# Backend-independent SHA-256/BitZ circuit synthesis, copied into this
 # workspace so fresh checkouts do not require a sibling repository.
 circuit = { path = "crates/circuit", default-features = false }
 
 # Optional Plonky3 stack used by the PCS and native SHA-256 comparisons.
-# Pin all P3 crates to one commit from the fork's f2z-benching branch.
+# Pin all P3 crates to the same benchmark fork revision.
 p3-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-baby-bear = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
@@ -58,16 +53,16 @@ p3-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec
 p3-whir = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
 
-# Benchmark-only native Limber adapters. The normal F2Z dependency graph does
+# Benchmark-only native Limber adapters. The normal BitZ dependency graph does
 # not include Bellpepper or either Limber PCS engine.
 bellpepper = { version = "0.4.1", optional = true }
 bellpepper-core = { version = "0.4.0", optional = true }
 ff = { version = "0.13.1", features = ["derive", "bits"], optional = true }
-limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "861f10a6a4d705d92a9faf13a8f860d8ba057ca0", default-features = false, optional = true }
+limber = { git = "https://github.com/wu-s-john/limber-impl.git", rev = "836c50f23e674098dcfbe42a4873f583d4e0fe3f", default-features = false, optional = true }
 spartan2 = { git = "https://github.com/wu-s-john/Spartan2.git", rev = "d3e686ebc4554cabfbe6282ef3c91baba00f755f", default-features = false, features = ["sha256-ecdsa"], optional = true }
 
 # Optional Binius64 stack for the PCS and native SHA-256 comparisons.
-# Pin every crate to the same commit from the fork's f2z-benching branch.
+# Pin every crate to the same benchmark fork revision.
 binius-compute = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-circuits = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
 binius-core = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790", optional = true }
@@ -92,6 +87,9 @@ csv = { version = "1.4", optional = true }
 libc = "0.2" # getrusage: peak resident set of CLI sweep children
 
 [dev-dependencies]
+# Independent correctness oracles and excluded benchmark adapters only.
+num-bigint = "0.4"
+num-integer = "0.1"
 clap = { version = "4", features = ["derive", "env", "string"] }
 csv = "1.4"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
@@ -110,11 +108,11 @@ required-features = ["span-metrics", "sha256-ecdsa-compare"]
 
 [[bench]]
 name = "pcs"
-required-features = ["span-metrics"]
+required-features = ["span-metrics", "bench-peak-memory"]
 harness = false
 # Plain-main bench (no criterion): commit/prove/verify timings, serialized
 # proof size + codec round-trip, and peak heap per phase. Shapes via
-# F2Z_BENCH_SHAPES ("t:s:W" triples), reps via F2Z_BENCH_REPS.
+# BITZ_BENCH_SHAPES ("t:s:W" triples), reps via BITZ_BENCH_REPS.
 
 [[bench]]
 name = "field"
@@ -122,55 +120,16 @@ required-features = ["span-metrics"]
 harness = false
 # GF(2^128)-GHASH vs GF(2^127)-b127 head-to-head on the prover's hot
 # patterns (batch/chain mul, squares, comb powers, wide-dot, eqf kernels).
-# Reps via F2Z_BENCH_REPS.
+# Reps via BITZ_BENCH_REPS.
 
 [[bench]]
 name = "cm_and"
-required-features = ["span-metrics"]
+required-features = ["span-metrics", "bench-peak-memory"]
 harness = false
 # CM-AND relation (paper \Relation_CM): batched 32-bit x AND y = z via ONE
 # linear constraint per gate, with w = x XOR y as an F2-VIRTUAL block -
-# committed bits are x|y|z only, w is derived by the virtual F2Z opening.
-# Exponents via F2Z_CM_EXPONENTS; reps via F2Z_BENCH_REPS.
-
-[[bench]]
-name = "u32_mul"
-required-features = ["span-metrics"]
-harness = false
-# Integer u32×u32→u64 R1CS through the Spartan PIOP, with the terminal
-# assignment claim discharged against the compact F2 witness by F2Z. The
-# canonical protocol is commit-before-prime with a transcript-sampled Step-2
-# prime, Lambda100 profile (F2Z_BENCH_LAMBDA selects another), and K=3
-# univariate-prefix skip. Unified output schema (docs/bench-schema.md).
-# Exponents via F2Z_BENCH_SHAPES; reps via F2Z_BENCH_REPS.
-
-[[bench]]
-name = "baby_bear_mul"
-required-features = ["span-metrics"]
-harness = false
-# Independent BabyBear multiplications (a*b = c + p*k) through the PAPER
-# path (transcript-sampled Step-2 prime), TWO rows per shape on one
-# witness: Lambda100 and Lambda128 (or the one F2Z_BENCH_LAMBDA selects).
-# Unified output schema (docs/bench-schema.md). Exponents via
-# F2Z_BENCH_SHAPES (alias F2Z_BABY_BEAR_MUL_EXPONENTS); reps via
-# F2Z_BENCH_REPS.
-
-[[bench]]
-name = "baby_bear_pcs_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
-
-[[bench]]
-name = "u32_pcs_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "plonky3-whir-bench", "binius64-bench"]
-
-[[bench]]
-name = "u32_mul_inner_policy"
-harness = false
-required-features = ["span-metrics", "bench-internals"]
-# Controlled PIOP-only sweep with a fixed delayed-Barrett outer sumcheck.
-# It varies native witness folding and field coefficient accumulation only.
+# committed bits are x|y|z only, w is derived by the virtual BitZ opening.
+# Exponents via BITZ_CM_EXPONENTS; reps via BITZ_BENCH_REPS.
 
 [[bench]]
 name = "eq_tables"
@@ -180,20 +139,13 @@ required-features = ["span-metrics", "bench-internals"]
 # Widths 8, 12, and 16; alternating median samples and explicit PR 1 gates.
 
 [[bench]]
-name = "u32_mul_outer_skip"
-required-features = ["span-metrics"]
-harness = false
-# Controlled PIOP-only comparison of the standard outer sumcheck against
-# known-zero univariate prefix skips K=1,2,3,4 (the canonical adapter uses K=3).
-
-[[bench]]
 name = "multiswap"
 required-features = ["span-metrics"]
 harness = false
 # Limber's wired MultiSwap Mod-R1CS (6209 rows, k=0) through Spartan over a
-# transcript-sampled 113-bit prime + the runtime-prime F2Z bit opening.
-# Unified output schema (docs/bench-schema.md). Reps via F2Z_BENCH_REPS
-# (alias F2Z_MULTISWAP_REPS); profile via F2Z_BENCH_LAMBDA (114 = the
+# transcript-sampled 113-bit prime + the runtime-prime BitZ bit opening.
+# Unified output schema (benches/common/output.rs). Reps via BITZ_BENCH_REPS
+# (alias BITZ_MULTISWAP_REPS); profile via BITZ_BENCH_LAMBDA (114 = the
 # pinned Limber114, the only two-prime profile); run RAYON_NUM_THREADS=1
 # for Limber parity.
 
@@ -204,17 +156,17 @@ harness = false
 # One SHA-256 witness proved under Lambda100 / Sha128ReferenceSchedule /
 # Lambda128 (compile-time profiles) in the unified schema - the
 # prover-time / proof-size tradeoff table for the security target.
-# F2Z_BENCH_LAMBDA restricts the run to one of them. Exponent via
-# F2Z_BENCH_SHAPES (default 12); reps via F2Z_BENCH_REPS.
+# BITZ_BENCH_LAMBDA restricts the run to one of them. Exponent via
+# BITZ_BENCH_SHAPES (default 12); reps via BITZ_BENCH_REPS.
 
 [[bench]]
 name = "sha256_compressions"
 required-features = ["span-metrics"]
 harness = false
 # Independent SHA-256 compression batches through the structured Spartan +
-# virtual F2Z path. Unified output schema (docs/bench-schema.md). Exponents
-# via F2Z_BENCH_SHAPES (alias F2Z_SHA_LOG2S); reps via F2Z_BENCH_REPS
-# (alias F2Z_SHA_REPS); profile via F2Z_BENCH_LAMBDA.
+# virtual BitZ path. Unified output schema (benches/common/output.rs). Exponents
+# via BITZ_BENCH_SHAPES (alias BITZ_SHA_LOG2S); reps via BITZ_BENCH_REPS
+# (alias BITZ_SHA_REPS); profile via BITZ_BENCH_LAMBDA.
 
 [[bench]]
 name = "sha256_chain"
@@ -223,17 +175,26 @@ harness = false
 # CHAINED SHA-256 compressions (the Merkle–Damgård chain over 2^k blocks,
 # intermediate chaining values as witness) through the same linear PIOP +
 # direct product opening, on the chained virtual map. Unified output
-# schema (docs/bench-schema.md). Exponents via F2Z_BENCH_SHAPES; reps via
-# F2Z_BENCH_REPS; profile via F2Z_BENCH_LAMBDA.
+# schema (benches/common/output.rs). Exponents via BITZ_BENCH_SHAPES; reps via
+# BITZ_BENCH_REPS; profile via BITZ_BENCH_LAMBDA.
 
 [[bench]]
 name = "sha256_e2e_compare"
 harness = false
 required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
-# Claim-equivalent fixed-IV native SHA-256 comparison across F2Z, full
+# Claim-equivalent fixed-IV native SHA-256 comparison across BitZ, full
 # Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
-# Exponents via F2Z_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
+# Exponents via BITZ_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
 # 21 measured verified samples by default.
+
+[[bench]]
+name = "sha256_chain_compare"
+harness = false
+required-features = ["span-metrics", "binius64-bench"]
+
+[[test]]
+name = "sha256_chain_comparison"
+required-features = ["span-metrics", "binius64-bench"]
 
 [[bench]]
 name = "hybrid_u32_sha256"
@@ -243,15 +204,6 @@ required-features = ["span-metrics", "hybrid"]
 # Chained SHA-256 plus x*y = z + 2^32*w with four u32 limbs.
 # Counts and repetitions via --mul-log, --sha-log, and --iterations.
 
-[[bench]]
-name = "mul_e2e_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
-
-[[bench]]
-name = "mul_witness_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "native-mul-compare"]
 
 [[test]]
 name = "native_mul_compare"
@@ -278,7 +230,7 @@ harness = false
 required-features = ["span-metrics", "bench-internals"]
 # Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
 # t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
-# F2Z_SHA_PRODUCT_TS.
+# BITZ_SHA_PRODUCT_TS.
 
 [[example]]
 name = "binius_probe"
@@ -322,10 +274,6 @@ required-features = ["span-metrics"]
 
 [[example]]
 name = "spartan_probe"
-required-features = ["span-metrics", "parallel"]
-
-[[example]]
-name = "sha_probe"
 required-features = ["span-metrics", "parallel"]
 
 [[example]]
@@ -396,7 +344,7 @@ native-mul-compare = [
     "dep:p3-multi-stark",
     "binius64-bench",
     # Limber's own wrapping-multiplication rows, proved in process through
-    # its Brakedown Mod-PCS engine (benches/mul_e2e_compare/limber.rs).
+    # its Brakedown Mod-PCS engine (benches/mul/native/limber.rs).
     "dep:limber",
 ]
 native-sha256-compare = [
@@ -467,8 +415,8 @@ inherits = "release"
 debug = 2
 
 [[bin]]
-name = "f2z"
-path = "src/bin/f2z.rs"
+name = "bitz"
+path = "src/bin/bitz.rs"
 required-features = ["span-metrics"]
 
 [[bin]]
@@ -485,3 +433,17 @@ required-features = ["bench-internals", "binius64-bench"]
 name = "ligerito_bounds"
 harness = false
 required-features = ["span-metrics", "ecdsa", "hybrid", "bench-internals"]
+
+[[bench]]
+name = "mul_bitz"
+harness = false
+required-features = ["span-metrics", "bench-internals"]
+
+[[bench]]
+name = "mul_compare"
+harness = false
+required-features = ["native-mul-compare", "bench-internals"]
+
+[[test]]
+name = "mul_bench"
+required-features = ["span-metrics", "bench-internals"]

@@ -1,90 +1,66 @@
+#[cfg(test)]
+use crate::piop::spartan::SpartanField as _;
+#[cfg(test)]
+use crate::piop::spartan::protocol::{FieldConfig as Config, SpartanBitzField as F};
 use circuit::{
-    matrix_products::{IntegerProducts, StoredInteger},
+    integer_storage::IntegerTableView,
+    matrix_products::IntegerProducts,
     p256, sha256,
     witgen::{PackedWitness, ProductWitgen, Witgen},
 };
-use num_bigint::{BigInt, BigUint};
-use num_traits::{One, Zero};
+#[cfg(test)]
+use num_bigint::BigInt;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::array;
 
 use super::{
-    Config, Result, error,
+    Result, error,
     relation::{OuterMode, P_INPUT_ALIAS, PreparedSha256Ecdsa, SHA_F, SHA_H, Sha256EcdsaStatement},
 };
-use crate::{
-    pcs::IntegerMatrixLayout,
-    piop::spartan::{
-        f2z::SpartanF2zField as F,
-        raw_monty::{Raw, RawMontyCtx, RawProducts},
-    },
-};
-use crypto_primitives::PrimeField;
+use crate::{pcs::IntegerMatrixLayout, sumcheck::outer::OuterRows};
 
 /// Packed source and virtual assignment, with exact P-256 row operands.
 pub struct Sha256EcdsaWitness {
-    pub(crate) f_rows: Vec<Vec<u64>>,
+    pub(crate) f_rows: std::sync::Arc<Vec<Vec<u64>>>,
     pub(crate) h_rows: Vec<Vec<u64>>,
     pub(crate) products: IntegerProducts,
     pub(crate) statement: Sha256EcdsaStatement,
 }
 
 impl Sha256EcdsaWitness {
-    /// Raw residue tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`
-    /// over the outer sumcheck's row space: the exact two's-complement row
-    /// products reduced natively (Horner over their words), rows in
-    /// parallel. Residue-for-residue the tables of
-    /// [`Self::build_outer_product_mles`].
-    pub(super) fn build_outer_raw_products(
-        &self,
-        prepared: &PreparedSha256Ecdsa,
-        ctx: &RawMontyCtx,
-    ) -> RawProducts {
-        let len = 1usize << prepared.outer_sumcheck_num_vars();
+    /// Borrow exact P-256 rows; SHA and padding rows are structural zeros.
+    pub(super) fn outer_integer_rows<'a>(
+        &'a self,
+        prepared: &'a PreparedSha256Ecdsa,
+    ) -> impl OuterRows<AB = field::Z<5>, C = field::Z<9>> + 'a {
         let products = [
             &self.products.a_mw,
             &self.products.b_mw,
             &self.products.c_mw,
         ];
-        let two_pow_64 = ctx.two_pow_64_residue();
-        let max_words = products
-            .iter()
-            .flat_map(|values| values.iter().map(|value| value.words().len()))
-            .max()
-            .unwrap_or(0);
-        let powers = ctx.two_pow_64_plain_powers(two_pow_64, max_words);
-        // Split mode packs the nonlinear rows at the front; all-row mode
-        // places every local row after the (identically zero) SHA rows.
-        let (offset, rows): (usize, Option<&[usize]>) = match prepared.mode {
-            OuterMode::Split => (0, Some(&prepared.local.nonlinear)),
+        // The P-256 circuit records signed nine-word rows. Check declared
+        // storage widths, never private values, before entering the hot loop.
+        assert!(
+            products
+                .iter()
+                .all(|p| p.max_limbs() <= 9 && p.len() == prepared.local.rows())
+        );
+        let (offset, selection) = match prepared.mode {
+            OuterMode::Split => (0, Some(prepared.local.nonlinear.as_slice())),
             OuterMode::AllRows => (256 * prepared.compressions(), None),
         };
-        let count = rows.map_or(prepared.local.rows(), <[usize]>::len);
-        let convert = |values: &[StoredInteger]| -> Vec<Raw> {
-            let residue = |i: usize| {
-                let source = rows.map_or(i, |rows| rows[i]);
-                ctx.signed_words_residue(values[source].words(), two_pow_64, &powers)
-            };
-            let mut table = vec![0 as Raw; len];
-            #[cfg(feature = "parallel")]
-            table[offset..offset + count]
-                .par_iter_mut()
-                .with_min_len(256)
-                .enumerate()
-                .for_each(|(i, slot)| *slot = residue(i));
-            #[cfg(not(feature = "parallel"))]
-            for (i, slot) in table[offset..offset + count].iter_mut().enumerate() {
-                *slot = residue(i);
-            }
-            table
-        };
-        let [az, bz, cz] = products.map(|values| convert(values));
-        RawProducts { az, bz, cz }
+        EcdsaOuterRows {
+            products: products.map(|p| p.view()),
+            selection,
+            offset,
+            count: selection.map_or(prepared.local.rows(), <[usize]>::len),
+            rows: 1 << prepared.outer_sumcheck_num_vars(),
+        }
     }
 
     /// MLE tables of `(A h) mod q`, `(B h) mod q`, and `(C h) mod q`: the
-    /// reference (BigInt) form of [`Self::build_outer_raw_products`].
+    /// independent BigInt projection used only by differential tests.
     #[cfg(test)]
     pub(super) fn build_outer_product_mles(
         &self,
@@ -103,11 +79,7 @@ impl Sha256EcdsaWitness {
         ];
         for (table, products) in tables.iter_mut().zip(products) {
             let mut set = |dst: usize, src: usize| {
-                let bytes: Vec<_> = products[src]
-                    .words()
-                    .iter()
-                    .flat_map(|w| w.to_le_bytes())
-                    .collect();
+                let bytes: Vec<_> = products[src].iter().flat_map(|w| w.to_le_bytes()).collect();
                 table[dst] =
                     super::reduce_integer_mod_q(&BigInt::from_signed_bytes_le(&bytes), q, cfg);
             };
@@ -151,32 +123,65 @@ impl Sha256EcdsaWitness {
     }
 }
 
+struct EcdsaOuterRows<'a> {
+    products: [IntegerTableView<'a>; 3],
+    selection: Option<&'a [usize]>,
+    offset: usize,
+    count: usize,
+    rows: usize,
+}
+impl EcdsaOuterRows<'_> {
+    #[inline]
+    fn read<const N: usize>(&self, table: usize, row: usize) -> field::Z<N> {
+        if row < self.offset || row - self.offset >= self.count {
+            return field::Z::ZERO;
+        }
+        let row = row - self.offset;
+        let source = self.selection.map_or(row, |indices| indices[row]);
+        let words = &self.products[table][source];
+        let sign = 0u64.wrapping_sub(words[words.len() - 1] >> 63);
+        // build_local checks the public A/B row norms fit Z<5>; C retains
+        // its declared nine limbs. Truncation here never depends on values.
+        let mut extended = [sign; N];
+        let count = words.len().min(N);
+        extended[..count].copy_from_slice(&words[..count]);
+        field::Z::from_twos_complement_words(extended)
+    }
+}
+impl OuterRows for EcdsaOuterRows<'_> {
+    type AB = field::Z<5>;
+    type C = field::Z<9>;
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (self.rows, self.rows, self.rows)
+    }
+    #[inline]
+    fn a(&self, row: usize) -> Self::AB {
+        self.read(0, row)
+    }
+    #[inline]
+    fn b(&self, row: usize) -> Self::AB {
+        self.read(1, row)
+    }
+    #[inline]
+    fn c(&self, row: usize) -> Self::C {
+        self.read(2, row)
+    }
+}
+
 pub(crate) fn inverse(value: &[u8; 32]) -> Result<[u8; 32]> {
-    let modulus = BigUint::parse_bytes(
-        b"ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
-        16,
-    )
-    .unwrap();
-    let n = BigUint::from_bytes_be(value);
-    if n.is_zero() || n >= modulus {
+    use field::{CanonicalCodec, IntegerOps, Uint};
+    let mut bytes = *value;
+    bytes.reverse();
+    let scalar: Uint<4> = IntegerOps
+        .decode_public(&bytes)
+        .expect("fixed-width scalar encoding");
+    let inverse = p256::scalar_inverse_ct(&scalar);
+    if !inverse.validity().declassify() {
         return Err(error("signature scalar is not in 1..n"));
     }
-    let modulus = BigInt::from(modulus);
-    let (mut r, mut next_r) = (modulus.clone(), BigInt::from(n));
-    let (mut t, mut next_t) = (BigInt::zero(), BigInt::one());
-    while !next_r.is_zero() {
-        let q = &r / &next_r;
-        (r, next_r) = (next_r.clone(), r - &q * next_r);
-        (t, next_t) = (next_t.clone(), t - q * next_t);
-    }
-    if r != BigInt::one() {
-        return Err(error("noninvertible signature scalar"));
-    }
-    let t = ((t % &modulus) + &modulus) % modulus;
-    let bytes = t.to_biguint().unwrap().to_bytes_be();
-    let mut out = [0; 32];
-    out[32 - bytes.len()..].copy_from_slice(&bytes);
-    Ok(out)
+    IntegerOps.encode_into(inverse.value(), &mut bytes);
+    bytes.reverse();
+    Ok(bytes)
 }
 
 fn pack_bits(
@@ -191,8 +196,8 @@ fn pack_bits(
                 for b in 0..64 {
                     let row = word * 64 + b;
                     let index = (c << p.row_vars) + row;
-                    if row < p.rows() && index < live && bit(index) {
-                        value |= 1 << b;
+                    if row < p.rows() && index < live {
+                        value |= u64::from(bit(index)) << b;
                     }
                 }
                 value
@@ -215,9 +220,16 @@ fn copy_bits(dst: &mut [u64], dst_off: usize, src: &[u64], src_off: usize, len: 
     let mut done = 0;
     while done < len {
         let (s, d) = (src_off + done, dst_off + done);
-        let take = (64 - s % 64).min(64 - d % 64).min(len - done);
-        let mask = if take == 64 { u64::MAX } else { (1u64 << take) - 1 };
-        dst[d / 64] |= ((src[s / 64] >> (s % 64)) & mask) << (d % 64);
+        let take = (64 - d % 64).min(len - done);
+        let shift = s % 64;
+        let mut value = src[s / 64] >> shift;
+        // Assemble a whole destination word even when the source is unaligned.
+        // Read the next source word only when the requested bits cross into it.
+        if take > 64 - shift {
+            value |= src[s / 64 + 1] << (64 - shift);
+        }
+        let mask = u64::MAX >> (64 - take);
+        dst[d / 64] |= (value & mask) << (d % 64);
         done += take;
     }
 }
@@ -243,19 +255,30 @@ fn transpose64(a: &mut [u64; 64]) {
 fn masked_word(witness: &PackedWitness, index: usize) -> u64 {
     let word = witness.words()[index];
     let valid = witness.bit_len() - 64 * index;
-    if valid >= 64 { word } else { word & ((1u64 << valid) - 1) }
+    if valid >= 64 {
+        word
+    } else {
+        word & ((1u64 << valid) - 1)
+    }
 }
 
-/// Splits the flat packed cells `(c << t) + row` into the per-column rows.
-fn split_columns(flat: Vec<u64>, p: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
-    let words = p.rows() / 64;
-    #[cfg(feature = "parallel")]
-    {
-        flat.par_chunks(words).map(<[u64]>::to_vec).collect()
-    }
-    #[cfg(not(feature = "parallel"))]
-    {
-        flat.chunks(words).map(<[u64]>::to_vec).collect()
+/// Copy across column boundaries directly into the final packed storage.
+fn copy_column_bits(
+    rows: &mut [Vec<u64>],
+    row_vars: usize,
+    mut dst: usize,
+    src: &[u64],
+    mut src_off: usize,
+    mut len: usize,
+) {
+    let row_bits = 1usize << row_vars;
+    while len != 0 {
+        let offset = dst & (row_bits - 1);
+        let take = len.min(row_bits - offset);
+        copy_bits(&mut rows[dst >> row_vars], offset, src, src_off, take);
+        dst += take;
+        src_off += take;
+        len -= take;
     }
 }
 
@@ -268,21 +291,29 @@ fn pack_source(
     p_f: &PackedWitness,
 ) -> Vec<Vec<u64>> {
     let p = &prepared.f_layout;
-    let mut flat = vec![0u64; p.cols() * p.rows() / 64];
-    flat[0] = 1;
+    let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
+    rows[0][0] = 1;
     for (instance, shard) in shards.iter().enumerate() {
         let dst = 1 + instance * SHA_F;
-        copy_bits(&mut flat, dst, shard.0.words(), 0, 512);
-        copy_bits(&mut flat, dst + 512, shard.0.words(), 768, SHA_F - 512);
+        copy_column_bits(&mut rows, p.row_vars, dst, shard.0.words(), 0, 512);
+        copy_column_bits(
+            &mut rows,
+            p.row_vars,
+            dst + 512,
+            shard.0.words(),
+            768,
+            SHA_F - 512,
+        );
     }
-    copy_bits(
-        &mut flat,
+    copy_column_bits(
+        &mut rows,
+        p.row_vars,
         prepared.map.f_offset,
         p_f.words(),
         P_INPUT_ALIAS - 1,
         p_f.bit_len() - (P_INPUT_ALIAS - 1),
     );
-    split_columns(flat, p)
+    rows
 }
 
 /// The assignment rows `h[instance + N·local]`: every 64 consecutive cells are
@@ -305,32 +336,46 @@ fn pack_assignment(
             }
         });
     }
-    let mut flat = vec![0u64; p.cols() * p.rows() / 64];
+    let words = p.rows() / 64;
     let instance_blocks = n / 64;
-    let (sha, tail) = flat.split_at_mut(prepared.map.h_offset / 64);
-    // Local block `lb` (locals 64·lb ..) owns the contiguous words
-    // [64·lb·instance_blocks, 64·(lb+1)·instance_blocks).
-    let fill = |(lb, chunk): (usize, &mut [u64])| {
-        let locals = chunk.len() / instance_blocks;
+    let tile_words = 64 * instance_blocks;
+    // A job owns whole columns and whole transpose tiles. In particular,
+    // a tile spanning several columns is transposed once, not per column.
+    let columns_per_job = tile_words.div_ceil(words);
+    let job_words = columns_per_job * words;
+    let sha_words = prepared.map.h_offset / 64;
+    let fill = |job: usize| {
+        let count = columns_per_job.min(p.cols() - job * columns_per_job);
+        let mut columns = vec![vec![0u64; words]; count];
+        let start = job * job_words;
+        let end = start + columns.len() * words;
         let mut tile = [0u64; 64];
-        for block in 0..instance_blocks {
-            for (i, word) in tile.iter_mut().enumerate() {
-                *word = masked_word(&shards[64 * block + i].1, lb);
-            }
-            transpose64(&mut tile);
-            for (local, word) in tile[..locals].iter().enumerate() {
-                chunk[local * instance_blocks + block] = *word;
+        for tile_start in (start..end.min(sha_words)).step_by(tile_words) {
+            let lb = tile_start / tile_words;
+            let locals = ((end.min(sha_words) - tile_start) / instance_blocks).min(64);
+            for block in 0..instance_blocks {
+                for (i, word) in tile.iter_mut().enumerate() {
+                    *word = masked_word(&shards[64 * block + i].1, lb);
+                }
+                transpose64(&mut tile);
+                for (local, word) in tile[..locals].iter().enumerate() {
+                    let dst = tile_start - start + local * instance_blocks + block;
+                    columns[dst / words][dst % words] = *word;
+                }
             }
         }
+        for dst in start.max(sha_words)..end.min(sha_words + p_h.words().len()) {
+            columns[(dst - start) / words][(dst - start) % words] =
+                masked_word(p_h, dst - sha_words);
+        }
+        columns
     };
+    let jobs = p.cols().div_ceil(columns_per_job);
     #[cfg(feature = "parallel")]
-    sha.par_chunks_mut(64 * instance_blocks).enumerate().for_each(fill);
+    let groups: Vec<_> = (0..jobs).into_par_iter().map(fill).collect();
     #[cfg(not(feature = "parallel"))]
-    sha.chunks_mut(64 * instance_blocks).enumerate().for_each(fill);
-    for (index, word) in tail.iter_mut().enumerate().take(p_h.words().len()) {
-        *word = masked_word(p_h, index);
-    }
-    split_columns(flat, p)
+    let groups: Vec<_> = (0..jobs).map(fill).collect();
+    groups.into_iter().flatten().collect()
 }
 
 /// Computes the SHA trace and all hint values. Signing is not part of this API.
@@ -420,9 +465,77 @@ pub fn generate_sha256_ecdsa_witness(
     let f_rows = pack_source(prepared, &shards, &p_f);
     let h_rows = pack_assignment(prepared, &shards, &p_h);
     Ok(Sha256EcdsaWitness {
-        f_rows,
+        f_rows: f_rows.into(),
         h_rows,
         products,
         statement: statement.clone(),
     })
+}
+
+#[cfg(test)]
+mod packing_tests {
+    use super::copy_bits;
+
+    #[test]
+    fn column_copies_match_bitwise_oracle_across_boundaries() {
+        let source = [0x0102_0304_0506_0708u64, u64::MAX, 0xAA55_AA55_AA55_AA55, 0];
+        for dst in [0, 1, 63, 64, 127, 128, 129] {
+            for src in [0, 1, 63] {
+                for len in [0, 1, 63, 64, 127, 129, 190] {
+                    let mut rows = vec![vec![0u64; 2]; 4];
+                    super::copy_column_bits(&mut rows, 7, dst, &source, src, len);
+                    let actual: Vec<_> = rows.into_iter().flatten().collect();
+                    let mut expected = vec![0u64; 8];
+                    for bit in 0..len {
+                        let value = source[(src + bit) / 64] >> ((src + bit) % 64) & 1;
+                        expected[(dst + bit) / 64] |= value << ((dst + bit) % 64);
+                    }
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unaligned_copies_match_individual_bits() {
+        copy_bits(&mut [], 0, &[], 0, 0);
+        for pattern in 0..3 {
+            let source: Vec<u64> = (0..20)
+                .map(|i| match pattern {
+                    0 => 0,
+                    1 => u64::MAX,
+                    _ => (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                })
+                .collect();
+            for src_off in 64usize..128 {
+                for dst_off in 0usize..64 {
+                    for len in [0, 1, 2, 31, 63, 64, 65, 127, 128, 129, 191, 1024] {
+                        // Preserve nonzero bits outside the copy and provide
+                        // exactly the source storage needed by this range.
+                        let mut actual = vec![0xa5a5_a5a5_a5a5_a5a5; 20];
+                        for bit in dst_off..dst_off + len {
+                            actual[bit / 64] &= !(1u64 << (bit % 64));
+                        }
+                        let mut expected = actual.clone();
+                        for bit in 0..len {
+                            let value =
+                                (source[(src_off + bit) / 64] >> ((src_off + bit) % 64)) & 1;
+                            expected[(dst_off + bit) / 64] |= value << ((dst_off + bit) % 64);
+                        }
+                        copy_bits(
+                            &mut actual,
+                            dst_off,
+                            &source[..(src_off + len).div_ceil(64)],
+                            src_off,
+                            len,
+                        );
+                        assert_eq!(
+                            actual, expected,
+                            "source {src_off}, destination {dst_off}, length {len}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

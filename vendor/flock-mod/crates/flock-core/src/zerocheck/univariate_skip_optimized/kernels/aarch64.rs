@@ -1,4 +1,4 @@
-use super::super::{F8, F128, InvNttTableByteSingleGf8, N_CHUNKS};
+use super::super::{Gf8, Gf128, InvNttTableByteSingleGf8, N_CHUNKS};
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
@@ -6,10 +6,10 @@ pub(crate) unsafe fn accumulate_convert(
     chunk_ab_bytes: &[[u8; 64]; 16],
     chunk_c_bytes: &[[u8; 64]; 16],
     n_b_med: usize,
-    convert: &[F128],
-    eq_lo_val: F128,
-    partial_ab: &mut [F128; 64],
-    partial_c: &mut [F128; 64],
+    convert: &[Gf128],
+    eq_lo_val: Gf128,
+    partial_ab: &mut [Gf128; 64],
+    partial_c: &mut [Gf128; 64],
 ) {
     use core::arch::aarch64::*;
 
@@ -33,11 +33,11 @@ pub(crate) unsafe fn accumulate_convert(
             }
             let ab = vreinterpretq_u64_u8(converted_ab);
             let c = vreinterpretq_u64_u8(converted_c);
-            partial_ab[lane] += F128 {
+            partial_ab[lane] += Gf128 {
                 lo: vgetq_lane_u64::<0>(ab),
                 hi: vgetq_lane_u64::<1>(ab),
             } * eq_lo_val;
-            partial_c[lane] += F128 {
+            partial_c[lane] += Gf128 {
                 lo: vgetq_lane_u64::<0>(c),
                 hi: vgetq_lane_u64::<1>(c),
             } * eq_lo_val;
@@ -51,11 +51,11 @@ pub(crate) unsafe fn accumulate_convert_with_s_hat_v(
     chunk_ab_bytes: &[[u8; 64]; 16],
     chunk_c_bytes: &[[u8; 64]; 16],
     n_b_med: usize,
-    convert: &[F128],
-    eq_lo_val: F128,
-    partial_ab: &mut [F128; 64],
-    partial_c_0: &mut [F128; 64],
-    partial_c_1: &mut [F128; 64],
+    convert: &[Gf128],
+    eq_lo_val: Gf128,
+    partial_ab: &mut [Gf128; 64],
+    partial_c_0: &mut [Gf128; 64],
+    partial_c_1: &mut [Gf128; 64],
 ) {
     use core::arch::aarch64::*;
 
@@ -85,15 +85,15 @@ pub(crate) unsafe fn accumulate_convert_with_s_hat_v(
             let ab = vreinterpretq_u64_u8(converted_ab);
             let c_0 = vreinterpretq_u64_u8(converted_c_0);
             let c_1 = vreinterpretq_u64_u8(converted_c_1);
-            partial_ab[lane] += F128 {
+            partial_ab[lane] += Gf128 {
                 lo: vgetq_lane_u64::<0>(ab),
                 hi: vgetq_lane_u64::<1>(ab),
             } * eq_lo_val;
-            partial_c_0[lane] += F128 {
+            partial_c_0[lane] += Gf128 {
                 lo: vgetq_lane_u64::<0>(c_0),
                 hi: vgetq_lane_u64::<1>(c_0),
             } * eq_lo_val;
-            partial_c_1[lane] += F128 {
+            partial_c_1[lane] += Gf128 {
                 lo: vgetq_lane_u64::<0>(c_1),
                 hi: vgetq_lane_u64::<1>(c_1),
             } * eq_lo_val;
@@ -186,10 +186,10 @@ pub(crate) fn shift_reduce_inner_ab_neon(
     chunk_byte_base: usize,
     b_med: usize,
     out: &mut [u8; 64],
-    a_col: &mut [F8],
-    b_col: &mut [F8],
+    a_col: &mut [Gf8],
+    b_col: &mut [Gf8],
 ) {
-    use crate::field::gf2_8::neon::{gf8_mul_vec16, gf8_reduce_vec16};
+    use crate::field::gf8_kernels::neon::{gf8_mul_vec16, gf8_reduce_vec16};
     use core::arch::aarch64::*;
 
     let byte_base_b = chunk_byte_base + b_med * N_CHUNKS * 8;
@@ -256,7 +256,7 @@ pub(crate) fn shift_reduce_inner_ab_neon(
 
 // ---------------------------------------------------------------------------
 // Fused NEON inner kernel: inv_NTT apply + F_8 mul + shift_reduce, all in
-// NEON registers (no Vec<F8> round-trip).
+// NEON registers (no Vec<Gf8> round-trip).
 //
 // `xor_apply_byte_into_8_regs::<BH, ODD>` handles one byte position (b ≥ 1).
 // `BH` (= b >> 1) selects which chunk-index XOR to apply; `ODD` (= b & 1)
@@ -338,7 +338,7 @@ unsafe fn fused_apply_one_k<const K: i32>(
     acc3_lo: &mut core::arch::aarch64::uint16x8_t,
     acc3_hi: &mut core::arch::aarch64::uint16x8_t,
 ) {
-    use crate::field::gf2_8::neon::gf8_mul_vec16;
+    use crate::field::gf8_kernels::neon::gf8_mul_vec16;
     use core::arch::aarch64::*;
     unsafe {
         // b = 0: identity permutation — plain load of the 4 chunks.
@@ -474,7 +474,7 @@ pub(crate) fn shift_reduce_inner_ab_fused_neon(
     b_med: usize,
     out: &mut [u8; 64],
 ) {
-    use crate::field::gf2_8::neon::gf8_reduce_vec16;
+    use crate::field::gf8_kernels::neon::gf8_reduce_vec16;
     use core::arch::aarch64::*;
 
     let byte_base_b = chunk_byte_base + b_med * N_CHUNKS * 8;

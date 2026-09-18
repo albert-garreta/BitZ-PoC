@@ -1,5 +1,5 @@
 //! Reporting projections over completed Perfetto intervals; no clocks or collector.
-pub(crate) use f2z::observability::Interval as CapturedSpan;
+pub(crate) use bitz::observability::Interval as CapturedSpan;
 
 fn required_span<'a>(raw: &'a [CapturedSpan], component: &str) -> &'a CapturedSpan {
     let mut spans = raw

@@ -34,13 +34,11 @@
 
 use crate::poly::mle::DenseMultilinearExtension;
 use crate::poly::univariate::binary::BinaryPoly;
-use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 use crate::transcript::traits::Transcript;
 
-use crate::utils::{cfg_into_iter, cfg_iter, cfg_iter_mut};
-
-use crypto_primitives::crypto_bigint_monty::MontyField;
+use crate::utils::{cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -100,64 +98,6 @@ pub fn gf_pow(base: Gf, mut exp: u128) -> Gf {
     acc
 }
 
-/// Fixed-base comb table for raising one **fixed** base `α` to many different
-/// exponents (the `α^{w_b}` over all `2^t` rows of a chunk).
-///
-/// [`gf_pow`]`(α, e)` re-runs the whole `α, α², α⁴, …` squaring chain on every
-/// call, but for a fixed base that chain is identical across calls. This
-/// precomputes, per `win`-bit window `i`, the table `T[i][d] = α^{d·2^{win·i}}`
-/// (the `α`-squaring chain, shared once); then `α^e = ∏_i T[i][digit_i(e)]` is
-/// `⌈bits/win⌉` muls with **no per-exponent squarings** — ~`win`× fewer field
-/// muls than `gf_pow` on a dense ~`c_w`-bit exponent.
-pub struct FixedBasePow {
-    /// `table[i][d] = α^{d · 2^{win·i}}`, `d ∈ [0, 2^win)`.
-    table: Vec<Vec<Gf>>,
-    win: usize,
-}
-
-impl FixedBasePow {
-    /// Build the comb for base `alpha` covering exponents up to `max_bits` bits,
-    /// with `win`-bit windows (`win ≤ 16`).
-    #[allow(clippy::arithmetic_side_effects)] // window/digit counters, bounded by max_bits/win
-    pub fn new(alpha: Gf, max_bits: usize, win: usize) -> Self {
-        debug_assert!((1..=16).contains(&win));
-        let num_windows = max_bits.div_ceil(win);
-        let radix = 1usize << win;
-        let mut table = Vec::with_capacity(num_windows);
-        let mut base_i = alpha; // α^{2^{win·0}} = α
-        for _ in 0..num_windows {
-            let mut row = Vec::with_capacity(radix);
-            let mut cur = Gf::one();
-            for _ in 0..radix {
-                row.push(cur);
-                cur = cur * base_i;
-            }
-            table.push(row);
-            for _ in 0..win {
-                base_i = base_i.square(); // advance to α^{2^{win·(i+1)}}
-            }
-        }
-        Self { table, win }
-    }
-
-    /// `α^exp` — one table lookup per non-zero `win`-bit window, multiplied.
-    #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
-    pub fn pow(&self, mut exp: u128) -> Gf {
-        let mask = (1u128 << self.win).wrapping_sub(1);
-        let mut acc = Gf::one();
-        let mut i = 0usize;
-        while exp != 0 {
-            let d = (exp & mask) as usize; // < 2^win ≤ 2^16
-            if d != 0 {
-                acc = acc * self.table[i][d];
-            }
-            exp >>= self.win;
-            i = i.wrapping_add(1);
-        }
-        acc
-    }
-}
-
 /// The shared row-bit weight vector `q_rowbit` over the `(b, j)` leaf index, at the
 /// forest's shared reduction point `ρ`:
 /// `q_rowbit[(b<<log₂W)|j] = eq((b,j),ρ) · (α^{w_b·2^j} − 1)`.
@@ -173,22 +113,67 @@ pub fn row_bit_weights(
     alpha: Gf,
     rho: &[Gf],
 ) -> Vec<Gf> {
-    let log_w = p.word_bits.trailing_zeros() as usize;
-    let mask = p.word_bits.wrapping_sub(1);
-    let eq = build_eq_x_r_vec(rho, &()).expect("shared reduction point is non-empty");
+    let mut weights = build_eq_x_r_vec(rho, &()).expect("shared reduction point is non-empty");
     // The `2^t` ~q_bits-wide exponentiations dominate this table (it is the
     // verifier's O(2^t) step and was 18% of the mod-q PROVE at nv=16):
     // fixed-base comb (≈8× fewer mults than square-and-multiply) + parallel.
-    let comb = FixedBasePow::new(alpha, 128, 8);
-    let bases: Vec<Gf> = cfg_iter!(row_weights).map(|&w| comb.pow(w)).collect();
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
     let one = Gf::one();
-    cfg_into_iter!(0..eq.len())
-        .map(|i| {
-            let b = i >> log_w;
-            let j = i & mask;
-            eq[i] * (gf_pow(bases[b], 1u128 << j) - one)
-        })
-        .collect()
+    cfg_chunks_mut!(weights, p.word_bits)
+        .enumerate()
+        .for_each(|(b, slots)| {
+            let w = row_weights[b];
+            let mut power = comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64]));
+            // Reuse the equality table as output and the previous bit's
+            // power: alpha^(w*2^(j+1)) = (alpha^(w*2^j))^2.
+            let last = slots.len() - 1;
+            for (j, slot) in slots.iter_mut().enumerate() {
+                *slot *= power - one;
+                if j != last {
+                    power = power.square();
+                }
+            }
+        });
+    weights
+}
+
+#[cfg(test)]
+mod row_bit_weight_tests {
+    use super::*;
+
+    #[test]
+    fn fused_weights_match_independent_powers() {
+        for word_bits in [1usize, 2, 8, 32, 128] {
+            let p = IntegerMatrixLayout {
+                row_vars: 4,
+                col_vars: 1,
+                word_bits,
+            };
+            let row_weights: Vec<_> = (0..p.rows())
+                .map(|b| match b {
+                    0 => 0,
+                    1 => 1,
+                    2 => u128::MAX,
+                    _ => (b as u128).wrapping_mul(0xa3b1_770d_41af_89c2_8211_7759_1234_0fab),
+                })
+                .collect();
+            let rho: Vec<_> = (0..p.row_vars + word_bits.trailing_zeros() as usize)
+                .map(|i| Gf::from([i as u64 + 13, i as u64 + 31]))
+                .collect();
+            let eq = build_eq_x_r_vec(&rho, &()).unwrap();
+            for alpha in [Gf::zero(), Gf::one(), Gf::from([0x99887766, 0x12345678])] {
+                let bases: Vec<_> = row_weights.iter().map(|&w| gf_pow(alpha, w)).collect();
+                let expected: Vec<_> = eq
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &e)| {
+                        e * (gf_pow(bases[i / word_bits], 1u128 << (i % word_bits)) - Gf::one())
+                    })
+                    .collect();
+                assert_eq!(row_bit_weights(&p, &row_weights, alpha, &rho), expected);
+            }
+        }
+    }
 }
 
 /// `max_c v_c` — the magnitude that must stay below `ord(α)` (≈ `2^128`) for the
@@ -294,7 +279,7 @@ pub fn is_generator(alpha: Gf) -> bool {
 /// protocol may use any Fiat–Shamir `α` accepted by [`is_generator`].
 pub fn smallest_generator() -> Gf {
     (2u128..)
-        .map(Gf::from)
+        .map(Gf::from_polynomial_bits)
         .find(|&a| is_generator(a))
         .expect("GF(2^128)^× is cyclic and has generators")
 }
@@ -341,7 +326,7 @@ pub fn smallest_generator() -> Gf {
 // resulting `𝔽_q` witness-MLE claim through the Ligerito opener. Its eval field
 // `F` may be a *config-based* `MontyField` over a fixed ~100-bit prime, while
 // the mod-`q` read-off works in a *config-free* `R: From<u128>+Add+Mul`. Both
-// share the SAME modulus `q = 2^100 − 15`; convert `F ↔ Fq` at the boundary via
+// share the SAME modulus `q = 2^100 − 15`; convert `F ↔ Q100Element` at the boundary via
 // the canonical integer ([`ProjectCanonicalU128`]).
 
 /// The fixed ~100-bit read-off prime `q = 2^100 − 15`. Must equal the host
@@ -350,70 +335,20 @@ pub const FQ_MOD: u128 = (1u128 << 100).wrapping_sub(15);
 /// `⌈log₂ q⌉` — the chunk-count input for the mod-`q` opening (`L = 1` for SHA).
 pub const FQ_BITS: usize = 100;
 
-/// Config-free element of `𝔽_q`, `q = 2^100 − 15` (invariant `0 ≤ .0 < q`). The
-/// mod-`q` read-off ring `R` for the integer-SHA-over-F₂ opening; pure `u128`
-/// arithmetic (no `crypto-bigint`), so it lives in the generic library where the
-/// host prover's step-7 branch runs.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Fq(pub u128);
+pub use field::Q100Element;
 
-/// `(a + b) mod q` for `a, b ∈ [0, q)`.
+/// Canonical integer arithmetic for the existing static PCS prime.
 #[inline]
 pub fn fq_add(a: u128, b: u128) -> u128 {
-    let s = a.wrapping_add(b);
-    if s >= FQ_MOD {
-        s.wrapping_sub(FQ_MOD)
-    } else {
-        s
-    }
+    (Q100Element::from(a) + Q100Element::from(b)).canonical_u128()
 }
-
-/// `(a − b) mod q` for `a, b ∈ [0, q)`.
 #[inline]
 pub fn fq_sub(a: u128, b: u128) -> u128 {
-    if a >= b {
-        a.wrapping_sub(b)
-    } else {
-        a.wrapping_add(FQ_MOD).wrapping_sub(b)
-    }
+    (Q100Element::from(a) - Q100Element::from(b)).canonical_u128()
 }
-
-/// `(a · b) mod q` by Russian-peasant doubling (no 256-bit dep; `q < 2^100`, so
-/// every `fq_add` stays below `2^101`).
 #[inline]
 pub fn fq_mul(a: u128, b: u128) -> u128 {
-    let mut a = a % FQ_MOD;
-    let mut b = b % FQ_MOD;
-    let mut r = 0u128;
-    while b != 0 {
-        if b & 1 == 1 {
-            r = fq_add(r, a);
-        }
-        a = fq_add(a, a);
-        b >>= 1;
-    }
-    r
-}
-
-impl From<u128> for Fq {
-    #[inline]
-    fn from(x: u128) -> Self {
-        Fq(x % FQ_MOD)
-    }
-}
-impl core::ops::Add for Fq {
-    type Output = Fq;
-    #[inline]
-    fn add(self, o: Fq) -> Fq {
-        Fq(fq_add(self.0, o.0))
-    }
-}
-impl core::ops::Mul for Fq {
-    type Output = Fq;
-    #[inline]
-    fn mul(self, o: Fq) -> Fq {
-        Fq(fq_mul(self.0, o.0))
-    }
+    (Q100Element::from(a) * Q100Element::from(b)).canonical_u128()
 }
 
 /// Little-endian `eq` table over `𝔽_q`: `out[idx] = ∏_l (bit_l(idx) ? point[l] :
@@ -422,17 +357,13 @@ impl core::ops::Mul for Fq {
 /// uses for the lifted `bar_u`. This makes the F₂ read-off weights agree with the
 /// host PIOP's α-combined witness-MLE claim. (Contrast the standalone tests'
 /// `eq_table_fq`, which is big-endian.)
-pub fn eq_le_table_fq(point: &[Fq]) -> Vec<Fq> {
-    debug_assert!(
-        point.iter().all(|r| r.0 < FQ_MOD),
-        "eq_le_table_fq requires canonical Fq inputs"
-    );
+pub fn eq_le_table_fq(point: &[Q100Element]) -> Vec<Q100Element> {
     let table_len = u32::try_from(point.len())
         .ok()
         .and_then(|num_vars| 1usize.checked_shl(num_vars))
         .expect("eq_le_table_fq domain must fit into usize");
-    let mut table = vec![Fq(0); table_len];
-    table[0] = Fq(1);
+    let mut table = vec![Q100Element::from_u128(0); table_len];
+    table[0] = Q100Element::from_u128(1);
 
     let mut half = 1usize;
     for challenge in point {
@@ -445,7 +376,7 @@ pub fn eq_le_table_fq(point: &[Fq]) -> Vec<Fq> {
             .for_each(|(zero, one)| {
                 let parent = *zero;
                 let one_child = parent * *challenge;
-                *zero = Fq(fq_sub(parent.0, one_child.0));
+                *zero = parent - one_child;
                 *one = one_child;
             });
         half = active_len;
@@ -457,65 +388,60 @@ pub fn eq_le_table_fq(point: &[Fq]) -> Vec<Fq> {
 mod eq_le_table_fq_tests {
     use super::*;
 
-    fn direct_eq(point: &[Fq], index: usize) -> Fq {
-        Fq(point
-            .iter()
-            .enumerate()
-            .fold(1u128, |acc, (bit, challenge)| {
-                let factor = if index >> bit & 1 == 1 {
-                    challenge.0
-                } else {
-                    fq_sub(1, challenge.0)
-                };
-                fq_mul(acc, factor)
-            }))
+    fn direct_eq(point: &[Q100Element], index: usize) -> Q100Element {
+        Q100Element::from_u128(
+            point
+                .iter()
+                .enumerate()
+                .fold(1u128, |acc, (bit, challenge)| {
+                    let factor = if index >> bit & 1 == 1 {
+                        challenge.canonical_u128()
+                    } else {
+                        fq_sub(1, challenge.canonical_u128())
+                    };
+                    fq_mul(acc, factor)
+                }),
+        )
     }
 
     #[test]
     fn empty_input_is_one() {
-        assert_eq!(eq_le_table_fq(&[]), vec![Fq(1)]);
+        assert_eq!(eq_le_table_fq(&[]), vec![Q100Element::from_u128(1)]);
     }
 
     #[test]
     fn two_coordinates_use_little_endian_order() {
-        let point = [Fq(2), Fq(3)];
+        let point = [Q100Element::from_u128(2), Q100Element::from_u128(3)];
         // Indices 0, 1, 2, 3 represent [00, 10, 01, 11].
         assert_eq!(
             eq_le_table_fq(&point),
-            vec![Fq(2), Fq(FQ_MOD - 4), Fq(FQ_MOD - 3), Fq(6)]
+            vec![
+                Q100Element::from_u128(2),
+                Q100Element::from_u128(FQ_MOD - 4),
+                Q100Element::from_u128(FQ_MOD - 3),
+                Q100Element::from_u128(6)
+            ]
         );
     }
 
     #[test]
     fn non_boolean_table_matches_direct_formula_and_sums_to_one() {
-        let point = [Fq(0), Fq(1), Fq(FQ_MOD - 1), Fq(123_456_789)];
+        let point = [
+            Q100Element::from_u128(0),
+            Q100Element::from_u128(1),
+            Q100Element::from_u128(FQ_MOD - 1),
+            Q100Element::from_u128(123_456_789),
+        ];
         let table = eq_le_table_fq(&point);
         for (index, &evaluation) in table.iter().enumerate() {
             assert_eq!(evaluation, direct_eq(&point, index), "entry {index}");
         }
         assert_eq!(
-            table.iter().fold(0u128, |acc, value| fq_add(acc, value.0)),
+            table
+                .iter()
+                .fold(0u128, |acc, value| fq_add(acc, value.canonical_u128())),
             1
         );
-    }
-}
-
-/// Extract the canonical integer (standard, *not* Montgomery, form) of a host
-/// eval-field element as a `u128`. Implemented for every `MontyField<LIMBS>` via
-/// `retrieve()`; only the low 128 bits are taken (the integer-SHA-over-F₂
-/// read-off values are all `< q < 2^100`, so this is exact on that path).
-pub trait ProjectCanonicalU128 {
-    fn canonical_u128(&self) -> u128;
-}
-
-impl<const LIMBS: usize> ProjectCanonicalU128 for MontyField<LIMBS> {
-    #[inline]
-    fn canonical_u128(&self) -> u128 {
-        let reduced = self.retrieve();
-        let words = reduced.as_words();
-        let lo = words.first().copied().map_or(0u128, u128::from);
-        let hi = words.get(1).copied().map_or(0u128, u128::from);
-        lo | (hi << 64)
     }
 }
 
@@ -573,7 +499,7 @@ pub fn sha_f2_bit_tensor<const D: usize>(
             let row_hi = trace_row >> s;
             let row_lo = trace_row & row_lo_mask;
             for (j, coeff) in cell.iter().enumerate() {
-                if coeff.into_inner() {
+                if bool::from(coeff) {
                     let b = (j << shift) | (i << layout.tw) | row_hi;
                     data[(b << s) | row_lo] = 1;
                 }
@@ -681,7 +607,7 @@ pub fn sha_f2_packed_cols<const D: usize>(
 }
 
 /// Build the mod-`q` opening weights from the host point `r₀` and the
-/// α-combination, all in the config-free [`Fq`]. `r0_fq[l] = canonical(r₀[l])`
+/// α-combination, all in the config-free [`Q100Element`]. `r0_fq[l] = canonical(r₀[l])`
 /// (little-endian, len `num_vars`); `alpha_canon[i][j] =
 /// canonical(F::from_with_cfg(α_{i,j}))`. Returns
 /// `(row_weights_q[b] = α_{i,j}·eq(row_hi,r₀_fold) mod q, col_weights[c] =
@@ -689,9 +615,9 @@ pub fn sha_f2_packed_cols<const D: usize>(
 /// `Σ_{i,j} α_{i,j}·MLE[bitⱼ(colᵢ)](r₀) = eval_f`.
 pub fn sha_f2_weights(
     layout: &ShaF2Layout,
-    r0_fq: &[Fq],
+    r0_fq: &[Q100Element],
     alpha_canon: &[Vec<u128>],
-) -> (Vec<u128>, Vec<Fq>) {
+) -> (Vec<u128>, Vec<Q100Element>) {
     let p = &layout.p;
     let s = p.col_vars;
     let tw = layout.tw;
@@ -714,7 +640,7 @@ pub fn sha_f2_weights(
                 .and_then(|a| a.get(j))
                 .copied()
                 .unwrap_or(0);
-            *w = fq_mul(aij, eq_fold[row_hi].0);
+            *w = fq_mul(aij, eq_fold[row_hi].canonical_u128());
         }
     }
     (row_weights_q, col_weights)
@@ -964,7 +890,7 @@ const FQ_R128: u128 = 15u128 << 28;
 /// ~2^-28-biased at the 100-bit `q`).
 pub fn fq_challenge(transcript: &mut impl Transcript) -> u128 {
     let to_u128 = |g: Gf| -> u128 {
-        let w = g.words();
+        let w = g.as_words();
         u128::from(w[0]) | (u128::from(w[1]) << 64)
     };
     let lo: Gf = transcript.get_field_challenge(&());
@@ -1090,9 +1016,17 @@ pub fn rlc_chunk_case_weights(
 /// 2^j-case leaves, W = 1): `out[b][m] = α^{W_b^{(l)}(m)}` via the shared
 /// fixed-base comb. Case 0 is `α^0 = 1` by construction.
 pub(crate) fn rlc_case_pow_table(w_cases: &[Vec<u128>], alpha: Gf) -> Vec<Vec<Gf>> {
-    let comb = FixedBasePow::new(alpha, 128, 8);
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
     cfg_iter!(w_cases)
-        .map(|row| row.iter().map(|&w| comb.pow(w)).collect())
+        .map(|row| {
+            row.iter()
+                .map(|&w| {
+                    Gf::from(
+                        comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64])),
+                    )
+                })
+                .collect()
+        })
         .collect()
 }
 
@@ -1146,6 +1080,72 @@ pub fn mod_q_num_chunks(p: &IntegerMatrixLayout, q_bits: usize) -> usize {
     q_bits.div_ceil(mod_q_chunk_width(p)).max(1)
 }
 
+/// A public map certifies that every derived cell is smaller than 2^value_bits.
+/// The physical stride remains a power of two, including at P=128.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VirtualWordBound {
+    layout: IntegerMatrixLayout,
+    value_bits: usize,
+    map_digest: [u8; 32],
+}
+impl VirtualWordBound {
+    pub(crate) fn new<M: circuit::linear_map::binary::VirtualMap>(
+        layout: IntegerMatrixLayout,
+        value_bits: usize,
+        map: &M,
+    ) -> Result<Self, ()> {
+        if !layout.word_bits.is_power_of_two()
+            || layout.word_bits > 128
+            || value_bits == 0
+            || value_bits > layout.word_bits
+        {
+            return Err(());
+        }
+        let bits = layout
+            .row_vars
+            .checked_add(layout.col_vars)
+            .and_then(|v| v.checked_add(layout.word_bits.ilog2() as usize))
+            .ok_or(())?;
+        let cells = 1usize
+            .checked_shl(u32::try_from(bits).map_err(|_| ())?)
+            .ok_or(())?;
+        if map.rows() != cells {
+            return Err(());
+        }
+        // Structural support, never the supplied witness, establishes this bound.
+        if map
+            .output_word_bits(layout.word_bits)
+            .is_none_or(|bound| bound > value_bits)
+        {
+            for column in 0..map.cols() {
+                for row in map.column_rows(column).ok_or(())? {
+                    if row >= cells || row % layout.word_bits >= value_bits {
+                        return Err(());
+                    }
+                }
+            }
+        }
+        Ok(Self {
+            layout,
+            value_bits,
+            map_digest: map.digest(),
+        })
+    }
+    pub(crate) const fn value_bits(&self) -> usize {
+        self.value_bits
+    }
+    pub(crate) fn matches_layout(&self, p: &IntegerMatrixLayout) -> bool {
+        self.layout == *p
+    }
+    pub(crate) fn matches_map<M: circuit::linear_map::binary::VirtualMap>(
+        &self,
+        p: &IntegerMatrixLayout,
+        map: &M,
+    ) -> bool {
+        self.matches_layout(p) && self.map_digest == map.digest()
+    }
+}
+
 /// A validated base-`2^c_w` decomposition of one public mod-`q` row-weight
 /// vector.
 ///
@@ -1159,6 +1159,7 @@ pub(crate) struct ModQWeightChunks {
     row_count: usize,
     chunk_width: usize,
     q_bits: usize,
+    padding: Option<VirtualWordBound>,
 }
 
 /// A validated, canonical source of public mod-`q` row weights.
@@ -1169,6 +1170,10 @@ pub(crate) struct ModQWeightChunks {
 /// exactly one `2^t`-row limb.  This keeps the opening transcript identical to
 /// [`ModQWeightChunks`] without requiring all `L` limbs to coexist.
 pub(crate) trait ModQWeightSource: Sync {
+    fn padding_bound(&self) -> Option<&VirtualWordBound> {
+        None
+    }
+
     /// Number of canonical row weights (`2^t`).
     fn row_count(&self) -> usize;
 
@@ -1281,6 +1286,30 @@ where
 }
 
 impl ModQWeightChunks {
+    pub(crate) fn from_dense_padded<M: circuit::linear_map::binary::VirtualMap>(
+        p: &IntegerMatrixLayout,
+        weights: &[u128],
+        q_bits: usize,
+        value_bits: usize,
+        map: &M,
+    ) -> Result<Self, ()> {
+        let padding = VirtualWordBound::new(*p, value_bits, map)?;
+        let (row_count, chunk_width, chunk_count) =
+            mod_q_weight_chunk_shape_with_width(p, q_bits, value_bits)?;
+        if weights.len() != row_count {
+            return Err(());
+        }
+        let mut chunks = Self {
+            chunks: vec![vec![0; row_count]; chunk_count],
+            row_count,
+            chunk_width,
+            q_bits,
+            padding: Some(padding),
+        };
+        chunks.set_weight_range(0, weights)?;
+        Ok(chunks)
+    }
+
     /// Adopt an owned dense vector directly when the geometry needs exactly
     /// one chunk. This is the production u32 fast path: no zero-fill and no
     /// dense-to-chunk copy are needed.
@@ -1304,6 +1333,7 @@ impl ModQWeightChunks {
             row_count,
             chunk_width,
             q_bits,
+            padding: None,
         })
     }
 
@@ -1317,6 +1347,7 @@ impl ModQWeightChunks {
             row_count,
             chunk_width,
             q_bits,
+            padding: None,
         })
     }
 
@@ -1408,6 +1439,7 @@ impl ModQWeightChunks {
             row_count,
             chunk_width,
             q_bits,
+            padding: None,
         })
     }
 
@@ -1467,6 +1499,9 @@ impl ModQWeightChunks {
 }
 
 impl ModQWeightSource for ModQWeightChunks {
+    fn padding_bound(&self) -> Option<&VirtualWordBound> {
+        self.padding.as_ref()
+    }
     fn row_count(&self) -> usize {
         self.row_count
     }
@@ -1514,6 +1549,17 @@ fn mod_q_weight_chunk_shape(
     p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> Result<(usize, usize, usize), ()> {
+    mod_q_weight_chunk_shape_with_width(p, q_bits, p.word_bits)
+}
+
+fn mod_q_weight_chunk_shape_with_width(
+    p: &IntegerMatrixLayout,
+    q_bits: usize,
+    value_bits: usize,
+) -> Result<(usize, usize, usize), ()> {
+    if value_bits == 0 || value_bits > p.word_bits {
+        return Err(());
+    }
     if !p.word_bits.is_power_of_two()
         || p.word_bits > u128::BITS as usize
         || !(1..=126).contains(&q_bits)
@@ -1524,7 +1570,7 @@ fn mod_q_weight_chunk_shape(
         .ok()
         .and_then(|t| 1usize.checked_shl(t))
         .ok_or(())?;
-    let tw = p.row_vars.checked_add(p.word_bits).ok_or(())?;
+    let tw = p.row_vars.checked_add(value_bits).ok_or(())?;
     if tw > 126 {
         return Err(());
     }
@@ -1600,11 +1646,12 @@ pub(crate) fn chunk_pow2_table(
     // Every row's base `α^{w_b}` shares the same `α`-squaring chain, so build it
     // ONCE as a fixed-base comb (≈ `win`× fewer muls than a per-row `gf_pow`),
     // then continue the per-row place-value chain `α^{w·2^j} = (·)²` for W > 1.
-    let comb = FixedBasePow::new(alpha, 128, 8);
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
     cfg_iter!(w_chunk)
         .map(|&w| {
             let mut chain = Vec::with_capacity(p.word_bits);
-            let mut cur = comb.pow(w);
+            let mut cur =
+                Gf::from(comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64])));
             for _ in 0..p.word_bits {
                 chain.push(cur);
                 cur = cur.square();
@@ -1787,6 +1834,36 @@ pub(crate) fn build_column_layer1_halves(
 #[allow(clippy::arithmetic_side_effects)]
 mod rlc_tests {
     use super::*;
+
+    #[test]
+    fn padded_weights_require_structural_support_and_bind_exact_map() {
+        use circuit::linear_map::{CscMatrix, binary::PreparedVirtualMap};
+        let p = IntegerMatrixLayout {
+            row_vars: 2,
+            col_vars: 0,
+            word_bits: 128,
+        };
+        let map = |row| {
+            PreparedVirtualMap::new(
+                CscMatrix::try_from_columns(512, vec![vec![(row, true)]]).unwrap(),
+            )
+            .unwrap()
+        };
+        let good = map(64);
+        let bad = map(65);
+        let weights = vec![(1_u128 << 99) + 7; p.rows()];
+        let chunks = ModQWeightChunks::from_dense_padded(&p, &weights, 100, 65, &good).unwrap();
+        assert_eq!(chunks.chunk_width(), 60);
+        let bound = chunks.padding_bound().unwrap();
+        assert!(bound.matches_map(&p, &good));
+        assert!(!bound.matches_map(&p, &map(63)));
+        assert!(ModQWeightChunks::from_dense_padded(&p, &weights, 100, 65, &bad).is_err());
+        assert!(VirtualWordBound::new(p, 0, &good).is_err());
+        assert!(VirtualWordBound::new(p, 129, &good).is_err());
+        let wrong_shape = IntegerMatrixLayout { row_vars: 3, ..p };
+        assert!(VirtualWordBound::new(wrong_shape, 65, &good).is_err());
+        assert!(!bound.matches_layout(&wrong_shape));
+    }
 
     #[test]
     fn validated_mod_q_weight_chunks_round_trip_dense_decomposition() {
@@ -2039,7 +2116,7 @@ where
     let mut buf = Vec::with_capacity(polys.len() * D * 16);
     for p in &polys {
         for c in p.coeffs.iter() {
-            for w in c.words() {
+            for w in c.as_words() {
                 buf.extend_from_slice(&w.to_le_bytes());
             }
         }

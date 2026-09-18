@@ -1,5 +1,5 @@
 //! Algebra-only randomized COMPLETENESS audit using historical configurations
-//! (including small unaudited shapes) of the F2Z mod-q PCS pipeline
+//! (including small unaudited shapes) of the BitZ mod-q PCS pipeline
 //! (`commit_rs_ligerito_rows` -> `prove_mle_eval_mod_q_ligerito` ->
 //! `verify_mle_eval_mod_q_ligerito`).
 //!
@@ -25,13 +25,13 @@ use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{
     IntEvalRsLigModQProof, commit_rs_flock_with, commit_rs_ligerito_rows,
-    prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito,
+    historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
-use f2z::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
-use f2z::transcript::Blake3Transcript;
+use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use bitz::transcript::Blake3Transcript;
 
 // ---------------------------------------------------------------------
 // Independent modular arithmetic (q < 2^127; double-and-add modmul)
@@ -836,8 +836,11 @@ const DATA_CLASSES: [DataClass; 5] = [
     DataClass::Sparse,
     DataClass::SingleBit,
 ];
-const POINT_CLASSES: [PointClass; 3] =
-    [PointClass::Uniform, PointClass::ZeroOneMax, PointClass::Repeated];
+const POINT_CLASSES: [PointClass; 3] = [
+    PointClass::Uniform,
+    PointClass::ZeroOneMax,
+    PointClass::Repeated,
+];
 
 /// Legal-shape sampler: W a power of two, t >= max(1, 7 - log2 W)
 /// (ligerito_flock.rs:284), s >= 1, t + W <= 126 (pcs.rs:1005), and
@@ -979,13 +982,13 @@ fn completeness_random_audit() {
     let seed = env_u64("AUDIT_SEED", 0xF2AC_0DE5_0000_0001);
     let bulk = env_u64("AUDIT_TRIALS", 150) as usize;
     println!("completeness audit seed = {seed:#018x}, bulk trials = {bulk}");
-    let f2z_env: Vec<String> = std::env::vars()
-        .filter(|(k, _)| k.starts_with("F2Z_"))
+    let bitz_env: Vec<String> = std::env::vars()
+        .filter(|(k, _)| k.starts_with("BITZ_"))
         .map(|(k, v)| format!("{k}={v}"))
         .collect();
     println!(
-        "F2Z_* env flags present: {}",
-        if f2z_env.is_empty() { "none".into() } else { f2z_env.join(", ") }
+        "BITZ_* env flags present: {}",
+        if bitz_env.is_empty() { "none".into() } else { bitz_env.join(", ") }
     );
 
     let mut rng = Rng::new(seed);
@@ -1255,9 +1258,8 @@ fn completeness_random_audit() {
 /// sampler steers around).
 #[test]
 fn domain_boundary_probes() {
-    assert!(crypto_primes::is_prime(
-        crypto_primes::Flavor::Any,
-        &crypto_bigint::U128::from(PRIMES[9].0),
+    assert!(field::prime::is_probable_prime_public(
+        &field::Uint::<2>::from(PRIMES[9].0),
     ));
     let p = IntegerMatrixLayout { row_vars: 7, col_vars: 8, word_bits: 1 };
     let weights = vec![1u128; p.rows()];
@@ -1301,7 +1303,13 @@ fn domain_boundary_probes() {
     }
 
     // (3) t + W > 126 must panic in mod_q_chunk_width (pcs.rs:1005).
-    let r = catch_unwind(|| mod_q_chunk_width(&IntegerMatrixLayout { row_vars: 100, col_vars: 1, word_bits: 32 }));
+    let r = catch_unwind(|| {
+        mod_q_chunk_width(&IntegerMatrixLayout {
+            row_vars: 100,
+            col_vars: 1,
+            word_bits: 32,
+        })
+    });
     match r {
         Err(e) => println!("probe: t+W=132 chunk width panicked as expected: {}", panic_msg(&e)),
         Ok(v) => panic!("t+W=132 mod_q_chunk_width unexpectedly returned {v}"),
@@ -1687,7 +1695,9 @@ fn fork_decode(m: &[u8]) -> DecodeOutcome {
     }
     #[cfg(not(unix))]
     {
-        match catch_unwind(AssertUnwindSafe(|| IntEvalRsLigModQProof::from_bytes(m).is_ok())) {
+        match catch_unwind(AssertUnwindSafe(|| {
+            IntEvalRsLigModQProof::from_bytes(m).is_ok()
+        })) {
             Ok(true) => DecodeOutcome::DecodeOk,
             Ok(false) => DecodeOutcome::DecodeErr,
             Err(_) => DecodeOutcome::DecodePanic,

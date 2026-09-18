@@ -5,13 +5,13 @@ mod fixture;
 #[path = "../benches/support/sha256_ecdsa_test_vectors.rs"]
 mod vectors;
 
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
+use bitz::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 
 #[test]
 #[cfg(feature = "span-metrics")]
 #[ignore = "requires PERFETTO_TRACE_PROCESSOR; verifies real Spartan2 phase intervals"]
 fn spartan_phase_timings_come_from_perfetto() {
-    use f2z::observability::{self, Recording};
+    use bitz::observability::{self, Recording};
     use spartan2::sha256_ecdsa::{Prepared, Statement};
     use tracing_subscriber::prelude::*;
 

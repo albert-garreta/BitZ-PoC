@@ -222,7 +222,7 @@ impl ResolvedLigerito {
     /// Version the enclosing transcript and bind the actual resolved policy
     /// before any OOD, projection or PIOP challenge.
     pub fn bind(&self, transcript: &mut impl Transcript) {
-        transcript.absorb_slice(b"f2z/ligerito-policy/early-ood/v1");
+        transcript.absorb_slice(b"bitz/ligerito-policy/early-ood/v1");
         transcript.absorb_slice(&self.digest);
     }
     /// Complete machine-readable identity. OOD work belongs to the enclosing
@@ -232,7 +232,7 @@ impl ResolvedLigerito {
             "requested_profile": requested.trim(), "resolved_profile": self.selection.name(),
             "regime": if self.ood_bits.is_some() { "johnson" } else { "udr" },
             "target_bits": self.security.target_security_bits,
-            "protocol_version": "f2z/ligerito-policy/early-ood/v1",
+            "protocol_version": "bitz/ligerito-policy/early-ood/v1",
             "configuration_fingerprint": self.digest.iter().map(|b| format!("{b:02x}")).collect::<String>(),
             "outer_ood": ood.is_some(), "outer_ood_grinding_bits": ood.map(|p| p.grinding_bits),
             "outer_ood_raw_bits": self.ood_bits,

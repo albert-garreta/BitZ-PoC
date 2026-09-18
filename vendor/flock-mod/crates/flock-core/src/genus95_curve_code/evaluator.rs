@@ -6,26 +6,26 @@ use super::constants::{
     BASE_Y_DEGREE, COVER_BASIS_LEN, FOUR_RUSSIANS_BLOCK_BITS, FOUR_RUSSIANS_TABLE_SIZE,
     PRODUCT_MESSAGE_BITS, PRODUCT_MESSAGE_BYTES, X_POWER_COUNT,
 };
-use super::field::{F128, F128Ext};
+use super::field::{Gf128, F128Ext};
 use super::messages::ProductMessage;
 use super::tables::{FourRussiansLayout, TABLES};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EvaluationPoint {
-    pub x: F128,
-    pub y: F128,
-    pub z1: F128,
-    pub z2: F128,
-    pub z3: F128,
+    pub x: Gf128,
+    pub y: Gf128,
+    pub z1: Gf128,
+    pub z2: Gf128,
+    pub z3: Gf128,
 }
 
 pub struct ProductFunctional {
-    coordinates: [F128; PRODUCT_MESSAGE_BITS],
-    byte_dot_tables: OnceLock<Box<[[F128; 256]; PRODUCT_MESSAGE_BYTES]>>,
+    coordinates: [Gf128; PRODUCT_MESSAGE_BITS],
+    byte_dot_tables: OnceLock<Box<[[Gf128; 256]; PRODUCT_MESSAGE_BYTES]>>,
 }
 
 impl ProductFunctional {
-    fn new(coordinates: [F128; PRODUCT_MESSAGE_BITS]) -> Self {
+    fn new(coordinates: [Gf128; PRODUCT_MESSAGE_BITS]) -> Self {
         Self {
             coordinates,
             byte_dot_tables: OnceLock::new(),
@@ -33,7 +33,7 @@ impl ProductFunctional {
     }
 
     #[inline(always)]
-    pub fn iter(&self) -> std::slice::Iter<'_, F128> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Gf128> {
         self.coordinates.iter()
     }
 
@@ -50,7 +50,7 @@ impl ProductFunctional {
 }
 
 impl Index<usize> for ProductFunctional {
-    type Output = F128;
+    type Output = Gf128;
 
     #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
@@ -63,8 +63,8 @@ impl Index<usize> for ProductFunctional {
 /// coefficient masks.  Generic over the coordinate count so the product
 /// evaluator (`N = 222`) and the base evaluator (`N = 64`) share one kernel.
 pub(crate) struct FunctionalBuilder<const N: usize> {
-    out: [F128; N],
-    block_values: [F128; FOUR_RUSSIANS_BLOCK_BITS],
+    out: [Gf128; N],
+    block_values: [Gf128; FOUR_RUSSIANS_BLOCK_BITS],
     input_index: usize,
     block_index: usize,
     block_fill: usize,
@@ -74,8 +74,8 @@ impl<const N: usize> FunctionalBuilder<N> {
     #[inline(always)]
     pub(crate) fn new() -> Self {
         Self {
-            out: [F128::ZERO; N],
-            block_values: [F128::ZERO; FOUR_RUSSIANS_BLOCK_BITS],
+            out: [Gf128::ZERO; N],
+            block_values: [Gf128::ZERO; FOUR_RUSSIANS_BLOCK_BITS],
             input_index: 0,
             block_index: 0,
             block_fill: 0,
@@ -83,7 +83,7 @@ impl<const N: usize> FunctionalBuilder<N> {
     }
 
     #[inline(always)]
-    pub(crate) fn push(&mut self, value: F128, layout: &FourRussiansLayout<N>) {
+    pub(crate) fn push(&mut self, value: Gf128, layout: &FourRussiansLayout<N>) {
         self.block_values[self.block_fill] = value;
         self.input_index += 1;
         self.block_fill += 1;
@@ -107,7 +107,7 @@ impl<const N: usize> FunctionalBuilder<N> {
     }
 
     #[inline(always)]
-    pub(crate) fn finish(mut self, layout: &FourRussiansLayout<N>) -> [F128; N] {
+    pub(crate) fn finish(mut self, layout: &FourRussiansLayout<N>) -> [Gf128; N] {
         if self.block_fill != 0 {
             self.flush_block(layout);
         }
@@ -127,11 +127,11 @@ pub(crate) fn build_functional<const N: usize, const XPC: usize>(
     point: &EvaluationPoint,
     layout: &FourRussiansLayout<N>,
     denominator_mask: u64,
-) -> ([F128; N], F128) {
+) -> ([Gf128; N], Gf128) {
     let x_powers = x_powers_n::<XPC>(point.x);
     let y_powers = y_powers(point.y);
     let z_monomials = z_monomials(point.z1, point.z2, point.z3);
-    let mut denominator = F128::ZERO;
+    let mut denominator = Gf128::ZERO;
     let mut builder = FunctionalBuilder::<N>::new();
 
     for (cover_index, z_monomial) in z_monomials.iter().copied().enumerate() {
@@ -191,11 +191,11 @@ pub fn product_evaluation_functional(point: &EvaluationPoint) -> Option<ProductF
 pub fn evaluate_product_functional(
     functional: &ProductFunctional,
     message: &ProductMessage,
-) -> F128 {
+) -> Gf128 {
     let byte_dot_tables = functional
         .byte_dot_tables
         .get_or_init(|| build_functional_byte_dot_tables(&functional.coordinates));
-    let mut out = F128::ZERO;
+    let mut out = Gf128::ZERO;
     xor_full_dot_table_limb(&mut out, byte_dot_tables, 0, message.limbs[0]);
     xor_full_dot_table_limb(&mut out, byte_dot_tables, 8, message.limbs[1]);
     xor_full_dot_table_limb(&mut out, byte_dot_tables, 16, message.limbs[2]);
@@ -210,8 +210,8 @@ pub fn evaluate_product_functional(
 
 #[inline(always)]
 fn xor_full_dot_table_limb(
-    out: &mut F128,
-    byte_dot_tables: &[[F128; 256]; PRODUCT_MESSAGE_BYTES],
+    out: &mut Gf128,
+    byte_dot_tables: &[[Gf128; 256]; PRODUCT_MESSAGE_BYTES],
     byte_base: usize,
     limb: u64,
 ) {
@@ -229,9 +229,9 @@ fn xor_full_dot_table_limb(
 /// packed binary message a byte at a time.  Generic over the coordinate count
 /// `N` and the number of message bytes `BYTES`.
 pub(crate) fn build_functional_byte_dot_tables<const N: usize, const BYTES: usize>(
-    coordinates: &[F128; N],
-) -> Box<[[F128; 256]; BYTES]> {
-    let mut tables = Box::new([[F128::ZERO; 256]; BYTES]);
+    coordinates: &[Gf128; N],
+) -> Box<[[Gf128; 256]; BYTES]> {
+    let mut tables = Box::new([[Gf128::ZERO; 256]; BYTES]);
     for byte_index in 0..BYTES {
         let coordinate_base = 8 * byte_index;
         let remaining = N.saturating_sub(coordinate_base);
@@ -249,13 +249,13 @@ pub(crate) fn build_functional_byte_dot_tables<const N: usize, const BYTES: usiz
 
 #[inline(always)]
 fn apply_four_russians_block<const N: usize>(
-    out: &mut [F128; N],
-    values: &[F128; FOUR_RUSSIANS_BLOCK_BITS],
+    out: &mut [Gf128; N],
+    values: &[Gf128; FOUR_RUSSIANS_BLOCK_BITS],
     coordinate_masks: &[u8; N],
     nonzero_coordinates: &[u16],
 ) {
-    let mut subset_sums = [MaybeUninit::<F128>::uninit(); FOUR_RUSSIANS_TABLE_SIZE];
-    subset_sums[0].write(F128::ZERO);
+    let mut subset_sums = [MaybeUninit::<Gf128>::uninit(); FOUR_RUSSIANS_TABLE_SIZE];
+    subset_sums[0].write(Gf128::ZERO);
     for bit in 0..FOUR_RUSSIANS_BLOCK_BITS {
         let bit_mask = 1usize << bit;
         for mask in 0..bit_mask {
@@ -277,14 +277,14 @@ fn apply_four_russians_block<const N: usize>(
 }
 
 #[inline(always)]
-pub(crate) fn x_powers(x: F128) -> [F128; X_POWER_COUNT] {
+pub(crate) fn x_powers(x: Gf128) -> [Gf128; X_POWER_COUNT] {
     x_powers_n::<X_POWER_COUNT>(x)
 }
 
 #[inline(always)]
-pub(crate) fn x_powers_n<const N: usize>(x: F128) -> [F128; N] {
-    let mut powers = [F128::ZERO; N];
-    powers[0] = F128::ONE;
+pub(crate) fn x_powers_n<const N: usize>(x: Gf128) -> [Gf128; N] {
+    let mut powers = [Gf128::ZERO; N];
+    powers[0] = Gf128::ONE;
     for i in 1..N {
         powers[i] = powers[i - 1] * x;
     }
@@ -292,23 +292,23 @@ pub(crate) fn x_powers_n<const N: usize>(x: F128) -> [F128; N] {
 }
 
 #[inline(always)]
-pub(crate) fn y_powers(y: F128) -> [F128; BASE_Y_DEGREE] {
+pub(crate) fn y_powers(y: Gf128) -> [Gf128; BASE_Y_DEGREE] {
     let y2 = y.square();
-    [F128::ONE, y, y2, y2 * y]
+    [Gf128::ONE, y, y2, y2 * y]
 }
 
 #[inline(always)]
-fn z_monomials(z1: F128, z2: F128, z3: F128) -> [F128; COVER_BASIS_LEN] {
+fn z_monomials(z1: Gf128, z2: Gf128, z3: Gf128) -> [Gf128; COVER_BASIS_LEN] {
     let z2z3 = z2 * z3;
     let z1z3 = z1 * z3;
     let z1z2 = z1 * z2;
-    [F128::ONE, z3, z2, z2z3, z1, z1z3, z1z2, z1z2 * z3]
+    [Gf128::ONE, z3, z2, z2z3, z1, z1z3, z1z2, z1z2 * z3]
 }
 
 #[inline(always)]
-pub(crate) fn eval_poly_mask<const N: usize>(mask: u64, powers: &[F128; N]) -> F128 {
+pub(crate) fn eval_poly_mask<const N: usize>(mask: u64, powers: &[Gf128; N]) -> Gf128 {
     let mut bits = mask;
-    let mut out = F128::ZERO;
+    let mut out = Gf128::ZERO;
     while bits != 0 {
         let degree = bits.trailing_zeros() as usize;
         debug_assert!(degree < N);

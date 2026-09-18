@@ -4,13 +4,12 @@
 //! bound into the Fiat--Shamir transcript do prover and verifier derive the
 //! prime `q` used by Spartan and by the integer-to-field projection.
 
-use crypto_bigint::U128;
-use crypto_primes::{Flavor, is_prime};
-use crypto_primitives::{PrimeField, crypto_bigint_monty::F128, crypto_bigint_uint::Uint};
+use crate::piop::spartan::SpartanField as _;
+use field::{Fp, Uint};
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{PrimeSamplingError, sample_prime_in_interval},
+    ext_proj::PrimeSamplingError,
     piop::spartan::{
         SpartanField, absorb_spartan_message,
         profile::{IopInstanceFacts, IopSecurityParams},
@@ -18,12 +17,12 @@ use crate::{
     transcript::traits::Transcript,
 };
 
-use super::super::SpartanF2zField;
+use super::super::SpartanBitzField;
 #[cfg(any(feature = "bench-internals", test))]
 use super::super::profile::{SoundnessAccounting, SoundnessTerm};
 
-const PRIME_SAMPLING_DOMAIN: &[u8] = b"f2z/spartan-sha256/runtime-prime/v1";
-const FIXED_PRIME_DOMAIN: &[u8] = b"f2z/spartan-sha256/fixed-prime/v1";
+const PRIME_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-sha256/runtime-prime/v1";
+const FIXED_PRIME_DOMAIN: &[u8] = b"bitz/spartan-sha256/fixed-prime/v1";
 
 /// Fixed 98-bit modulus used only by the controlled product-geometry sweep.
 /// It is the largest prime below `2^98`.
@@ -55,7 +54,7 @@ pub const SHA256_TAU_LOCAL_VARS: u32 = 8;
 
 /// The public statement facts the security-profile derivation consumes for
 /// a SHA-256 batch with outer capacity `2^log_instance_capacity`: per-row integer defects are far
-/// below any sampled prime (Boolean assignment, coefficients `< 2^33`, a
+/// below any sampled prime (Bit assignment, coefficients `< 2^33`, a
 /// few hundred entries per row — `< 2^96` conservatively), the Step-5.1
 /// lift sums `2^t` terms, and the opening is the VIRTUAL path (fold width
 /// capped from `q_bits`, so the one-chunk fold bound does not gate q).
@@ -239,68 +238,12 @@ pub(super) fn fixed_98_security_params() -> IopSecurityParams {
     }
 }
 
-/// Runtime arithmetic context shared by relation projection and Spartan.
-pub(super) struct Sha256ModQContext {
-    q: u128,
-    q_bits: usize,
-    field_config: <SpartanF2zField as PrimeField>::Config,
-}
-
-impl core::fmt::Debug for Sha256ModQContext {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("Sha256ModQContext")
-            .field("q", &self.q)
-            .field("q_bits", &self.q_bits)
-            .finish_non_exhaustive()
-    }
-}
-
-impl Sha256ModQContext {
-    fn new(profile: Sha256PrimeProfile, q: u128) -> Result<Self, Sha256PrimeError> {
-        if !profile.accepts_prime(q) {
-            return Err(Sha256PrimeError::PrimeOutsideProfile { q });
-        }
-        let field_config = F128::make_cfg(&Uint::from(q))
-            .map_err(|_| Sha256PrimeError::InvalidFieldConfiguration)?;
-        if profile.is_fixed() {
-            validate_fixed_98_prime(q)?;
-        } else {
-            F128::validate_config(&field_config)
-                .map_err(|_| Sha256PrimeError::InvalidFieldConfiguration)?;
-        }
-        let q_bits = (u128::BITS - q.leading_zeros()) as usize;
-        debug_assert!(q_bits <= 113);
-        Ok(Self {
-            q,
-            q_bits,
-            field_config,
-        })
-    }
-
-    /// Sampled prime modulus in canonical integer form.
-    pub const fn q(&self) -> u128 {
-        self.q
-    }
-
-    /// Actual bit length of `q` (98 in the controlled sweep, 112 or 113 in
-    /// the production transcript-derived profile).
-    pub const fn q_bits(&self) -> usize {
-        self.q_bits
-    }
-
-    /// Runtime Montgomery configuration for the 128-bit-backed prime field.
-    pub const fn field_config(&self) -> &<SpartanF2zField as PrimeField>::Config {
-        &self.field_config
-    }
-}
-
 /// Samples `q` from the transcript and immediately binds its canonical
 /// 16-byte encoding before any field-valued challenge is drawn.
 pub(super) fn sample_sha256_mod_q_context(
     transcript: &mut impl Transcript,
     profile: Sha256PrimeProfile,
-) -> Result<Sha256ModQContext, Sha256PrimeError> {
+) -> Result<field::FpCtx<2>, Sha256PrimeError> {
     if profile.is_fixed() {
         absorb_spartan_message(transcript, b"prime-domain", FIXED_PRIME_DOMAIN);
         absorb_spartan_message(
@@ -309,7 +252,8 @@ pub(super) fn sample_sha256_mod_q_context(
             &(profile.log_instance_capacity as u64).to_le_bytes(),
         );
         absorb_spartan_message(transcript, b"prime-q", &SHA256_FIXED_98_PRIME.to_le_bytes());
-        return Sha256ModQContext::new(profile, SHA256_FIXED_98_PRIME);
+        validate_fixed_98_prime(SHA256_FIXED_98_PRIME)?;
+        return Ok(field::create_prime_field(Uint::from(SHA256_FIXED_98_PRIME)));
     }
     absorb_spartan_message(transcript, b"prime-domain", PRIME_SAMPLING_DOMAIN);
     absorb_spartan_message(
@@ -319,27 +263,34 @@ pub(super) fn sample_sha256_mod_q_context(
     );
     absorb_spartan_message(transcript, b"prime-min", &profile.min_prime.to_le_bytes());
     absorb_spartan_message(transcript, b"prime-max", &profile.max_prime.to_le_bytes());
-    let q = sample_prime_in_interval(transcript, profile.min_prime, profile.max_prime)?;
+    let field = crate::ext_proj::sample_prime_context(
+        transcript,
+        profile.min_prime,
+        profile.max_prime,
+        128,
+    )?;
+    let q = field.modulus_u128();
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
-    Sha256ModQContext::new(profile, q)
+    Ok(field)
 }
 
 pub(super) fn validate_sha256_field_config(
-    field_config: &<SpartanF2zField as PrimeField>::Config,
+    field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<(), Sha256PrimeError> {
-    let encoding = SpartanF2zField::canonical_modulus_encoding(field_config);
+    let encoding = SpartanBitzField::canonical_modulus_encoding(field_config);
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&encoding);
     let q = u128::from_le_bytes(bytes);
     if q == SHA256_FIXED_98_PRIME {
         validate_fixed_98_prime(q)
     } else {
-        F128::validate_config(field_config).map_err(|_| Sha256PrimeError::InvalidFieldConfiguration)
+        Fp::<2>::validate_config(field_config)
+            .map_err(|_| Sha256PrimeError::InvalidFieldConfiguration)
     }
 }
 
 fn validate_fixed_98_prime(q: u128) -> Result<(), Sha256PrimeError> {
-    if q != SHA256_FIXED_98_PRIME || !is_prime(Flavor::Any, &U128::from(q)) {
+    if q != SHA256_FIXED_98_PRIME || !field::is_probable_prime_public(&field::Uint::from(q)) {
         return Err(Sha256PrimeError::InvalidFieldConfiguration);
     }
     Ok(())
@@ -422,12 +373,12 @@ mod tests {
         let mut second = Blake3Transcript::new();
         let first = sample_sha256_mod_q_context(&mut first, profile).unwrap();
         let second = sample_sha256_mod_q_context(&mut second, profile).unwrap();
-        assert_eq!(first.q(), second.q());
-        assert_eq!(first.q_bits(), 113);
-        assert!(profile.accepts_prime(first.q()));
+        assert_eq!(first.modulus_u128(), second.modulus_u128());
+        assert_eq!(first.modulus_bits(), 113);
+        assert!(profile.accepts_prime(first.modulus_u128()));
         assert_eq!(
-            F128::canonical_modulus_encoding(first.field_config()),
-            first.q().to_le_bytes()
+            Fp::<2>::canonical_modulus_encoding(&first),
+            first.modulus_u128().to_le_bytes()
         );
     }
 
@@ -438,11 +389,11 @@ mod tests {
         let mut transcript = Blake3Transcript::new();
         let context = sample_sha256_mod_q_context(&mut transcript, profile).unwrap();
 
-        assert_eq!(context.q(), SHA256_FIXED_98_PRIME);
-        assert_eq!(context.q_bits(), SHA256_FIXED_98_PRIME_BITS);
+        assert_eq!(context.modulus_u128(), SHA256_FIXED_98_PRIME);
+        assert_eq!(context.modulus_bits(), SHA256_FIXED_98_PRIME_BITS);
         assert_eq!(security.accounting.achieved_bits(), 100.0);
         assert_eq!(
-            F128::canonical_modulus_encoding(context.field_config()),
+            Fp::<2>::canonical_modulus_encoding(&context),
             SHA256_FIXED_98_PRIME.to_le_bytes()
         );
     }

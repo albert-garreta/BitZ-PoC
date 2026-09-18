@@ -26,7 +26,7 @@ fn observe(t: &mut Blake3Transcript, v: B128) {
 
 fn challenge(t: &mut Blake3Transcript) -> B128 {
     let x: Gf = t.get_field_challenge(&());
-    B128::new(u128::from(x.words()[0]) | (u128::from(x.words()[1]) << 64))
+    B128::new(u128::from(x.as_words()[0]) | (u128::from(x.as_words()[1]) << 64))
 }
 
 impl IPProverChannel<B128> for ProverChannel<'_> {

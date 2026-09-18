@@ -14,7 +14,8 @@
 //! reconstructs them from the zerocheck identity, so they are not emitted here.
 #![allow(dead_code)] // WIP (M1): packed input + entry points land incrementally.
 
-use crate::field::{F128, F256Unreduced};
+use crate::field::Gf128;
+use field::gf128::kernels::aarch64::{Gf128NeonAccumulator, mul_acc_unred, reduce_unred};
 use std::arch::aarch64::*;
 use std::sync::OnceLock;
 
@@ -2221,12 +2222,12 @@ unsafe fn product_bs(
 }
 
 #[inline(always)]
-unsafe fn fold_bs(prod: &[uint8x16_t; 160], eq: F128, res: &mut [F128; 160]) {
+unsafe fn fold_bs(prod: &[uint8x16_t; 160], eq: Gf128, res: &mut [Gf128; 160]) {
     unsafe {
         for j in 0..160 {
             let pf = vreinterpretq_u64_u8(prod[j]);
             res[j] += eq
-                * F128 {
+                * Gf128 {
                     lo: vgetq_lane_u64::<0>(pf),
                     hi: vgetq_lane_u64::<1>(pf),
                 };
@@ -2369,57 +2370,16 @@ fn transpose_128x128(src: &[u8], dst: &mut [uint8x16_t; 128]) {
 }
 
 #[inline(always)]
-unsafe fn fold_c(cp: &[uint8x16_t; 64], eq: F128, wbar: &mut [F128; 64]) {
+unsafe fn fold_c(cp: &[uint8x16_t; 64], eq: Gf128, wbar: &mut [Gf128; 64]) {
     unsafe {
         for k in 0..64 {
             let pf = vreinterpretq_u64_u8(cp[k]);
             wbar[k] += eq
-                * F128 {
+                * Gf128 {
                     lo: vgetq_lane_u64::<0>(pf),
                     hi: vgetq_lane_u64::<1>(pf),
                 };
         }
-    }
-}
-
-/// NEON-resident unreduced accumulator for one coordinate: the three Karatsuba
-/// parts of `Σ eq·x` kept as vectors — `[ll, cross, hh]` where `ll = Σ lo·lo`,
-/// `cross = Σ (lo·hi ^ hi·lo)`, `hh = Σ hi·hi`. Folded to (r0..r3) + reduced
-/// mod p ONCE per chunk. All-vector: no per-mult lane extracts, no reduction.
-type UnredAcc = [uint64x2_t; 3];
-
-#[inline(always)]
-unsafe fn pmull_u64(a: u64, b: u64) -> uint64x2_t {
-    unsafe { vreinterpretq_u64_p128(vmull_p64(a, b)) }
-}
-
-/// `acc ^= eq · x` unreduced: 4 PMULL + 4 VEOR, entirely in NEON registers.
-#[inline(always)]
-unsafe fn mul_acc_unred(acc: &mut UnredAcc, eq: F128, x: uint64x2_t) {
-    unsafe {
-        let xl = vgetq_lane_u64::<0>(x);
-        let xh = vgetq_lane_u64::<1>(x);
-        acc[0] = veorq_u64(acc[0], pmull_u64(eq.lo, xl));
-        acc[1] = veorq_u64(
-            acc[1],
-            veorq_u64(pmull_u64(eq.lo, xh), pmull_u64(eq.hi, xl)),
-        );
-        acc[2] = veorq_u64(acc[2], pmull_u64(eq.hi, xh));
-    }
-}
-
-/// Fold an [`UnredAcc`] to `(r0..r3)` and reduce mod p (same math as
-/// [`crate::field::F256Unreduced::reduce`], so results are bit-identical).
-#[inline]
-fn reduce_unred(acc: &UnredAcc) -> F128 {
-    unsafe {
-        F256Unreduced {
-            r0: vgetq_lane_u64::<0>(acc[0]),
-            r1: vgetq_lane_u64::<1>(acc[0]) ^ vgetq_lane_u64::<0>(acc[1]),
-            r2: vgetq_lane_u64::<0>(acc[2]) ^ vgetq_lane_u64::<1>(acc[1]),
-            r3: vgetq_lane_u64::<1>(acc[2]),
-        }
-        .reduce()
     }
 }
 
@@ -2434,12 +2394,12 @@ unsafe fn product_fold_bs(
     bf: &[uint8x16_t; 160],
     ax: &[uint8x16_t; 64],
     bx: &[uint8x16_t; 64],
-    eq: F128,
-    res: &mut [UnredAcc; 160],
+    eq: Gf128,
+    res: &mut [Gf128NeonAccumulator; 160],
 ) {
     unsafe {
         #[inline(always)]
-        unsafe fn acc(res: &mut UnredAcc, eq: F128, pr: uint8x16_t) {
+        unsafe fn acc(res: &mut Gf128NeonAccumulator, eq: Gf128, pr: uint8x16_t) {
             unsafe {
                 mul_acc_unred(res, eq, vreinterpretq_u64_u8(pr));
             }
@@ -2474,9 +2434,9 @@ fn transpose_fold_c_2src(
     c_packed: &[u8],
     base0: usize,
     base1: usize,
-    eq0: F128,
-    eq1: F128,
-    wbar: &mut [UnredAcc; 64],
+    eq0: Gf128,
+    eq1: Gf128,
+    wbar: &mut [Gf128NeonAccumulator; 64],
 ) {
     unsafe {
         let (m4, m2, m1) = (vdupq_n_u8(0x0F), vdupq_n_u8(0x33), vdupq_n_u8(0x55));
@@ -2527,12 +2487,12 @@ fn transpose_fold_c_2src(
     }
 }
 
-fn encode_c(wbar: &[F128; 64]) -> [F128; 160] {
+fn encode_c(wbar: &[Gf128; 64]) -> [Gf128; 160] {
     // once: fresh = M * wbar
-    let mut fresh = [F128::ZERO; 160];
+    let mut fresh = [Gf128::ZERO; 160];
     for lam in 0..160 {
         let mut m = M_MASK[lam];
-        let mut acc = F128::ZERO;
+        let mut acc = Gf128::ZERO;
         while m != 0 {
             acc += wbar[m.trailing_zeros() as usize];
             m &= m - 1;
@@ -2542,8 +2502,8 @@ fn encode_c(wbar: &[F128; 64]) -> [F128; 160] {
     fresh
 }
 
-fn deferred_c(cp: &[[uint8x16_t; 64]], eq: &[F128], n: usize) -> [F128; 160] {
-    let mut wbar = [F128::ZERO; 64];
+fn deferred_c(cp: &[[uint8x16_t; 64]], eq: &[Gf128], n: usize) -> [Gf128; 160] {
+    let mut wbar = [Gf128::ZERO; 64];
     for o in 0..n {
         unsafe {
             fold_c(&cp[o], eq[o], &mut wbar);
@@ -2556,12 +2516,12 @@ pub fn bin_abc_bitslice(
     a_pl: &[[uint8x16_t; 64]],
     b_pl: &[[uint8x16_t; 64]],
     c_pl: &[[uint8x16_t; 64]],
-    eq: &[F128],
+    eq: &[Gf128],
     n: usize,
-) -> ([F128; 160], [F128; 160]) {
+) -> ([Gf128; 160], [Gf128; 160]) {
     let z = unsafe { vdupq_n_u8(0) };
-    let mut res = [F128::ZERO; 160]; // AB (product) fold
-    let mut wbar = [F128::ZERO; 64]; // C (linear) fold
+    let mut res = [Gf128::ZERO; 160]; // AB (product) fold
+    let mut wbar = [Gf128::ZERO; 64]; // C (linear) fold
     let mut af = [z; 160];
     let mut bf = [z; 160];
     let mut prod = [z; 160];
@@ -2579,15 +2539,15 @@ pub fn bin_abc_bitslice(
 
 /// Multi-threaded fused AB+C: chunk the blocks, run the byte-identical serial
 /// kernel per chunk (scratch allocated once per chunk), then reduce the
-/// per-chunk (AB, C-`wbar`) accumulators by lane-wise F128 add. The fold is
+/// per-chunk (AB, C-`wbar`) accumulators by lane-wise Gf128 add. The fold is
 /// associative + commutative, so the result is bit-identical to serial.
 pub fn bin_abc_bitslice_par(
     a_pl: &[[uint8x16_t; 64]],
     b_pl: &[[uint8x16_t; 64]],
     c_pl: &[[uint8x16_t; 64]],
-    eq: &[F128],
+    eq: &[Gf128],
     n: usize,
-) -> ([F128; 160], [F128; 160]) {
+) -> ([Gf128; 160], [Gf128; 160]) {
     use rayon::prelude::*;
     let nthreads = rayon::current_num_threads().max(1);
     let chunk = n.div_ceil(8 * nthreads).max(1);
@@ -2598,8 +2558,8 @@ pub fn bin_abc_bitslice_par(
             let start = ci * chunk;
             let end = ((ci + 1) * chunk).min(n);
             let z = unsafe { vdupq_n_u8(0) };
-            let mut res = [F128::ZERO; 160];
-            let mut wbar = [F128::ZERO; 64];
+            let mut res = [Gf128::ZERO; 160];
+            let mut wbar = [Gf128::ZERO; 64];
             let mut af = [z; 160];
             let mut bf = [z; 160];
             let mut prod = [z; 160];
@@ -2615,7 +2575,7 @@ pub fn bin_abc_bitslice_par(
             (res, wbar)
         })
         .reduce(
-            || ([F128::ZERO; 160], [F128::ZERO; 64]),
+            || ([Gf128::ZERO; 160], [Gf128::ZERO; 64]),
             |(mut r1, mut w1), (r2, w2)| {
                 for j in 0..160 {
                     r1[j] += r2[j];
@@ -2678,12 +2638,12 @@ unsafe fn encode_direct(m: &[u64; 160], inp: &[uint8x16_t; 64], out: &mut [uint8
 }
 
 /// `fresh = M · wbar` for the linear C path, against the derived `M`.
-fn encode_c_derived(wbar: &[F128; 64]) -> [F128; 160] {
+fn encode_c_derived(wbar: &[Gf128; 64]) -> [Gf128; 160] {
     let m = derived_m();
-    let mut fresh = [F128::ZERO; 160];
+    let mut fresh = [Gf128::ZERO; 160];
     for lam in 0..160 {
         let mut mm = m[lam];
-        let mut acc = F128::ZERO;
+        let mut acc = Gf128::ZERO;
         while mm != 0 {
             acc += wbar[mm.trailing_zeros() as usize];
             mm &= mm - 1;
@@ -2701,13 +2661,13 @@ pub fn bin_abc(
     a_pl: &[[uint8x16_t; 64]],
     b_pl: &[[uint8x16_t; 64]],
     c_pl: &[[uint8x16_t; 64]],
-    eq: &[F128],
+    eq: &[Gf128],
     n: usize,
-) -> ([F128; 160], [F128; 160]) {
+) -> ([Gf128; 160], [Gf128; 160]) {
     let m = derived_m();
     let z = unsafe { vdupq_n_u8(0) };
-    let mut res = [F128::ZERO; 160];
-    let mut wbar = [F128::ZERO; 64];
+    let mut res = [Gf128::ZERO; 160];
+    let mut wbar = [Gf128::ZERO; 64];
     let mut af = [z; 160];
     let mut bf = [z; 160];
     let mut prod = [z; 160];
@@ -2725,15 +2685,15 @@ pub fn bin_abc(
 
 /// Multi-threaded [`bin_abc`]: split the blocks into contiguous chunks, run the
 /// serial derived-`M` kernel on each (scratch allocated once per chunk), then
-/// reduce the per-chunk `(AB, C-wbar)` accumulators by lane-wise F128 add. The
+/// reduce the per-chunk `(AB, C-wbar)` accumulators by lane-wise Gf128 add. The
 /// fold is associative + commutative, so the result is bit-identical to serial.
 pub fn bin_abc_par(
     a_pl: &[[uint8x16_t; 64]],
     b_pl: &[[uint8x16_t; 64]],
     c_pl: &[[uint8x16_t; 64]],
-    eq: &[F128],
+    eq: &[Gf128],
     n: usize,
-) -> ([F128; 160], [F128; 160]) {
+) -> ([Gf128; 160], [Gf128; 160]) {
     use rayon::prelude::*;
     let m = derived_m();
     let nthreads = rayon::current_num_threads().max(1);
@@ -2745,8 +2705,8 @@ pub fn bin_abc_par(
             let start = ci * chunk;
             let end = ((ci + 1) * chunk).min(n);
             let z = unsafe { vdupq_n_u8(0) };
-            let mut res = [F128::ZERO; 160];
-            let mut wbar = [F128::ZERO; 64];
+            let mut res = [Gf128::ZERO; 160];
+            let mut wbar = [Gf128::ZERO; 64];
             let mut af = [z; 160];
             let mut bf = [z; 160];
             let mut prod = [z; 160];
@@ -2762,7 +2722,7 @@ pub fn bin_abc_par(
             (res, wbar)
         })
         .reduce(
-            || ([F128::ZERO; 160], [F128::ZERO; 64]),
+            || ([Gf128::ZERO; 160], [Gf128::ZERO; 64]),
             |(mut r1, mut w1), (r2, w2)| {
                 for j in 0..160 {
                     r1[j] += r2[j];
@@ -2837,8 +2797,8 @@ pub fn bin_abc_packed(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 160]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 160]) {
     let ap = blocks_from_packed(a_packed);
     let bp = blocks_from_packed(b_packed);
     let cp = blocks_from_packed(c_packed);
@@ -2855,13 +2815,13 @@ pub fn round1_raw(
     a_pl: &[[uint8x16_t; 64]],
     b_pl: &[[uint8x16_t; 64]],
     c_pl: &[[uint8x16_t; 64]],
-    eq: &[F128],
+    eq: &[Gf128],
     n: usize,
-) -> ([F128; 160], [F128; 64]) {
+) -> ([Gf128; 160], [Gf128; 64]) {
     let m = derived_m();
     let z = unsafe { vdupq_n_u8(0) };
-    let mut res = [F128::ZERO; 160];
-    let mut wbar = [F128::ZERO; 64];
+    let mut res = [Gf128::ZERO; 160];
+    let mut wbar = [Gf128::ZERO; 64];
     let mut af = [z; 160];
     let mut bf = [z; 160];
     let mut prod = [z; 160];
@@ -2882,8 +2842,8 @@ pub fn round1_raw_packed(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 64]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 64]) {
     crate::suboptimal_path!(
         "reference round-1 (raw, non-bitsliced)",
         "round1_slp_packed_banks_fused"
@@ -3027,16 +2987,16 @@ pub fn round1_lut_packed(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 64]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 64]) {
     let n = a_packed.len() / 1024;
     assert_eq!(eq.len(), n, "one eq weight per block");
     let table = derived_lut().as_ptr();
     let cp = blocks_from_packed(c_packed);
-    let mut res = [F128::ZERO; 160];
-    let mut wbar = [F128::ZERO; 64];
+    let mut res = [Gf128::ZERO; 160];
+    let mut wbar = [Gf128::ZERO; 64];
     let mut rm = vec![0u8; 128 * 20];
-    let mut block = [F128::ZERO; 160];
+    let mut block = [Gf128::ZERO; 160];
     for o in 0..n {
         let base = o * 1024;
         for r in 0..128 {
@@ -3085,8 +3045,8 @@ pub fn round1_slp_packed(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 64]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 64]) {
     crate::suboptimal_path!("unfused SLP round-1", "round1_slp_packed_banks_fused");
     use rayon::prelude::*;
     let n = a_packed.len() / 1024;
@@ -3101,8 +3061,8 @@ pub fn round1_slp_packed(
             let start = ci * chunk;
             let end = ((ci + 1) * chunk).min(n);
             let z = unsafe { vdupq_n_u8(0) };
-            let mut res = [F128::ZERO; 160];
-            let mut wbar = [F128::ZERO; 64];
+            let mut res = [Gf128::ZERO; 160];
+            let mut wbar = [Gf128::ZERO; 64];
             let mut af = [z; 160];
             let mut bf = [z; 160];
             let mut prod = [z; 160];
@@ -3166,7 +3126,7 @@ pub fn round1_slp_packed(
             (res, wbar)
         })
         .reduce(
-            || ([F128::ZERO; 160], [F128::ZERO; 64]),
+            || ([Gf128::ZERO; 160], [Gf128::ZERO; 64]),
             |(mut r1, mut w1), (r2, w2)| {
                 for j in 0..160 {
                     r1[j] += r2[j];
@@ -3189,14 +3149,14 @@ unsafe fn process_block(
     a_packed: &[u8],
     b_packed: &[u8],
     base: usize,
-    eq_o: F128,
+    eq_o: Gf128,
     cp: &[uint8x16_t; 64],
     pab: &mut [uint8x16_t; 128],
     af: &mut [uint8x16_t; 160],
     bf: &mut [uint8x16_t; 160],
     prod: &mut [uint8x16_t; 160],
-    res: &mut [F128; 160],
-    wbar: &mut [F128; 64],
+    res: &mut [Gf128; 160],
+    wbar: &mut [Gf128; 64],
 ) {
     // a+b straight from the packed witnesses into one transpose (no interleave buf).
     transpose_128x128_2src(a_packed, base, b_packed, base, pab);
@@ -3219,11 +3179,11 @@ unsafe fn process_block_fused(
     a_packed: &[u8],
     b_packed: &[u8],
     base: usize,
-    eq_o: F128,
+    eq_o: Gf128,
     pab: &mut [uint8x16_t; 128],
     af: &mut [uint8x16_t; 160],
     bf: &mut [uint8x16_t; 160],
-    res: &mut [UnredAcc; 160],
+    res: &mut [Gf128NeonAccumulator; 160],
 ) {
     transpose_128x128_2src(a_packed, base, b_packed, base, pab);
     let ap: &[uint8x16_t; 64] = (&pab[0..64]).try_into().unwrap();
@@ -3243,8 +3203,8 @@ pub fn round1_slp_packed_fused(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 64]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 64]) {
     crate::suboptimal_path!(
         "prototype fused round-1 (no banks)",
         "round1_slp_packed_banks_fused"
@@ -3262,9 +3222,8 @@ pub fn round1_slp_packed_fused(
             let start = ci * chunk;
             let end = ((ci + 1) * chunk).min(n);
             let z = unsafe { vdupq_n_u8(0) };
-            let z64 = unsafe { vdupq_n_u64(0) };
-            let mut res = [[z64; 3]; 160];
-            let mut wbar = [[z64; 3]; 64];
+            let mut res = [Gf128NeonAccumulator::zero(); 160];
+            let mut wbar = [Gf128NeonAccumulator::zero(); 64];
             let mut af = [z; 160];
             let mut bf = [z; 160];
             let mut pab = [z; 128];
@@ -3311,8 +3270,8 @@ pub fn round1_slp_packed_fused(
                 }
             }
             // Reduce once per chunk (amortized over the chunk's blocks).
-            let mut res_r = [F128::ZERO; 160];
-            let mut wbar_r = [F128::ZERO; 64];
+            let mut res_r = [Gf128::ZERO; 160];
+            let mut wbar_r = [Gf128::ZERO; 64];
             for j in 0..160 {
                 res_r[j] = reduce_unred(&res[j]);
             }
@@ -3322,7 +3281,7 @@ pub fn round1_slp_packed_fused(
             (res_r, wbar_r)
         })
         .reduce(
-            || ([F128::ZERO; 160], [F128::ZERO; 64]),
+            || ([Gf128::ZERO; 160], [Gf128::ZERO; 64]),
             |(mut r1, mut w1), (r2, w2)| {
                 for j in 0..160 {
                     r1[j] += r2[j];
@@ -3344,20 +3303,20 @@ const C_EVEN_MASK: u64 = 0x5555_5555_5555_5555; // bits 0,2,4,…
 const C_ODD_MASK: u64 = 0xAAAA_AAAA_AAAA_AAAA; // bits 1,3,5,…
 unsafe fn fold_c_banks(
     cp: &[uint8x16_t; 64],
-    eq: F128,
-    bank0: &mut [F128; 64],
-    bank1: &mut [F128; 64],
+    eq: Gf128,
+    bank0: &mut [Gf128; 64],
+    bank1: &mut [Gf128; 64],
 ) {
     unsafe {
         for k in 0..64 {
             let pf = vreinterpretq_u64_u8(cp[k]);
             let lo = vgetq_lane_u64::<0>(pf);
             let hi = vgetq_lane_u64::<1>(pf);
-            let even = F128 {
+            let even = Gf128 {
                 lo: lo & C_EVEN_MASK,
                 hi: hi & C_EVEN_MASK,
             };
-            let odd = F128 {
+            let odd = Gf128 {
                 lo: lo & C_ODD_MASK,
                 hi: hi & C_ODD_MASK,
             };
@@ -3375,15 +3334,15 @@ unsafe fn process_block_banks(
     a_packed: &[u8],
     b_packed: &[u8],
     base: usize,
-    eq_o: F128,
+    eq_o: Gf128,
     cp: &[uint8x16_t; 64],
     pab: &mut [uint8x16_t; 128],
     af: &mut [uint8x16_t; 160],
     bf: &mut [uint8x16_t; 160],
     prod: &mut [uint8x16_t; 160],
-    res: &mut [F128; 160],
-    bank0: &mut [F128; 64],
-    bank1: &mut [F128; 64],
+    res: &mut [Gf128; 160],
+    bank0: &mut [Gf128; 64],
+    bank1: &mut [Gf128; 64],
 ) {
     transpose_128x128_2src(a_packed, base, b_packed, base, pab);
     let ap: &[uint8x16_t; 64] = (&pab[0..64]).try_into().unwrap();
@@ -3406,8 +3365,8 @@ pub fn round1_slp_packed_banks(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 64], [F128; 64]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 64], [Gf128; 64]) {
     crate::suboptimal_path!("unfused banks round-1", "round1_slp_packed_banks_fused");
     use rayon::prelude::*;
     let n = a_packed.len() / 1024;
@@ -3422,9 +3381,9 @@ pub fn round1_slp_packed_banks(
             let start = ci * chunk;
             let end = ((ci + 1) * chunk).min(n);
             let z = unsafe { vdupq_n_u8(0) };
-            let mut res = [F128::ZERO; 160];
-            let mut bank0 = [F128::ZERO; 64];
-            let mut bank1 = [F128::ZERO; 64];
+            let mut res = [Gf128::ZERO; 160];
+            let mut bank0 = [Gf128::ZERO; 64];
+            let mut bank1 = [Gf128::ZERO; 64];
             let mut af = [z; 160];
             let mut bf = [z; 160];
             let mut prod = [z; 160];
@@ -3482,7 +3441,7 @@ pub fn round1_slp_packed_banks(
             (res, bank0, bank1)
         })
         .reduce(
-            || ([F128::ZERO; 160], [F128::ZERO; 64], [F128::ZERO; 64]),
+            || ([Gf128::ZERO; 160], [Gf128::ZERO; 64], [Gf128::ZERO; 64]),
             |(mut r1, mut a0, mut a1), (r2, b0, b1)| {
                 for j in 0..160 {
                     r1[j] += r2[j];
@@ -3504,10 +3463,10 @@ fn transpose_fold_c_banks_2src(
     c_packed: &[u8],
     base0: usize,
     base1: usize,
-    eq0: F128,
-    eq1: F128,
-    bank0: &mut [UnredAcc; 64],
-    bank1: &mut [UnredAcc; 64],
+    eq0: Gf128,
+    eq1: Gf128,
+    bank0: &mut [Gf128NeonAccumulator; 64],
+    bank1: &mut [Gf128NeonAccumulator; 64],
 ) {
     unsafe {
         let (m4, m2, m1) = (vdupq_n_u8(0x0F), vdupq_n_u8(0x33), vdupq_n_u8(0x55));
@@ -3566,8 +3525,8 @@ pub fn round1_slp_packed_banks_fused(
     a_packed: &[u8],
     b_packed: &[u8],
     c_packed: &[u8],
-    eq: &[F128],
-) -> ([F128; 160], [F128; 64], [F128; 64]) {
+    eq: &[Gf128],
+) -> ([Gf128; 160], [Gf128; 64], [Gf128; 64]) {
     use rayon::prelude::*;
     let n = a_packed.len() / 1024;
     assert_eq!(eq.len(), n, "one eq weight per block");
@@ -3581,10 +3540,9 @@ pub fn round1_slp_packed_banks_fused(
             let start = ci * chunk;
             let end = ((ci + 1) * chunk).min(n);
             let z = unsafe { vdupq_n_u8(0) };
-            let z64 = unsafe { vdupq_n_u64(0) };
-            let mut res = [[z64; 3]; 160];
-            let mut bank0 = [[z64; 3]; 64];
-            let mut bank1 = [[z64; 3]; 64];
+            let mut res = [Gf128NeonAccumulator::zero(); 160];
+            let mut bank0 = [Gf128NeonAccumulator::zero(); 64];
+            let mut bank1 = [Gf128NeonAccumulator::zero(); 64];
             let mut af = [z; 160];
             let mut bf = [z; 160];
             let mut pab = [z; 128];
@@ -3641,9 +3599,9 @@ pub fn round1_slp_packed_banks_fused(
                     }
                 }
             }
-            let mut res_r = [F128::ZERO; 160];
-            let mut b0_r = [F128::ZERO; 64];
-            let mut b1_r = [F128::ZERO; 64];
+            let mut res_r = [Gf128::ZERO; 160];
+            let mut b0_r = [Gf128::ZERO; 64];
+            let mut b1_r = [Gf128::ZERO; 64];
             for j in 0..160 {
                 res_r[j] = reduce_unred(&res[j]);
             }
@@ -3654,7 +3612,7 @@ pub fn round1_slp_packed_banks_fused(
             (res_r, b0_r, b1_r)
         })
         .reduce(
-            || ([F128::ZERO; 160], [F128::ZERO; 64], [F128::ZERO; 64]),
+            || ([Gf128::ZERO; 160], [Gf128::ZERO; 64], [Gf128::ZERO; 64]),
             |(mut r1, mut a0, mut a1), (r2, b0, b1)| {
                 for j in 0..160 {
                     r1[j] += r2[j];
@@ -3721,12 +3679,12 @@ mod tests {
     fn scalar_ref(
         a_msg: &[[u64; 128]],
         b_msg: &[[u64; 128]],
-        eq: &[F128],
+        eq: &[Gf128],
         n: usize,
-    ) -> [F128; 160] {
-        let mut res = [F128::ZERO; 160];
+    ) -> [Gf128; 160] {
+        let mut res = [Gf128::ZERO; 160];
         for o in 0..n {
-            let mut word = [F128::ZERO; 160];
+            let mut word = [Gf128::ZERO; 160];
             for r in 0..128 {
                 let am = a_msg[o][r];
                 let bm = b_msg[o][r];
@@ -3768,10 +3726,10 @@ mod tests {
         res
     }
 
-    fn scalar_c(cm: &[[u64; 128]], eq: &[F128], n: usize) -> [F128; 160] {
-        let mut res = [F128::ZERO; 160];
+    fn scalar_c(cm: &[[u64; 128]], eq: &[Gf128], n: usize) -> [Gf128; 160] {
+        let mut res = [Gf128::ZERO; 160];
         for o in 0..n {
-            let mut word = [F128::ZERO; 160];
+            let mut word = [Gf128::ZERO; 160];
             for r in 0..128 {
                 let c = cm[o][r];
                 for lam in 0..160 {
@@ -3808,8 +3766,8 @@ mod tests {
         let ap: Vec<[uint8x16_t; 64]> = (0..vn).map(|o| bitslice(&am[o])).collect();
         let bp: Vec<[uint8x16_t; 64]> = (0..vn).map(|o| bitslice(&bm[o])).collect();
         let cp: Vec<[uint8x16_t; 64]> = (0..vn).map(|o| bitslice(&cm[o])).collect();
-        let eq: Vec<F128> = (0..vn)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..vn)
+            .map(|_| Gf128 {
                 lo: rng.n(),
                 hi: rng.n(),
             })
@@ -4007,14 +3965,14 @@ mod tests {
         use crate::genus95_curve_code::product::extended_base_product_message;
         use crate::genus95_curve_code::{BaseMessage, product_code_message};
 
-        let gpow = |r: usize| -> F128 {
+        let gpow = |r: usize| -> Gf128 {
             if r < 64 {
-                F128 {
+                Gf128 {
                     lo: 1u64 << r,
                     hi: 0,
                 }
             } else {
-                F128 {
+                Gf128 {
                     lo: 0,
                     hi: 1u64 << (r - 64),
                 }
@@ -4032,8 +3990,8 @@ mod tests {
                 cm[o][r] = rng.n();
             }
         }
-        let eq: Vec<F128> = (0..vn)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..vn)
+            .map(|_| Gf128 {
                 lo: rng.n(),
                 hi: rng.n(),
             })
@@ -4049,8 +4007,8 @@ mod tests {
             "par != serial"
         );
 
-        let mut ab_ref = [F128::ZERO; 160];
-        let mut c_ref = [F128::ZERO; 160];
+        let mut ab_ref = [Gf128::ZERO; 160];
+        let mut c_ref = [Gf128::ZERO; 160];
         for o in 0..vn {
             for r in 0..128 {
                 let w = eq[o] * gpow(r);
@@ -4100,8 +4058,8 @@ mod tests {
             p
         };
         let (a_packed, b_packed, c_packed) = (pack(&am), pack(&bm), pack(&cm));
-        let eq: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: rng.n(),
                 hi: rng.n(),
             })
@@ -4136,8 +4094,8 @@ mod tests {
         let a = mk(&mut rng);
         let b = mk(&mut rng);
         let c = mk(&mut rng);
-        let eq: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: rng.n(),
                 hi: rng.n(),
             })
@@ -4173,8 +4131,8 @@ mod tests {
             let a = mk(&mut rng);
             let b = mk(&mut rng);
             let c = mk(&mut rng);
-            let eq: Vec<F128> = (0..n)
-                .map(|_| F128 {
+            let eq: Vec<Gf128> = (0..n)
+                .map(|_| Gf128 {
                     lo: rng.n(),
                     hi: rng.n(),
                 })
@@ -4209,8 +4167,8 @@ mod tests {
             let a = mk(&mut rng);
             let b = mk(&mut rng);
             let c = mk(&mut rng);
-            let eq: Vec<F128> = (0..n)
-                .map(|_| F128 {
+            let eq: Vec<Gf128> = (0..n)
+                .map(|_| Gf128 {
                     lo: rng.n(),
                     hi: rng.n(),
                 })
@@ -4242,8 +4200,8 @@ mod tests {
             let a = mk(&mut rng);
             let b = mk(&mut rng);
             let c = mk(&mut rng);
-            let eq: Vec<F128> = (0..n)
-                .map(|_| F128 {
+            let eq: Vec<Gf128> = (0..n)
+                .map(|_| Gf128 {
                     lo: rng.n(),
                     hi: rng.n(),
                 })
@@ -4280,8 +4238,8 @@ mod tests {
             let a = mk(&mut rng);
             let b = mk(&mut rng);
             let c = mk(&mut rng);
-            let eq: Vec<F128> = (0..n)
-                .map(|_| F128 {
+            let eq: Vec<Gf128> = (0..n)
+                .map(|_| Gf128 {
                     lo: rng.n(),
                     hi: rng.n(),
                 })
@@ -4331,8 +4289,8 @@ mod tests {
             p
         };
         let (a_packed, b_packed, c_packed) = (pack(&am), pack(&bm), pack(&cm));
-        let eq: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let eq: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: rng.n(),
                 hi: rng.n(),
             })

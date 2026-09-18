@@ -1,7 +1,8 @@
-use crypto_primitives::{Field, PrimeField, Semiring};
+use crate::poly::coefficient::{Coefficient, FieldRepresentation, PolynomialField};
+
+use crate::utils::{cfg_iter_mut, inner_transparent_field::InnerTransparentField, sub};
 use num_traits::Zero;
 use thiserror::Error;
-use crate::utils::{cfg_iter_mut, inner_transparent_field::InnerTransparentField, sub};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -26,7 +27,7 @@ pub fn build_eq_x_r<F>(
     cfg: &F::Config,
 ) -> Result<DenseMultilinearExtension<F>, ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
 {
     let evals = build_eq_x_r_vec(r, cfg)?;
     let mle =
@@ -44,7 +45,7 @@ where
 ///      eq(x,y) = \prod_i=1^num_var (x_i * r_i + (1-x_i)*(1-r_i))
 pub fn build_eq_x_r_vec<F>(r: &[F], cfg: &F::Config) -> Result<Vec<F>, ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
 {
     // we build eq(x,r) from its evaluations
     // we want to evaluate eq(x,r) over x \in {0, 1}^num_vars
@@ -80,7 +81,7 @@ where
 /// multiplication per parent, while producing the identical output.
 fn build_eq_x_r_helper<F>(r: &[F], buf: &mut Vec<F>, cfg: &F::Config) -> Result<(), ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
 {
     if r.is_empty() {
         return Err(ArithErrors::InvalidParameters("r length is 0".into()));
@@ -99,19 +100,36 @@ where
     for (i, ri) in r.iter().enumerate() {
         let half = 1usize << i;
         let (lo, hi) = buf.split_at_mut(half);
-        cfg_iter_mut!(lo)
-            .zip(cfg_iter_mut!(hi))
-            .for_each(|(lo_j, hi_j)| {
-                // child for `x_i = 1`
-                let one_child = lo_j.clone() * ri;
-                // child for `x_i = 0`: parent - one_child = parent * (1 - r_i)
-                *lo_j -= &one_child;
-                *hi_j = one_child;
-            });
+        let expand = |lo_j: &mut F, hi_j: &mut F| {
+            // child for `x_i = 1`
+            let one_child = lo_j.clone() * ri;
+            // child for `x_i = 0`: parent - one_child = parent * (1 - r_i)
+            *lo_j -= &one_child;
+            *hi_j = one_child;
+        };
+        // The levels are independent per element, so a level may run in
+        // parallel; below `EQ_PARALLEL_MIN_HALF` parents the pool dispatch
+        // costs more than the level (a 15-variable table has 12 such
+        // levels), so those run inline. Same products either way.
+        #[cfg(feature = "parallel")]
+        if half >= EQ_PARALLEL_MIN_HALF && rayon::current_num_threads() > 1 {
+            lo.par_iter_mut()
+                .zip(hi.par_iter_mut())
+                .for_each(|(lo_j, hi_j)| expand(lo_j, hi_j));
+            continue;
+        }
+        lo.iter_mut()
+            .zip(hi.iter_mut())
+            .for_each(|(lo_j, hi_j)| expand(lo_j, hi_j));
     }
 
     Ok(())
 }
+
+/// Parents per level from which [`build_eq_x_r_helper`] splits the level
+/// across the pool.
+#[cfg(feature = "parallel")]
+const EQ_PARALLEL_MIN_HALF: usize = 1 << 12;
 
 /// This function build the eq(x, r) polynomial for any given r.
 ///
@@ -124,7 +142,7 @@ pub fn build_eq_x_r_inner<F>(
     cfg: &F::Config,
 ) -> Result<DenseMultilinearExtension<F::Inner>, ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: Zero,
 {
     let evals = build_eq_x_r_inner_vec(r, cfg)?;
@@ -145,7 +163,7 @@ where
 ///      eq(x,y) = \prod_i=1^num_var (x_i * r_i + (1-x_i)*(1-r_i))
 fn build_eq_x_r_inner_vec<F>(r: &[F], cfg: &F::Config) -> Result<Vec<F::Inner>, ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: Zero,
 {
     // we build eq(x,r) from its evaluations
@@ -174,7 +192,7 @@ fn build_eq_x_r_inner_helper<F>(
     cfg: &F::Config,
 ) -> Result<(), ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: Zero,
 {
     if r.is_empty() {
@@ -223,7 +241,7 @@ pub fn build_next_c_r_mle<F>(
     field_cfg: &F::Config,
 ) -> Result<DenseMultilinearExtension<F::Inner>, ArithErrors>
 where
-    F: PrimeField,
+    F: PolynomialField,
     F::Inner: Zero,
 {
     let num_vars = r.len();
@@ -250,7 +268,7 @@ where
 
 /// Evaluate eq polynomial.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn eq_eval<R: Semiring>(x: &[R], y: &[R], one: R) -> Result<R, ArithErrors> {
+pub fn eq_eval<R: Coefficient>(x: &[R], y: &[R], one: R) -> Result<R, ArithErrors> {
     if x.len() != y.len() {
         return Err(ArithErrors::InvalidParameters(
             "x and y have different length".to_string(),
@@ -299,7 +317,7 @@ pub fn mle_eval_with_eq_table<F: InnerTransparentField>(
 /// Returns a multilinear polynomial in 2n variables that evaluates to 1
 /// if and only if the second n-bit vector is equal to the first vector plus one
 #[allow(clippy::arithmetic_side_effects)]
-pub fn next_mle_inner<F: Field>(
+pub fn next_mle_inner<F: FieldRepresentation>(
     num_vars: u32,
     zero: F,
     one: F,
@@ -348,7 +366,7 @@ pub fn next_mle_inner<F: Field>(
 /// # Panics
 /// Panics if `u.len() != v.len()`.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn next_mle_eval<R: Semiring>(u: &[R], v: &[R], zero: R, one: R) -> R {
+pub fn next_mle_eval<R: Coefficient>(u: &[R], v: &[R], zero: R, one: R) -> R {
     let n = u.len();
     assert_eq!(n, v.len(), "u and v must have the same length");
     if n == 0 {

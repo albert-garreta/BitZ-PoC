@@ -1,4 +1,4 @@
-//! Binius64's PIOP discharged through the F2Z opener: the `binius64-ligerito`
+//! Binius64's PIOP discharged through the BitZ opener: the `binius64-ligerito`
 //! scheme of the comparison benchmarks.
 //!
 //! Binius64 proves its constraint system exactly as upstream does — the
@@ -6,16 +6,16 @@
 //! reductions on a BLAKE3 Fiat–Shamir transcript — up to the witness
 //! evaluation claim its own ring switch would consume
 //! (`IOPProver::prove_to_evaluation`, exposed by the vendored fork).
-//! Everything below that line is F2Z's: every oracle the PIOP commits is an
+//! Everything below that line is BitZ's: every oracle the PIOP commits is an
 //! interleaved Reed–Solomon codeword under BLAKE3 (rate 1/2 by default,
 //! [`Prepared::with_rate`] takes another), pinned by Round 0 right after its
 //! root is bound; the witness evaluation claim is discharged
-//! by F2Z's ring switch and a Johnson-regime Ligerito opening with fold and
+//! by BitZ's ring switch and a Johnson-regime Ligerito opening with fold and
 //! query grinding; every other oracle relation the PIOP queued (the IntMul
 //! reduction's logup* pushforward, when the circuit multiplies) is discharged
 //! by its own Ligerito opening. The whole protocol is gated at 100 bits under
 //! one of two [`Accounting`] models — a union bound over every error term, or
-//! the round-by-round minimum (every term on its own, the figure F2Z's own
+//! the round-by-round minimum (every term on its own, the figure BitZ's own
 //! rows report) — rather than by Binius64's query-phase target.
 pub(crate) mod channel;
 
@@ -24,8 +24,8 @@ use crate::{
         self, BinaryPcs, BitMleOpening, SecurityTerm, read_ligerito, read_round0, write_ligerito,
         write_round0,
     },
-    ligerito_flock::{OodRound, f128_to_gf, gf_to_f128},
-    poly::univariate::binary_gf128::BinaryFieldGF128 as Gf,
+    ligerito_flock::OodRound,
+    poly::univariate::binary_gf128::Gf128 as Gf,
     proof_codec::{CodecError, Reader, Writer},
     transcript::{Blake3Transcript, traits::Transcript},
 };
@@ -38,7 +38,7 @@ use binius_iop::channel::OracleSpec;
 use binius_prover::{IOPProver, OptimalPackedB128, protocols::shift::KeyCollection};
 use binius_verifier::{IOPVerifier, config::B128};
 use channel::{ProverChannel, ProverRelation, VerifierChannel, VerifierRelation};
-use flock_core::{field::F128, merkle::Hash, pcs::ligerito::LigeritoProof};
+use flock_core::{field::Gf128, merkle::Hash, pcs::ligerito::LigeritoProof};
 
 /// Oracle handles are commitment indices.
 pub type Oracle = usize;
@@ -49,34 +49,34 @@ pub const TARGET_BITS: u32 = 100;
 /// fold grind.
 pub const MIN_COMPONENT_BITS: usize = 100;
 pub const MAX_COMPONENT_BITS: usize = 112;
-const PROTOCOL: &[u8] = b"f2z/binius64-ligerito/non-zk/v1";
-const EVALUATION_DOMAIN: &[u8] = b"f2z/binius64-ligerito/evaluation/v1";
-const RELATIONS_DOMAIN: &[u8] = b"f2z/binius64-ligerito/relations/v1";
-const FORK_DOMAIN: &[u8] = b"f2z/binius64-ligerito/opening-fork/v1";
+const PROTOCOL: &[u8] = b"bitz/binius64-ligerito/non-zk/v1";
+const EVALUATION_DOMAIN: &[u8] = b"bitz/binius64-ligerito/evaluation/v1";
+const RELATIONS_DOMAIN: &[u8] = b"bitz/binius64-ligerito/relations/v1";
+const FORK_DOMAIN: &[u8] = b"bitz/binius64-ligerito/opening-fork/v1";
 /// Fork tag of the witness bit-MLE opening; relation group `i` uses `1 + i`.
 const WITNESS_FORK: u64 = 0;
 const MAGIC: &[u8; 8] = b"BLIG\x01\0\0\0";
 /// Bound on the PIOP message count when decoding.
 const MAX_MESSAGES: usize = 1 << 24;
 
-pub(crate) fn b128_to_f128(x: B128) -> F128 {
+pub(crate) fn b128_to_f128(x: B128) -> Gf128 {
     let v = u128::from(x);
-    F128 {
+    Gf128 {
         lo: v as u64,
         hi: (v >> 64) as u64,
     }
 }
 
-pub(crate) fn f128_to_b128(f: F128) -> B128 {
+pub(crate) fn f128_to_b128(f: Gf128) -> B128 {
     B128::new(u128::from(f.lo) | (u128::from(f.hi) << 64))
 }
 
 fn b128_to_gf(x: B128) -> Gf {
-    f128_to_gf(b128_to_f128(x))
+    (b128_to_f128(x))
 }
 
 fn gf_to_b128(g: Gf) -> B128 {
-    f128_to_b128(gf_to_f128(g))
+    f128_to_b128((g))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -100,7 +100,7 @@ pub enum Accounting {
     /// term about `log2(#terms)` bits above the gate.
     UnionBound,
     /// `-log2` of the LARGEST term: the round-by-round minimum, the figure
-    /// F2Z's own rows report (`SoundnessAccounting::achieved_bits`); every
+    /// BitZ's own rows report (`SoundnessAccounting::achieved_bits`); every
     /// term must clear the gate on its own.
     RoundByRound,
 }
@@ -216,7 +216,7 @@ impl Prepared {
         }
         let k_inv = 2f64.powi(-128);
         // AND's univariate degree is <=126 (64-bit word domain), with three
-        // skipped Boolean coordinates; the subsequent zerocheck/shift rounds
+        // skipped Bit coordinates; the subsequent zerocheck/shift rounds
         // have degree <=3. 4096 per coordinate bounds the initial identity
         // tests, skipped rounds, all operand batches and their sumchecks —
         // the same overcount `hybrid::security` applies to the SHA circuit.
@@ -508,11 +508,11 @@ impl Prepared {
                 let mut target = Gf::zero();
                 for (relation, &w) in group.iter().zip(weights) {
                     for (slot, &b) in basis.iter_mut().zip(&relation.basis) {
-                        *slot = *slot + w * f128_to_gf(b);
+                        *slot = *slot + w * (b);
                     }
                     target = target + w * b128_to_gf(relation.claim);
                 }
-                (basis.into_iter().map(gf_to_f128).collect(), target)
+                (basis.into_iter().collect(), target)
             };
             let o = &oracles[index];
             relation_proofs.push(self.pcs[index].open_basis(
@@ -765,27 +765,30 @@ mod tests {
         (builder.build(), wires)
     }
 
-    /// Expected products computed with F2Z's own GF(2^128) — the same GHASH
+    /// Expected products computed with BitZ's own GF(2^128) — the same GHASH
     /// field and the same `(lo, hi)` coefficient words as the BMUL gate.
     fn bmul_witness(circuit: &Circuit, wires: &[[Wire; 6]], corrupt: bool) -> Option<ValueVec> {
         let mut filler = circuit.new_witness_filler();
         for (i, [a_lo, a_hi, b_lo, b_hi, c_lo, c_hi]) in wires.iter().enumerate() {
-            let a = Gf::from_words([(i as u64).wrapping_mul(0x9e37_79b9), !(i as u64)]);
-            let b = Gf::from_words([0x0123_4567_89ab_cdef ^ i as u64, ((i as u64) << 32) | 1]);
+            let a = Gf::from_polynomial_words([(i as u64).wrapping_mul(0x9e37_79b9), !(i as u64)]);
+            let b = Gf::from_polynomial_words([
+                0x0123_4567_89ab_cdef ^ i as u64,
+                ((i as u64) << 32) | 1,
+            ]);
             let c = a * b;
-            filler[*a_lo] = Word(a.words()[0]);
-            filler[*a_hi] = Word(a.words()[1]);
-            filler[*b_lo] = Word(b.words()[0]);
-            filler[*b_hi] = Word(b.words()[1]);
-            filler[*c_lo] = Word(c.words()[0] ^ u64::from(corrupt && i == 0));
-            filler[*c_hi] = Word(c.words()[1]);
+            filler[*a_lo] = Word(a.as_words()[0]);
+            filler[*a_hi] = Word(a.as_words()[1]);
+            filler[*b_lo] = Word(b.as_words()[0]);
+            filler[*b_hi] = Word(b.as_words()[1]);
+            filler[*c_lo] = Word(c.as_words()[0] ^ u64::from(corrupt && i == 0));
+            filler[*c_hi] = Word(c.as_words()[1]);
         }
         circuit.populate_wire_witness(&mut filler).ok()?;
         Some(filler.into_value_vec())
     }
 
     #[test]
-    fn bmul_circuit_round_trips_through_the_f2z_opener() {
+    fn bmul_circuit_round_trips_through_the_bitz_opener() {
         let (circuit, wires) = bmul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         // BinMul commits no extra oracle: the witness is the only one.
@@ -849,7 +852,7 @@ mod tests {
     }
 
     #[test]
-    fn multiplication_circuit_round_trips_through_the_f2z_opener() {
+    fn multiplication_circuit_round_trips_through_the_bitz_opener() {
         let (circuit, wires) = mul_circuit(11);
         let prepared = Prepared::new(circuit.constraint_system()).unwrap();
         assert_eq!(
@@ -914,9 +917,8 @@ mod tests {
     fn round_by_round_accounting_gates_every_term_at_100() {
         let (circuit, wires) = mul_circuit(11);
         let union = Prepared::new(circuit.constraint_system()).unwrap();
-        let rbr =
-            Prepared::with_options(circuit.constraint_system(), 1, Accounting::RoundByRound)
-                .unwrap();
+        let rbr = Prepared::with_options(circuit.constraint_system(), 1, Accounting::RoundByRound)
+            .unwrap();
         assert_eq!(rbr.accounting(), Accounting::RoundByRound);
         // Every term on its own clears 100 at the smallest component target,
         // while their sum does not — that is the union bound's extra margin.
@@ -954,7 +956,7 @@ mod tests {
 
     /// The IntMul reduction's queued pushforward relation must mean the same
     /// thing on both sides: `⟨basis, oracle⟩ = claim` on the prover, and the
-    /// verifier's transparent closure must be the basis MLE in F2Z's
+    /// verifier's transparent closure must be the basis MLE in BitZ's
     /// coordinate convention.
     #[test]
     fn pushforward_relation_is_consistent_across_prover_and_verifier() {
@@ -1003,9 +1005,7 @@ mod tests {
                 .basis
                 .iter()
                 .zip(pushforward)
-                .fold(Gf::zero(), |acc, (&b, &f)| {
-                    acc + f128_to_gf(b) * f128_to_gf(f)
-                });
+                .fold(Gf::zero(), |acc, (&b, &f)| acc + (b) * (f));
             assert_eq!(
                 inner,
                 b128_to_gf(relation.claim),
@@ -1046,7 +1046,7 @@ mod tests {
                 .basis
                 .iter()
                 .zip(eq_table(&pt))
-                .fold(Gf::zero(), |acc, (&b, e)| acc + f128_to_gf(b) * e);
+                .fold(Gf::zero(), |acc, (&b, e)| acc + (b) * e);
             let via_closure = b128_to_gf((vrelation.transparent)(&pt_b128));
             let via_reversed = b128_to_gf((vrelation.transparent)(&reversed));
             assert!(
@@ -1070,11 +1070,11 @@ mod tests {
         let mut target = Gf::zero();
         for (relation, &w) in relations.iter().zip(&weights) {
             for (slot, &b) in combined.iter_mut().zip(&relation.basis) {
-                *slot = *slot + w * f128_to_gf(b);
+                *slot = *slot + w * (b);
             }
             target = target + w * b128_to_gf(relation.claim);
         }
-        let combined_f128: Vec<F128> = combined.iter().copied().map(gf_to_f128).collect();
+        let combined_f128: Vec<Gf128> = combined.iter().copied().collect();
         let point_gf: Vec<Gf> = point.iter().map(|&x| b128_to_gf(x)).collect();
         let w = &oracles[0];
         let mut fork_w = Prepared::fork(&t, WITNESS_FORK);
@@ -1149,7 +1149,7 @@ mod tests {
                 prepared.pcs[1].verifier_config(),
                 &pushforward_opening,
                 &dense,
-                gf_to_f128(target),
+                (target),
                 &voracles[1].root,
                 &mut crate::ligerito_flock::ZincChallenger(&mut tv),
             );

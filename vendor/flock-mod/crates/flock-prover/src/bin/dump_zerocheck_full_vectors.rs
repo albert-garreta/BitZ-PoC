@@ -4,7 +4,7 @@
 //!
 //! Output (LE) to argv[1] (default zerocheck_full_vectors.bin):
 //!   magic u32 = 0x5A434656 ("ZCFV"); m u32; domain_len u32, domain bytes
-//!   M (64*64 F8 bytes, col-major); f8mul (256*256 bytes)
+//!   M (64*64 Gf8 bytes, col-major); f8mul (256*256 bytes)
 //!   a_packed; b_packed; c_packed   (2^m/8 bytes each)
 //!   round1_ab[64] {lo,hi}; round1_c[64] {lo,hi}
 //!   n_mlv u32; multilinear_rounds[n_mlv] {msg_1,msg_inf} each {lo,hi}
@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use flock_prover::challenger::FsChallenger;
-use flock_prover::field::{F8, F128};
+use flock_prover::field::{Gf8, Gf128};
 use flock_prover::ntt::AdditiveNttGf8;
 use flock_prover::zerocheck::prove_packed;
 use flock_prover::zerocheck::univariate_skip::pack_bits;
@@ -42,7 +42,7 @@ impl Rng {
     }
 }
 
-fn wf(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn wf(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -72,13 +72,13 @@ fn main() -> std::io::Result<()> {
     let mut ch = FsChallenger::new(DOMAIN);
     let (proof, _claim) = prove_packed(&a_packed, &b_packed, &c_packed, m, &mut ch);
 
-    // Extension matrix M and F8 mul table (for the round-1 kernel).
-    let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-    let ntt_l = AdditiveNttGf8::new(K_SKIP, F8(1u8 << K_SKIP));
+    // Extension matrix M and Gf8 mul table (for the round-1 kernel).
+    let ntt_s = AdditiveNttGf8::new(K_SKIP, Gf8::ZERO);
+    let ntt_l = AdditiveNttGf8::new(K_SKIP, Gf8(1u8 << K_SKIP));
     let mut mcol = vec![0u8; 64 * 64];
     for s in 0..64 {
-        let mut col = vec![F8::ZERO; 64];
-        col[s] = F8(1);
+        let mut col = vec![Gf8::ZERO; 64];
+        col[s] = Gf8(1);
         ntt_s.inverse(&mut col);
         ntt_l.forward(&mut col);
         for i in 0..64 {
@@ -88,7 +88,7 @@ fn main() -> std::io::Result<()> {
     let mut f8mul = vec![0u8; 256 * 256];
     for x in 0..256usize {
         for y in 0..256usize {
-            f8mul[x * 256 + y] = (F8(x as u8) * F8(y as u8)).0;
+            f8mul[x * 256 + y] = (Gf8(x as u8) * Gf8(y as u8)).0;
         }
     }
 

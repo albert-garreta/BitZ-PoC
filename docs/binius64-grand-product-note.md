@@ -1,4 +1,4 @@
-# Binius64's grand product today, vs the F2Z forest
+# Binius64's grand product today, vs the BitZ forest
 
 Note, 2026-08-22. Upstream = binius-zk/binius64 `origin/main` @ `3f96163`
 (2026-08-18); ours = the merged GKR forest (`src/merged_forest.rs` +

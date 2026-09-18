@@ -1,4 +1,4 @@
-//! GF(2^128) for the genus-95 routines is the crate-wide [`crate::field::F128`]
+//! GF(2^128) for the genus-95 routines is the crate-wide [`crate::field::Gf128`]
 //! (GHASH form, irreducible polynomial x^128 + x^7 + x^2 + x + 1) — the same
 //! field, with the same hardware-accelerated PMULL/CLMUL arithmetic, that the
 //! rest of flock uses.
@@ -12,17 +12,17 @@
 //!   - [`F128Ext::to_bits`]/[`F128Ext::from_bits`] — raw 128-bit access for the
 //!     Artin–Schreier GF(2) linear algebra (coefficient i is bit i).
 //!
-//! `square` is provided by the shared `F128` itself (a dedicated 2-CLMUL
+//! `square` is provided by the shared `Gf128` itself (a dedicated 2-CLMUL
 //! square), so the genus-95 code calls `value.square()` directly.
 //!
-//! Field addition is XOR; the shared `F128` spells it `+` (via `Add`), so the
+//! Field addition is XOR; the shared `Gf128` spells it `+` (via `Add`), so the
 //! genus-95 code uses `+`/`+=` like the rest of the repository.
 
 use rand_core::RngCore;
 
-pub use crate::field::F128;
+pub use crate::field::Gf128;
 
-/// Genus-95-specific helpers layered onto the shared [`F128`].
+/// Genus-95-specific helpers layered onto the shared [`Gf128`].
 pub(crate) trait F128Ext: Sized {
     fn inverse(self) -> Option<Self>;
     fn random(rng: &mut impl RngCore) -> Self;
@@ -30,19 +30,19 @@ pub(crate) trait F128Ext: Sized {
     fn from_bits(bits: u128) -> Self;
 }
 
-impl F128Ext for F128 {
+impl F128Ext for Gf128 {
     #[inline(always)]
     fn inverse(self) -> Option<Self> {
         if self.is_zero() {
             None
         } else {
-            Some(self.inv())
+            Some(self.inverse_or_zero())
         }
     }
 
     #[inline(always)]
     fn random(rng: &mut impl RngCore) -> Self {
-        F128::new(rng.next_u64(), rng.next_u64())
+        Gf128::new(rng.next_u64(), rng.next_u64())
     }
 
     #[inline(always)]
@@ -52,6 +52,6 @@ impl F128Ext for F128 {
 
     #[inline(always)]
     fn from_bits(bits: u128) -> Self {
-        F128::new(bits as u64, (bits >> 64) as u64)
+        Gf128::new(bits as u64, (bits >> 64) as u64)
     }
 }

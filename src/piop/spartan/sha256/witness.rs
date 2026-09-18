@@ -1,10 +1,10 @@
 //! SHA-256 compression witness generation.
 //!
-//! One [`Witgen`] execution produces the Boolean source `f` and synthesized
+//! One [`Witgen`] execution produces the Bit source `f` and synthesized
 //! integer assignment `h_bar` without evaluating or retaining any constraint
 //! matrix products. A batch shares one leading constant cell, places every
 //! instance immediately after the preceding instance, and pads only the final
-//! suffix of the complete F2Z domain.
+//! suffix of the complete BitZ domain.
 
 use std::array;
 
@@ -17,7 +17,7 @@ use thiserror::Error;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::{f2map::PackedSourceOrder, pcs::IntegerMatrixLayout};
+use {crate::pcs::IntegerMatrixLayout, circuit::linear_map::binary::PackedSourceOrder};
 
 use super::constraints::{
     PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
@@ -41,7 +41,7 @@ pub type Sha256CompressionInput = ([u32; 8], [u32; 16]);
 /// This statement covers one compression invocation only: `M` is an
 /// already-parsed 512-bit message block, so no message padding or byte-to-word
 /// parsing occurs here. Each word `x` is decomposed inside the circuit as
-/// `x = sum_{b=0}^{31} x_b 2^b`, with Boolean bits `x_b` numbered
+/// `x = sum_{b=0}^{31} x_b 2^b`, with Bit bits `x_b` numbered
 /// least-significant first. The canonical public order is `H`, `M`, `H_hat`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sha256CompressionStatement {
@@ -96,24 +96,24 @@ impl Sha256CompressionStatement {
 
 /// A complete product-free SHA-256 witness batch.
 ///
-/// Boolean source and assignment rows are generated and packed immediately.
+/// Bit source and assignment rows are generated and packed immediately.
 /// No exact or field-valued constraint-matrix products are materialized; the
 /// linear prover consumes the signed sparse relation and packed assignment
 /// bits directly.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Sha256CompressionWitnessBatch {
-    /// Packed F2Z source rows with logical bit layout
+    /// Packed BitZ source rows with logical bit layout
     ///
     /// `source = [1 | f_0 | f_1 | ... | f_{N-1} | 0 ... 0]`.
     ///
     /// The leading constant is shared. Each `f_i` contributes exactly
     /// [`SHA256_F_INSTANCE_BITS`] adjacent cells, and only the complete
-    /// power-of-two domain has a trailing zero suffix. For F2Z parameters
+    /// power-of-two domain has a trailing zero suffix. For BitZ parameters
     /// `(t, s)`, flat sequence cell `j` is row `j mod 2^t` of column
     /// `j >> t`; the low `t` sequence bits are the packed-row coordinates.
     source_rows: Vec<Vec<u64>>,
 
-    /// Packed F2Z assignment rows with logical bit layout
+    /// Packed BitZ assignment rows with logical bit layout
     ///
     /// `assignment = [1 | h_0[1..] | h_1[1..] | ... | h_{N-1}[1..] | 0 ... 0]`.
     ///
@@ -145,12 +145,12 @@ pub struct Sha256CompressionWitnessBatch {
 }
 
 impl Sha256CompressionWitnessBatch {
-    /// Packed committed Boolean source rows, including the shared leading-one cell.
+    /// Packed committed Bit source rows, including the shared leading-one cell.
     pub(crate) fn source_rows(&self) -> &[Vec<u64>] {
         &self.source_rows
     }
 
-    /// Packed synthesized Boolean assignment rows.
+    /// Packed synthesized Bit assignment rows.
     pub(crate) fn assignment_rows(&self) -> &[Vec<u64>] {
         &self.assignment_rows
     }
@@ -201,7 +201,7 @@ impl Sha256CompressionWitnessBatch {
 /// Failures while generating or packing a SHA-256 compression batch.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum Sha256WitnessError {
-    /// Inputs and F2Z parameters do not describe one common packed batch.
+    /// Inputs and BitZ parameters do not describe one common packed batch.
     #[error("SHA-256 witness inputs do not match the batch geometry")]
     InvalidGeometry,
 
@@ -221,7 +221,7 @@ struct PackedCompressionShard {
     output: [u32; 8],
 }
 
-/// Generates product-free packed Boolean source and assignment rows.
+/// Generates product-free packed Bit source and assignment rows.
 pub fn generate_sha256_compression_witnesses(
     prepared: &PreparedSha256CompressionBatch,
     inputs: &[Sha256CompressionInput],
@@ -323,7 +323,7 @@ fn compression_input_bits(
 /// Each `f_i` contains [`COMPRESSION_INPUT_BITS`] input bits followed by
 /// [`COMPRESSION_HINT_BITS`] hint bits, for exactly
 /// [`SHA256_F_INSTANCE_BITS`] cells. Logical cells are packed least-significant
-/// bit first in the semantic sequence. The sequence index is also F2Z's
+/// bit first in the semantic sequence. The sequence index is also BitZ's
 /// physical column-major index: its low `t` bits select a packed row and its
 /// high `s` bits select a column.
 fn pack_source_rows<'a>(
@@ -343,7 +343,7 @@ fn pack_source_rows<'a>(
     rows
 }
 
-/// Packs the already-synthesized Boolean assignments into the F2Z row/column
+/// Packs the already-synthesized Bit assignments into the BitZ row/column
 /// view without changing their flat logical order.
 ///
 /// [`Witgen`] has already materialized each augmented assignment
@@ -369,8 +369,8 @@ fn pack_derived_rows<'a>(
 
 /// Packs the proof-only tensor `D[local, instance] = h_instance[local]`.
 ///
-/// The low `t` instance bits are physical F2Z rows. Remaining high instance
-/// bits sit next to the local assignment column in the F2Z column coordinate.
+/// The low `t` instance bits are physical BitZ rows. Remaining high instance
+/// bits sit next to the local assignment column in the BitZ column coordinate.
 /// All logical copies of local column zero contain one, but the virtual map
 /// maps them back to the single committed source constant.
 fn pack_product_derived_rows(
@@ -537,12 +537,12 @@ mod tests {
     use num_bigint::BigInt;
 
     use super::*;
-    use crate::{
-        f2map::VirtualMap,
-        piop::spartan::sha256::constraints::{
+    use {
+        crate::piop::spartan::sha256::constraints::{
             SHA256_CONSTRAINTS, prepare_sha256_compression_batch_for_product_t_test,
             prepare_sha256_compression_batch_for_test,
         },
+        circuit::linear_map::binary::VirtualMap,
     };
 
     fn abc_input() -> Sha256CompressionInput {
@@ -630,7 +630,7 @@ mod tests {
         // it is row 1 of column 0, not row 0 of column 1.
         assert_eq!(witness.source_rows()[0][0] >> 1 & 1, 1);
 
-        // The nonidentity Boolean map copies that source bit to local
+        // The nonidentity Bit map copies that source bit to local
         // assignment cell 257. Native order makes this row 1 of column 1.
         assert!(prepared.map().column_rows(1).unwrap().any(|row| row == 257));
         assert_eq!(witness.assignment_rows()[1][0] >> 1 & 1, 1);
@@ -785,7 +785,7 @@ mod tests {
                     .expect("local assignment column")
                 {
                     let flat_row = prepared.flat_constraint_row(instance, local_row).unwrap();
-                    residuals[flat_row] += coefficient;
+                    residuals[flat_row] += *coefficient;
                 }
             }
         }

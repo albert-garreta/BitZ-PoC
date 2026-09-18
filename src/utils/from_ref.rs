@@ -1,4 +1,4 @@
-use crypto_primitives::{boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use field::{Bit, Uint, Z};
 
 //
 // FromRef
@@ -11,12 +11,12 @@ pub trait FromRef<T> {
     fn from_ref(value: &T) -> Self;
 }
 
-impl<T> FromRef<Boolean> for T
+impl<T> FromRef<Bit> for T
 where
     T: From<bool>,
 {
-    fn from_ref(value: &Boolean) -> Self {
-        T::from(**value)
+    fn from_ref(value: &Bit) -> Self {
+        T::from(bool::from(*value))
     }
 }
 
@@ -41,7 +41,7 @@ impl_from_ref_for_primitive!(i8, [i8]);
 macro_rules! impl_int_from_primitive_ref {
     ($($t:ty),+) => {
         $(
-            impl<const LIMBS: usize> FromRef<$t> for Int<LIMBS> {
+            impl<const LIMBS: usize> FromRef<$t> for Z<LIMBS> {
                 #[inline(always)]
                 fn from_ref(value: &$t) -> Self {
                     Self::from(*value)
@@ -53,16 +53,30 @@ macro_rules! impl_int_from_primitive_ref {
 
 impl_int_from_primitive_ref!(i8, i16, i32, i64, i128);
 
-impl<const LIMBS: usize, const LIMBS2: usize> FromRef<Int<LIMBS2>> for Int<LIMBS> {
+impl<const LIMBS: usize, const LIMBS2: usize> FromRef<Z<LIMBS2>> for Z<LIMBS> {
     #[inline]
-    fn from_ref(value: &Int<LIMBS2>) -> Self {
-        Self::try_from(value.inner()).expect("Destination Int type is too small")
+    fn from_ref(value: &Z<LIMBS2>) -> Self {
+        {
+            let resized = value.checked_resize_ct::<LIMBS>();
+            assert!(
+                resized.validity().declassify(),
+                "Destination Z type is too small"
+            );
+            *resized.value()
+        }
     }
 }
 
 impl<const LIMBS: usize, const LIMBS2: usize> FromRef<Uint<LIMBS2>> for Uint<LIMBS> {
     #[inline]
     fn from_ref(value: &Uint<LIMBS2>) -> Self {
-        Self::try_from(value.inner()).expect("Destination Uint type is too small")
+        {
+            let resized = value.checked_resize_ct::<LIMBS>();
+            assert!(
+                resized.validity().declassify(),
+                "Destination Uint type is too small"
+            );
+            *resized.value()
+        }
     }
 }

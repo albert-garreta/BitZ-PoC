@@ -143,7 +143,7 @@ impl BenchmarkPass {
     pub fn from_env() -> Self {
         #[derive(Parser)]
         struct Env {
-            #[arg(long, env = "F2Z_BENCH_PASS", default_value = "latency",
+            #[arg(long, env = "BITZ_BENCH_PASS", default_value = "latency",
                 value_parser = clap::value_parser!(BenchmarkPass).try_map(|pass| {
                     if pass.measures_memory() && !cfg!(feature = "bench-peak-memory") {
                         Err("memory and both require --features bench-peak-memory")
@@ -168,4 +168,11 @@ impl BenchmarkPass {
             Self::Both => "both",
         }
     }
+}
+
+pub fn enum_list<T: clap::ValueEnum>(value: &str) -> Result<Vec<T>, String> {
+    list::<String>(value)?
+        .into_iter()
+        .map(|value| T::from_str(&value, false))
+        .collect()
 }

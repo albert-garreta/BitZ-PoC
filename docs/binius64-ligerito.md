@@ -1,17 +1,17 @@
-# Binius64 with the F2Z opener (`binius64-ligerito`)
+# Binius64 with the BitZ opener (`binius64-ligerito`)
 
-A comparison scheme that answers "what if Binius64 used F2Z's binary-field
+A comparison scheme that answers "what if Binius64 used BitZ's binary-field
 PCS?": Binius64's own circuits and PIOP, unchanged, with every oracle
-committed and opened by the opener F2Z itself uses — default rate 1/2, the Johnson
+committed and opened by the opener BitZ itself uses — default rate 1/2, the Johnson
 (list-decoding) proximity regime, fold and query grinding, and Round 0 (the
 out-of-domain sample). It is available in the supported benchmarks listed below. The composed SHA+P-256 ECDSA circuit is currently unsupported because it contains BMUL constraints.
 
 | bench | scheme id | what it measures |
 | --- | --- | --- |
-| `benches/mul_e2e_compare` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
+| `benches/mul_compare.rs` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
 | `benches/sha256_e2e_compare` | `binius64-ligerito` | Binius64's two-lane SHA-256 circuit, end to end |
 | `benches/hybrid_u32_sha256` | mode `binius-ligerito` | the all-Binius circuit (four-limb mod-2^32 gadget + chained SHA) |
-| `benches/u32_pcs_compare`, `benches/baby_bear_pcs_compare` | `f2z-ligerito-binary` | PCS only: the Binius64 packed rows and the identical bit-MLE claim, opened by the F2Z opener instead of BaseFold |
+| `mul_compare pcs --workload u32-full,baby-bear` | `bitz-ligerito-binary` | PCS only: the Binius64 packed rows and the identical bit-MLE claim, opened by the BitZ opener instead of BaseFold |
 
 Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
 `src/binius_ligerito/` (the Binius64 PIOP adapter; feature `binius64-bench`).
@@ -30,7 +30,7 @@ Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
    the IntMul reduction's logup* pushforward (2^16 words) when the circuit
    multiplies — is committed by `BinaryPcs`: an interleaved Reed–Solomon
    codeword at rate 1/2 by default (`Prepared::with_rate` / the bench's
-   `F2Z_BINIUS_LOG_INV_RATE` select another; the rate is part of the
+   `BITZ_BINIUS_LOG_INV_RATE` select another; the rate is part of the
    statement digest), 32 lanes (512-byte leaves), BLAKE3 Merkle tree. The
    root is bound into the transcript and **Round 0 is taken immediately**:
    the prover grinds, the verifier draws `ζ`, the prover sends
@@ -49,7 +49,7 @@ Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
    draw into a single opening.
 5. **Openings.** After the PIOP, the evaluation value and every relation
    claim are bound, and each opening runs on its own fork of the transcript
-   (domain-separated by oracle index): the witness claim through F2Z's ring
+   (domain-separated by oracle index): the witness claim through BitZ's ring
    switch (128 partial evaluations) and one Ligerito continuation; each other
    oracle's relations (combined by one draw if there are several) through one
    Ligerito continuation on that oracle's basis. Every continuation batches
@@ -100,15 +100,15 @@ per-challenge bounds and a statistical bound without grinding. Binius64's own
 "100 bits" is its FRI query-phase
 target only (`calculate_n_test_queries`), which counts neither its folding
 phase nor its PIOP. The opener's rate follows the campaign's Binius rate
-(`F2Z_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2; 3 = rate 1/8, through
+(`BITZ_BINIUS_LOG_INV_RATE`, default 1 = rate 1/2; 3 = rate 1/8, through
 `Prepared::with_rate`). The 2026-09-13 suite runs the opener rows at both
 rates under the round-by-round accounting
-(`F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr`) — the model the paper's tables
+(`BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr`) — the model the paper's tables
 render; the union bound stays available and is recorded alongside.
 
 `BinaryPcs::with_log_inv_rate` and `Prepared::with_log_inv_rate` also accept
 rates 1/2, 1/4, and 1/8. Native multiplication rows can override the campaign
-rate with `F2Z_BINIUS_LIGERITO_LOG_INV_RATE=1|2|3`.
+rate with `BITZ_BINIUS_LIGERITO_LOG_INV_RATE=1|2|3`.
 
 As everywhere in this repository the bound is algebraic/IOP-level under
 BLAKE3 Fiat–Shamir and 256-bit Merkle hashing; it is not an unconditional
@@ -117,33 +117,27 @@ Fiat–Shamir theorem.
 ## Running
 
 ```sh
-# Native multiplication tables (adds the binius64-ligerito rows at the campaign's
-# Binius rate, F2Z_BINIUS_LOG_INV_RATE=1 (default, rate 1/2) or 3 (rate 1/8), gated
-# under F2Z_BINIUS_LIGERITO_ACCOUNTING=union (default) or rbr (round-by-round)).
-F2Z_BENCH_SHAPES="15 16" F2Z_BENCH_REPS=5 F2Z_MUL_COMPARE_WORKLOADS="u32" \
-F2Z_MUL_COMPARE_BACKENDS="f2z binius64 binius64-ligerito" \
-RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
-python3 scripts/native_mul_table.py PerfRuns/<run> --workload u32
+python3 scripts/run_multiplication_benchmarks.py compare -- \
+  proof --workload u32-mod32 --backends binius64,binius64-ligerito --log-n 15 --threads 8
+python3 scripts/run_multiplication_benchmarks.py compare --output PerfRuns/binary-pcs -- \
+  pcs --workload u32-full,baby-bear --backends binius64-basefold,bitz-ligerito-binary \
+  --log-n 15 --threads 8
 
 # SHA-256 comparison.
-F2Z_SHA_COMPARE_BACKENDS=binius64,binius64-ligerito F2Z_SHA_COMPARE_LOG_INV_RATE=3 \
+BITZ_SHA_COMPARE_BACKENDS=binius64,binius64-ligerito BITZ_SHA_COMPARE_LOG_INV_RATE=3 \
   bash scripts/run_native_sha256_compare.sh
 
-# Hybrid table: the all-Binius circuit with the F2Z opener, at the campaign's
-# rate and accounting (the same knobs as the native-mul rows).
+# Hybrid all-Binius circuit with the BitZ opener.
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=10 \
-F2Z_BINIUS_LOG_INV_RATE=3 F2Z_BINIUS_LIGERITO_ACCOUNTING=rbr \
+BITZ_BINIUS_LOG_INV_RATE=3 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr \
   cargo bench --bench hybrid_u32_sha256 --features hybrid -- \
   --sweep --mode binius-ligerito --iterations 11
-
-# PCS-only rows.
-F2Z_PCS_COMPARE_BACKENDS="binius64-basefold f2z-ligerito-binary" F2Z_BINIUS_LOG_INV_RATE=3 \
-  cargo bench --bench u32_pcs_compare --features bench-internals,plonky3-whir-bench,binius64-bench
 ```
 
-Unit tests: `cargo test --release --lib --features binius64-bench -- binary_pcs binius_ligerito`
-(a multiplication circuit with the two-oracle path, an AND-only circuit, the
-opener's bit-MLE and arbitrary-basis openings, tamper rejection).
+Multiplication configuration uses flags; see the [benchmark guide](native-mul-compare.md).
+
+The dated sections below preserve historical measurements and their original
+interpretation; they are not results from the unified benchmark interface.
 
 ## The allocator: use Binius64's pool, not the global allocator (2026-09-12)
 
@@ -154,7 +148,7 @@ and recycled across proofs). The adapter previously passed `GlobalAllocator`.
 
 That one line was worth **14 % of the whole prover** at u64 2^20, and it sat
 entirely inside the *shared* PIOP, so it was measured as if it were a cost of
-the F2Z opener:
+the BitZ opener:
 
 | phase (u64 2^20, ms) | Binius64 own | opener, GlobalAllocator | opener, BufferPool |
 | --- | ---: | ---: | ---: |
@@ -199,7 +193,7 @@ converge the same way (2^19: 39.0 vs 39.1 ms, was 31.8).
 The same fix was applied to `benches/integer_pcs_compare/binius.rs`, where
 `GlobalAllocator` was handicapping **Binius64's own** BaseFold rows; any
 PCS-compare numbers recorded before 2026-09-12 predate it. `src/hybrid/sha.rs`
-was already pooled. F2Z's own prover does not allocate through Binius's
+was already pooled. BitZ's own prover does not allocate through Binius's
 `Allocator` at all, and the analogous idea for it - a retained scratch arena -
 was **measured dead** (`docs/fields-witch-compare.md`: page reclaims at n = 27
 are 63.7k for one proof and 68.6k for three, i.e. ~2-3 ms per proof after
@@ -219,9 +213,9 @@ squeeze), `PerfRuns/rerun-{u32,u64,u128}-lig4-{r2,r8}-{union,rbr}*`:
 | `binius64-ligerito-rbr@1` | 1/2 | round-by-round minimum | 100 | 183 | 11→16 | 100.0 | union 95.2–95.4 |
 | `binius64-ligerito-rbr@3` | 1/8 | round-by-round minimum | 100 | 60 | 12→17 | 100.0–100.1 | union 95.3–95.7 |
 
-The round-by-round model is the one F2Z's own rows report (`SoundnessAccounting::
+The round-by-round model is the one BitZ's own rows report (`SoundnessAccounting::
 achieved_bits`, the minimum over terms; the opener's level-0 geometry is then
-identical to F2Z's `custom:1:4` / `custom:3:4` at 32 lanes). The union bound over
+identical to BitZ's `custom:1:4` / `custom:3:4` at 32 lanes). The union bound over
 the ~30 terms of a two-opening proof costs about 5 bits, hence the 105-bit
 per-round target, 6 more fold-grinding bits and 11 / 3 more level-0 queries.
 The opener's fold terms are counted one per fold round (each is exactly
@@ -278,9 +272,9 @@ whole-protocol union bound.
 | hybrid table, 2^15 mul : 2^7 SHA (3 iterations) | all-binius (same session) | 57.1–61.8 | 2.9–3.3 | 245,104 | rate 1/8, 100-bit FRI target; the paper's quiet 11-iteration median is 50.5 / 2.59 |
 | | binius-ligerito | 76.5–83.4 | 3.3–3.7 | 188,880 | setup 245 ms; oracles [2^17, 2^16]; target 105 → 100.56 bits (hybrid v3 at this shape: 50.1 / 3.29 / 109,952) |
 | u32 PCS compare, 2^15 rows (1 sample) | binius64-basefold | commit 1.21, open 1.05 | — | 128,096 | 121 queries |
-| | f2z-ligerito-binary | commit 1.07, open 9.48 | — | 70,040 | 62 queries, 16 query + 14 fold grinding bits, target 104 → 100.8 bits |
+| | bitz-ligerito-binary | commit 1.07, open 9.48 | — | 70,040 | 62 queries, 16 query + 14 fold grinding bits, target 104 → 100.8 bits |
 | BabyBear PCS compare, 2^15 rows (1 sample) | binius64-basefold | commit 1.11, open 0.95 | — | 128,128 | 121 queries |
-| | f2z-ligerito-binary | commit 1.55, open 10.4 | — | 70,136 | 62 queries, target 104 → 100.8 bits |
+| | bitz-ligerito-binary | commit 1.55, open 10.4 | — | 70,136 | 62 queries, target 104 → 100.8 bits |
 
 Larger sizes (same box, 3 samples + warm-up, medians; `PerfRuns/large-*`):
 
@@ -306,7 +300,7 @@ the proof gap widens to −35 %, and peak memory is 27 % lower at 2^20 (the
 rate-1/8 Reed–Solomon codeword plus a Merkle tree, against BaseFold's
 folded-oracle ladder).
 
-Reading: the proof-size win of the F2Z opener over BaseFold at rate 1/8 is
+Reading: the proof-size win of the BitZ opener over BaseFold at rate 1/8 is
 −45 % on the identical claim (PCS rows) and −49 % on the SHA circuit (one
 oracle), but only −23 % on the multiplication circuits, where Binius64's
 IntMul reduction commits a second, 2^16-word logup* oracle that costs a

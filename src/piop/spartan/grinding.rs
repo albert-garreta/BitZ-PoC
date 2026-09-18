@@ -17,6 +17,7 @@
 //! transcript.
 
 use core::marker::PhantomData;
+use field::RingOps;
 
 use thiserror::Error;
 
@@ -26,9 +27,9 @@ use crate::utils::blake3x4::smallest_pow_nonce;
 use crate::utils::blake3x4::{first_pow_nonce, pow_ok};
 
 /// Transcript frame for every Spartan grinding boundary.
-const GRINDING_TRANSCRIPT_DOMAIN: &[u8] = b"f2z/spartan/fiat-shamir-grinding/v1";
+const GRINDING_TRANSCRIPT_DOMAIN: &[u8] = b"bitz/spartan/fiat-shamir-grinding/v1";
 /// Frame separating the canonical nonce from the seed-derivation inputs.
-const GRINDING_NONCE_DOMAIN: &[u8] = b"f2z/spartan/fiat-shamir-grinding/nonce/v1";
+const GRINDING_NONCE_DOMAIN: &[u8] = b"bitz/spartan/fiat-shamir-grinding/nonce/v1";
 
 /// BLAKE3 outputs 256 bits, so no larger difficulty can be satisfied.
 pub const MAX_GRINDING_BITS: u32 = 256;
@@ -303,7 +304,7 @@ fn grinding_nonce_is_valid_unchecked(seed: &GrindingSeed, nonce: u64, bits: u32)
 pub enum ForestRoundGrinding {}
 
 impl GrindingDomain for ForestRoundGrinding {
-    const DOMAIN: &'static [u8] = b"f2z/forest/round-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/forest/round-grinding/v1";
 }
 
 /// Prover-side transcript adapter: before every challenge drawn through
@@ -353,6 +354,21 @@ impl<'a, T: Transcript, D> ProverGrindingTranscript<'a, T, D> {
 }
 
 impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
+    fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+        self.inner.fill_sampling_bytes(output);
+    }
+
+    fn begin_sampling(&mut self) {
+        if self.bits > 0 {
+            let index = self.next_index;
+            self.next_index = self.next_index.wrapping_add(1);
+            let nonce = grind_and_absorb_in_domain(self.inner, self.domain, index, self.bits)
+                .expect("per-round grinding difficulty is validated by the profile");
+            self.nonces.push(nonce);
+        }
+        self.inner.begin_sampling();
+    }
+
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
             let index = self.next_index;
@@ -362,14 +378,6 @@ impl<T: Transcript, D> Transcript for ProverGrindingTranscript<'_, T, D> {
             self.nonces.push(nonce);
         }
         self.inner.get_challenge()
-    }
-
-    fn get_prime<R, P>(&mut self) -> R
-    where
-        R: crypto_primitives::ConstIntSemiring + ConstTranscribable,
-        P: crate::utils::primality::PrimalityTest<R>,
-    {
-        self.inner.get_prime::<R, P>()
     }
 
     fn absorb_inner(&mut self, v: &[u8]) {
@@ -439,6 +447,27 @@ impl<'a, 'n, T: Transcript, D> VerifierGrindingTranscript<'a, 'n, T, D> {
 }
 
 impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
+    fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+        self.inner.fill_sampling_bytes(output);
+    }
+
+    fn begin_sampling(&mut self) {
+        if self.bits > 0 {
+            let index = self.next_index;
+            self.next_index = self.next_index.wrapping_add(1);
+            // A missing nonce absorbs a canonical zero so the transcript
+            // stays deterministic; `finish` reports the failure.
+            let nonce = self.nonces.get(self.consumed).copied().unwrap_or(0);
+            self.consumed = self.consumed.saturating_add(1);
+            if let Err(error) =
+                verify_and_absorb_in_domain(self.inner, self.domain, index, self.bits, nonce)
+            {
+                self.failure.get_or_insert(error);
+            }
+        }
+        self.inner.begin_sampling();
+    }
+
     fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
         if self.bits > 0 {
             let index = self.next_index;
@@ -454,14 +483,6 @@ impl<T: Transcript, D> Transcript for VerifierGrindingTranscript<'_, '_, T, D> {
             }
         }
         self.inner.get_challenge()
-    }
-
-    fn get_prime<R, P>(&mut self) -> R
-    where
-        R: crypto_primitives::ConstIntSemiring + ConstTranscribable,
-        P: crate::utils::primality::PrimalityTest<R>,
-    {
-        self.inner.get_prime::<R, P>()
     }
 
     fn absorb_inner(&mut self, v: &[u8]) {
@@ -496,6 +517,30 @@ mod tests {
         transcript.absorb_slice(b"fixed public statement");
         transcript.absorb_slice(b"fixed prover message");
         transcript
+    }
+
+    #[test]
+    fn internal_sampler_reads_do_not_create_grinding_rounds() {
+        let mut prover = transcript();
+        let mut verifier = transcript();
+        let mut p = ProverGrindingTranscript::<_, OuterRound>::new(&mut prover, 1);
+        let prime = crate::ext_proj::sample_prime_context(&mut p, 251, 251, 128).unwrap();
+        let p_next: u64 = p.get_challenge();
+        let nonces = p.finish();
+        assert_eq!(
+            nonces.len(),
+            1,
+            "only the explicit following challenge is ground"
+        );
+        let mut v = VerifierGrindingTranscript::<_, OuterRound>::new(&mut verifier, 1, &nonces);
+        let replay = crate::ext_proj::sample_prime_context(&mut v, 251, 251, 128).unwrap();
+        assert_eq!(prime.modulus(), replay.modulus());
+        assert_eq!(p_next, v.get_challenge::<u64>());
+        v.finish().unwrap();
+        assert_eq!(
+            prover.get_challenge::<u64>(),
+            verifier.get_challenge::<u64>()
+        );
     }
 
     #[test]
@@ -694,5 +739,66 @@ mod tests {
         let parallel = find_grinding_nonce_parallel(&seed, 11).unwrap();
         assert_eq!(parallel, serial);
         assert_eq!(find_grinding_nonce(&seed, 11).unwrap(), serial);
+    }
+}
+
+#[cfg(test)]
+mod sampling_boundary_tests {
+    use super::*;
+    use crate::transcript::{Blake3Transcript, traits::ConstTranscribable};
+
+    struct RetryingTranscript {
+        inner: Blake3Transcript,
+        word_reads: usize,
+    }
+    impl RetryingTranscript {
+        fn new() -> Self {
+            Self {
+                inner: Blake3Transcript::new(),
+                word_reads: 0,
+            }
+        }
+    }
+    impl Transcript for RetryingTranscript {
+        fn get_challenge<C: ConstTranscribable>(&mut self) -> C {
+            self.inner.get_challenge()
+        }
+        fn fill_sampling_bytes(&mut self, out: &mut [u8]) {
+            self.inner.fill_sampling_bytes(out);
+            self.word_reads += 1;
+            out.fill(if self.word_reads <= 2 { 255 } else { 0 });
+            if self.word_reads == 3 {
+                out[0] = 42;
+            }
+        }
+        fn absorb_inner(&mut self, value: &[u8]) {
+            self.inner.absorb_inner(value);
+        }
+    }
+    enum SamplingRound {}
+    impl GrindingDomain for SamplingRound {
+        const DOMAIN: &'static [u8] = b"test/field-sampling";
+    }
+
+    #[test]
+    fn field_sampling_retries_share_one_grinding_boundary_and_replay() {
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let mut prover = RetryingTranscript::new();
+        let mut grinded = ProverGrindingTranscript::<_, SamplingRound>::new(&mut prover, 4);
+        let value =
+            crate::piop::spartan::squeeze_field::<field::Fp<2>, _>(&mut grinded, &field).unwrap();
+        let nonces = grinded.finish();
+        assert_eq!(nonces.len(), 1);
+        assert_eq!(prover.word_reads, 4);
+        assert_eq!(u128::from(field.to_integer(&value)), 42);
+        let mut verifier = RetryingTranscript::new();
+        let mut grinded =
+            VerifierGrindingTranscript::<_, SamplingRound>::new(&mut verifier, 4, &nonces);
+        let replay =
+            crate::piop::spartan::squeeze_field::<field::Fp<2>, _>(&mut grinded, &field).unwrap();
+        grinded.finish().unwrap();
+        assert_eq!(value, replay);
+        assert_eq!(verifier.word_reads, 4);
+        assert_eq!(prover.inner.state_digest(), verifier.inner.state_digest());
     }
 }

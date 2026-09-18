@@ -14,24 +14,25 @@
 //! extra profiled prove of `rlc3` and `vx3` dumps the phase tree per shape.
 //!
 //! ```text
-//! F2Z_AB_N="22 24 26" F2Z_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
+//! BITZ_AB_N="22 24 26" BITZ_AB_REPS=5 RUSTFLAGS="-C target-cpu=native" \
 //!   cargo run --release --example rlc_ab --features unchecked,span-metrics
 //! ```
 
-use f2z::ligerito::packed_vars;
-use f2z::ligerito_flock::{
+use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{
     RlcFamilyClaim, RlcSharedClaim, VirtualXorClaim, VirtualXorVerifyClaim,
-    commit_rs_ligerito_rows, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
-    mle_eval_mod_q_lig_xor_proof_size_bytes, prove_mle_eval_mod_q_ligerito_claims_only,
-    prove_mle_eval_mod_q_ligerito_rlc_family, prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
-    historical_sha_lig_configs, verify_mle_eval_mod_q_ligerito_claims_only,
-    verify_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+    commit_rs_ligerito_rows, historical_sha_lig_configs,
+    mle_eval_mod_q_lig_rlc_family_proof_size_bytes, mle_eval_mod_q_lig_xor_proof_size_bytes,
+    prove_mle_eval_mod_q_ligerito_claims_only, prove_mle_eval_mod_q_ligerito_rlc_family,
+    prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
+    verify_mle_eval_mod_q_ligerito_claims_only, verify_mle_eval_mod_q_ligerito_rlc_family,
+    verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
 };
-use f2z::pcs::{
-    FQ_BITS, FQ_MOD, Fq, IntegerMatrixLayout, ShaF2Layout, extract_virtual_xor_rows,
+use bitz::pcs::{
+    FQ_BITS, FQ_MOD, IntegerMatrixLayout, Q100Element, ShaF2Layout, extract_virtual_xor_rows,
     smallest_generator, virtual_xor_params,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 /// n → the A/B layout: 4 UAIR columns (log_cols = 2) of 32-bit words
 /// (bit_vars = 5), the remaining n − 2 variables split t' vs s as evenly
@@ -63,12 +64,12 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 fn main() {
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let alpha = smallest_generator();
-    let ns: Vec<usize> = std::env::var("F2Z_AB_N")
+    let ns: Vec<usize> = std::env::var("BITZ_AB_N")
         .map(|v| v.split_whitespace().map(|x| x.parse().unwrap()).collect())
         .unwrap_or_else(|_| vec![22, 24]);
-    let reps: usize = std::env::var("F2Z_AB_REPS").map_or(5, |v| v.parse().unwrap());
+    let reps: usize = std::env::var("BITZ_AB_REPS").map_or(5, |v| v.parse().unwrap());
     let profile = std::env::var("OBLONG_PROFILE").is_ok_and(|v| v == "1");
 
     for &n in &ns {
@@ -97,8 +98,11 @@ fn main() {
         // shared column point.
         let family_cols = [0usize, 1];
         let forms = [0b01usize, 0b10, 0b11];
-        let col_lists: Vec<Vec<usize>> =
-            vec![vec![family_cols[0]], vec![family_cols[1]], family_cols.to_vec()];
+        let col_lists: Vec<Vec<usize>> = vec![
+            vec![family_cols[0]],
+            vec![family_cols[1]],
+            family_cols.to_vec(),
+        ];
         let rws: Vec<Vec<u128>> = (0..3)
             .map(|i| {
                 (0..p_x.rows())
@@ -111,31 +115,34 @@ fn main() {
                     .collect()
             })
             .collect();
-        let colw: Vec<Fq> = (0..p_x.cols())
-            .map(|c| Fq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
+        let colw: Vec<Q100Element> = (0..p_x.cols())
+            .map(|c| Q100Element::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
             .collect();
         let cs: Vec<u128> = (0..3)
             .map(|i| {
-                let a_rows =
-                    extract_virtual_xor_rows(&layout, hint.rows(), &col_lists[i], 0, None);
-                let mut y = Fq::from(0u128);
+                let a_rows = extract_virtual_xor_rows(&layout, hint.rows(), &col_lists[i], 0, None);
+                let mut y = Q100Element::from(0u128);
                 for (c, row) in a_rows.iter().enumerate() {
-                    let mut acc = Fq::from(0u128);
+                    let mut acc = Q100Element::from(0u128);
                     for (wi, &word) in row.iter().enumerate() {
                         let mut bits = word;
                         while bits != 0 {
                             let t = bits.trailing_zeros() as usize;
-                            acc = acc + Fq::from(rws[i][(wi << 6) | t]);
+                            acc = acc + Q100Element::from(rws[i][(wi << 6) | t]);
                             bits &= bits.wrapping_sub(1);
                         }
                     }
                     y = y + colw[c] * acc;
                 }
-                y.0
+                y.canonical_u128()
             })
             .collect();
         let claims: Vec<RlcFamilyClaim<'_>> = (0..3)
-            .map(|i| RlcFamilyClaim { form: forms[i], row_weights_q: &rws[i], claimed: cs[i] })
+            .map(|i| RlcFamilyClaim {
+                form: forms[i],
+                row_weights_q: &rws[i],
+                claimed: cs[i],
+            })
             .collect();
         let vx_of = |idx: &[usize]| -> Vec<VirtualXorClaim<'_>> {
             idx.iter()
@@ -148,11 +155,11 @@ fn main() {
                 .collect()
         };
 
-        // Optional single-claim comparisons (F2Z_AB_SINGLES=1): the same
+        // Optional single-claim comparisons (BITZ_AB_SINGLES=1): the same
         // lone claim through the family API (j=1, k=1), and a lone XOR
         // claim through both APIs (family j=2 k=1 form=11 — the elided
         // pure-XOR family — vs the vx extraction path).
-        let singles = std::env::var("F2Z_AB_SINGLES").is_ok_and(|v| v == "1");
+        let singles = std::env::var("BITZ_AB_SINGLES").is_ok_and(|v| v == "1");
         let c_xor = cs[2];
         let single_family_col = [family_cols[0]];
         let rlc1_claims = vec![RlcFamilyClaim {
@@ -171,70 +178,176 @@ fn main() {
             let mut t_vxx1 = Vec::with_capacity(reps);
             let mut t_single1 = Vec::with_capacity(reps);
             for _ in 0..reps {
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
-                        &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0]), alpha, &pc,
+                        &mut pt,
+                        &hint,
+                        &layout,
+                        FQ_BITS,
+                        &vx_of(&[0]),
+                        alpha,
+                        &pc,
                     )
                 };
-                t_single1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_single1.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_rlc_family(
-                        &mut pt, &hint, &layout, &single_family_col, &rlc1_claims, alpha, &pc,
+                        &mut pt,
+                        &hint,
+                        &layout,
+                        &single_family_col,
+                        &rlc1_claims,
+                        alpha,
+                        &pc,
                     )
                 };
-                t_rlc1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_rlc1.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
-                        &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[2]), alpha, &pc,
+                        &mut pt,
+                        &hint,
+                        &layout,
+                        FQ_BITS,
+                        &vx_of(&[2]),
+                        alpha,
+                        &pc,
                     )
                 };
-                t_vxx1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_vxx1.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_rlc_family(
-                        &mut pt, &hint, &layout, &family_cols, &rlcx1_claims, alpha, &pc,
+                        &mut pt,
+                        &hint,
+                        &layout,
+                        &family_cols,
+                        &rlcx1_claims,
+                        alpha,
+                        &pc,
                     )
                 };
-                t_rlcx1.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_rlcx1.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr);
             }
             // Sanity: the two family singles verify.
             {
                 let mut pt = Blake3Transcript::new();
                 let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut pt, &hint, &layout, &single_family_col, &rlc1_claims, alpha, &pc,
+                    &mut pt,
+                    &hint,
+                    &layout,
+                    &single_family_col,
+                    &rlc1_claims,
+                    alpha,
+                    &pc,
                 );
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut vt, &hint.commitment, &pr, &layout, &single_family_col, &rlc1_claims,
-                    &colw, alpha, &vc,
+                    &mut vt,
+                    &hint.commitment,
+                    &pr,
+                    &layout,
+                    &single_family_col,
+                    &rlc1_claims,
+                    &colw,
+                    alpha,
+                    &vc,
                 )
                 .expect("rlc1 verifies");
                 let mut pt = Blake3Transcript::new();
                 let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut pt, &hint, &layout, &family_cols, &rlcx1_claims, alpha, &pc,
+                    &mut pt,
+                    &hint,
+                    &layout,
+                    &family_cols,
+                    &rlcx1_claims,
+                    alpha,
+                    &pc,
                 );
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut vt, &hint.commitment, &pr, &layout, &family_cols, &rlcx1_claims, &colw,
-                    alpha, &vc,
+                    &mut vt,
+                    &hint.commitment,
+                    &pr,
+                    &layout,
+                    &family_cols,
+                    &rlcx1_claims,
+                    &colw,
+                    alpha,
+                    &vc,
                 )
                 .expect("rlcx1 (pure-XOR single) verifies");
             }
@@ -247,14 +360,13 @@ fn main() {
             );
         }
 
-        // Optional j = 3 family A/B (F2Z_AB_J3=1): k = 4 claims on cols
+        // Optional j = 3 family A/B (BITZ_AB_J3=1): k = 4 claims on cols
         // {0},{1},{2},{0,1,2} — the cascade discharge (level-2 AND) path —
         // vs the batched-vx and independent baselines on the same statement.
-        if std::env::var("F2Z_AB_J3").is_ok_and(|v| v == "1") {
+        if std::env::var("BITZ_AB_J3").is_ok_and(|v| v == "1") {
             let family3 = [0usize, 1, 2];
             let forms3 = [0b001usize, 0b010, 0b100, 0b111];
-            let col_lists3: Vec<Vec<usize>> =
-                vec![vec![0], vec![1], vec![2], vec![0, 1, 2]];
+            let col_lists3: Vec<Vec<usize>> = vec![vec![0], vec![1], vec![2], vec![0, 1, 2]];
             let rws3: Vec<Vec<u128>> = (0..4)
                 .map(|i| {
                     (0..p_x.rows())
@@ -271,20 +383,20 @@ fn main() {
                 .map(|i| {
                     let a_rows =
                         extract_virtual_xor_rows(&layout, hint.rows(), &col_lists3[i], 0, None);
-                    let mut y = Fq::from(0u128);
+                    let mut y = Q100Element::from(0u128);
                     for (c, row) in a_rows.iter().enumerate() {
-                        let mut acc = Fq::from(0u128);
+                        let mut acc = Q100Element::from(0u128);
                         for (wi, &word) in row.iter().enumerate() {
                             let mut bits = word;
                             while bits != 0 {
                                 let t = bits.trailing_zeros() as usize;
-                                acc = acc + Fq::from(rws3[i][(wi << 6) | t]);
+                                acc = acc + Q100Element::from(rws3[i][(wi << 6) | t]);
                                 bits &= bits.wrapping_sub(1);
                             }
                         }
                         y = y + colw[c] * acc;
                     }
-                    y.0
+                    y.canonical_u128()
                 })
                 .collect();
             let claims3: Vec<RlcFamilyClaim<'_>> = (0..4)
@@ -309,7 +421,8 @@ fn main() {
             let mut t_ind4 = Vec::with_capacity(reps);
             let mut sz = (0usize, 0usize, 0usize);
             for rep in 0..reps {
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_rlc = {
                     let mut pt = Blake3Transcript::new();
@@ -317,43 +430,106 @@ fn main() {
                         &mut pt, &hint, &layout, &family3, &claims3, alpha, &pc,
                     )
                 };
-                t_rlc4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_rlc4.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr_rlc);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_vx = {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
-                        &mut pt, &hint, &layout, FQ_BITS, &vx3_of(&[0, 1, 2, 3]), alpha, &pc,
+                        &mut pt,
+                        &hint,
+                        &layout,
+                        FQ_BITS,
+                        &vx3_of(&[0, 1, 2, 3]),
+                        alpha,
+                        &pc,
                     )
                 };
-                t_vx4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_vx4.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr_vx);
 
-                let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t0_recording = bitz::observability::Recording::start(Vec::new())
+                    .expect("start operation capture");
                 let t0 = tracing::info_span!("rlc_ab:t0").entered();
                 let pr_inds: Vec<_> = (0..4)
                     .map(|i| {
                         let mut pt = Blake3Transcript::new();
                         prove_mle_eval_mod_q_ligerito_claims_only(
-                            &mut pt, &hint, &layout, FQ_BITS, &vx3_of(&[i]), alpha, &pc,
+                            &mut pt,
+                            &hint,
+                            &layout,
+                            FQ_BITS,
+                            &vx3_of(&[i]),
+                            alpha,
+                            &pc,
                         )
                     })
                     .collect();
-                t_ind4.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                t_ind4.push(
+                    {
+                        drop(t0);
+                        bitz::observability::duration(
+                            &t0_recording
+                                .intervals()
+                                .expect("complete operation capture"),
+                            "rlc_ab:t0",
+                        )
+                        .expect("query completed operation")
+                    }
+                    .as_secs_f64()
+                        * 1e3,
+                );
                 std::hint::black_box(&pr_inds);
 
                 if rep == 0 {
                     sz = (
                         mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&pr_rlc),
                         mle_eval_mod_q_lig_xor_proof_size_bytes(&pr_vx),
-                        pr_inds.iter().map(mle_eval_mod_q_lig_xor_proof_size_bytes).sum(),
+                        pr_inds
+                            .iter()
+                            .map(mle_eval_mod_q_lig_xor_proof_size_bytes)
+                            .sum(),
                     );
                     let mut vt = Blake3Transcript::new();
                     verify_mle_eval_mod_q_ligerito_rlc_family(
-                        &mut vt, &hint.commitment, &pr_rlc, &layout, &family3, &claims3, &colw,
-                        alpha, &vc,
+                        &mut vt,
+                        &hint.commitment,
+                        &pr_rlc,
+                        &layout,
+                        &family3,
+                        &claims3,
+                        &colw,
+                        alpha,
+                        &vc,
                     )
                     .expect("rlc j3 verifies");
                 }
@@ -369,7 +545,7 @@ fn main() {
             );
         }
 
-        // Optional SHARED-POINT maximal families (F2Z_AB_SHARED=1): the
+        // Optional SHARED-POINT maximal families (BITZ_AB_SHARED=1): the
         // full XOR-closure of j columns at ONE point — j = 2: k = 3,
         // j = 3: k = 7, j = 4: k = 15 — through (rlcS) the shared-point
         // API, (rlcG) the general family API on the same statement (k
@@ -377,12 +553,11 @@ fn main() {
         // rank-1 case build), (vx) the batched virtual-XOR path, and (ind)
         // k independent proofs. Verify medians per arm. The vx forest pads
         // k to 2^⌈log₂k⌉ tree-sets of 16 B leaves and is SKIPPED above an
-        // ~8 GB estimate (k = 15 at n = 28). `F2Z_AB_STMTS=S` averages
+        // ~8 GB estimate (k = 15 at n = 28). `BITZ_AB_STMTS=S` averages
         // over S statements (FS grinding luck is deterministic per
         // statement — material at n ≤ 24).
-        if std::env::var("F2Z_AB_SHARED").is_ok_and(|v| v == "1") {
-            let stmts: usize =
-                std::env::var("F2Z_AB_STMTS").map_or(1, |v| v.parse().unwrap());
+        if std::env::var("BITZ_AB_SHARED").is_ok_and(|v| v == "1") {
+            let stmts: usize = std::env::var("BITZ_AB_STMTS").map_or(1, |v| v.parse().unwrap());
             for j in [2usize, 3, 4] {
                 let k = (1usize << j) - 1;
                 let family: Vec<usize> = (0..j).collect();
@@ -413,20 +588,20 @@ fn main() {
                         .map(|cl| {
                             let a_rows =
                                 extract_virtual_xor_rows(&layout, hint.rows(), cl, 0, None);
-                            let mut y = Fq::from(0u128);
+                            let mut y = Q100Element::from(0u128);
                             for (c, row) in a_rows.iter().enumerate() {
-                                let mut acc = Fq::from(0u128);
+                                let mut acc = Q100Element::from(0u128);
                                 for (wi, &word) in row.iter().enumerate() {
                                     let mut bits = word;
                                     while bits != 0 {
                                         let t = bits.trailing_zeros() as usize;
-                                        acc = acc + Fq::from(rw_s[(wi << 6) | t]);
+                                        acc = acc + Q100Element::from(rw_s[(wi << 6) | t]);
                                         bits &= bits.wrapping_sub(1);
                                     }
                                 }
                                 y = y + colw[c] * acc;
                             }
-                            y.0
+                            y.canonical_u128()
                         })
                         .collect();
                     let sh_claims: Vec<RlcSharedClaim> = forms
@@ -452,7 +627,7 @@ fn main() {
                             row_weights_q: &rw_s,
                         })
                         .collect();
-                    let vx_verify: Vec<VirtualXorVerifyClaim<'_, Fq>> = col_lists_s
+                    let vx_verify: Vec<VirtualXorVerifyClaim<'_, Q100Element>> = col_lists_s
                         .iter()
                         .zip(cs_s.iter())
                         .map(|(cl, &c)| VirtualXorVerifyClaim {
@@ -461,7 +636,7 @@ fn main() {
                             has_external: false,
                             row_weights_q: &rw_s,
                             col_weights: &colw,
-                            claimed: Fq::from(c),
+                            claimed: Q100Element::from(c),
                         })
                         .collect();
 
@@ -469,7 +644,8 @@ fn main() {
                     let mut t: Vec<Vec<f64>> = vec![Vec::with_capacity(reps); 8];
                     let mut sz = (0usize, 0usize, 0usize);
                     for rep in 0..reps {
-                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
+                            .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_s = {
                             let mut pt = Blake3Transcript::new();
@@ -477,42 +653,119 @@ fn main() {
                                 &mut pt, &hint, &layout, &family, &rw_s, &sh_claims, alpha, &pc,
                             )
                         };
-                        t[0].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
-                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        t[0].push(
+                            {
+                                drop(t0);
+                                bitz::observability::duration(
+                                    &t0_recording
+                                        .intervals()
+                                        .expect("complete operation capture"),
+                                    "rlc_ab:t0",
+                                )
+                                .expect("query completed operation")
+                            }
+                            .as_secs_f64()
+                                * 1e3,
+                        );
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
+                            .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         {
                             let mut vt = Blake3Transcript::new();
                             verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
-                                &mut vt, &hint.commitment, &pr_s, &layout, &family, &rw_s,
-                                &sh_claims, &colw, alpha, &vc,
+                                &mut vt,
+                                &hint.commitment,
+                                &pr_s,
+                                &layout,
+                                &family,
+                                &rw_s,
+                                &sh_claims,
+                                &colw,
+                                alpha,
+                                &vc,
                             )
                             .expect("rlcS verifies");
                         }
-                        t[4].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                        t[4].push(
+                            {
+                                drop(t0);
+                                bitz::observability::duration(
+                                    &t0_recording
+                                        .intervals()
+                                        .expect("complete operation capture"),
+                                    "rlc_ab:t0",
+                                )
+                                .expect("query completed operation")
+                            }
+                            .as_secs_f64()
+                                * 1e3,
+                        );
 
-                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
+                            .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_g = {
                             let mut pt = Blake3Transcript::new();
                             prove_mle_eval_mod_q_ligerito_rlc_family(
-                                &mut pt, &hint, &layout, &family, &gen_claims, alpha, &pc,
+                                &mut pt,
+                                &hint,
+                                &layout,
+                                &family,
+                                &gen_claims,
+                                alpha,
+                                &pc,
                             )
                         };
-                        t[1].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
-                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        t[1].push(
+                            {
+                                drop(t0);
+                                bitz::observability::duration(
+                                    &t0_recording
+                                        .intervals()
+                                        .expect("complete operation capture"),
+                                    "rlc_ab:t0",
+                                )
+                                .expect("query completed operation")
+                            }
+                            .as_secs_f64()
+                                * 1e3,
+                        );
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
+                            .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         {
                             let mut vt = Blake3Transcript::new();
                             verify_mle_eval_mod_q_ligerito_rlc_family(
-                                &mut vt, &hint.commitment, &pr_g, &layout, &family, &gen_claims,
-                                &colw, alpha, &vc,
+                                &mut vt,
+                                &hint.commitment,
+                                &pr_g,
+                                &layout,
+                                &family,
+                                &gen_claims,
+                                &colw,
+                                alpha,
+                                &vc,
                             )
                             .expect("rlcG verifies");
                         }
-                        t[5].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                        t[5].push(
+                            {
+                                drop(t0);
+                                bitz::observability::duration(
+                                    &t0_recording
+                                        .intervals()
+                                        .expect("complete operation capture"),
+                                    "rlc_ab:t0",
+                                )
+                                .expect("query completed operation")
+                            }
+                            .as_secs_f64()
+                                * 1e3,
+                        );
 
                         let pr_vx = if run_vx {
-                            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                            let t0_recording = bitz::observability::Recording::start(Vec::new())
+                                .expect("start operation capture");
                             let t0 = tracing::info_span!("rlc_ab:t0").entered();
                             let pr = {
                                 let mut pt = Blake3Transcript::new();
@@ -520,46 +773,118 @@ fn main() {
                                     &mut pt, &hint, &layout, FQ_BITS, &vx_claims, alpha, &pc,
                                 )
                             };
-                            t[2].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
-                            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                            t[2].push(
+                                {
+                                    drop(t0);
+                                    bitz::observability::duration(
+                                        &t0_recording
+                                            .intervals()
+                                            .expect("complete operation capture"),
+                                        "rlc_ab:t0",
+                                    )
+                                    .expect("query completed operation")
+                                }
+                                .as_secs_f64()
+                                    * 1e3,
+                            );
+                            let t0_recording = bitz::observability::Recording::start(Vec::new())
+                                .expect("start operation capture");
                             let t0 = tracing::info_span!("rlc_ab:t0").entered();
                             {
                                 let mut vt = Blake3Transcript::new();
                                 verify_mle_eval_mod_q_ligerito_claims_only(
-                                    &mut vt, &hint.commitment, &pr, &layout, alpha, FQ_BITS,
-                                    &vx_verify, &vc,
+                                    &mut vt,
+                                    &hint.commitment,
+                                    &pr,
+                                    &layout,
+                                    alpha,
+                                    FQ_BITS,
+                                    &vx_verify,
+                                    &vc,
                                 )
                                 .expect("vx verifies");
                             }
-                            t[6].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                            t[6].push(
+                                {
+                                    drop(t0);
+                                    bitz::observability::duration(
+                                        &t0_recording
+                                            .intervals()
+                                            .expect("complete operation capture"),
+                                        "rlc_ab:t0",
+                                    )
+                                    .expect("query completed operation")
+                                }
+                                .as_secs_f64()
+                                    * 1e3,
+                            );
                             Some(pr)
                         } else {
                             None
                         };
 
-                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
+                            .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         let pr_inds: Vec<_> = (0..k)
                             .map(|i| {
                                 let mut pt = Blake3Transcript::new();
                                 prove_mle_eval_mod_q_ligerito_claims_only(
-                                    &mut pt, &hint, &layout, FQ_BITS,
-                                    core::slice::from_ref(&vx_claims[i]), alpha, &pc,
+                                    &mut pt,
+                                    &hint,
+                                    &layout,
+                                    FQ_BITS,
+                                    core::slice::from_ref(&vx_claims[i]),
+                                    alpha,
+                                    &pc,
                                 )
                             })
                             .collect();
-                        t[3].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
-                        let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+                        t[3].push(
+                            {
+                                drop(t0);
+                                bitz::observability::duration(
+                                    &t0_recording
+                                        .intervals()
+                                        .expect("complete operation capture"),
+                                    "rlc_ab:t0",
+                                )
+                                .expect("query completed operation")
+                            }
+                            .as_secs_f64()
+                                * 1e3,
+                        );
+                        let t0_recording = bitz::observability::Recording::start(Vec::new())
+                            .expect("start operation capture");
                         let t0 = tracing::info_span!("rlc_ab:t0").entered();
                         for (i, pr) in pr_inds.iter().enumerate() {
                             let mut vt = Blake3Transcript::new();
                             verify_mle_eval_mod_q_ligerito_claims_only(
-                                &mut vt, &hint.commitment, pr, &layout, alpha, FQ_BITS,
-                                core::slice::from_ref(&vx_verify[i]), &vc,
+                                &mut vt,
+                                &hint.commitment,
+                                pr,
+                                &layout,
+                                alpha,
+                                FQ_BITS,
+                                core::slice::from_ref(&vx_verify[i]),
+                                &vc,
                             )
                             .unwrap_or_else(|e| panic!("ind[{i}] verifies: {e:?}"));
                         }
-                        t[7].push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+                        t[7].push(
+                            {
+                                drop(t0);
+                                bitz::observability::duration(
+                                    &t0_recording
+                                        .intervals()
+                                        .expect("complete operation capture"),
+                                    "rlc_ab:t0",
+                                )
+                                .expect("query completed operation")
+                            }
+                            .as_secs_f64()
+                                * 1e3,
+                        );
 
                         if rep == 0 {
                             sz = (
@@ -576,7 +901,13 @@ fn main() {
                     }
                     let med: Vec<f64> = t
                         .iter()
-                        .map(|v| if v.is_empty() { f64::NAN } else { median(v.clone()) })
+                        .map(|v| {
+                            if v.is_empty() {
+                                f64::NAN
+                            } else {
+                                median(v.clone())
+                            }
+                        })
                         .collect();
                     for (a, &m) in agg.iter_mut().zip(med.iter()) {
                         a.push(m);
@@ -585,8 +916,18 @@ fn main() {
                         "n={n} shared j{j}(k={k}) stmt{stmt}: rlcS {:.1} ms ({} B, v {:.1}) | \
                          rlcG {:.1} ms (v {:.1}) | vx {:.1} ms ({} B, v {:.1}) | \
                          ind {:.1} ms ({} B, v {:.1}) | rlcS/claim {:.1} ms",
-                        med[0], sz.0, med[4], med[1], med[5], med[2], sz.1, med[6], med[3],
-                        sz.2, med[7], med[0] / k as f64,
+                        med[0],
+                        sz.0,
+                        med[4],
+                        med[1],
+                        med[5],
+                        med[2],
+                        sz.1,
+                        med[6],
+                        med[3],
+                        sz.2,
+                        med[7],
+                        med[0] / k as f64,
                     );
                 }
                 if stmts > 1 {
@@ -594,8 +935,14 @@ fn main() {
                     println!(
                         "n={n} shared j{j}(k={k}) MEAN of {stmts} stmts: rlcS {:.1} ms (v {:.1}) | \
                          rlcG {:.1} ms (v {:.1}) | vx {:.1} ms (v {:.1}) | ind {:.1} ms (v {:.1})",
-                        mean(&agg[0]), mean(&agg[4]), mean(&agg[1]), mean(&agg[5]),
-                        mean(&agg[2]), mean(&agg[6]), mean(&agg[3]), mean(&agg[7]),
+                        mean(&agg[0]),
+                        mean(&agg[4]),
+                        mean(&agg[1]),
+                        mean(&agg[5]),
+                        mean(&agg[2]),
+                        mean(&agg[6]),
+                        mean(&agg[3]),
+                        mean(&agg[7]),
                     );
                 }
                 // Phase trees for one profiled prove + verify (the
@@ -615,20 +962,20 @@ fn main() {
                         .map(|cl| {
                             let a_rows =
                                 extract_virtual_xor_rows(&layout, hint.rows(), cl, 0, None);
-                            let mut y = Fq::from(0u128);
+                            let mut y = Q100Element::from(0u128);
                             for (c, row) in a_rows.iter().enumerate() {
-                                let mut acc = Fq::from(0u128);
+                                let mut acc = Q100Element::from(0u128);
                                 for (wi, &word) in row.iter().enumerate() {
                                     let mut bits = word;
                                     while bits != 0 {
                                         let t = bits.trailing_zeros() as usize;
-                                        acc = acc + Fq::from(rw_p[(wi << 6) | t]);
+                                        acc = acc + Q100Element::from(rw_p[(wi << 6) | t]);
                                         bits &= bits.wrapping_sub(1);
                                     }
                                 }
                                 y = y + colw[c] * acc;
                             }
-                            y.0
+                            y.canonical_u128()
                         })
                         .collect();
                     let cl_p: Vec<RlcSharedClaim> = forms
@@ -637,19 +984,41 @@ fn main() {
                         .map(|(&form, &claimed)| RlcSharedClaim { form, claimed })
                         .collect();
                     let mut pt = Blake3Transcript::new();
-                    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                    let profile =
+                        bitz::observability::Recording::start(Vec::new()).expect("capture profile");
                     let pr = prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
                         &mut pt, &hint, &layout, &family, &rw_p, &cl_p, alpha, &pc,
                     );
-                    f2z::observability::write_profile(std::io::stderr().lock(), &format!("rlcS prove j{j} n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
-                    let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+                    bitz::observability::write_profile(
+                        std::io::stderr().lock(),
+                        &format!("rlcS prove j{j} n={n}"),
+                        &profile.intervals().expect("profile intervals"),
+                        None,
+                    )
+                    .expect("write profile");
+                    let profile =
+                        bitz::observability::Recording::start(Vec::new()).expect("capture profile");
                     let mut vt = Blake3Transcript::new();
                     verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
-                        &mut vt, &hint.commitment, &pr, &layout, &family, &rw_p, &cl_p, &colw,
-                        alpha, &vc,
+                        &mut vt,
+                        &hint.commitment,
+                        &pr,
+                        &layout,
+                        &family,
+                        &rw_p,
+                        &cl_p,
+                        &colw,
+                        alpha,
+                        &vc,
                     )
                     .expect("profiled rlcS verifies");
-                    f2z::observability::write_profile(std::io::stderr().lock(), &format!("rlcS verify j{j} n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
+                    bitz::observability::write_profile(
+                        std::io::stderr().lock(),
+                        &format!("rlcS verify j{j} n={n}"),
+                        &profile.intervals().expect("profile intervals"),
+                        None,
+                    )
+                    .expect("write profile");
                 }
             }
         }
@@ -661,60 +1030,143 @@ fn main() {
         let mut t_ind3 = Vec::with_capacity(reps);
         let mut sizes = (0usize, 0usize, 0usize); // rlc3, vx3, ind3
         for rep in 0..reps {
-            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0_recording =
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_single = {
                 let mut pt = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_claims_only(
-                    &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0]), alpha, &pc,
+                    &mut pt,
+                    &hint,
+                    &layout,
+                    FQ_BITS,
+                    &vx_of(&[0]),
+                    alpha,
+                    &pc,
                 )
             };
-            t_single.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+            t_single.push(
+                {
+                    drop(t0);
+                    bitz::observability::duration(
+                        &t0_recording
+                            .intervals()
+                            .expect("complete operation capture"),
+                        "rlc_ab:t0",
+                    )
+                    .expect("query completed operation")
+                }
+                .as_secs_f64()
+                    * 1e3,
+            );
             std::hint::black_box(&pr_single);
 
-            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0_recording =
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_rlc = {
                 let mut pt = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut pt, &hint, &layout, &family_cols, &claims, alpha, &pc,
+                    &mut pt,
+                    &hint,
+                    &layout,
+                    &family_cols,
+                    &claims,
+                    alpha,
+                    &pc,
                 )
             };
-            t_rlc3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+            t_rlc3.push(
+                {
+                    drop(t0);
+                    bitz::observability::duration(
+                        &t0_recording
+                            .intervals()
+                            .expect("complete operation capture"),
+                        "rlc_ab:t0",
+                    )
+                    .expect("query completed operation")
+                }
+                .as_secs_f64()
+                    * 1e3,
+            );
             std::hint::black_box(&pr_rlc);
 
-            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0_recording =
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_vx3 = {
                 let mut pt = Blake3Transcript::new();
                 prove_mle_eval_mod_q_ligerito_claims_only(
-                    &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0, 1, 2]), alpha, &pc,
+                    &mut pt,
+                    &hint,
+                    &layout,
+                    FQ_BITS,
+                    &vx_of(&[0, 1, 2]),
+                    alpha,
+                    &pc,
                 )
             };
-            t_vx3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+            t_vx3.push(
+                {
+                    drop(t0);
+                    bitz::observability::duration(
+                        &t0_recording
+                            .intervals()
+                            .expect("complete operation capture"),
+                        "rlc_ab:t0",
+                    )
+                    .expect("query completed operation")
+                }
+                .as_secs_f64()
+                    * 1e3,
+            );
             std::hint::black_box(&pr_vx3);
 
-            let t0_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t0_recording =
+                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
             let t0 = tracing::info_span!("rlc_ab:t0").entered();
             let pr_inds: Vec<_> = (0..3)
                 .map(|i| {
                     let mut pt = Blake3Transcript::new();
                     prove_mle_eval_mod_q_ligerito_claims_only(
-                        &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[i]), alpha, &pc,
+                        &mut pt,
+                        &hint,
+                        &layout,
+                        FQ_BITS,
+                        &vx_of(&[i]),
+                        alpha,
+                        &pc,
                     )
                 })
                 .collect();
-            t_ind3.push({ drop(t0); f2z::observability::duration(&t0_recording.intervals().expect("complete operation capture"), "rlc_ab:t0").expect("query completed operation") }.as_secs_f64() * 1e3);
+            t_ind3.push(
+                {
+                    drop(t0);
+                    bitz::observability::duration(
+                        &t0_recording
+                            .intervals()
+                            .expect("complete operation capture"),
+                        "rlc_ab:t0",
+                    )
+                    .expect("query completed operation")
+                }
+                .as_secs_f64()
+                    * 1e3,
+            );
             std::hint::black_box(&pr_inds);
 
             if rep == 0 {
                 sizes = (
                     mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&pr_rlc),
                     mle_eval_mod_q_lig_xor_proof_size_bytes(&pr_vx3),
-                    pr_inds.iter().map(mle_eval_mod_q_lig_xor_proof_size_bytes).sum(),
+                    pr_inds
+                        .iter()
+                        .map(mle_eval_mod_q_lig_xor_proof_size_bytes)
+                        .sum(),
                 );
                 // Sanity: every variant verifies.
-                let vx_vc = |idx: &[usize]| -> Vec<VirtualXorVerifyClaim<'_, Fq>> {
+                let vx_vc = |idx: &[usize]| -> Vec<VirtualXorVerifyClaim<'_, Q100Element>> {
                     idx.iter()
                         .map(|&i| VirtualXorVerifyClaim {
                             cols: &col_lists[i],
@@ -722,39 +1174,69 @@ fn main() {
                             has_external: false,
                             row_weights_q: &rws[i],
                             col_weights: &colw,
-                            claimed: Fq::from(cs[i]),
+                            claimed: Q100Element::from(cs[i]),
                         })
                         .collect()
                 };
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_rlc_family(
-                    &mut vt, &hint.commitment, &pr_rlc, &layout, &family_cols, &claims, &colw,
-                    alpha, &vc,
+                    &mut vt,
+                    &hint.commitment,
+                    &pr_rlc,
+                    &layout,
+                    &family_cols,
+                    &claims,
+                    &colw,
+                    alpha,
+                    &vc,
                 )
                 .expect("rlc3 verifies");
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_claims_only(
-                    &mut vt, &hint.commitment, &pr_vx3, &layout, alpha, FQ_BITS, &vx_vc(&[0, 1, 2]),
+                    &mut vt,
+                    &hint.commitment,
+                    &pr_vx3,
+                    &layout,
+                    alpha,
+                    FQ_BITS,
+                    &vx_vc(&[0, 1, 2]),
                     &vc,
                 )
                 .expect("vx3 verifies");
                 for (i, pr) in pr_inds.iter().enumerate() {
                     let mut vt = Blake3Transcript::new();
                     verify_mle_eval_mod_q_ligerito_claims_only(
-                        &mut vt, &hint.commitment, pr, &layout, alpha, FQ_BITS, &vx_vc(&[i]), &vc,
+                        &mut vt,
+                        &hint.commitment,
+                        pr,
+                        &layout,
+                        alpha,
+                        FQ_BITS,
+                        &vx_vc(&[i]),
+                        &vc,
                     )
                     .unwrap_or_else(|e| panic!("ind3[{i}] verifies: {e:?}"));
                 }
                 let mut vt = Blake3Transcript::new();
                 verify_mle_eval_mod_q_ligerito_claims_only(
-                    &mut vt, &hint.commitment, &pr_single, &layout, alpha, FQ_BITS, &vx_vc(&[0]),
+                    &mut vt,
+                    &hint.commitment,
+                    &pr_single,
+                    &layout,
+                    alpha,
+                    FQ_BITS,
+                    &vx_vc(&[0]),
                     &vc,
                 )
                 .expect("single verifies");
             }
         }
-        let (mu, mr, mb, mi) =
-            (median(t_single), median(t_rlc3), median(t_vx3), median(t_ind3));
+        let (mu, mr, mb, mi) = (
+            median(t_single),
+            median(t_rlc3),
+            median(t_vx3),
+            median(t_ind3),
+        );
         println!(
             "n={n} (t'={}, s={}, m={}) reps={reps}\n  single {mu:8.1} ms\n  rlc3   {mr:8.1} ms  ({:.2}x single)  proof {} B\n  vx3    {mb:8.1} ms  ({:.2}x single)  proof {} B\n  ind3   {mi:8.1} ms  ({:.2}x single)  proof {} B",
             p_x.row_vars,
@@ -770,19 +1252,45 @@ fn main() {
 
         if profile {
             let mut pt = Blake3Transcript::new();
-            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+            let profile =
+                bitz::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_mle_eval_mod_q_ligerito_rlc_family(
-                &mut pt, &hint, &layout, &family_cols, &claims, alpha, &pc,
+                &mut pt,
+                &hint,
+                &layout,
+                &family_cols,
+                &claims,
+                alpha,
+                &pc,
             );
             std::hint::black_box(&pr);
-            f2z::observability::write_profile(std::io::stderr().lock(), &format!("rlc3 n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
+            bitz::observability::write_profile(
+                std::io::stderr().lock(),
+                &format!("rlc3 n={n}"),
+                &profile.intervals().expect("profile intervals"),
+                None,
+            )
+            .expect("write profile");
             let mut pt = Blake3Transcript::new();
-            let profile = f2z::observability::Recording::start(Vec::new()).expect("capture profile");
+            let profile =
+                bitz::observability::Recording::start(Vec::new()).expect("capture profile");
             let pr = prove_mle_eval_mod_q_ligerito_claims_only(
-                &mut pt, &hint, &layout, FQ_BITS, &vx_of(&[0, 1, 2]), alpha, &pc,
+                &mut pt,
+                &hint,
+                &layout,
+                FQ_BITS,
+                &vx_of(&[0, 1, 2]),
+                alpha,
+                &pc,
             );
             std::hint::black_box(&pr);
-            f2z::observability::write_profile(std::io::stderr().lock(), &format!("vx3 n={n}"), &profile.intervals().expect("profile intervals"), None).expect("write profile");
+            bitz::observability::write_profile(
+                std::io::stderr().lock(),
+                &format!("vx3 n={n}"),
+                &profile.intervals().expect("profile intervals"),
+                None,
+            )
+            .expect("write profile");
         }
     }
 }

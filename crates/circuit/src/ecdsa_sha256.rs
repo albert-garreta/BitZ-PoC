@@ -79,7 +79,7 @@ mod tests {
     use num_traits::{One, Zero};
 
     use super::*;
-    use crate::matrix_products::StoredInteger;
+
     use crate::stats::{Dummy, LeanStats, Stats};
     use crate::witgen::ProductWitgen;
 
@@ -134,9 +134,8 @@ mod tests {
         bits.try_into().unwrap()
     }
 
-    fn stored_bigint(value: &StoredInteger) -> BigInt {
+    fn stored_bigint(value: &[u64]) -> BigInt {
         let bytes = value
-            .words()
             .iter()
             .flat_map(|word| word.to_le_bytes())
             .collect::<Vec<_>>();
@@ -176,8 +175,8 @@ mod tests {
             .products()
             .a_mw
             .iter()
-            .zip(&witgen.products().b_mw)
-            .zip(&witgen.products().c_mw)
+            .zip(witgen.products().b_mw.iter())
+            .zip(witgen.products().c_mw.iter())
         {
             assert_eq!(stored_bigint(a) * stored_bigint(b), stored_bigint(c));
         }

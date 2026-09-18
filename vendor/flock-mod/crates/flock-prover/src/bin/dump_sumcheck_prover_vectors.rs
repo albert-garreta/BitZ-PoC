@@ -29,7 +29,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::pcs::ligerito::SumcheckProver;
 
 struct Rng(u64);
@@ -44,15 +44,15 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn next_f128(&mut self) -> F128 {
-        F128 {
+    fn next_f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
     }
 }
 
-fn wf(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn wf(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -73,8 +73,8 @@ fn main() -> std::io::Result<()> {
     let len = 1usize << log_len;
 
     let mut rng = Rng::new(0xC0FFEE);
-    let f: Vec<F128> = (0..len).map(|_| rng.next_f128()).collect();
-    let b1: Vec<F128> = (0..len).map(|_| rng.next_f128()).collect();
+    let f: Vec<Gf128> = (0..len).map(|_| rng.next_f128()).collect();
+    let b1: Vec<Gf128> = (0..len).map(|_| rng.next_f128()).collect();
 
     // Build the op script: intro+glue events at a couple of dims interleaved
     // with folds, ending folded to length 1. Track current dim so introduced
@@ -98,7 +98,7 @@ fn main() -> std::io::Result<()> {
     let h1 = f
         .iter()
         .zip(b1.iter())
-        .fold(F128::ZERO, |a, (&x, &y)| a + x * y);
+        .fold(Gf128::ZERO, |a, (&x, &y)| a + x * y);
     let (mut sc, msg0) = SumcheckProver::new(f.clone(), b1.clone(), h1);
 
     let mut w = BufWriter::new(File::create(&path)?);
@@ -128,7 +128,7 @@ fn main() -> std::io::Result<()> {
                 cur_len /= 2;
             }
             Op::IntroGlue => {
-                let b_new: Vec<F128> = (0..cur_len).map(|_| rng.next_f128()).collect();
+                let b_new: Vec<Gf128> = (0..cur_len).map(|_| rng.next_f128()).collect();
                 let h_new = rng.next_f128(); // arbitrary: does not affect messages
                 let msg = sc.introduce_new(b_new.clone(), h_new);
                 let beta = rng.next_f128();

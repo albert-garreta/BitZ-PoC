@@ -136,9 +136,9 @@ pub(crate) fn alloc_uninit_vec<T: Copy>(n: usize) -> Vec<T> {
     v
 }
 
-/// Compatibility shim — same as `alloc_uninit_vec::<F128>(n)`.
-pub(crate) fn alloc_uninit_f128_vec(n: usize) -> Vec<crate::field::F128> {
-    alloc_uninit_vec::<crate::field::F128>(n)
+/// Compatibility shim — same as `alloc_uninit_vec::<Gf128>(n)`.
+pub(crate) fn alloc_uninit_f128_vec(n: usize) -> Vec<crate::field::Gf128> {
+    alloc_uninit_vec::<crate::field::Gf128>(n)
 }
 
 /// Cached [`perf_core_count`]. The uncached version may spawn `sysctl`; this

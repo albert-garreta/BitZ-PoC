@@ -1,6 +1,6 @@
-//! # F2Z — an integer-MLE-evaluation PCS over an `F_2` commitment
+//! # BitZ — an integer-MLE-evaluation PCS over an `F_2` commitment
 //!
-//! F2Z proves `MLE[INT(D)](r) = y ∈ F_q` for data `D` committed over a
+//! BitZ proves `MLE[INT(D)](r) = y ∈ F_q` for data `D` committed over a
 //! cheap characteristic-2 (`F_2`) code, by folding the row variables **in
 //! the exponent** of `K = GF(2^128)` (`α^{v_c} = ∏_b α^{w_b·D[(b,c)]}`,
 //! certified by a GKR grand-product forest that touches the commitment only
@@ -33,7 +33,7 @@
 //! ## F₂-virtualization
 //!
 //! Claims about a DERIVED vector `h = M·f` (a public canonical CSC
-//! [`F₂`-linear map][f2map::PreparedVirtualMap] of the committed bits) are
+//! [`F₂`-linear map][circuit::linear_map::binary::PreparedVirtualMap] of the committed bits) are
 //! opened against the commitment to `f` alone —
 //! [`ligerito_flock::prove_mle_eval_mod_q_ligerito_virtual`] /
 //! [`ligerito_flock::verify_mle_eval_mod_q_ligerito_virtual`]: the
@@ -48,29 +48,29 @@
 //! verifier's `M`-dependent cost is `O(L·nnz + #cols)` field ops. When `M`
 //! is the identity on a shared row layout the opening
 //! routes to the plain base path instead (the identity fast path,
-//! `F2Z_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
+//! `BITZ_VIRT_ID_FAST`), skipping the derived-vector machinery entirely.
 //! [`piop::spartan::cm`] wires a full R1CS through this path — the
 //! paper's CM relation: batched `x ∧ y = z` via one LINEAR constraint
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
 pub mod binary_pcs;
-#[cfg(feature = "span-metrics")]
-pub mod observability;
 #[cfg(feature = "binius64-bench")]
 pub mod binius_ligerito;
 pub mod dual_basis;
 pub mod ext_proj;
+pub mod f2map;
 #[cfg(feature = "hybrid")]
 pub mod hybrid;
-pub mod f2map;
 pub mod ligerito;
 pub mod ligerito_flock;
 pub mod merged_forest;
+#[cfg(feature = "span-metrics")]
+pub mod observability;
 pub mod pcs;
 pub mod piop;
 pub mod poly;
 pub mod proof_codec;
-pub mod sparse_matrix;
+
 pub mod taps;
 pub mod transcript;
 pub mod utils;
@@ -81,7 +81,7 @@ pub use ligerito_flock::{
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
 // Round 0 of the paper's `c:core_iop` (the out-of-domain sample) and the
-// standalone statement binding the `f2z` CLI / bench use around it.
+// standalone statement binding the `bitz` CLI / bench use around it.
 pub use ligerito_flock::{
     OodRound, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
     ood_round_bits, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood, sha_lig_ood_params,
@@ -117,13 +117,15 @@ pub use ligerito_flock::{
 // EXPERIMENTAL — the single-tap shared-point collapse: k single-tap
 // claims at one point become ≤ #columns × 2 plain single-column claims
 // (weight transform; no streams, channels, or translated-eq rings).
+pub use circuit::linear_map::binary::{PreparedVirtualMap, PreparedVirtualMapError};
 pub use ligerito_flock::{
     TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
     verify_mle_eval_mod_q_ligerito_tap_collapse,
 };
 pub use pcs::IntegerMatrixLayout;
-pub use f2map::{PreparedVirtualMap, PreparedVirtualMapError};
-pub use sparse_matrix::{SparseColumn, SparseMatrix, SparseMatrixError};
-pub use poly::univariate::binary_b127::BinaryFieldB127;
-pub use poly::univariate::binary_gf128::BinaryFieldGF128;
+pub use poly::univariate::binary_b127::B127;
+pub use poly::univariate::binary_gf128::Gf128;
+
 pub use taps::{TapOp, extract_virtual_tap_rows};
+
+pub mod sumcheck;

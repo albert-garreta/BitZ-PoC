@@ -5,7 +5,7 @@
 use std::sync::OnceLock;
 
 use flock_core::bits::transpose_8_u64s_to_64_bytes;
-use flock_core::field::F128;
+use flock_core::field::Gf128;
 use flock_core::r1cs::{BlockR1cs, SparseBinaryMatrix, WitnessLayout};
 
 /// OR the low 32 bits of `val` into `buf` starting at bit-offset `bit_off`.
@@ -195,7 +195,7 @@ pub(crate) fn build_block_r1cs_with_matrices(
 
 /// Drive the parallel chunked witness build for `n_blocks` instances padded
 /// to `2^n_blocks_log` slots. Returns `(z, a, b, z_lincheck)` packed in
-/// F128 form (z/a/b) and byte-stripe form (z_lincheck).
+/// Gf128 form (z/a/b) and byte-stripe form (z_lincheck).
 ///
 /// `per_block(initial, z_u64, a_u64, b_u64)` populates one block's worth of
 /// `(z, a, b)` data — 3 zero-initialized `u64`-buffers of length `K / 64`.
@@ -215,7 +215,7 @@ pub(crate) fn drive_witness_packed_and_lincheck<S: Sync, F>(
     n_blocks_log: usize,
     k_log: usize,
     per_block: F,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>)
+) -> (Vec<Gf128>, Vec<Gf128>, Vec<Gf128>, Vec<u8>)
 where
     F: Fn(&S, &mut [u64], &mut [u64], &mut [u64]) + Sync,
 {
@@ -257,8 +257,8 @@ where
             // were uninit-allocated). The per-block builder ORs 1-bits into
             // pre-zeroed words; any slot left unbuilt (no padding block) stays
             // zero, which the lincheck transpose below reads correctly.
-            // SAFETY: F128 is `Copy` (no Drop) and the all-zero bit pattern is
-            // the valid `F128::ZERO`, so a byte memset is a correct init.
+            // SAFETY: Gf128 is `Copy` (no Drop) and the all-zero bit pattern is
+            // the valid `Gf128::ZERO`, so a byte memset is a correct init.
             unsafe {
                 std::ptr::write_bytes(z_grp.as_mut_ptr(), 0, z_grp.len());
                 std::ptr::write_bytes(a_grp.as_mut_ptr(), 0, a_grp.len());
@@ -279,7 +279,7 @@ where
                 let z_chunk = &mut z_grp[k_in * f128_per_block..(k_in + 1) * f128_per_block];
                 let a_chunk = &mut a_grp[k_in * f128_per_block..(k_in + 1) * f128_per_block];
                 let b_chunk = &mut b_grp[k_in * f128_per_block..(k_in + 1) * f128_per_block];
-                // SAFETY: F128 is `repr(C, align(16))` with two `u64` fields in
+                // SAFETY: Gf128 is `repr(C, align(16))` with two `u64` fields in
                 // LE order — same byte layout as a u64 pair.
                 let z_u64: &mut [u64] = unsafe {
                     std::slice::from_raw_parts_mut(
@@ -515,7 +515,7 @@ pub(crate) fn drive_witness_batch_major<S: Sync, F>(
     k_log: usize,
     useful_bits: usize,
     per_group: F,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>, Vec<u8>)
+) -> (Vec<Gf128>, Vec<Gf128>, Vec<Gf128>, Vec<u8>)
 where
     F: Fn([&S; BM_V], &mut [BmRow], &mut [BmRow], &mut [BmRow]) + Sync + Send,
 {
@@ -539,7 +539,7 @@ where
     for buf in [&mut z, &mut a, &mut b] {
         buf[tail..]
             .par_chunks_mut(1 << 16)
-            .for_each(|c| c.fill(F128::ZERO));
+            .for_each(|c| c.fill(Gf128::ZERO));
     }
 
     let (zp, ap, bp) = (

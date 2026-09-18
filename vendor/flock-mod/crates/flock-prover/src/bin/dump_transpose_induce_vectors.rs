@@ -16,7 +16,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use flock_prover::field::F128;
+use flock_prover::field::Gf128;
 use flock_prover::pcs::ligerito::induce_sumcheck_poly_via_ntt;
 
 struct Rng(u64);
@@ -31,8 +31,8 @@ impl Rng {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
         z ^ (z >> 31)
     }
-    fn f128(&mut self) -> F128 {
-        F128 {
+    fn f128(&mut self) -> Gf128 {
+        Gf128 {
             lo: self.next_u64(),
             hi: self.next_u64(),
         }
@@ -46,7 +46,7 @@ fn ceil_log2(n: usize) -> usize {
         (n - 1).ilog2() as usize + 1
     }
 }
-fn wf(w: &mut impl Write, x: F128) -> std::io::Result<()> {
+fn wf(w: &mut impl Write, x: Gf128) -> std::io::Result<()> {
     w.write_all(&x.lo.to_le_bytes())?;
     w.write_all(&x.hi.to_le_bytes())
 }
@@ -68,7 +68,7 @@ fn main() -> std::io::Result<()> {
     let alpha_len = ceil_log2(n_queries);
 
     let mut rng = Rng::new(0xC0FFEE);
-    let alpha: Vec<F128> = (0..alpha_len).map(|_| rng.f128()).collect();
+    let alpha: Vec<Gf128> = (0..alpha_len).map(|_| rng.f128()).collect();
     // distinct query positions in the FULL codeword domain [0, block_len).
     let mut queries: Vec<usize> = Vec::with_capacity(n_queries);
     {
@@ -82,8 +82,8 @@ fn main() -> std::io::Result<()> {
     }
     // enforced_sum needs opened_rows + v_challenges; basis does not depend on them.
     // Use empty v_challenges (num_interleaved=1) + 1-col rows so the call is valid.
-    let v_challenges: Vec<F128> = Vec::new();
-    let opened_rows: Vec<Vec<F128>> = (0..n_queries).map(|_| vec![rng.f128()]).collect();
+    let v_challenges: Vec<Gf128> = Vec::new();
+    let opened_rows: Vec<Vec<Gf128>> = (0..n_queries).map(|_| vec![rng.f128()]).collect();
 
     let (basis, _enforced) = induce_sumcheck_poly_via_ntt(
         log_msg_cols,

@@ -1,7 +1,10 @@
-#[cfg(all(target_feature = "avx512f", target_feature = "vpclmulqdq"))]
-use super::super::{ELL, F128, N_MEDIUM};
+#[cfg(all(target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1", target_feature = "vpclmulqdq"))]
+use super::super::{ELL, Gf128, N_MEDIUM};
 #[cfg(target_feature = "gfni")]
-use super::super::{F8, InvNttTableByteSingleGf8, N_CHUNKS};
+use super::super::{Gf8, InvNttTableByteSingleGf8, N_CHUNKS};
 
 /// AVX-512 (VBMI) 64-byte bit-transpose — direct port of the NEON two-stage
 /// algorithm. `_mm512_permutexvar_epi8` does the byte-gather (NEON `vqtbl4q`)
@@ -61,8 +64,8 @@ pub(crate) unsafe fn shift_reduce_inner_ab_x86_sse(
     chunk_byte_base: usize,
     b_med: usize,
     out: &mut [u8; 64],
-    a_col: &mut [F8],
-    b_col: &mut [F8],
+    a_col: &mut [Gf8],
+    b_col: &mut [Gf8],
 ) {
     use core::arch::x86_64::*;
     let byte_base_b = chunk_byte_base + b_med * N_CHUNKS * 8;
@@ -140,25 +143,28 @@ pub(crate) unsafe fn shift_reduce_inner_ab_x86_avx512(
 }
 /// x86 AVX-512 convert-table fold for the two-bank C path. Table lookups stay
 /// scalar because their byte-selected addresses are irregular, while four
-/// lanes of each resulting F128 accumulator are multiplied by `eq_lo_val` in
+/// lanes of each resulting Gf128 accumulator are multiplied by `eq_lo_val` in
 /// one VPCLMULQDQ batch before being XORed into the worker partials.
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
     target_feature = "vpclmulqdq"
 ))]
-#[target_feature(enable = "avx512f,vpclmulqdq")]
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq,pclmulqdq,sse4.1")]
 pub(crate) unsafe fn accumulate_convert_with_s_hat_v_x86_avx512(
     chunk_ab_bytes: &[[u8; ELL]; 1 << N_MEDIUM],
     chunk_c_bytes: &[[u8; ELL]; 1 << N_MEDIUM],
     n_b_med: usize,
-    convert: &[F128],
-    eq_lo_val: F128,
-    partial_ab: &mut [F128; ELL],
-    partial_c_0: &mut [F128; ELL],
-    partial_c_1: &mut [F128; ELL],
+    convert: &[Gf128],
+    eq_lo_val: Gf128,
+    partial_ab: &mut [Gf128; ELL],
+    partial_c_0: &mut [Gf128; ELL],
+    partial_c_1: &mut [Gf128; ELL],
 ) {
-    use crate::field::gf2_128::x86_64::{f128x4_set, ghash_mul_x4};
+    use crate::field::gf128_kernels::x86_64::{f128x4_set, ghash_mul_x4};
     use core::arch::x86_64::*;
     debug_assert!(n_b_med <= 1 << N_MEDIUM);
     debug_assert_eq!(ELL % 4, 0);
@@ -169,9 +175,9 @@ pub(crate) unsafe fn accumulate_convert_with_s_hat_v_x86_avx512(
     unsafe {
         let eq = f128x4_set(eq_lo_val, eq_lo_val, eq_lo_val, eq_lo_val);
         for lane in (0..ELL).step_by(4) {
-            let mut cf_ab = [F128::ZERO; 4];
-            let mut cf_c_0 = [F128::ZERO; 4];
-            let mut cf_c_1 = [F128::ZERO; 4];
+            let mut cf_ab = [Gf128::ZERO; 4];
+            let mut cf_c_0 = [Gf128::ZERO; 4];
+            let mut cf_c_1 = [Gf128::ZERO; 4];
             for b_med in 0..n_b_med {
                 let table_base = b_med * 256;
                 for j in 0..4 {

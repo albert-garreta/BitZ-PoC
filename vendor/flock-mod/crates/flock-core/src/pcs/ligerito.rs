@@ -8,7 +8,7 @@
 //! Ligerito: recursive multilinear PCS.
 //!
 //! Ported from bolt-rs (`ligerito_recursive.rs`) onto Flock primitives:
-//! `F128` (GHASH irreducible), [`AdditiveNttF128`] (LCH novel basis,
+//! `Gf128` (GHASH irreducible), [`AdditiveNttF128`] (LCH novel basis,
 //! byte-identical to bolt-rs's FFT), SHA-256 merkle from [`crate::merkle`],
 //! and the [`Challenger`] trait for Fiat-Shamir.
 //!
@@ -30,11 +30,12 @@
 //!    c. Else: commit f^{i+2}, open f^{i+1}, induce next basis, glue.
 
 use crate::challenger::Challenger;
-use crate::field::F128;
+use crate::field::Gf128;
 use crate::lincheck::build_eq_table;
 use crate::merkle::{self, Hash, HashKind};
 use crate::ntt::additive_ntt_f128::AdditiveNttF128;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 // ===================================================================
 // Config
@@ -541,7 +542,7 @@ pub enum GrindingStep {
 pub struct LigeritoLevelConfig {
     /// PCS rate at this level: codeword expansion factor = 2^log_inv_rate.
     pub log_inv_rate: usize,
-    /// Message dimension at this level (log of number of F128 columns in
+    /// Message dimension at this level (log of number of Gf128 columns in
     /// the codeword). `log_msg_cols + log_inv_rate = log_2(block_len)`.
     pub log_msg_cols: usize,
     /// Log of lane width per Merkle leaf at this level. For L0 = `initial_k`;
@@ -605,7 +606,7 @@ pub struct LigeritoLevelConfig {
 /// only meaningful parameter is its dimension.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinalBlockConfig {
-    /// `log_2(|yr|)` — number of F128 values sent in the clear. The last
+    /// `log_2(|yr|)` — number of Gf128 values sent in the clear. The last
     /// recursive level's sumcheck stops at this dim instead of folding to 1.
     pub yr_log_n: usize,
 }
@@ -666,7 +667,7 @@ pub struct LigeritoSecurityConfig {
     pub final_block: FinalBlockConfig,
 }
 
-/// Default field size used for soundness analysis: `q = 2^128` (our F128).
+/// Default field size used for soundness analysis: `q = 2^128` (our Gf128).
 const ANALYSIS_LOG_Q: f64 = 128.0;
 
 /// Round a float to one decimal place. Used to round paper-predicted
@@ -1506,10 +1507,10 @@ impl LigeritoSecurityConfig {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecursiveProof {
-    /// One row per query, each of `num_interleaved` F128 entries. Rows are
+    /// One row per query, each of `num_interleaved` Gf128 entries. Rows are
     /// emitted in **sorted** query-position order so they align with the
     /// merkle multi-proof.
-    pub opened_rows: Vec<Vec<F128>>,
+    pub opened_rows: Vec<Vec<Gf128>>,
     /// Single octopus multi-proof shared across all queries at this level.
     pub merkle_proof: Vec<Hash>,
 }
@@ -1517,9 +1518,9 @@ pub struct RecursiveProof {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FinalProof {
     /// Remaining polynomial sent in clear at the last recursive step.
-    pub yr: Vec<F128>,
+    pub yr: Vec<Gf128>,
     /// Same sorted-by-position convention as [`RecursiveProof`].
-    pub opened_rows: Vec<Vec<F128>>,
+    pub opened_rows: Vec<Vec<Gf128>>,
     pub merkle_proof: Vec<Hash>,
 }
 
@@ -1541,7 +1542,7 @@ pub struct LigeritoProof {
     /// (level 1's `ood_samples[1]` values, then level 2's, ...). Empty when
     /// the config takes no OOD samples (UDR profiles, legacy paths).
     #[serde(default)]
-    pub ood_values: Vec<F128>,
+    pub ood_values: Vec<Gf128>,
     /// Fold-challenge PoW nonces, flattened in transcript order — one per
     /// fold challenge at every level with `fold_grinding_bits > 0`. Empty
     /// when no level fold-grinds.
@@ -1551,7 +1552,7 @@ pub struct LigeritoProof {
 
 impl LigeritoProof {
     pub fn size_bytes(&self) -> usize {
-        const ELEM: usize = core::mem::size_of::<F128>();
+        const ELEM: usize = core::mem::size_of::<Gf128>();
         let level_bytes = |p: &RecursiveProof| -> usize {
             p.opened_rows.iter().map(|r| r.len() * ELEM).sum::<usize>() + p.merkle_proof.len() * 32
         };
@@ -1577,7 +1578,7 @@ impl LigeritoProof {
 
     /// Print a per-component breakdown of the proof size to stderr.
     pub fn print_size_breakdown(&self) {
-        const ELEM: usize = core::mem::size_of::<F128>();
+        const ELEM: usize = core::mem::size_of::<Gf128>();
         let kb = |b: usize| {
             if b >= 1024 * 1024 {
                 format!("{:.2} MB", b as f64 / 1024.0 / 1024.0)
@@ -1674,10 +1675,10 @@ impl LigeritoProof {
 ///
 /// Matches Flock's [`build_eq_table`] LSB-first convention (and bolt-rs's
 /// `partial_eval` Julia convention).
-pub(crate) fn partial_eval_lsb(evals: &[F128], rs: &[F128]) -> Vec<F128> {
+pub(crate) fn partial_eval_lsb(evals: &[Gf128], rs: &[Gf128]) -> Vec<Gf128> {
     let mut cur = evals.to_vec();
     for &r in rs {
-        let one_plus_r = F128::ONE + r;
+        let one_plus_r = Gf128::ONE + r;
         let half = cur.len() / 2;
         // Pair (cur[2i], cur[2i+1]) collapses to cur[2i]·(1+r) + cur[2i+1]·r.
         // LSB-first ⇒ adjacent pairs are bit_0 = 0 vs 1.
@@ -1694,7 +1695,7 @@ pub(crate) fn partial_eval_lsb(evals: &[F128], rs: &[F128]) -> Vec<F128> {
 /// `point.len()` must equal `log2(evals.len())`. Test oracle for
 /// `partial_eval_lsb` composition; not used in production paths.
 #[cfg(test)]
-pub(crate) fn eval_mle_lsb(evals: &[F128], point: &[F128]) -> F128 {
+pub(crate) fn eval_mle_lsb(evals: &[Gf128], point: &[Gf128]) -> Gf128 {
     let folded = partial_eval_lsb(evals, point);
     debug_assert_eq!(folded.len(), 1);
     folded[0]
@@ -1707,22 +1708,22 @@ pub(crate) fn eval_mle_lsb(evals: &[F128], point: &[F128]) -> F128 {
 // Same subspace-polynomial recurrence `s_{i+1}(x) = s_i(x)² + s_i(v_i)·s_i(x)`
 // as Flock's `AdditiveNttF128`, but we expose the evaluation at an arbitrary
 // point — which the NTT doesn't currently surface publicly. Standard basis only
-// (v_i = 2^i, embedded as `F128::new(1 << i, 0)`).
+// (v_i = 2^i, embedded as `Gf128::new(1 << i, 0)`).
 
 #[inline]
-fn next_s(s: F128, s_at_root: F128) -> F128 {
+fn next_s(s: Gf128, s_at_root: Gf128) -> Gf128 {
     s * s + s_at_root * s
 }
 
 /// `sks_vks[k] = s_k(v_k)` for `k = 0..=log_n`. Length `log_n + 1`.
 /// Only depends on `log_n`, so callers cache.
-pub fn eval_sk_at_vks(log_n: usize) -> Vec<F128> {
-    let mut sks_vks = vec![F128::ZERO; log_n + 1];
-    sks_vks[0] = F128::ONE;
+pub fn eval_sk_at_vks(log_n: usize) -> Vec<Gf128> {
+    let mut sks_vks = vec![Gf128::ZERO; log_n + 1];
+    sks_vks[0] = Gf128::ONE;
     if log_n == 0 {
         return sks_vks;
     }
-    let mut layer: Vec<F128> = (1..=log_n).map(|i| F128::new(1u64 << i, 0)).collect();
+    let mut layer: Vec<Gf128> = (1..=log_n).map(|i| Gf128::new(1u64 << i, 0)).collect();
     let mut cur_len = log_n;
     for i in 0..log_n {
         for j in 0..cur_len {
@@ -1743,15 +1744,15 @@ pub fn eval_sk_at_vks(log_n: usize) -> Vec<F128> {
 /// `alpha`. `Ŵ_k = s_k / s_k(v_k)` is normalized to match Flock's NTT twiddles.
 ///
 /// `sks_at_x` is a scratch buffer of length `≥ log_n`. `sks_vks` is from
-/// [`eval_sk_at_vks`]; `inv_sks_vks[k] = sks_vks[k].inv()` precomputed once
+/// [`eval_sk_at_vks`]; `inv_sks_vks[k] = sks_vks[k].inverse_or_zero()` precomputed once
 /// across many queries.
 fn evaluate_scaled_basis_inplace(
-    sks_at_x: &mut [F128],
-    basis: &mut [F128],
-    sks_vks: &[F128],
-    inv_sks_vks: &[F128],
-    x: F128,
-    alpha: F128,
+    sks_at_x: &mut [Gf128],
+    basis: &mut [Gf128],
+    sks_vks: &[Gf128],
+    inv_sks_vks: &[Gf128],
+    x: Gf128,
+    alpha: Gf128,
 ) {
     let log_n = basis.len().trailing_zeros() as usize;
     debug_assert_eq!(basis.len(), 1 << log_n);
@@ -1796,27 +1797,27 @@ fn evaluate_scaled_basis_inplace(
 /// Cheap: O(num_queries × num_interleaved). Verifier needs this at level
 /// intro time (before residual challenges are known).
 pub(crate) fn induce_sumcheck_enforced_sum(
-    opened_rows: &[Vec<F128>],
-    v_challenges: &[F128],
+    opened_rows: &[Vec<Gf128>],
+    v_challenges: &[Gf128],
     queries: &[usize],
-    alpha: &[F128],
-) -> F128 {
+    alpha: &[Gf128],
+) -> Gf128 {
     assert_eq!(opened_rows.len(), queries.len());
     let eq = build_eq_table(v_challenges);
     let n_queries = queries.len();
-    let alpha_weights: Vec<F128> = if n_queries == 0 {
+    let alpha_weights: Vec<Gf128> = if n_queries == 0 {
         Vec::new()
     } else {
         build_eq_table(alpha).into_iter().take(n_queries).collect()
     };
-    let mut sum = F128::ZERO;
+    let mut sum = Gf128::ZERO;
     for (i, row) in opened_rows.iter().enumerate() {
         debug_assert_eq!(row.len(), eq.len());
-        let dot: F128 = row
+        let dot: Gf128 = row
             .iter()
             .zip(eq.iter())
             .map(|(&r, &e)| r * e)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         sum += alpha_weights[i] * dot;
     }
     sum
@@ -1850,12 +1851,12 @@ pub(crate) fn ceil_log2(n: usize) -> usize {
 
 pub(crate) fn induce_sumcheck_evaluate_at_residual(
     log_msg_cols: usize,
-    sks_vks: &[F128],
+    sks_vks: &[Gf128],
     queries: &[usize],
-    alpha: &[F128],
-    ris_for_basis: &[F128],
+    alpha: &[Gf128],
+    ris_for_basis: &[Gf128],
     yr_log_n: usize,
-) -> Vec<F128> {
+) -> Vec<Gf128> {
     use crate::lincheck::build_eq_table;
     use rayon::prelude::*;
     assert_eq!(ris_for_basis.len() + yr_log_n, log_msg_cols);
@@ -1867,7 +1868,7 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
     // indices ≥ n_queries. Replaces the legacy α^i Vandermonde scheme;
     // soundness bound goes from `Q/q` (univariate S-Z) to `⌈log₂ Q⌉/q`
     // (multilinear S-Z), matching the rest of the multilinear protocol.
-    let alpha_pows: Vec<F128> = if n_queries == 0 {
+    let alpha_pows: Vec<Gf128> = if n_queries == 0 {
         Vec::new()
     } else {
         let table = build_eq_table(alpha);
@@ -1875,9 +1876,15 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
         table.into_iter().take(n_queries).collect()
     };
 
-    let inv_sks_vks: Vec<F128> = sks_vks
+    let inv_sks_vks: Vec<Gf128> = sks_vks
         .iter()
-        .map(|&v| if v.is_zero() { F128::ZERO } else { v.inv() })
+        .map(|&v| {
+            if v.is_zero() {
+                Gf128::ZERO
+            } else {
+                v.inverse_or_zero()
+            }
+        })
         .collect();
 
     let prefix_len = ris_for_basis.len();
@@ -1885,11 +1892,11 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
     // Per-query precomputation: Ŵ_k(q) for all k, then split into prefix
     // product (fixed scalar) and suffix Ŵ values (varied per y).
     struct PerQuery {
-        prefix_prod: F128,
-        suffix_w: Vec<F128>, // length = yr_log_n
+        prefix_prod: Gf128,
+        suffix_w: Vec<Gf128>, // length = yr_log_n
     }
     let compute_query = |&q: &usize| -> PerQuery {
-        let q_field = F128::new(q as u64, 0);
+        let q_field = Gf128::new(q as u64, 0);
         // Compute s_k(q_field) recursively, then normalize by 1/s_k(v_k).
         let mut sks_at_x = Vec::with_capacity(log_msg_cols.max(1));
         if log_msg_cols > 0 {
@@ -1902,9 +1909,9 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
             }
         }
         // Prefix product: Π_{k<prefix_len} (1 + ris[k] · (1 + Ŵ_k(q)))
-        let mut prefix_prod = F128::ONE;
+        let mut prefix_prod = Gf128::ONE;
         for k in 0..prefix_len {
-            prefix_prod *= F128::ONE + ris_for_basis[k] * (F128::ONE + sks_at_x[k]);
+            prefix_prod *= Gf128::ONE + ris_for_basis[k] * (Gf128::ONE + sks_at_x[k]);
         }
         let suffix_w = if log_msg_cols > prefix_len {
             sks_at_x[prefix_len..].to_vec()
@@ -1929,18 +1936,18 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
     };
 
     // For each residual position y, accumulate the suffix product per query.
-    let compute_y = |y: usize| -> F128 {
-        let mut sum = F128::ZERO;
+    let compute_y = |y: usize| -> Gf128 {
+        let mut sum = Gf128::ZERO;
         for i in 0..n_queries {
             let pq = &per_query[i];
-            let mut suffix_prod = F128::ONE;
+            let mut suffix_prod = Gf128::ONE;
             for j in 0..yr_log_n {
                 let p_j = if (y >> j) & 1 == 1 {
-                    F128::ONE
+                    Gf128::ONE
                 } else {
-                    F128::ZERO
+                    Gf128::ZERO
                 };
-                suffix_prod *= F128::ONE + p_j * (F128::ONE + pq.suffix_w[j]);
+                suffix_prod *= Gf128::ONE + p_j * (Gf128::ONE + pq.suffix_w[j]);
             }
             sum += alpha_pows[i] * pq.prefix_prod * suffix_prod;
         }
@@ -1953,19 +1960,19 @@ pub(crate) fn induce_sumcheck_evaluate_at_residual(
     }
 }
 
-/// `queries` are **0-indexed** codeword positions. `q_field = F128::new(q, 0)`.
+/// `queries` are **0-indexed** codeword positions. `q_field = Gf128::new(q, 0)`.
 ///
 /// Parallel: each thread takes a chunk of queries, builds a partial basis_poly
 /// accumulator + partial enforced_sum, then we reduce. The per-query work
 /// (eq-dot + LCH novel-basis expansion) is independent of other queries.
 pub fn induce_sumcheck_poly(
     log_msg_cols: usize,
-    sks_vks: &[F128],
-    opened_rows: &[Vec<F128>],
-    v_challenges: &[F128],
+    sks_vks: &[Gf128],
+    opened_rows: &[Vec<Gf128>],
+    v_challenges: &[Gf128],
     queries: &[usize],
-    alpha: &[F128],
-) -> (Vec<F128>, F128) {
+    alpha: &[Gf128],
+) -> (Vec<Gf128>, Gf128) {
     use rayon::prelude::*;
     let n = 1usize << log_msg_cols;
     let n_queries = queries.len();
@@ -1984,7 +1991,7 @@ pub fn induce_sumcheck_poly(
     // `i ∈ {0,1}^{⌈log₂ n_queries⌉}` (LSB-first), truncated to the first
     // `n_queries` indices. Replaces the legacy α^i Vandermonde scheme;
     // matches the multilinear S-Z structure used by the lane fold.
-    let alpha_pows: Vec<F128> = if n_queries == 0 {
+    let alpha_pows: Vec<Gf128> = if n_queries == 0 {
         Vec::new()
     } else {
         let table = build_eq_table(alpha);
@@ -1993,9 +2000,15 @@ pub fn induce_sumcheck_poly(
     };
 
     // Precompute inv_sks_vks once across all queries and threads.
-    let inv_sks_vks: Vec<F128> = sks_vks
+    let inv_sks_vks: Vec<Gf128> = sks_vks
         .iter()
-        .map(|&v| if v.is_zero() { F128::ZERO } else { v.inv() })
+        .map(|&v| {
+            if v.is_zero() {
+                Gf128::ZERO
+            } else {
+                v.inverse_or_zero()
+            }
+        })
         .collect();
 
     // Per-thread chunked accumulation: each thread accumulates a partial
@@ -2003,33 +2016,33 @@ pub fn induce_sumcheck_poly(
     let n_threads = rayon::current_num_threads().max(1);
     let chunk_size = (n_queries + n_threads - 1) / n_threads.max(1);
 
-    let partials: Vec<(Vec<F128>, F128)> = (0..n_threads)
+    let partials: Vec<(Vec<Gf128>, Gf128)> = (0..n_threads)
         .into_par_iter()
         .map(|t| {
             let start = t * chunk_size;
             let end = (start + chunk_size).min(n_queries);
             if start >= end {
-                return (vec![F128::ZERO; n], F128::ZERO);
+                return (vec![Gf128::ZERO; n], Gf128::ZERO);
             }
-            let mut accum_basis = vec![F128::ZERO; n];
+            let mut accum_basis = vec![Gf128::ZERO; n];
             // Per-thread scratch reused across this chunk's queries.
-            let mut local_basis = vec![F128::ZERO; n];
-            let mut sks_at_x = vec![F128::ZERO; log_msg_cols.max(1)];
-            let mut local_sum = F128::ZERO;
+            let mut local_basis = vec![Gf128::ZERO; n];
+            let mut sks_at_x = vec![Gf128::ZERO; log_msg_cols.max(1)];
+            let mut local_sum = Gf128::ZERO;
 
             for i in start..end {
                 let row = &opened_rows[i];
                 let q = queries[i];
                 let ap = alpha_pows[i];
 
-                let dot: F128 = row
+                let dot: Gf128 = row
                     .iter()
                     .zip(eq.iter())
                     .map(|(&r, &e)| r * e)
-                    .fold(F128::ZERO, |a, v| a + v);
+                    .fold(Gf128::ZERO, |a, v| a + v);
                 local_sum += dot * ap;
 
-                let q_field = F128::new(q as u64, 0);
+                let q_field = Gf128::new(q as u64, 0);
                 evaluate_scaled_basis_inplace(
                     &mut sks_at_x,
                     &mut local_basis,
@@ -2047,8 +2060,8 @@ pub fn induce_sumcheck_poly(
         .collect();
 
     // Reduce across threads.
-    let mut basis_poly = vec![F128::ZERO; n];
-    let mut enforced_sum = F128::ZERO;
+    let mut basis_poly = vec![Gf128::ZERO; n];
+    let mut enforced_sum = Gf128::ZERO;
     for (lb, ls) in partials {
         for (acc, &v) in basis_poly.iter_mut().zip(lb.iter()) {
             *acc += v;
@@ -2063,7 +2076,7 @@ pub fn induce_sumcheck_poly(
 /// Forward butterfly is `M=[[1,t],[1,t+1]]`; transpose `Mᵀ=[[1,1],[t,t+1]]` is
 /// `s=a+b; top=s; bot=t·s+b`, applied in **reverse** layer order. (Baseline:
 /// one parallel sweep per layer.)
-fn transpose_forward_ntt(ntt: &AdditiveNttF128, data: &mut [F128], log_d: usize) {
+fn transpose_forward_ntt(ntt: &AdditiveNttF128, data: &mut [Gf128], log_d: usize) {
     use rayon::prelude::*;
     debug_assert_eq!(data.len(), 1usize << log_d);
     debug_assert!(log_d <= ntt.log_domain_size());
@@ -2111,11 +2124,11 @@ fn transpose_forward_ntt(ntt: &AdditiveNttF128, data: &mut [F128], log_d: usize)
 pub fn induce_sumcheck_poly_via_ntt(
     log_msg_cols: usize,
     log_inv_rate: usize,
-    opened_rows: &[Vec<F128>],
-    v_challenges: &[F128],
+    opened_rows: &[Vec<Gf128>],
+    v_challenges: &[Gf128],
     queries: &[usize],
-    alpha: &[F128],
-) -> (Vec<F128>, F128) {
+    alpha: &[Gf128],
+) -> (Vec<Gf128>, Gf128) {
     let n = 1usize << log_msg_cols;
     let log_block = log_msg_cols + log_inv_rate;
     let block_len = 1usize << log_block;
@@ -2123,7 +2136,7 @@ pub fn induce_sumcheck_poly_via_ntt(
     assert_eq!(opened_rows.len(), n_queries);
 
     let eq = build_eq_table(v_challenges);
-    let alpha_pows: Vec<F128> = if n_queries == 0 {
+    let alpha_pows: Vec<Gf128> = if n_queries == 0 {
         Vec::new()
     } else {
         let table = build_eq_table(alpha);
@@ -2131,18 +2144,18 @@ pub fn induce_sumcheck_poly_via_ntt(
         table.into_iter().take(n_queries).collect()
     };
 
-    let mut enforced_sum = F128::ZERO;
+    let mut enforced_sum = Gf128::ZERO;
     for i in 0..n_queries {
-        let dot: F128 = opened_rows[i]
+        let dot: Gf128 = opened_rows[i]
             .iter()
             .zip(eq.iter())
             .map(|(&r, &e)| r * e)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         enforced_sum += dot * alpha_pows[i];
     }
 
     let mut coeffs = if log_block == 0 {
-        let mut c = vec![F128::ZERO; block_len];
+        let mut c = vec![Gf128::ZERO; block_len];
         for i in 0..n_queries {
             c[queries[i]] += alpha_pows[i];
         }
@@ -2173,12 +2186,12 @@ pub fn induce_sumcheck_poly_via_ntt(
 pub(crate) fn induce_sumcheck_poly_auto(
     log_msg_cols: usize,
     log_inv_rate: usize,
-    sks_vks: &[F128],
-    opened_rows: &[Vec<F128>],
-    v_challenges: &[F128],
+    sks_vks: &[Gf128],
+    opened_rows: &[Vec<Gf128>],
+    v_challenges: &[Gf128],
     queries: &[usize],
-    alpha: &[F128],
-) -> (Vec<F128>, F128) {
+    alpha: &[Gf128],
+) -> (Vec<Gf128>, Gf128) {
     let log_block = log_msg_cols + log_inv_rate;
     let use_ntt =
         log_msg_cols >= 12 && queries.len() > 4 * (1usize << log_inv_rate) * log_block.max(1);
@@ -2213,9 +2226,9 @@ pub(crate) fn induce_sumcheck_poly_auto(
 fn transpose_forward_ntt_sparse(
     ntt: &AdditiveNttF128,
     positions: &[usize],
-    values: &[F128],
+    values: &[Gf128],
     log_d: usize,
-) -> Vec<F128> {
+) -> Vec<Gf128> {
     use rayon::prelude::*;
     use std::collections::HashMap;
     let n = 1usize << log_d;
@@ -2223,7 +2236,7 @@ fn transpose_forward_ntt_sparse(
     let k = if log_d >= 12 { 8usize.min(log_d) } else { 0 };
 
     if k == 0 {
-        let mut data = vec![F128::ZERO; n];
+        let mut data = vec![Gf128::ZERO; n];
         for (&p, &v) in positions.iter().zip(values) {
             data[p] += v;
         }
@@ -2235,17 +2248,17 @@ fn transpose_forward_ntt_sparse(
 
     let wmask = (1usize << k) - 1;
     // Group nonzeros into 2^k windows.
-    let mut windows: HashMap<usize, Vec<F128>> = HashMap::new();
+    let mut windows: HashMap<usize, Vec<Gf128>> = HashMap::new();
     for (&p, &v) in positions.iter().zip(values) {
         let buf = windows
             .entry(p >> k)
-            .or_insert_with(|| vec![F128::ZERO; 1 << k]);
+            .or_insert_with(|| vec![Gf128::ZERO; 1 << k]);
         buf[p & wmask] += v;
     }
 
     // Steps s = 0..k-1 within each active window, in parallel (windows disjoint).
-    let win_vec: Vec<(usize, Vec<F128>)> = windows.into_iter().collect();
-    let processed: Vec<(usize, Vec<F128>)> = win_vec
+    let win_vec: Vec<(usize, Vec<Gf128>)> = windows.into_iter().collect();
+    let processed: Vec<(usize, Vec<Gf128>)> = win_vec
         .into_par_iter()
         .map(|(w, mut buf)| {
             for s in 0..k {
@@ -2272,7 +2285,7 @@ fn transpose_forward_ntt_sparse(
 
     // Densify (active windows only; the rest stay zero, which is the correct
     // post-step-(k-1) state for an all-zero window).
-    let mut data = vec![F128::ZERO; n];
+    let mut data = vec![Gf128::ZERO; n];
     for (w, buf) in processed {
         data[(w << k)..((w + 1) << k)].copy_from_slice(&buf);
     }
@@ -2327,7 +2340,7 @@ fn transpose_forward_ntt_sparse(
 /// `pos ∈ [0, block_len)`, `lane ∈ [0, num_interleaved)`. Each row
 /// (one `pos` across all lanes) is one Merkle leaf.
 pub struct LigeroWitness {
-    pub mat: Vec<F128>,
+    pub mat: Vec<Gf128>,
     pub tree: Vec<Hash>,
     pub block_len: usize,
     pub num_interleaved: usize,
@@ -2341,18 +2354,20 @@ impl Drop for LigeroWitness {
     }
 }
 
-// SumcheckProver owns the two witness-sized polynomials of the open (the
-// packed witness `f` and the γ-combined basis) — recycle both on drop.
-impl Drop for SumcheckProver {
+// Only owned fold storage may enter the scratch pool; the initial witness
+// can still belong to the commitment hint.
+impl Drop for SumcheckProver<'_> {
     fn drop(&mut self) {
-        crate::scratch::give_f128(std::mem::take(&mut self.f));
+        if let Cow::Owned(f) = std::mem::take(&mut self.f) {
+            crate::scratch::give_f128(f);
+        }
         crate::scratch::give_f128(std::mem::take(&mut self.combined_basis));
     }
 }
 
 impl LigeroWitness {
     #[inline]
-    pub fn row(&self, pos: usize) -> &[F128] {
+    pub fn row(&self, pos: usize) -> &[Gf128] {
         let start = pos * self.num_interleaved;
         &self.mat[start..start + self.num_interleaved]
     }
@@ -2373,7 +2388,7 @@ impl LigeroWitness {
 /// lane indices, so `partial_eval_lsb(poly, lane_challenges)` produces the
 /// next-level poly directly. This composes cleanly with sumcheck folds.
 pub fn ligero_commit(
-    poly: &[F128],
+    poly: &[Gf128],
     log_msg_cols: usize,
     log_num_interleaved: usize,
     log_inv_rate: usize,
@@ -2399,12 +2414,12 @@ pub fn ligero_commit(
     // RS-encode every lane in one call (each lane is one independent NTT).
     ntt.forward_transform_interleaved_from_layer(&mut mat, num_interleaved, log_inv_rate);
 
-    // Merkle over rows. One leaf = `num_interleaved` consecutive F128 = 16·num_interleaved bytes.
-    let leaf_size_bytes = num_interleaved * core::mem::size_of::<F128>();
+    // Merkle over rows. One leaf = `num_interleaved` consecutive Gf128 = 16·num_interleaved bytes.
+    let leaf_size_bytes = num_interleaved * core::mem::size_of::<Gf128>();
     let data_bytes: &[u8] = unsafe {
         core::slice::from_raw_parts(
             mat.as_ptr() as *const u8,
-            mat.len() * core::mem::size_of::<F128>(),
+            mat.len() * core::mem::size_of::<Gf128>(),
         )
     };
     debug_assert_eq!(data_bytes.len(), block_len * leaf_size_bytes);
@@ -2441,22 +2456,22 @@ pub fn ligero_commit(
 /// (u_0, u_2) per round — what the prover sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SumcheckMessage {
-    pub u_0: F128,
-    pub u_2: F128,
+    pub u_0: Gf128,
+    pub u_2: Gf128,
 }
 
 /// Round-quadratic in coefficient form `c + b·X + a·X²`. Used by the verifier
 /// to track the running quadratic across fold / introduce_new / glue.
 #[derive(Clone, Copy, Debug)]
 struct RoundQuad {
-    c: F128, // u_0
-    b: F128, // u_1 (X coeff) — derived from T_r and u_2
-    a: F128, // u_2 (X² coeff)
+    c: Gf128, // u_0
+    b: Gf128, // u_1 (X coeff) — derived from T_r and u_2
+    a: Gf128, // u_2 (X² coeff)
 }
 
 impl RoundQuad {
     #[inline]
-    fn from_msg(msg: SumcheckMessage, t_r: F128) -> Self {
+    fn from_msg(msg: SumcheckMessage, t_r: Gf128) -> Self {
         Self {
             c: msg.u_0,
             b: t_r + msg.u_2,
@@ -2464,11 +2479,11 @@ impl RoundQuad {
         }
     }
     #[inline]
-    fn eval(&self, r: F128) -> F128 {
+    fn eval(&self, r: Gf128) -> Gf128 {
         self.c + r * self.b + r * r * self.a
     }
     #[inline]
-    fn fold(p1: &Self, p2: &Self, alpha: F128) -> Self {
+    fn fold(p1: &Self, p2: &Self, alpha: Gf128) -> Self {
         Self {
             c: p1.c + alpha * p2.c,
             b: p1.b + alpha * p2.b,
@@ -2480,9 +2495,9 @@ impl RoundQuad {
 /// Compute `(u_0, u_2)` for `u(X) = Σ_x f(X, x) · b(X, x)` where `X` is the
 /// LSB variable. Parallel reduction across pair indices.
 ///
-/// Uses a SINGLE combined basis poly. (Previously took `&[Vec<F128>]` and
+/// Uses a SINGLE combined basis poly. (Previously took `&[Vec<Gf128>]` and
 /// summed at every pair index; collapsing to one basis happens at glue time.)
-fn round_msg_lsb(f: &[F128], b: &[F128]) -> SumcheckMessage {
+fn round_msg_lsb(f: &[Gf128], b: &[Gf128]) -> SumcheckMessage {
     use rayon::prelude::*;
     let n = f.len();
     debug_assert!(n.is_power_of_two() && n >= 2);
@@ -2491,8 +2506,8 @@ fn round_msg_lsb(f: &[F128], b: &[F128]) -> SumcheckMessage {
     const PAR_THRESHOLD: usize = 4096;
     let half = n / 2;
     if half < PAR_THRESHOLD {
-        let mut u_0 = F128::ZERO;
-        let mut u_2 = F128::ZERO;
+        let mut u_0 = Gf128::ZERO;
+        let mut u_2 = Gf128::ZERO;
         for j in 0..half {
             let f0 = f[2 * j];
             let f1 = f[2 * j + 1];
@@ -2515,7 +2530,7 @@ fn round_msg_lsb(f: &[F128], b: &[F128]) -> SumcheckMessage {
             (f0 * b0, (f0 + f1) * (b0 + b1))
         })
         .reduce(
-            || (F128::ZERO, F128::ZERO),
+            || (Gf128::ZERO, Gf128::ZERO),
             |(a0, a2), (b0, b2)| (a0 + b0, a2 + b2),
         );
     SumcheckMessage { u_0, u_2 }
@@ -2530,9 +2545,9 @@ fn round_msg_lsb(f: &[F128], b: &[F128]) -> SumcheckMessage {
 /// 2^n witness; this collapses them into one (the phase is memory-bandwidth
 /// bound, so a saved pass is a near-proportional win). The `u_0` term `f0·b0`
 /// is shared between the message and the eval, so `y` costs one extra mul per
-/// pair. Bit-identical to the unfused path: F128 sums are exact and order-
+/// pair. Bit-identical to the unfused path: Gf128 sums are exact and order-
 /// independent, so `y == mle_eval_inline(f, z)`.
-fn round_msg_and_eval_lsb(f: &[F128], b: &[F128]) -> (SumcheckMessage, F128) {
+fn round_msg_and_eval_lsb(f: &[Gf128], b: &[Gf128]) -> (SumcheckMessage, Gf128) {
     use rayon::prelude::*;
     let n = f.len();
     debug_assert!(n.is_power_of_two() && n >= 2);
@@ -2540,7 +2555,7 @@ fn round_msg_and_eval_lsb(f: &[F128], b: &[F128]) -> (SumcheckMessage, F128) {
 
     const PAR_THRESHOLD: usize = 4096;
     let half = n / 2;
-    let term = |j: usize| -> (F128, F128, F128) {
+    let term = |j: usize| -> (Gf128, Gf128, Gf128) {
         let f0 = f[2 * j];
         let f1 = f[2 * j + 1];
         let b0 = b[2 * j];
@@ -2550,7 +2565,7 @@ fn round_msg_and_eval_lsb(f: &[F128], b: &[F128]) -> (SumcheckMessage, F128) {
         (e0, (f0 + f1) * (b0 + b1), e0 + f1 * b1)
     };
     if half < PAR_THRESHOLD {
-        let (mut u_0, mut u_2, mut y) = (F128::ZERO, F128::ZERO, F128::ZERO);
+        let (mut u_0, mut u_2, mut y) = (Gf128::ZERO, Gf128::ZERO, Gf128::ZERO);
         for j in 0..half {
             let (a0, a2, ay) = term(j);
             u_0 += a0;
@@ -2565,7 +2580,7 @@ fn round_msg_and_eval_lsb(f: &[F128], b: &[F128]) -> (SumcheckMessage, F128) {
         .with_min_len(PAR_THRESHOLD / 4)
         .map(term)
         .reduce(
-            || (F128::ZERO, F128::ZERO, F128::ZERO),
+            || (Gf128::ZERO, Gf128::ZERO, Gf128::ZERO),
             |(a0, a2, ay), (b0, b2, by)| (a0 + b0, a2 + b2, ay + by),
         );
     (SumcheckMessage { u_0, u_2 }, y)
@@ -2575,12 +2590,12 @@ fn round_msg_and_eval_lsb(f: &[F128], b: &[F128]) -> (SumcheckMessage, F128) {
 /// Parallel for large arrays. Test oracle for the fused fold below; the
 /// production path uses `fold_and_msg_lsb` instead.
 #[cfg(test)]
-fn partial_eval_lsb_one(evals: &mut Vec<F128>, r: F128) {
+fn partial_eval_lsb_one(evals: &mut Vec<Gf128>, r: Gf128) {
     use rayon::prelude::*;
     let n = evals.len();
     debug_assert!(n.is_power_of_two() && n >= 2);
     let half = n / 2;
-    let one_plus_r = F128::ONE + r;
+    let one_plus_r = Gf128::ONE + r;
 
     const PAR_THRESHOLD: usize = 4096;
     if half < PAR_THRESHOLD {
@@ -2596,7 +2611,7 @@ fn partial_eval_lsb_one(evals: &mut Vec<F128>, r: F128) {
     // Parallel: produce a fresh halved Vec then swap in. Doing it in-place with
     // par_iter on overlapping indices is dicey; allocate the halved output and
     // swap (cheap vs the fold itself).
-    let folded: Vec<F128> = (0..half)
+    let folded: Vec<Gf128> = (0..half)
         .into_par_iter()
         .with_min_len(PAR_THRESHOLD / 4)
         .map(|j| evals[2 * j] * one_plus_r + evals[2 * j + 1] * r)
@@ -2616,8 +2631,12 @@ fn partial_eval_lsb_one(evals: &mut Vec<F128>, r: F128) {
 ///
 /// Returns `(folded_f, folded_b, next_msg)` where `next_msg = round_msg_lsb
 /// (folded_f, folded_b)`. Bit-identical to the unfused sequence.
-fn fold_and_msg_lsb(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>, SumcheckMessage) {
-    use crate::field::F256Unreduced;
+fn fold_and_msg_lsb(
+    f: &[Gf128],
+    b: &[Gf128],
+    r: Gf128,
+) -> (Vec<Gf128>, Vec<Gf128>, SumcheckMessage) {
+    use crate::field::Gf128Product;
     use rayon::prelude::*;
     let n = f.len();
     debug_assert!(n.is_power_of_two() && n >= 2);
@@ -2638,8 +2657,8 @@ fn fold_and_msg_lsb(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>, S
             nf.push(f0 + (f0 + f[2 * j + 1]) * r);
             nb.push(b0 + (b0 + b[2 * j + 1]) * r);
         }
-        let mut u_0 = F256Unreduced::ZERO;
-        let mut u_2 = F256Unreduced::ZERO;
+        let mut u_0 = Gf128Product::zero();
+        let mut u_2 = Gf128Product::zero();
         let mut k = 0;
         while k + 1 < half {
             let f0 = nf[k];
@@ -2681,8 +2700,8 @@ fn fold_and_msg_lsb(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>, S
         .map(|(ci, (fc, bc))| {
             let base = ci * CHUNK;
             let len = fc.len();
-            let mut u0 = F256Unreduced::ZERO;
-            let mut u2 = F256Unreduced::ZERO;
+            let mut u0 = Gf128Product::zero();
+            let mut u2 = Gf128Product::zero();
             // Fold this slice via the arch-dispatched slice kernel (AVX-512 on
             // x86, NEON on aarch64), then pair up the just-folded values for
             // the msg. `src[2j]·(1+r) + src[2j+1]·r = v0 + (v0+v1)·r` exactly
@@ -2702,7 +2721,7 @@ fn fold_and_msg_lsb(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>, S
             (u0, u2)
         })
         .reduce(
-            || (F256Unreduced::ZERO, F256Unreduced::ZERO),
+            || (Gf128Product::zero(), Gf128Product::zero()),
             |(a0, a2), (c0, c2)| (a0 ^ c0, a2 ^ c2),
         );
     (
@@ -2727,15 +2746,15 @@ fn fold_and_msg_lsb(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>, S
 /// bit-identical.
 #[derive(Clone, Copy, Debug)]
 pub struct FoldLookahead {
-    u0: [F128; 3],
-    u2: [F128; 3],
+    u0: [Gf128; 3],
+    u2: [Gf128; 3],
 }
 
-use crate::field::F256Unreduced;
+use crate::field::Gf128Product;
 
 impl FoldLookahead {
     #[inline]
-    fn eval(&self, r: F128) -> SumcheckMessage {
+    fn eval(&self, r: Gf128) -> SumcheckMessage {
         let r2 = r * r;
         SumcheckMessage {
             u_0: self.u0[0] + r * self.u0[1] + r2 * self.u0[2],
@@ -2757,7 +2776,7 @@ impl FoldLookahead {
 /// 8 unreduced muls per group (Karatsuba middle terms: the `r'`-linear
 /// coefficient is `m1 + m2 + (A+dA)(B+dB)` — exact in char 2).
 #[inline(always)]
-pub fn lookahead_accum_group(fq: &[F128; 4], bq: &[F128; 4], acc: &mut [F256Unreduced; 8]) {
+pub fn lookahead_accum_group(fq: &[Gf128; 4], bq: &[Gf128; 4], acc: &mut [Gf128Product; 8]) {
     let a0 = fq[0];
     let da0 = fq[0] + fq[1];
     let a1 = fq[2];
@@ -2791,7 +2810,7 @@ pub fn lookahead_accum_group(fq: &[F128; 4], bq: &[F128; 4], acc: &mut [F256Unre
 
 /// Reduce the 8 lookahead accumulators into `(msg, coeffs)`.
 #[inline]
-pub fn lookahead_finish(acc: [F256Unreduced; 8]) -> (SumcheckMessage, FoldLookahead) {
+pub fn lookahead_finish(acc: [Gf128Product; 8]) -> (SumcheckMessage, FoldLookahead) {
     (
         SumcheckMessage {
             u_0: acc[0].reduce(),
@@ -2805,7 +2824,7 @@ pub fn lookahead_finish(acc: [F256Unreduced; 8]) -> (SumcheckMessage, FoldLookah
 }
 
 #[inline]
-pub(crate) fn xor_acc8(mut a: [F256Unreduced; 8], b: [F256Unreduced; 8]) -> [F256Unreduced; 8] {
+pub(crate) fn xor_acc8(mut a: [Gf128Product; 8], b: [Gf128Product; 8]) -> [Gf128Product; 8] {
     for k in 0..8 {
         a[k] ^= b[k];
     }
@@ -2817,10 +2836,10 @@ pub(crate) fn xor_acc8(mut a: [F256Unreduced; 8], b: [F256Unreduced; 8]) -> [F25
 /// Identical fold/message values to [`fold_and_msg_lsb`]; the extra
 /// coefficients cost ~1 extra mul per output in the same pass.
 fn fold1_lookahead_lsb(
-    f: &[F128],
-    b: &[F128],
-    r: F128,
-) -> (Vec<F128>, Vec<F128>, SumcheckMessage, FoldLookahead) {
+    f: &[Gf128],
+    b: &[Gf128],
+    r: Gf128,
+) -> (Vec<Gf128>, Vec<Gf128>, SumcheckMessage, FoldLookahead) {
     use rayon::prelude::*;
     let n = f.len();
     debug_assert_eq!(b.len(), n);
@@ -2841,7 +2860,7 @@ fn fold1_lookahead_lsb(
             let base = ci * CHUNK;
             let len = fc.len();
             debug_assert!(len.is_multiple_of(4) || len == half - base);
-            let mut acc = [F256Unreduced::ZERO; 8];
+            let mut acc = [Gf128Product::zero(); 8];
             // Fold this slice (1 mul per output per array)…
             for t in 0..len {
                 let j = base + t;
@@ -2862,7 +2881,7 @@ fn fold1_lookahead_lsb(
             }
             acc
         })
-        .reduce(|| [F256Unreduced::ZERO; 8], xor_acc8);
+        .reduce(|| [Gf128Product::zero(); 8], xor_acc8);
     let (msg, la) = lookahead_finish(acc);
     (nf, nb, msg, la)
 }
@@ -2873,11 +2892,11 @@ fn fold1_lookahead_lsb(
 /// [`fold_and_msg_lsb`] rounds, at ~55% of their memory traffic (the
 /// intermediate half-size arrays are never materialized).
 fn fold2_lookahead_lsb(
-    f: &[F128],
-    b: &[F128],
-    r_a: F128,
-    r_b: F128,
-) -> (Vec<F128>, Vec<F128>, SumcheckMessage, FoldLookahead) {
+    f: &[Gf128],
+    b: &[Gf128],
+    r_a: Gf128,
+    r_b: Gf128,
+) -> (Vec<Gf128>, Vec<Gf128>, SumcheckMessage, FoldLookahead) {
     use rayon::prelude::*;
     let n = f.len();
     debug_assert_eq!(b.len(), n);
@@ -2897,13 +2916,13 @@ fn fold2_lookahead_lsb(
         .map(|(ci, (fc, bc))| {
             let base = ci * CHUNK;
             let len = fc.len();
-            let mut acc = [F256Unreduced::ZERO; 8];
+            let mut acc = [Gf128Product::zero(); 8];
             // Fold 4→1 (3 muls per output per array), 4 outputs per group.
             let mut g = 0;
             while g < len {
                 let glen = (len - g).min(4);
-                let mut fq = [F128::ZERO; 4];
-                let mut bq = [F128::ZERO; 4];
+                let mut fq = [Gf128::ZERO; 4];
+                let mut bq = [Gf128::ZERO; 4];
                 for t in 0..glen {
                     let j = base + g + t;
                     let i = 4 * j;
@@ -2924,14 +2943,14 @@ fn fold2_lookahead_lsb(
             }
             acc
         })
-        .reduce(|| [F256Unreduced::ZERO; 8], xor_acc8);
+        .reduce(|| [Gf128Product::zero(); 8], xor_acc8);
     let (msg, la) = lookahead_finish(acc);
     (nf, nb, msg, la)
 }
 
 /// Fold both arrays by `r` with NO message computation (write-only drain for
 /// a pending lookahead challenge at the end of an odd-length schedule).
-fn fold_pair_no_msg(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>) {
+fn fold_pair_no_msg(f: &[Gf128], b: &[Gf128], r: Gf128) -> (Vec<Gf128>, Vec<Gf128>) {
     use rayon::prelude::*;
     let n = f.len();
     debug_assert_eq!(b.len(), n);
@@ -2957,34 +2976,32 @@ fn fold_pair_no_msg(f: &[F128], b: &[F128], r: F128) -> (Vec<F128>, Vec<F128>) {
     (nf, nb)
 }
 
-pub struct SumcheckProver {
-    f: Vec<F128>,
+/// Borrows the initial polynomial when possible. Each fold produces its own
+/// smaller buffer; only owned buffers are returned to the scratch pool.
+pub struct SumcheckProver<'a> {
+    f: Cow<'a, [Gf128]>,
     /// Single combined basis poly. After every `glue(β)`, the introduced
     /// `b_new` is folded into here as `combined_basis += β · b_new`. This
     /// keeps fold cost O(1 + 1) = (f + combined_basis) regardless of how
     /// many recursive intro/glue pairs have happened.
-    combined_basis: Vec<F128>,
-    t_r: F128,
+    combined_basis: Vec<Gf128>,
+    t_r: Gf128,
     transcript: Vec<SumcheckMessage>,
-    pending_glue: Option<(Vec<F128>, F128)>,
+    pending_glue: Option<(Vec<Gf128>, Gf128)>,
     /// Lookahead bookkeeping: a fold challenge whose array fold is deferred
     /// to the next lookahead pass (the round's message was already produced
     /// by [`FoldLookahead::eval`]). Must be `None` (drained) before any
     /// non-lookahead operation touches `f`/`combined_basis`.
-    pending_fold: Option<F128>,
+    pending_fold: Option<Gf128>,
 }
 
-impl SumcheckProver {
-    pub fn new(f: Vec<F128>, b1: Vec<F128>, h1: F128) -> (Self, SumcheckMessage) {
-        assert_eq!(f.len(), b1.len());
-        let mut inst = Self {
-            f,
-            combined_basis: b1,
-            t_r: h1,
-            transcript: Vec::new(),
-            pending_glue: None,
-            pending_fold: None,
-        };
+impl<'a> SumcheckProver<'a> {
+    pub fn new(
+        f: impl Into<Cow<'a, [Gf128]>>,
+        b1: Vec<Gf128>,
+        h1: Gf128,
+    ) -> (Self, SumcheckMessage) {
+        let mut inst = Self::initial_state(f.into(), b1, h1);
         let msg = round_msg_lsb(&inst.f, &inst.combined_basis);
         inst.transcript.push(msg);
         (inst, msg)
@@ -2996,25 +3013,29 @@ impl SumcheckProver {
     /// `recursive_prover_with_basis` to consume the round0 prime that
     /// `compute_combined_basis_and_target` produces for free.
     pub fn new_with_first_msg(
-        f: Vec<F128>,
-        b1: Vec<F128>,
-        h1: F128,
+        f: impl Into<Cow<'a, [Gf128]>>,
+        b1: Vec<Gf128>,
+        h1: Gf128,
         first_msg: SumcheckMessage,
     ) -> (Self, SumcheckMessage) {
+        let mut inst = Self::initial_state(f.into(), b1, h1);
+        inst.transcript.push(first_msg);
+        (inst, first_msg)
+    }
+
+    fn initial_state(f: Cow<'a, [Gf128]>, b1: Vec<Gf128>, h1: Gf128) -> Self {
         assert_eq!(f.len(), b1.len());
-        let mut inst = Self {
+        Self {
             f,
             combined_basis: b1,
             t_r: h1,
             transcript: Vec::new(),
             pending_glue: None,
             pending_fold: None,
-        };
-        inst.transcript.push(first_msg);
-        (inst, first_msg)
+        }
     }
 
-    pub fn fold(&mut self, r: F128) -> SumcheckMessage {
+    pub fn fold(&mut self, r: Gf128) -> SumcheckMessage {
         debug_assert!(self.pending_fold.is_none(), "fold with pending lookahead");
         // Fused: fold f and combined_basis at r AND build the next-round
         // message in one parallel pass (was three passes). See
@@ -3022,8 +3043,7 @@ impl SumcheckProver {
         let (nf, nb, msg) = fold_and_msg_lsb(&self.f, &self.combined_basis, r);
         // Recycle the outgoing buffers (the round-0 pair is the 2^(m-7)
         // packed witness + b_combined) instead of munmap-ing them.
-        crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
-        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+        self.replace_folded(nf, nb);
         self.transcript.push(msg);
         msg
     }
@@ -3031,11 +3051,10 @@ impl SumcheckProver {
     /// Lookahead entry: like [`Self::fold`] but also returns the next round's
     /// message coefficients (see [`FoldLookahead`]). Same fold + message
     /// values as `fold(r)`.
-    pub fn fold1_lookahead(&mut self, r: F128) -> (SumcheckMessage, FoldLookahead) {
+    pub fn fold1_lookahead(&mut self, r: Gf128) -> (SumcheckMessage, FoldLookahead) {
         debug_assert!(self.pending_fold.is_none(), "fold1 with pending lookahead");
         let (nf, nb, msg, la) = fold1_lookahead_lsb(&self.f, &self.combined_basis, r);
-        crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
-        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+        self.replace_folded(nf, nb);
         self.transcript.push(msg);
         (msg, la)
     }
@@ -3045,7 +3064,7 @@ impl SumcheckProver {
     /// fold by `r` is deferred to the next [`Self::fold2_lookahead`] (or
     /// [`Self::drain_pending_fold`]). The message value is identical to
     /// `fold(r)`'s by exact polynomial identity.
-    pub fn fold_skip(&mut self, la: &FoldLookahead, r: F128) -> SumcheckMessage {
+    pub fn fold_skip(&mut self, la: &FoldLookahead, r: Gf128) -> SumcheckMessage {
         debug_assert!(self.pending_fold.is_none(), "double lookahead skip");
         let msg = la.eval(r);
         self.pending_fold = Some(r);
@@ -3055,14 +3074,13 @@ impl SumcheckProver {
 
     /// Lookahead steady state: fold the pending challenge AND `r` in one
     /// 4→1 pass, returning the post-fold message + next coefficients.
-    pub fn fold2_lookahead(&mut self, r: F128) -> (SumcheckMessage, FoldLookahead) {
+    pub fn fold2_lookahead(&mut self, r: Gf128) -> (SumcheckMessage, FoldLookahead) {
         let r_a = self
             .pending_fold
             .take()
             .expect("fold2_lookahead without pending challenge");
         let (nf, nb, msg, la) = fold2_lookahead_lsb(&self.f, &self.combined_basis, r_a, r);
-        crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
-        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+        self.replace_folded(nf, nb);
         self.transcript.push(msg);
         (msg, la)
     }
@@ -3072,14 +3090,13 @@ impl SumcheckProver {
     pub fn drain_pending_fold(&mut self) {
         if let Some(r) = self.pending_fold.take() {
             let (nf, nb) = fold_pair_no_msg(&self.f, &self.combined_basis, r);
-            crate::scratch::give_f128(std::mem::replace(&mut self.f, nf));
-            crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, nb));
+            self.replace_folded(nf, nb);
         }
     }
 
     /// Introduce a fresh basis poly with claimed sum `h_new`. Sends the
     /// (u_0, u_2) for `Σ_x f(x) · b_new(x)` at the current dim.
-    pub fn introduce_new(&mut self, b_new: Vec<F128>, h_new: F128) -> SumcheckMessage {
+    pub fn introduce_new(&mut self, b_new: Vec<Gf128>, h_new: Gf128) -> SumcheckMessage {
         debug_assert!(self.pending_fold.is_none(), "introduce with pending fold");
         assert_eq!(b_new.len(), self.f.len());
         let msg = round_msg_lsb(&self.f, &b_new);
@@ -3094,7 +3111,7 @@ impl SumcheckProver {
     /// eval `f̂(z)` — fusing it here removes the separate `mle_eval_inline`
     /// fold over `f`. Transcript-identical: the caller observes the returned
     /// `h_new` then `(u_0, u_2)`, exactly as the unfused path does.
-    pub fn introduce_new_with_eval(&mut self, b_new: Vec<F128>) -> (SumcheckMessage, F128) {
+    pub fn introduce_new_with_eval(&mut self, b_new: Vec<Gf128>) -> (SumcheckMessage, Gf128) {
         debug_assert!(self.pending_fold.is_none(), "introduce with pending fold");
         assert_eq!(b_new.len(), self.f.len());
         let (msg, h_new) = round_msg_and_eval_lsb(&self.f, &b_new);
@@ -3105,7 +3122,7 @@ impl SumcheckProver {
 
     /// Combine the introduced basis into `combined_basis` with separation α.
     /// `combined_basis[j] += α · b_new[j]` (pointwise), `T_r += α · h_new`.
-    pub fn glue(&mut self, alpha: F128) {
+    pub fn glue(&mut self, alpha: Gf128) {
         use rayon::prelude::*;
         let (b_new, h_new) = self
             .pending_glue
@@ -3127,7 +3144,7 @@ impl SumcheckProver {
         self.t_r += alpha * h_new;
     }
 
-    pub fn f(&self) -> &[F128] {
+    pub fn f(&self) -> &[Gf128] {
         debug_assert!(self.pending_fold.is_none(), "f() with pending fold");
         &self.f
     }
@@ -3144,6 +3161,23 @@ impl SumcheckProver {
 
     pub fn transcript(&self) -> &[SumcheckMessage] {
         &self.transcript
+    }
+
+    fn replace_folded(&mut self, folded: Vec<Gf128>, basis: Vec<Gf128>) {
+        if let Cow::Owned(previous) = std::mem::replace(&mut self.f, Cow::Owned(folded)) {
+            crate::scratch::give_f128(previous);
+        }
+        crate::scratch::give_f128(std::mem::replace(&mut self.combined_basis, basis));
+    }
+
+    /// Transfer the final polynomial and messages into the proof. The
+    /// protocol has materialized its folds before reaching this boundary.
+    fn finish(mut self) -> (Vec<Gf128>, Vec<SumcheckMessage>) {
+        assert!(self.pending_fold.is_none(), "finish with pending fold");
+        (
+            std::mem::take(&mut self.f).into_owned(),
+            std::mem::take(&mut self.transcript),
+        )
     }
 }
 
@@ -3195,9 +3229,9 @@ fn merkle_multi_proof_for(tree: &[Hash], block_len: usize, queries: &[usize]) ->
 ///    introduce + glue.
 pub fn recursive_prover<Ch: Challenger>(
     config: &ProverConfig,
-    poly: &[F128],
-    eval_point: &[F128],
-    claimed_value: F128,
+    poly: &[Gf128],
+    eval_point: &[Gf128],
+    claimed_value: Gf128,
     challenger: &mut Ch,
 ) -> LigeritoProof {
     let trace = std::env::var("LIGERITO_TRACE").is_ok();
@@ -3270,11 +3304,11 @@ pub fn recursive_prover<Ch: Challenger>(
 /// `log_batch_size = config.initial_k` and `log_inv_rate = config.log_inv_rates[0]`.
 pub fn recursive_prover_with_l0<Ch: Challenger>(
     config: &ProverConfig,
-    poly: &[F128],
-    l0_codeword: Vec<F128>,
+    poly: &[Gf128],
+    l0_codeword: Vec<Gf128>,
     l0_tree: Vec<Hash>,
-    eval_point: &[F128],
-    claimed_value: F128,
+    eval_point: &[Gf128],
+    claimed_value: Gf128,
     challenger: &mut Ch,
 ) -> LigeritoProof {
     let trace = std::env::var("LIGERITO_TRACE").is_ok();
@@ -3351,12 +3385,12 @@ pub fn recursive_prover_with_l0<Ch: Challenger>(
 /// basis with no single `z`), runs `initial_k` real sumcheck rounds folding
 /// both `f` and `b` together with FS challenges. The folded f becomes wtns_1
 /// and the rest of the protocol proceeds identically.
-pub fn recursive_prover_with_basis<Ch: Challenger>(
+pub fn recursive_prover_with_basis<'a, Ch: Challenger>(
     config: &ProverConfig,
-    packed_witness: Vec<F128>,
-    b_initial: Vec<F128>,
-    target: F128,
-    l0_codeword: &[F128],
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    l0_codeword: &[Gf128],
     l0_tree: &[Hash],
     challenger: &mut Ch,
 ) -> LigeritoProof {
@@ -3379,14 +3413,14 @@ pub fn recursive_prover_with_basis<Ch: Challenger>(
 /// side effect while building `b_initial` — passing them in here lets
 /// `SumcheckProver::new` skip the redundant 256 MB read pass over (f, b1).
 #[allow(clippy::too_many_arguments)]
-pub fn recursive_prover_with_basis_precomputed_round0<Ch: Challenger>(
+pub fn recursive_prover_with_basis_precomputed_round0<'a, Ch: Challenger>(
     config: &ProverConfig,
-    packed_witness: Vec<F128>,
-    b_initial: Vec<F128>,
-    target: F128,
-    l0_codeword: &[F128],
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    l0_codeword: &[Gf128],
     l0_tree: &[Hash],
-    round0_uv: (F128, F128),
+    round0_uv: (Gf128, Gf128),
     round1_lookahead: Option<FoldLookahead>,
     challenger: &mut Ch,
 ) -> LigeritoProof {
@@ -3407,12 +3441,12 @@ pub fn recursive_prover_with_basis_precomputed_round0<Ch: Challenger>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn recursive_prover_with_basis_impl<Ch: Challenger>(
+fn recursive_prover_with_basis_impl<'a, Ch: Challenger>(
     config: &ProverConfig,
-    packed_witness: Vec<F128>,
-    b_initial: Vec<F128>,
-    target: F128,
-    l0_codeword: &[F128],
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    l0_codeword: &[Gf128],
     l0_tree: &[Hash],
     first_msg: Option<SumcheckMessage>,
     round1_lookahead: Option<FoldLookahead>,
@@ -3420,15 +3454,25 @@ fn recursive_prover_with_basis_impl<Ch: Challenger>(
 ) -> LigeritoProof {
     let initial_root = *l0_tree.last().expect("nonempty initial Merkle tree");
     recursive_prover_with_basis_initial_impl(
-        config, packed_witness, b_initial, target, initial_root,
+        config,
+        packed_witness,
+        b_initial,
+        target,
+        initial_root,
         |positions, lanes, queries| {
             assert_eq!(l0_codeword.len(), positions * lanes);
             assert_eq!(l0_tree.len(), 2 * positions - 1);
             RecursiveProof {
-                opened_rows: queries.iter().map(|&q| l0_codeword[q * lanes..(q + 1) * lanes].to_vec()).collect(),
+                opened_rows: queries
+                    .iter()
+                    .map(|&q| l0_codeword[q * lanes..(q + 1) * lanes].to_vec())
+                    .collect(),
                 merkle_proof: merkle_multi_proof_for(l0_tree, positions, queries),
             }
-        }, first_msg, round1_lookahead, challenger,
+        },
+        first_msg,
+        round1_lookahead,
+        challenger,
     )
 }
 
@@ -3440,11 +3484,11 @@ fn recursive_prover_with_basis_impl<Ch: Challenger>(
 /// identifier. This hook supports virtual concatenation of committed oracles
 /// without constructing a third initial Merkle tree.
 #[allow(clippy::too_many_arguments)]
-pub fn recursive_prover_with_basis_initial<Ch, O>(
+pub fn recursive_prover_with_basis_initial<'a, Ch, O>(
     config: &ProverConfig,
-    packed_witness: Vec<F128>,
-    b_initial: Vec<F128>,
-    target: F128,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
     initial_root: Hash,
     open_initial: O,
     challenger: &mut Ch,
@@ -3454,17 +3498,24 @@ where
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
 {
     recursive_prover_with_basis_initial_impl(
-        config, packed_witness, b_initial, target, initial_root,
-        open_initial, None, None, challenger,
+        config,
+        packed_witness,
+        b_initial,
+        target,
+        initial_root,
+        open_initial,
+        None,
+        None,
+        challenger,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn recursive_prover_with_basis_initial_impl<Ch, O>(
+fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
     config: &ProverConfig,
-    packed_witness: Vec<F128>,
-    b_initial: Vec<F128>,
-    target: F128,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
     initial_root: Hash,
     open_initial: O,
     first_msg: Option<SumcheckMessage>,
@@ -3475,6 +3526,7 @@ where
     Ch: Challenger,
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
 {
+    let packed_witness = packed_witness.into();
     let log_n = packed_witness.len().trailing_zeros() as usize;
     let r = config.recursive_steps;
     let initial_k = config.initial_k;
@@ -3517,7 +3569,7 @@ where
         0,
         "L0 must not take explicit OOD samples"
     );
-    let mut ood_values: Vec<F128> = Vec::new();
+    let mut ood_values: Vec<Gf128> = Vec::new();
     let mut fold_grinding_nonces: Vec<u64> = Vec::new();
     let fold_bits =
         |lvl: usize| -> u32 { config.fold_grinding_bits.get(lvl).copied().unwrap_or(0) as u32 };
@@ -3605,9 +3657,8 @@ where
     let log_inv_rate_1 = config.log_inv_rates[1];
     let _t = std::time::Instant::now();
     let ntt_1 = AdditiveNttF128::standard(log_msg_cols_1 + log_inv_rate_1);
-    let f1 = sc_prover.f().to_vec();
     let wtns_1 = ligero_commit(
-        &f1,
+        sc_prover.f(),
         log_msg_cols_1,
         log_num_interleaved_1,
         log_inv_rate_1,
@@ -3660,7 +3711,12 @@ where
     let _t = std::time::Instant::now();
     let initial_proof = open_initial(l0_block_len, l0_num_interleaved, &queries_0);
     assert_eq!(initial_proof.opened_rows.len(), queries_0.len());
-    assert!(initial_proof.opened_rows.iter().all(|row| row.len() == l0_num_interleaved));
+    assert!(
+        initial_proof
+            .opened_rows
+            .iter()
+            .all(|row| row.len() == l0_num_interleaved)
+    );
     let opened_rows_0 = &initial_proof.opened_rows;
     if trace {
         t_opens += _t.elapsed();
@@ -3723,7 +3779,7 @@ where
         }
 
         if i == r - 1 {
-            let yr = sc_prover.f().to_vec();
+            let (yr, sumcheck_transcript) = sc_prover.finish();
             for v in &yr {
                 challenger.observe_f128(*v);
             }
@@ -3734,7 +3790,7 @@ where
             let queries_last =
                 sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_last);
             let _t = std::time::Instant::now();
-            let opened_rows_last: Vec<Vec<F128>> = queries_last
+            let opened_rows_last: Vec<Vec<Gf128>> = queries_last
                 .iter()
                 .map(|&q| wtns_prev.row(q).to_vec())
                 .collect();
@@ -3788,7 +3844,7 @@ where
                     opened_rows: opened_rows_last,
                     merkle_proof: merkle_proof_last,
                 },
-                sumcheck_transcript: sc_prover.transcript().to_vec(),
+                sumcheck_transcript,
                 grinding_nonces,
                 ood_values,
                 fold_grinding_nonces,
@@ -3802,9 +3858,8 @@ where
         let log_inv_rate_next = config.log_inv_rates[i + 2];
         let _t = std::time::Instant::now();
         let ntt_next = AdditiveNttF128::standard(log_msg_cols_next + log_inv_rate_next);
-        let f_evals = sc_prover.f().to_vec();
         let wtns_next = ligero_commit(
-            &f_evals,
+            sc_prover.f(),
             log_msg_cols_next,
             log_num_interleaved_next,
             log_inv_rate_next,
@@ -3844,7 +3899,7 @@ where
         let queries_i = sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_i);
         let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
         let _t = std::time::Instant::now();
-        let opened_rows_i: Vec<Vec<F128>> = queries_i
+        let opened_rows_i: Vec<Vec<Gf128>> = queries_i
             .iter()
             .map(|&q| wtns_prev.row(q).to_vec())
             .collect();
@@ -3853,10 +3908,6 @@ where
         if trace {
             t_opens += _t.elapsed();
         }
-        recursive_proofs.push(RecursiveProof {
-            opened_rows: opened_rows_i.clone(),
-            merkle_proof: merkle_proof_i,
-        });
 
         let sks_vks_i = eval_sk_at_vks(n_next);
         let _t = std::time::Instant::now();
@@ -3871,6 +3922,11 @@ where
         if trace {
             t_induce += _t.elapsed();
         }
+
+        recursive_proofs.push(RecursiveProof {
+            opened_rows: opened_rows_i,
+            merkle_proof: merkle_proof_i,
+        });
 
         let _t = std::time::Instant::now();
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
@@ -3889,7 +3945,7 @@ where
 }
 
 /// Succinct verifier for [`recursive_prover_with_basis`]: instead of accepting
-/// a dense `b_initial: &[F128]` (which would be ~16 MB at m=29), accepts a
+/// a dense `b_initial: &[Gf128]` (which would be ~16 MB at m=29), accepts a
 /// **closure** `eval_b` that evaluates `b_initial(point)` at any multilinear
 /// point. The verifier calls `eval_b` only `yr.len()` times (at the residual)
 /// — typically a few dozen times, not 2^L. Use this from
@@ -3902,7 +3958,7 @@ pub fn recursive_verifier_with_basis_succinct<Ch, F>(
     config: &VerifierConfig,
     proof: &LigeritoProof,
     log_n: usize,
-    target: F128,
+    target: Gf128,
     expected_initial_root: &Hash,
     eval_b_residual: F,
     challenger: &mut Ch,
@@ -3913,14 +3969,27 @@ where
     // Returns 2^yr_log_n values: eval_b(ris ++ y_bits) for y ∈ [0, 2^yr_log_n).
     // This API allows callers to amortize prefix work across yr positions
     // (e.g. ring_switch::eval_rs_eq_prefix + finish_from_prefix).
-    F: Fn(&[F128], usize) -> Vec<F128>,
+    F: Fn(&[Gf128], usize) -> Vec<Gf128>,
 {
     recursive_verifier_with_basis_initial(
-        config, proof, log_n, target, expected_initial_root, eval_b_residual,
-        |positions, lanes, queries, opening| verify_level_opens(
-            expected_initial_root, positions, queries, &opening.opened_rows,
-            lanes, &opening.merkle_proof, config.merkle_hash,
-        ), challenger,
+        config,
+        proof,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        |positions, lanes, queries, opening| {
+            verify_level_opens(
+                expected_initial_root,
+                positions,
+                queries,
+                &opening.opened_rows,
+                lanes,
+                &opening.merkle_proof,
+                config.merkle_hash,
+            )
+        },
+        challenger,
     )
 }
 
@@ -3933,7 +4002,7 @@ pub fn recursive_verifier_with_basis_initial<Ch, F, A>(
     config: &VerifierConfig,
     proof: &LigeritoProof,
     log_n: usize,
-    target: F128,
+    target: Gf128,
     expected_initial_root: &Hash,
     eval_b_residual: F,
     authenticate_initial: A,
@@ -3941,7 +4010,7 @@ pub fn recursive_verifier_with_basis_initial<Ch, F, A>(
 ) -> bool
 where
     Ch: Challenger,
-    F: Fn(&[F128], usize) -> Vec<F128>,
+    F: Fn(&[Gf128], usize) -> Vec<Gf128>,
     A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
 {
     let trace = std::env::var("LIG_VERIFY_TRACE").is_ok();
@@ -3992,9 +4061,9 @@ where
     // OOD claims glued into the running sumcheck: each contributes
     // `beta · Π_b eq(z_b, r_b) · eq(z_tail, ·)` at the residual.
     struct OodCtx {
-        z: Vec<F128>,
+        z: Vec<Gf128>,
         ris_start: usize,
-        beta: F128,
+        beta: Gf128,
     }
     let mut ood_ctxs: Vec<OodCtx> = Vec::new();
 
@@ -4084,8 +4153,17 @@ where
     let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
     let _t = std::time::Instant::now();
     if proof.initial_proof.opened_rows.len() != queries_0.len()
-        || proof.initial_proof.opened_rows.iter().any(|row| row.len() != num_interleaved_0)
-        || !authenticate_initial(block_len_0, num_interleaved_0, &queries_0, &proof.initial_proof)
+        || proof
+            .initial_proof
+            .opened_rows
+            .iter()
+            .any(|row| row.len() != num_interleaved_0)
+        || !authenticate_initial(
+            block_len_0,
+            num_interleaved_0,
+            &queries_0,
+            &proof.initial_proof,
+        )
     {
         return false;
     }
@@ -4124,9 +4202,9 @@ where
     struct LevelCtx {
         log_msg_cols: usize,
         queries: Vec<usize>,
-        alpha: Vec<F128>, // ⌈log₂ Q⌉ field elements (eq-tensor combination)
+        alpha: Vec<Gf128>, // ⌈log₂ Q⌉ field elements (eq-tensor combination)
         ris_start: usize,
-        beta: F128,
+        beta: Gf128,
     }
     let mut level_ctxs: Vec<LevelCtx> = vec![LevelCtx {
         log_msg_cols: n1,
@@ -4135,7 +4213,7 @@ where
         ris_start: initial_k,
         beta: beta_0,
     }];
-    let mut ris: Vec<F128> = r_lane_fold.clone();
+    let mut ris: Vec<Gf128> = r_lane_fold.clone();
 
     let mut prev_root = root_1;
     let mut prev_log_num_interleaved = config.recursive_ks[0];
@@ -4272,7 +4350,7 @@ where
             let yr_log_n = n_current;
 
             let _t = std::time::Instant::now();
-            let induced_residuals: Vec<Vec<F128>> = level_ctxs
+            let induced_residuals: Vec<Vec<Gf128>> = level_ctxs
                 .iter()
                 .map(|ctx| {
                     let sks_vks = eval_sk_at_vks(ctx.log_msg_cols);
@@ -4301,7 +4379,7 @@ where
             // at dim |z| and folded by the subsequent challenges contributes
             // `beta · Π_b eq(z_b, r_b)` times the eq table on z's unfolded
             // tail (char-2 eq factor: 1 + a + b).
-            let mut ood_residuals: Vec<Vec<F128>> = Vec::with_capacity(ood_ctxs.len());
+            let mut ood_residuals: Vec<Vec<Gf128>> = Vec::with_capacity(ood_ctxs.len());
             for ctx in &ood_ctxs {
                 if ctx.z.len() < yr_log_n || ctx.ris_start + (ctx.z.len() - yr_log_n) > ris.len() {
                     return false;
@@ -4309,7 +4387,7 @@ where
                 let folded = ctx.z.len() - yr_log_n;
                 let mut scalar = ctx.beta;
                 for b in 0..folded {
-                    scalar *= F128::ONE + ctx.z[b] + ris[ctx.ris_start + b];
+                    scalar *= Gf128::ONE + ctx.z[b] + ris[ctx.ris_start + b];
                 }
                 let mut tail = build_eq_table(&ctx.z[folded..]);
                 for v in tail.iter_mut() {
@@ -4328,7 +4406,7 @@ where
             if evb_vec.len() != yr_len {
                 return false;
             }
-            let mut inner = F128::ZERO;
+            let mut inner = Gf128::ZERO;
             let _t = std::time::Instant::now();
             for y in 0..yr_len {
                 let mut combined_y = evb_vec[y];
@@ -4492,8 +4570,8 @@ where
 pub fn recursive_verifier_with_basis<Ch: Challenger>(
     config: &VerifierConfig,
     proof: &LigeritoProof,
-    b_initial: &[F128],
-    target: F128,
+    b_initial: &[Gf128],
+    target: Gf128,
     expected_initial_root: &Hash,
     challenger: &mut Ch,
 ) -> bool {
@@ -4542,7 +4620,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
     let mut ood_idx = 0usize;
     // OOD eq bases glued into the running sumcheck, accumulated as
     // (dense eq table, ris_start, beta) and added at the residual check.
-    let mut ood_bases: Vec<(Vec<F128>, usize, F128)> = Vec::new();
+    let mut ood_bases: Vec<(Vec<Gf128>, usize, Gf128)> = Vec::new();
 
     let mut r_lane_fold = Vec::with_capacity(initial_k);
     for j in 0..initial_k {
@@ -4658,10 +4736,10 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
     // Basis poly tracking for residual check.
     // b_initial is the "level-0 basis" — it gets partial-eval'd at all ris.
     // basis_0_induced is introduced at start (before any ris from level 0+) — partial-eval at the level-0+ ris.
-    let mut basis_polys: Vec<Vec<F128>> = vec![b_initial.to_vec(), basis_0_induced];
+    let mut basis_polys: Vec<Vec<Gf128>> = vec![b_initial.to_vec(), basis_0_induced];
     let mut basis_ris_starts: Vec<usize> = vec![0, initial_k];
-    let mut basis_separations: Vec<F128> = vec![beta_0];
-    let mut ris: Vec<F128> = r_lane_fold.clone();
+    let mut basis_separations: Vec<Gf128> = vec![beta_0];
+    let mut ris: Vec<Gf128> = r_lane_fold.clone();
 
     let mut prev_root = root_1;
     let mut prev_log_num_interleaved = config.recursive_ks[0];
@@ -4777,7 +4855,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
 
             // Residual check.
             let yr_len = yr.len();
-            let mut combined = vec![F128::ZERO; yr_len];
+            let mut combined = vec![Gf128::ZERO; yr_len];
             for (k, basis) in basis_polys.iter().enumerate() {
                 let start = basis_ris_starts[k];
                 let residual = partial_eval_lsb(basis, &ris[start..]);
@@ -4785,7 +4863,7 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
                     return false;
                 }
                 let sep = if k == 0 {
-                    F128::ONE
+                    Gf128::ONE
                 } else {
                     basis_separations[k - 1]
                 };
@@ -4803,11 +4881,11 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
                     *c += *beta * rr;
                 }
             }
-            let inner: F128 = yr
+            let inner: Gf128 = yr
                 .iter()
                 .zip(combined.iter())
                 .map(|(&y, &c)| y * c)
-                .fold(F128::ZERO, |a, v| a + v);
+                .fold(Gf128::ZERO, |a, v| a + v);
             return inner == t_r;
         }
 
@@ -4918,10 +4996,10 @@ pub fn recursive_verifier_with_basis<Ch: Challenger>(
 #[allow(clippy::too_many_arguments)]
 fn recursive_prover_inner<Ch: Challenger>(
     config: &ProverConfig,
-    poly: &[F128],
+    poly: &[Gf128],
     wtns_0: LigeroWitness,
-    eval_point: &[F128],
-    claimed_value: F128,
+    eval_point: &[Gf128],
+    claimed_value: Gf128,
     challenger: &mut Ch,
     t_total: std::time::Instant,
     mut t_commits: std::time::Duration,
@@ -4976,13 +5054,10 @@ fn recursive_prover_inner<Ch: Challenger>(
     let queries_0 = sample_distinct_queries(challenger, wtns_0.block_len, num_queries_0);
     let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
     let t = std::time::Instant::now();
-    let opened_rows_0: Vec<Vec<F128>> = queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
+    let opened_rows_0: Vec<Vec<Gf128>> =
+        queries_0.iter().map(|&q| wtns_0.row(q).to_vec()).collect();
     let merkle_proof_0 = merkle_multi_proof_for(&wtns_0.tree, wtns_0.block_len, &queries_0);
     t_opens += t.elapsed();
-    let initial_proof = RecursiveProof {
-        opened_rows: opened_rows_0.clone(),
-        merkle_proof: merkle_proof_0,
-    };
 
     // ---- Induce basis from wtns_0 opens ----
     let sks_vks_n1 = eval_sk_at_vks(n1);
@@ -4997,6 +5072,11 @@ fn recursive_prover_inner<Ch: Challenger>(
         &alpha_0,
     );
     t_induce += t.elapsed();
+
+    let initial_proof = RecursiveProof {
+        opened_rows: opened_rows_0,
+        merkle_proof: merkle_proof_0,
+    };
 
     // ---- Start sumcheck: f¹ · eq(z[initial_k..], ·) = claimed_value ----
     let eq_z_residual = build_eq_table(&eval_point[initial_k..]);
@@ -5041,7 +5121,7 @@ fn recursive_prover_inner<Ch: Challenger>(
                 t_total.elapsed()
             );
             // Last iter: send residual yr + open wtns_prev.
-            let yr = sc_prover.f().to_vec();
+            let (yr, sumcheck_transcript) = sc_prover.finish();
             for v in &yr {
                 challenger.observe_f128(*v);
             }
@@ -5049,7 +5129,7 @@ fn recursive_prover_inner<Ch: Challenger>(
             let num_queries_last = udr_queries(config.log_inv_rates[i + 1]);
             let queries_last =
                 sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_last);
-            let opened_rows_last: Vec<Vec<F128>> = queries_last
+            let opened_rows_last: Vec<Vec<Gf128>> = queries_last
                 .iter()
                 .map(|&q| wtns_prev.row(q).to_vec())
                 .collect();
@@ -5065,7 +5145,7 @@ fn recursive_prover_inner<Ch: Challenger>(
                     opened_rows: opened_rows_last,
                     merkle_proof: merkle_proof_last,
                 },
-                sumcheck_transcript: sc_prover.transcript().to_vec(),
+                sumcheck_transcript,
                 grinding_nonces: Vec::new(), // legacy recursive_prover_inner: no grinding plumbed
                 ood_values: Vec::new(),
                 fold_grinding_nonces: Vec::new(),
@@ -5084,10 +5164,9 @@ fn recursive_prover_inner<Ch: Challenger>(
         let log_msg_cols_next = n_next - log_num_interleaved_next;
         let log_inv_rate_next = config.log_inv_rates[i + 2];
         let ntt_next = AdditiveNttF128::standard(log_msg_cols_next + log_inv_rate_next);
-        let f_evals = sc_prover.f().to_vec();
         let t = std::time::Instant::now();
         let wtns_next = ligero_commit(
-            &f_evals,
+            sc_prover.f(),
             log_msg_cols_next,
             log_num_interleaved_next,
             log_inv_rate_next,
@@ -5106,17 +5185,13 @@ fn recursive_prover_inner<Ch: Challenger>(
         let queries_i = sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_i);
         let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
         let t = std::time::Instant::now();
-        let opened_rows_i: Vec<Vec<F128>> = queries_i
+        let opened_rows_i: Vec<Vec<Gf128>> = queries_i
             .iter()
             .map(|&q| wtns_prev.row(q).to_vec())
             .collect();
         let merkle_proof_i =
             merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_i);
         t_opens += t.elapsed();
-        recursive_proofs.push(RecursiveProof {
-            opened_rows: opened_rows_i.clone(),
-            merkle_proof: merkle_proof_i,
-        });
 
         // Induce fresh basis from these opens.
         let sks_vks_i = eval_sk_at_vks(n_next);
@@ -5128,6 +5203,11 @@ fn recursive_prover_inner<Ch: Challenger>(
             &queries_i,
             &alpha_i,
         );
+
+        recursive_proofs.push(RecursiveProof {
+            opened_rows: opened_rows_i,
+            merkle_proof: merkle_proof_i,
+        });
 
         // Introduce + glue.
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
@@ -5148,7 +5228,7 @@ fn verify_level_opens(
     root: &Hash,
     block_len: usize,
     queries: &[usize],
-    opened_rows: &[Vec<F128>],
+    opened_rows: &[Vec<Gf128>],
     expected_num_interleaved: usize,
     multi_proof: &[Hash],
     kind: HashKind,
@@ -5164,7 +5244,7 @@ fn verify_level_opens(
         let bytes: &[u8] = unsafe {
             core::slice::from_raw_parts(
                 row.as_ptr() as *const u8,
-                row.len() * core::mem::size_of::<F128>(),
+                row.len() * core::mem::size_of::<Gf128>(),
             )
         };
         leaf_hashes.push(merkle::hash_leaf(bytes, kind));
@@ -5176,8 +5256,8 @@ fn verify_level_opens(
 pub fn recursive_verifier<Ch: Challenger>(
     config: &VerifierConfig,
     proof: &LigeritoProof,
-    eval_point: &[F128],
-    claimed_value: F128,
+    eval_point: &[Gf128],
+    claimed_value: Gf128,
     challenger: &mut Ch,
 ) -> bool {
     let log_n = eval_point.len();
@@ -5244,10 +5324,10 @@ pub fn recursive_verifier<Ch: Challenger>(
     let eq_z_residual = build_eq_table(&eval_point[initial_k..]);
     // basis_polys[k] are stored at the dim they were introduced. ris_starts[k] is
     // the index in `ris` at the time basis_polys[k] was introduced.
-    let mut basis_polys: Vec<Vec<F128>> = vec![eq_z_residual];
+    let mut basis_polys: Vec<Vec<Gf128>> = vec![eq_z_residual];
     let mut basis_ris_starts: Vec<usize> = vec![0];
-    let mut basis_separations: Vec<F128> = Vec::new(); // separation for basis_polys[k+1]
-    let mut ris: Vec<F128> = Vec::new();
+    let mut basis_separations: Vec<Gf128> = Vec::new(); // separation for basis_polys[k+1]
+    let mut ris: Vec<Gf128> = Vec::new();
     let mut t_r = claimed_value;
     let mut tx_idx = 0usize;
 
@@ -5361,7 +5441,7 @@ pub fn recursive_verifier<Ch: Challenger>(
             // Each basis_polys[k] is partially-evaluated at ris[ris_starts[k]..].
             // basis_polys[0] has separation 1, basis_polys[k+1] has separation basis_separations[k].
             let yr_len = yr.len();
-            let mut combined = vec![F128::ZERO; yr_len];
+            let mut combined = vec![Gf128::ZERO; yr_len];
             for (k, basis) in basis_polys.iter().enumerate() {
                 let start = basis_ris_starts[k];
                 let residual = partial_eval_lsb(basis, &ris[start..]);
@@ -5369,7 +5449,7 @@ pub fn recursive_verifier<Ch: Challenger>(
                     return false;
                 }
                 let sep = if k == 0 {
-                    F128::ONE
+                    Gf128::ONE
                 } else {
                     basis_separations[k - 1]
                 };
@@ -5377,11 +5457,11 @@ pub fn recursive_verifier<Ch: Challenger>(
                     *c += sep * r;
                 }
             }
-            let inner: F128 = yr
+            let inner: Gf128 = yr
                 .iter()
                 .zip(combined.iter())
                 .map(|(&y, &c)| y * c)
-                .fold(F128::ZERO, |a, v| a + v);
+                .fold(Gf128::ZERO, |a, v| a + v);
             return inner == t_r;
         }
 
@@ -5474,35 +5554,35 @@ mod tests {
             z ^ (z >> 31)
         };
         let n = 1usize << 12;
-        let f: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let f: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: next(),
                 hi: next(),
             })
             .collect();
-        let b: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let b: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: next(),
                 hi: next(),
             })
             .collect();
-        let target = F128 {
+        let target = Gf128 {
             lo: next(),
             hi: next(),
         };
         let first = SumcheckMessage {
-            u_0: F128 {
+            u_0: Gf128 {
                 lo: next(),
                 hi: next(),
             },
-            u_2: F128 {
+            u_2: Gf128 {
                 lo: next(),
                 hi: next(),
             },
         };
         for k in [5usize, 6] {
-            let rs: Vec<F128> = (0..k)
-                .map(|_| F128 {
+            let rs: Vec<Gf128> = (0..k)
+                .map(|_| Gf128 {
                     lo: next(),
                     hi: next(),
                 })
@@ -5513,7 +5593,9 @@ mod tests {
             let plain_msgs: Vec<SumcheckMessage> = rs.iter().map(|&r| plain.fold(r)).collect();
 
             let (mut la_prover, _) =
-                SumcheckProver::new_with_first_msg(f.clone(), b.clone(), target, first);
+                SumcheckProver::new_with_first_msg(f.as_slice(), b.clone(), target, first);
+            assert!(matches!(&la_prover.f, Cow::Borrowed(_)));
+            assert_eq!(la_prover.f().as_ptr(), f.as_ptr());
             let mut lookahead: Option<FoldLookahead> = None;
             let mut la_msgs = Vec::with_capacity(k);
             for &r in &rs {
@@ -5541,6 +5623,15 @@ mod tests {
                 plain.combined_basis, la_prover.combined_basis,
                 "k={k}: folded basis mismatch"
             );
+            let final_ptr = la_prover.f().as_ptr();
+            let (final_f, messages) = la_prover.finish();
+            assert_eq!(
+                final_f.as_ptr(),
+                final_ptr,
+                "final fold must move into proof"
+            );
+            assert_eq!(final_f, plain.f());
+            assert_eq!(messages.len(), plain.transcript().len());
         }
     }
 
@@ -5563,31 +5654,31 @@ mod tests {
             z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
             z ^ (z >> 31)
         };
-        let f: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let f: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: next(),
                 hi: next(),
             })
             .collect();
-        let b: Vec<F128> = (0..n)
-            .map(|_| F128 {
+        let b: Vec<Gf128> = (0..n)
+            .map(|_| Gf128 {
                 lo: next(),
                 hi: next(),
             })
             .collect();
-        let rs: Vec<F128> = (0..k)
-            .map(|_| F128 {
+        let rs: Vec<Gf128> = (0..k)
+            .map(|_| Gf128 {
                 lo: next(),
                 hi: next(),
             })
             .collect();
-        let target = F128::ZERO;
+        let target = Gf128::ZERO;
         let first = SumcheckMessage {
-            u_0: F128::ZERO,
-            u_2: F128::ZERO,
+            u_0: Gf128::ZERO,
+            u_2: Gf128::ZERO,
         };
 
-        let run_plain = |f: &[F128], b: &[F128]| -> (f64, SumcheckMessage) {
+        let run_plain = |f: &[Gf128], b: &[Gf128]| -> (f64, SumcheckMessage) {
             let (mut p, _) =
                 SumcheckProver::new_with_first_msg(f.to_vec(), b.to_vec(), target, first);
             let t = Instant::now();
@@ -5597,7 +5688,7 @@ mod tests {
             }
             (t.elapsed().as_secs_f64(), last)
         };
-        let run_la = |f: &[F128], b: &[F128]| -> (f64, SumcheckMessage) {
+        let run_la = |f: &[Gf128], b: &[Gf128]| -> (f64, SumcheckMessage) {
             let (mut p, _) =
                 SumcheckProver::new_with_first_msg(f.to_vec(), b.to_vec(), target, first);
             let t = Instant::now();
@@ -5630,7 +5721,7 @@ mod tests {
                 .par_chunks(4)
                 .zip(b.par_chunks(4))
                 .map(|(fc, bc)| {
-                    let mut acc = [F256Unreduced::ZERO; 8];
+                    let mut acc = [Gf128Product::zero(); 8];
                     lookahead_accum_group(
                         &[fc[0], fc[1], fc[2], fc[3]],
                         &[bc[0], bc[1], bc[2], bc[3]],
@@ -5638,10 +5729,10 @@ mod tests {
                     );
                     acc
                 })
-                .reduce(|| [F256Unreduced::ZERO; 8], xor_acc8);
+                .reduce(|| [Gf128Product::zero(); 8], xor_acc8);
             lookahead_finish(acc).1
         };
-        let run_la_entry = |f: &[F128], b: &[F128]| -> (f64, SumcheckMessage) {
+        let run_la_entry = |f: &[Gf128], b: &[Gf128]| -> (f64, SumcheckMessage) {
             let (mut p, _) =
                 SumcheckProver::new_with_first_msg(f.to_vec(), b.to_vec(), target, first);
             let t = Instant::now();
@@ -5769,7 +5860,11 @@ mod tests {
     #[ignore]
     fn regen_embedded_tomls() {
         let write = std::env::var("REGEN_WRITE").is_ok();
-        let ms: Vec<usize> = if write { (22..=35).collect() } else { vec![22, 29, 32] };
+        let ms: Vec<usize> = if write {
+            (22..=35).collect()
+        } else {
+            vec![22, 29, 32]
+        };
         for &m in &ms {
             for profile in [
                 LigeritoProfile::Fast,
@@ -6078,14 +6173,14 @@ mod tests {
         let log_inv_rate = 1;
 
         let mut rng = crate::challenger::RandomChallenger::new(0x6817_D146);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let b = build_eq_table(&z);
-        let target: F128 = poly
+        let target: Gf128 = poly
             .iter()
             .zip(b.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         // Hand-set queries + grinding (small but non-zero c so we exercise
@@ -6188,16 +6283,16 @@ mod tests {
     fn partial_eval_then_eval_equals_full_eval() {
         let n = 6;
         let len = 1usize << n;
-        let evals: Vec<F128> = (0..len)
+        let evals: Vec<Gf128> = (0..len)
             .map(|i| {
-                F128::new(
+                Gf128::new(
                     (i as u64).wrapping_mul(0xDEAD_BEEF_CAFE_BABE),
                     0xA5A5 ^ i as u64,
                 )
             })
             .collect();
-        let point: Vec<F128> = (0..n)
-            .map(|i| F128::new(0x1111 * (i as u64 + 1), 0x2222 * (i as u64 + 1)))
+        let point: Vec<Gf128> = (0..n)
+            .map(|i| Gf128::new(0x1111 * (i as u64 + 1), 0x2222 * (i as u64 + 1)))
             .collect();
 
         let full = eval_mle_lsb(&evals, &point);
@@ -6216,7 +6311,7 @@ mod tests {
             .iter()
             .zip(eq.iter())
             .map(|(&e, &q)| e * q)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         assert_eq!(dot, full);
     }
 
@@ -6229,32 +6324,32 @@ mod tests {
         use crate::challenger::Challenger;
         let n = 5;
         let len = 1usize << n;
-        let f: Vec<F128> = (0..len)
+        let f: Vec<Gf128> = (0..len)
             .map(|i| {
-                F128::new(
+                Gf128::new(
                     (i as u64).wrapping_mul(0x1234_5678_9ABC_DEF0),
                     0x55AA ^ i as u64,
                 )
             })
             .collect();
-        let b: Vec<F128> = (0..len)
+        let b: Vec<Gf128> = (0..len)
             .map(|i| {
-                F128::new(
+                Gf128::new(
                     (i as u64).wrapping_mul(0xFEDC_BA98_7654_3210),
                     0xAA55 ^ i as u64,
                 )
             })
             .collect();
-        let h: F128 = f
+        let h: Gf128 = f
             .iter()
             .zip(b.iter())
             .map(|(&fi, &bi)| fi * bi)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
 
         // Prover: 1 start message + (n-1) folds, leaving a length-2 residual.
         let (mut prover, _first) = SumcheckProver::new(f.clone(), b.clone(), h);
         let mut ch = crate::challenger::RandomChallenger::new(0xC0FFEE);
-        let mut ris: Vec<F128> = Vec::new();
+        let mut ris: Vec<Gf128> = Vec::new();
         for _ in 0..(n - 1) {
             let r = ch.sample_f128();
             ris.push(r);
@@ -6272,14 +6367,14 @@ mod tests {
         for (i, msg) in msgs.iter().enumerate() {
             let quad = RoundQuad::from_msg(*msg, t_r);
             assert_eq!(
-                quad.eval(F128::ZERO) + quad.eval(F128::ONE),
+                quad.eval(Gf128::ZERO) + quad.eval(Gf128::ONE),
                 t_r,
                 "round {i}: q(0)+q(1) != T_r"
             );
             let r_i = if i < n - 1 { ris[i] } else { r_last };
             t_r = quad.eval(r_i);
         }
-        let one_plus_r = F128::ONE + r_last;
+        let one_plus_r = Gf128::ONE + r_last;
         let f_resid = prover.f()[0] * one_plus_r + prover.f()[1] * r_last;
         let b_resid = prover.combined_basis[0] * one_plus_r + prover.combined_basis[1] * r_last;
         assert_eq!(f_resid * b_resid, t_r, "residual inner product != t_r");
@@ -6291,19 +6386,19 @@ mod tests {
         use crate::challenger::Challenger;
         let n = 5;
         let len = 1usize << n;
-        let mk = |seed: u64| -> Vec<F128> {
+        let mk = |seed: u64| -> Vec<Gf128> {
             (0..len)
-                .map(|i| F128::new(seed.wrapping_mul(i as u64 + 1), seed ^ (i as u64) << 7))
+                .map(|i| Gf128::new(seed.wrapping_mul(i as u64 + 1), seed ^ (i as u64) << 7))
                 .collect()
         };
         let f = mk(0xC1);
         let b1 = mk(0xB1);
         let b2 = mk(0xB2);
-        let h1: F128 = f
+        let h1: Gf128 = f
             .iter()
             .zip(b1.iter())
             .map(|(&x, &y)| x * y)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
 
         let (mut prover, _first) = SumcheckProver::new(f.clone(), b1.clone(), h1);
         let mut ch = crate::challenger::RandomChallenger::new(0xBEEF);
@@ -6317,11 +6412,11 @@ mod tests {
         // The h for b2 at the folded dim is Σ b2_folded · f_folded — but the verifier
         // also gets to recompute this from the same shared inputs. For the test we
         // pass it explicitly.
-        let h2_folded: F128 = b2_folded
+        let h2_folded: Gf128 = b2_folded
             .iter()
             .zip(prover.f().iter())
             .map(|(&x, &y)| x * y)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         prover.introduce_new(b2_folded.clone(), h2_folded);
         let alpha = ch.sample_f128();
         prover.glue(alpha);
@@ -6348,22 +6443,22 @@ mod tests {
         let mut t_r = h1;
         // start
         let q0 = RoundQuad::from_msg(msgs[0], t_r);
-        assert_eq!(q0.eval(F128::ZERO) + q0.eval(F128::ONE), t_r);
+        assert_eq!(q0.eval(Gf128::ZERO) + q0.eval(Gf128::ONE), t_r);
         t_r = q0.eval(r0); // fold(r0)
         // fold msg (idx 1)
         let q1 = RoundQuad::from_msg(msgs[1], t_r);
-        assert_eq!(q1.eval(F128::ZERO) + q1.eval(F128::ONE), t_r);
+        assert_eq!(q1.eval(Gf128::ZERO) + q1.eval(Gf128::ONE), t_r);
         // introduce_new msg (idx 2): claim is h2_folded, not T_r
         let q_intro = RoundQuad::from_msg(msgs[2], h2_folded);
         assert_eq!(
-            q_intro.eval(F128::ZERO) + q_intro.eval(F128::ONE),
+            q_intro.eval(Gf128::ZERO) + q_intro.eval(Gf128::ONE),
             h2_folded
         );
         // glue: running := q1 + alpha · q_intro; T_r := T_r + alpha · h2_folded
         let combined = RoundQuad::fold(&q1, &q_intro, alpha);
         t_r += alpha * h2_folded;
         // The combined quad must satisfy sumcheck identity against the new T_r
-        assert_eq!(combined.eval(F128::ZERO) + combined.eval(F128::ONE), t_r);
+        assert_eq!(combined.eval(Gf128::ZERO) + combined.eval(Gf128::ONE), t_r);
         // Apply the rest of the folds; each subsequent msg supersedes `combined` after eval.
         // After glue, the next fold uses challenge ris[1]. msgs[3] is from fold(ris[1]).
         let mut running = combined;
@@ -6376,7 +6471,7 @@ mod tests {
             let msg = msgs[2 + k]; // idx 3, 4, ...
             running = RoundQuad::from_msg(msg, t_r);
             assert_eq!(
-                running.eval(F128::ZERO) + running.eval(F128::ONE),
+                running.eval(Gf128::ZERO) + running.eval(Gf128::ONE),
                 t_r,
                 "post-glue round k={k}"
             );
@@ -6384,7 +6479,7 @@ mod tests {
         // Final: apply r_last to the LAST message's quad
         t_r = running.eval(r_last);
 
-        let one_plus_r = F128::ONE + r_last;
+        let one_plus_r = Gf128::ONE + r_last;
         let f_resid = prover.f()[0] * one_plus_r + prover.f()[1] * r_last;
         // With the collapsed-basis design, combined_basis already holds
         // eq + α·b2 at the residual dim.
@@ -6411,11 +6506,11 @@ mod tests {
 
         // Single-lane (num_interleaved = 1, no v_challenges).
         let mut ch = crate::challenger::RandomChallenger::new(0xF00DCAFE);
-        let msg: Vec<F128> = (0..msg_cols).map(|_| ch.sample_f128()).collect();
+        let msg: Vec<Gf128> = (0..msg_cols).map(|_| ch.sample_f128()).collect();
 
         // Encode via Flock's NTT (zero-pad to block_len).
         let ntt = AdditiveNttF128::standard(log_msg + log_inv_rate);
-        let mut codeword = vec![F128::ZERO; block_len];
+        let mut codeword = vec![Gf128::ZERO; block_len];
         codeword[..msg_cols].copy_from_slice(&msg);
         ntt.forward_transform(&mut codeword);
 
@@ -6428,7 +6523,7 @@ mod tests {
                 queries.push(q);
             }
         }
-        let opened_rows: Vec<Vec<F128>> = queries.iter().map(|&q| vec![codeword[q]]).collect();
+        let opened_rows: Vec<Vec<Gf128>> = queries.iter().map(|&q| vec![codeword[q]]).collect();
         let alpha = ch.sample_f128_vec(ceil_log2(queries.len()));
         let sks_vks = eval_sk_at_vks(log_msg);
 
@@ -6437,25 +6532,25 @@ mod tests {
         assert_eq!(basis_poly.len(), msg_cols);
 
         // Check 1: enforced_sum = Σ_i eq(α, i_bin) · c[q_i]
-        let alpha_weights: Vec<F128> = crate::lincheck::build_eq_table(&alpha)
+        let alpha_weights: Vec<Gf128> = crate::lincheck::build_eq_table(&alpha)
             .into_iter()
             .take(queries.len())
             .collect();
-        let expected: F128 = queries
+        let expected: Gf128 = queries
             .iter()
             .zip(alpha_weights.iter())
             .map(|(&q, &w)| w * codeword[q])
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         assert_eq!(enforced_sum, expected, "enforced_sum != eq(α)-batched c[q]");
 
         // Check 2: Σ_j msg[j] · basis_poly[j] = enforced_sum.
         // This is the LCH novel-basis identity: c[q] = Σ_j msg[j] · Ŵ_j(q_field),
         // so Σ_i α^i · c[q_i] = Σ_j msg[j] · Σ_i α^i · Ŵ_j(q_i_field) = Σ_j msg[j] · basis_poly[j].
-        let inner: F128 = msg
+        let inner: Gf128 = msg
             .iter()
             .zip(basis_poly.iter())
             .map(|(&m, &b)| m * b)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         assert_eq!(inner, enforced_sum, "msg · basis_poly != enforced_sum");
     }
 
@@ -6485,7 +6580,7 @@ mod tests {
                 }
             }
             let nq = queries.len();
-            let opened_rows: Vec<Vec<F128>> = (0..nq)
+            let opened_rows: Vec<Vec<Gf128>> = (0..nq)
                 .map(|_| ch.sample_f128_vec(num_interleaved))
                 .collect();
             let v_challenges = ch.sample_f128_vec(log_int);
@@ -6526,7 +6621,7 @@ mod tests {
                     crate::challenger::RandomChallenger::new(0xC0DE ^ (log_d * 131 + nq) as u64);
                 let ntt = AdditiveNttF128::standard(log_d);
                 let mut positions: Vec<usize> = Vec::new();
-                let mut values: Vec<F128> = Vec::new();
+                let mut values: Vec<Gf128> = Vec::new();
                 while positions.len() < nq {
                     let p = (ch.sample_f128().lo as usize) % n;
                     if !positions.contains(&p) {
@@ -6535,7 +6630,7 @@ mod tests {
                     }
                 }
                 // Baseline: scatter then dense transpose.
-                let mut dense = vec![F128::ZERO; n];
+                let mut dense = vec![Gf128::ZERO; n];
                 for (&p, &v) in positions.iter().zip(&values) {
                     dense[p] += v;
                 }
@@ -6561,11 +6656,11 @@ mod tests {
 
         let mut ch = crate::challenger::RandomChallenger::new(0xDEAD_BEEF);
         // poly[lane * msg_cols + col] convention (matches ligero_commit input).
-        let poly: Vec<F128> = (0..poly_len).map(|_| ch.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..poly_len).map(|_| ch.sample_f128()).collect();
 
         // v_challenges fold the lanes after commit. Under the LSB-lane layout,
         // f_folded is just partial_eval_lsb of the poly at v_challenges.
-        let v_challenges: Vec<F128> = (0..log_interleaved).map(|_| ch.sample_f128()).collect();
+        let v_challenges: Vec<Gf128> = (0..log_interleaved).map(|_| ch.sample_f128()).collect();
         let f_folded = partial_eval_lsb(&poly, &v_challenges);
         assert_eq!(f_folded.len(), msg_cols);
 
@@ -6589,7 +6684,7 @@ mod tests {
                 queries.push(q);
             }
         }
-        let opened_rows: Vec<Vec<F128>> = queries.iter().map(|&q| w.row(q).to_vec()).collect();
+        let opened_rows: Vec<Vec<Gf128>> = queries.iter().map(|&q| w.row(q).to_vec()).collect();
 
         let alpha = ch.sample_f128_vec(ceil_log2(queries.len()));
         let sks_vks = eval_sk_at_vks(log_msg);
@@ -6603,11 +6698,11 @@ mod tests {
         );
 
         // The folded polynomial f_folded should satisfy Σ_j f_folded[j] · basis_poly[j] = enforced_sum.
-        let inner: F128 = f_folded
+        let inner: Gf128 = f_folded
             .iter()
             .zip(basis_poly.iter())
             .map(|(&m, &b)| m * b)
-            .fold(F128::ZERO, |a, v| a + v);
+            .fold(Gf128::ZERO, |a, v| a + v);
         assert_eq!(
             inner, enforced_sum,
             "folded-msg · basis_poly != enforced_sum (interleaved + v_challenges path)"
@@ -6626,16 +6721,16 @@ mod tests {
         let num_queries = 0; // unused — kept to silence the moved literal
 
         let mut rng = crate::challenger::RandomChallenger::new(0xCAFE_F00D);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
 
         // True value v = poly(z)
         let eq = build_eq_table(&z);
-        let v: F128 = poly
+        let v: Gf128 = poly
             .iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         let queries: Vec<usize> = log_inv_rates.iter().map(|&r| udr_queries(r)).collect();
@@ -6710,14 +6805,14 @@ mod tests {
             "log_n={log_n}  initial_k={initial_k}  ks={:?}  log_inv_rates={:?}  queries={:?}",
             recursive_ks, log_inv_rates, queries_per_level
         );
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let eq = build_eq_table(&z);
-        let v: F128 = poly
+        let v: Gf128 = poly
             .iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
         drop(eq); // free 16 MB
 
         let grinding_bits = vec![0; log_inv_rates.len()];
@@ -6876,7 +6971,7 @@ mod tests {
         recursive_ks: Vec<usize>,
         log_inv_rates: Vec<usize>,
     ) -> usize {
-        const ELEM: usize = core::mem::size_of::<F128>();
+        const ELEM: usize = core::mem::size_of::<Gf128>();
         assert_eq!(log_inv_rates.len(), recursive_ks.len() + 1);
         let r = recursive_ks.len();
         let kb = |b: usize| {
@@ -7073,14 +7168,14 @@ mod tests {
         let num_queries = 0;
 
         let mut rng = crate::challenger::RandomChallenger::new(0xABCD_1234);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let eq = build_eq_table(&z);
-        let v: F128 = poly
+        let v: Gf128 = poly
             .iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         // wtns_0: log_n - initial_k = 9, num_interleaved = 8
         // wtns_1: dim n1 = 9, num_interleaved = 2^k_0 = 8, msg_cols = 2^(9-3) = 64
@@ -7136,14 +7231,14 @@ mod tests {
         let k_0 = 2;
         let log_inv_rate = 1;
         let mut rng = crate::challenger::RandomChallenger::new(0xDEED_F00D);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let eq = build_eq_table(&z);
-        let v: F128 = poly
+        let v: Gf128 = poly
             .iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         let cfg = ProverConfig {
@@ -7182,14 +7277,14 @@ mod tests {
         let log_inv_rate = 1;
 
         let mut rng = crate::challenger::RandomChallenger::new(0xBA51_CAFE);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let b = build_eq_table(&z);
-        let target: F128 = poly
+        let target: Gf128 = poly
             .iter()
             .zip(b.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         let cfg = ProverConfig {
@@ -7264,16 +7359,16 @@ mod tests {
 
         let mut rng = crate::challenger::RandomChallenger::new(0x2017_5052);
         let queries: Vec<usize> = (0..num_queries).map(|i| (i * 7 + 3) % (1 << 8)).collect();
-        let opened_rows: Vec<Vec<F128>> = (0..num_queries)
+        let opened_rows: Vec<Vec<Gf128>> = (0..num_queries)
             .map(|_| (0..num_interleaved).map(|_| rng.sample_f128()).collect())
             .collect();
-        let v_challenges: Vec<F128> = (0..log_num_interleaved)
+        let v_challenges: Vec<Gf128> = (0..log_num_interleaved)
             .map(|_| rng.sample_f128())
             .collect();
-        let alpha: Vec<F128> = (0..ceil_log2(num_queries))
+        let alpha: Vec<Gf128> = (0..ceil_log2(num_queries))
             .map(|_| rng.sample_f128())
             .collect();
-        let ris_for_basis: Vec<F128> = (0..prefix_len).map(|_| rng.sample_f128()).collect();
+        let ris_for_basis: Vec<Gf128> = (0..prefix_len).map(|_| rng.sample_f128()).collect();
         let sks_vks = eval_sk_at_vks(log_msg_cols);
 
         // Dense path
@@ -7342,7 +7437,7 @@ mod tests {
 
         let mut rng = crate::challenger::RandomChallenger::new(0xB19D_1235);
         // num_interleaved = 1 ⇒ no lane fold (level_rs empty) ⇒ yr == the message.
-        let yr: Vec<F128> = (0..msg_cols).map(|_| rng.sample_f128()).collect();
+        let yr: Vec<Gf128> = (0..msg_cols).map(|_| rng.sample_f128()).collect();
         let ntt = AdditiveNttF128::standard(log_msg_cols + log_inv_rate);
         let wtns = ligero_commit(&yr, log_msg_cols, 0, log_inv_rate, &ntt, HashKind::Sha256);
 
@@ -7355,10 +7450,10 @@ mod tests {
                 queries.push(q);
             }
         }
-        let opened_rows: Vec<Vec<F128>> = queries.iter().map(|&p| wtns.row(p).to_vec()).collect();
+        let opened_rows: Vec<Vec<Gf128>> = queries.iter().map(|&p| wtns.row(p).to_vec()).collect();
 
-        let level_rs: Vec<F128> = Vec::new(); // num_interleaved = 1
-        let alpha: Vec<F128> = (0..ceil_log2(num_queries))
+        let level_rs: Vec<Gf128> = Vec::new(); // num_interleaved = 1
+        let alpha: Vec<Gf128> = (0..ceil_log2(num_queries))
             .map(|_| rng.sample_f128())
             .collect();
 
@@ -7373,11 +7468,11 @@ mod tests {
             &[],
             log_msg_cols,
         );
-        let inner = |v: &[F128]| -> F128 {
+        let inner = |v: &[Gf128]| -> Gf128 {
             v.iter()
                 .zip(induced_basis.iter())
                 .map(|(&a, &b)| a * b)
-                .fold(F128::ZERO, |s, x| s + x)
+                .fold(Gf128::ZERO, |s, x| s + x)
         };
 
         // Honest yr (the committed message) satisfies the proximity tie.
@@ -7394,7 +7489,7 @@ mod tests {
             .position(|b| !b.is_zero())
             .expect("induced basis must not be identically zero");
         let mut yr_bad = yr.clone();
-        yr_bad[jnz] += F128::ONE;
+        yr_bad[jnz] += Gf128::ONE;
         assert_ne!(
             inner(&yr_bad),
             enforced_sum,
@@ -7414,14 +7509,14 @@ mod tests {
         let log_inv_rate = 1;
 
         let mut rng = crate::challenger::RandomChallenger::new(0x52CC_2017);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let b = build_eq_table(&z);
-        let target: F128 = poly
+        let target: Gf128 = poly
             .iter()
             .zip(b.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         let cfg = ProverConfig {
@@ -7485,17 +7580,17 @@ mod tests {
 
         // Succinct verifier — batch eval_b is just eq(z, ris ++ y_bits) by construction
         let mut v_ch2 = crate::challenger::FsChallenger::new(b"succ-cmp");
-        let eval_b_residual = |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
+        let eval_b_residual = |ris: &[Gf128], yr_log_n: usize| -> Vec<Gf128> {
             let yr_len = 1usize << yr_log_n;
             let mut point = ris.to_vec();
-            point.resize(ris.len() + yr_log_n, F128::ZERO);
+            point.resize(ris.len() + yr_log_n, Gf128::ZERO);
             (0..yr_len)
                 .map(|y| {
                     for j in 0..yr_log_n {
                         point[ris.len() + j] = if (y >> j) & 1 == 1 {
-                            F128::ONE
+                            Gf128::ONE
                         } else {
-                            F128::ZERO
+                            Gf128::ZERO
                         };
                     }
                     crate::zerocheck::multilinear::eq_eval(&z, &point)
@@ -7581,14 +7676,14 @@ mod tests {
         let (p_cfg, v_cfg) = ood_test_configs(log_n, initial_k, &ks, vec![0, 2, 2], vec![3, 3, 3]);
 
         let mut rng = crate::challenger::RandomChallenger::new(0x00D_7E57);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let b = build_eq_table(&z);
-        let target: F128 = poly
+        let target: Gf128 = poly
             .iter()
             .zip(b.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_msg_cols_0 = log_n - initial_k;
         let ntt_0 = AdditiveNttF128::standard(log_msg_cols_0 + 1);
@@ -7624,17 +7719,17 @@ mod tests {
         };
         let eval_b_residual = {
             let z = z.clone();
-            move |ris: &[F128], yr_log_n: usize| -> Vec<F128> {
+            move |ris: &[Gf128], yr_log_n: usize| -> Vec<Gf128> {
                 let yr_len = 1usize << yr_log_n;
                 let mut point = ris.to_vec();
-                point.resize(ris.len() + yr_log_n, F128::ZERO);
+                point.resize(ris.len() + yr_log_n, Gf128::ZERO);
                 (0..yr_len)
                     .map(|y| {
                         for j in 0..yr_log_n {
                             point[ris.len() + j] = if (y >> j) & 1 == 1 {
-                                F128::ONE
+                                Gf128::ONE
                             } else {
-                                F128::ZERO
+                                Gf128::ZERO
                             };
                         }
                         crate::zerocheck::multilinear::eq_eval(&z, &point)
@@ -7660,7 +7755,7 @@ mod tests {
 
         // Tamper an OOD value → both verifiers reject.
         let mut bad_ood = proof.clone();
-        bad_ood.ood_values[0] += F128::ONE;
+        bad_ood.ood_values[0] += Gf128::ONE;
         assert!(!dense(&bad_ood), "dense must reject tampered OOD value");
         assert!(
             !succinct(&bad_ood),
@@ -7697,14 +7792,14 @@ mod tests {
         assert!(p_cfg.fold_grinding_bits.iter().any(|&g| g > 0));
 
         let mut rng = crate::challenger::RandomChallenger::new(0xFA57_0022);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let b = build_eq_table(&z);
-        let target: F128 = poly
+        let target: Gf128 = poly
             .iter()
             .zip(b.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_msg_cols_0 = log_n - initial_k;
         let ntt_0 = AdditiveNttF128::standard(log_msg_cols_0 + 1);
@@ -7757,14 +7852,14 @@ mod tests {
         v_cfg.merkle_hash = HashKind::Blake3;
 
         let mut rng = crate::challenger::RandomChallenger::new(0xB1A5_E300);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let b = build_eq_table(&z);
-        let target: F128 = poly
+        let target: Gf128 = poly
             .iter()
             .zip(b.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_msg_cols_0 = log_n - initial_k;
         let ntt_0 = AdditiveNttF128::standard(log_msg_cols_0 + 1);
@@ -7833,14 +7928,14 @@ mod tests {
                 v_cfg.merkle_hash = merkle_hash;
 
                 let mut rng = crate::challenger::RandomChallenger::new(0x4A11_0000);
-                let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-                let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+                let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+                let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
                 let b = build_eq_table(&z);
-                let target: F128 = poly
+                let target: Gf128 = poly
                     .iter()
                     .zip(b.iter())
                     .map(|(&a, &c)| a * c)
-                    .fold(F128::ZERO, |a, x| a + x);
+                    .fold(Gf128::ZERO, |a, x| a + x);
 
                 let log_msg_cols_0 = log_n - initial_k;
                 let ntt_0 = AdditiveNttF128::standard(log_msg_cols_0 + 1);
@@ -7906,28 +8001,28 @@ mod tests {
         let log_inv_rate = 1;
 
         let mut rng = crate::challenger::RandomChallenger::new(0xBA51_BA51);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z1: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
-        let z2: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z1: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let z2: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let g1 = rng.sample_f128();
         let g2 = rng.sample_f128();
         let b1 = build_eq_table(&z1);
         let b2 = build_eq_table(&z2);
-        let b: Vec<F128> = b1
+        let b: Vec<Gf128> = b1
             .iter()
             .zip(b2.iter())
             .map(|(&a, &c)| g1 * a + g2 * c)
             .collect();
-        let v1: F128 = poly
+        let v1: Gf128 = poly
             .iter()
             .zip(b1.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
-        let v2: F128 = poly
+            .fold(Gf128::ZERO, |a, x| a + x);
+        let v2: Gf128 = poly
             .iter()
             .zip(b2.iter())
             .map(|(&a, &c)| a * c)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
         let target = g1 * v1 + g2 * v2;
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
@@ -8001,14 +8096,14 @@ mod tests {
         let log_inv_rate = 1;
 
         let mut rng = crate::challenger::RandomChallenger::new(0xACED_BEEF);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let eq = build_eq_table(&z);
-        let v: F128 = poly
+        let v: Gf128 = poly
             .iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         let cfg = ProverConfig {
@@ -8098,14 +8193,14 @@ mod tests {
         let num_queries = 0;
 
         let mut rng = crate::challenger::RandomChallenger::new(0xDEAD_BEEF);
-        let poly: Vec<F128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
-        let z: Vec<F128> = (0..log_n).map(|_| rng.sample_f128()).collect();
+        let poly: Vec<Gf128> = (0..(1usize << log_n)).map(|_| rng.sample_f128()).collect();
+        let z: Vec<Gf128> = (0..log_n).map(|_| rng.sample_f128()).collect();
         let eq = build_eq_table(&z);
-        let v: F128 = poly
+        let v: Gf128 = poly
             .iter()
             .zip(eq.iter())
             .map(|(&a, &b)| a * b)
-            .fold(F128::ZERO, |a, x| a + x);
+            .fold(Gf128::ZERO, |a, x| a + x);
 
         let log_inv_rates = vec![log_inv_rate, log_inv_rate];
         let _ = num_queries;
@@ -8142,7 +8237,7 @@ mod tests {
         let mut proof = recursive_prover(&prover_cfg, &poly, &z, v, &mut p_ch);
 
         // Mutate yr.
-        proof.final_proof.yr[0] += F128::ONE;
+        proof.final_proof.yr[0] += Gf128::ONE;
 
         let mut v_ch = crate::challenger::FsChallenger::new(b"test-mut");
         let ok = recursive_verifier(&verifier_cfg, &proof, &z, v, &mut v_ch);
@@ -8159,9 +8254,9 @@ mod tests {
         let block_len = msg_cols << log_inv_rate;
 
         // Deterministic dummy polynomial.
-        let poly: Vec<F128> = (0..num_interleaved * msg_cols)
+        let poly: Vec<Gf128> = (0..num_interleaved * msg_cols)
             .map(|i| {
-                F128::new(
+                Gf128::new(
                     (i as u64).wrapping_mul(0x9E3779B97F4A7C15),
                     0x1234 ^ i as u64,
                 )
@@ -8184,7 +8279,7 @@ mod tests {
         // Per-lane inv-NTT should recover the padded message. Under the LSB-lane
         // layout, lane `lane`'s col `col` message lives at `poly[col * num_interleaved + lane]`.
         for lane in 0..num_interleaved {
-            let mut col: Vec<F128> = (0..block_len)
+            let mut col: Vec<Gf128> = (0..block_len)
                 .map(|pos| w.mat[pos * num_interleaved + lane])
                 .collect();
             ntt.inverse_transform(&mut col);
@@ -8198,7 +8293,7 @@ mod tests {
             for col_idx in msg_cols..block_len {
                 assert_eq!(
                     col[col_idx],
-                    F128::ZERO,
+                    Gf128::ZERO,
                     "lane {lane} pad position {col_idx} not zero",
                 );
             }

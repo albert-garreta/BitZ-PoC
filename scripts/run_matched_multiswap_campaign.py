@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the matched F2Z/Limber MultiSwap performance campaign.
+"""Run the matched BitZ/Limber MultiSwap performance campaign.
 
 The runner creates a new immutable run directory, executes six cells per
 reference-circuit batch size, validates every proof trace before moving on, and finally
@@ -8,6 +8,7 @@ execution plan without creating files or compiling benchmarks.
 """
 
 from __future__ import annotations
+from bench_support import cpu_name as _cpu_name, command_text, filtered_environment, stream_logged
 
 import argparse
 import hashlib
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import matched_multiswap_report as report
-from prepare_matched_limber import BASE_REVISION as LIMBER_BASE_REVISION
+from prepare_matched_limber import DEFAULT_DESTINATION, migrate_multiswap_domains
 
 
 WORKLOAD_DISCLOSURE = (
@@ -33,19 +34,7 @@ WORKLOAD_DISCLOSURE = (
 
 
 def _capture(command: list[str], cwd: Path | None = None) -> str | None:
-    try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    value = result.stdout.strip()
-    return value or None
+    return command_text(*command, cwd=cwd, missing=None) or None
 
 
 def detect_performance_cores() -> tuple[int, str]:
@@ -96,26 +85,9 @@ def _git_metadata(root: Path) -> dict[str, Any]:
     }
 
 
-def _cpu_name() -> str:
-    hardware = _capture(["system_profiler", "SPHardwareDataType"])
-    if hardware:
-        match = re.search(r"^\s*Chip:\s*(.+)$", hardware, re.MULTILINE)
-        if match:
-            return match.group(1).strip()
-    brand = _capture(["sysctl", "-n", "machdep.cpu.brand_string"])
-    if brand:
-        return brand
-    cpuinfo = Path("/proc/cpuinfo")
-    if cpuinfo.is_file():
-        match = re.search(r"^model name\s*:\s*(.+)$", cpuinfo.read_text(), re.MULTILINE)
-        if match:
-            return match.group(1)
-    return platform.processor() or platform.machine()
-
-
 def build_cells(
     *,
-    f2z_root: Path,
+    bitz_root: Path,
     limber_root: Path,
     run_dir: Path,
     campaign_id: str,
@@ -135,7 +107,7 @@ def build_cells(
             raise report.CampaignError("batch counts must be unique values from 1,2,4,8,16")
         result = []
         for ordinal, batch in enumerate(batch_counts):
-            group = build_cells(f2z_root=f2z_root, limber_root=limber_root, run_dir=run_dir,
+            group = build_cells(bitz_root=bitz_root, limber_root=limber_root, run_dir=run_dir,
                 campaign_id=campaign_id, samples=samples, warmups=warmups, all_threads=all_threads,
                 rustflags=rustflags, expected_digests={}, k_values=(0,), security_bits=security_bits)
             for cell in group:
@@ -144,10 +116,10 @@ def build_cells(
                 for field in ("cell_id", "trace", "log"):
                     cell[field] = cell[field].replace("k0-", f"b{batch}-")
                 env = cell["environment"]
-                for name in ("F2Z_MULTISWAP_TRACE_PATH", "MATCHED_TRACE_PATH"):
+                for name in ("BITZ_MULTISWAP_TRACE_PATH", "MATCHED_TRACE_PATH"):
                     if name in env: env[name] = env[name].replace("k0-", f"b{batch}-")
-                env["F2Z_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "f2z-ligerito" else "MATCHED_BATCH_COUNT"] = str(batch)
-            implementations = ("f2z-ligerito", "limber-hyrax", "limber-brakedown")
+                env["BITZ_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "bitz-ligerito" else "MATCHED_BATCH_COUNT"] = str(batch)
+            implementations = ("bitz-ligerito", "limber-hyrax", "limber-brakedown")
             rotated = implementations[ordinal % 3:] + implementations[:ordinal % 3]
             threads = ("single", "performance") if ordinal % 2 == 0 else ("performance", "single")
             group.sort(key=lambda c: (rotated.index(c["implementation"]), threads.index(c["thread_mode"])))
@@ -159,31 +131,31 @@ def build_cells(
     cpu = _cpu_name()
     for workload_k in k_values:
         for thread_mode, threads in thread_modes:
-            cell_id = f"k{workload_k}-f2z-{thread_mode}"
+            cell_id = f"k{workload_k}-bitz-{thread_mode}"
             trace = run_dir / "raw" / f"{cell_id}.jsonl"
             environment = {
                 "OBLONG_PROFILE_INTERVALS": "1",
-                "F2Z_MULTISWAP_TRACE_PATH": str(trace),
-                "F2Z_MULTISWAP_CAMPAIGN_ID": campaign_id,
-                "F2Z_MULTISWAP_BUILD_PROFILE": "bench",
-                "F2Z_MULTISWAP_CPU": cpu,
-                "F2Z_BENCH_REPS": str(samples),
-                "F2Z_BENCH_SHAPES": str(workload_k),
+                "BITZ_MULTISWAP_TRACE_PATH": str(trace),
+                "BITZ_MULTISWAP_CAMPAIGN_ID": campaign_id,
+                "BITZ_MULTISWAP_BUILD_PROFILE": "bench",
+                "BITZ_MULTISWAP_CPU": cpu,
+                "BITZ_BENCH_REPS": str(samples),
+                "BITZ_BENCH_SHAPES": str(workload_k),
                 "RAYON_NUM_THREADS": str(threads),
                 "RUSTFLAGS": rustflags,
             }
             if workload_k in expected_digests:
-                environment["F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST"] = expected_digests[workload_k]
+                environment["BITZ_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST"] = expected_digests[workload_k]
             cells.append(
                 {
                     "cell_id": cell_id,
-                    "label": f"k={workload_k} · F2Z · {threads} thread{'s' if threads != 1 else ''}",
-                    "implementation": "f2z-ligerito",
-                    "backend": "virtual-f2z",
+                    "label": f"k={workload_k} · BitZ · {threads} thread{'s' if threads != 1 else ''}",
+                    "implementation": "bitz-ligerito",
+                    "backend": "virtual-bitz",
                     "workload_k": workload_k,
                     "thread_mode": thread_mode,
                     "rayon_threads": threads,
-                    "cwd": str(f2z_root),
+                    "cwd": str(bitz_root),
                     "trace": str(Path("..") / "raw" / trace.name),
                     "log": str(Path("..") / "logs" / f"{cell_id}.log"),
                     "command": ["cargo", "bench", "--bench", "multiswap", "--features", "unchecked,span-metrics"],
@@ -234,7 +206,7 @@ def build_cells(
                     }
                 )
     ordered: list[dict[str, Any]] = []
-    implementations = ("f2z-ligerito", "limber-hyrax", "limber-brakedown")
+    implementations = ("bitz-ligerito", "limber-hyrax", "limber-brakedown")
     for k_index, workload_k in enumerate(k_values):
         rotation = k_index % len(implementations)
         implementation_order = implementations[rotation:] + implementations[:rotation]
@@ -257,15 +229,15 @@ def build_cells(
         if security_bits is not None:
             cell["security_bits"] = security_bits
             env = cell["environment"]
-            if cell["implementation"] == "f2z-ligerito":
-                env["F2Z_BENCH_LAMBDA"] = str(security_bits)
+            if cell["implementation"] == "bitz-ligerito":
+                env["BITZ_BENCH_LAMBDA"] = str(security_bits)
             else:
                 env["MATCHED_SECURITY_BITS"] = str(security_bits)
                 # Limber's ~114-bit fingerprint floor coexists with its native
                 # 128-bit CRT target. Keep 112 only for historical reproduction.
                 env["MATCHED_INTEGER_SECURITY_BITS"] = str(128 if security_bits == 114 else security_bits)
                 env.update({"BDLAMBDA": str(security_bits), "BDSPEC": "4", "BDROWLEN": "32768", "BDDIRECT": "65536"})
-        cell["environment"].setdefault("F2Z_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "f2z-ligerito" else "MATCHED_BATCH_COUNT", "1")
+        cell["environment"].setdefault("BITZ_MULTISWAP_BATCH_COUNT" if cell["implementation"] == "bitz-ligerito" else "MATCHED_BATCH_COUNT", "1")
     return ordered
 
 
@@ -273,7 +245,7 @@ def build_manifest(
     *,
     campaign_id: str,
     run_dir: Path,
-    f2z_root: Path,
+    bitz_root: Path,
     limber_root: Path,
     samples: int,
     warmups: int,
@@ -323,7 +295,7 @@ def build_manifest(
             "affinity": "unpinned",
         },
         "repositories": {
-            "f2z": _git_metadata(f2z_root),
+            "bitz": _git_metadata(bitz_root),
             "limber": _git_metadata(limber_root),
         },
         "paths": {"run_dir": str(run_dir)},
@@ -357,21 +329,7 @@ def _run_logged(cell: dict[str, Any], run_dir: Path) -> None:
     with log_path.open("w", encoding="utf-8") as log:
         log.write(f"$ {_display_command(cell)}\n\n")
         log.flush()
-        process = subprocess.Popen(
-            cell["command"],
-            cwd=cell["cwd"],
-            env=process_environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            log.write(line)
-        return_code = process.wait()
+        return_code = stream_logged(cell["command"], cwd=cell["cwd"], env=process_environment, log=log)
     if return_code:
         raise report.CampaignError(
             f"cell {cell['cell_id']} exited with status {return_code}; see {log_path}"
@@ -381,11 +339,9 @@ def _run_logged(cell: dict[str, Any], run_dir: Path) -> None:
 
 
 def benchmark_environment(overrides: dict[str, str]) -> dict[str, str]:
-    prefixes = ("F2Z_", "F2_FOREST", "MATCHED_", "MS", "BD", "LOGUP_", "INT_EVAL_", "OBLONG_")
+    prefixes = ("BITZ_", "F2_FOREST", "MATCHED_", "MS", "BD", "LOGUP_", "INT_EVAL_", "OBLONG_")
     knobs = {"IMOD_K", "GKRSKIP", "CHAIN_BITS", "SEGGLOG", "M127", "PSIZE", "PSDUMP", "KSWEEP", "CARGO_ENCODED_RUSTFLAGS"}
-    environment = {k: v for k, v in os.environ.items() if not k.startswith(prefixes) and k not in knobs}
-    environment.update(overrides)
-    return environment
+    return filtered_environment(os.environ, prefixes, knobs, overrides)
 
 
 def preflight_profiler(profiler: Path | None) -> dict[str, Any]:
@@ -463,8 +419,8 @@ def execute_campaign(
         print(f"\n==> {cell['label']}")
         print(_display_command(cell))
         try:
-            if cell["implementation"] == "f2z-ligerito" and workload_k in expected_digests:
-                cell["environment"]["F2Z_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST"] = expected_digests[workload_k]
+            if cell["implementation"] == "bitz-ligerito" and workload_k in expected_digests:
+                cell["environment"]["BITZ_MULTISWAP_EXPECTED_CONSTRAINT_DIGEST"] = expected_digests[workload_k]
             _run_logged(cell, manifest_path.parent.parent)
             trace_path = _resolve_cell_trace(manifest_path, cell)
             if profiler is not None:
@@ -524,7 +480,7 @@ def execute_campaign(
             canonical = subprocess.run(
                 [sys.executable, str(profiler), "report", str(combined_trace),
                  "--out-dir", str(canonical_report_dir),
-                 "--title", "Matched MultiSwap F2Z / Limber campaign"],
+                 "--title", "Matched MultiSwap BitZ / Limber campaign"],
                 check=False,
             )
             if canonical.returncode:
@@ -578,8 +534,9 @@ def _parse_expected_digests(raw_values: Sequence[str]) -> dict[int, str]:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--f2z-root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--limber-root", type=Path)
+    parser.add_argument("--bitz-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--limber-root", type=Path, default=DEFAULT_DESTINATION,
+                        help=f"Limber checkout to benchmark (default: {DEFAULT_DESTINATION})")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--campaign-id")
     parser.add_argument("--samples", type=int, default=10)
@@ -629,15 +586,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             all_threads, core_detection = detect_performance_cores()
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
         campaign_id = args.campaign_id or stamp
-        f2z_root = args.f2z_root.resolve()
-        limber_root = (args.limber_root or (f2z_root.parent / "limber-impl")).resolve()
+        bitz_root = args.bitz_root.resolve()
+        limber_root = args.limber_root.resolve()
         run_dir = (
             args.output_dir.resolve()
             if args.output_dir
-            else f2z_root / "bench_results" / f"{stamp}-matched-multiswap"
+            else bitz_root / "bench_results" / f"{stamp}-matched-multiswap"
         )
         cells = build_cells(
-            f2z_root=f2z_root,
+            bitz_root=bitz_root,
             limber_root=limber_root,
             run_dir=run_dir,
             campaign_id=campaign_id,
@@ -652,7 +609,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = build_manifest(
             campaign_id=campaign_id,
             run_dir=run_dir,
-            f2z_root=f2z_root,
+            bitz_root=bitz_root,
             limber_root=limber_root,
             samples=args.samples,
             warmups=args.warmups,
@@ -668,10 +625,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "comparison_checks": "pending",
             "canonical_validation": "pending",
         }
-        manifest["repositories"]["limber"]["instrumented_base_revision"] = LIMBER_BASE_REVISION
-        patch = f2z_root / "patches/limber-multiswap.patch"
-        if patch.is_file():
-            manifest["repositories"]["limber"]["matched_patch_sha256"] = hashlib.sha256(patch.read_bytes()).hexdigest()
         if batch_counts is not None:
             manifest["workload"]["batch_counts"] = list(batch_counts)
             manifest["workload"]["k_semantics"] = "independent copies of the k=0 reference circuit in one proof"
@@ -685,14 +638,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if run_dir.exists():
             raise report.CampaignError(f"refusing to overwrite run directory {run_dir}")
-        if not f2z_root.is_dir() or not limber_root.is_dir():
-            raise report.CampaignError("F2Z and Limber repository roots must both exist")
+        if not bitz_root.is_dir() or not limber_root.is_dir():
+            raise report.CampaignError("BitZ and Limber repository roots must both exist")
         manifest["validator"] = None if args.draft else preflight_profiler(args.profiler)
-        ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", LIMBER_BASE_REVISION, "HEAD"], cwd=limber_root)
-        if ancestor.returncode:
-            raise report.CampaignError(f"Limber must descend from instrumented base {LIMBER_BASE_REVISION}")
+        try:
+            domain_migration = migrate_multiswap_domains(limber_root)
+        except (OSError, ValueError) as error:
+            raise report.CampaignError(f"cannot prepare Limber benchmark domains: {error}") from error
+        manifest["repositories"]["limber"].update(_git_metadata(limber_root))
+        manifest["repositories"]["limber"]["benchmark_domains"] = domain_migration
         manifest["toolchains"] = {
-            "f2z": _capture(["rustc", "--version"], f2z_root),
+            "bitz": _capture(["rustc", "--version"], bitz_root),
             "limber": _capture(["rustup", "run", "nightly-2026-07-01", "rustc", "--version"], limber_root),
         }
         if not all(manifest["toolchains"].values()):

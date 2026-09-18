@@ -4,8 +4,8 @@
 //! this runs every supported one-chunk split that stays below the memory cap,
 //! `t=7..=27`, with one warmup and 21 measured samples per split. `t=28` is
 //! reported as skipped because its projected peak exceeds 60 GiB. Select a subset with
-//! `F2Z_SHA_PRODUCT_TS="13 17"` and override samples with
-//! `F2Z_BENCH_REPS=3`.
+//! `BITZ_SHA_PRODUCT_TS="13 17"` and override samples with
+//! `BITZ_BENCH_REPS=3`.
 //! Enable `bench-peak-memory` to report peak live heap per sample and its
 //! maximum per split. Proof sizes are reported in both samples and summaries.
 

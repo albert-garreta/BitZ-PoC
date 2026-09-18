@@ -4,20 +4,28 @@ mod common;
 mod shared_fixture;
 
 use bincode::Options;
-use f2z::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
+use bitz::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 use flock_core::pcs::commit::Commitment;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::error::Error;
+use std::{cell::RefCell, collections::HashMap, time::Instant};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum Timing {
+    Perfetto,
+    WallClock,
+}
 
 #[derive(clap::Parser)]
 #[command(args_override_self = true)]
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(long, value_parser = ["f2z-split", "f2z-all", "spartan-mc", "binius64", "binius64-ligerito"])]
+    #[arg(long, value_parser = ["bitz-split", "bitz-all", "spartan-mc", "binius64", "binius64-ligerito"])]
     method: String,
     #[arg(long)]
     r: usize,
@@ -39,6 +47,9 @@ struct Args {
     binius64_worker: Option<std::path::PathBuf>,
     #[arg(long = "log-inv-rate", alias = "binius-log-inv-rate", default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
     log_inv_rate: u8,
+    /// Wall-clock reports top-level timings without recording internal spans.
+    #[arg(long, value_enum, default_value = "perfetto")]
+    timing: Timing,
 }
 
 impl Args {
@@ -109,14 +120,106 @@ fn dispatch_binius(args: &Args) -> Result<()> {
 }
 
 fn setup<T, E: Into<Box<dyn Error>>>(
+    timing: Timing,
     f: impl FnOnce() -> std::result::Result<T, E>,
 ) -> Result<(T, f64)> {
-    let (value, duration) = f2z::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
+    if timing == Timing::WallClock {
+        let start = Instant::now();
+        let value = f();
+        let ms = start.elapsed().as_secs_f64() * 1000.;
+        return Ok((value.map_err(Into::into)?, ms));
+    }
+    let (value, duration) = bitz::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
     Ok((value.map_err(Into::into)?, duration.as_secs_f64() * 1000.))
 }
 
+/// Both backends use the same operation boundaries. Only Perfetto captures
+/// nested protocol phases; wall-clock measurements stay in this harness.
+struct TrialTiming {
+    recording: Option<bitz::observability::Recording<Vec<u8>>>,
+    wall_ms: RefCell<HashMap<&'static str, f64>>,
+}
+
+impl TrialTiming {
+    fn start(timing: Timing) -> Result<Self> {
+        Ok(Self {
+            recording: if timing == Timing::Perfetto {
+                Some(bitz::observability::Recording::start(Vec::new())?)
+            } else {
+                None
+            },
+            wall_ms: RefCell::new(HashMap::new()),
+        })
+    }
+
+    fn enter(&self, name: &'static str, span: tracing::Span) -> TimedScope<'_> {
+        TimedScope {
+            timer: self,
+            name,
+            _span: span.entered(),
+            start: self.recording.is_none().then(Instant::now),
+        }
+    }
+
+    fn finish(self) -> Result<TrialMeasurements> {
+        Ok(TrialMeasurements {
+            intervals: self.recording.map(|r| r.intervals()).transpose()?,
+            wall_ms: self.wall_ms.into_inner(),
+        })
+    }
+}
+
+struct TimedScope<'a> {
+    timer: &'a TrialTiming,
+    name: &'static str,
+    _span: tracing::span::EnteredSpan,
+    start: Option<Instant>,
+}
+
+impl TimedScope<'_> {
+    fn in_scope<T>(self, f: impl FnOnce() -> T) -> T {
+        f()
+    }
+}
+
+impl Drop for TimedScope<'_> {
+    fn drop(&mut self) {
+        if let Some(start) = self.start {
+            let ms = start.elapsed().as_secs_f64() * 1000.;
+            self.timer.wall_ms.borrow_mut().insert(self.name, ms);
+        }
+    }
+}
+
+struct TrialMeasurements {
+    intervals: Option<Vec<bitz::observability::Interval>>,
+    wall_ms: HashMap<&'static str, f64>,
+}
+
+impl TrialMeasurements {
+    fn ms(&self, name: &str) -> f64 {
+        match &self.intervals {
+            Some(intervals) => common::span_ms(intervals, name),
+            None => self.wall_ms[name],
+        }
+    }
+
+    fn phases(&self, name: &str) -> Result<Vec<(String, f64)>> {
+        match &self.intervals {
+            Some(intervals) => Ok(bitz::observability::phase_totals(intervals, name)?),
+            None => Ok(Vec::new()),
+        }
+    }
+}
+
+macro_rules! timed {
+    ($timer:expr, $name:literal) => {
+        $timer.enter($name, tracing::info_span!($name))
+    };
+}
+
 #[derive(Serialize, Deserialize)]
-struct F2zWire {
+struct BitzWire {
     commitment: Commitment,
     proof: Vec<u8>,
 }
@@ -153,7 +256,10 @@ struct Measurements<D> {
 }
 
 #[derive(Serialize)]
-struct F2zDetails {
+struct BitzDetails {
+    proof_digest: String,
+    prover_transcript: String,
+    verifier_transcript: String,
     ligerito_profile: String,
     phases_seconds: Vec<(String, f64)>,
     verify_phases_seconds: Vec<(String, f64)>,
@@ -179,11 +285,11 @@ struct SpartanPhases {
 
 impl SpartanPhases {
     fn from_intervals(
-        intervals: &[f2z::observability::Interval],
+        intervals: &[bitz::observability::Interval],
         folding: bool,
     ) -> std::io::Result<Self> {
         let millis = |label| {
-            f2z::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
+            bitz::observability::duration(intervals, label).map(|d| d.as_secs_f64() * 1000.0)
         };
         let folding_ms = millis("spartan2.folding")?;
         Ok(Self {
@@ -201,6 +307,7 @@ impl SpartanPhases {
 #[derive(Serialize)]
 struct ResultRecord<'a, D> {
     schema: &'static str,
+    timing: Timing,
     method: &'a str,
     zk: bool,
     fixture_profile: &'static str,
@@ -233,7 +340,8 @@ fn result_record<'a, D>(
     row: Measurements<D>,
 ) -> ResultRecord<'a, D> {
     ResultRecord {
-        schema: "f2z/sha256-ecdsa-compare/v1",
+        schema: "bitz/sha256-ecdsa-compare/v1",
+        timing: args.timing,
         method: &args.method,
         zk: false,
         fixture_profile: shared_fixture::SCHEMA,
@@ -266,27 +374,28 @@ fn emit<D: Serialize>(args: &Args, fixture: &Fixture, trial: usize, row: Measure
             .expect("serialize SHA/ECDSA result")
     );
 }
-fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
+fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let statement = statement(fixture);
     // The campaign runner selects the opener rate per case through
-    // `F2Z_LIG_PROFILE`; record the request verbatim on every row.
+    // `BITZ_LIG_PROFILE`; record the request verbatim on every row.
     let ligerito_profile =
-        std::env::var("F2Z_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
-    let (prepared, setup_ms) = setup(|| {
+        std::env::var("BITZ_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
+    let (prepared, setup_ms) = setup(args.timing, || {
         prepare_sha256_ecdsa(args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
     })?;
     let security = prepared.security()?;
     for trial in 0..=args.reps {
-        let recording = f2z::observability::Recording::start(Vec::new())?;
-        let e2e = tracing::info_span!("benchmark:e2e").entered();
-        let witness = tracing::info_span!("benchmark:witness")
+        let recording = TrialTiming::start(args.timing)?;
+        let e2e = timed!(recording, "benchmark:e2e");
+        let witness = timed!(recording, "benchmark:witness")
             .in_scope(|| generate_sha256_ecdsa_witness(&prepared, &statement, &fixture.message))?;
-        let hint = tracing::info_span!("benchmark:commit")
+        let hint = timed!(recording, "benchmark:commit")
             .in_scope(|| commit_sha256_ecdsa(&prepared, &witness))?;
-        let proof = tracing::info_span!("benchmark:protocol").in_scope(|| {
+        let mut prover_transcript = Blake3Transcript::new();
+        let proof = timed!(recording, "benchmark:protocol").in_scope(|| {
             prove_sha256_ecdsa(
-                &mut Blake3Transcript::new(),
+                &mut prover_transcript,
                 &prepared,
                 &statement,
                 &witness,
@@ -295,26 +404,28 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             )
         })?;
         drop(e2e);
-        let codec = tracing::info_span!("benchmark:codec").entered();
+        let codec = timed!(recording, "benchmark:codec");
         let proof_bytes = proof.to_bytes();
         let object_bytes = proof_bytes.len();
+        let proof_digest = blake3::hash(&proof_bytes).to_hex().to_string();
         let wire = bincode::DefaultOptions::new()
             .with_fixint_encoding()
-            .serialize(&F2zWire {
+            .serialize(&BitzWire {
                 commitment: hint.commitment.clone(),
                 proof: proof_bytes,
             })?;
-        let decoded: F2zWire = bincode::DefaultOptions::new()
+        let decoded: BitzWire = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_limit(wire.len() as u64)
             .reject_trailing_bytes()
             .deserialize(&wire)?;
         let decoded_proof = Sha256EcdsaProof::from_bytes(&decoded.proof)?;
         drop(codec);
-        tracing::info_span!("benchmark:verification").in_scope(|| {
+        let mut verifier_transcript = Blake3Transcript::new();
+        timed!(recording, "benchmark:verification").in_scope(|| {
             fixture.validate_statement()?;
             verify_sha256_ecdsa(
-                &mut Blake3Transcript::new(),
+                &mut verifier_transcript,
                 &prepared,
                 &statement,
                 &decoded.commitment,
@@ -322,15 +433,15 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
             )
             .map_err(|e| -> Box<dyn Error> { e.into() })
         })?;
-        let intervals = recording.intervals()?;
-        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
-        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
-        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
-        let e2e_prover_ms = common::span_ms(&intervals, "benchmark:e2e");
-        let codec_ms = common::span_ms(&intervals, "benchmark:codec");
-        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
-        let phases = f2z::observability::phase_totals(&intervals, "benchmark:e2e")?;
-        let verify_phases = f2z::observability::phase_totals(&intervals, "benchmark:verification")?;
+        let timings = recording.finish()?;
+        let witness_ms = timings.ms("benchmark:witness");
+        let commit_ms = timings.ms("benchmark:commit");
+        let protocol_ms = timings.ms("benchmark:protocol");
+        let e2e_prover_ms = timings.ms("benchmark:e2e");
+        let codec_ms = timings.ms("benchmark:codec");
+        let verify_ms = timings.ms("benchmark:verification");
+        let phases = timings.phases("benchmark:e2e")?;
+        let verify_phases = timings.phases("benchmark:verification")?;
         let phase = |name: &str| {
             phases
                 .iter()
@@ -353,9 +464,12 @@ fn f2z(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 proof_material_bytes: wire.len(),
                 outer_ms: phase("ecdsa:outer_prove"),
                 inner_ms: phase("ecdsa:shared_inner_prove"),
-                opening_ms: phase("ecdsa:f2z_prove"),
+                opening_ms: phase("ecdsa:bitz_prove"),
                 folding_ms: None,
-                details: F2zDetails {
+                details: BitzDetails {
+                    proof_digest,
+                    prover_transcript: blake3::Hash::from(prover_transcript.state_digest()).to_hex().to_string(),
+                    verifier_transcript: blake3::Hash::from(verifier_transcript.state_digest()).to_hex().to_string(),
                     ligerito_profile: ligerito_profile.clone(),
                     phases_seconds: phases,
                     verify_phases_seconds: verify_phases,
@@ -382,34 +496,36 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
         r: s.r,
         s: s.s,
     };
-    let (prepared, setup_ms) = setup(|| Prepared::setup(args.r, args.c))?;
+    let (prepared, setup_ms) = setup(args.timing, || Prepared::setup(args.r, args.c))?;
     for trial in 0..=args.reps {
-        let recording = f2z::observability::Recording::start(Vec::new())?;
-        let e2e = tracing::info_span!("benchmark:e2e").entered();
-        let witness = tracing::info_span!("benchmark:witness")
+        let recording = TrialTiming::start(args.timing)?;
+        let e2e = timed!(recording, "benchmark:e2e");
+        let witness = timed!(recording, "benchmark:witness")
             .in_scope(|| prepared.generate_witness(&statement, &fixture.message))?;
         let committed =
-            tracing::info_span!("benchmark:commit").in_scope(|| prepared.commit(witness))?;
-        let proof = tracing::info_span!("benchmark:protocol")
+            timed!(recording, "benchmark:commit").in_scope(|| prepared.commit(witness))?;
+        let proof = timed!(recording, "benchmark:protocol")
             .in_scope(|| prepared.prove(&statement, &committed))?;
         drop(e2e);
-        let codec = tracing::info_span!("benchmark:codec").entered();
+        let codec = timed!(recording, "benchmark:codec");
         let bytes = proof.to_bytes()?;
         let decoded = Proof::from_bytes(&bytes)?;
         drop(codec);
-        tracing::info_span!("benchmark:verification").in_scope(|| -> Result<()> {
+        timed!(recording, "benchmark:verification").in_scope(|| -> Result<()> {
             fixture.validate_statement()?;
             prepared.verify(&statement, &decoded)?;
             Ok(())
         })?;
-        let intervals = recording.intervals()?;
-        let phases = SpartanPhases::from_intervals(&intervals, args.c != 0)?;
-        let witness_ms = common::span_ms(&intervals, "benchmark:witness");
-        let commit_ms = common::span_ms(&intervals, "benchmark:commit");
-        let protocol_ms = common::span_ms(&intervals, "benchmark:protocol");
-        let e2e_prover_ms = common::span_ms(&intervals, "benchmark:e2e");
-        let codec_ms = common::span_ms(&intervals, "benchmark:codec");
-        let verify_ms = common::span_ms(&intervals, "benchmark:verification");
+        let timings = recording.finish()?;
+        let phases = timings.intervals.as_ref()
+            .map(|intervals| SpartanPhases::from_intervals(intervals, args.c != 0))
+            .transpose()?;
+        let witness_ms = timings.ms("benchmark:witness");
+        let commit_ms = timings.ms("benchmark:commit");
+        let protocol_ms = timings.ms("benchmark:protocol");
+        let e2e_prover_ms = timings.ms("benchmark:e2e");
+        let codec_ms = timings.ms("benchmark:codec");
+        let verify_ms = timings.ms("benchmark:verification");
         emit(
             args,
             fixture,
@@ -424,13 +540,13 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
                 codec_ms,
                 proof_object_bytes: bytes.len(),
                 proof_material_bytes: bytes.len(),
-                outer_ms: Some(phases.outer_ms),
-                inner_ms: Some(phases.inner_ms),
-                opening_ms: Some(phases.opening_ms),
+                outer_ms: phases.as_ref().map(|p| p.outer_ms),
+                inner_ms: phases.as_ref().map(|p| p.inner_ms),
+                opening_ms: phases.as_ref().map(|p| p.opening_ms),
                 folding_ms: if args.c == 0 {
                     None
                 } else {
-                    Some(phases.folding_ms)
+                    phases.as_ref().map(|p| p.folding_ms)
                 },
                 details: SpartanDetails {
                     phases_ms: phases,
@@ -452,27 +568,35 @@ fn main() -> Result<()> {
         return Err("require 3 <= r+c <= 16 and target 100/128".into());
     }
     if args.method == "binius64-ligerito" && args.target != 100 {
-        return Err("the F2Z opener gate is fixed at 100 bits".into());
+        return Err("the BitZ opener gate is fixed at 100 bits".into());
     }
-    f2z::observability::install().expect("install Perfetto subscriber");
     if let Some(path) = &args.export_fixture {
         return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
             .write(path);
     }
     if args.method.starts_with("binius64") {
+        if args.timing == Timing::WallClock {
+            return Err("--timing wall-clock supports bitz-split, bitz-all and spartan-mc".into());
+        }
         return dispatch_binius(&args);
+    }
+    if args.timing == Timing::Perfetto {
+        bitz::observability::install()?;
     }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
 
     let fixture = fixture(&args)?;
-    match args.method.as_str() {
-        "f2z-split" => f2z(&args, &fixture, OuterMode::Split),
-        "f2z-all" => f2z(&args, &fixture, OuterMode::AllRows),
+    common::start_gkr_recording();
+    let result = match args.method.as_str() {
+        "bitz-split" => bitz(&args, &fixture, OuterMode::Split),
+        "bitz-all" => bitz(&args, &fixture, OuterMode::AllRows),
         "spartan-mc" => spartan(&args, &fixture),
         _ => unreachable!(),
-    }
+    };
+    common::print_gkr_schedules();
+    result
 }
 
 #[cfg(test)]
@@ -484,7 +608,7 @@ mod reporting_tests {
         let intervals: Vec<_> = ["matrix", "folding", "outer", "inner", "opening"]
             .into_iter()
             .enumerate()
-            .map(|(i, name)| f2z::observability::Interval {
+            .map(|(i, name)| bitz::observability::Interval {
                 id: i as u64,
                 parent: None,
                 track_id: 0,
@@ -515,7 +639,7 @@ mod reporting_tests {
     fn result_envelope_keeps_totals_nulls_and_trial_numbering() {
         let mut args = Args {
             cargo: Default::default(),
-            method: "f2z-split".into(),
+            method: "bitz-split".into(),
             r: 1,
             c: 2,
             target: 100,
@@ -526,6 +650,7 @@ mod reporting_tests {
             export_fixture: None,
             binius64_worker: None,
             log_inv_rate: 1,
+            timing: Timing::Perfetto,
         };
         let fixture = Fixture::generate(3, 0).unwrap();
         let row = || Measurements {
@@ -542,7 +667,10 @@ mod reporting_tests {
             inner_ms: None,
             opening_ms: None,
             folding_ms: None,
-            details: F2zDetails {
+            details: BitzDetails {
+                proof_digest: "test-proof".into(),
+                prover_transcript: "test-prover".into(),
+                verifier_transcript: "test-verifier".into(),
                 ligerito_profile: "custom:1:4".into(),
                 phases_seconds: vec![("commit".into(), 0.003)],
                 verify_phases_seconds: vec![],
@@ -577,7 +705,7 @@ mod cli_tests {
     use clap::{CommandFactory, Parser, error::ErrorKind};
 
     fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
-        Args::try_parse_from(["ecdsa", "--method", "f2z-split", "--r", "1", "--c", "2"]
+        Args::try_parse_from(["ecdsa", "--method", "bitz-split", "--r", "1", "--c", "2"]
             .into_iter().chain(extra.iter().copied()))
     }
 
@@ -595,7 +723,7 @@ mod cli_tests {
         assert_eq!(args.fixture.as_deref(), Some(std::path::Path::new("fixture.json")));
         assert_eq!(args.export_fixture.as_deref(), Some(std::path::Path::new("export.json")));
         assert_eq!(args.binius64_worker.as_deref(), Some(std::path::Path::new("worker")));
-        for method in ["f2z-all", "binius64"] {
+        for method in ["bitz-all", "binius64"] {
             assert_eq!(parse(&["--method", method]).unwrap().method, method);
         }
     }
@@ -612,7 +740,7 @@ mod cli_tests {
         ] {
             assert!(parse(extra).is_err(), "accepted {extra:?}");
         }
-        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "f2z-split", "--r", "1"]] {
+        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "bitz-split", "--r", "1"]] {
             assert!(Args::try_parse_from(argv).is_err());
         }
         assert_eq!(Args::try_parse_from(["ecdsa", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);

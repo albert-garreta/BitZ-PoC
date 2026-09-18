@@ -1,19 +1,19 @@
-use super::super::{F128, build_sum_table};
+use super::super::{Gf128, build_sum_table};
 
 const NEON_TILE_T: usize = 8;
 
 /// Single-matrix partial fold with **tiled + NEON-register accumulators**.
 /// Keeps `BLOCK_K = 8` accumulators in NEON registers across a `NEON_TILE_T`
 /// stripe sweep — no per-byte accumulator LD/ST. Hand-rolled aarch64
-/// intrinsics force the F128 XOR to a single `EOR.16B` and pin the 8 accs
+/// intrinsics force the Gf128 XOR to a single `EOR.16B` and pin the 8 accs
 /// in Q registers.
 #[cfg(target_arch = "aarch64")]
 pub fn partial_fold_packed_z_neon_single(
     z_packed: &[u8],
     m: usize,
     k_log: usize,
-    eq_outer: &[F128],
-) -> Vec<F128> {
+    eq_outer: &[Gf128],
+) -> Vec<Gf128> {
     let k = 1usize << k_log;
     partial_fold_packed_z_neon_single_padded(z_packed, m, k_log, k, eq_outer)
 }
@@ -29,8 +29,8 @@ pub fn partial_fold_packed_z_neon_single_padded(
     m: usize,
     k_log: usize,
     useful_bits: usize,
-    eq_outer: &[F128],
-) -> Vec<F128> {
+    eq_outer: &[Gf128],
+) -> Vec<Gf128> {
     use rayon::prelude::*;
     use std::arch::aarch64::*;
 
@@ -65,11 +65,11 @@ pub fn partial_fold_packed_z_neon_single_padded(
         .par_chunks(bytes_per_chunk)
         .enumerate()
         .fold(
-            || vec![F128::ZERO; k],
+            || vec![Gf128::ZERO; k],
             |mut out, (chunk_idx, chunk_bytes)| {
                 let tile_start = chunk_idx * tiles_per_chunk;
-                // TILE_T × 256 F128 = 32 KB tables. L1 resident.
-                let mut tables = vec![F128::ZERO; TILE_T * 256];
+                // TILE_T × 256 Gf128 = 32 KB tables. L1 resident.
+                let mut tables = vec![Gf128::ZERO; TILE_T * 256];
 
                 let n_tiles_in_chunk = chunk_bytes.len() / (TILE_T * k);
                 for tile_rel in 0..n_tiles_in_chunk {
@@ -107,7 +107,7 @@ pub fn partial_fold_packed_z_neon_single_padded(
             },
         )
         .reduce(
-            || vec![F128::ZERO; k],
+            || vec![Gf128::ZERO; k],
             |mut a, b| {
                 for (x, y) in a.iter_mut().zip(b.iter()) {
                     *x += *y;
@@ -124,7 +124,7 @@ pub fn partial_fold_packed_z_neon_single_padded(
 /// # Safety
 /// - `tile_bytes_ptr` must point to at least `TILE_T * k` bytes.
 /// - `tables_ptr` must point to at least `TILE_T * 256 * 16` bytes.
-/// - `out_ptr` must point to at least 8 F128 (128 bytes) of mutable storage.
+/// - `out_ptr` must point to at least 8 Gf128 (128 bytes) of mutable storage.
 #[cfg(target_arch = "aarch64")]
 #[inline(never)]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -133,7 +133,7 @@ unsafe fn process_block_neon_single(
     k: usize,
     bs: usize,
     tables_ptr: *const u8,
-    out_ptr: *mut F128,
+    out_ptr: *mut Gf128,
 ) {
     use std::arch::aarch64::*;
     const TILE_T: usize = NEON_TILE_T;
@@ -190,11 +190,11 @@ unsafe fn process_block_neon_single(
 /// accumulator (2 MB at k = 2¹⁷). With P workers that's `P · 2 MB` of live
 /// accumulators — past ~3 workers it exceeds L2, so each worker's accumulator
 /// spills and gets re-streamed from **main memory** once per stripe-tile
-/// (≈ `n_tiles · 2·k` F128 of memory traffic). Measured: scaling saturates at
+/// (≈ `n_tiles · 2·k` Gf128 of memory traffic). Measured: scaling saturates at
 /// ~5× on 10 cores (memory-bound), not ~10×.
 ///
 /// Here the workers own **disjoint** slices of a single shared `out`, so the
-/// total live accumulator is just `k` F128 = 2 MB — it stays L2-resident, never
+/// total live accumulator is just `k` Gf128 = 2 MB — it stays L2-resident, never
 /// re-streamed from memory, and there is **no final reduction**. Main-memory
 /// traffic drops to one pass over z plus one write of `out`. Each worker still
 /// uses the register-tiled inner kernel (8 accumulators across `TILE_T`
@@ -206,8 +206,8 @@ pub fn partial_fold_packed_z_neon_iblock_padded(
     m: usize,
     k_log: usize,
     useful_bits: usize,
-    eq_outer: &[F128],
-) -> Vec<F128> {
+    eq_outer: &[Gf128],
+) -> Vec<Gf128> {
     use rayon::prelude::*;
 
     const TILE_T: usize = NEON_TILE_T;
@@ -234,7 +234,7 @@ pub fn partial_fold_packed_z_neon_iblock_padded(
     // contribute nothing. Rows [useful, k) stay zero from the vec init.
     let useful = (useful_bits.div_ceil(BLOCK_K) * BLOCK_K).min(k);
 
-    let mut out = vec![F128::ZERO; k];
+    let mut out = vec![Gf128::ZERO; k];
     if useful == 0 {
         return out;
     }
@@ -264,8 +264,8 @@ pub fn partial_fold_packed_z_neon_iblock_padded(
         .for_each(|(ci, out_slice)| {
             let i_base = ci * i_chunk;
             let n_block = out_slice.len() / BLOCK_K;
-            // TILE_T × 256 F128 = 32 KB tables, L1-resident, rebuilt per tile.
-            let mut tables = vec![F128::ZERO; TILE_T * 256];
+            // TILE_T × 256 Gf128 = 32 KB tables, L1-resident, rebuilt per tile.
+            let mut tables = vec![Gf128::ZERO; TILE_T * 256];
             for tile in 0..n_tiles {
                 let stripe_base = tile * TILE_T;
                 for t in 0..TILE_T {
@@ -308,7 +308,7 @@ pub fn partial_fold_packed_z_neon_iblock_padded(
 /// tile tables exactly **once**, folds them into a private length-k partial, and the
 /// `p` partials are XOR-reduced at the end. The partial is the full length-k
 /// (256 KB at k_log=14 ⇒ spills L1 to L2), but the register-tiled inner kernel keeps
-/// 8 F128 accumulators in NEON registers, so the L2 traffic is mild — measured ≈2 %
+/// 8 Gf128 accumulators in NEON registers, so the L2 traffic is mild — measured ≈2 %
 /// ST cost at m=32, none at m=30 — and far cheaper than iblock's redundant tables:
 /// the fold scales ~8.5× vs iblock's ~6.5× on 10 P-cores at m=32, and the margin
 /// grows with the outer dim (the redundant-table cost it removes is ∝ `n_stripes`).
@@ -320,8 +320,8 @@ pub fn partial_fold_packed_z_neon_oblock_padded(
     m: usize,
     k_log: usize,
     useful_bits: usize,
-    eq_outer: &[F128],
-) -> Vec<F128> {
+    eq_outer: &[Gf128],
+) -> Vec<Gf128> {
     use rayon::prelude::*;
 
     const TILE_T: usize = NEON_TILE_T;
@@ -347,7 +347,7 @@ pub fn partial_fold_packed_z_neon_oblock_padded(
     // up to BLOCK_K; columns [useful, k) stay zero from the partial init.
     let useful = (useful_bits.div_ceil(BLOCK_K) * BLOCK_K).min(k);
     if useful == 0 {
-        return vec![F128::ZERO; k];
+        return vec![Gf128::ZERO; k];
     }
 
     // One private length-k partial per worker; workers own contiguous tile bands,
@@ -356,15 +356,15 @@ pub fn partial_fold_packed_z_neon_oblock_padded(
     let tiles_per_worker = n_tiles.div_ceil(p);
     let n_workers = n_tiles.div_ceil(tiles_per_worker); // ≤ p, every band non-empty
 
-    let mut partials = vec![F128::ZERO; n_workers * k];
+    let mut partials = vec![Gf128::ZERO; n_workers * k];
     partials
         .par_chunks_mut(k)
         .enumerate()
         .for_each(|(w, partial)| {
             let tile_lo = w * tiles_per_worker;
             let tile_hi = ((w + 1) * tiles_per_worker).min(n_tiles);
-            // TILE_T × 256 F128 = 32 KB tables, L1-resident, built once per tile.
-            let mut tables = vec![F128::ZERO; TILE_T * 256];
+            // TILE_T × 256 Gf128 = 32 KB tables, L1-resident, built once per tile.
+            let mut tables = vec![Gf128::ZERO; TILE_T * 256];
             for tile in tile_lo..tile_hi {
                 let stripe_base = tile * TILE_T;
                 for t in 0..TILE_T {
@@ -422,8 +422,8 @@ pub fn partial_fold_packed_z_neon_allcore_padded(
     m: usize,
     k_log: usize,
     useful_bits: usize,
-    eq_outer: &[F128],
-) -> Vec<F128> {
+    eq_outer: &[Gf128],
+) -> Vec<Gf128> {
     use rayon::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -450,15 +450,15 @@ pub fn partial_fold_packed_z_neon_allcore_padded(
     // up to BLOCK_K; columns [useful, k) stay zero from the partial init.
     let useful = (useful_bits.div_ceil(BLOCK_K) * BLOCK_K).min(k);
     if useful == 0 {
-        return vec![F128::ZERO; k];
+        return vec![Gf128::ZERO; k];
     }
 
     let pool = crate::all_core_pool();
     let next_tile = AtomicUsize::new(0);
-    let partials: Vec<Vec<F128>> = pool.broadcast(|_| {
-        let mut partial = vec![F128::ZERO; k];
-        // TILE_T × 256 F128 = 32 KB tables, L1-resident, built once per tile.
-        let mut tables = vec![F128::ZERO; TILE_T * 256];
+    let partials: Vec<Vec<Gf128>> = pool.broadcast(|_| {
+        let mut partial = vec![Gf128::ZERO; k];
+        // TILE_T × 256 Gf128 = 32 KB tables, L1-resident, built once per tile.
+        let mut tables = vec![Gf128::ZERO; TILE_T * 256];
         loop {
             let tile = next_tile.fetch_add(1, Ordering::Relaxed);
             if tile >= n_tiles {

@@ -1,18 +1,18 @@
-# Session prompt: LaTeX note on the F2Z verifier (Ligerito as a black box)
+# Session prompt: LaTeX note on the BitZ verifier (Ligerito as a black box)
 
 **Repo:** `/Users/albertgarretafontelles/f2z-pcs` (standalone; git, commits
 unsigned — `git commit --no-gpg-sign`). Written 2026-07-16, by the session
-that extracted F2Z, made Ligerito its only opener, and did the packed-rows +
+that extracted BitZ, made Ligerito its only opener, and did the packed-rows +
 build-parity passes.
 **Skill to load (if available):** `writing-crypto-papers`. If the zinc-plus
 skills (`zinc-plus-fieldswitch`) are available they give useful background,
-but this note must describe **F2Z as extracted**, not the zinc-plus
+but this note must describe **BitZ as extracted**, not the zinc-plus
 deployment — verify every claim against THIS repo's code.
 
 ## The task
 
 Write a LaTeX note (new directory `docs/verifier-note/`, `main.tex`,
-buildable with `latexmk -pdf`) that precisely describes the **F2Z verifier**
+buildable with `latexmk -pdf`) that precisely describes the **BitZ verifier**
 for the core mod-q opening — `verify_mle_eval_mod_q_ligerito` — **treating
 the flock Ligerito PCS verifier as a correct black box**. The note's job is
 to make the zinc-side verification logic reviewable: a reader holding the
@@ -89,7 +89,7 @@ verification order, one section per link:
   `recombine_read_off`-equivalents (`src/pcs.rs`);
   `to_bytes`/`from_bytes` (`src/proof_codec.rs`).
 - Upstream exposition to borrow notation from (do NOT copy claims without
-  re-verifying against F2Z):
+  re-verifying against BitZ):
   `zinc-plus/.claude/worktrees/f2-int-sha/documentation/f2-int-eval-doc/`
   (the 21-page as-deployed note; its §§ on the forest wire format, the
   batched transcript schedule, and mod-q chunking are the closest prior
@@ -97,9 +97,9 @@ verification order, one section per link:
 
 ## Traps
 
-1. **F2Z ≠ zinc-plus.** The extraction is single-claim-centric, RAA-free,
+1. **BitZ ≠ zinc-plus.** The extraction is single-claim-centric, RAA-free,
    and has drifted (packed-rows commit, codec). Describe what THIS repo's
-   verifier does; where the upstream note says something F2Z doesn't do,
+   verifier does; where the upstream note says something BitZ doesn't do,
    the upstream is not authoritative.
 2. **Do not describe Ligerito internals** — the user's explicit constraint.
    If a section needs "and then the opening is checked," that is the
@@ -112,7 +112,7 @@ verification order, one section per link:
    oracle-certified). This framing catches the real bug class.
 5. **Scope honestly**: embedded-profile regime, core mod-q path, oracle
    assumption stated up front — the note should say exactly what a
-   correctness argument for F2Z would still owe (Ligerito itself, the
+   correctness argument for BitZ would still owe (Ligerito itself, the
    domain-separation upstream item, the unaudited ad-hoc config).
 
 ## Deliverables
@@ -121,7 +121,7 @@ verification order, one section per link:
   under `latexmk -pdf`; check the PDF renders.
 - A README pointer (one line in the Layout/docs section).
 - Commit in this repo when green (unsigned). No zinc-plus ledger entry is
-  required for f2z-only docs work — but if the writing uncovers a BUG or a
+  required for bitz-only docs work — but if the writing uncovers a BUG or a
   soundness gap in the verifier, STOP writing, report it, and (if it also
   affects upstream) add the finding to
   `zinc-plus/.claude/worktrees/f2-int-sha/documentation/f2x-sha-todo.md`

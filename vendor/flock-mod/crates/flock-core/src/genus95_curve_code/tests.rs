@@ -5,7 +5,7 @@ use super::evaluator::{
     EvaluationPoint, eval_poly_mask, evaluate_product_functional, product_evaluation_functional,
     x_powers, y_powers,
 };
-use super::field::{F128, F128Ext};
+use super::field::{Gf128, F128Ext};
 use super::messages::{BaseMessage, ProductMessage};
 use super::product::{extended_base_product_message, product_code_message};
 use super::sampling::{eval_base_rational_function, sample_random_evaluation_point};
@@ -37,7 +37,7 @@ fn sampled_points_are_evaluable() {
         assert!(functional.iter().any(|value| !value.is_zero()));
         assert_eq!(
             evaluate_product_functional(&functional, &ProductMessage::default()),
-            F128::ZERO
+            Gf128::ZERO
         );
     }
 }
@@ -47,7 +47,7 @@ fn artin_schreier_solver_round_trip() {
     let solver = ArtinSchreierSolver::new();
     let mut rng = Sha256Rng::seed_from_u64(3);
     for _ in 0..128 {
-        let z = F128::random(&mut rng);
+        let z = Gf128::random(&mut rng);
         let rhs = z.square() + z;
         let recovered = solver.solve(rhs).expect("solvable rhs");
         assert_eq!(recovered.square() + recovered, rhs);
@@ -58,10 +58,10 @@ fn artin_schreier_solver_round_trip() {
 fn field_helpers_round_trip() {
     let mut rng = Sha256Rng::seed_from_u64(4);
     for _ in 0..512 {
-        let left = F128::random(&mut rng);
+        let left = Gf128::random(&mut rng);
         assert_eq!(left.square(), left * left);
         if !left.is_zero() {
-            assert_eq!(left * left.inverse().unwrap(), F128::ONE);
+            assert_eq!(left * left.inverse().unwrap(), Gf128::ONE);
         }
     }
 }
@@ -124,7 +124,7 @@ fn rust_product_identity_residuals_are_zero_at_sampled_points() {
                 evaluate_product_functional(&functional, &extended_base_product_message(right));
             let product_value =
                 evaluate_product_functional(&functional, &product_code_message(left, right));
-            assert_eq!((left_value * right_value) + product_value, F128::ZERO);
+            assert_eq!((left_value * right_value) + product_value, Gf128::ZERO);
         }
     }
 }
@@ -139,7 +139,7 @@ fn random_nonzero_product_messages_evaluate_nonzero_at_sampled_points() {
             let message = random_nonzero_product_message(&mut rng);
             assert_ne!(
                 evaluate_product_functional(&functional, &message),
-                F128::ZERO
+                Gf128::ZERO
             );
         }
     }
@@ -196,7 +196,7 @@ fn sampled_point_satisfies_equations(point: &EvaluationPoint) -> bool {
     let x7 = x4 * x2 * x;
     let y2 = y.square();
     let y4 = y2.square();
-    let base = y4 + ((x + F128::ONE) * y2) + ((x3 + x) * y) + x7 + x3;
+    let base = y4 + ((x + Gf128::ONE) * y2) + ((x3 + x) * y) + x7 + x3;
     if !base.is_zero() {
         return false;
     }
@@ -254,11 +254,11 @@ fn random_nonzero_product_message(rng: &mut impl RngCore) -> ProductMessage {
 fn product_evaluation_functionals_have_full_rank_222() {
     const N_POINTS: usize = 256;
     let mut rng = Sha256Rng::seed_from_u64(13);
-    let mut rows: Vec<[F128; PRODUCT_MESSAGE_BITS]> = Vec::with_capacity(N_POINTS);
+    let mut rows: Vec<[Gf128; PRODUCT_MESSAGE_BITS]> = Vec::with_capacity(N_POINTS);
     for _ in 0..N_POINTS {
         let point = sample_random_evaluation_point(&mut rng).expect("sample point");
         let functional = product_evaluation_functional(&point).expect("functional");
-        let mut row = [F128::ZERO; PRODUCT_MESSAGE_BITS];
+        let mut row = [Gf128::ZERO; PRODUCT_MESSAGE_BITS];
         for (slot, value) in functional.iter().enumerate() {
             row[slot] = *value;
         }
@@ -336,7 +336,7 @@ fn mask_degree(mask: u64) -> usize {
 }
 
 /// Rank over GF(2^128) of a set of 222-wide rows, by Gauss-Jordan elimination.
-fn gf128_row_rank(mut rows: Vec<[F128; PRODUCT_MESSAGE_BITS]>) -> usize {
+fn gf128_row_rank(mut rows: Vec<[Gf128; PRODUCT_MESSAGE_BITS]>) -> usize {
     let cols = PRODUCT_MESSAGE_BITS;
     let nrows = rows.len();
     let mut rank = 0usize;

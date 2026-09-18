@@ -1,6 +1,6 @@
-# F2Z design notes
+# BitZ design notes
 
-F2Z realises §9 of Lev Soukhanov's char2-fieldswitch note: an integer-MLE
+BitZ realises §9 of Lev Soukhanov's char2-fieldswitch note: an integer-MLE
 evaluation over an `F₂` commitment, folded **in the exponent** of
 `K = GF(2^128)` and opened by a **ring-switch + recursive Ligerito** pipeline
 (the only opener). This document is the distilled protocol, the serialization
@@ -14,7 +14,7 @@ long-form write-ups live in the source repository (`zinc-plus`:
 An integer MLE evaluation cannot be read off an `F₂` commitment by
 `F₂`-proximity: the parity collapse `Σ G[j,i]·d_i mod 2` destroys the integer
 information, while committing with a genuinely integer code forfeits the cheap
-binary commitment. F2Z's resolution: **do not fold through the code**. Commit
+binary commitment. BitZ's resolution: **do not fold through the code**. Commit
 the bits over `F_2`, and carry the integer row-fold **in the exponent** of
 `K = GF(2^128)`, certified by a GKR grand product that touches the commitment
 only through `K`-linear queries.
@@ -191,7 +191,7 @@ generic arm.
 For the packed-source repetition (`PackedSourceRepeatedVirtualMap`,
 `global = 1 + instance·w + local`, the SHA-256 product layout) the PROVER
 side of both batching passes goes one step further (`virt_batch`,
-`F2Z_VIRT_PLANES=0` opts out). The factored weights `W_{(i,c)} = e_i·s_c`
+`BITZ_VIRT_PLANES=0` opts out). The factored weights `W_{(i,c)} = e_i·s_c`
 are never formed: by the dual-basis identity
 `bit_b(e·s) = c₀(e·s·A(e_b)) = Σ_a bit_a(e·A(e_b))·bit_a(A⁻¹s)`, the instance
 factor separates from the local-column factor, so with the local plane
@@ -239,7 +239,7 @@ walk). The forest, the PIOP and the proof bytes are the independent batch's.
 When the prepared map is exactly the identity and both tensor layouts agree,
 the prover may emit `VirtOpenTail::Eq` and run the base opening directly on
 committed `f`. Otherwise it emits `VirtOpenTail::Batch`. The verifier accepts
-the eq tail only for an eligible public statement. `F2Z_VIRT_ID_FAST=0` forces
+the eq tail only for an eligible public statement. `BITZ_VIRT_ID_FAST=0` forces
 the general batch tail for diagnostics.
 
 The statement transcript order is unchanged: absorb the commitment and
@@ -263,17 +263,19 @@ map directly as CSC columns:
 - a z source bit feeds only its identity row;
 - padded source slots have empty columns.
 
-`project_cm_and_witness` produces one `EvaluatedSpartanAssignment` containing
-assignment `h` and products `Ah`, `Bh`, and `Ch`, plus packed `h_rows`, from
-the same `CmAndWitness`. The unchanged Spartan PIOP proves the R1CS over `h`.
-Its terminal assignment claim is bitified and passed to virtual F2Z, which
-binds it to the commitment to `f` through the public CSC map.
+The Spartan PIOP borrows `CmAndWitness` through `OuterRows` and its native
+assignment slice. It evaluates the signed residual without allocating `Ah`,
+`Bh` or `Ch` tables. Its terminal assignment claim is bitified and passed to
+virtual BitZ, which binds the synthesized `h` rows to the commitment to `f`
+through the public CSC map. `project_cm_and_witness` remains an explicit
+dense reference projection, returning `EvaluatedSpartanAssignment`.
 
-Canonical u32 multiplication uses `U32MulProof`: its runtime-prime Spartan
-component applies the fixed K=3 univariate-prefix skip and its terminal claim
-is opened by `IntEvalRsLigModQProof`. CM pairs ordinary Spartan with
-`IntEvalRsLigVirtProof`; its sealed `SpartanF2zProof<S, M>` mode prevents a
-direct opening from being passed to a virtualized verifier.
+Canonical u32 multiplication uses `protocol::Proof`: its runtime-prime
+Spartan component applies the fixed K=3 univariate-prefix skip. The generic
+runner selects `Opening::Direct` or `Opening::Virtual` from the prepared
+relation and rejects a mismatched variant before transcript processing.
+Existing u32 W=1/8 paths use `IntEvalRsLigModQProof`; other packing widths
+use `IntEvalRsLigVirtProof`. CM also exposes its explicit virtual entrypoints.
 
 SHA-256 witness synthesis and affine constants are intentionally outside this
 refactor; a future client only needs to supply synthesized `f`, `h`,
@@ -413,7 +415,7 @@ equivalence, and the serialization roundtrip + tampered-byte rejection.
 - **flock Merkle leaf/node domain separation** is not yet implemented upstream:
   flock's `merkle` module does not domain-separate leaf vs internal-node
   hashing (its module note flags it as a "micro-benchmark module, not production
-  code"). F2Z inherits flock's commitment/Merkle verbatim; the current Merkle
+  code"). BitZ inherits flock's commitment/Merkle verbatim; the current Merkle
   binding should be treated as pre-production until flock ships the fix.
 - The scheme is **not zero-knowledge** (the Ligerito opening reveals queried
   committed rows).

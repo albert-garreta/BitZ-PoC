@@ -91,71 +91,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "ark-ff"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a177aba0ed1e0fbb62aa9f6d0502e9b46dad8c2eab04c14258a1212d2557ea70"
-dependencies = [
- "ark-ff-asm",
- "ark-ff-macros",
- "ark-serialize",
- "ark-std",
- "arrayvec",
- "digest 0.10.7",
- "educe",
- "itertools 0.13.0",
- "num-bigint 0.4.8",
- "num-traits",
- "paste",
- "zeroize",
-]
-
-[[package]]
-name = "ark-ff-asm"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62945a2f7e6de02a31fe400aa489f0e0f5b2502e69f95f853adb82a96c7a6b60"
-dependencies = [
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
-name = "ark-ff-macros"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09be120733ee33f7693ceaa202ca41accd5653b779563608f1234f78ae07c4b3"
-dependencies = [
- "num-bigint 0.4.8",
- "num-traits",
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
-name = "ark-serialize"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f4d068aaf107ebcd7dfb52bc748f8030e0fc930ac8e360146ca54c1203088f7"
-dependencies = [
- "ark-std",
- "arrayvec",
- "digest 0.10.7",
- "num-bigint 0.4.8",
-]
-
-[[package]]
-name = "ark-std"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
-dependencies = [
- "num-traits",
- "rand 0.8.6",
-]
-
-[[package]]
 name = "array-util"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -589,6 +524,78 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitz"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bellpepper",
+ "bellpepper-core",
+ "bincode",
+ "binius-circuits",
+ "binius-compute",
+ "binius-core",
+ "binius-field",
+ "binius-frontend",
+ "binius-hash",
+ "binius-iop",
+ "binius-iop-prover",
+ "binius-ip",
+ "binius-ip-prover",
+ "binius-math",
+ "binius-prover",
+ "binius-transcript",
+ "binius-utils",
+ "binius-verifier",
+ "blake3",
+ "circuit",
+ "clap",
+ "csv",
+ "derive_more",
+ "ff",
+ "field",
+ "flock-core",
+ "itertools 0.14.0",
+ "libc",
+ "limber",
+ "num-bigint 0.4.8",
+ "num-integer",
+ "num-traits",
+ "p256",
+ "p3-air",
+ "p3-baby-bear",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-fri",
+ "p3-goldilocks",
+ "p3-matrix",
+ "p3-merkle-tree",
+ "p3-multi-stark",
+ "p3-multilinear-util",
+ "p3-sha256-air",
+ "p3-sumcheck",
+ "p3-symmetric",
+ "p3-uni-stark",
+ "p3-util",
+ "p3-whir",
+ "perfetto-sdk",
+ "postcard",
+ "rand 0.10.2",
+ "rand_core 0.10.1",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "spartan2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "tracing-perfetto-sdk",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "blake2s_simd"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -701,11 +708,12 @@ dependencies = [
 name = "circuit"
 version = "0.1.0"
 dependencies = [
- "crypto-bigint 0.7.5",
+ "blake3",
  "field",
- "num-bigint 0.4.8",
  "num-traits",
  "rayon",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -929,60 +937,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto-primitives"
-version = "0.1.0"
-dependencies = [
- "ark-ff",
- "ark-std",
- "crypto-bigint 0.7.5",
- "crypto-primitives-proc-macros 0.1.0",
- "num-traits",
- "pastey",
- "rand 0.10.2",
- "serde",
- "thiserror 2.0.18",
- "zeroize",
-]
-
-[[package]]
-name = "crypto-primitives"
-version = "0.1.0"
-source = "git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b#3c4232bf362339041414a73254a3af303538ac81"
-dependencies = [
- "ark-ff",
- "ark-std",
- "crypto-bigint 0.7.5",
- "crypto-primitives-proc-macros 0.1.0 (git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b)",
- "num-traits",
- "pastey",
- "rand 0.10.2",
- "serde",
- "thiserror 2.0.18",
- "zerocopy",
- "zerocopy-derive",
- "zeroize",
-]
-
-[[package]]
-name = "crypto-primitives-proc-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
-name = "crypto-primitives-proc-macros"
-version = "0.1.0"
-source = "git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b#3c4232bf362339041414a73254a3af303538ac81"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
 name = "csv"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1091,18 +1045,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "educe"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d7bc049e1bd8cdeb31b68bbd586a9464ecf9f3944af3958a7a9d0f8b9799417"
-dependencies = [
- "enum-ordinalize",
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1141,26 +1083,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
-name = "enum-ordinalize"
-version = "4.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07f808d588c10e464ea6f7d3eaed500049eff30aaac103460f61828c2d65b3eb"
-dependencies = [
- "enum-ordinalize-derive",
-]
-
-[[package]]
-name = "enum-ordinalize-derive"
-version = "4.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42e528e2d34ba8a67a1a650b86beae8ef69fc5fdb638016f386b973226590432"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1174,80 +1096,6 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys",
-]
-
-[[package]]
-name = "f2z"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bellpepper",
- "bellpepper-core",
- "bincode",
- "binius-circuits",
- "binius-compute",
- "binius-core",
- "binius-field",
- "binius-frontend",
- "binius-hash",
- "binius-iop",
- "binius-iop-prover",
- "binius-ip",
- "binius-ip-prover",
- "binius-math",
- "binius-prover",
- "binius-transcript",
- "binius-utils",
- "binius-verifier",
- "blake3",
- "circuit",
- "clap",
- "crypto-bigint 0.7.5",
- "crypto-primes",
- "crypto-primitives 0.1.0",
- "csv",
- "derive_more",
- "ff",
- "flock-core",
- "itertools 0.14.0",
- "libc",
- "limber",
- "num-bigint 0.4.8",
- "num-integer",
- "num-traits",
- "p256",
- "p3-air",
- "p3-baby-bear",
- "p3-challenger",
- "p3-commit",
- "p3-dft",
- "p3-field",
- "p3-fri",
- "p3-goldilocks",
- "p3-matrix",
- "p3-merkle-tree",
- "p3-multi-stark",
- "p3-multilinear-util",
- "p3-sha256-air",
- "p3-sumcheck",
- "p3-symmetric",
- "p3-uni-stark",
- "p3-util",
- "p3-whir",
- "perfetto-sdk",
- "postcard",
- "rand 0.10.2",
- "rand_core 0.10.1",
- "rayon",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "spartan2",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
- "tracing-perfetto-sdk",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1288,9 +1136,9 @@ dependencies = [
 name = "field"
 version = "0.1.0"
 dependencies = [
- "crypto-primitives 0.1.0 (git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b)",
- "crypto-primitives-proc-macros 0.1.0 (git+https://github.com/NethermindEth/crypto-primitives.git?rev=3c4232b)",
+ "crypto-bigint 0.7.5",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -1322,6 +1170,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "blake3",
+ "field",
  "rand_core 0.9.5",
  "rayon",
  "serde",
@@ -1546,15 +1395,6 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -1631,7 +1471,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "limber"
 version = "0.1.0"
-source = "git+https://github.com/wu-s-john/limber-impl.git?rev=861f10a6a4d705d92a9faf13a8f860d8ba057ca0#861f10a6a4d705d92a9faf13a8f860d8ba057ca0"
+source = "git+https://github.com/wu-s-john/limber-impl.git?rev=836c50f23e674098dcfbe42a4873f583d4e0fe3f#836c50f23e674098dcfbe42a4873f583d4e0fe3f"
 dependencies = [
  "bellpepper",
  "bellpepper-core",
@@ -2215,12 +2055,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "pastey"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pem-rfc7468"
@@ -3196,20 +3030,6 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
 
 [[package]]
 name = "zlib-rs"

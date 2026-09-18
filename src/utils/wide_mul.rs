@@ -14,11 +14,6 @@
 //! Prime fields take the trivial instance (`Wide = Self`, reduced ops), so
 //! the driver stays field-generic with zero overhead there.
 
-use crypto_bigint::modular::ConstMontyParams;
-use crypto_primitives::{
-    crypto_bigint_const_monty::ConstMontyField, crypto_bigint_monty::MontyField,
-};
-
 /// Multiply-accumulate with an opaque (possibly unreduced) accumulator.
 ///
 /// Laws (all exact, no approximation):
@@ -29,6 +24,12 @@ use crypto_primitives::{
 /// so any sum of products computed through this trait equals the same sum
 /// computed with reduced multiplies — bit-for-bit.
 pub trait WideMulAcc: Sized {
+    /// Optional inverse for a public equality coordinate. Unsupported fields
+    /// and zero return `None`, retaining the three-coefficient GKR kernel.
+    fn eqf_inverse(&self) -> Option<Self> {
+        None
+    }
+
     /// The accumulator representation (unreduced for char-2 carryless
     /// fields; `Self` for fields whose multiply is cheapest reduced).
     type Wide: Clone + Send;
@@ -105,7 +106,7 @@ pub trait WideMulAcc: Sized {
         false
     }
 
-    /// Optional fused kernel for the pass-fusion path (`F2Z_EQF_FUSE`): the
+    /// Optional fused kernel for the pass-fusion path (`BITZ_EQF_FUSE`): the
     /// DEFERRED fold of the previous round fused with this round's
     /// single-pair message body, in one pass. `l`/`r` hold `4·half`
     /// unfolded entries; for `b < half` the kernel folds
@@ -131,7 +132,7 @@ pub trait WideMulAcc: Sized {
     }
 
     /// Optional kernel for the double-fold dense grid pass
-    /// (`F2Z_EQF_DOUBLE`'s `dense_grid_pass` body): per quad `b < quads`,
+    /// (`BITZ_EQF_DOUBLE`'s `dense_grid_pass` body): per quad `b < quads`,
     /// fold the `pending` deferred challenges (`d = pending.len() ≤ 2`)
     /// into the 4 logical values `lv[i] = fold(l, (b≪2)|i, pending)` (same
     /// for `r`), write them back to the buffer prefix when `d > 0` (the
@@ -151,90 +152,5 @@ pub trait WideMulAcc: Sized {
         _quads: usize,
     ) -> Option<[Self; 9]> {
         None
-    }
-}
-
-/// Compile-time-modulus prime fields: reduced representation IS the
-/// accumulator.
-impl<Mod: ConstMontyParams<LIMBS>, const LIMBS: usize> WideMulAcc for ConstMontyField<Mod, LIMBS> {
-    type Wide = Self;
-
-    #[inline(always)]
-    fn wide_zero(zero: &Self) -> Self::Wide {
-        zero.clone()
-    }
-
-    #[inline(always)]
-    fn wide_of(x: &Self) -> Self::Wide {
-        x.clone()
-    }
-
-    #[inline(always)]
-    fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
-        a.clone() * b
-    }
-
-    #[inline(always)]
-    fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc += x;
-    }
-
-    #[inline(always)]
-    fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc -= x;
-    }
-
-    #[inline(always)]
-    fn from_wide(w: Self::Wide) -> Self {
-        w
-    }
-
-    #[inline(always)]
-    fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
-        if mask {
-            *acc += x;
-        }
-    }
-}
-
-/// Prime fields: the reduced representation IS the accumulator.
-impl<const LIMBS: usize> WideMulAcc for MontyField<LIMBS> {
-    type Wide = Self;
-
-    #[inline(always)]
-    fn wide_zero(zero: &Self) -> Self::Wide {
-        zero.clone()
-    }
-
-    #[inline(always)]
-    fn wide_of(x: &Self) -> Self::Wide {
-        x.clone()
-    }
-
-    #[inline(always)]
-    fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
-        a.clone() * b
-    }
-
-    #[inline(always)]
-    fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc += x;
-    }
-
-    #[inline(always)]
-    fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc -= x;
-    }
-
-    #[inline(always)]
-    fn from_wide(w: Self::Wide) -> Self {
-        w
-    }
-
-    #[inline(always)]
-    fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
-        if mask {
-            *acc += x;
-        }
     }
 }

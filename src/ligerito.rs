@@ -37,13 +37,13 @@
 //! prover and verifier).
 
 use crate::piop::lookup::gkr_product::{ProductForestProof, verify_product_forest};
-use crate::piop::sumcheck::multi_degree::{
-    MultiDegreeSumcheck, MultiDegreeSumcheckGroup, MultiDegreeSumcheckProof,
-};
+use crate::piop::sumcheck::multi_degree::MultiDegreeSumcheckProof;
+#[cfg(test)]
+use crate::poly::coefficient::FieldRepresentation;
+#[cfg(test)]
 use crate::poly::mle::DenseMultilinearExtension;
-use crate::poly::univariate::binary_gf128::{BinaryFieldGF128 as Gf, REDUCTION_LOW_GF128};
+use crate::poly::univariate::binary_gf128::{Gf128 as Gf, REDUCTION_LOW_GF128};
 use crate::poly::utils::build_eq_x_r_vec;
-use crypto_primitives::Field;
 use crate::transcript::traits::Transcript;
 
 use crate::pcs::{
@@ -105,7 +105,12 @@ impl RsOpenConfig {
     /// at rate 1/4 in the unique-decoding regime (γ = 3/8 ⇒
     /// `⌈100/−log₂(5/8)⌉ = 148`).
     pub fn default_100bit() -> Self {
-        Self { log_inv_rate: 2, log_batch: 2, num_queries: 148, log_fri_arity: 3 }
+        Self {
+            log_inv_rate: 2,
+            log_batch: 2,
+            num_queries: 148,
+            log_fri_arity: 3,
+        }
     }
 }
 
@@ -117,14 +122,14 @@ impl RsOpenConfig {
 #[allow(clippy::arithmetic_side_effects)]
 #[inline]
 fn mul_by_x(a: Gf) -> Gf {
-    let w = a.words();
+    let w = a.as_words();
     let carry = w[1] >> 63;
     let hi = (w[1] << 1) | (w[0] >> 63);
     let mut lo = w[0] << 1;
     if carry == 1 {
         lo ^= REDUCTION_LOW_GF128;
     }
-    Gf::from_words([lo, hi])
+    Gf::from_polynomial_words([lo, hi])
 }
 
 /// Absorb a `Gf` slice into the transcript with a domain tag (framed by
@@ -134,7 +139,7 @@ fn absorb_gf_slice(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
     let mut bytes = Vec::with_capacity(vals.len() * 16 + 1);
     bytes.push(tag);
     for v in vals {
-        let w = v.words();
+        let w = v.as_words();
         bytes.extend_from_slice(&w[0].to_le_bytes());
         bytes.extend_from_slice(&w[1].to_le_bytes());
     }
@@ -181,7 +186,11 @@ pub(crate) fn bind_low(tbl: &mut Vec<Gf>, r: Gf) {
 /// `point[k]`) at `point`, by repeated low-bit binds.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn mle_eval(tbl: &[Gf], point: &[Gf]) -> Gf {
-    assert_eq!(tbl.len(), 1usize << point.len(), "table/point size mismatch");
+    assert_eq!(
+        tbl.len(),
+        1usize << point.len(),
+        "table/point size mismatch"
+    );
     let mut buf = tbl.to_vec();
     for &r in point {
         bind_low(&mut buf, r);
@@ -197,14 +206,14 @@ pub(crate) fn transpose_bits_128(inp: &[Gf]) -> Vec<Gf> {
     assert_eq!(inp.len(), 128);
     let mut out = vec![[0u64; 2]; 128];
     for (v, s) in inp.iter().enumerate() {
-        let w = s.words();
+        let w = s.as_words();
         for u in 0..128 {
             if (w[u >> 6] >> (u & 63)) & 1 == 1 {
                 out[u][v >> 6] |= 1u64 << (v & 63);
             }
         }
     }
-    out.into_iter().map(Gf::from_words).collect()
+    out.into_iter().map(Gf::from_polynomial_words).collect()
 }
 
 /// `Σ_u bit_w(X^u·y)·cols[u]` for every `w`: one tensor-algebra
@@ -216,7 +225,7 @@ pub(crate) fn apply_right_mul(cols: &[Gf], y: Gf) -> Vec<Gf> {
     let mut row = y; // X^u · y, starting at u = 0
     for cu in cols.iter().take(128) {
         if !cu.is_zero() {
-            let w = row.words();
+            let w = row.as_words();
             for wi in 0..2usize {
                 let mut bits = w[wi];
                 while bits != 0 {
@@ -268,7 +277,7 @@ pub fn residual_b_evals(prefix: &[Gf], yr_log_n: usize, r_hi: &[Gf], eq_r2: &[Gf
             cols[w] = la * f0[w] + *a * f1[w];
         }
     }
-    // Boolean tail expansion: at each step j, the left leg is 0 or 1, so
+    // Bit tail expansion: at each step j, the left leg is 0 or 1, so
     // E·[(1+a)⊗(1+h) + a⊗h] collapses to the single term E·(1⊗(1+h)) (bit 0)
     // or E·(1⊗h) (bit 1). Tail index bit j is appended at weight 2^j.
     let mut cur: Vec<Vec<Gf>> = vec![cols];
@@ -284,7 +293,11 @@ pub fn residual_b_evals(prefix: &[Gf], yr_log_n: usize, r_hi: &[Gf], eq_r2: &[Gf
         cur = next;
     }
     cur.iter()
-        .map(|cols| cols.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (c, e)| acc + *c * *e))
+        .map(|cols| {
+            cols.iter()
+                .zip(eq_r2.iter())
+                .fold(Gf::zero(), |acc, (c, e)| acc + *c * *e)
+        })
         .collect()
 }
 
@@ -355,7 +368,7 @@ pub(crate) fn absorb_hs(transcript: &mut impl Transcript, s: &[Gf]) {
 }
 
 // ---------------------------------------------------------------------
-// Ring-switch fold kernels (flock-derived; `F2Z_RS_FAST`)
+// Ring-switch fold kernels (flock-derived; `BITZ_RS_FAST`)
 // ---------------------------------------------------------------------
 
 /// Fast ring-switch/basis kernels — the default: the `s_v` in-pack marginals
@@ -364,14 +377,14 @@ pub(crate) fn absorb_hs(transcript: &mut impl Transcript, s: &[Gf]) {
 /// byte-table subset-sum lookups (flock's `fold_b128_elems` shape) instead of
 /// data-dependent bit scans; the mod-q opener additionally fuses the Ligerito
 /// round-0 message into the basis pass and calls flock's
-/// `recursive_prover_with_basis_precomputed_round0`. `F2Z_RS_FAST=0` opts out
+/// `recursive_prover_with_basis_precomputed_round0`. `BITZ_RS_FAST=0` opts out
 /// (restores the scalar bit-scan paths and the plain prover entry point —
 /// diagnostic / A-B measurement). Byte-identical proofs either way (exact
 /// field-op reassociation only; pinned cross-process by
 /// `examples/fuse_check.rs`). Read once per process.
 pub(crate) fn rs_fast() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_RS_FAST").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_RS_FAST").map_or(true, |v| v != "0"))
 }
 
 /// 128-bit-word view of a packed-message element, so the fold kernels run
@@ -384,7 +397,7 @@ pub(crate) trait PackedBits: Sync {
 impl PackedBits for Gf {
     #[inline(always)]
     fn bit_words(&self) -> [u64; 2] {
-        *self.words()
+        *self.as_words()
     }
 }
 
@@ -499,6 +512,24 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
     s
 }
 
+/// `Φ_{r″}` — the F₂-linear batching map on the bit representation:
+/// `β_u ↦ eq_r2[u]`, applied to a K element by summing over its set bits.
+#[allow(clippy::arithmetic_side_effects)]
+#[inline(always)]
+pub(crate) fn phi_bit_sum(ev: Gf, eq_r2: &[Gf]) -> Gf {
+    let w = ev.as_words();
+    let mut acc = Gf::zero();
+    for wi in 0..2usize {
+        let mut bits = w[wi];
+        while bits != 0 {
+            let t = bits.trailing_zeros() as usize;
+            acc += eq_r2[(wi << 6) | t];
+            bits &= bits.wrapping_sub(1);
+        }
+    }
+    acc
+}
+
 /// 16 byte-position subset-sum tables of `scale·eq_r2`:
 /// `T[pos·256 + v] = Σ_{bit j of v} scale·eq_r2[pos·8 + j]` (64 KB). A
 /// `Φ_{r″}` image then costs 16 gathers + a XOR tree ([`phi_from_words`])
@@ -509,17 +540,27 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
 pub(crate) fn phi_byte_tables(eq_r2: &[Gf], scale: Gf) -> Vec<Gf> {
     debug_assert_eq!(eq_r2.len(), 128);
     let mut t = vec![Gf::zero(); 16 * 256];
+    phi_byte_tables_into(&mut t, |i| scale * eq_r2[i]);
+    t
+}
+
+/// Fill the byte-position subset sums of 128 coefficients, overwriting `out`.
+/// The callback lets callers supply precomputed or scaled coefficients without
+/// allocating an intermediate table or multiplying the unit-scale case.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn phi_byte_tables_into(out: &mut [Gf], coefficient: impl Fn(usize) -> Gf) {
+    debug_assert_eq!(out.len(), 16 * 256);
     for pos in 0..16usize {
-        let tbl = &mut t[pos << 8..(pos + 1) << 8];
+        let table = &mut out[pos << 8..(pos + 1) << 8];
+        table[0] = Gf::zero();
         for j in 0..8usize {
-            let base = scale * eq_r2[(pos << 3) | j];
+            let base = coefficient((pos << 3) | j);
             let half = 1usize << j;
             for k in 0..half {
-                tbl[half + k] = tbl[k] + base;
+                table[half + k] = table[k] + base;
             }
         }
     }
-    t
 }
 
 /// `Σ_l T_l[…]` gather for one element: 16 byte-indexed lookups into a
@@ -598,11 +639,14 @@ pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
 
     // β₀ = Σ_u eq_r2[u]·s_u via the bit transpose.
     let s_u = transpose_bits_128(&s);
-    let beta0 = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
+    let beta0 = s_u
+        .iter()
+        .zip(eq_r2.iter())
+        .fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
 
     // B(y) = Φ_{r″}(eq_hi[y]) = Σ_{u: bit_u(eq_hi[y])} eq_r2[u]. Parallel per y.
     let phi_slow = |y: usize| {
-        let w = eq_hi[y].words();
+        let w = eq_hi[y].as_words();
         let mut acc = Gf::zero();
         for wi in 0..2usize {
             let mut bits = w[wi];
@@ -617,15 +661,18 @@ pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
     let b_tbl: Vec<O> = if rs_fast() {
         let tables = phi_byte_tables(&eq_r2, Gf::one());
         cfg_into_iter!(0..eq_hi.len())
-            .map(|y| convert(phi_from_words(*eq_hi[y].words(), &tables)))
+            .map(|y| convert(phi_from_words(*eq_hi[y].as_words(), &tables)))
             .collect()
     } else {
-        cfg_into_iter!(0..eq_hi.len()).map(|y| convert(phi_slow(y))).collect()
+        cfg_into_iter!(0..eq_hi.len())
+            .map(|y| convert(phi_slow(y)))
+            .collect()
     };
     debug_assert_eq!(
         (0..eq_hi.len())
             .zip(p_msg.iter())
-            .fold(Gf::zero(), |a, (y, p)| a + phi_slow(y) * Gf::from_words(p.bit_words())),
+            .fold(Gf::zero(), |a, (y, p)| a + phi_slow(y)
+                * Gf::from_polynomial_words(p.bit_words())),
         beta0,
         "ring-switch recombination identity"
     );
@@ -646,7 +693,11 @@ pub fn ring_switch_verify(
         return Err(RsOpenError::Shape);
     }
     let eq_lo = build_eq_x_r_vec(r_lo, &()).expect("r_lo non-empty");
-    let claim = proof.s_v.iter().zip(eq_lo.iter()).fold(Gf::zero(), |acc, (s, e)| acc + *s * *e);
+    let claim = proof
+        .s_v
+        .iter()
+        .zip(eq_lo.iter())
+        .fold(Gf::zero(), |acc, (s, e)| acc + *s * *e);
     if claim != mu {
         return Err(RsOpenError::RingSwitchClaim);
     }
@@ -654,7 +705,10 @@ pub fn ring_switch_verify(
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2 non-empty");
     let s_u = transpose_bits_128(&proof.s_v);
-    let beta0 = s_u.iter().zip(eq_r2.iter()).fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
+    let beta0 = s_u
+        .iter()
+        .zip(eq_r2.iter())
+        .fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
     Ok((eq_r2, beta0))
 }
 
@@ -667,8 +721,12 @@ pub fn ring_switch_verify(
 pub enum IntEvalRsError {
     Forest,
     ChallengeNotGenerator,
-    RootBinding { c: usize },
-    Magnitude { max: u128 },
+    RootBinding {
+        c: usize,
+    },
+    Magnitude {
+        max: u128,
+    },
     /// The pre-sumcheck rejected, or its claimed sum disagrees with the
     /// forest-derived batched claim `Y_ξ`.
     PreSumcheck,
@@ -694,7 +752,10 @@ pub(crate) fn xi_combined_rows_and(
     let t_w = row_bit_vars(p);
     let len = 1usize << t_w;
     debug_assert!(!row_sets.is_empty());
-    debug_assert!(len >= 64, "row_len below one word is out of scope (t_w >= 7 holds here)");
+    debug_assert!(
+        len >= 64,
+        "row_len below one word is out of scope (t_w >= 7 holds here)"
+    );
     let mut m = vec![Gf::zero(); len];
     cfg_chunks_mut!(m, 64).enumerate().for_each(|(wi, block)| {
         for c in 0..p.cols() {
@@ -723,7 +784,10 @@ pub(crate) fn xi_combined_rows(
 ) -> Vec<Gf> {
     let t_w = row_bit_vars(p);
     let len = 1usize << t_w;
-    debug_assert!(len >= 64, "row_len below one word is out of scope (t_w >= 7 holds here)");
+    debug_assert!(
+        len >= 64,
+        "row_len below one word is out of scope (t_w >= 7 holds here)"
+    );
     let mut m = vec![Gf::zero(); len];
     cfg_chunks_mut!(m, 64).enumerate().for_each(|(wi, block)| {
         for (c, row) in rows.iter().enumerate() {
@@ -783,24 +847,26 @@ pub(crate) fn xi_combined_rows_packed(
     // output slots are L1-resident RMW — no cross-group pointer chases in
     // the inner loop and no 256-deep serial add chain per output.
     let mut m = vec![Gf::zero(); len];
-    cfg_chunks_mut!(m, 1 << 10).enumerate().for_each(|(ci, chunk)| {
-        let base = ci << 10;
-        for (g, tg) in tables.iter().enumerate() {
-            let src = &packed_cols[g][base..base + chunk.len()];
-            for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
-                let mut x = x;
-                let mut pos = 0usize;
-                while x != 0 {
-                    let byte = (x & 0xFF) as usize;
-                    if byte != 0 {
-                        *slot += tg[(pos << 8) | byte];
+    cfg_chunks_mut!(m, 1 << 10)
+        .enumerate()
+        .for_each(|(ci, chunk)| {
+            let base = ci << 10;
+            for (g, tg) in tables.iter().enumerate() {
+                let src = &packed_cols[g][base..base + chunk.len()];
+                for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
+                    let mut x = x;
+                    let mut pos = 0usize;
+                    while x != 0 {
+                        let byte = (x & 0xFF) as usize;
+                        if byte != 0 {
+                            *slot += tg[(pos << 8) | byte];
+                        }
+                        x >>= 8;
+                        pos += 1;
                     }
-                    x >>= 8;
-                    pos += 1;
                 }
             }
-        }
-    });
+        });
     m
 }
 
@@ -867,7 +933,16 @@ fn prove_fold_forest_fast(
     let mask = p.cols().wrapping_sub(1);
     let pair_tbl = crate::pcs::layer1_pair_table(p, &pow2, log_w, row_len);
     let gen_layer1 = |k: usize| -> (Vec<Gf>, Vec<Gf>) {
-        build_column_layer1_halves(p, packed_cols, k & mask, &pow2, &pair_tbl, one, log_w, row_len)
+        build_column_layer1_halves(
+            p,
+            packed_cols,
+            k & mask,
+            &pow2,
+            &pair_tbl,
+            one,
+            log_w,
+            row_len,
+        )
     };
     let tau_sets = vec![leaf_tau_halves(p, &pow2, one, log_w, row_len)];
     let col_bits = extract_column_bit_halves(packed_cols, p.cols(), row_len);
@@ -877,7 +952,11 @@ fn prove_fold_forest_fast(
         transcript,
         p.cols(),
         gen_layer1,
-        ForestLeafBits { bits_of: &bits_of, tau_sets: &tau_sets, tau_set_of: &tau_set_of },
+        ForestLeafBits {
+            bits_of: &bits_of,
+            tau_sets: &tau_sets,
+            tau_set_of: &tau_set_of,
+        },
         &(),
     );
     let rho: Vec<Gf> = claims.first().map(|(pt, _)| pt.clone()).unwrap_or_default();
@@ -897,12 +976,33 @@ fn prove_fold_forest_fast(
 ///   entries shared by all `2^s` columns), then each column is an
 ///   unconditional table-add per nonzero nibble — no per-bit
 ///   trailing-zeros walk, no data-dependent shift;
-/// - **tz-walk** (`F2Z_FOLDV_LUT=0`): the original per-set-bit scan.
+/// - **tz-walk** (`BITZ_FOLDV_LUT=0`): the original per-set-bit scan.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn fold_values_bits(
     p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
     row_weights: &[u128],
+) -> Vec<u128> {
+    fold_values_bits_width::<false>(p, rows, row_weights, p.word_bits)
+}
+
+pub(crate) fn fold_values_bits_bounded(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+    value_bits: usize,
+) -> Vec<u128> {
+    if value_bits == p.word_bits {
+        return fold_values_bits(p, rows, row_weights);
+    }
+    fold_values_bits_width::<true>(p, rows, row_weights, value_bits)
+}
+
+fn fold_values_bits_width<const PADDED: bool>(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+    value_bits: usize,
 ) -> Vec<u128> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let mask = p.word_bits.wrapping_sub(1);
@@ -914,7 +1014,11 @@ pub(crate) fn fold_values_bits(
         let words = row_len.div_ceil(64);
         let groups = words << 4;
         let wbit = |i: usize| -> u128 {
-            if i < row_len { row_weights[i >> log_w] << (i & mask) } else { 0 }
+            if i < row_len && (!PADDED || (i & mask) < value_bits) {
+                row_weights[i >> log_w] << (i & mask)
+            } else {
+                0
+            }
         };
         let tbl: Vec<u128> = {
             let rows_t: Vec<[u128; 16]> = cfg_into_iter!(0..groups, 1 << 12)
@@ -922,8 +1026,8 @@ pub(crate) fn fold_values_bits(
                     let mut t = [0u128; 16];
                     for nib in 1..16usize {
                         // t[nib] = t[nib without its lowest bit] + that bit's weight.
-                        t[nib] = t[nib & (nib - 1)]
-                            + wbit((g << 2) | nib.trailing_zeros() as usize);
+                        t[nib] =
+                            t[nib & (nib - 1)] + wbit((g << 2) | nib.trailing_zeros() as usize);
                     }
                     t
                 })
@@ -970,7 +1074,9 @@ pub(crate) fn fold_values_bits(
                 while bits != 0 {
                     let tz = bits.trailing_zeros() as usize;
                     let i = (wi << 6) | tz;
-                    acc += row_weights[i >> log_w] << (i & mask);
+                    if !PADDED || (i & mask) < value_bits {
+                        acc += row_weights[i >> log_w] << (i & mask);
+                    }
                     bits &= bits.wrapping_sub(1);
                 }
             }
@@ -979,12 +1085,12 @@ pub(crate) fn fold_values_bits(
         .collect()
 }
 
-/// [`fold_values_bits`] form choice: `F2Z_FOLDV_LUT=0` opts back into the
+/// [`fold_values_bits`] form choice: `BITZ_FOLDV_LUT=0` opts back into the
 /// per-set-bit trailing-zeros walk (diagnostic / A-B). Read once per
 /// process.
 fn foldv_lut() -> bool {
     static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("F2Z_FOLDV_LUT").map_or(true, |v| v != "0"))
+    *ENV.get_or_init(|| std::env::var("BITZ_FOLDV_LUT").map_or(true, |v| v != "0"))
 }
 
 /// One fused pass folding `K` weight sets at once: per column,
@@ -1165,7 +1271,12 @@ pub(crate) fn prove_int_eval_common(
     alpha: Gf,
     rows: &[Vec<u64>],
     packed_cols: Option<&[Vec<u64>]>,
-) -> (ProductForestProof<Gf>, Vec<u128>, MultiDegreeSumcheckProof<Gf>, Vec<Gf>) {
+) -> (
+    ProductForestProof<Gf>,
+    Vec<u128>,
+    MultiDegreeSumcheckProof<Gf>,
+    Vec<Gf>,
+) {
     let (forest, rho) =
         prove_fold_forest_fast(transcript, p, data, row_weights, alpha, packed_cols);
     let v = fold_values_bits(p, rows, row_weights);
@@ -1183,22 +1294,20 @@ pub(crate) fn prove_int_eval_common(
     let r_tbl = row_bit_weights(p, row_weights, alpha, &rho);
     let m_tbl = xi_combined_rows(p, rows, &eq_xi);
 
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: &[Gf]| {
-        DenseMultilinearExtension::from_evaluations_vec(
-            t_w,
-            tbl.iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
+    let (presum, r_star) = {
+        let (values, weights) = crate::sumcheck::inner::binary::inputs(vec![[r_tbl, m_tbl]], t_w);
+        crate::sumcheck::inner::binary::encode(
+            crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                &field::Gf128Ops,
+                transcript,
+                crate::sumcheck::inner::InitialClaims::Compute,
+                values,
+                weights,
+                &mut crate::sumcheck::UngrindedRoundBoundary,
+            )
+            .expect("valid post-GKR dot products"),
         )
     };
-    let group = MultiDegreeSumcheckGroup::new(
-        2,
-        vec![to_mle(&r_tbl), to_mle(&m_tbl)],
-        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-    );
-    let (presum, states) =
-        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &());
-    let r_star = states[0].randomness.clone();
 
     // Residual claim point: M̂(r*, ξ) = μ.
     let point: Vec<Gf> = r_star.iter().chain(xi.iter()).copied().collect();
@@ -1231,7 +1340,10 @@ pub(crate) fn verify_int_eval_common(
     if v.len() != p.cols() || forest.roots.len() != p.cols() {
         return Err(IntEvalRsError::Forest);
     }
-    let rho: Vec<Gf> = vclaims.first().map(|(pt, _)| pt.clone()).unwrap_or_default();
+    let rho: Vec<Gf> = vclaims
+        .first()
+        .map(|(pt, _)| pt.clone())
+        .unwrap_or_default();
     let leaf_evals: Vec<Gf> = vclaims.iter().map(|(_, e)| *e).collect();
 
     // (2) Bind the sent integers.
@@ -1263,9 +1375,9 @@ pub(crate) fn verify_int_eval_common(
         .iter()
         .zip(eq_xi.iter())
         .fold(Gf::zero(), |acc, (l, e)| acc + *e * (*l - one));
-    let subclaims =
-        MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
-            .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = presum
+        .verify_as_subprotocol(transcript, t_w, &[2], &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
     if presum.claimed_sums() != [y_xi] {
         return Err(IntEvalRsError::PreSumcheck);
     }
@@ -1275,11 +1387,14 @@ pub(crate) fn verify_int_eval_common(
     // (3b) The verifier's O(2^t·W) step: R̂(r*), then μ = expected / R̂(r*).
     let r_tbl = row_bit_weights(p, row_weights, alpha, &rho);
     let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
-    let r_hat = r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
+    let r_hat = r_tbl
+        .iter()
+        .zip(eq_rstar.iter())
+        .fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
     if r_hat.is_zero() {
         return Err(IntEvalRsError::RHatZero);
     }
-    let mu = expected * r_hat.inverse();
+    let mu = expected * r_hat.invert_nonzero();
 
     let point: Vec<Gf> = r_star.iter().chain(xi.iter()).copied().collect();
     Ok((point, mu))
@@ -1302,26 +1417,35 @@ pub(crate) fn verify_int_eval_common(
 /// vs the generic per-point gather (identical per-slot products at the nodes
 /// `{0, 1, F::from(2)}`; reduction is `F₂`-linear and the outer sums are
 /// exact), so the emitted proof is byte-identical. Attached under
-/// [`rs_fast`] purely so `F2Z_RS_FAST=0` restores the generic path for A/B.
+/// [`rs_fast`] purely so `BITZ_RS_FAST=0` restores the generic path for A/B.
+#[cfg(test)]
 pub(crate) struct ProdPairWideEvaluator;
 
+#[cfg(test)]
 impl crate::piop::sumcheck::prover::RoundPolyEvaluator<Gf> for ProdPairWideEvaluator {
     #[allow(clippy::arithmetic_side_effects)]
     fn round_evals(
         &self,
-        mles: &[DenseMultilinearExtension<<Gf as crypto_primitives::Field>::Inner>],
+        mles: &[DenseMultilinearExtension<
+            <Gf as crate::poly::coefficient::FieldRepresentation>::Inner,
+        >],
         round: usize,
         num_vars: usize,
         degree: usize,
         _config: &(),
     ) -> Vec<Gf> {
+        use crate::poly::coefficient::PolynomialField;
         use crate::utils::inner_transparent_field::InnerTransparentField;
         use crate::utils::wide_mul::WideMulAcc;
-        use crypto_primitives::{FromWithConfig, PrimeField};
+
         assert_eq!(degree, 2, "product-pair evaluator is degree-2 only");
-        assert_eq!(mles.len(), 2, "product-pair evaluator expects exactly 2 MLEs");
+        assert_eq!(
+            mles.len(),
+            2,
+            "product-pair evaluator expects exactly 2 MLEs"
+        );
         let half = 1usize << (num_vars - round);
-        let x2 = Gf::from_with_cfg(2u64, &());
+        let x2 = Gf::interpolation_node(2, &());
         const CHUNK: usize = 1 << 12;
         let n_chunks = half.div_ceil(CHUNK).max(1);
         let partials: Vec<(Gf, Gf, Gf)> = cfg_into_iter!(0..n_chunks)
@@ -1387,8 +1511,33 @@ pub(crate) fn prove_int_eval_merged_common(
     MultiDegreeSumcheckProof<Gf>,
     Vec<Gf>,
 ) {
+    prove_int_eval_merged_bounded(
+        transcript,
+        p,
+        rows,
+        packed_cols,
+        row_weights,
+        alpha,
+        p.word_bits,
+    )
+}
+
+pub(crate) fn prove_int_eval_merged_bounded(
+    transcript: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    packed_cols: Option<&[Vec<u64>]>,
+    row_weights: &[u128],
+    alpha: Gf,
+    value_bits: usize,
+) -> (
+    crate::merged_forest::MergedForestProof,
+    Vec<u128>,
+    MultiDegreeSumcheckProof<Gf>,
+    Vec<Gf>,
+) {
+    use crate::merged_forest::prove_merged_forest_lazy_from_rows;
     use crate::pcs::chunk_pow2_table;
-    use crate::merged_forest::prove_merged_forest_lazy;
     let t_w = row_bit_vars(p);
     let owned;
     let packed_cols: &[Vec<u64>] = match packed_cols {
@@ -1406,7 +1555,13 @@ pub(crate) fn prove_int_eval_merged_common(
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
         if crate::merged_forest::quad_active(p) {
-            crate::merged_forest::prove_merged_forest_lazy_quad(transcript, p, packed_cols, &pow2)
+            crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
+                transcript,
+                p,
+                Some(rows),
+                packed_cols,
+                &pow2,
+            )
         } else {
             // A zero-padded witness ends in all-zero columns; those trees
             // are constant 1 and never get built (byte-identical proof).
@@ -1414,13 +1569,13 @@ pub(crate) fn prove_int_eval_merged_common(
                 let _g = tracing::info_span!("mc:live_cols").entered();
                 crate::merged_forest::live_cols(p, rows)
             };
-            prove_merged_forest_lazy(transcript, p, packed_cols, &pow2, live)
+            prove_merged_forest_lazy_from_rows(transcript, p, rows, packed_cols, &pow2, live)
         }
     };
     drop(pow2);
     let v = {
         let _g = tracing::info_span!("mc:fold_v").entered();
-        fold_values_bits(p, rows, row_weights)
+        fold_values_bits_bounded(p, rows, row_weights, value_bits)
     };
 
     let _g_tbls = tracing::info_span!("mc:presum_tbls").entered();
@@ -1438,29 +1593,24 @@ pub(crate) fn prove_int_eval_merged_common(
     };
     drop(_g_tbls);
 
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: &[Gf]| {
-        DenseMultilinearExtension::from_evaluations_vec(
-            t_w,
-            tbl.iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
-        )
-    };
-    let group = MultiDegreeSumcheckGroup::new(
-        2,
-        vec![to_mle(&r_tbl), to_mle(&m_tbl)],
-        Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-    );
-    let group = if rs_fast() {
-        group.with_round_evaluator(Box::new(ProdPairWideEvaluator))
-    } else {
-        group
-    };
-    let (presum, states) = {
+    let (presum, r_star) = {
         let _g = tracing::info_span!("mc:presum_run").entered();
-        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, vec![group], t_w, &())
+        {
+            let (values, weights) =
+                crate::sumcheck::inner::binary::inputs(vec![[r_tbl, m_tbl]], t_w);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        }
     };
-    let r_star = states[0].randomness.clone();
 
     // Residual claim point: M̂(r*, z_c) = μ.
     let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
@@ -1483,14 +1633,17 @@ pub(crate) fn prove_x_claims_batched_common(
     claim_rows: &[&[Vec<u64>]],
     claim_weights: &[&[u128]],
     alpha: Gf,
-) -> (
-    crate::merged_forest::MergedForestProof,
-    Vec<Vec<u128>>,
-    MultiDegreeSumcheckProof<Gf>,
-    Vec<Gf>,
-) {
-    use crate::pcs::chunk_pow2_table;
+) -> Result<
+    (
+        crate::merged_forest::MergedForestProof,
+        Vec<Vec<u128>>,
+        MultiDegreeSumcheckProof<Gf>,
+        Vec<Gf>,
+    ),
+    crate::merged_forest::schedule::UnsupportedSchedule,
+> {
     use crate::merged_forest::prove_merged_forest_lazy_multi;
+    use crate::pcs::chunk_pow2_table;
     let n_real = claim_rows.len();
     assert!(n_real >= 1 && n_real == claim_weights.len(), "claim shape");
     let pad_n = n_real.next_power_of_two();
@@ -1502,22 +1655,30 @@ pub(crate) fn prove_x_claims_batched_common(
     let w_of: Vec<usize> = claim_weights
         .iter()
         .enumerate()
-        .map(|(n, w)| match w_reps.iter().position(|&r| claim_weights[r] == *w) {
-            Some(u) => u,
-            None => {
-                w_reps.push(n);
-                w_reps.len() - 1
-            }
-        })
+        .map(
+            |(n, w)| match w_reps.iter().position(|&r| claim_weights[r] == *w) {
+                Some(u) => u,
+                None => {
+                    w_reps.push(n);
+                    w_reps.len() - 1
+                }
+            },
+        )
         .collect();
 
     let packed: Vec<Vec<Vec<u64>>> = {
         let _g = tracing::info_span!("mc:pack").entered();
-        claim_rows.iter().map(|rows| pack_columns_from_rows(p, rows)).collect()
+        claim_rows
+            .iter()
+            .map(|rows| pack_columns_from_rows(p, rows))
+            .collect()
     };
     let pow2s: Vec<Vec<Vec<Gf>>> = {
         let _g = tracing::info_span!("mc:pow2").entered();
-        w_reps.iter().map(|&r| chunk_pow2_table(p, claim_weights[r], alpha)).collect()
+        w_reps
+            .iter()
+            .map(|&r| chunk_pow2_table(p, claim_weights[r], alpha))
+            .collect()
     };
     // Dummy padding: zero-weight tau chains (all 1 => leaves identically
     // 1); the bits are irrelevant — reuse claim 0's store.
@@ -1532,7 +1693,7 @@ pub(crate) fn prove_x_claims_batched_common(
     }
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
-        prove_merged_forest_lazy_multi(transcript, p, &pairs)
+        prove_merged_forest_lazy_multi(transcript, p, &pairs)?
     };
     let us: Vec<Vec<u128>> = {
         let _g = tracing::info_span!("mc:fold_v").entered();
@@ -1556,19 +1717,13 @@ pub(crate) fn prove_x_claims_batched_common(
     } else {
         build_eq_x_r_vec(z_claim, &()).expect("log N >= 1")
     };
-    let zero_inner = Gf::zero().into_inner();
-    let to_mle = |tbl: Vec<Gf>| {
-        DenseMultilinearExtension::from_evaluations_vec(
-            t_w,
-            tbl.into_iter().map(|g| g.into_inner()).collect(),
-            zero_inner,
-        )
-    };
     // One q_rowbit table per UNIQUE weight set; per-claim groups take a
     // scaled copy.
-    let r_tbls: Vec<Vec<Gf>> =
-        w_reps.iter().map(|&r| row_bit_weights(p, claim_weights[r], alpha, z_bj)).collect();
-    let groups: Vec<MultiDegreeSumcheckGroup<Gf>> = (0..n_real)
+    let r_tbls: Vec<Vec<Gf>> = w_reps
+        .iter()
+        .map(|&r| row_bit_weights(p, claim_weights[r], alpha, z_bj))
+        .collect();
+    let groups: Vec<[Vec<Gf>; 2]> = (0..n_real)
         .map(|n| {
             let mut r_tbl = r_tbls[w_of[n]].clone();
             let scale = eq_claim[n];
@@ -1576,23 +1731,31 @@ pub(crate) fn prove_x_claims_batched_common(
                 *e = *e * scale;
             }
             let m_tbl = xi_combined_rows(p, claim_rows[n], &eq_clear);
-            MultiDegreeSumcheckGroup::new(
-                2,
-                vec![to_mle(r_tbl), to_mle(m_tbl)],
-                Box::new(|vals: &[Gf]| vals[0] * vals[1]),
-            )
+            [r_tbl, m_tbl]
         })
         .collect();
     drop(_g_tbls);
-    let (presum, states) = {
+    let (presum, r_star) = {
         let _g = tracing::info_span!("mc:presum_run").entered();
-        MultiDegreeSumcheck::<Gf>::prove_as_subprotocol(transcript, groups, t_w, &())
+        {
+            let (values, weights) = crate::sumcheck::inner::binary::inputs(groups, t_w);
+            crate::sumcheck::inner::binary::encode(
+                crate::sumcheck::inner::prove_batched_inner_sumcheck(
+                    &field::Gf128Ops,
+                    transcript,
+                    crate::sumcheck::inner::InitialClaims::Compute,
+                    values,
+                    weights,
+                    &mut crate::sumcheck::UngrindedRoundBoundary,
+                )
+                .expect("valid post-GKR dot products"),
+            )
+        }
     };
-    let r_star = states[0].randomness.clone();
 
     // Shared residual point: every claim's M-hat_n(r*, z_clear) = mu_n.
     let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
-    (mf, us, presum, point)
+    Ok((mf, us, presum, point))
 }
 
 /// Verifier of [`prove_x_claims_batched_common`]: recompute the `N·2^s`
@@ -1610,7 +1773,6 @@ pub(crate) fn verify_x_claims_batched_common(
     claim_weights: &[&[u128]],
     alpha: Gf,
 ) -> Result<(Vec<Gf>, Vec<Gf>), IntEvalRsError> {
-    use crate::pcs::FixedBasePow;
     use crate::merged_forest::verify_merged_forest;
     let n_real = claim_us.len();
     if n_real == 0 || n_real != claim_weights.len() {
@@ -1634,11 +1796,13 @@ pub(crate) fn verify_x_claims_batched_common(
             return Err(IntEvalRsError::Magnitude { max });
         }
     }
-    let comb = FixedBasePow::new(alpha, 128, 8);
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
     let mut roots = Vec::with_capacity(pad_n << p.col_vars);
     for n in 0..pad_n {
         if n < n_real {
-            roots.extend(claim_us[n].iter().map(|&u| comb.pow(u)));
+            roots.extend(claim_us[n].iter().map(|&u| {
+                Gf::from(comb.pow_public(&field::Uint::from_words([u as u64, (u >> 64) as u64])))
+            }));
         } else {
             roots.extend(core::iter::repeat(one).take(p.cols()));
         }
@@ -1647,14 +1811,9 @@ pub(crate) fn verify_x_claims_batched_common(
         verify_merged_forest(transcript, &roots, mf, t_w, p.col_vars.wrapping_add(log_n))
             .map_err(|_| IntEvalRsError::Forest)?;
 
-    let subclaims = MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(
-        transcript,
-        t_w,
-        &vec![2; n_real],
-        presum,
-        &(),
-    )
-    .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = presum
+        .verify_as_subprotocol(transcript, t_w, &vec![2; n_real], &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
     let sums = presum.claimed_sums();
     if sums.len() != n_real {
         return Err(IntEvalRsError::PreSumcheck);
@@ -1679,18 +1838,23 @@ pub(crate) fn verify_x_claims_batched_common(
     let w_of: Vec<usize> = claim_weights
         .iter()
         .enumerate()
-        .map(|(n, w)| match w_reps.iter().position(|&r| claim_weights[r] == *w) {
-            Some(u) => u,
-            None => {
-                w_reps.push(n);
-                w_reps.len() - 1
-            }
-        })
+        .map(
+            |(n, w)| match w_reps.iter().position(|&r| claim_weights[r] == *w) {
+                Some(u) => u,
+                None => {
+                    w_reps.push(n);
+                    w_reps.len() - 1
+                }
+            },
+        )
         .collect();
     let r_hats: Vec<Gf> = cfg_into_iter!(w_reps)
         .map(|r| {
             let r_tbl = row_bit_weights(p, claim_weights[r], alpha, z_bj);
-            r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e)
+            r_tbl
+                .iter()
+                .zip(eq_rstar.iter())
+                .fold(Gf::zero(), |acc, (q, e)| acc + *q * *e)
         })
         .collect();
     let mut mus = Vec::with_capacity(n_real);
@@ -1699,7 +1863,7 @@ pub(crate) fn verify_x_claims_batched_common(
         if denom.is_zero() {
             return Err(IntEvalRsError::RHatZero);
         }
-        mus.push(*expected * denom.inverse());
+        mus.push(*expected * denom.invert_nonzero());
     }
 
     let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
@@ -1723,7 +1887,6 @@ pub(crate) fn verify_int_eval_merged_common(
     row_weights: &[u128],
     alpha: Gf,
 ) -> Result<(Vec<Gf>, Gf), IntEvalRsError> {
-    use crate::pcs::FixedBasePow;
     use crate::merged_forest::verify_merged_forest;
     let t_w = row_bit_vars(p);
     if v.len() != p.cols() {
@@ -1743,8 +1906,13 @@ pub(crate) fn verify_int_eval_merged_common(
     if max >= GF128_MULT_ORDER {
         return Err(IntEvalRsError::Magnitude { max });
     }
-    let comb = FixedBasePow::new(alpha, 128, 8);
-    let roots: Vec<Gf> = v.iter().map(|&vc| comb.pow(vc)).collect();
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
+    let roots: Vec<Gf> = v
+        .iter()
+        .map(|&vc| {
+            Gf::from(comb.pow_public(&field::Uint::from_words([vc as u64, (vc >> 64) as u64])))
+        })
+        .collect();
     drop(_g_roots);
 
     // (2) Merged forest against the recomputed roots → exit point
@@ -1762,9 +1930,9 @@ pub(crate) fn verify_int_eval_merged_common(
     // (3a) Pre-sumcheck against the forest exit claim: for the bit-affine
     // leaves `1 + M·(A−1)`, `Σ eq·M·A = e_d − 1` (`= e_d + 1` in char 2).
     let _g_presum = tracing::info_span!("mv:presum").entered();
-    let subclaims =
-        MultiDegreeSumcheck::<Gf>::verify_as_subprotocol(transcript, t_w, &[2], presum, &())
-            .map_err(|_| IntEvalRsError::PreSumcheck)?;
+    let subclaims = presum
+        .verify_as_subprotocol(transcript, t_w, &[2], &())
+        .map_err(|_| IntEvalRsError::PreSumcheck)?;
     let one = Gf::one();
     if presum.claimed_sums() != [e_d + one] {
         return Err(IntEvalRsError::PreSumcheck);
@@ -1778,11 +1946,14 @@ pub(crate) fn verify_int_eval_merged_common(
     let _g_rhat = tracing::info_span!("mv:rhat").entered();
     let r_tbl = row_bit_weights(p, row_weights, alpha, z_bj);
     let eq_rstar = build_eq_x_r_vec(&r_star, &()).expect("t_w >= 1");
-    let r_hat = r_tbl.iter().zip(eq_rstar.iter()).fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
+    let r_hat = r_tbl
+        .iter()
+        .zip(eq_rstar.iter())
+        .fold(Gf::zero(), |acc, (q, e)| acc + *q * *e);
     if r_hat.is_zero() {
         return Err(IntEvalRsError::RHatZero);
     }
-    let mu = expected * r_hat.inverse();
+    let mu = expected * r_hat.invert_nonzero();
     drop(_g_rhat);
 
     let point: Vec<Gf> = r_star.iter().chain(z_c.iter()).copied().collect();
@@ -1800,7 +1971,7 @@ mod tests {
 
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
-        Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+        Gf::from_polynomial_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
     }
 
     /// `rows_from_packed_cols` inverts `pack_columns_from_rows` exactly
@@ -1847,7 +2018,7 @@ mod tests {
         let eq_ch = build_eq_x_r_vec(&chals, &()).expect("ch");
         let mut brute = Gf::zero();
         for y in 0..(1usize << m_p) {
-            let w = eq_hi[y].words();
+            let w = eq_hi[y].as_words();
             let mut phi = Gf::zero();
             for u in 0..128usize {
                 if (w[u >> 6] >> (u & 63)) & 1 == 1 {
@@ -1863,7 +2034,7 @@ mod tests {
         let b_tbl: Vec<Gf> = eq_hi
             .iter()
             .map(|ev| {
-                let w = ev.words();
+                let w = ev.as_words();
                 let mut acc = Gf::zero();
                 for u in 0..128usize {
                     if (w[u >> 6] >> (u & 63)) & 1 == 1 {
@@ -1892,7 +2063,11 @@ mod tests {
         for y in 0..(1usize << yr) {
             let mut point = prefix.clone();
             for j in 0..yr {
-                point.push(if (y >> j) & 1 == 1 { Gf::one() } else { Gf::zero() });
+                point.push(if (y >> j) & 1 == 1 {
+                    Gf::one()
+                } else {
+                    Gf::zero()
+                });
             }
             assert_eq!(
                 block[y],
@@ -1911,9 +2086,28 @@ mod tests {
             let eq: Vec<Gf> = (0..len).map(|i| sample(0x5000 + i as u64)).collect();
             let mut expect = vec![Gf::zero(); 128];
             for y in 0..len {
-                sv_scalar_accum(&mut expect, *wit[y].words(), eq[y]);
+                sv_scalar_accum(&mut expect, *wit[y].as_words(), eq[y]);
             }
             assert_eq!(sv_fold_mfr(&wit, &eq), expect, "len {len}");
+        }
+    }
+
+    #[test]
+    fn phi_byte_tables_into_reuses_buffer() {
+        let mut tables = vec![sample(1); 16 * 256];
+        for seed in [0xA000, 0xB000] {
+            let coefficients: Vec<_> = (0..128).map(|i| sample(seed + i)).collect();
+            phi_byte_tables_into(&mut tables, |i| coefficients[i]);
+            for (position, table) in tables.chunks_exact(256).enumerate() {
+                for (bits, &actual) in table.iter().enumerate() {
+                    let expected = (0..8)
+                        .filter(|&bit| bits & (1 << bit) != 0)
+                        .fold(Gf::zero(), |sum, bit| {
+                            sum + coefficients[8 * position + bit]
+                        });
+                    assert_eq!(actual, expected, "position {position}, bits {bits}");
+                }
+            }
         }
     }
 
@@ -1922,11 +2116,15 @@ mod tests {
     fn phi_byte_tables_match_bitscan() {
         let eq_r2: Vec<Gf> = (0..128).map(|i| sample(0x9100 + i as u64)).collect();
         for &scale_seed in &[0u64, 0x42, 0xFFFF] {
-            let scale = if scale_seed == 0 { Gf::one() } else { sample(scale_seed) };
+            let scale = if scale_seed == 0 {
+                Gf::one()
+            } else {
+                sample(scale_seed)
+            };
             let tables = phi_byte_tables(&eq_r2, scale);
             for i in 0..64u64 {
                 let v = sample(0xA000 + i);
-                let w = *v.words();
+                let w = *v.as_words();
                 let mut acc = Gf::zero();
                 for wi in 0..2usize {
                     let mut bits = w[wi];
@@ -1953,7 +2151,9 @@ mod tests {
         let mk = |seed: u64| {
             DenseMultilinearExtension::from_evaluations_vec(
                 nv,
-                (0..n).map(|i| sample(seed + i as u64).into_inner()).collect(),
+                (0..n)
+                    .map(|i| sample(seed + i as u64).into_inner())
+                    .collect(),
                 zero_inner,
             )
         };

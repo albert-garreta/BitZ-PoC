@@ -25,7 +25,7 @@ struct BinaryOpenerIdentity {
 }
 
 impl BinaryOpenerIdentity {
-    fn new(opener: &f2z::binary_pcs::BinaryPcs) -> Result<Self, super::AnyError> {
+    fn new(opener: &bitz::binary_pcs::BinaryPcs) -> Result<Self, super::AnyError> {
         Ok(Self {
             packed_log: opener.packed_log(),
             configuration: serde_json::to_value(opener.config())?,
@@ -35,9 +35,9 @@ impl BinaryOpenerIdentity {
 }
 
 impl BiniusLigeritoIdentity {
-    const SCHEMA: &str = "f2z/binius-ligerito-pcs/v1";
+    const SCHEMA: &str = "bitz/binius-ligerito-pcs/v1";
 
-    pub(super) fn new(prepared: &f2z::binius_ligerito::Prepared) -> Result<Self, super::AnyError> {
+    pub(super) fn new(prepared: &bitz::binius_ligerito::Prepared) -> Result<Self, super::AnyError> {
         Ok(Self {
             schema: Self::SCHEMA.into(),
             target_bits: prepared.security().target_bits,
@@ -53,7 +53,7 @@ impl BiniusLigeritoIdentity {
     }
 
     pub(super) fn validate(&self) -> Result<(), super::AnyError> {
-        use f2z::binius_ligerito::{MAX_COMPONENT_BITS, MIN_COMPONENT_BITS, TARGET_BITS};
+        use bitz::binius_ligerito::{MAX_COMPONENT_BITS, MIN_COMPONENT_BITS, TARGET_BITS};
         if self.schema != Self::SCHEMA
             || self.target_bits != TARGET_BITS
             || !(MIN_COMPONENT_BITS..=MAX_COMPONENT_BITS).contains(&self.component_bits)
@@ -75,7 +75,7 @@ impl BiniusLigeritoIdentity {
         // Re-derive every ladder and Round-0 setting instead of accepting a
         // regime label or treating the whole-protocol target as an opener target.
         for oracle in &self.oracles {
-            let opener = f2z::binary_pcs::BinaryPcs::with_log_inv_rate(oracle.packed_log, self.component_bits, self.log_inv_rate)?;
+            let opener = bitz::binary_pcs::BinaryPcs::with_log_inv_rate(oracle.packed_log, self.component_bits, self.log_inv_rate)?;
             if *oracle != BinaryOpenerIdentity::new(&opener)? {
                 return Err("inconsistent Binius-Ligerito oracle configuration".into());
             }

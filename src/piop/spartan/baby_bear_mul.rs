@@ -9,7 +9,7 @@
 //!
 //! The logical assignment is `[e0 | a | b | c | k]`. It contains five
 //! capacity-sized blocks and is padded to eight blocks only when materialized
-//! as Spartan's assignment MLE. The compact F2Z witness contains 31
+//! as Spartan's assignment MLE. The compact BitZ witness contains 31
 //! little-endian bits for each of `a`, `b`, `c`, and `k`, followed by four
 //! unused slots that the honest witness builder leaves zero. Verification does
 //! not separately constrain those unused committed bits.
@@ -18,20 +18,20 @@
 //! comparison with `p`. The proof relation itself binds 31-bit integers and
 //! the exact quotient identity.
 
+use crate::piop::spartan::SpartanField as _;
+use crate::sumcheck::bridge::PreparedBinding;
+use circuit::linear_map::CscMatrix;
+use field::RingOps;
 use std::borrow::Cow;
 
-use crypto_primitives::{FromWithConfig, PrimeField};
 use thiserror::Error;
 
-use crate::{
-    pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension, sparse_matrix::SparseColumn,
-};
+use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 
 use super::{
     ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
-    SparseMatrix, SpartanF2zField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
-    SpartanRelationBackend, build_assignment_mle, build_product_mles,
-    slot_rows::pack_slot_major_rows_w1,
+    SpartanBitzField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
+    build_assignment_mle, build_product_mles, slot_rows::pack_slot_major_rows_w1,
 };
 
 /// The BabyBear prime `2^31 - 2^27 + 1`.
@@ -72,7 +72,7 @@ const BABY_BEAR_OPERAND_MASK: u32 = 0x7fff_ffff;
 // relation. The combined production proof applies its stricter 2^15 minimum.
 const MIN_CAPACITY: usize = 1 << 8;
 
-// `SpartanF2zField` is the 128-bit runtime-configured Montgomery field, whose
+// `SpartanBitzField` is the 128-bit runtime-configured Montgomery field, whose
 // canonical element encoding is a fixed-width, little-endian 16-byte string.
 // BabyBear's modulus is 0x78000001. Keeping this encoding static lets matrix
 // hashing borrow it for every modulus coefficient without a per-entry
@@ -109,7 +109,7 @@ pub enum BabyBearMulCoefficient {
     Modulus,
 }
 
-impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
+impl SpartanMatrixCoefficient<SpartanBitzField> for BabyBearMulCoefficient {
     fn validate(&self, _field_modulus_encoding: &[u8]) -> Result<(), SpartanMatrixError> {
         // Every Spartan field is at least 100 bits, so both public coefficients
         // are nonzero canonical elements in every accepted configuration.
@@ -122,7 +122,7 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
 
     fn canonical_field_encoding<'a>(
         &'a self,
-        _field_config: &<SpartanF2zField as PrimeField>::Config,
+        _field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
         field_one_encoding: &'a [u8],
     ) -> Cow<'a, [u8]> {
         match self {
@@ -133,47 +133,30 @@ impl SpartanMatrixCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
 
     fn scale(
         &self,
-        value: &SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
-    ) -> SpartanF2zField {
+        value: &SpartanBitzField,
+        field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
+    ) -> SpartanBitzField {
         match self {
             Self::One => value.clone(),
             Self::Modulus => {
-                let coefficient = SpartanF2zField::from_with_cfg(BABY_BEAR_MODULUS, field_config);
+                let coefficient = SpartanBitzField::from_with_cfg(BABY_BEAR_MODULUS, field_config);
                 let mut scaled = value.clone();
-                scaled *= &coefficient;
+                scaled = field_config.mul(&(scaled), &(&coefficient));
                 scaled
             }
         }
     }
-
-    fn column_dot(
-        column: SparseColumn<'_, Self>,
-        row_weights: &[SpartanF2zField],
-        zero: &SpartanF2zField,
-        field_config: &<SpartanF2zField as PrimeField>::Config,
-    ) -> SpartanF2zField {
-        if let Some((row, coefficient)) = column.single() {
-            return coefficient.scale(&row_weights[row], field_config);
-        }
-
-        let mut evaluation = zero.clone();
-        for (row, coefficient) in column {
-            evaluation += &coefficient.scale(&row_weights[row], field_config);
-        }
-        evaluation
-    }
 }
 
 /// Both public coefficients encode to modulus-independent bytes: `One` to
-/// the field's canonical one (exactly like a Boolean `true`) and `Modulus`
+/// the field's canonical one (exactly like a Bit `true`) and `Modulus`
 /// to the embedded BabyBear prime, which is canonical and never the unit in
 /// any accepted (at least 100-bit) Spartan field.
-impl ModulusIndependentCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
+impl ModulusIndependentCoefficient<SpartanBitzField> for BabyBearMulCoefficient {
     fn write_modulus_independent_encoding(&self, out: &mut Vec<u8>) {
         match self {
             Self::One => {
-                ModulusIndependentCoefficient::<SpartanF2zField>::write_modulus_independent_encoding(
+                ModulusIndependentCoefficient::<SpartanBitzField>::write_modulus_independent_encoding(
                     &true, out,
                 )
             }
@@ -184,16 +167,6 @@ impl ModulusIndependentCoefficient<SpartanF2zField> for BabyBearMulCoefficient {
     fn is_unit(&self) -> bool {
         matches!(self, Self::One)
     }
-}
-
-/// Integer relation backend used by the BabyBear multiplication prover.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BabyBearMulRelationBackend;
-
-impl SpartanRelationBackend<SpartanF2zField> for BabyBearMulRelationBackend {
-    type MatrixCoeff = BabyBearMulCoefficient;
-    type Witness = u64;
-    type Product = u64;
 }
 
 /// Failures while constructing the BabyBear multiplication relation.
@@ -223,7 +196,7 @@ pub enum BabyBearMulError {
     SpartanMatrix(#[from] SpartanMatrixError),
 }
 
-/// Shared shape of the integer assignment and compact F2Z bit witness.
+/// Shared shape of the integer assignment and compact BitZ bit witness.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BabyBearMulLayout {
     multiplications: usize,
@@ -235,7 +208,7 @@ impl BabyBearMulLayout {
     /// Creates a layout for `multiplications` live rows.
     ///
     /// The gate capacity is `max(256, multiplications).next_power_of_two()`.
-    /// The production Spartan/F2Z API may impose a larger minimum.
+    /// The production Spartan/BitZ API may impose a larger minimum.
     pub fn new(multiplications: usize) -> Result<Self, BabyBearMulError> {
         if multiplications == 0 {
             return Err(BabyBearMulError::EmptyBatch);
@@ -290,12 +263,12 @@ impl BabyBearMulLayout {
         self.gate_vars + 3
     }
 
-    /// F2Z shape for the slot-major 31/31/31/31-bit witness.
+    /// BitZ shape for the slot-major 31/31/31/31-bit witness.
     ///
     /// If `g = log2(capacity)`, the low `s = floor(g/2)` gate coordinates
-    /// become F2Z columns. The remaining gate coordinates and seven physical
+    /// become BitZ columns. The remaining gate coordinates and seven physical
     /// slot coordinates become folded row variables.
-    pub const fn f2z_params(&self) -> IntegerMatrixLayout {
+    pub const fn bitz_params(&self) -> IntegerMatrixLayout {
         let s = self.gate_vars / 2;
         IntegerMatrixLayout {
             row_vars: 7 + self.gate_vars - s,
@@ -304,10 +277,10 @@ impl BabyBearMulLayout {
         }
     }
 
-    /// Maps `(bit_slot, gate)` to the F2Z row-major cell `(b, c)`.
+    /// Maps `(bit_slot, gate)` to the BitZ row-major cell `(b, c)`.
     ///
     /// `params.cell_index(b, c) == bit_slot * capacity + gate`.
-    pub const fn f2z_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
+    pub const fn bitz_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
         if bit_slot >= BABY_BEAR_MUL_BIT_SLOTS || gate >= self.capacity {
             return None;
         }
@@ -334,50 +307,6 @@ impl BabyBearMulLayout {
 pub struct BabyBearMulWitness {
     layout: BabyBearMulLayout,
     assignment: Box<[u64]>,
-}
-
-/// Native MLE tables retained before Spartan's first field-valued fold.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BabyBearMulNativeMles {
-    assignment: DenseMultilinearExtension<u64>,
-    products: R1csProductMles<u64>,
-}
-
-impl BabyBearMulNativeMles {
-    /// Complete padded native assignment MLE `w`.
-    pub const fn w(&self) -> &DenseMultilinearExtension<u64> {
-        &self.assignment
-    }
-
-    /// Complete eight-block native assignment MLE.
-    pub const fn assignment(&self) -> &DenseMultilinearExtension<u64> {
-        self.w()
-    }
-
-    /// Native `Aw`, `Bw`, and `Cw` MLEs.
-    pub const fn products(&self) -> &R1csProductMles<u64> {
-        &self.products
-    }
-
-    /// Native `Aw` table.
-    pub const fn aw(&self) -> &DenseMultilinearExtension<u64> {
-        &self.products.az
-    }
-
-    /// Native `Bw` table.
-    pub const fn bw(&self) -> &DenseMultilinearExtension<u64> {
-        &self.products.bz
-    }
-
-    /// Native `Cw` table containing `c + p*k`.
-    pub const fn cw(&self) -> &DenseMultilinearExtension<u64> {
-        &self.products.cz
-    }
-
-    /// Moves out the assignment and product MLEs.
-    pub fn into_parts(self) -> (DenseMultilinearExtension<u64>, R1csProductMles<u64>) {
-        (self.assignment, self.products)
-    }
 }
 
 impl BabyBearMulWitness {
@@ -491,7 +420,7 @@ impl BabyBearMulWitness {
         self.bw()
     }
 
-    /// Builds compact `W=1` F2Z rows without materializing a cell tensor.
+    /// Builds compact `W=1` BitZ rows without materializing a cell tensor.
     ///
     /// Slots `0..31`, `31..62`, `62..93`, and `93..124` contain
     /// little-endian bits of `a`, `b`, `c`, and `k`. Slots `124..128` remain
@@ -505,8 +434,8 @@ impl BabyBearMulWitness {
     /// [`super::slot_rows`]; smaller layouts take the bitwise path. Both
     /// produce identical rows.
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn f2z_bit_rows(&self) -> Vec<Vec<u64>> {
-        let params = self.layout.f2z_params();
+    pub fn bitz_bit_rows(&self) -> Vec<Vec<u64>> {
+        let params = self.layout.bitz_params();
         let words_per_row = params.rows() / u64::BITS as usize;
         let mut rows = vec![vec![0_u64; words_per_row]; params.cols()];
 
@@ -600,7 +529,7 @@ fn write_value_bits(
             continue;
         }
         let (b, c) = layout
-            .f2z_cell(slot_offset + bit, gate)
+            .bitz_cell(slot_offset + bit, gate)
             .expect("witness bit coordinates are in bounds");
         rows[c][b / u64::BITS as usize] |= 1_u64 << (b % u64::BITS as usize);
     }
@@ -643,7 +572,7 @@ fn selector_matrix(
     layout: &BabyBearMulLayout,
     block: usize,
     coefficient: BabyBearMulCoefficient,
-) -> Result<SparseMatrix<BabyBearMulCoefficient>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[BabyBearMulCoefficient]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let offset = block * layout.capacity;
@@ -658,13 +587,13 @@ fn selector_matrix(
     column_offsets[offset + rows + 1..].fill(rows);
     let entries = (0..rows).map(|row| (row, coefficient)).collect::<Vec<_>>();
 
-    Ok(SparseMatrix::try_from_csc(rows, column_offsets, entries)?)
+    Ok(CscMatrix::try_from_csc(rows, column_offsets, entries)?)
 }
 
 #[allow(clippy::arithmetic_side_effects)]
 fn output_matrix(
     layout: &BabyBearMulLayout,
-) -> Result<SparseMatrix<BabyBearMulCoefficient>, SpartanMatrixError> {
+) -> Result<CscMatrix<Box<[BabyBearMulCoefficient]>>, SpartanMatrixError> {
     let columns = layout.assignment_len();
     let rows = layout.multiplications;
     let c_offset = 3 * layout.capacity;
@@ -689,15 +618,15 @@ fn output_matrix(
     let mut entries = Vec::with_capacity(2 * rows);
     entries.extend((0..rows).map(|row| (row, BabyBearMulCoefficient::One)));
     entries.extend((0..rows).map(|row| (row, BabyBearMulCoefficient::Modulus)));
-    Ok(SparseMatrix::try_from_csc(rows, column_offsets, entries)?)
+    Ok(CscMatrix::try_from_csc(rows, column_offsets, entries)?)
 }
 
-/// Generates and prepares the compact BabyBear matrices over the Spartan/F2Z
+/// Generates and prepares the compact BabyBear matrices over the Spartan/BitZ
 /// field.
 pub fn prepare_baby_bear_mul_relation(
     layout: BabyBearMulLayout,
-    field_config: &<SpartanF2zField as PrimeField>::Config,
-) -> Result<PreparedConstraintMatrices<SpartanF2zField, BabyBearMulCoefficient>, BabyBearMulError> {
+    field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
+) -> Result<PreparedConstraintMatrices<SpartanBitzField, BabyBearMulCoefficient>, BabyBearMulError> {
     let matrices = baby_bear_mul_constraint_matrices(&layout)?;
     Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
 }
@@ -705,7 +634,9 @@ pub fn prepare_baby_bear_mul_relation(
 /// Pads the exact logical assignment to eight blocks and materializes native
 /// `Aw`, `Bw`, and `Cw` tables without projecting them into a field.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn project_baby_bear_mul_native_witness(witness: &BabyBearMulWitness) -> BabyBearMulNativeMles {
+pub fn project_baby_bear_mul_native_witness(
+    witness: &BabyBearMulWitness,
+) -> super::EvaluatedSpartanAssignment<u64> {
     // Allocate the final 8M table once. Extending a 5M clone to 8M can first
     // allocate and copy 5M values, then reallocate and copy them again at the
     // largest benchmark sizes.
@@ -742,10 +673,7 @@ pub fn project_baby_bear_mul_native_witness(witness: &BabyBearMulWitness) -> Bab
         },
     };
 
-    BabyBearMulNativeMles {
-        assignment,
-        products,
-    }
+    super::EvaluatedSpartanAssignment::new(assignment, products)
 }
 
 /// Converts the exact native assignment and products into any supported
@@ -757,7 +685,7 @@ pub fn project_baby_bear_mul_witness<F>(
     field_config: &F::Config,
 ) -> Result<(DenseMultilinearExtension<F>, R1csProductMles<F>), BabyBearMulError>
 where
-    F: SpartanField + FromWithConfig<u64>,
+    F: SpartanField,
 {
     F::validate_config(field_config).map_err(SpartanMatrixError::from)?;
 
@@ -794,18 +722,20 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crypto_primitives::{FromWithConfig, PrimeField};
 
     use super::*;
-    use crate::piop::spartan::spartan_f2z_field_config;
+    use crate::piop::spartan::spartan_bitz_field_config;
 
-    fn field(value: u64, config: &<SpartanF2zField as PrimeField>::Config) -> SpartanF2zField {
-        SpartanF2zField::from_with_cfg(value, config)
+    fn field(
+        value: u64,
+        config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
+    ) -> SpartanBitzField {
+        SpartanBitzField::from_with_cfg(value, config)
     }
 
     #[allow(clippy::arithmetic_side_effects)]
     fn multiply_compact_matrix(
-        matrix: &SparseMatrix<BabyBearMulCoefficient>,
+        matrix: &CscMatrix<Box<[BabyBearMulCoefficient]>>,
         assignment: &[u64],
     ) -> Vec<u64> {
         assert_eq!(matrix.column_count(), assignment.len());
@@ -832,7 +762,7 @@ mod tests {
         assert!(product < (1_u64 << 62));
         assert!(BABY_BEAR_MODULUS - 2 < (1_u64 << BABY_BEAR_MUL_K_BITS));
 
-        // F2Z proves that all four explicit assignment values are 31-bit, but
+        // BitZ proves that all four explicit assignment values are 31-bit, but
         // it deliberately does not prove that they are canonical BabyBear
         // representatives.  Bound both sides for the larger malicious-witness
         // domain as well: field equality still lifts to integer equality.
@@ -856,17 +786,17 @@ mod tests {
             assert_eq!(layout.padded_assignment_len(), 8 * capacity);
             assert_eq!(layout.assignment_vars(), layout.gate_vars() + 3);
 
-            let params = layout.f2z_params();
+            let params = layout.bitz_params();
             assert_eq!(params.word_bits, 1);
             assert_eq!(params.cells(), BABY_BEAR_MUL_BIT_SLOTS * capacity);
             for slot in 0..BABY_BEAR_MUL_BIT_SLOTS {
                 for gate in 0..capacity {
-                    let (b, c) = layout.f2z_cell(slot, gate).unwrap();
+                    let (b, c) = layout.bitz_cell(slot, gate).unwrap();
                     assert_eq!(params.cell_index(b, c), slot * capacity + gate);
                 }
             }
-            assert_eq!(layout.f2z_cell(BABY_BEAR_MUL_BIT_SLOTS, 0), None);
-            assert_eq!(layout.f2z_cell(0, capacity), None);
+            assert_eq!(layout.bitz_cell(BABY_BEAR_MUL_BIT_SLOTS, 0), None);
+            assert_eq!(layout.bitz_cell(0, capacity), None);
         }
     }
 
@@ -1022,10 +952,10 @@ mod tests {
         let native = project_baby_bear_mul_native_witness(&witness);
 
         assert_eq!(
-            native.w().evaluations.len(),
+            native.assignment().evaluations.len(),
             witness.layout().padded_assignment_len()
         );
-        assert_eq!(native.assignment(), native.w());
+
         assert_eq!(
             native.assignment().num_vars,
             witness.layout().assignment_vars()
@@ -1040,31 +970,31 @@ mod tests {
                 .all(|&value| value == 0)
         );
         assert_eq!(
-            &native.aw().evaluations[..3],
+            &native.products().az.evaluations[..3],
             &[2, BABY_BEAR_MODULUS - 1, 11]
         );
         assert_eq!(
-            &native.bw().evaluations[..3],
+            &native.products().bz.evaluations[..3],
             &[3, BABY_BEAR_MODULUS - 1, 13]
         );
         assert_eq!(
-            &native.cw().evaluations[..3],
+            &native.products().cz.evaluations[..3],
             &[6, (BABY_BEAR_MODULUS - 1).pow(2), 143]
         );
         for row in 0..inputs.len() {
             assert_eq!(
-                native.aw().evaluations[row] * native.bw().evaluations[row],
-                native.cw().evaluations[row]
+                native.products().az.evaluations[row] * native.products().bz.evaluations[row],
+                native.products().cz.evaluations[row]
             );
         }
-        assert_eq!(native.aw().evaluations[3], 0);
-        assert_eq!(native.bw().evaluations[3], 0);
-        assert_eq!(native.cw().evaluations[3], 0);
+        assert_eq!(native.products().az.evaluations[3], 0);
+        assert_eq!(native.products().bz.evaluations[3], 0);
+        assert_eq!(native.products().cz.evaluations[3], 0);
     }
 
     #[test]
     fn compact_matrices_independently_produce_native_and_field_products() {
-        let config = spartan_f2z_field_config();
+        let config = spartan_bitz_field_config();
         let p = BABY_BEAR_MODULUS as u32;
         let witness =
             BabyBearMulWitness::from_inputs(&[(0, p - 1), (2, 3), (p - 1, p - 1), (17, 19)])
@@ -1077,9 +1007,13 @@ mod tests {
         ];
         let native = project_baby_bear_mul_native_witness(&witness);
         let (_, projected) =
-            project_baby_bear_mul_witness::<SpartanF2zField>(&witness, &config).unwrap();
+            project_baby_bear_mul_witness::<SpartanBitzField>(&witness, &config).unwrap();
         let live = witness.layout().multiplications();
-        let native_products = [native.aw(), native.bw(), native.cw()];
+        let native_products = [
+            &native.products().az,
+            &native.products().bz,
+            &native.products().cz,
+        ];
         let projected_products = [&projected.az, &projected.bz, &projected.cz];
 
         for ((expected, native_product), projected_product) in independently_computed
@@ -1175,8 +1109,8 @@ mod tests {
         let inputs = [(0x4000_0001, 3), (p - 1, p - 1), (17, 19)];
         let witness = BabyBearMulWitness::from_inputs(&inputs).unwrap();
         let layout = witness.layout();
-        let params = layout.f2z_params();
-        let rows = witness.f2z_bit_rows();
+        let params = layout.bitz_params();
+        let rows = witness.bitz_bit_rows();
 
         assert_eq!(rows.len(), params.cols());
         assert!(rows.iter().all(|row| row.len() == params.rows() / 64));
@@ -1189,14 +1123,14 @@ mod tests {
                 (BABY_BEAR_MUL_K_SLOT_START, witness.k_values()[gate]),
             ] {
                 for bit in 0..BABY_BEAR_MUL_VALUE_BITS {
-                    let (b, c) = layout.f2z_cell(slot_offset + bit, gate).unwrap();
+                    let (b, c) = layout.bitz_cell(slot_offset + bit, gate).unwrap();
                     let committed_bit = (rows[c][b / 64] >> (b % 64)) & 1;
                     assert_eq!(committed_bit, (value >> bit) & 1);
                 }
             }
 
             for slot in BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS..BABY_BEAR_MUL_BIT_SLOTS {
-                let (b, c) = layout.f2z_cell(slot, gate).unwrap();
+                let (b, c) = layout.bitz_cell(slot, gate).unwrap();
                 assert_eq!((rows[c][b / 64] >> (b % 64)) & 1, 0);
             }
         }
@@ -1227,11 +1161,11 @@ mod tests {
             ((1 << 15) + 37, 5),
         ] {
             let witness = random_witness(multiplications, seed);
-            let params = witness.layout().f2z_params();
+            let params = witness.layout().bitz_params();
             let mut expected = vec![vec![0_u64; params.rows() / 64]; params.cols()];
             witness.write_bit_rows_bitwise(&mut expected);
             assert_eq!(
-                witness.f2z_bit_rows(),
+                witness.bitz_bit_rows(),
                 expected,
                 "multiplications={multiplications}"
             );
@@ -1262,10 +1196,10 @@ mod tests {
 
     #[test]
     fn compact_coefficients_borrow_fixed_canonical_encodings() {
-        let config = spartan_f2z_field_config();
-        let field_one_encoding = field(1, &config).canonical_element_encoding();
+        let config = spartan_bitz_field_config();
+        let field_one_encoding = field(1, &config).canonical_element_encoding(&config);
         let expected_modulus_encoding =
-            field(BABY_BEAR_MODULUS, &config).canonical_element_encoding();
+            field(BABY_BEAR_MODULUS, &config).canonical_element_encoding(&config);
         let one_encoding =
             BabyBearMulCoefficient::One.canonical_field_encoding(&config, &field_one_encoding);
         let modulus_encoding =
@@ -1286,7 +1220,7 @@ mod tests {
 
     #[test]
     fn compact_coefficients_match_field_matrix_digest_and_evaluations() {
-        let config = spartan_f2z_field_config();
+        let config = spartan_bitz_field_config();
         let layout = BabyBearMulLayout::new(3).unwrap();
         let capacity = layout.capacity();
         let one = field(1, &config);
@@ -1307,13 +1241,13 @@ mod tests {
             })
             .collect();
         let field_matrices = ConstraintMatrices::new(
-            SparseMatrix::try_from_rows(layout.assignment_len(), a_rows).unwrap(),
-            SparseMatrix::try_from_rows(layout.assignment_len(), b_rows).unwrap(),
-            SparseMatrix::try_from_rows(layout.assignment_len(), c_rows).unwrap(),
+            CscMatrix::try_from_rows(layout.assignment_len(), a_rows).unwrap(),
+            CscMatrix::try_from_rows(layout.assignment_len(), b_rows).unwrap(),
+            CscMatrix::try_from_rows(layout.assignment_len(), c_rows).unwrap(),
         )
         .unwrap();
         let field_prepared =
-            PreparedConstraintMatrices::<SpartanF2zField>::new(field_matrices, &config).unwrap();
+            PreparedConstraintMatrices::<SpartanBitzField>::new(field_matrices, &config).unwrap();
         let compact_prepared = prepare_baby_bear_mul_relation(layout, &config).unwrap();
 
         assert_eq!(compact_prepared.digest(), field_prepared.digest());
@@ -1326,28 +1260,38 @@ mod tests {
             .map(|coordinate| field(coordinate as u64 + 7, &config))
             .collect::<Vec<_>>();
         let rho = field(19, &config);
-        let compact_bound = compact_prepared.bind_and_batch(&row_point, &rho).unwrap();
-        let field_bound = field_prepared.bind_and_batch(&row_point, &rho).unwrap();
+        let compact_bound =
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, compact_prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| compact_prepared.binding(&rho).bind_rows(&weights))
+                .unwrap();
+        let field_bound =
+            crate::piop::spartan::matrix::eq_table_prover(&row_point, field_prepared.config())
+                .map_err(crate::sumcheck::SumcheckError::from)
+                .and_then(|weights| field_prepared.binding(&rho).bind_rows(&weights))
+                .unwrap();
         assert_eq!(compact_bound, field_bound);
         assert_eq!(
             compact_prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap(),
             field_prepared
-                .evaluate_batched(&row_point, &rho, &column_point)
+                .structured()
+                .evaluate_equality(&row_point, &rho, &column_point)
                 .unwrap()
         );
     }
 
     #[test]
     fn field_projection_preserves_assignment_and_integer_products() {
-        let config = spartan_f2z_field_config();
+        let config = spartan_bitz_field_config();
         let p = BABY_BEAR_MODULUS as u32;
         let inputs = [(2, 3), (p - 1, p - 1), (11, 13)];
         let witness = BabyBearMulWitness::from_inputs(&inputs).unwrap();
         let relation = prepare_baby_bear_mul_relation(*witness.layout(), &config).unwrap();
         let (assignment, products) =
-            project_baby_bear_mul_witness::<SpartanF2zField>(&witness, &config).unwrap();
+            project_baby_bear_mul_witness::<SpartanBitzField>(&witness, &config).unwrap();
 
         assert_eq!(
             assignment.evaluations.len(),
@@ -1371,7 +1315,7 @@ mod tests {
         );
         for row in 0..inputs.len() {
             let mut product = products.az.evaluations[row].clone();
-            product *= &products.bz.evaluations[row];
+            product = config.mul(&(product), &(&products.bz.evaluations[row]));
             assert_eq!(product, products.cz.evaluations[row]);
 
             let native_cw = witness.c_values()[row] + BABY_BEAR_MODULUS * witness.k_values()[row];

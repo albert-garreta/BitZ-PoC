@@ -242,7 +242,7 @@ python3 scripts/run_sha256_ecdsa_compare.py \
 This run reused the existing binary with `--binary` and
 `CARGO_HOME=/tmp/bitz-sha-cargo-home`; its backend Git object was available
 locally. The same backend commit has since been published on the Spartan2
-fork's `f2z-benching` branch.
+fork's `bitz-benching` branch.
 The [methodology guide](sha256-ecdsa-comparison.md) documents the APIs and
 timing boundaries.
 

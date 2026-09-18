@@ -1,3 +1,4 @@
+pub mod coefficient;
 pub mod mle;
 pub mod univariate;
 pub mod utils;

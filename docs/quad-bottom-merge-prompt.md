@@ -45,7 +45,7 @@ Ligerito are untouched.
 - Layer count: even d: (d−2)/2 + 1; odd d: (d−5)/2 + 1 + 1 + 1. Verifier
   (`verify_merged_forest_quad`) gets the same plan change; the bottom
   quad verifies at degree 5 over d−2 phase-A vars like any quad layer —
-  only the PLAN changes, not the per-layer checks. Gate as `F2Z_QUAD=2`
+  only the PLAN changes, not the per-layer checks. Gate as `BITZ_QUAD=2`
   (v1 stays at `=1` for A/B; `quad_active` returns the level).
 
 ## Round 1 from the case tables — the pairing subtlety
@@ -93,7 +93,7 @@ Mirror `Leaf2Bits`/`Leaf3Bits`, per multiplicand:
   over the four bits of two adjacent positions) as round 3's inline
   value tables; dense buffers appear only at round 3's fold —
   4 quarters × 2·2^{d−5} = 2^{d−3}/tree.
-- `F2Z_QUAD_LUT=…` opt-outs mirroring `F2Z_LUT3`, all variants pinned
+- `BITZ_QUAD_LUT=…` opt-outs mirroring `BITZ_LUT3`, all variants pinned
   byte-identical to the shallow path (the identities are the same char-2
   re-associations as the arity-2 cascade; transcript unchanged across
   variants by construction).
@@ -117,10 +117,10 @@ row bits; te/to already index through `pow2`).
 ## Tests and measurement
 
 - Roundtrip legs at both parities and W>1: (10,5,1) d=10 even,
-  (4,8,32) d=9 odd — extend the existing quad legs to `F2Z_QUAD=2`.
+  (4,8,32) d=9 odd — extend the existing quad legs to `BITZ_QUAD=2`.
 - Byte-identity: stash-variant knobs vs the shallow bottom-quad path.
 - Wrong-claim, codec, arity-2-rejects — as v1.
-- Measure: sandwiches n=22–28 vs BOTH base and quad-v1 (`F2Z_QUAD=1`),
+- Measure: sandwiches n=22–28 vs BOTH base and quad-v1 (`BITZ_QUAD=1`),
   kernel on; expect the n=24/26 wins to compound and n=28 to tip
   positive; n=30 only on a memory-fresh box (±9 % churn band measured
   2026-07-30 on a used box — alternating pairs disagreed in sign).

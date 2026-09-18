@@ -4,16 +4,17 @@
 
 mod support;
 
-use circuit::matrix_products::RuntimeModulus;
-use circuit::matrix_transpose::{MTransposeGenerator, MaterializedMTranspose};
-use circuit::matrix_wengert::{WengertGenerator, WengertTape};
+use circuit::linear_map::circuit::{WengertGenerator, WengertTape};
+use circuit::linear_map::{CscMatrix, ImplicitOnes, LeftMul};
+use circuit::matrix_transpose::MTransposeGenerator;
 use circuit::sha256::{
     SHA256_2KB_MESSAGE_BITS, SHA256_2KB_WITNESS_BITS, block_aligned_witness_bits,
     sha256_2kb_circuit, sha256_block_aligned_circuit,
 };
 use circuit::witgen::ProductWitgen;
 use divan::{Bencher, black_box};
-use field::F128;
+use field::Gf128;
+use field::{ModRingCtx, Uint};
 use num_bigint::BigUint;
 use num_traits::One;
 use std::sync::Once;
@@ -25,21 +26,21 @@ fn main() {
     divan::main();
 }
 
-fn build_transpose() -> MaterializedMTranspose {
+fn build_transpose() -> CscMatrix<ImplicitOnes, u32> {
     let mut generator = MTransposeGenerator::new(SHA256_2KB_MESSAGE_BITS);
     let inputs = generator.take_boxed_inputs();
     let _ = sha256_2kb_circuit(&mut generator, &inputs);
     generator.finish()
 }
 
-fn report_m_transpose(transpose: &MaterializedMTranspose) {
-    let bytes = transpose.payload_bytes();
+fn report_m_transpose(transpose: &CscMatrix<ImplicitOnes, u32>) {
+    let bytes = transpose.topology_bytes();
     REPORT_M_TRANSPOSE.call_once(|| {
         eprintln!(
             "SHA-256 2 KiB M (stored as M^T): {bytes} bytes ({:.2} MiB), {} nonzeros, \
              {} M rows x {} M columns",
             bytes as f64 / (1024.0 * 1024.0),
-            transpose.nonzero_count(),
+            transpose.nnz(),
             transpose.row_count(),
             transpose.column_count(),
         );
@@ -147,7 +148,7 @@ fn sha256_2kb_abc_mw(bencher: Bencher) {
         ProductWitgen::with_inputs_and_capacity(message.as_ref(), SHA256_2KB_WITNESS_BITS);
     let _ = sha256_2kb_circuit(&mut witgen, &message);
     let (_, _, integer_products) = witgen.into_parts();
-    let modulus = RuntimeModulus::<2>::new(prime_128()).unwrap();
+    let modulus = ModRingCtx::<2>::new(Uint::from_words([u64::MAX - 158, u64::MAX])).unwrap();
     bencher.bench_local(|| {
         black_box(black_box(&integer_products).reduce_parallel(black_box(&modulus)))
     });
@@ -160,13 +161,13 @@ fn sha256_2kb_rm(bencher: Bencher) {
     report_m_transpose(&transpose);
     let challenges: Vec<_> = (0..transpose.row_count())
         .map(|index| {
-            F128::new(
+            Gf128::new(
                 (index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15),
                 (index as u64).wrapping_mul(0xd1b5_4a32_d192_ed03),
             )
         })
         .collect();
-    bencher.bench_local(|| black_box(transpose.apply(black_box(&challenges)).unwrap()));
+    bencher.bench_local(|| black_box(transpose.mul_left(black_box(&challenges)).unwrap()));
 }
 
 /// Apply the preprocessed reverse-mode tape modulo a runtime prime.
@@ -184,7 +185,7 @@ fn sha256_2kb_rabc(bencher: Bencher) {
         })
         .collect();
     let x = [0x243f_6a88_85a3_08d3, 0x1319_8a2e_0370_7344];
-    let modulus = RuntimeModulus::<2>::new(prime_128()).unwrap();
+    let modulus = ModRingCtx::<2>::new(Uint::from_words([u64::MAX - 158, u64::MAX])).unwrap();
     let encoder = tape.prepare(&modulus).unwrap();
     let challenges: Vec<_> = challenges
         .into_iter()
@@ -194,9 +195,22 @@ fn sha256_2kb_rabc(bencher: Bencher) {
     drop(encoder);
     bencher.bench_local(|| {
         let mut evaluator = tape.prepare(black_box(&modulus)).unwrap();
-        let output = evaluator
-            .apply(black_box(&challenges), black_box(x))
-            .unwrap();
+        let field = evaluator.field();
+        let x = field.from_montgomery_integer(field::Uint::from_words(black_box(x)));
+        let x2 = field::RingOps::square(field, &x);
+        let weights: Vec<_> = black_box(&challenges)
+            .iter()
+            .flat_map(|&words| {
+                let w = field.from_montgomery_integer(field::Uint::from_words(words));
+                [
+                    w,
+                    field::RingOps::mul(field, &w, &x),
+                    field::RingOps::mul(field, &w, &x2),
+                ]
+            })
+            .collect();
+        let mut output = field::RingOps::zero_vec(field, tape.column_count());
+        evaluator.mul_left_into(&weights, &mut output).unwrap();
         black_box(output);
     });
 }

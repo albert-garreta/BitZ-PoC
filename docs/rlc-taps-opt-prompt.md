@@ -16,7 +16,7 @@ priority. Read FIRST:
    MPS closure); in `src/ligerito_flock.rs` the tap-claims path (0x42),
    the stream family (0x43), the collapse (0x44,
    `TapPointClaim { cols, op, claimed }`); `examples/taps_ab.rs`;
-   `src/bin/f2z.rs` (`--taps vx|family|collapse|rotxor`).
+   `src/bin/bitz.rs` (`--taps vx|family|collapse|rotxor`).
 4. The README's dated structured-taps notes (both) — tables, phase
    attributions, pitfalls.
 

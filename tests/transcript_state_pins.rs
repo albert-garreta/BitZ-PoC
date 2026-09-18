@@ -14,63 +14,170 @@
 //!   components that are not absorbed into the transcript (Merkle paths and
 //!   the Ligerito query answers).
 //!
-//! Set `F2Z_RECORD_PINS=1` to print the table entries instead of asserting.
+//! Set `BITZ_RECORD_PINS=1` to print the table entries instead of asserting.
 //! Update a value only in a commit that *intends* a transcript change.
 
+use ::bitz::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use ::bitz::piop::spartan::protocol;
+use ::bitz::piop::spartan::protocol::PreparedRelation;
+use bitz::piop::spartan::mul::{MulLayout, MulWitness};
+
 use blake3::Hasher;
-use f2z::piop::spartan::multiswap::{
+use bitz::piop::spartan::multiswap::{
     MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
     verify_multiswap_mod_r1cs,
 };
-use f2z::piop::spartan::{
-    BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, PreparedBabyBearMulRelation,
-    Sha128ReferenceSchedule, Sha256CompressionStatement, SpartanReductionStrategy,
-    commit_baby_bear_mul_paper_witness, commit_sha256_chain_witness,
-    commit_sha256_compression_witness, generate_sha256_chain_witnesses,
-    generate_sha256_compression_witnesses, prepare_sha256_chain_batch_with_profile,
+use bitz::piop::spartan::{
+    BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, Sha128ReferenceSchedule,
+    Sha256CompressionStatement, commit_sha256_chain_witness, commit_sha256_compression_witness,
+    generate_sha256_chain_witnesses, generate_sha256_compression_witnesses,
+    prepare_sha256_chain_batch_with_profile,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-    prepare_sha256_compression_batch_with_profile, prove_baby_bear_mul_paper,
-    prove_sha256_chain, prove_sha256_compressions, verify_baby_bear_mul_paper,
+    prepare_sha256_compression_batch_with_profile, prove_sha256_chain, prove_sha256_compressions,
     verify_sha256_chain, verify_sha256_compressions,
 };
-use f2z::piop::spartan::{
-    PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation, U32MulF2zWidth,
-    U32MulWitness, U64MulWitness, U128MulWitness, commit_u32_mul_witness,
-    commit_u64_mul_witness, commit_u128_mul_witness, prove_u32_mul, prove_u64_mul,
-    prove_u128_mul, verify_u32_mul, verify_u64_mul, verify_u128_mul,
-};
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 /// `(name, prover transcript state, verifier transcript state, serialized
 /// proof parts)`. The two states differ by design: flock's Ligerito prover
 /// and verifier end in different transcript states after the last level, so
 /// both are pinned.
 const PINS: &[(&str, &str, &str, &str)] = &[
-    // Recorded with `F2Z_RECORD_PINS=1` on the pre-unification code
-    // (master 5d2aea9, 2026-09-11).
-    ("baby_bear/2p15/lambda100", "36d6d70ee81300f7633094854c2ffe044113f9be4124b6b8de770ea84b4286a8", "18456aa354b4436c8caf5487c0c6e4cf2d588d7b7c76c37a7e97465f2e171922", "2fa5d981945754a943ceca1a6101cfa0fa63e8abdd5ac5a42ac14c4c2260dad4"),
-    ("baby_bear/2p15/lambda128", "e18baca3215fa14537c68ecb601417d56d7d68d4b115a6956bad06023010b64a", "320aa9f05f904a1f2e9108390ce3aa7ec1d7916d2b276e651b2fe736f1a03303", "73f3cae0b33eeba6f6c2a2a8975421e55776a6f4dbb5aebf85732fe39068798e"),
-    ("cm_and/2p15/lambda100", "c68268896faafdfb4b3c01e57079b6b8e282ca65f3b752844ccf316d32f2229b", "f7ff79f5e132b966361ffb40e5aedd620a12a90a72b7b5f05cbf1941ed87c767", "1dd03b16040f867ce46fc421be1a6830b9dac69f7f192a49b963f238d9cff713"),
-    ("multiswap/mini/limber114", "4ab1ecce1d1acb01ac6105c56162a2c2167e206fa6f5332028456ea61513f020", "4fd000bc191c713d9cc6c1f26b702b9fba61ba02536fb1c41fbd165117119b6d", "dbc1b5d42f41f6e5d424c93fb384056676267a2926b5e2b32cdf9604c04a0087"),
-    ("sha256_chain/2p7/lambda100", "54cd62218b845ed0509b8adb6a01adb7f16d3941ee84a5b983b79acf004f954a", "3d4f162f7e7f6df10b79118ecd528c94808a42ceddb3d0403a56845c5eaa2af5", "a100728ea0813ab858a2e47e7b0a0f711dc0f12ded97534be6b4627e64cab719"),
-    ("sha256_chain/2p7/lambda128", "3e0f1762b0776e062217a99efca2f1c83145e91dcd65b0cc18958958cfbd069e", "d584bafd0596b14fda0b2babc9cc3578c54466be46466739c815b65e7d707c40", "bc24af2bd1fbc68762494fdb1db23f162b11a82ec0f2abc7f78bee5b5c70fdc2"),
-    ("sha256/2p7/lambda100", "8dd21f4c2421721fe023feeb6a631f5be54e6b68e22b2747ea7dde55e481d1b9", "f931788ec55d652e7e54cffb3d6dbae4fa1a2fa778000ff5a0543fe24f4ec926", "c6a47f7f6a62cd10d85423f7f35a935c28eae1905f607fd629b04b3d3444f23c"),
-    ("sha256/2p7/lambda128", "9174fde9a1036f1cf97bdaf36cf95f5a70e7fe30c7f5c5b98bb3f7176b7a109d", "7b90b079d4f2d5e404bcdadb45a1633662381d59cd4589125515f26f6bd352c9", "eb5a85229710b9c56fdf699dae215e06be815aa99faa53139a07909c08d8227b"),
-    ("sha256/2p7/reference", "6de14a6c3ba9bb05504dc4868d45a0ae5cba14bd0ba259df0420149cf72d0066", "14190b95b59ad69e2184e95e37d05a066e6c2690170fc9466de00b88ce0c6d1f", "c907854108bfa75f047a8aec694e47d46ea0d04806942f7dba5fd47213a2c905"),
-    ("sha256/legacy-rows21/lambda100", "4bac2e7de6d659003f382dbb6f58b73d57f629fd141d6c70daf4c01fa895b124", "0a8e16f81cd521f9d882107a27925874fb1afb62ba79e3b18f5cf8862ee3476a", "057a98a5df8a586a4b19f76ccbc30401bd7a865744d2b4fce68ca0836126cffa"),
-    ("u128_mul/2p15/lambda100", "f0a9af270144dadd95f5acd5e49fb28a22fc6960beef6fe23cdfb84bad4f4858", "a0041e202960567ea9fea90ddced5f66c2428e2a6a7c34cae80f8f18fb3016c3", "b3b3e27140e3132e8616402dd3051eada21a56d3b036f2f36599ed7ac8d00cf7"),
-    ("u32_mul/2p15/w1/lambda100", "3713fa94ff52d93283e951098919aa88c97acfd3b37181ff68c165b430600fc8", "17a12aa10604f74018b0d8978283849a62a349166fae7895d1f5ed58888aef03", "4bc343a54ad6ec4df4c915ef80df11d6120d046098b8485b1aa03f8c0d9b385a"),
-    ("u32_mul/2p15/w1/lambda128", "4d8b55ce0ceb2b60d0004706d30f567c75f1c155f8d2cc8fc761adc98004d1ac", "83b6a754c046b1223a397f2d0549e3ed76ac348c15e3c2be8d7c71f2e5140458", "e10149b81e36328c089cabeeb67c5a69c246367a220d88c8aaf36ee75cebbb2f"),
-    ("u32_mul/2p15/w8/lambda100", "0dba1e7de9a45e3e340e0fdb2eb3155aa7a57dc6971044d6eb186fa27356a1dd", "ba663d87a56d06b8a97c7cdb721f94a765d80e24cce392359e813cc3dcf8d902", "9de3f2a1a955c612170b13cd66e31ed10d562a4f93a80479df9f324a6b334299"),
-    ("u64_mul/2p15/lambda100", "10524e78940e5f90f8275746197646780ea7e5dcf1ba3cb22bb4ac234c63fac9", "5843f4c036b615aeee94d9952b0253ded59ef0f0ebe9cffc464c27c8d60d76f7", "d06897db59f4d65e5feb4e5030479b8150e81ba956ec22555a2f2e5f33d6ee49"),
-    ("u64_mul/2p15/shift+1/lambda100", "ea2a0e03edb7ce5430479bdf4bb11d0f00fb19dbcdd07788233a8acf0c4b8630", "f23bb20b0c12c4cea5e53157166511adc5fd1a2830c90bd052675e29c369de6d", "5d6b769e91d478d30dbfa656ee18b1f8020cae6757c4276aa15c97f5e1757406"),
-    ("sha256_ecdsa/2p3/allrows/lambda100", "5aca8ae95c9228db846a44fddb1eeefce535a99ad9cf3e20073333e44dbe6e6b", "5aca8ae95c9228db846a44fddb1eeefce535a99ad9cf3e20073333e44dbe6e6b", "729bc1a0eccb80f5e42c3efe968e64600480d075b5adb0ad969726e5d41c1b72"),
-    ("sha256_ecdsa/2p3/allrows/lambda128", "f4e9e3919b5c0d5be7bc73ca602bed71226eae8b281d0f62d81a5740d5871817", "f4e9e3919b5c0d5be7bc73ca602bed71226eae8b281d0f62d81a5740d5871817", "5b56247305180b3e46cd5ac99e521941cc1d5cbc2129d39454426a75ab771639"),
-    ("sha256_ecdsa/2p3/split/lambda100", "5c08b4a910a906e9e495af348eaf253950b139724e66db5611084c5235092d3c", "5c08b4a910a906e9e495af348eaf253950b139724e66db5611084c5235092d3c", "98d86d6d85594691b2884ca40c64da36c21090281744a5194add27c4e8bcf30a"),
-    ("sha256_ecdsa/2p3/split/lambda128", "942bb995a8cbb6dee834c8c6c21922c2558c4838748faa0ab16c93562fb9516e", "942bb995a8cbb6dee834c8c6c21922c2558c4838748faa0ab16c93562fb9516e", "544140f516613b9a241ac556fbfe203c396d798a0329cdbe5e8513302e07450b"),
-    ("sha256/fixed98-t13/2p14", "1e003e6e7ad04324c87a52945954d31103c8555d030608a26924efba20e36900", "9aa0798d570c4ecc1cf6a60d91589f62314375a771db7359ae26adada656ad8c", "6b5fe05d55ae343c81e82ff10a7777b32abda6f72573c6885206c0d4de7ed12d"),
-    ("hybrid/2p13x16/johnson", "-", "-", "7435a68c2c98260f735183cade04afac4bf73dfec22fc7553067bbb571b5b8a9"),
+    // Recorded after the BitZ hashing-domain and proof-codec namespace migration.
+    // Spartan domains use v2; hybrid wire encoding uses version 6.
+    (
+        "baby_bear/2p15/lambda100",
+        "eb77e02494e687a921603fab5a7b789cec3d27e77ad41462940c66ea76062b83",
+        "2aaac0fd78dc910164af92ea073a5453dd57236ff9a5b77c6411f881745ca44d",
+        "33a97048356b304e28fddde2665022693d7a43fb181530acd1f41253ffe78050",
+    ),
+    (
+        "baby_bear/2p15/lambda128",
+        "272df05ae695d3576ac071629608d5904cdd3830e00f65150d32b50d9ed86c50",
+        "1fed2c175959adeb6aee2e96f305f07fe42b6d8b42f752f2177b30cc1229c445",
+        "7230969be62c9e19852fbee2e92554a301f01abfbad12ce1131f8bde8519fd4b",
+    ),
+    (
+        "cm_and/2p15/lambda100",
+        "8f10a23d4a65c486cf0d2e4b85d9649b8219a307d950009a29580039235d5270",
+        "72878cfd1a95fbea684a3899ed26096157627a30656705bcfb95afdbfc121263",
+        "9fb2f8e26c166806832bca165585c3ab1e723f00499e6a19342c5d4df3df48cb",
+    ),
+    (
+        "multiswap/mini/limber114",
+        "f31653acaa7adc17f289cb7d47eda8201b583183868241a66511097a5b34e364",
+        "7c6bfbc5e95af60d7419425613ee8fd8dfebc1873e38b689eeb39d59b80df4fe",
+        "c4c8e5970bfda242807c072eb9a4aa8d22fb65aeabe184ff242e83889d2f1b1c",
+    ),
+    (
+        "sha256_chain/2p7/lambda100",
+        "0b2b7998f47c02cb70aca8fd7561c8a1ad6e8142f5f6029355cf2760a3732cad",
+        "9b33b7404442b04f65fb830ffd1aa8c4c4b75f5aabb4b0798e64c3355c667663",
+        "ba1819388576efff8efed3bfeb7db37e2e1de4adc9d6dd52ac0d264ee3ba40f2",
+    ),
+    (
+        "sha256_chain/2p7/lambda128",
+        "70578a67e25ae159b741729147dca146b5feaf44fc699609fd8f5117775d1836",
+        "7ba565d08a4787eaf98d83188f5dabac9c1a330b09aaee8e51dba26c21e3f1bb",
+        "774c5232e32bfd4333794940d4c69724bb3eb5b7f3f2af5520ef9d12f68fe24f",
+    ),
+    (
+        "sha256/2p7/lambda100",
+        "ac6d91d9b9d51cb88a5f1cb5b67a49cdb833ff4bfb03a292a4f3aa04e2fecf0b",
+        "c4304ceb0e63926ca5bbe653a11e6b354a53b418fe4f2047325910c04a6c471c",
+        "c94b8d886b48b0911b8071544a666b22e4d70bc828d8745f809b1f5332d0da1a",
+    ),
+    (
+        "sha256/2p7/lambda128",
+        "f533399b44008c8bee8881ff8851606db05b978c1bad2ddc4b78445982d47b58",
+        "d3ab988fb7af81cf7fa36582ce8034b108959ba5cb1b8e9c0096df13f66a631c",
+        "a271b8e240a4074e75b549c50ac1cecf3594b62390c7f6a2c372357b6ac4284b",
+    ),
+    (
+        "sha256/2p7/reference",
+        "ec2ce1b805bf904768c5fd2723aaa6df6bde77011a8d7b01fec5644fee4165e0",
+        "8cf91a240b3a77f228c4c0ce554c5b98ef7cf48bfb0e1c15b9eb0344aadbbb7e",
+        "2b7f570b24c15b66b45fd2bda9d0042a7a6dfaa681f01d36f36fc3a2a1b6cf6a",
+    ),
+    (
+        "sha256/legacy-rows21/lambda100",
+        "5af2461d489e30d47fd8fca2d39f575bc24344beaa3c328caf669c566bde31a5",
+        "ffc13f7fb113859bf5a4770af582a2e8febc822e764ac5c70674025ea49108e4",
+        "e1a03bcdf965fc0cda54763fc13e2143ad68812be0af52228d295de6d5845deb",
+    ),
+    (
+        "u128_mul/2p15/lambda100",
+        "96dff9b7d608b46a384222ae6cf1b3a16dffde7e8b13c0c0807539ce6d176e35",
+        "bb5adbe923e20a2d2c5075c452cf223fd090e6c84565cd6a82c078ee177aeeb2",
+        "4f846f9e12e975c2655d8b33d8749840178987ed1c766b6af9534b0e5ce23b06",
+    ),
+    (
+        "u32_mul/2p15/w1/lambda100",
+        "5046c5c2b0608a6befd13a40e0efcccb91e1915c582da3e9ca5e47a6894eef4e",
+        "c20a35085e3450006528c4cd3fc8dc95246c9923ca5cd505168ab5490e1c9322",
+        "30e9fe6fe902c62f699a913196400d8c56c06531b310f215c870c7488a90c6d5",
+    ),
+    (
+        "u32_mul/2p15/w1/lambda128",
+        "d0285a82cca8f45c3b6634c1a02fdf64e28cb9b5d881c0aaaa46c93b19958716",
+        "462d3ea2e828dea1b266773349e7b9833411ee1eb73b3a3b8497c20199351da6",
+        "d36f6ccbaa9e7b3ab595676d76c24f842164909e5fc240b9631f66c88baf2400",
+    ),
+    (
+        "u32_mul/2p15/w8/lambda100",
+        "7d30f24ec6fe86ad0226f751a56f1bfddc62c4604d1746bf629b3fb1453a2910",
+        "b3685058d4f90ce376ed7111f7fc94463af8f536a28c79bfe9bb0287bc41bd67",
+        "544c084b9fb6cf2a3aa28819a5b1f3cf961649f4e506c525f6efb3142a6c05b0",
+    ),
+    (
+        "u64_mul/2p15/lambda100",
+        "4d2fa9c0cf0ae4d1783f7164a4081c4bb086fc9181e95a942ca67d3fc92f4e64",
+        "7c63d15df4118bfceca698358bf386f485fb35be3462e2e7d6f78f20b839c70d",
+        "7df89f1280105dc71d4c824d40c44b6aa18391e243391c5620f884e1bc5022f7",
+    ),
+    (
+        "u64_mul/2p15/shift+1/lambda100",
+        "9faf268d12f2ad1d5ff77e9bf24109238442e580d5cd4177f432fe220f5d98fa",
+        "2aac021bc68f13ac60e60dba0b9fca2e545d636219c06e764036948257654a3f",
+        "23ca403d4488679848b6f1cd1849a0ed276865f601db99fb52f4fa5da35b84d2",
+    ),
+    (
+        "sha256_ecdsa/2p3/allrows/lambda100",
+        "78b0b01605b58d7a1235dc1216a140a464bd6728edffee603251b5ea32970c5d",
+        "78b0b01605b58d7a1235dc1216a140a464bd6728edffee603251b5ea32970c5d",
+        "b0c209e2c4aa6f7d86915372efeff9d04e551d5783f216bf1e777d9325c57fba",
+    ),
+    (
+        "sha256_ecdsa/2p3/allrows/lambda128",
+        "46d72414ae99fb288b20084759e0ff1cb7e9b881c48d15ac7f611d476a1c5c0c",
+        "46d72414ae99fb288b20084759e0ff1cb7e9b881c48d15ac7f611d476a1c5c0c",
+        "3fc21ed3d18d036466255cdbb8e768ccd419d944312baa2869ae06762ad235d7",
+    ),
+    (
+        "sha256_ecdsa/2p3/split/lambda100",
+        "fcc100b4ce3d3e8ffd5ef75efacc12ec9f68c8465a5e231c9d4c61c495d33d2c",
+        "fcc100b4ce3d3e8ffd5ef75efacc12ec9f68c8465a5e231c9d4c61c495d33d2c",
+        "3c98bbe731afd0fe053fef8a17dab690e7fb00f52fe7f883cb8749635f7dc8f8",
+    ),
+    (
+        "sha256_ecdsa/2p3/split/lambda128",
+        "15c0fb99ac07d68ddd4845f5dd714816400a831471d8c0261d5fad944ea88874",
+        "15c0fb99ac07d68ddd4845f5dd714816400a831471d8c0261d5fad944ea88874",
+        "385d46f3a6fd6ef04cbcf7a464cd84556a3553e58099e8e9268173b2119c4957",
+    ),
+    (
+        "sha256/fixed98-t13/2p14",
+        "b287d3697862faff80a574f1b21a169721328e3c562f0f7acd08260407d6453d",
+        "c2f49c0f733f29366c3a29726ee04b12af341cbeca5fc258697adef5f902a852",
+        "21d419e52943caaa0f8836f11ed21436b00c9a8757a271d45d2058dbaf9792f0",
+    ),
+    (
+        "hybrid/2p13x16/johnson",
+        "-",
+        "-",
+        "0aefced198a8a264bd50025dbef5696fa7a37fae02412de84a57120a317903ba",
+    ),
 ];
 
 fn digest_hex(parts: &[&[u8]]) -> String {
@@ -83,27 +190,40 @@ fn digest_hex(parts: &[&[u8]]) -> String {
 }
 
 fn state_hex(transcript: &Blake3Transcript) -> String {
-    blake3::Hash::from(transcript.state_digest()).to_hex().to_string()
+    blake3::Hash::from(transcript.state_digest())
+        .to_hex()
+        .to_string()
 }
 
 fn check(name: &str, prover_state: &str, verifier_state: &str, bytes: &str) {
-    if std::env::var_os("F2Z_RECORD_PINS").is_some() {
+    if std::env::var_os("BITZ_RECORD_PINS").is_some() {
         println!("    (\"{name}\", \"{prover_state}\", \"{verifier_state}\", \"{bytes}\"),");
         return;
     }
     let expected = PINS
         .iter()
         .find(|(pinned, _, _, _)| *pinned == name)
-        .unwrap_or_else(|| panic!("{name}: no pin recorded (run with F2Z_RECORD_PINS=1)"));
-    assert_eq!(prover_state, expected.1, "{name}: prover transcript state moved");
-    assert_eq!(verifier_state, expected.2, "{name}: verifier transcript state moved");
+        .unwrap_or_else(|| panic!("{name}: no pin recorded (run with BITZ_RECORD_PINS=1)"));
+    assert_eq!(
+        prover_state, expected.1,
+        "{name}: prover transcript state moved"
+    );
+    assert_eq!(
+        verifier_state, expected.2,
+        "{name}: verifier transcript state moved"
+    );
     assert_eq!(bytes, expected.3, "{name}: serialized proof parts moved");
 }
 
 /// Checks (or records) one pin: the prover's and the verifier's final
 /// transcript states plus the serialized proof parts.
 fn pin(name: &str, prover: &Blake3Transcript, verifier: &Blake3Transcript, parts: &[&[u8]]) {
-    check(name, &state_hex(prover), &state_hex(verifier), &digest_hex(parts));
+    check(
+        name,
+        &state_hex(prover),
+        &state_hex(verifier),
+        &digest_hex(parts),
+    );
 }
 
 /// Pins a proof whose prover builds its own transcript (no state digest).
@@ -117,8 +237,8 @@ fn nonces_le(nonces: impl IntoIterator<Item = u64>) -> Vec<u8> {
 
 // ---------------------------------------------------------------- u32 mul
 
-fn u32_witness(width: U32MulF2zWidth) -> U32MulWitness {
-    U32MulWitness::from_fn_with_f2z_width(1usize << 15, width, |i| {
+fn u32_witness(width: usize) -> MulWitness<u32> {
+    MulWitness::<u32>::from_fn_with_word_bits(1usize << 15, width, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
         (x, y)
@@ -126,39 +246,40 @@ fn u32_witness(width: U32MulF2zWidth) -> U32MulWitness {
     .expect("witness")
 }
 
-fn u32_pin<P: IopSecurityProfile>(name: &str, width: U32MulF2zWidth) {
+fn u32_pin<P: IopSecurityProfile>(name: &str, width: usize) {
     let witness = u32_witness(width);
-    let prepared = PreparedU32MulRelation::new_with_profile::<P>(*witness.layout()).expect("prepare");
-    let hint = commit_u32_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u32>>::new_with_profile::<P>(*witness.layout())
+        .expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_u32_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_u32_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
     // digest already covers them.
-    let f2z_bytes = proof.f2z().to_bytes();
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    let bitz_bytes = proof.bitz().to_bytes();
+    pin(name, &pt, &vt, &[&hint.commitment.root, &bitz_bytes]);
 }
 
 #[test]
 fn u32_mul_2p15_w1_lambda100() {
-    u32_pin::<Lambda100>("u32_mul/2p15/w1/lambda100", U32MulF2zWidth::W1);
+    u32_pin::<Lambda100>("u32_mul/2p15/w1/lambda100", 1);
 }
 
 #[test]
 fn u32_mul_2p15_w8_lambda100() {
-    u32_pin::<Lambda100>("u32_mul/2p15/w8/lambda100", U32MulF2zWidth::W8);
+    u32_pin::<Lambda100>("u32_mul/2p15/w8/lambda100", 8);
 }
 
 #[test]
 fn u32_mul_2p15_w1_lambda128() {
-    u32_pin::<Lambda128>("u32_mul/2p15/w1/lambda128", U32MulF2zWidth::W1);
+    u32_pin::<Lambda128>("u32_mul/2p15/w1/lambda128", 1);
 }
 
 // ---------------------------------------------------------------- u64 mul
 
 fn u64_pin(name: &str, split_shift: i8) {
-    let witness = U64MulWitness::from_fn(1usize << 15, |i| {
+    let witness = MulWitness::<u64>::from_fn(1usize << 15, |i| {
         let x = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
         let y = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
         (x, y)
@@ -166,16 +287,16 @@ fn u64_pin(name: &str, split_shift: i8) {
     .expect("witness")
     .with_split_shift(split_shift)
     .expect("split shift");
-    let prepared = PreparedU64MulRelation::new(*witness.layout()).expect("prepare");
-    let hint = commit_u64_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u64>>::new(*witness.layout()).expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_u64_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_u64_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
     // digest already covers them.
-    let f2z_bytes = proof.f2z().to_bytes();
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    let bitz_bytes = proof.bitz().to_bytes();
+    pin(name, &pt, &vt, &[&hint.commitment.root, &bitz_bytes]);
 }
 
 #[test]
@@ -192,7 +313,7 @@ fn u64_mul_2p15_shift_plus1_lambda100() {
 
 #[test]
 fn u128_mul_2p15_lambda100() {
-    let witness = U128MulWitness::from_fn(1usize << 15, |i| {
+    let witness = MulWitness::<u128>::from_fn(1usize << 15, |i| {
         let lo = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
         let hi = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
         let x = (u128::from(hi) << 64) | u128::from(lo);
@@ -200,14 +321,19 @@ fn u128_mul_2p15_lambda100() {
         (x, y)
     })
     .expect("witness");
-    let prepared = PreparedU128MulRelation::new(*witness.layout()).expect("prepare");
-    let hint = commit_u128_mul_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u128>>::new(*witness.layout()).expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_u128_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_u128_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
-    let f2z_bytes = proof.f2z().to_bytes();
-    pin("u128_mul/2p15/lambda100", &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    let bitz_bytes = proof.bitz().to_bytes();
+    pin(
+        "u128_mul/2p15/lambda100",
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &bitz_bytes],
+    );
 }
 
 // ---------------------------------------------------------------- BabyBear
@@ -219,25 +345,17 @@ fn baby_bear_pin<P: IopSecurityProfile>(name: &str) {
         (a, b)
     })
     .expect("witness");
-    let prepared =
-        PreparedBabyBearMulRelation::new_with_profile::<P>(*witness.layout()).expect("prepare");
-    let hint =
-        commit_baby_bear_mul_paper_witness(&prepared, witness.f2z_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<BabyBearMulLayout>::new_with_profile::<P>(*witness.layout())
+        .expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_baby_bear_mul_paper(
-        &mut pt,
-        &prepared,
-        &witness,
-        &hint,
-        SpartanReductionStrategy::DelayedBarrett,
-    )
-    .expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_baby_bear_mul_paper(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
     // digest already covers them.
-    let f2z_bytes = proof.f2z().to_bytes();
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    let bitz_bytes = proof.bitz().to_bytes();
+    pin(name, &pt, &vt, &[&hint.commitment.root, &bitz_bytes]);
 }
 
 #[test]
@@ -258,21 +376,22 @@ fn multiswap_mini_limber114() {
     let prepared = PreparedMultiswapRelation::new(&circuit).expect("prepare");
     let assignment = MultiswapAssignment::new(&circuit).expect("assignment");
     let (pc, vc) = multiswap_lig_configs(prepared.params()).expect("configs");
-    let hint =
-        commit_multiswap_witness(prepared.params(), assignment.f2z_bit_rows(), &pc).expect("commit");
+    let hint = commit_multiswap_witness(prepared.params(), assignment.bitz_bit_rows(), &pc)
+        .expect("commit");
     let mut pt = Blake3Transcript::new();
     let proof =
         prove_multiswap_mod_r1cs(&mut pt, &prepared, &assignment, &hint, &pc).expect("prove");
     let mut vt = Blake3Transcript::new();
     verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc).expect("verify");
-    let f2z_bytes = proof.f2z().to_bytes();
-    let mu_prime = proof.mu_prime().expect("lift").to_bytes_le();
+    let bitz_bytes = proof.bitz().to_bytes();
+    let mu_prime =
+        bitz::piop::spartan::multiswap::reduce::encode_integer_lift(proof.mu_prime().expect("lift"));
     let nonce = proof.reduction_nonce().expect("nonce").to_le_bytes();
     pin(
         "multiswap/mini/limber114",
         &pt,
         &vt,
-        &[&hint.commitment.root, &f2z_bytes, &mu_prime, &nonce],
+        &[&hint.commitment.root, &bitz_bytes, &mu_prime, &nonce],
     );
 }
 
@@ -290,10 +409,7 @@ fn sha256_inputs(instances: usize) -> Vec<([u32; 8], [u32; 16])> {
         .collect()
 }
 
-fn sha256_pin(
-    name: &str,
-    prepared: &f2z::piop::spartan::PreparedSha256CompressionBatch,
-) {
+fn sha256_pin(name: &str, prepared: &bitz::piop::spartan::PreparedSha256CompressionBatch) {
     let inputs = sha256_inputs(prepared.instances());
     let witness = generate_sha256_compression_witnesses(prepared, &inputs).expect("witness");
     let statements: Vec<_> = inputs
@@ -309,7 +425,7 @@ fn sha256_pin(
     let mut vt = Blake3Transcript::new();
     verify_sha256_compressions(&mut vt, prepared, &statements, &hint.commitment, &proof)
         .expect("verify");
-    let f2z_bytes = proof.f2z().to_bytes();
+    let bitz_bytes = proof.bitz().to_bytes();
     let nonces = nonces_le(
         proof
             .inner_nonces()
@@ -317,7 +433,12 @@ fn sha256_pin(
             .copied()
             .chain([proof.initial_nonce(), proof.terminal_nonce()]),
     );
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes, &nonces]);
+    pin(
+        name,
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &bitz_bytes, &nonces],
+    );
 }
 
 #[test]
@@ -328,8 +449,8 @@ fn sha256_2p7_lambda100() {
 
 #[test]
 fn sha256_2p7_reference_schedule() {
-    let prepared =
-        prepare_sha256_compression_batch_with_profile::<Sha128ReferenceSchedule>(7).expect("prepare");
+    let prepared = prepare_sha256_compression_batch_with_profile::<Sha128ReferenceSchedule>(7)
+        .expect("prepare");
     sha256_pin("sha256/2p7/reference", &prepared);
 }
 
@@ -351,7 +472,7 @@ fn sha256_legacy_inner_sumcheck_rows21_lambda100() {
 #[test]
 fn sha256_fixed98_product_t13_2p14() {
     let prepared =
-        f2z::piop::spartan::prepare_sha256_compression_batch_for_product_t_fixed98(14, 13)
+        bitz::piop::spartan::prepare_sha256_compression_batch_for_product_t_fixed98(14, 13)
             .expect("prepare");
     sha256_pin("sha256/fixed98-t13/2p14", &prepared);
 }
@@ -368,13 +489,17 @@ fn sha256_chain_pin<P: IopSecurityProfile>(name: &str) {
     let statement = witness.statement();
     let hint = commit_sha256_chain_witness(&prepared, &witness).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof =
-        prove_sha256_chain(&mut pt, &prepared, &statement, &witness, &hint).expect("prove");
+    let proof = prove_sha256_chain(&mut pt, &prepared, &statement, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
     verify_sha256_chain(&mut vt, &prepared, &statement, &hint.commitment, &proof).expect("verify");
-    let f2z_bytes = proof.f2z().to_bytes();
+    let bitz_bytes = proof.bitz().to_bytes();
     let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
-    pin(name, &pt, &vt, &[&hint.commitment.root, &f2z_bytes, &nonces]);
+    pin(
+        name,
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &bitz_bytes, &nonces],
+    );
 }
 
 #[test]
@@ -391,12 +516,12 @@ fn sha256_chain_2p7_lambda128() {
 
 #[test]
 fn cm_and_2p15_lambda100() {
-    use f2z::piop::spartan::cm::commit_cm_and_witness_with_config;
-    use f2z::piop::spartan::{
-        CmAndWitness, SpartanF2zField, prepare_cm_and_relation, project_cm_and_witness,
-        prove_cm_and_f2z, spartan_f2z_field_config, verify_cm_and_f2z,
+    use bitz::piop::spartan::cm::commit_cm_and_witness_with_config;
+    use bitz::piop::spartan::{
+        CmAndWitness, SpartanBitzField, prepare_cm_and_relation, prove_cm_and_bitz,
+        spartan_bitz_field_config, verify_cm_and_bitz,
     };
-    let field_config = spartan_f2z_field_config();
+    let field_config = spartan_bitz_field_config();
     let witness = CmAndWitness::from_fn(1usize << 15, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
@@ -404,25 +529,31 @@ fn cm_and_2p15_lambda100() {
     })
     .expect("witness");
     let layout = *witness.layout();
-    let relation =
-        prepare_cm_and_relation(layout, &field_config).expect("relation");
-    let pc = relation.ligerito_configuration().expect("ligerito").prover();
-    let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), pc).expect("commit");
-    let projected =
-        project_cm_and_witness::<SpartanF2zField>(&witness, &field_config).expect("project");
+    let relation = prepare_cm_and_relation(layout, &field_config).expect("relation");
+    let pc = relation
+        .ligerito_configuration()
+        .expect("ligerito")
+        .prover();
+    let hint =
+        commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), pc).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_cm_and_f2z(&mut pt, &relation, projected, &hint).expect("prove");
+    let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_cm_and_f2z(&mut vt, &relation, &hint.commitment, &proof).expect("verify");
-    let f2z_bytes = proof.f2z().to_bytes();
-    pin("cm_and/2p15/lambda100", &pt, &vt, &[&hint.commitment.root, &f2z_bytes]);
+    verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).expect("verify");
+    let bitz_bytes = proof.bitz().to_bytes();
+    pin(
+        "cm_and/2p15/lambda100",
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &bitz_bytes],
+    );
 }
 
 // ---------------------------------------------------------------- SHA-256 + ECDSA
 
 #[cfg(feature = "ecdsa")]
-fn ecdsa_pin(name: &str, lambda: u32, mode: f2z::piop::spartan::ecdsa_sha256::OuterMode) {
-    use f2z::piop::spartan::ecdsa_sha256::{
+fn ecdsa_pin(name: &str, lambda: u32, mode: bitz::piop::spartan::ecdsa_sha256::OuterMode) {
+    use bitz::piop::spartan::ecdsa_sha256::{
         Sha256EcdsaStatement, commit_sha256_ecdsa, generate_sha256_ecdsa_witness,
         prepare_sha256_ecdsa, prove_sha256_ecdsa, verify_sha256_ecdsa,
     };
@@ -464,7 +595,7 @@ fn sha256_ecdsa_2p3_split_lambda100() {
     ecdsa_pin(
         "sha256_ecdsa/2p3/split/lambda100",
         100,
-        f2z::piop::spartan::ecdsa_sha256::OuterMode::Split,
+        bitz::piop::spartan::ecdsa_sha256::OuterMode::Split,
     );
 }
 
@@ -474,7 +605,7 @@ fn sha256_ecdsa_2p3_allrows_lambda100() {
     ecdsa_pin(
         "sha256_ecdsa/2p3/allrows/lambda100",
         100,
-        f2z::piop::spartan::ecdsa_sha256::OuterMode::AllRows,
+        bitz::piop::spartan::ecdsa_sha256::OuterMode::AllRows,
     );
 }
 
@@ -484,7 +615,7 @@ fn sha256_ecdsa_2p3_split_lambda128() {
     ecdsa_pin(
         "sha256_ecdsa/2p3/split/lambda128",
         128,
-        f2z::piop::spartan::ecdsa_sha256::OuterMode::Split,
+        bitz::piop::spartan::ecdsa_sha256::OuterMode::Split,
     );
 }
 
@@ -494,7 +625,7 @@ fn sha256_ecdsa_2p3_allrows_lambda128() {
     ecdsa_pin(
         "sha256_ecdsa/2p3/allrows/lambda128",
         128,
-        f2z::piop::spartan::ecdsa_sha256::OuterMode::AllRows,
+        bitz::piop::spartan::ecdsa_sha256::OuterMode::AllRows,
     );
 }
 
@@ -503,7 +634,7 @@ fn sha256_ecdsa_2p3_allrows_lambda128() {
 #[cfg(feature = "hybrid")]
 #[test]
 fn hybrid_2p13_muls_16_compressions_johnson() {
-    use f2z::hybrid::{Parameters, PreparedHybrid};
+    use bitz::hybrid::{Parameters, PreparedHybrid};
     // The shared opener needs a committed-bit exponent of at least 20, i.e.
     // 2^13 packed words: the smallest production-like shape.
     let parameters = Parameters {
@@ -523,7 +654,9 @@ fn hybrid_2p13_muls_16_compressions_johnson() {
         .collect();
     let committed = prepared.commit(&muls, &blocks).expect("commit");
     let proof = prepared.prove(&committed).expect("prove");
-    prepared.verify(committed.statement(), &proof).expect("verify");
+    prepared
+        .verify(committed.statement(), &proof)
+        .expect("verify");
     let bytes = proof.to_bytes();
     let roots: Vec<u8> = committed
         .statement()

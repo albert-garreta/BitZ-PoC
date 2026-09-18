@@ -6,9 +6,9 @@ lockfiles must move together when this dependency is updated. The root and
 worker use Rust 1.98.1; the worker keeps its own workspace, build, and provenance.
 
 The consolidated revision is [`bc73510e`](https://github.com/wu-s-john/binius64/commit/bc73510ed63bf47eec25d4d10ade84f1c1fe2790).
-Both published branches point to this commit.
+The BitZ benchmark branch and the SHA+ECDSA branch point to this commit.
 
-The fork's `f2z-benching` branch merges the old benchmark branch (`2b27daea`)
+The fork's `bitz-benching` branch merges the old benchmark branch (`2b27daea`)
 with `sha256-chain-ecdsa-sig-verify-benching` (`938eadcd`). The latter contains
 Albert's benchmark commit, rebased onto upstream `c28940ae`. The merge preserves
 both histories and ports the structured Perfetto tags to the current protocol.
@@ -21,7 +21,7 @@ Public inputs now contain only instance input/output words; circuit constants
 come from setup. The hybrid verifier independently constructs the eight final
 SHA state words, observes them in its transcript, checks the public-segment
 sumcheck, and checks the claimed wiring evaluation natively. Only the private
-trace evaluation remains for the joint sumcheck and shared F2Z opening.
+trace evaluation remains for the joint sumcheck and shared BitZ opening.
 
 The ordinary Binius prover still completes private ring switching and deferred
 BaseFold opening. Trace metadata keeps the `prepare_witness`, `commit_witness`

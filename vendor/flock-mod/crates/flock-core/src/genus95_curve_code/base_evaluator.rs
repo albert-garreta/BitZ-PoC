@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use super::constants::{BASE_FUNCTIONAL_BITS, BASE_FUNCTIONAL_BYTES, BASE_X_POWER_COUNT};
 use super::evaluator::{EvaluationPoint, build_functional, build_functional_byte_dot_tables};
-use super::field::{F128, F128Ext};
+use super::field::{Gf128, F128Ext};
 use super::messages::BaseMessage;
 use super::tables::TABLES;
 
@@ -11,12 +11,12 @@ use super::tables::TABLES;
 /// at a point.  Dotting a 64-bit base message against it gives `C(m)(P)`
 /// without first extending `m` to a 222-coordinate product message.
 pub struct BaseFunctional {
-    coordinates: [F128; BASE_FUNCTIONAL_BITS],
-    byte_dot_tables: OnceLock<Box<[[F128; 256]; BASE_FUNCTIONAL_BYTES]>>,
+    coordinates: [Gf128; BASE_FUNCTIONAL_BITS],
+    byte_dot_tables: OnceLock<Box<[[Gf128; 256]; BASE_FUNCTIONAL_BYTES]>>,
 }
 
 impl BaseFunctional {
-    fn new(coordinates: [F128; BASE_FUNCTIONAL_BITS]) -> Self {
+    fn new(coordinates: [Gf128; BASE_FUNCTIONAL_BITS]) -> Self {
         Self {
             coordinates,
             byte_dot_tables: OnceLock::new(),
@@ -24,7 +24,7 @@ impl BaseFunctional {
     }
 
     #[inline(always)]
-    pub fn iter(&self) -> std::slice::Iter<'_, F128> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Gf128> {
         self.coordinates.iter()
     }
 
@@ -41,7 +41,7 @@ impl BaseFunctional {
 }
 
 impl Index<usize> for BaseFunctional {
-    type Output = F128;
+    type Output = Gf128;
 
     #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
@@ -70,12 +70,12 @@ pub fn base_evaluation_functional(point: &EvaluationPoint) -> Option<BaseFunctio
 /// Evaluate a base-code message against a precomputed base-code evaluation
 /// functional.  Equivalent to `evaluate_product_functional(_, R*m)`.
 #[inline(always)]
-pub fn evaluate_base_functional(functional: &BaseFunctional, message: &BaseMessage) -> F128 {
+pub fn evaluate_base_functional(functional: &BaseFunctional, message: &BaseMessage) -> Gf128 {
     let byte_dot_tables = functional
         .byte_dot_tables
         .get_or_init(|| build_functional_byte_dot_tables(&functional.coordinates));
     let limb = message.0;
-    let mut out = F128::ZERO;
+    let mut out = Gf128::ZERO;
     out += byte_dot_tables[0][(limb & 0xff) as usize];
     out += byte_dot_tables[1][((limb >> 8) & 0xff) as usize];
     out += byte_dot_tables[2][((limb >> 16) & 0xff) as usize];

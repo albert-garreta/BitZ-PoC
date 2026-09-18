@@ -9,16 +9,21 @@ license = "MIT OR Apache-2.0"
 default = ["full"]
 # Arithmetic-heavy P-256 and matrix-evaluation backends. The SHA-256 circuit,
 # sparse constraint generator, and witness generators do not need this stack.
-full = ["dep:field", "dep:crypto-bigint"]
+full = []
+bench-memory = []
 
 [dependencies]
-field = { path = "../field", optional = true }
-num-bigint = "0.4"
+tracing = "0.1"
+thiserror = "2.0"
+blake3 = { version = "1.8", features = ["rayon"] }
+field = { path = "../../vendor/field" }
 num-traits = "0.2"
-crypto-bigint = { version = "=0.7.5", optional = true }
 rayon = "1.10"
 
 [dev-dependencies]
+num-bigint = "0.4"
+# Independent Montgomery oracle for shared arithmetic tests.
+crypto-bigint = "=0.7.5"
 divan = "0.1.21"
 
 [[bench]]
@@ -32,3 +37,9 @@ harness = false
 [[bench]]
 name = "ecdsa_sha256_matrix_products"
 harness = false
+
+[profile.bench]
+inherits = "release"
+debug = 2
+strip = false
+split-debuginfo = "unpacked"

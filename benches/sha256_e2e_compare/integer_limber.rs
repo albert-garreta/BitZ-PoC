@@ -548,7 +548,7 @@ impl Context {
     pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
         security_metadata();
         let program = Arc::new(Program::compile(corpus));
-        let started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let started = tracing::info_span!("sha256_e2e_compare/integer_limber:started").entered();
         let shape = program.shape::<E>();
         let arity = shape.num_vars().max(shape.num_cons()).ilog2() as usize;
@@ -560,7 +560,7 @@ impl Context {
             program,
             pk,
             vk,
-            setup_ms: { drop(started); f2z::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/integer_limber:started").expect("query completed operation") }.as_secs_f64() * 1e3,
+            setup_ms: { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "sha256_e2e_compare/integer_limber:started").expect("query completed operation") }.as_secs_f64() * 1e3,
         })
     }
 

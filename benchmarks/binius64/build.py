@@ -24,7 +24,7 @@ def main():
     binary = ROOT / "target/release/binius64-sha256-ecdsa"
     info = json.loads(subprocess.check_output([str(binary), "--build-info"], text=True))
     info.update(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
-    # Resolved sha2 backends, one line per version: the f2z path dependency
+    # Resolved sha2 backends, one line per version: the bitz path dependency
     # pulls flock-core, whose `asm` feature accelerates sha2 0.10 (host-side
     # p256 digests only); binius-hash's BaseFold Merkle hashing is sha2 0.11,
     # a separate version that feature unification cannot touch. Recorded so a

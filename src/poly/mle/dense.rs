@@ -9,16 +9,17 @@ use std::{
     slice::SliceIndex,
 };
 
+use crate::poly::coefficient::{Coefficient, PolynomialField, SignedCoefficient};
 use crate::poly::{
     EvaluationError,
     mle::{MultilinearExtension, MultilinearExtensionRand},
 };
-use crypto_primitives::{Matrix, PrimeField, Ring, Semiring};
-use rand::{distr::StandardUniform, prelude::*};
+
 use crate::utils::{
     CHECKED, add, cfg_into_iter, inner_transparent_field::InnerTransparentField,
     mul_by_scalar::MulByScalar, projectable_to_field::ProjectableToField, sub,
 };
+use rand::{distr::StandardUniform, prelude::*};
 
 use super::MultilinearExtensionWithConfig;
 
@@ -67,30 +68,6 @@ impl<R: Clone> DenseMultilinearExtension<R> {
             num_vars,
             evaluations,
         }
-    }
-
-    /// Returns the dense MLE from the given matrix, without modifying the
-    /// original matrix.
-    #[allow(clippy::arithmetic_side_effects)]
-    pub fn from_matrix<M: Matrix<R>>(matrix: &M, zero: R) -> Self {
-        let n_vars: usize = // n_vars = s + s'
-            (crate::utils::log2(matrix.num_rows()) + crate::utils::log2(matrix.num_cols())) as usize;
-
-        // Matrices might need to get padded before turned into an MLE
-        let padded_rows = matrix.num_rows().next_power_of_two();
-        let padded_cols = matrix.num_cols().next_power_of_two();
-
-        // build dense vector representing the sparse padded matrix
-        let mut v = vec![zero.clone(); padded_rows * padded_cols];
-
-        for (row_i, row) in matrix.cells().enumerate() {
-            for (col_i, val) in row {
-                v[(padded_cols * row_i) + col_i] = val.clone();
-            }
-        }
-
-        // convert the dense vector into a mle
-        Self::from_evaluations_slice(n_vars, &v, zero)
     }
 }
 
@@ -200,7 +177,7 @@ impl<'data, R: Send + Sync> IntoParallelRefMutIterator<'data>
     }
 }
 
-impl<R: Semiring> DenseMultilinearExtension<R> {
+impl<R: Coefficient> DenseMultilinearExtension<R> {
     pub fn evaluate<S>(&self, point: &[S], zero: R) -> Result<R, EvaluationError>
     where
         R: for<'a> MulByScalar<&'a S>,
@@ -242,7 +219,7 @@ where
     fn fix_variables_with_config(
         &mut self,
         partial_point: &[F],
-        config: &<F as PrimeField>::Config,
+        config: &<F as PolynomialField>::Config,
     ) {
         assert!(
             partial_point.len() <= self.num_vars,
@@ -259,7 +236,7 @@ where
         let mut r = partial_point[0].clone();
         for i in 1..dim + 1 {
             for b in 0..1 << (nv - i) {
-                *r.inner_mut() = partial_point[i - 1].inner().clone();
+                r.set_inner(partial_point[i - 1].inner().clone());
                 if self[2 * b + 1] != self[2 * b] {
                     // a = f(1) - f(0)
                     let a = F::sub_inner(&self[2 * b + 1], &self[2 * b], config);
@@ -280,7 +257,7 @@ where
     fn fixed_variables_with_config(
         &self,
         partial_point: &[F],
-        config: &<F as PrimeField>::Config,
+        config: &<F as PolynomialField>::Config,
     ) -> Self {
         let mut res = self.clone();
         res.fix_variables_with_config(partial_point, config);
@@ -290,7 +267,7 @@ where
     fn evaluate_with_config(
         mut self,
         point: &[F],
-        config: &<F as PrimeField>::Config,
+        config: &<F as PolynomialField>::Config,
     ) -> Result<F, EvaluationError> {
         if point.len() == self.num_vars {
             self.fix_variables_with_config(point, config);
@@ -311,7 +288,7 @@ where
 
 impl<R> MultilinearExtension<R> for DenseMultilinearExtension<R>
 where
-    R: Semiring,
+    R: Coefficient,
 {
     #[allow(clippy::arithmetic_side_effects)]
     fn fix_variables<S>(&mut self, partial_point: &[S], zero: R)
@@ -383,7 +360,7 @@ impl<T, I: SliceIndex<[T]>> IndexMut<I> for DenseMultilinearExtension<T> {
     }
 }
 
-impl<R: Ring> Neg for DenseMultilinearExtension<R> {
+impl<R: SignedCoefficient> Neg for DenseMultilinearExtension<R> {
     type Output = Self;
 
     fn neg(mut self) -> Self::Output {
@@ -392,7 +369,7 @@ impl<R: Ring> Neg for DenseMultilinearExtension<R> {
     }
 }
 
-impl<R: Semiring> Add for DenseMultilinearExtension<R> {
+impl<R: Coefficient> Add for DenseMultilinearExtension<R> {
     type Output = Self;
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -401,7 +378,7 @@ impl<R: Semiring> Add for DenseMultilinearExtension<R> {
     }
 }
 
-impl<R: Semiring> Add<&Self> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> Add<&Self> for DenseMultilinearExtension<R> {
     type Output = Self;
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -411,7 +388,7 @@ impl<R: Semiring> Add<&Self> for DenseMultilinearExtension<R> {
     }
 }
 
-impl<R: Semiring> Sub<&Self> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> Sub<&Self> for DenseMultilinearExtension<R> {
     type Output = Self;
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -421,7 +398,7 @@ impl<R: Semiring> Sub<&Self> for DenseMultilinearExtension<R> {
     }
 }
 
-impl<R: Semiring> Mul<&Self> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> Mul<&Self> for DenseMultilinearExtension<R> {
     type Output = Self;
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -431,7 +408,7 @@ impl<R: Semiring> Mul<&Self> for DenseMultilinearExtension<R> {
     }
 }
 
-impl<R: Semiring> Mul<R> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> Mul<R> for DenseMultilinearExtension<R> {
     type Output = Self;
 
     #[allow(clippy::arithmetic_side_effects)]
@@ -441,28 +418,28 @@ impl<R: Semiring> Mul<R> for DenseMultilinearExtension<R> {
     }
 }
 
-impl<R: Semiring> AddAssign<&Self> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> AddAssign<&Self> for DenseMultilinearExtension<R> {
     #[allow(clippy::arithmetic_side_effects)]
     fn add_assign(&mut self, rhs: &Self) {
         self.binary(rhs, |a, b| *a += b);
     }
 }
 
-impl<R: Semiring> SubAssign<&Self> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> SubAssign<&Self> for DenseMultilinearExtension<R> {
     #[allow(clippy::arithmetic_side_effects)]
     fn sub_assign(&mut self, rhs: &Self) {
         self.binary(rhs, |a, b| *a -= b);
     }
 }
 
-impl<R: Semiring> MulAssign<&Self> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> MulAssign<&Self> for DenseMultilinearExtension<R> {
     #[allow(clippy::arithmetic_side_effects)]
     fn mul_assign(&mut self, rhs: &Self) {
         self.binary(rhs, |a, b| *a *= b);
     }
 }
 
-impl<R: Semiring> AddAssign<(R, &Self)> for DenseMultilinearExtension<R> {
+impl<R: Coefficient> AddAssign<(R, &Self)> for DenseMultilinearExtension<R> {
     #[allow(clippy::arithmetic_side_effects)]
     fn add_assign(&mut self, rhs: (R, &Self)) {
         let coeff = rhs.0;
@@ -470,7 +447,7 @@ impl<R: Semiring> AddAssign<(R, &Self)> for DenseMultilinearExtension<R> {
     }
 }
 
-pub fn project_coeffs<F: PrimeField, R: ProjectableToField<F> + Send + Sync>(
+pub fn project_coeffs<F: PolynomialField, R: ProjectableToField<F> + Send + Sync>(
     mle: DenseMultilinearExtension<R>,
     sampled_value: &F,
 ) -> DenseMultilinearExtension<F::Inner> {

@@ -1,6 +1,6 @@
 //! Compact terminal output for the shared-witness PCS comparisons.
 
-use f2z::observability::Interval;
+use bitz::observability::Interval;
 
 /// Explain the console's timing boundaries once before the size sweep.
 pub fn print_timing_definitions() {
@@ -18,7 +18,7 @@ pub fn print_timing_definitions() {
         "  opening_proof_ms: generate the terminal evaluation opening proof; excludes commitment, claim derivation, and verification."
     );
     eprintln!(
-        "    F2Z: terminal F2Z opening; WHIR: WHIR opening; Binius64: ring-switch reduction + BaseFold opening."
+        "    BitZ: terminal BitZ opening; WHIR: WHIR opening; Binius64: ring-switch reduction + BaseFold opening."
     );
     eprintln!(
         "  commit_and_open_ms: sum of those two disjoint phases; excludes setup, witness generation/conversion, claim derivation, and verification."

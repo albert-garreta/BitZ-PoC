@@ -1,4 +1,4 @@
-//! The one F2Z protocol every relation runs.
+//! The one BitZ protocol every relation runs.
 //!
 //! A relation describes itself once — its committed bit tensor, its
 //! constraint matrices, how its assignment blocks map to bit slots, the
@@ -20,37 +20,43 @@
 //! Transcripts are byte-for-byte those of the protocols this module
 //! replaced; the pins in `tests/transcript_state_pins.rs` hold them.
 
+use crate::piop::spartan::SpartanField as _;
+use field::{RingOps, Uint};
 pub mod binding;
 pub mod bitify;
 pub mod linear;
 
 use std::{borrow::Cow, sync::OnceLock};
 
-use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
-use crypto_primes::{Flavor, is_prime};
 use flock_core::pcs::{
     commit::Commitment,
-    ligerito::{LigeritoProfile, ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
+    ligerito::{
+        LigeritoProfile, ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig,
+    },
 };
-use num_bigint::BigUint;
+
 use thiserror::Error;
 
-use crate::{
-    ext_proj::{PrimeSamplingError, sample_prime_in_interval},
-    f2map::VirtualMap,
-    ligerito::{LOG_PACKING, packed_vars},
-    ligerito_flock::{
-        FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, IntEvalRsLigVirtProof,
-        LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
-        bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
-        prove_mle_eval_mod_q_ligerito_virtual_runtime,
-        prove_mle_eval_mod_q_ligerito_with_weight_chunks,
-        verify_mle_eval_mod_q_ligerito_virtual_runtime,
-        verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
+use {
+    crate::{
+        ext_proj::PrimeSamplingError,
+        ligerito::{LOG_PACKING, packed_vars},
+        ligerito_flock::{
+            FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, IntEvalRsLigVirtProof,
+            LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
+            bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
+            prove_mle_eval_mod_q_ligerito_virtual_runtime,
+            prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime,
+            prove_mle_eval_mod_q_ligerito_with_weight_chunks,
+            verify_mle_eval_mod_q_ligerito_virtual_runtime,
+            verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime,
+            verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
+        },
+        pcs::IntegerMatrixLayout,
+        poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::Gf128},
+        transcript::traits::Transcript,
     },
-    pcs::IntegerMatrixLayout,
-    poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::BinaryFieldGF128},
-    transcript::traits::Transcript,
+    circuit::linear_map::binary::VirtualMap,
 };
 
 use super::{
@@ -62,29 +68,27 @@ use super::{
     matrix::{self, ScaledMleEvaluationClaim, SpartanMatrixCoefficient},
     multiswap::reduce::{step50_accepts_lift, step50_integer_lift, step50_reduce},
     piop::{
-        SpartanError, SpartanPiopProof, SpartanReductionStrategy,
-        prove_spartan_piop_native_u64_borrowed, prove_spartan_piop_native_u64_with_strategy,
+        SpartanError, SpartanPiopProof, prove_spartan_piop_field,
+        prove_spartan_piop_native_u64_borrowed,
         prove_spartan_piop_native_u64_with_univariate_skip_borrowed,
         prove_spartan_piop_raw_products_native_assignment,
-        prove_spartan_piop_raw_products_raw_witness, prove_spartan_piop_with_strategy,
-        verify_spartan_proof, verify_spartan_univariate_skip_proof,
+        prove_spartan_piop_raw_products_raw_witness, verify_spartan_proof,
+        verify_spartan_univariate_skip_proof,
     },
     profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
-    raw_monty::{NativeProducts, RawMontyCoefficient, RawProducts, RawWitness},
+    raw_monty::{NativeProducts, RawMontyCoefficient, RawWitness},
     sumcheck::R1csProductMles,
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
 pub use binding::BindingHasher;
-pub use bitify::{
-    Arith, BitifiedClaim, BitifiedRows, BlockTable, FieldArith, Modular, ScaleSide, SlotRange,
-};
+pub use bitify::{BitifiedClaim, BitifiedRows, BlockTable, ScaleSide, SlotRange};
 
-/// Runtime-configured Spartan field used by every F2Z relation.
-pub type SpartanF2zField = crypto_primitives::crypto_bigint_monty::F128;
+/// Runtime-configured Spartan field used by every BitZ relation.
+pub type SpartanBitzField = field::Fp<2>;
 
 /// The runtime field configuration.
-pub type FieldConfig = <SpartanF2zField as PrimeField>::Config;
+pub type FieldConfig = <SpartanBitzField as crate::piop::spartan::SpartanField>::Config;
 
 /// Embedded, validator-gated Ligerito profiles begin at a 22-variable
 /// committed bit MLE: seven slot variables plus fifteen gate variables.
@@ -103,8 +107,8 @@ pub enum ProtocolError {
     #[error("failed to derive a Ligerito configuration: {0}")]
     LigeritoConfig(String),
 
-    #[error("the F2Z opening rejected: {0:?}")]
-    F2z(FlockRsError),
+    #[error("the BitZ opening rejected: {0:?}")]
+    Bitz(FlockRsError),
 
     #[error("the sampled modulus is not supported by the runtime field")]
     UnsupportedFieldModulus,
@@ -115,13 +119,13 @@ pub enum ProtocolError {
     #[error("the compact bit rows do not match the relation layout")]
     InvalidBitRows,
 
-    #[error("the F2Z parameters are invalid for the relation layout")]
-    InvalidF2zParameters,
+    #[error("the BitZ parameters are invalid for the relation layout")]
+    InvalidBitzParameters,
 
-    #[error("the combined Spartan/F2Z proof requires at least 2^15 gate slots")]
-    UnauditedF2zParameters,
+    #[error("the combined Spartan/BitZ proof requires at least 2^15 gate slots")]
+    UnauditedBitzParameters,
 
-    #[error("the commitment parameters do not match the derived F2Z configuration")]
+    #[error("the commitment parameters do not match the derived BitZ configuration")]
     CommitmentConfigMismatch,
 
     #[error("the commitment does not match the prepared terminal-opening statement")]
@@ -251,7 +255,7 @@ pub struct Domains {
     pub initial_grinding: &'static [u8],
     pub piop_grinding: &'static [u8],
     pub terminal_grinding: &'static [u8],
-    /// Domain of the bridge digest bound between Spartan and F2Z (the direct
+    /// Domain of the bridge digest bound between Spartan and BitZ (the direct
     /// discharge).
     pub bitified_claim: &'static [u8],
     /// The direct opener's statement domain.
@@ -277,10 +281,10 @@ pub struct Scopes {
     pub spartan_verify: fn() -> tracing::Span,
     pub bitify_prover: fn() -> tracing::Span,
     pub bitify_verifier: fn() -> tracing::Span,
-    pub f2z_prove: fn() -> tracing::Span,
-    pub f2z_verify: fn() -> tracing::Span,
-    pub f2z_prepare_prover: fn() -> tracing::Span,
-    pub f2z_prepare_verifier: fn() -> tracing::Span,
+    pub bitz_prove: fn() -> tracing::Span,
+    pub bitz_verify: fn() -> tracing::Span,
+    pub bitz_prepare_prover: fn() -> tracing::Span,
+    pub bitz_prepare_verifier: fn() -> tracing::Span,
 }
 
 /// Builds the [`Scopes`] of a relation from its scope prefix.
@@ -288,17 +292,23 @@ pub struct Scopes {
 macro_rules! protocol_scopes {
     ($prefix:literal) => {
         $crate::piop::spartan::protocol::Scopes {
-            relation_projection_prove: || tracing::info_span!(concat!($prefix, ":relation_projection_prove")),
-            relation_projection_verify: || tracing::info_span!(concat!($prefix, ":relation_projection_verify")),
-            witness_projection_prove: || tracing::info_span!(concat!($prefix, ":witness_projection_prove")),
+            relation_projection_prove: || {
+                tracing::info_span!(concat!($prefix, ":relation_projection_prove"))
+            },
+            relation_projection_verify: || {
+                tracing::info_span!(concat!($prefix, ":relation_projection_verify"))
+            },
+            witness_projection_prove: || {
+                tracing::info_span!(concat!($prefix, ":witness_projection_prove"))
+            },
             spartan_prove: || tracing::info_span!(concat!($prefix, ":spartan_prove")),
             spartan_verify: || tracing::info_span!(concat!($prefix, ":spartan_verify")),
             bitify_prover: || tracing::info_span!(concat!($prefix, ":bitify_prover")),
             bitify_verifier: || tracing::info_span!(concat!($prefix, ":bitify_verifier")),
-            f2z_prove: || tracing::info_span!(concat!($prefix, ":f2z_prove")),
-            f2z_verify: || tracing::info_span!(concat!($prefix, ":f2z_verify")),
-            f2z_prepare_prover: || tracing::info_span!(concat!($prefix, ":f2z_prepare_prover")),
-            f2z_prepare_verifier: || tracing::info_span!(concat!($prefix, ":f2z_prepare_verifier")),
+            bitz_prove: || tracing::info_span!(concat!($prefix, ":bitz_prove")),
+            bitz_verify: || tracing::info_span!(concat!($prefix, ":bitz_verify")),
+            bitz_prepare_prover: || tracing::info_span!(concat!($prefix, ":bitz_prepare_prover")),
+            bitz_prepare_verifier: || tracing::info_span!(concat!($prefix, ":bitz_prepare_verifier")),
         }
     };
 }
@@ -350,10 +360,11 @@ impl Default for Schedule {
 }
 
 /// Instantiates a prime-independent skeleton at a runtime prime.
-type SkeletonProjection<C> = fn(
-    &ConstraintMatricesSkeleton<SpartanF2zField, C>,
-    &FieldConfig,
-) -> Result<PreparedConstraintMatrices<SpartanF2zField, C>, matrix::SpartanMatrixError>;
+type SkeletonProjection<C> =
+    fn(
+        &ConstraintMatricesSkeleton<SpartanBitzField, C>,
+        &FieldConfig,
+    ) -> Result<PreparedConstraintMatrices<SpartanBitzField, C>, matrix::SpartanMatrixError>;
 
 /// Where a relation's constraint matrices come from at the runtime prime.
 pub enum MatrixSource<C> {
@@ -361,11 +372,11 @@ pub enum MatrixSource<C> {
     /// in `O(log nnz)` with a bit-identical digest (build with
     /// [`MatrixSource::skeleton`]).
     Skeleton {
-        skeleton: ConstraintMatricesSkeleton<SpartanF2zField, C>,
+        skeleton: ConstraintMatricesSkeleton<SpartanBitzField, C>,
         project: SkeletonProjection<C>,
     },
     /// Matrices at a fixed prime (the relation never draws one).
-    Fixed(PreparedConstraintMatrices<SpartanF2zField, C>),
+    Fixed(PreparedConstraintMatrices<SpartanBitzField, C>),
     /// Projected by the relation at every draw
     /// ([`RelationSpec::project_matrices`]).
     PerPrime,
@@ -373,12 +384,12 @@ pub enum MatrixSource<C> {
 
 impl<C> MatrixSource<C>
 where
-    C: SpartanMatrixCoefficient<SpartanF2zField> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<SpartanBitzField> + RawMontyCoefficient,
 {
     /// Prepares prime-independent matrices once.
     pub fn skeleton(matrices: super::ConstraintMatrices<C>) -> Result<Self, ProtocolError>
     where
-        C: matrix::ModulusIndependentCoefficient<SpartanF2zField>,
+        C: matrix::ModulusIndependentCoefficient<SpartanBitzField>,
     {
         let skeleton = ConstraintMatricesSkeleton::new(matrices).map_err(SpartanError::from)?;
         Ok(Self::Skeleton {
@@ -391,14 +402,14 @@ where
         &self,
         spec: &S,
         config: &FieldConfig,
-    ) -> Result<Cow<'_, PreparedConstraintMatrices<SpartanF2zField, C>>, ProtocolError> {
+    ) -> Result<Cow<'_, PreparedConstraintMatrices<SpartanBitzField, C>>, ProtocolError> {
         match self {
-            Self::Skeleton { skeleton, project } => {
-                Ok(Cow::Owned(project(skeleton, config).map_err(SpartanError::from)?))
-            }
+            Self::Skeleton { skeleton, project } => Ok(Cow::Owned(
+                project(skeleton, config).map_err(SpartanError::from)?,
+            )),
             Self::Fixed(matrices) => {
                 if matrices.field_modulus_encoding()
-                    != SpartanF2zField::canonical_modulus_encoding(config)
+                    != SpartanBitzField::canonical_modulus_encoding(config)
                 {
                     return Err(ProtocolError::UnsupportedFieldModulus);
                 }
@@ -419,76 +430,52 @@ pub enum PiopWitness<'w> {
         bz: Cow<'w, [u64]>,
         cz: Cow<'w, [u64]>,
         assignment: &'w [u64],
+        /// Public constant block established by a typed witness constructor.
+        constant_prefix: Option<super::raw_monty::NativeConstantPrefix>,
     },
-    /// Owned native tables under an explicit reduction strategy.
-    NativeOwned {
-        products: R1csProductMles<u64>,
-        assignment: DenseMultilinearExtension<u64>,
-        strategy: SpartanReductionStrategy,
-    },
-    /// Raw product residues and a borrowed native assignment.
-    RawProductsNative {
-        products: RawProducts,
-        assignment: &'w [u64],
-    },
-    /// Raw product residues and a raw assignment.
-    RawProductsRaw {
-        products: RawProducts,
+    Mul32(&'w super::MulWitness<u32>),
+    Mul64(&'w super::MulWitness<u64>),
+    Mul128(&'w super::MulWitness<u128>),
+    CmAnd(&'w super::CmAndWitness),
+    /// Exact 4096-bit row operands with a borrowed declared-width assignment.
+    IntegerProducts {
+        products: crate::sumcheck::outer::OuterInputs<field::Uint<64>>,
         witness: RawWitness<'w>,
     },
-    /// Field-valued tables under an explicit reduction strategy.
-    Field {
-        products: R1csProductMles<SpartanF2zField>,
-        assignment: DenseMultilinearExtension<SpartanF2zField>,
-        strategy: SpartanReductionStrategy,
+    /// Complete padded assignment in canonical Montgomery representation for
+    /// the sampled prime, matching `RawWitness::Field`. The generic driver
+    /// derives row products from its already-projected public matrices.
+    FieldAssignment {
+        assignment: Vec<u128>,
     },
-}
-
-/// Prover-side options that do not move the transcript.
-#[derive(Clone, Copy, Debug)]
-pub struct ProveOptions {
-    /// The Spartan reduction strategy for relations that offer a choice
-    /// (transcript-neutral).
-    pub strategy: SpartanReductionStrategy,
-}
-
-impl Default for ProveOptions {
-    fn default() -> Self {
-        Self {
-            strategy: SpartanReductionStrategy::DelayedBarrett,
-        }
-    }
-}
-
-/// The sampled Step-2 prime with its runtime field configuration and
-/// canonical arithmetic.
-pub struct RuntimePrime {
-    pub q: u128,
-    pub q_bits: usize,
-    pub config: FieldConfig,
-    pub arith: Arith,
+    /// Field-valued tables for the delayed reduction kernel.
+    Field {
+        products: R1csProductMles<SpartanBitzField>,
+        assignment: DenseMultilinearExtension<SpartanBitzField>,
+    },
 }
 
 /// What a relation sees when it binds its bitified claim before a virtual
 /// or reduced discharge.
 pub struct ClaimFrame<'a> {
+    pub field: &'a FieldConfig,
     pub binding: &'a [u8; 32],
     pub matrices_digest: &'a [u8; 32],
-    pub terminal_claim: &'a ScaledMleEvaluationClaim<SpartanF2zField>,
+    pub terminal_claim: &'a ScaledMleEvaluationClaim<SpartanBitzField>,
     pub opening: &'a BitifiedClaim,
     /// Dense canonical row weights over the committed tensor.
     pub row_weights: &'a [u128],
     /// Canonical clear column weights.
     pub col_weights: &'a [u128],
     /// Strategy 2: the exact integer lift of the claim.
-    pub mu_prime: Option<&'a BigUint>,
+    pub mu_prime: Option<&'a field::Uint<5>>,
 }
 
 /// The static description of one relation: everything the protocol needs
 /// besides a witness.
 pub trait RelationSpec: Sync {
     /// The constraint-matrix coefficient type.
-    type Coefficient: SpartanMatrixCoefficient<SpartanF2zField> + RawMontyCoefficient + Send + Sync;
+    type Coefficient: SpartanMatrixCoefficient<SpartanBitzField> + RawMontyCoefficient + Send + Sync;
     /// The prover's witness.
     type Witness: ?Sized + Sync;
     /// The virtual map of a virtual discharge (any map type for relations
@@ -503,6 +490,14 @@ pub trait RelationSpec: Sync {
 
     /// Geometry of the committed bit tensor.
     fn committed_layout(&self) -> IntegerMatrixLayout;
+    /// Geometry after the public virtual map; ordinary relations use the source.
+    fn opening_layout(&self) -> IntegerMatrixLayout {
+        self.committed_layout()
+    }
+    /// Integer magnitude bound; a smaller width requires a padding map.
+    fn opening_word_bits(&self) -> usize {
+        self.opening_layout().word_bits
+    }
 
     /// Number of gate coordinates of the assignment MLE (the assignment has
     /// `gate_vars + selector_vars` variables).
@@ -519,7 +514,7 @@ pub trait RelationSpec: Sync {
     fn project_matrices(
         &self,
         config: &FieldConfig,
-    ) -> Result<PreparedConstraintMatrices<SpartanF2zField, Self::Coefficient>, ProtocolError> {
+    ) -> Result<PreparedConstraintMatrices<SpartanBitzField, Self::Coefficient>, ProtocolError> {
         let _ = config;
         Err(ProtocolError::MatrixSourceUnavailable)
     }
@@ -561,7 +556,7 @@ pub trait RelationSpec: Sync {
         &self,
         transcript: &mut T,
         security: &IopSecurityParams,
-    ) -> Result<RuntimePrime, ProtocolError> {
+    ) -> Result<field::FpCtx<2>, ProtocolError> {
         sample_mod_q(
             transcript,
             self.domains().prime_sampling,
@@ -575,7 +570,6 @@ pub trait RelationSpec: Sync {
         &self,
         witness: &'w Self::Witness,
         config: &FieldConfig,
-        options: ProveOptions,
     ) -> Result<PiopWitness<'w>, ProtocolError>;
 
     /// The virtual map of a virtual discharge.
@@ -616,16 +610,18 @@ impl Opener {
     pub fn prover(&self) -> Result<&LigProverConfig, ProtocolError> {
         match self {
             Self::Resolved(resolved) => Ok(resolved.prover()),
-            Self::Custom { prover, .. } => prover.as_ref().ok_or(ProtocolError::OpenerConfigUnavailable),
+            Self::Custom { prover, .. } => prover
+                .as_ref()
+                .ok_or(ProtocolError::OpenerConfigUnavailable),
         }
     }
 
     pub fn verifier(&self) -> Result<&LigVerifierConfig, ProtocolError> {
         match self {
             Self::Resolved(resolved) => Ok(resolved.verifier()),
-            Self::Custom { verifier, .. } => {
-                verifier.as_ref().ok_or(ProtocolError::OpenerConfigUnavailable)
-            }
+            Self::Custom { verifier, .. } => verifier
+                .as_ref()
+                .ok_or(ProtocolError::OpenerConfigUnavailable),
         }
     }
 
@@ -668,7 +664,6 @@ impl Opener {
             Self::Custom { .. } => None,
         }
     }
-
 }
 
 /// The prime-independent prefix of a relation: the constraint matrices
@@ -707,7 +702,7 @@ impl<S: RelationSpec> PreparedRelationPrefix<S> {
         &self.spec
     }
 
-    /// F2Z geometry of the committed bit tensor.
+    /// BitZ geometry of the committed bit tensor.
     pub fn params(&self) -> IntegerMatrixLayout {
         self.spec.committed_layout()
     }
@@ -722,7 +717,7 @@ impl<S: RelationSpec> PreparedRelationPrefix<S> {
     }
 
     /// The prime-independent skeleton, for relations prepared from one.
-    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient>> {
+    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanBitzField, S::Coefficient>> {
         match &self.matrices {
             MatrixSource::Skeleton { skeleton, .. } => Some(skeleton),
             _ => None,
@@ -770,7 +765,7 @@ impl<S: RelationSpec> PreparedRelation<S> {
         selection: LigeritoSelection,
     ) -> Result<Self, ProtocolError> {
         if prefix.spec.gate_vars() < MIN_PRODUCTION_GATE_VARS {
-            return Err(ProtocolError::UnauditedF2zParameters);
+            return Err(ProtocolError::UnauditedBitzParameters);
         }
         let p = prefix.params();
         let ligerito = selection
@@ -817,7 +812,7 @@ impl<S: RelationSpec> PreparedRelation<S> {
         &self.prefix.spec
     }
 
-    /// F2Z geometry of the committed bit tensor.
+    /// BitZ geometry of the committed bit tensor.
     pub fn params(&self) -> IntegerMatrixLayout {
         self.prefix.params()
     }
@@ -851,7 +846,7 @@ impl<S: RelationSpec> PreparedRelation<S> {
     }
 
     /// The prime-independent skeleton, for relations prepared from one.
-    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanF2zField, S::Coefficient>> {
+    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanBitzField, S::Coefficient>> {
         self.prefix.skeleton()
     }
 
@@ -860,7 +855,6 @@ impl<S: RelationSpec> PreparedRelation<S> {
     pub fn assignment_binding(&self, commitment: &Commitment) -> Result<[u8; 32], ProtocolError> {
         assignment_binding(&self.prefix, &self.opener, commitment)
     }
-
 }
 
 /// The statement binding of a prefix under an opener configuration.
@@ -923,7 +917,7 @@ fn bind_verifier_statement<T: Transcript + Send, S: RelationSpec>(
             prefix.security.ood,
             round,
         )
-        .map_err(ProtocolError::F2z)?
+        .map_err(ProtocolError::Bitz)?
     } else {
         VerifierOod::from(prefix.security.ood)
     };
@@ -947,8 +941,8 @@ pub fn instantiate_profile<P: IopSecurityProfile, S: RelationSpec>(
 /// The Spartan part of a proof, in the shape the relation's kernel produces.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpartanProof {
-    Plain(SpartanPiopProof<SpartanF2zField>),
-    UnivariateSkip(UnivariateSkipSpartanPiopProof<SpartanF2zField>),
+    Plain(SpartanPiopProof<SpartanBitzField>),
+    UnivariateSkip(UnivariateSkipSpartanPiopProof<SpartanBitzField>),
 }
 
 impl SpartanProof {
@@ -971,7 +965,7 @@ impl SpartanProof {
     }
 
     /// The plain cubic-outer proof, if that is the kernel's shape.
-    pub const fn plain(&self) -> Option<&SpartanPiopProof<SpartanF2zField>> {
+    pub const fn plain(&self) -> Option<&SpartanPiopProof<SpartanBitzField>> {
         match self {
             Self::Plain(proof) => Some(proof),
             Self::UnivariateSkip(_) => None,
@@ -979,7 +973,9 @@ impl SpartanProof {
     }
 
     /// The univariate-skip proof, if that is the kernel's shape.
-    pub const fn univariate_skip(&self) -> Option<&UnivariateSkipSpartanPiopProof<SpartanF2zField>> {
+    pub const fn univariate_skip(
+        &self,
+    ) -> Option<&UnivariateSkipSpartanPiopProof<SpartanBitzField>> {
         match self {
             Self::UnivariateSkip(proof) => Some(proof),
             Self::Plain(_) => None,
@@ -1001,7 +997,7 @@ pub struct SpartanPrefixProof {
 /// before the reduction-prime draw.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReductionProof {
-    pub mu_prime: BigUint,
+    pub mu_prime: field::Uint<5>,
     pub nonce: u64,
 }
 
@@ -1041,24 +1037,82 @@ impl OpeningProof for IntEvalRsLigVirtProof {
 }
 
 /// A proof over a transcript-selected prime: the Spartan reduction, the
-/// optional Step-5.0 lift, the F2Z opening and any profile-selected
+/// optional Step-5.0 lift, the BitZ opening and any profile-selected
 /// grinding nonces.
+/// The prepared relation determines which opening proof is accepted.
 #[derive(Clone)]
-pub struct Proof<O: OpeningProof = IntEvalRsLigModQProof> {
+pub enum Opening {
+    Direct(IntEvalRsLigModQProof),
+    Virtual(IntEvalRsLigVirtProof),
+}
+impl Opening {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Direct(p) => p.to_bytes(),
+            Self::Virtual(p) => p.to_bytes(),
+        }
+    }
+    pub fn ood(&self) -> Option<&OodRound> {
+        match self {
+            Self::Direct(p) => p.ood.as_ref(),
+            Self::Virtual(p) => p.ood.as_ref(),
+        }
+    }
+    pub fn direct(&self) -> Option<&IntEvalRsLigModQProof> {
+        match self {
+            Self::Direct(p) => Some(p),
+            _ => None,
+        }
+    }
+    pub fn direct_mut(&mut self) -> Option<&mut IntEvalRsLigModQProof> {
+        match self {
+            Self::Direct(p) => Some(p),
+            _ => None,
+        }
+    }
+}
+impl OpeningProof for Opening {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_bytes()
+    }
+    fn grinding_nonces(&self) -> &[u64] {
+        match self {
+            Self::Direct(p) => &p.grinding_nonces,
+            Self::Virtual(p) => &p.grinding_nonces,
+        }
+    }
+    fn ood(&self) -> Option<&OodRound> {
+        self.ood()
+    }
+}
+
+#[derive(Clone)]
+pub struct Proof<O: OpeningProof = Opening> {
     prefix: SpartanPrefixProof,
     reduction: Option<ReductionProof>,
-    f2z: O,
+    bitz: O,
 }
 
 impl<O: OpeningProof> Proof<O> {
+    fn map_opening<P: OpeningProof>(self, map: impl FnOnce(O) -> P) -> Proof<P> {
+        Proof {
+            prefix: self.prefix,
+            reduction: self.reduction,
+            bitz: map(self.bitz),
+        }
+    }
+    pub fn opening_grinding_nonces(&self) -> &[u64] {
+        self.bitz.grinding_nonces()
+    }
+
     /// Spartan outer and inner sumcheck proofs.
     pub const fn spartan(&self) -> &SpartanProof {
         &self.prefix.spartan
     }
 
-    /// The F2Z opening proof.
-    pub const fn f2z(&self) -> &O {
-        &self.f2z
+    /// The BitZ opening proof.
+    pub const fn bitz(&self) -> &O {
+        &self.bitz
     }
 
     /// The prefix messages.
@@ -1089,40 +1143,44 @@ impl<O: OpeningProof> Proof<O> {
     }
 
     /// Transmitted grinding nonces (initial/terminal boundaries when armed,
-    /// the per-draw PIOP nonces, and the forest section in the F2Z stream).
+    /// the per-draw PIOP nonces, and the forest section in the BitZ stream).
     pub fn grinding_nonce_count(&self, security: &IopSecurityParams) -> usize {
         usize::from(security.initial_grinding_bits > 0)
             + usize::from(security.terminal_grinding_bits > 0)
             + self.prefix.piop_nonces.len()
-            + self.f2z.grinding_nonces().len()
+            + self.bitz.grinding_nonces().len()
     }
 
     /// Serialized size in bytes of the proof: the Spartan payload as 16-byte
-    /// field elements, the nonces as 8-byte words, and the F2Z opening's
+    /// field elements, the nonces as 8-byte words, and the BitZ opening's
     /// exact codec bytes.
     pub fn size_bytes(&self, security: &IopSecurityParams) -> usize {
         self.spartan_payload_elements() * 16
-            + (self.grinding_nonce_count(security) - self.f2z.grinding_nonces().len()) * 8
-            + self.f2z.to_bytes().len()
+            + (self.grinding_nonce_count(security) - self.bitz.grinding_nonces().len()) * 8
+            + self.bitz.to_bytes().len()
     }
 
     /// Splits the proof into its parts (tests and codecs).
     pub fn into_parts(self) -> (SpartanPrefixProof, Option<ReductionProof>, O) {
-        (self.prefix, self.reduction, self.f2z)
+        (self.prefix, self.reduction, self.bitz)
     }
 
     /// Assembles a proof from its parts (tests and codecs).
-    pub const fn from_parts(prefix: SpartanPrefixProof, reduction: Option<ReductionProof>, f2z: O) -> Self {
+    pub const fn from_parts(
+        prefix: SpartanPrefixProof,
+        reduction: Option<ReductionProof>,
+        bitz: O,
+    ) -> Self {
         Self {
             prefix,
             reduction,
-            f2z,
+            bitz,
         }
     }
 
     /// Step 5.0 exact integer lift of the bitified terminal claim (reduced
     /// discharges).
-    pub fn mu_prime(&self) -> Option<&BigUint> {
+    pub fn mu_prime(&self) -> Option<&field::Uint<5>> {
         self.reduction.as_ref().map(|reduction| &reduction.mu_prime)
     }
 
@@ -1134,12 +1192,12 @@ impl<O: OpeningProof> Proof<O> {
 
     /// Serialized byte length of the Step 5.0 integer lift (0 without one).
     pub fn mu_prime_bytes(&self) -> usize {
-        self.mu_prime().map_or(0, |mu| mu.to_bytes_le().len())
+        self.mu_prime().map_or(0, |_| 40)
     }
 
     /// Mutable access to the opening proof (tests).
-    pub fn f2z_mut(&mut self) -> &mut O {
-        &mut self.f2z
+    pub fn bitz_mut(&mut self) -> &mut O {
+        &mut self.bitz
     }
 
     /// Mutable access to the prefix messages (tests).
@@ -1172,39 +1230,35 @@ pub fn commit<S: RelationSpec>(
     Ok(hint)
 }
 
-/// Proves the relation with the default prover options, discharging the
-/// bitified claim directly through the runtime-q exponent fold.
+/// Proves a one-prime relation, selecting direct or virtual discharge from
+/// the prepared relation's public map. Strategy 2 uses `prove_reduced`.
 pub fn prove<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
     witness: &S::Witness,
     hint: &FlockCommitHint,
 ) -> Result<Proof, ProtocolError> {
-    prove_with_options(transcript, prepared, witness, hint, ProveOptions::default())
+    prove_with_opener(
+        transcript,
+        &prepared.prefix,
+        &prepared.opener,
+        witness,
+        hint,
+    )
 }
 
-/// Proves the relation: commit-before-prime, a transcript-sampled Step-2
-/// prime, the Spartan PIOP over that runtime field, bitification, and the
-/// direct runtime-q F2Z opening.
-pub fn prove_with_options<T: Transcript + Send, S: RelationSpec>(
-    transcript: &mut T,
-    prepared: &PreparedRelation<S>,
-    witness: &S::Witness,
-    hint: &FlockCommitHint,
-    options: ProveOptions,
-) -> Result<Proof, ProtocolError> {
-    prove_with_opener(transcript, &prepared.prefix, &prepared.opener, witness, hint, options)
-}
-
-/// [`prove_with_options`] over a prefix and an explicit opener.
+/// [`prove`] over a prefix and an explicit opener.
 pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-    options: ProveOptions,
 ) -> Result<Proof, ProtocolError> {
+    if prefix.spec.map().is_some() {
+        return prove_virtual_with_opener(transcript, prefix, opener, witness, hint)
+            .map(|p| p.map_opening(Opening::Virtual));
+    }
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
     let p = prefix.params();
@@ -1216,16 +1270,16 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     let scopes = &domains.scopes;
 
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_piop(transcript, prefix, witness, &binding, options)?;
+    let proved = prove_piop(transcript, prefix, witness, &binding)?;
     let prime = &proved.prime;
 
-    // Steps 5.1–5.3: the runtime-q F2Z opening (one chunk by construction).
-    let f2z = {
+    // Steps 5.1–5.3: the runtime-q BitZ opening (one chunk by construction).
+    let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = (scopes.f2z_prove)().entered();
+        let _scope = (scopes.bitz_prove)().entered();
         let chunks = {
-            let _scope = (scopes.f2z_prepare_prover)().entered();
-            bitify::prepare_chunks(&proved.opening, &proved.table, prime.q_bits, &prime.arith)?
+            let _scope = (scopes.bitz_prepare_prover)().entered();
+            bitify::prepare_chunks(&proved.opening, &proved.table, prime.modulus_bits(), &prime)?
         };
         if chunks.len() != 1 {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
@@ -1237,31 +1291,37 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
             &p,
             &chunks,
             &proved.bridge_digest,
-            prime.q_bits,
-            f2z_generator(),
+            prime.modulus_bits(),
+            bitz_generator(),
             spec.opener_grinding_bits(security),
             ood,
             pc,
         )
-        .map_err(ProtocolError::F2z)?
+        .map_err(ProtocolError::Bitz)?
     };
 
     Ok(Proof {
         prefix: proved.messages,
         reduction: None,
-        f2z,
+        bitz: Opening::Direct(bitz),
     })
 }
 
-/// Verifies a direct-discharge proof, re-deriving the prime from the bound
-/// transcript.
+/// Verifies the relation-selected discharge, re-deriving the prime from the
+/// bound transcript and rejecting an incompatible opening variant.
 pub fn verify<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
     commitment: &Commitment,
     proof: &Proof,
 ) -> Result<(), ProtocolError> {
-    verify_with_opener(transcript, &prepared.prefix, &prepared.opener, commitment, proof)
+    verify_with_opener(
+        transcript,
+        &prepared.prefix,
+        &prepared.opener,
+        commitment,
+        proof,
+    )
 }
 
 /// [`verify`] over a prefix and an explicit opener.
@@ -1272,6 +1332,13 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &Proof,
 ) -> Result<(), ProtocolError> {
+    let bitz = match (&proof.bitz, prefix.spec.map().is_some()) {
+        (Opening::Direct(p), false) => p,
+        (Opening::Virtual(p), true) => {
+            return verify_virtual_parts(transcript, prefix, opener, commitment, &proof.prefix, p);
+        }
+        _ => return Err(ProtocolError::UnsupportedDischarge),
+    };
     let spec = &prefix.spec;
     let p = prefix.params();
     let vc = opener.verifier()?;
@@ -1283,20 +1350,21 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
 
     let (binding, ood) =
-        bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
+        bind_verifier_statement(transcript, prefix, opener, commitment, bitz.ood.as_ref())?;
     let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = (scopes.f2z_verify)().entered();
+    let _scope = (scopes.bitz_verify)().entered();
     let (chunks, col_weights_q) = {
-        let _scope = (scopes.f2z_prepare_verifier)().entered();
-        let chunks =
-            bitify::prepare_chunks(&verified.opening, &verified.table, prime.q_bits, &prime.arith)?;
-        let col_weights_q: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
-            .iter()
-            .map(|weight| weight.0)
-            .collect();
+        let _scope = (scopes.bitz_prepare_verifier)().entered();
+        let chunks = bitify::prepare_chunks(
+            &verified.opening,
+            &verified.table,
+            prime.modulus_bits(),
+            &prime,
+        )?;
+        let col_weights_q: Vec<u128> = bitify::column_weights(&verified.opening, &prime)?;
         (chunks, col_weights_q)
     };
     if chunks.len() != 1 {
@@ -1306,20 +1374,20 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
         transcript,
         domains.opening,
         commitment,
-        &proof.f2z,
+        bitz,
         &p,
         &chunks,
         &col_weights_q,
         &verified.bridge_digest,
-        f2z_generator(),
-        verified.opening.claimed.0,
-        prime.q,
-        prime.q_bits,
+        bitz_generator(),
+        verified.opening.claimed,
+        prime.modulus_u128(),
+        prime.modulus_bits(),
         spec.opener_grinding_bits(security),
         ood,
         vc,
     )
-    .map_err(ProtocolError::F2z)
+    .map_err(ProtocolError::Bitz)
 }
 
 /// Binds the bitified claim frame of a virtual or reduced discharge.
@@ -1333,6 +1401,29 @@ fn bind_claim_frame<T: Transcript, S: RelationSpec>(
     Ok(())
 }
 
+fn virtual_weight_chunks<S: RelationSpec>(
+    spec: &S,
+    weights: &[u128],
+    q_bits: usize,
+) -> Result<crate::pcs::ModQWeightChunks, ProtocolError> {
+    let p = spec.opening_layout();
+    let width = spec.opening_word_bits();
+    let result = if width < p.word_bits {
+        crate::pcs::ModQWeightChunks::from_dense_padded(
+            &p,
+            weights,
+            q_bits,
+            width,
+            spec.map().ok_or(ProtocolError::UnsupportedDischarge)?,
+        )
+    } else if width == p.word_bits {
+        crate::pcs::ModQWeightChunks::from_dense(&p, weights, q_bits)
+    } else {
+        Err(())
+    };
+    result.map_err(|_| ProtocolError::InvalidBitzParameters)
+}
+
 /// Proves the relation, discharging the bitified claim through the
 /// relation's virtual map onto its derived grid at the runtime prime.
 pub fn prove_virtual<T: Transcript + Send, S: RelationSpec>(
@@ -1340,9 +1431,14 @@ pub fn prove_virtual<T: Transcript + Send, S: RelationSpec>(
     prepared: &PreparedRelation<S>,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-    options: ProveOptions,
 ) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
-    prove_virtual_with_opener(transcript, &prepared.prefix, &prepared.opener, witness, hint, options)
+    prove_virtual_with_opener(
+        transcript,
+        &prepared.prefix,
+        &prepared.opener,
+        witness,
+        hint,
+    )
 }
 
 /// [`prove_virtual`] over a prefix and an explicit opener.
@@ -1352,7 +1448,6 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     opener: &Opener,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-    options: ProveOptions,
 ) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
@@ -1366,18 +1461,16 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
 
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_piop(transcript, prefix, witness, &binding, options)?;
+    let proved = prove_piop(transcript, prefix, witness, &binding)?;
     let prime = &proved.prime;
 
-    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime.arith)?;
-    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime.arith)?
-        .iter()
-        .map(|weight| weight.0)
-        .collect();
+    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime)?;
     bind_claim_frame(
         transcript,
         spec,
         ClaimFrame {
+            field: prime,
             binding: &binding,
             matrices_digest: &proved.matrices_digest,
             terminal_claim: &proved.terminal_claim,
@@ -1388,33 +1481,34 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
         },
     )?;
 
-    let f2z = {
+    let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = (scopes.f2z_prove)().entered();
+        let _scope = (scopes.bitz_prove)().entered();
         let derived = spec.derived_rows(witness);
         let h_rows = derived.as_deref().unwrap_or(hint.rows());
-        prove_mle_eval_mod_q_ligerito_virtual_runtime(
+        let chunks = virtual_weight_chunks(spec, &row_weights, prime.modulus_bits())?;
+        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime(
             transcript,
             hint,
             h_rows,
-            &p,
+            &spec.opening_layout(),
             &p,
             map,
-            &row_weights,
-            prime.q,
-            prime.q_bits,
-            f2z_generator(),
+            &chunks,
+            prime.modulus_u128(),
+            prime.modulus_bits(),
+            bitz_generator(),
             spec.opener_grinding_bits(security),
             ood,
             pc,
         )
-        .map_err(ProtocolError::F2z)?
+        .map_err(ProtocolError::Bitz)?
     };
 
     Ok(Proof {
         prefix: proved.messages,
         reduction: None,
-        f2z,
+        bitz,
     })
 }
 
@@ -1425,7 +1519,13 @@ pub fn verify_virtual<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &Proof<IntEvalRsLigVirtProof>,
 ) -> Result<(), ProtocolError> {
-    verify_virtual_with_opener(transcript, &prepared.prefix, &prepared.opener, commitment, proof)
+    verify_virtual_with_opener(
+        transcript,
+        &prepared.prefix,
+        &prepared.opener,
+        commitment,
+        proof,
+    )
 }
 
 /// [`verify_virtual`] over a prefix and an explicit opener.
@@ -1436,6 +1536,24 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &Proof<IntEvalRsLigVirtProof>,
 ) -> Result<(), ProtocolError> {
+    verify_virtual_parts(
+        transcript,
+        prefix,
+        opener,
+        commitment,
+        &proof.prefix,
+        &proof.bitz,
+    )
+}
+
+fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    opener: &Opener,
+    commitment: &Commitment,
+    messages: &SpartanPrefixProof,
+    bitz: &IntEvalRsLigVirtProof,
+) -> Result<(), ProtocolError> {
     let spec = &prefix.spec;
     let p = prefix.params();
     let vc = opener.verifier()?;
@@ -1445,22 +1563,20 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
-    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
+    check_proof_kernel(spec.kernel(), &messages.spartan)?;
 
     let (binding, ood) =
-        bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
-    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
+        bind_verifier_statement(transcript, prefix, opener, commitment, bitz.ood.as_ref())?;
+    let verified = verify_piop(transcript, prefix, &binding, messages)?;
     let prime = &verified.prime;
 
-    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime.arith)?;
-    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
-        .iter()
-        .map(|weight| weight.0)
-        .collect();
+    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime)?;
     bind_claim_frame(
         transcript,
         spec,
         ClaimFrame {
+            field: prime,
             binding: &binding,
             matrices_digest: &verified.matrices_digest,
             terminal_claim: &verified.terminal_claim,
@@ -1472,25 +1588,26 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     )?;
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = (scopes.f2z_verify)().entered();
-    verify_mle_eval_mod_q_ligerito_virtual_runtime(
+    let _scope = (scopes.bitz_verify)().entered();
+    let chunks = virtual_weight_chunks(spec, &row_weights, prime.modulus_bits())?;
+    verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime(
         transcript,
         commitment,
-        &proof.f2z,
-        &p,
+        bitz,
+        &spec.opening_layout(),
         &p,
         map,
-        &row_weights,
+        &chunks,
         &col_weights,
-        f2z_generator(),
-        verified.opening.claimed.0,
-        prime.q,
-        prime.q_bits,
+        bitz_generator(),
+        verified.opening.claimed,
+        prime.modulus_u128(),
+        prime.modulus_bits(),
         spec.opener_grinding_bits(security),
         ood,
         vc,
     )
-    .map_err(ProtocolError::F2z)
+    .map_err(ProtocolError::Bitz)
 }
 
 /// Proves the relation under Strategy 2: after bitification the prover
@@ -1503,7 +1620,6 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
     prepared: &PreparedRelation<S>,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-    options: ProveOptions,
 ) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
     let prefix = &prepared.prefix;
     let opener = &prepared.opener;
@@ -1514,30 +1630,35 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
     validate_bit_rows(&p, hint.rows())?;
     validate_commitment(&p, &hint.commitment, pc)?;
     let security = &prefix.security;
-    let reduction = security.reduction.ok_or(ProtocolError::UnsupportedProfile)?;
+    let reduction = security
+        .reduction
+        .ok_or(ProtocolError::UnsupportedProfile)?;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
 
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_piop(transcript, prefix, witness, &binding, options)?;
+    let proved = prove_piop(transcript, prefix, witness, &binding)?;
     let prime = &proved.prime;
-    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime.arith)?;
-    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime.arith)?
-        .iter()
-        .map(|weight| weight.0)
-        .collect();
+    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime)?;
 
     // Step 5.0: exact integer lift, grinded fresh-prime draw, re-projection.
     let step5_0_scope = tracing::info_span!("step5_0:reduce_prove").entered();
     let mu_prime = step50_integer_lift(hint.rows(), &row_weights, &col_weights);
-    if !step50_accepts_lift(&mu_prime, proved.opening.claimed.0, prime.q, p.cells()) {
+    if !step50_accepts_lift(
+        &mu_prime,
+        proved.opening.claimed,
+        prime.modulus_u128(),
+        p.cells(),
+    ) {
         return Err(ProtocolError::InvalidIntegerLift);
     }
     bind_claim_frame(
         transcript,
         spec,
         ClaimFrame {
+            field: prime,
             binding: &binding,
             matrices_digest: &proved.matrices_digest,
             terminal_claim: &proved.terminal_claim,
@@ -1553,15 +1674,24 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
         0,
         reduction.grinding_bits,
     )?;
-    let reduced = sample_mod_q(transcript, domains.reduction_prime, reduction.min, reduction.max)?;
-    let (row_weights_reduced, _, _) =
-        step50_reduce(&row_weights, &col_weights, &mu_prime, reduced.q);
+    let reduced = sample_mod_q(
+        transcript,
+        domains.reduction_prime,
+        reduction.min,
+        reduction.max,
+    )?;
+    let (row_weights_reduced, _, _) = step50_reduce(
+        &row_weights,
+        &col_weights,
+        &mu_prime,
+        reduced.modulus_u128(),
+    );
     drop(step5_0_scope);
 
-    // Steps 5.1–5.3: the F2Z opening at the reduced prime.
-    let f2z = {
+    // Steps 5.1–5.3: the BitZ opening at the reduced prime.
+    let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = (scopes.f2z_prove)().entered();
+        let _scope = (scopes.bitz_prove)().entered();
         prove_mle_eval_mod_q_ligerito_virtual_runtime(
             transcript,
             hint,
@@ -1570,20 +1700,20 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
             &p,
             map,
             &row_weights_reduced,
-            reduced.q,
-            reduced.q_bits,
-            f2z_generator(),
+            reduced.modulus_u128(),
+            reduced.modulus_bits(),
+            bitz_generator(),
             spec.opener_grinding_bits(security),
             ood,
             pc,
         )
-        .map_err(ProtocolError::F2z)?
+        .map_err(ProtocolError::Bitz)?
     };
 
     Ok(Proof {
         prefix: proved.messages,
         reduction: Some(ReductionProof { mu_prime, nonce }),
-        f2z,
+        bitz,
     })
 }
 
@@ -1603,33 +1733,46 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
     let binding_config = opener.binding_config()?;
     validate_commitment(&p, commitment, &binding_config)?;
     let security = &prefix.security;
-    let reduction = security.reduction.ok_or(ProtocolError::UnsupportedProfile)?;
+    let reduction = security
+        .reduction
+        .ok_or(ProtocolError::UnsupportedProfile)?;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
-    let lift = proof.reduction.as_ref().ok_or(ProtocolError::InvalidIntegerLift)?;
+    let lift = proof
+        .reduction
+        .as_ref()
+        .ok_or(ProtocolError::InvalidIntegerLift)?;
     check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
 
-    let (binding, ood) =
-        bind_verifier_statement(transcript, prefix, opener, commitment, proof.f2z.ood.as_ref())?;
+    let (binding, ood) = bind_verifier_statement(
+        transcript,
+        prefix,
+        opener,
+        commitment,
+        proof.bitz.ood.as_ref(),
+    )?;
     let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
-    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime.arith)?;
-    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime.arith)?
-        .iter()
-        .map(|weight| weight.0)
-        .collect();
+    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime)?;
 
     // Step 5.0: the claimed integer lift must land in the derived mod-Q
     // class and inside the d * Q^2 magnitude bound.
     let step5_0_scope = tracing::info_span!("step5_0:reduce_verify").entered();
-    if !step50_accepts_lift(&lift.mu_prime, verified.opening.claimed.0, prime.q, p.cells()) {
+    if !step50_accepts_lift(
+        &lift.mu_prime,
+        verified.opening.claimed,
+        prime.modulus_u128(),
+        p.cells(),
+    ) {
         return Err(ProtocolError::InvalidIntegerLift);
     }
     bind_claim_frame(
         transcript,
         spec,
         ClaimFrame {
+            field: prime,
             binding: &binding,
             matrices_digest: &verified.matrices_digest,
             terminal_claim: &verified.terminal_claim,
@@ -1646,52 +1789,61 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
         reduction.grinding_bits,
         lift.nonce,
     )?;
-    let reduced = sample_mod_q(transcript, domains.reduction_prime, reduction.min, reduction.max)?;
-    let (row_weights_reduced, col_weights_reduced, claimed_reduced) =
-        step50_reduce(&row_weights, &col_weights, &lift.mu_prime, reduced.q);
+    let reduced = sample_mod_q(
+        transcript,
+        domains.reduction_prime,
+        reduction.min,
+        reduction.max,
+    )?;
+    let (row_weights_reduced, col_weights_reduced, claimed_reduced) = step50_reduce(
+        &row_weights,
+        &col_weights,
+        &lift.mu_prime,
+        reduced.modulus_u128(),
+    );
     drop(step5_0_scope);
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = (scopes.f2z_verify)().entered();
+    let _scope = (scopes.bitz_verify)().entered();
     verify_mle_eval_mod_q_ligerito_virtual_runtime(
         transcript,
         commitment,
-        &proof.f2z,
+        &proof.bitz,
         &p,
         &p,
         map,
         &row_weights_reduced,
         &col_weights_reduced,
-        f2z_generator(),
+        bitz_generator(),
         claimed_reduced,
-        reduced.q,
-        reduced.q_bits,
+        reduced.modulus_u128(),
+        reduced.modulus_bits(),
         spec.opener_grinding_bits(security),
         ood,
         vc,
     )
-    .map_err(ProtocolError::F2z)
+    .map_err(ProtocolError::Bitz)
 }
 
 /// The prover's output of the protocol prefix: the transcript messages and
 /// the bitified claim the discharge consumes.
 pub struct ProvedPrefix {
     pub messages: SpartanPrefixProof,
-    pub terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
+    pub terminal_claim: ScaledMleEvaluationClaim<SpartanBitzField>,
     pub matrices_digest: [u8; 32],
     pub opening: BitifiedClaim,
     pub bridge_digest: [u8; 32],
-    pub prime: RuntimePrime,
+    pub prime: field::FpCtx<2>,
     pub table: BlockTable,
 }
 
 /// The verifier's output of the protocol prefix.
 pub struct VerifiedPrefix {
-    pub terminal_claim: ScaledMleEvaluationClaim<SpartanF2zField>,
+    pub terminal_claim: ScaledMleEvaluationClaim<SpartanBitzField>,
     pub matrices_digest: [u8; 32],
     pub opening: BitifiedClaim,
     pub bridge_digest: [u8; 32],
-    pub prime: RuntimePrime,
+    pub prime: field::FpCtx<2>,
     pub table: BlockTable,
 }
 
@@ -1704,7 +1856,6 @@ pub fn prove_piop<T: Transcript, S: RelationSpec>(
     prefix: &PreparedRelationPrefix<S>,
     witness: &S::Witness,
     binding: &[u8; 32],
-    options: ProveOptions,
 ) -> Result<ProvedPrefix, ProtocolError> {
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
@@ -1716,16 +1867,19 @@ pub fn prove_piop<T: Transcript, S: RelationSpec>(
     // Step 2: pre-draw grinding, prime draw, and relation projection into
     // the runtime field.
     let step2_scope = tracing::info_span!("step2:project_prove").entered();
-    let initial_nonce =
-        grind_boundary(transcript, domains.initial_grinding, security.initial_grinding_bits)?;
+    let initial_nonce = grind_boundary(
+        transcript,
+        domains.initial_grinding,
+        security.initial_grinding_bits,
+    )?;
     let prime = spec.runtime_prime(transcript, security)?;
     let matrices = {
         let _scope = (scopes.relation_projection_prove)().entered();
-        prefix.matrices.project(spec, &prime.config)?
+        prefix.matrices.project(spec, &prime)?
     };
     let piop_witness = {
         let _scope = (scopes.witness_projection_prove)().entered();
-        spec.piop_witness(witness, &prime.config, options)?
+        spec.piop_witness(witness, &prime)?
     };
     drop(step2_scope);
 
@@ -1741,8 +1895,13 @@ pub fn prove_piop<T: Transcript, S: RelationSpec>(
                 piop_wrap_bits(security),
                 domains.piop_grinding,
             );
-            let (spartan, terminal_claim) =
-                run_kernel(&mut grinder, spec.kernel(), &matrices, binding, piop_witness)?;
+            let (spartan, terminal_claim) = run_kernel(
+                &mut grinder,
+                spec.kernel(),
+                &matrices,
+                binding,
+                piop_witness,
+            )?;
             (spartan, terminal_claim, grinder.finish())
         } else {
             let (spartan, terminal_claim) =
@@ -1757,10 +1916,21 @@ pub fn prove_piop<T: Transcript, S: RelationSpec>(
     let table = spec.block_table();
     let (opening, bridge_digest) = {
         let _scope = (scopes.bitify_prover)().entered();
-        bitify_and_bind(spec, &matrices, binding, &terminal_claim, &table, schedule.scale_side, &prime)?
+        bitify_and_bind(
+            spec,
+            &matrices,
+            binding,
+            &terminal_claim,
+            &table,
+            schedule.scale_side,
+            &prime,
+        )?
     };
-    let terminal_nonce =
-        grind_boundary(transcript, domains.terminal_grinding, security.terminal_grinding_bits)?;
+    let terminal_nonce = grind_boundary(
+        transcript,
+        domains.terminal_grinding,
+        security.terminal_grinding_bits,
+    )?;
     drop(step4_scope);
 
     Ok(ProvedPrefix {
@@ -1803,7 +1973,7 @@ pub fn verify_piop<T: Transcript, S: RelationSpec>(
     let prime = spec.runtime_prime(transcript, security)?;
     let matrices = {
         let _scope = (scopes.relation_projection_verify)().entered();
-        prefix.matrices.project(spec, &prime.config)?
+        prefix.matrices.project(spec, &prime)?
     };
     drop(step2_scope);
 
@@ -1817,7 +1987,8 @@ pub fn verify_piop<T: Transcript, S: RelationSpec>(
                 &messages.piop_nonces,
                 domains.piop_grinding,
             );
-            let terminal_claim = verify_kernel(&mut grinder, &matrices, binding, &messages.spartan)?;
+            let terminal_claim =
+                verify_kernel(&mut grinder, &matrices, binding, &messages.spartan)?;
             grinder.finish()?;
             terminal_claim
         } else {
@@ -1836,7 +2007,15 @@ pub fn verify_piop<T: Transcript, S: RelationSpec>(
     let table = spec.block_table();
     let (opening, bridge_digest) = {
         let _scope = (scopes.bitify_verifier)().entered();
-        bitify_and_bind(spec, &matrices, binding, &terminal_claim, &table, schedule.scale_side, &prime)?
+        bitify_and_bind(
+            spec,
+            &matrices,
+            binding,
+            &terminal_claim,
+            &table,
+            schedule.scale_side,
+            &prime,
+        )?
     };
     check_boundary(
         transcript,
@@ -1860,12 +2039,12 @@ pub fn verify_piop<T: Transcript, S: RelationSpec>(
 fn run_kernel<C, T: Transcript>(
     transcript: &mut T,
     kernel: Kernel,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField, C>,
+    matrices: &PreparedConstraintMatrices<SpartanBitzField, C>,
     binding: &[u8; 32],
     witness: PiopWitness<'_>,
-) -> Result<(SpartanProof, ScaledMleEvaluationClaim<SpartanF2zField>), ProtocolError>
+) -> Result<(SpartanProof, ScaledMleEvaluationClaim<SpartanBitzField>), ProtocolError>
 where
-    C: SpartanMatrixCoefficient<SpartanF2zField> + RawMontyCoefficient,
+    C: SpartanMatrixCoefficient<SpartanBitzField> + RawMontyCoefficient,
 {
     let (spartan, claim) = match (kernel, witness) {
         (
@@ -1875,6 +2054,7 @@ where
                 bz,
                 cz,
                 assignment,
+                constant_prefix,
             },
         ) => {
             let products = NativeProducts {
@@ -1883,7 +2063,24 @@ where
                 cz: &cz,
             };
             let (proof, claim) = prove_spartan_piop_native_u64_with_univariate_skip_borrowed(
-                transcript, matrices, binding, products, assignment, skip_vars,
+                transcript,
+                matrices,
+                binding,
+                products,
+                assignment,
+                skip_vars,
+                constant_prefix,
+            )?;
+            (SpartanProof::UnivariateSkip(proof), claim)
+        }
+        (Kernel::UnivariateSkip { skip_vars }, PiopWitness::Mul32(witness)) => {
+            let (proof, claim) = super::piop::prove_spartan_piop_raw_native_u64_with_skip_core(
+                transcript,
+                matrices,
+                binding,
+                witness,
+                witness.inner_witness(),
+                skip_vars,
             )?;
             (SpartanProof::UnivariateSkip(proof), claim)
         }
@@ -1895,6 +2092,7 @@ where
                 bz,
                 cz,
                 assignment,
+                constant_prefix,
             },
         ) => {
             let products = NativeProducts {
@@ -1903,36 +2101,69 @@ where
                 cz: &cz,
             };
             let (proof, claim) = prove_spartan_piop_native_u64_borrowed(
-                transcript, matrices, binding, products, assignment,
+                transcript,
+                matrices,
+                binding,
+                products,
+                assignment,
+                constant_prefix,
             )?;
             (SpartanProof::Plain(proof), claim)
         }
-        (
-            Kernel::Plain,
-            PiopWitness::NativeOwned {
-                products,
-                assignment,
-                strategy,
-            },
-        ) => {
-            let (proof, claim) = prove_spartan_piop_native_u64_with_strategy(
-                transcript, matrices, binding, products, assignment, strategy,
+        (Kernel::Plain, PiopWitness::Mul32(witness)) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                witness,
+                witness.inner_witness(),
             )?;
             (SpartanProof::Plain(proof), claim)
         }
-        (
-            Kernel::Plain,
-            PiopWitness::RawProductsNative {
-                products,
-                assignment,
-            },
-        ) => {
+        (Kernel::Plain, PiopWitness::Mul64(witness)) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                witness.native_products(),
+                witness.inner_witness(),
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::Mul128(witness)) => {
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                witness.native_products(),
+                witness.inner_witness(),
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::CmAnd(witness)) => {
             let (proof, claim) = prove_spartan_piop_raw_products_native_assignment(
-                transcript, matrices, binding, products, assignment,
+                transcript,
+                matrices,
+                binding,
+                witness,
+                witness.assignment(),
+                None,
             )?;
             (SpartanProof::Plain(proof), claim)
         }
-        (Kernel::Plain, PiopWitness::RawProductsRaw { products, witness }) => {
+        (Kernel::Plain, PiopWitness::FieldAssignment { assignment }) => {
+            let products =
+                super::matrix::products_from_montgomery_assignment(matrices, &assignment)?;
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                products,
+                RawWitness::Field(assignment),
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::IntegerProducts { products, witness }) => {
             let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
                 transcript, matrices, binding, products, witness,
             )?;
@@ -1943,12 +2174,10 @@ where
             PiopWitness::Field {
                 products,
                 assignment,
-                strategy,
             },
         ) => {
-            let (proof, claim) = prove_spartan_piop_with_strategy(
-                transcript, matrices, binding, products, assignment, strategy,
-            )?;
+            let (proof, claim) =
+                prove_spartan_piop_field(transcript, matrices, binding, products, assignment)?;
             (SpartanProof::Plain(proof), claim)
         }
     };
@@ -1958,15 +2187,17 @@ where
 /// Verifies the Spartan proof of either kernel shape.
 fn verify_kernel<C, T: Transcript>(
     transcript: &mut T,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField, C>,
+    matrices: &PreparedConstraintMatrices<SpartanBitzField, C>,
     binding: &[u8; 32],
     spartan: &SpartanProof,
-) -> Result<ScaledMleEvaluationClaim<SpartanF2zField>, ProtocolError>
+) -> Result<ScaledMleEvaluationClaim<SpartanBitzField>, ProtocolError>
 where
-    C: SpartanMatrixCoefficient<SpartanF2zField>,
+    C: SpartanMatrixCoefficient<SpartanBitzField>,
 {
     Ok(match spartan {
-        SpartanProof::Plain(spartan) => verify_spartan_proof(transcript, matrices, binding, spartan)?,
+        SpartanProof::Plain(spartan) => {
+            verify_spartan_proof(transcript, matrices, binding, spartan)?
+        }
         SpartanProof::UnivariateSkip(spartan) => {
             verify_spartan_univariate_skip_proof(transcript, matrices, binding, spartan)?
         }
@@ -1994,30 +2225,31 @@ fn check_proof_kernel(kernel: Kernel, spartan: &SpartanProof) -> Result<(), Prot
 #[allow(clippy::too_many_arguments)]
 fn bitify_and_bind<S: RelationSpec>(
     spec: &S,
-    matrices: &PreparedConstraintMatrices<SpartanF2zField, S::Coefficient>,
+    matrices: &PreparedConstraintMatrices<SpartanBitzField, S::Coefficient>,
     binding: &[u8; 32],
-    terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+    terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
     table: &BlockTable,
     scale_side: ScaleSide,
-    prime: &RuntimePrime,
+    prime: &field::FpCtx<2>,
 ) -> Result<(BitifiedClaim, [u8; 32]), ProtocolError> {
     let opening = bitify::bitify(
         terminal_claim,
-        spec.committed_layout(),
+        spec.opening_layout(),
         spec.gate_vars(),
         table,
         scale_side,
-        &prime.arith,
+        &prime,
     )?;
     let digest = bitify::bridge_digest(
         spec.domains().bitified_claim,
         binding,
         matrices.field_modulus_encoding(),
         matrices.digest(),
-        prime.q,
+        prime.modulus_u128(),
         |hasher| spec.hash_bridge_constants(hasher),
         terminal_claim,
         &opening,
+        matrices.config(),
     )?;
     Ok((opening, digest))
 }
@@ -2066,79 +2298,44 @@ pub fn sample_mod_q(
     domain: &[u8],
     min: u128,
     max: u128,
-) -> Result<RuntimePrime, ProtocolError> {
+) -> Result<field::FpCtx<2>, ProtocolError> {
     absorb_spartan_message(transcript, b"prime-domain", domain);
     absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
     absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
-    let q = sample_prime_in_interval(transcript, min, max)?;
+    let field = crate::ext_proj::sample_prime_context(transcript, min, max, 128)?;
+    let q = u128::from(*field.modulus());
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
-    runtime_field(q)
+    if field.modulus_bits() < super::SPARTAN_MIN_MODULUS_BITS as usize {
+        return Err(ProtocolError::UnsupportedFieldModulus);
+    }
+    Ok(field)
 }
 
-/// Samples a full-width prime from `[2^127, 2^128)` under `domain`.
-///
-/// The interval exceeds the general sampler's `2^126` operating cap, so
-/// this sampler draws exactly uniform odd candidates (the `2^126` odd
-/// residues divide the `u128` draw space evenly, so masking a uniform draw
-/// is exact) and tests them with the same deterministic BPSW-style check
-/// that guards every runtime Spartan field configuration. Rejected draws
-/// advance the transcript for prover and verifier identically.
+/// Samples a full-width prime under the same bounded policy as smaller
+/// intervals. Prover and verifier replay the identical advancing stream.
 pub fn sample_full_width_prime(
     transcript: &mut impl Transcript,
     domain: &[u8],
     min: u128,
     max: u128,
-) -> Result<RuntimePrime, ProtocolError> {
-    const ATTEMPTS: usize = 64 * 128;
+) -> Result<field::FpCtx<2>, ProtocolError> {
     absorb_spartan_message(transcript, b"prime-domain", domain);
-    absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
-    absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
-    let mut q = None;
-    for _ in 0..ATTEMPTS {
-        let draw: BinaryFieldGF128 = transcript.get_field_challenge(&());
-        let words = draw.words();
-        let draw = (u128::from(words[0]) | (u128::from(words[1]) << 64)) & ((1u128 << 126) - 1);
-        let candidate = (1u128 << 127) | (draw << 1) | 1;
-        if is_prime(Flavor::Any, &crypto_bigint::U128::from(candidate)) {
-            q = Some(candidate);
-            break;
-        }
-    }
-    let q = q.ok_or(ProtocolError::FingerprintSearchExhausted { attempts: ATTEMPTS })?;
+    let field = crate::ext_proj::sample_prime_context(transcript, min, max, 128)?;
+    let q = u128::from(*field.modulus());
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
-    if q < min || q > max {
+    if field.modulus_bits() < super::SPARTAN_MIN_MODULUS_BITS as usize {
         return Err(ProtocolError::UnsupportedFieldModulus);
     }
-    runtime_field(q)
+    Ok(field)
 }
 
-impl RuntimePrime {
-    /// The arithmetic of an already-validated field configuration.
-    pub fn from_config(q: u128, config: FieldConfig) -> Self {
-        let q_bits = (u128::BITS - q.leading_zeros()) as usize;
-        let arith = Arith::new(q, &config);
-        Self {
-            q,
-            q_bits,
-            config,
-            arith,
-        }
-    }
-}
-
-/// The runtime field configuration and canonical arithmetic of `q`.
-pub fn runtime_field(q: u128) -> Result<RuntimePrime, ProtocolError> {
-    let config = SpartanF2zField::make_cfg(&Uint::from(q))
+/// Validates a public protocol modulus and prepares its shared arithmetic once.
+pub fn runtime_field(q: u128) -> Result<field::FpCtx<2>, ProtocolError> {
+    let config = SpartanBitzField::make_cfg(&Uint::from(q))
         .map_err(|_| ProtocolError::UnsupportedFieldModulus)?;
-    SpartanF2zField::validate_config(&config).map_err(|_| ProtocolError::UnsupportedFieldModulus)?;
-    let q_bits = (u128::BITS - q.leading_zeros()) as usize;
-    let arith = Arith::new(q, &config);
-    Ok(RuntimePrime {
-        q,
-        q_bits,
-        config,
-        arith,
-    })
+    SpartanBitzField::validate_config(&config)
+        .map_err(|_| ProtocolError::UnsupportedFieldModulus)?;
+    Ok(config)
 }
 
 /// The committed bit rows must have exactly the layout's shape.
@@ -2167,7 +2364,7 @@ pub fn validate_config_pair(
 ) -> Result<(), ProtocolError> {
     let m_p = packed_variables(p)?;
     let Some(&log_inv_rate) = pc.log_inv_rates.first() else {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     };
     if log_inv_rate == 0
         || pc.initial_k >= m_p
@@ -2184,7 +2381,7 @@ pub fn validate_config_pair(
         || pc.ood_samples != vc.ood_samples
         || pc.merkle_hash != vc.merkle_hash
     {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     Ok(())
 }
@@ -2197,7 +2394,7 @@ pub fn validate_commitment(
 ) -> Result<(), ProtocolError> {
     let m_p = packed_variables(p)?;
     let Some(&log_inv_rate) = pc.log_inv_rates.first() else {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     };
     let params = &commitment.params;
     if params.m != m_p + LOG_PACKING
@@ -2215,36 +2412,36 @@ pub fn validate_commitment(
 /// the shared packing rule.
 pub fn packed_variables(p: &IntegerMatrixLayout) -> Result<usize, ProtocolError> {
     if !p.word_bits.is_power_of_two() || p.word_bits > u128::BITS as usize {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     let row_bit_vars = p
         .row_vars
         .checked_add(p.word_bits.trailing_zeros() as usize)
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     let expected = row_bit_vars
         .checked_sub(LOG_PACKING)
         .and_then(|folded| folded.checked_add(p.col_vars))
-        .ok_or(ProtocolError::InvalidF2zParameters)?;
+        .ok_or(ProtocolError::InvalidBitzParameters)?;
     if packed_vars(p) != expected {
-        return Err(ProtocolError::InvalidF2zParameters);
+        return Err(ProtocolError::InvalidBitzParameters);
     }
     Ok(expected)
 }
 
 pub fn checked_pow2(exponent: usize) -> Result<usize, ProtocolError> {
-    let exponent = u32::try_from(exponent).map_err(|_| ProtocolError::InvalidF2zParameters)?;
+    let exponent = u32::try_from(exponent).map_err(|_| ProtocolError::InvalidBitzParameters)?;
     1_usize
         .checked_shl(exponent)
-        .ok_or(ProtocolError::InvalidF2zParameters)
+        .ok_or(ProtocolError::InvalidBitzParameters)
 }
 
 /// The GF(2^128) generator every opening runs against.
-pub fn f2z_generator() -> BinaryFieldGF128 {
-    static GENERATOR: OnceLock<BinaryFieldGF128> = OnceLock::new();
+pub fn bitz_generator() -> Gf128 {
+    static GENERATOR: OnceLock<Gf128> = OnceLock::new();
     *GENERATOR.get_or_init(crate::pcs::smallest_generator)
 }
 
-/// The PCS-only terminal-opening benchmark path: the F2Z opening of an
+/// The PCS-only terminal-opening benchmark path: the BitZ opening of an
 /// externally supplied terminal claim at the fixed comparison field, with
 /// relation projection, profile derivation and statement binding excluded
 /// from every timer.
@@ -2303,11 +2500,10 @@ pub mod terminal {
 
         fn statement_binding(&self, commitment: &Commitment) -> Result<[u8; 32], ProtocolError> {
             match self.binding {
-                Binding::Paper => self.spec.assignment_binding(
-                    commitment,
-                    &self.security,
-                    self.ligerito.prover(),
-                ),
+                Binding::Paper => {
+                    self.spec
+                        .assignment_binding(commitment, &self.security, self.ligerito.prover())
+                }
                 Binding::Custom(binding) => binding(&self.spec, commitment),
             }
         }
@@ -2323,8 +2519,8 @@ pub mod terminal {
         fn bind_claim(
             &self,
             transcript: &mut impl Transcript,
-            terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
-        ) -> Result<(BitifiedClaim, [u8; 32], BlockTable, RuntimePrime), ProtocolError> {
+            terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
+        ) -> Result<(BitifiedClaim, [u8; 32], BlockTable, field::FpCtx<2>), ProtocolError> {
             let prime = runtime_field(FQ_MOD)?;
             let table = self.spec.block_table();
             let opening = bitify::bitify(
@@ -2333,7 +2529,7 @@ pub mod terminal {
                 self.spec.gate_vars(),
                 &table,
                 self.spec.schedule().scale_side,
-                &prime.arith,
+                &prime,
             )?;
             let bridge_digest = bitify::bridge_digest(
                 self.spec.domains().bitified_claim,
@@ -2344,13 +2540,18 @@ pub mod terminal {
                 |hasher| self.spec.hash_bridge_constants(hasher),
                 terminal_claim,
                 &opening,
+                &prime,
             )?;
             match self.payload {
                 StatementPayload::BridgeDigest => {
                     absorb_spartan_message(transcript, self.statement_tag, &bridge_digest);
                 }
                 StatementPayload::AssignmentBinding { relation_tag } => {
-                    absorb_spartan_message(transcript, self.statement_tag, &self.assignment_binding);
+                    absorb_spartan_message(
+                        transcript,
+                        self.statement_tag,
+                        &self.assignment_binding,
+                    );
                     absorb_spartan_message(transcript, relation_tag, &self.relation_digest);
                 }
             }
@@ -2371,7 +2572,7 @@ pub mod terminal {
         let matrices = prepared
             .prefix
             .matrices
-            .project(prepared.layout(), &prime.config)?;
+            .project(prepared.layout(), &prime)?;
         let params = prepared.params();
         let ligerito = prepared.ligerito_configuration().clone();
         validate_commitment(&params, commitment, ligerito.prover())?;
@@ -2409,13 +2610,14 @@ pub mod terminal {
         transcript: &mut T,
         prepared: &PreparedTerminalOpening<S>,
         hint: &FlockCommitHint,
-        terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+        terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
     ) -> Result<IntEvalRsLigModQProof, ProtocolError> {
         prepared.validate_commitment(&hint.commitment)?;
         validate_bit_rows(&prepared.params, hint.rows())?;
-        let (opening, bridge_digest, table, prime) = prepared.bind_claim(transcript, terminal_claim)?;
+        let (opening, bridge_digest, table, prime) =
+            prepared.bind_claim(transcript, terminal_claim)?;
         let ood = bind_prover_ood(transcript, hint, prepared.security.ood);
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime.arith)?;
+        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime)?;
         if chunks.len() != 1 {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
         }
@@ -2427,12 +2629,12 @@ pub mod terminal {
             &chunks,
             &bridge_digest,
             FQ_BITS,
-            f2z_generator(),
+            bitz_generator(),
             prepared.spec.opener_grinding_bits(&prepared.security),
             ood,
             prepared.ligerito.prover(),
         )
-        .map_err(ProtocolError::F2z)
+        .map_err(ProtocolError::Bitz)
     }
 
     /// Verifies the PCS-only terminal opening from public data alone.
@@ -2440,24 +2642,25 @@ pub mod terminal {
         transcript: &mut T,
         prepared: &PreparedTerminalOpening<S>,
         commitment: &Commitment,
-        terminal_claim: &ScaledMleEvaluationClaim<SpartanF2zField>,
+        terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
         proof: &IntEvalRsLigModQProof,
     ) -> Result<(), ProtocolError> {
         prepared.validate_commitment(commitment)?;
-        let (opening, bridge_digest, table, prime) = prepared.bind_claim(transcript, terminal_claim)?;
+        let (opening, bridge_digest, table, prime) =
+            prepared.bind_claim(transcript, terminal_claim)?;
         let ood = bind_verifier_ood(
             transcript,
             packed_variables(&prepared.params)?,
             prepared.security.ood,
             proof.ood.as_ref(),
         )
-        .map_err(ProtocolError::F2z)?;
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime.arith)?;
+        .map_err(ProtocolError::Bitz)?;
+        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime)?;
         if chunks.len() != 1 {
             return Err(ProtocolError::MultiChunkRuntimeWeights);
         }
-        let col_weights = bitify::column_weights(&opening, &prime.arith)?;
-        crate::ligerito_flock::verify_mle_eval_mod_q_ligerito_with_weight_chunks(
+        let col_weights = bitify::column_weights(&opening, &prime)?;
+        verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
             transcript,
             prepared.spec.domains().opening,
             commitment,
@@ -2466,13 +2669,20 @@ pub mod terminal {
             &chunks,
             &col_weights,
             &bridge_digest,
-            f2z_generator(),
+            bitz_generator(),
             opening.claimed,
+            FQ_MOD,
             FQ_BITS,
             prepared.spec.opener_grinding_bits(&prepared.security),
             ood,
             prepared.ligerito.verifier(),
         )
-        .map_err(ProtocolError::F2z)
+        .map_err(ProtocolError::Bitz)
+    }
+}
+
+impl From<super::sumcheck::SumcheckError> for ProtocolError {
+    fn from(value: super::sumcheck::SumcheckError) -> Self {
+        Self::Spartan(value.into())
     }
 }

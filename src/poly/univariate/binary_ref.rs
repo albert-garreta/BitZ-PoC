@@ -1,19 +1,7 @@
+use crate::poly::coefficient::{Coefficient, PolynomialField};
 use crate::poly::{
     ConstCoeffBitWidth, EvaluatablePolynomial, EvaluationError, Polynomial,
     univariate::{F2AddAssign, dense::DensePolynomial, prepare_projection},
-};
-use crypto_primitives::{PrimeField, Semiring, semiring::boolean::Boolean};
-use derive_more::{
-    Add, AddAssign, AsRef, Display, From, Mul, MulAssign, Product, Sub, SubAssign, Sum,
-};
-use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
-use rand::{distr::StandardUniform, prelude::*};
-use std::{
-    array,
-    hash::Hash,
-    iter::{Product, Sum},
-    marker::PhantomData,
-    ops::{Add, AddAssign, Deref, DerefMut, Mul, MulAssign, Sub, SubAssign},
 };
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable};
 use crate::utils::{
@@ -22,6 +10,19 @@ use crate::utils::{
     mul_by_scalar::MulByScalar,
     named::Named,
     projectable_to_field::ProjectableToField,
+};
+use derive_more::{
+    Add, AddAssign, AsRef, Display, From, Mul, MulAssign, Product, Sub, SubAssign, Sum,
+};
+use field::Bit;
+use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
+use rand::{distr::StandardUniform, prelude::*};
+use std::{
+    array,
+    hash::Hash,
+    iter::{Product, Sum},
+    marker::PhantomData,
+    ops::{Add, AddAssign, Deref, DerefMut, Mul, MulAssign, Sub, SubAssign},
 };
 
 #[derive(
@@ -45,17 +46,17 @@ use crate::utils::{
     Product,
 )]
 #[repr(transparent)]
-pub struct BinaryRefPoly<const DEGREE_PLUS_ONE: usize>(DensePolynomial<Boolean, DEGREE_PLUS_ONE>);
+pub struct BinaryRefPoly<const DEGREE_PLUS_ONE: usize>(DensePolynomial<Bit, DEGREE_PLUS_ONE>);
 
 impl<const DEGREE_PLUS_ONE: usize> BinaryRefPoly<DEGREE_PLUS_ONE> {
     #[inline(always)]
-    pub const fn inner(&self) -> &DensePolynomial<Boolean, DEGREE_PLUS_ONE> {
+    pub const fn inner(&self) -> &DensePolynomial<Bit, DEGREE_PLUS_ONE> {
         &self.0
     }
 }
 
 impl<const DEGREE_PLUS_ONE: usize> From<BinaryRefPoly<DEGREE_PLUS_ONE>>
-    for DensePolynomial<Boolean, DEGREE_PLUS_ONE>
+    for DensePolynomial<Bit, DEGREE_PLUS_ONE>
 {
     #[inline(always)]
     fn from(binary_poly: BinaryRefPoly<DEGREE_PLUS_ONE>) -> Self {
@@ -66,7 +67,7 @@ impl<const DEGREE_PLUS_ONE: usize> From<BinaryRefPoly<DEGREE_PLUS_ONE>>
 impl From<u32> for BinaryRefPoly<32> {
     fn from(value: u32) -> Self {
         Self(DensePolynomial {
-            coeffs: array::from_fn(|i| Boolean::new(value & (1 << i) != 0)),
+            coeffs: array::from_fn(|i| Bit::from_bool(value & (1 << i) != 0)),
         })
     }
 }
@@ -74,7 +75,7 @@ impl From<u32> for BinaryRefPoly<32> {
 impl From<u64> for BinaryRefPoly<64> {
     fn from(value: u64) -> Self {
         Self(DensePolynomial {
-            coeffs: array::from_fn(|i| Boolean::new(value & (1 << i) != 0)),
+            coeffs: array::from_fn(|i| Bit::from_bool(value & (1 << i) != 0)),
         })
     }
 }
@@ -85,7 +86,7 @@ impl<const DEGREE_PLUS_ONE: usize> BinaryRefPoly<DEGREE_PLUS_ONE> {
     /// be filled with zeros. If the input has more than N+1 coefficients,
     /// it will panic.
     #[inline(always)]
-    pub fn new(coeffs: impl AsRef<[Boolean]>) -> Self {
+    pub fn new(coeffs: impl AsRef<[Bit]>) -> Self {
         Self(DensePolynomial::new(coeffs))
     }
 
@@ -94,8 +95,8 @@ impl<const DEGREE_PLUS_ONE: usize> BinaryRefPoly<DEGREE_PLUS_ONE> {
     /// be filled with zeros. If the input has more than N+1 coefficients,
     /// it will panic.
     #[inline(always)]
-    pub fn new_padded(coeffs: impl AsRef<[Boolean]>) -> Self {
-        Self(DensePolynomial::new_with_zero(coeffs, Boolean::ZERO))
+    pub fn new_padded(coeffs: impl AsRef<[Bit]>) -> Self {
+        Self(DensePolynomial::new_with_zero(coeffs, Bit::ZERO))
     }
 }
 
@@ -166,12 +167,12 @@ impl<'a, const DEGREE_PLUS_ONE: usize> AddAssign<&'a Self> for BinaryRefPoly<DEG
 }
 
 impl<const DEGREE_PLUS_ONE: usize> F2AddAssign for BinaryRefPoly<DEGREE_PLUS_ONE> {
-    /// XOR each coefficient — bypasses `Boolean::AddAssign`'s overflow
+    /// XOR each coefficient — bypasses `Bit::AddAssign`'s overflow
     /// check so that `1 + 1 = 0` rather than panicking.
     #[inline(always)]
     fn f2_add_assign(&mut self, rhs: &Self) {
         for (a, b) in self.0.coeffs.iter_mut().zip(rhs.0.coeffs.iter()) {
-            *a = Boolean::new(a.inner() ^ b.inner());
+            *a = Bit::from_bool((bool::from(*a)) ^ (bool::from(*b)));
         }
     }
 }
@@ -187,7 +188,7 @@ impl<const DEGREE_PLUS_ONE: usize> crate::poly::univariate::F2PackU64
         );
         let mut v: u64 = 0;
         for (i, c) in self.0.coeffs.iter().enumerate() {
-            if c.inner() {
+            if bool::from(*c) {
                 #[allow(clippy::arithmetic_side_effects)]
                 {
                     v |= 1u64 << i;
@@ -204,7 +205,7 @@ impl<const DEGREE_PLUS_ONE: usize> crate::poly::univariate::F2PackU64
             "F2PackU64 requires DEGREE_PLUS_ONE <= 64; got {DEGREE_PLUS_ONE}",
         );
         Self(DensePolynomial {
-            coeffs: array::from_fn(|i| Boolean::new((value & (1u64 << i)) != 0)),
+            coeffs: array::from_fn(|i| Bit::from_bool((value & (1u64 << i)) != 0)),
         })
     }
 }
@@ -265,14 +266,14 @@ impl<'a, const DEGREE_PLUS_ONE: usize> Product<&'a Self> for BinaryRefPoly<DEGRE
     }
 }
 
-impl<const DEGREE_PLUS_ONE: usize> Semiring for BinaryRefPoly<DEGREE_PLUS_ONE> {}
+impl<const DEGREE_PLUS_ONE: usize> Coefficient for BinaryRefPoly<DEGREE_PLUS_ONE> {}
 
 impl<const DEGREE_PLUS_ONE: usize> Distribution<BinaryRefPoly<DEGREE_PLUS_ONE>>
     for StandardUniform
 {
     #[inline(always)]
     fn sample<Gen: Rng + ?Sized>(&self, rng: &mut Gen) -> BinaryRefPoly<DEGREE_PLUS_ONE> {
-        let coeffs: [Boolean; DEGREE_PLUS_ONE] = rng.random();
+        let coeffs: [Bit; DEGREE_PLUS_ONE] = array::from_fn(|_| Bit::from_bool(rng.random()));
 
         // I didn't manage to delegate this one to
         // `DensePolynomial::sample` because of unsatisfied
@@ -285,12 +286,12 @@ impl<const DEGREE_PLUS_ONE: usize> Distribution<BinaryRefPoly<DEGREE_PLUS_ONE>>
 //
 // Zip-specific traits
 //
-impl<const DEGREE_PLUS_ONE: usize> Polynomial<Boolean> for BinaryRefPoly<DEGREE_PLUS_ONE> {
-    const DEGREE_BOUND: usize = DensePolynomial::<Boolean, DEGREE_PLUS_ONE>::DEGREE_BOUND;
+impl<const DEGREE_PLUS_ONE: usize> Polynomial<Bit> for BinaryRefPoly<DEGREE_PLUS_ONE> {
+    const DEGREE_BOUND: usize = DensePolynomial::<Bit, DEGREE_PLUS_ONE>::DEGREE_BOUND;
 }
 
 impl<R: Clone + Zero + One + CheckedAdd + CheckedMul, const DEGREE_PLUS_ONE: usize>
-    EvaluatablePolynomial<Boolean, R> for BinaryRefPoly<DEGREE_PLUS_ONE>
+    EvaluatablePolynomial<Bit, R> for BinaryRefPoly<DEGREE_PLUS_ONE>
 {
     type EvaluationPoint = R;
 
@@ -302,11 +303,18 @@ impl<R: Clone + Zero + One + CheckedAdd + CheckedMul, const DEGREE_PLUS_ONE: usi
         let result = self.0.coeffs[1..]
             .iter()
             .try_fold(
-                (self.0.coeffs[0].widen::<R>(), R::one()),
+                (
+                    if bool::from(self.0.coeffs[0]) {
+                        R::one()
+                    } else {
+                        R::zero()
+                    },
+                    R::one(),
+                ),
                 |(mut acc, mut pow), coeff| {
                     pow = pow.checked_mul(point).ok_or(EvaluationError::Overflow)?;
 
-                    if coeff.inner() {
+                    if bool::from(*coeff) {
                         acc = acc.checked_add(&pow).ok_or(EvaluationError::Overflow)?;
                     }
 
@@ -320,7 +328,7 @@ impl<R: Clone + Zero + One + CheckedAdd + CheckedMul, const DEGREE_PLUS_ONE: usi
 }
 
 impl<const DEGREE_PLUS_ONE: usize> ConstCoeffBitWidth for BinaryRefPoly<DEGREE_PLUS_ONE> {
-    const COEFF_BIT_WIDTH: usize = DensePolynomial::<Boolean, DEGREE_PLUS_ONE>::COEFF_BIT_WIDTH;
+    const COEFF_BIT_WIDTH: usize = DensePolynomial::<Bit, DEGREE_PLUS_ONE>::COEFF_BIT_WIDTH;
 }
 
 impl<const DEGREE_PLUS_ONE: usize> Named for BinaryRefPoly<DEGREE_PLUS_ONE> {
@@ -334,7 +342,7 @@ impl<const DEGREE_PLUS_ONE: usize> GenTranscribable for BinaryRefPoly<DEGREE_PLU
     fn read_transcription_bytes_exact(bytes: &[u8]) -> Self {
         let value = u64::read_transcription_bytes_exact(bytes);
         Self(DensePolynomial {
-            coeffs: array::from_fn(|i| Boolean::new(value & (1 << i) != 0)),
+            coeffs: array::from_fn(|i| Bit::from_bool(value & (1 << i) != 0)),
         })
     }
 
@@ -343,7 +351,7 @@ impl<const DEGREE_PLUS_ONE: usize> GenTranscribable for BinaryRefPoly<DEGREE_PLU
         let mut value: u64 = 0;
 
         self.0.coeffs.iter().enumerate().for_each(|(i, coeff)| {
-            if coeff.inner() {
+            if bool::from(*coeff) {
                 value |= 1 << i;
             }
         });
@@ -376,18 +384,18 @@ impl<const DEGREE_PLUS_ONE: usize> From<&BinaryRefPoly<DEGREE_PLUS_ONE>>
 
 impl<const DEGREE_PLUS_ONE: usize> BinaryRefPoly<DEGREE_PLUS_ONE> {
     #[inline(always)]
-    pub fn iter(&self) -> std::slice::Iter<'_, Boolean> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Bit> {
         self.0.iter()
     }
 
     #[inline(always)]
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Boolean> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Bit> {
         self.0.iter_mut()
     }
 }
 
 impl<const DEGREE_PLUS_ONE: usize> Deref for BinaryRefPoly<DEGREE_PLUS_ONE> {
-    type Target = [Boolean];
+    type Target = [Bit];
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -409,7 +417,7 @@ impl<Rhs, Out, const DEGREE_PLUS_ONE: usize> InnerProduct<BinaryRefPoly<DEGREE_P
     for BinaryRefPolyInnerProduct<Rhs, DEGREE_PLUS_ONE>
 where
     Rhs: Clone,
-    Out: FromRef<Rhs> + CheckedAdd,
+    Out: FromRef<Rhs> + CheckedAdd + field::CtSelect + Clone,
 {
     #[inline(always)]
     fn inner_product<const CHECK: bool>(
@@ -423,11 +431,11 @@ where
 
 impl<F, const DEGREE_PLUS_ONE: usize> ProjectableToField<F> for BinaryRefPoly<DEGREE_PLUS_ONE>
 where
-    F: PrimeField + FromRef<F> + 'static,
+    F: PolynomialField + FromRef<F> + 'static,
 {
     fn prepare_projection(sampled_value: &F) -> impl Fn(&Self) -> F + 'static {
         prepare_projection::<F, Self, _, DEGREE_PLUS_ONE>(sampled_value, |poly, i| {
-            poly.0.coeffs[i].inner()
+            bool::from(poly.0.coeffs[i])
         })
     }
 }
@@ -444,7 +452,7 @@ impl<const DEGREE_PLUS_ONE: usize> MulByScalar<&i64, DensePolynomial<i64, DEGREE
         let mut coeffs: [i64; DEGREE_PLUS_ONE] = [0_i64; DEGREE_PLUS_ONE];
 
         coeffs.iter_mut().enumerate().for_each(|(i, out)| {
-            if self.0.coeffs[i].inner() {
+            if bool::from(self.0.coeffs[i]) {
                 *out = *rhs;
             }
         });

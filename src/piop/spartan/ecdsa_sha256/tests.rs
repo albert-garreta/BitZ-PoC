@@ -1,5 +1,8 @@
 use super::*;
-use crate::f2map::VirtualMap;
+use crate::piop::spartan::SpartanField as _;
+use crate::piop::spartan::raw_monty::RawFieldStorage;
+use circuit::linear_map::binary::VirtualMap;
+use field::Uint;
 use num_bigint::{BigInt, BigUint};
 use sha2::{Digest, Sha256};
 
@@ -47,8 +50,8 @@ pub(super) fn fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
 
 #[test]
 fn compact_map_matches_generated_witness_and_exact_constraints() {
-    // 2^3 packs the assignment bit by bit, 2^6 through the 64×64 transposes.
-    for exponent in [3, 6] {
+    // Cover bit packing, tiles within columns, and tiles spanning columns.
+    for exponent in [3, 6, 10] {
         map_matches_witness(exponent);
     }
 }
@@ -76,20 +79,15 @@ fn map_matches_witness(exponent: u8) {
             "virtual bit {i}"
         );
     }
-    let integer = |v: &circuit::matrix_products::StoredInteger| {
-        BigInt::from_signed_bytes_le(
-            &v.words()
-                .iter()
-                .flat_map(|w| w.to_le_bytes())
-                .collect::<Vec<_>>(),
-        )
+    let integer = |v: &[u64]| {
+        BigInt::from_signed_bytes_le(&v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>())
     };
     for (i, ((a, b), c)) in witness
         .products
         .a_mw
         .iter()
-        .zip(&witness.products.b_mw)
-        .zip(&witness.products.c_mw)
+        .zip(witness.products.b_mw.iter())
+        .zip(witness.products.c_mw.iter())
         .enumerate()
     {
         assert_eq!(integer(a) * integer(b), integer(c), "P-256 row {i}");
@@ -106,23 +104,46 @@ fn map_matches_witness(exponent: u8) {
 }
 
 #[test]
-fn outer_raw_products_match_field_products() {
-    use crate::piop::spartan::{f2z::SpartanF2zField as F, raw_monty::RawMontyCtx};
-    use crypto_primitives::{PrimeField, crypto_bigint_uint::Uint};
+fn outer_integer_rows_match_independent_field_products() {
+    use crate::piop::spartan::bitz::SpartanBitzField as F;
+
     // Any prime above 2^64 exercises the native reduction; the sampled
     // 113-bit primes are covered by the pinned transcript.
     let modulus: u128 = (1u128 << 127) - 1;
     let cfg = F::make_cfg(&Uint::from(modulus)).unwrap();
-    let ctx = RawMontyCtx::new(&cfg);
+    use crate::sumcheck::outer::OuterRows;
+    use field::IntegerEmbedding;
     let (statement, message) = fixture();
     for mode in [OuterMode::Split, OuterMode::AllRows] {
         let prepared = prepare_sha256_ecdsa(3, 100, mode).unwrap();
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
         let field = witness.build_outer_product_mles(&prepared, modulus, &cfg);
-        let raw = witness.build_outer_raw_products(&prepared, &ctx);
-        assert_eq!(raw.az, ctx.raw_vec(&field.az.evaluations), "{mode:?} A");
-        assert_eq!(raw.bz, ctx.raw_vec(&field.bz.evaluations), "{mode:?} B");
-        assert_eq!(raw.cz, ctx.raw_vec(&field.cz.evaluations), "{mode:?} C");
+        let rows = witness.outer_integer_rows(&prepared);
+        assert_eq!(
+            rows.dimensions(),
+            (
+                field.az.evaluations.len(),
+                field.bz.evaluations.len(),
+                field.cz.evaluations.len()
+            )
+        );
+        for i in 0..field.az.evaluations.len() {
+            assert_eq!(
+                cfg.from_integer(&rows.a(i)),
+                field.az.evaluations[i],
+                "{mode:?} A row {i}"
+            );
+            assert_eq!(
+                cfg.from_integer(&rows.b(i)),
+                field.bz.evaluations[i],
+                "{mode:?} B row {i}"
+            );
+            assert_eq!(
+                cfg.from_integer(&rows.c(i)),
+                field.cz.evaluations[i],
+                "{mode:?} C row {i}"
+            );
+        }
     }
 }
 
@@ -370,7 +391,7 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
     // Both traces separately satisfy their rows. Only the virtual-map digest
     // alias connects the changed SHA trace to the original P-256 trace.
     copy_prefix(
-        &mut witness.f_rows,
+        std::sync::Arc::make_mut(&mut witness.f_rows).as_mut_slice(),
         &different.f_rows,
         &prepared.f_layout,
         prepared.map.f_offset,

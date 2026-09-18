@@ -21,34 +21,41 @@
 //! measured repetitions after one warm-up. Override with, for example:
 //!
 //! ```text
-//! F2Z_BENCH_SHAPES="10 12" F2Z_BENCH_REPS=1 \
+//! BITZ_BENCH_SHAPES="10 12" BITZ_BENCH_REPS=1 \
 //!   cargo bench --bench sha256_chain --features unchecked
 //! ```
 //!
-//! `F2Z_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
+//! `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile (default `Lambda100`; the two-prime `Limber114` profile is
 //! MultiSwap-only and is rejected here). Blocks are pseudo-random from
-//! `F2Z_BENCH_SEED`; a real message is the same bench with its parsed,
+//! `BITZ_BENCH_SEED`; a real message is the same bench with its parsed,
 //! padded blocks.
 
 mod common;
+#[cfg(feature = "bench-peak-memory")]
+#[global_allocator]
+static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::PeakAlloc;
 
-use std::{hint::black_box};
+use std::hint::black_box;
 
-use f2z::{
-    f2map::VirtualMap,
-    piop::spartan::{
-        IopSecurityProfile, PreparedSha256ChainBatch, PrimePolicy, SHA256_CHAIN_F_INSTANCE_BITS,
-        SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CONSTRAINTS, SHA256_MAX_LOG_COMPRESSIONS,
-        Sha256ConstraintError, commit_sha256_chain_witness_with_config,
-        generate_sha256_chain_witnesses, prepare_sha256_chain_batch_with_profile,
-        prove_sha256_chain_with_config, sha256_chain_configs, verify_sha256_chain_with_config,
+use {
+    circuit::linear_map::binary::VirtualMap,
+    bitz::{
+        piop::spartan::{
+            IopSecurityProfile, PreparedSha256ChainBatch, PrimePolicy,
+            SHA256_CHAIN_F_INSTANCE_BITS, SHA256_CHAIN_H_BAR_LIVE_BITS, SHA256_CONSTRAINTS,
+            SHA256_MAX_LOG_COMPRESSIONS, Sha256ConstraintError,
+            commit_sha256_chain_witness_with_config, generate_sha256_chain_witnesses,
+            prepare_sha256_chain_batch_with_profile, prove_sha256_chain_with_config,
+            sha256_chain_configs, verify_sha256_chain_with_config,
+        },
+        transcript::Blake3Transcript,
     },
-    transcript::Blake3Transcript,
 };
 
 /// One rep's raw measurements; step extraction happens in `common`.
 struct RepTiming {
+    e2e_ms: f64,
     witness_ms: f64,
     commit_ms: f64,
     prove_ms: f64,
@@ -56,8 +63,26 @@ struct RepTiming {
     prove_phases: Vec<(String, f64)>,
     verify_phases: Vec<(String, f64)>,
     piop_bytes: usize,
-    f2z_bytes: usize,
+    bitz_bytes: usize,
     forests: usize,
+}
+
+impl RepTiming {
+    fn emit_trial(&self, trial: &str) {
+        if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
+            let gkr = self
+                .prove_phases
+                .iter()
+                .find(|(n, _)| n == "mc:forest")
+                .map_or(0.0, |(_, v)| 1000.0 * v);
+            println!(
+                "PROVER_TRIAL {}",
+                serde_json::json!({"trial":trial,"verified":true,
+                "e2e_ms":self.e2e_ms,"prove_ms":self.prove_ms,"witness_ms":self.witness_ms,
+                "verify_ms":self.verify_ms,"gkr_ms":gkr,"proof_bytes":self.piop_bytes+self.bitz_bytes})
+            );
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -85,8 +110,12 @@ fn make_blocks(compressions: usize, seed: u64) -> Vec<[u32; 16]> {
 }
 
 fn shapes() -> Vec<usize> {
-    common::shape_values(None, clap::builder::RangedU64ValueParser::<usize>::new().range(7..=SHA256_MAX_LOG_COMPRESSIONS as u64))
-        .unwrap_or_else(|| (7..=16).collect())
+    common::shape_values(
+        None,
+        clap::builder::RangedU64ValueParser::<usize>::new()
+            .range(7..=SHA256_MAX_LOG_COMPRESSIONS as u64),
+    )
+    .unwrap_or_else(|| (7..=16).collect())
 }
 
 fn fmt_ms(milliseconds: f64) -> String {
@@ -105,8 +134,10 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> RepTiming {
-    let recording = f2z::observability::Recording::start(Vec::new()).expect("start SHA chain trial");
+    let recording =
+        bitz::observability::Recording::start(Vec::new()).expect("start SHA chain trial");
 
+    let e2e = tracing::info_span!("chain:witness_to_proof").entered();
     // Witness synthesis (the native chain, the per-compression circuit
     // replay, and packing) is excluded from the prover boundary
     // (docs/bench-schema.md).
@@ -135,7 +166,8 @@ fn run_once(
     )
     .expect("SHA chain proof succeeds");
     drop(proving);
-    let forests = proof.f2z().mfs.len();
+    drop(e2e);
+    let forests = proof.bitz().mfs.len();
     assert_eq!(
         forests, 1,
         "every chain proof uses exactly one merged forest"
@@ -153,16 +185,18 @@ fn run_once(
     )
     .expect("SHA chain proof verifies");
     drop(verification);
+    common::proof_fingerprint::linear(&proof, &hint.commitment.root, &prover_transcript);
     let intervals = recording.intervals().expect("query SHA chain trial");
     let witness_ms = common::span_ms(&intervals, "chain:witness");
     let commit_ms = common::span_ms(&intervals, "chain:commit");
     let prove_ms = common::span_ms(&intervals, "chain:proving");
     let verify_ms = common::span_ms(&intervals, "chain:verification");
-    let prove_phases = f2z::observability::phase_totals(&intervals, "chain:proving").unwrap();
-    let verify_phases = f2z::observability::phase_totals(&intervals, "chain:verification").unwrap();
+    let prove_phases = bitz::observability::phase_totals(&intervals, "chain:proving").unwrap();
+    let verify_phases = bitz::observability::phase_totals(&intervals, "chain:verification").unwrap();
     black_box(&proof);
 
     RepTiming {
+        e2e_ms: common::span_ms(&intervals, "chain:witness_to_proof"),
         witness_ms,
         commit_ms,
         prove_ms,
@@ -170,7 +204,7 @@ fn run_once(
         prove_phases,
         verify_phases,
         piop_bytes: proof.piop_bytes(),
-        f2z_bytes: proof.f2z().to_bytes().len(),
+        bitz_bytes: proof.bitz().to_bytes().len(),
         forests,
     }
 }
@@ -185,10 +219,12 @@ fn bench_shape<P: IopSecurityProfile>(
         root_seed ^ (exponent as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x6368_6169_6e5f_7368; // "chain_sh"
     let slug = format!("chain-2p{exponent}");
 
-    let setup_started_recording = f2z::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let setup_started_recording =
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_chain:setup_started").entered();
     let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent)
-        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS))) {
+        .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
+    {
         Ok(prepared) => prepared,
         Err(
             error @ (Sha256ConstraintError::Profile(_) | Sha256ConstraintError::PrimeProfile(_)),
@@ -199,9 +235,28 @@ fn bench_shape<P: IopSecurityProfile>(
         }
         Err(error) => panic!("prepare failed: {error}"),
     };
-    println!("LIGERITO_CONFIG {}", common::ligerito_report(prepared.ligerito_configuration().expect("validated Ligerito"), prepared.security().ood));
+    println!(
+        "LIGERITO_CONFIG {}",
+        common::ligerito_report(
+            prepared
+                .ligerito_configuration()
+                .expect("validated Ligerito"),
+            prepared.security().ood
+        )
+    );
     let (pc, vc) = sha256_chain_configs(&prepared).expect("valid Ligerito config");
-    let setup_ms = { drop(setup_started); f2z::observability::duration(&setup_started_recording.intervals().expect("complete operation capture"), "sha256_chain:setup_started").expect("query completed operation") }.as_secs_f64() * 1e3;
+    let setup_ms = {
+        drop(setup_started);
+        bitz::observability::duration(
+            &setup_started_recording
+                .intervals()
+                .expect("complete operation capture"),
+            "sha256_chain:setup_started",
+        )
+        .expect("query completed operation")
+    }
+    .as_secs_f64()
+        * 1e3;
     let compressions = prepared.instances();
     let message_bytes = 64 * compressions;
     let live_source_cells = 1 + SHA256_CHAIN_F_INSTANCE_BITS * compressions;
@@ -236,9 +291,10 @@ fn bench_shape<P: IopSecurityProfile>(
 
     let warm = run_once(&make_blocks(compressions, shape_seed), &prepared, &pc, &vc);
     println!(
-        "  opening layout: direct product opening on the chained map | F2Z rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
+        "  opening layout: direct product opening on the chained map | BitZ rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
         opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
     );
+    warm.emit_trial("warmup");
     black_box(warm);
 
     let mut prover = common::StepSamples::default();
@@ -257,6 +313,8 @@ fn bench_shape<P: IopSecurityProfile>(
             timing.prove_ms,
             timing.verify_ms,
         );
+        common::print_regression_phases(&timing.prove_phases);
+        timing.emit_trial("sample");
         prover.record_prove(timing.prove_ms, timing.commit_ms, &timing.prove_phases);
         verifier.record_verify(timing.verify_ms, &timing.verify_phases);
         witness_samples.push(timing.witness_ms);
@@ -275,7 +333,10 @@ fn bench_shape<P: IopSecurityProfile>(
         bench: "sha256_chain",
         shape: slug,
         extra: vec![
-            common::ligerito_identity(prepared.ligerito_configuration().unwrap(), prepared.security().ood),
+            common::ligerito_identity(
+                prepared.ligerito_configuration().unwrap(),
+                prepared.security().ood,
+            ),
             ("profile".into(), prepared.security().profile_name.into()),
             ("compressions".into(), compressions.to_string()),
             ("message_bytes".into(), message_bytes.to_string()),
@@ -296,13 +357,17 @@ fn bench_shape<P: IopSecurityProfile>(
         verifier: verifier.medians(),
         proof: common::ProofBytes {
             piop: last.piop_bytes,
-            open: last.f2z_bytes,
+            open: last.bitz_bytes,
         },
     };
     report.print_human();
 }
 
 fn main() {
+    common::start_gkr_recording();
+    #[cfg(feature = "bench-peak-memory")]
+    let _heap_report = common::heap_run::Report::start();
+
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 3);
     let root_seed = common::seed(None, 0x4632_5a5f_4348_4149);
@@ -310,11 +375,11 @@ fn main() {
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
 
     let shapes = shapes();
-    f2z::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install Perfetto subscriber");
     let threads = common::init();
 
     println!(
-        "SHA-256 chain: H_{{i+1}} = Compress(H_i, M_i) from the IV; source [1|block₀,hints₀|block₁,hints₁|…], chained map + direct product opening + virtual F2Z"
+        "SHA-256 chain: H_{{i+1}} = Compress(H_i, M_i) from the IV; source [1|block₀,hints₀|block₁,hints₁|…], chained map + direct product opening + virtual BitZ"
     );
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
@@ -329,4 +394,5 @@ fn main() {
         common::with_profile!(profile, bench_shape(exponent, reps, root_seed, threads));
     }
     flock_core::scratch::clear();
+    common::print_gkr_schedules();
 }

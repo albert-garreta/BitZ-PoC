@@ -4,7 +4,7 @@
 //! the circuit behind Table 1 of "Limber: Low Overhead SNARKs for Integers
 //! from Any PCS" (ePrint 2026/1635).  The constants, row/column allocation
 //! order, witness advice, and per-row modulus schedule are reproduced
-//! exactly so an F2Z proof of this relation is a proof of the same 6209-row
+//! exactly so an BitZ proof of this relation is a proof of the same 6209-row
 //! statement Limber benchmarks (`k = 0`, the only configuration Limber's
 //! authors mark quotable).
 //!
@@ -32,16 +32,106 @@
 //! mod-`l` reduction row.
 
 use blake3::Hasher;
-use num_bigint::BigUint;
-use num_integer::Integer;
-use num_traits::Zero;
+use circuit::integer_storage::UnsignedIntegerTable;
+use field::{CanonicalCodec, CtEq, CtMask, CtSelect, IntegerOps, PreparedDivisor, Uint, WideMul};
+
+#[cfg(test)]
+#[path = "circuit_reference.rs"]
+mod reference;
+
+/// Public COO coordinates with coefficient storage segmented by declared width.
+#[derive(Clone, Debug, Default)]
+pub struct IntegerCoo {
+    coordinates: Vec<(usize, usize)>,
+    coefficients: UnsignedIntegerTable,
+}
+impl IntegerCoo {
+    fn push<const L: usize>(&mut self, (row, column, value): (usize, usize, Uint<L>)) {
+        self.coordinates.push((row, column));
+        self.coefficients.push(value);
+    }
+    pub fn len(&self) -> usize {
+        self.coordinates.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.coordinates.is_empty()
+    }
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, usize, &[u64])> {
+        self.coordinates
+            .iter()
+            .zip(self.coefficients.iter())
+            .map(|(&(r, c), v)| (r, c, v))
+    }
+    pub(crate) fn copy_coefficient_to(&self, index: usize, output: &mut UnsignedIntegerTable) {
+        self.coefficients.copy_row_to(index, output);
+    }
+    fn repeat(
+        &self,
+        count: usize,
+        rows: usize,
+        columns: usize,
+        old_constant: usize,
+        new_constant: usize,
+    ) -> Self {
+        let mut output = Self::default();
+        for copy in 0..count {
+            for (i, &(r, c)) in self.coordinates.iter().enumerate() {
+                output.coordinates.push((
+                    r + copy * rows,
+                    if c == old_constant {
+                        new_constant
+                    } else {
+                        c + copy * columns
+                    },
+                ));
+                self.coefficients.copy_row_to(i, &mut output.coefficients);
+            }
+        }
+        output
+    }
+}
+
+fn public_hex<const L: usize>(hex: &str) -> Uint<L> {
+    assert_eq!(hex.len(), 16 * L);
+    Uint::from_words(core::array::from_fn(|i| {
+        u64::from_str_radix(&hex[(L - i - 1) * 16..(L - i) * 16], 16).expect("valid public modulus")
+    }))
+}
+fn read<const L: usize>(value: &Uint<32>) -> Uint<L> {
+    let narrowed = value.checked_resize_ct();
+    debug_assert!(
+        narrowed.validity().declassify(),
+        "generator violated its declared width"
+    );
+    *narrowed.value()
+}
+fn div_product<const L: usize>(
+    a: &Uint<L>,
+    b: &Uint<L>,
+    divisor: &PreparedDivisor<L>,
+) -> (Uint<32>, Uint<L>) {
+    let product = IntegerOps.mul_wide(a, b);
+    let (q, r) = divisor.div_rem_product_ct(&product);
+    // Both operands are reduced: their product divided by the modulus is
+    // below that modulus, hence below 2^(64 L). No secret overflow branch.
+    let q = q.checked_resize_ct::<32>();
+    debug_assert!(q.validity().declassify());
+    (*q.value(), r)
+}
+fn div_value<const L: usize>(
+    value: &Uint<32>,
+    divisor: &PreparedDivisor<L>,
+) -> (Uint<32>, Uint<L>) {
+    divisor.div_rem_ct(value)
+}
+
 use thiserror::Error;
 
 /// Upper bound (bits) on every witness and quotient value.
 ///
 /// Every value in the wired circuit is reduced modulo one of the circuit
 /// moduli (all `< 2^2048`) or is a quotient of a product of two such values
-/// by its modulus, so `2^2048` bounds both blocks.  The F2Z commitment
+/// by its modulus, so `2^2048` bounds both blocks.  The BitZ commitment
 /// stores exactly this many little-endian bits per assignment entry.
 pub const MULTISWAP_VALUE_BITS: usize = 2048;
 
@@ -66,7 +156,7 @@ const N_GROUP_MULS: usize = 2;
 /// Exponent bit length of the Fiat--Shamir prime challenge `l`.
 const ELL_BITS: usize = 352;
 
-const CIRCUIT_DIGEST_DOMAIN: &[u8] = b"f2z/multiswap/circuit-digest/v1";
+const CIRCUIT_DIGEST_DOMAIN: &[u8] = b"bitz/multiswap/circuit-digest/v2";
 
 /// Row/column dimension schedule of one wired MultiSwap instance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -203,17 +293,17 @@ pub struct MultiswapCircuit {
     batch_count: usize,
     num_cons: usize,
     num_vars: usize,
-    a: Vec<(usize, usize, BigUint)>,
-    b: Vec<(usize, usize, BigUint)>,
-    c: Vec<(usize, usize, BigUint)>,
-    mods: Vec<BigUint>,
-    w: Vec<BigUint>,
-    quos: Vec<BigUint>,
+    a: IntegerCoo,
+    b: IntegerCoo,
+    c: IntegerCoo,
+    mods: UnsignedIntegerTable,
+    w: Vec<Uint<32>>,
+    quos: Vec<Uint<32>>,
 }
 
 /// RSA-2048 modulus `N` (the RSA-2048 factoring-challenge value Limber
 /// hardcodes).
-pub fn modulus_n() -> BigUint {
+pub fn modulus_n() -> Uint<32> {
     let hex = "c7970ceedcc3b0754490201a7aa613cd73911081c790f5f1a8726f463550bb5b\
                7ff0db8e1ea1189ec72f93d1650011bd721aeeacc2acde32a04107f0648c2813\
                a31f5b0b7765ff8b44b4b6ffc93384b646eb09c7cf5e8592d40ea33c80039f35\
@@ -222,64 +312,60 @@ pub fn modulus_n() -> BigUint {
                f6135809f85334b5cb1813addc80cd05609f10ac6a95ad65872c909525bdad32\
                bc729592642920f24c61dc5b3c3b7923e56b16a4d9d373d8721f24a3fc0f1b31\
                31f55615172866bccc30f95054c824e733a5eb6817f7bc16399d48c6361cc7e5";
-    BigUint::parse_bytes(hex.as_bytes(), 16).expect("valid RSA-2048 hex")
+    public_hex(hex)
 }
 
 /// The 352-bit Fiat--Shamir challenge modulus `l`.
-pub fn modulus_ell() -> BigUint {
-    BigUint::from_bytes_be(&[0xc3u8; 44])
+pub fn modulus_ell() -> Uint<6> {
+    Uint::from_words([
+        0xc3c3c3c3c3c3c3c3,
+        0xc3c3c3c3c3c3c3c3,
+        0xc3c3c3c3c3c3c3c3,
+        0xc3c3c3c3c3c3c3c3,
+        0xc3c3c3c3c3c3c3c3,
+        0x00000000c3c3c3c3,
+    ])
 }
 
 /// BLS12-381 scalar prime standing in for the Poseidon field.
-pub fn modulus_p_hash() -> BigUint {
+pub fn modulus_p_hash() -> Uint<4> {
     let hex = "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
-    BigUint::parse_bytes(hex.as_bytes(), 16).expect("valid BLS12-381 scalar hex")
+    public_hex(hex)
 }
 
-/// Mersenne moduli of the wired `Hp` certificate chains.
-#[allow(clippy::arithmetic_side_effects)]
-fn hp_moduli() -> [BigUint; 4] {
-    [
-        (BigUint::from(1u32) << 61) - 1u32,
-        (BigUint::from(1u32) << 89) - 1u32,
-        (BigUint::from(1u32) << 107) - 1u32,
-        (BigUint::from(1u32) << 127) - 1u32,
-    ]
+/// Hp moduli use the declared two-limb Mersenne domain (61..127 bits).
+fn hp_moduli() -> [Uint<2>; 4] {
+    [61, 89, 107, 127].map(|bits| Uint::from((1u128 << bits) - 1))
 }
-
-/// Deterministic `(base, exponent)` pairs for the `Hp` chains.
-#[allow(clippy::arithmetic_side_effects)]
-fn hp_chain_inputs(bits: usize) -> [(BigUint, BigUint); 4] {
+fn hp_chain_inputs(bits: usize) -> [(Uint<2>, Uint<1>); 4] {
     let ms = hp_moduli();
     core::array::from_fn(|i| {
-        let base = &ms[i] - BigUint::from(1000u32 + 37 * i as u32);
-        let exponent = (BigUint::from(0x9e37_79b9_7f4a_7c15u64) >> (64 - bits)) ^ BigUint::from(i);
-        (base, exponent)
+        (
+            ms[i].wrapping_sub(&Uint::from_u64(1000 + 37 * i as u64)),
+            Uint::from_u64((0x9e37_79b9_7f4a_7c15u64 >> (64 - bits)) ^ i as u64),
+        )
     })
 }
-
-#[allow(clippy::arithmetic_side_effects)]
-fn exp_bases() -> [BigUint; 4] {
+fn exp_bases() -> [Uint<32>; 4] {
     let n = modulus_n();
-    core::array::from_fn(|i| &n - BigUint::from(37u64 * i as u64 + 3))
+    core::array::from_fn(|i| n.wrapping_sub(&Uint::from_u64(37 * i as u64 + 3)))
 }
-
-#[allow(clippy::arithmetic_side_effects)]
-fn exp_exponents(ell_bits: usize) -> [BigUint; 4] {
+fn exp_exponents(ell_bits: usize) -> [Uint<6>; 4] {
     core::array::from_fn(|i| {
-        let seed = (i as u64 + 1) * 0x0123_4567_89AB_CDEFu64;
+        let seed = (i as u64 + 1) * 0x0123_4567_89ab_cdefu64;
         let mut bytes = vec![0u8; ell_bits.div_ceil(8)];
         for (k, byte) in bytes.iter_mut().enumerate() {
-            *byte = ((seed.wrapping_mul(k as u64 + 1).wrapping_add(0xDEAD)) & 0xFF) as u8;
+            *byte = seed.wrapping_mul(k as u64 + 1).wrapping_add(0xdead) as u8;
         }
         if !ell_bits.is_multiple_of(8) {
             bytes[0] &= (1u8 << (ell_bits % 8)) - 1;
         }
-        let msb_byte = (ell_bits - 1) / 8;
-        let msb_bit = (ell_bits - 1) % 8;
-        let msb_idx = bytes.len() - 1 - msb_byte;
-        bytes[msb_idx] |= 1u8 << msb_bit;
-        BigUint::from_bytes_be(&bytes)
+        bytes[0] |= 1 << ((ell_bits - 1) % 8);
+        let mut le = [0; 48];
+        for (dst, src) in le.iter_mut().zip(bytes.iter().rev()) {
+            *dst = *src;
+        }
+        IntegerOps.decode_public(&le).expect("six-limb exponent")
     })
 }
 
@@ -288,23 +374,24 @@ fn exp_exponents(ell_bits: usize) -> [BigUint; 4] {
 /// one reconstruction row binding the bits to the exponent column.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
-fn build_exp_circuit(
-    base: &BigUint,
-    exponent: &BigUint,
-    n: &BigUint,
+fn build_exp_circuit<const L: usize, const E: usize>(
+    base: &Uint<L>,
+    exponent: &Uint<E>,
+    n: &Uint<L>,
     ell_bits: usize,
     row_base: usize,
     col_base: usize,
     const_col: usize,
-    a_entries: &mut Vec<(usize, usize, BigUint)>,
-    b_entries: &mut Vec<(usize, usize, BigUint)>,
-    c_entries: &mut Vec<(usize, usize, BigUint)>,
-    mods: &mut Vec<BigUint>,
-    w: &mut [BigUint],
-    quos: &mut [BigUint],
+    a_entries: &mut IntegerCoo,
+    b_entries: &mut IntegerCoo,
+    c_entries: &mut IntegerCoo,
+    mods: &mut UnsignedIntegerTable,
+    w: &mut [Uint<32>],
+    quos: &mut [Uint<32>],
 ) -> usize {
-    let one = BigUint::from(1u32);
-    let g_minus_1 = base - &one;
+    let one = Uint::<1>::ONE;
+    let g_minus_1 = base.wrapping_sub(&Uint::ONE);
+    let divisor = PreparedDivisor::new(*n).expect("public nonzero chain modulus");
 
     let bit_col = |j: usize| col_base + j;
     let exp_col = col_base + ell_bits;
@@ -314,27 +401,26 @@ fn build_exp_circuit(
     let bits: Vec<u8> = (0..ell_bits)
         .map(|j| {
             let bit_pos = ell_bits - 1 - j;
-            u8::from(exponent.bit(bit_pos as u64))
+            exponent.bit(bit_pos).as_u64() as u8
         })
         .collect();
 
     for j in 0..ell_bits {
-        w[bit_col(j)] = BigUint::from(bits[j]);
+        w[bit_col(j)] = Uint::from_u64(bits[j] as u64);
     }
-    w[exp_col] = exponent.clone();
+    w[exp_col] = exponent.zero_extend();
 
     let mut row = row_base;
     for j in 0..ell_bits {
         let acc_val = if j == 0 {
-            one.clone()
+            Uint::<L>::ONE
         } else {
-            w[acc_col(j - 1)].clone()
+            read::<L>(&w[acc_col(j - 1)])
         };
 
         // Square row.
-        let sq_prod = &acc_val * &acc_val;
-        let (sq_q, sq_val) = sq_prod.div_rem(n);
-        w[sq_col(j)] = sq_val.clone();
+        let (sq_q, sq_val) = div_product(&acc_val, &acc_val, &divisor);
+        w[sq_col(j)] = sq_val.zero_extend();
         quos[row] = sq_q;
 
         let acc_j_col = if j == 0 { const_col } else { acc_col(j - 1) };
@@ -345,10 +431,9 @@ fn build_exp_circuit(
         row += 1;
 
         // Conditional-multiply row.
-        let b_val = BigUint::from(bits[j]) * &g_minus_1 + &one;
-        let cm_prod = &sq_val * &b_val;
-        let (cm_q, acc_next) = cm_prod.div_rem(n);
-        w[acc_col(j)] = acc_next;
+        let b_val = Uint::ct_select(&Uint::ONE, base, CtMask::from_lsb(bits[j] as u64));
+        let (cm_q, acc_next) = div_product(&sq_val, &b_val, &divisor);
+        w[acc_col(j)] = acc_next.zero_extend();
         quos[row] = cm_q;
 
         a_entries.push((row, sq_col(j), one.clone()));
@@ -364,31 +449,75 @@ fn build_exp_circuit(
         a_entries.push((row, bit_col(j), one.clone()));
         b_entries.push((row, bit_col(j), one.clone()));
         c_entries.push((row, bit_col(j), one.clone()));
-        quos[row] = BigUint::from(0u32);
-        mods.push(BigUint::from(0u32));
+        quos[row] = Uint::ZERO;
+        mods.push(Uint::<1>::ZERO);
         row += 1;
     }
 
     // Reconstruction: sum of the bit columns weighted by powers of two
     // equals the exponent column (quotient fixed to zero, so exact).
     for j in 0..ell_bits {
-        let power = BigUint::from(1u32) << (ell_bits - 1 - j);
+        let power = Uint::<E>::ONE.truncating_shl(ell_bits - 1 - j);
         a_entries.push((row, bit_col(j), power));
     }
     b_entries.push((row, const_col, one.clone()));
     c_entries.push((row, exp_col, one.clone()));
-    quos[row] = BigUint::from(0u32);
+    quos[row] = Uint::ZERO;
     mods.push(n.clone());
     row += 1;
 
-    let expected = base.modpow(exponent, n);
-    assert_eq!(
-        w[acc_col(ell_bits - 1)],
-        expected,
-        "exponentiation circuit witness mismatch"
-    );
-
     row - row_base
+}
+
+pub(super) fn public_coefficient_product(words: &[u64], value: &Uint<32>) -> Uint<65> {
+    fn product<const L: usize>(words: &[u64], value: &Uint<32>) -> Uint<65> {
+        let coefficient =
+            Uint::<L>::from_words(words.try_into().expect("declared coefficient width"));
+        *IntegerOps
+            .mul_wide(&coefficient, value)
+            .checked_resize_ct::<65>()
+            .value()
+    }
+    match words.len() {
+        1 => product::<1>(words, value),
+        2 => product::<2>(words, value),
+        4 => product::<4>(words, value),
+        6 => product::<6>(words, value),
+        32 => product::<32>(words, value),
+        _ => unreachable!("circuit uses only its declared modulus and exponent widths"),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_generic_rows<const L: usize>(
+    modulus: &Uint<L>,
+    count: usize,
+    start: usize,
+    row: &mut usize,
+    col: &mut usize,
+    a: &mut IntegerCoo,
+    b: &mut IntegerCoo,
+    c: &mut IntegerCoo,
+    mods: &mut UnsignedIntegerTable,
+    w: &mut [Uint<32>],
+    quos: &mut [Uint<32>],
+) {
+    let divisor = PreparedDivisor::new(*modulus).expect("public row modulus");
+    for r in start..start + count {
+        let av = modulus.wrapping_sub(&Uint::from_u64(r as u64 % 17 + 1));
+        let bv = modulus.wrapping_sub(&Uint::from_u64((r as u64 * 7) % 19 + 2));
+        let (q, cv) = div_product(&av, &bv, &divisor);
+        w[*col] = av.zero_extend();
+        w[*col + 1] = bv.zero_extend();
+        w[*col + 2] = cv.zero_extend();
+        quos[*row] = q;
+        a.push((*row, *col, Uint::<1>::ONE));
+        b.push((*row, *col + 1, Uint::<1>::ONE));
+        c.push((*row, *col + 2, Uint::<1>::ONE));
+        mods.push(*modulus);
+        *row += 1;
+        *col += 3;
+    }
 }
 
 impl MultiswapCircuit {
@@ -398,6 +527,9 @@ impl MultiswapCircuit {
         let n = modulus_n();
         let ell = modulus_ell();
         let p_hash = modulus_p_hash();
+        let n_divisor = PreparedDivisor::new(n).expect("public RSA modulus");
+        let hash_divisor = PreparedDivisor::new(p_hash).expect("public hash modulus");
+        let ell_divisor = PreparedDivisor::new(ell).expect("public exponent modulus");
         let bases = exp_bases();
         let exponents = exp_exponents(dims.ell_bits);
 
@@ -405,13 +537,13 @@ impl MultiswapCircuit {
         let num_vars = dims.num_real_cols().next_power_of_two();
         let const_col = num_vars;
 
-        let mut a_entries = Vec::new();
-        let mut b_entries = Vec::new();
-        let mut c_entries = Vec::new();
-        let mut mods = Vec::new();
-        let mut w = vec![BigUint::from(0u32); num_vars];
-        let mut quos = vec![BigUint::from(0u32); num_cons];
-        let one = BigUint::from(1u32);
+        let mut a_entries = IntegerCoo::default();
+        let mut b_entries = IntegerCoo::default();
+        let mut c_entries = IntegerCoo::default();
+        let mut mods = UnsignedIntegerTable::default();
+        let mut w = vec![Uint::<32>::ZERO; num_vars];
+        let mut quos = vec![Uint::<32>::ZERO; num_cons];
+        let one = Uint::<1>::ONE;
 
         for i in 0..dims.n_group_exps {
             build_exp_circuit(
@@ -439,7 +571,7 @@ impl MultiswapCircuit {
         for i in 0..dims.n_group_muls {
             let a_col = exp_out(2 * i);
             let b_col = exp_out(2 * i + 1);
-            let (qi, ci) = (&w[a_col] * &w[b_col]).div_rem(&n);
+            let (qi, ci) = div_product(&w[a_col], &w[b_col], &n_divisor);
             w[col] = ci;
             quos[row] = qi;
             a_entries.push((row, a_col, one.clone()));
@@ -478,8 +610,8 @@ impl MultiswapCircuit {
         // Poseidon seed: reduce the first exponentiation output mod p_hash.
         let seed_col = col;
         {
-            let (qi, ci) = w[exp_out(0)].div_rem(&p_hash);
-            w[seed_col] = ci;
+            let (qi, ci) = div_value(&w[exp_out(0)], &hash_divisor);
+            w[seed_col] = ci.zero_extend();
             quos[row] = qi;
             a_entries.push((row, exp_out(0), one.clone()));
             b_entries.push((row, const_col, one.clone()));
@@ -490,28 +622,28 @@ impl MultiswapCircuit {
         }
 
         // Chained Poseidon-cost rows mod p_hash (x², x⁴, x⁵ per S-box).
-        let zero = BigUint::from(0u32);
+        let zero = Uint::<1>::ZERO;
         let mut x_col = seed_col;
         for _ in 0..(dims.poseidon_rows / 3) {
-            let x = w[x_col].clone();
-            let (q2, x2) = (&x * &x).div_rem(&p_hash);
-            let (q4, x4) = (&x2 * &x2).div_rem(&p_hash);
-            let (q5, x5) = (&x4 * &x).div_rem(&p_hash);
-            w[col] = x2;
+            let x = read::<4>(&w[x_col]);
+            let (q2, x2) = div_product(&x, &x, &hash_divisor);
+            let (q4, x4) = div_product(&x2, &x2, &hash_divisor);
+            let (q5, x5) = div_product(&x4, &x, &hash_divisor);
+            w[col] = x2.zero_extend();
             a_entries.push((row, x_col, one.clone()));
             b_entries.push((row, x_col, one.clone()));
             c_entries.push((row, col, one.clone()));
             mods.push(p_hash.clone());
             quos[row] = q2;
             row += 1;
-            w[col + 1] = x4;
+            w[col + 1] = x4.zero_extend();
             a_entries.push((row, col, one.clone()));
             b_entries.push((row, col, one.clone()));
             c_entries.push((row, col + 1, one.clone()));
             mods.push(p_hash.clone());
             quos[row] = q4;
             row += 1;
-            w[col + 2] = x5;
+            w[col + 2] = x5.zero_extend();
             a_entries.push((row, col + 1, one.clone()));
             b_entries.push((row, x_col, one.clone()));
             c_entries.push((row, col + 2, one.clone()));
@@ -536,31 +668,31 @@ impl MultiswapCircuit {
             let val = w[val_col].clone();
             let bit_base = col;
             for j in 0..nbits {
-                let bit = u8::from(val.bit((nbits - 1 - j) as u64));
-                w[col] = BigUint::from(bit);
+                let bit = val.bit(nbits - 1 - j).as_u64();
+                w[col] = Uint::from_u64(bit);
                 a_entries.push((row, col, one.clone()));
                 b_entries.push((row, col, one.clone()));
                 c_entries.push((row, col, one.clone()));
                 mods.push(zero.clone());
-                quos[row] = zero.clone();
+                quos[row] = Uint::ZERO;
                 row += 1;
                 col += 1;
             }
             for j in 0..nbits {
-                let power = BigUint::from(1u32) << (nbits - 1 - j);
+                let power = Uint::<4>::ONE.truncating_shl(nbits - 1 - j);
                 a_entries.push((row, bit_base + j, power));
             }
             b_entries.push((row, const_col, one.clone()));
             c_entries.push((row, val_col, one.clone()));
             mods.push(zero.clone());
-            quos[row] = zero.clone();
+            quos[row] = Uint::ZERO;
             row += 1;
         }
 
         // Final mod-l reduction row, wired to the Poseidon output.
         {
-            let (qi, ci) = w[pos_out_col].div_rem(&ell);
-            w[col] = ci;
+            let (qi, ci) = div_value(&w[pos_out_col], &ell_divisor);
+            w[col] = ci.zero_extend();
             quos[row] = qi;
             a_entries.push((row, pos_out_col, one.clone()));
             b_entries.push((row, const_col, one.clone()));
@@ -572,32 +704,38 @@ impl MultiswapCircuit {
 
         // Per-swap H-delta models (`k > 0` only; unfaithful, kept for
         // Limber parity).
-        let groups: Vec<(&BigUint, usize)> =
-            vec![(&ell, 2 * dims.k), (&p_hash, 2 * dims.k * dims.h_rows)];
-        let mut r = 0usize;
-        for (modulus, count) in &groups {
-            for _ in 0..*count {
-                let a_val = *modulus - BigUint::from((r as u64 % 17) + 1);
-                let b_val = *modulus - BigUint::from(((r as u64 * 7) % 19) + 2);
-                let prod = &a_val * &b_val;
-                let (qi, ci) = prod.div_rem(modulus);
-                w[col] = a_val;
-                w[col + 1] = b_val;
-                w[col + 2] = ci;
-                quos[row] = qi;
-                a_entries.push((row, col, one.clone()));
-                b_entries.push((row, col + 1, one.clone()));
-                c_entries.push((row, col + 2, one.clone()));
-                mods.push((*modulus).clone());
-                row += 1;
-                col += 3;
-                r += 1;
-            }
-        }
+        build_generic_rows(
+            &ell,
+            2 * dims.k,
+            0,
+            &mut row,
+            &mut col,
+            &mut a_entries,
+            &mut b_entries,
+            &mut c_entries,
+            &mut mods,
+            &mut w,
+            &mut quos,
+        );
+        build_generic_rows(
+            &p_hash,
+            2 * dims.k * dims.h_rows,
+            2 * dims.k,
+            &mut row,
+            &mut col,
+            &mut a_entries,
+            &mut b_entries,
+            &mut c_entries,
+            &mut mods,
+            &mut w,
+            &mut quos,
+        );
         debug_assert_eq!(row, dims.num_real_rows());
         debug_assert_eq!(col, dims.num_real_cols());
 
-        mods.resize(num_cons, BigUint::from(2u32));
+        while mods.len() < num_cons {
+            mods.push(Uint::<1>::from_u64(2));
+        }
 
         let circuit = Self {
             dims,
@@ -633,39 +771,33 @@ impl MultiswapCircuit {
         let cols = base.live_columns();
         let num_cons = (rows * batch_count).next_power_of_two();
         let num_vars = (cols * batch_count).next_power_of_two();
-        let expand = |entries: &[(usize, usize, BigUint)]| {
-            (0..batch_count)
-                .flat_map(|copy| {
-                    entries.iter().map(move |(r, c, v)| {
-                        (
-                            r + copy * rows,
-                            if *c == base.num_vars {
-                                num_vars
-                            } else {
-                                c + copy * cols
-                            },
-                            v.clone(),
-                        )
-                    })
-                })
-                .collect()
-        };
         let mut result = Self {
             dims,
             batch_count,
             num_cons,
             num_vars,
-            a: expand(&base.a),
-            b: expand(&base.b),
-            c: expand(&base.c),
-            mods: vec![BigUint::from(2u32); num_cons],
-            w: vec![BigUint::zero(); num_vars],
-            quos: vec![BigUint::zero(); num_cons],
+            a: base
+                .a
+                .repeat(batch_count, rows, cols, base.num_vars, num_vars),
+            b: base
+                .b
+                .repeat(batch_count, rows, cols, base.num_vars, num_vars),
+            c: base
+                .c
+                .repeat(batch_count, rows, cols, base.num_vars, num_vars),
+            mods: UnsignedIntegerTable::default(),
+            w: vec![Uint::ZERO; num_vars],
+            quos: vec![Uint::ZERO; num_cons],
         };
         for copy in 0..batch_count {
-            result.mods[copy * rows..(copy + 1) * rows].clone_from_slice(&base.mods[..rows]);
+            for r in 0..rows {
+                base.mods.copy_row_to(r, &mut result.mods);
+            }
             result.quos[copy * rows..(copy + 1) * rows].clone_from_slice(&base.quos[..rows]);
             result.w[copy * cols..(copy + 1) * cols].clone_from_slice(&base.w[..cols]);
+        }
+        while result.mods.len() < num_cons {
+            result.mods.push(Uint::<1>::from_u64(2));
         }
         result.validate_shape()?;
         Ok(result)
@@ -683,7 +815,7 @@ impl MultiswapCircuit {
     /// unchanged for B=1; this envelope additionally binds roles and public IO.
     pub fn comparison_statement_digest(&self) -> [u8; 32] {
         let mut h = Hasher::new();
-        h.update(b"f2z-limber/multiswap-statement/v2");
+        h.update(b"bitz-limber/multiswap-statement/v2");
         h.update(&self.statement_digest());
         for v in [
             self.batch_count,
@@ -701,28 +833,10 @@ impl MultiswapCircuit {
     fn validate_shape(&self) -> Result<(), MultiswapCircuitError> {
         let columns = self.num_vars + 1;
         for entries in [&self.a, &self.b, &self.c] {
-            for &(row, column, _) in entries {
+            for (row, column, _) in entries.iter() {
                 if row >= self.num_cons || column >= columns {
                     return Err(MultiswapCircuitError::EntryOutOfShape { row, column });
                 }
-            }
-        }
-        for (index, value) in self.w.iter().enumerate() {
-            if value.bits() > MULTISWAP_VALUE_BITS as u64 {
-                return Err(MultiswapCircuitError::ValueTooWide {
-                    location: "witness",
-                    index,
-                    actual_bits: value.bits(),
-                });
-            }
-        }
-        for (index, value) in self.quos.iter().enumerate() {
-            if value.bits() > MULTISWAP_VALUE_BITS as u64 {
-                return Err(MultiswapCircuitError::ValueTooWide {
-                    location: "quotient",
-                    index,
-                    actual_bits: value.bits(),
-                });
             }
         }
         Ok(())
@@ -754,64 +868,81 @@ impl MultiswapCircuit {
     }
 
     /// COO entries of `A` over the Limber column space.
-    pub fn a_entries(&self) -> &[(usize, usize, BigUint)] {
+    pub fn a_entries(&self) -> &IntegerCoo {
         &self.a
     }
 
     /// COO entries of `B` over the Limber column space.
-    pub fn b_entries(&self) -> &[(usize, usize, BigUint)] {
+    pub fn b_entries(&self) -> &IntegerCoo {
         &self.b
     }
 
     /// COO entries of `C` over the Limber column space.
-    pub fn c_entries(&self) -> &[(usize, usize, BigUint)] {
+    pub fn c_entries(&self) -> &IntegerCoo {
         &self.c
     }
 
     /// Per-row moduli (`0` marks an exact integer row).
-    pub fn mods(&self) -> &[BigUint] {
+    pub fn mods(&self) -> &UnsignedIntegerTable {
         &self.mods
     }
 
     /// Integer witness values, one per Limber witness column.
-    pub fn witness(&self) -> &[BigUint] {
+    pub fn witness(&self) -> &[Uint<32>] {
         &self.w
     }
 
     /// Integer quotient advice, one per padded row.
-    pub fn quotients(&self) -> &[BigUint] {
+    pub fn quotients(&self) -> &[Uint<32>] {
         &self.quos
     }
 
     /// Checks `A·z ∘ B·z = C·z + mods ∘ quos` over the integers.
     #[allow(clippy::arithmetic_side_effects)]
     pub fn is_sat_integer(&self) -> Result<(), MultiswapCircuitError> {
-        let multiply = |entries: &[(usize, usize, BigUint)]| -> Vec<BigUint> {
-            let mut out = vec![BigUint::zero(); self.num_cons];
-            for (row, column, value) in entries {
-                let z = if *column == self.num_vars {
-                    &BigUint::from(1u32) * value
+        let multiply = |entries: &IntegerCoo| -> Vec<Uint<65>> {
+            let mut out = vec![Uint::<65>::ZERO; self.num_cons];
+            for (row, column, words) in entries.iter() {
+                let w = if column == self.num_vars {
+                    Uint::ONE
                 } else {
-                    value * &self.w[*column]
+                    self.w[column]
                 };
-                out[*row] += z;
+                let term = public_coefficient_product(words, &w);
+                // <2^64 products of two 32-limb values fit 65 limbs.
+                out[row] = out[row].wrapping_add(&term);
             }
             out
         };
         let az = multiply(&self.a);
         let bz = multiply(&self.b);
         let cz = multiply(&self.c);
+        let mut failure = self.num_cons as u64;
         for row in 0..self.num_cons {
-            if &az[row] * &bz[row] != &cz[row] + &self.mods[row] * &self.quos[row] {
-                return Err(MultiswapCircuitError::Unsatisfied { row });
-            }
+            let lhs = IntegerOps.mul_wide(&az[row], &bz[row]);
+            let rhs = public_coefficient_product(&self.mods[row], &self.quos[row]);
+            let rhs = rhs
+                .zero_extend::<130>()
+                .wrapping_add(&cz[row].zero_extend());
+            let equal = lhs.checked_resize_ct::<130>().value().ct_eq(&rhs);
+            failure = u64::ct_select(
+                &failure,
+                &(row as u64),
+                !equal & failure.ct_eq(&(self.num_cons as u64)),
+            );
         }
-        Ok(())
+        if failure == self.num_cons as u64 {
+            Ok(())
+        } else {
+            Err(MultiswapCircuitError::Unsatisfied {
+                row: failure as usize,
+            })
+        }
     }
 
     /// Replaces the quotient advice, for negative tests only.
     #[cfg(test)]
-    pub(crate) fn with_quotients_for_tests(mut self, quos: Vec<BigUint>) -> Self {
+    pub(crate) fn with_quotients_for_tests(mut self, quos: Vec<Uint<32>>) -> Self {
         assert_eq!(quos.len(), self.num_cons);
         self.quos = quos;
         self
@@ -844,17 +975,17 @@ impl MultiswapCircuit {
         }
         for entries in [&self.a, &self.b, &self.c] {
             hasher.update(&(entries.len() as u64).to_le_bytes());
-            for (row, column, value) in entries {
-                hasher.update(&(*row as u64).to_le_bytes());
-                hasher.update(&(*column as u64).to_le_bytes());
-                let bytes = value.to_bytes_le();
+            for (row, column, value) in entries.iter() {
+                hasher.update(&(row as u64).to_le_bytes());
+                hasher.update(&(column as u64).to_le_bytes());
+                let bytes: Vec<_> = value.iter().flat_map(|word| word.to_le_bytes()).collect();
                 hasher.update(&(bytes.len() as u64).to_le_bytes());
                 hasher.update(&bytes);
             }
         }
         hasher.update(&(self.mods.len() as u64).to_le_bytes());
-        for modulus in &self.mods {
-            let bytes = modulus.to_bytes_le();
+        for modulus in self.mods.iter() {
+            let bytes: Vec<_> = modulus.iter().flat_map(|word| word.to_le_bytes()).collect();
             hasher.update(&(bytes.len() as u64).to_le_bytes());
             hasher.update(&bytes);
         }
@@ -865,6 +996,54 @@ impl MultiswapCircuit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_builder_matches_the_frozen_biguint_oracle() {
+        let integer = |words: &[u64]| {
+            num_bigint::BigUint::from_bytes_le(
+                &words
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        for full in [false, true] {
+            let (dims, old_dims) = if full {
+                (
+                    MultiswapDims::multiswap(0),
+                    reference::MultiswapDims::multiswap(0),
+                )
+            } else {
+                (MultiswapDims::mini(), reference::MultiswapDims::mini())
+            };
+            let actual = MultiswapCircuit::build(dims).unwrap();
+            let expected = reference::MultiswapCircuit::build(old_dims).unwrap();
+            assert_eq!(actual.num_cons(), expected.num_cons());
+            assert_eq!(actual.num_vars(), expected.num_vars());
+            for (got, want) in actual.witness().iter().zip(expected.witness()) {
+                assert_eq!(&integer(got.as_words()), want);
+            }
+            for (got, want) in actual.quotients().iter().zip(expected.quotients()) {
+                assert_eq!(&integer(got.as_words()), want);
+            }
+            for (got, want) in actual.mods().iter().zip(expected.mods()) {
+                assert_eq!(&integer(got), want);
+            }
+            for (got, want) in [
+                (actual.a_entries(), expected.a_entries()),
+                (actual.b_entries(), expected.b_entries()),
+                (actual.c_entries(), expected.c_entries()),
+            ] {
+                assert_eq!(got.len(), want.len());
+                for ((r, c, value), (er, ec, ev)) in got.iter().zip(want) {
+                    assert_eq!((r, c), (*er, *ec));
+                    assert_eq!(&integer(value), ev);
+                }
+                // Unit coefficients occupy one limb even in the RSA circuit.
+                assert!(got.iter().any(|(_, _, v)| v.len() == 1));
+            }
+        }
+    }
 
     #[test]
     fn batches_preserve_reference_and_reject_a_corrupt_last_copy() {
@@ -884,7 +1063,7 @@ mod tests {
             // The last live row is modular, so changing its quotient changes
             // an actual equation rather than unconstrained padding advice.
             let last = circuit.live_rows() - 1;
-            circuit.quos[last] += BigUint::from(1u32);
+            circuit.quos[last] = circuit.quos[last].wrapping_add(&Uint::ONE);
             assert_eq!(
                 circuit.is_sat_integer(),
                 Err(MultiswapCircuitError::Unsatisfied { row: last })
@@ -894,7 +1073,9 @@ mod tests {
                 circuit.comparison_statement_digest(),
                 "witness is excluded from statement"
             );
-            circuit.mods[last] += BigUint::from(1u32);
+            circuit
+                .mods
+                .set(last, modulus_ell().wrapping_add(&Uint::ONE));
             assert_ne!(before, circuit.comparison_statement_digest());
         }
         assert!(MultiswapCircuit::build_batch(dims, 0).is_err());
@@ -923,7 +1104,7 @@ mod tests {
     #[test]
     fn tampered_witness_fails_the_integer_relation() {
         let mut circuit = MultiswapCircuit::build(MultiswapDims::mini()).unwrap();
-        circuit.w[0] += BigUint::from(1u32);
+        circuit.w[0] = circuit.w[0].wrapping_add(&Uint::ONE);
         assert!(matches!(
             circuit.is_sat_integer(),
             Err(MultiswapCircuitError::Unsatisfied { .. })

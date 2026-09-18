@@ -1,4 +1,4 @@
-# SHA-256 + ECDSA: the build-profile trap, and where F2Z now loses
+# SHA-256 + ECDSA: the build-profile trap, and where BitZ now loses
 
 Date: 2026-09-13 (evening). Box: Apple M5 (10 cores, fanless), 24 GB, macOS 26.6, rustc 1.98.1,
 `RUSTFLAGS=-C target-cpu=native`. Workload: one SHA-256 hash of a `64(N-1)`-byte message
@@ -17,9 +17,9 @@ Prompt: `docs/sha256-ecdsa-investigation-prompt.md`. Companion docs: `docs/sha25
    `lto = "thin"` never applied). Same source, same lockfile, same fixture, only the profile
    changed: 1007–1015 / 149–151 ms (prover / verifier, 1 thread) under the recorded profile —
    the campaign's 1019 / 148 — against 165–169 / 12.7–13.4 ms under thin or fat LTO; 243 / 57 vs
-   60–62 / 6.3 ms at 10 threads. Codegen units alone: no effect. The `f2z` path dependency and the
+   60–62 / 6.3 ms at 10 threads. Codegen units alone: no effect. The `bitz` path dependency and the
    lockfile change: no effect (the old source under fat LTO gives the same numbers as the new).
-   Every build produced byte-identical proofs (BLAKE3 `dbec3448…`). F2Z's own bench loses only
+   Every build produced byte-identical proofs (BLAKE3 `dbec3448…`). BitZ's own bench loses only
    4 % without LTO, which is why the old table flipped.
 2. **Audit (§2).** Every other table already runs every scheme at fat LTO + 1 CGU +
    `-C target-cpu=native` (in-process adapters use the root profile; Limber/Zinc+ carry it in
@@ -28,12 +28,12 @@ Prompt: `docs/sha256-ecdsa-investigation-prompt.md`. Companion docs: `docs/sha25
 3. **Policy (§3).** Fat LTO + 1 CGU + `target-cpu=native` for every scheme, stated in every
    worker's root manifest, recorded in the run's provenance (the sidecar records only
    `rustflags` today, which is why the trap was invisible), enforced by the runner; the caption
-   states it. Affected artifacts: the inline table `tab:sha256-ecdsa-f2z-opt` and the stale
+   states it. Affected artifacts: the inline table `tab:sha256-ecdsa-bitz-opt` and the stale
    `paper/sha256-ecdsa-table.tex`; nothing else changes.
-4. **Where F2Z now loses (§4).** With fair builds at 2^7: prover 207 vs 168 ms (1 thread), 66 vs
+4. **Where BitZ now loses (§4).** With fair builds at 2^7: prover 207 vs 168 ms (1 thread), 66 vs
    60 (10 threads); verifier 45 vs 13 and 15 vs 6. The P-256 part costs the two provers the same
-   (F2Z 138 vs Binius64 149 ms fixed, 1 thread; F2Z is faster at 1 KB messages), but each SHA-256
-   compression costs F2Z 0.54 ms against 0.068 ms (inner sumcheck over the integer arithmetization
+   (BitZ 138 vs Binius64 149 ms fixed, 1 thread; BitZ is faster at 1 KB messages), but each SHA-256
+   compression costs BitZ 0.54 ms against 0.068 ms (inner sumcheck over the integer arithmetization
    of SHA at 113 bits, plus the opening): that is the whole 1-thread prover gap, and it grows to
    3.2× at 64 KB. The verifier gap is one fixed term — 30 ms evaluating the P-256 constraint
    matrices (4.24 M nonzero entries) at the sumcheck point, versus 12 ms for Binius64's
@@ -57,7 +57,7 @@ Prompt: `docs/sha256-ecdsa-investigation-prompt.md`. Companion docs: `docs/sha25
 6. **Paper (§5, proposals only).** Every Binius64 cell of the inline table, its before/after
    caption, the "4 KB / 2^6" prose and the intro-table row depend on the crippled build. A fair
    replacement table for 2^4–2^7 and 2^10 (48 new cases run tonight through the official runner)
-   and replacement prose are drafted; F2Z keeps the proof-size (3×) and witgen (3–4×) wins and
+   and replacement prose are drafted; BitZ keeps the proof-size (3×) and witgen (3–4×) wins and
    prover parity up to 2 KB, and loses the prover from 4 KB and the verifier everywhere.
 
 ## 1. The A/B grid and the confirmed root cause
@@ -81,7 +81,7 @@ and `CARGO_TARGET_DIR`.
 
 Evidence from `cargo build -v` of the recorded 2026-09-10 worker source (the campaign runner keeps a
 copy of the worker's `Cargo.toml`, `Cargo.lock` and `src/main.rs` in
-`bench_results/sha256-ecdsa-i7-f2z-binius/source/benchmarks/binius64/`; the lock's SHA-256 is the
+`bench_results/sha256-ecdsa-i7-bitz-binius/source/benchmarks/binius64/`; the lock's SHA-256 is the
 recorded `fdaeaeae…`), rebuilt in isolated target directories:
 
 | variant | rustc flags of every rlib (e.g. `binius_prover`) | rustc flags of the final binary |
@@ -93,13 +93,13 @@ recorded `fdaeaeae…`), rebuilt in isolated target directories:
 ### 1.2 Grid
 
 Same source, same lockfile, same fixture, same rustc; only the profile changes. "old" is the
-recorded 2026-09-10 worker (no `f2z` dependency, lock `fdaeaeae…`); "cur" is the worker at HEAD
-`c0751bf` (path dependency on `f2z`, lock `aece839d…` = the suite's). Profiles are applied with
+recorded 2026-09-10 worker (no `bitz` dependency, lock `fdaeaeae…`); "cur" is the worker at HEAD
+`c0751bf` (path dependency on `bitz`, lock `aece839d…` = the suite's). Profiles are applied with
 `CARGO_PROFILE_RELEASE_LTO` / `CARGO_PROFILE_RELEASE_CODEGEN_UNITS` (equivalent to
 `--config profile.release.lto=…`), each into its own `CARGO_TARGET_DIR`; no tracked file was
 edited. Binius64 BaseFold, rate 1/2, 2^7, target 100, medians of 5 after one warm-up, 15 s
 cool-down between cells, `RAYON_NUM_THREADS = HARDWARE_CONCURRENCY = threads`. The `suite` rows
-are the exact binaries the 2026-09-13 suite ran (`910e6ddc…` worker, `63505e6c…` F2Z bench).
+are the exact binaries the 2026-09-13 suite ran (`910e6ddc…` worker, `63505e6c…` BitZ bench).
 
 | source, lock | profile (LTO / CGUs) | thr | setup | witgen | commit | PIOP | opening | **prove** | **verify** | proof digest (BLAKE3) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -125,10 +125,10 @@ are the exact binaries the 2026-09-13 suite ran (`910e6ddc…` worker, `63505e6c
 Rate 1/8 (the paper's other Binius64 row), current source: none / 16 → 1241.5 / 148.6 ms at 1 thread and
 277.1 / 56.9 ms at 10 threads; fat / 1 → 214.0 / 12.65 ms and 70.5 / 6.18 ms; digest `467c0a5f…` in all four.
 
-The F2Z bench binary (`benches/sha256_ecdsa_compare.rs`, worktree of HEAD, same three profiles;
-F2Z Split, rate 1/2, same fixture):
+The BitZ bench binary (`benches/sha256_ecdsa_compare.rs`, worktree of HEAD, same three profiles;
+BitZ Split, rate 1/2, same fixture):
 
-| F2Z build | thr | outer | inner | combine | evaluate | opening | **prove** | **verify** |
+| BitZ build | thr | outer | inner | combine | evaluate | opening | **prove** | **verify** |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | none / 16 | 1 | 3.7 | 122.4 | 22.2 | 11.8 | 53.1 | **214.6** | **45.6** |
 | thin / 16 | 1 | 3.6 | 116.1 | 21.8 | 11.7 | 52.8 | **207.4** | **45.6** |
@@ -153,17 +153,17 @@ F2Z Split, rate 1/2, same fixture):
   153 vs 149 ms verifier); `fat / 16` equals `fat / 1`. The 16-CGU default is not the trap;
   the absent `lto` key is.
 - **The dependency and lockfile change contributed nothing.** The current source (with the
-  `f2z` path dependency and the new lock) reproduces the old numbers under the old profile, and
+  `bitz` path dependency and the new lock) reproduces the old numbers under the old profile, and
   the recorded old source under fat LTO gives the fair numbers (rows "old" in §1.2: 1007 / 150 ms under the recorded profile, 169 / 13.4 ms under thin LTO, 165 / 12.7 ms under fat LTO — the same three numbers as the current source, and the same proof digest `dbec3448…`).
 - **Proof bytes are identical across every build and thread count** (BLAKE3 `dbec3448…` at
   rate 1/2, `467c0a5f…` at rate 1/8, 393,776 / 289,200 bytes) — the profile changes speed only.
-- **F2Z is nearly insensitive to the same trap** (+4 % prover, +3.5 % verifier without LTO at 1
+- **BitZ is nearly insensitive to the same trap** (+4 % prover, +3.5 % verifier without LTO at 1
   thread; +6 % at 10 threads): its hot kernels are crate-local or generic and monomorphized at the
   call site, whereas Binius64's field arithmetic (`binius-field`, `binius-math`) is called across
   crate boundaries from `binius-prover`/`binius-iop-prover`/`binius-verifier`. That asymmetry is
-  why the 2026-09-10 table flipped: the crippled build cost Binius64 6×, F2Z 4 %.
+  why the 2026-09-10 table flipped: the crippled build cost Binius64 6×, BitZ 4 %.
 - **Tonight's re-runs of the suite binaries agree with the suite's recorded medians within 2 %**
-  (Binius64 164.8 / 12.7 vs 167.5 / 12.8; F2Z 204.1 / 43.9 vs 206.8 / 44.7 at 1 thread), so the
+  (Binius64 164.8 / 12.7 vs 167.5 / 12.8; BitZ 204.1 / 43.9 vs 206.8 / 44.7 at 1 thread), so the
   suite's SHA+ECDSA numbers stand.
 
 ## 2. Audit of the other benchmark builds
@@ -174,20 +174,20 @@ and the `rustflags` recorded in the artifact's Cargo fingerprint (`target/releas
 
 | Scheme / binary | Where it is built | Effective release profile | `-C target-cpu=native` evidence | Tables | Verdict |
 |---|---|---|---|---|---|
-| F2Z (every table) | f2z-pcs root; `cargo bench` (profile.bench) or `cargo build --release` (profile.release) | fat LTO, 1 CGU (bench profile adds `debug = 2`) | fingerprints in `~/zinc-plus/target/release/.fingerprint` | all | fair |
-| Binius64, in-process adapters (`benches/mul_e2e_compare`, `hybrid_u32_sha256`, `sha256_e2e_compare`, `*_pcs_compare`) | f2z-pcs root, `cargo bench` | fat LTO, 1 CGU (above Binius64's own `lto = "thin"`, 16 CGUs) | `binius-prover` fingerprint: `-Ctarget-cpu=native` | native-mul u32/u64/u128, hybrid (both variants), SHA-256 compare | fair; the grid below quantifies thin vs fat |
-| Binius64 + F2Z opener rows (same binaries as above; SHA+ECDSA rows in the worker) | as the row above / as the worker | as the row above / as the worker | idem | native-mul, hybrid, SHA+ECDSA | fair since 2026-09-13 |
-| **Binius64 SHA+ECDSA worker**, `benchmarks/binius64` (own workspace) | `benchmarks/binius64/build.py`: `cargo build --release --locked` | **2026-09-10/11 campaigns: `[profile.release] debug = 1` only → Cargo defaults: `lto = false` (crate-local thin LTO), 16 CGUs.** Since `bec4835` (2026-09-13): fat LTO, 1 CGU | `.build.json` sidecar: `rustflags = -C target-cpu=native` in both campaigns | `tab:sha256-ecdsa-f2z-opt` (main.tex), stale generated `paper/sha256-ecdsa-table.tex` | **crippled before 2026-09-13**; the recorded manifest copy is in `bench_results/sha256-ecdsa-i7-f2z-binius/source/benchmarks/binius64/Cargo.toml` |
+| BitZ (every table) | f2z-pcs root; `cargo bench` (profile.bench) or `cargo build --release` (profile.release) | fat LTO, 1 CGU (bench profile adds `debug = 2`) | fingerprints in `~/zinc-plus/target/release/.fingerprint` | all | fair |
+| Binius64, in-process adapters (`benches/mul_compare.rs`, `hybrid_u32_sha256`, `sha256_e2e_compare`, `*_pcs_compare`) | f2z-pcs root, `cargo bench` | fat LTO, 1 CGU (above Binius64's own `lto = "thin"`, 16 CGUs) | `binius-prover` fingerprint: `-Ctarget-cpu=native` | native-mul u32/u64/u128, hybrid (both variants), SHA-256 compare | fair; the grid below quantifies thin vs fat |
+| Binius64 + BitZ opener rows (same binaries as above; SHA+ECDSA rows in the worker) | as the row above / as the worker | as the row above / as the worker | idem | native-mul, hybrid, SHA+ECDSA | fair since 2026-09-13 |
+| **Binius64 SHA+ECDSA worker**, `benchmarks/binius64` (own workspace) | `benchmarks/binius64/build.py`: `cargo build --release --locked` | **2026-09-10/11 campaigns: `[profile.release] debug = 1` only → Cargo defaults: `lto = false` (crate-local thin LTO), 16 CGUs.** Since `bec4835` (2026-09-13): fat LTO, 1 CGU | `.build.json` sidecar: `rustflags = -C target-cpu=native` in both campaigns | `tab:sha256-ecdsa-bitz-opt` (main.tex), stale generated `paper/sha256-ecdsa-table.tex` | **crippled before 2026-09-13**; the recorded manifest copy is in `bench_results/sha256-ecdsa-i7-bitz-binius/source/benchmarks/binius64/Cargo.toml` |
 | Limber, native-mul tables | in-process git dependency (`861f10a`) of f2z-pcs, `cargo bench` | fat LTO, 1 CGU (root profile; Limber's own `lto = "fat"` is ignored as a dependency but coincides) | `limber` fingerprint: `-C target-cpu=native` | native-mul u32/u64 (Limber rows) | fair |
 | Limber, MultiSwap historical row | `~/limber-impl` @ `b003684`, `cargo bench --bench multiswap_modp` (own workspace root) | its own `[profile.release] lto = "fat"` (CGUs default 16; bench profile inherits release) | fingerprint: `-C target-cpu=native` | MultiSwap table | fair (fat LTO; CGU count is second-order under fat LTO, see grid) |
 | Zinc+, MultiSwap historical row | `~/zinc-plus` @ `878fbd8`, `cargo bench --bench limber_multiswap` | its own `lto = true`, `codegen-units = 1` | README command sets `RUSTFLAGS="-C target-cpu=native"` | MultiSwap table | fair |
 | Plonky3 FRI | in-process git dependencies of f2z-pcs, `cargo bench` | fat LTO, 1 CGU | `p3-fri` fingerprint: `-C target-cpu=native` | native-mul u32/u64 | fair |
 | Spartan2 fork (`spartan-mc`) | in-process dependency, `cargo bench` | fat LTO, 1 CGU | `spartan2` fingerprint: `-C target-cpu=native` | historical SHA+ECDSA docs only | fair |
-| fields-witch (`~/fields-witch` @ `30cca8c`; the opener variant and the asm control in `~/fields-witch-f2z/target-{f2z,asm}`) | own workspace root, `cargo build --release --examples` | its own `lto = "thin"`, `codegen-units = 1` (the author documents fat LTO as a regression of its SHA-NI backend) | fingerprints in both target dirs: `-C target-cpu=native`; identical profile hash per unit kind in `target-asm` and `target-f2z` | fields-witch table | fair under "upstream default"; not fat+1 by the author's choice |
+| fields-witch (`~/fields-witch` @ `30cca8c`; the opener variant and the asm control in `~/fields-witch-bitz/target-{bitz,asm}`) | own workspace root, `cargo build --release --examples` | its own `lto = "thin"`, `codegen-units = 1` (the author documents fat LTO as a regression of its SHA-NI backend) | fingerprints in both target dirs: `-C target-cpu=native`; identical profile hash per unit kind in `target-asm` and `target-bitz` | fields-witch table | fair under "upstream default"; not fat+1 by the author's choice |
 | zkpassport worker (`benchmarks/zkpassport`) | own workspace root | `opt-level = 3`, `lto = "thin"` (16 CGUs) | no binary present on the box | none (method deprecated) | n/a |
-| f2z-p3-bridge (`~/f2z-p3-bridge`) | own workspace root | fat LTO, 1 CGU | docs only | none | n/a |
+| bitz-p3-bridge (`~/bitz-p3-bridge`) | own workspace root | fat LTO, 1 CGU | docs only | none | n/a |
 
-Two checks worth recording: the two fields-witch build directories (`target-f2z`, the opener
+Two checks worth recording: the two fields-witch build directories (`target-bitz`, the opener
 variant; `target-asm`, the assembly-SHA control) have identical Cargo profile hashes per unit
 kind, so both ran under the same thin + 1 CGU profile with different features only; and no
 `~/.cargo/config.toml`, repo or worker `.cargo/config.toml` exists, so nothing outside the
@@ -232,13 +232,13 @@ Tables and numbers that change under the policy:
 
 | Artifact | Status | What changes |
 |---|---|---|
-| `paper/main.tex`, inline table `tab:sha256-ecdsa-f2z-opt` (lines ~2926–2961) | **crippled Binius64 rows** (2026-09-11 campaign, worker without LTO): all 24 Binius64 cells; the F2Z cells are pre-suite (`fac8c8f`-level, rate 1/8 only) | replace with the fair table (§5.3); Binius64's 1-thread prover goes ~1019 → 168 ms, verifier ~150 → 13 ms at 8 KB; F2Z no longer wins the prover or verifier columns |
-| `paper/sha256-ecdsa-table.tex` (generated 2026-09-10, not `\input`) | stale on both sides (F2Z pre-`fac8c8f`, Binius64 crippled) | regenerate from the fair directories or delete |
+| `paper/main.tex`, inline table `tab:sha256-ecdsa-bitz-opt` (lines ~2926–2961) | **crippled Binius64 rows** (2026-09-11 campaign, worker without LTO): all 24 Binius64 cells; the BitZ cells are pre-suite (`fac8c8f`-level, rate 1/8 only) | replace with the fair table (§5.3); Binius64's 1-thread prover goes ~1019 → 168 ms, verifier ~150 → 13 ms at 8 KB; BitZ no longer wins the prover or verifier columns |
+| `paper/sha256-ecdsa-table.tex` (generated 2026-09-10, not `\input`) | stale on both sides (BitZ pre-`fac8c8f`, Binius64 crippled) | regenerate from the fair directories or delete |
 | `paper/native-mul*-table.tex`, `hybrid-table*.tex`, `u32-mul-table.tex`, `raw-performance-table.tex`, `multiswap-table.tex` | already fat LTO + 1 CGU on every scheme | unchanged |
 | `paper/fields-witch-table.tex` | fields-witch at its own thin + 1 CGU profile (documented exception) | unchanged; caption clause |
-| memory `f2z-sha256-ecdsa-opt.md`, `f2z-sha256-ecdsa-i7-campaign.md` | quote the crippled Binius64 numbers (1019/148, 917–1262/130–150, 214–289/51–57 ms) | superseded by this document; the `f2z-bench-suite-methodology.md` BUILD-PROFILE TRAP entry is updated below |
+| memory `bitz-sha256-ecdsa-opt.md`, `bitz-sha256-ecdsa-i7-campaign.md` | quote the crippled Binius64 numbers (1019/148, 917–1262/130–150, 214–289/51–57 ms) | superseded by this document; the `bitz-bench-suite-methodology.md` BUILD-PROFILE TRAP entry is updated below |
 
-## 4. Where F2Z now loses: F2Z vs Binius64 with fair builds
+## 4. Where BitZ now loses: BitZ vs Binius64 with fair builds
 
 All numbers below are from fair builds (fat LTO, 1 CGU, `-C target-cpu=native` on both sides):
 the 2026-09-13 suite at 2^7 (`bench_results/suite-sha256-ecdsa-20260913`, reps 3), the
@@ -249,17 +249,17 @@ same binaries re-run in this session (§1.2 `suite` rows, reps 5), the fair camp
 
 ### 4.1 The 2^7 breakdown (rate 1/2, ms, medians; 1 thread | 10 threads)
 
-F2Z Split, per-step scopes (`phases_seconds` / `verify_phases_seconds` of
+BitZ Split, per-step scopes (`phases_seconds` / `verify_phases_seconds` of
 `benches/sha256_ecdsa_compare.rs`; the nested opener scopes are inclusive):
 
-| F2Z prover step | 1 thr | 10 thr | | F2Z verifier step | 1 thr | 10 thr |
+| BitZ prover step | 1 thr | 10 thr | | BitZ verifier step | 1 thr | 10 thr |
 |---|---:|---:|---|---|---:|---:|
 | prover total (commit + protocol) | **206.8** | **65.8** | | verifier total | **44.7** | **15.2** |
 | `ecdsa:outer_prove` (6,807 nonlinear P-256 rows) | 3.4 | 3.9 | | `ecdsa:coefficient_evaluate` (P-256 matrices at the inner point) | 30.1 | 6.8 |
 | `ecdsa:coefficient_combine` (batched matrix MLE: 4.24 M-entry gather) | 21.0 | 5.7 | | `mv:rswitch` (ring-switch read-off) | 12.9 | 6.0 |
 | `ecdsa:shared_inner_prove` (degree-2 inner sumcheck over 2^22 cells) | 117.8 | 26.7 | | ⤷ `mqv:vaprime` (dual-basis a′ over the source columns) | 10.1 | 1.9 |
 | `ecdsa:coefficient_evaluate` (scale at the inner point) | 11.2 | 2.8 | | ⤷ `mqv:vwprep` (virtual column weights, serial) | 2.8 | 3.9 |
-| `ecdsa:f2z_prove` (the F2Z opening) | 52.3 | 25.2 | | `ecdsa:matrix_projection` (3,358 residues) | 0.6 | 0.7 |
+| `ecdsa:bitz_prove` (the BitZ opening) | 52.3 | 25.2 | | `ecdsa:matrix_projection` (3,358 residues) | 0.6 | 0.7 |
 | ⤷ `mc:forest` (GKR forest; `mf:phaseA` 18.4 / 11.6, `eqf:rounds` 15.5 / 7.9) | 20.8 | 12.6 | | `mv:lig` (Ligerito verify) | 0.4 | 0.4 |
 | ⤷ `mqv:hs` (ring-switch h-fold over the packed source) | 13.3 | 3.2 | | sumcheck rounds, grinding checks, rest | ~0.7 | ~1.4 |
 | ⤷ `mqv:aprime` | 7.0 | 1.8 | | | | |
@@ -279,50 +279,50 @@ Binius64 (BaseFold, rate 1/2; the worker's four phases, plus §4.3 for the PIOP'
 | verifier total | **12.8** | **6.2** |
 | witness generation (+ packing) | 9.4 | 10.3 |
 
-Circuits: F2Z `nonlinear_rows 6,807`, `linear_rows 24,831`, assignment `3,834,159` bits, source
+Circuits: BitZ `nonlinear_rows 6,807`, `linear_rows 24,831`, assignment `3,834,159` bits, source
 `2,097,071` bits; Binius64 `gates 637,313`, `bitand 332,751`, `intmul 64,801` (+45 k BMUL),
-FRI message 2^20, 241 queries. Proofs: F2Z 135.3 KB (rate 1/2) / 92.4 KB (rate 1/8), Binius64
+FRI message 2^20, 241 queries. Proofs: BitZ 135.3 KB (rate 1/2) / 92.4 KB (rate 1/8), Binius64
 393.8 / 289.2 KB; both schemes' proofs are byte-identical across thread counts.
 
 ### 4.2 Fixed P-256 cost versus per-compression SHA cost (1 thread unless stated)
 
 Least-squares fit `time = fixed + N · per_compression` over `N ∈ {16, 32, 64, 128, 1024}` from
-the fair campaigns (fit residuals at 2^7 are within 1 ms for F2Z and within 10 ms for Binius64,
+the fair campaigns (fit residuals at 2^7 are within 1 ms for BitZ and within 10 ms for Binius64,
 whose commit/opening step up when the FRI message grows from 2^19 to 2^20 at 2^7):
 
 | series | fixed (ms) | per compression (µs) | measured @ 2^4 | @ 2^7 | @ 2^10 |
 |---|---:|---:|---:|---:|---:|
-| F2Z prover, 1 thr | 137.7 | 538.6 | 146.0 | 206.8 | 689.2 |
+| BitZ prover, 1 thr | 137.7 | 538.6 | 146.0 | 206.8 | 689.2 |
 | Binius64 prover, 1 thr | 149.1 | 67.9 | 147.7 | 167.5 | 217.8 |
-| F2Z prover, 10 thr | 50.9 | 113.7 | 51.7 | 65.8 | 167.3 |
+| BitZ prover, 10 thr | 50.9 | 113.7 | 51.7 | 65.8 | 167.3 |
 | Binius64 prover, 10 thr | 57.1 | 15.7 | 57.3 | 60.3 | 73.1 |
-| F2Z verifier, 1 thr | 39.6 | 36.3 | 39.9 | 44.7 | 76.7 |
+| BitZ verifier, 1 thr | 39.6 | 36.3 | 39.9 | 44.7 | 76.7 |
 | Binius64 verifier, 1 thr | 11.1 | 11.0 | 11.3 | 12.8 | 22.4 |
-| F2Z verifier, 10 thr | 14.0 | 9.0 | 14.2 | 15.2 | 23.2 |
+| BitZ verifier, 10 thr | 14.0 | 9.0 | 14.2 | 15.2 | 23.2 |
 | Binius64 verifier, 10 thr | 5.7 | 2.6 | 5.7 | 6.2 | 8.4 |
-| F2Z `shared_inner_prove`, 1 thr | 66.5 | 400.8 | 72.0 | 117.8 | 476.9 |
-| F2Z `f2z_prove` (opening), 1 thr | 34.7 | 135.2 | 37.4 | 52.3 | 173.2 |
+| BitZ `shared_inner_prove`, 1 thr | 66.5 | 400.8 | 72.0 | 117.8 | 476.9 |
+| BitZ `bitz_prove` (opening), 1 thr | 34.7 | 135.2 | 37.4 | 52.3 | 173.2 |
 | ⤷ `mc:forest`, 1 thr | 7.4 | 110.4 | 9.6 | 20.8 | 120.6 |
-| F2Z `coefficient_combine` + `evaluate` (prover), 1 thr | 32.0 | ≈0 | 31.8 | 32.2 | 32.3 |
-| F2Z verifier `coefficient_evaluate`, 1 thr | 29.5 | ≈0 | 29.4 | 30.1 | 30.1 |
-| F2Z verifier `mv:rswitch`, 1 thr | 8.3 | 35.2 | 8.9 | 12.9 | 44.4 |
+| BitZ `coefficient_combine` + `evaluate` (prover), 1 thr | 32.0 | ≈0 | 31.8 | 32.2 | 32.3 |
+| BitZ verifier `coefficient_evaluate`, 1 thr | 29.5 | ≈0 | 29.4 | 30.1 | 30.1 |
+| BitZ verifier `mv:rswitch`, 1 thr | 8.3 | 35.2 | 8.9 | 12.9 | 44.4 |
 | Binius64 PIOP, 1 thr | 135.4 | 57.9 | 135.9 | 144.5 | 194.5 |
 
 Reading:
 
-- **The P-256 part costs the two provers the same.** F2Z's fixed cost (138 ms) is 8 % *below*
+- **The P-256 part costs the two provers the same.** BitZ's fixed cost (138 ms) is 8 % *below*
   Binius64's (149 ms) at 1 thread and 11 % below at 10 threads (51 vs 57 ms). At 2^4 the two
-  provers tie at 1 thread (146 vs 148 ms) and F2Z is 10 % faster at 10 threads (51.7 vs 57.3 ms).
-- **The SHA part is where F2Z loses the prover.** Each SHA-256 compression costs F2Z 0.54 ms
-  against Binius64's 0.068 ms single-threaded (7.9×; 7.2× at 10 threads). Of F2Z's 0.54 ms,
+  provers tie at 1 thread (146 vs 148 ms) and BitZ is 10 % faster at 10 threads (51.7 vs 57.3 ms).
+- **The SHA part is where BitZ loses the prover.** Each SHA-256 compression costs BitZ 0.54 ms
+  against Binius64's 0.068 ms single-threaded (7.9×; 7.2× at 10 threads). Of BitZ's 0.54 ms,
   0.40 ms is the inner sumcheck (2 × 20,457 cell-visits per compression ≈ 9.8 ns each, i.e. about
   two 113-bit Montgomery multiplications per visit) and 0.135 ms is the opening (0.11 ms of it the
   GKR forest over the compression's 2^14 source bits). This is the cost of proving SHA-256 as
   integer R1CS over a 113-bit prime; Binius64 proves it over F_2 words. At 2^7 the SHA rows
-  therefore cost F2Z 69 ms against Binius64's 9 ms, which is the 1-thread gap (207 vs 168 ms)
+  therefore cost BitZ 69 ms against Binius64's 9 ms, which is the 1-thread gap (207 vs 168 ms)
   almost exactly (the rest is the FRI-message step in Binius64's commit/opening at 2^7).
 - **The verifier gap is one fixed term plus a smaller linear one.** Of the 32 ms gap at 2^7,
-  28.5 ms is fixed: F2Z's verifier spends 30 ms evaluating the batched P-256 constraint-matrix
+  28.5 ms is fixed: BitZ's verifier spends 30 ms evaluating the batched P-256 constraint-matrix
   MLE at the inner sumcheck point (`ModQCoefficients::evaluate_batched_matrix_mle`: a gather over
   the 4.24 M nonzero entries, one Montgomery multiplication and addition each, then a
   1.2 M-column dot product with two multiplications per column ≈ 6.7 M Montgomery
@@ -330,13 +330,13 @@ Reading:
   fixed verifier of 11 ms — of which 12.0 of 12.6 ms at 2^7 is the same kind of term, the
   constraint-system ("wiring") evaluation at word granularity (§4.3), and only 0.4 ms is the
   BaseFold/FRI verification. The remaining 3.5 ms of the gap is linear:
-  F2Z's ring-switch read-off (`mv:rswitch`, 35 µs/compression, dominated by `mqv:vaprime`)
+  BitZ's ring-switch read-off (`mv:rswitch`, 35 µs/compression, dominated by `mqv:vaprime`)
   against Binius64's 11 µs/compression.
 - **The prover's fixed part has the same O(nnz) gathers.** `coefficient_combine` (21 ms) builds
   the same batched matrix MLE the verifier evaluates, and `coefficient_evaluate` (11 ms) is the
   same tail dot product; together 32 ms of the prover's 138 ms fixed cost.
-- **10 threads.** F2Z's fixed prover cost parallelizes 2.7× (138 → 51 ms) and Binius64's 2.6×
-  (149 → 57 ms); F2Z's per-compression cost parallelizes 4.7× and Binius64's 4.3×. F2Z's residual
+- **10 threads.** BitZ's fixed prover cost parallelizes 2.7× (138 → 51 ms) and Binius64's 2.6×
+  (149 → 57 ms); BitZ's per-compression cost parallelizes 4.7× and Binius64's 4.3×. BitZ's residual
   serial work at 10 threads is `ecdsa:outer_prove` (3.9 ms), `mqv:wprep` (4.0 ms, *slower* than
   at 1 thread) and the forest's `mf:phaseA` (11.6 ms, only 1.6× faster than at 1 thread); those
   three are 30 % of the 10-thread prover. On the verifier `mqv:vwprep` (3.9 ms) is 26 % of the
@@ -365,15 +365,15 @@ is 4× longer, and the Merkle hashing is portable SHA-256; `IntMul check` 98.5, 
 The **IntMul reduction is 54 % of Binius64's PIOP** and is entirely the P-256 gadget's cost
 (64,801 IntMul constraints, the same at every message size); the SHA-256 compressions enter only
 through the shift and AND reductions, which is why Binius64's per-compression cost is 0.068 ms.
-For F2Z the corresponding fixed cost is the 6,807 nonlinear rows' outer sumcheck (3.4 ms) plus the
+For BitZ the corresponding fixed cost is the 6,807 nonlinear rows' outer sumcheck (3.4 ms) plus the
 P-256 share of the inner sumcheck and of the two O(nnz) gathers.
 
-With the F2Z opener in place of BaseFold (`binius64-ligerito`, rate 1/2, 1 thread): prover 173.8
+With the BitZ opener in place of BaseFold (`binius64-ligerito`, rate 1/2, 1 thread): prover 173.8
 = `Commit oracles` 14.1 + `PIOP prefix` 143.1 + `Opening` 16.4; verifier 14.1 ms. The PIOP prefix
 is the same 143 ms; the opener adds 7 ms of opening (Round 0 + two Johnson openings with grinding)
 against BaseFold's 9.6 ms opening + cheaper commit, and its verifier is 1.4 ms slower than
-BaseFold's. The Binius64-with-F2Z-opener rows therefore inherit Binius64's PIOP cost structure
-exactly; they are not a path to closing F2Z-SNARK's own gaps.
+BaseFold's. The Binius64-with-BitZ-opener rows therefore inherit Binius64's PIOP cost structure
+exactly; they are not a path to closing BitZ-SNARK's own gaps.
 
 **Binius64's verifier.** Its named sub-phases (`[phase] Verify IntMul/BinMul/BitAnd/Shift
 Reduction`, `Verify Public Input`, `Verify PCS Opening`) total only 0.2 ms of the 12.8 ms: the
@@ -393,19 +393,19 @@ folding checks). Timed separately in the profiling copy (the worker's `verify` r
 | BaseFold finish (`channel.finish()`: ring switch, 241 / 121 FRI queries, Merkle paths, folds) | 0.43 | 0.33 | 0.51 | 0.39 |
 | total `verify` | 12.65 | 12.56 | 6.23 | 6.16 |
 
-Binius64's verifier is therefore **95 % the wiring evaluation** — the same kind of term as F2Z's
-`coefficient_evaluate`, and it parallelizes the same way (12.0 → 5.5 ms at 10 threads, F2Z's
+Binius64's verifier is therefore **95 % the wiring evaluation** — the same kind of term as BitZ's
+`coefficient_evaluate`, and it parallelizes the same way (12.0 → 5.5 ms at 10 threads, BitZ's
 30 → 6.8). The FRI/BaseFold verification is 0.3–0.5 ms at either rate.
 
-So Binius64's verifier is also linear in the circuit, like F2Z's; the difference is the constant:
-word-granular operands in GF(2^128) (12 ms) against F2Z's 4.24 M bit-level nonzero entries with
+So Binius64's verifier is also linear in the circuit, like BitZ's; the difference is the constant:
+word-granular operands in GF(2^128) (12 ms) against BitZ's 4.24 M bit-level nonzero entries with
 113-bit modular multiplications (30 ms), i.e. roughly 3.5× fewer entries and cheaper arithmetic
 per entry. The "holographic" lever V3 would apply to Binius64 just as well; neither system
 preprocesses its constraint system today.
 
 ### 4.4 Function-level attribution (macOS `sample`, 1 ms, 1 thread; share of busy samples)
 
-F2Z (suite binary, `f2z-split`, rate 1/2, 40 proofs + verifications; 6,715 busy samples): the
+BitZ (suite binary, `bitz-split`, rate 1/2, 40 proofs + verifications; 6,715 busy samples): the
 inner sumcheck's factored prefix pass `inner_sumcheck::accumulate_factored_instance<4>` 16.2 %,
 `inner_reduction::ModQCoefficients::p256_column_weight` 16.0 % (the O(nnz) gather — the prover's
 `coefficient_combine` and the verifier's `coefficient_evaluate` share it), `accumulate_suffix<4>`
@@ -430,7 +430,7 @@ portable `sha256_multi<4>` 2.7 % (Merkle leaves), `MleCheckRoundEvaluator::accum
 the wiring `call_native` ≈ 1.3 %. Nothing in Binius64's profile is a single dominant kernel; the
 P-256 IntMul machinery is spread over a dozen functions.
 
-F2Z at 10 threads (80 proofs; 21,768 busy samples on 10 threads): `p256_column_weight` 14.5 % and
+BitZ at 10 threads (80 proofs; 21,768 busy samples on 10 threads): `p256_column_weight` 14.5 % and
 `accumulate_factored_instance` 14.1 % lead again, `evaluate_batched_matrix_mle` 3.6 %,
 `build_batched_matrix_mle` 2.9 %, `first_pow_nonce` 2.1 %; of the 41.5 k thread-samples,
 19.8 k are idle waits (`__psynch_cvwait`, `swtch_pri`): the pool is idle almost half of the
@@ -439,7 +439,7 @@ short parallel regions with rayon dispatch overhead.
 
 ### 4.5 Levers (what could close the gaps)
 
-Related to the levers recorded in memory (`f2z-sha256-ecdsa-opt.md`: the interned projection
+Related to the levers recorded in memory (`bitz-sha256-ecdsa-opt.md`: the interned projection
 and the raw-Montgomery gathers are in; "what is left" was the composite inner sumcheck from 2^9
 up, the opening at ~0.17 ms/compression, and `mv:rswitch` as the verifier's linear term). The
 fair data refine that list: the verifier's *fixed* term — the P-256 matrix evaluation — was not
@@ -451,7 +451,7 @@ on it and is now the largest single gap.
 | V2 | fewer nonzero entries in the P-256 gadget (4.24 M entries in 7,061 rows: a 494 k, b 2.17 M, c 1.58 M; 3,358 distinct coefficients, 45 % of entries 129–256 bits — the vendored `crates/circuit` bignum rows) | verifier fixed 30 ms and prover fixed 32 ms (`combine` + `evaluate`) | proportional: halving nnz saves ≈15 ms verifier and ≈10 ms prover at 1 thread | no (circuit-crate change) |
 | V3 | holographic evaluation of A, B, C (commit to the matrices once; Spark-style sparse evaluation with a preprocessing step) | verifier | removes the whole fixed 30 ms term (verifier ≈ 15 ms at 1 thread, on par with Binius64's 13) at the price of a preprocessing phase and extra prover openings | no (protocol change; paper-level) |
 | V4 | parallelize or hoist `mqv:vwprep` (serial; 2.8 ms at 1 thread, 3.9 ms at 10) and `ecdsa:outer_prove` (3.4 / 3.9 ms) | verifier and prover at 10 threads | ≈8 ms of the 10-thread prover (12 %), 4 ms of the 10-thread verifier (26 %) | no |
-| **V0** | **adopt the vendored crate's Wengert tape** (`crates/circuit/src/matrix_wengert.rs`: the P-256 circuit's linear arithmetic recorded as a DAG; `PreparedWengertEvaluator::apply` computes `r·(A + xB + x²C)` over all 1,215,663 columns by reverse mode, with the 2^i bit lifts as doubling "power groups") in place of the expanded 4.24 M-entry gather of `ModQCoefficients::build_batched_matrix_mle` / `evaluate_batched_matrix_mle`; F2Z uses only the crate's witness-generation products today | prover `coefficient_combine` and the gather inside the verifier's `coefficient_evaluate` | **measured on the crate's own bench (§4.7): 66,412 nodes, 97,986 edges, 259 reverse levels, 1,029 coefficients; apply 2.71 ms at 1 thread, 0.82 ms at 10, against 21 / 5.7 ms today**; with V1 for the remaining tail dot the verifier's 30 ms term becomes ≈8 ms | tape: yes; integration: no (plan in §4.7) |
+| **V0** | **adopt the vendored crate's Wengert tape** (`crates/circuit/src/matrix_wengert.rs`: the P-256 circuit's linear arithmetic recorded as a DAG; `PreparedWengertEvaluator::apply` computes `r·(A + xB + x²C)` over all 1,215,663 columns by reverse mode, with the 2^i bit lifts as doubling "power groups") in place of the expanded 4.24 M-entry gather of `ModQCoefficients::build_batched_matrix_mle` / `evaluate_batched_matrix_mle`; BitZ uses only the crate's witness-generation products today | prover `coefficient_combine` and the gather inside the verifier's `coefficient_evaluate` | **measured on the crate's own bench (§4.7): 66,412 nodes, 97,986 edges, 259 reverse levels, 1,029 coefficients; apply 2.71 ms at 1 thread, 0.82 ms at 10, against 21 / 5.7 ms today**; with V1 for the remaining tail dot the verifier's 30 ms term becomes ≈8 ms | tape: yes; integration: no (plan in §4.7) |
 | P0 | hoist the per-element field-configuration check of the inner prover (`crypto_bigint MontyParams::eq`, 3.5 % of the 1-thread samples in §4.4: every coefficient the prefix/fold passes read is compared against the shared runtime configuration) | prover, all thread counts | ≈7 ms of the 1-thread prover (3 %) | no (sample evidence only) |
 | P1 | the inner sumcheck's SHA share: 0.40 ms/compression ≈ 2 Montgomery multiplications per cell-visit; the K = 4 ternary prefix pass, shared block extensions and zero skipping are already in (memory Tier 3; K = 3 ≈ K = 4 measured) | prover, 1 thread | the 8× per-compression gap cannot be closed inside the 113-bit prime-field arithmetization; the paper's answer is the hybrid SNARK (SHA over F_2, §"Mod 2^32 multiplication and SHA-256 hashing") | scaling measured (§4.2) |
 | P2 | the forest's `mf:phaseA` scaling (18.4 → 11.6 ms) and the opening's fixed 35 ms (Round 0 + ring switch + Ligerito with grinding) | prover, 10 threads | 12 ms of the 10-thread prover | no |
@@ -511,10 +511,10 @@ once and expanding the bit lifts by doubling. Measured with the crate's own benc
 | tape | 66,412 nodes, 97,986 edges, 259 reverse levels, 1,029 distinct coefficients, 7,061 rows × 1,215,663 columns, 6.2 MiB |
 | `apply` (the vector `r·(A + xB + x²C)` over all columns, Montgomery form), 1 thread | **2.71 ms** |
 | `apply`, 10 threads | **0.82 ms** |
-| F2Z today: `coefficient_combine` (prover, the same vector), 1 / 10 threads | 21.0 / 5.7 ms |
-| F2Z today: the gather inside the verifier's `coefficient_evaluate`, 1 / 10 threads | ≈21 / ≈5 ms of 30.1 / 6.8 |
+| BitZ today: `coefficient_combine` (prover, the same vector), 1 / 10 threads | 21.0 / 5.7 ms |
+| BitZ today: the gather inside the verifier's `coefficient_evaluate`, 1 / 10 threads | ≈21 / ≈5 ms of 30.1 / 6.8 |
 
-F2Z's `ModQCoefficients` (`src/piop/spartan/ecdsa_sha256/inner_reduction.rs`) was written
+BitZ's `ModQCoefficients` (`src/piop/spartan/ecdsa_sha256/inner_reduction.rs`) was written
 against the expanded rows (`CompactRows` + `TailColumns`, the 2026-09-10 interning pass) and
 never adopted the tape; only witness generation uses the crate's product machinery
 (`ProductWitgen`). Row and column numbering coincide by construction: both backends replay
@@ -552,10 +552,10 @@ Result at 2^7: prover −10 % at 1 thread (206 → 184 ms; Binius64 168) and −
 and ≈8 ms of tail dot product — the phase 2/3 targets.
 
 **Every size, tape build vs the fair campaign** (`bench_results/sha256-ecdsa-tape-20260913-i4-10`,
-F2Z rows only, official runner, same fixtures, reps 3; proof sizes identical at every cell; the
+BitZ rows only, official runner, same fixtures, reps 3; proof sizes identical at every cell; the
 Binius64 rate-1/2 column is the fair campaign's):
 
-| N | thr | F2Z prover before → after | F2Z verifier before → after | Binius64 prover / verifier |
+| N | thr | BitZ prover before → after | BitZ verifier before → after | Binius64 prover / verifier |
 |---|---:|---:|---:|---:|
 | 2^4 | 1 | 146 → **125** (−14 %) | 39.9 → **19.4** (−51 %) | 148 / 11.3 |
 | 2^5 | 1 | 156 → **136** (−13 %) | 40.7 → **20.1** (−51 %) | 148 / 11.4 |
@@ -568,9 +568,9 @@ Binius64 rate-1/2 column is the fair campaign's):
 | 2^7 | 10 | 65.8 → **62.5** (−5 %) | 15.2 → **12.4** (−19 %) | 60.3 / 6.2 |
 | 2^10 | 10 | 167 → **166** (−1 %) | 23.2 → **20.1** (−13 %) | 73.1 / 8.4 |
 
-(rate 1/8 rows within 1 % of rate 1/2.) F2Z's prover now beats Binius64's at 1 thread up to 4 KB
+(rate 1/8 rows within 1 % of rate 1/2.) BitZ's prover now beats Binius64's at 1 thread up to 4 KB
 and at 10 threads up to 4 KB, and is within 4 % at 8 KB and 10 threads. The proposed paper table
-with these F2Z rows is `docs/sha256-ecdsa-table-proposed-tape.tex`.
+with these BitZ rows is `docs/sha256-ecdsa-table-proposed-tape.tex`.
 
 **Phase 1 as planned (kept for the record; transcript-neutral, proofs byte-identical).** Build the `WengertTape`
 in `build_local` next to the expanded rows; `ModQCoefficients::from_relation` calls
@@ -600,9 +600,9 @@ P-256 relation. Add a `Circuit` backend to the vendored crate that lowers the la
 representatives to 64-bit limb cells instead of bit vectors: a 521-bit hint becomes nine limb
 cells, `uint_from_repr` becomes a nine-term combination with `2^{64k}` coefficients, the 7,061
 rows keep their shape with ≈60 k nonzeros in total, and the witness becomes ≈20 k integer cells
-of the same total bit count. F2Z's per-column bit-size bound gives every limb its range for
+of the same total bit count. BitZ's per-column bit-size bound gives every limb its range for
 free, which is what the bit lifts provide implicitly today; the 265-bit quotient bound is a
-five-limb cell with a narrower top limb. On the F2Z side the P-256 part becomes a mod-q
+five-limb cell with a narrower top limb. On the BitZ side the P-256 part becomes a mod-q
 integer-cell relation in the style of the u64 relation (field-valued raw-Montgomery Spartan,
 `2^64` C coefficients), whose claim is batched with the SHA bit claim in one opening the way the
 hybrid protocol already batches an integer-cell claim with a Binius bit claim. The inner
@@ -651,10 +651,10 @@ A/B at 2^7 (tape build vs tape + kernel, interleaved 2 × 5, ms):
 | tape | 10 | 1/8 | 61.7 | 25.9 | 24.4 | 12.1 | 92,433 |
 | tape + kernel | 10 | 1/8 | 63.1 | 26.9 | 24.9 | 11.9 | 92,433 |
 
-Every size (`bench_results/sha256-ecdsa-kernel-20260913-i4-10`, official runner, F2Z rows;
+Every size (`bench_results/sha256-ecdsa-kernel-20260913-i4-10`, official runner, BitZ rows;
 proof sizes identical to the tape build at every cell):
 
-| N | thr | F2Z prover: tape → kernel | Binius64 prover | F2Z verifier | Binius64 verifier |
+| N | thr | BitZ prover: tape → kernel | Binius64 prover | BitZ verifier | Binius64 verifier |
 |---|---:|---:|---:|---:|---:|
 | 2^4 | 1 | 125 → **93** (−25 %) | 148 | 19.5 | 11.3 |
 | 2^5 | 1 | 136 → **103** (−24 %) | 148 | 20.0 | 11.4 |
@@ -665,7 +665,7 @@ proof sizes identical to the tape build at every cell):
 | 2^7 | 10 | 62.5 → 63.6 | 60.3 | 12.1 | 6.2 |
 | 2^10 | 10 | 165 → 165 | 73.1 | 19.2 | 8.4 |
 
-Reading: at 1 thread F2Z's prover is now below Binius64's up to 8 KB (37 % faster at 1 KB,
+Reading: at 1 thread BitZ's prover is now below Binius64's up to 8 KB (37 % faster at 1 KB,
 9 % at 8 KB) and the P-256 fixed cost is ≈85 ms against Binius64's 149. At 10 threads the
 kernel is a wash (+1–4 %, within noise): the tail's prefix pass was already parallel and small
 there, and the new pass adds ≈1 ms of serial piece construction (done twice; caching it is a
@@ -677,7 +677,7 @@ be applied one level up — the natural next lever if the 1-thread prover matter
 
 Combined patch (tape + kernel, 7 files, +875/−44), applied to the main checkout uncommitted for
 review: `docs/sha256-ecdsa-tape-kernel.patch` (supersedes `sha256-ecdsa-tape-phase1.patch`).
-Proposed paper table with these F2Z rows: `docs/sha256-ecdsa-table-proposed-kernel.tex`.
+Proposed paper table with these BitZ rows: `docs/sha256-ecdsa-table-proposed-kernel.tex`.
 
 ### 4.9 Levers 2, 3, 5 (part) and 7 — DONE and measured (2026-09-13, 22:19; committed)
 
@@ -705,7 +705,7 @@ A/B at 2^7 (kernel build vs this build, interleaved 2 × 5, ms):
 
 Every size (`bench_results/sha256-ecdsa-levers2-20260913-i4-10`; proof sizes identical):
 
-| N | thr | F2Z prover: kernel → now | Binius64 | F2Z verifier: kernel → now | Binius64 |
+| N | thr | BitZ prover: kernel → now | Binius64 | BitZ verifier: kernel → now | Binius64 |
 |---|---:|---:|---:|---:|---:|
 | 2^4 | 1 | 93 → **85** | 148 | 19.5 → **14.8** | 11.3 |
 | 2^5 | 1 | 103 → **94** | 148 | 20.0 → **15.6** | 11.4 |
@@ -753,7 +753,7 @@ A/B at 2^7 (previous commit vs this build, interleaved 2 × 5, ms):
 
 Every size (`bench_results/sha256-ecdsa-levers3-20260913-i4-10`; proof sizes identical):
 
-| N | thr | F2Z prover: §4.9 → now | Binius64 | F2Z verifier: §4.9 → now | Binius64 |
+| N | thr | BitZ prover: §4.9 → now | Binius64 | BitZ verifier: §4.9 → now | Binius64 |
 |---|---:|---:|---:|---:|---:|
 | 2^4 | 1 | 85 → **66** | 148 | 14.8 → 15.6 | 11.3 |
 | 2^5 | 1 | 94 → **70** | 148 | 15.6 → 16.1 | 11.4 |
@@ -778,10 +778,10 @@ Asked after §4.10: make sure the SHA+ECDSA path uses every optimization the oth
 get (parallel grinding and the other levers "on the table"). Three checks and two changes.
 
 **Library knobs.** Every byte-identical lever is a library default that no campaign script
-overrides (`F2Z_RS_FAST`, `F2Z_FIXED_SCALAR`, `F2Z_VIRT_PLANES`, `F2Z_VIRT_ID_FAST`, `F2Z_LUT3`,
-`F2Z_EQF_DOUBLE`, `F2Z_EQF_FUSE`, `F2Z_JIT_GRID`, `F2Z_LEAF_TILE`, `F2Z_PAIR2_FACTORED`,
-`F2Z_FOLDV_LUT`, `F2Z_COL_ELIDE`; size-gated `F2Z_MATS_TILE`, `F2Z_T4_FACTORED`, `F2Z_LEAF8`,
-`F2Z_FLAT_FOREST`), so the forest, ring switch and opener kernels are identical across the u32/u64,
+overrides (`BITZ_RS_FAST`, `BITZ_FIXED_SCALAR`, `BITZ_VIRT_PLANES`, `BITZ_VIRT_ID_FAST`, `BITZ_LUT3`,
+`BITZ_EQF_DOUBLE`, `BITZ_EQF_FUSE`, `BITZ_JIT_GRID`, `BITZ_LEAF_TILE`, `BITZ_PAIR2_FACTORED`,
+`BITZ_FOLDV_LUT`, `BITZ_COL_ELIDE`; size-gated `BITZ_MATS_TILE`, `BITZ_T4_FACTORED`, `BITZ_LEAF8`,
+`BITZ_FLAT_FOREST`), so the forest, ring switch and opener kernels are identical across the u32/u64,
 SHA-chain and SHA+ECDSA benches by construction. A gated sweep of the opt-in and tuning knobs on the
 §4.10 binary (2^7, `custom:1:4`, 2 × 5 interleaved at 1 and 10 threads, `res/knobs-*.jsonl`)
 found nothing that beats the defaults:
@@ -789,14 +789,14 @@ found nothing that beats the defaults:
 | knob | 1 thr prover | 10 thr prover | 10 thr `mc:forest` |
 |---|---:|---:|---:|
 | defaults | 91.5 | 49.3 | 12.8 |
-| `F2Z_PAR_CHUNK=1` / `2` / `4` | 90.5 / 91.3 / 92.6 | 50.0 / 50.4 / 49.3 | 13.8 / 13.5 / 13.3 |
-| `F2Z_LUT4=1` | 91.3 | 49.7 | 13.0 |
-| `F2Z_FLAT_FOREST=0` | 93.6 | 51.8 | 14.6 |
-| `F2Z_FLAT_FOREST=1` (forced) | 92.0 | 48.6 | 12.6 |
-| `F2Z_LEAF8=1` | 92.3 | 49.5 | 12.8 |
+| `BITZ_PAR_CHUNK=1` / `2` / `4` | 90.5 / 91.3 / 92.6 | 50.0 / 50.4 / 49.3 | 13.8 / 13.5 / 13.3 |
+| `BITZ_LUT4=1` | 91.3 | 49.7 | 13.0 |
+| `BITZ_FLAT_FOREST=0` | 93.6 | 51.8 | 14.6 |
+| `BITZ_FLAT_FOREST=1` (forced) | 92.0 | 48.6 | 12.6 |
+| `BITZ_LEAF8=1` | 92.3 | 49.5 | 12.8 |
 
 All within the ±1 ms run-to-run noise except the flat forest, whose default (auto) already picks
-the winning shape. `F2Z_QUAD` and `F2_FOREST_SCHEDULE` change the transcript and stay out.
+the winning shape. `BITZ_QUAD` and `F2_FOREST_SCHEDULE` change the transcript and stay out.
 
 **Grinding.** Both grinders — the Ligerito challenger (`ligerito_flock::grind_pow`) and the Spartan
 round boundaries (`grinding::find_grinding_nonce`) — call the same `blake3x4::first_pow_nonce`
@@ -874,11 +874,11 @@ SHA-chain table pays the same code), so it is at parity — and it is the remain
    compressions), the suite's headline size is 2^7 (8,128 bytes), and the fair campaign adds
    2^10 (65,472 bytes). "We compare \ftwoz-SNARK with Binius64 \cite{binius64}, Zinc+
    \cite{zincplus}" — there is no Zinc+ row; the Binius suite has four rows.
-2. **Lines 2926–2961, the inline table `tab:sha256-ecdsa-f2z-opt`.** Every Binius64 cell
+2. **Lines 2926–2961, the inline table `tab:sha256-ecdsa-bitz-opt`.** Every Binius64 cell
    (both rates, both thread counts, all four sizes) comes from the crippled worker: prover
    917–1262 ms and verifier 130–150 ms at 1 thread, 214–289 / 51–57 ms at 10 threads. Fair values
    at 8.13 KB: 167 / 12.8 ms (1 thread), 60.3 / 6.2 ms (10 threads) at rate 1/2. Consequently
-   the bold marks in the Prover and Verifier columns are wrong (F2Z does not win them), the F2Z
+   the bold marks in the Prover and Verifier columns are wrong (BitZ does not win them), the BitZ
    rows are pre-suite (`fac8c8f` level, rate 1/8 only; the suite measures both rates), the scheme
    names carry "(this work)" and `\cite` (against the 2026-09-13 naming decision), and the
    caption still describes a before/after A/B ("\emph{Before} is master 9d75b2b, \emph{after} is
@@ -946,14 +946,14 @@ was generated from `bench_results/suite-sha256-ecdsa-20260913` (2^7) and
 | 65.47 | \ftwoz-SNARK, rate 1/8 | 696 | 169 | 76.7 | 22.9 | 125 |
 | 65.47 | Binius (UDR), rate 1/2 | 218 | 73.1 | 22.4 | 7.93 | 394 |
 
-Two caveats for the user: the F2Z witgen column at 2^4/2^5 (7.2–9.4 ms at 1 thread, 3.0–3.5 ms at
+Two caveats for the user: the BitZ witgen column at 2^4/2^5 (7.2–9.4 ms at 1 thread, 3.0–3.5 ms at
 10 threads) still uses the per-bit packing fallback for `N < 64` that memory Tier 2b removed in
 the unmerged `worktree-ecdsa-opt`; and the 2^10 rows are the only ones where Binius64's peak
-memory (1.67–1.77 GB) exceeds F2Z's (1.41 GB).
+memory (1.67–1.77 GB) exceeds BitZ's (1.41 GB).
 
 ## 6. Reproduction and files
 
-Everything ran through `scripts/bench_gate.py` (lock `/tmp/f2z-bench.lock`, idle hold, swap guard)
+Everything ran through `scripts/bench_gate.py` (lock `/tmp/bitz-bench.lock`, idle hold, swap guard)
 after the other session had stopped its raw-performance sweep and handed the machine over; nothing
 in the main checkout was edited, committed, stashed or reset. Session artifacts live under the
 session scratchpad `…/scratchpad/inv/` (not in the repository):
@@ -985,7 +985,7 @@ Repository results written by this investigation (new directories only):
 Re-running the grid from scratch:
 
 ```sh
-# recorded 2026-09-10 worker source: bench_results/sha256-ecdsa-i7-f2z-binius/source/benchmarks/binius64
+# recorded 2026-09-10 worker source: bench_results/sha256-ecdsa-i7-bitz-binius/source/benchmarks/binius64
 # (needs ../../benches/support/sha256_ecdsa_fixture.rs next to it); current worker: benchmarks/binius64
 CARGO_TARGET_DIR=/tmp/t-none16 CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
   RUSTFLAGS="-C target-cpu=native" cargo build --release --locked -v      # Cargo default (the old worker)

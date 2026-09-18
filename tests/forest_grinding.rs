@@ -1,15 +1,17 @@
 //! End-to-end coverage of the B.6 forest/opening grinding hooks: at
-//! `Lambda128` every challenge drawn in the F2Z opening region carries a
+//! `Lambda128` every challenge drawn in the BitZ opening region carries a
 //! two-bit proof-of-work boundary and the nonces ride the proof stream.
 
-use f2z::ligerito_flock::IntEvalRsLigVirtProof;
-use f2z::piop::spartan::{
+use ::bitz::piop::spartan::protocol::linear::LinearProof;
+
+use bitz::ligerito_flock::IntEvalRsLigVirtProof;
+use bitz::piop::spartan::{
     Lambda128, PreparedSha256CompressionBatch, Sha128ReferenceSchedule, Sha256CompressionStatement,
     commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
     prepare_sha256_compression_batch_with_profile, prove_sha256_compressions_with_config,
     sha256_compression_configs, verify_sha256_compressions_with_config,
 };
-use f2z::transcript::Blake3Transcript;
+use bitz::transcript::Blake3Transcript;
 
 const EXPONENT: usize = 7;
 
@@ -18,7 +20,7 @@ fn prove_under(
 ) -> (
     Vec<u8>,
     usize,
-    f2z::piop::spartan::Sha256CompressionProof,
+    LinearProof,
     flock_core::pcs::commit::Commitment,
     flock_core::pcs::ligerito::VerifierConfig,
     Vec<Sha256CompressionStatement>,
@@ -62,8 +64,8 @@ fn prove_under(
         &vc,
     )
     .expect("verify");
-    let bytes = proof.f2z().to_bytes();
-    let nonces = proof.f2z().grinding_nonces.len();
+    let bytes = proof.bitz().to_bytes();
+    let nonces = proof.bitz().grinding_nonces.len();
     (bytes, nonces, proof, hint.commitment, vc, statements)
 }
 

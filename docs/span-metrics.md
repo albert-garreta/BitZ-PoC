@@ -8,11 +8,19 @@ they do not maintain a second clock or collector. `src/utils/prof.rs` is retired
 
 ## Runtime requirements
 
-Install the native Perfetto trace processor separately and set
-`PERFETTO_TRACE_PROCESSOR=/absolute/path/to/trace_processor_shell`, or put that
-executable on `PATH`. Queries run locally, in Rust, through the native processor;
+Install the native Perfetto trace processor into this checkout:
+
+```bash
+bash scripts/install_trace_processor.sh
+export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
+```
+
+Run these commands from the repository root. The installer pins Perfetto v58.2,
+verifies its SHA-256 checksum, and reuses a matching installation. Alternatively,
+set `PERFETTO_TRACE_PROCESSOR` to another native processor or put
+`trace_processor_shell` on `PATH`. Queries run locally, in Rust, through the native processor;
 there is no Python step or automatic download. In-memory querying currently uses
-Unix `/dev/stdin`. Build profiling examples and the `f2z` CLI with
+Unix `/dev/stdin`. Build profiling examples and the `bitz` CLI with
 `--features span-metrics`; add their backend features as usual.
 
 ## Measurement contract
@@ -57,7 +65,7 @@ on macOS. The diagnostic hybrid probe uses `getrusage` on macOS and Linux.
 
 ## Inventory and checks
 
-The shared path covers core F2Z annotations; native multiplication and SHA;
+The shared path covers core BitZ annotations; native multiplication and SHA;
 SHA/ECDSA (including the Spartan2 `d3e686e` phase spans); PCS comparisons;
 setup/witness audits; tuning; hybrid runs; CLI summaries; diagnostic examples;
 isolated Binius64/zkPassport workers; and the standalone field microbenchmark.
@@ -96,7 +104,7 @@ Rayon threads.
   all 44 tests, including the formerly failing configuration assertion.
 - The new Spartan2 pin passes six verified SHA/ECDSA trials with its internal
   phase intervals. Canonical PCS validation passes 18 runs / 9,702 spans across
-  F2Z, Binius64 BaseFold, and F2Z-Ligerito binary adapters.
+  BitZ, Binius64 BaseFold, and BitZ-Ligerito binary adapters.
 - All four hybrid modes produce one warmup plus five verified samples. The CLI
   multiplication run, the hybrid RSS diagnostic (six verified trials), and the
   native multiplication untraced memory child also pass.
@@ -111,7 +119,7 @@ Metadata compatibility follow-up:
 - The native multiplication test now validates the versioned identity and reads
   ladder fields under `configuration`, matching the producer's actual schema.
 - Binius-Ligerito now emits `LIGERITO_CONFIG` using the typed
-  `f2z/binius-ligerito-pcs/v1` identity. It records the whole-protocol target (100),
+  `bitz/binius-ligerito-pcs/v1` identity. It records the whole-protocol target (100),
   the selected opener component target, and every oracle's actual ladder and
   Round-0 grinding settings. This is a PCS configuration identity, not a new
   security theorem or an alternative soundness analysis.

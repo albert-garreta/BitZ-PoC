@@ -1,4 +1,7 @@
-//! Controlled decoding-bound experiment within F2Z. No competing backend configuration is read.
+//! Controlled decoding-bound experiment within BitZ. No competing backend configuration is read.
+use ::bitz::ligerito_flock::IntEvalRsLigModQProof;
+use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
+
 mod common;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 macro_rules! bail {
@@ -6,13 +9,13 @@ macro_rules! bail {
         return Err($message.into())
     };
 }
-use ::f2z::{
+use ::bitz::observability::{self, Recording};
+use ::bitz::{
     ligerito_flock::{LigeritoSelection, ResolvedLigerito},
     piop::spartan::*,
     transcript::Blake3Transcript,
 };
 use serde_json::json;
-use ::f2z::observability::{self, Recording};
 const SEED: u64 = 0x5533_3250_4353_0064;
 type SetupCapture = (Recording<Vec<u8>>, tracing::span::EnteredSpan);
 
@@ -26,7 +29,7 @@ impl Experiment {
         &self,
         setup: SetupCapture,
         resolved: &ResolvedLigerito,
-        ood: Option<::f2z::ligerito_flock::OodRoundParams>,
+        ood: Option<::bitz::ligerito_flock::OodRoundParams>,
         corpus: &[u8],
         witness: impl Fn() -> Result<W>,
         commit: impl Fn(&W) -> Result<H>,
@@ -35,14 +38,16 @@ impl Experiment {
         size: impl Fn(&H, &P) -> Result<ProofSize>,
     ) -> Result<()> {
         drop(setup.1);
-        let setup_ms = observability::duration(&setup.0.intervals()?, "bounds:setup")?.as_secs_f64() * 1000.;
+        let setup_ms =
+            observability::duration(&setup.0.intervals()?, "bounds:setup")?.as_secs_f64() * 1000.;
         let mut config = common::ligerito_report(resolved, ood);
         config["requested_profile"] = json!(self.selection.name());
         let corpus_digest = blake3::hash(corpus).to_hex().to_string();
         let trials = if self.memory { 1 } else { 6 };
         for trial in 0..trials {
             let recording = Recording::start(Vec::new())?;
-            let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0).entered();
+            let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0)
+                .entered();
             let w = tracing::info_span!("bounds:witness").in_scope(&witness)?;
             let online = tracing::info_span!("bounds:online").entered();
             let h = tracing::info_span!("bounds:commit").in_scope(|| commit(&w))?;
@@ -53,7 +58,8 @@ impl Experiment {
             let proof_size = size(&h, &p)?;
             tracing::info_span!("bounds:verification").in_scope(|| verify(&w, &h, &p))?;
             let intervals = recording.intervals()?;
-            let millis = |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
+            let millis =
+                |name| observability::duration(&intervals, name).map(|d| d.as_secs_f64() * 1000.);
             let witness_ms = millis("bounds:witness")?;
             let commit_ms = millis("bounds:commit")?;
             let online_prover_ms = millis("bounds:online")?;
@@ -61,7 +67,7 @@ impl Experiment {
             let verify_ms = millis("bounds:verification")?;
             println!(
                 "{}",
-                json!({"schema":"f2z-ligerito-bound-comparison/v1", "case":self.case,
+                json!({"schema":"bitz-ligerito-bound-comparison/v1", "case":self.case,
                 "trial":if self.memory {"memory"} else if trial==0 {"warmup"} else {"sample"}, "index":trial,
                 "seed":SEED,"corpus_digest":corpus_digest,"threads":rayon::current_num_threads(),"measurement_policy":"one-setup/one-warmup/five-proofs/v1",
                 "ligerito":config,"setup_ms":setup_ms,"witness_ms":witness_ms,"commit_ms":commit_ms,
@@ -95,7 +101,7 @@ fn bytes(root: usize, opening: &[u8], analytic: usize) -> ProofSize {
 }
 fn inputs() -> Vec<(u128, u128)> {
     let mut h = blake3::Hasher::new();
-    h.update(b"f2z/ligerito-bound-inputs/v1");
+    h.update(b"bitz/ligerito-bound-inputs/v1");
     h.update(&SEED.to_le_bytes());
     let mut r = h.finalize_xof();
     (0..1 << 15)
@@ -113,7 +119,7 @@ fn inputs() -> Vec<(u128, u128)> {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(value_parser = ["u32-mod32", "u32-full", "u64", "u128", "baby-bear", "sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
+    #[arg(value_parser = ["sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
     case: String,
     profile: String,
     #[arg(long)]
@@ -123,77 +129,27 @@ struct Args {
 fn main() -> Result<()> {
     let args = <Args as clap::Parser>::parse();
     let e = Experiment {
-        selection: LigeritoSelection::parse(&args.profile, if args.case.starts_with("hybrid") { 106 } else { 100 })?,
+        selection: LigeritoSelection::parse(
+            &args.profile,
+            if args.case.starts_with("hybrid") {
+                106
+            } else {
+                100
+            },
+        )?,
         case: args.case,
         memory: args.memory,
     };
-    ::f2z::observability::install().expect("install Perfetto subscriber");
+    ::bitz::observability::install().expect("install Perfetto subscriber");
     if rayon::current_num_threads() != 8 {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
     let input = inputs();
-    let setup = (Recording::start(Vec::new())?, tracing::info_span!("bounds:setup").entered());
-    macro_rules! multiplication {
-        ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr $(,$strategy:expr)?) => {{
-            let data = $data;
-            let p = $rel::new_with_profile_and_ligerito::<Lambda100>($layout::new(data.len())?,e.selection)?;
-            e.run(setup,p.ligerito_configuration(),p.security().ood,&bincode::serialize(&data)?,
-                || Ok($wit::from_inputs(&data)?), |w| Ok($commit(&p,w.f2z_bit_rows())?),
-                |w,h| Ok($prove(&mut Blake3Transcript::new(),&p,w,h $(,$strategy)?)?),
-                |_,h,proof| Ok($verify(&mut Blake3Transcript::new(),&p,&h.commitment,proof)?),
-                |h,proof| { let b=proof.f2z().to_bytes();
-                    let decoded=::f2z::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?; assert_eq!(decoded.to_bytes(),b);
-                    Ok(bytes(h.commitment.root.len(),&b,proof.spartan_payload_elements()*16+
-                        (proof.grinding_nonce_count(p.security())-proof.f2z().grinding_nonces.len())*8)) })
-        }};
-    }
+    let setup = (
+        Recording::start(Vec::new())?,
+        tracing::info_span!("bounds:setup").entered(),
+    );
     match e.case.as_str() {
-        "u32-mod32" | "u32-full" => multiplication!(
-            PreparedU32MulRelation,
-            U32MulLayout,
-            U32MulWitness,
-            commit_u32_mul_witness,
-            prove_u32_mul,
-            verify_u32_mul,
-            input
-                .iter()
-                .map(|&(x, y)| (x as u32, y as u32))
-                .collect::<Vec<_>>()
-        ),
-        "u64" => multiplication!(
-            PreparedU64MulRelation,
-            U64MulLayout,
-            U64MulWitness,
-            commit_u64_mul_witness,
-            prove_u64_mul,
-            verify_u64_mul,
-            input
-                .iter()
-                .map(|&(x, y)| (x as u64, y as u64))
-                .collect::<Vec<_>>()
-        ),
-        "u128" => multiplication!(
-            PreparedU128MulRelation,
-            U128MulLayout,
-            U128MulWitness,
-            commit_u128_mul_witness,
-            prove_u128_mul,
-            verify_u128_mul,
-            input
-        ),
-        "baby-bear" => multiplication!(
-            PreparedBabyBearMulRelation,
-            BabyBearMulLayout,
-            BabyBearMulWitness,
-            commit_baby_bear_mul_paper_witness,
-            prove_baby_bear_mul_paper,
-            verify_baby_bear_mul_paper,
-            input
-                .iter()
-                .map(|&(x, y)| ((x % 2013265921) as u32, (y % 2013265921) as u32))
-                .collect::<Vec<_>>(),
-            SpartanReductionStrategy::DelayedBarrett
-        ),
         "sha-compression" => {
             let p = sha256::prepare_sha256_compression_batch(7)?.with_ligerito(e.selection)?;
             let source: Vec<_> = (0..128)
@@ -234,8 +190,8 @@ fn main() -> Result<()> {
                     )?)
                 },
                 |h, proof| {
-                    let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let b = proof.bitz().to_bytes();
+                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
@@ -277,8 +233,8 @@ fn main() -> Result<()> {
                     )?)
                 },
                 |h, proof| {
-                    let b = proof.f2z().to_bytes();
-                    let decoded = ::f2z::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let b = proof.bitz().to_bytes();
+                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
@@ -286,7 +242,7 @@ fn main() -> Result<()> {
         }
         "ecdsa-split" | "ecdsa-all" => ecdsa(&e, setup),
         "hybrid-15-7" | "hybrid-15-2" => {
-            use ::f2z::hybrid::*;
+            use ::bitz::hybrid::*;
             let sha_log = if e.case.ends_with('7') { 7 } else { 2 };
             let p = PreparedHybrid::new_with_ligerito(
                 Parameters {
@@ -299,7 +255,7 @@ fn main() -> Result<()> {
                 .map(|i| std::array::from_fn(|j| (i * 16 + j) as u32))
                 .collect();
             e.run(setup,p.ligerito_configuration(),p.ood_round(),&bincode::serialize(&(&input,&blocks))?,
-                || Ok(input.iter().map(|&(x,y)|U32MulMod32Row::new(x as u32,y as u32)).collect::<Vec<_>>()),
+                || Ok(input.iter().map(|&(x,y)|MulRow::<u32>::new(x as u32,y as u32)).collect::<Vec<_>>()),
                 |rows| Ok(p.commit_mod32(rows,&blocks)?), |_,h| Ok(p.prove(h)?),
                 |_,h,proof| { let b=proof.to_bytes(); let decoded=p.proof_from_bytes(h.statement(),&b)?; Ok(p.verify(h.statement(),&decoded)?) },
                 |_,proof| Ok(ProofSize { total_bytes: proof.to_bytes().len(), commitment_bytes: None,
@@ -311,7 +267,7 @@ fn main() -> Result<()> {
     }
 }
 fn ecdsa(e: &Experiment, setup: SetupCapture) -> Result<()> {
-    use ::f2z::piop::spartan::ecdsa_sha256::*;
+    use ::bitz::piop::spartan::ecdsa_sha256::*;
     use p256::ecdsa::{Signature, SigningKey, signature::Signer};
     let mode = if e.case.ends_with("split") {
         OuterMode::Split
@@ -376,7 +332,7 @@ fn ecdsa(e: &Experiment, setup: SetupCapture) -> Result<()> {
     )
 }
 fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
-    use ::f2z::{
+    use ::bitz::{
         ext_proj::*,
         ligerito_flock::*,
         pcs::{IntegerMatrixLayout, smallest_generator},
@@ -397,15 +353,17 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
                 prime_bits: q_bits,
                 ..Default::default()
             },
-        );
-        let a = ProjArith::new(q);
+        )
+        .expect("bounded benchmark prime search");
+        let a = field::FpCtx::from_prime_u128(q);
         let eq = |r: Vec<u128>| {
             let mut table = vec![1];
             for x in r {
+                let factor = a.prepare_multiplier_u128(x);
                 let mut next = Vec::with_capacity(table.len() * 2);
                 for v in table {
-                    let v1 = a.mul(v, x);
-                    next.push(if v >= v1 { v - v1 } else { v + q - v1 });
+                    let v1 = a.mul_canonical_u128(v, &factor);
+                    next.push(a.sub_canonical_u128(v, v1));
                     next.push(v1);
                 }
                 table = next;
@@ -420,10 +378,10 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
         setup,
         &resolved,
         ood,
-        b"BLAKE3-XOF:f2z/ligerito-bound-pcs/v1:seed=0x5533325043530064:t11:s11:w1",
+        b"BLAKE3-XOF:bitz/ligerito-bound-pcs/v1:seed=0x5533325043530064:t11:s11:w1",
         || {
             let mut hasher = blake3::Hasher::new();
-            hasher.update(b"f2z/ligerito-bound-pcs/v1");
+            hasher.update(b"bitz/ligerito-bound-pcs/v1");
             hasher.update(&SEED.to_le_bytes());
             let mut r = hasher.finalize_xof();
             Ok((0..p.cols())
@@ -453,7 +411,7 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
             resolved.bind(&mut t);
             let bound = bind_prover_ood(&mut t, h, ood);
             let (q, rows, cols) = sample(&mut t);
-            let a = ProjArith::new(q);
+            let a = field::FpCtx::from_prime_u128(q);
             let mut y = 0;
             for (c, w) in h.rows().iter().enumerate() {
                 let mut acc = 0;
@@ -462,10 +420,10 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
                     while bits != 0 {
                         let bit = bits.trailing_zeros() as usize;
                         bits &= bits - 1;
-                        acc = a.add(acc, rows[wi * 64 + bit]);
+                        acc = a.add_u128(acc, rows[wi * 64 + bit]);
                     }
                 }
-                y = a.add(y, a.mul(cols[c], acc));
+                y = a.add_u128(y, a.mul_u128(cols[c], acc));
             }
             absorb_standalone_mod_q_claim(&mut t, q, y);
             Ok((
@@ -543,7 +501,6 @@ mod reporting_tests {
     }
 }
 
-
 #[cfg(test)]
 mod cli_tests {
     use super::Args;
@@ -552,18 +509,36 @@ mod cli_tests {
     #[test]
     fn positional_cases_memory_and_cargo_flag() {
         Args::command().debug_assert();
-        let latency = Args::try_parse_from(["bounds", "u32-mod32", "custom:1:4", "--bench"]).unwrap();
-        assert_eq!((latency.case.as_str(), latency.profile.as_str(), latency.memory),
-            ("u32-mod32", "custom:1:4", false));
-        let memory = Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();
-        assert_eq!((memory.case.as_str(), memory.profile.as_str(), memory.memory),
-            ("hybrid-15-7", "udrg:1:4", true));
+        let latency =
+            Args::try_parse_from(["bounds", "sha-compression", "custom:1:4", "--bench"]).unwrap();
+        assert_eq!(
+            (
+                latency.case.as_str(),
+                latency.profile.as_str(),
+                latency.memory
+            ),
+            ("sha-compression", "custom:1:4", false)
+        );
+        let memory =
+            Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();
+        assert_eq!(
+            (memory.case.as_str(), memory.profile.as_str(), memory.memory),
+            ("hybrid-15-7", "udrg:1:4", true)
+        );
         for argv in [
-            &["bounds"][..], &["bounds", "u64"], &["bounds", "unknown", "custom:1:4"],
+            &["bounds"][..],
+            &["bounds", "u64"],
+            &["bounds", "unknown", "custom:1:4"],
             &["bounds", "u64", "custom:1:4", "--unknown"],
         ] {
             assert!(Args::try_parse_from(argv).is_err(), "accepted {argv:?}");
         }
-        assert_eq!(Args::try_parse_from(["bounds", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
+        assert_eq!(
+            Args::try_parse_from(["bounds", "--help"])
+                .err()
+                .unwrap()
+                .kind(),
+            ErrorKind::DisplayHelp
+        );
     }
 }

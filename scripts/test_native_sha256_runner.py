@@ -16,17 +16,17 @@ class RunnerTests(unittest.TestCase):
             cargo = root / "cargo"
             cargo.write_text(
                 '#!/bin/sh\n'
-                'printf "%s\\n" "$F2Z_SHA_COMPARE_BACKENDS" '
-                '"$F2Z_SHA_COMPARE_LIMBER_ENGINE" "${F2Z_SHA_COMPARE_LIMBER_K-unset}" '
-                '"$F2Z_SHA_COMPARE_EXPONENTS" > "$SHA_TEST_CAPTURE"\n'
+                'printf "%s\\n" "$BITZ_SHA_COMPARE_BACKENDS" '
+                '"$BITZ_SHA_COMPARE_LIMBER_ENGINE" "${BITZ_SHA_COMPARE_LIMBER_K-unset}" '
+                '"$BITZ_SHA_COMPARE_EXPONENTS" > "$SHA_TEST_CAPTURE"\n'
             )
             cargo.chmod(0o755)
-            env = {k: v for k, v in os.environ.items() if not k.startswith("F2Z_SHA_COMPARE_")}
+            env = {k: v for k, v in os.environ.items() if not k.startswith("BITZ_SHA_COMPARE_")}
             env.update(
                 PATH=str(root) + os.pathsep + env["PATH"],
                 SHA_TEST_CAPTURE=str(root / "capture"),
                 ZK_TRACE_SCRIPT=str(root / "absent-profiler"),
-                F2Z_SHA_COMPARE_RUN_DIR=str(root / "run"),
+                BITZ_SHA_COMPARE_RUN_DIR=str(root / "run"),
             )
             env.update(overrides)
             result = subprocess.run(
@@ -41,23 +41,23 @@ class RunnerTests(unittest.TestCase):
 
     def test_defaults_use_exactly_four_backends_and_brakedown(self):
         self.assertEqual(self.invoke({}), [
-            "f2z plonky3-whir binius64 limber", "brakedown", "unset",
+            "bitz plonky3-whir binius64 limber", "brakedown", "unset",
             "7 8 10 11 12 13 14 15 16",
         ])
 
     def test_explicit_subset_and_k_are_preserved(self):
-        settings = dict(F2Z_SHA_COMPARE_BACKENDS="binius64,limber",
-                        F2Z_SHA_COMPARE_LIMBER_ENGINE="brakedown",
-                        F2Z_SHA_COMPARE_LIMBER_K="11", F2Z_SHA_COMPARE_EXPONENTS="7")
+        settings = dict(BITZ_SHA_COMPARE_BACKENDS="binius64,limber",
+                        BITZ_SHA_COMPARE_LIMBER_ENGINE="brakedown",
+                        BITZ_SHA_COMPARE_LIMBER_K="11", BITZ_SHA_COMPARE_EXPONENTS="7")
         self.assertEqual(self.invoke(settings), ["binius64,limber", "brakedown", "11", "7"])
 
     def test_hyrax_and_unknown_selections_fail_before_build(self):
         for settings in [
-            dict(F2Z_SHA_COMPARE_LIMBER_ENGINE="hyrax"),
-            dict(F2Z_SHA_COMPARE_LIMBER_ENGINE="unknown"),
-            dict(F2Z_SHA_COMPARE_BACKENDS="f2z spartan-hyrax limber"),
-            dict(F2Z_SHA_COMPARE_BACKENDS="unknown"),
-            dict(F2Z_SHA_COMPARE_BACKENDS=" "),
+            dict(BITZ_SHA_COMPARE_LIMBER_ENGINE="hyrax"),
+            dict(BITZ_SHA_COMPARE_LIMBER_ENGINE="unknown"),
+            dict(BITZ_SHA_COMPARE_BACKENDS="bitz spartan-hyrax limber"),
+            dict(BITZ_SHA_COMPARE_BACKENDS="unknown"),
+            dict(BITZ_SHA_COMPARE_BACKENDS=" "),
         ]:
             with self.subTest(settings=settings):
                 self.invoke(settings, expected_code=2)

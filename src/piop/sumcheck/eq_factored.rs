@@ -50,15 +50,14 @@
 //!   mode; the sent values differ from the Generic mode, so prover and
 //!   verifier must agree on the mode per instance.
 
-use crypto_primitives::FromPrimitiveWithConfig;
-use num_traits::Zero;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 use crate::transcript::traits::{ConstTranscribable, Transcript};
 use crate::utils::{
     cfg_chunks, cfg_into_iter, cfg_iter, cfg_iter_mut,
     inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
 };
+use num_traits::Zero;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use super::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
 use super::verifier::Subclaim;
@@ -81,7 +80,7 @@ pub struct EqInnerGroup<F> {
 }
 
 /// Buffer payload of one group in the mixed-entry driver.
-pub enum GroupBufs<F> {
+pub enum GroupBufs<'a, F> {
     /// Materialised `(L, R)` pair vectors — the general case.
     Dense(Vec<(Vec<F>, Vec<F>)>),
     /// Single-pair Dense group whose `(L, R)` live in the driver's shared
@@ -102,8 +101,8 @@ pub enum GroupBufs<F> {
     /// `ρ·τ`-style tables. The leaf values themselves are never built.
     /// Bits are packed 64 per `u64`, position `i` at word `i/64`, bit `i%64`.
     LeafBits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected product layer** (char-2 forests, single pair, one
@@ -121,8 +120,8 @@ pub enum GroupBufs<F> {
     /// built — combined with generating the NEXT level down from bits,
     /// the whole level `d−1` is skipped.
     Pair2Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, TWO bit-driven rounds** (char-2 forests,
@@ -143,8 +142,8 @@ pub enum GroupBufs<F> {
     /// the groups of a set (`O(2^k)` per set, amortised over the trees);
     /// every step is an exact char-2 identity, byte-identical to `Dense`.
     Leaf2Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, THREE bit-driven rounds** (`k ≥ 4`):
@@ -159,8 +158,8 @@ pub enum GroupBufs<F> {
     /// pay). Dense buffers materialise only at round 3's fold
     /// (`2^{k−3}`/side — the leaf-round set drops to L/8).
     Leaf3Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-affine leaf layer, FOUR bit-driven rounds** (`k ≥ 5` — probe
@@ -177,8 +176,8 @@ pub enum GroupBufs<F> {
     /// buffers materialise only at round 4's fold (`2^{k−4}`/side — the
     /// leaf residue halves again vs [`Leaf3Bits`](GroupBufs::Leaf3Bits)).
     Leaf4Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected product layer, TWO bit-driven rounds** (`k ≥ 3`):
@@ -189,8 +188,8 @@ pub enum GroupBufs<F> {
     /// O-side at bit offset `2^k`); round 2 reads values inline and its
     /// fold materialises `Dense` (`2^{k−2}`/side).
     Pair3Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
     /// **Bit-selected 4-leaf-product layer** (`k ≥ 2`, one level ABOVE
@@ -203,8 +202,8 @@ pub enum GroupBufs<F> {
     /// values inline; its fold materialises `Dense` (`2^{k−1}`/side) —
     /// the layer's stored/JIT input level is never needed.
     T4Bits {
-        lbits: Vec<u64>,
-        rbits: Vec<u64>,
+        lbits: &'a [u64],
+        rbits: &'a [u64],
         tau_set: usize,
     },
 }
@@ -240,10 +239,10 @@ impl<F> PreRound<F> {
 }
 
 /// One group of the mixed-entry driver ([`prove_eq_inner_sumcheck_mixed`]).
-pub struct EqInnerGroupMixed<F> {
-    pub q: Vec<F>,
+pub struct EqInnerGroupMixed<'a, F: Clone> {
+    pub q: std::borrow::Cow<'a, [F]>,
     pub scale: F,
-    pub bufs: GroupBufs<F>,
+    pub bufs: GroupBufs<'a, F>,
 }
 
 /// Shared flat storage for all-[`GroupBufs::Flat`] single-pair groups:
@@ -276,8 +275,7 @@ where
     {
         let n = fs.l.len() / seg.max(1);
         let min_len = par_min_len(n, half);
-        fs.l
-            .par_chunks_mut(seg)
+        fs.l.par_chunks_mut(seg)
             .zip(fs.r.par_chunks_mut(seg))
             .with_min_len(min_len)
             .enumerate()
@@ -287,8 +285,7 @@ where
     #[cfg(not(feature = "parallel"))]
     {
         let _ = half;
-        fs.l
-            .chunks_mut(seg)
+        fs.l.chunks_mut(seg)
             .zip(fs.r.chunks_mut(seg))
             .enumerate()
             .map(|(t, (lseg, rseg))| body(t, lseg, rseg))
@@ -309,8 +306,7 @@ where
     {
         let n = fs.l.len() / seg.max(1);
         let min_len = par_min_len(n, half);
-        fs.l
-            .par_chunks(seg)
+        fs.l.par_chunks(seg)
             .zip(fs.r.par_chunks(seg))
             .with_min_len(min_len)
             .enumerate()
@@ -320,8 +316,7 @@ where
     #[cfg(not(feature = "parallel"))]
     {
         let _ = half;
-        fs.l
-            .chunks(seg)
+        fs.l.chunks(seg)
             .zip(fs.r.chunks(seg))
             .enumerate()
             .map(|(t, (lseg, rseg))| body(t, lseg, rseg))
@@ -354,11 +349,19 @@ where
 /// consumed by branchless masked adds only — zero case-indexed loads; the
 /// [`LeafA2::Factored`] idea carried to the whole table set.
 enum LeafTables<F> {
-    Split { t_a0: Vec<F>, t_a1: Vec<F>, a2: LeafA2<F>, w_sum: F },
-    Raw8 { t: Vec<F>, w_sum: F },
+    Split {
+        t_a0: Vec<F>,
+        t_a1: Vec<F>,
+        a2: LeafA2<F>,
+        w_sum: F,
+    },
+    Raw8 {
+        t: Vec<F>,
+        w_sum: F,
+    },
 }
 
-/// Leaf-table form choice: `F2Z_LEAF8=0/1` forces split/[`Raw8`]; unset
+/// Leaf-table form choice: `BITZ_LEAF8=0/1` forces split/[`Raw8`]; unset
 /// (the default) picks by footprint — Raw8 iff `half ≥ 2^17`, i.e. once
 /// even the 12-entry split set (`192·half` B) is ~25 MB, well past the
 /// P-cluster L2. Measured (l8, churned box, alternated in-window pairs,
@@ -370,7 +373,7 @@ enum LeafTables<F> {
 /// Read once per process.
 fn leaf8(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LEAF8") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_LEAF8") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -392,7 +395,7 @@ enum LeafA2<F> {
     Factored(Vec<F>),
 }
 
-/// ΔΔ-table form choice: `F2Z_LEAF_A2_FACTORED=0/1` forces
+/// ΔΔ-table form choice: `BITZ_LEAF_A2_FACTORED=0/1` forces
 /// precombined/factored; unset (the default) picks by footprint —
 /// factored iff `half ≥ 2^15`, i.e. once the precombined leaf tables
 /// (`384·half` bytes) reach ~12.6 MB and stop co-residing in the
@@ -404,7 +407,7 @@ enum LeafA2<F> {
 /// way. Env read once per process.
 fn leaf_a2_factored(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LEAF_A2_FACTORED") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_LEAF_A2_FACTORED") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -446,7 +449,7 @@ where
 /// line-within-window picks are data-dependent (committed bits), which
 /// defeats the hardware prefetcher, but the indices are cheaply
 /// recomputable ahead from the sequential bit words.
-/// `F2Z_LUT_PRFM=0/1` forces off/on; unset (the default) picks by round
+/// `BITZ_LUT_PRFM=0/1` forces off/on; unset (the default) picks by round
 /// size — on iff `half ≥ 2^14` (these sites run at rounds 2–3, so this
 /// is the n=30-class boundary: stashes `2·32·half·16 B ≥ 16.8 MB`, past
 /// the P-cluster L2). Measured (fresh box, alternated in-window pairs):
@@ -457,7 +460,7 @@ where
 /// construction. Env read once per process.
 fn lut_prfm(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_LUT_PRFM") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_LUT_PRFM") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -489,13 +492,7 @@ pub(crate) fn prefetch_l1<F>(v: &[F], idx: usize) {
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn build_leaf_tables<F>(
-    v1: &[F],
-    tau_l: &[F],
-    tau_r: &[F],
-    zero: &F,
-    tile: bool,
-) -> LeafTables<F>
+fn build_leaf_tables<F>(v1: &[F], tau_l: &[F], tau_r: &[F], zero: &F, tile: bool) -> LeafTables<F>
 where
     F: InnerTransparentField + Send + Sync,
 {
@@ -593,8 +590,17 @@ where
             }
         }
     }
-    let a2 = if factored { LeafA2::Factored(t_a2) } else { LeafA2::Precombined(t_a2) };
-    LeafTables::Split { t_a0, t_a1, a2, w_sum }
+    let a2 = if factored {
+        LeafA2::Factored(t_a2)
+    } else {
+        LeafA2::Precombined(t_a2)
+    };
+    LeafTables::Split {
+        t_a0,
+        t_a1,
+        a2,
+        w_sum,
+    }
 }
 
 /// The shared leaf round-1 body (LeafBits round 1 = Leaf2Bits/Leaf3Bits
@@ -620,7 +626,12 @@ where
     let mut t11 = zero.clone();
     let mut a2 = zero.clone();
     match lt {
-        LeafTables::Split { t_a0, t_a1, a2: a2t, w_sum } => {
+        LeafTables::Split {
+            t_a0,
+            t_a1,
+            a2: a2t,
+            w_sum,
+        } => {
             for b in 0..half {
                 // Positions 2b, 2b+1 of the half share word b/32 at bit
                 // offset 2·(b mod 32).
@@ -682,24 +693,24 @@ where
 /// finalization), `None` for any other group (the caller computes those
 /// with the per-group body). Engages only on the single-tau-set shape
 /// (the forest); multi-set callers keep the tree-outer form.
-/// `F2Z_LEAF_TILE=0` opts out (read once per process).
+/// `BITZ_LEAF_TILE=0` opts out (read once per process).
 fn leaf_tile_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_LEAF_TILE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_LEAF_TILE").map_or(true, |v| v != "0"))
 }
 
-/// The shared-stash fold precombine (`F2Z_MATS_PRE=0` opts out): scale the
+/// The shared-stash fold precombine (`BITZ_MATS_PRE=0` opts out): scale the
 /// 3-bit value stashes by the round's fold weights ONCE — even 16-case
 /// chunks ×(1+ρ), odd ×ρ, the Leaf4 round-3 factorization — so the
 /// materialising folds push two-pick XORs with no per-entry multiply
 /// (`(1+ρ)v₀ + ρv₁ = v₀ + ρ(v₀+v₁)` exactly, char-2 distributivity).
 fn mats_pre_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_MATS_PRE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_MATS_PRE").map_or(true, |v| v != "0"))
 }
 
 /// Slot-tiled materialising folds over the reweighted stashes:
-/// `F2Z_MATS_TILE=0/1` forces the per-group/tiled path; unset (the
+/// `BITZ_MATS_TILE=0/1` forces the per-group/tiled path; unset (the
 /// default) engages the tile only at `half ≥ 2^12` (the mats rounds run
 /// at `half = 2^{d−4}`, so d ≥ 16). The tile's per-(group, block) costs
 /// (write-chunk granularity, wide-partial grid reductions, bits reloads
@@ -711,7 +722,7 @@ fn mats_pre_enabled() -> bool {
 /// window). Byte-identical either way. See [`mats_fold_tiled`].
 fn mats_tile_engaged(half: usize) -> bool {
     static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    let env = *ENV.get_or_init(|| match std::env::var("F2Z_MATS_TILE") {
+    let env = *ENV.get_or_init(|| match std::env::var("BITZ_MATS_TILE") {
         Ok(v) if v == "0" => Some(false),
         Ok(v) if v == "1" => Some(true),
         _ => None,
@@ -719,7 +730,7 @@ fn mats_tile_engaged(half: usize) -> bool {
     env.unwrap_or(half >= 1 << 12)
 }
 
-/// Slot-block width for [`mats_fold_tiled`]: `F2Z_MATS_TILE_B` fixes it;
+/// Slot-block width for [`mats_fold_tiled`]: `BITZ_MATS_TILE_B` fixes it;
 /// the default is `max(64, half/16)` — a constant 16 blocks, which the
 /// 2026-08-21 sweep measured monotonically better than smaller blocks
 /// (per-(group, block) overheads — write-chunk granularity, accumulator
@@ -728,7 +739,9 @@ fn mats_tile_engaged(half: usize) -> bool {
 fn mats_tile_b(half: usize) -> usize {
     static B: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     let env = *B.get_or_init(|| {
-        std::env::var("F2Z_MATS_TILE_B").ok().and_then(|v| v.parse().ok())
+        std::env::var("BITZ_MATS_TILE_B")
+            .ok()
+            .and_then(|v| v.parse().ok())
     });
     env.unwrap_or_else(|| (half / 16).max(64))
 }
@@ -783,15 +796,17 @@ where
         let b0 = blk * tb;
         let b1 = half.min(b0 + tb);
         let mut grids: Vec<[F::Wide; 9]> = if mat_grid_now {
-            (0..num_groups).map(|_| core::array::from_fn(|_| F::wide_zero(zero))).collect()
+            (0..num_groups)
+                .map(|_| core::array::from_fn(|_| F::wide_zero(zero)))
+                .collect()
         } else {
             Vec::new()
         };
         let mut ql: [F; 4] = core::array::from_fn(|_| zero.clone());
         let mut qr: [F; 4] = core::array::from_fn(|_| zero.clone());
         for (g, (lbits, rbits)) in views.iter().enumerate() {
-            let lp = ptrs[g].0 .0;
-            let rp = ptrs[g].1 .0;
+            let lp = ptrs[g].0.0;
+            let rp = ptrs[g].1.0;
             for b in b0..b1 {
                 let (i0, i1, i2, i3) = idx4(lbits, rbits, b);
                 let lv = vs.f_e[i0].clone() + &vs.f_e[i1];
@@ -835,8 +850,10 @@ where
         .reduce_with(merge)
         .expect("nblocks >= 1");
     #[cfg(not(feature = "parallel"))]
-    let grid_sum: Vec<[F::Wide; 9]> =
-        (0..nblocks).map(run_block).reduce(merge).expect("nblocks >= 1");
+    let grid_sum: Vec<[F::Wide; 9]> = (0..nblocks)
+        .map(run_block)
+        .reduce(merge)
+        .expect("nblocks >= 1");
     drop(ptrs);
     for (l, r) in outs.iter_mut() {
         // SAFETY: every index `< half` of both buffers was written exactly
@@ -847,7 +864,10 @@ where
         }
     }
     let mat_grids: Vec<Option<[F; 9]>> = if mat_grid_now {
-        grid_sum.into_iter().map(|acc| Some(grid_finish(acc))).collect()
+        grid_sum
+            .into_iter()
+            .map(|acc| Some(grid_finish(acc)))
+            .collect()
     } else {
         (0..num_groups).map(|_| None).collect()
     };
@@ -856,7 +876,7 @@ where
 
 #[allow(clippy::arithmetic_side_effects)]
 fn leaf_round1_tiled<F>(
-    bufs: &[GroupBufs<F>],
+    bufs: &[GroupBufs<'_, F>],
     leaf_tables: &[LeafTables<F>],
     half: usize,
     zero: &F,
@@ -867,7 +887,13 @@ where
     if leaf_tables.len() != 1 {
         return None;
     }
-    let LeafTables::Split { t_a0, t_a1, a2: a2t, w_sum } = &leaf_tables[0] else {
+    let LeafTables::Split {
+        t_a0,
+        t_a1,
+        a2: a2t,
+        w_sum,
+    } = &leaf_tables[0]
+    else {
         // Raw8 is the n ≥ 30 form — its sequential 128-B slot blocks are
         // already stream-shaped; tile only the split form.
         return None;
@@ -876,14 +902,26 @@ where
     let views: Vec<Option<(&[u64], &[u64])>> = bufs
         .iter()
         .map(|gb| match gb {
-            GroupBufs::LeafBits { lbits, rbits, tau_set }
-            | GroupBufs::Leaf2Bits { lbits, rbits, tau_set }
-            | GroupBufs::Leaf3Bits { lbits, rbits, tau_set }
-            | GroupBufs::Leaf4Bits { lbits, rbits, tau_set }
-                if *tau_set == 0 =>
-            {
-                Some((lbits.as_slice(), rbits.as_slice()))
+            GroupBufs::LeafBits {
+                lbits,
+                rbits,
+                tau_set,
             }
+            | GroupBufs::Leaf2Bits {
+                lbits,
+                rbits,
+                tau_set,
+            }
+            | GroupBufs::Leaf3Bits {
+                lbits,
+                rbits,
+                tau_set,
+            }
+            | GroupBufs::Leaf4Bits {
+                lbits,
+                rbits,
+                tau_set,
+            } if *tau_set == 0 => Some((*lbits, *rbits)),
             _ => None,
         })
         .collect();
@@ -907,8 +945,7 @@ where
         for (t, view) in views.iter().enumerate() {
             let Some((lb, rb)) = view else { continue };
             let slot = &mut acc[t];
-            let (mut a0, mut t11, mut a2) =
-                (slot.0.clone(), slot.1.clone(), slot.2.clone());
+            let (mut a0, mut t11, mut a2) = (slot.0.clone(), slot.1.clone(), slot.2.clone());
             for b in s0..s1 {
                 let lp = ((lb[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
                 let rp = ((rb[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
@@ -969,7 +1006,12 @@ pub(crate) struct LeafFoldTables<F> {
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn build_leaf_fold_tables<F>(rho: &F, one: &F, tau_l: &[F], tau_r: &[F]) -> LeafFoldTables<F>
+pub(crate) fn build_leaf_fold_tables<F>(
+    rho: &F,
+    one: &F,
+    tau_l: &[F],
+    tau_r: &[F],
+) -> LeafFoldTables<F>
 where
     F: InnerTransparentField,
 {
@@ -993,13 +1035,16 @@ where
             .collect();
         rows.into_flattened()
     };
-    LeafFoldTables { t_l: build(tau_l), t_r: build(tau_r) }
+    LeafFoldTables {
+        t_l: build(tau_l),
+        t_r: build(tau_r),
+    }
 }
 
 /// Round-1 message tables for one [`Pair2TauSet`], two interchangeable
 /// forms (byte-identical sums either way):
 ///
-/// **`Precombined`** (opt-out, `F2Z_PAIR2_FACTORED=0`) — case-LUT form (16
+/// **`Precombined`** (opt-out, `BITZ_PAIR2_FACTORED=0`) — case-LUT form (16
 /// entries per slot each; slot `b` pairs positions `2b, 2b+1`):
 /// - `t_a0[b≪4 | (cE0≪2|cO0)]` = `w_b·TE_{2b}[cE0]·TO_{2b}[cO0]` (the
 ///   `Σ w·L0·R0` term),
@@ -1037,12 +1082,12 @@ enum Pair2Tables<F> {
 
 /// Factored [`Pair2Tables`] — the default: 4× less table footprint on the
 /// 16-case rounds, measured faster at DRAM-scale forest shapes.
-/// `F2Z_PAIR2_FACTORED=0` opts out (restores the precombined 16-case
+/// `BITZ_PAIR2_FACTORED=0` opts out (restores the precombined 16-case
 /// tables — diagnostic / A-B measurement). Byte-identical proofs either
 /// way. Read once per process.
 fn pair2_factored() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_PAIR2_FACTORED").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_PAIR2_FACTORED").map_or(true, |v| v != "0"))
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -1054,8 +1099,12 @@ where
     debug_assert_eq!(set.te.len(), half << 3, "te = 4·2^k entries");
     debug_assert_eq!(set.to.len(), half << 3, "to = 4·2^k entries");
     if pair2_factored() {
-        let wte: Vec<F> =
-            set.te.iter().enumerate().map(|(i, t)| v1[i >> 3].clone() * t).collect();
+        let wte: Vec<F> = set
+            .te
+            .iter()
+            .enumerate()
+            .map(|(i, t)| v1[i >> 3].clone() * t)
+            .collect();
         return Pair2Tables::Factored { wte };
     }
     let mut t_a0 = Vec::with_capacity(half << 4);
@@ -1066,7 +1115,9 @@ where
         let w = &v1[b];
         // w·TE at the even (2b) and odd (2b+1) positions, 4 cases each.
         let wte0: Vec<F> = (0..4).map(|c| w.clone() * &set.te[(b << 3) | c]).collect();
-        let wte1: Vec<F> = (0..4).map(|c| w.clone() * &set.te[(b << 3) | 4 | c]).collect();
+        let wte1: Vec<F> = (0..4)
+            .map(|c| w.clone() * &set.te[(b << 3) | 4 | c])
+            .collect();
         for ce in 0..4 {
             for co in 0..4 {
                 t_a0.push(wte0[ce].clone() * &set.to[(b << 3) | co]);
@@ -1080,7 +1131,12 @@ where
             }
         }
     }
-    Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do }
+    Pair2Tables::Precombined {
+        t_a0,
+        t_a1,
+        t_wde,
+        t_do,
+    }
 }
 
 /// The factored 16-case round body shared by the four consumers
@@ -1091,7 +1147,7 @@ where
 /// field values as the precombined tables (see [`Pair2Tables`]).
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-fn pair2_factored_body<F>(
+fn pair2_factored_body_impl<F, const RECOVER: bool>(
     wte: &[F],
     to: &[F],
     half: usize,
@@ -1111,7 +1167,9 @@ where
         let t0 = &to[(b << 3) | co0];
         let t1 = &to[(b << 3) | 4 | co1];
         F::wide_add_assign(&mut a0w, &F::mul_wide(u0, t0));
-        F::wide_add_assign(&mut t11w, &F::mul_wide(u1, t1));
+        if !RECOVER {
+            F::wide_add_assign(&mut t11w, &F::mul_wide(u1, t1));
+        }
         let du = u0.clone() + u1;
         let dt = t0.clone() + t1;
         F::wide_add_assign(&mut a2w, &F::mul_wide(&du, &dt));
@@ -1119,8 +1177,31 @@ where
     let a0 = F::from_wide(a0w);
     let t11 = F::from_wide(t11w);
     let a2 = F::from_wide(a2w);
-    let a1 = t11 + &a0 + &a2;
+    let a1 = if RECOVER {
+        zero.clone()
+    } else {
+        t11 + &a0 + &a2
+    };
     (a0, a1, a2)
+}
+
+#[inline(always)]
+fn pair2_factored_body<F>(
+    wte: &[F],
+    to: &[F],
+    half: usize,
+    zero: &F,
+    recover: bool,
+    cases: impl Fn(usize) -> (usize, usize, usize, usize),
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    if recover {
+        pair2_factored_body_impl::<F, true>(wte, to, half, zero, cases)
+    } else {
+        pair2_factored_body_impl::<F, false>(wte, to, half, zero, cases)
+    }
 }
 
 /// Round-1 fold tables for one [`Pair2TauSet`]: the folded round-2 entry is
@@ -1133,7 +1214,11 @@ pub(crate) struct Pair2FoldTables<F> {
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn build_pair2_fold_tables<F>(rho: &F, one: &F, set: &Pair2TauSet<F>) -> Pair2FoldTables<F>
+pub(crate) fn build_pair2_fold_tables<F>(
+    rho: &F,
+    one: &F,
+    set: &Pair2TauSet<F>,
+) -> Pair2FoldTables<F>
 where
     F: InnerTransparentField,
 {
@@ -1144,15 +1229,19 @@ where
     let build = |t: &[F]| -> Vec<F> {
         let rows: Vec<[F; 16]> = cfg_into_iter!(0..half, 1 << 9)
             .map(|b| {
-                let e0: Vec<F> =
-                    (0..4).map(|c| one_plus_rho.clone() * &t[(b << 3) | c]).collect();
+                let e0: Vec<F> = (0..4)
+                    .map(|c| one_plus_rho.clone() * &t[(b << 3) | c])
+                    .collect();
                 let e1: Vec<F> = (0..4).map(|c| rho.clone() * &t[(b << 3) | 4 | c]).collect();
                 core::array::from_fn(|m| e0[m >> 2].clone() + &e1[m & 3])
             })
             .collect();
         rows.into_flattened()
     };
-    Pair2FoldTables { f_e: build(&set.te), f_o: build(&set.to) }
+    Pair2FoldTables {
+        f_e: build(&set.te),
+        f_o: build(&set.to),
+    }
 }
 
 /// The Leaf4Bits round-3 "fold": ρ₃-reweight a stashed 16-case set IN
@@ -1199,7 +1288,7 @@ where
 /// round-3 buffers (exact identities; the wide accumulation order matches
 /// the dense body's).
 #[allow(clippy::arithmetic_side_effects)]
-fn leaf3_round3_msg<F>(
+fn leaf3_round3_msg<F, const RECOVER: bool>(
     vs: &Pair2FoldTables<F>,
     lbits: &[u64],
     rbits: &[u64],
@@ -1238,15 +1327,76 @@ where
         let l0w = w.clone() * l0;
         let l1w = w.clone() * l1;
         let wc0 = F::mul_wide(&l0w, r0);
-        let w11 = F::mul_wide(&l1w, r1);
         let dr = r1.clone() - r0;
-        let dl = l1w - &l0w;
+        let dl = l1w.clone() - &l0w;
         let wc2 = F::mul_wide(&dl, &dr);
         F::wide_add_assign(&mut a0, &wc0);
         F::wide_add_assign(&mut a2, &wc2);
-        F::wide_add_assign(&mut a1, &w11);
-        F::wide_sub_assign(&mut a1, &wc0);
-        F::wide_sub_assign(&mut a1, &wc2);
+        if !RECOVER {
+            F::wide_add_assign(&mut a1, &F::mul_wide(&l1w, r1));
+            F::wide_sub_assign(&mut a1, &wc0);
+            F::wide_sub_assign(&mut a1, &wc2);
+        }
+    }
+    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+}
+
+fn pair3_round2_msg<F, const RECOVER: bool>(
+    vs: &Pair2FoldTables<F>,
+    lbits: &[u64],
+    rbits: &[u64],
+    half: usize,
+    suffix_t: &[F],
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + WideMulAcc,
+{
+    let h_off = half << 2; // 2^k — absolute O-side bit offset
+    let prfm = lut_prfm(half);
+    let mut a0 = F::wide_zero(zero);
+    let mut a1 = F::wide_zero(zero);
+    let mut a2 = F::wide_zero(zero);
+    for b in 0..half {
+        if prfm && b + PRFM_DIST < half {
+            let bp = b + PRFM_DIST;
+            let pe2 = bp << 2;
+            let nl2 = ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+            let nr2 = ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+            let po2 = pe2 + h_off;
+            let ml2 = ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+            let mr2 = ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+            let ep = bp << 1;
+            prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
+            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2));
+            prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
+            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2));
+        }
+        let pe = b << 2;
+        let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+        let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+        let po = pe + h_off;
+        let ml = ((lbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+        let mr = ((rbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+        let e = b << 1;
+        let l0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
+        let l1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
+        let r0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
+        let r1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
+        let w = &suffix_t[b];
+        let l0w = w.clone() * l0;
+        let l1w = w.clone() * l1;
+        let wc0 = F::mul_wide(&l0w, r0);
+        let dr = r1.clone() - r0;
+        let dl = l1w.clone() - &l0w;
+        let wc2 = F::mul_wide(&dl, &dr);
+        F::wide_add_assign(&mut a0, &wc0);
+        F::wide_add_assign(&mut a2, &wc2);
+        if !RECOVER {
+            F::wide_add_assign(&mut a1, &F::mul_wide(&l1w, r1));
+            F::wide_sub_assign(&mut a1, &wc0);
+            F::wide_sub_assign(&mut a1, &wc2);
+        }
     }
     (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
 }
@@ -1261,8 +1411,8 @@ fn leaf4_entry_pair<F>(t: &[F], e: usize, w16: usize) -> (F, F)
 where
     F: InnerTransparentField,
 {
-    let v0 = t[(e << 4) | leaf3_idx(w16 & 15)].clone()
-        + &t[((e | 1) << 4) | leaf3_idx((w16 >> 4) & 15)];
+    let v0 =
+        t[(e << 4) | leaf3_idx(w16 & 15)].clone() + &t[((e | 1) << 4) | leaf3_idx((w16 >> 4) & 15)];
     let v1 = t[((e | 2) << 4) | leaf3_idx((w16 >> 8) & 15)].clone()
         + &t[((e | 3) << 4) | leaf3_idx(w16 >> 12)];
     (v0, v1)
@@ -1336,7 +1486,12 @@ where
 /// `2b + H` (`H` even ⇒ the pair never straddles a word).
 #[inline]
 #[allow(clippy::arithmetic_side_effects)]
-fn pair2_cases(lbits: &[u64], rbits: &[u64], b: usize, h_off: usize) -> (usize, usize, usize, usize) {
+fn pair2_cases(
+    lbits: &[u64],
+    rbits: &[u64],
+    b: usize,
+    h_off: usize,
+) -> (usize, usize, usize, usize) {
     let pe = b << 1;
     let lp_e = ((lbits[pe >> 6] >> (pe & 63)) & 3) as usize;
     let rp_e = ((rbits[pe >> 6] >> (pe & 63)) & 3) as usize;
@@ -1403,11 +1558,11 @@ fn t4bits_idx(lbits: &[u64], rbits: &[u64], j: usize, q1: usize) -> usize {
 /// instead of fold-read + message-read; measured ~10 % prove at n=26–28).
 /// Byte-identical: the same field values in the same transcript order —
 /// only the physical pass structure changes. Gated on all-Dense-single-pair
-/// groups (the forest's shape). `F2Z_EQF_FUSE=0` opts out (restores the
+/// groups (the forest's shape). `BITZ_EQF_FUSE=0` opts out (restores the
 /// eager two-pass fold path).
 fn eqf_fuse_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_EQF_FUSE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_EQF_FUSE").map_or(true, |v| v != "0"))
 }
 
 /// **Double-fold**: bind TWO variables per pass over the dense buffers.
@@ -1420,25 +1575,25 @@ fn eqf_fuse_enabled() -> bool {
 /// arrives precomputed and the grid can only start at round 2), at
 /// 13 multiplies per 4 slots instead of 15. Byte-identical — the same
 /// messages in the same transcript order, and every accumulation is
-/// `F₂`-linear in the reduction. `F2Z_EQF_DOUBLE=0` opts out. Read once
+/// `F₂`-linear in the reduction. `BITZ_EQF_DOUBLE=0` opts out. Read once
 /// per process.
 /// Mat+grid fusion (S2 of `docs/forest-speedup-ideas.md`): a
 /// materialising fold accumulates the next round-pair's bivariate grid
 /// over the values it writes (cache-hot, quad by quad), and deposits it —
 /// so the fresh dense buffers' first actual read is round j+3's pass,
 /// the same one-generation-pass shape `PreRound::Grid` gives the JIT
-/// layers. `F2Z_MAT_GRID=0` opts out (the first dense round then re-reads
+/// layers. `BITZ_MAT_GRID=0` opts out (the first dense round then re-reads
 /// the just-written buffers from DRAM). Byte-identical either way: the
 /// deposited grid is the exact per-quad accumulation the dense grid pass
 /// would compute over the same values. Read once per process.
 fn mat_grid_enabled() -> bool {
     static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| std::env::var("F2Z_MAT_GRID").map_or(true, |v| v != "0"))
+    *ENV.get_or_init(|| std::env::var("BITZ_MAT_GRID").map_or(true, |v| v != "0"))
 }
 
 pub(crate) fn eqf_double() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F2Z_EQF_DOUBLE").map_or(true, |v| v != "0"))
+    *ON.get_or_init(|| std::env::var("BITZ_EQF_DOUBLE").map_or(true, |v| v != "0"))
 }
 
 /// Double-fold engagement floor on the round's `half`: below it the round
@@ -1448,14 +1603,16 @@ pub(crate) fn eqf_double() -> bool {
 /// tiny halves with many groups (the wide-shallow forest tail) the
 /// bookkeeping exceeds the saved pass. Both paths are byte-identical per
 /// round (the 9-combo flag pin), so a per-round mix is transcript-safe.
-/// `F2Z_EQF_DOUBLE_MIN` overrides; default 64 — the measured minimum of
+/// `BITZ_EQF_DOUBLE_MIN` overrides; default 64 — the measured minimum of
 /// the in-window sweep at n=30 15:15 (0/16/64/256/1024 → 5729/5228/4944/
 /// 5383/6623 ms prove, 2026-08-27): higher floors start discarding the
 /// double-fold where it genuinely wins. Read once per process.
 fn eqf_double_min_half() -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     let env = *ENV.get_or_init(|| {
-        std::env::var("F2Z_EQF_DOUBLE_MIN").ok().and_then(|v| v.parse().ok())
+        std::env::var("BITZ_EQF_DOUBLE_MIN")
+            .ok()
+            .and_then(|v| v.parse().ok())
     });
     env.unwrap_or(64)
 }
@@ -1465,7 +1622,116 @@ fn eqf_double_min_half() -> usize {
 /// loops — isolates pass-structure gains from kernel quality in A/B runs.
 fn eqf_nokernel() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("F2Z_EQF_NOKERNEL").is_some())
+    *ON.get_or_init(|| std::env::var_os("BITZ_EQF_NOKERNEL").is_some())
+}
+
+/// Aggregate only needed coefficients. `BITZ_GKR_DIRECT_CLOSE=0` opts out.
+fn direct_close_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("BITZ_GKR_DIRECT_CLOSE").map_or(true, |v| v != "0"))
+}
+
+/// Recover the linear coefficient when supported. `BITZ_GKR_RECOVER=0` opts out.
+fn coefficient_recovery_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("BITZ_GKR_RECOVER").map_or(true, |v| v != "0"))
+}
+
+/// Batch the two public-coordinate inverses without storing a per-round
+/// vector. Zero coordinates and unsupported fields keep the baseline kernel.
+fn recovery_inverses<F: InnerTransparentField + WideMulAcc>(
+    a: Option<&F>,
+    b: Option<&F>,
+) -> [Option<F>; 2] {
+    if let (Some(a), Some(b)) = (a, b) {
+        if let Some(inverse) = (a.clone() * b).eqf_inverse() {
+            return [Some(inverse.clone() * b), Some(inverse * a)];
+        }
+    }
+    [a.and_then(F::eqf_inverse), b.and_then(F::eqf_inverse)]
+}
+
+fn close_coefficients<F>(
+    hs: &[(F, F, F)],
+    scales: &[F],
+    zero: &F,
+    initial: bool,
+    recover: bool,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + Send + Sync,
+{
+    if direct_close_enabled() {
+        let _span = tracing::info_span!("eqf:direct_close").entered();
+        return match (initial, recover) {
+            (true, _) => close_selected::<F, true, true>(hs, scales, zero),
+            (false, true) => close_selected::<F, true, false>(hs, scales, zero),
+            (false, false) => close_selected::<F, false, true>(hs, scales, zero),
+        };
+    }
+    let identity = || (zero.clone(), zero.clone(), zero.clone());
+    let chunks = cfg_chunks!(hs, 1 << 10)
+        .zip(cfg_chunks!(scales, 1 << 10))
+        .map(|(hc, ac)| {
+            let mut p = identity();
+            for (h, a) in hc.iter().zip(ac) {
+                p.0 += a.clone() * &h.0;
+                p.1 += a.clone() * &h.1;
+                p.2 += a.clone() * &h.2;
+            }
+            p
+        });
+    let add = |mut a: (F, F, F), b: (F, F, F)| {
+        a.0 += &b.0;
+        a.1 += &b.1;
+        a.2 += &b.2;
+        a
+    };
+    chunks.collect::<Vec<_>>().into_iter().fold(identity(), add)
+}
+
+fn close_selected<F, const CONSTANT: bool, const LINEAR: bool>(
+    hs: &[(F, F, F)],
+    scales: &[F],
+    zero: &F,
+) -> (F, F, F)
+where
+    F: InnerTransparentField + Send + Sync,
+{
+    let identity = || (zero.clone(), zero.clone(), zero.clone());
+    if hs.len() <= 1024 {
+        let mut out = identity();
+        for (h, a) in hs.iter().zip(scales) {
+            if CONSTANT {
+                out.0 += a.clone() * &h.0;
+            }
+            if LINEAR {
+                out.1 += a.clone() * &h.1;
+            }
+            out.2 += a.clone() * &h.2;
+        }
+        return out;
+    }
+    let chunks = cfg_chunks!(hs, 1 << 10)
+        .zip(cfg_chunks!(scales, 1 << 10))
+        .map(|(hc, ac)| {
+            let mut out = identity();
+            for (h, a) in hc.iter().zip(ac) {
+                if CONSTANT {
+                    out.0 += a.clone() * &h.0;
+                }
+                if LINEAR {
+                    out.1 += a.clone() * &h.1;
+                }
+                out.2 += a.clone() * &h.2;
+            }
+            out
+        });
+    let add = |a: (F, F, F), b: (F, F, F)| (a.0 + &b.0, a.1 + &b.1, a.2 + &b.2);
+    #[cfg(feature = "parallel")]
+    return chunks.reduce(identity, add);
+    #[cfg(not(feature = "parallel"))]
+    chunks.fold(identity(), add)
 }
 
 /// Flat storage for the per-round suffix tensors `V_1, …, V_k`.
@@ -1479,11 +1745,15 @@ pub(crate) struct SuffixTensorArena<F> {
 }
 
 impl<F> SuffixTensorArena<F> {
-    /// Returns `V_{round+1}` in little-endian Boolean-cube order.
+    /// Returns `V_{round+1}` in little-endian Bit-cube order.
     #[inline]
     pub(crate) fn tensor(&self, round: usize) -> &[F] {
         let start = self.offsets[round];
-        let end = if round == 0 { self.values.len() } else { self.offsets[round - 1] };
+        let end = if round == 0 {
+            self.values.len()
+        } else {
+            self.offsets[round - 1]
+        };
         &self.values[start..end]
     }
 
@@ -1603,11 +1873,25 @@ fn fold_logical<F: InnerTransparentField>(v: &[F], i: usize, pending: &[F]) -> F
 /// is `F₂`-linear, so accumulating each node separately and converting
 /// after reduction lands on the identical field elements.
 #[allow(clippy::arithmetic_side_effects)]
-fn dense_grid_pass<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
+fn dense_grid_pass<F>(
+    l: &mut Vec<F>,
+    r: &mut Vec<F>,
+    pending: &[F],
+    suffix: &[F],
+    quads: usize,
+    zero: &F,
+) -> [F; 9]
 where
     F: InnerTransparentField + WideMulAcc,
 {
-    let res = dense_grid_pass_slices(l.as_mut_slice(), r.as_mut_slice(), pending, suffix, quads, zero);
+    let res = dense_grid_pass_slices(
+        l.as_mut_slice(),
+        r.as_mut_slice(),
+        pending,
+        suffix,
+        quads,
+        zero,
+    );
     if !pending.is_empty() {
         l.truncate(quads << 2);
         r.truncate(quads << 2);
@@ -1619,13 +1903,28 @@ where
 /// identical kernel dispatch and body, folded values land in the prefix,
 /// no truncation — the caller hands the next pass a shorter prefix.
 #[allow(clippy::arithmetic_side_effects)]
-fn dense_grid_pass_slices<F>(l: &mut [F], r: &mut [F], pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
+fn dense_grid_pass_slices<F>(
+    l: &mut [F],
+    r: &mut [F],
+    pending: &[F],
+    suffix: &[F],
+    quads: usize,
+    zero: &F,
+) -> [F; 9]
 where
     F: InnerTransparentField + WideMulAcc,
 {
     let d = pending.len();
-    debug_assert_eq!(l.len(), (quads << 2) << d, "grid pass reads the unfolded prefix");
-    debug_assert_eq!(suffix.len(), quads, "grid weight is the round j+1 suffix tensor");
+    debug_assert_eq!(
+        l.len(),
+        (quads << 2) << d,
+        "grid pass reads the unfolded prefix"
+    );
+    debug_assert_eq!(
+        suffix.len(),
+        quads,
+        "grid weight is the round j+1 suffix tensor"
+    );
     // Hand kernel (fixed-scalar arity-4 fold + vector-resident grid) when
     // the field ships one — value-exact vs the generic body below.
     if let Some(res) = F::eqf_grid_pass(l, r, pending, suffix, quads) {
@@ -1652,7 +1951,7 @@ where
 
 /// Task granularity for the per-group parallel passes: >= ~512
 /// element-pairs per task so late-round tiny bodies don't drown in rayon
-/// dispatch overhead. `F2Z_PAR_CHUNK=<d>` additionally floors the chunk
+/// dispatch overhead. `BITZ_PAR_CHUNK=<d>` additionally floors the chunk
 /// at groups/(d*threads) — coarser equal-work tasks that shed the
 /// per-item split/steal checks (diagnostic knob; read once). MEASURED
 /// 2026-08-21 at n = 28, paired in-window: d = 4 is a wash-to-loss
@@ -1665,7 +1964,10 @@ pub(crate) fn par_min_len(groups: usize, half: usize) -> usize {
     let by_work = (512usize / half.max(1)).max(1);
     static DIV: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     let d = *DIV.get_or_init(|| {
-        std::env::var("F2Z_PAR_CHUNK").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+        std::env::var("BITZ_PAR_CHUNK")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
     });
     if d == 0 {
         return by_work;
@@ -1679,7 +1981,14 @@ pub(crate) fn par_min_len(groups: usize, half: usize) -> usize {
 /// pinned against.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(dead_code)]
-fn dense_grid_pass_generic<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], quads: usize, zero: &F) -> [F; 9]
+fn dense_grid_pass_generic<F>(
+    l: &mut Vec<F>,
+    r: &mut Vec<F>,
+    pending: &[F],
+    suffix: &[F],
+    quads: usize,
+    zero: &F,
+) -> [F; 9]
 where
     F: InnerTransparentField + WideMulAcc,
 {
@@ -1779,7 +2088,13 @@ where
 /// ([`FlatDense`] path): kernel when available, else the generic
 /// weight-folded-into-`L` loop — `compute_h`'s single-pair arm, verbatim.
 #[allow(clippy::arithmetic_side_effects)]
-fn dense_single_pair_round_slices<F>(l: &[F], r: &[F], suffix: &[F], half: usize, zero: &F) -> (F, F, F)
+fn dense_single_pair_round_slices<F>(
+    l: &[F],
+    r: &[F],
+    suffix: &[F],
+    half: usize,
+    zero: &F,
+) -> (F, F, F)
 where
     F: InnerTransparentField + WideMulAcc,
 {
@@ -1886,9 +2201,8 @@ fn grid_this_round<F: InnerTransparentField>(g: &[F; 9], q_next: &F, one: &F) ->
 #[allow(clippy::arithmetic_side_effects)]
 fn grid_next_round<F: InnerTransparentField>(g: &[F; 9], rho: &F) -> (F, F, F) {
     let rho2 = rho.clone() * rho;
-    let at = |v: usize| -> F {
-        g[v].clone() + &(rho.clone() * &g[3 + v]) + &(rho2.clone() * &g[6 + v])
-    };
+    let at =
+        |v: usize| -> F { g[v].clone() + &(rho.clone() * &g[3 + v]) + &(rho2.clone() * &g[6 + v]) };
     let (n0, n1, ninf) = (at(0), at(1), at(2));
     let a1 = n1 - &n0 - &ninf;
     (n0, a1, ninf)
@@ -1900,11 +2214,25 @@ fn grid_next_round<F: InnerTransparentField>(g: &[F; 9], rho: &F) -> (F, F, F) {
 /// `d = 2` case a double-fold cascade leaves behind at its last rounds
 /// (`d = 1` keeps the hand-fused kernel path).
 #[allow(clippy::arithmetic_side_effects)]
-fn dense_msg_pass_d<F>(l: &mut Vec<F>, r: &mut Vec<F>, pending: &[F], suffix: &[F], half: usize, zero: &F) -> (F, F, F)
+fn dense_msg_pass_d<F>(
+    l: &mut Vec<F>,
+    r: &mut Vec<F>,
+    pending: &[F],
+    suffix: &[F],
+    half: usize,
+    zero: &F,
+) -> (F, F, F)
 where
     F: InnerTransparentField + WideMulAcc,
 {
-    let res = dense_msg_pass_d_slices(l.as_mut_slice(), r.as_mut_slice(), pending, suffix, half, zero);
+    let res = dense_msg_pass_d_slices(
+        l.as_mut_slice(),
+        r.as_mut_slice(),
+        pending,
+        suffix,
+        half,
+        zero,
+    );
     l.truncate(half << 1);
     r.truncate(half << 1);
     res
@@ -1913,11 +2241,22 @@ where
 /// [`dense_msg_pass_d`] on exact-prefix slices (the [`FlatDense`] path):
 /// same folds and accumulation, no truncation.
 #[allow(clippy::arithmetic_side_effects)]
-fn dense_msg_pass_d_slices<F>(l: &mut [F], r: &mut [F], pending: &[F], suffix: &[F], half: usize, zero: &F) -> (F, F, F)
+fn dense_msg_pass_d_slices<F>(
+    l: &mut [F],
+    r: &mut [F],
+    pending: &[F],
+    suffix: &[F],
+    half: usize,
+    zero: &F,
+) -> (F, F, F)
 where
     F: InnerTransparentField + WideMulAcc,
 {
-    debug_assert_eq!(l.len(), (half << 1) << pending.len(), "d-fold pass buffer shape");
+    debug_assert_eq!(
+        l.len(),
+        (half << 1) << pending.len(),
+        "d-fold pass buffer shape"
+    );
     let mut a0 = F::wide_zero(zero);
     let mut a1 = F::wide_zero(zero);
     let mut a2 = F::wide_zero(zero);
@@ -1977,14 +2316,18 @@ pub fn prove_eq_inner_sumcheck<F>(
     field_cfg: &F::Config,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + WideMulAcc + Send + Sync,
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
     let mixed = groups
         .into_iter()
-        .map(|g| EqInnerGroupMixed { q: g.q, scale: g.scale, bufs: GroupBufs::Dense(g.pairs) })
+        .map(|g| EqInnerGroupMixed {
+            q: g.q.into(),
+            scale: g.scale,
+            bufs: GroupBufs::Dense(g.pairs),
+        })
         .collect();
     prove_eq_inner_sumcheck_mixed(transcript, mixed, &[], &[], &[], field_cfg)
 }
@@ -2005,14 +2348,14 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
     field_cfg: &F::Config,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + WideMulAcc + Send + Sync,
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
@@ -2038,14 +2381,14 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed_gruen<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
     field_cfg: &F::Config,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + WideMulAcc + Send + Sync,
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
@@ -2088,17 +2431,20 @@ pub fn verify_eq_inner_sumcheck_gruen<F>(
     field_cfg: &F::Config,
 ) -> Result<Subclaim<F>, SumCheckError<F>>
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig,
+    F: InnerTransparentField,
     F::Inner: ConstTranscribable,
     F::Modulus: ConstTranscribable,
 {
     let k = q.len();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror the prover.
-    transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
-    transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
+    transcript.absorb_random_field(&F::interpolation_node(k as u64, field_cfg), &mut buf);
+    transcript.absorb_random_field(&F::interpolation_node(3u64, field_cfg), &mut buf);
     if proof.messages.len() != k {
-        return Err(SumCheckError::InvalidProofLength { expected: k, got: proof.messages.len() });
+        return Err(SumCheckError::InvalidProofLength {
+            expected: k,
+            got: proof.messages.len(),
+        });
     }
     if k == 0 {
         return Ok(Subclaim {
@@ -2128,7 +2474,10 @@ where
         expected = e1 * &h_at;
         point.push(rho);
     }
-    Ok(Subclaim { point, expected_evaluation: expected })
+    Ok(Subclaim {
+        point,
+        expected_evaluation: expected,
+    })
 }
 
 /// [`prove_eq_inner_sumcheck_mixed`] with optionally PRECOMPUTED round-1
@@ -2146,7 +2495,49 @@ where
 #[allow(clippy::arithmetic_side_effects, clippy::type_complexity)]
 pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     transcript: &mut impl Transcript,
-    groups: Vec<EqInnerGroupMixed<F>>,
+    groups: Vec<EqInnerGroupMixed<'_, F>>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    pre_round1: Option<PreRound<F>>,
+    flat: Option<FlatDense<F>>,
+    gruen: bool,
+    field_cfg: &F::Config,
+) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
+    prove_eq_inner_sumcheck_mixed_prepared(
+        transcript,
+        SharedPointInput {
+            groups,
+            constant_weight: F::zero_with_cfg(field_cfg),
+        },
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        pre_round1,
+        flat,
+        gruen,
+        field_cfg,
+        None,
+    )
+}
+
+/// Real groups plus an analytic all-ones contribution at their shared point.
+/// A nonzero constant is supported only by the shared-point Gruen format.
+pub(crate) struct SharedPointInput<'a, F: Clone> {
+    pub(crate) groups: Vec<EqInnerGroupMixed<'a, F>>,
+    pub(crate) constant_weight: F,
+}
+
+/// Internal forest entry with suffixes constructed for this layer's shared point.
+pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
+    transcript: &mut impl Transcript,
+    input: SharedPointInput<'_, F>,
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
@@ -2154,13 +2545,22 @@ pub fn prove_eq_inner_sumcheck_mixed_pre<F>(
     flat: Option<FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
+    prepared_suffix: Option<SuffixTensorArena<F>>,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
-    F: InnerTransparentField + FromPrimitiveWithConfig + WideMulAcc + Send + Sync,
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
+    let SharedPointInput {
+        groups,
+        constant_weight,
+    } = input;
+    assert!(
+        gruen || constant_weight == F::zero_with_cfg(field_cfg),
+        "analytic constants require the shared-point Gruen format"
+    );
     // Flat single-pair storage (the wide-shallow forest layout): all
     // groups are `Flat` markers over ONE shared store, group 0 carries the
     // shared point and the rest leave `q` empty (no clones). Semantically
@@ -2175,7 +2575,11 @@ where
         assert!(gruen, "flat groups share their point — Gruen format only");
         assert_eq!(fs.l.len(), groups.len() * fs.seg, "flat store shape (L)");
         assert_eq!(fs.r.len(), groups.len() * fs.seg, "flat store shape (R)");
-        assert_eq!(fs.seg, 1usize << groups.first().map_or(0, |g| g.q.len()), "flat seg = 2^k");
+        assert_eq!(
+            fs.seg,
+            1usize << groups.first().map_or(0, |g| g.q.len()),
+            "flat seg = 2^k"
+        );
     } else {
         assert!(
             groups.iter().all(|g| !matches!(g.bufs, GroupBufs::Flat)),
@@ -2190,45 +2594,76 @@ where
         );
     }
     let k = groups.first().map_or(0, |g| g.q.len());
-    debug_assert!(!groups.is_empty(), "eq-factored sumcheck needs at least one group");
+    debug_assert!(
+        !groups.is_empty(),
+        "eq-factored sumcheck needs at least one group"
+    );
     debug_assert!(groups.iter().enumerate().all(|(t, g)| {
         (g.q.len() == k || (all_flat && t > 0 && g.q.is_empty()))
             && match &g.bufs {
                 GroupBufs::Flat => true,
-                GroupBufs::Dense(pairs) => {
-                    pairs.iter().all(|(l, r)| l.len() == 1 << k && r.len() == 1 << k)
-                }
-                GroupBufs::LeafBits { lbits, rbits, tau_set } => {
+                GroupBufs::Dense(pairs) => pairs
+                    .iter()
+                    .all(|(l, r)| l.len() == 1 << k && r.len() == 1 << k),
+                GroupBufs::LeafBits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     lbits.len() == (1usize << k).div_ceil(64)
                         && rbits.len() == (1usize << k).div_ceil(64)
                         && *tau_set < tau_sets.len()
                         && tau_sets[*tau_set].0.len() == 1 << k
                         && tau_sets[*tau_set].1.len() == 1 << k
                 }
-                GroupBufs::Pair2Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Pair2Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     lbits.len() == (2usize << k).div_ceil(64)
                         && rbits.len() == (2usize << k).div_ceil(64)
                         && *tau_set < pair_tau_sets.len()
                         && pair_tau_sets[*tau_set].te.len() == 4 << k
                         && pair_tau_sets[*tau_set].to.len() == 4 << k
                 }
-                GroupBufs::Leaf2Bits { lbits, rbits, tau_set }
-                | GroupBufs::Leaf3Bits { lbits, rbits, tau_set }
-                | GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Leaf2Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                }
+                | GroupBufs::Leaf3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                }
+                | GroupBufs::Leaf4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     lbits.len() == (1usize << k).div_ceil(64)
                         && rbits.len() == (1usize << k).div_ceil(64)
                         && *tau_set < tau_sets.len()
                         && tau_sets[*tau_set].0.len() == 1 << k
                         && tau_sets[*tau_set].1.len() == 1 << k
                 }
-                GroupBufs::Pair3Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Pair3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     lbits.len() == (2usize << k).div_ceil(64)
                         && rbits.len() == (2usize << k).div_ceil(64)
                         && *tau_set < pair_tau_sets.len()
                         && pair_tau_sets[*tau_set].te.len() == 4 << k
                         && pair_tau_sets[*tau_set].to.len() == 4 << k
                 }
-                GroupBufs::T4Bits { lbits, rbits, tau_set } => {
+                GroupBufs::T4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     lbits.len() == (4usize << k).div_ceil(64)
                         && rbits.len() == (4usize << k).div_ceil(64)
                         && *tau_set < t4_sets.len()
@@ -2236,19 +2671,33 @@ where
                 }
             }
     }));
-    let has_leaf = groups.iter().any(|g| matches!(g.bufs, GroupBufs::LeafBits { .. }));
-    let has_pair = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Pair2Bits { .. }));
-    let has_leaf2 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Leaf2Bits { .. }));
-    let has_leaf3 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Leaf3Bits { .. }));
-    let has_leaf4 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Leaf4Bits { .. }));
-    let has_pair3 = groups.iter().any(|g| matches!(g.bufs, GroupBufs::Pair3Bits { .. }));
-    let has_t4b = groups.iter().any(|g| matches!(g.bufs, GroupBufs::T4Bits { .. }));
+    let has_leaf = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::LeafBits { .. }));
+    let has_pair = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::Pair2Bits { .. }));
+    let has_leaf2 = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::Leaf2Bits { .. }));
+    let has_leaf3 = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::Leaf3Bits { .. }));
+    let has_leaf4 = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::Leaf4Bits { .. }));
+    let has_pair3 = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::Pair3Bits { .. }));
+    let has_t4b = groups
+        .iter()
+        .any(|g| matches!(g.bufs, GroupBufs::T4Bits { .. }));
     let one = F::one_with_cfg(field_cfg);
     let zero = F::zero_with_cfg(field_cfg);
     // The generic path's boundary nodes: F::from(2) = X, F::from(3) = X+1
     // (bit-pattern convention; for prime fields these are the integers).
-    let c2 = F::from_with_cfg(2u64, field_cfg);
-    let c3 = F::from_with_cfg(3u64, field_cfg);
+    let c2 = F::interpolation_node(2u64, field_cfg);
+    let c3 = F::interpolation_node(3u64, field_cfg);
     // Node squares, for the per-group coefficient→node conversion below.
     let c2sq = c2.clone() * &c2;
     let c3sq = c3.clone() * &c3;
@@ -2259,49 +2708,75 @@ where
     // (all trees reduce to one point), so the suffix tensors are identical —
     // compute them ONCE in that case, else once per group. (The L·R products,
     // which differ per group, still drive the per-group round-body parallelism.)
-    let shared_q =
-        all_flat || (!groups.is_empty() && groups.iter().all(|g| g.q == groups[0].q));
+    let shared_q = all_flat || (!groups.is_empty() && groups.iter().all(|g| g.q == groups[0].q));
     // The Gruen message format factors ONE eq1 out of the whole round
     // polynomial — meaningless unless every group sits at the same point.
-    assert!(!gruen || shared_q, "Gruen-format rounds require a shared eq point");
+    assert!(
+        !gruen || shared_q,
+        "Gruen-format rounds require a shared eq point"
+    );
     if has_leaf || has_pair || has_leaf2 || has_leaf3 || has_leaf4 || has_pair3 || has_t4b {
         // The bit expansions' 1-cancellations are char-2 identities, the
         // shared tables assume one suffix tensor, and round 1 must have a
         // fold (j < k) to materialise the dense round-2 buffers.
         assert!(char2, "bit-selected groups require characteristic 2");
         assert!(shared_q, "bit-selected groups require a shared eq point");
-        assert!(k >= 2, "bit-selected groups need k >= 2 (materialise tiny trees eagerly)");
+        assert!(
+            k >= 2,
+            "bit-selected groups need k >= 2 (materialise tiny trees eagerly)"
+        );
     }
     if has_leaf2 {
         // Round 2 must have a fold (j = 2 < k) to materialise the dense
         // round-3 buffers; at k = 2 use `LeafBits`.
-        assert!(k >= 3, "Leaf2Bits groups need k >= 3 (use LeafBits at k = 2)");
+        assert!(
+            k >= 3,
+            "Leaf2Bits groups need k >= 3 (use LeafBits at k = 2)"
+        );
     }
     if has_leaf3 {
-        assert!(k >= 4, "Leaf3Bits groups need k >= 4 (use Leaf2Bits at k = 3)");
+        assert!(
+            k >= 4,
+            "Leaf3Bits groups need k >= 4 (use Leaf2Bits at k = 3)"
+        );
     }
     if has_leaf4 {
-        assert!(k >= 5, "Leaf4Bits groups need k >= 5 (use Leaf3Bits at k = 4)");
+        assert!(
+            k >= 5,
+            "Leaf4Bits groups need k >= 5 (use Leaf3Bits at k = 4)"
+        );
     }
     if has_pair3 {
-        assert!(k >= 3, "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)");
+        assert!(
+            k >= 3,
+            "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)"
+        );
     }
     let suffix: Vec<SuffixTensorArena<F>> = {
         let _g = tracing::info_span!("eqf:suffix").entered();
-        if shared_q {
+        if let Some(arena) = prepared_suffix {
+            assert!(shared_q, "prepared suffixes require a shared point");
+            assert_eq!(arena.len(), k, "prepared suffix dimension");
+            vec![arena]
+        } else if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
         } else {
-            cfg_iter!(groups).map(|g| suffix_tensors(&g.q, field_cfg)).collect()
+            cfg_iter!(groups)
+                .map(|g| suffix_tensors(&g.q, field_cfg))
+                .collect()
         }
     };
-    debug_assert!(suffix.iter().all(|arena| arena.len() == k && arena.is_empty() == (k == 0)));
-    // Destructure once — the groups are consumed here anyway, so the
-    // per-group `q` vectors move instead of cloning (2^s clones per layer
-    // otherwise; byte-identical).
+    debug_assert!(
+        suffix
+            .iter()
+            .all(|arena| arena.len() == k && arena.is_empty() == (k == 0))
+    );
+    // Consume the groups so each equality point keeps its owned or borrowed
+    // storage without cloning.
     let num_groups = groups.len();
-    let mut qs: Vec<Vec<F>> = Vec::with_capacity(num_groups);
+    let mut qs: Vec<std::borrow::Cow<'_, [F]>> = Vec::with_capacity(num_groups);
     let mut scales: Vec<F> = Vec::with_capacity(num_groups);
-    let mut bufs: Vec<GroupBufs<F>> = Vec::with_capacity(num_groups);
+    let mut bufs: Vec<GroupBufs<'_, F>> = Vec::with_capacity(num_groups);
     for g in groups {
         qs.push(g.q);
         scales.push(g.scale);
@@ -2311,11 +2786,11 @@ where
     let _g = tracing::info_span!("eqf:rounds").entered();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
     // Header — mirror `prove_as_subprotocol`.
-    transcript.absorb_random_field(&F::from_with_cfg(k as u64, field_cfg), &mut buf);
-    transcript.absorb_random_field(&F::from_with_cfg(3u64, field_cfg), &mut buf);
+    transcript.absorb_random_field(&F::interpolation_node(k as u64, field_cfg), &mut buf);
+    transcript.absorb_random_field(&F::interpolation_node(3u64, field_cfg), &mut buf);
 
     // A zero-variable sumcheck is the direct evaluation of the singleton
-    // Boolean cube. This case occurs when an integer commitment has exactly
+    // Bit cube. This case occurs when an integer commitment has exactly
     // one column (`s = 0`): there is no tree-index challenge to sample, but
     // the claimed sum and closing values still bind the surrounding GKR
     // layer. Keep the same header absorption as the non-empty protocol so
@@ -2337,16 +2812,23 @@ where
                 })
                 .collect()
         };
-        let claimed_sum = scales.iter().zip(&final_evals).fold(zero, |sum, (scale, pairs)| {
-            let group_sum = pairs
+        let claimed_sum =
+            scales
                 .iter()
-                .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
-                    acc + &(left.clone() * right)
+                .zip(&final_evals)
+                .fold(constant_weight.clone(), |sum, (scale, pairs)| {
+                    let group_sum = pairs
+                        .iter()
+                        .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
+                            acc + &(left.clone() * right)
+                        });
+                    sum + &(scale.clone() * &group_sum)
                 });
-            sum + &(scale.clone() * &group_sum)
-        });
         return (
-            SumcheckProof { messages: Vec::new(), claimed_sum },
+            SumcheckProof {
+                messages: Vec::new(),
+                claimed_sum,
+            },
             Vec::new(),
             final_evals,
         );
@@ -2356,6 +2838,27 @@ where
     let mut randomness: Vec<F> = Vec::with_capacity(k);
     let mut messages: Vec<ProverMsg<F>> = Vec::with_capacity(k);
     let mut claimed_sum = zero.clone();
+    let recover = gruen
+        && coefficient_recovery_enabled()
+        && (has_pair3 || has_leaf2 || has_leaf3 || has_leaf4);
+    let inverses = if recover {
+        recovery_inverses(
+            qs[0].get(1),
+            if has_leaf3 || has_leaf4 {
+                qs[0].get(2)
+            } else {
+                None
+            },
+        )
+    } else {
+        [None, None]
+    };
+    let last_recovery_round = inverses
+        .iter()
+        .rposition(Option::is_some)
+        .map_or(0, |i| i + 2);
+    let mut running_claim = zero.clone();
+    let mut constant_prefix = constant_weight.clone();
     // Leaf2Bits round-2 state: the ρ₁-dependent per-position 4-case VALUE
     // tables (one [`Pair2TauSet`] per tau set), stashed at round 1's fold —
     // they are exactly that fold's [`LeafFoldTables`].
@@ -2384,35 +2887,59 @@ where
         // theirs implicitly at the same size).
         let half = 1usize << (k - j);
 
+        let recovery_inverse = match j {
+            2 => inverses[0].as_ref(),
+            3 => inverses[1].as_ref(),
+            _ => None,
+        }
+        .filter(|_| {
+            bufs.iter().all(|b| {
+                matches!(
+                    (b, j),
+                    (
+                        GroupBufs::Pair3Bits { .. }
+                            | GroupBufs::Leaf2Bits { .. }
+                            | GroupBufs::Leaf3Bits { .. }
+                            | GroupBufs::Leaf4Bits { .. },
+                        2
+                    ) | (GroupBufs::Leaf3Bits { .. } | GroupBufs::Leaf4Bits { .. }, 3)
+                )
+            })
+        });
+        let recover_linear = recovery_inverse.is_some();
+
         // Shared leaf tables for round 1 (one per tau set; every group of a
         // set only XOR-selects from them).
         let leaf_tables: Vec<LeafTables<F>> =
             if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
-            let _g = tracing::info_span!("eqf:leaf_tables").entered();
-            let v1 = suffix[0].tensor(0);
-            // Mirror [`leaf_round1_tiled`]'s engagement condition: the
-            // tiled body wants the Precombined ΔΔ form.
-            let tile = leaf_tile_enabled() && tau_sets.len() == 1;
-            cfg_iter!(tau_sets)
-                .map(|(tl, tr)| build_leaf_tables(v1, tl, tr, &zero, tile))
-                .collect()
-        } else {
-            Vec::new()
-        };
+                let _g = tracing::info_span!("eqf:leaf_tables").entered();
+                let v1 = suffix[0].tensor(0);
+                // Mirror [`leaf_round1_tiled`]'s engagement condition: the
+                // tiled body wants the Precombined ΔΔ form.
+                let tile = leaf_tile_enabled() && tau_sets.len() == 1;
+                cfg_iter!(tau_sets)
+                    .map(|(tl, tr)| build_leaf_tables(v1, tl, tr, &zero, tile))
+                    .collect()
+            } else {
+                Vec::new()
+            };
         let pair2_tables: Vec<Pair2Tables<F>> = if j == 1 && (has_pair || has_pair3) {
             let _g = tracing::info_span!("eqf:pair2_tables").entered();
             let v1 = suffix[0].tensor(0);
-            cfg_iter!(pair_tau_sets).map(|set| build_pair2_tables(v1, set)).collect()
+            cfg_iter!(pair_tau_sets)
+                .map(|set| build_pair2_tables(v1, set))
+                .collect()
         } else {
             Vec::new()
         };
         // Leaf2Bits round-2 message tables: the [`Pair2Tables`] of the
         // stashed ρ₁-dependent value sets, weighted by V_2.
-        let leaf2_tables: Vec<Pair2Tables<F>> = if j == 2 && (has_leaf2 || has_leaf3 || has_leaf4)
-        {
+        let leaf2_tables: Vec<Pair2Tables<F>> = if j == 2 && (has_leaf2 || has_leaf3 || has_leaf4) {
             let _g = tracing::info_span!("eqf:leaf2_tables").entered();
             let v2 = suffix[0].tensor(1);
-            cfg_iter!(leaf2_value_sets).map(|set| build_pair2_tables(v2, set)).collect()
+            cfg_iter!(leaf2_value_sets)
+                .map(|set| build_pair2_tables(v2, set))
+                .collect()
         } else {
             Vec::new()
         };
@@ -2435,7 +2962,8 @@ where
         // skipped multiply saves — and was removed.) Parallel **across
         // groups**, with a minimum batch so tiny late-round bodies amortise
         // the rayon dispatch.
-        let compute_h = |t: usize, bufs: &[GroupBufs<F>]| -> (F, F, F) {
+        let recovery_span = recover_linear.then(|| tracing::info_span!("eqf:recover").entered());
+        let compute_h = |t: usize, bufs: &[GroupBufs<'_, F>]| -> (F, F, F) {
             let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
             match &bufs[t] {
                 GroupBufs::Flat => {
@@ -2488,8 +3016,7 @@ where
                             F::wide_sub_assign(&mut i1, &wc0);
                             F::wide_sub_assign(&mut i1, &wc2);
                         }
-                        let (i0, i1, i2) =
-                            (F::from_wide(i0), F::from_wide(i1), F::from_wide(i2));
+                        let (i0, i1, i2) = (F::from_wide(i0), F::from_wide(i1), F::from_wide(i2));
                         let w = &suffix_t[b];
                         F::wide_add_assign(&mut a0, &F::mul_wide(w, &i0));
                         F::wide_add_assign(&mut a1, &F::mul_wide(w, &i1));
@@ -2497,7 +3024,11 @@ where
                     }
                     (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
                 }
-                GroupBufs::Pair2Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Pair2Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Bit-selected product layer, round 1 only: `a0` and the
                     // `Σ w·l1·r1` accumulator are ONE case-LUT load per slot;
                     // the ΔL·ΔR cross term is one wide multiply of two
@@ -2511,15 +3042,20 @@ where
                             &pair_tau_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| pair2_cases(lbits, rbits, b, h_off),
                         ),
-                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                        Pair2Tables::Precombined {
+                            t_a0,
+                            t_a1,
+                            t_wde,
+                            t_do,
+                        } => {
                             let mut a0 = zero.clone();
                             let mut t11 = zero.clone();
                             let mut a2w = F::wide_zero(&zero);
                             for b in 0..half {
-                                let (ce0, ce1, co0, co1) =
-                                    pair2_cases(lbits, rbits, b, h_off);
+                                let (ce0, ce1, co0, co1) = pair2_cases(lbits, rbits, b, h_off);
                                 a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
                                 t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
                                 let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
@@ -2532,7 +3068,11 @@ where
                         }
                     }
                 }
-                GroupBufs::LeafBits { lbits, rbits, tau_set } => {
+                GroupBufs::LeafBits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Bit-affine leaf layer, round 1 only: each slot's
                     // contribution to `Σ w·l0·r0`, `Σ w·l1·r1` and `Σ w·ΔΔ`
                     // comes off the shared [`LeafTables`] selected by the
@@ -2542,13 +3082,21 @@ where
                     debug_assert_eq!(j, 1, "leaf-bit groups are consumed in round 1");
                     leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
-                GroupBufs::Leaf2Bits { lbits, rbits, tau_set } if j == 1 => {
+                GroupBufs::Leaf2Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 1 => {
                     // Round 1: identical to the LeafBits body (the same
                     // shared [`LeafTables`] — the leaves are the same
                     // implicit `1 + m·τ` values).
                     leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
-                GroupBufs::Leaf2Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Leaf2Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Round 2: the Pair2Bits case-LUT round over the
                     // ρ₁-dependent 4-case value tables — the round-2
                     // entries are per-position selects keyed by adjacent
@@ -2563,9 +3111,15 @@ where
                             &leaf2_value_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| leaf2_cases(lbits, rbits, b),
                         ),
-                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                        Pair2Tables::Precombined {
+                            t_a0,
+                            t_a1,
+                            t_wde,
+                            t_do,
+                        } => {
                             let mut a0 = zero.clone();
                             let mut t11 = zero.clone();
                             let mut a2w = F::wide_zero(&zero);
@@ -2583,11 +3137,19 @@ where
                         }
                     }
                 }
-                GroupBufs::Leaf3Bits { lbits, rbits, tau_set } if j == 1 => {
+                GroupBufs::Leaf3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 1 => {
                     // Round 1: the LeafBits body (same shared tables).
                     leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
-                GroupBufs::Leaf3Bits { lbits, rbits, tau_set } if j == 2 => {
+                GroupBufs::Leaf3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 2 => {
                     // Round 2: the Leaf2Bits body (same shared round-2
                     // tables over the same stashed value sets).
                     match &leaf2_tables[*tau_set] {
@@ -2596,9 +3158,15 @@ where
                             &leaf2_value_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| leaf2_cases(lbits, rbits, b),
                         ),
-                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                        Pair2Tables::Precombined {
+                            t_a0,
+                            t_a1,
+                            t_wde,
+                            t_do,
+                        } => {
                             let mut a0 = zero.clone();
                             let mut t11 = zero.clone();
                             let mut a2w = F::wide_zero(&zero);
@@ -2616,14 +3184,23 @@ where
                         }
                     }
                 }
-                GroupBufs::Leaf3Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Leaf3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Round 3: values INLINE from the stashed 16-case
                     // tables — one aligned byte per side per slot, then
                     // the dense single-pair body (multiplies are free;
                     // only skipped bytes pay). Same field values as the
                     // dense round over materialised round-3 buffers.
                     debug_assert_eq!(j, 3, "leaf3-bit groups are consumed in round 3");
-                    leaf3_round3_msg(
+                    let message = if recover_linear {
+                        leaf3_round3_msg::<F, true>
+                    } else {
+                        leaf3_round3_msg::<F, false>
+                    };
+                    message(
                         &leaf3_value_sets[*tau_set],
                         lbits,
                         rbits,
@@ -2632,11 +3209,19 @@ where
                         &zero,
                     )
                 }
-                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } if j == 1 => {
+                GroupBufs::Leaf4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 1 => {
                     // Round 1: the LeafBits body (same shared tables).
                     leaf_round1_body(&leaf_tables[*tau_set], lbits, rbits, half, &zero)
                 }
-                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } if j == 2 => {
+                GroupBufs::Leaf4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 2 => {
                     // Round 2: the Leaf2Bits body (same shared round-2
                     // tables over the same stashed value sets).
                     match &leaf2_tables[*tau_set] {
@@ -2645,9 +3230,15 @@ where
                             &leaf2_value_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| leaf2_cases(lbits, rbits, b),
                         ),
-                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                        Pair2Tables::Precombined {
+                            t_a0,
+                            t_a1,
+                            t_wde,
+                            t_do,
+                        } => {
                             let mut a0 = zero.clone();
                             let mut t11 = zero.clone();
                             let mut a2w = F::wide_zero(&zero);
@@ -2665,10 +3256,19 @@ where
                         }
                     }
                 }
-                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } if j == 3 => {
+                GroupBufs::Leaf4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 3 => {
                     // Round 3: the Leaf3Bits body over the same stashed
                     // sets (still un-reweighted at message time).
-                    leaf3_round3_msg(
+                    let message = if recover_linear {
+                        leaf3_round3_msg::<F, true>
+                    } else {
+                        leaf3_round3_msg::<F, false>
+                    };
+                    message(
                         &leaf3_value_sets[*tau_set],
                         lbits,
                         rbits,
@@ -2677,7 +3277,11 @@ where
                         &zero,
                     )
                 }
-                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Leaf4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Round 4: entries as XOR-of-two-gathers from the
                     // ρ₃-reweighted sets — F₃ is never built; the table
                     // footprint stays at the 16-case level.
@@ -2691,7 +3295,11 @@ where
                         &zero,
                     )
                 }
-                GroupBufs::Pair3Bits { lbits, rbits, tau_set } if j == 1 => {
+                GroupBufs::Pair3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } if j == 1 => {
                     // Round 1: the Pair2Bits body (same shared tables).
                     let h_off = 1usize << k;
                     match &pair2_tables[*tau_set] {
@@ -2700,15 +3308,20 @@ where
                             &pair_tau_sets[*tau_set].to,
                             half,
                             &zero,
+                            recover_linear,
                             |b| pair2_cases(lbits, rbits, b, h_off),
                         ),
-                        Pair2Tables::Precombined { t_a0, t_a1, t_wde, t_do } => {
+                        Pair2Tables::Precombined {
+                            t_a0,
+                            t_a1,
+                            t_wde,
+                            t_do,
+                        } => {
                             let mut a0 = zero.clone();
                             let mut t11 = zero.clone();
                             let mut a2w = F::wide_zero(&zero);
                             for b in 0..half {
-                                let (ce0, ce1, co0, co1) =
-                                    pair2_cases(lbits, rbits, b, h_off);
+                                let (ce0, ce1, co0, co1) = pair2_cases(lbits, rbits, b, h_off);
                                 a0 += &t_a0[(b << 4) | (ce0 << 2) | co0];
                                 t11 += &t_a1[(b << 4) | (ce1 << 2) | co1];
                                 let wde = &t_wde[(b << 4) | (ce0 << 2) | ce1];
@@ -2721,60 +3334,34 @@ where
                         }
                     }
                 }
-                GroupBufs::Pair3Bits { lbits, rbits, tau_set } => {
+                GroupBufs::Pair3Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Round 2: values inline from the stashed fold tables
                     // (entry keys = interleaved l/r bit pairs; one aligned
                     // nibble per array per side per slot).
                     debug_assert_eq!(j, 2, "pair3-bit groups are consumed in round 2");
-                    let vs = &pair3_value_sets[*tau_set];
-                    let h_off = half << 2; // 2^k — absolute O-side bit offset
-                    let prfm = lut_prfm(half);
-                    let mut a0 = F::wide_zero(&zero);
-                    let mut a1 = F::wide_zero(&zero);
-                    let mut a2 = F::wide_zero(&zero);
-                    for b in 0..half {
-                        if prfm && b + PRFM_DIST < half {
-                            let bp = b + PRFM_DIST;
-                            let pe2 = bp << 2;
-                            let nl2 = ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
-                            let nr2 = ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
-                            let po2 = pe2 + h_off;
-                            let ml2 = ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
-                            let mr2 = ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
-                            let ep = bp << 1;
-                            prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
-                            prefetch_l1(&vs.f_e, ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2));
-                            prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
-                            prefetch_l1(&vs.f_o, ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2));
-                        }
-                        let pe = b << 2;
-                        let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                        let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                        let po = pe + h_off;
-                        let ml = ((lbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                        let mr = ((rbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                        let e = b << 1;
-                        let l0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
-                        let l1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
-                        let r0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
-                        let r1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
-                        let w = &suffix_t[b];
-                        let l0w = w.clone() * l0;
-                        let l1w = w.clone() * l1;
-                        let wc0 = F::mul_wide(&l0w, r0);
-                        let w11 = F::mul_wide(&l1w, r1);
-                        let dr = r1.clone() - r0;
-                        let dl = l1w - &l0w;
-                        let wc2 = F::mul_wide(&dl, &dr);
-                        F::wide_add_assign(&mut a0, &wc0);
-                        F::wide_add_assign(&mut a2, &wc2);
-                        F::wide_add_assign(&mut a1, &w11);
-                        F::wide_sub_assign(&mut a1, &wc0);
-                        F::wide_sub_assign(&mut a1, &wc2);
-                    }
-                    (F::from_wide(a0), F::from_wide(a1), F::from_wide(a2))
+                    let message = if recover_linear {
+                        pair3_round2_msg::<F, true>
+                    } else {
+                        pair3_round2_msg::<F, false>
+                    };
+                    message(
+                        &pair3_value_sets[*tau_set],
+                        lbits,
+                        rbits,
+                        half,
+                        suffix_t,
+                        &zero,
+                    )
                 }
-                GroupBufs::T4Bits { lbits, rbits, tau_set } => {
+                GroupBufs::T4Bits {
+                    lbits,
+                    rbits,
+                    tau_set,
+                } => {
                     // Round 1 only: inline T4 selects — the layer's input
                     // level is never stored nor regenerated (4 selects +
                     // the dense body per slot).
@@ -2827,7 +3414,9 @@ where
             && j + 1 < k
             && !(j == 1 && pre_round1.is_some())
             && (all_flat
-                || bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1)));
+                || bufs
+                    .iter()
+                    .all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1)));
         let hs: Vec<(F, F, F)> = if grid_rho.is_some() {
             // Round j+1 of a double-fold pass: nine field elements per
             // group, evaluated at the challenge just drawn. No pass.
@@ -2862,7 +3451,7 @@ where
                     )
                 })
             } else {
-                let pass = |t: usize, gb: &mut GroupBufs<F>| -> [F; 9] {
+                let pass = |t: usize, gb: &mut GroupBufs<'_, F>| -> [F; 9] {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("double-fold requires all-Dense single-pair groups")
@@ -2880,8 +3469,11 @@ where
                         .collect()
                 };
                 #[cfg(not(feature = "parallel"))]
-                let o: Vec<[F; 9]> =
-                    bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
+                let o: Vec<[F; 9]> = bufs
+                    .iter_mut()
+                    .enumerate()
+                    .map(|(t, gb)| pass(t, gb))
+                    .collect();
                 o
             };
             let hs = out
@@ -2910,7 +3502,7 @@ where
                     )
                 })
             } else {
-                let pass = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                let pass = |t: usize, gb: &mut GroupBufs<'_, F>| -> (F, F, F) {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("deferred folds require all-Dense single-pair groups")
@@ -2928,8 +3520,11 @@ where
                         .collect()
                 };
                 #[cfg(not(feature = "parallel"))]
-                let o: Vec<(F, F, F)> =
-                    bufs.iter_mut().enumerate().map(|(t, gb)| pass(t, gb)).collect();
+                let o: Vec<(F, F, F)> = bufs
+                    .iter_mut()
+                    .enumerate()
+                    .map(|(t, gb)| pass(t, gb))
+                    .collect();
                 o
             }
         } else if j == 1 && pre_round1.is_some() {
@@ -2972,7 +3567,7 @@ where
                     )
                 })
             } else {
-                let fused = |t: usize, gb: &mut GroupBufs<F>| -> (F, F, F) {
+                let fused = |t: usize, gb: &mut GroupBufs<'_, F>| -> (F, F, F) {
                     let suffix_t = suffix[if shared_q { 0 } else { t }].tensor(j - 1);
                     let GroupBufs::Dense(group_bufs) = gb else {
                         unreachable!("fused rounds require all-Dense single-pair groups")
@@ -3004,8 +3599,11 @@ where
                         .collect()
                 };
                 #[cfg(not(feature = "parallel"))]
-                let o: Vec<(F, F, F)> =
-                    bufs.iter_mut().enumerate().map(|(t, gb)| fused(t, gb)).collect();
+                let o: Vec<(F, F, F)> = bufs
+                    .iter_mut()
+                    .enumerate()
+                    .map(|(t, gb)| fused(t, gb))
+                    .collect();
                 o
             }
         } else {
@@ -3047,45 +3645,46 @@ where
                 });
                 hs
             } else {
-            // Slot-tiled round-1 form for the leaf-bit groups (see
-            // [`leaf_round1_tiled`]); any group the tile doesn't cover
-            // (e.g. the elided-witness constant Dense group) falls back
-            // to the per-group body. The pair-shaped rounds measured a
-            // WASH under the same tiling (2026-08-21, both table forms:
-            // they are wide-mul-bound, not table-bandwidth-bound) — only
-            // the pick/XOR-heavy leaf round 1 profits.
-            let tiled = if j == 1 && leaf_tile_enabled() {
-                let _g_tile = tracing::info_span!("eqf:tile_r1").entered();
-                leaf_round1_tiled(&bufs, &leaf_tables, half, &zero)
-            } else {
-                None
-            };
-            if let Some(tiled) = tiled {
-                tiled
-                    .into_iter()
-                    .enumerate()
-                    .map(|(t, v)| v.unwrap_or_else(|| compute_h(t, &bufs)))
-                    .collect()
-            } else {
-                #[cfg(feature = "parallel")]
-                let out: Vec<(F, F, F)> = {
-                    // ≥ ~512 element-pairs per task so late-round tiny bodies
-                    // don't drown in rayon dispatch overhead.
-                    let min_len = par_min_len(num_groups, half);
-                    (0..num_groups)
-                        .into_par_iter()
-                        .with_min_len(min_len)
-                        .map(|t| compute_h(t, &bufs))
-                        .collect()
+                // Slot-tiled round-1 form for the leaf-bit groups (see
+                // [`leaf_round1_tiled`]); any group the tile doesn't cover
+                // (e.g. the elided-witness constant Dense group) falls back
+                // to the per-group body. The pair-shaped rounds measured a
+                // WASH under the same tiling (2026-08-21, both table forms:
+                // they are wide-mul-bound, not table-bandwidth-bound) — only
+                // the pick/XOR-heavy leaf round 1 profits.
+                let tiled = if j == 1 && leaf_tile_enabled() {
+                    let _g_tile = tracing::info_span!("eqf:tile_r1").entered();
+                    leaf_round1_tiled(&bufs, &leaf_tables, half, &zero)
+                } else {
+                    None
                 };
-                #[cfg(not(feature = "parallel"))]
-                let out: Vec<(F, F, F)> =
-                    (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
-                out
-            }
+                if let Some(tiled) = tiled {
+                    tiled
+                        .into_iter()
+                        .enumerate()
+                        .map(|(t, v)| v.unwrap_or_else(|| compute_h(t, &bufs)))
+                        .collect()
+                } else {
+                    #[cfg(feature = "parallel")]
+                    let out: Vec<(F, F, F)> = {
+                        // ≥ ~512 element-pairs per task so late-round tiny bodies
+                        // don't drown in rayon dispatch overhead.
+                        let min_len = par_min_len(num_groups, half);
+                        (0..num_groups)
+                            .into_par_iter()
+                            .with_min_len(min_len)
+                            .map(|t| compute_h(t, &bufs))
+                            .collect()
+                    };
+                    #[cfg(not(feature = "parallel"))]
+                    let out: Vec<(F, F, F)> =
+                        (0..num_groups).map(|t| compute_h(t, &bufs)).collect();
+                    out
+                }
             }
         };
 
+        drop(recovery_span);
         let _g_close = tracing::info_span!("eqf:close").entered();
         let tail = if gruen {
             // Gruen format (shared q, asserted): the round polynomial is
@@ -3098,25 +3697,20 @@ where
             // Chunked Σ_t A_t·H_t (parallel at forest widths): field
             // addition is associative, so the chunk re-association is
             // value-identical — same message, byte-identical transcript.
-            let mut ch = (zero.clone(), zero.clone(), zero.clone());
-            let partials: Vec<(F, F, F)> = cfg_chunks!(hs, 1 << 10)
-                .zip(cfg_chunks!(a_scalars, 1 << 10))
-                .map(|(hc, ac)| {
-                    let mut p = (zero.clone(), zero.clone(), zero.clone());
-                    for (h, a) in hc.iter().zip(ac.iter()) {
-                        p.0 += a.clone() * &h.0;
-                        p.1 += a.clone() * &h.1;
-                        p.2 += a.clone() * &h.2;
-                    }
-                    p
-                })
-                .collect();
-            for p in partials {
-                ch.0 += &p.0;
-                ch.1 += &p.1;
-                ch.2 += &p.2;
+            let mut ch = close_coefficients(&hs, &a_scalars, &zero, j == 1, recover_linear);
+            if let Some(inverse) = recovery_inverse {
+                // The claim includes padding; the real groups' constant
+                // coefficient does not. Only the aggregate has a known claim.
+                ch.1 =
+                    (running_claim.clone() - &(ch.0.clone() + &constant_prefix)) * inverse - &ch.2;
             }
             if j == 1 {
+                // The all-ones group has H(X)=1: it contributes C only to
+                // the initial claim. Later C*A_j is the constant coefficient
+                // reconstructed from that claim by the verifier. Gruen sends
+                // only the two nonconstant coefficients, so no prefix buffer
+                // or per-round multiplication for the constant is needed.
+                ch.0 += &constant_weight;
                 claimed_sum = ch.0.clone() + &(qj.clone() * &(ch.1.clone() + &ch.2));
             }
             vec![ch.1, ch.2]
@@ -3131,8 +3725,7 @@ where
                 let qj = &qs[t][j - 1];
                 let e0 = one.clone() - qj;
                 let e1 = qj.clone();
-                let eq1_at =
-                    |c: &F| -> F { e0.clone() * &(one.clone() - c) + &(e1.clone() * c) };
+                let eq1_at = |c: &F| -> F { e0.clone() * &(one.clone() - c) + &(e1.clone() * c) };
                 let (a0, a1, a2) = h;
                 let h0 = a0.clone();
                 let h1 = a0.clone() + &a1 + &a2;
@@ -3158,6 +3751,18 @@ where
 
         let rho: F = transcript.get_field_challenge(field_cfg);
         transcript.absorb_random_field(&rho, &mut buf);
+        if j < last_recovery_round {
+            if j == 1 {
+                running_claim = claimed_sum.clone();
+            }
+            let tail = &messages.last().expect("round message").0.tail_evaluations;
+            let qj = &qs[0][j - 1];
+            let a0 = running_claim.clone() - &(qj.clone() * &(tail[0].clone() + &tail[1]));
+            let eq = (one.clone() - qj) * &(one.clone() - &rho) + &(qj.clone() * &rho);
+            running_claim = eq.clone()
+                * &(a0 + &(rho.clone() * &(tail[0].clone() + &(rho.clone() * &tail[1]))));
+            constant_prefix = constant_prefix * &eq;
+        }
         // A grid produced this round is spent by the next one, at ρ_j.
         if grid.is_some() {
             grid_rho = Some(rho.clone());
@@ -3186,7 +3791,9 @@ where
             // never reach here fused.
             if eqf_fuse_enabled()
                 && (all_flat
-                    || bufs.iter().all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1)))
+                    || bufs
+                        .iter()
+                        .all(|gb| matches!(gb, GroupBufs::Dense(p) if p.len() == 1)))
             {
                 pending.push(rho.clone());
                 randomness.push(rho);
@@ -3202,8 +3809,7 @@ where
                 } else {
                     Vec::new()
                 };
-            let pair2_fold_tables: Vec<Pair2FoldTables<F>> = if j == 1 && (has_pair || has_pair3)
-            {
+            let pair2_fold_tables: Vec<Pair2FoldTables<F>> = if j == 1 && (has_pair || has_pair3) {
                 cfg_iter!(pair_tau_sets)
                     .map(|set| build_pair2_fold_tables(&rho, &one, set))
                     .collect()
@@ -3230,8 +3836,11 @@ where
                 && ((has_pair3 && j == 2) || (has_leaf3 && !has_leaf4 && j == 3));
             if mats_pre {
                 let _g = tracing::info_span!("eqf:mats_pre").entered();
-                let sets =
-                    if j == 2 { &mut pair3_value_sets } else { &mut leaf3_value_sets };
+                let sets = if j == 2 {
+                    &mut pair3_value_sets
+                } else {
+                    &mut leaf3_value_sets
+                };
                 for set in sets.iter_mut() {
                     reweight_fold_tables_in_place(&rho, &one, set);
                 }
@@ -3246,318 +3855,358 @@ where
             let mat_grid_now = mat_grid_enabled() && eqf_double() && j + 2 < k;
             // Fold every group's L,R at ρ. Parallel **across groups**; the
             // per-vector fold is sequential (the groups are the big dimension).
-            let fold_group = |gb: &mut GroupBufs<F>| -> Option<[F; 9]> {
+            let fold_group = |gb: &mut GroupBufs<'_, F>| -> Option<[F; 9]> {
                 match gb {
-                GroupBufs::Flat => {
-                    unreachable!("Flat groups fold through the driver's flat fold branch")
-                }
-                GroupBufs::Dense(group_bufs) => {
-                    for (l, r) in group_bufs.iter_mut() {
-                        // Fold each buffer in place: write index `b` is only ever
-                        // read at the earlier iteration `b/2` (its parent), so
-                        // overwriting `v[b]` after that read is safe and saves the
-                        // per-round `collect()` allocation (large on the deep layers).
-                        // A field's fused fold kernel takes over when available.
-                        let fold_in_place = |v: &mut Vec<F>| {
-                            if eqf_nokernel() || !F::eqf_fold_in_place(v.as_mut_slice(), &rho, half) {
-                                for b in 0..half {
-                                    let v0 = v[b << 1].clone();
-                                    let diff = v[(b << 1) | 1].clone() - &v0;
-                                    v[b] = v0 + &(rho.clone() * &diff);
+                    GroupBufs::Flat => {
+                        unreachable!("Flat groups fold through the driver's flat fold branch")
+                    }
+                    GroupBufs::Dense(group_bufs) => {
+                        for (l, r) in group_bufs.iter_mut() {
+                            // Fold each buffer in place: write index `b` is only ever
+                            // read at the earlier iteration `b/2` (its parent), so
+                            // overwriting `v[b]` after that read is safe and saves the
+                            // per-round `collect()` allocation (large on the deep layers).
+                            // A field's fused fold kernel takes over when available.
+                            let fold_in_place = |v: &mut Vec<F>| {
+                                if eqf_nokernel()
+                                    || !F::eqf_fold_in_place(v.as_mut_slice(), &rho, half)
+                                {
+                                    for b in 0..half {
+                                        let v0 = v[b << 1].clone();
+                                        let diff = v[(b << 1) | 1].clone() - &v0;
+                                        v[b] = v0 + &(rho.clone() * &diff);
+                                    }
                                 }
-                            }
-                            v.truncate(half);
+                                v.truncate(half);
+                            };
+                            fold_in_place(l);
+                            fold_in_place(r);
+                        }
+                        None
+                    }
+                    GroupBufs::LeafBits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        // Materialise the dense round-2 buffers straight from the
+                        // bits: `v' = 1 + m_0·(1+ρ)τ_0 + m_1·ρτ_1` — the exact
+                        // field value of `v_0 + ρ(v_1 − v_0)` over the implicit
+                        // leaves (char-2 identity), precombined per bit pair so
+                        // each entry is ONE indexed load (see [`LeafFoldTables`]).
+                        let ft = &leaf_fold_tables[*tau_set];
+                        let build = |bits: &[u64], t: &[F]| -> Vec<F> {
+                            (0..half)
+                                .map(|b| {
+                                    let p2 =
+                                        ((bits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
+                                    t[(b << 2) | p2].clone()
+                                })
+                                .collect()
                         };
-                        fold_in_place(l);
-                        fold_in_place(r);
+                        let l = build(lbits, &ft.t_l);
+                        let r = build(rbits, &ft.t_r);
+                        *gb = GroupBufs::Dense(vec![(l, r)]);
+                        None
                     }
-                    None
-                }
-                GroupBufs::LeafBits { lbits, rbits, tau_set } => {
-                    // Materialise the dense round-2 buffers straight from the
-                    // bits: `v' = 1 + m_0·(1+ρ)τ_0 + m_1·ρτ_1` — the exact
-                    // field value of `v_0 + ρ(v_1 − v_0)` over the implicit
-                    // leaves (char-2 identity), precombined per bit pair so
-                    // each entry is ONE indexed load (see [`LeafFoldTables`]).
-                    let ft = &leaf_fold_tables[*tau_set];
-                    let build = |bits: &[u64], t: &[F]| -> Vec<F> {
-                        (0..half)
-                            .map(|b| {
-                                let p2 =
-                                    ((bits[b >> 5] >> ((b & 31) << 1)) & 3) as u32 as usize;
-                                t[(b << 2) | p2].clone()
-                            })
-                            .collect()
-                    };
-                    let l = build(lbits, &ft.t_l);
-                    let r = build(rbits, &ft.t_r);
-                    *gb = GroupBufs::Dense(vec![(l, r)]);
-                    None
-                }
-                GroupBufs::Pair2Bits { lbits, rbits, tau_set } => {
-                    // Materialise the dense round-2 buffers from the bits via
-                    // the 16-case fold tables: `v' = (1+ρ)v_0 + ρv_1` with
-                    // both v's 2-bit selects (see [`Pair2FoldTables`]).
-                    let ft = &pair2_fold_tables[*tau_set];
-                    // Round 1: buffers had 2^k entries ⇒ O-offset 2^k bits.
-                    let h_off = 2 * half;
-                    let mut l = Vec::with_capacity(half);
-                    let mut r = Vec::with_capacity(half);
-                    for b in 0..half {
-                        let (ce0, ce1, co0, co1) = pair2_cases(lbits, rbits, b, h_off);
-                        l.push(ft.f_e[(b << 4) | (ce0 << 2) | ce1].clone());
-                        r.push(ft.f_o[(b << 4) | (co0 << 2) | co1].clone());
-                    }
-                    *gb = GroupBufs::Dense(vec![(l, r)]);
-                    None
-                }
-                GroupBufs::Leaf2Bits { lbits, rbits, tau_set } => {
-                    if j == 1 {
-                        // Round 1's fold keeps the bits: the fold tables
-                        // built above ARE the round-2 value tables — they
-                        // get stashed as `leaf2_value_sets` below.
-                    } else {
-                        // Round 2's fold materialises the dense round-3
-                        // buffers straight from the bits via the 16-case
-                        // fold tables over the ρ₁-dependent value sets:
-                        // `v'' = (1+ρ₂)v'_0 + ρ₂v'_1` with both v's
-                        // nibble-keyed selects (exact char-2 identity).
-                        let ft = &leaf2_fold_tables[*tau_set];
+                    GroupBufs::Pair2Bits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        // Materialise the dense round-2 buffers from the bits via
+                        // the 16-case fold tables: `v' = (1+ρ)v_0 + ρv_1` with
+                        // both v's 2-bit selects (see [`Pair2FoldTables`]).
+                        let ft = &pair2_fold_tables[*tau_set];
+                        // Round 1: buffers had 2^k entries ⇒ O-offset 2^k bits.
+                        let h_off = 2 * half;
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
                         for b in 0..half {
-                            let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
+                            let (ce0, ce1, co0, co1) = pair2_cases(lbits, rbits, b, h_off);
                             l.push(ft.f_e[(b << 4) | (ce0 << 2) | ce1].clone());
                             r.push(ft.f_o[(b << 4) | (co0 << 2) | co1].clone());
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
-                    }
-                    None
-                }
-                GroupBufs::Leaf3Bits { lbits, rbits, tau_set } => {
-                    if j <= 2 {
-                        // Rounds 1-2 keep the bits; the round-2 fold
-                        // tables get stashed as `leaf3_value_sets` below.
                         None
-                    } else {
-                        // Round 3's fold: inline-materialise the dense
-                        // round-4 buffers — `v' = v_0 + ρ₃(v_0 + v_1)`
-                        // (the canonical one-multiply char-2 fold; equals
-                        // `(1+ρ₃)v_0 + ρ₃v_1` exactly by distributivity)
-                        // over byte-keyed selects.
-                        let vs = &leaf3_value_sets[*tau_set];
-                        let prfm = lut_prfm(half);
+                    }
+                    GroupBufs::Leaf2Bits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        if j == 1 {
+                            // Round 1's fold keeps the bits: the fold tables
+                            // built above ARE the round-2 value tables — they
+                            // get stashed as `leaf2_value_sets` below.
+                        } else {
+                            // Round 2's fold materialises the dense round-3
+                            // buffers straight from the bits via the 16-case
+                            // fold tables over the ρ₁-dependent value sets:
+                            // `v'' = (1+ρ₂)v'_0 + ρ₂v'_1` with both v's
+                            // nibble-keyed selects (exact char-2 identity).
+                            let ft = &leaf2_fold_tables[*tau_set];
+                            let mut l = Vec::with_capacity(half);
+                            let mut r = Vec::with_capacity(half);
+                            for b in 0..half {
+                                let (ce0, ce1, co0, co1) = leaf2_cases(lbits, rbits, b);
+                                l.push(ft.f_e[(b << 4) | (ce0 << 2) | ce1].clone());
+                                r.push(ft.f_o[(b << 4) | (co0 << 2) | co1].clone());
+                            }
+                            *gb = GroupBufs::Dense(vec![(l, r)]);
+                        }
+                        None
+                    }
+                    GroupBufs::Leaf3Bits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        if j <= 2 {
+                            // Rounds 1-2 keep the bits; the round-2 fold
+                            // tables get stashed as `leaf3_value_sets` below.
+                            None
+                        } else {
+                            // Round 3's fold: inline-materialise the dense
+                            // round-4 buffers — `v' = v_0 + ρ₃(v_0 + v_1)`
+                            // (the canonical one-multiply char-2 fold; equals
+                            // `(1+ρ₃)v_0 + ρ₃v_1` exactly by distributivity)
+                            // over byte-keyed selects.
+                            let vs = &leaf3_value_sets[*tau_set];
+                            let prfm = lut_prfm(half);
+                            let mut l = Vec::with_capacity(half);
+                            let mut r = Vec::with_capacity(half);
+                            let mut g9 = mat_grid_now
+                                .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
+                            let sfx: &[F] = if g9.is_some() {
+                                suffix[0].tensor(j + 1)
+                            } else {
+                                &[]
+                            };
+                            for b in 0..half {
+                                if prfm && b + PRFM_DIST < half {
+                                    let bp = b + PRFM_DIST;
+                                    let pp = bp << 3;
+                                    let plb = ((lbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+                                    let prb = ((rbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
+                                    let ep = bp << 1;
+                                    prefetch_l1(&vs.f_e, (ep << 4) | leaf3_idx(plb & 15));
+                                    prefetch_l1(&vs.f_e, ((ep | 1) << 4) | leaf3_idx(plb >> 4));
+                                    prefetch_l1(&vs.f_o, (ep << 4) | leaf3_idx(prb & 15));
+                                    prefetch_l1(&vs.f_o, ((ep | 1) << 4) | leaf3_idx(prb >> 4));
+                                }
+                                let p = b << 3;
+                                let bl = ((lbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+                                let br = ((rbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+                                let e = b << 1;
+                                let v0 = &vs.f_e[(e << 4) | leaf3_idx(bl & 15)];
+                                let v1 = &vs.f_e[((e | 1) << 4) | leaf3_idx(bl >> 4)];
+                                l.push(if mats_pre {
+                                    // Stash reweighted above: entry IS the fold.
+                                    v0.clone() + v1
+                                } else {
+                                    v0.clone() + &(rho.clone() * &(v0.clone() + v1))
+                                });
+                                let u0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
+                                let u1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
+                                r.push(if mats_pre {
+                                    u0.clone() + u1
+                                } else {
+                                    u0.clone() + &(rho.clone() * &(u0.clone() + u1))
+                                });
+                                if b & 3 == 3 {
+                                    if let Some(acc) = g9.as_mut() {
+                                        // Cache-hot readback of the quad just
+                                        // written — the fresh buffers' first
+                                        // DRAM read moves to round j+3's pass.
+                                        let base = b - 3;
+                                        let lv: [F; 4] =
+                                            core::array::from_fn(|i| l[base + i].clone());
+                                        let rv: [F; 4] =
+                                            core::array::from_fn(|i| r[base + i].clone());
+                                        grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
+                                    }
+                                }
+                            }
+                            *gb = GroupBufs::Dense(vec![(l, r)]);
+                            g9.map(grid_finish)
+                        }
+                    }
+                    GroupBufs::Leaf4Bits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        if j <= 3 {
+                            // Rounds 1–2 keep the bits (stash bookkeeping
+                            // below); round 3's "fold" is the shared ρ₃
+                            // REWEIGHT of the stashed sets (also below) —
+                            // still nothing per-tree.
+                            None
+                        } else {
+                            // Round 4's fold: inline-materialise the dense
+                            // round-5 buffers — each round-4 value the XOR of
+                            // two gathers from the reweighted sets, folded by
+                            // the one-multiply `v_0 + ρ₄(v_0 + v_1)`.
+                            let vs = &leaf4_value_sets[*tau_set];
+                            let prfm = lut_prfm(half);
+                            let mut l = Vec::with_capacity(half);
+                            let mut r = Vec::with_capacity(half);
+                            let mut g9 = mat_grid_now
+                                .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
+                            let sfx: &[F] = if g9.is_some() {
+                                suffix[0].tensor(j + 1)
+                            } else {
+                                &[]
+                            };
+                            for b in 0..half {
+                                if prfm && b + PRFM_DIST < half {
+                                    let bp = b + PRFM_DIST;
+                                    let pp = bp << 4;
+                                    let plb =
+                                        ((lbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
+                                    let prb =
+                                        ((rbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
+                                    let ep = bp << 2;
+                                    leaf4_prefetch(&vs.f_e, ep, plb);
+                                    leaf4_prefetch(&vs.f_o, ep, prb);
+                                }
+                                let p = b << 4;
+                                let bl = ((lbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
+                                let br = ((rbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
+                                let e = b << 2;
+                                let (v0, v1) = leaf4_entry_pair(&vs.f_e, e, bl);
+                                l.push(v0.clone() + &(rho.clone() * &(v0 + &v1)));
+                                let (u0, u1) = leaf4_entry_pair(&vs.f_o, e, br);
+                                r.push(u0.clone() + &(rho.clone() * &(u0 + &u1)));
+                                if b & 3 == 3 {
+                                    if let Some(acc) = g9.as_mut() {
+                                        let base = b - 3;
+                                        let lv: [F; 4] =
+                                            core::array::from_fn(|i| l[base + i].clone());
+                                        let rv: [F; 4] =
+                                            core::array::from_fn(|i| r[base + i].clone());
+                                        grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
+                                    }
+                                }
+                            }
+                            *gb = GroupBufs::Dense(vec![(l, r)]);
+                            g9.map(grid_finish)
+                        }
+                    }
+                    GroupBufs::Pair3Bits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        if j == 1 {
+                            // Round 1's fold keeps the bits; its fold tables
+                            // get stashed as `pair3_value_sets` below.
+                            None
+                        } else {
+                            // Round 2's fold: inline-materialise the dense
+                            // round-3 buffers from the stashed tables (same
+                            // extraction as the round-2 message body), via the
+                            // one-multiply fold `v_0 + ρ₂(v_0 + v_1)`.
+                            let vs = &pair3_value_sets[*tau_set];
+                            let h_off = half << 2; // 2^k at j = 2
+                            let prfm = lut_prfm(half);
+                            let mut l = Vec::with_capacity(half);
+                            let mut r = Vec::with_capacity(half);
+                            let mut g9 = mat_grid_now
+                                .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
+                            let sfx: &[F] = if g9.is_some() {
+                                suffix[0].tensor(j + 1)
+                            } else {
+                                &[]
+                            };
+                            for b in 0..half {
+                                if prfm && b + PRFM_DIST < half {
+                                    let bp = b + PRFM_DIST;
+                                    let pe2 = bp << 2;
+                                    let nl2 =
+                                        ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+                                    let nr2 =
+                                        ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
+                                    let po2 = pe2 + h_off;
+                                    let ml2 =
+                                        ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+                                    let mr2 =
+                                        ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
+                                    let ep = bp << 1;
+                                    prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
+                                    prefetch_l1(
+                                        &vs.f_e,
+                                        ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2),
+                                    );
+                                    prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
+                                    prefetch_l1(
+                                        &vs.f_o,
+                                        ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2),
+                                    );
+                                }
+                                let pe = b << 2;
+                                let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+                                let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+                                let po = pe + h_off;
+                                let ml = ((lbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+                                let mr = ((rbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+                                let e = b << 1;
+                                let v0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
+                                let v1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
+                                l.push(if mats_pre {
+                                    // Stash reweighted above: entry IS the fold.
+                                    v0.clone() + v1
+                                } else {
+                                    v0.clone() + &(rho.clone() * &(v0.clone() + v1))
+                                });
+                                let u0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
+                                let u1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
+                                r.push(if mats_pre {
+                                    u0.clone() + u1
+                                } else {
+                                    u0.clone() + &(rho.clone() * &(u0.clone() + u1))
+                                });
+                                if b & 3 == 3 {
+                                    if let Some(acc) = g9.as_mut() {
+                                        let base = b - 3;
+                                        let lv: [F; 4] =
+                                            core::array::from_fn(|i| l[base + i].clone());
+                                        let rv: [F; 4] =
+                                            core::array::from_fn(|i| r[base + i].clone());
+                                        grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
+                                    }
+                                }
+                            }
+                            *gb = GroupBufs::Dense(vec![(l, r)]);
+                            g9.map(grid_finish)
+                        }
+                    }
+                    GroupBufs::T4Bits {
+                        lbits,
+                        rbits,
+                        tau_set,
+                    } => {
+                        // Round 1's fold: inline-materialise the dense round-2
+                        // buffers from T4 selects, via the one-multiply fold
+                        // `v_0 + ρ(v_0 + v_1)`.
+                        let t4 = &t4_sets[*tau_set];
+                        let q1 = 4 * half; // 2^{k+1}
+                        let h_off = 2 * half; // 2^k
                         let mut l = Vec::with_capacity(half);
                         let mut r = Vec::with_capacity(half);
-                        let mut g9 = mat_grid_now
-                            .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
-                        let sfx: &[F] = if g9.is_some() { suffix[0].tensor(j + 1) } else { &[] };
                         for b in 0..half {
-                            if prfm && b + PRFM_DIST < half {
-                                let bp = b + PRFM_DIST;
-                                let pp = bp << 3;
-                                let plb =
-                                    ((lbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
-                                let prb =
-                                    ((rbits[pp >> 6] >> (pp & 63)) & 255) as u32 as usize;
-                                let ep = bp << 1;
-                                prefetch_l1(&vs.f_e, (ep << 4) | leaf3_idx(plb & 15));
-                                prefetch_l1(&vs.f_e, ((ep | 1) << 4) | leaf3_idx(plb >> 4));
-                                prefetch_l1(&vs.f_o, (ep << 4) | leaf3_idx(prb & 15));
-                                prefetch_l1(&vs.f_o, ((ep | 1) << 4) | leaf3_idx(prb >> 4));
-                            }
-                            let p = b << 3;
-                            let bl = ((lbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
-                            let br = ((rbits[p >> 6] >> (p & 63)) & 255) as u32 as usize;
                             let e = b << 1;
-                            let v0 = &vs.f_e[(e << 4) | leaf3_idx(bl & 15)];
-                            let v1 = &vs.f_e[((e | 1) << 4) | leaf3_idx(bl >> 4)];
-                            l.push(if mats_pre {
-                                // Stash reweighted above: entry IS the fold.
-                                v0.clone() + v1
-                            } else {
-                                v0.clone() + &(rho.clone() * &(v0.clone() + v1))
-                            });
-                            let u0 = &vs.f_o[(e << 4) | leaf3_idx(br & 15)];
-                            let u1 = &vs.f_o[((e | 1) << 4) | leaf3_idx(br >> 4)];
-                            r.push(if mats_pre {
-                                u0.clone() + u1
-                            } else {
-                                u0.clone() + &(rho.clone() * &(u0.clone() + u1))
-                            });
-                            if b & 3 == 3 {
-                                if let Some(acc) = g9.as_mut() {
-                                    // Cache-hot readback of the quad just
-                                    // written — the fresh buffers' first
-                                    // DRAM read moves to round j+3's pass.
-                                    let base = b - 3;
-                                    let lv: [F; 4] =
-                                        core::array::from_fn(|i| l[base + i].clone());
-                                    let rv: [F; 4] =
-                                        core::array::from_fn(|i| r[base + i].clone());
-                                    grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
-                                }
-                            }
+                            let v0 = &t4[t4bits_idx(lbits, rbits, e, q1)];
+                            let v1 = &t4[t4bits_idx(lbits, rbits, e | 1, q1)];
+                            l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
+                            let u0 = &t4[t4bits_idx(lbits, rbits, e + h_off, q1)];
+                            let u1 = &t4[t4bits_idx(lbits, rbits, (e | 1) + h_off, q1)];
+                            r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
                         }
                         *gb = GroupBufs::Dense(vec![(l, r)]);
-                        g9.map(grid_finish)
-                    }
-                }
-                GroupBufs::Leaf4Bits { lbits, rbits, tau_set } => {
-                    if j <= 3 {
-                        // Rounds 1–2 keep the bits (stash bookkeeping
-                        // below); round 3's "fold" is the shared ρ₃
-                        // REWEIGHT of the stashed sets (also below) —
-                        // still nothing per-tree.
                         None
-                    } else {
-                        // Round 4's fold: inline-materialise the dense
-                        // round-5 buffers — each round-4 value the XOR of
-                        // two gathers from the reweighted sets, folded by
-                        // the one-multiply `v_0 + ρ₄(v_0 + v_1)`.
-                        let vs = &leaf4_value_sets[*tau_set];
-                        let prfm = lut_prfm(half);
-                        let mut l = Vec::with_capacity(half);
-                        let mut r = Vec::with_capacity(half);
-                        let mut g9 = mat_grid_now
-                            .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
-                        let sfx: &[F] = if g9.is_some() { suffix[0].tensor(j + 1) } else { &[] };
-                        for b in 0..half {
-                            if prfm && b + PRFM_DIST < half {
-                                let bp = b + PRFM_DIST;
-                                let pp = bp << 4;
-                                let plb =
-                                    ((lbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
-                                let prb =
-                                    ((rbits[pp >> 6] >> (pp & 63)) & 0xFFFF) as u32 as usize;
-                                let ep = bp << 2;
-                                leaf4_prefetch(&vs.f_e, ep, plb);
-                                leaf4_prefetch(&vs.f_o, ep, prb);
-                            }
-                            let p = b << 4;
-                            let bl = ((lbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
-                            let br = ((rbits[p >> 6] >> (p & 63)) & 0xFFFF) as u32 as usize;
-                            let e = b << 2;
-                            let (v0, v1) = leaf4_entry_pair(&vs.f_e, e, bl);
-                            l.push(v0.clone() + &(rho.clone() * &(v0 + &v1)));
-                            let (u0, u1) = leaf4_entry_pair(&vs.f_o, e, br);
-                            r.push(u0.clone() + &(rho.clone() * &(u0 + &u1)));
-                            if b & 3 == 3 {
-                                if let Some(acc) = g9.as_mut() {
-                                    let base = b - 3;
-                                    let lv: [F; 4] =
-                                        core::array::from_fn(|i| l[base + i].clone());
-                                    let rv: [F; 4] =
-                                        core::array::from_fn(|i| r[base + i].clone());
-                                    grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
-                                }
-                            }
-                        }
-                        *gb = GroupBufs::Dense(vec![(l, r)]);
-                        g9.map(grid_finish)
                     }
-                }
-                GroupBufs::Pair3Bits { lbits, rbits, tau_set } => {
-                    if j == 1 {
-                        // Round 1's fold keeps the bits; its fold tables
-                        // get stashed as `pair3_value_sets` below.
-                        None
-                    } else {
-                        // Round 2's fold: inline-materialise the dense
-                        // round-3 buffers from the stashed tables (same
-                        // extraction as the round-2 message body), via the
-                        // one-multiply fold `v_0 + ρ₂(v_0 + v_1)`.
-                        let vs = &pair3_value_sets[*tau_set];
-                        let h_off = half << 2; // 2^k at j = 2
-                        let prfm = lut_prfm(half);
-                        let mut l = Vec::with_capacity(half);
-                        let mut r = Vec::with_capacity(half);
-                        let mut g9 = mat_grid_now
-                            .then(|| core::array::from_fn::<_, 9, _>(|_| F::wide_zero(&zero)));
-                        let sfx: &[F] = if g9.is_some() { suffix[0].tensor(j + 1) } else { &[] };
-                        for b in 0..half {
-                            if prfm && b + PRFM_DIST < half {
-                                let bp = b + PRFM_DIST;
-                                let pe2 = bp << 2;
-                                let nl2 =
-                                    ((lbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
-                                let nr2 =
-                                    ((rbits[pe2 >> 6] >> (pe2 & 63)) & 15) as u32 as usize;
-                                let po2 = pe2 + h_off;
-                                let ml2 =
-                                    ((lbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
-                                let mr2 =
-                                    ((rbits[po2 >> 6] >> (po2 & 63)) & 15) as u32 as usize;
-                                let ep = bp << 1;
-                                prefetch_l1(&vs.f_e, (ep << 4) | pair3_idx(nl2 & 3, nr2 & 3));
-                                prefetch_l1(
-                                    &vs.f_e,
-                                    ((ep | 1) << 4) | pair3_idx(nl2 >> 2, nr2 >> 2),
-                                );
-                                prefetch_l1(&vs.f_o, (ep << 4) | pair3_idx(ml2 & 3, mr2 & 3));
-                                prefetch_l1(
-                                    &vs.f_o,
-                                    ((ep | 1) << 4) | pair3_idx(ml2 >> 2, mr2 >> 2),
-                                );
-                            }
-                            let pe = b << 2;
-                            let nl = ((lbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                            let nr = ((rbits[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                            let po = pe + h_off;
-                            let ml = ((lbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                            let mr = ((rbits[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                            let e = b << 1;
-                            let v0 = &vs.f_e[(e << 4) | pair3_idx(nl & 3, nr & 3)];
-                            let v1 = &vs.f_e[((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2)];
-                            l.push(if mats_pre {
-                                // Stash reweighted above: entry IS the fold.
-                                v0.clone() + v1
-                            } else {
-                                v0.clone() + &(rho.clone() * &(v0.clone() + v1))
-                            });
-                            let u0 = &vs.f_o[(e << 4) | pair3_idx(ml & 3, mr & 3)];
-                            let u1 = &vs.f_o[((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2)];
-                            r.push(if mats_pre {
-                                u0.clone() + u1
-                            } else {
-                                u0.clone() + &(rho.clone() * &(u0.clone() + u1))
-                            });
-                            if b & 3 == 3 {
-                                if let Some(acc) = g9.as_mut() {
-                                    let base = b - 3;
-                                    let lv: [F; 4] =
-                                        core::array::from_fn(|i| l[base + i].clone());
-                                    let rv: [F; 4] =
-                                        core::array::from_fn(|i| r[base + i].clone());
-                                    grid_quad_acc(acc, &lv, &rv, &sfx[base >> 2]);
-                                }
-                            }
-                        }
-                        *gb = GroupBufs::Dense(vec![(l, r)]);
-                        g9.map(grid_finish)
-                    }
-                }
-                GroupBufs::T4Bits { lbits, rbits, tau_set } => {
-                    // Round 1's fold: inline-materialise the dense round-2
-                    // buffers from T4 selects, via the one-multiply fold
-                    // `v_0 + ρ(v_0 + v_1)`.
-                    let t4 = &t4_sets[*tau_set];
-                    let q1 = 4 * half; // 2^{k+1}
-                    let h_off = 2 * half; // 2^k
-                    let mut l = Vec::with_capacity(half);
-                    let mut r = Vec::with_capacity(half);
-                    for b in 0..half {
-                        let e = b << 1;
-                        let v0 = &t4[t4bits_idx(lbits, rbits, e, q1)];
-                        let v1 = &t4[t4bits_idx(lbits, rbits, e | 1, q1)];
-                        l.push(v0.clone() + &(rho.clone() * &(v0.clone() + v1)));
-                        let u0 = &t4[t4bits_idx(lbits, rbits, e + h_off, q1)];
-                        let u1 = &t4[t4bits_idx(lbits, rbits, (e | 1) + h_off, q1)];
-                        r.push(u0.clone() + &(rho.clone() * &(u0.clone() + u1)));
-                    }
-                    *gb = GroupBufs::Dense(vec![(l, r)]);
-                    None
-                }
                 }
             };
             // Diagnostic-only: split folds by shape — bit-keeping stashes vs
@@ -3578,95 +4227,108 @@ where
                 (GroupBufs::T4Bits { .. }, _) => "eqf:fold:t4mat",
             };
             // Slot-tiled materialising fold over the reweighted stash
-            // ([`mats_fold_tiled`], probe gate `F2Z_MATS_TILE`): engaged
+            // ([`mats_fold_tiled`], probe gate `BITZ_MATS_TILE`): engaged
             // only when every group is the round's uniform single-set
             // 3-bit shape; any other mix falls back to the per-group
             // fold below.
-            let tiled_mats: Option<(Vec<(Vec<F>, Vec<F>)>, Vec<Option<[F; 9]>>)> = if mats_pre
-                && mats_tile_engaged(half)
-            {
-                let _g_t = tracing::info_span!("eqf:fold:mats_tile").entered();
-                let sfx: &[F] = if mat_grid_now { suffix[0].tensor(j + 1) } else { &[] };
-                let sets_uniform =
-                    if j == 2 { pair3_value_sets.len() == 1 } else { leaf3_value_sets.len() == 1 };
-                let views: Option<Vec<(&[u64], &[u64])>> = if sets_uniform {
-                    bufs.iter()
-                        .map(|gb| match gb {
-                            GroupBufs::Pair3Bits { lbits, rbits, tau_set: 0 } if j == 2 => {
-                                Some((lbits.as_slice(), rbits.as_slice()))
-                            }
-                            GroupBufs::Leaf3Bits { lbits, rbits, tau_set: 0 } if j == 3 => {
-                                Some((lbits.as_slice(), rbits.as_slice()))
-                            }
-                            _ => None,
-                        })
-                        .collect()
+            let tiled_mats: Option<(Vec<(Vec<F>, Vec<F>)>, Vec<Option<[F; 9]>>)> =
+                if mats_pre && mats_tile_engaged(half) {
+                    let _g_t = tracing::info_span!("eqf:fold:mats_tile").entered();
+                    let sfx: &[F] = if mat_grid_now {
+                        suffix[0].tensor(j + 1)
+                    } else {
+                        &[]
+                    };
+                    let sets_uniform = if j == 2 {
+                        pair3_value_sets.len() == 1
+                    } else {
+                        leaf3_value_sets.len() == 1
+                    };
+                    let views: Option<Vec<(&[u64], &[u64])>> = if sets_uniform {
+                        bufs.iter()
+                            .map(|gb| match gb {
+                                GroupBufs::Pair3Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: 0,
+                                } if j == 2 => Some((*lbits, *rbits)),
+                                GroupBufs::Leaf3Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: 0,
+                                } if j == 3 => Some((*lbits, *rbits)),
+                                _ => None,
+                            })
+                            .collect()
+                    } else {
+                        None
+                    };
+                    views.map(|views| {
+                        #[cfg(feature = "bench-internals")]
+                        let _activation = tracing::info_span!("eqf:mats_tile_active").entered();
+                        if j == 2 {
+                            let h_off = half << 2; // 2^k at j = 2
+                            mats_fold_tiled(
+                                &views,
+                                &pair3_value_sets[0],
+                                half,
+                                mat_grid_now,
+                                sfx,
+                                &zero,
+                                |lb: &[u64], rb: &[u64], b: usize| {
+                                    let pe = b << 2;
+                                    let nl = ((lb[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+                                    let nr = ((rb[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
+                                    let po = pe + h_off;
+                                    let ml = ((lb[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+                                    let mr = ((rb[po >> 6] >> (po & 63)) & 15) as u32 as usize;
+                                    let e = b << 1;
+                                    (
+                                        (e << 4) | pair3_idx(nl & 3, nr & 3),
+                                        ((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2),
+                                        (e << 4) | pair3_idx(ml & 3, mr & 3),
+                                        ((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2),
+                                    )
+                                },
+                            )
+                        } else {
+                            mats_fold_tiled(
+                                &views,
+                                &leaf3_value_sets[0],
+                                half,
+                                mat_grid_now,
+                                sfx,
+                                &zero,
+                                |lb: &[u64], rb: &[u64], b: usize| {
+                                    let p = b << 3;
+                                    let bl = ((lb[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+                                    let br = ((rb[p >> 6] >> (p & 63)) & 255) as u32 as usize;
+                                    let e = b << 1;
+                                    (
+                                        (e << 4) | leaf3_idx(bl & 15),
+                                        ((e | 1) << 4) | leaf3_idx(bl >> 4),
+                                        (e << 4) | leaf3_idx(br & 15),
+                                        ((e | 1) << 4) | leaf3_idx(br >> 4),
+                                    )
+                                },
+                            )
+                        }
+                    })
                 } else {
                     None
                 };
-                views.map(|views| {
-                    if j == 2 {
-                        let h_off = half << 2; // 2^k at j = 2
-                        mats_fold_tiled(
-                            &views,
-                            &pair3_value_sets[0],
-                            half,
-                            mat_grid_now,
-                            sfx,
-                            &zero,
-                            |lb: &[u64], rb: &[u64], b: usize| {
-                                let pe = b << 2;
-                                let nl = ((lb[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                                let nr = ((rb[pe >> 6] >> (pe & 63)) & 15) as u32 as usize;
-                                let po = pe + h_off;
-                                let ml = ((lb[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                                let mr = ((rb[po >> 6] >> (po & 63)) & 15) as u32 as usize;
-                                let e = b << 1;
-                                (
-                                    (e << 4) | pair3_idx(nl & 3, nr & 3),
-                                    ((e | 1) << 4) | pair3_idx(nl >> 2, nr >> 2),
-                                    (e << 4) | pair3_idx(ml & 3, mr & 3),
-                                    ((e | 1) << 4) | pair3_idx(ml >> 2, mr >> 2),
-                                )
-                            },
-                        )
-                    } else {
-                        mats_fold_tiled(
-                            &views,
-                            &leaf3_value_sets[0],
-                            half,
-                            mat_grid_now,
-                            sfx,
-                            &zero,
-                            |lb: &[u64], rb: &[u64], b: usize| {
-                                let p = b << 3;
-                                let bl = ((lb[p >> 6] >> (p & 63)) & 255) as u32 as usize;
-                                let br = ((rb[p >> 6] >> (p & 63)) & 255) as u32 as usize;
-                                let e = b << 1;
-                                (
-                                    (e << 4) | leaf3_idx(bl & 15),
-                                    ((e | 1) << 4) | leaf3_idx(bl >> 4),
-                                    (e << 4) | leaf3_idx(br & 15),
-                                    ((e | 1) << 4) | leaf3_idx(br >> 4),
-                                )
-                            },
-                        )
-                    }
-                })
-            } else {
-                None
-            };
             let mat_grids: Vec<Option<[F; 9]>> = if let Some((outs, grids)) = tiled_mats {
                 for ((l, r), gb) in outs.into_iter().zip(bufs.iter_mut()) {
                     *gb = GroupBufs::Dense(vec![(l, r)]);
                 }
                 grids
             } else if let Some(fs) = flat.as_mut() {
-                // Unfused flat fold (`F2Z_EQF_FUSE=0` only — fused rounds
+                // Unfused flat fold (`BITZ_EQF_FUSE=0` only — fused rounds
                 // defer their folds into the next pass): fold each
                 // segment's live prefix in place, exactly the Dense
                 // in-place fold without the truncation.
-                let _g_fold = tracing::info_span!("sumcheck_fold", component = fold_label).entered();
+                let _g_fold =
+                    tracing::info_span!("sumcheck_fold", component = fold_label).entered();
                 let read = half << 1;
                 let _: Vec<()> = flat_map_segments(fs, half, |_t, lseg, rseg| {
                     flat_fold_side(&mut lseg[..read], &rho, half);
@@ -3674,20 +4336,23 @@ where
                 });
                 Vec::new()
             } else {
-                let _g_fold = tracing::info_span!("sumcheck_fold", component = fold_label).entered();
+                let _g_fold =
+                    tracing::info_span!("sumcheck_fold", component = fold_label).entered();
                 #[cfg(feature = "parallel")]
                 let out: Vec<Option<[F; 9]>> = {
                     let min_len = par_min_len(num_groups, half);
-                    bufs.par_iter_mut().with_min_len(min_len).map(fold_group).collect()
+                    bufs.par_iter_mut()
+                        .with_min_len(min_len)
+                        .map(fold_group)
+                        .collect()
                 };
                 #[cfg(not(feature = "parallel"))]
                 let out: Vec<Option<[F; 9]>> = bufs.iter_mut().map(fold_group).collect();
                 out
             };
-            if mat_grid_now
-                && !mat_grids.is_empty()
-                && mat_grids.iter().all(Option::is_some)
-            {
+            if mat_grid_now && !mat_grids.is_empty() && mat_grids.iter().all(Option::is_some) {
+                #[cfg(feature = "bench-internals")]
+                let _activation = tracing::info_span!("eqf:mat_grid_deposit").entered();
                 // Every group's materialising fold produced the next
                 // round-pair's grid — deposit it; `grid_rho` stays unset
                 // until the NEXT round's challenge (the deposited-grid
@@ -3702,7 +4367,10 @@ where
                     // [`Pair2TauSet`] (4·2^{k−1} entries per side).
                     leaf2_value_sets = leaf_fold_tables
                         .into_iter()
-                        .map(|ft| Pair2TauSet { te: ft.t_l, to: ft.t_r })
+                        .map(|ft| Pair2TauSet {
+                            te: ft.t_l,
+                            to: ft.t_r,
+                        })
                         .collect();
                 } else if j == 2 {
                     if has_leaf3 || has_leaf4 {
@@ -3754,9 +4422,7 @@ where
             // Final interpolation of every pair at ρ_k. (Leaf-bit groups
             // materialised at the round-1 fold — `k ≥ 2` is asserted — so
             // only Dense groups reach here.)
-            let interp = |v: &[F]| -> F {
-                v[0].clone() + &(rho.clone() * &(v[1].clone() - &v[0]))
-            };
+            let interp = |v: &[F]| -> F { v[0].clone() + &(rho.clone() * &(v[1].clone() - &v[0])) };
             let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
                 // The last round always ran a real pass (grid production is
                 // gated off the final round), so each segment's live prefix
@@ -3768,9 +4434,10 @@ where
             } else {
                 bufs.iter()
                     .map(|gb| match gb {
-                        GroupBufs::Dense(group_bufs) => {
-                            group_bufs.iter().map(|(l, r)| (interp(l), interp(r))).collect()
-                        }
+                        GroupBufs::Dense(group_bufs) => group_bufs
+                            .iter()
+                            .map(|(l, r)| (interp(l), interp(r)))
+                            .collect(),
                         GroupBufs::Flat => {
                             unreachable!("Flat groups take the flat finals branch")
                         }
@@ -3781,13 +4448,22 @@ where
                         | GroupBufs::Leaf4Bits { .. }
                         | GroupBufs::Pair3Bits { .. }
                         | GroupBufs::T4Bits { .. } => {
-                            unreachable!("bit-selected groups materialise at their fold (k asserts)")
+                            unreachable!(
+                                "bit-selected groups materialise at their fold (k asserts)"
+                            )
                         }
                     })
                     .collect()
             };
             randomness.push(rho);
-            return (SumcheckProof { messages, claimed_sum }, randomness, final_evals);
+            return (
+                SumcheckProof {
+                    messages,
+                    claimed_sum,
+                },
+                randomness,
+                final_evals,
+            );
         }
     }
     unreachable!("the final round returns")
@@ -3797,11 +4473,11 @@ where
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
-    use crate::poly::univariate::binary_gf128::BinaryFieldGF128 as Gf;
+    use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
-        Gf::from_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+        Gf::from_polynomial_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
     }
 
     /// MLE evaluation by sequential low-variable folds (char-2: `−` = `+`).
@@ -3819,19 +4495,334 @@ mod tests {
         let width = q.len() - round - 1;
         (0..1usize << width)
             .map(|index| {
-                q[round + 1..].iter().enumerate().fold(Gf::one(), |product, (bit, challenge)| {
-                    let factor =
-                        if (index >> bit) & 1 == 1 { *challenge } else { Gf::one() - *challenge };
-                    product * factor
-                })
+                q[round + 1..]
+                    .iter()
+                    .enumerate()
+                    .fold(Gf::one(), |product, (bit, challenge)| {
+                        let factor = if (index >> bit) & 1 == 1 {
+                            *challenge
+                        } else {
+                            Gf::one() - *challenge
+                        };
+                        product * factor
+                    })
             })
             .collect()
     }
 
     #[test]
+    fn recovery_batched_inverses_preserve_zero_fallback() {
+        let zero = Gf::zero();
+        let one = Gf::one();
+        let nontrivial = sample(91);
+        let coordinates = [None, Some(&zero), Some(&one), Some(&nontrivial)];
+        for a in coordinates {
+            for b in coordinates {
+                assert_eq!(
+                    recovery_inverses(a, b),
+                    [a.and_then(Gf::eqf_inverse), b.and_then(Gf::eqf_inverse)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovery_kernels_match_three_coefficient_reference() {
+        for half in [1usize, 2, 8, 64, 512] {
+            let vs = Pair2FoldTables {
+                f_e: (0..half * 32).map(|i| sample(i as u64)).collect(),
+                f_o: (0..half * 32).map(|i| sample(i as u64 + 9000)).collect(),
+            };
+            let bits = |salt: u64| {
+                (0..(half * 8).div_ceil(64))
+                    .map(|i| (i as u64 + salt).wrapping_mul(0x98761234abcdef01))
+                    .collect::<Vec<_>>()
+            };
+            let l = bits(23);
+            let r = bits(71);
+            let w: Vec<_> = (0..half).map(|i| sample(i as u64 + 17)).collect();
+            for (full, reduced) in [
+                (
+                    leaf3_round3_msg::<_, false>(&vs, &l, &r, half, &w, &Gf::zero()),
+                    leaf3_round3_msg::<_, true>(&vs, &l, &r, half, &w, &Gf::zero()),
+                ),
+                (
+                    pair3_round2_msg::<_, false>(&vs, &l, &r, half, &w, &Gf::zero()),
+                    pair3_round2_msg::<_, true>(&vs, &l, &r, half, &w, &Gf::zero()),
+                ),
+            ] {
+                assert_eq!((full.0, full.2), (reduced.0, reduced.2));
+                assert_eq!(reduced.1, Gf::zero());
+                for q in [Gf::one(), sample(19)] {
+                    for padding in [Gf::zero(), sample(27)] {
+                        let claim = full.0 + padding + q * (full.1 + full.2);
+                        let linear =
+                            (claim - reduced.0 - padding) * q.eqf_inverse().unwrap() - reduced.2;
+                        assert_eq!(linear, full.1);
+                    }
+                }
+            }
+        }
+        assert_eq!(Gf::zero().eqf_inverse(), None);
+    }
+
+    #[test]
+    fn recovery_leaf_groups_match_independent_dense_proof() {
+        use crate::transcript::Blake3Transcript;
+        for k in [5, 7, 10] {
+            let n = 1usize << k;
+            let bits: Vec<_> = (0..3)
+                .map(|group| {
+                    (0..n.div_ceil(64))
+                        .map(|i| (i as u64 + 1 + group * 29).wrapping_mul(0x98761234abcdef01))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            let tables: Vec<_> = (0..2)
+                .map(|set| {
+                    (
+                        (0..n)
+                            .map(|i| sample(i as u64 + set * 193))
+                            .collect::<Vec<_>>(),
+                        (0..n)
+                            .map(|i| sample(i as u64 + set * 211 + 999))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect();
+            for edge in 0..3 {
+                let q: Vec<_> = (0..k)
+                    .map(|i| match edge {
+                        0 => Gf::zero(),
+                        1 => Gf::one(),
+                        _ => sample(i as u64 + 33),
+                    })
+                    .collect();
+                let make = |dense| {
+                    (0..2)
+                        .map(|t| {
+                            let lbits = bits[t].as_slice();
+                            let rbits = bits[t + 1].as_slice();
+                            let bufs = if dense {
+                                let expand = |bits: &[u64], tau: &[Gf]| {
+                                    (0..n)
+                                        .map(|i| {
+                                            Gf::one()
+                                                + Gf::from_polynomial_words([
+                                                    (bits[i / 64] >> (i % 64)) & 1,
+                                                    0,
+                                                ]) * tau[i]
+                                        })
+                                        .collect()
+                                };
+                                GroupBufs::Dense(vec![(
+                                    expand(lbits, &tables[t].0),
+                                    expand(rbits, &tables[t].1),
+                                )])
+                            } else if t == 0 {
+                                GroupBufs::Leaf3Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: t,
+                                }
+                            } else {
+                                GroupBufs::Leaf4Bits {
+                                    lbits,
+                                    rbits,
+                                    tau_set: t,
+                                }
+                            };
+                            EqInnerGroupMixed {
+                                q: q.as_slice().into(),
+                                scale: sample(t as u64 + 1),
+                                bufs,
+                            }
+                        })
+                        .collect()
+                };
+                let prove = |dense, transcript: &mut Blake3Transcript| {
+                    prove_eq_inner_sumcheck_mixed_prepared(
+                        transcript,
+                        SharedPointInput {
+                            groups: make(dense),
+                            constant_weight: sample(102),
+                        },
+                        &tables,
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        true,
+                        &(),
+                        None,
+                    )
+                };
+                let mut reference_t = Blake3Transcript::new();
+                let mut actual_t = Blake3Transcript::new();
+                let reference = prove(true, &mut reference_t);
+                let actual = prove(false, &mut actual_t);
+                assert_eq!(actual, reference, "k={k}, edge={edge}");
+                assert_eq!(actual_t.state_digest(), reference_t.state_digest());
+            }
+        }
+    }
+
+    #[test]
+    fn analytic_constants_with_zero_equality_prefix() {
+        #[derive(Default)]
+        struct Fixed {
+            one: bool,
+            absorbed: Vec<u8>,
+        }
+        impl Transcript for Fixed {
+            fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
+                let mut bytes = vec![0; T::NUM_BYTES];
+                if self.one && !bytes.is_empty() {
+                    bytes[0] = 1;
+                }
+                T::read_transcription_bytes_exact(&bytes)
+            }
+            fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+                output.fill(0);
+            }
+            fn absorb_inner(&mut self, bytes: &[u8]) {
+                self.absorbed.extend_from_slice(bytes);
+            }
+        }
+        for k in 1..=6 {
+            for one in [false, true] {
+                let q = vec![if one { Gf::zero() } else { Gf::one() }; k];
+                let mk = |constant| EqInnerGroupMixed {
+                    q: q.as_slice().into(),
+                    scale: sample(777),
+                    bufs: GroupBufs::Dense(vec![(
+                        (0..1 << k)
+                            .map(|i| if constant { Gf::one() } else { sample(i) })
+                            .collect(),
+                        (0..1 << k)
+                            .map(|i| if constant { Gf::one() } else { sample(i + 100) })
+                            .collect(),
+                    )]),
+                };
+                let mut dense_t = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let dense = prove_eq_inner_sumcheck_mixed_gruen(
+                    &mut dense_t,
+                    vec![mk(false), mk(true)],
+                    &[],
+                    &[],
+                    &[],
+                    &(),
+                );
+                let mut analytic_t = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let analytic = prove_eq_inner_sumcheck_mixed_prepared(
+                    &mut analytic_t,
+                    SharedPointInput {
+                        groups: vec![mk(false)],
+                        constant_weight: sample(777),
+                    },
+                    &[],
+                    &[],
+                    &[],
+                    None,
+                    None,
+                    true,
+                    &(),
+                    None,
+                );
+                assert_eq!(dense.0, analytic.0);
+                assert_eq!(dense.1, analytic.1);
+                assert_eq!(dense_t.absorbed, analytic_t.absorbed);
+                let mut vt = Fixed {
+                    one,
+                    ..Fixed::default()
+                };
+                let sub = verify_eq_inner_sumcheck_gruen(&mut vt, &q, &analytic.0, &()).unwrap();
+                assert_eq!(sub.expected_evaluation, Gf::zero());
+            }
+        }
+    }
+
+    #[test]
+    fn analytic_constants_match_dense_transcript() {
+        use crate::transcript::Blake3Transcript;
+        for k in 0..=7 {
+            for edge in 0..3 {
+                let q: Vec<Gf> = (0..k)
+                    .map(|i| match edge {
+                        0 => Gf::zero(),
+                        1 => Gf::one(),
+                        _ => sample(90 + i as u64),
+                    })
+                    .collect();
+                for c in [Gf::zero(), Gf::one(), sample(777)] {
+                    let n = 1 << k;
+                    let mk = || EqInnerGroupMixed {
+                        q: q.as_slice().into(),
+                        scale: sample(42),
+                        bufs: GroupBufs::Dense(vec![(
+                            (0..n).map(|i| sample(i as u64)).collect(),
+                            (0..n).map(|i| sample(1000 + i as u64)).collect(),
+                        )]),
+                    };
+                    let constant = EqInnerGroupMixed {
+                        q: q.as_slice().into(),
+                        scale: c,
+                        bufs: GroupBufs::Dense(vec![(vec![Gf::one(); n], vec![Gf::one(); n])]),
+                    };
+                    let mut td = Blake3Transcript::new();
+                    let dense = prove_eq_inner_sumcheck_mixed_gruen(
+                        &mut td,
+                        vec![mk(), constant],
+                        &[],
+                        &[],
+                        &[],
+                        &(),
+                    );
+                    let mut ta = Blake3Transcript::new();
+                    let analytic = prove_eq_inner_sumcheck_mixed_prepared(
+                        &mut ta,
+                        SharedPointInput {
+                            groups: vec![mk()],
+                            constant_weight: c,
+                        },
+                        &[],
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        true,
+                        &(),
+                        None,
+                    );
+                    assert_eq!(analytic.0, dense.0, "k={k}, edge={edge}");
+                    assert_eq!(analytic.1, dense.1);
+                    assert_eq!(analytic.2, dense.2[..1]);
+                    assert_eq!(ta.state_digest(), td.state_digest());
+                    let mut tv = Blake3Transcript::new();
+                    let sub =
+                        verify_eq_inner_sumcheck_gruen(&mut tv, &q, &analytic.0, &()).unwrap();
+                    let eq = analytic.1.iter().zip(&q).fold(Gf::one(), |acc, (&r, &q)| {
+                        acc * ((Gf::one() + r) * (Gf::one() + q) + r * q)
+                    });
+                    let (l, r) = analytic.2[0][0];
+                    assert_eq!(sub.expected_evaluation, eq * (sample(42) * l * r + c));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn suffix_tensor_arena_matches_independent_products() {
         for k in 0..=6usize {
-            let q: Vec<Gf> = (0..k).map(|i| sample(0x5100 + (k * 17 + i) as u64)).collect();
+            let q: Vec<Gf> = (0..k)
+                .map(|i| sample(0x5100 + (k * 17 + i) as u64))
+                .collect();
             let arena = suffix_tensors(&q, &());
             assert_eq!(arena.len(), k);
             assert_eq!(arena.is_empty(), k == 0);
@@ -3841,7 +4832,11 @@ mod tests {
             for round in (0..k).rev() {
                 let expected = direct_suffix_tensor(&q, round);
                 assert_eq!(arena.tensor(round).len(), 1usize << (k - round - 1));
-                assert_eq!(arena.tensor(round), expected, "level mismatch for k={k}, round={round}");
+                assert_eq!(
+                    arena.tensor(round),
+                    expected,
+                    "level mismatch for k={k}, round={round}"
+                );
                 assert_eq!(arena.offsets[round], (1usize << (k - round - 1)) - 1);
                 physical.extend(expected);
             }
@@ -3853,7 +4848,10 @@ mod tests {
                 let mut changed_q0 = q.clone();
                 changed_q0[0] = sample(0xDEAD_0000 + k as u64);
                 let changed = suffix_tensors(&changed_q0, &());
-                assert_eq!(changed.values, arena.values, "q[0] leaked into suffixes for k={k}");
+                assert_eq!(
+                    changed.values, arena.values,
+                    "q[0] leaked into suffixes for k={k}"
+                );
                 assert_eq!(changed.offsets, arena.offsets);
             }
         }
@@ -3865,18 +4863,35 @@ mod tests {
         let arena = suffix_tensors(&[sample(0xCAFE), a, b], &());
         assert_eq!(
             arena.tensor(0),
-            &[(Gf::one() - a) * (Gf::one() - b), a * (Gf::one() - b), (Gf::one() - a) * b, a * b]
+            &[
+                (Gf::one() - a) * (Gf::one() - b),
+                a * (Gf::one() - b),
+                (Gf::one() - a) * b,
+                a * b
+            ]
         );
 
-        // Boolean challenges make every level one-hot, including both zero
+        // Bit challenges make every level one-hot, including both zero
         // and one edges of the recurrence.
         let boolean_q = [sample(0xF00D), Gf::zero(), Gf::one(), Gf::zero(), Gf::one()];
         let arena = suffix_tensors(&boolean_q, &());
         for round in 0..boolean_q.len() {
             let expected = direct_suffix_tensor(&boolean_q, round);
             assert_eq!(arena.tensor(round), expected);
-            assert_eq!(arena.tensor(round).iter().filter(|&&value| value == Gf::one()).count(), 1);
-            assert!(arena.tensor(round).iter().all(|&value| value == Gf::zero() || value == Gf::one()));
+            assert_eq!(
+                arena
+                    .tensor(round)
+                    .iter()
+                    .filter(|&&value| value == Gf::one())
+                    .count(),
+                1
+            );
+            assert!(
+                arena
+                    .tensor(round)
+                    .iter()
+                    .all(|&value| value == Gf::zero() || value == Gf::one())
+            );
         }
     }
 
@@ -3914,36 +4929,6 @@ mod tests {
             best[1] * 1e3,
             best[0] / best[1]
         );
-
-        // Fused fold+round: composed vs fixed-ρ kernels, directly.
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            use crate::poly::univariate::binary_gf128::neon;
-            let half = 1usize << 15; // 2^17 entries per side (2 MB)
-            let n = half << 2;
-            let l0: Vec<Gf> = (0..n).map(|i| sample(0xF000 + i as u64)).collect();
-            let r0: Vec<Gf> = (0..n).map(|i| sample(0xF100 + i as u64)).collect();
-            let w: Vec<Gf> = (0..half).map(|i| sample(0xF200 + i as u64)).collect();
-            let rho = sample(0xF300);
-            let mut best = [f64::MAX; 2];
-            for _ in 0..reps {
-                let (mut la, mut ra) = (l0.clone(), r0.clone());
-                let t0 = Instant::now();
-                let ca = neon::eqf_fused_fold_round(&mut la, &mut ra, &rho, &w, half);
-                best[0] = best[0].min(t0.elapsed().as_secs_f64());
-                let (mut lb, mut rb) = (l0.clone(), r0.clone());
-                let t0 = Instant::now();
-                let cb = neon::eqf_fused_fold_round_fixed(&mut lb, &mut rb, &rho, &w, half);
-                best[1] = best[1].min(t0.elapsed().as_secs_f64());
-                assert_eq!(ca, cb);
-            }
-            println!(
-                "fused fold+round (half=2^15): composed {:.3} ms | fixed {:.3} ms  ({:.2}x)",
-                best[0] * 1e3,
-                best[1] * 1e3,
-                best[0] / best[1]
-            );
-        }
     }
 
     /// The field's `eqf_grid_pass` hand kernel (when the target ships
@@ -3959,10 +4944,10 @@ mod tests {
                 let seed = 0x9000 + (d * 131 + quads) as u64;
                 let l0: Vec<Gf> = (0..n).map(|i| sample(seed + i as u64)).collect();
                 let r0: Vec<Gf> = (0..n).map(|i| sample(seed + 0x1_0000 + i as u64)).collect();
-                let pending: Vec<Gf> =
-                    (0..d).map(|i| sample(seed + 0x2_0000 + i as u64)).collect();
-                let suffix: Vec<Gf> =
-                    (0..quads).map(|i| sample(seed + 0x3_0000 + i as u64)).collect();
+                let pending: Vec<Gf> = (0..d).map(|i| sample(seed + 0x2_0000 + i as u64)).collect();
+                let suffix: Vec<Gf> = (0..quads)
+                    .map(|i| sample(seed + 0x3_0000 + i as u64))
+                    .collect();
                 let zero = Gf::zero();
 
                 let (mut lg, mut rg) = (l0.clone(), r0.clone());
@@ -3987,17 +4972,17 @@ mod tests {
     #[test]
     fn gruen_roundtrip_and_shape_rejection() {
         use crate::transcript::Blake3Transcript;
-        for (k, pair_counts) in
-            [
-                (0usize, vec![1usize]),
-                (1, vec![1]),
-                (2, vec![1, 1, 1]),
-                (5, vec![1, 2]),
-                (6, vec![2]),
-            ]
-        {
+        for (k, pair_counts) in [
+            (0usize, vec![1usize]),
+            (1, vec![1]),
+            (2, vec![1, 1, 1]),
+            (5, vec![1, 2]),
+            (6, vec![2]),
+        ] {
             let n = 1usize << k;
-            let q: Vec<Gf> = (0..k).map(|i| sample(0x4100 + (k * 31 + i) as u64)).collect();
+            let q: Vec<Gf> = (0..k)
+                .map(|i| sample(0x4100 + (k * 31 + i) as u64))
+                .collect();
             let mk = |seed: u64| -> Vec<Gf> { (0..n).map(|i| sample(seed + i as u64)).collect() };
             let dense: Vec<(Gf, Vec<(Vec<Gf>, Vec<Gf>)>)> = pair_counts
                 .iter()
@@ -4013,10 +4998,10 @@ mod tests {
                     (scale, pairs)
                 })
                 .collect();
-            let groups: Vec<EqInnerGroupMixed<Gf>> = dense
+            let groups: Vec<EqInnerGroupMixed<'_, Gf>> = dense
                 .iter()
                 .map(|(scale, pairs)| EqInnerGroupMixed {
-                    q: q.clone(),
+                    q: q.clone().into(),
                     scale: *scale,
                     bufs: GroupBufs::Dense(pairs.clone()),
                 })
@@ -4024,19 +5009,26 @@ mod tests {
             let mut pt = Blake3Transcript::new();
             let (proof, r, finals) =
                 prove_eq_inner_sumcheck_mixed_gruen(&mut pt, groups, &[], &[], &[], &());
-            assert!(proof.messages.iter().all(|m| m.0.tail_evaluations.len() == 2));
+            assert!(
+                proof
+                    .messages
+                    .iter()
+                    .all(|m| m.0.tail_evaluations.len() == 2)
+            );
 
             // The claimed sum is the actual eq-weighted sum.
             let eq_at = |i: usize, pt_: &[Gf]| -> Gf {
                 (0..k).fold(Gf::one(), |a, b| {
-                    a * if (i >> b) & 1 == 1 { pt_[b] } else { Gf::one() + pt_[b] }
+                    a * if (i >> b) & 1 == 1 {
+                        pt_[b]
+                    } else {
+                        Gf::one() + pt_[b]
+                    }
                 })
             };
             let want_sum = dense.iter().fold(Gf::zero(), |acc, (scale, pairs)| {
                 (0..n).fold(acc, |a, i| {
-                    let inner = pairs
-                        .iter()
-                        .fold(Gf::zero(), |s, (l, rr)| s + l[i] * rr[i]);
+                    let inner = pairs.iter().fold(Gf::zero(), |s, (l, rr)| s + l[i] * rr[i]);
                     a + *scale * eq_at(i, &q) * inner
                 })
             });
@@ -4049,20 +5041,21 @@ mod tests {
             let eq_rq = (0..k).fold(Gf::one(), |a, i| {
                 a * (r[i] * q[i] + (Gf::one() + r[i]) * (Gf::one() + q[i]))
             });
-            let want_eval = dense.iter().zip(finals.iter()).fold(
-                Gf::zero(),
-                |a, ((scale, pairs), fin)| {
-                    let inner = pairs.iter().zip(fin.iter()).fold(
-                        Gf::zero(),
-                        |s, ((l, rr), &(fl, fr))| {
-                            assert_eq!(fl, mle_fold(l, &r), "final L k={k}");
-                            assert_eq!(fr, mle_fold(rr, &r), "final R k={k}");
-                            s + fl * fr
-                        },
-                    );
-                    a + *scale * eq_rq * inner
-                },
-            );
+            let want_eval =
+                dense
+                    .iter()
+                    .zip(finals.iter())
+                    .fold(Gf::zero(), |a, ((scale, pairs), fin)| {
+                        let inner = pairs.iter().zip(fin.iter()).fold(
+                            Gf::zero(),
+                            |s, ((l, rr), &(fl, fr))| {
+                                assert_eq!(fl, mle_fold(l, &r), "final L k={k}");
+                                assert_eq!(fr, mle_fold(rr, &r), "final R k={k}");
+                                s + fl * fr
+                            },
+                        );
+                        a + *scale * eq_rq * inner
+                    });
             assert_eq!(sub.expected_evaluation, want_eval, "subclaim closes k={k}");
 
             if k > 0 {
@@ -4095,8 +5088,12 @@ mod tests {
         let prods: Vec<Gf> = (0..slots << 2).map(|i| sample(0x7A00 + i as u64)).collect();
         let mut pre = Vec::with_capacity(slots << 4);
         for b in 0..slots {
-            let (p00, p10, p01, p11) =
-                (prods[b << 2], prods[(b << 2) | 1], prods[(b << 2) | 2], prods[(b << 2) | 3]);
+            let (p00, p10, p01, p11) = (
+                prods[b << 2],
+                prods[(b << 2) | 1],
+                prods[(b << 2) | 2],
+                prods[(b << 2) | 3],
+            );
             for c in 0..16usize {
                 let mut v = zero;
                 if c & 0b0101 == 0b0101 {

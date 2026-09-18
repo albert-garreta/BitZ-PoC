@@ -5,7 +5,7 @@
 //! ```
 //!
 //! For every m = 22..=35, builds the config via
-//! [`f2z::ligerito_flock::custom_johnson_config`] (flock's own
+//! [`bitz::ligerito_flock::custom_johnson_config`] (flock's own
 //! `paper_predicted_*` formulas, gated by
 //! `LigeritoSecurityConfig::validate`) and overwrites
 //! `crates/flock-core/configs/ligerito/m{m}_{profile}.toml` in the local
@@ -16,7 +16,7 @@
 //! target) — regenerating `fast` moves it onto that convention (the
 //! original fast generation used no query grinding).
 
-use f2z::ligerito_flock::custom_johnson_config;
+use bitz::ligerito_flock::custom_johnson_config;
 
 fn main() {
     let flock_cfg_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

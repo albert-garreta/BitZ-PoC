@@ -1,212 +1,47 @@
 //! An eager witness-generation evaluator.
 
-use std::iter::Sum;
-use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
-
 use num_traits::{One, Zero};
 
 use crate::matrix_products::IntegerProducts;
 use crate::{BoolWitness, Circuit, HintResult, PackedBits, WitnessContext};
+pub use field::Z;
 
-/// A signed two's-complement integer with a compile-time capacity.
-///
-/// Arithmetic wraps modulo `2^(64 * LIMBS)`. A witness generator must be
-/// instantiated with enough limbs for every signed intermediate in its
-/// circuit. This makes arithmetic allocation-free and non-panicking, allowing
-/// constraint-only calculations to be eliminated by the optimizer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Z<const LIMBS: usize = 1> {
-    words: [u64; LIMBS],
+/// Packing boundary with the circuit's explicitly declared wrapping capacity.
+pub(crate) fn integer_from_words<const L: usize>(words: &[u64]) -> Z<L> {
+    Z::from_twos_complement_words(core::array::from_fn(|i| words.get(i).copied().unwrap_or(0)))
 }
 
-impl<const LIMBS: usize> Z<LIMBS> {
-    /// Constructs a nonnegative integer from little-endian machine words.
-    pub fn from_le_words(words: &[u64]) -> Self {
-        let mut output = [0; LIMBS];
-        for (output, input) in output.iter_mut().zip(words) {
-            *output = *input;
+pub(crate) fn integer_from_bits<const L: usize>(bits: &[bool]) -> Z<L> {
+    let mut words = [0; L];
+    for (i, bit) in bits.iter().take(64 * L).enumerate() {
+        words[i / 64] |= u64::from(*bit) << (i % 64);
+    }
+    Z::from_twos_complement_words(words)
+}
+
+fn integer_from_packed<const L: usize, const N: usize, const M: usize>(
+    bits: &PackedBits<N, M>,
+) -> Z<L> {
+    integer_from_words(bits.words())
+}
+
+fn integer_from_prefix<const L: usize, const N: usize, const M: usize>(
+    bits: &PackedBits<N, M>,
+    width: usize,
+) -> Z<L> {
+    assert!(width <= N);
+    let words = core::array::from_fn(|i| {
+        let start = i * 64;
+        let word = bits.words().get(i).copied().unwrap_or(0);
+        if start >= width {
+            0
+        } else if width - start >= 64 {
+            word
+        } else {
+            word & ((1u64 << (width - start)) - 1)
         }
-        Self { words: output }
-    }
-
-    /// Constructs a nonnegative integer from little-endian bits.
-    pub fn from_le_bits(bits: &[bool]) -> Self {
-        let mut words = [0; LIMBS];
-        for (index, set) in bits.iter().take(LIMBS * 64).enumerate() {
-            words[index / 64] |= u64::from(*set) << (index % 64);
-        }
-        Self { words }
-    }
-
-    /// Constructs a nonnegative integer from packed little-endian bits.
-    ///
-    /// Values wider than the declared capacity are truncated. The caller's
-    /// circuit-wide bound is responsible for ruling that out.
-    pub fn from_packed_bits<const N: usize, const M: usize>(bits: &PackedBits<N, M>) -> Self {
-        let mut words = [0; LIMBS];
-        for (output, input) in words.iter_mut().zip(bits.words()) {
-            *output = *input;
-        }
-        Self { words }
-    }
-
-    fn from_packed_prefix<const N: usize, const M: usize>(
-        bits: &PackedBits<N, M>,
-        width: usize,
-    ) -> Self {
-        assert!(width <= N);
-        let mut value = Self::from_packed_bits(bits);
-        let retained_words = width.div_ceil(64).min(LIMBS);
-        for word in &mut value.words[retained_words..] {
-            *word = 0;
-        }
-        if !width.is_multiple_of(64) && retained_words != 0 {
-            value.words[retained_words - 1] &= (1_u64 << (width % 64)) - 1;
-        }
-        value
-    }
-
-    /// Little-endian two's-complement storage words.
-    pub fn words(&self) -> &[u64; LIMBS] {
-        &self.words
-    }
-
-    /// Whether the fixed-width value is negative.
-    pub fn is_negative(&self) -> bool {
-        self.words.last().is_some_and(|word| word >> 63 == 1)
-    }
-
-    /// Sign-extends this value into a wider fixed representation.
-    pub fn sign_extend<const TO_LIMBS: usize>(self) -> Z<TO_LIMBS> {
-        assert!(TO_LIMBS >= LIMBS, "cannot sign-extend into fewer limbs");
-        let mut words = [if self.is_negative() { u64::MAX } else { 0 }; TO_LIMBS];
-        for (output, input) in words.iter_mut().zip(self.words) {
-            *output = input;
-        }
-        Z { words }
-    }
-}
-
-impl<const LIMBS: usize> Default for Z<LIMBS> {
-    fn default() -> Self {
-        Self::zero()
-    }
-}
-
-impl<const LIMBS: usize> From<i128> for Z<LIMBS> {
-    fn from(value: i128) -> Self {
-        let mut words = [if value < 0 { u64::MAX } else { 0 }; LIMBS];
-        if LIMBS != 0 {
-            words[0] = value as u64;
-        }
-        if LIMBS > 1 {
-            words[1] = (value >> 64) as u64;
-        }
-        Self { words }
-    }
-}
-
-impl<const LIMBS: usize> From<u64> for Z<LIMBS> {
-    fn from(value: u64) -> Self {
-        let mut words = [0; LIMBS];
-        if LIMBS != 0 {
-            words[0] = value;
-        }
-        Self { words }
-    }
-}
-
-impl<const LIMBS: usize> Zero for Z<LIMBS> {
-    fn zero() -> Self {
-        Self { words: [0; LIMBS] }
-    }
-
-    fn is_zero(&self) -> bool {
-        self.words.iter().all(|word| *word == 0)
-    }
-}
-
-impl<const LIMBS: usize> One for Z<LIMBS> {
-    fn one() -> Self {
-        Self::from(1_u64)
-    }
-}
-
-impl<const LIMBS: usize> Add for Z<LIMBS> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let mut words = [0; LIMBS];
-        let mut carry = false;
-        for (index, output) in words.iter_mut().enumerate() {
-            let (sum, first_carry) = self.words[index].overflowing_add(rhs.words[index]);
-            let (sum, second_carry) = sum.overflowing_add(u64::from(carry));
-            *output = sum;
-            carry = first_carry || second_carry;
-        }
-        Self { words }
-    }
-}
-
-impl<const LIMBS: usize> AddAssign for Z<LIMBS> {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = *self + rhs;
-    }
-}
-
-impl<const LIMBS: usize> Sub for Z<LIMBS> {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        let mut words = [0; LIMBS];
-        let mut borrow = false;
-        for (index, output) in words.iter_mut().enumerate() {
-            let (difference, first_borrow) = self.words[index].overflowing_sub(rhs.words[index]);
-            let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
-            *output = difference;
-            borrow = first_borrow || second_borrow;
-        }
-        Self { words }
-    }
-}
-
-impl<const LIMBS: usize> SubAssign for Z<LIMBS> {
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = *self - rhs;
-    }
-}
-
-impl<const LIMBS: usize> Mul for Z<LIMBS> {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let mut words = [0; LIMBS];
-        for left in 0..LIMBS {
-            let mut carry = 0_u128;
-            for right in 0..(LIMBS - left) {
-                let output = left + right;
-                let product = u128::from(self.words[left]) * u128::from(rhs.words[right]);
-                let total = u128::from(words[output]) + product + carry;
-                words[output] = total as u64;
-                carry = total >> 64;
-            }
-        }
-        Self { words }
-    }
-}
-
-impl<const LIMBS: usize> Neg for Z<LIMBS> {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        Self::zero() - self
-    }
-}
-
-impl<const LIMBS: usize> Sum for Z<LIMBS> {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::zero(), Add::add)
-    }
+    });
+    Z::from_twos_complement_words(words)
 }
 
 struct ValueContext;
@@ -217,7 +52,7 @@ impl<const LIMBS: usize> WitnessContext<Z<LIMBS>, bool, Z<LIMBS>> for ValueConte
     }
 
     fn eval_z_words<'a>(&self, witness: &'a Z<LIMBS>) -> Option<&'a [u64]> {
-        Some(witness.words())
+        Some(witness.as_words())
     }
 
     fn eval_bool(&self, witness: &bool) -> bool {
@@ -359,7 +194,7 @@ impl Circuit for WitnessOnly {
     type Z<const LIMBS: usize> = Z<LIMBS>;
 
     fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
-        Z::from_le_words(words)
+        integer_from_words(words)
     }
 
     fn xor(&mut self, lhs: bool, rhs: bool) -> bool {
@@ -382,18 +217,18 @@ impl Circuit for WitnessOnly {
         bits
     }
 
-    fn f2z<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
-        if value { Z::one() } else { Z::zero() }
+    fn bitz<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
+        Z::from(u64::from(value))
     }
 
-    fn f2z_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
         &mut self,
         bits_le: &<bool as BoolWitness>::Repr<N, M>,
     ) -> (Z<LIMBS>, Z<LIMBS>) {
         assert!(LOW <= N, "low part cannot be wider than the input");
         (
-            Z::from_packed_bits(bits_le),
-            Z::from_packed_prefix(bits_le, LOW),
+            integer_from_packed(bits_le),
+            integer_from_prefix(bits_le, LOW),
         )
     }
 
@@ -429,10 +264,10 @@ impl Witgen {
         &self.witness
     }
 
-    /// Packed values returned by logical `f2z` calls.
+    /// Packed values returned by logical `bitz` calls.
     ///
     /// Entry zero is the implicit integer constant one. Every later entry is
-    /// the 0/1 result of one `f2z`, in circuit order, so this is exactly `M * w`.
+    /// the 0/1 result of one `bitz`, in circuit order, so this is exactly `M * w`.
     pub fn integer_witness(&self) -> &PackedWitness {
         &self.integer_witness
     }
@@ -496,7 +331,7 @@ impl Circuit for Witgen {
     type Z<const LIMBS: usize> = Z<LIMBS>;
 
     fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
-        Z::from_le_words(words)
+        integer_from_words(words)
     }
 
     fn xor(&mut self, lhs: bool, rhs: bool) -> bool {
@@ -519,20 +354,20 @@ impl Circuit for Witgen {
         bits
     }
 
-    fn f2z<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
+    fn bitz<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
         self.integer_witness.extend(&[value]);
-        if value { Z::one() } else { Z::zero() }
+        Z::from(u64::from(value))
     }
 
-    fn f2z_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
         &mut self,
         bits_le: &<bool as BoolWitness>::Repr<N, M>,
     ) -> (Z<LIMBS>, Z<LIMBS>) {
         assert!(LOW <= N, "low part cannot be wider than the input");
         self.integer_witness.extend_packed(bits_le);
         (
-            Z::from_packed_bits(bits_le),
-            Z::from_packed_prefix(bits_le, LOW),
+            integer_from_packed(bits_le),
+            integer_from_prefix(bits_le, LOW),
         )
     }
 
@@ -619,7 +454,7 @@ impl Circuit for ProductWitgen {
     type Z<const LIMBS: usize> = Z<LIMBS>;
 
     fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
-        Z::from_le_words(words)
+        integer_from_words(words)
     }
 
     fn xor(&mut self, lhs: bool, rhs: bool) -> bool {
@@ -639,15 +474,15 @@ impl Circuit for ProductWitgen {
         self.witgen.hint(hint)
     }
 
-    fn f2z<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
-        self.witgen.f2z(value)
+    fn bitz<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
+        self.witgen.bitz(value)
     }
 
-    fn f2z_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
         &mut self,
         bits_le: &<bool as BoolWitness>::Repr<N, M>,
     ) -> (Z<LIMBS>, Z<LIMBS>) {
-        self.witgen.f2z_unsigned::<LIMBS, N, M, LOW>(bits_le)
+        self.witgen.bitz_unsigned::<LIMBS, N, M, LOW>(bits_le)
     }
 
     fn assert_r1c<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>, c: Z<LIMBS>) {
@@ -700,8 +535,8 @@ mod tests {
         >(&bits, 63);
         assert!((0..65).all(|index| sliced.bit(index) == expected(index + 63)));
 
-        let integer = Z::<4>::from_packed_bits(&bits);
-        assert_eq!(integer.words(), bits.words());
+        let integer: Z<4> = integer_from_packed(&bits);
+        assert_eq!(integer.as_words(), bits.words());
     }
 
     #[test]
@@ -736,7 +571,7 @@ mod tests {
         let mut witgen = Witgen::new();
 
         let bits = <Witgen as Circuit>::hint::<1, 4, 1, _>(&mut witgen, move |context| {
-            let integer = context.eval_z(&captured).words()[0];
+            let integer = context.eval_z(&captured).as_words()[0];
             Ok(PackedBits::<4, 1>::from_fn(|bit| integer >> bit & 1 == 1))
         });
 
@@ -744,16 +579,16 @@ mod tests {
             bits,
             PackedBits::<4, 1>::from_array([true, false, true, true])
         );
-        assert_eq!(witgen.f2z::<1>(true), Z::<1>::one());
+        assert_eq!(witgen.bitz::<1>(true), Z::<1>::one());
     }
 
     #[test]
-    fn records_the_integer_witness_in_logical_f2z_order() {
+    fn records_the_integer_witness_in_logical_bitz_order() {
         let mut witgen = Witgen::new();
-        let _ = witgen.f2z::<1>(true);
-        let _ = witgen.f2z::<8>(false);
+        let _ = witgen.bitz::<1>(true);
+        let _ = witgen.bitz::<8>(false);
         let bits = PackedBits::<4, 1>::from_array([false, true, true, false]);
-        let _: (Z<1>, Z<1>) = witgen.f2z_unsigned::<1, 4, 1, 2>(&bits);
+        let _: (Z<1>, Z<1>) = witgen.bitz_unsigned::<1, 4, 1, 2>(&bits);
 
         let expected = [true, true, false, false, true, true, false];
         assert_eq!(witgen.integer_witness().bit_len(), expected.len());
@@ -768,12 +603,12 @@ mod tests {
     #[test]
     fn one_runner_supports_local_widths_and_explicit_sign_extension() {
         let mut witgen = Witgen::new();
-        let small: Z<1> = witgen.f2z::<1>(true);
+        let small: Z<1> = witgen.bitz::<1>(true);
         let large: Z<128> = witgen.sign_extend_z::<1, 128>(-small);
-        let rsa_bit: Z<128> = witgen.f2z::<128>(false);
+        let rsa_bit: Z<128> = witgen.bitz::<128>(false);
 
-        assert_eq!(large.words(), &[u64::MAX; 128]);
-        assert_eq!(rsa_bit.words(), &[0; 128]);
+        assert_eq!(large.as_words(), &[u64::MAX; 128]);
+        assert_eq!(rsa_bit.as_words(), &[0; 128]);
     }
 
     #[test]
@@ -781,27 +616,27 @@ mod tests {
         assert_eq!(std::mem::size_of::<Z<4>>(), 4 * std::mem::size_of::<u64>());
         assert!(!std::mem::needs_drop::<Z<4>>());
         assert_eq!(
-            (Z::<2>::from(i128::MAX) + Z::one()).words(),
+            (Z::<2>::from(i128::MAX) + Z::one()).as_words(),
             &[0, 1_u64 << 63]
         );
         assert_eq!(
-            Z::<4>::from_le_bits(&[true; 200]).words(),
+            integer_from_bits::<4>(&[true; 200]).as_words(),
             &[u64::MAX, u64::MAX, u64::MAX, 0xff]
         );
     }
 
     #[test]
     fn fixed_integer_arithmetic_carries_across_limbs() {
-        let left = Z::<3> {
-            words: [u64::MAX, 4, 5],
-        };
-        let right = Z::<3> { words: [2, 8, 9] };
+        let left = Z::<3>::from_twos_complement_words([u64::MAX, 4, 5]);
+        let right = Z::<3>::from_twos_complement_words([2, 8, 9]);
 
-        assert_eq!((left + right).words(), &[1, 13, 14]);
+        assert_eq!((left + right).as_words(), &[1, 13, 14]);
         assert_eq!(((left + right) - right), left);
         assert_eq!(((left - right) + right), left);
         assert_eq!(
-            (Z::<3> { words: [3, 4, 5] } * Z::<3> { words: [7, 8, 9] }).words(),
+            (Z::<3>::from_twos_complement_words([3, 4, 5])
+                * Z::<3>::from_twos_complement_words([7, 8, 9]))
+            .as_words(),
             &[21, 52, 94]
         );
     }

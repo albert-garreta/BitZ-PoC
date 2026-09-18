@@ -1,22 +1,25 @@
+use circuit::linear_map::CscMatrix;
 use std::{
     array,
     collections::HashMap,
     sync::{Arc, OnceLock},
 };
 
+use circuit::integer_storage::IntegerTable;
+use circuit::linear_map::{CsrBuilder, CsrMatrix, IndexedCoefficients};
 use circuit::{
     constraints::ConstraintGenerator,
-    matrix_wengert::{WengertGenerator, WengertTape},
+    linear_map::circuit::{WengertGenerator, WengertTape},
     p256, sha256,
 };
-use num_bigint::{BigInt, BigUint};
-use num_traits::Zero;
+use field::{CtOrd, IntegerOps, Uint, WideMul, ZRef};
 
-use super::{Result, error};
-use crate::{
-    f2map::{ChainedPackedSourceParts, ChainedSourceTail, PreparedVirtualMap, VirtualMap},
-    pcs::IntegerMatrixLayout,
-    sparse_matrix::SparseMatrix,
+use super::error;
+use {
+    crate::pcs::IntegerMatrixLayout,
+    circuit::linear_map::binary::{
+        ChainedPackedSourceParts, ChainedSourceTail, PreparedVirtualMap, VirtualMap,
+    },
 };
 
 pub(crate) const SHA_H: usize = 20_457;
@@ -42,7 +45,7 @@ pub struct Sha256EcdsaStatement {
 }
 
 impl Sha256EcdsaStatement {
-    pub fn message_bytes(&self) -> Result<usize> {
+    pub fn message_bytes(&self) -> Result<usize, super::Sha256EcdsaError> {
         if !(3..=16).contains(&self.log_compressions) {
             return Err(error("compression exponent must be in 3..=16"));
         }
@@ -61,141 +64,72 @@ impl Sha256EcdsaStatement {
     }
 }
 
-/// Sparse integer rows whose coefficients index one shared table of distinct
-/// values ([`LocalRelation::coefficients`]). The P-256 matrices hold 4.2M
-/// entries but only ~3.4k distinct coefficients, so per-coefficient work — the
-/// per-proof reduction modulo the sampled prime — is done on the table, never
-/// on the entries, and an entry costs eight bytes instead of a heap integer.
-pub(crate) struct CompactRows {
-    row_ptr: Vec<u32>,
-    cols: Vec<u32>,
-    coefs: Vec<u32>,
-}
-
-impl CompactRows {
-    pub(crate) fn rows(&self) -> usize {
-        self.row_ptr.len() - 1
-    }
-    pub(crate) fn is_empty_row(&self, r: usize) -> bool {
-        self.row_ptr[r] == self.row_ptr[r + 1]
-    }
-    /// `(column, coefficient index)` entries of row `r` in increasing column order.
-    pub(crate) fn row(&self, r: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
-        let (start, end) = (self.row_ptr[r] as usize, self.row_ptr[r + 1] as usize);
-        self.cols[start..end]
-            .iter()
-            .zip(&self.coefs[start..end])
-            .map(|(&c, &k)| (c as usize, k as usize))
-    }
-}
-
 /// Interns matrix coefficients into the shared table, first seen first.
 #[derive(Default)]
 struct Interner {
-    table: Vec<BigInt>,
-    index: HashMap<BigInt, u32>,
+    table: IntegerTable,
+    index: HashMap<Vec<u64>, u32>,
 }
 
 impl Interner {
-    fn intern(&mut self, value: &BigInt) -> u32 {
-        if let Some(&k) = self.index.get(value) {
+    fn intern(&mut self, matrix: &CsrMatrix<IntegerTable>, coefficient: usize) -> u32 {
+        let words = &matrix.coefficients()[coefficient];
+        if let Some(&k) = self.index.get(words) {
             return k;
         }
         let k = u32::try_from(self.table.len()).expect("coefficient table fits u32");
-        self.table.push(value.clone());
-        self.index.insert(value.clone(), k);
+        matrix
+            .coefficients()
+            .copy_row_to(coefficient, &mut self.table);
+        self.index.insert(words.to_vec(), k);
         k
     }
-    fn rows(&mut self, matrix: &circuit::constraints::SparseMatrix<BigInt>) -> CompactRows {
-        let mut out = CompactRows {
-            row_ptr: Vec::with_capacity(matrix.row_count() + 1),
-            cols: Vec::new(),
-            coefs: Vec::new(),
-        };
-        out.row_ptr.push(0);
+    fn rows(&mut self, matrix: &CsrMatrix<IntegerTable>) -> CsrMatrix<Box<[u32]>, u32> {
+        let mut builder = CsrBuilder::<Vec<u32>, u32>::new(Vec::new());
         for row in matrix.rows() {
-            for (column, coefficient) in row.entries() {
-                out.cols
-                    .push(u32::try_from(*column).expect("matrix column fits u32"));
-                out.coefs.push(self.intern(coefficient));
-            }
-            out.row_ptr
-                .push(u32::try_from(out.cols.len()).expect("matrix entries fit u32"));
+            builder
+                .push_row(
+                    row.indices()
+                        .iter()
+                        .zip(row.entry_range())
+                        .map(|(&column, entry)| (column, self.intern(matrix, entry))),
+                )
+                .expect("canonical compact circuit rows");
         }
-        out
+        let matrix = builder
+            .finish(matrix.column_count())
+            .expect("allocated columns");
+        matrix
+            .map_coefficients(Vec::into_boxed_slice)
+            .expect("unchanged entry count")
     }
 }
 
-/// The three P-256 matrices transposed over the assignment tail, so the
-/// combined coefficient of every tail cell is one independent gather: entry
-/// `(slot, coefficient index)` with `slot = 3·row + m`, `m` = 0/1/2 for A/B/C.
-pub(crate) struct TailColumns {
-    col_ptr: Vec<u32>,
-    slots: Vec<u32>,
-    coefs: Vec<u32>,
-}
-
-impl TailColumns {
-    fn new(columns: usize, matrices: [&CompactRows; 3]) -> Result<Self> {
-        let mut col_ptr = vec![0u32; columns + 1];
-        for matrix in matrices {
-            for &c in &matrix.cols {
-                if c as usize >= columns {
-                    return Err(error("P-256 matrix column outside the assignment tail"));
-                }
-                col_ptr[c as usize + 1] += 1;
-            }
-        }
-        for j in 0..columns {
-            col_ptr[j + 1] += col_ptr[j];
-        }
-        let nnz = col_ptr[columns] as usize;
-        let (mut slots, mut coefs) = (vec![0u32; nnz], vec![0u32; nnz]);
-        let mut next = col_ptr.clone();
-        for (m, matrix) in matrices.iter().enumerate() {
-            for r in 0..matrix.rows() {
-                let slot = u32::try_from(3 * r + m).expect("row slot fits u32");
-                for (c, k) in matrix.row(r) {
-                    let at = next[c] as usize;
-                    next[c] += 1;
-                    slots[at] = slot;
-                    coefs[at] = k as u32;
-                }
-            }
-        }
-        Ok(Self {
-            col_ptr,
-            slots,
-            coefs,
-        })
-    }
-    pub(crate) fn columns(&self) -> usize {
-        self.col_ptr.len() - 1
-    }
-    /// `(slot, coefficient index)` entries of tail cell `j`.
-    pub(crate) fn column(&self, j: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
-        let (start, end) = (self.col_ptr[j] as usize, self.col_ptr[j + 1] as usize);
-        self.slots[start..end]
-            .iter()
-            .zip(&self.coefs[start..end])
-            .map(|(&s, &k)| (s as usize, k as usize))
-    }
+/// Interleave A/B/C rows before CSC conversion so encoded slots remain sorted.
+fn tail_columns(
+    columns: usize,
+    matrices: [&CsrMatrix<Box<[u32]>, u32>; 3],
+) -> Result<CscMatrix<Box<[u32]>, u32>, super::Sha256EcdsaError> {
+    CscMatrix::try_from_row_source(3 * matrices[0].row_count(), columns, |slot| {
+        matrices[slot % 3].row(slot / 3).unwrap()
+    })
+    .map_err(|_| error("invalid compact P-256 tail matrix"))
 }
 
 pub(crate) struct LocalRelation {
     pub sha_local: PreparedVirtualMap,
     pub sha_prev: PreparedVirtualMap,
     pub sha_first: PreparedVirtualMap,
-    pub sha_c: CompactRows,
+    pub sha_c: CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
     pub sha_output: [usize; 256],
     pub p_map: PreparedVirtualMap,
-    pub a: CompactRows,
-    pub b: CompactRows,
-    pub c: CompactRows,
+    pub a: CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
+    pub b: CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
+    pub c: CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
     /// The distinct integer coefficients of `sha_c`, `a`, `b` and `c`.
-    pub coefficients: Vec<BigInt>,
+    pub coefficients: Arc<IntegerTable>,
     /// `a`, `b`, `c` column by column over the P-256 assignment tail.
-    pub tail: TailColumns,
+    pub tail: CscMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
     /// The P-256 circuit's Z-side linear arithmetic as a reverse-mode tape:
     /// `r · (A + xB + x²C)` over every tail column by one pass over the
     /// circuit's DAG (97,986 edges) instead of the 4.2M expanded entries.
@@ -210,20 +144,22 @@ pub(crate) struct LocalRelation {
 impl LocalRelation {
     /// Number of P-256 rows (shared by `a`, `b` and `c`).
     pub(crate) fn rows(&self) -> usize {
-        self.a.rows()
+        self.a.row_count()
     }
 }
 
-fn bool_map(columns: usize, rows: Vec<Vec<usize>>) -> Result<PreparedVirtualMap> {
+fn bool_map(
+    columns: usize,
+    rows: Vec<Vec<usize>>,
+) -> Result<PreparedVirtualMap, super::Sha256EcdsaError> {
     let rows = rows
         .into_iter()
         .map(|row| row.into_iter().map(|c| (c, true)).collect())
         .collect();
-    PreparedVirtualMap::new(SparseMatrix::try_from_rows(columns, rows).map_err(error)?)
-        .map_err(error)
+    PreparedVirtualMap::new(CscMatrix::try_from_rows(columns, rows).map_err(error)?).map_err(error)
 }
 
-fn build_local() -> Result<LocalRelation> {
+fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
     let mut generator = ConstraintGenerator::new(sha256::COMPRESSION_INPUT_BITS);
     let inputs = generator.inputs();
     let outputs = sha256::compression_circuit(&mut generator, &inputs);
@@ -235,21 +171,16 @@ fn build_local() -> Result<LocalRelation> {
     let sha = generator.into_matrices();
     if sha.m.row_count() != SHA_H
         || sha.c.row_count() != SHA_ROWS
-        || sha
-            .a
-            .rows()
-            .iter()
-            .chain(sha.b.rows())
-            .any(|r| !r.entries().is_empty())
+        || sha.a.rows().chain(sha.b.rows()).any(|r| !r.is_empty())
     {
         return Err(error("unexpected SHA compression shape"));
     }
     let mut local = vec![Vec::new(); SHA_H];
     let mut prev = vec![Vec::new(); SHA_H];
     let mut first = vec![Vec::new(); SHA_H];
-    for (row, terms) in sha.m.rows().iter().enumerate() {
+    for (row, terms) in sha.m.rows().enumerate() {
         let mut parity = false;
-        for &column in terms.positions() {
+        for &column in terms.indices() {
             match column {
                 0..=512 => local[row].push(column),
                 513..=768 => {
@@ -276,8 +207,8 @@ fn build_local() -> Result<LocalRelation> {
     p256::verify_digest_circuit(&mut generator, &inputs);
     let p = generator.into_matrices();
     let mut public_h = [usize::MAX; 1024];
-    for (h, row) in p.m.rows().iter().enumerate() {
-        if let [source] = row.positions() {
+    for (h, row) in p.m.rows().enumerate() {
+        if let [source] = row.indices() {
             if (257..1281).contains(source) && public_h[*source - 257] == usize::MAX {
                 public_h[*source - 257] = h;
             }
@@ -288,52 +219,119 @@ fn build_local() -> Result<LocalRelation> {
     }
     let p_map = bool_map(
         p.m.column_count(),
-        p.m.rows().iter().map(|r| r.positions().to_vec()).collect(),
+        p.m.rows().map(|r| r.indices().to_vec()).collect(),
     )?;
     let a = interner.rows(&p.a);
     let b = interner.rows(&p.b);
     let c = interner.rows(&p.c);
-    let tail = TailColumns::new(p.m.row_count(), [&a, &b, &c])?;
+    let tail = tail_columns(p.m.row_count(), [&a, &b, &c])?;
     drop(p);
     let mut tape_generator = WengertGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
     let tape_inputs = tape_generator.take_boxed_inputs::<{ p256::VERIFY_DIGEST_INPUT_BITS }>();
     p256::verify_digest_circuit(&mut tape_generator, &tape_inputs);
     let tape = tape_generator.finish();
-    if tape.row_count() != a.rows() || tape.column_count() != tail.columns() {
-        return Err(error("P-256 tape shape disagrees with the constraint matrices"));
+    if tape.row_count() != a.row_count() || tape.column_count() != tail.column_count() {
+        return Err(error(
+            "P-256 tape shape disagrees with the constraint matrices",
+        ));
     }
-    let coefficients = interner.table;
-    let (linear, nonlinear): (Vec<_>, Vec<_>) =
-        (0..a.rows()).partition(|&i| a.is_empty_row(i) || b.is_empty_row(i));
-    let magnitudes: Vec<BigUint> = coefficients.iter().map(|c| c.magnitude().clone()).collect();
-    let norm = |rows: &CompactRows, r: usize| -> BigUint {
-        rows.row(r)
-            .fold(BigUint::zero(), |sum, (_, k)| sum + &magnitudes[k])
+    let coefficients = Arc::new(interner.table);
+    let attach = |matrix: CsrMatrix<Box<[u32]>, u32>| {
+        matrix
+            .map_coefficients(|indices| {
+                IndexedCoefficients::new(Arc::clone(&coefficients), indices.into_vec())
+                    .expect("interned coefficients")
+            })
+            .expect("unchanged entry count")
     };
-    let mut bound = BigUint::from(1u8);
-    for r in 0..sha_c.rows() {
-        bound = bound.max(norm(&sha_c, r));
+    let sha_c = attach(sha_c);
+    let a = attach(a);
+    let b = attach(b);
+    let c = attach(c);
+    let tail = tail
+        .map_coefficients(|indices| {
+            IndexedCoefficients::new(Arc::clone(&coefficients), indices.into_vec())
+                .expect("interned coefficients")
+        })
+        .expect("unchanged entry count");
+    let (linear, nonlinear): (Vec<_>, Vec<_>) = (0..a.row_count())
+        .partition(|&i| a.row(i).unwrap().is_empty() || b.row(i).unwrap().is_empty());
+    // P-256 declares at most nine signed limbs. One extra limb covers a
+    // row with fewer than 2^64 terms; the product of two row norms plus C
+    // fits 21 limbs. These public bounds never depend on witness magnitudes.
+    if coefficients.max_limbs() > 9 {
+        return Err(error("P-256 coefficient declaration exceeds nine limbs"));
     }
-    for i in 0..a.rows() {
-        bound = bound.max(norm(&a, i) * norm(&b, i) + norm(&c, i));
+    let magnitudes: Vec<Uint<10>> = coefficients
+        .iter()
+        .map(|words| {
+            ZRef::from_twos_complement_words(words)
+                .checked_resize_ct::<9>()
+                .value()
+                .unsigned_abs()
+                .zero_extend()
+        })
+        .collect();
+    let norm =
+        |rows: &CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>, r: usize| -> Uint<10> {
+            rows.row(r)
+                .unwrap()
+                .indexed_entries()
+                .fold(Uint::ZERO, |sum, (_, k)| sum.wrapping_add(&magnitudes[k]))
+        };
+    let mut bound = Uint::<21>::ONE;
+    for r in 0..sha_c.row_count() {
+        let candidate = norm(&sha_c, r).zero_extend::<21>();
+        if bound.ct_lt(&candidate).declassify() {
+            bound = candidate;
+        }
     }
-    let defect_bits = u32::try_from(bound.bits()).map_err(error)?;
-    // The digest streams the same bytes as the original entry-wise encoding.
-    let signed_bytes: Vec<Vec<u8>> = coefficients.iter().map(BigInt::to_signed_bytes_le).collect();
+    // The assignment is Boolean, so the public coefficient 1-norm bounds
+    // every row operand, including malformed witnesses. Retaining this check
+    // lets the borrowed outer rows use five signed limbs for A/B without
+    // inspecting their private magnitudes or allocating narrowed tables.
+    let outer_ab_limit = Uint::<10>::from_words([0, 0, 0, 0, 1 << 63, 0, 0, 0, 0, 0]);
+    for i in 0..a.row_count() {
+        let a_norm = norm(&a, i);
+        let b_norm = norm(&b, i);
+        if !(a_norm.ct_lt(&outer_ab_limit) & b_norm.ct_lt(&outer_ab_limit)).declassify() {
+            return Err(error("P-256 A/B row bound exceeds five signed limbs"));
+        }
+        let product = IntegerOps.mul_wide(&a_norm, &b_norm);
+        let candidate = product
+            .checked_resize_ct::<21>()
+            .value()
+            .wrapping_add(&norm(&c, i).zero_extend());
+        if bound.ct_lt(&candidate).declassify() {
+            bound = candidate;
+        }
+    }
+    let defect_bits = bound
+        .as_words()
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, word)| **word != 0)
+        .map_or(0, |(i, word)| (64 * i) as u32 + 64 - word.leading_zeros());
+    // The digest binds each declared signed width and every encoded limb.
+    let signed_bytes: Vec<Vec<u8>> = coefficients
+        .iter()
+        .map(|words| words.iter().flat_map(|word| word.to_le_bytes()).collect())
+        .collect();
     let mut hash = blake3::Hasher::new();
-    hash.update(b"f2z/sha256-ecdsa/local-relation/v1");
+    hash.update(b"bitz/sha256-ecdsa/local-relation/v2");
     for map in [&sha_local, &sha_prev, &sha_first, &p_map] {
         hash.update(&map.digest());
     }
     let mut buffer = Vec::new();
     for matrix in [&sha_c, &a, &b, &c] {
-        hash.update(&(matrix.rows() as u64).to_le_bytes());
-        for r in 0..matrix.rows() {
+        hash.update(&(matrix.row_count() as u64).to_le_bytes());
+        for r in 0..matrix.row_count() {
             buffer.clear();
             buffer.extend_from_slice(
-                &((matrix.row_ptr[r + 1] - matrix.row_ptr[r]) as u64).to_le_bytes(),
+                &((matrix.row_offsets()[r + 1] - matrix.row_offsets()[r]) as u64).to_le_bytes(),
             );
-            for (column, k) in matrix.row(r) {
+            for (column, k) in matrix.row(r).unwrap().indexed_entries() {
                 buffer.extend_from_slice(&(column as u64).to_le_bytes());
                 buffer.extend_from_slice(&(signed_bytes[k].len() as u64).to_le_bytes());
                 buffer.extend_from_slice(&signed_bytes[k]);
@@ -431,7 +429,7 @@ impl VirtualMap for Sha256EcdsaMap {
         let mut rows = Vec::new();
         let mut add = |map: &PreparedVirtualMap, c: usize, instance: usize| {
             if let Some(col) = map.matrix().column(c) {
-                rows.extend(col.row_indices().iter().map(|r| instance + self.n * r));
+                rows.extend(col.indices().iter().map(|r| instance + self.n * r));
             }
         };
         if column == 0 {
@@ -453,7 +451,7 @@ impl VirtualMap for Sha256EcdsaMap {
         }
         let mut add_p = |c: usize| {
             if let Some(col) = self.local.p_map.matrix().column(c) {
-                rows.extend(col.row_indices().iter().map(|r| self.h_offset + r));
+                rows.extend(col.indices().iter().map(|r| self.h_offset + r));
             }
         };
         if column == 0 {
@@ -493,12 +491,14 @@ pub struct PreparedSha256Ecdsa {
 }
 
 impl PreparedSha256Ecdsa {
-    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito { &self.ligerito }
+    pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        &self.ligerito
+    }
 
     pub fn with_ligerito(
         mut self,
         selection: crate::ligerito_flock::LigeritoSelection,
-    ) -> Result<Self> {
+    ) -> Result<Self, super::Sha256EcdsaError> {
         self.ligerito = selection
             .resolve(
                 self.f_layout.row_vars + self.f_layout.col_vars - 7,
@@ -583,7 +583,7 @@ pub fn prepare_sha256_ecdsa(
     log_compressions: usize,
     lambda: u32,
     mode: OuterMode,
-) -> Result<PreparedSha256Ecdsa> {
+) -> Result<PreparedSha256Ecdsa, super::Sha256EcdsaError> {
     if !(3..=16).contains(&log_compressions) || ![100, 128].contains(&lambda) {
         return Err(error("expected exponent 3..=16 and security 100 or 128"));
     }
@@ -614,13 +614,7 @@ pub fn prepare_sha256_ecdsa(
     let pad = padding(n);
     let mut canceled = 0;
     for bit in 0..512 {
-        for &row in local
-            .sha_local
-            .matrix()
-            .column(bit + 1)
-            .unwrap()
-            .row_indices()
-        {
+        for &row in local.sha_local.matrix().column(bit + 1).unwrap().indices() {
             last[row].push(bit + 1);
             canceled += 1;
             if pad[bit / 32] >> (bit % 32) & 1 != 0 {
@@ -648,7 +642,7 @@ pub fn prepare_sha256_ecdsa(
         + local.p_map.nnz()
         - 2 * canceled;
     let mut hash = blake3::Hasher::new();
-    hash.update(b"f2z/sha256-ecdsa/map/v1");
+    hash.update(b"bitz/sha256-ecdsa/map/v1");
     hash.update(&local.digest);
     hash.update(&last.digest());
     hash.update(&(n as u64).to_le_bytes());
@@ -676,6 +670,7 @@ pub fn prepare_sha256_ecdsa(
         h_layout,
         f_layout,
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
-            .resolve(f_bits - 7, lambda as usize).map_err(error)?,
+            .resolve(f_bits - 7, lambda as usize)
+            .map_err(error)?,
     })
 }

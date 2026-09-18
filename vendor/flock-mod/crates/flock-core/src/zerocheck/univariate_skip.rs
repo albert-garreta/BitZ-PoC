@@ -1,7 +1,7 @@
 //! Round-1 prover message (univariate skip).
 //!
 //! The round-1 message is `(P^{AB}, P^C)`, each a length-`2^k_skip` vector
-//! of F128 values. They are evaluations on the NTT domain `Λ` of the
+//! of Gf128 values. They are evaluations on the NTT domain `Λ` of the
 //! polynomial (over λ) defined by
 //!
 //!   P^{AB}(λ) = Σ_{x ∈ {0,1}^{m-k_skip}} eq(r_rest, x) · φ₈(â(λ, x) · b̂(λ, x))
@@ -18,7 +18,7 @@
 //! [`super::univariate_skip_optimized`] drops a constant F₈ factor
 //! `C_s = φ₈(0x1C)` from the eq-on-S weights; this one keeps it.
 
-use crate::field::{F8, F128, mul_by_x, phi8};
+use crate::field::{Gf8, Gf128, mul_by_x, embed_gf8};
 use crate::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
 
 // ---------------------------------------------------------------------------
@@ -28,15 +28,15 @@ use crate::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
 /// Build the multilinear-eq evaluation table over `r`:
 /// `table[x] = ∏_i ((1 + r_i) · (1 ⊕ bit_i(x)) + r_i · bit_i(x))` for `x ∈ {0,1}^n`,
 /// where `n = r.len()`. Standard in-place power-of-two doubling.
-pub fn build_eq(r: &[F128]) -> Vec<F128> {
+pub fn build_eq(r: &[Gf128]) -> Vec<Gf128> {
     let n = r.len();
     // Uninit alloc — same invariant as `build_eq_parallel` in ring_switch:
     // every slot in t[0..2^n] is written exactly once before any read.
     let mut t = crate::alloc_uninit_f128_vec(1usize << n);
-    t[0] = F128::ONE;
+    t[0] = Gf128::ONE;
     for i in 0..n {
         let r_i = r[i];
-        let one_minus_r = F128::ONE + r_i;
+        let one_minus_r = Gf128::ONE + r_i;
         // Iterate downward so we read t[x] before overwriting it as t[x | (1<<i)].
         for x in (0..(1usize << i)).rev() {
             t[x | (1 << i)] = t[x] * r_i;
@@ -54,7 +54,7 @@ pub fn build_eq(r: &[F128]) -> Vec<F128> {
 /// inner, no deferred reduction — direct algorithmic translation of the
 /// protocol formula).
 ///
-/// Returns `(p_ab, p_c)`, each a length-`2^k_skip` F128 vector of evaluations
+/// Returns `(p_ab, p_c)`, each a length-`2^k_skip` Gf128 vector of evaluations
 /// on Λ.
 ///
 /// Preconditions:
@@ -71,8 +71,8 @@ pub fn round1_naive(
     c: &[bool],
     m: usize,
     k_skip: usize,
-    r: &[F128],
-) -> (Vec<F128>, Vec<F128>) {
+    r: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>) {
     assert!(k_skip <= m, "k_skip must be ≤ m");
     assert_eq!(a.len(), 1usize << m);
     assert_eq!(b.len(), 1usize << m);
@@ -83,26 +83,26 @@ pub fn round1_naive(
     let n_chunks_x = 1usize << (m - k_skip);
 
     // NTT for evaluating-on-Λ via inv-on-S then fwd-on-Λ.
-    let ntt_s = AdditiveNttGf8::new(k_skip, F8::ZERO);
-    let ntt_l = AdditiveNttGf8::new(k_skip, F8(ell as u8));
+    let ntt_s = AdditiveNttGf8::new(k_skip, Gf8::ZERO);
+    let ntt_l = AdditiveNttGf8::new(k_skip, Gf8(ell as u8));
 
     // eq table over the rest-of-r challenges; only r[k_skip..] is used here
     // (the skip portion r[0..k_skip] is consumed by the verifier later).
     let eq_full = build_eq(&r[k_skip..]);
 
-    let mut p_ab = vec![F128::ZERO; ell];
-    let mut p_c = vec![F128::ZERO; ell];
+    let mut p_ab = vec![Gf128::ZERO; ell];
+    let mut p_c = vec![Gf128::ZERO; ell];
 
-    let mut a_col = vec![F8::ZERO; ell];
-    let mut b_col = vec![F8::ZERO; ell];
-    let mut c_col = vec![F8::ZERO; ell];
+    let mut a_col = vec![Gf8::ZERO; ell];
+    let mut b_col = vec![Gf8::ZERO; ell];
+    let mut c_col = vec![Gf8::ZERO; ell];
 
     for x_rest in 0..n_chunks_x {
         let base = x_rest * ell;
         for s in 0..ell {
-            a_col[s] = F8(a[base + s] as u8);
-            b_col[s] = F8(b[base + s] as u8);
-            c_col[s] = F8(c[base + s] as u8);
+            a_col[s] = Gf8(a[base + s] as u8);
+            b_col[s] = Gf8(b[base + s] as u8);
+            c_col[s] = Gf8(c[base + s] as u8);
         }
         // Extend the row polynomial from S to Λ.
         ntt_s.inverse(&mut a_col);
@@ -115,8 +115,8 @@ pub fn round1_naive(
         let eq_x = eq_full[x_rest];
         for i in 0..ell {
             let ab = a_col[i] * b_col[i];
-            p_ab[i] += eq_x * phi8(ab);
-            p_c[i] += eq_x * phi8(c_col[i]);
+            p_ab[i] += eq_x * embed_gf8(ab);
+            p_c[i] += eq_x * embed_gf8(c_col[i]);
         }
     }
 
@@ -129,7 +129,7 @@ pub fn round1_naive(
 //
 // Same output as `round1_naive`, but:
 //   * uses `InvNttTableByteSingleGf8::apply` (one L1 lookup pass) instead of
-//     two F8 NTT calls per row;
+//     two Gf8 NTT calls per row;
 //   * splits the eq table into lo/hi halves (cache-friendly outer/inner);
 //   * processes C in extract_c form — accumulates on S, NTT-extends to Λ once
 //     at the end, instead of NTT-extending per row.
@@ -167,21 +167,21 @@ pub fn pack_bits(bits: &[bool]) -> Vec<u8> {
 pub struct SplitEqGhash {
     pub n_lo: usize,
     pub n_hi: usize,
-    pub lo: Vec<F128>,
-    pub hi: Vec<F128>,
+    pub lo: Vec<Gf128>,
+    pub hi: Vec<Gf128>,
 }
 
 impl SplitEqGhash {
-    /// C++-default cap on the hi half size — keeps outer F128 muls cheap.
+    /// C++-default cap on the hi half size — keeps outer Gf128 muls cheap.
     pub const MAX_N_HI: usize = 7;
 
-    pub fn new(r: &[F128]) -> Self {
+    pub fn new(r: &[Gf128]) -> Self {
         let n = r.len();
         let n_hi = n.min(Self::MAX_N_HI);
         Self::with_n_hi(r, n_hi)
     }
 
-    pub fn with_n_hi(r: &[F128], n_hi: usize) -> Self {
+    pub fn with_n_hi(r: &[Gf128], n_hi: usize) -> Self {
         let n = r.len();
         let n_hi = n_hi.min(n);
         let n_lo = n - n_hi;
@@ -194,31 +194,31 @@ impl SplitEqGhash {
     }
 }
 
-/// Extend a length-`ell` F128 vector from the input domain S to the extension
+/// Extend a length-`ell` Gf128 vector from the input domain S to the extension
 /// domain Λ using bit-plane decomposition: for each of the 128 bit positions
-/// of F128, run the bit-input NTT (`inv_NTT_S` then `fwd_NTT_Λ` via the
+/// of Gf128, run the bit-input NTT (`inv_NTT_S` then `fwd_NTT_Λ` via the
 /// precomputed table) on that bit-plane, scale by γ^b, and accumulate.
 ///
 /// Ports `ntt_extend_f128_vec_ghash` (scalar form). The NTT is F_2-linear and
 /// φ_8 commutes with that linearity, which is what makes the bit-by-bit
 /// decomposition equal to the direct F_8-valued NTT extension.
-pub fn ntt_extend_f128_vec_ghash(in_s: &[F128], inv_table: &InvNttTableByteSingleGf8) -> Vec<F128> {
+pub fn ntt_extend_f128_vec_ghash(in_s: &[Gf128], inv_table: &InvNttTableByteSingleGf8) -> Vec<Gf128> {
     let ell = inv_table.ell;
     assert_eq!(in_s.len(), ell);
     assert_eq!(ell, 1usize << inv_table.k);
 
-    let mut out = vec![F128::ZERO; ell];
+    let mut out = vec![Gf128::ZERO; ell];
     let n_chunks = inv_table.n_chunks;
 
     // γ^b for b ∈ [0, 128).
-    let mut gamma_pow = [F128::ZERO; 128];
-    gamma_pow[0] = F128::ONE;
+    let mut gamma_pow = [Gf128::ZERO; 128];
+    gamma_pow[0] = Gf128::ONE;
     for b in 1..128 {
         gamma_pow[b] = mul_by_x(gamma_pow[b - 1]);
     }
 
     let mut input_bits = vec![0u8; n_chunks];
-    let mut out_bytes = vec![F8::ZERO; ell];
+    let mut out_bytes = vec![Gf8::ZERO; ell];
 
     for b in 0..128 {
         // Pack bit b of each in_s[z] into z-indexed LSB-first byte form.
@@ -239,7 +239,7 @@ pub fn ntt_extend_f128_vec_ghash(in_s: &[F128], inv_table: &InvNttTableByteSingl
 
         let g_b = gamma_pow[b];
         for lambda in 0..ell {
-            out[lambda] += g_b * phi8(out_bytes[lambda]);
+            out[lambda] += g_b * embed_gf8(out_bytes[lambda]);
         }
     }
 
@@ -249,7 +249,7 @@ pub fn ntt_extend_f128_vec_ghash(in_s: &[F128], inv_table: &InvNttTableByteSingl
 /// Round-1 prover message (extract_c form, scalar, algorithmically optimized
 /// but without the geometric-eq shift_reduce trick).
 ///
-/// Output: `(res_AB, res_C_lifted)`, each length `2^k_skip` F128 vector.
+/// Output: `(res_AB, res_C_lifted)`, each length `2^k_skip` Gf128 vector.
 /// Both are evaluations on Λ. Output equals `round1_naive(..)` byte-for-byte
 /// (no C_s factor — see module-level comment).
 pub fn round1_extract_c(
@@ -258,9 +258,9 @@ pub fn round1_extract_c(
     c: &[bool],
     m: usize,
     k_skip: usize,
-    r: &[F128],
+    r: &[Gf128],
     inv_table: &InvNttTableByteSingleGf8,
-) -> (Vec<F128>, Vec<F128>) {
+) -> (Vec<Gf128>, Vec<Gf128>) {
     assert_eq!(a.len(), 1usize << m);
     assert_eq!(b.len(), 1usize << m);
     assert_eq!(c.len(), 1usize << m);
@@ -280,9 +280,9 @@ pub fn round1_extract_c_packed(
     c_packed: &[u8],
     m: usize,
     k_skip: usize,
-    r: &[F128],
+    r: &[Gf128],
     inv_table: &InvNttTableByteSingleGf8,
-) -> (Vec<F128>, Vec<F128>) {
+) -> (Vec<Gf128>, Vec<Gf128>) {
     assert!(k_skip <= m);
     let total_bytes = (1usize << m) / 8;
     assert_eq!(a_packed.len(), total_bytes);
@@ -298,19 +298,19 @@ pub fn round1_extract_c_packed(
     let lo_size = 1usize << eq.n_lo;
     let hi_size = 1usize << eq.n_hi;
 
-    let mut res_ab = vec![F128::ZERO; ell];
+    let mut res_ab = vec![Gf128::ZERO; ell];
     // C accumulator stays in S-domain; we NTT-extend once at the end.
-    let mut res_c_s = vec![F128::ZERO; ell];
+    let mut res_c_s = vec![Gf128::ZERO; ell];
 
-    let mut partial_ab = vec![F128::ZERO; ell];
-    let mut partial_c = vec![F128::ZERO; ell];
+    let mut partial_ab = vec![Gf128::ZERO; ell];
+    let mut partial_c = vec![Gf128::ZERO; ell];
 
-    let mut a_col = vec![F8::ZERO; ell];
-    let mut b_col = vec![F8::ZERO; ell];
+    let mut a_col = vec![Gf8::ZERO; ell];
+    let mut b_col = vec![Gf8::ZERO; ell];
 
     for x_hi in 0..hi_size {
-        partial_ab.iter_mut().for_each(|p| *p = F128::ZERO);
-        partial_c.iter_mut().for_each(|p| *p = F128::ZERO);
+        partial_ab.iter_mut().for_each(|p| *p = Gf128::ZERO);
+        partial_c.iter_mut().for_each(|p| *p = Gf128::ZERO);
 
         for x_lo in 0..lo_size {
             let x_rest = (x_hi << eq.n_lo) | x_lo;
@@ -325,7 +325,7 @@ pub fn round1_extract_c_packed(
             // AB on Λ.
             for lambda in 0..ell {
                 let ab = a_col[lambda] * b_col[lambda];
-                partial_ab[lambda] += eq_lo * phi8(ab);
+                partial_ab[lambda] += eq_lo * embed_gf8(ab);
             }
 
             // C on S — read original bits, no NTT yet.
@@ -387,9 +387,9 @@ pub fn round1_extract_c_packed_with_s_hat_v(
     c_packed: &[u8],
     m: usize,
     k_skip: usize,
-    r: &[F128],
+    r: &[Gf128],
     inv_table: &InvNttTableByteSingleGf8,
-) -> (Vec<F128>, Vec<F128>, Vec<F128>) {
+) -> (Vec<Gf128>, Vec<Gf128>, Vec<Gf128>) {
     assert!(k_skip <= m);
     let total_bytes = (1usize << m) / 8;
     assert_eq!(a_packed.len(), total_bytes);
@@ -405,23 +405,23 @@ pub fn round1_extract_c_packed_with_s_hat_v(
     let lo_size = 1usize << eq.n_lo;
     let hi_size = 1usize << eq.n_hi;
 
-    let mut res_ab = vec![F128::ZERO; ell];
+    let mut res_ab = vec![Gf128::ZERO; ell];
     // Two C banks, one per value of bit 0 of `x_rest` = bit `k_skip` of the
     // flat witness index (= `b_7` in ring-switch's parlance).
-    let mut res_c_s_0 = vec![F128::ZERO; ell];
-    let mut res_c_s_1 = vec![F128::ZERO; ell];
+    let mut res_c_s_0 = vec![Gf128::ZERO; ell];
+    let mut res_c_s_1 = vec![Gf128::ZERO; ell];
 
-    let mut partial_ab = vec![F128::ZERO; ell];
-    let mut partial_c_0 = vec![F128::ZERO; ell];
-    let mut partial_c_1 = vec![F128::ZERO; ell];
+    let mut partial_ab = vec![Gf128::ZERO; ell];
+    let mut partial_c_0 = vec![Gf128::ZERO; ell];
+    let mut partial_c_1 = vec![Gf128::ZERO; ell];
 
-    let mut a_col = vec![F8::ZERO; ell];
-    let mut b_col = vec![F8::ZERO; ell];
+    let mut a_col = vec![Gf8::ZERO; ell];
+    let mut b_col = vec![Gf8::ZERO; ell];
 
     for x_hi in 0..hi_size {
-        partial_ab.iter_mut().for_each(|p| *p = F128::ZERO);
-        partial_c_0.iter_mut().for_each(|p| *p = F128::ZERO);
-        partial_c_1.iter_mut().for_each(|p| *p = F128::ZERO);
+        partial_ab.iter_mut().for_each(|p| *p = Gf128::ZERO);
+        partial_c_0.iter_mut().for_each(|p| *p = Gf128::ZERO);
+        partial_c_1.iter_mut().for_each(|p| *p = Gf128::ZERO);
 
         for x_lo in 0..lo_size {
             let x_rest = (x_hi << eq.n_lo) | x_lo;
@@ -437,7 +437,7 @@ pub fn round1_extract_c_packed_with_s_hat_v(
             // AB on Λ — unchanged.
             for lambda in 0..ell {
                 let ab = a_col[lambda] * b_col[lambda];
-                partial_ab[lambda] += eq_lo * phi8(ab);
+                partial_ab[lambda] += eq_lo * embed_gf8(ab);
             }
 
             // C on S — route into bank 0 or bank 1 based on b_7. The eq
@@ -468,7 +468,7 @@ pub fn round1_extract_c_packed_with_s_hat_v(
     // Wire output: combined bank sum = original res_c_s. (The eq(r[k_skip], 0)
     // factor (= 1 + r[k_skip]) is baked into bank 0, eq(r[k_skip], 1) (= r[k_skip])
     // into bank 1. Summing reconstitutes the eq(r[k_skip..m], x_rest) sum.)
-    let mut res_c_s = vec![F128::ZERO; ell];
+    let mut res_c_s = vec![Gf128::ZERO; ell];
     for s in 0..ell {
         res_c_s[s] = res_c_s_0[s] + res_c_s_1[s];
     }
@@ -477,9 +477,9 @@ pub fn round1_extract_c_packed_with_s_hat_v(
     // s_hat_v_c: strip the eq(r[k_skip], ·) factor from each bank by dividing
     // by 1 + r[k_skip] (bank 0) and r[k_skip] (bank 1). No NTT extension —
     // lanes are already boolean indices, which is what ring-switch consumes.
-    let inv_zero = (F128::ONE + r[k_skip]).inv();
-    let inv_one = r[k_skip].inv();
-    let mut s_hat_v_c = vec![F128::ZERO; 2 * ell];
+    let inv_zero = (Gf128::ONE + r[k_skip]).inverse_or_zero();
+    let inv_one = r[k_skip].inverse_or_zero();
+    let mut s_hat_v_c = vec![Gf128::ZERO; 2 * ell];
     for lane in 0..ell {
         s_hat_v_c[lane] = res_c_s_0[lane] * inv_zero;
         s_hat_v_c[ell + lane] = res_c_s_1[lane] * inv_one;
@@ -506,8 +506,8 @@ pub fn round1_evals_on_s(
     c: &[bool],
     m: usize,
     k_skip: usize,
-    r: &[F128],
-) -> (Vec<F128>, Vec<F128>) {
+    r: &[Gf128],
+) -> (Vec<Gf128>, Vec<Gf128>) {
     assert!(k_skip <= m);
     assert_eq!(a.len(), 1usize << m);
     assert_eq!(b.len(), 1usize << m);
@@ -518,8 +518,8 @@ pub fn round1_evals_on_s(
     let n_chunks_x = 1usize << (m - k_skip);
     let eq_full = build_eq(&r[k_skip..]);
 
-    let mut p_ab = vec![F128::ZERO; ell];
-    let mut p_c = vec![F128::ZERO; ell];
+    let mut p_ab = vec![Gf128::ZERO; ell];
+    let mut p_c = vec![Gf128::ZERO; ell];
 
     for x_rest in 0..n_chunks_x {
         let base = x_rest * ell;
@@ -560,8 +560,8 @@ mod tests {
         fn bit(&mut self) -> bool {
             (self.next_u64() & 1) != 0
         }
-        fn f128(&mut self) -> F128 {
-            F128 {
+        fn f128(&mut self) -> Gf128 {
+            Gf128 {
                 lo: self.next_u64(),
                 hi: self.next_u64(),
             }
@@ -569,7 +569,7 @@ mod tests {
         fn bits(&mut self, n: usize) -> Vec<bool> {
             (0..n).map(|_| self.bit()).collect()
         }
-        fn f128_vec(&mut self, n: usize) -> Vec<F128> {
+        fn f128_vec(&mut self, n: usize) -> Vec<Gf128> {
             (0..n).map(|_| self.f128()).collect()
         }
     }
@@ -577,23 +577,23 @@ mod tests {
     #[test]
     fn build_eq_basic() {
         // Empty r → table = [1].
-        assert_eq!(build_eq(&[]), vec![F128::ONE]);
+        assert_eq!(build_eq(&[]), vec![Gf128::ONE]);
         // Single r = [r0] → table = [(1+r0), r0].
-        let r0 = F128 {
+        let r0 = Gf128 {
             lo: 0xCAFEBABE,
             hi: 0x12345678,
         };
         let t = build_eq(&[r0]);
         assert_eq!(t.len(), 2);
-        assert_eq!(t[0], F128::ONE + r0);
+        assert_eq!(t[0], Gf128::ONE + r0);
         assert_eq!(t[1], r0);
         // Sum of all eq values is 1 (a defining property of the multilinear eq).
         let n = 5;
         let mut rng = Rng::new(99);
         let r = rng.f128_vec(n);
         let t = build_eq(&r);
-        let sum: F128 = t.iter().copied().fold(F128::ZERO, |a, b| a + b);
-        assert_eq!(sum, F128::ONE, "Σ_x eq(r, x) should be 1");
+        let sum: Gf128 = t.iter().copied().fold(Gf128::ZERO, |a, b| a + b);
+        assert_eq!(sum, Gf128::ONE, "Σ_x eq(r, x) should be 1");
     }
 
     #[test]
@@ -688,7 +688,7 @@ mod tests {
         for s in 0..p_ab_s.len() {
             assert_eq!(
                 p_ab_s[s] + p_c_s[s],
-                F128::ZERO,
+                Gf128::ZERO,
                 "P at S should be 0 for honest witness, but failed at s={s}"
             );
         }
@@ -708,14 +708,14 @@ mod tests {
         let r = rng.f128_vec(m);
 
         let (p_ab_s, p_c_s) = round1_evals_on_s(&a, &b, &c, m, k_skip, &r);
-        let combined: Vec<F128> = p_ab_s.iter().zip(&p_c_s).map(|(x, y)| *x + *y).collect();
+        let combined: Vec<Gf128> = p_ab_s.iter().zip(&p_c_s).map(|(x, y)| *x + *y).collect();
         let nonzero = combined.iter().any(|v| !v.is_zero());
         assert!(nonzero, "P at S should be nonzero for a random witness");
     }
 
     fn make_inv_table(k_skip: usize) -> InvNttTableByteSingleGf8 {
-        let ntt_s = AdditiveNttGf8::new(k_skip, F8::ZERO);
-        let ntt_l = AdditiveNttGf8::new(k_skip, F8(1u8 << k_skip));
+        let ntt_s = AdditiveNttGf8::new(k_skip, Gf8::ZERO);
+        let ntt_l = AdditiveNttGf8::new(k_skip, Gf8(1u8 << k_skip));
         InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l)
     }
 
@@ -870,7 +870,7 @@ mod tests {
 
     #[test]
     fn ntt_extend_round_trips_naive_c_path() {
-        // Sanity for the F128 NTT extension: build a length-ell F128 vector by
+        // Sanity for the Gf128 NTT extension: build a length-ell Gf128 vector by
         // applying the naive (eq-weighted) C accumulation at S, then
         // NTT-extending it. Compare to running the naive C path (which does
         // the NTT-extend per row). These must agree because both are linear.

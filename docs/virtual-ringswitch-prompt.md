@@ -29,7 +29,7 @@ the 2^15-gate CM shape (see `examples/cm_probe.rs`, `OBLONG_PROFILE=1`):
 kill `mqv:sc` (~17 ms), the `mqv:wtbl` Gf table + `to_mle` copies and
 their 2×64 MB transient, and the separate point-opening ring
 (`mqv:open`'s ring-switch part); proof loses the bridge's ~1.4 KB.
-Target: virtual F2Z ≈ 58 → ~35–40 ms prove; verify stays O(nnz(M))-class.
+Target: virtual BitZ ≈ 58 → ~35–40 ms prove; verify stays O(nnz(M))-class.
 
 ## The protocol (paper, transcribed to our objects)
 
@@ -160,14 +160,14 @@ paper; check each with a brute-force unit test at tiny sizes:
   `lig: LigeritoProof`. Update the codec
   (`to_bytes`/`from_bytes`, keep it canonical + tamper-rejecting; the
   old layout has no external consumers — the API is days old) and
-  `validate_f2z_proof_shape`-style checks (`hs.len() == 128`).
+  `validate_bitz_proof_shape`-style checks (`hs.len() == 128`).
 - Transcript order: statement digest (cached in `PreparedVirtualMap` from the canonical CSC),
   chunks (unchanged), η's (unchanged), absorb the `h_i` (use
   `absorb_sv`'s tag discipline — pick a fresh tag byte, don't reuse
   0x20), draw ρ, then the Ligerito call on the same transcript. This
   CHANGES the virtual transcript — that is expected; there is no byte
   digest to preserve across this rework. After landing, re-pin.
-- Callers: `piop/spartan/cm.rs` (`prove/verify_cm_and_f2z*`) and
+- Callers: `piop/spartan/cm.rs` (`prove/verify_cm_and_bitz*`) and
   `tests/virtual_open.rs` compile unchanged except proof-shape mentions
   (the presum-swap tamper case and codec test need updating to the new
   fields). `benches/cm_and.rs` and `examples/cm_probe.rs` unchanged.
@@ -197,8 +197,8 @@ paper; check each with a brute-force unit test at tiny sizes:
 4. Perf: `OBLONG_PROFILE=1 cargo run --release --features unchecked
    --example cm_probe -- 15` before/after; report the new
    prove/verify splits and update DESIGN.md's measured paragraph and
-   the `f2z-virtualization` memory. Also one
-   `F2Z_CM_EXPONENTS=15 F2Z_BENCH_REPS=3 cargo bench --bench cm_and
+   the `bitz-virtualization` memory. Also one
+   `BITZ_CM_EXPONENTS=15 BITZ_BENCH_REPS=3 cargo bench --bench cm_and
    --features unchecked` headline.
 
 ## House rules and traps (do not skip)
@@ -210,7 +210,7 @@ paper; check each with a brute-force unit test at tiny sizes:
 - `CARGO_TARGET_DIR` is globally set to `~/zinc-plus/target` — override
   it per-command to a scratch dir; `./target` binaries are stale.
 - flock-core is pinned by ABSOLUTE path to
-  `~/flock-f2z-port/crates/flock-core` (branch f2z-k4-port). Do not
+  `~/flock-bitz-port/crates/flock-core` (branch bitz-k4-port). Do not
   repoint it; `~/flock` is a trap.
 - Builds/benches: `RUSTFLAGS="-C target-cpu=native"`, `--features
   unchecked` for measurement; ad-hoc Ligerito configs need `m_p ≥ 8`

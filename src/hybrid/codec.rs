@@ -3,11 +3,11 @@
 use super::{Error, HybridProof, PreparedHybrid, Statement, mul, opening, sumcheck};
 use crate::{
     ligerito::RingSwitchProof,
-    ligerito_flock::{OodRound, f128_to_gf, gf_to_f128},
+    ligerito_flock::OodRound,
     merged_forest::{MergedForestProof, MergedLayer},
     piop::spartan::{
         SpartanField,
-        f2z::SpartanF2zField as Q,
+        bitz::SpartanBitzField as Q,
         sumcheck::{OuterSumcheckProof, SumcheckProof as QSumcheck},
         univariate_skip::{
             UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
@@ -16,10 +16,10 @@ use crate::{
     proof_codec::{CodecError, Reader, Writer},
 };
 use bincode::Options;
-use crypto_primitives::{FromWithConfig, PrimeField};
-use flock_core::field::F128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x05\0\0\0";
+use flock_core::field::Gf128;
+
+const MAGIC: &[u8; 8] = b"BZSH\x06\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
@@ -31,13 +31,13 @@ fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
     }
 }
 
-fn write_q(w: &mut Writer, q: &Q) {
-    w.bytes(&q.canonical_element_encoding());
+fn write_q(w: &mut Writer, q: &Q, cfg: &field::FpCtx<2>) {
+    w.bytes(&q.canonical_element_encoding(cfg));
 }
 fn read_q(
     r: &mut Reader<'_>,
     modulus: u128,
-    cfg: &<Q as PrimeField>::Config,
+    cfg: &<Q as SpartanField>::Config,
 ) -> Result<Q, CodecError> {
     let x = r.u128()?;
     if x >= modulus {
@@ -45,18 +45,18 @@ fn read_q(
     }
     Ok(Q::from_with_cfg(x, cfg))
 }
-fn write_rounds<const N: usize>(w: &mut Writer, rounds: &QSumcheck<Q, N>) {
+fn write_rounds<const N: usize>(w: &mut Writer, rounds: &QSumcheck<Q, N>, cfg: &field::FpCtx<2>) {
     w.len(rounds.round_polynomials.len());
     for row in &rounds.round_polynomials {
         for q in row {
-            write_q(w, q);
+            write_q(w, q, cfg);
         }
     }
 }
 fn read_rounds<const N: usize>(
     r: &mut Reader<'_>,
     modulus: u128,
-    cfg: &<Q as PrimeField>::Config,
+    cfg: &<Q as SpartanField>::Config,
 ) -> Result<QSumcheck<Q, N>, CodecError> {
     let n = count(r, 64)?;
     let mut round_polynomials = Vec::with_capacity(n);
@@ -103,11 +103,11 @@ fn read_sc(
     })
 }
 
-fn write_f(w: &mut Writer, f: F128) {
-    w.gf(&f128_to_gf(f));
+fn write_f(w: &mut Writer, f: Gf128) {
+    w.gf(&(f));
 }
-fn read_f(r: &mut Reader<'_>) -> Result<F128, CodecError> {
-    r.gf().map(gf_to_f128)
+fn read_f(r: &mut Reader<'_>) -> Result<Gf128, CodecError> {
+    r.gf()
 }
 
 impl HybridProof {
@@ -122,7 +122,9 @@ impl HybridProof {
         if let Some(ood) = &self.opening.ood {
             w.gf(&ood.y);
             w.len(usize::from(ood.nonce.is_some()));
-            if let Some(nonce) = ood.nonce { w.bytes(&nonce.to_le_bytes()); }
+            if let Some(nonce) = ood.nonce {
+                w.bytes(&nonce.to_le_bytes());
+            }
         }
         let p = &self.multiplication;
         w.bytes(&p.initial_nonce.to_le_bytes());
@@ -135,18 +137,18 @@ impl HybridProof {
         w.len(s.outer.skip.skip_vars as usize);
         w.len(s.outer.skip.finite_q_evaluations.len());
         for q in &s.outer.skip.finite_q_evaluations {
-            write_q(&mut w, q);
+            write_q(&mut w, q, &p.field);
         }
-        write_q(&mut w, &s.outer.skip.q_at_infinity);
-        write_rounds(&mut w, &s.outer.tail.sumcheck);
+        write_q(&mut w, &s.outer.skip.q_at_infinity, &p.field);
+        write_rounds(&mut w, &s.outer.tail.sumcheck, &p.field);
         for q in [
             &s.outer.tail.az_mle_claim,
             &s.outer.tail.bz_mle_claim,
             &s.outer.tail.cz_mle_claim,
         ] {
-            write_q(&mut w, q);
+            write_q(&mut w, q, &p.field);
         }
-        write_rounds(&mut w, &s.inner);
+        write_rounds(&mut w, &s.inner, &p.field);
         w.len(p.sums.len());
         for &sum in &p.sums {
             w.u128(sum);
@@ -161,7 +163,7 @@ impl HybridProof {
             w.gf(&layer.pair.0);
             w.gf(&layer.pair.1);
             // This protocol always uses the binary forest, regardless of
-            // environment variables controlling standalone F2Z schedules.
+            // environment variables controlling standalone BitZ schedules.
             assert!(layer.pair2.is_none());
         }
         w.len(self.sha.len());
@@ -209,13 +211,28 @@ impl PreparedHybrid {
             return Err(CodecError::NonCanonical.into());
         }
         let has_ood = count(&mut r, 1)? == 1;
-        if has_ood != self.ood.is_some() { return Err(CodecError::NonCanonical.into()); }
+        if has_ood != self.ood.is_some() {
+            return Err(CodecError::NonCanonical.into());
+        }
         let ood = if has_ood {
             let y = r.gf()?;
             let has_nonce = count(&mut r, 1)? == 1;
-            if has_nonce != self.ood.is_some_and(|params| params.grinding_bits > 0) { return Err(CodecError::NonCanonical.into()); }
-            Some(OodRound { y, nonce: if has_nonce { Some(u64::from_le_bytes(r.take(8)?.try_into().expect("eight bytes"))) } else { None } })
-        } else { None };
+            if has_nonce != self.ood.is_some_and(|params| params.grinding_bits > 0) {
+                return Err(CodecError::NonCanonical.into());
+            }
+            Some(OodRound {
+                y,
+                nonce: if has_nonce {
+                    Some(u64::from_le_bytes(
+                        r.take(8)?.try_into().expect("eight bytes"),
+                    ))
+                } else {
+                    None
+                },
+            })
+        } else {
+            None
+        };
         let initial_nonce = u64::from_le_bytes(r.take(8)?.try_into().expect("eight bytes"));
         let terminal_nonce = u64::from_le_bytes(r.take(8)?.try_into().expect("eight bytes"));
         let n = count(&mut r, 256)?;
@@ -315,6 +332,7 @@ impl PreparedHybrid {
         }
         Ok(HybridProof {
             multiplication: mul::PrefixProof {
+                field: cfg,
                 initial_nonce,
                 terminal_nonce,
                 piop_nonces,
