@@ -8,6 +8,10 @@
 //! the bitified claim — the integer folds bound in the clear plus the GKR
 //! forest — is the hybrid's own, since its opener runs at the composition's
 //! geometry.
+use crate::piop::spartan::mul::{MulLayout, MulWitness};
+use crate::piop::spartan::protocol::PreparedRelationPrefix;
+use crate::piop::spartan::protocol::ProtocolError;
+
 use super::super::{
     absorb_spartan_message,
     protocol::{
@@ -23,7 +27,7 @@ use crate::merged_forest::{MergedForestProof, prove_merged_forest_lazy, verify_m
 use crate::pcs::{chunk_pow2_table, row_bit_weights};
 use crate::piop::spartan::SpartanField as _;
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
-use crate::transcript::Blake3Transcript;
+use crate::transcript::{Blake3Transcript, traits::Transcript};
 use field::{Fp, RingOps, Uint, Uint as FieldUint};
 
 #[derive(Clone, Debug)]
@@ -50,7 +54,7 @@ impl PrefixProof {
 
 pub(crate) fn decoding_config(
     transcript: &mut Blake3Transcript,
-    prepared: &U32MulPrefixRelation,
+    prepared: &PreparedRelationPrefix<MulLayout<u32>>,
     statement: &[u8; 32],
     nonce: u64,
 ) -> Result<
@@ -98,8 +102,8 @@ fn endpoint(p: &crate::pcs::IntegerMatrixLayout, weights: &[u128], z: &[Gf], e: 
 
 pub(crate) fn prove(
     transcript: &mut Blake3Transcript,
-    prepared: &U32MulPrefixRelation,
-    witness: &U32MulWitness,
+    prepared: &PreparedRelationPrefix<MulLayout<u32>>,
+    witness: &MulWitness<u32>,
     rows: &[Vec<u64>],
     statement: &[u8; 32],
 ) -> Result<(PrefixProof, BinaryClaim), Error> {
@@ -168,7 +172,7 @@ pub(crate) fn prove(
 
 pub(crate) fn verify(
     transcript: &mut Blake3Transcript,
-    prepared: &U32MulPrefixRelation,
+    prepared: &PreparedRelationPrefix<MulLayout<u32>>,
     statement: &[u8; 32],
     proof: &PrefixProof,
 ) -> Result<BinaryClaim, Error> {
@@ -177,7 +181,7 @@ pub(crate) fn verify(
     let actual_skip_vars = proof.spartan.outer.skip.skip_vars;
     let expected_skip_vars = U32_MUL_UNIVARIATE_SKIP_VARS as u8;
     if actual_skip_vars != expected_skip_vars {
-        return Err(SpartanBitzError::UnexpectedUnivariateSkipVariables {
+        return Err(ProtocolError::UnexpectedUnivariateSkipVariables {
             expected: expected_skip_vars,
             actual: actual_skip_vars,
         }

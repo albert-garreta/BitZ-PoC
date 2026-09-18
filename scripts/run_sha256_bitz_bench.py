@@ -4,63 +4,22 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import platform
 import statistics
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from ligerito_results import validate_result_fields
+from bench_support import command_text, cpu_name, write_csv, run_logged, cargo_executables, environment
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCHES = {"compressions": "sha256_compressions", "chain": "sha256_chain"}
 
 
-def command_text(*command: str) -> str:
-    try:
-        result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=True)
-        return result.stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unavailable"
-
-
-def cpu_name() -> str:
-    cpuinfo = Path("/proc/cpuinfo")
-    if cpuinfo.exists():
-        for line in cpuinfo.read_text().splitlines():
-            if line.startswith("model name"):
-                return line.partition(":")[2].strip()
-    if platform.system() == "Darwin":
-        return command_text("sysctl", "-n", "machdep.cpu.brand_string")
-    return platform.processor() or platform.machine()
-
-
 def fields(line: str) -> dict[str, str]:
     return dict(token.split("=", 1) for token in line.split()[1:] if "=" in token)
-
-
-def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
-    if rows:
-        columns = list(dict.fromkeys(key for row in rows for key in row))
-        with path.open("w", newline="") as output:
-            writer = csv.DictWriter(output, fieldnames=columns)
-            writer.writeheader()
-            writer.writerows(rows)
-
-
-def run_logged(command: list[str], env: dict[str, str], path: Path) -> str:
-    print(f"Running {' '.join(command)}; log: {path}", flush=True)
-    with path.open("w") as output:
-        process = subprocess.Popen(
-            command, cwd=ROOT, env=env, text=True, stdout=output, stderr=subprocess.STDOUT
-        )
-        status = process.wait()
-    if status:
-        raise RuntimeError(f"exit {status}; inspect {path}")
-    return path.read_text()
 
 
 def parse_args() -> argparse.Namespace:
@@ -117,8 +76,7 @@ def main() -> int:
         "workload": args.workload, "shapes": args.shapes, "threads": args.threads,
         "reps": args.reps, "warmups": 1, "lambda": args.security, "seed": hex(args.seed),
         "features": features, "default_features": True, "build_command": build,
-        "environment": {key: value for key, value in env.items() if key.startswith(("BITZ_", "F2_", "OBLONG_"))
-                        or key in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_HOME", "CARGO_TARGET_DIR", "RAYON_NUM_THREADS"}},
+        "environment": environment(env),
         "cleared_environment": removed, "runs": [],
     }
     metadata_path = out / "metadata.json"
@@ -127,15 +85,7 @@ def main() -> int:
     try:
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
         build_log = run_logged(build, env, out / "build.log")
-        executables = {}
-        for line in build_log.splitlines():
-            if line.startswith("{"):
-                event = json.loads(line)
-                if event.get("reason") == "compiler-artifact" and event.get("executable"):
-                    executables[event["target"]["name"]] = event["executable"]
-        for bench in BENCHES.values():
-            if bench not in executables:
-                raise RuntimeError(f"Cargo did not report an executable for {bench}; inspect build.log")
+        executables = cargo_executables(build_log, BENCHES.values())
         workloads = list(BENCHES) if args.workload == "both" else [args.workload]
         for workload in workloads:
             bench = BENCHES[workload]

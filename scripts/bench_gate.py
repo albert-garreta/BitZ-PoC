@@ -83,15 +83,26 @@ def terminate(signum, _frame):
 
 
 def stop_process_group(process: subprocess.Popen) -> None:
+    handlers = {sig: signal.signal(sig, signal.SIG_IGN)
+                for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        # Reap the whole group even when the leader exits before its workers.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         process.wait()
+    finally:
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
 
 
 def main() -> int:
@@ -140,9 +151,9 @@ def main() -> int:
         watchdog = threading.Thread(target=guard, daemon=True)
         watchdog.start()
         code = process.wait()
-        return ABORTED if aborted.is_set() else code
+        return ABORTED if aborted.is_set() else (code if code >= 0 else 128 - code)
     finally:
-        if process is not None and process.poll() is None:
+        if process is not None:
             stop_process_group(process)
         release()
 

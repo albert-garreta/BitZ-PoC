@@ -2,6 +2,8 @@
 //! `Lambda128` every challenge drawn in the BitZ opening region carries a
 //! two-bit proof-of-work boundary and the nonces ride the proof stream.
 
+use ::bitz::piop::spartan::protocol::linear::LinearProof;
+
 use bitz::ligerito_flock::IntEvalRsLigVirtProof;
 use bitz::piop::spartan::{
     Lambda128, PreparedSha256CompressionBatch, Sha128ReferenceSchedule, Sha256CompressionStatement,
@@ -18,7 +20,7 @@ fn prove_under(
 ) -> (
     Vec<u8>,
     usize,
-    bitz::piop::spartan::Sha256CompressionProof,
+    LinearProof,
     flock_core::pcs::commit::Commitment,
     flock_core::pcs::ligerito::VerifierConfig,
     Vec<Sha256CompressionStatement>,

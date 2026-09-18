@@ -17,6 +17,11 @@
 //! Set `BITZ_RECORD_PINS=1` to print the table entries instead of asserting.
 //! Update a value only in a commit that *intends* a transcript change.
 
+use ::bitz::piop::spartan::baby_bear_mul::BabyBearMulLayout;
+use ::bitz::piop::spartan::protocol;
+use ::bitz::piop::spartan::protocol::PreparedRelation;
+use bitz::piop::spartan::mul::{MulLayout, MulWitness};
+
 use blake3::Hasher;
 use bitz::piop::spartan::multiswap::{
     MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
@@ -24,21 +29,13 @@ use bitz::piop::spartan::multiswap::{
     verify_multiswap_mod_r1cs,
 };
 use bitz::piop::spartan::{
-    BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, PreparedBabyBearMulRelation,
-    Sha128ReferenceSchedule, Sha256CompressionStatement, commit_baby_bear_mul_paper_witness,
-    commit_sha256_chain_witness, commit_sha256_compression_witness,
+    BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, Sha128ReferenceSchedule,
+    Sha256CompressionStatement, commit_sha256_chain_witness, commit_sha256_compression_witness,
     generate_sha256_chain_witnesses, generate_sha256_compression_witnesses,
     prepare_sha256_chain_batch_with_profile,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-    prepare_sha256_compression_batch_with_profile, prove_baby_bear_mul_paper, prove_sha256_chain,
-    prove_sha256_compressions, verify_baby_bear_mul_paper, verify_sha256_chain,
-    verify_sha256_compressions,
-};
-use bitz::piop::spartan::{
-    PreparedU32MulRelation, PreparedU64MulRelation, PreparedU128MulRelation, U32MulBitzWidth,
-    U32MulWitness, U64MulWitness, U128MulWitness, commit_u32_mul_witness, commit_u64_mul_witness,
-    commit_u128_mul_witness, prove_u32_mul, prove_u64_mul, prove_u128_mul, verify_u32_mul,
-    verify_u64_mul, verify_u128_mul,
+    prepare_sha256_compression_batch_with_profile, prove_sha256_chain, prove_sha256_compressions,
+    verify_sha256_chain, verify_sha256_compressions,
 };
 use bitz::transcript::Blake3Transcript;
 
@@ -240,8 +237,8 @@ fn nonces_le(nonces: impl IntoIterator<Item = u64>) -> Vec<u8> {
 
 // ---------------------------------------------------------------- u32 mul
 
-fn u32_witness(width: U32MulBitzWidth) -> U32MulWitness {
-    U32MulWitness::from_fn_with_bitz_width(1usize << 15, width, |i| {
+fn u32_witness(width: usize) -> MulWitness<u32> {
+    MulWitness::<u32>::from_fn_with_word_bits(1usize << 15, width, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
         (x, y)
@@ -249,15 +246,15 @@ fn u32_witness(width: U32MulBitzWidth) -> U32MulWitness {
     .expect("witness")
 }
 
-fn u32_pin<P: IopSecurityProfile>(name: &str, width: U32MulBitzWidth) {
+fn u32_pin<P: IopSecurityProfile>(name: &str, width: usize) {
     let witness = u32_witness(width);
-    let prepared =
-        PreparedU32MulRelation::new_with_profile::<P>(*witness.layout()).expect("prepare");
-    let hint = commit_u32_mul_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u32>>::new_with_profile::<P>(*witness.layout())
+        .expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_u32_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_u32_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
     // digest already covers them.
     let bitz_bytes = proof.bitz().to_bytes();
@@ -266,23 +263,23 @@ fn u32_pin<P: IopSecurityProfile>(name: &str, width: U32MulBitzWidth) {
 
 #[test]
 fn u32_mul_2p15_w1_lambda100() {
-    u32_pin::<Lambda100>("u32_mul/2p15/w1/lambda100", U32MulBitzWidth::W1);
+    u32_pin::<Lambda100>("u32_mul/2p15/w1/lambda100", 1);
 }
 
 #[test]
 fn u32_mul_2p15_w8_lambda100() {
-    u32_pin::<Lambda100>("u32_mul/2p15/w8/lambda100", U32MulBitzWidth::W8);
+    u32_pin::<Lambda100>("u32_mul/2p15/w8/lambda100", 8);
 }
 
 #[test]
 fn u32_mul_2p15_w1_lambda128() {
-    u32_pin::<Lambda128>("u32_mul/2p15/w1/lambda128", U32MulBitzWidth::W1);
+    u32_pin::<Lambda128>("u32_mul/2p15/w1/lambda128", 1);
 }
 
 // ---------------------------------------------------------------- u64 mul
 
 fn u64_pin(name: &str, split_shift: i8) {
-    let witness = U64MulWitness::from_fn(1usize << 15, |i| {
+    let witness = MulWitness::<u64>::from_fn(1usize << 15, |i| {
         let x = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
         let y = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
         (x, y)
@@ -290,12 +287,12 @@ fn u64_pin(name: &str, split_shift: i8) {
     .expect("witness")
     .with_split_shift(split_shift)
     .expect("split shift");
-    let prepared = PreparedU64MulRelation::new(*witness.layout()).expect("prepare");
-    let hint = commit_u64_mul_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u64>>::new(*witness.layout()).expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_u64_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_u64_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
     // digest already covers them.
     let bitz_bytes = proof.bitz().to_bytes();
@@ -316,7 +313,7 @@ fn u64_mul_2p15_shift_plus1_lambda100() {
 
 #[test]
 fn u128_mul_2p15_lambda100() {
-    let witness = U128MulWitness::from_fn(1usize << 15, |i| {
+    let witness = MulWitness::<u128>::from_fn(1usize << 15, |i| {
         let lo = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
         let hi = (i as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 1;
         let x = (u128::from(hi) << 64) | u128::from(lo);
@@ -324,12 +321,12 @@ fn u128_mul_2p15_lambda100() {
         (x, y)
     })
     .expect("witness");
-    let prepared = PreparedU128MulRelation::new(*witness.layout()).expect("prepare");
-    let hint = commit_u128_mul_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u128>>::new(*witness.layout()).expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_u128_mul(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_u128_mul(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     let bitz_bytes = proof.bitz().to_bytes();
     pin(
         "u128_mul/2p15/lambda100",
@@ -348,14 +345,13 @@ fn baby_bear_pin<P: IopSecurityProfile>(name: &str) {
         (a, b)
     })
     .expect("witness");
-    let prepared =
-        PreparedBabyBearMulRelation::new_with_profile::<P>(*witness.layout()).expect("prepare");
-    let hint =
-        commit_baby_bear_mul_paper_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<BabyBearMulLayout>::new_with_profile::<P>(*witness.layout())
+        .expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_baby_bear_mul_paper(&mut pt, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut pt, &prepared, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
-    verify_baby_bear_mul_paper(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
+    protocol::verify(&mut vt, &prepared, &hint.commitment, &proof).expect("verify");
     // The grinding nonces are absorbed into the transcript, so the state
     // digest already covers them.
     let bitz_bytes = proof.bitz().to_bytes();
@@ -522,8 +518,8 @@ fn sha256_chain_2p7_lambda128() {
 fn cm_and_2p15_lambda100() {
     use bitz::piop::spartan::cm::commit_cm_and_witness_with_config;
     use bitz::piop::spartan::{
-        CmAndWitness, SpartanBitzField, prepare_cm_and_relation, project_cm_and_witness,
-        prove_cm_and_bitz, spartan_bitz_field_config, verify_cm_and_bitz,
+        CmAndWitness, SpartanBitzField, prepare_cm_and_relation, prove_cm_and_bitz,
+        spartan_bitz_field_config, verify_cm_and_bitz,
     };
     let field_config = spartan_bitz_field_config();
     let witness = CmAndWitness::from_fn(1usize << 15, |i| {
@@ -540,10 +536,8 @@ fn cm_and_2p15_lambda100() {
         .prover();
     let hint =
         commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), pc).expect("commit");
-    let projected =
-        project_cm_and_witness::<SpartanBitzField>(&witness, &field_config).expect("project");
     let mut pt = Blake3Transcript::new();
-    let proof = prove_cm_and_bitz(&mut pt, &relation, projected, &hint).expect("prove");
+    let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).expect("prove");
     let mut vt = Blake3Transcript::new();
     verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).expect("verify");
     let bitz_bytes = proof.bitz().to_bytes();

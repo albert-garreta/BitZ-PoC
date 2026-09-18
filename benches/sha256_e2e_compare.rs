@@ -39,6 +39,7 @@ use binius_verifier::{
 };
 use bitz::binius_ligerito::Prepared as BiniusLigerito;
 use bitz::{
+    observability::Interval,
     piop::spartan::{
         PreparedSha256CompressionBatch, SHA256_DEFAULT_INNER_PREFIX_VARS, Sha256CompressionInput,
         Sha256CompressionStatement, SpartanField, commit_sha256_compression_witness_with_config,
@@ -47,7 +48,6 @@ use bitz::{
         verify_sha256_compressions_with_config,
     },
     transcript::Blake3Transcript,
-    observability::Interval,
 };
 use serde_json::{Value, json};
 
@@ -585,11 +585,12 @@ struct BiniusLigeritoContext {
 impl BiniusLigeritoContext {
     fn setup(corpus: &Corpus) -> Self {
         let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
-        let (prepared, setup_started) = bitz::observability::measure(
-            tracing::info_span!("sha256_e2e_compare:prepared"),
-            || BiniusLigerito::new(circuit.constraint_system())
-            .expect("binius64-ligerito setup reaches the 100-bit gate"),
-        ).expect("measure completed operation");
+        let (prepared, setup_started) =
+            bitz::observability::measure(tracing::info_span!("sha256_e2e_compare:prepared"), || {
+                BiniusLigerito::new(circuit.constraint_system())
+                    .expect("binius64-ligerito setup reaches the 100-bit gate")
+            })
+            .expect("measure completed operation");
         let setup_ms = setup_started.as_secs_f64() * 1e3;
         Self {
             circuit,
@@ -1728,9 +1729,7 @@ fn choose_plonky3_params(
     overrides: &Plonky3Env,
 ) -> Result<(plonky3_backend::Params, whir_tuning::TuningReport), String> {
     let explicit =
-        whir_tuning::replay()?.or_else(|| {
-            overrides.is_explicit().then(|| overrides.params())
-        });
+        whir_tuning::replay()?.or_else(|| overrides.is_explicit().then(|| overrides.params()));
     whir_tuning::tune(
         &[4, 5],
         explicit,
@@ -2557,7 +2556,7 @@ fn binius_tamper_self_test() {
 struct Config {
     #[arg(env = "BITZ_SHA_COMPARE_EXPONENTS")]
     exponents: Option<String>,
-    #[arg(env = "BITZ_SHA_COMPARE_BACKENDS", default_value = "bitz plonky3-whir binius64 binius64-ligerito limber", value_parser = common::pcs_cli::enum_list::<Backend>)]
+    #[arg(env = "BITZ_SHA_COMPARE_BACKENDS", default_value = "bitz plonky3-whir binius64 binius64-ligerito limber", value_parser = common::cli::enum_list::<Backend>)]
     backends: common::cli::List<Backend>,
     #[arg(env = "BITZ_SHA_COMPARE_REPS", default_value_t = DEFAULT_REPS, value_parser = common::cli::positive)]
     reps: usize,
@@ -2635,8 +2634,14 @@ impl Plonky3Env {
         }
     }
     fn is_explicit(&self) -> bool {
-        [self.extension_degree, self.folding, self.starting_log_inv_rate, self.max_pow_bits]
-            .iter().any(Option::is_some)
+        [
+            self.extension_degree,
+            self.folding,
+            self.starting_log_inv_rate,
+            self.max_pow_bits,
+        ]
+        .iter()
+        .any(Option::is_some)
     }
 }
 
@@ -2739,7 +2744,12 @@ fn init() -> usize {
 fn run_preflight(backend: Backend) {
     let exponent = env_usize("BITZ_SHA_COMPARE_PREFLIGHT_EXPONENT", 16);
     let seed = common::cli::env::<u64>("BITZ_SHA_COMPARE_SEED").unwrap_or(DEFAULT_ROOT_SEED);
-    let prefix = (backend == Backend::Bitz).then(|| env_usize("BITZ_SHA_COMPARE_BITZ_PREFIX", SHA256_DEFAULT_INNER_PREFIX_VARS));
+    let prefix = (backend == Backend::Bitz).then(|| {
+        env_usize(
+            "BITZ_SHA_COMPARE_BITZ_PREFIX",
+            SHA256_DEFAULT_INNER_PREFIX_VARS,
+        )
+    });
     let rate = (backend == Backend::Binius).then(|| env_usize("BITZ_SHA_COMPARE_LOG_INV_RATE", 1));
     let plonky3 = (backend == Backend::Plonky3Whir).then(|| common::cli::environment::<Plonky3Env>().params());
     let (limber_params, _) = env_limber_params();
@@ -3203,7 +3213,7 @@ mod cli_tests {
         Config::command().debug_assert();
         Plonky3Env::command().debug_assert();
         PreflightEnv::command().debug_assert();
-        assert_eq!(common::pcs_cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
+        assert_eq!(common::cli::enum_list::<Backend>("binius64,binius64-ligerito").unwrap(), [Backend::Binius, Backend::BiniusLigerito]);
         let args = Plonky3Env { extension_degree: None, folding: None, starting_log_inv_rate: None, max_pow_bits: None };
         assert!(!args.is_explicit());
         assert_eq!(args.params().extension_degree, 5);
@@ -3219,7 +3229,9 @@ mod cli_environment_tests {
 
     #[test]
     fn configuration_probe() {
-        let Ok(mode) = std::env::var("BITZ_SHA_CLI_TEST_MODE") else { return };
+        let Ok(mode) = std::env::var("BITZ_SHA_CLI_TEST_MODE") else {
+            return;
+        };
         let value = if mode == "preflight" {
             let preflight = common::cli::environment::<PreflightEnv>();
             let p3 = common::cli::environment::<Plonky3Env>();
@@ -3251,25 +3263,67 @@ mod cli_environment_tests {
     #[test]
     fn campaign_precedence_deduplication_and_small_shape_opt_in() {
         let defaults = config("campaign", &[]);
-        assert_eq!(defaults, json!({"exponents":[7,8,10,11,12,13,14,15,16],"reps":21,
-            "pilot_reps":5,"self_tests":true,"pilot":true,"preflight":true}));
-        assert_eq!(config("campaign", &[("BITZ_BENCH_SHAPES", "9 7 9")])["exponents"], json!([7,9]));
-        assert_eq!(config("campaign", &[("BITZ_BENCH_SHAPES", "6,0 16"),
-            ("BITZ_SHA_COMPARE_ALLOW_SMALL", "true")])["exponents"], json!([0,6,16]));
-        assert_eq!(config("campaign", &[("BITZ_SHA_COMPARE_EXPONENTS", "8,7 8"),
-            ("BITZ_BENCH_SHAPES", "ignored-invalid")])["exponents"], json!([7,8]));
-        let small = config("campaign", &[("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
-            ("BITZ_SHA_COMPARE_EXPONENTS", "0 6 16"), ("BITZ_SHA_COMPARE_SELF_TESTS", "0"),
-            ("BITZ_SHA_COMPARE_PILOT", "false"), ("BITZ_SHA_COMPARE_PREFLIGHT", "off")]);
-        assert_eq!(small["exponents"], json!([0,6,16]));
-        for flag in ["self_tests", "pilot", "preflight"] { assert_eq!(small[flag], false); }
-        for settings in [vec![("BITZ_SHA_COMPARE_EXPONENTS", "6")],
+        assert_eq!(
+            defaults,
+            json!({"exponents":[7,8,10,11,12,13,14,15,16],"reps":21,
+            "pilot_reps":5,"self_tests":true,"pilot":true,"preflight":true})
+        );
+        assert_eq!(
+            config("campaign", &[("BITZ_BENCH_SHAPES", "9 7 9")])["exponents"],
+            json!([7, 9])
+        );
+        assert_eq!(
+            config(
+                "campaign",
+                &[
+                    ("BITZ_BENCH_SHAPES", "6,0 16"),
+                    ("BITZ_SHA_COMPARE_ALLOW_SMALL", "true")
+                ]
+            )["exponents"],
+            json!([0, 6, 16])
+        );
+        assert_eq!(
+            config(
+                "campaign",
+                &[
+                    ("BITZ_SHA_COMPARE_EXPONENTS", "8,7 8"),
+                    ("BITZ_BENCH_SHAPES", "ignored-invalid")
+                ]
+            )["exponents"],
+            json!([7, 8])
+        );
+        let small = config(
+            "campaign",
+            &[
+                ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
+                ("BITZ_SHA_COMPARE_EXPONENTS", "0 6 16"),
+                ("BITZ_SHA_COMPARE_SELF_TESTS", "0"),
+                ("BITZ_SHA_COMPARE_PILOT", "false"),
+                ("BITZ_SHA_COMPARE_PREFLIGHT", "off"),
+            ],
+        );
+        assert_eq!(small["exponents"], json!([0, 6, 16]));
+        for flag in ["self_tests", "pilot", "preflight"] {
+            assert_eq!(small[flag], false);
+        }
+        for settings in [
+            vec![("BITZ_SHA_COMPARE_EXPONENTS", "6")],
             vec![("BITZ_BENCH_SHAPES", "6")],
             vec![("BITZ_SHA_COMPARE_EXPONENTS", "")],
-            vec![("BITZ_SHA_COMPARE_EXPONENTS", "17"), ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1")],
-            vec![("BITZ_BENCH_SHAPES", "17"), ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1")],
-            vec![("BITZ_SHA_COMPARE_EXPONENTS", "bad"), ("BITZ_BENCH_SHAPES", "7")],
-            vec![("BITZ_SHA_COMPARE_REPS", "0")]] {
+            vec![
+                ("BITZ_SHA_COMPARE_EXPONENTS", "17"),
+                ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
+            ],
+            vec![
+                ("BITZ_BENCH_SHAPES", "17"),
+                ("BITZ_SHA_COMPARE_ALLOW_SMALL", "1"),
+            ],
+            vec![
+                ("BITZ_SHA_COMPARE_EXPONENTS", "bad"),
+                ("BITZ_BENCH_SHAPES", "7"),
+            ],
+            vec![("BITZ_SHA_COMPARE_REPS", "0")],
+        ] {
             let out = child("campaign", &settings);
             let error = String::from_utf8_lossy(&out.stderr);
             assert_eq!(out.status.code(), Some(2), "{settings:?}: {error}");
@@ -3280,14 +3334,28 @@ mod cli_environment_tests {
 
     #[test]
     fn preflight_selector_and_explicit_tuning_stay_independent_of_campaign_values() {
-        assert_eq!(config("preflight", &[]), json!({"backend":null,"limber_k":9,"p3_explicit":false,"p3_folding":4}));
-        assert_eq!(config("preflight", &[("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "binius64-ligerito"),
-            ("BITZ_SHA_COMPARE_LIMBER_K", "11"), ("BITZ_SHA_COMPARE_P3_FOLDING", "4"),
-            ("BITZ_SHA_COMPARE_EXPONENTS", "unused"), ("BITZ_SHA_COMPARE_REPS", "0")]),
-            json!({"backend":"binius64-ligerito","limber_k":11,"p3_explicit":true,"p3_folding":4}));
-        for settings in [vec![("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")],
+        assert_eq!(
+            config("preflight", &[]),
+            json!({"backend":null,"limber_k":9,"p3_explicit":false,"p3_folding":4})
+        );
+        assert_eq!(
+            config(
+                "preflight",
+                &[
+                    ("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "binius64-ligerito"),
+                    ("BITZ_SHA_COMPARE_LIMBER_K", "11"),
+                    ("BITZ_SHA_COMPARE_P3_FOLDING", "4"),
+                    ("BITZ_SHA_COMPARE_EXPONENTS", "unused"),
+                    ("BITZ_SHA_COMPARE_REPS", "0")
+                ]
+            ),
+            json!({"backend":"binius64-ligerito","limber_k":11,"p3_explicit":true,"p3_folding":4})
+        );
+        for settings in [
+            vec![("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")],
             vec![("BITZ_SHA_COMPARE_LIMBER_ENGINE", "hyrax")],
-            vec![("BITZ_SHA_COMPARE_P3_FOLDING", "bad")]] {
+            vec![("BITZ_SHA_COMPARE_P3_FOLDING", "bad")],
+        ] {
             assert_eq!(child("preflight", &settings).status.code(), Some(2));
         }
     }

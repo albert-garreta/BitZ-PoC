@@ -8,10 +8,10 @@ out-of-domain sample). It is available in the supported benchmarks listed below.
 
 | bench | scheme id | what it measures |
 | --- | --- | --- |
-| `benches/mul_e2e_compare` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
+| `benches/mul_compare.rs` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
 | `benches/sha256_e2e_compare` | `binius64-ligerito` | Binius64's two-lane SHA-256 circuit, end to end |
 | `benches/hybrid_u32_sha256` | mode `binius-ligerito` | the all-Binius circuit (four-limb mod-2^32 gadget + chained SHA) |
-| `benches/u32_pcs_compare`, `benches/baby_bear_pcs_compare` | `bitz-ligerito-binary` | PCS only: the Binius64 packed rows and the identical bit-MLE claim, opened by the BitZ opener instead of BaseFold |
+| `mul_compare pcs --workload u32-full,baby-bear` | `bitz-ligerito-binary` | PCS only: the Binius64 packed rows and the identical bit-MLE claim, opened by the BitZ opener instead of BaseFold |
 
 Code: `src/binary_pcs.rs` (the opener as a stand-alone binary PCS) and
 `src/binius_ligerito/` (the Binius64 PIOP adapter; feature `binius64-bench`).
@@ -117,33 +117,27 @@ Fiat–Shamir theorem.
 ## Running
 
 ```sh
-# Native multiplication tables (adds the binius64-ligerito rows at the campaign's
-# Binius rate, BITZ_BINIUS_LOG_INV_RATE=1 (default, rate 1/2) or 3 (rate 1/8), gated
-# under BITZ_BINIUS_LIGERITO_ACCOUNTING=union (default) or rbr (round-by-round)).
-BITZ_BENCH_SHAPES="15 16" BITZ_BENCH_REPS=5 BITZ_MUL_COMPARE_WORKLOADS="u32" \
-BITZ_MUL_COMPARE_BACKENDS="bitz binius64 binius64-ligerito" \
-RAYON_NUM_THREADS=8 bash scripts/run_native_mul_compare.sh
-python3 scripts/native_mul_table.py PerfRuns/<run> --workload u32
+python3 scripts/run_multiplication_benchmarks.py compare -- \
+  proof --workload u32-mod32 --backends binius64,binius64-ligerito --log-n 15 --threads 8
+python3 scripts/run_multiplication_benchmarks.py compare --output PerfRuns/binary-pcs -- \
+  pcs --workload u32-full,baby-bear --backends binius64-basefold,bitz-ligerito-binary \
+  --log-n 15 --threads 8
 
 # SHA-256 comparison.
 BITZ_SHA_COMPARE_BACKENDS=binius64,binius64-ligerito BITZ_SHA_COMPARE_LOG_INV_RATE=3 \
   bash scripts/run_native_sha256_compare.sh
 
-# Hybrid table: the all-Binius circuit with the BitZ opener, at the campaign's
-# rate and accounting (the same knobs as the native-mul rows).
+# Hybrid all-Binius circuit with the BitZ opener.
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=10 \
 BITZ_BINIUS_LOG_INV_RATE=3 BITZ_BINIUS_LIGERITO_ACCOUNTING=rbr \
   cargo bench --bench hybrid_u32_sha256 --features hybrid -- \
   --sweep --mode binius-ligerito --iterations 11
-
-# PCS-only rows.
-BITZ_PCS_COMPARE_BACKENDS="binius64-basefold bitz-ligerito-binary" BITZ_BINIUS_LOG_INV_RATE=3 \
-  cargo bench --bench u32_pcs_compare --features bench-internals,plonky3-whir-bench,binius64-bench
 ```
 
-Unit tests: `cargo test --release --lib --features binius64-bench -- binary_pcs binius_ligerito`
-(a multiplication circuit with the two-oracle path, an AND-only circuit, the
-opener's bit-MLE and arbitrary-basis openings, tamper rejection).
+Multiplication configuration uses flags; see the [benchmark guide](native-mul-compare.md).
+
+The dated sections below preserve historical measurements and their original
+interpretation; they are not results from the unified benchmark interface.
 
 ## The allocator: use Binius64's pool, not the global allocator (2026-09-12)
 

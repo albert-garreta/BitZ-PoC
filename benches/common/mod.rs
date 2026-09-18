@@ -1,9 +1,8 @@
 //! Shared harness for the protocol benches: one accounting model, one
 //! printer, one machine-readable `RESULT` line (`schema=bitz/1`).
 //!
-//! The full schema — timing semantics, the paper §2.1 step taxonomy, key
-//! names, and env-var conventions — is documented in `docs/bench-schema.md`.
-//! Keep that file and this module in lockstep.
+//! Multiplication campaigns use the separate manifest/sample format described
+//! in `docs/native-mul-compare.md`. This module retains the other benches’ console output.
 //!
 //! Summary of the semantics implemented here:
 //! - `prove_ms` is the **end-to-end prover**: everything after the prover
@@ -22,6 +21,23 @@ pub mod cli;
 pub mod environment;
 pub mod proof_fingerprint;
 
+/// Record actual forest choices for the application benchmarks as well as multiplication.
+pub fn start_gkr_recording() {
+    #[cfg(feature = "bench-internals")]
+    bitz::merged_forest::schedule::start_recording();
+}
+
+pub fn print_gkr_schedules() {
+    #[cfg(feature = "bench-internals")]
+    println!(
+        "GKR_SCHEDULES {}",
+        serde_json::json!({
+            "requested": std::env::var("F2_FOREST_SCHEDULE").unwrap_or_else(|_| "auto".into()),
+            "resolved": bitz::merged_forest::schedule::take_records(),
+        })
+    );
+}
+
 /// Serialize native SDK sessions in tests and explicitly supply their subscriber.
 #[cfg(all(test, feature = "span-metrics"))]
 pub fn test_tracing() -> (
@@ -36,21 +52,19 @@ pub fn test_tracing() -> (
     );
     (subscriber, lock)
 }
+#[cfg(feature = "bench-peak-memory")]
+pub mod heap_run;
 pub mod mul_witness;
 pub mod output;
-pub mod pcs_cli;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
-#[cfg(feature = "bench-peak-memory")]
-pub mod heap_run;
 #[cfg(feature = "span-metrics")]
 pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
 #[cfg(any(feature = "native-mul-compare", feature = "plonky3-sha256-bench"))]
 pub mod whir_tuning;
-
 
 use clap::ValueEnum;
 use bitz::piop::spartan::{
@@ -122,8 +136,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_AB_SINGLES",
     "BITZ_AB_STMTS",
     // Deprecated aliases (kept working; see `reps`/`shapes`/`seed`).
-    "BITZ_BABY_BEAR_MUL_EXPONENTS",
-    "BITZ_BABY_BEAR_MUL_SEED",
     // Canonical bench knobs.
     "BITZ_BENCH_EXT",
     "BITZ_BENCH_FILL",
@@ -176,33 +188,14 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     // Deprecated alias.
     "BITZ_MULTISWAP_REPS",
     "BITZ_MULTISWAP_TRACE_PATH",
-    // Native multiplication comparison selectors.
-    "BITZ_MUL_COMPARE_BACKENDS",
-    "BITZ_MUL_COMPARE_MEMORY",
-    "BITZ_MUL_COMPARE_OUTPUT_DIR",
-    "BITZ_MUL_COMPARE_WORKLOADS",
-    "BITZ_MUL_WORD_BITS",
     "BITZ_PAIR2_FACTORED",
     "BITZ_PAR_CHUNK",
-    // Controlled BabyBear terminal-claim PCS comparison trace.
     "BITZ_BINIUS_LOG_INV_RATE",
     "BITZ_BINIUS_LIGERITO_LOG_INV_RATE",
     "BITZ_PLONKY3_LOG_INV_RATE",
     // Binius64-with-BitZ-opener rows: the 100-bit gate's accounting model
     // (`union` = union bound over every term, `rbr` = round-by-round minimum).
     "BITZ_BINIUS_LIGERITO_ACCOUNTING",
-    // u64 native-mul comparison: lower the BitZ row side by k (see
-    // benches/mul_e2e_compare/bitz.rs::u64_split_shift).
-    "BITZ_U64_SPLIT_SHIFT",
-    "BITZ_PCS_COMPARE_BACKENDS",
-    "BITZ_PCS_COMPARE_BUILD_PROFILE",
-    "BITZ_PCS_COMPARE_CAMPAIGN_ID",
-    "BITZ_PCS_COMPARE_CAMPAIGN_PATH",
-    "BITZ_PCS_COMPARE_CPU",
-    "BITZ_PCS_COMPARE_GIT_DIRTY",
-    "BITZ_PCS_COMPARE_GIT_REV",
-    "BITZ_PCS_COMPARE_TRACE_PATH",
-    "BITZ_PCS_COMPARE_WHIR_DEGREE",
     "BITZ_WHIR_FOLDING",
     "BITZ_WHIR_LOG_INV_RATE",
     "BITZ_WHIR_MAX_POW_BITS",
@@ -250,7 +243,7 @@ pub fn enforce_known_env() {
         "error: unknown BITZ_* environment variable(s): {}",
         unknown.join(", ")
     );
-    eprintln!("       known knobs (docs/bench-schema.md):");
+    eprintln!("       known benchmark knobs:");
     for chunk in KNOWN_BITZ_ENV.chunks(4) {
         eprintln!("         {}", chunk.join(" "));
     }
@@ -384,7 +377,10 @@ impl SecurityProfile {
     /// The shortest `BITZ_BENCH_LAMBDA` spelling of the profile: the target
     /// bits where that is unambiguous, the full name otherwise.
     pub fn knob_value(self) -> String {
-        self.to_possible_value().expect("selectable profile").get_name().to_owned()
+        self.to_possible_value()
+            .expect("selectable profile")
+            .get_name()
+            .to_owned()
     }
 
     fn admissible(policy: PrimePolicy) -> String {
@@ -614,8 +610,11 @@ impl StepSamples {
     /// after the prove call.
     pub fn record_prove(&mut self, total_ms: f64, commit_ms: f64, phases: &[(String, f64)]) {
         if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
-            println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"prove", "total_ms":total_ms,
-                "commit_ms":commit_ms, "phases_seconds":phases}));
+            println!(
+                "PHASE_SAMPLE {}",
+                serde_json::json!({"kind":"prove", "total_ms":total_ms,
+                "commit_ms":commit_ms, "phases_seconds":phases})
+            );
         }
         self.total.push(total_ms);
         self.commit.push(Some(commit_ms));
@@ -634,8 +633,11 @@ impl StepSamples {
     /// Records one verifier rep (no Step 1: the verifier holds a commitment).
     pub fn record_verify(&mut self, total_ms: f64, phases: &[(String, f64)]) {
         if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
-            println!("PHASE_SAMPLE {}", serde_json::json!({"kind":"verify", "total_ms":total_ms,
-                "phases_seconds":phases}));
+            println!(
+                "PHASE_SAMPLE {}",
+                serde_json::json!({"kind":"verify", "total_ms":total_ms,
+                "phases_seconds":phases})
+            );
         }
         self.total.push(total_ms);
         self.commit.push(None);
@@ -841,7 +843,7 @@ impl BenchReport {
         println!("  {}", self.result_line_with_commitment(commitment_bytes));
     }
 
-    /// The machine-readable line (`docs/bench-schema.md`).
+    /// The machine-readable console line.
     pub fn result_line(&self) -> String {
         self.result_line_with_commitment(0)
     }
@@ -941,7 +943,8 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
 pub fn span_ms(intervals: &[bitz::observability::Interval], label: &str) -> f64 {
     bitz::observability::duration(intervals, label)
         .unwrap_or_else(|error| panic!("invalid benchmark measurement: {error}"))
-        .as_secs_f64() * 1e3
+        .as_secs_f64()
+        * 1e3
 }
 
 /// Only BitZ callers consult this selector. Competing PCS configurations do not.
@@ -985,5 +988,8 @@ pub fn ligerito_identity(
 /// Per-trial detail timings, emitted after the captured proof/verification scopes.
 /// Retain each label separately so improvements cannot hide a slower inner sumcheck.
 pub fn print_regression_phases(phases: &[(String, f64)]) {
-    println!("REGRESSION_PHASES {}", serde_json::to_string(phases).expect("phase JSON"));
+    println!(
+        "REGRESSION_PHASES {}",
+        serde_json::to_string(phases).expect("phase JSON")
+    );
 }

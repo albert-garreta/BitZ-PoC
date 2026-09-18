@@ -37,6 +37,9 @@
 
 #![recursion_limit = "512"]
 
+use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
+use ::bitz::piop::spartan::protocol::Proof;
+
 pub(crate) mod common;
 #[cfg(feature = "bench-peak-memory")]
 #[global_allocator]
@@ -48,7 +51,7 @@ use std::{collections::HashMap, fs::File, hint::black_box, io::BufWriter, proces
 
 use bitz::observability::Interval;
 use bitz::piop::spartan::multiswap::{
-    MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims, MultiswapProof,
+    MULTISWAP_VALUE_BITS, MultiswapAssignment, MultiswapCircuit, MultiswapDims,
     PreparedMultiswapRelation, commit_multiswap_witness, prove_multiswap_mod_r1cs,
     verify_multiswap_mod_r1cs,
 };
@@ -988,7 +991,7 @@ fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
     values
 }
 
-fn proof_sizes(proof: &MultiswapProof) -> (usize, usize) {
+fn proof_sizes(proof: &Proof<IntEvalRsLigVirtProof>) -> (usize, usize) {
     let opening_bytes = proof.bitz().to_bytes().len();
     let piop_bytes = proof.spartan_payload_elements() * 16 + proof.mu_prime_bytes() + 8;
     (piop_bytes, opening_bytes)
@@ -1001,7 +1004,7 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
     setup_ns: u64,
-) -> (RepTiming, MultiswapProof) {
+) -> (RepTiming, Proof<IntEvalRsLigVirtProof>) {
     let recording =
         bitz::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
@@ -1089,6 +1092,7 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
+    common::start_gkr_recording();
     #[cfg(feature = "bench-peak-memory")]
     let _heap_report = common::heap_run::Report::start();
 
@@ -1266,6 +1270,7 @@ fn main() {
         },
     };
     report.print_human_with_commitment(commitment_bytes);
+    common::print_gkr_schedules();
 }
 
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {

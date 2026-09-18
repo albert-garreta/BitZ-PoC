@@ -160,7 +160,8 @@ A version-1 smoke sweep on 2026-09-08 successfully generated and verified one hy
 ## Library API
 
 ```rust
-use bitz::hybrid::{Parameters, PreparedHybrid, U32MulMod32Row};
+use bitz::hybrid::{Parameters, PreparedHybrid};
+use bitz::piop::spartan::MulRow;
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let parameters = Parameters {
@@ -169,7 +170,7 @@ let parameters = Parameters {
 };
 let prepared = PreparedHybrid::new(parameters)?;
 // Explicit witness claims: MAX * 2 = (2^32 - 2) + 2^32 * 1.
-let row = U32MulMod32Row { x: u32::MAX, y: 2, z: u32::MAX - 1, w: 1 };
+let row = MulRow { x: u32::MAX, y: 2, lo: u32::MAX - 1, hi: 1 };
 let rows = vec![row; parameters.multiplications];
 let blocks = vec![[0x12345678u32; 16]; parameters.sha_compressions];
 
@@ -185,7 +186,7 @@ prepared.verify(&statement, &decoded)?;
 # }
 ```
 
-`commit_mod32` retains all four supplied limbs, including `z` and `w`; it does not replace them with recomputed outputs. Their consistency is checked by the proof. `U32MulMod32Row::new(x, y)` is a convenience constructor that computes a valid modular result and carry, and `row.packed_product()` reconstructs the supplied `z + 2^32 * w`. For callers with only operands, `prepared.commit(&operands, &blocks)` generates the same four-limb witness. `committed.multiplication_rows()` exposes the committed rows as an iterator.
+`commit_mod32` retains all four supplied limbs, including `lo` and `hi`; it does not replace them with recomputed outputs. Their consistency is checked by the proof. `MulRow::<u32>::new(x, y)` is a convenience constructor that computes a valid modular result and carry, and `row.product()` reconstructs the supplied `lo + 2^32 * hi`. For callers with only operands, `prepared.commit(&operands, &blocks)` generates the same four-limb witness. `committed.multiplication_rows()` exposes the committed rows as an iterator.
 
 Each block is sixteen words in SHA's standard word order; each word represents four big-endian message bytes. Commitment preparation generates intermediate SHA states and commits both packed witnesses. The public statement is obtained from `committed.statement()`. Setup can be reused across statements of the same shape. Decoding is bounded and requires the public statement to reconstruct the transcript-selected integer field; decoding alone does not accept a proof.
 

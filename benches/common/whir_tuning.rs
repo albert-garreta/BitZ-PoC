@@ -424,13 +424,27 @@ pub struct Finalist {
 pub fn tune<C>(
     degrees: &[usize],
     explicit: Option<Params>,
+    setup: impl FnMut(Params) -> Result<C, String>,
+    run: impl FnMut(&C) -> f64,
+    report: impl Fn(&C) -> Value,
+) -> Result<(Params, TuningReport), String> {
+    let reps = if explicit.is_some() {
+        0
+    } else {
+        super::cli::env::<std::num::NonZeroUsize>("BITZ_WHIR_TUNING_REPS").map_or(5, usize::from)
+    };
+    tune_with_reps(degrees, explicit, reps, setup, run, report)
+}
+
+/// Explicit benchmark options; no ambient experiment environment is consulted.
+pub fn tune_with_reps<C>(
+    degrees: &[usize],
+    explicit: Option<Params>,
+    reps: usize,
     mut setup: impl FnMut(Params) -> Result<C, String>,
     mut run: impl FnMut(&C) -> f64,
     report: impl Fn(&C) -> Value,
 ) -> Result<(Params, TuningReport), String> {
-    let reps = if explicit.is_some() { 0 } else {
-        super::cli::env::<std::num::NonZeroUsize>("BITZ_WHIR_TUNING_REPS").map_or(5, usize::from)
-    };
     let recording = bitz::observability::Recording::start(Vec::new()).map_err(|e| e.to_string())?;
     let campaign = tracing::info_span!("whir:tuning").entered();
     if let Some(params) = explicit {
@@ -444,8 +458,13 @@ pub fn tune<C>(
                 security: report(&context),
                 tuning_ms: {
                     drop(campaign);
-                    bitz::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
-                        .map_err(|e| e.to_string())?.as_secs_f64() * 1e3
+                    bitz::observability::duration(
+                        &recording.intervals().map_err(|e| e.to_string())?,
+                        "whir:tuning",
+                    )
+                    .map_err(|e| e.to_string())?
+                    .as_secs_f64()
+                        * 1e3
                 },
                 candidates: vec![],
                 workload: None,
@@ -506,8 +525,13 @@ pub fn tune<C>(
             candidates,
             tuning_ms: {
                 drop(campaign);
-                bitz::observability::duration(&recording.intervals().map_err(|e| e.to_string())?, "whir:tuning")
-                    .map_err(|e| e.to_string())?.as_secs_f64() * 1e3
+                bitz::observability::duration(
+                    &recording.intervals().map_err(|e| e.to_string())?,
+                    "whir:tuning",
+                )
+                .map_err(|e| e.to_string())?
+                .as_secs_f64()
+                    * 1e3
             },
             workload: None,
             exponent: None,

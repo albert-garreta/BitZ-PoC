@@ -18,7 +18,8 @@
 /outputs/field-native-x86-validation/
 *.tar.gz
 
-# LaTeX build intermediates (docs/verifier-note)
+# LaTeX build intermediates
+/paper/*.fdb_latexmk
 docs/**/*.aux
 docs/**/*.fdb_latexmk
 docs/**/*.fls

@@ -28,6 +28,13 @@ pub enum PreparedVirtualMapError {
 /// batches can instead expose an implicit tensor repetition without allocating
 /// the fully expanded CSC column-offset array.
 pub trait VirtualMap: Sync {
+    /// Structural bound on output bits within each `word_stride`-bit cell.
+    /// Every touched row must satisfy `row % word_stride < bound`.
+    /// Unknown maps are validated through their complete column support.
+    fn output_word_bits(&self, _word_stride: usize) -> Option<usize> {
+        None
+    }
+
     /// Iterator over the derived rows touched by one source column.
     type ColumnRows<'a>: ExactSizeIterator<Item = usize>
     where

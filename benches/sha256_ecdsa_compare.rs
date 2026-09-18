@@ -588,12 +588,15 @@ fn main() -> Result<()> {
         .build_global()?;
 
     let fixture = fixture(&args)?;
-    match args.method.as_str() {
+    common::start_gkr_recording();
+    let result = match args.method.as_str() {
         "bitz-split" => bitz(&args, &fixture, OuterMode::Split),
         "bitz-all" => bitz(&args, &fixture, OuterMode::AllRows),
         "spartan-mc" => spartan(&args, &fixture),
         _ => unreachable!(),
-    }
+    };
+    common::print_gkr_schedules();
+    result
 }
 
 #[cfg(test)]

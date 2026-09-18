@@ -9,7 +9,7 @@ use field::{Fp, Uint};
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{PrimeSamplingError},
+    ext_proj::PrimeSamplingError,
     piop::spartan::{
         SpartanField, absorb_spartan_message,
         profile::{IopInstanceFacts, IopSecurityParams},

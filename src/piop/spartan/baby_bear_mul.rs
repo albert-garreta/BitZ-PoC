@@ -31,8 +31,7 @@ use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 use super::{
     ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
     SpartanBitzField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
-    SpartanRelationBackend, build_assignment_mle, build_product_mles,
-    slot_rows::pack_slot_major_rows_w1,
+    build_assignment_mle, build_product_mles, slot_rows::pack_slot_major_rows_w1,
 };
 
 /// The BabyBear prime `2^31 - 2^27 + 1`.
@@ -168,16 +167,6 @@ impl ModulusIndependentCoefficient<SpartanBitzField> for BabyBearMulCoefficient 
     fn is_unit(&self) -> bool {
         matches!(self, Self::One)
     }
-}
-
-/// Integer relation backend used by the BabyBear multiplication prover.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BabyBearMulRelationBackend;
-
-impl SpartanRelationBackend<SpartanBitzField> for BabyBearMulRelationBackend {
-    type MatrixCoeff = BabyBearMulCoefficient;
-    type Witness = u64;
-    type Product = u64;
 }
 
 /// Failures while constructing the BabyBear multiplication relation.
@@ -318,50 +307,6 @@ impl BabyBearMulLayout {
 pub struct BabyBearMulWitness {
     layout: BabyBearMulLayout,
     assignment: Box<[u64]>,
-}
-
-/// Native MLE tables retained before Spartan's first field-valued fold.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BabyBearMulNativeMles {
-    assignment: DenseMultilinearExtension<u64>,
-    products: R1csProductMles<u64>,
-}
-
-impl BabyBearMulNativeMles {
-    /// Complete padded native assignment MLE `w`.
-    pub const fn w(&self) -> &DenseMultilinearExtension<u64> {
-        &self.assignment
-    }
-
-    /// Complete eight-block native assignment MLE.
-    pub const fn assignment(&self) -> &DenseMultilinearExtension<u64> {
-        self.w()
-    }
-
-    /// Native `Aw`, `Bw`, and `Cw` MLEs.
-    pub const fn products(&self) -> &R1csProductMles<u64> {
-        &self.products
-    }
-
-    /// Native `Aw` table.
-    pub const fn aw(&self) -> &DenseMultilinearExtension<u64> {
-        &self.products.az
-    }
-
-    /// Native `Bw` table.
-    pub const fn bw(&self) -> &DenseMultilinearExtension<u64> {
-        &self.products.bz
-    }
-
-    /// Native `Cw` table containing `c + p*k`.
-    pub const fn cw(&self) -> &DenseMultilinearExtension<u64> {
-        &self.products.cz
-    }
-
-    /// Moves out the assignment and product MLEs.
-    pub fn into_parts(self) -> (DenseMultilinearExtension<u64>, R1csProductMles<u64>) {
-        (self.assignment, self.products)
-    }
 }
 
 impl BabyBearMulWitness {
@@ -689,7 +634,9 @@ pub fn prepare_baby_bear_mul_relation(
 /// Pads the exact logical assignment to eight blocks and materializes native
 /// `Aw`, `Bw`, and `Cw` tables without projecting them into a field.
 #[allow(clippy::arithmetic_side_effects)]
-pub fn project_baby_bear_mul_native_witness(witness: &BabyBearMulWitness) -> BabyBearMulNativeMles {
+pub fn project_baby_bear_mul_native_witness(
+    witness: &BabyBearMulWitness,
+) -> super::EvaluatedSpartanAssignment<u64> {
     // Allocate the final 8M table once. Extending a 5M clone to 8M can first
     // allocate and copy 5M values, then reallocate and copy them again at the
     // largest benchmark sizes.
@@ -726,10 +673,7 @@ pub fn project_baby_bear_mul_native_witness(witness: &BabyBearMulWitness) -> Bab
         },
     };
 
-    BabyBearMulNativeMles {
-        assignment,
-        products,
-    }
+    super::EvaluatedSpartanAssignment::new(assignment, products)
 }
 
 /// Converts the exact native assignment and products into any supported
@@ -1008,10 +952,10 @@ mod tests {
         let native = project_baby_bear_mul_native_witness(&witness);
 
         assert_eq!(
-            native.w().evaluations.len(),
+            native.assignment().evaluations.len(),
             witness.layout().padded_assignment_len()
         );
-        assert_eq!(native.assignment(), native.w());
+
         assert_eq!(
             native.assignment().num_vars,
             witness.layout().assignment_vars()
@@ -1026,26 +970,26 @@ mod tests {
                 .all(|&value| value == 0)
         );
         assert_eq!(
-            &native.aw().evaluations[..3],
+            &native.products().az.evaluations[..3],
             &[2, BABY_BEAR_MODULUS - 1, 11]
         );
         assert_eq!(
-            &native.bw().evaluations[..3],
+            &native.products().bz.evaluations[..3],
             &[3, BABY_BEAR_MODULUS - 1, 13]
         );
         assert_eq!(
-            &native.cw().evaluations[..3],
+            &native.products().cz.evaluations[..3],
             &[6, (BABY_BEAR_MODULUS - 1).pow(2), 143]
         );
         for row in 0..inputs.len() {
             assert_eq!(
-                native.aw().evaluations[row] * native.bw().evaluations[row],
-                native.cw().evaluations[row]
+                native.products().az.evaluations[row] * native.products().bz.evaluations[row],
+                native.products().cz.evaluations[row]
             );
         }
-        assert_eq!(native.aw().evaluations[3], 0);
-        assert_eq!(native.bw().evaluations[3], 0);
-        assert_eq!(native.cw().evaluations[3], 0);
+        assert_eq!(native.products().az.evaluations[3], 0);
+        assert_eq!(native.products().bz.evaluations[3], 0);
+        assert_eq!(native.products().cz.evaluations[3], 0);
     }
 
     #[test]
@@ -1065,7 +1009,11 @@ mod tests {
         let (_, projected) =
             project_baby_bear_mul_witness::<SpartanBitzField>(&witness, &config).unwrap();
         let live = witness.layout().multiplications();
-        let native_products = [native.aw(), native.bw(), native.cw()];
+        let native_products = [
+            &native.products().az,
+            &native.products().bz,
+            &native.products().cz,
+        ];
         let projected_products = [&projected.az, &projected.bz, &projected.cz];
 
         for ((expected, native_product), projected_product) in independently_computed

@@ -1080,6 +1080,72 @@ pub fn mod_q_num_chunks(p: &IntegerMatrixLayout, q_bits: usize) -> usize {
     q_bits.div_ceil(mod_q_chunk_width(p)).max(1)
 }
 
+/// A public map certifies that every derived cell is smaller than 2^value_bits.
+/// The physical stride remains a power of two, including at P=128.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VirtualWordBound {
+    layout: IntegerMatrixLayout,
+    value_bits: usize,
+    map_digest: [u8; 32],
+}
+impl VirtualWordBound {
+    pub(crate) fn new<M: circuit::linear_map::binary::VirtualMap>(
+        layout: IntegerMatrixLayout,
+        value_bits: usize,
+        map: &M,
+    ) -> Result<Self, ()> {
+        if !layout.word_bits.is_power_of_two()
+            || layout.word_bits > 128
+            || value_bits == 0
+            || value_bits > layout.word_bits
+        {
+            return Err(());
+        }
+        let bits = layout
+            .row_vars
+            .checked_add(layout.col_vars)
+            .and_then(|v| v.checked_add(layout.word_bits.ilog2() as usize))
+            .ok_or(())?;
+        let cells = 1usize
+            .checked_shl(u32::try_from(bits).map_err(|_| ())?)
+            .ok_or(())?;
+        if map.rows() != cells {
+            return Err(());
+        }
+        // Structural support, never the supplied witness, establishes this bound.
+        if map
+            .output_word_bits(layout.word_bits)
+            .is_none_or(|bound| bound > value_bits)
+        {
+            for column in 0..map.cols() {
+                for row in map.column_rows(column).ok_or(())? {
+                    if row >= cells || row % layout.word_bits >= value_bits {
+                        return Err(());
+                    }
+                }
+            }
+        }
+        Ok(Self {
+            layout,
+            value_bits,
+            map_digest: map.digest(),
+        })
+    }
+    pub(crate) const fn value_bits(&self) -> usize {
+        self.value_bits
+    }
+    pub(crate) fn matches_layout(&self, p: &IntegerMatrixLayout) -> bool {
+        self.layout == *p
+    }
+    pub(crate) fn matches_map<M: circuit::linear_map::binary::VirtualMap>(
+        &self,
+        p: &IntegerMatrixLayout,
+        map: &M,
+    ) -> bool {
+        self.matches_layout(p) && self.map_digest == map.digest()
+    }
+}
+
 /// A validated base-`2^c_w` decomposition of one public mod-`q` row-weight
 /// vector.
 ///
@@ -1093,6 +1159,7 @@ pub(crate) struct ModQWeightChunks {
     row_count: usize,
     chunk_width: usize,
     q_bits: usize,
+    padding: Option<VirtualWordBound>,
 }
 
 /// A validated, canonical source of public mod-`q` row weights.
@@ -1103,6 +1170,10 @@ pub(crate) struct ModQWeightChunks {
 /// exactly one `2^t`-row limb.  This keeps the opening transcript identical to
 /// [`ModQWeightChunks`] without requiring all `L` limbs to coexist.
 pub(crate) trait ModQWeightSource: Sync {
+    fn padding_bound(&self) -> Option<&VirtualWordBound> {
+        None
+    }
+
     /// Number of canonical row weights (`2^t`).
     fn row_count(&self) -> usize;
 
@@ -1215,6 +1286,30 @@ where
 }
 
 impl ModQWeightChunks {
+    pub(crate) fn from_dense_padded<M: circuit::linear_map::binary::VirtualMap>(
+        p: &IntegerMatrixLayout,
+        weights: &[u128],
+        q_bits: usize,
+        value_bits: usize,
+        map: &M,
+    ) -> Result<Self, ()> {
+        let padding = VirtualWordBound::new(*p, value_bits, map)?;
+        let (row_count, chunk_width, chunk_count) =
+            mod_q_weight_chunk_shape_with_width(p, q_bits, value_bits)?;
+        if weights.len() != row_count {
+            return Err(());
+        }
+        let mut chunks = Self {
+            chunks: vec![vec![0; row_count]; chunk_count],
+            row_count,
+            chunk_width,
+            q_bits,
+            padding: Some(padding),
+        };
+        chunks.set_weight_range(0, weights)?;
+        Ok(chunks)
+    }
+
     /// Adopt an owned dense vector directly when the geometry needs exactly
     /// one chunk. This is the production u32 fast path: no zero-fill and no
     /// dense-to-chunk copy are needed.
@@ -1238,6 +1333,7 @@ impl ModQWeightChunks {
             row_count,
             chunk_width,
             q_bits,
+            padding: None,
         })
     }
 
@@ -1251,6 +1347,7 @@ impl ModQWeightChunks {
             row_count,
             chunk_width,
             q_bits,
+            padding: None,
         })
     }
 
@@ -1342,6 +1439,7 @@ impl ModQWeightChunks {
             row_count,
             chunk_width,
             q_bits,
+            padding: None,
         })
     }
 
@@ -1401,6 +1499,9 @@ impl ModQWeightChunks {
 }
 
 impl ModQWeightSource for ModQWeightChunks {
+    fn padding_bound(&self) -> Option<&VirtualWordBound> {
+        self.padding.as_ref()
+    }
     fn row_count(&self) -> usize {
         self.row_count
     }
@@ -1448,6 +1549,17 @@ fn mod_q_weight_chunk_shape(
     p: &IntegerMatrixLayout,
     q_bits: usize,
 ) -> Result<(usize, usize, usize), ()> {
+    mod_q_weight_chunk_shape_with_width(p, q_bits, p.word_bits)
+}
+
+fn mod_q_weight_chunk_shape_with_width(
+    p: &IntegerMatrixLayout,
+    q_bits: usize,
+    value_bits: usize,
+) -> Result<(usize, usize, usize), ()> {
+    if value_bits == 0 || value_bits > p.word_bits {
+        return Err(());
+    }
     if !p.word_bits.is_power_of_two()
         || p.word_bits > u128::BITS as usize
         || !(1..=126).contains(&q_bits)
@@ -1458,7 +1570,7 @@ fn mod_q_weight_chunk_shape(
         .ok()
         .and_then(|t| 1usize.checked_shl(t))
         .ok_or(())?;
-    let tw = p.row_vars.checked_add(p.word_bits).ok_or(())?;
+    let tw = p.row_vars.checked_add(value_bits).ok_or(())?;
     if tw > 126 {
         return Err(());
     }
@@ -1722,6 +1834,36 @@ pub(crate) fn build_column_layer1_halves(
 #[allow(clippy::arithmetic_side_effects)]
 mod rlc_tests {
     use super::*;
+
+    #[test]
+    fn padded_weights_require_structural_support_and_bind_exact_map() {
+        use circuit::linear_map::{CscMatrix, binary::PreparedVirtualMap};
+        let p = IntegerMatrixLayout {
+            row_vars: 2,
+            col_vars: 0,
+            word_bits: 128,
+        };
+        let map = |row| {
+            PreparedVirtualMap::new(
+                CscMatrix::try_from_columns(512, vec![vec![(row, true)]]).unwrap(),
+            )
+            .unwrap()
+        };
+        let good = map(64);
+        let bad = map(65);
+        let weights = vec![(1_u128 << 99) + 7; p.rows()];
+        let chunks = ModQWeightChunks::from_dense_padded(&p, &weights, 100, 65, &good).unwrap();
+        assert_eq!(chunks.chunk_width(), 60);
+        let bound = chunks.padding_bound().unwrap();
+        assert!(bound.matches_map(&p, &good));
+        assert!(!bound.matches_map(&p, &map(63)));
+        assert!(ModQWeightChunks::from_dense_padded(&p, &weights, 100, 65, &bad).is_err());
+        assert!(VirtualWordBound::new(p, 0, &good).is_err());
+        assert!(VirtualWordBound::new(p, 129, &good).is_err());
+        let wrong_shape = IntegerMatrixLayout { row_vars: 3, ..p };
+        assert!(VirtualWordBound::new(wrong_shape, 65, &good).is_err());
+        assert!(!bound.matches_layout(&wrong_shape));
+    }
 
     #[test]
     fn validated_mod_q_weight_chunks_round_trip_dense_decomposition() {
