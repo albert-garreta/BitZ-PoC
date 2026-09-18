@@ -257,4 +257,16 @@ mod tests {
             assert_eq!(comb.pow_public(&crate::Uint::MAX), alpha.pow(u128::MAX));
         }
     }
+
+    #[test]
+    fn byte_window_products_handle_zero_and_sparse_exponents() {
+        for alpha in [Gf128::ZERO, Gf128::ONE, smallest_generator()] {
+            let comb =
+                crate::preparation::FixedBasePow::<_, 2>::new_public(crate::Gf128Ops, alpha, 8);
+            for exponent in [0, 1, 1 << 63, 1 << 64, 1 << 127, u128::MAX] {
+                let words = crate::Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
+                assert_eq!(comb.pow_public(&words), alpha.pow(exponent));
+            }
+        }
+    }
 }
