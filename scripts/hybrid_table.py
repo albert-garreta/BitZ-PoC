@@ -97,6 +97,12 @@ def decode_hex_json(encoded: str) -> dict:
     return json.loads(bytes.fromhex(encoded))
 
 
+def knob(meta: dict[str, str], name: str) -> str | None:
+    """A recorded knob; sweeps measured before the BitZ rename record F2Z_* names."""
+    value = meta.get(f"BITZ_{name}")
+    return value if value is not None else meta.get(f"F2Z_{name}")
+
+
 def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str]) -> None:
     """The recorded knobs must match the row key; unrecorded runs are rejected."""
     if mode not in meta.get("modes", ""):
@@ -108,7 +114,7 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
             "threads (runs must record an explicit thread count)"
         )
     if mode == "all-binius":
-        recorded = meta.get("BITZ_HYBRID_BINIUS_LOG_INV_RATE")
+        recorded = knob(meta, "HYBRID_BINIUS_LOG_INV_RATE")
         if recorded is None:
             raise RunError(
                 f"{base}: run.txt does not record BITZ_HYBRID_BINIUS_LOG_INV_RATE; "
@@ -117,8 +123,8 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
         if recorded != str(rate):
             raise RunError(f"{base}: all-Binius rate {recorded} does not match key rate {rate}")
     elif mode == "binius-ligerito":
-        recorded = meta.get("BITZ_BINIUS_LOG_INV_RATE")
-        accounting = meta.get("BITZ_BINIUS_LIGERITO_ACCOUNTING")
+        recorded = knob(meta, "BINIUS_LOG_INV_RATE")
+        accounting = knob(meta, "BINIUS_LIGERITO_ACCOUNTING")
         if recorded is None or accounting is None:
             raise RunError(
                 f"{base}: run.txt does not record the BitZ-opener knobs; re-measure with the updated sweep"

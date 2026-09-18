@@ -31,8 +31,12 @@ def inside(root: Path, relative: str) -> Path:
 
 
 def sha256(path: Path) -> str:
+    # Chunked rather than hashlib.file_digest (Python 3.11+); same digest.
+    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def object_id(kind: str, content: bytes) -> bytes:
@@ -205,7 +209,9 @@ def verify_histories(root: Path, bundle_directory: Path) -> list[str]:
             if git(repository, "rev-parse", snapshot + "^{tree}").decode().strip() != record["snapshot_tree"]:
                 raise ValueError(f"{name}: bundle snapshot tree mismatch")
             identities = git(repository, "log", snapshot, "--format=%an <%ae>%n%cn <%ce>").decode()
-            if re.search(r"john[ ._-]*wu|wu-s-john|albert[ ._-]*gar{1,2}et{1,2}a|johnswu", identities, re.I):
+            # The identities to reject are supplied by the packager, not embedded here.
+            forbidden = os.environ.get("RELEASE_FORBIDDEN_IDENTITIES")
+            if forbidden and re.search(forbidden, identities, re.I):
                 raise ValueError(f"{name}: identifying author/committer remains in bundle")
             git(repository, "checkout", "--quiet", "--detach", base)
             git(repository, "apply", "--index", "--whitespace=nowarn", str(patch))

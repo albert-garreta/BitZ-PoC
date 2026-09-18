@@ -232,9 +232,10 @@ class ReleaseTests(unittest.TestCase):
 
     def test_personal_fork_dependency_is_rejected(self):
         self.ready()
-        (self.root / "Cargo.toml").write_text('[dependencies]\nx = {git="https://github.com/wu-s-john/private"}\n')
+        (self.root / "Cargo.toml").write_text('[dependencies]\nx = {git="https://github.com/fork-owner/private"}\n')
         commit(self.root)
-        with self.assertRaisesRegex(ValueError, "personal fork dependency"):
+        with mock.patch.dict(os.environ, {"RELEASE_FORBIDDEN_FORKS": "fork-owner|other-owner"}), \
+             self.assertRaisesRegex(ValueError, "personal fork dependency"):
             packager.package(self.root, self.work / "x.zip")
 
     def test_archive_checks_and_build_metadata_need_no_git(self):

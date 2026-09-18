@@ -49,10 +49,13 @@ execute benchmarks. `--smoke` uses one size and one measured sample per campaign
 retaining the listed backends, rates, and thread counts. It also exercises the
 equal-count hybrid table. Warmups and separate memory trials still run.
 
-One outer benchmark lock protects the complete workflow; multiplication receives
-`--no-gate` internally to avoid taking that lock twice. The default swap-growth
-guard is 34 GiB, configurable with `--swap-grow-gb`. Failures retain their logs and
-stop the workflow without claiming completion.
+One outer benchmark lock protects the complete workflow; before the first
+campaign, the gate waits for at least 88% CPU idle held for 120 s. Multiplication
+receives `--no-gate` internally to avoid taking that lock twice. The default
+swap-growth guard is 34 GiB, configurable with `--swap-grow-gb`. Failures retain
+their logs and stop the workflow without claiming completion. The wrapper waits for
+idle only once; see [Measurement conditions](#measurement-conditions-of-the-published-numbers)
+for how the published numbers were gated.
 
 ## Materialize vendors and create the source ZIP
 
@@ -108,6 +111,57 @@ To compile the hybrid SHA-256/multiplication benchmark without executing it:
 RUSTFLAGS="-C target-cpu=native" cargo +1.98.1 bench --locked --no-run \
   --bench hybrid_u32_sha256 --features hybrid
 ```
+
+## Measurement conditions of the published numbers
+
+The paper's numbers were measured on an Apple M5 (24 GB) under the conditions
+below. Departing from them moves the numbers by more than most of the effects the
+tables report.
+
+- **Idle gate.** Every timed campaign started only after `scripts/bench_gate.py`
+  saw at least 88% CPU idle held for 120 s, sampled every 20 s (`--min-idle`,
+  `--hold-seconds`, `--poll-seconds`). Run back-to-back on a warm machine, an
+  unchanged binary measured a 21% slower prover and a 47% slower verifier (SHA-256,
+  `2^14` compressions, 10 threads). `--hold-seconds 60` is acceptable; do not drop
+  the wait.
+- **Campaign granularity.** One gated invocation per workload, backend, rate and
+  thread count, with the sizes running inside it; the SHA-256 tables were gated per
+  rate and thread group. The multiplication launcher (campaign 3, without
+  `--no-gate`) gates each of its campaigns itself. To reproduce a SHA-256 table
+  group, run it separately under the gate, for example:
+
+  ```bash
+  python3 scripts/bench_gate.py run --label sha256-p256-rate2-t10 -- \
+    python3 scripts/run_sha256_ecdsa_compare.py \
+    --output "$RUN_DIR/sha256-p256-rate2-t10" \
+    --methods bitz-split binius64 binius64-ligerito --exponents 4 5 6 7 \
+    --targets 100 --threads 10 --reps 5 --bitz-profiles custom:1:4 \
+    --binius-rates 1 --timing perfetto
+  ```
+
+- **GKR forest schedule.** On Apple Silicon, large single-claim forests keep the
+  L/4 storage schedule above four worker threads (`src/merged_forest/schedule.rs`).
+  The L/8 rule used elsewhere costs 19–37% of prover time there, for about 19% less
+  peak RSS. The paper's 10-thread numbers were measured with this rule. Each
+  multiplication result records the resolved schedule under
+  `effective.gkr_schedules`; expect `l4` at ten threads. Explicit `--gkr-schedule`
+  requests are never substituted.
+- **Builds.** `cargo +1.98.1`, fat LTO and one codegen unit (the release and bench
+  profiles), and `RUSTFLAGS="-C target-cpu=native"` for every scheme, including the
+  competitors. Resolve benchmark executables from Cargo's `--message-format=json`
+  output, as the runners do, never by listing an existing `target/` directory. A
+  stale binary measures old code, and can also reject shapes that the current
+  source accepts.
+- **Fixed inputs.** The u32 corpus seed is `0x5533_3250_4353_0064`
+  (6139306037344403556). Each multiplication result records its per-exponent
+  corpus digest (`effective.corpus_digest`); rows measured at another seed are not
+  comparable. Transcript domain strings determine the proof bytes, so changing them
+  changes the proof-size columns.
+
+Not reproducible from this artifact:
+
+- the Fields-Witch comparison (rates 1/2 and 1/8); its runner is not included;
+- the Zinc+ rows; the external Zinc+ comparison is omitted (see `NOTICE.md`).
 
 ## Benchmark campaigns
 

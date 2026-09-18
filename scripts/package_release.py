@@ -87,8 +87,10 @@ def collect(root: Path):
             relative = target.relative_to(root.resolve()).as_posix()
             if relative not in included and not any(n.startswith(relative + "/") for n in included):
                 raise ValueError(f"symlink target is missing from archive: {name}")
-        if Path(name).name in {"Cargo.toml", "Cargo.lock"} and re.search(
-                rb"github\.com[/:](?:wu-s-john|albert-garreta)/", data, re.I):
+        # Fork owners to reject are supplied by the packager, not embedded here.
+        forks = os.environ.get("RELEASE_FORBIDDEN_FORKS")
+        if forks and Path(name).name in {"Cargo.toml", "Cargo.lock"} and re.search(
+                rb"github\.com[/:](?:" + forks.encode() + rb")/", data, re.I):
             raise ValueError(f"personal fork dependency remains: {name}")
     if "README.md" not in included or "provenance.toml" not in included:
         raise ValueError("release must include README.md and provenance.toml")

@@ -186,7 +186,7 @@ else:
         harnesses = [
             ('import sys; import run_multiplication_benchmarks as r; '
              'sys.exit(r.run_campaign(sys.argv[1:], None, None, gated=False))', []),
-            ('import bench_gate as g; g.swap_used_gb = lambda: 0; '
+            ('import bench_gate as g; g.swap_used_gb = lambda: 0; g.wait_idle = lambda *a: None; '
              'raise SystemExit(g.main())', ["run", "--label", "test", "--"]),
         ]
         for harness, flags in harnesses:
@@ -210,12 +210,26 @@ else:
         env = dict(os.environ, PYTHONPATH=str(launcher.ROOT / "scripts"),
                    BITZ_BENCH_LOCK=str(Path(self.temp.name) / "lock"))
         result = subprocess.run(
-            [sys.executable, "-c", "import bench_gate as g; g.swap_used_gb = lambda: 0; raise SystemExit(g.main())",
+            [sys.executable, "-c", "import bench_gate as g; g.swap_used_gb = lambda: 0; "
+             "g.wait_idle = lambda *a: None; raise SystemExit(g.main())",
              "run", "--label", "test", "--", sys.executable, "-c",
              "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"],
             env=env, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 143)
         self.assertFalse(Path(env["BITZ_BENCH_LOCK"]).exists())
+
+    def test_gate_requires_sustained_idle_before_starting(self):
+        import bench_gate
+        samples = iter([95.0, 50.0, 95.0, 95.0])
+        with patch.object(bench_gate, "idle_percent", side_effect=lambda: next(samples)), \
+             patch.object(bench_gate.time, "sleep"), contextlib.redirect_stdout(io.StringIO()):
+            # Two consecutive qualifying samples; the busy sample resets the streak.
+            bench_gate.wait_idle("test", 88.0, 40.0, 20.0)
+        self.assertIsNone(next(samples, None))
+        with patch.object(bench_gate, "idle_percent", return_value=10.0), \
+             patch.object(bench_gate.time, "sleep"), contextlib.redirect_stdout(io.StringIO()), \
+             self.assertRaises(TimeoutError):
+            bench_gate.wait_idle("test", 88.0, 40.0, 20.0, max_wait_seconds=0)
 
     def test_gate_cleans_workers_after_leader_exits(self):
         import bench_gate
