@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compare signed SHA-256 chains in fresh processes; retain failures and full samples."""
+from bench_support import cargo_executables, source_metadata, environment, file_hash, run_process, address_space_limit, write_json
 import argparse
 import csv
 import hashlib
@@ -8,9 +9,6 @@ import json
 import math
 import os
 from pathlib import Path
-import platform
-import resource
-import signal
 import statistics
 import subprocess
 import sys
@@ -268,35 +266,17 @@ def build(args, directory):
     (directory / "build.log").write_text(result.stderr)
     if result.returncode:
         raise RuntimeError(f"build failed; see {directory / 'build.log'}")
-    for line in reversed(result.stdout.splitlines()):
-        try:
-            artifact = json.loads(line)
-        except ValueError:
-            continue
-        if artifact.get("target", {}).get("name") == "sha256_ecdsa_compare" and artifact.get("executable"):
-            return Path(artifact["executable"]).resolve()
-    raise RuntimeError("Cargo did not return the benchmark executable")
+    return Path(cargo_executables(result.stdout, ["sha256_ecdsa_compare"])["sha256_ecdsa_compare"]).resolve()
 
 
 def metadata(binary):
-    def output(command):
-        return subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=True).stdout.strip()
-    cpu = platform.processor() or platform.machine()
-    if Path("/proc/cpuinfo").exists():
-        cpu = next((s.partition(":")[2].strip() for s in Path("/proc/cpuinfo").read_text().splitlines()
-                    if s.startswith("model name")), cpu)
-    diff = subprocess.run(["git", "diff", "HEAD"], cwd=ROOT, capture_output=True, check=True).stdout
     fingerprint = (binary.parent.parent / ".fingerprint" /
                    binary.name.replace("sha256_ecdsa_compare-", "bitz-", 1) /
                    "test-bench-sha256_ecdsa_compare.json")
     build_info = json.loads(fingerprint.read_text()) if fingerprint.exists() else None
     return dict(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                 runner_sha256=file_hash(Path(__file__)), memory_limit_enforced=sys.platform.startswith("linux"),
-                revision=output(["git", "rev-parse", "HEAD"]), git_status=output(["git", "status", "--short"]),
-                tracked_diff_sha256=hashlib.sha256(diff).hexdigest(), rustc=output(["rustc", "-Vv"]),
-                build=build_info, cpu=cpu, platform=platform.platform(), logical_cpus=os.cpu_count(),
-                runtime_env={k: v for k, v in os.environ.items() if k.startswith("BITZ_") or
-                             k in ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "RAYON_NUM_THREADS", "CARGO_TARGET_DIR"]})
+                **source_metadata(ROOT), build=build_info, runtime_env=environment(os.environ))
 
 
 def case_config_token(case):
@@ -306,22 +286,6 @@ def case_config_token(case):
     if "log_inv_rate" in case:
         return f"-rate{case['log_inv_rate']}"
     return ""
-
-
-def address_space_limit(memory_gib):
-    """Cap worker address space, where the platform enforces it.
-
-    macOS rejects every finite RLIMIT_AS (and RLIMIT_DATA/RLIMIT_RSS), so a
-    preexec_fn that sets one aborts the spawn. Return None there and record
-    the unenforced cap in the manifest.
-    """
-    if not sys.platform.startswith("linux"):
-        return None
-
-    def limit():
-        size = memory_gib * 1024**3
-        resource.setrlimit(resource.RLIMIT_AS, (size, size))
-    return limit
 
 
 def run_case(binary, case, args, directory):
@@ -367,19 +331,13 @@ def run_case(binary, case, args, directory):
         if "ligerito_profile" in case:
             env["BITZ_LIG_PROFILE"] = case["ligerito_profile"]
         try:
-            process = subprocess.Popen(command, stdout=stdout, stderr=stderr, cwd=ROOT,
-                                       start_new_session=True,
-                                       preexec_fn=address_space_limit(args.memory_gib),
-                                       env=env)
+            returncode, timed_out = run_process(command, stdout=stdout, stderr=stderr, cwd=ROOT,
+                                                preexec_fn=address_space_limit(args.memory_gib),
+                                                env=env, timeout=args.timeout)
+            if timed_out:
+                status = "timeout"
         except (OSError, subprocess.SubprocessError) as exc:
             stderr.write(str(exc) + "\n")
-        else:
-            try:
-                returncode = process.wait(timeout=args.timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                status = "timeout"
     rows = []
     for line in (directory / f"{name}.stdout").read_text().splitlines():
         try:
@@ -396,16 +354,10 @@ def run_case(binary, case, args, directory):
     rss = peak_rss_bytes(rss_path, directory / f"{name}.stderr")
     result = dict(case=case, status=status, returncode=returncode, rows=rows,
                   peak_rss_bytes=rss, elapsed_seconds=time.monotonic()-started)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(result, indent=2)+"\n")
-    temporary.replace(path)
+    write_json(path, result)
     summarize(directory)
     print(f"{name}: {status} ({result['elapsed_seconds']:.1f}s)", flush=True)
     return status == "complete"
-
-
-def file_hash(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def peak_rss_bytes(linux_rss_path, stderr_path):

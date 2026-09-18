@@ -1,3 +1,3 @@
 #![allow(dead_code)]
-#[path = "../benches/mul_e2e_compare.rs"]
-mod benchmark;
+#[path = "../benches/common/mod.rs"] mod common;
+#[path = "../benches/mul/mod.rs"] mod mul;

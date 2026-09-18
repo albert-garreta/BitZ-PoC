@@ -11,14 +11,18 @@
 //! mismatched statement is rejected; the production entry points gate
 //! unaudited configurations.
 
+use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
+use ::bitz::piop::spartan::protocol::Proof;
+use ::bitz::piop::spartan::protocol::ProtocolError;
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use bitz::ligerito_flock::{IntEvalRsLigVirtProof, LigConfig, lig_configs};
 use bitz::ligerito::packed_vars;
+use bitz::ligerito_flock::{LigConfig, lig_configs};
 use bitz::piop::spartan::{
-    CmAndLayout, CmAndWitness, CmBitzError, CmBitzProof, SpartanBitzField,
-    commit_cm_and_witness_with_config, prepare_cm_and_relation, project_cm_and_witness,
-    prove_cm_and_bitz, prove_cm_and_bitz_with_config, verify_cm_and_bitz_with_config,
+    CmAndLayout, CmAndWitness, SpartanBitzField, commit_cm_and_witness_with_config,
+    prepare_cm_and_relation, prove_cm_and_bitz, prove_cm_and_bitz_with_config,
+    verify_cm_and_bitz_with_config,
 };
 use bitz::transcript::Blake3Transcript;
 
@@ -59,7 +63,7 @@ struct Fixture {
     witness: CmAndWitness,
     hint: bitz::ligerito_flock::FlockCommitHint,
     vc: flock_core::pcs::ligerito::VerifierConfig,
-    proof: CmBitzProof,
+    proof: Proof<IntEvalRsLigVirtProof>,
 }
 
 fn honest_fixture(gates: usize, seed: u64) -> Fixture {
@@ -73,22 +77,29 @@ fn honest_fixture(gates: usize, seed: u64) -> Fixture {
     let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = audited_configs(&relation);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
 
     let mut pt = Blake3Transcript::new();
-    let proof =
-        prove_cm_and_bitz_with_config(&mut pt, &relation, projected, &hint, &pc).unwrap();
-    Fixture { relation, witness, hint, vc, proof }
+    let proof = prove_cm_and_bitz_with_config(&mut pt, &relation, &witness, &hint, &pc).unwrap();
+    Fixture {
+        relation,
+        witness,
+        hint,
+        vc,
+        proof,
+    }
 }
 
-fn verify_fixture(fx: &Fixture, proof: &CmBitzProof) -> Result<(), CmBitzError> {
+fn verify_fixture(fx: &Fixture, proof: &Proof<IntEvalRsLigVirtProof>) -> Result<(), ProtocolError> {
     let mut vt = Blake3Transcript::new();
     verify_cm_and_bitz_with_config(&mut vt, &fx.relation, &fx.hint.commitment, proof, &fx.vc)
 }
 
 #[test]
 fn cm_and_virtual_roundtrips() {
-    for (gates, seed) in [(PRODUCTION_GATES, 0xC0_0001u64), (PRODUCTION_GATES + 77, 0xC0_0002)] {
+    for (gates, seed) in [
+        (PRODUCTION_GATES, 0xC0_0001u64),
+        (PRODUCTION_GATES + 77, 0xC0_0002),
+    ] {
         let fx = honest_fixture(gates, seed);
         verify_fixture(&fx, &fx.proof)
             .unwrap_or_else(|e| panic!("honest CM-AND roundtrip ({gates} gates) failed: {e:?}"));
@@ -112,12 +123,11 @@ fn cm_and_small_explicit_domains_roundtrip_and_reject_false_witnesses() {
             let (pc, vc) = adhoc_configs(&layout);
             let hint =
                 commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
-            let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
             let outcome = catch_unwind(AssertUnwindSafe(|| {
                 prove_cm_and_bitz_with_config(
                     &mut Blake3Transcript::new(),
                     &relation,
-                    projected,
+                    &witness,
                     &hint,
                     &pc,
                 )
@@ -147,8 +157,13 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
     let fx = honest_fixture(PRODUCTION_GATES, 0xC0DE_C0DE);
     let bytes = fx.proof.bitz().to_bytes();
     let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("canonical decode");
-    assert_eq!(decoded.to_bytes(), bytes, "codec is a bijection on its image");
-    let reproof = CmBitzProof::from_parts(fx.proof.prefix().clone(), None, decoded);
+    assert_eq!(
+        decoded.to_bytes(),
+        bytes,
+        "codec is a bijection on its image"
+    );
+    let reproof =
+        Proof::<IntEvalRsLigVirtProof>::from_parts(fx.proof.prefix().clone(), None, decoded);
     verify_fixture(&fx, &reproof).expect("decoded proof verifies");
 
     // Every truncation must fail to decode.
@@ -167,7 +182,11 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         .ok()
         .and_then(|r| r.ok());
         if let Some(decoded) = decoded {
-            let reproof = CmBitzProof::from_parts(fx.proof.prefix().clone(), None, decoded);
+            let reproof = Proof::<IntEvalRsLigVirtProof>::from_parts(
+                fx.proof.prefix().clone(),
+                None,
+                decoded,
+            );
             assert!(
                 verify_fixture(&fx, &reproof).is_err(),
                 "tampered byte {position} verified"
@@ -193,13 +212,12 @@ fn cm_and_rejects_a_false_relation_with_consistent_bits() {
     let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = audited_configs(&relation);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
 
     // The prover may panic on internal debug assertions (debug builds) or
     // complete; either way no accepting transcript may exist.
     let accepted = catch_unwind(AssertUnwindSafe(|| {
         let mut pt = Blake3Transcript::new();
-        prove_cm_and_bitz_with_config(&mut pt, &relation, projected, &hint, &pc)
+        prove_cm_and_bitz_with_config(&mut pt, &relation, &witness, &hint, &pc)
     }))
     .ok()
     .and_then(|r| r.ok())
@@ -231,11 +249,10 @@ fn cm_and_rejects_spartan_valid_but_xor_invalid_witness() {
     let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, vc) = audited_configs(&relation);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
 
     let accepted = catch_unwind(AssertUnwindSafe(|| {
         let mut pt = Blake3Transcript::new();
-        prove_cm_and_bitz_with_config(&mut pt, &relation, projected, &hint, &pc)
+        prove_cm_and_bitz_with_config(&mut pt, &relation, &witness, &hint, &pc)
     }))
     .ok()
     .and_then(|result| result.ok())
@@ -269,11 +286,10 @@ fn cm_and_rejects_inconsistent_committed_bits() {
     let (b, c) = layout.cell(64, 0).unwrap();
     rows[c][b / 64] ^= 1u64 << (b % 64);
     let hint = commit_cm_and_witness_with_config(&layout, rows, &pc).unwrap();
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
 
     let accepted = catch_unwind(AssertUnwindSafe(|| {
         let mut pt = Blake3Transcript::new();
-        prove_cm_and_bitz_with_config(&mut pt, &relation, projected, &hint, &pc)
+        prove_cm_and_bitz_with_config(&mut pt, &relation, &witness, &hint, &pc)
     }))
     .ok()
     .and_then(|r| r.ok())
@@ -309,10 +325,9 @@ fn cm_and_production_entry_points_gate_small_shapes() {
     let relation = prepare_cm_and_relation(layout, &config).unwrap();
     let (pc, _) = adhoc_configs(&layout);
     let hint = commit_cm_and_witness_with_config(&layout, witness.f_bit_rows(), &pc).unwrap();
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
     assert!(matches!(
-        prove_cm_and_bitz(&mut pt, &relation, projected, &hint),
-        Err(CmBitzError::UnauditedBitzParameters)
+        prove_cm_and_bitz(&mut pt, &relation, &witness, &hint),
+        Err(ProtocolError::UnauditedBitzParameters)
     ));
 }

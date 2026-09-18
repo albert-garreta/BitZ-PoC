@@ -9,6 +9,11 @@ use bitz::{
 };
 use field::Fp;
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProofFingerprint {
+    pub proof: String,
+    pub transcript: String,
+}
 struct Encoder(blake3::Hasher);
 impl Encoder {
     fn word(&mut self, value: u64) {
@@ -43,23 +48,31 @@ impl Encoder {
         self.field(&proof.bz_mle_claim);
         self.field(&proof.cz_mle_claim);
     }
-    fn emit(self, transcript: &Blake3Transcript) {
-        println!(
-            "PROOF_FINGERPRINT {}",
-            serde_json::json!({
-                "proof":self.0.finalize().to_hex().to_string(),
-                "transcript":blake3::Hash::from(transcript.state_digest()).to_hex().to_string(),
-            })
-        );
+    fn finish(self, transcript: &Blake3Transcript) -> ProofFingerprint {
+        ProofFingerprint {
+            proof: self.0.finalize().to_hex().to_string(),
+            transcript: blake3::Hash::from(transcript.state_digest())
+                .to_hex()
+                .to_string(),
+        }
     }
 }
 fn enabled() -> bool {
     std::env::var("BITZ_BENCH_PROOF_FINGERPRINT").is_ok_and(|v| v == "1")
 }
 pub fn nonlinear<O: OpeningProof>(proof: &Proof<O>, root: &[u8], transcript: &Blake3Transcript) {
-    if !enabled() {
-        return;
+    if enabled() {
+        println!(
+            "PROOF_FINGERPRINT {}",
+            serde_json::to_string(&nonlinear_fingerprint(proof, root, transcript)).unwrap()
+        );
     }
+}
+pub fn nonlinear_fingerprint<O: OpeningProof>(
+    proof: &Proof<O>,
+    root: &[u8],
+    transcript: &Blake3Transcript,
+) -> ProofFingerprint {
     let mut out = Encoder(blake3::Hasher::new());
     out.bytes(b"benchmark/nonlinear-proof/v1");
     out.bytes(root);
@@ -94,7 +107,7 @@ pub fn nonlinear<O: OpeningProof>(proof: &Proof<O>, root: &[u8], transcript: &Bl
         out.word(0);
     }
     out.bytes(&proof.bitz().to_bytes());
-    out.emit(transcript);
+    out.finish(transcript)
 }
 pub fn linear(proof: &LinearProof, root: &[u8], transcript: &Blake3Transcript) {
     if !enabled() {
@@ -108,5 +121,8 @@ pub fn linear(proof: &LinearProof, root: &[u8], transcript: &Blake3Transcript) {
     out.nonces(proof.inner_nonces());
     out.word(proof.terminal_nonce());
     out.bytes(&proof.bitz().to_bytes());
-    out.emit(transcript);
+    println!(
+        "PROOF_FINGERPRINT {}",
+        serde_json::to_string(&out.finish(transcript)).unwrap()
+    );
 }

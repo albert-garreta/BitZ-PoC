@@ -1154,7 +1154,24 @@ where
     S: ModQWeightSource + ?Sized,
 {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
-    let (geometry, chunk_width, chunk_count) = checked_mod_q_geometry(p, q_bits)?;
+    let (geometry, chunk_width, chunk_count) = match source.padding_bound() {
+        None => checked_mod_q_geometry(p, q_bits)?,
+        Some(bound) => {
+            if !bound.matches_layout(p) || q_weight_bound(q_bits).is_none() {
+                return Err(shape());
+            }
+            let geometry = checked_int_eval_geometry(p)?;
+            let tw = p
+                .row_vars
+                .checked_add(bound.value_bits())
+                .ok_or_else(shape)?;
+            if tw > 126 {
+                return Err(shape());
+            }
+            let width = 127 - tw;
+            (geometry, width, q_bits.div_ceil(width))
+        }
+    };
     if source.chunk_count() == 0
         || source.row_count() != geometry.rows
         || source.chunk_width() != chunk_width
@@ -3024,13 +3041,16 @@ where
     for chunk_index in 0..lch {
         let (mf, u, presum, point) = chunks
             .with_chunk(chunk_index, |weights| {
-                prove_int_eval_merged_common(
+                crate::ligerito::prove_int_eval_merged_bounded(
                     &mut grinder,
                     relation_params,
                     relation_rows,
                     relation_packed_cols,
                     weights,
                     alpha,
+                    chunks
+                        .padding_bound()
+                        .map_or(relation_params.word_bits, |b| b.value_bits()),
                 )
             })
             .expect("validated weight source must materialize every chunk");
@@ -3186,6 +3206,9 @@ pub(crate) fn prove_mle_eval_mod_q_ligerito_with_weight_chunks(
     pc: &LigProverConfig,
 ) -> Result<IntEvalRsLigModQProof, FlockRsError> {
     validate_ligerito_commitment(&hint.commitment, pc)?;
+    if chunks.padding_bound().is_some() {
+        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
+    }
     let commitment_geometry = validate_int_eval_geometry(&hint.commitment, p, 0)?;
     let (geometry, _, _) = checked_mod_q_weight_chunks_geometry(p, chunks, q_bits)?;
     let expected_words = 1usize
@@ -3349,7 +3372,13 @@ where
     let range_shift = chunks
         .chunk_width()
         .checked_add(p.row_vars)
-        .and_then(|shift| shift.checked_add(p.word_bits))
+        .and_then(|shift| {
+            shift.checked_add(
+                chunks
+                    .padding_bound()
+                    .map_or(p.word_bits, |b| b.value_bits()),
+            )
+        })
         .ok_or_else(shape)?;
     let shift = u32::try_from(range_shift).map_err(|_| shape())?;
     let bound = 1u128.checked_shl(shift).ok_or_else(shape)?;
@@ -4915,7 +4944,8 @@ fn prove_mod_q_lig_xor_impl(
         for l in 0..lch_x {
             let w_refs: Vec<&[u128]> = x_chunks_all.iter().map(|ch| &ch[l][..]).collect();
             let (mf, us_per_claim, presum, pt) =
-                prove_x_claims_batched_common(transcript, &p_x, &rows_refs, &w_refs, alpha);
+                prove_x_claims_batched_common(transcript, &p_x, &rows_refs, &w_refs, alpha)
+                    .expect("unsupported GKR schedule for multi-claim proof");
             x_mfs.push(mf);
             x_presums.push(presum);
             x_points.push(pt);
@@ -6805,7 +6835,8 @@ pub fn prove_mle_eval_mod_q_ligerito_tap_claims(
                 .collect();
             let (mf, us_per_claim, presum, pt) = crate::ligerito::prove_x_claims_batched_common(
                 transcript, &p_x, &rows_refs, &w_refs, alpha,
-            );
+            )
+            .expect("unsupported GKR schedule for multi-claim proof");
             x_mfs.push(mf);
             x_presums.push(presum);
             for (k, u) in us_per_claim.into_iter().enumerate() {
@@ -11236,7 +11267,12 @@ where
     // v3 additionally binds the full runtime modulus rather than only its
     // bit length.  Distinct primes with one bit length must never share a
     // subprotocol statement.
-    hash.update(b"bitz/mod-q-virtual-statement/v3");
+    if let Some(bound) = row_weights.padding_bound() {
+        hash.update(b"bitz/mod-q-virtual-statement/v4");
+        hash.update(&(bound.value_bits() as u64).to_le_bytes());
+    } else {
+        hash.update(b"bitz/mod-q-virtual-statement/v3");
+    }
     hash.update(&commitment.root);
     for v in [
         commitment.params.m,
@@ -12274,6 +12310,12 @@ where
     M: circuit::linear_map::binary::VirtualMap,
     S: ModQWeightSource + ?Sized,
 {
+    assert!(
+        chunks
+            .padding_bound()
+            .is_none_or(|b| b.matches_map(h_layout, map)),
+        "padding bound must match the virtual statement"
+    );
     let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)
         .expect("h_layout, q_bits, and chunks must define valid mod-q geometry");
     let f_geometry = validate_int_eval_geometry(&hint_f.commitment, f_layout, 0)
@@ -12680,6 +12722,12 @@ where
     C: Fn(&[u128], usize, usize) -> bool,
 {
     let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
+    if chunks
+        .padding_bound()
+        .is_some_and(|b| !b.matches_map(h_layout, map))
+    {
+        return Err(shape());
+    }
     let (h_geometry, _, _) = checked_mod_q_weight_source_geometry(h_layout, chunks, q_bits)?;
     let f_geometry = validate_int_eval_geometry(commitment_f, f_layout, 0)?;
     let h_cells = h_geometry
@@ -13877,6 +13925,8 @@ mod tests {
                     "ligerito_flock::tests::mle_eval_mod_q_ligerito_roundtrips",
                 ])
                 .env(CHILD, "1")
+                // Quad is an L4-only experiment; auto may choose a binary schedule.
+                .env("F2_FOREST_SCHEDULE", "l4")
                 .status()
                 .unwrap();
             assert!(status.success(), "isolated quad test failed");

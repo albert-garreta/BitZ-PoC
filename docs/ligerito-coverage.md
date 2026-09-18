@@ -32,10 +32,10 @@ capacity guarantee. Comparison backends and runners may impose tighter limits.
 
 | Workload / entrypoints | Preparation and policy | Shape preflight / proof validation |
 |---|---|---|
-| Full u32 product; mod32 relation; `u32_mul`, `mul_e2e_compare`, `bitz --mul` | `PreparedU32MulRelation::new_with_profile_and_ligerito`; Lambda100 defaults Johnson | `coverage::multiplication_shapes_preflight_without_witnesses`: L=15..28, W=1 and W=8; u32 proof/tamper tests, both regimes |
-| u64 / u128 full products; `mul_e2e_compare` | `PreparedU64MulRelation` / `PreparedU128MulRelation`; same resolver | u64 L=15..27, u128 L=15..26; native relation roundtrips and malformed-witness tests |
-| BabyBear multiplication; `baby_bear_mul` | `PreparedBabyBearMulRelation`; target inherited from Lambda100 or Lambda128 | L=15..28; paper-path proof tests and fixed-modulus compatibility tests |
-| Terminal u32 / BabyBear PCS comparisons; `u32_pcs_compare`, `baby_bear_pcs_compare` | Prepared terminal opener retains resolved Ligerito policy; fixed-q BabyBear exposes explicit `_with_ligerito` APIs | Terminal and combined adapter roundtrips; same committed-source shape eligibility |
+| Full u32 product; mod32 relation; `mul_bitz proof`, `mul_compare proof`, `bitz --mul` | `PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito`; Lambda100 defaults Johnson | `coverage::multiplication_shapes_preflight_without_witnesses`: L=15..28, W=1 and W=8; u32 proof/tamper tests, both regimes |
+| u64 / u128 full products; `mul_compare proof` | `PreparedRelation<MulLayout<u64>>` / `PreparedRelation<MulLayout<u128>>`; same resolver | u64 L=15..27, u128 L=15..26; native relation roundtrips and malformed-witness tests |
+| BabyBear multiplication; `mul_bitz proof --workload baby-bear` | `PreparedRelation<BabyBearMulLayout>`; target inherited from Lambda100 or Lambda128 | L=15..28; paper-path proof tests and fixed-modulus compatibility tests |
+| Terminal u32 / BabyBear PCS comparisons; `mul_compare pcs` | Prepared terminal opener retains resolved Ligerito policy; fixed-q BabyBear exposes explicit `_with_ligerito` APIs | Terminal and combined adapter roundtrips; same committed-source shape eligibility |
 | CM-AND; `cm_and` | `PreparedCmAndRelation::with_ligerito`; 100-bit Ligerito policy | L=15..28 configuration preflight; both-regime `ligerito_protocols` proof/codec checks. Tiny algebra fixtures have no production security claim |
 | SHA compression; `sha256_compressions`, `sha256_e2e_compare` BitZ arm | Prepared SHA compression policy, target inherited from enclosing profile | K=7..16; explicit inner-sumcheck, assignment-row-sized, and product layouts; proof/public-output tests |
 | SHA chain; `sha256_chain` | Prepared SHA chain policy | K=7..16; both-regime chain proof and public-statement tampering tests |
@@ -61,12 +61,12 @@ Hybrid's Binius SHA arithmetization supports its own smaller sizes.
   `fuse_check`, and `taps_ab` explicitly use `historical_sha_lig_configs`.
   Their low-level/kernel results are historical experiments with no new
   production security claim. CLI family/tap experiments require explicit UDR.
-- `field`, `eq_tables`, `u32_mul_inner_policy`, `u32_mul_outer_skip`, and
-  `mul_witness_compare` measure arithmetic, witness generation, or PIOP
+- `field`, `eq_tables`, `u32_mul_inner_policy`, `mul_bitz piop`, and
+  `mul_compare witness` measure arithmetic, witness generation, or PIOP
   kernels. They do not prove a complete statement with a security claim.
 - `gen_lig_configs` generates checked research configurations; it is not a proof benchmark.
-- The old BabyBear report parser and `bench_csv.sh` are labelled historical
-  human-output helpers; do not import their output into new production tables.
+- `scripts/mul_report.py` reads only current multiplication campaigns; historical
+  artifacts remain unchanged.
 
 ## Transcript and result identity
 
@@ -107,10 +107,10 @@ campaign was run for this implementation pass.
 
 ```sh
 # Default Johnson+OOD, or matched UDR for the same workload.
-RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=8 BITZ_BENCH_SHAPES=15 \
-  cargo +1.98.1 bench --bench u32_mul
-BITZ_LIG_PROFILE=udrg:3:4 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=8 \
-  BITZ_BENCH_SHAPES=15 cargo +1.98.1 bench --bench u32_mul
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  proof --workload u32-full --log-n 15 --threads 8
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  proof --workload u32-full --log-n 15 --threads 8 --ligerito udrg:3:4
 
 # CLI selection overrides the environment; selector affects only the shared opener.
 cargo +1.98.1 run --release --features hybrid --bin hybrid-u32-sha256 -- \
@@ -121,7 +121,7 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=8 \
   cargo +1.98.1 test --release --lib --features ecdsa,hybrid,bench-internals coverage::
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=8 \
   cargo +1.98.1 test --release --test native_mul_compare \
-  --features bench-internals,native-mul-compare ligerito_isolation_tests
+  --features bench-internals,native-mul-compare
 ```
 
 ## Validation record (2026-09-10)

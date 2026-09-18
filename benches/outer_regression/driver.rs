@@ -37,8 +37,8 @@ pub(super) enum Inputs {
     },
 }
 impl Inputs {
-    fn new(bits: u32, n: usize) -> Self {
-        let mut rng = StdRng::seed_from_u64(0xa345_0385 ^ n as u64 ^ u64::from(bits));
+    fn new(bits: u32, n: usize, seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed ^ n as u64 ^ u64::from(bits));
         // Include boundaries among otherwise full-width uniform operands.
         let a: Vec<u128> = (0..1usize << n)
             .map(|i| match i {
@@ -178,79 +178,46 @@ impl Proof {
         hasher.finalize().to_hex().to_string()
     }
 }
-fn words(name: &str, default: &str) -> Vec<String> {
-    std::env::var(name)
-        .unwrap_or_else(|_| default.into())
-        .split_whitespace()
-        .map(str::to_owned)
-        .collect()
-}
 
-pub fn run() {
-    #[cfg(feature = "parallel")]
-    let threads = rayon::current_num_threads();
-    #[cfg(not(feature = "parallel"))]
-    let threads = 1;
-    let reps = std::env::var("OUTER_REPS").map_or(5, |s| s.parse().unwrap());
+/// Paired trials preserve the distinct preparation boundaries and verify identical proofs.
+pub fn samples(
+    bits: u32,
+    n: usize,
+    seed: u64,
+    k: usize,
+    trials: usize,
+) -> (String, Vec<(f64, f64)>) {
     let field = Fp::<2>::make_cfg(&Uint::from((1u128 << 100) - 15)).unwrap();
-    let variants = words("OUTER_VARIANTS", "production");
-    for shape in words("OUTER_SHAPES", "12 15 17 19") {
-        let n: usize = shape.parse().unwrap();
-        for width in words("OUTER_WIDTHS", "32 64 128") {
-            let bits: u32 = width.parse().unwrap();
-            let input = Inputs::new(bits, n);
-            let fixture_digest = input.fixture_digest();
-            for protocol in words("OUTER_PROTOCOLS", "ordinary skip-1 skip-2 skip-3 skip-4") {
-                let k: usize = if protocol == "ordinary" {
-                    0
-                } else {
-                    protocol.strip_prefix("skip-").unwrap().parse().unwrap()
-                };
-                if n < k {
-                    continue;
-                }
-                let tau: Vec<_> = (0..n - k)
-                    .map(|i| field.from_integer(&(i as u64 + 7)))
-                    .collect();
-                let prepared = adapter::prepare(&field, k);
-                let mut expected = None;
-                // First trial is an excluded warmup. Rotate in-process variants.
-                for sample in 0..=reps {
-                    for j in 0..variants.len() {
-                        let variant = &variants[(j + sample) % variants.len()];
-                        let mut transcript = Blake3Transcript::new();
-                        adapter::reset_measurements();
-                        let started = Instant::now();
-                        let proof = match variant.as_str() {
-                            "production" => {
-                                adapter::production(&input, &field, &mut transcript, &tau, n, k)
-                            }
-                            "generic" => adapter::generic(
-                                &input,
-                                &field,
-                                &mut transcript,
-                                &tau,
-                                k,
-                                &prepared,
-                            ),
-                            _ => panic!("unknown variant {variant}"),
-                        };
-                        let ns = started.elapsed().as_nanos();
-                        let digest = transcript.state_digest();
-                        let fingerprint = proof.verify_and_hash(&field, &tau, n, digest);
-                        if let Some(ref expected) = expected {
-                            assert_eq!(&fingerprint, expected)
-                        } else {
-                            expected = Some(fingerprint.clone())
-                        }
-                        black_box(&proof);
-                        println!(
-                            "OUTER_SAMPLE {}",
-                            serde_json::json!({"revision":adapter::REVISION,"variant":variant,"bits":bits,"rows":1usize<<n,"protocol":protocol,"threads":threads,"sample":sample,"warmup":sample==0,"ns":ns.to_string(),"proof_digest":fingerprint,"fixture_digest":fixture_digest,"verified":true,"phase_ns":adapter::take_measurements()})
-                        );
-                    }
-                }
+    let input = Inputs::new(bits, n, seed);
+    let fixture = input.fixture_digest();
+    let tau: Vec<_> = (0..n - k)
+        .map(|i| field.from_integer(&(i as u64 + 7)))
+        .collect();
+    let prepared = adapter::prepare(&field, k);
+    let mut expected = None;
+    let mut samples = Vec::new();
+    for sample in 0..trials {
+        let mut times = [0.; 2];
+        for offset in 0..2 {
+            let index = (sample + offset) % 2;
+            let mut transcript = Blake3Transcript::new();
+            adapter::reset_measurements();
+            let start = Instant::now();
+            let proof = if index == 0 {
+                adapter::production(&input, &field, &mut transcript, &tau, n, k)
+            } else {
+                adapter::generic(&input, &field, &mut transcript, &tau, k, &prepared)
+            };
+            times[index] = start.elapsed().as_secs_f64() * 1000.;
+            let fingerprint = proof.verify_and_hash(&field, &tau, n, transcript.state_digest());
+            if let Some(expected) = &expected {
+                assert_eq!(&fingerprint, expected);
+            } else {
+                expected = Some(fingerprint);
             }
+            black_box(proof);
         }
+        samples.push((times[0], times[1]));
     }
+    (fixture, samples)
 }

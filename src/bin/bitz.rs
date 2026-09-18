@@ -136,6 +136,12 @@
 //! `--features unchecked` for release-style plain integer ops (the header
 //! reports the active mode and warns otherwise).
 
+use ::bitz::ligerito_flock::IntEvalRsLigModQProof;
+use ::bitz::piop::spartan::protocol;
+use ::bitz::piop::spartan::protocol::PreparedRelation;
+use ::bitz::piop::spartan::protocol::Proof;
+use bitz::piop::spartan::mul::{MulLayout, MulWitness};
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::HashMap;
 use std::hint::black_box;
@@ -147,6 +153,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use bitz::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::FlockCommitHint;
+use bitz::ligerito_flock::LigeritoSelection;
 use bitz::ligerito_flock::{
     OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
     ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
@@ -154,11 +161,7 @@ use bitz::ligerito_flock::{
 };
 use bitz::ligerito_flock::{commit_rs_ligerito_rows, mle_eval_mod_q_lig_size_breakdown};
 use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
-use bitz::piop::spartan::bitz::U32MulLigerito;
-use bitz::piop::spartan::{
-    IopSecurityProfile, Lambda100, Lambda128, PreparedU32MulRelation, U32MulBitzWidth, U32MulProof,
-    U32MulWitness, commit_u32_mul_witness, prove_u32_mul, verify_u32_mul,
-};
+use bitz::piop::spartan::{IopSecurityProfile, Lambda100, Lambda128};
 use bitz::transcript::Blake3Transcript;
 use flock_core::pcs::ligerito::LigeritoSecurityConfig;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -1147,7 +1150,7 @@ fn main() {
             &pc,
         )
     };
-    let verify_once = |proof: &bitz::ligerito_flock::IntEvalRsLigModQProof| {
+    let verify_once = |proof: &IntEvalRsLigModQProof| {
         let mut vt = Blake3Transcript::new();
         absorb_standalone_mod_q_statement(
             &mut vt,
@@ -3355,19 +3358,19 @@ impl MulResult {
 /// (Step 1, timed separately) followed by the combined Spartan + BitZ proof.
 /// Timings are queried by the caller; memory passes use the same proof body.
 fn mul_prove_e2e(
-    relation: &PreparedU32MulRelation,
-    witness: &U32MulWitness,
-) -> (U32MulProof, FlockCommitHint) {
+    relation: &PreparedRelation<MulLayout<u32>>,
+    witness: &MulWitness<u32>,
+) -> (Proof, FlockCommitHint) {
     let proving = tracing::info_span!("cli:mul.proving").entered();
     let commit = tracing::info_span!("cli:mul.commit").entered();
     let rows = witness.bitz_bit_rows();
-    let hint = commit_u32_mul_witness(relation, rows).unwrap_or_else(|err| {
+    let hint = protocol::commit(relation, rows).unwrap_or_else(|err| {
         eprintln!("BitZ commitment failed: {err}");
         exit(1)
     });
     drop(commit);
     let mut tr = Blake3Transcript::new();
-    let proof = prove_u32_mul(&mut tr, relation, witness, &hint).unwrap_or_else(|err| {
+    let proof = protocol::prove(&mut tr, relation, witness, &hint).unwrap_or_else(|err| {
         eprintln!("combined prove failed: {err}");
         exit(1)
     });
@@ -3393,8 +3396,8 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         exit(2);
     }
     let width = match o.word_bits {
-        1 => U32MulBitzWidth::W1,
-        8 => U32MulBitzWidth::W8,
+        1 => 1,
+        8 => 8,
         w => {
             eprintln!("--word-bits must be 1 or 8 for --mul (got {w})");
             exit(2);
@@ -3419,7 +3422,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // packing of the assignment for the BitZ commitment is part of Step 1
     // (the Commit column), not of this.
     let gen_witness = || {
-        U32MulWitness::from_inputs_with_bitz_width(&inputs, width).unwrap_or_else(|err| {
+        MulWitness::<u32>::from_inputs_with_word_bits(&inputs, width).unwrap_or_else(|err| {
             eprintln!("witness: {err}");
             exit(1)
         })
@@ -3453,21 +3456,23 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // The Ligerito opener: the raw-performance table's Johnson geometry by
     // default (so the two paper tables share one opener), or the relation's
     // own validated-UDR default (`udr`, what the bench and the pins run).
-    let lig = U32MulLigerito::parse(&o.profile, P::LIGERITO_TARGET_BITS).unwrap_or_else(|error| {
-        eprintln!("{error}");
-        exit(2)
-    });
+    let lig =
+        LigeritoSelection::parse(&o.profile, P::LIGERITO_TARGET_BITS).unwrap_or_else(|error| {
+            eprintln!("{error}");
+            exit(2)
+        });
     let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
     let t0_recording =
         bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let t0 = tracing::info_span!("bitz:t0").entered();
-    let relation = PreparedU32MulRelation::new_with_profile_and_ligerito::<P>(layout, lig)
-        .unwrap_or_else(|err| {
-            eprintln!("relation preparation failed at profile {}: {err}", P::NAME);
-            exit(1)
-        });
+    let relation =
+        PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<P>(layout, lig)
+            .unwrap_or_else(|err| {
+                eprintln!("relation preparation failed at profile {}: {err}", P::NAME);
+                exit(1)
+            });
     drop(t0);
     let setup_ms =
         bitz::observability::duration(&t0_recording.intervals().expect("setup capture"), "bitz:t0")
@@ -3521,7 +3526,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     {
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
         let mut vt = Blake3Transcript::new();
-        verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
+        protocol::verify(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
             eprintln!("warm-up verification failed: {err}");
             exit(1)
         });
@@ -3543,7 +3548,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut verify_ms_v = Vec::with_capacity(o.reps);
     let mut psteps = StepTable::default();
     let mut vsteps = StepTable::default();
-    let mut last: Option<(U32MulProof, usize, usize, String)> = None;
+    let mut last: Option<(Proof, usize, usize, String)> = None;
     for rep in 0..o.reps {
         let recording =
             bitz::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
@@ -3551,7 +3556,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
 
         let mut vt = Blake3Transcript::new();
         let verification = tracing::info_span!("cli:mul.verification").entered();
-        verify_u32_mul(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
+        protocol::verify(&mut vt, &relation, &hint.commitment, &proof).unwrap_or_else(|err| {
             eprintln!("verification failed: {err}");
             exit(1)
         });
@@ -3596,10 +3601,15 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // Bytes (the bench's accounting): Spartan payload + boundary nonces, and
     // the serialized BitZ opening split into non-Ligerito | Ligerito.
     let spartan_elements = proof.spartan_payload_elements();
-    let boundary_nonces = proof.grinding_nonce_count(sec) - proof.bitz().grinding_nonces.len();
+    let boundary_nonces = proof.grinding_nonce_count(sec) - proof.opening_grinding_nonces().len();
     let piop_bytes = spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>();
     let open_bytes = proof.bitz().to_bytes().len();
-    let (_zb, open_lig_bytes) = mle_eval_mod_q_lig_size_breakdown(proof.bitz());
+    let (_zb, open_lig_bytes) = mle_eval_mod_q_lig_size_breakdown(
+        proof
+            .bitz()
+            .direct()
+            .expect("the multiplication CLI selects direct W=1 or W=8"),
+    );
     let total_bytes = piop_bytes + open_bytes;
 
     let commit_med = median(commit_ms_v.clone());

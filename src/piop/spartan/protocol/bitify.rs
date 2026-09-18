@@ -43,6 +43,7 @@ pub struct SlotRange {
 pub struct BlockTable {
     selector_vars: usize,
     blocks: Vec<Option<SlotRange>>,
+    packing: Option<(usize, usize)>,
 }
 
 impl BlockTable {
@@ -56,7 +57,14 @@ impl BlockTable {
         Ok(Self {
             selector_vars,
             blocks,
+            packing: None,
         })
+    }
+
+    /// Native limbs are split into logical W-bit cells with a padded stride.
+    pub(crate) fn with_word_packing(mut self, limb_bits: usize, value_bits: usize) -> Self {
+        self.packing = Some((limb_bits, value_bits));
+        self
     }
 
     pub fn selector_vars(&self) -> usize {
@@ -282,6 +290,11 @@ fn structured_row_weights(
     factors: &[u128],
     arith: &field::FpCtx<2>,
 ) -> Result<Vec<u128>, ProtocolError> {
+    if let Some((limb_bits, value_bits)) = table.packing {
+        return packed_row_weights(
+            params, gate_high, table, factors, arith, limb_bits, value_bits,
+        );
+    }
     let word_bits = params.word_bits;
     if !word_bits.is_power_of_two() {
         return Err(ProtocolError::InvalidBitzParameters);
@@ -322,6 +335,47 @@ fn structured_row_weights(
             let factor = arith.prepare_multiplier_u128(scalar);
             for (row, equality) in rows.iter_mut().zip(&eq_high) {
                 *row = arith.mul_canonical_u128(*equality, &factor);
+            }
+        });
+    Ok(weights)
+}
+
+fn packed_row_weights(
+    params: &IntegerMatrixLayout,
+    gate_high: &[u128],
+    table: &BlockTable,
+    factors: &[u128],
+    arith: &field::FpCtx<2>,
+    limb_bits: usize,
+    value_bits: usize,
+) -> Result<Vec<u128>, ProtocolError> {
+    let high = checked_pow2(gate_high.len())?;
+    let cells = limb_bits.div_ceil(value_bits).next_power_of_two();
+    let mut scalars = vec![0; params.rows() / high];
+    for ((_, range), &factor) in table.variable_blocks().zip(factors) {
+        if range.bit_slot_start % limb_bits != 0 || range.bit_count % limb_bits != 0 {
+            return Err(ProtocolError::InvalidBitzParameters);
+        }
+        let mut power = 1;
+        for bit in 0..range.bit_count {
+            if bit % limb_bits % value_bits == 0 {
+                let limb = (range.bit_slot_start + bit) / limb_bits;
+                let cell = limb * cells + (bit % limb_bits) / value_bits;
+                *scalars
+                    .get_mut(cell)
+                    .ok_or(ProtocolError::InvalidBitzParameters)? = arith.mul_u128(factor, power);
+            }
+            power = arith.add_u128(power, power);
+        }
+    }
+    let eq = eq_le_table_fq_fast_with(gate_high, arith)?;
+    let mut weights = vec![0; params.rows()];
+    cfg_chunks_mut!(weights, high)
+        .zip(cfg_iter!(scalars))
+        .for_each(|(target, &scalar)| {
+            let factor = arith.prepare_multiplier_u128(scalar);
+            for (out, &weight) in target.iter_mut().zip(&eq) {
+                *out = arith.mul_canonical_u128(weight, &factor);
             }
         });
     Ok(weights)

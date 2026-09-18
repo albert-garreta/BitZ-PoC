@@ -1,4 +1,7 @@
 //! Controlled decoding-bound experiment within BitZ. No competing backend configuration is read.
+use ::bitz::ligerito_flock::IntEvalRsLigModQProof;
+use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
+
 mod common;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 macro_rules! bail {
@@ -116,7 +119,7 @@ fn inputs() -> Vec<(u128, u128)> {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(value_parser = ["u32-mod32", "u32-full", "u64", "u128", "baby-bear", "sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
+    #[arg(value_parser = ["sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
     case: String,
     profile: String,
     #[arg(long)]
@@ -146,91 +149,7 @@ fn main() -> Result<()> {
         Recording::start(Vec::new())?,
         tracing::info_span!("bounds:setup").entered(),
     );
-    macro_rules! multiplication {
-        ($rel:ident,$layout:ident,$wit:ident,$commit:ident,$prove:ident,$verify:ident,$data:expr) => {{
-            let data = $data;
-            let p = $rel::new_with_profile_and_ligerito::<Lambda100>(
-                $layout::new(data.len())?,
-                e.selection,
-            )?;
-            e.run(
-                setup,
-                p.ligerito_configuration(),
-                p.security().ood,
-                &bincode::serialize(&data)?,
-                || Ok($wit::from_inputs(&data)?),
-                |w| Ok($commit(&p, w.bitz_bit_rows())?),
-                |w, h| Ok($prove(&mut Blake3Transcript::new(), &p, w, h)?),
-                |_, h, proof| {
-                    Ok($verify(
-                        &mut Blake3Transcript::new(),
-                        &p,
-                        &h.commitment,
-                        proof,
-                    )?)
-                },
-                |h, proof| {
-                    let b = proof.bitz().to_bytes();
-                    let decoded = ::bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&b)?;
-                    assert_eq!(decoded.to_bytes(), b);
-                    Ok(bytes(
-                        h.commitment.root.len(),
-                        &b,
-                        proof.spartan_payload_elements() * 16
-                            + (proof.grinding_nonce_count(p.security())
-                                - proof.bitz().grinding_nonces.len())
-                                * 8,
-                    ))
-                },
-            )
-        }};
-    }
     match e.case.as_str() {
-        "u32-mod32" | "u32-full" => multiplication!(
-            PreparedU32MulRelation,
-            U32MulLayout,
-            U32MulWitness,
-            commit_u32_mul_witness,
-            prove_u32_mul,
-            verify_u32_mul,
-            input
-                .iter()
-                .map(|&(x, y)| (x as u32, y as u32))
-                .collect::<Vec<_>>()
-        ),
-        "u64" => multiplication!(
-            PreparedU64MulRelation,
-            U64MulLayout,
-            U64MulWitness,
-            commit_u64_mul_witness,
-            prove_u64_mul,
-            verify_u64_mul,
-            input
-                .iter()
-                .map(|&(x, y)| (x as u64, y as u64))
-                .collect::<Vec<_>>()
-        ),
-        "u128" => multiplication!(
-            PreparedU128MulRelation,
-            U128MulLayout,
-            U128MulWitness,
-            commit_u128_mul_witness,
-            prove_u128_mul,
-            verify_u128_mul,
-            input
-        ),
-        "baby-bear" => multiplication!(
-            PreparedBabyBearMulRelation,
-            BabyBearMulLayout,
-            BabyBearMulWitness,
-            commit_baby_bear_mul_paper_witness,
-            prove_baby_bear_mul_paper,
-            verify_baby_bear_mul_paper,
-            input
-                .iter()
-                .map(|&(x, y)| ((x % 2013265921) as u32, (y % 2013265921) as u32))
-                .collect::<Vec<_>>()
-        ),
         "sha-compression" => {
             let p = sha256::prepare_sha256_compression_batch(7)?.with_ligerito(e.selection)?;
             let source: Vec<_> = (0..128)
@@ -272,7 +191,7 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.bitz().to_bytes();
-                    let decoded = ::bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
@@ -315,7 +234,7 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.bitz().to_bytes();
-                    let decoded = ::bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
@@ -336,7 +255,7 @@ fn main() -> Result<()> {
                 .map(|i| std::array::from_fn(|j| (i * 16 + j) as u32))
                 .collect();
             e.run(setup,p.ligerito_configuration(),p.ood_round(),&bincode::serialize(&(&input,&blocks))?,
-                || Ok(input.iter().map(|&(x,y)|U32MulMod32Row::new(x as u32,y as u32)).collect::<Vec<_>>()),
+                || Ok(input.iter().map(|&(x,y)|MulRow::<u32>::new(x as u32,y as u32)).collect::<Vec<_>>()),
                 |rows| Ok(p.commit_mod32(rows,&blocks)?), |_,h| Ok(p.prove(h)?),
                 |_,h,proof| { let b=proof.to_bytes(); let decoded=p.proof_from_bytes(h.statement(),&b)?; Ok(p.verify(h.statement(),&decoded)?) },
                 |_,proof| Ok(ProofSize { total_bytes: proof.to_bytes().len(), commitment_bytes: None,
@@ -591,14 +510,14 @@ mod cli_tests {
     fn positional_cases_memory_and_cargo_flag() {
         Args::command().debug_assert();
         let latency =
-            Args::try_parse_from(["bounds", "u32-mod32", "custom:1:4", "--bench"]).unwrap();
+            Args::try_parse_from(["bounds", "sha-compression", "custom:1:4", "--bench"]).unwrap();
         assert_eq!(
             (
                 latency.case.as_str(),
                 latency.profile.as_str(),
                 latency.memory
             ),
-            ("u32-mod32", "custom:1:4", false)
+            ("sha-compression", "custom:1:4", false)
         );
         let memory =
             Args::try_parse_from(["bounds", "hybrid-15-7", "udrg:1:4", "--memory"]).unwrap();

@@ -13,7 +13,7 @@
 
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::{
-    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs,
+    commit_rs_ligerito_rows, historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito,
     verify_mle_eval_mod_q_ligerito,
 };
 use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};

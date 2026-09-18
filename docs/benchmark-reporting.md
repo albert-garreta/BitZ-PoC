@@ -47,10 +47,8 @@ file opener remains outside `benches/common/output.rs`.
 | `benches/multiswap.rs` | Optional JSONL trace | Create new; create parents |
 | `benches/sha256_compressions.rs` | Optional JSONL trace and text samples/summary | Replace; create parents |
 | `benches/sha256_product_layout.rs` | Optional status file | Append existing |
-| `benches/mul_e2e_compare.rs` (also witness benchmark) | Trace, samples, memory samples, summary, metrics CSV, witness checks/summary | Create new; create output directory |
 | `benches/sha256_e2e_compare.rs` | Trace, summary, metrics CSV | Trace create new; summary/CSV replace; create directories |
-| `benches/baby_bear_pcs_compare.rs` | Trace or stdout; campaign manifest | Create new; create parents |
-| `benches/u32_pcs_compare.rs` | Trace or stdout | Create new; create parents |
+| `benches/mul_bitz.rs`, `benches/mul_compare.rs` | Manifest, raw samples, worker logs | Create new campaign artifacts; Python owns reports |
 | `benches/common/whir_tuning.rs` | Tuning records | Create new |
 | `benches/support/sha256_ecdsa_fixture.rs` | Validated compact JSON fixtures, including worker exports | Replace; no implicit parents |
 | `benches/hybrid_u32_sha256/runner.rs` (also hybrid binary) | Proof bytes, binary/text statement, configuration JSON; CSV on stdout | Replace; no implicit parents |
@@ -68,8 +66,9 @@ labels; no handwritten CSV output or comma-splitting CSV reader remains.
 
 ## Record and format contracts
 
-- Native multiplication samples use integer proof sizes; summary medians use
-  floating-point proof sizes and retain the existing upper-middle median.
+- Multiplication samples use integer proof sizes. The shared Python reporter
+  computes medians by averaging the middle pair for even sample counts and
+  uses Type 7 percentiles; see the [current format](native-mul-compare.md).
 - SHA reuses typed trial metrics. SHA/ECDSA retains explicit null phase fields,
   method-specific details and its existing sample numbering.
 - Tuning candidates and PCS campaign statuses are typed variants. Absent
@@ -89,9 +88,10 @@ labels; no handwritten CSV output or comma-splitting CSV reader remains.
 Timing infrastructure, phase boundaries, formulas, protocol code and Python
 consumers are outside this refactor.
 
-The existing Python campaign runner still adds provenance and protocol
-fingerprints before invoking paper exporters. Raw Rust `summary.json` files
-are not a substitute for that enriched campaign output.
+The multiplication launcher invokes the shared reporter only after a completed,
+verified `mul-bench/v2` campaign. Its manifest and samples carry provenance and
+resolved configurations; historical multiplication formats are unsupported.
+Other comparison runners retain their own reporting formats.
 
 ## Executable checks
 
@@ -125,18 +125,11 @@ JSON/JSONL/CSV files, subprocess log capture and combined CSV output.
 
 ## Opt-in Perfetto interval capture
 
-Add the `bench-perfetto` feature to native multiplication or native SHA comparison
-builds. Each warmup/measured trial writes a separate `.pftrace` next to the normal
-artifacts (next to `trace.jsonl` when SHA uses a custom trace path). Files are
-create-new, never overwritten. Open them locally in <https://ui.perfetto.dev>.
-
-```sh
-RAYON_NUM_THREADS=2 BITZ_BENCH_SHAPES=4 BITZ_BENCH_REPS=5 \
-BITZ_MUL_COMPARE_BACKENDS=binius64 BITZ_MUL_COMPARE_MEMORY=0 \
-BITZ_MUL_COMPARE_OUTPUT_DIR=/tmp/my-new-perfetto-run \
-cargo bench --bench mul_e2e_compare \
-  --features bench-internals,native-mul-compare,bench-perfetto
-```
+Native multiplication records per-trial phase totals in `samples.jsonl`; see
+[the multiplication interface](native-mul-compare.md). For native SHA comparison,
+`bench-perfetto` also saves diagnostic `.pftrace` files beside the normal
+artifacts (or beside a custom trace path). Open them locally in
+<https://ui.perfetto.dev>.
 
 `src/observability.rs` configures `tracing-perfetto-sdk` with an in-process
 Perfetto session. It composes with the existing subscriber; it does not install

@@ -5,46 +5,15 @@ Run under scripts/bench_gate.py. Allocation-instrumented binaries must not be
 used here. Each block is a fresh process with the worker's own warmup.
 """
 import argparse
-import hashlib
 import itertools
 import json
-import math
 import os
 from pathlib import Path
-import random
 import statistics
-import subprocess
+from bench_support import run_checked, clean_environment, file_hash, write_json
 
 
-def paired_interval(ratios):
-    if len(ratios) < 2 or any(not math.isfinite(r) or r <= 0 for r in ratios):
-        raise ValueError('paired intervals require at least two positive finite ratios')
-    rng = random.Random(0)
-    logs = [math.log(x) for x in ratios]
-    draws = sorted(math.exp(statistics.mean(rng.choices(logs, k=len(logs)))) for _ in range(10000))
-    return [draws[249], draws[9749]]
-
-
-def classify_interval(interval, maximum=1.0):
-    """Uncertainty is not evidence of nonregression. No tolerated slowdown."""
-    if interval[1] <= maximum:
-        return 'pass'
-    if interval[0] > 1.0:
-        return 'regression'
-    return 'inconclusive'
-
-
-def timing_ratios(baseline, candidate, diagnostic=False):
-    if len(baseline) != len(candidate):
-        raise ValueError('unpaired timing blocks')
-    if any(not math.isfinite(v) or v < 0 for v in baseline + candidate):
-        raise ValueError('invalid timing')
-    if any(v == 0 for v in baseline + candidate):
-        if diagnostic:
-            return []  # A removed optional phase has no log-ratio interval.
-        raise ValueError('missing mandatory timing')
-    return [b/a for a,b in zip(baseline, candidate)]
-
+from bench_statistics import paired_interval, classify_interval, timing_ratios
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -61,18 +30,17 @@ def main():
     parser.add_argument('--targets', type=int, nargs='+', choices=[100, 128], default=[100])
     parser.add_argument('--baseline-env', action='append', default=[])
     parser.add_argument('--candidate-env', action='append', default=[])
-    parser.add_argument('--schedule', choices=['l2','l4','l8'], default='l4')
+    parser.add_argument('--schedule', choices=['auto','l2','l4','l8'], default='auto')
     parser.add_argument('--require-transcripts', action='store_true')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = {k: getattr(args, k).resolve(strict=True) for k in ['baseline', 'candidate']}
-    clean_env = {k: v for k, v in os.environ.items()
-                 if not k.startswith(('BITZ_', 'F2_FOREST_', 'RAYON_')) and k != 'HARDWARE_CONCURRENCY'}
-    manifest = dict(binaries={k: dict(path=str(v), sha256=hashlib.sha256(v.read_bytes()).hexdigest())
+    clean_env = clean_environment(os.environ)
+    manifest = dict(binaries={k: dict(path=str(v), sha256=file_hash(v))
                               for k, v in binaries.items()},
                     args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
                     affinity=sorted(os.sched_getaffinity(0)))
-    (args.output / 'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
+    write_json(args.output/'manifest.json',manifest)
     summaries = []
     for method, exponent, threads, target, seed in itertools.product(
             args.methods, args.exponents, args.threads, args.targets, args.seeds or [args.seed]):
@@ -97,7 +65,7 @@ def main():
                            '--r', str(exponent), '--c', '0', '--target', str(target),
                            '--threads', str(threads), '--reps', str(args.reps), '--seed', str(seed)]
                 with (args.output / (name+'.stdout')).open('w') as out, (args.output / (name+'.stderr')).open('w') as err:
-                    subprocess.run(command, env=env, stdout=out, stderr=err, timeout=600, check=True)
+                    run_checked(command, env=env, stdout=out, stderr=err, timeout=600)
                 rows = [json.loads(line) for line in (args.output / (name+'.stdout')).read_text().splitlines()
                         if line.startswith('{')]
                 rows = [{**r, **r.get('measurements', {})} for r in rows]
@@ -139,7 +107,7 @@ def main():
             if ratios:
                 summary['metrics'][metric]['nonregression'] = classify_interval(interval)
         summaries.append(summary)
-        (args.output / 'summary.json').write_text(json.dumps(summaries, indent=2)+'\n')
+        write_json(args.output/'summary.json',summaries)
     return 0
 
 

@@ -170,16 +170,11 @@ python3 scripts/run_sha256_chain_compare.py \
   --output "$RUN_DIR/sha256-chain" \
   2>&1 | tee "$RUN_DIR/sha256-chain.log"
 
-# 3. All multiplication comparisons
-python3 scripts/run_multiplication_benchmarks.py \
-  --no-gate \
-  --workloads u32 u64 u128 \
-  --backends bitz binius64 binius64-ligerito plonky3-fri limber \
-  --threads 1 10 \
-  --reps 5 \
-  --bitz-profiles custom:1:4 custom:3:4 \
-  --binius-rates 1 3 \
-  --output "$RUN_DIR/multiplication" \
+# 3. Multiplication comparisons (new unified result format)
+python3 scripts/run_multiplication_benchmarks.py compare \
+  --no-gate --output "$RUN_DIR/multiplication" -- \
+  proof --workload u32-mod32,u64,u128 --backends all \
+  --log-n 15,17,19 --threads 1,10 --reps 5 --memory rss --skip-unsupported \
   2>&1 | tee "$RUN_DIR/multiplication.log"
 
 # 4. BitZ full-product u32 × u32 → u64, with component breakdown
@@ -250,83 +245,37 @@ regenerates the paper table from a finished run.
 
 ### Integer multiplication
 
-Run all multiplication comparisons sequentially with explicit options:
-
-```bash
-python3 scripts/run_multiplication_benchmarks.py \
-  --workloads u32 u64 u128 --threads 1 10 --reps 5
-```
-
-Add `--dry-run` to preview the sizes, systems, rates and commands. Use
-`--backends bitz limber` or `--exponents 15 17 19` to select a smaller run,
-and `--output bench_results/multiplication-run` to name a new results directory.
-By default, results go into a fresh `PerfRuns/<timestamp>-multiplication/`
-directory with a combined `metrics.csv`, `suite.json` progress, and per-campaign
-logs and raw samples. The runner uses the local Perfetto installation above,
-preserves the paper suite's per-backend size limits and rates, and retains the
-machine lock and swap guards. Campaigns start as soon as the lock is available.
-Add `--no-gate` to run campaigns directly without the lock or swap guard.
-Use `--help` for the full list of options.
-
-*BitZ performance step-by-step*
+Choose `bitz` for standalone BitZ experiments or `compare` for cross-system
+comparisons. Launcher options go before `--`; Rust benchmark flags go after it.
+Standalone proof timings exclude native witness generation; comparison proof
+timings include it.
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    --mul-sweep 15-22 --threads 8 --reps 5 --profile custom:1:4 --cooldown 20
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  proof --workload u32-full,u64,u128 --log-n 15..=20 --w 1,3,8 \
+  --split=0,1 --threads 1,8 --reps 5 --skip-unsupported --dry-run
+
+python3 scripts/run_multiplication_benchmarks.py compare --output results/compare -- \
+  proof --workload u32-mod32,u64,u128 --backends all --log-n 15,17,19 \
+  --threads 1,8 --skip-unsupported --memory rss
+
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  witness --workload u32-full,u64,u128,baby-bear --log-n 10 --threads 1
 ```
 
-*Full-proving comparison between different schemes*
-```sh
-LIMBER_REPO=../limber-impl \
-RAYON_NUM_THREADS=8 \
-BITZ_BENCH_SHAPES="15 16 17 18 19 20" \
-BITZ_BENCH_REPS=5 \
-BITZ_MUL_COMPARE_WORKLOADS="u32" \
-BITZ_MUL_COMPARE_BACKENDS="bitz binius64 plonky3-fri limber" \
-bash scripts/run_native_mul_compare.sh
-```
+The launcher builds one executable, runs under the machine lock and swap guard,
+and writes shared reports under `<output>/reports`. It defaults to a fresh
+`PerfRuns/<timestamp>-multiplication` directory. `--no-gate` disables the gate;
+`--swap-grow-gb` changes its default 12 GiB limit. Build settings are preserved,
+with native CPU compilation used when no Rust flags are supplied.
 
-
-*64-bit multiplication* (`x · y = z_lo + 2^64 · z_hi` for random 64-bit `x, y`; the `u64` workload
-runs on BitZ and Binius64):
-```sh
-RAYON_NUM_THREADS=8 \
-BITZ_BENCH_SHAPES="15 16 17 18 19 20" \
-BITZ_BENCH_REPS=5 \
-BITZ_MUL_COMPARE_WORKLOADS="u64" \
-BITZ_MUL_COMPARE_BACKENDS="bitz binius64" \
-bash scripts/run_native_mul_compare.sh
-```
-
-*128-bit multiplication* (`x · y = z` for random 128-bit `x, y` and the exact
-256-bit `z`; the `u128` workload runs on BitZ and Binius64 only; Binius64 uses its
-[`textbook_mul` bignum circuit](https://github.com/binius-zk/binius64/blob/e0ddeb91d3826457322e3b7434a8ca0625f2f56e/crates/circuits/src/bignum/mul.rs#L27-L42). BitZ runs to
-2^21 here; Binius64's bignum prover exceeds the machine's 16 GB from 2^18, so run
-it separately on 2^15–2^17, once at its default rate 1/2 and once at rate 1/8
-with `BITZ_BINIUS_LOG_INV_RATE=3`, since the paper's tables list both):
-
-```sh
-RAYON_NUM_THREADS=8 \
-BITZ_BENCH_SHAPES="15 16 17 18 19 20 21" \
-BITZ_BENCH_REPS=5 \
-BITZ_MUL_COMPARE_WORKLOADS="u128" \
-BITZ_MUL_COMPARE_BACKENDS="bitz" \
-bash scripts/run_native_mul_compare.sh
-RAYON_NUM_THREADS=8 \
-BITZ_BENCH_SHAPES="15 16 17" \
-BITZ_BENCH_REPS=5 \
-BITZ_MUL_COMPARE_WORKLOADS="u128" \
-BITZ_MUL_COMPARE_BACKENDS="binius64" \
-BITZ_BINIUS_LOG_INV_RATE=3 \
-bash scripts/run_native_mul_compare.sh
-```
-
-Every warmup and measured trial generates and verifies the complete proof.
-The default `u32-mod32` workload (`u32` is an alias) compares **independent
-multiplications modulo 2^32** on BitZ, Binius64, Plonky3-FRI and
-Limber-Brakedown, with identical inputs. Limber uses the `int_mult` example
-on your fork's `bitz-benching` branch in the sibling checkout. The old
-multiplication Limber adapter has been removed.
+Launcher `--dry-run` before `--` prints commands without building or writing
+files. Benchmark `--dry-run` after `--` builds and validates the expanded cases
+without proving. Forwarded `--help` shows the selected benchmark's flags.
+Both targets support `proof`, `witness`, and `pcs`; `bitz` additionally supports
+`piop`, `outer`, and `bounds`. See the
+[multiplication benchmark guide](docs/native-mul-compare.md) for configuration,
+measurement boundaries, memory passes, and the `mul-bench/v2` result format.
 
 ### RSA MultiSwap — matched 114-bit comparison
 
@@ -707,63 +656,14 @@ See the [native ZKPassport benchmark guide](benchmarks/zkpassport/README.md)
 for measurement boundaries, offline operation, and the retained upstream
 Noir constraint-coverage diagnostic.
 
-### u32×u32 -> u64 — λ=100; exponents ≥ 15:
-```sh
-BITZ_BENCH_LAMBDA=100 BITZ_BENCH_SHAPES="15 20" BITZ_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --bench u32_mul --features unchecked
-```
-
-### Babybear mult — λ=100; exponents ≥ 15 (unset `BITZ_BENCH_LAMBDA` = a λ=100 and a λ=128 row per shape):
-```sh
-BITZ_BENCH_LAMBDA=100 BITZ_BENCH_SHAPES="15 20" BITZ_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --bench baby_bear_mul --features unchecked
-```
-
-### Independent multiplication modulo 2^32: four backends
-
-Prepare the sibling `limber-impl` checkout on your fork's `bitz-benching`
-branch with the independent Brakedown `examples/int_mult.rs`. Run the smoke
-case (2^15 operations, one in-process warmup, five verified samples):
+### Multiplication and BabyBear
 
 ```sh
-bash scripts/run_native_mul_compare.sh
+cargo bench --bench mul_bitz --features span-metrics,bench-internals -- \
+  proof --workload baby-bear --log-n 15,20 --bitz-profile 100,128 --threads 8
 ```
 
-The runner enforces Rust 1.98.1, native CPU compilation and eight threads.
-Set `LIMBER_REPO` if the fork is elsewhere. For a five-sample sweep:
-
-```sh
-BITZ_BENCH_SHAPES="15 16 17 18 19 20" BITZ_BENCH_REPS=5 \
-bash scripts/run_native_mul_compare.sh
-```
-
-For each size, the runner invokes Limber for warmup and all samples, plus a
-separate invocation for isolated peak RSS. The equivalent standalone command,
-run from this repository root, is:
-
-```sh
-RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=8 \
-cargo +1.98.1 run --manifest-path ../limber-impl/Cargo.toml \
-  --release --example int_mult -- --bits 32 --log-gates 15
-```
-
-At L=15 all backends prove **32,768 independent gates**; Limber allocates
-131,072 padded witness slots. `u32` aliases `u32-mod32`; BabyBear is absent
-from this comparison. BitZ uses Lambda100 and defaults to Johnson `custom:1:4`
-and Round-0 OOD. Binius and Plonky3 use their documented 100-bit targets;
-Limber retains its native approximately 114-bit policy.
-
-Each run writes unified `summary.json`, `samples.jsonl`, `metrics.csv` and
-`campaign.json` under `PerfRuns/`, including source fingerprints and effective
-parameters. Generate a table with:
-
-```sh
-python3 scripts/native_mul_table.py PerfRuns/<run-directory> --out paper/native-mul-table.tex
-```
-
-The exporter rejects incompatible workloads, configurations, corpora,
-measurement policies and machines. Historical chain, Hyrax, WHIR and
-full-product rows remain separate.
+All multiplication benchmarks and reports use the [two-target interface](docs/native-mul-compare.md).
 
 ### SHA security-profile sweep: Lambda100 / Sha128ReferenceSchedule / Lambda128 (set `BITZ_BENCH_LAMBDA` for one of them):
 ```sh
@@ -774,7 +674,7 @@ BITZ_BENCH_SHAPES=12 BITZ_BENCH_REPS=3 RUSTFLAGS="-C target-cpu=native" \
 ### PCS-only (t:s:W triples; no IOP security profile, so `BITZ_BENCH_LAMBDA` does not apply; profiling stays opt-in here — add OBLONG_PROFILE=1 for the phase line):
 ```sh
 BITZ_BENCH_SHAPES="17:11:1" BITZ_BENCH_REPS=5 RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --bench pcs --features unchecked
+  cargo bench --bench pcs --features unchecked,span-metrics,bench-peak-memory
 ```
 
 ## Dependencies

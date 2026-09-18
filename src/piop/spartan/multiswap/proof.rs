@@ -30,6 +30,10 @@
 //! Limber's own implementation accepts, at a total grinding cost of
 //! `2^10` hashes.
 
+use crate::ligerito_flock::IntEvalRsLigVirtProof;
+use crate::piop::spartan::protocol::Proof;
+use crate::piop::spartan::protocol::ProtocolError;
+
 use crate::piop::spartan::SpartanField as _;
 use blake3::Hasher;
 use circuit::linear_map::CscMatrix;
@@ -44,8 +48,8 @@ use {
         f2map::cell_count,
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, FlockRsError, IntEvalRsLigVirtProof, LigeritoStatementConfig,
-            ModQOpeningKind, validated_udr_lig_configs_with,
+            FlockCommitHint, FlockRsError, LigeritoStatementConfig, ModQOpeningKind,
+            validated_udr_lig_configs_with,
         },
         pcs::IntegerMatrixLayout,
         transcript::traits::Transcript,
@@ -60,8 +64,8 @@ use super::super::{
     profile::{IopInstanceFacts, IopSecurityParams, IopSecurityProfile, Limber114},
     protocol::{
         self, BindingHasher, BlockTable, ClaimFrame, Domains, FieldConfig, Kernel, MatrixSource,
-        PiopWitness, PreparedRelation, PreparedRelationPrefix, PrimeStrategy, Proof, ProtocolError,
-        RelationSpec, ScaleSide, Schedule, SlotRange,
+        PiopWitness, PreparedRelation, PreparedRelationPrefix, PrimeStrategy, RelationSpec,
+        ScaleSide, Schedule, SlotRange,
     },
 };
 use super::{
@@ -97,9 +101,6 @@ static MULTISWAP_DOMAINS: Domains = Domains {
     reduction_prime: REDUCTION_SAMPLING_DOMAIN,
     scopes: crate::protocol_scopes!("multiswap"),
 };
-
-/// Failures in the MultiSwap Spartan/BitZ adapter.
-pub type MultiswapError = ProtocolError;
 
 impl From<MultiswapCircuitError> for ProtocolError {
     fn from(error: MultiswapCircuitError) -> Self {
@@ -387,7 +388,7 @@ pub struct PreparedMultiswapRelation {
 impl PreparedMultiswapRelation {
     /// Prepares the relation, layout, and identity map from a built circuit
     /// at the pinned [`Limber114`] comparison profile.
-    pub fn new(circuit: &MultiswapCircuit) -> Result<Self, MultiswapError> {
+    pub fn new(circuit: &MultiswapCircuit) -> Result<Self, ProtocolError> {
         Self::new_with_profile::<Limber114>(circuit)
     }
 
@@ -396,7 +397,7 @@ impl PreparedMultiswapRelation {
     /// defect bound rules out a single derived-width fingerprint).
     pub fn new_with_profile<P: IopSecurityProfile>(
         circuit: &MultiswapCircuit,
-    ) -> Result<Self, MultiswapError> {
+    ) -> Result<Self, ProtocolError> {
         let spec = MultiswapSpec::new(circuit)?;
         let params = spec.committed_layout();
         let prefix = PreparedRelationPrefix::new::<P>(spec)?;
@@ -432,7 +433,7 @@ impl PreparedMultiswapRelation {
         &self.opening_config_digest
     }
 
-    fn validate_config(&self, config: &impl LigeritoStatementConfig) -> Result<(), MultiswapError> {
+    fn validate_config(&self, config: &impl LigeritoStatementConfig) -> Result<(), ProtocolError> {
         if config_digest(config) != self.opening_config_digest {
             return Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig));
         }
@@ -478,7 +479,7 @@ impl PreparedMultiswapRelation {
 /// Derives the production Ligerito configuration for the MultiSwap shape.
 pub fn multiswap_lig_configs(
     p: &IntegerMatrixLayout,
-) -> Result<(LigProverConfig, LigVerifierConfig), MultiswapError> {
+) -> Result<(LigProverConfig, LigVerifierConfig), ProtocolError> {
     // `udrg:3:4:114`: UDR geometry at rate 1/8 with fold arity 4, fold
     // grinding, BLAKE3, validator-gated at the row's 114-bit target. Chosen
     // 2026-09-08 over the audited `udrg:1:4:128` (rate 1/2) for proof size:
@@ -494,7 +495,7 @@ pub fn commit_multiswap_witness(
     p: &IntegerMatrixLayout,
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
-) -> Result<FlockCommitHint, MultiswapError> {
+) -> Result<FlockCommitHint, ProtocolError> {
     if p.word_bits != 1 {
         return Err(ProtocolError::InvalidBitzParameters);
     }
@@ -505,9 +506,6 @@ pub fn commit_multiswap_witness(
     Ok(hint)
 }
 
-/// The two-prime MultiSwap proof.
-pub type MultiswapProof = Proof<IntEvalRsLigVirtProof>;
-
 /// Proves the MultiSwap Mod-R1CS against a committed bit witness.
 pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     transcript: &mut T,
@@ -515,7 +513,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     assignment: &MultiswapAssignment,
     hint: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<MultiswapProof, MultiswapError> {
+) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
     prepared.validate_config(pc)?;
     protocol::prove_reduced(transcript, &prepared.inner, assignment, hint)
 }
@@ -526,9 +524,9 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,
     commitment: &Commitment,
-    proof: &MultiswapProof,
+    proof: &Proof<IntEvalRsLigVirtProof>,
     vc: &LigVerifierConfig,
-) -> Result<(), MultiswapError> {
+) -> Result<(), ProtocolError> {
     prepared.validate_config(vc)?;
     protocol::verify_reduced(transcript, &prepared.inner, commitment, proof)
 }
@@ -616,7 +614,7 @@ mod tests {
         let (prefix, reduction, bitz) = proof.clone().into_parts();
         let mut reduction = reduction.unwrap();
         reduction.mu_prime = reduction.mu_prime.wrapping_add(&field::Uint::ONE);
-        let tampered = MultiswapProof::from_parts(prefix, Some(reduction), bitz);
+        let tampered = Proof::<IntEvalRsLigVirtProof>::from_parts(prefix, Some(reduction), bitz);
         assert!(matches!(
             verify_multiswap_mod_r1cs(
                 &mut Blake3Transcript::new(),

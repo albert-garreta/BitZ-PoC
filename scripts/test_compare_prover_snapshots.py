@@ -1,7 +1,7 @@
 """Guard against accepting uncertain or invalid performance measurements."""
 import unittest
 
-from compare_prover_snapshots import classify_interval, paired_interval, timing_ratios
+from bench_statistics import classify_interval, paired_interval, timing_ratios
 from qualify_gkr import evaluate
 
 

@@ -1,4 +1,6 @@
 //! Composition of Spartan's outer and inner sumchecks.
+#[cfg(test)]
+use crate::piop::spartan::mul::MulWitness;
 use crate::sumcheck::{
     UngrindedRoundBoundary,
     bridge::{
@@ -703,11 +705,11 @@ where
 /// The raw-table native univariate-skip prover core. Inputs must already have
 /// passed [`validate_native_u32_prover_inputs`] or
 /// [`validate_native_u32_prover_slices`].
-fn prove_spartan_piop_raw_native_u64_with_skip_core<C>(
+pub(crate) fn prove_spartan_piop_raw_native_u64_with_skip_core<C, I: OuterRows>(
     transcript: &mut impl Transcript,
     matrices: &PreparedConstraintMatrices<Fp<2>, C>,
     assignment_oracle_binding: &[u8; 32],
-    products: NativeProducts<'_>,
+    products: I,
     witness: RawWitness<'_>,
     skip_vars: usize,
 ) -> Result<
@@ -719,6 +721,7 @@ fn prove_spartan_piop_raw_native_u64_with_skip_core<C>(
 >
 where
     C: SpartanMatrixCoefficient<Fp<2>> + RawMontyCoefficient,
+    field::FpCtx<2>: OuterArithmetic<I::AB, I::C>,
 {
     let skip_vars = validate_univariate_skip_variables(skip_vars, matrices.num_row_vars())?;
     absorb_univariate_skip_statement(transcript, matrices, assignment_oracle_binding, skip_vars);
@@ -1389,9 +1392,7 @@ mod tests {
     use crate::piop::spartan::matrix::{
         ConstraintMatrices, build_assignment_mle, build_product_mles,
     };
-    use crate::piop::spartan::u32_mul::{
-        U32MulWitness, prepare_u32_mul_relation, project_u32_mul_native_witness,
-    };
+    use crate::piop::spartan::u32_mul::{prepare_u32_mul_relation, project_u32_mul_native_witness};
 
     const Q100: u128 = (1_u128 << 100) - 15;
     const ROWS: usize = 5;
@@ -1586,7 +1587,7 @@ mod tests {
             (0x8000_0000, 2),
             (17, 19),
         ];
-        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
+        let witness = MulWitness::<u32>::from_inputs(&inputs).unwrap();
         let matrices = prepare_u32_mul_relation(*witness.layout(), &config).unwrap();
         let native = project_u32_mul_native_witness(&witness);
         let (assignment, products) = native.into_parts();
@@ -1700,7 +1701,7 @@ mod tests {
                 _ => (0x8000_0000 + index as u32, 17 + index as u32),
             })
             .collect::<Vec<_>>();
-        let witness = U32MulWitness::from_inputs(&inputs).unwrap();
+        let witness = MulWitness::<u32>::from_inputs(&inputs).unwrap();
         let matrices = prepare_u32_mul_relation(*witness.layout(), &field_config).unwrap();
         assert!(matrices.num_row_vars() >= 4);
         let native = project_u32_mul_native_witness(&witness);
@@ -2054,7 +2055,7 @@ mod tests {
     #[test]
     fn native_u32_zero_variable_outer_sumcheck_is_exact() {
         let config = config(Q100);
-        let witness = U32MulWitness::from_inputs(&[(u32::MAX, u32::MAX)]).unwrap();
+        let witness = MulWitness::<u32>::from_inputs(&[(u32::MAX, u32::MAX)]).unwrap();
         let matrices = prepare_u32_mul_relation(*witness.layout(), &config).unwrap();
         let (assignment, products) = project_u32_mul_native_witness(&witness).into_parts();
         let assignment_binding = [0x3C; 32];
@@ -2106,7 +2107,7 @@ mod tests {
     #[test]
     fn native_u32_first_round_rejects_wide_multiplicands_before_absorption() {
         let config = config(Q100);
-        let witness = U32MulWitness::from_inputs(&[(2, 3)]).unwrap();
+        let witness = MulWitness::<u32>::from_inputs(&[(2, 3)]).unwrap();
         let matrices = prepare_u32_mul_relation(*witness.layout(), &config).unwrap();
         let native = project_u32_mul_native_witness(&witness);
         let (assignment, mut products) = native.into_parts();

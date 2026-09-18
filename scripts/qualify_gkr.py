@@ -10,7 +10,7 @@ import json
 import math
 from pathlib import Path
 
-from compare_prover_snapshots import paired_interval, classify_interval
+from bench_statistics import paired_interval, classify_interval
 
 
 def evaluate(ecdsa, workloads):
@@ -34,7 +34,9 @@ def evaluate(ecdsa, workloads):
             else:
                 key = tuple(row[k] for k in ['case', 'threads', 'seed'])
                 seen = seen_w
-                total = 'e2e_ms'
+                total = 'prove_ms' if row['case'].startswith('full-u32-') else 'e2e_ms'
+                if row.get('total_metric', total) != total:
+                    raise ValueError('incorrect proving boundary')
             if key in seen:
                 raise ValueError(f'duplicate case {key}')
             seen.add(key)

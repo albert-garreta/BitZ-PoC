@@ -983,6 +983,27 @@ pub(crate) fn fold_values_bits(
     rows: &[Vec<u64>],
     row_weights: &[u128],
 ) -> Vec<u128> {
+    fold_values_bits_width::<false>(p, rows, row_weights, p.word_bits)
+}
+
+pub(crate) fn fold_values_bits_bounded(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+    value_bits: usize,
+) -> Vec<u128> {
+    if value_bits == p.word_bits {
+        return fold_values_bits(p, rows, row_weights);
+    }
+    fold_values_bits_width::<true>(p, rows, row_weights, value_bits)
+}
+
+fn fold_values_bits_width<const PADDED: bool>(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+    value_bits: usize,
+) -> Vec<u128> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let mask = p.word_bits.wrapping_sub(1);
     if foldv_lut() {
@@ -993,7 +1014,7 @@ pub(crate) fn fold_values_bits(
         let words = row_len.div_ceil(64);
         let groups = words << 4;
         let wbit = |i: usize| -> u128 {
-            if i < row_len {
+            if i < row_len && (!PADDED || (i & mask) < value_bits) {
                 row_weights[i >> log_w] << (i & mask)
             } else {
                 0
@@ -1053,7 +1074,9 @@ pub(crate) fn fold_values_bits(
                 while bits != 0 {
                     let tz = bits.trailing_zeros() as usize;
                     let i = (wi << 6) | tz;
-                    acc += row_weights[i >> log_w] << (i & mask);
+                    if !PADDED || (i & mask) < value_bits {
+                        acc += row_weights[i >> log_w] << (i & mask);
+                    }
                     bits &= bits.wrapping_sub(1);
                 }
             }
@@ -1488,6 +1511,31 @@ pub(crate) fn prove_int_eval_merged_common(
     MultiDegreeSumcheckProof<Gf>,
     Vec<Gf>,
 ) {
+    prove_int_eval_merged_bounded(
+        transcript,
+        p,
+        rows,
+        packed_cols,
+        row_weights,
+        alpha,
+        p.word_bits,
+    )
+}
+
+pub(crate) fn prove_int_eval_merged_bounded(
+    transcript: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    packed_cols: Option<&[Vec<u64>]>,
+    row_weights: &[u128],
+    alpha: Gf,
+    value_bits: usize,
+) -> (
+    crate::merged_forest::MergedForestProof,
+    Vec<u128>,
+    MultiDegreeSumcheckProof<Gf>,
+    Vec<Gf>,
+) {
     use crate::merged_forest::prove_merged_forest_lazy_from_rows;
     use crate::pcs::chunk_pow2_table;
     let t_w = row_bit_vars(p);
@@ -1527,7 +1575,7 @@ pub(crate) fn prove_int_eval_merged_common(
     drop(pow2);
     let v = {
         let _g = tracing::info_span!("mc:fold_v").entered();
-        fold_values_bits(p, rows, row_weights)
+        fold_values_bits_bounded(p, rows, row_weights, value_bits)
     };
 
     let _g_tbls = tracing::info_span!("mc:presum_tbls").entered();
@@ -1585,12 +1633,15 @@ pub(crate) fn prove_x_claims_batched_common(
     claim_rows: &[&[Vec<u64>]],
     claim_weights: &[&[u128]],
     alpha: Gf,
-) -> (
-    crate::merged_forest::MergedForestProof,
-    Vec<Vec<u128>>,
-    MultiDegreeSumcheckProof<Gf>,
-    Vec<Gf>,
-) {
+) -> Result<
+    (
+        crate::merged_forest::MergedForestProof,
+        Vec<Vec<u128>>,
+        MultiDegreeSumcheckProof<Gf>,
+        Vec<Gf>,
+    ),
+    crate::merged_forest::schedule::UnsupportedSchedule,
+> {
     use crate::merged_forest::prove_merged_forest_lazy_multi;
     use crate::pcs::chunk_pow2_table;
     let n_real = claim_rows.len();
@@ -1642,7 +1693,7 @@ pub(crate) fn prove_x_claims_batched_common(
     }
     let (_roots, mf, z, _e_d) = {
         let _g = tracing::info_span!("mc:forest").entered();
-        prove_merged_forest_lazy_multi(transcript, p, &pairs)
+        prove_merged_forest_lazy_multi(transcript, p, &pairs)?
     };
     let us: Vec<Vec<u128>> = {
         let _g = tracing::info_span!("mc:fold_v").entered();
@@ -1704,7 +1755,7 @@ pub(crate) fn prove_x_claims_batched_common(
 
     // Shared residual point: every claim's M-hat_n(r*, z_clear) = mu_n.
     let point: Vec<Gf> = r_star.iter().chain(z_clear.iter()).copied().collect();
-    (mf, us, presum, point)
+    Ok((mf, us, presum, point))
 }
 
 /// Verifier of [`prove_x_claims_batched_common`]: recompute the `N·2^s`

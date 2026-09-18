@@ -124,17 +124,16 @@ outside this change.
 
 ## Validation and performance reference
 
-Baseline: `a3450385` (`Unify BitZ arithmetic under vendor/field`), release benchmark
-`u32_mul_outer_skip`, default parallel feature plus `span-metrics`, Apple Silicon.
+Baseline: `a3450385` (`Unify BitZ arithmetic under vendor/field`), the former outer-kernel
+benchmark, default parallel feature plus `span-metrics`, Apple Silicon.
 The frozen pre-refactor executable and logs were retained in `/tmp/bitz-outer-baseline`
-and `/tmp/bitz-outer-before.log` during development. Reproduce on a checkout of the
-baseline and this change using the same toolchain, features, thread count, and
-Perfetto processor:
+and `/tmp/bitz-outer-before.log` during development. The current outer-kernel entry point is below. Compare revisions using the same
+toolchain, features, thread count, and Perfetto processor:
 
 ```sh
-BITZ_BENCH_SHAPES='15 17' BITZ_BENCH_REPS=5 \
-  PERFETTO_TRACE_PROCESSOR=/path/to/trace_processor_shell \
-  cargo bench --bench u32_mul_outer_skip --features span-metrics
+PERFETTO_TRACE_PROCESSOR=/path/to/trace_processor_shell \
+  cargo bench --bench mul_bitz --features span-metrics,bench-internals -- \
+  outer --workload u32-full --log-n 15,17 --reps 5
 ```
 
 Correctness checks compare coefficients, points, terminal evaluations, and the

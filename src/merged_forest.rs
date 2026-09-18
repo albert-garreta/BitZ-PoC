@@ -37,7 +37,9 @@
 //! claim the pre-sumcheck consumes, with (z_c, z_bj) replacing the old
 //! (ξ, ρ).
 
+pub mod schedule;
 use core::mem::MaybeUninit;
+use schedule::{ForestPath, configured};
 
 use crate::pcs::IntegerMatrixLayout;
 use crate::piop::sumcheck::eq_factored::{
@@ -1133,7 +1135,7 @@ pub fn prove_merged_forest(
 /// driver's [`GroupBufs::Pair2Bits`] case-LUT round, and layer d−1's runs
 /// the two-round bit-affine [`GroupBufs::Leaf2Bits`] round (dense buffers
 /// only after round 2, ≈ L/4) — all over the SAME per-tree leaf bit halves
-/// + shared tau tables. Under [`forest_schedule_l8`] (opt-in) every bottom
+/// + shared tau tables. Under the L8 schedule every bottom
 /// layer goes ONE round deeper from bits (T4Bits / Pair3Bits / Leaf3Bits,
 /// build top d−4) — every stage ≈ L/8. `pow2` is
 /// [`crate::pcs::chunk_pow2_table`]'s per-row α-power chains.
@@ -1149,7 +1151,14 @@ pub fn prove_merged_forest_lazy(
     pow2: &[Vec<Gf>],
     live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    prove_merged_forest_lazy_sched(transcript, p, packed_cols, pow2, forest_schedule(), live)
+    prove_merged_forest_lazy_sched(
+        transcript,
+        p,
+        packed_cols,
+        pow2,
+        configured(p, ForestPath::Single).expect("single forest schedule"),
+        live,
+    )
 }
 
 pub(crate) fn prove_merged_forest_lazy_from_rows(
@@ -1166,7 +1175,7 @@ pub(crate) fn prove_merged_forest_lazy_from_rows(
         Some(rows),
         packed_cols,
         pow2,
-        forest_schedule(),
+        configured(p, ForestPath::Single).expect("single forest schedule"),
         live,
     )
 }
@@ -1174,42 +1183,27 @@ pub(crate) fn prove_merged_forest_lazy_from_rows(
 /// Where the stored level chain tops out — the forest's time/memory knob,
 /// one notch per level. Every schedule is byte-identical: they differ only
 /// in which levels are stored, regenerated, or read straight off the bits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum ForestSchedule {
     /// Build top d−2: level d−2 is STORED, so the layer-(d−3) JIT
     /// regeneration disappears. Peak ≈ `2^n·8 B` — double L/4, in
     /// exchange for one fewer full `T4` sweep. The RAM-for-time end of
     /// the knob (`F2_FOREST_SCHEDULE=l2`).
     L2,
-    /// Build top d−3, level d−2 regenerated JIT at its own layer — the
-    /// DEFAULT. Peak ≈ `2^n·4 B`.
+    /// Build top d−3, level d−2 regenerated JIT at its own layer.
+    /// Peak ≈ `2^n·4 B`.
     L4,
     /// Build top d−4 + one more bit-driven round per bottom layer. Peak
-    /// ≈ `2^n·2 B`, at a measured +5–13 % prove cost
-    /// (`F2_FOREST_SCHEDULE=l8`).
+    /// ≈ `2^n·2 B` (`F2_FOREST_SCHEDULE=l8`).
     L8,
 }
 
 impl ForestSchedule {
     fn is_l8(self) -> bool {
         matches!(self, ForestSchedule::L8)
-    }
-}
-
-/// The forest schedule knob: `F2_FOREST_SCHEDULE=l8` opts into the L/8
-/// schedule (one more bit-driven round per bottom layer + build top d−4 —
-/// peaks halve again, at a measured +5–13 % prove cost at the 2-col model
-/// shapes); `=l2` opts into the L/2 schedule (level d−2 stored instead of
-/// JIT-regenerated — peak doubles, one full `T4` sweep saved); unset or
-/// anything else keeps the **L/4 default** (exactly the shipped `077b4b1`
-/// path). Flip to l8 for memory-bound runs — at nv=23 (2^17 compressions)
-/// the model projects ~2.6 GB under L/8 vs ~4.5 GB under L/4. Read once
-/// per prove call.
-fn forest_schedule() -> ForestSchedule {
-    match std::env::var("F2_FOREST_SCHEDULE").as_deref() {
-        Ok("l2") => ForestSchedule::L2,
-        Ok("l8") => ForestSchedule::L8,
-        _ => ForestSchedule::L4,
     }
 }
 
@@ -1943,7 +1937,9 @@ pub fn quad_active(p: &IntegerMatrixLayout) -> bool {
     }
     let knob = std::env::var("BITZ_QUAD").unwrap_or_default();
     let forced = knob == "force" || knob == "force2";
-    if !(forced || knob == "1" || knob == "2") || forest_schedule() != ForestSchedule::L4 {
+    if !(forced || knob == "1" || knob == "2")
+        || configured(p, ForestPath::Single).expect("single forest schedule") != ForestSchedule::L4
+    {
         return false;
     }
     let log_w = p.word_bits.trailing_zeros() as usize;
@@ -3206,16 +3202,20 @@ pub fn prove_merged_forest_lazy_rlc_general(
 /// untouched. `N` must be a power of two (callers pad with zero-weight
 /// claims: their τ chains are all 1, so their leaves are identically 1
 /// whatever bits they carry) and the depth ≥ 4 (the deployed x shapes
-/// have `t' ≥ 6`). Honours the [`forest_schedule_l8`] knob (L/4 default).
+/// have `t' ≥ 6`). Uses the shared automatic policy or an explicit L4/L8 schedule.
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_merged_forest_lazy_multi(
     transcript: &mut impl Transcript,
     p: &IntegerMatrixLayout,
     claims: &[(&[Vec<u64>], &[Vec<Gf>])],
-) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    // L/2 is a single-prover schedule; the multi path reads the knob as
-    // L/4-or-L/8 (`l2` there means "the default").
-    prove_merged_forest_lazy_multi_sched(transcript, p, claims, forest_schedule().is_l8())
+) -> Result<(Vec<Gf>, MergedForestProof, Vec<Gf>, Gf), schedule::UnsupportedSchedule> {
+    let schedule = configured(p, ForestPath::Multi)?;
+    Ok(prove_merged_forest_lazy_multi_sched(
+        transcript,
+        p,
+        claims,
+        schedule.is_l8(),
+    ))
 }
 
 /// [`prove_merged_forest_lazy_multi`] with the schedule explicit — the

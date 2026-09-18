@@ -10,15 +10,15 @@
 //! RUSTFLAGS="-C target-cpu=native" cargo run --release --example protocol_digest
 //! ```
 
+use ::bitz::piop::spartan::protocol;
+use ::bitz::piop::spartan::protocol::PreparedRelation;
+use bitz::piop::spartan::mul::{MulLayout, MulWitness};
+
 use blake3::Hasher;
 use bitz::piop::spartan::multiswap::{
     MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
     verify_multiswap_mod_r1cs,
-};
-use bitz::piop::spartan::{
-    PreparedU32MulRelation, U32MulBitzWidth, U32MulWitness, commit_u32_mul_witness, prove_u32_mul,
-    verify_u32_mul,
 };
 use bitz::piop::spartan::{
     Sha256CompressionStatement, commit_sha256_compression_witness,
@@ -130,19 +130,19 @@ fn sha256_digest() -> String {
 }
 
 fn u32_mul_digest() -> String {
-    let witness = U32MulWitness::from_fn_with_bitz_width(1usize << 15, U32MulBitzWidth::W1, |i| {
+    let witness = MulWitness::<u32>::from_fn_with_word_bits(1usize << 15, 1, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
         (x, y)
     })
     .expect("witness");
     let layout = *witness.layout();
-    let prepared = PreparedU32MulRelation::new(layout).expect("prepare");
-    let hint = commit_u32_mul_witness(&prepared, witness.bitz_bit_rows()).expect("commit");
+    let prepared = PreparedRelation::<MulLayout<u32>>::new(layout).expect("prepare");
+    let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = prove_u32_mul(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
+    let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).expect("prove");
     let mut verifier_transcript = Blake3Transcript::new();
-    verify_u32_mul(
+    protocol::verify(
         &mut verifier_transcript,
         &prepared,
         &hint.commitment,

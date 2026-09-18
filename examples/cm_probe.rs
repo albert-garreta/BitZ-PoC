@@ -12,7 +12,7 @@
 
 use bitz::piop::spartan::{
     CmAndWitness, SpartanBitzField, commit_cm_and_witness, prepare_cm_and_relation,
-    project_cm_and_witness, prove_cm_and_bitz, spartan_bitz_field_config, verify_cm_and_bitz,
+    prove_cm_and_bitz, spartan_bitz_field_config, verify_cm_and_bitz,
 };
 use bitz::transcript::Blake3Transcript;
 
@@ -44,20 +44,19 @@ fn main() {
 
     // Warm-up (excluded), also the correctness check.
     let profile = bitz::observability::Recording::start(Vec::new()).expect("capture warmup");
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let proof = prove_cm_and_bitz(&mut pt, &relation, projected, &hint).unwrap();
+    let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).unwrap();
     let mut vt = Blake3Transcript::new();
     verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).unwrap();
     bitz::observability::write_profile(std::io::stderr().lock(), "cm_probe warmup", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
     drop(proof);
 
     let profile = bitz::observability::Recording::start(Vec::new()).expect("capture prove");
-    let projected = project_cm_and_witness::<SpartanBitzField>(&witness, &config).unwrap();
     let mut pt = Blake3Transcript::new();
-    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording =
+        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let started = tracing::info_span!("cm_probe:started").entered();
-    let proof = prove_cm_and_bitz(&mut pt, &relation, projected, &hint).unwrap();
+    let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).unwrap();
     eprintln!(
         "== PROVE 2^{log2_gates} gates: {:.2} ms ==",
         { drop(started); bitz::observability::duration(&started_recording.intervals().expect("complete operation capture"), "cm_probe:started").expect("query completed operation") }.as_secs_f64() * 1e3

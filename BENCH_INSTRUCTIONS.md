@@ -14,13 +14,22 @@ export RUSTFLAGS="-C target-cpu=native"
 ### Integer multiplication
 
 ```sh
-python3 scripts/run_multiplication_benchmarks.py \
-  --workloads u32 u64 u128 --threads 1 10 --reps 5
+python3 scripts/run_multiplication_benchmarks.py compare --output PerfRuns/multiplication -- \
+  proof --workload u32-mod32,u64,u128 --backends all --log-n 15,17,19 \
+  --threads 1,10 --reps 5 --memory rss --skip-unsupported
 ```
 
-Add `--dry-run` to preview the plan. Results go to a fresh
-`PerfRuns/<timestamp>-multiplication/`, or a new directory selected with
-`--output`. Its top-level `metrics.csv` combines all completed campaigns.
+All experiment settings use the unified benchmark flags after `--`. Choose
+`bitz` for standalone experiments, including `piop`, `outer`, and `bounds`.
+The launcher builds once, gates measurements, and generates reports under
+`<output>/reports`; omission of `--output` selects a fresh timestamped directory.
+Use launcher `--dry-run` before `--` to print commands without building, or
+benchmark `--dry-run` after it to build and validate the selected cases.
+
+This is an explicit new campaign, not a reconstruction of the historical paper
+matrix. Select sizes, profiles, rates, and memory limits for the intended machine;
+there are no implicit per-backend size limits. The maintained tools consume only
+`mul-bench/v2` results with BitZ configuration names.
 
 ### Suite: integer multiplication, SHA+ECDSA, hybrid, MultiSwap
 
@@ -83,15 +92,9 @@ for E in 15 17 19 21 23; do
 done
 ```
 
-Collect the `ZINC_RESULT` / `ZINC_TRIAL` lines and the `maximum resident set
-size` of each case into `bench_results/zinc-plus-u32-<date>/results.jsonl`
-and `t<threads>-e<exponent>.out`, then:
-
-```sh
-python3 scripts/zinc_plus_summary.py bench_results/zinc-plus-u32-<date> \
-    --clone /tmp/zinc-609c18c --revision 609c18c --toolchain "$(rustc --version)" \
-    --machine-from PerfRuns/suite-u32-bitz-r2-t1 --out PerfRuns/zinc-plus-u32
-```
+The Zinc+ commands above reproduce historical external measurements. Retain
+their raw logs separately; the current multiplication reporter does not import
+that historical format.
 
 ### MultiSwap rows of the other systems
 
@@ -110,27 +113,7 @@ LIMB16=1 NVARS=13 REPS=5 RAYON_NUM_THREADS=10 cargo bench --locked \
 ## Tables
 
 ```sh
-python3 scripts/native_mul_table.py \
-    PerfRuns/suite-u32-{bin-r1,bin-r3,bitz-r2,bitz-r8,fri,lig-r1,lig-r3,limber}-t10 \
-    PerfRuns/suite-u32-{bin-r1,bin-r3,bitz-r2,bitz-r8,fri,lig-r1,lig-r3,limber}-t1 \
-    PerfRuns/zinc-plus-u32 \
-    --workload u32-mod32 --exponents 15,17,19,21,23 \
-    --unsupported binius64:23,binius64-ligerito-rbr:23,limber:21,limber:23 \
-    --unsupported-reason 'their provers exceed the 24\,GB memory of the machine at those sizes'
-
-python3 scripts/native_mul_table.py \
-    PerfRuns/suite-u64-{bin-r1,bin-r3,bitz-r2,bitz-r8,lig-r1,lig-r3,limber}-t10 \
-    PerfRuns/suite-u64-{bin-r1,bin-r3,bitz-r2,bitz-r8,lig-r1,lig-r3,limber}-t1 \
-    --workload u64 --unsupported limber:21 \
-    --unsupported-reason 'its prover exceeds the 24\,GB memory of the machine at that size'
-
-python3 scripts/native_mul_table.py \
-    PerfRuns/suite-u128-{bin-r1,bin-r3,bitz-r2,bitz-r8,lig-r1,lig-r3,limber}-t10 \
-    PerfRuns/suite-u128-{bin-r1,bin-r3,bitz-r2,bitz-r8,lig-r1,lig-r3,limber}-t1 \
-    PerfRuns/suite-u128-lig-r1-t10-s21 PerfRuns/suite-u128-lig-r1-t1-s21 \
-    --workload u128 --paging binius64:21,binius64-ligerito-rbr@1:21 \
-    --unsupported binius64-ligerito-rbr@3:21,limber:21 \
-    --unsupported-reason 'their provers exceed the 24\,GB memory of the machine at that size'
+python3 scripts/mul_report.py PerfRuns/multiplication --out reports/multiplication
 
 python3 scripts/sha256_ecdsa_table.py bench_results/suite-sha256-ecdsa-<date>
 

@@ -2,6 +2,8 @@
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
 use crate::piop::spartan::SpartanField as _;
 #[cfg(test)]
+use crate::piop::spartan::mul::MulLayout;
+#[cfg(test)]
 use crate::sumcheck::bridge::PreparedBinding;
 pub use crate::sumcheck::outer::arithmetic::NativeWideProducts;
 #[cfg(test)]
@@ -43,7 +45,7 @@ mod state;
 use folded::FoldedValue;
 pub use state::NativeWeights;
 
-pub use native_witness::{NativeLimbWitness, NativeU128Witness};
+pub use native_witness::{NativeBlockWitness, NativeLimbWitness};
 
 pub(crate) type Field = Fp<2>;
 pub(crate) type FieldConfig = field::FpCtx<2>;
@@ -314,7 +316,7 @@ pub enum RawWitness<'a> {
         constant_prefix: Option<NativeConstantPrefix>,
     },
     /// Borrowed declared-width x/y/u256 product segments.
-    Wide(NativeU128Witness<'a>),
+    Wide(NativeBlockWitness<'a>),
     /// Borrowed 32-limb witness and quotient blocks.
     Limbs(NativeLimbWitness<'a>),
     /// Raw field residues.
@@ -461,10 +463,33 @@ fn inner_coefficients_native_raw(
     witness: &[u64],
 ) -> [Raw; 2] {
     debug_assert_eq!(matrix.len(), witness.len());
+    inner_coefficients_native_pairs(ctx, matrix, |start, len| {
+        witness[start..start + len]
+            .chunks_exact(2)
+            .map(|w| [w[0], w[1]])
+    })
+}
+fn inner_coefficients_native_map(
+    ctx: &field::FpCtx<2>,
+    matrix: &[Raw],
+    read: impl Fn(usize) -> u64 + Sync,
+) -> [Raw; 2] {
+    inner_coefficients_native_pairs(ctx, matrix, |start, len| {
+        (start..start + len)
+            .step_by(2)
+            .map(|i| [read(i), read(i + 1)])
+    })
+}
+
+fn inner_coefficients_native_pairs<I: Iterator<Item = [u64; 2]>>(
+    ctx: &field::FpCtx<2>,
+    matrix: &[Raw],
+    pairs: impl Fn(usize, usize) -> I + Sync,
+) -> [Raw; 2] {
     debug_assert_eq!(matrix.len() % 2, 0);
-    let block = |matrix: &[Raw], witness: &[u64]| -> LinearPair {
+    let block = |start: usize, matrix: &[Raw]| -> LinearPair {
         let mut accumulators = linear_pair();
-        for (m, w) in matrix.chunks_exact(2).zip(witness.chunks_exact(2)) {
+        for (m, w) in matrix.chunks_exact(2).zip(pairs(start, matrix.len())) {
             accumulators[0].accumulate_encoded(ctx, m[0], w[0]);
             // (m1 - m0)(w1 - w0) as (±(m1 - m0)) · |w1 - w0|: one product,
             // congruent modulo q to the two-product form.
@@ -481,80 +506,127 @@ fn inner_coefficients_native_raw(
     if parallel(matrix.len() / 2) {
         let total = matrix
             .par_chunks(2 * FOLD_BLOCK)
-            .zip(witness.par_chunks(2 * FOLD_BLOCK))
-            .map(|(m, w)| block(m, w))
+            .enumerate()
+            .map(|(i, m)| block(i * 2 * FOLD_BLOCK, m))
             .reduce(linear_pair, merge_accumulators);
         return reduce_linear_pair(total, ctx);
     }
-    reduce_linear_pair(block(matrix, witness), ctx)
+    reduce_linear_pair(block(0, matrix), ctx)
 }
 
 /// First native fold with canonical integer output and typed linear MAC.
 fn fold_inner_native_raw(
     ctx: &field::FpCtx<2>,
-    matrix_in: &[Raw],
-    witness_in: &[u64],
+    matrix: &[Raw],
+    witness: &[u64],
     matrix_out: &mut [Raw],
-    witness_out: &mut [field::Uint<2>],
+    out: &mut [field::Uint<2>],
     challenge: Raw,
 ) -> [Raw; 2] {
-    debug_assert_eq!(matrix_in.len(), 2 * matrix_out.len());
-    debug_assert_eq!(witness_in.len(), 2 * witness_out.len());
-    debug_assert_eq!(matrix_out.len(), witness_out.len());
-    debug_assert_eq!(matrix_out.len() % 2, 0);
-    let one_minus_challenge = ctx.sub_raw(ctx.one_raw(), challenge);
-    let block = |matrix_in: &[Raw],
-                 witness_in: &[u64],
-                 matrix_out: &mut [Raw],
-                 witness_out: &mut [field::Uint<2>]|
-     -> [field::FpLinearAcc<2, 2>; 2] {
-        let mut accumulators = folded::pair::<field::Uint<2>>();
-        for (((m, w), m_out), w_out) in matrix_in
-            .chunks_exact(4)
-            .zip(witness_in.chunks_exact(4))
-            .zip(matrix_out.chunks_exact_mut(2))
-            .zip(witness_out.chunks_exact_mut(2))
+    debug_assert_eq!(witness.len(), 2 * out.len());
+    fold_native_pairs::<true, _>(
+        ctx,
+        matrix,
+        |start, len| {
+            witness[start..start + len]
+                .chunks_exact(2)
+                .map(|w| [w[0], w[1]])
+        },
+        matrix_out,
+        out,
+        challenge,
+    )
+}
+
+fn fold_native_map<const FOLD_WEIGHTS: bool>(
+    ctx: &field::FpCtx<2>,
+    weights: &[Raw],
+    read: impl Fn(usize) -> u64 + Sync,
+    matrix_out: &mut [Raw],
+    out: &mut [field::Uint<2>],
+    challenge: Raw,
+) -> [Raw; 2] {
+    fold_native_pairs::<FOLD_WEIGHTS, _>(
+        ctx,
+        weights,
+        |start, len| {
+            (start..start + len)
+                .step_by(2)
+                .map(|i| [read(i), read(i + 1)])
+        },
+        matrix_out,
+        out,
+        challenge,
+    )
+}
+
+fn fold_native_pairs<const FOLD_WEIGHTS: bool, I: Iterator<Item = [u64; 2]>>(
+    ctx: &field::FpCtx<2>,
+    weights: &[Raw],
+    pairs: impl Fn(usize, usize) -> I + Sync,
+    matrix_out: &mut [Raw],
+    out: &mut [field::Uint<2>],
+    challenge: Raw,
+) -> [Raw; 2] {
+    debug_assert_eq!(weights.len(), out.len() * if FOLD_WEIGHTS { 2 } else { 1 });
+    debug_assert_eq!(matrix_out.len(), if FOLD_WEIGHTS { out.len() } else { 0 });
+    debug_assert_eq!(out.len() % 2, 0);
+    let one_minus = ctx.sub_raw(ctx.one_raw(), challenge);
+    let block = |start: usize, mout: &mut [Raw], out: &mut [field::Uint<2>]| {
+        let mut acc = folded::pair::<field::Uint<2>>();
+        let mut input = pairs(2 * start, 2 * out.len());
+        let stride = if FOLD_WEIGHTS { 2 } else { 1 };
+        let weights = &weights[start * stride..(start + out.len()) * stride];
+        for (pair, (weights, z)) in weights
+            .chunks_exact(2 * stride)
+            .zip(out.chunks_exact_mut(2))
+            .enumerate()
         {
-            let m0 = ctx.interpolate(m[0], m[1], challenge);
-            let m1 = ctx.interpolate(m[2], m[3], challenge);
-            let w0 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, w[0], w[1]);
-            let w1 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, w[2], w[3]);
-            m_out[0] = m0;
-            m_out[1] = m1;
-            w_out[0] = field::Uint::from_words(raw_to_words(w0));
-            w_out[1] = field::Uint::from_words(raw_to_words(w1));
+            let mut m = [0; 2];
+            for j in 0..2 {
+                m[j] = if FOLD_WEIGHTS {
+                    ctx.interpolate(weights[2 * j], weights[2 * j + 1], challenge)
+                } else {
+                    weights[j]
+                };
+                if FOLD_WEIGHTS {
+                    mout[2 * pair + j] = m[j];
+                }
+                let [at_zero, at_one] = input.next().expect("native pairs cover every output");
+                z[j] = field::Uint::from_words(raw_to_words(fold_native_pair_plain(
+                    ctx, one_minus, challenge, at_zero, at_one,
+                )));
+            }
+            <field::Uint<2> as FoldedValue>::accumulate(ctx, &mut acc[0], m[0], z[0]);
             <field::Uint<2> as FoldedValue>::accumulate(
                 ctx,
-                &mut accumulators[0],
-                m0,
-                field::Uint::from_words(raw_to_words(w0)),
-            );
-            <field::Uint<2> as FoldedValue>::accumulate(
-                ctx,
-                &mut accumulators[1],
-                ctx.sub_raw(m1, m0),
-                field::Uint::from_words(raw_to_words(ctx.sub_raw(w1, w0))),
+                &mut acc[1],
+                ctx.sub_raw(m[1], m[0]),
+                field::Uint::from_words(raw_to_words(
+                    ctx.sub_raw(u128::from(z[1]), u128::from(z[0])),
+                )),
             );
         }
-        accumulators
+        acc
     };
     #[cfg(feature = "parallel")]
-    if parallel(matrix_out.len() / 2) {
-        let total = (
-            matrix_in.par_chunks(2 * FOLD_BLOCK),
-            witness_in.par_chunks(2 * FOLD_BLOCK),
-            matrix_out.par_chunks_mut(FOLD_BLOCK),
-            witness_out.par_chunks_mut(FOLD_BLOCK),
-        )
-            .into_par_iter()
-            .map(|(m, w, m_out, w_out)| block(m, w, m_out, w_out))
-            .reduce(
-                folded::pair::<field::Uint<2>>,
-                merge_accumulators::<field::FpLinearAcc<2, 2>, 2>,
-            );
-        return folded::reduce::<field::Uint<2>>(ctx, total);
+    if parallel(out.len() / 2) {
+        let acc = if FOLD_WEIGHTS {
+            matrix_out
+                .par_chunks_mut(FOLD_BLOCK)
+                .zip(out.par_chunks_mut(FOLD_BLOCK))
+                .enumerate()
+                .map(|(i, (m, z))| block(i * FOLD_BLOCK, m, z))
+                .reduce(folded::pair::<field::Uint<2>>, merge_accumulators)
+        } else {
+            out.par_chunks_mut(FOLD_BLOCK)
+                .enumerate()
+                .map(|(i, z)| block(i * FOLD_BLOCK, &mut [], z))
+                .reduce(folded::pair::<field::Uint<2>>, merge_accumulators)
+        };
+        return folded::reduce::<field::Uint<2>>(ctx, acc);
     }
-    folded::reduce::<field::Uint<2>>(ctx, block(matrix_in, witness_in, matrix_out, witness_out))
+    folded::reduce::<field::Uint<2>>(ctx, block(0, matrix_out, out))
 }
 
 // ---------------------------------------------------------------------------
@@ -594,60 +666,24 @@ fn fold_table_raw(ctx: &field::FpCtx<2>, input: &[Raw], output: &mut [Raw], chal
 /// folded block is emitted in plain form.
 fn fold_block_native_raw(
     ctx: &field::FpCtx<2>,
-    weights_next: &[Raw],
-    z_in: &[u64],
-    z_out: &mut [field::Uint<2>],
+    weights: &[Raw],
+    values: &[u64],
+    out: &mut [field::Uint<2>],
     challenge: Raw,
 ) -> [Raw; 2] {
-    debug_assert_eq!(z_in.len(), 2 * z_out.len());
-    debug_assert_eq!(weights_next.len(), z_out.len());
-    debug_assert_eq!(z_out.len() % 2, 0);
-    let one_minus_challenge = ctx.sub_raw(ctx.one_raw(), challenge);
-    let block = |weights: &[Raw],
-                 z_in: &[u64],
-                 z_out: &mut [field::Uint<2>]|
-     -> [field::FpLinearAcc<2, 2>; 2] {
-        let mut accumulators = folded::pair::<field::Uint<2>>();
-        for ((w, z), out) in weights
-            .chunks_exact(2)
-            .zip(z_in.chunks_exact(4))
-            .zip(z_out.chunks_exact_mut(2))
-        {
-            let z0 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, z[0], z[1]);
-            let z1 = fold_native_pair_plain(ctx, one_minus_challenge, challenge, z[2], z[3]);
-            out[0] = field::Uint::from_words(raw_to_words(z0));
-            out[1] = field::Uint::from_words(raw_to_words(z1));
-            <field::Uint<2> as FoldedValue>::accumulate(
-                ctx,
-                &mut accumulators[0],
-                w[0],
-                field::Uint::from_words(raw_to_words(z0)),
-            );
-            <field::Uint<2> as FoldedValue>::accumulate(
-                ctx,
-                &mut accumulators[1],
-                ctx.sub_raw(w[1], w[0]),
-                field::Uint::from_words(raw_to_words(ctx.sub_raw(z1, z0))),
-            );
-        }
-        accumulators
-    };
-    #[cfg(feature = "parallel")]
-    if parallel(z_out.len() / 2) {
-        let total = (
-            weights_next.par_chunks(FOLD_BLOCK),
-            z_in.par_chunks(2 * FOLD_BLOCK),
-            z_out.par_chunks_mut(FOLD_BLOCK),
-        )
-            .into_par_iter()
-            .map(|(w, z, out)| block(w, z, out))
-            .reduce(
-                folded::pair::<field::Uint<2>>,
-                merge_accumulators::<field::FpLinearAcc<2, 2>, 2>,
-            );
-        return folded::reduce::<field::Uint<2>>(ctx, total);
-    }
-    folded::reduce::<field::Uint<2>>(ctx, block(weights_next, z_in, z_out))
+    debug_assert_eq!(values.len(), 2 * out.len());
+    fold_native_pairs::<false, _>(
+        ctx,
+        weights,
+        |start, len| {
+            values[start..start + len]
+                .chunks_exact(2)
+                .map(|w| [w[0], w[1]])
+        },
+        &mut [],
+        out,
+        challenge,
+    )
 }
 
 /// Terminal folds for structural constant/zero blocks. Private values never
@@ -665,7 +701,9 @@ fn sparse_block_value_raw(eq_at_zero: Raw, block: BlockValues<'_>) -> Option<Raw
 /// scale (its fold never enters a message before the block rounds).
 fn weighted_block_sum_raw(ctx: &field::FpCtx<2>, eq: &[Raw], block: BlockValues<'_>) -> Raw {
     match block {
-        BlockValues::U128(_)
+        BlockValues::U32(_)
+        | BlockValues::U64FromU32Halves(_, _)
+        | BlockValues::U128(_)
         | BlockValues::U256(_, _)
         | BlockValues::ConstantOne
         | BlockValues::Limbs(_)
@@ -724,6 +762,8 @@ fn weighted_block_sum_raw(ctx: &field::FpCtx<2>, eq: &[Raw], block: BlockValues<
 #[derive(Clone, Copy)]
 enum BlockValues<'a> {
     Native(&'a [u64]),
+    U32(&'a [u32]),
+    U64FromU32Halves(&'a [u32], &'a [u32]),
     Field(&'a [Raw]),
     U128(&'a [u128]),
     U256(&'a [u128], &'a [u128]),
@@ -745,7 +785,7 @@ mod tests {
             prove_inner_sumcheck_u32_native_with_reducer, prove_inner_sumcheck_with_reducer,
             prove_u32_first_round,
         },
-        u32_mul::{U32MulLayout, u32_mul_constraint_matrices},
+        u32_mul::u32_mul_constraint_matrices,
         univariate_skip::PrefixUnivariateRowBinding,
         univariate_skip_native::{
             encoded_native_message, fold_encoded_lagrange, fold_native_lagrange_validated,
@@ -1369,7 +1409,7 @@ mod tests {
             }
 
             for multiplications in [1usize, 3, 256, 257, 1000, 4096, 5000] {
-                let layout = U32MulLayout::new(multiplications).unwrap();
+                let layout = MulLayout::<u32>::new(multiplications).unwrap();
                 let prepared = PreparedConstraintMatrices::<Field, bool>::new(
                     u32_mul_constraint_matrices(&layout, true).unwrap(),
                     &cfg,
@@ -1637,7 +1677,7 @@ mod tests {
     fn block_selector_layouts_are_detected_for_the_generated_relations() {
         let cfg = config(MODULI[0]);
         for multiplications in [1usize, 3, 255, 256, 257, 1000, 4096, 5000] {
-            let layout = U32MulLayout::new(multiplications).unwrap();
+            let layout = MulLayout::<u32>::new(multiplications).unwrap();
             let matrices = u32_mul_constraint_matrices(&layout, true).unwrap();
             let prepared =
                 PreparedConstraintMatrices::<Field, bool>::new(matrices.clone(), &cfg).unwrap();
