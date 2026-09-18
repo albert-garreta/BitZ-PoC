@@ -10,7 +10,7 @@ use crate::sumcheck::bridge::PreparedBinding;
 use circuit::linear_map::SparseMatrixError;
 use field::RingOps;
 #[cfg(test)]
-use field::{Fp, Uint};
+use field::{Fp, IntegerEmbedding, Uint};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -30,6 +30,72 @@ const CONSTRAINT_MATRIX_DIGEST_DOMAIN: &[u8] = b"bitz/spartan/constraint-matrice
 use circuit::linear_map::CscMatrix;
 
 use super::{SpartanField, SpartanFieldError, sumcheck::R1csProductMles};
+
+/// Form field row operands from the complete padded Montgomery assignment.
+/// Traversal depends only on public sparse structure, never on witness values.
+pub(crate) fn products_from_montgomery_assignment<C>(
+    matrices: &PreparedConstraintMatrices<field::Fp<2>, C>,
+    assignment: &[u128],
+) -> Result<crate::sumcheck::outer::OuterInputs<field::Fp<2>>, super::SpartanError>
+where
+    C: SpartanMatrixCoefficient<field::Fp<2>>,
+{
+    use super::raw_monty::{raw_shared, shared_raw};
+    use field::{CtEq, CtOrd};
+    let _scope = tracing::info_span!("sp:field_assignment_products").entered();
+    let field = matrices.config();
+    let logical = matrices.matrices().column_count();
+    if assignment.len() != 1usize << matrices.num_column_vars() {
+        return Err(super::SpartanError::InvalidAssignmentDimensions);
+    }
+    let modulus = field.modulus();
+    let valid = assignment.iter().fold(field::CtMask::TRUE, |valid, value| {
+        valid & field::Uint::<2>::from(*value).ct_lt(modulus)
+    });
+    if !valid.declassify() {
+        return Err(super::SpartanError::FieldConfigurationMismatch);
+    }
+    if !field::Uint::<2>::from(assignment[0])
+        .ct_eq(&field::Uint::<2>::from(raw_shared(field.one())))
+        .declassify()
+    {
+        return Err(SpartanMatrixError::InvalidAssignmentConstant.into());
+    }
+    if assignment[logical..]
+        .iter()
+        .fold(0, |any, &value| any | value)
+        != 0
+    {
+        return Err(super::SpartanError::InvalidAssignmentPadding);
+    }
+    let product = |matrix: &CscMatrix<Box<[C]>>| {
+        let mut out = vec![field.zero(); 1usize << matrices.num_row_vars()];
+        let offsets = matrix.column_offsets();
+        for column in 0..matrix.column_count() {
+            let value = shared_raw(field, assignment[column]);
+            for index in offsets[column]..offsets[column + 1] {
+                let row = matrix.row_indices()[index];
+                let term = matrix.coefficients()[index].scale(&value, field);
+                out[row] = field.add(&out[row], &term);
+            }
+        }
+        out
+    };
+    let m = matrices.matrices();
+    #[cfg(feature = "parallel")]
+    if m.a().nnz() + m.b().nnz() + m.c().nnz() >= 4096 && rayon::current_num_threads() > 1 {
+        let (ax, (bx, cx)) = rayon::join(
+            || product(m.a()),
+            || rayon::join(|| product(m.b()), || product(m.c())),
+        );
+        return Ok(crate::sumcheck::outer::OuterInputs { ax, bx, cx });
+    }
+    Ok(crate::sumcheck::outer::OuterInputs {
+        ax: product(m.a()),
+        bx: product(m.b()),
+        cx: product(m.c()),
+    })
+}
 
 /// A sparse R1CS coefficient that can act on values in `F`.
 ///
@@ -1550,6 +1616,76 @@ mod tests {
 
     fn field(value: u64, config: &<Fp<2> as crate::piop::spartan::SpartanField>::Config) -> Fp<2> {
         Fp::<2>::from_with_cfg(value, config)
+    }
+
+    #[test]
+    fn montgomery_products_support_generic_coefficients_and_validate_assignment() {
+        use super::super::raw_monty::raw_shared;
+        let field = Fp::<2>::make_cfg(&Uint::from(crate::pcs::FQ_MOD)).unwrap();
+        let columns = vec![
+            vec![(0, true)],
+            vec![(1, true)],
+            vec![(2, true)],
+            vec![],
+            vec![(0, true)],
+        ];
+        let bool_matrix = CscMatrix::try_from_columns(3, columns.clone()).unwrap();
+        let field_matrix = CscMatrix::try_from_columns(
+            3,
+            columns
+                .into_iter()
+                .map(|column| {
+                    column
+                        .into_iter()
+                        .map(|(row, _)| (row, field.one()))
+                        .collect()
+                })
+                .collect(),
+        )
+        .unwrap();
+        let boolean = PreparedConstraintMatrices::<Fp<2>, bool>::new(
+            ConstraintMatrices::new(bool_matrix.clone(), bool_matrix.clone(), bool_matrix).unwrap(),
+            &field,
+        )
+        .unwrap();
+        let ordinary = PreparedConstraintMatrices::new(
+            ConstraintMatrices::new(field_matrix.clone(), field_matrix.clone(), field_matrix)
+                .unwrap(),
+            &field,
+        )
+        .unwrap();
+        let mut values = vec![0; 8];
+        for (i, value) in values[..5].iter_mut().enumerate() {
+            *value = raw_shared(field.from_integer(&Uint::<1>::from_u64((i + 1) as u64)));
+        }
+        let a = products_from_montgomery_assignment(&boolean, &values).unwrap();
+        let b = products_from_montgomery_assignment(&ordinary, &values).unwrap();
+        assert_eq!(a.ax, b.ax);
+        assert_eq!(a.bx, b.bx);
+        assert_eq!(a.cx, b.cx);
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values[..7]),
+            Err(super::super::SpartanError::InvalidAssignmentDimensions)
+        ));
+        values[7] = values[0];
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values),
+            Err(super::super::SpartanError::InvalidAssignmentPadding)
+        ));
+        values[7] = 0;
+        values[0] = 0;
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values),
+            Err(super::super::SpartanError::Matrix(
+                SpartanMatrixError::InvalidAssignmentConstant
+            ))
+        ));
+        values[0] = raw_shared(field.one());
+        values[1] = u128::from(*field.modulus());
+        assert!(matches!(
+            products_from_montgomery_assignment(&boolean, &values),
+            Err(super::super::SpartanError::FieldConfigurationMismatch)
+        ));
     }
 
     fn columns_from_rows<F: Clone>(

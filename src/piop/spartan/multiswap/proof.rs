@@ -339,11 +339,10 @@ impl RelationSpec for MultiswapSpec {
     fn piop_witness<'w>(
         &self,
         assignment: &'w MultiswapAssignment,
-        _config: &FieldConfig,
+        config: &FieldConfig,
     ) -> Result<PiopWitness<'w>, ProtocolError> {
-        Ok(PiopWitness::IntegerProducts {
-            products: assignment.integer_products(&self.relation),
-            witness: super::super::raw_monty::RawWitness::Limbs(assignment.native()),
+        Ok(PiopWitness::FieldAssignment {
+            assignment: assignment.projected_assignment(config),
         })
     }
 
@@ -639,6 +638,43 @@ mod tests {
             ),
             Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
         ));
+    }
+
+    #[test]
+    fn mini_batches_preserve_verified_codec_roundtrips() {
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        for batch in [1, 2, 4] {
+            let circuit = MultiswapCircuit::build_batch(MultiswapDims::mini(), batch).unwrap();
+            let prepared = PreparedMultiswapRelation::new(&circuit).unwrap();
+            let assignment = MultiswapAssignment::new(&circuit).unwrap();
+            let (pc, vc) = prepared.ligerito_configs();
+            let hint = commit_multiswap_witness(prepared.params(), assignment.bitz_bit_rows(), &pc)
+                .unwrap();
+            let mut prover = Blake3Transcript::new();
+            let proof =
+                prove_multiswap_mod_r1cs(&mut prover, &prepared, &assignment, &hint, &pc).unwrap();
+            let original = proof.clone();
+            let (prefix, reduction, opening) = proof.into_parts();
+            let bytes = opening.to_bytes();
+            let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).unwrap();
+            assert_eq!(decoded.to_bytes(), bytes);
+            let decoded = Proof::from_parts(prefix, reduction, decoded);
+            let mut verifier = Blake3Transcript::new();
+            verify_multiswap_mod_r1cs(&mut verifier, &prepared, &hint.commitment, &decoded, &vc)
+                .unwrap();
+            let mut original_verifier = Blake3Transcript::new();
+            verify_multiswap_mod_r1cs(
+                &mut original_verifier,
+                &prepared,
+                &hint.commitment,
+                &original,
+                &vc,
+            )
+            .unwrap();
+            assert_eq!(original_verifier.state_digest(), verifier.state_digest());
+        }
     }
 
     #[test]

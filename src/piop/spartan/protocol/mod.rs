@@ -442,6 +442,12 @@ pub enum PiopWitness<'w> {
         products: crate::sumcheck::outer::OuterInputs<field::Uint<64>>,
         witness: RawWitness<'w>,
     },
+    /// Complete padded assignment in canonical Montgomery representation for
+    /// the sampled prime, matching `RawWitness::Field`. The generic driver
+    /// derives row products from its already-projected public matrices.
+    FieldAssignment {
+        assignment: Vec<u128>,
+    },
     /// Field-valued tables for the delayed reduction kernel.
     Field {
         products: R1csProductMles<SpartanBitzField>,
@@ -2142,6 +2148,18 @@ where
                 witness,
                 witness.assignment(),
                 None,
+            )?;
+            (SpartanProof::Plain(proof), claim)
+        }
+        (Kernel::Plain, PiopWitness::FieldAssignment { assignment }) => {
+            let products =
+                super::matrix::products_from_montgomery_assignment(matrices, &assignment)?;
+            let (proof, claim) = prove_spartan_piop_raw_products_raw_witness(
+                transcript,
+                matrices,
+                binding,
+                products,
+                RawWitness::Field(assignment),
             )?;
             (SpartanProof::Plain(proof), claim)
         }

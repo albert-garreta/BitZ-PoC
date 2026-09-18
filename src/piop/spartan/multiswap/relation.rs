@@ -415,6 +415,22 @@ impl MultiswapAssignment {
         rows
     }
 
+    /// Project the original declared-width blocks once after the prime draw.
+    /// Storage is canonical Montgomery residues, as required by RawWitness::Field.
+    pub(crate) fn projected_assignment(&self, field: &FpCtx<2>) -> Vec<u128> {
+        use field::RingOps;
+        let mut out = vec![0; self.layout.assignment_len()];
+        out[0] = super::super::raw_monty::raw_shared(field.one());
+        let (_, tail) = out.split_at_mut(self.layout.witness_block_start());
+        let (witness, tail) = tail.split_at_mut(self.layout.capacity);
+        let (quotients, _) = tail.split_at_mut(self.layout.capacity);
+        project_unsigned_blocks(
+            field,
+            [(&self.witness, witness), (&self.quotients, quotients)],
+        );
+        out
+    }
+
     /// Exact row operands for the generic outer sumcheck. The relation checks
     /// the coefficient-sum bound once using public data during preparation.
     pub fn integer_products(
@@ -521,6 +537,38 @@ fn field_modulus(encoding: Vec<u8>) -> BigUint {
 }
 
 /// Reduces a nonnegative integer modulo the runtime prime into `u128`.
+/// One unsigned reduction preparation shared by every declared-width block.
+fn project_unsigned_blocks<const N: usize, const BLOCKS: usize>(
+    field: &FpCtx<2>,
+    blocks: [(&[Uint<N>], &mut [u128]); BLOCKS],
+) {
+    use field::{PreparedLinearCombination, RingOps};
+    let prepared = <FpCtx<2> as PreparedLinearCombination<Uint<N>>>::prepare_linear_combination(
+        field,
+        [field.one()],
+    );
+    for (values, output) in blocks {
+        assert!(values.len() <= output.len());
+        let project = |(value, output): (&Uint<N>, &mut u128)| {
+            let projected = <FpCtx<2> as PreparedLinearCombination<Uint<N>>>::linear_combination(
+                &prepared,
+                |_| *value,
+            );
+            *output = super::super::raw_monty::raw_shared(projected);
+        };
+        #[cfg(feature = "parallel")]
+        if values.len() >= 4096 && rayon::current_num_threads() > 1 {
+            values
+                .par_iter()
+                .zip(output.par_iter_mut())
+                .with_min_len(256)
+                .for_each(project);
+            continue;
+        }
+        values.iter().zip(output.iter_mut()).for_each(project);
+    }
+}
+
 #[allow(clippy::arithmetic_side_effects)]
 #[cfg(test)]
 fn reduce_biguint(value: &BigUint, modulus: &BigUint) -> u128 {
@@ -744,6 +792,113 @@ mod tests {
                 serial.install(|| assignment.bitz_bit_rows()),
                 parallel.install(|| assignment.bitz_bit_rows())
             );
+        }
+    }
+
+    fn check_unsigned_projection<const N: usize>(field: &FpCtx<2>) {
+        let values = [
+            Uint::<N>::ZERO,
+            Uint::<N>::ONE,
+            Uint::from_words([u64::MAX; N]),
+            Uint::from_words(core::array::from_fn(
+                |i| if i + 1 == N { 1 << 63 } else { 0 },
+            )),
+        ];
+        let mut output = [0; 6];
+        project_unsigned_blocks(field, [(&values, &mut output)]);
+        for (value, raw) in values.iter().zip(output) {
+            let expected = field.from_integer(value);
+            assert_eq!(
+                super::super::super::raw_monty::shared_raw(field, raw),
+                expected
+            );
+        }
+        assert_eq!(&output[4..], &[0, 0]);
+    }
+
+    #[test]
+    fn prepared_unsigned_projection_preserves_high_bits_and_padding() {
+        for modulus in [crate::pcs::FQ_MOD, 260337761016399727832017529560925459939] {
+            let field = Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+            check_unsigned_projection::<1>(&field);
+            check_unsigned_projection::<2>(&field);
+            check_unsigned_projection::<4>(&field);
+            check_unsigned_projection::<32>(&field);
+            check_unsigned_projection::<64>(&field);
+            let assignment = synthetic_assignment(16);
+            let projected = assignment.projected_assignment(&field);
+            for (index, raw) in projected.into_iter().enumerate() {
+                let expected = field.from_integer(&assignment.value(index));
+                assert_eq!(
+                    super::super::super::raw_monty::shared_raw(&field, raw),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn witness_projection_matches_worker_counts() {
+        let assignment = synthetic_assignment(8192);
+        let field = test_config();
+        let serial = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let parallel = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap();
+        assert_eq!(
+            serial.install(|| assignment.projected_assignment(&field)),
+            parallel.install(|| assignment.projected_assignment(&field))
+        );
+    }
+
+    #[test]
+    fn witness_first_preserves_products_piop_and_transcript() {
+        use crate::piop::spartan::{
+            matrix::products_from_montgomery_assignment,
+            piop::prove_spartan_piop_raw_products_raw_witness, raw_monty::RawWitness,
+        };
+        use crate::transcript::Blake3Transcript;
+        let (_, relation, assignment) = mini();
+        for modulus in [crate::pcs::FQ_MOD, 260337761016399727832017529560925459939] {
+            let field = Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+            let matrices = relation.project::<Fp<2>>(&field).unwrap();
+            let raw = assignment.projected_assignment(&field);
+            let products = products_from_montgomery_assignment(&matrices, &raw).unwrap();
+            let integers = assignment.integer_products(&relation);
+            for (projected, exact) in [
+                (&products.ax, &integers.ax),
+                (&products.bx, &integers.bx),
+                (&products.cx, &integers.cx),
+            ] {
+                for (projected, exact) in projected.iter().zip(exact) {
+                    assert_eq!(*projected, field.from_integer(exact));
+                }
+            }
+            let mut old_transcript = Blake3Transcript::new();
+            let mut new_transcript = Blake3Transcript::new();
+            let old = prove_spartan_piop_raw_products_raw_witness(
+                &mut old_transcript,
+                &matrices,
+                &[7; 32],
+                integers,
+                RawWitness::Limbs(assignment.native()),
+            )
+            .unwrap();
+            let new = prove_spartan_piop_raw_products_raw_witness(
+                &mut new_transcript,
+                &matrices,
+                &[7; 32],
+                products,
+                RawWitness::Field(raw),
+            )
+            .unwrap();
+            assert_eq!(old, new);
+            assert_eq!(old_transcript.state_digest(), new_transcript.state_digest());
         }
     }
 
