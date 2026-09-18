@@ -298,7 +298,7 @@ In \cref{s:instantiation} we discuss how to instantiate \ftwoz at 128 bits of se
 \bigskip
  
 \noindent \emph{\underline{128 bits of security using $\FF_{2^{128}}$, arbitrary rings $R$, and arbitrary sizes of the entries of $\vv$.}} %\lncsnote{Review} 
-We manage to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having essentially no limitation on the size of the ring $R$ we start with.
+We manage to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having essentially no limitation on the size of the ring $R$ we start with, see \cref{s:instantiation}.
 \fi
 
 \paragraph{Issues 3 and 4: batched low entropy grand products.} We split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\bff)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\bff)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\bff)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\bff)|}$ sized factors. This is typically the case since $\vv$ is usually an ``eq'' vector, and $\uu=L^{\mathsf{T}}\cdot \vv$ for a highly structured matrix $L$\footnote{For example, in our previous example, $\uu= \vv \otimes (1,2,\ldots, 2^{B-1})$. If $\vv$ is an ``eq'' vector, then $\uu$ admits highly customizable tensor decompositions.}. Then, assuming the notation of Step 3 above, we aim to prove  in the exponent $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$ in $\ZZ$  for all $j\in [|\uu^{(2)}|]$, such that $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\bff)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. We  set up a grand product for each of these claims, obtaining 
@@ -358,17 +358,20 @@ In our implementation, we use \ftwoz\ as a PCS that can simultaneously prove R1C
 A particularly interesting subclass of this relation is that obtained by setting $A=B=\mathbf{0}$, in which case the resulting relation, which we call the \emph{$\mathsf{CM}$ relation}, degenerates to linear constraints over $\ZZ$ and over $\FF_2$, i.e.\ a ``dually linear'' constraint. 
 \iflncs
 % [LNCS pointer (Claude Fable 5.1), 2026-09-16: to the appendix section that now holds the virtual-transform material, the SHA table and the CM lemma; please review]
- Our arithmetization of SHA-256 + ECDSA signature verification is an instance of this relation (see \cref{tab:sha_arithmetization} and \cref{r:CM_is_NP_complete} in \cref{s:to_f2_virtual}). Concretely  we arithmetize SHA-256 with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}. However, if only seeking to prove a large amount of SHA-256 compressions, using a binary field is still preferable (see \cref{s:experiments_sha_modmul}).
-
-% [AI-reworded (Claude Opus 5), 2026-09-16: tones down "we describe a proof system ... which uses BitZ as its PCS" (the hybrid scheme is a simple combination; its batched opening uses WHIR or a similar PCS); please review]
-\paragraph{Polynomial constraints in integers and binary fields} For computations mixing constraints over the integers (or other rings) with constraints over binary fields, we construct a SNARK that works, intuitively, as follows: the witness of both constraints is committed together over a binary field. Then we run  \ftwoz-SNARK  for the integer constraints, and  a binary-field SNARK such as Binius64 \cite{binius64}, both using the committed witness. Both of these  reduce the initial constraints to an MLE evaluation claim of the witness over a binary field. Now we batch the two resulting MLE evaluation claims together and prove them over the binary field using a PCS such as WHIR \cite{whir} or Ligerito \cite{Ligerito}. We provide more details in \cref{s:hybrid_snark}. 
-
-We use this simple combination to prove SHA-256 compressions together with multiplications modulo $2^{32}$ (see \cref{tab:intro_table}).
+% [AI edit (Claude Opus 5), 2026-09-18: "this relation" replaced by the name of the relation (the ECDSA part needs $A,B\neq \mathbf{0}$, so the arithmetization is not a CM instance); please review]
+ Our arithmetization of SHA-256 + ECDSA signature verification is an instance of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$ (see \cref{tab:sha_arithmetization} and \cref{r:CM_is_NP_complete} in \cref{s:to_f2_virtual}). Concretely  we arithmetize SHA-256 with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}. However, if only seeking to prove a large amount of SHA-256 compressions, using a binary field is still preferable (see \cref{s:experiments_sha_modmul}).
 \else
 
-In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  We remark that despite this small arithmetization, when it comes to proving a large amount of classic hash compressions, we observe that binary field native proof systems such as Flock \cite{flock} and Binius64 \cite{binius64} perform better. Because of this, in \cref{s:hybrid_snark} we describe how the \ftwoz-SNARK can be combined with such a binary-field SNARK, on a common commitment, to prove computations that mix constraints over the integers (or other rings) and over binary fields.
+% [AI-drafted (Claude Opus 5), 2026-09-18, at the author's request: in the paragraph below, the sentence on SHA-256 + ECDSA as an R1CS-bits-virtual instance and the pointer to s:experiments_sha_modmul, both taken from the submission version; please review]
+In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete \albert{Or NP-hard?}. Our arithmetization of SHA-256 + ECDSA signature verification (\cref{tab:intro_table}) is an instance of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  We remark that despite this small arithmetization, when it comes to proving a large amount of classic hash compressions, we observe that binary field native proof systems such as Flock \cite{flock} and Binius64 \cite{binius64} perform better (see \cref{s:experiments_sha_modmul}). Because of this, in \cref{s:hybrid_snark} we describe how the \ftwoz-SNARK can be combined with such a binary-field SNARK, on a common commitment, to prove computations that mix constraints over the integers (or other rings) and over binary fields.
 % [AI-reworded (Claude Opus 5), 2026-09-16: previous sentence, was "we propose a proof system that can handle simultaneously constraints over integers (or other rings) and binary fields, and which uses \ftwoz\ as its PCS"; please review]
 \fi
+
+% [AI-reworded (Claude Opus 5), 2026-09-16: tones down "we describe a proof system ... which uses BitZ as its PCS" (the hybrid scheme is a simple combination; its batched opening uses WHIR or a similar PCS); please review]
+% [AI edit (Claude Opus 5), 2026-09-18, at the author's request: this paragraph and the next sentence are shown in both versions (they were submission-only); "MLE evaluation claim(s)" replaced by "inner product claim(s)", as in \cref{s:hybrid_snark}; please review]
+\paragraph{Polynomial constraints in integers and binary fields} For computations mixing constraints over the integers (or other rings) with constraints over binary fields, we construct a SNARK that works, intuitively, as follows: the witness of both constraints is committed together over a binary field. Then we run  \ftwoz-SNARK  for the integer constraints, and  a binary-field SNARK such as Binius64 \cite{binius64}, both using the committed witness. Both of these  reduce the initial constraints to an inner product claim of the witness over a binary field. Now we batch the two resulting inner product claims together and prove them over the binary field using a PCS such as WHIR \cite{whir} or Ligerito \cite{Ligerito}. We provide more details in \cref{s:hybrid_snark}. 
+
+We use this simple combination to prove SHA-256 compressions together with multiplications modulo $2^{32}$ (see \cref{tab:intro_table}).
 
 \begin{lncstable}{ShaArith}
 \begin{table}[H]
@@ -1159,10 +1162,8 @@ We list some ongoing work of ours and questions that we leave open:
 \end{lncsmove}
 \section{Preliminaries}
 
-\iflncs
-We next present preliminary concepts and notation used throughout the paper. In \cref{a:prelims} we provide an extended preliminaries section, which includes, among others, concepts on Interactive Oracle Reductions (IORs) and their round-by-round knowledge soundness.
-\else
-\fi
+We next present preliminary concepts and notation used throughout the paper.
+\iflncs In \cref{a:prelims} we provide an extended preliminaries section, which includes, among others, concepts on Interactive Oracle Reductions (IORs) and their round-by-round knowledge soundness.\fi
 
 \paragraph{General notation.} Given an integer $n\geq 1$, we write $[n]$ to denote the set $\{1,\ldots, n\}$. Given integers $m\leq n$, we let $\range{m}{n}$ denote the set of integers $\{m, m+1,. \ldots, n\}$.
 
@@ -1781,7 +1782,7 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 % [LNCS pointer (Claude Fable 5.1), 2026-09-16: the multilinear-extension paragraph moved to the extended preliminaries is pointed to at its first use; please review]
 % [LNCS, 2026-09-16: the description of Round 0 is hidden in the LNCS body (one-line pointer, AI-drafted) and copied verbatim into the OOD appendix a:OOD; please review]
 % [LNCS pointer (Claude Fable 5.1), 2026-09-16: the multilinear-extension paragraph moved to the extended preliminaries is pointed to at its first use; please review]
-\item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.} Optionally, the verifier samples sends a random point of a certain shape, and the prover replies with the MLE evaluation of $\Enc_\cC\circ\pack\pi_2(\bitstext(\bff))$ on the point.  This step is skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \iflncs\cref{a:prelims_codes}\else\cref{s:prelims_codes}\fi, and \cref{t:thm_core_IOPP}). Otherwise the step is executed\iflncs\ (see \cref{a:OOD}).\else. In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with \iflncs(where ``tilde'' denotes multilinear extension, cf.\ \cref{a:prelims_mle}\fi$$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$\fi
+\item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.} Optionally, the verifier samples sends a random point of a certain shape, and the prover replies with the MLE evaluation of $\Enc_\cC\circ\pack\pi_2(\bitstext(\bff))$ on the point.  This step is skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \iflncs\cref{a:prelims_codes}\else\cref{s:prelims_codes}\fi, and \cref{t:thm_core_IOPP}). Otherwise the step is executed (see \cref{a:OOD})\iflncs.\else. In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with \iflncs(where ``tilde'' denotes multilinear extension, cf.\ \cref{a:prelims_mle}\fi$$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$\fi
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
 This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_p$ and $p < \fieldboundsizeexponent$; in that case we set $q\defeq p$ in Round 2 and Phase 3. Otherwise the step is executed. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
 
@@ -2369,7 +2370,7 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 \end{remark}
 
 \end{lncsmove}
-\iflncs\paragraph{Costs of \cref{c:LinModFieldBin}.} \else \paragraph{Costs.}\fi We discuss the costs of \Cref{c:LinModFieldBin}. The rounds, oracles and queries of \cref{c:LinModFieldBin} are exactly those of \cref{c:core_iop} (see \cref{t:core_iop_complexity}), which is run on the bitified witness $\bitstext(\bff)$ of length $\codedim=\codedim_0\cdot \moduledegree\cdot B$ (if using the standard bitification matrix of \cref{d:bitification}), and with the weight vector $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u}.   The only additional costs of \cref{c:LinModFieldBin} are those of computing the bitification of $\bff$ and of computing $\uu^{(1)}$ and $\uu^{(2)}$. When using the standard bitification matrix, the verifier does not need to compute $\uu$ entirely: it suffices to compute $\uu^{(1)}, \uu^{(2)}$, avoiding a linear cost.  In \Cref{t:LinModFieldBin_complexity} we summarize the costs of \cref{c:LinModFieldBin}. 
+\paragraph{Costs of \cref{c:LinModFieldBin}.} We discuss the costs of \Cref{c:LinModFieldBin}. The rounds, oracles and queries of \cref{c:LinModFieldBin} are exactly those of \cref{c:core_iop} (see \cref{t:core_iop_complexity}), which is run on the bitified witness $\bitstext(\bff)$ of length $\codedim=\codedim_0\cdot \moduledegree\cdot B$ (if using the standard bitification matrix of \cref{d:bitification}), and with the weight vector $\uu=\uu^{(1)}\otimes \uu^{(2)}$ of \cref{r:tensor_dec_u}.   The only additional costs of \cref{c:LinModFieldBin} are those of computing the bitification of $\bff$ and of computing $\uu^{(1)}$ and $\uu^{(2)}$. When using the standard bitification matrix, the verifier does not need to compute $\uu$ entirely: it suffices to compute $\uu^{(1)}, \uu^{(2)}$, avoiding a linear cost.  In \Cref{t:LinModFieldBin_complexity} we summarize the costs of \cref{c:LinModFieldBin}. 
 
 
 %For a general bitification matrix $L$, computing $\uu=\psi(L)^{\mathsf{T}}\cdot \vv$ costs $O(\mathsf{nnz}(L))$ operations in $R$, where $\mathsf{nnz}(L)$ denotes the number of nonzero entries of $L$.
@@ -2705,7 +2706,7 @@ We briefly outline how to handle the case when $S$ is an arbitrary finitely gene
 \section{A GKR protocol for low entropy batched grand products }\label{s:gkr_low_entropy}
 
 
-\iflncs We now describe our instantiation of the GKR protocol for proving batched grand products, and our prover optimizations when these have ``low entropy''. \else\fi
+We now describe our instantiation of the GKR protocol for proving batched grand products, and our prover optimizations when these have ``low entropy''.
 
 
 
@@ -3296,7 +3297,7 @@ The remaining experiments, including those summarized in \cref{tab:intro_table,t
 We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the purpose of proving a large amount of hashes (besides offering a simpler arithmetization via the $\mathsf{CM}$ relation from \cref{e:CM_rel}). Indeed if seeking raw performance, Flock or Binius64 is, as of now, better suited for that task.
 
 
- There is a series of works working on anonymous credentials that prove computations similar to SHA-256 followed by ECDSA signature \cite{longfellow,vega}. These works, additionally, prove JSON/CBOR document parsing, and are zero-knowledge. Because we do not support the latter at the moment of writing, we do not compare agains them.
+ There is a series of works working on anonymous credentials that prove computations similar to SHA-256 followed by ECDSA signature \cite{longfellow,vega}. These works, additionally, prove JSON/CBOR document parsing, and are zero-knowledge. Because we do not support the latter at the moment of writing, we do not compare against them.
 
  When proving computations with SHA-256 in them, we do not benchmark against Zinc+\cite{zincplus} because at these amounts of hash compressions it`' runs out of memory.
 %We also do not compare against Flock \cite{flock}, for the reasons explained in \iflncs\cref{s:further_experiments}\else\cref{s:experiments}\fi.
@@ -3403,8 +3404,6 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 
 
 We experiment with proving the SHA-256 hash of a message of a few KB message followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). For the latter we compose two circuits in the Binius64 repo, one for SHA-256 and one for ECDSA signature verification.
-
-There are highly interesting projects proving a related computation, namely SHA+ECDSA and JSON or CBOR document parsing, e.g.\ \cite{longfellow,vega}. However, our scheme does not support zero-knowledge yet, nor JSON/CBOR parsing, and so we omit a comparison here.  In ongoing work we aim to benchmark against these.
 
 
 For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}). 
