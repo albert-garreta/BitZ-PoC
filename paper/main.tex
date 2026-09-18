@@ -398,6 +398,8 @@ In \cite{qaren} the authors propose $\QQ$aren, a compiler that takes any PCS ove
 The concurrent work Limber \cite{limber} proposes a new compiler that transforms any PCS over fields of sufficiently large characteristic $q$ (in this case, $q$ is $\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size, while in \cite{qaren} it is $\Omega(2^\lambda)$) into a PCS for integer polynomials. Additionally Limber compiles into strictly integer PCS, and does not present the issue that a malicious prover could use rationals that are ``almost integers''. Limber is instantiated in practice with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
 \fi
 
+Compared to all prior work, \ftwoz\ proposes a new  concrete PCS over rings, and a new paradigm  for building such. As already demonstrated in the present work for $\ZZ$ and Zaratan, \ftwoz\ can be combined with the arithmetizations and PIOP's from Zaratan, Zinc, and Zinc+, and any other scheme for constraints over rings, to build efficient SNARKs over finitely generated rings.
+
 
 \paragraph{Proof systems over binary fields.} Hash-based SNARKs over binary fields were pioneered by the line of work of Ben-Sasson et al.~\cite{fri,stark,linearSizedIOPs,cryptoeprint:2022/1542}, but did not see widespread adoption until the introduction of \textit{packed} polynomial commitment schemes by Diamond and Posen~\cite{binius,binius2}; see also \cite{binius64}. Such schemes allow one to commit to a bit-valued witness over an extension field without incurring embedding overhead, while still providing evaluation proofs for its original ``uncompressed'' representation. % The \emph{ring-switching} technique of Diamond and Posen~\cite{binius2} is generic, enabling the use of codes over larger alphabets without introducing representational redundancy.\footnotemark 
 %A particularly attractive choice is Reed--Solomon codes over $GF(2^k)$ \cite{binius64,hashcaster:repo}, which offer an excellent trade-off between distance and encoding cost, although several works~\cite{Blaze,tensorswitch,Bolt} explore this design space using more efficient codes.
@@ -445,11 +447,15 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 %\bigskip
 
 % [LNCS, 2026-09-16: the sentence about the AI-drafted soundness overview is hidden in the LNCS build (that overview is not part of it); please review the disclosure wording]
-\noindent \emph{Document preparation:} This document was  written with limited assistance of AI. It was only used to  identify typos and incoherences; make refactorings and stylistic improvements; \iflncs\else and\fi for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}\iflncs; for reformatting into LNCS format, sometimes summarizing some proof outlines; and for organizing benchmark results into tables\else\fi.  \iflncs\else The only ``non-trivial'' use of AI was during the soundness proof overview  in the technical overview  \cref{s:to_soundness}: this   was initially drafted with AI and was ellaborated upon by us subsequently. \fi\albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness} 
+
+
+\noindent \emph{Implementation:} We crucially used AI in our implementation and experiments, in the way explained in \cref{s:experiments}.
 
 \bigskip
 
-\noindent \emph{Implementation:} We crucially used AI in our implementation and experiments, in the way explained in \cref{s:experiments}.
+\noindent \emph{Document preparation:} This document was  written with relatively limited assistance of AI. It was  used to:  identify typos and incoherences; make refactorings and stylistic improvements; \iflncs\else and\fi for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}\iflncs; for preparing the benchmark tables; for reformatting into LNCS format, sometimes summarizing some proof outlines; and for organizing benchmark results into tables\else\fi. The soundness proof of the Out Of Domain (OOD) step (\cref{a:OOD}) was initially drafted with AI, and edited by us subsequntly (such proof is a simple adaptation of well-known arguments to our notation and context).    \iflncs\else The soundness proof   in the technical overview  \cref{s:to_soundness}  was initially drafted with AI and was ellaborated upon by us subsequently. \fi\albertimportant{I also used it in the standard appendix proofs. And used it for help in drating the technical overview soudnness} 
+
+
 \iflncs
 \bigskip
 
@@ -3277,11 +3283,12 @@ We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the
 
  There is a series of works working on anonymous credentials that prove computations similar to SHA-256 followed by ECDSA signature \cite{longfellow,vega}. These works, additionally, prove JSON/CBOR document parsing, and are zero-knowledge. Because we do not support the latter at the moment of writing, we do not compare agains them.
 
+ When proving computations with SHA-256 in them, we do not benchmark against Zinc+\cite{zincplus} because at these amounts of hash compressions it`' runs out of memory.
 %We also do not compare against Flock \cite{flock}, for the reasons explained in \iflncs\cref{s:further_experiments}\else\cref{s:experiments}\fi.
 \lncsplace{ExpRaw}
 
 \begin{lncsmove}{ExpAI}
-\paragraph{Usage of AI} The scheme was initially implemented with AI. After that we thoroughly reviewed the verifier and, following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping the verifier unchanged. Subsequently we manually reviewed, refactored and further optimized both the prover and verifier. The reported benchmark results correspond to this PoC implementation.
+\paragraph{Usage of AI} The scheme was initially implemented with AI. After that we thoroughly reviewed the verifier and, following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping the verifier unchanged. Subsequently we manually reviewed, refactored and further optimized both the prover and verifier. The reported benchmark results correspond to this PoC implementation, which is the one provided in \url{https://anonymous.4open.science/r/BitZ-473D/README.md}.
 
 Additionally, we are currently developing a parallel production-grade  handcrafted implementation,  using more conventional methods. 
 
@@ -3390,7 +3397,7 @@ The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ re
 
 We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}
 
-
+We do not benchmark against Zinc+\cite{zincplus} because at these amounts of hash compressions it runs out of memory.
 
 \begin{table}[H]
   \centering
