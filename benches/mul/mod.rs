@@ -6,6 +6,7 @@ mod outer;
 mod pcs;
 mod piop;
 mod proof;
+mod rss;
 use anyhow::{Result, ensure};
 use clap::Parser;
 use config::{Args, Job, Memory, Mode};
@@ -156,7 +157,7 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
     }
     if !run.latency() {
         let bytes = match run.job.memory {
-            Memory::Rss => peak_rss()? as f64,
+            Memory::Rss => rss::peak_rss_bytes()? as f64,
             Memory::Heap => {
                 #[cfg(feature = "bench-peak-memory")]
                 {
@@ -190,20 +191,6 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
         }];
     }
     write_json(&path.with_extension("result.json"), &run)
-}
-fn peak_rss() -> Result<u64> {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
-    // SAFETY: getrusage initializes this valid output pointer on success.
-    ensure!(
-        unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } == 0,
-        "getrusage failed"
-    );
-    let rss = unsafe { usage.assume_init() }.ru_maxrss as u64;
-    Ok(if cfg!(target_os = "macos") {
-        rss
-    } else {
-        rss * 1024
-    })
 }
 fn child(job: &Job, dir: &Path) -> Result<Run> {
     let name = format!("{}-{:?}", job.id, job.memory).to_lowercase();
