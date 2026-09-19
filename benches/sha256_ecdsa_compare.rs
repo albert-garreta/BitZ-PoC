@@ -181,6 +181,8 @@ fn dispatch_binius(args: &Args) -> Result<()> {
         &args.reps.to_string(),
         "--seed",
         &args.seed.to_string(),
+        "--curve",
+        &args.curve,
     ]);
     if let Some(path) = &args.fixture {
         command.arg("--fixture").arg(path);
@@ -388,7 +390,9 @@ struct ResultRecord<'a, D> {
     method: &'a str,
     zk: bool,
     fixture_profile: &'static str,
-    curve: &'static str,
+    /// The canonical CLI token, not the curve's display name: the campaign
+    /// runner matches rows against `--curve`.
+    curve: &'a str,
     trial: &'static str,
     sample: usize,
     log_compressions: usize,
@@ -423,7 +427,7 @@ fn result_record<'a, D>(
         method: &args.method,
         zk: false,
         fixture_profile: fixture.schema(),
-        curve: args.ecdsa_curve().name(),
+        curve: &args.curve,
         trial: if trial == 0 { "warmup" } else { "sample" },
         sample: trial,
         log_compressions: args.exponent(),
