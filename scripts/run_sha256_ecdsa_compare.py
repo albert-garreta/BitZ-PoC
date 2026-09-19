@@ -552,11 +552,12 @@ def main():
         (directory / "source.patch").write_bytes(patch)
         # Preserve this task's new source files, which git diff does not include.
         sources = ["benches/sha256_ecdsa_compare.rs", "scripts/run_sha256_ecdsa_compare.py",
-                   "benches/support/sha256_ecdsa_fixture.rs"]
+                   "benches/support/sha256_ecdsa_fixture.rs",
+                   "benches/support/sha256_ecdsa_secp_fixture.rs"]
         if args.with_binius64:
             sources += ["benchmarks/binius64/" + path for path in
                         ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "build.py", "build.rs",
-                         "src/main.rs", "src/secp256k1_relation.rs", "src/secp_fixture.rs"]]
+                         "src/main.rs", "src/secp256k1_relation.rs"]]
         for relative in sources:
             target = directory / "source" / relative
             target.parent.mkdir(parents=True, exist_ok=True)
