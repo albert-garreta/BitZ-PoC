@@ -41,7 +41,8 @@ class CampaignTests(unittest.TestCase):
                                   trial="sample" if sample else "warmup", compressions=8, message_bytes=448,
                                   signatures=1, statement_bytes=129, fixture_id="a"*64,
                                   spartan_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
-                                  curve="p256",
+                                  curve="p256-paper",
+                                  circuit_profile="sha256-chain-p256/paper/v1",
                                   security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
@@ -125,6 +126,7 @@ class CampaignTests(unittest.TestCase):
                        circuit_profile="sha256-chain-p256/standard/v1", curve="p256",
                        security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
                                  "log_inv_rate":3})
+        # p256 is BitZ-only in campaigns; these rows exercise validate_rows alone.
         self.assertTrue(campaign.validate_rows(rows, case, 1))
         self.assertFalse(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=2))
         for rate in (1, 2, 3):
@@ -152,7 +154,8 @@ class CampaignTests(unittest.TestCase):
         def rows_for(curve):
             rows = copy.deepcopy(self.rows)
             for row in rows:
-                row.update(case, binius_revision="c"*40, spartan_revision=None, curve=curve,
+                row.update(case, binius_revision="c"*40, spartan_revision=None,
+                           curve=campaign.CURVES[curve]["binius_curve"],
                            circuit_profile=campaign.CURVES[curve]["circuit_profile"],
                            fixture_profile=campaign.CURVES[curve]["fixture_schema"],
                            security=dict(security))

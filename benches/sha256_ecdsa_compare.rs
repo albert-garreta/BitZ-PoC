@@ -399,6 +399,9 @@ struct ResultRecord<'a, D> {
     /// The canonical CLI token, not the curve's display name: the campaign
     /// runner matches rows against `--curve`.
     curve: &'a str,
+    /// Which circuit variant produced this row. Binius rows carry the worker's
+    /// own profile string; these are BitZ's.
+    circuit_profile: &'static str,
     trial: &'static str,
     sample: usize,
     log_compressions: usize,
@@ -434,6 +437,12 @@ fn result_record<'a, D>(
         zk: false,
         fixture_profile: fixture.schema(),
         curve: &args.curve,
+        circuit_profile: match args.ecdsa_curve() {
+            EcdsaCurve::P256 => "sha256-chain-p256/optimized/v1",
+            EcdsaCurve::P256Paper => "sha256-chain-p256/paper/v1",
+            EcdsaCurve::Secp256k1 => "sha256-chain-secp256k1/optimized/v1",
+            EcdsaCurve::Secp256k1Matched => "sha256-chain-secp256k1/binius-matched/v1",
+        },
         trial: if trial == 0 { "warmup" } else { "sample" },
         sample: trial,
         log_compressions: args.exponent(),

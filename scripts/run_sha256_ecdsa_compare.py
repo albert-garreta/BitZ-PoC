@@ -30,11 +30,31 @@ FIXTURE_SCHEMA = "bitz/sha256-ecdsa-fixture/standard-p256/v1"
 # secp256k1 BitZ additionally takes the GLV path, so its circuit is ~20% smaller
 # there; Binius uses its own native secp256k1 verifier. Only spartan-mc is
 # P-256 only.
+# A campaign names a signature curve; each method then runs the circuit that
+# makes the comparison meaningful on it, which is not always the same circuit.
+#
+#   secp256k1  the head-to-head. Binius64 runs its own stock upstream verifier
+#              (ecdsa::bitcoin_verify + msm_strauss_endo); BitZ runs a circuit
+#              matched to that schedule, so the measurement isolates the proof
+#              systems rather than the circuit engineering.
+#   p256       BitZ alone, on the circuit the paper documents. Binius64 upstream
+#              implements ECDSA only over secp256k1, so there is no Binius P-256
+#              row to compare against.
 CURVES = {
-    "p256": dict(fixture_schema=FIXTURE_SCHEMA,
-                 circuit_profile="sha256-chain-p256/standard/v1"),
-    "secp256k1": dict(fixture_schema="bitz/sha256-ecdsa-fixture/standard-secp256k1/v1",
-                      circuit_profile="sha256-chain-secp256k1/standard/v1"),
+    "secp256k1": dict(
+        fixture_schema="bitz/sha256-ecdsa-fixture/standard-secp256k1/v1",
+        bitz_curve="secp256k1-matched",
+        binius_curve="secp256k1",
+        bitz_profile="sha256-chain-secp256k1/binius-matched/v1",
+        circuit_profile="sha256-chain-secp256k1/standard/v1",
+    ),
+    "p256": dict(
+        fixture_schema=FIXTURE_SCHEMA,
+        bitz_curve="p256-paper",
+        binius_curve="p256",
+        bitz_profile="sha256-chain-p256/paper/v1",
+        circuit_profile="sha256-chain-p256/standard/v1",
+    ),
 }
 METRICS = ["setup_ms", "witness_ms", "commit_ms", "protocol_ms", "prove_ms",
            "witness_to_proof_ms", "e2e_prover_ms", "verify_ms", "codec_ms", "outer_ms", "inner_ms",
@@ -143,10 +163,14 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None, curve="p256"):
         revision = row.get("binius_revision" if binius else "spartan_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
             return False
-        if row.get("curve") != curve:
+        expected_curve = profiles["binius_curve"] if binius else profiles["bitz_curve"]
+        if row.get("curve") != expected_curve:
             return False
-        if binius and (row["security"].get("log_inv_rate") != expected_rate
-                       or row.get("circuit_profile") != profiles["circuit_profile"]):
+        expected_circuit = (profiles["circuit_profile"] if binius
+                            else profiles["bitz_profile"])
+        if row.get("circuit_profile") != expected_circuit:
+            return False
+        if binius and row["security"].get("log_inv_rate") != expected_rate:
             return False
         if case["method"] == "binius64" and (row["security"].get("fri_query_target_bits") != case["security_target"]
                                              or row["security"].get("pcs") != "BaseFold"):
@@ -318,7 +342,8 @@ def run_case(binary, case, args, directory):
     worker = args.binius64_worker if binius else binary
     command = [str(worker), "--method", case["method"], "--r", str(r), "--c", str(c),
                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
-    command.extend(["--curve", args.curve])
+    profiles = CURVES[args.curve]
+    command.extend(["--curve", profiles["binius_curve"] if binius else profiles["bitz_curve"]])
     if not binius:
         command.extend(["--timing", args.timing])
     if case["security_target"] is not None:
@@ -405,11 +430,11 @@ def prepare_fixtures(args, directory, binary, splits):
         if not path.exists():
             if binary is not None:
                 command = [str(binary), "--method", "bitz-split", "--r", str(exponent), "--c", "0",
-                           "--seed", str(seed), "--curve", args.curve,
+                           "--seed", str(seed), "--curve", CURVES[args.curve]["bitz_curve"],
                            "--export-fixture", str(path)]
             else:
                 command = [str(args.binius64_worker), "--r", str(exponent), "--c", "0",
-                           "--seed", str(seed), "--curve", args.curve,
+                           "--seed", str(seed), "--curve", CURVES[args.curve]["binius_curve"],
                            "--export-fixture", str(path)]
             subprocess.run(command, check=True)
         if json.loads(path.read_text()).get("schema") != schema:
@@ -489,6 +514,10 @@ def main():
         parser.error("select either --binius-log-inv-rate or --binius-rates")
     args.binius_rates = args.binius_rates or ([args.binius_log_inv_rate] if args.binius_log_inv_rate is not None else DEFAULT_BINIUS_RATES)
     args.with_binius64 = any(method.startswith("binius64") for method in args.methods)
+    if args.curve == "p256" and any(m.startswith("binius64") for m in args.methods):
+        parser.error("--curve p256 is a BitZ-only campaign: Binius64 upstream implements "
+                     "ECDSA over secp256k1 only, and the fork's P-256 verifier was written "
+                     "for this comparison rather than by the Binius authors")
     if args.curve != "p256" and "spartan-mc" in args.methods:
         parser.error(f"--curve {args.curve} is unsupported by spartan-mc, whose "
                      "demo relation is P-256 only")
