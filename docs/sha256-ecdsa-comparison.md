@@ -1,4 +1,4 @@
-# SHA-256 / P-256 ECDSA comparison
+# SHA-256 / ECDSA comparison
 
 The comparison benchmark calls **BitZ Split** (at Ligerito rates 1/2 and 1/8),
 **Binius64** (BaseFold at rates 1/2 and 1/8), and **Binius64 with the BitZ
@@ -24,7 +24,11 @@ workspace, lockfile, and toolchain. See [branch consolidation](binius64-consolid
 ZKPassport is deprecated and is no longer an active method. Historical outputs
 remain readable with `--summarize-only`.
 
-Every new run uses `bitz/sha256-ecdsa-fixture/standard-p256/v1` fixtures. Signatures
+A campaign names a signature curve (`--curve`), and each curve has its own
+fixture profile: `bitz/sha256-ecdsa-fixture/standard-p256/v1` for `p256`,
+`.../standard-secp256k1/v1` for `secp256k1`. The generated tables are one per
+curve, `paper/sha256-ecdsa-{p256,secp256k1}-table.tex`; see BENCH_INSTRUCTIONS.md
+for which circuit each scheme runs on each curve. Signatures
 are not normalized: valid low-s and high-s signatures are both accepted, with
 `0 < r,s < n`. Export/import uses this same generator and validation. Regenerate
 legacy low-s-profile fixtures for a new campaign; old results are not relabelled
