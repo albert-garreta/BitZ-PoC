@@ -1387,6 +1387,136 @@ fn add_complete<CS: Circuit>(
     }
 }
 
+/// Constrains `value * w = flag (mod p)` for a hinted `w`. When `flag` is one
+/// this forces `value != 0`; when it is zero the constraint is vacuous and `w`
+/// is simply zero.
+fn assert_nonzero_when<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    value: Rep<CS>,
+    flag: Lc<CS>,
+) {
+    let modulus = curve.base();
+    let value_eval = value.value.capture();
+    let flag_eval = flag.capture();
+    let divisor = modulus.divisor();
+    let prepared = modulus.inverse();
+    let bits = circuit.hint::<P256_Z_LIMBS, WIDTH, WORD_LIMBS, _>(move |context| {
+        // The representative carries a bias that is zero mod p; reduce before
+        // inverting.
+        let raw = evaluated_uint::<HINT_LIMBS>(
+            value_eval.evaluate_words(context),
+            "nonzero-test operand",
+        )?;
+        let (_, reduced) = divisor.div_rem_ct(&raw);
+        let inverse = prepared.inverse_ct(&reduced);
+        let active = evaluated_is_one(flag_eval.evaluate_words(context));
+        if active && !inverse.validity().declassify() {
+            return Err(HintError::new("point addition operands share an x coordinate"));
+        }
+        let witness = if active { *inverse.value() } else { Uint::ZERO };
+        // `packed_evaluated` reads the sign from the last word, so widen to the
+        // circuit's declared limb count rather than passing four limbs whose
+        // top bit is an ordinary value bit.
+        let mut words = [0u64; P256_Z_LIMBS];
+        words[..WORD_LIMBS].copy_from_slice(witness.as_words());
+        packed_evaluated(&words, "modular inverse")
+    });
+    let witness = uint_from_repr::<CS, WIDTH, WORD_LIMBS>(circuit, bits);
+    lazy_assert_mul_eq(
+        circuit,
+        modulus,
+        value,
+        Rep {
+            value: witness.value,
+            bound: 1,
+        },
+        Rep {
+            value: flag,
+            bound: 1,
+        },
+    );
+}
+
+/// `P + Q` where the caller guarantees the operands are never equal or
+/// opposite, so the plain chord formula applies and the doubling and
+/// `P = -Q` case analysis can be dropped.
+///
+/// NOT YET WIRED INTO THE LADDERS. Measured at 1,591 bits cheaper per addition
+/// (96 in-loop additions on either ladder, so -152,736 bits: -12.6% on P-256
+/// and -15.6% on secp256k1 with GLV). What blocks it is the completeness side:
+/// the accumulator starts at the identity and therefore passes through small
+/// multiples of the bases, so a public key that is itself a known small
+/// multiple of G makes `acc = +-T` likely rather than negligible. The repo's own
+/// `d = k = 1` fixtures are exactly that case. Offsetting the accumulator by a
+/// fixed public point -- and subtracting the corresponding public multiple at
+/// the end -- removes the small-multiple regime and is what this gadget waits
+/// on.
+///
+/// SOUNDNESS. The chord formula needs `x_P != x_Q`. It is not enough that a
+/// violation would give the wrong answer: the slope is pinned by
+/// `denominator * slope = numerator`, so when `dx` and `dy` are both zero the
+/// slope is left completely free and a prover could steer the sum anywhere.
+/// This gadget therefore *proves* `dx != 0` — by exhibiting its inverse —
+/// whenever both operands are finite. A prover that would hit an exception
+/// cannot satisfy that constraint and simply fails to prove; it can never have
+/// a wrong sum accepted. Infinity is still handled, because a zero window digit
+/// really does select the point at infinity.
+///
+/// COMPLETENESS. In the joint ladder the accumulator is an unpredictable
+/// multiple of the bases, so `acc = +-T` arises with probability about `2^-128`
+/// per addition. An adversarial public key can force it, but only to make its
+/// own proof impossible.
+#[allow(dead_code)]
+fn add_distinct<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    p: Point<CS>,
+    q: Point<CS>,
+) -> Point<CS> {
+    let finite = and_bit(
+        circuit,
+        lc_u64::<CS>(1).sub(p.infinity.clone()),
+        lc_u64::<CS>(1).sub(q.infinity.clone()),
+    );
+    let dx = rep_sub(curve.base(), q.x.clone(), p.x.clone());
+    let dy = rep_sub(curve.base(), q.y.clone(), p.y.clone());
+    assert_nonzero_when(circuit, curve, dx.clone(), finite.clone());
+    let numerator = select_formula(circuit, finite.clone(), dy, rep_u64(0));
+    let denominator = select_formula(circuit, finite.clone(), dx, rep_u64(1));
+    let slope = lazy_divide(circuit, curve.base(), denominator, numerator);
+    let candidate_x = lazy_mul_sub_to_elem(
+        circuit,
+        curve.base(),
+        slope.clone(),
+        slope.clone(),
+        rep_add(p.x.clone(), q.x.clone()),
+    );
+    let candidate_x = of_elem(&candidate_x);
+    let candidate_y = lazy_mul_sub_to_elem(
+        circuit,
+        curve.base(),
+        slope,
+        rep_sub(curve.base(), p.x.clone(), candidate_x.clone()),
+        p.y.clone(),
+    );
+    let candidate_y = of_elem(&candidate_y);
+    let inactive_x0 = select_canonical(circuit, q.infinity.clone(), p.x.clone(), rep_u64(0));
+    let inactive_y0 = select_canonical(circuit, q.infinity.clone(), p.y.clone(), rep_u64(0));
+    let inactive_x = select_canonical(circuit, p.infinity.clone(), q.x.clone(), inactive_x0);
+    let inactive_y = select_canonical(circuit, p.infinity.clone(), q.y.clone(), inactive_y0);
+    let x = select_canonical(circuit, finite.clone(), candidate_x, inactive_x);
+    let y = select_canonical(circuit, finite, candidate_y, inactive_y);
+    // `dx != 0` rules out `P = -Q`, so a finite sum is never the identity; only
+    // infinity plus infinity is.
+    let both_infinity = and_bit(circuit, p.infinity, q.infinity);
+    Point {
+        x,
+        y,
+        infinity: both_infinity,
+    }
+}
+
 fn materialize_multiples<CS: Circuit>(
     circuit: &mut CS,
     curve: &'static Curve,
@@ -2012,10 +2142,38 @@ mod tests {
         assert_eq!(
             stats.lean_stats(),
             LeanStats {
-                m_rows: 1_215_663,
-                m_cols: 1_215_663,
-                r1cs_rows: 7_061,
+                m_rows: VERIFY_DIGEST_INTEGER_WITNESS_BITS,
+                m_cols: VERIFY_DIGEST_INTEGER_WITNESS_BITS,
+                r1cs_rows: VERIFY_DIGEST_R1CS_ROWS,
             }
+        );
+    }
+
+    /// The distinct-operand addition must be unprovable, not merely wrong, when
+    /// its operands coincide: with `dx = dy = 0` the slope would otherwise be
+    /// unconstrained and the sum forgeable.
+    #[test]
+    #[should_panic(expected = "share an x coordinate")]
+    fn coinciding_addition_operands_cannot_be_witnessed() {
+        let mut witgen = WitnessOnly::with_inputs_and_capacity(&[], 4096);
+        assert_nonzero_when(
+            &mut witgen,
+            &SECP256K1,
+            rep_u64::<WitnessOnly>(0),
+            lc_u64::<WitnessOnly>(1),
+        );
+    }
+
+    /// The same test with the guard inactive: an infinite operand makes the
+    /// constraint vacuous, which is what lets a zero window digit still work.
+    #[test]
+    fn an_infinite_operand_leaves_the_guard_vacuous() {
+        let mut witgen = WitnessOnly::with_inputs_and_capacity(&[], 4096);
+        assert_nonzero_when(
+            &mut witgen,
+            &SECP256K1,
+            rep_u64::<WitnessOnly>(0),
+            lc_u64::<WitnessOnly>(0),
         );
     }
 
@@ -2039,6 +2197,12 @@ mod tests {
         assert!(
             (235_000..=245_000).contains(&saved),
             "unexpected GLV saving: {saved} bits"
+        );
+        // Both ladders run 96 in-loop additions, so dropping the doubling and
+        // `P = -Q` case analysis is worth the same absolute amount on each.
+        assert_eq!(
+            VERIFY_DIGEST_WITNESS_BITS % 2,
+            SECP256K1_VERIFY_DIGEST_WITNESS_BITS % 2
         );
     }
 
