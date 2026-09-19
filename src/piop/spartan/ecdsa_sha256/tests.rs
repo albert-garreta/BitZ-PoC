@@ -173,6 +173,106 @@ fn transposed_assignment_rows_prove_and_verify() {
     .unwrap();
 }
 
+/// The same `d = k = 1` instance over secp256k1: `Q = G`, `r = G.x`,
+/// `s = z + r mod n`, using that curve's own generator and order.
+fn secp256k1_fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
+    let hex = |s: &[u8]| BigUint::parse_bytes(s, 16).unwrap();
+    let gx = hex(b"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+    let gy = hex(b"483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8");
+    let n = hex(b"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+    let message: Vec<_> = (0..64 * ((1usize << exponent) - 1))
+        .map(|i| i as u8)
+        .collect();
+    let digest = BigUint::from_bytes_be(&Sha256::digest(&message));
+    let s = (&digest + &gx) % n;
+    (
+        Sha256EcdsaStatement {
+            log_compressions: exponent,
+            qx: word(&gx),
+            qy: word(&gy),
+            r: word(&gx),
+            s: word(&s),
+        },
+        message,
+    )
+}
+
+/// secp256k1 proves and verifies end to end, and the two curves are genuinely
+/// distinct relations rather than one cached behind the other.
+#[test]
+fn secp256k1_proves_and_verifies_and_stays_separate_from_p256() {
+    use crate::transcript::Blake3Transcript;
+    let secp = prepare_sha256_ecdsa_on(6, 100, OuterMode::Split, EcdsaCurve::Secp256k1).unwrap();
+    let nist = prepare_sha256_ecdsa_on(6, 100, OuterMode::Split, EcdsaCurve::P256).unwrap();
+
+    // The per-curve cache really is per curve, and the transcript separates
+    // them: `local.digest` is absorbed under `b"relation"`.
+    assert_eq!(secp.curve(), EcdsaCurve::Secp256k1);
+    assert_ne!(secp.local.digest, nist.local.digest);
+    // GLV shrinks the verifier; P-256 keeps its 7,061 rows.
+    assert_eq!(nist.local.rows(), 7061);
+    assert_eq!(secp.local.rows(), 6637);
+    // The factored affine-tail plane engine needs an identity source map; a
+    // non-identity map silently falls back to a dense ~19 MiB/chunk correction.
+    assert!(
+        secp.local.p_map.is_identity(),
+        "secp256k1 tail map must stay factorable"
+    );
+
+    let (statement, message) = secp256k1_fixture_at(6);
+    let witness = generate_sha256_ecdsa_witness(&secp, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&secp, &witness).unwrap();
+    let proof = prove_sha256_ecdsa(
+        &mut Blake3Transcript::new(),
+        &secp,
+        &statement,
+        &witness,
+        &hint,
+        4,
+    )
+    .unwrap();
+    verify_sha256_ecdsa(
+        &mut Blake3Transcript::new(),
+        &secp,
+        &statement,
+        &hint.commitment,
+        &proof,
+    )
+    .unwrap();
+
+    // A P-256 instance must not verify against the secp256k1 relation. Witness
+    // generation does not check satisfaction, so the rejection has to surface
+    // at proving or verification, not earlier.
+    let (other, other_message) = fixture_at(6);
+    let rejected = match generate_sha256_ecdsa_witness(&secp, &other, &other_message) {
+        Err(_) => true,
+        Ok(bad) => match commit_sha256_ecdsa(&secp, &bad) {
+            Err(_) => true,
+            Ok(bad_hint) => {
+                match prove_sha256_ecdsa(
+                    &mut Blake3Transcript::new(),
+                    &secp,
+                    &other,
+                    &bad,
+                    &bad_hint,
+                    4,
+                ) {
+                    Err(_) => true,
+                    Ok(bad_proof) => verify_sha256_ecdsa(
+                        &mut Blake3Transcript::new(),
+                        &secp,
+                        &other,
+                        &bad_hint.commitment,
+                        &bad_proof,
+                    )
+                    .is_err(),
+                }
+            }
+        },
+    };
+    assert!(rejected, "secp256k1 accepted a P-256 instance");
+}
+
 #[test]
 fn rejects_wrong_message_length_and_zero_scalar() {
     let prepared = prepare_sha256_ecdsa(3, 100, OuterMode::Split).unwrap();

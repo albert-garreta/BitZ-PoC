@@ -41,6 +41,25 @@ bash scripts/run_suite_2026_09_13.sh hybrid-counts    # tab:hybrid-equal-counts
 bash scripts/run_suite_2026_09_13.sh multiswap        # tab:multiswap (BitZ row)
 ```
 
+### SHA+ECDSA over secp256k1 (Binius64 family only)
+
+```sh
+for CURVE in p256 secp256k1; do
+  python3 scripts/bench_gate.py run --label "sha-ecdsa-$CURVE" --swap-grow-gb 12 -- \
+    python3 scripts/run_sha256_ecdsa_compare.py \
+      --output "bench_results/sha-ecdsa-$CURVE" --curve "$CURVE" \
+      --methods bitz-split binius64 binius64-ligerito --exponents 4 5 6 7 \
+      --binius-rates 1 3 --threads 1 10 --reps 3
+done
+```
+
+Both families carry both curves; only `spartan-mc` is P-256 only. On secp256k1
+BitZ takes a GLV path worth ~20% of its ECDSA verifier, and Binius uses its own
+native secp256k1 circuit. `bench_gate` does not wait for sustained idle, so measure both curves
+back to back in one window and repeat a slice of the first to confirm the window
+held; see [the worker README](benchmarks/binius64/README.md#secp256k1) for what
+the curve change does and does not isolate.
+
 ### Raw performance of the PCS (tab:bitz-raw-performance)
 
 ```sh
@@ -95,6 +114,51 @@ done
 The Zinc+ commands above reproduce historical external measurements. Retain
 their raw logs separately; the current multiplication reporter does not import
 that historical format.
+
+### Zinc+ row of the SHA-256 + ECDSA table
+
+In a zinc-plus checkout at `main-beta` (878fbd8), with this repository's
+harness patch applied and the lock taken from a working checkout. `N` is the
+number of chained compressions and `NV` the smallest `num_vars` with
+`2^NV >= 68N + 4`; the pair must be edited into the source and rebuilt, because
+upstream holds the compression count in a compile-time constant:
+
+```sh
+git clone https://github.com/NethermindEth/zinc-plus /tmp/zinc-878fbd8
+git -C /tmp/zinc-878fbd8 checkout 878fbd8
+cp ~/zinc-plus/Cargo.lock /tmp/zinc-878fbd8/Cargo.lock
+git -C /tmp/zinc-878fbd8 apply \
+    ~/f2z-pcs/benchmarks/zinc-plus/sha256-ecdsa-harness.patch
+
+N=128; NV=14   # 2^7 compressions; 68*128+4 = 8708 rows
+sed -i '' "s/^    pub const NUM_COMPRESSIONS: usize = .*/    pub const NUM_COMPRESSIONS: usize = $N;/" \
+    /tmp/zinc-878fbd8/test-uair/src/sha256.rs
+sed -i '' "s/^    pub const MIN_NUM_VARS: usize = .*/    pub const MIN_NUM_VARS: usize = $NV;/" \
+    /tmp/zinc-878fbd8/test-uair/src/sha256.rs
+
+cd /tmp/zinc-878fbd8/protocol
+CARGO_TARGET_DIR=/tmp/zinc-sha-st RUSTFLAGS="-C target-cpu=native" \
+    cargo bench --no-run --offline --bench e2e --features "simd unchecked"
+CARGO_TARGET_DIR=/tmp/zinc-sha-mt RUSTFLAGS="-C target-cpu=native" \
+    cargo bench --no-run --offline --bench e2e --features "simd unchecked parallel"
+```
+
+Rate 1/4 is the default; add `iprs-rate-1-8` for rate 1/8, which the IPRS NTT
+allows only up to `2^13` rows (so not at 128 compressions). `MODE=folded4x`
+selects the 4×-folded commitment path of the Zinc+ paper's own headline number;
+it stops at `2^12` rows. One process per (size, threads):
+
+```sh
+MODE=plain SHA_NV=$NV REPS=3 \
+    /usr/bin/time -l /tmp/zinc-sha-st/release/deps/e2e-*[0-9a-f]
+RAYON_NUM_THREADS=10 MODE=plain SHA_NV=$NV REPS=3 \
+    /usr/bin/time -l /tmp/zinc-sha-mt/release/deps/e2e-*[0-9a-f]
+```
+
+Each run prints one `ZINC_TRIAL` line per repetition and one `ZINC_RESULT`
+JSON line. See [docs/zinc-plus-sha256-ecdsa.md](docs/zinc-plus-sha256-ecdsa.md)
+for the measured numbers and for what the Zinc+ statement does and does not
+contain — it is weaker than the one the other schemes in that table prove.
 
 ### MultiSwap rows of the other systems
 
