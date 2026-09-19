@@ -35,7 +35,8 @@ there are no implicit per-backend size limits. The maintained tools consume only
 
 ```sh
 bash scripts/run_suite_2026_09_13.sh                  # every phase, in order
-bash scripts/run_suite_2026_09_13.sh sha-ecdsa        # tab:sha256-ecdsa
+bash scripts/run_suite_2026_09_13.sh sha-ecdsa        # tab:sha256-ecdsa-secp256k1
+bash scripts/run_suite_2026_09_13.sh sha-ecdsa-p256   # tab:sha256-ecdsa-p256
 bash scripts/run_suite_2026_09_13.sh hybrid-witness   # tab:hybrid
 bash scripts/run_suite_2026_09_13.sh hybrid-counts    # tab:hybrid-equal-counts
 bash scripts/run_suite_2026_09_13.sh multiswap        # tab:multiswap (BitZ row)
@@ -71,6 +72,12 @@ Both campaigns run 2^4..2^7 compressions at 1 and 10 threads, at rates 1/2 and
 `bench_gate` does not wait for sustained idle, so run them back to back in one
 window. Pass `--binary` and `--binius64-binary` to measure a prebuilt pair
 rather than letting the runner build into `$CARGO_TARGET_DIR`.
+
+Each campaign makes its own table (`tab:sha256-ecdsa-secp256k1`,
+`tab:sha256-ecdsa-p256`) — see **Tables** below. The generator keeps the curves
+apart and refuses to put two circuits of one scheme family in one table, so
+merging an older run directory into a newer one is safe: either it overrides
+the same cases, or the generator names the circuits that disagree.
 
 ### Raw performance of the PCS (tab:bitz-raw-performance)
 
@@ -191,7 +198,11 @@ LIMB16=1 NVARS=13 REPS=5 RAYON_NUM_THREADS=10 cargo bench --locked \
 ```sh
 python3 scripts/mul_report.py PerfRuns/multiplication --out reports/multiplication
 
-python3 scripts/sha256_ecdsa_table.py bench_results/suite-sha256-ecdsa-<date>
+# One table per curve: paper/sha256-ecdsa-{secp256k1,p256}-table.tex. A table
+# holds one curve and one circuit per scheme family; the generator refuses to
+# mix them, so both campaigns can be passed in one call.
+python3 scripts/sha256_ecdsa_table.py bench_results/suite-sha256-ecdsa-<date> \
+    bench_results/suite-sha256-ecdsa-p256-<date>
 
 for V in witness counts; do
   python3 scripts/hybrid_table.py --variant $V \
