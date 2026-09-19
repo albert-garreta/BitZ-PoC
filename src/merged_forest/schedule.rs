@@ -58,8 +58,8 @@ pub enum UnsupportedSchedule {
     ShallowL8 { depth: usize },
 }
 
-/// A single shared policy for all forest entry points. Measurement coverage and
-/// the full-product correction are documented in docs/gkr-full-product-regression.md.
+/// A single shared policy for all forest entry points. Measurement coverage is
+/// documented in docs/gkr-full-product-regression.md.
 pub fn resolve_schedule(
     policy: SchedulePolicy,
     layout: &IntegerMatrixLayout,
@@ -103,13 +103,15 @@ fn apple_single_schedule(
     depth: usize,
     threads: usize,
 ) -> Option<ForestSchedule> {
-    // Full-product 2^20..=2^22, W=1, ten workers: L8 recomputation outweighs
-    // its memory savings on M1 Max. Keep this exception to measured shapes.
-    if threads == 10
-        && layout.word_bits == 1
-        && matches!((depth, layout.col_vars), (17, 10) | (18, 10 | 11))
-    {
-        return Some(ForestSchedule::L4);
+    if threads == 10 && layout.word_bits == 1 {
+        match (depth, layout.col_vars) {
+            // u64/u128 at 2^19: storing another level avoids enough GKR
+            // recomputation to beat both L4 and L8, at higher peak heap.
+            (18 | 19, 9) => return Some(ForestSchedule::L2),
+            // Full-product 2^20..=2^22: retain the measured L4 crossover.
+            (17, 10) | (18, 10 | 11) => return Some(ForestSchedule::L4),
+            _ => {}
+        }
     }
     if depth != 13 {
         return None;
@@ -316,11 +318,11 @@ mod tests {
     }
 
     #[test]
-    fn apple_full_product_exception_preserves_other_shapes_and_overrides() {
+    fn apple_tall_forest_exceptions_preserve_other_shapes_and_overrides() {
         // Exhaust the neighboring shapes, word widths, worker counts and paths:
-        // the full-product exception must not become a general L8 replacement.
-        for rows in 14..=19 {
-            for cols in 9..=12 {
+        // the measured exceptions must not become a general L8 replacement.
+        for rows in 14..=20 {
+            for cols in 8..=12 {
                 for bits in [1, 8] {
                     for threads in [1, 4, 8, 10, 11] {
                         for path in [ForestPath::Single, ForestPath::Multi] {
@@ -330,12 +332,16 @@ mod tests {
                                 word_bits: bits,
                             };
                             let depth = rows + bits.ilog2() as usize;
-                            let measured = cfg!(all(target_arch = "aarch64", target_os = "macos"))
-                                && path == ForestPath::Single
-                                && threads == 10
-                                && bits == 1
-                                && matches!((rows, cols), (17, 10) | (18, 10 | 11));
-                            let expected = if measured {
+                            let apple_single =
+                                cfg!(all(target_arch = "aarch64", target_os = "macos"))
+                                    && path == ForestPath::Single
+                                    && threads == 10
+                                    && bits == 1;
+                            let expected = if apple_single && matches!((rows, cols), (18 | 19, 9)) {
+                                ForestSchedule::L2
+                            } else if apple_single
+                                && matches!((rows, cols), (17, 10) | (18, 10 | 11))
+                            {
                                 ForestSchedule::L4
                             } else if depth + cols >= 25 && threads > 4 {
                                 ForestSchedule::L8
@@ -352,6 +358,10 @@ mod tests {
                             assert_eq!(
                                 resolve_schedule(SchedulePolicy::L8, &layout, path, threads),
                                 Ok(ForestSchedule::L8)
+                            );
+                            assert_eq!(
+                                resolve_schedule(SchedulePolicy::L4, &layout, path, threads),
+                                Ok(ForestSchedule::L4)
                             );
                         }
                     }
