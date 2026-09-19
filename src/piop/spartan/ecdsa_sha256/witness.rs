@@ -460,8 +460,8 @@ pub fn generate_sha256_ecdsa_witness(
     let input: [bool; p256::VERIFY_DIGEST_INPUT_BITS] =
         array::from_fn(|bit| words[bit / 256][31 - (bit % 256) / 8] >> (bit % 8) & 1 != 0);
     let mut generator =
-        ProductWitgen::with_inputs_and_capacity(&input, curve.verify_digest_witness_bits());
-    p256::verify_digest_circuit_on(&mut generator, curve, &input);
+        ProductWitgen::with_inputs_and_capacity(&input, prepared.local.p_map.rows() - 1);
+    p256::verify_digest_circuit_with(&mut generator, curve, prepared.curve.profile(), &input);
     let (p_f, p_h, products) = generator.into_parts();
     if p_h.bit_len() != prepared.local.p_map.rows()
         || p_f.bit_len() + 1 != prepared.local.p_map.cols()
