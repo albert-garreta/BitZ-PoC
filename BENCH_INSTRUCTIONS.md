@@ -41,24 +41,36 @@ bash scripts/run_suite_2026_09_13.sh hybrid-counts    # tab:hybrid-equal-counts
 bash scripts/run_suite_2026_09_13.sh multiswap        # tab:multiswap (BitZ row)
 ```
 
-### SHA+ECDSA over secp256k1 (Binius64 family only)
+### SHA-256 chain + ECDSA
+
+Two campaigns, because the two curves answer different questions.
 
 ```sh
-for CURVE in p256 secp256k1; do
-  python3 scripts/bench_gate.py run --label "sha-ecdsa-$CURVE" --swap-grow-gb 12 -- \
-    python3 scripts/run_sha256_ecdsa_compare.py \
-      --output "bench_results/sha-ecdsa-$CURVE" --curve "$CURVE" \
-      --methods bitz-split binius64 binius64-ligerito --exponents 4 5 6 7 \
-      --binius-rates 1 3 --threads 1 10 --reps 3
-done
+bash scripts/run_suite_2026_09_13.sh sha-ecdsa       # secp256k1 head-to-head
+bash scripts/run_suite_2026_09_13.sh sha-ecdsa-p256  # P-256, BitZ alone
 ```
 
-Both families carry both curves; only `spartan-mc` is P-256 only. On secp256k1
-BitZ takes a GLV path worth ~20% of its ECDSA verifier, and Binius uses its own
-native secp256k1 circuit. `bench_gate` does not wait for sustained idle, so measure both curves
-back to back in one window and repeat a slice of the first to confirm the window
-held; see [the worker README](benchmarks/binius64/README.md#secp256k1) for what
-the curve change does and does not isolate.
+**secp256k1 — the head-to-head.** Binius64 runs its own stock upstream verifier
+(`ecdsa::bitcoin_verify` + `msm_strauss_endo`, GLV endomorphism MSM over a
+one-limb pseudo-Mersenne field); BitZ runs a circuit *matched to that schedule*
+(`secp256k1-matched`: uniform 4-bit windows on all four GLV bases, tables built
+in-circuit, accumulator at the identity). Matching costs BitZ +27% in witness
+bits and +69% in rows against its own schedule, and that is the point — the
+measurement isolates the proof systems rather than the circuit engineering.
+
+**P-256 — BitZ alone.** Binius64 upstream implements ECDSA over secp256k1 only.
+The P-256 verifier in the pinned fork was added in a single commit on
+2026-09-09 (`938eadcd`, "Add matched SHA-chain P-256 verification") to give this
+comparison a counterpart to BitZ's circuit; it is not code the Binius authors
+ship. So there is no honest Binius P-256 row, and the runner refuses to make
+one. BitZ uses `p256-paper`, the circuit the paper documents (1,215,662 witness
+bits, 7,061 rows), which a test pins against drift.
+
+Both campaigns run 2^4..2^7 compressions at 1 and 10 threads, at rates 1/2 and
+1/8, three measured samples after a warm-up, one worker process per case.
+`bench_gate` does not wait for sustained idle, so run them back to back in one
+window. Pass `--binary` and `--binius64-binary` to measure a prebuilt pair
+rather than letting the runner build into `$CARGO_TARGET_DIR`.
 
 ### Raw performance of the PCS (tab:bitz-raw-performance)
 
