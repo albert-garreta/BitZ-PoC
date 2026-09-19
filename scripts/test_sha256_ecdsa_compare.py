@@ -41,6 +41,7 @@ class CampaignTests(unittest.TestCase):
                                   trial="sample" if sample else "warmup", compressions=8, message_bytes=448,
                                   signatures=1, statement_bytes=129, fixture_id="a"*64,
                                   spartan_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
+                                  curve="p256",
                                   security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
@@ -121,7 +122,7 @@ class CampaignTests(unittest.TestCase):
         rows = copy.deepcopy(self.rows)
         for row in rows:
             row.update(case, binius_revision="c"*40, spartan_revision=None,
-                       circuit_profile="sha256-chain-p256/standard/v1",
+                       circuit_profile="sha256-chain-p256/standard/v1", curve="p256",
                        security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
                                  "log_inv_rate":3})
         self.assertTrue(campaign.validate_rows(rows, case, 1))
@@ -135,12 +136,35 @@ class CampaignTests(unittest.TestCase):
             self.assertTrue(campaign.validate_rows(rated_rows, rated_case, 1))
             self.assertTrue(campaign.validate_rows(rated_rows, rated_case, 1, binius_log_inv_rate=rate))
         for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "secp256k1"),
+                           ("curve", "secp256k1"), ("curve", None),
                            ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96, "log_inv_rate":3}),
                            ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100, "log_inv_rate":1}),
                            ("log_inv_rate", 1)]:
             bad = copy.deepcopy(rows)
             bad[1][key] = value
             self.assertFalse(campaign.validate_rows(bad, case, 1), key)
+
+    def test_secp256k1_campaign_requires_its_own_curve_and_profiles(self):
+        """A secp256k1 campaign must not silently accept P-256 rows, or vice versa."""
+        case = dict(self.case, method="binius64", log_inv_rate=1)
+        security = {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
+                    "log_inv_rate":1}
+        def rows_for(curve):
+            rows = copy.deepcopy(self.rows)
+            for row in rows:
+                row.update(case, binius_revision="c"*40, spartan_revision=None, curve=curve,
+                           circuit_profile=campaign.CURVES[curve]["circuit_profile"],
+                           fixture_profile=campaign.CURVES[curve]["fixture_schema"],
+                           security=dict(security))
+            return rows
+        for curve in ("p256", "secp256k1"):
+            self.assertTrue(campaign.validate_rows(rows_for(curve), case, 1, curve=curve), curve)
+        self.assertFalse(campaign.validate_rows(rows_for("p256"), case, 1, curve="secp256k1"))
+        self.assertFalse(campaign.validate_rows(rows_for("secp256k1"), case, 1, curve="p256"))
+        # A row that only half-swaps (right curve tag, stale circuit) is rejected.
+        mixed = rows_for("secp256k1")
+        mixed[1]["circuit_profile"] = campaign.CURVES["p256"]["circuit_profile"]
+        self.assertFalse(campaign.validate_rows(mixed, case, 1, curve="secp256k1"))
 
     def test_opener_rows_require_the_round_by_round_gate(self):
         case = dict(self.case, method="binius64-ligerito", log_inv_rate=1)
@@ -150,7 +174,8 @@ class CampaignTests(unittest.TestCase):
                 "union_bound_bits":97.2, "log_inv_rate":1}
         for row in rows:
             row.update(case, binius_revision="c"*40, spartan_revision=None,
-                       circuit_profile="sha256-chain-p256/standard/v1", security=dict(good))
+                       circuit_profile="sha256-chain-p256/standard/v1", curve="p256",
+                       security=dict(good))
         self.assertTrue(campaign.validate_rows(rows, case, 1))
         for override in [dict(accounting="union-bound"), dict(round_by_round_bits=99.9),
                          dict(pcs="BaseFold"), dict(target_bits=96), dict(log_inv_rate=3)]:

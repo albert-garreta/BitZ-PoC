@@ -34,6 +34,30 @@ pub enum OuterMode {
     AllRows,
 }
 
+/// Which curve the signature is over. This belongs to the RELATION, not the
+/// statement: the public words are the same shape on either curve, and what
+/// separates a P-256 proof from a secp256k1 one is `LocalRelation::digest`,
+/// which the transcript absorbs under `b"relation"`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EcdsaCurve {
+    #[default]
+    P256,
+    Secp256k1,
+}
+
+impl EcdsaCurve {
+    pub(crate) fn params(self) -> &'static p256::Curve {
+        match self {
+            Self::P256 => &p256::P256,
+            Self::Secp256k1 => &p256::SECP256K1,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        self.params().name()
+    }
+}
+
 /// Public values use fixed-width big-endian encodings. The message is a witness.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sha256EcdsaStatement {
@@ -159,7 +183,7 @@ fn bool_map(
     PreparedVirtualMap::new(CscMatrix::try_from_rows(columns, rows).map_err(error)?).map_err(error)
 }
 
-fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
+fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaError> {
     let mut generator = ConstraintGenerator::new(sha256::COMPRESSION_INPUT_BITS);
     let inputs = generator.inputs();
     let outputs = sha256::compression_circuit(&mut generator, &inputs);
@@ -204,7 +228,7 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
 
     let mut generator = ConstraintGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
     let inputs = generator.inputs();
-    p256::verify_digest_circuit(&mut generator, &inputs);
+    p256::verify_digest_circuit_on(&mut generator, curve.params(), &inputs);
     let p = generator.into_matrices();
     let mut public_h = [usize::MAX; 1024];
     for (h, row) in p.m.rows().enumerate() {
@@ -228,7 +252,7 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
     drop(p);
     let mut tape_generator = WengertGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
     let tape_inputs = tape_generator.take_boxed_inputs::<{ p256::VERIFY_DIGEST_INPUT_BITS }>();
-    p256::verify_digest_circuit(&mut tape_generator, &tape_inputs);
+    p256::verify_digest_circuit_on(&mut tape_generator, curve.params(), &tape_inputs);
     let tape = tape_generator.finish();
     if tape.row_count() != a.row_count() || tape.column_count() != tail.column_count() {
         return Err(error(
@@ -480,6 +504,7 @@ impl VirtualMap for Sha256EcdsaMap {
 
 /// Prepared public relation. No message or signature is retained here.
 pub struct PreparedSha256Ecdsa {
+    pub(crate) curve: EcdsaCurve,
     pub(crate) local: Arc<LocalRelation>,
     pub(crate) map: Sha256EcdsaMap,
     pub(crate) log_n: usize,
@@ -491,6 +516,10 @@ pub struct PreparedSha256Ecdsa {
 }
 
 impl PreparedSha256Ecdsa {
+    pub fn curve(&self) -> EcdsaCurve {
+        self.curve
+    }
+
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
         &self.ligerito
     }
@@ -584,12 +613,30 @@ pub fn prepare_sha256_ecdsa(
     lambda: u32,
     mode: OuterMode,
 ) -> Result<PreparedSha256Ecdsa, super::Sha256EcdsaError> {
+    prepare_sha256_ecdsa_on(log_compressions, lambda, mode, EcdsaCurve::P256)
+}
+
+/// [`prepare_sha256_ecdsa`] over an explicit curve.
+pub fn prepare_sha256_ecdsa_on(
+    log_compressions: usize,
+    lambda: u32,
+    mode: OuterMode,
+    curve: EcdsaCurve,
+) -> Result<PreparedSha256Ecdsa, super::Sha256EcdsaError> {
     if !(3..=16).contains(&log_compressions) || ![100, 128].contains(&lambda) {
         return Err(error("expected exponent 3..=16 and security 100 or 128"));
     }
-    static LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> = OnceLock::new();
-    let local = LOCAL
-        .get_or_init(|| build_local().map(Arc::new).map_err(|e| e.to_string()))
+    // One cache per curve: a single global would let whichever curve was
+    // prepared first silently serve every later call in the process.
+    static P256_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> = OnceLock::new();
+    static SECP256K1_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> =
+        OnceLock::new();
+    let cache = match curve {
+        EcdsaCurve::P256 => &P256_LOCAL,
+        EcdsaCurve::Secp256k1 => &SECP256K1_LOCAL,
+    };
+    let local = cache
+        .get_or_init(|| build_local(curve).map(Arc::new).map_err(|e| e.to_string()))
         .as_ref()
         .map_err(error)?
         .clone();
@@ -662,6 +709,7 @@ pub fn prepare_sha256_ecdsa(
     };
     map.aliases = array::from_fn(|c| map.p_source(c));
     Ok(PreparedSha256Ecdsa {
+        curve,
         local,
         map,
         log_n: log_compressions,
