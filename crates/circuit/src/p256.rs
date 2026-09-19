@@ -97,6 +97,11 @@ pub enum LadderProfile {
     /// two systems on a matched circuit; it is strictly worse for us, and it
     /// inherits Binius64's completeness gap along with its schedule.
     BiniusMatched,
+    /// The schedule the paper currently describes: complete addition
+    /// throughout, an accumulator starting at the identity, and no offset
+    /// correction. Kept so the paper's rows can be reproduced from the same
+    /// binary as the optimized ones.
+    PaperOriginal,
 }
 
 /// A prime-order short-Weierstrass curve `y^2 = x^3 + a*x + b` over `F_p`,
@@ -2103,6 +2108,7 @@ fn glv_scalar_mul<CS: Circuit>(
 fn joint_scalar_mul<CS: Circuit>(
     circuit: &mut CS,
     curve: &'static Curve,
+    profile: LadderProfile,
     u1: ScalarElem<CS>,
     u2: ScalarElem<CS>,
     q: Point<CS>,
@@ -2110,7 +2116,21 @@ fn joint_scalar_mul<CS: Circuit>(
     let q_table = materialize_multiples(circuit, curve, q);
     let g_table = generator_coefficients::<CS>(curve);
     let offsets = curve.offsets();
-    let mut accumulator = constant_point(&offsets[0]);
+    let original = profile == LadderProfile::PaperOriginal;
+    // The paper's schedule starts at the identity and pays complete addition
+    // everywhere; ours starts at the offset and needs only distinct operands.
+    let mut add = |circuit: &mut CS, acc, point| {
+        if original {
+            add_complete(circuit, curve, acc, point)
+        } else {
+            add_distinct(circuit, curve, acc, point)
+        }
+    };
+    let mut accumulator = if original {
+        infinity()
+    } else {
+        constant_point(&offsets[0])
+    };
     for i in 0..32 {
         let d1 = scalar_window(&u1, 248 - 8 * i, 8);
         let d2_hi = scalar_window(&u2, 252 - 8 * i, 4);
@@ -2121,12 +2141,15 @@ fn joint_scalar_mul<CS: Circuit>(
         for _ in 0..4 {
             accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_distinct(circuit, curve, accumulator, q_hi);
+        accumulator = add(circuit, accumulator, q_hi);
         for _ in 0..4 {
             accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_distinct(circuit, curve, accumulator, q_lo);
-        accumulator = add_distinct(circuit, curve, accumulator, g);
+        accumulator = add(circuit, accumulator, q_lo);
+        accumulator = add(circuit, accumulator, g);
+    }
+    if original {
+        return accumulator;
     }
     // Thirty-two rounds of eight doublings leave `2^256 R`.
     add_complete(circuit, curve, accumulator, constant_point(&offsets[2]))
@@ -2224,14 +2247,14 @@ pub fn verify_digest_circuit_with<CS: Circuit>(
 
     let q = point_from_elems(&qx, &qy);
     let sum = match (&curve.endomorphism, profile) {
-        (Some(endomorphism), LadderProfile::Native) => {
+        (Some(endomorphism), LadderProfile::Native | LadderProfile::PaperOriginal) => {
             glv_scalar_mul(circuit, curve, endomorphism, u1, u2, q)
         }
         (Some(endomorphism), LadderProfile::BiniusMatched) => {
             glv_scalar_mul_binius_matched(circuit, curve, endomorphism, u1, u2, q)
         }
         // Binius64 has no matched schedule without an endomorphism.
-        (None, _) => joint_scalar_mul(circuit, curve, u1, u2, q),
+        (None, _) => joint_scalar_mul(circuit, curve, profile, u1, u2, q),
     };
     assert_zero(circuit, sum.infinity);
     let x_canonical = lazy_reduce(circuit, curve.base(), sum.x);
@@ -2362,6 +2385,28 @@ mod tests {
             &SECP256K1,
             rep_u64::<WitnessOnly>(0),
             lc_u64::<WitnessOnly>(0),
+        );
+    }
+
+    /// The paper's P-256 schedule must reproduce its published dimensions
+    /// exactly: 1,215,663 packed rows and 7,061 constraints. Any drift means
+    /// the profile no longer describes the circuit the paper documents.
+    #[test]
+    fn paper_profile_reproduces_the_published_p256_dimensions() {
+        let mut stats = Stats::new(VERIFY_DIGEST_INPUT_BITS);
+        verify_digest_circuit_with(
+            &mut stats,
+            &P256,
+            LadderProfile::PaperOriginal,
+            &[Dummy; VERIFY_DIGEST_INPUT_BITS],
+        );
+        assert_eq!(
+            stats.lean_stats(),
+            LeanStats {
+                m_rows: 1_215_663,
+                m_cols: 1_215_663,
+                r1cs_rows: 7_061,
+            }
         );
     }
 

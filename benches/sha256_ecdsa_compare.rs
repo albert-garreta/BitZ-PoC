@@ -43,7 +43,7 @@ struct Args {
     seed: u64,
     /// Signature curve. BitZ and Binius share the statement shape; the curve
     /// selects the relation, and each curve has its own fixture schema.
-    #[arg(long, default_value = "p256", value_parser = ["p256", "secp256k1", "secp256k1-matched"])]
+    #[arg(long, default_value = "p256", value_parser = ["p256", "p256-paper", "secp256k1", "secp256k1-matched"])]
     curve: String,
     #[arg(long)]
     fixture: Option<std::path::PathBuf>,
@@ -64,6 +64,7 @@ impl Args {
     }
     fn ecdsa_curve(&self) -> EcdsaCurve {
         match self.curve.as_str() {
+            "p256-paper" => EcdsaCurve::P256Paper,
             "secp256k1" => EcdsaCurve::Secp256k1,
             "secp256k1-matched" => EcdsaCurve::Secp256k1Matched,
             _ => EcdsaCurve::P256,
@@ -91,7 +92,9 @@ macro_rules! fixture_field {
 impl Fixture {
     fn generate(curve: EcdsaCurve, exponent: u8, seed: u64) -> Result<Self> {
         Ok(match curve {
-            EcdsaCurve::P256 => Self::P256(shared_fixture::SignedFixture::generate(exponent, seed)?),
+            EcdsaCurve::P256 | EcdsaCurve::P256Paper => {
+                Self::P256(shared_fixture::SignedFixture::generate(exponent, seed)?)
+            }
             EcdsaCurve::Secp256k1 | EcdsaCurve::Secp256k1Matched => {
                 Self::Secp256k1(shared_secp_fixture::SignedFixture::generate(exponent, seed)?)
             }
@@ -99,7 +102,9 @@ impl Fixture {
     }
     fn read(curve: EcdsaCurve, path: &std::path::Path) -> Result<Self> {
         Ok(match curve {
-            EcdsaCurve::P256 => Self::P256(shared_fixture::SignedFixture::read(path)?),
+            EcdsaCurve::P256 | EcdsaCurve::P256Paper => {
+                Self::P256(shared_fixture::SignedFixture::read(path)?)
+            }
             EcdsaCurve::Secp256k1 | EcdsaCurve::Secp256k1Matched => {
                 Self::Secp256k1(shared_secp_fixture::SignedFixture::read(path)?)
             }
