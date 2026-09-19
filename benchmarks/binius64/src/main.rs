@@ -1,4 +1,4 @@
-//! Isolated non-ZK Binius64 worker for the common SHA-chain/P-256 relation.
+//! Isolated non-ZK Binius64 worker for the common SHA-chain/ECDSA relation.
 //!
 //! Two openers over the identical circuit and witness: Binius64's own ring
 //! switch + BaseFold (`--method binius64`, the upstream prover), and the BitZ
@@ -6,24 +6,200 @@
 //! the witness evaluation claim, every oracle committed and opened by BitZ's
 //! binary PCS under the round-by-round 100-bit gate
 //! (`bitz::binius_ligerito::Prepared`).
+//!
+//! `--curve` selects the signature: `p256` is the pinned fork's
+//! `binius_circuits::sha256_ecdsa` relation, `secp256k1` the same statement and
+//! SHA-256 chain composed here against Binius64's native secp256k1 verifier.
 #![recursion_limit = "256"]
 
 #[path = "../../../benches/support/sha256_ecdsa_fixture.rs"]
 mod fixture;
 use bitz::observability;
+mod secp256k1_relation;
+#[path = "../../../benches/support/sha256_ecdsa_secp_fixture.rs"]
+mod secp_fixture;
 #[path = "../../../benches/common/trace_capture.rs"]
 mod trace_capture;
 
 use binius_circuits::sha256_ecdsa::{PROFILE, Sha256Ecdsa, public_words};
-use binius_frontend::{Circuit, CircuitBuilder};
+use binius_frontend::{Circuit, CircuitBuilder, WitnessFiller};
 use binius_hash::sha256::Sha256HashSuite;
 use binius_prover::{OptimalPackedB128, Prover};
 use binius_transcript::{ProverTranscript, VerifierTranscript};
 use binius_verifier::{Verifier, config::StdChallenger};
 use bitz::binius_ligerito::{Accounting, Prepared};
-use fixture::{Result, SignedFixture};
+use fixture::Result;
+use secp256k1_relation::Sha256EcdsaSecp256k1;
 use serde_json::json;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
+
+/// The signature scheme the relation verifies. Message derivation, public
+/// statement encoding and the SHA-256 chain are identical on both curves.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Curve {
+    P256,
+    Secp256k1,
+}
+
+impl Curve {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "p256" | "secp256r1" => Some(Self::P256),
+            "secp256k1" | "secp" | "k256" => Some(Self::Secp256k1),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::P256 => "p256",
+            Self::Secp256k1 => "secp256k1",
+        }
+    }
+
+    fn circuit_profile(self) -> &'static str {
+        match self {
+            Self::P256 => PROFILE,
+            Self::Secp256k1 => secp256k1_relation::PROFILE,
+        }
+    }
+
+    fn fixture_profile(self) -> &'static str {
+        match self {
+            Self::P256 => fixture::SCHEMA,
+            Self::Secp256k1 => secp_fixture::SCHEMA,
+        }
+    }
+}
+
+/// One instance on either curve. Both fixture types carry the same fields; this
+/// keeps the measurement paths curve-agnostic.
+#[derive(Clone)]
+enum Fixture {
+    P256(fixture::SignedFixture),
+    Secp256k1(secp_fixture::SignedFixture),
+}
+
+macro_rules! fixture_field {
+    ($self:expr, $field:ident) => {
+        match $self {
+            Fixture::P256(inner) => &inner.$field,
+            Fixture::Secp256k1(inner) => &inner.$field,
+        }
+    };
+}
+
+impl Fixture {
+    fn generate(curve: Curve, exponent: u8, seed: u64) -> Result<Self> {
+        Ok(match curve {
+            Curve::P256 => Self::P256(fixture::SignedFixture::generate(exponent, seed)?),
+            Curve::Secp256k1 => {
+                Self::Secp256k1(secp_fixture::SignedFixture::generate(exponent, seed)?)
+            }
+        })
+    }
+
+    fn read(curve: Curve, path: &Path) -> Result<Self> {
+        Ok(match curve {
+            Curve::P256 => Self::P256(fixture::SignedFixture::read(path)?),
+            Curve::Secp256k1 => Self::Secp256k1(secp_fixture::SignedFixture::read(path)?),
+        })
+    }
+
+    fn write(&self, path: &Path) -> Result<()> {
+        match self {
+            Self::P256(inner) => inner.write(path),
+            Self::Secp256k1(inner) => inner.write(path),
+        }
+    }
+
+    fn curve(&self) -> Curve {
+        match self {
+            Self::P256(_) => Curve::P256,
+            Self::Secp256k1(_) => Curve::Secp256k1,
+        }
+    }
+
+    fn log_compressions(&self) -> u8 {
+        *fixture_field!(self, log_compressions)
+    }
+    fn seed(&self) -> u64 {
+        *fixture_field!(self, seed)
+    }
+    fn message(&self) -> &[u8] {
+        fixture_field!(self, message)
+    }
+    fn qx(&self) -> &[u8; 32] {
+        fixture_field!(self, qx)
+    }
+    fn qy(&self) -> &[u8; 32] {
+        fixture_field!(self, qy)
+    }
+    fn r(&self) -> &[u8; 32] {
+        fixture_field!(self, r)
+    }
+    fn s(&self) -> &[u8; 32] {
+        fixture_field!(self, s)
+    }
+    fn id(&self) -> &str {
+        fixture_field!(self, id)
+    }
+
+    fn validate_statement(&self) -> Result<()> {
+        match self {
+            Self::P256(inner) => inner.validate_statement(),
+            Self::Secp256k1(inner) => inner.validate_statement(),
+        }
+    }
+
+    /// The `--self-test` public-statement mutations, one per index.
+    fn mutated(&self, which: usize) -> Self {
+        let mut altered = self.clone();
+        macro_rules! with {
+            ($inner:expr) => {
+                match which {
+                    0 => $inner.qx[31] ^= 1,
+                    1 => $inner.qy[31] ^= 1,
+                    2 => $inner.r[31] ^= 1,
+                    3 => $inner.s[31] ^= 1,
+                    _ => $inner.log_compressions += 1,
+                }
+            };
+        }
+        match &mut altered {
+            Self::P256(inner) => with!(inner),
+            Self::Secp256k1(inner) => with!(inner),
+        }
+        altered
+    }
+}
+
+/// The circuit on either curve; both expose the same statement and witness.
+enum Relation {
+    P256(Sha256Ecdsa),
+    Secp256k1(Sha256EcdsaSecp256k1),
+}
+
+impl Relation {
+    fn new(b: &CircuitBuilder, curve: Curve, exponent: u8) -> Result<Self> {
+        Ok(match curve {
+            Curve::P256 => Self::P256(Sha256Ecdsa::new(b, exponent)?),
+            Curve::Secp256k1 => Self::Secp256k1(Sha256EcdsaSecp256k1::new(b, exponent)?),
+        })
+    }
+
+    fn populate(&self, w: &mut WitnessFiller<'_>, f: &Fixture) -> Result<()> {
+        let (message, qx, qy, r, s) = (f.message(), f.qx(), f.qy(), f.r(), f.s());
+        match self {
+            Self::P256(inner) => inner.populate(w, message, qx, qy, r, s)?,
+            Self::Secp256k1(inner) => inner.populate(w, message, qx, qy, r, s)?,
+        }
+        Ok(())
+    }
+}
 
 const PHASES: [&str; 4] = [
     "Prepare witness",
@@ -66,6 +242,9 @@ struct Args {
     reps: usize,
     seed: u64,
     fixture: Option<PathBuf>,
+    /// Write the derived fixture to this path and exit without measuring.
+    export_fixture: Option<PathBuf>,
+    curve: Curve,
     self_test: bool,
 }
 
@@ -83,6 +262,8 @@ impl Args {
             reps: 3,
             seed: 0,
             fixture: None,
+            export_fixture: None,
+            curve: Curve::P256,
             self_test: false,
         };
         while let Some(flag) = args.next() {
@@ -108,6 +289,11 @@ impl Args {
                 "--reps" => out.reps = value.parse()?,
                 "--seed" => out.seed = value.parse()?,
                 "--fixture" => out.fixture = Some(value.into()),
+                "--export-fixture" => out.export_fixture = Some(value.into()),
+                "--curve" => {
+                    out.curve =
+                        Curve::parse(&value).ok_or("--curve must be p256 or secp256k1")?;
+                }
                 _ => return Err(format!("unknown argument {flag} {value}").into()),
             }
         }
@@ -141,25 +327,30 @@ impl Args {
 }
 
 fn build_info() -> serde_json::Value {
+    // `circuit_profile`/`fixture_profile` remain the P-256 defaults so existing
+    // provenance consumers keep working; `curves` carries the full map.
     json!({"binius_revision":env!("BINIUS_REVISION"), "lock_sha256":env!("LOCK_SHA256"),
         "source_sha256":env!("SOURCE_SHA256"), "rustc":env!("BUILD_RUSTC"), "rustflags":env!("BUILD_RUSTFLAGS"),
         "bitz_revision":env!("BITZ_REVISION"), "bitz_dirty":env!("BITZ_DIRTY") == "dirty",
-        "circuit_profile":PROFILE, "fixture_profile":fixture::SCHEMA, "zk":false})
+        "circuit_profile":PROFILE, "fixture_profile":fixture::SCHEMA, "zk":false,
+        "curves":{
+            "p256":{"circuit_profile":Curve::P256.circuit_profile(), "fixture_profile":Curve::P256.fixture_profile()},
+            "secp256k1":{"circuit_profile":Curve::Secp256k1.circuit_profile(), "fixture_profile":Curve::Secp256k1.fixture_profile()}}})
 }
 
-fn expected_words(fixture: &SignedFixture) -> Vec<binius_core::word::Word> {
+fn expected_words(fixture: &Fixture) -> Vec<binius_core::word::Word> {
     public_words(
-        fixture.log_compressions,
-        &fixture.qx,
-        &fixture.qy,
-        &fixture.r,
-        &fixture.s,
+        fixture.log_compressions(),
+        fixture.qx(),
+        fixture.qy(),
+        fixture.r(),
+        fixture.s(),
     )
 }
 
 fn verify(
     verifier: &Verifier<Sha256HashSuite>,
-    fixture: &SignedFixture,
+    fixture: &Fixture,
     proof: Vec<u8>,
 ) -> Result<()> {
     fixture.validate_statement()?;
@@ -172,7 +363,7 @@ fn verify(
 
 /// Statement validation + decode + BitZ-opener verification, the counterpart
 /// of [`verify`] for `binius64-ligerito` rows.
-fn verify_bitz(prepared: &Prepared, fixture: &SignedFixture, proof: &[u8]) -> Result<()> {
+fn verify_bitz(prepared: &Prepared, fixture: &Fixture, proof: &[u8]) -> Result<()> {
     fixture.validate_statement()?;
     let expected = expected_words(fixture);
     let decoded = prepared.proof_from_bytes(proof)?;
@@ -180,17 +371,17 @@ fn verify_bitz(prepared: &Prepared, fixture: &SignedFixture, proof: &[u8]) -> Re
     Ok(())
 }
 
-fn base_row(args: &Args, fixture: &SignedFixture, trial: usize, circuit_id: &str) -> serde_json::Value {
+fn base_row(args: &Args, fixture: &Fixture, trial: usize, circuit_id: &str) -> serde_json::Value {
     json!({
         "schema":"bitz/sha256-ecdsa-compare/v1", "method":args.method, "zk":false,
         "trial":if trial == 0 {"warmup"} else {"sample"}, "sample":trial,
-        "log_compressions":args.exponent, "compressions":1usize << args.exponent, "message_bytes":fixture.message.len(),
+        "log_compressions":args.exponent, "compressions":1usize << args.exponent, "message_bytes":fixture.message().len(),
         "signatures":1, "r":null, "c":null, "security_target":args.target, "log_inv_rate":args.log_inv_rate,
         "threads":args.threads, "seed":args.seed,
-        "fixture_id":fixture.id, "fixture_profile":fixture::SCHEMA, "statement_bytes":129,
+        "fixture_id":fixture.id(), "fixture_profile":args.curve.fixture_profile(), "statement_bytes":129,
         "statement":"public-key-signature; witness-message", "binius_revision":env!("BINIUS_REVISION"),
-        "bitz_revision":env!("BITZ_REVISION"),
-        "circuit_profile":PROFILE, "circuit_id":circuit_id, "verified":true,
+        "bitz_revision":env!("BITZ_REVISION"), "curve":args.curve.name(),
+        "circuit_profile":args.curve.circuit_profile(), "circuit_id":circuit_id, "verified":true,
     })
 }
 
@@ -200,11 +391,11 @@ fn circuit_json(circuit: &Circuit) -> serde_json::Value {
 }
 
 /// The upstream prover: ring switch + BaseFold at `--log-inv-rate`.
-fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
+fn run_basefold(args: &Args, fixture: &Fixture) -> Result<()> {
     let recording = observability::Recording::start(Vec::new())?;
     let setup = tracing::info_span!("worker:setup").entered();
     let builder = CircuitBuilder::new();
-    let relation = Sha256Ecdsa::new(&builder, args.exponent)?;
+    let relation = Relation::new(&builder, args.curve, args.exponent)?;
     let circuit = builder.build();
     let verifier = Verifier::<Sha256HashSuite>::setup_with_security_bits(
         circuit.constraint_system().clone(),
@@ -215,23 +406,23 @@ fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
     drop(setup);
     let setup_ms =
         observability::duration(&recording.intervals()?, "worker:setup")?.as_secs_f64() * 1000.;
-    let circuit_id =
-        blake3::hash(format!("{PROFILE}:{}:{}", args.exponent, env!("SOURCE_SHA256")).as_bytes())
-            .to_hex()
-            .to_string();
+    let circuit_id = blake3::hash(
+        format!(
+            "{}:{}:{}",
+            args.curve.circuit_profile(),
+            args.exponent,
+            env!("SOURCE_SHA256")
+        )
+        .as_bytes(),
+    )
+    .to_hex()
+    .to_string();
     for trial in 0..=args.reps {
         let recording = observability::Recording::start(Vec::new())?;
         let e2e = tracing::info_span!("worker:e2e", trial, warmup = trial == 0).entered();
         let witness_start = tracing::info_span!("worker:assignment").entered();
         let mut filler = circuit.new_witness_filler();
-        relation.populate(
-            &mut filler,
-            &fixture.message,
-            &fixture.qx,
-            &fixture.qy,
-            &fixture.r,
-            &fixture.s,
-        )?;
+        relation.populate(&mut filler, fixture)?;
         circuit.populate_wire_witness(&mut filler)?;
         let witness = filler.into_value_vec();
         drop(witness_start);
@@ -274,15 +465,7 @@ fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
         }
         if args.self_test && trial == 0 {
             for which in 0..5 {
-                let mut other = fixture.clone();
-                match which {
-                    0 => other.qx[31] ^= 1,
-                    1 => other.qy[31] ^= 1,
-                    2 => other.r[31] ^= 1,
-                    3 => other.s[31] ^= 1,
-                    _ => other.log_compressions += 1,
-                }
-                if verify(&verifier, &other, bytes.clone()).is_ok() {
+                if verify(&verifier, &fixture.mutated(which), bytes.clone()).is_ok() {
                     return Err("accepted altered public statement".into());
                 }
             }
@@ -328,11 +511,11 @@ fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
 /// witness evaluation claim, every oracle committed and opened by BitZ's binary
 /// PCS, gated at 100 bits round-by-round. Witness packing happens inside the
 /// prover here, so `witness_ms` is the wire assignment alone.
-fn run_bitz_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
+fn run_bitz_opener(args: &Args, fixture: &Fixture) -> Result<()> {
     let recording = observability::Recording::start(Vec::new())?;
     let setup = tracing::info_span!("worker:setup").entered();
     let builder = CircuitBuilder::new();
-    let relation = Sha256Ecdsa::new(&builder, args.exponent)?;
+    let relation = Relation::new(&builder, args.curve, args.exponent)?;
     let circuit = builder.build();
     let prepared = Prepared::with_options(
         circuit.constraint_system(),
@@ -346,23 +529,23 @@ fn run_bitz_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
         return Err("BitZ opener gate unsatisfied".into());
     }
     let expected = expected_words(fixture);
-    let circuit_id =
-        blake3::hash(format!("{PROFILE}:{}:{}", args.exponent, env!("SOURCE_SHA256")).as_bytes())
-            .to_hex()
-            .to_string();
+    let circuit_id = blake3::hash(
+        format!(
+            "{}:{}:{}",
+            args.curve.circuit_profile(),
+            args.exponent,
+            env!("SOURCE_SHA256")
+        )
+        .as_bytes(),
+    )
+    .to_hex()
+    .to_string();
     for trial in 0..=args.reps {
         let recording = observability::Recording::start(Vec::new())?;
         let e2e = tracing::info_span!("worker:e2e").entered();
         let witness_start = tracing::info_span!("worker:assignment").entered();
         let mut filler = circuit.new_witness_filler();
-        relation.populate(
-            &mut filler,
-            &fixture.message,
-            &fixture.qx,
-            &fixture.qy,
-            &fixture.r,
-            &fixture.s,
-        )?;
+        relation.populate(&mut filler, fixture)?;
         circuit.populate_wire_witness(&mut filler)?;
         let witness = filler.into_value_vec();
         drop(witness_start);
@@ -414,15 +597,7 @@ fn run_bitz_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
         }
         if args.self_test && trial == 0 {
             for which in 0..5 {
-                let mut other = fixture.clone();
-                match which {
-                    0 => other.qx[31] ^= 1,
-                    1 => other.qy[31] ^= 1,
-                    2 => other.r[31] ^= 1,
-                    3 => other.s[31] ^= 1,
-                    _ => other.log_compressions += 1,
-                }
-                if verify_bitz(&prepared, &other, &bytes).is_ok() {
+                if verify_bitz(&prepared, &fixture.mutated(which), &bytes).is_ok() {
                     return Err("accepted altered public statement".into());
                 }
             }
@@ -474,9 +649,13 @@ fn main() -> Result<()> {
     if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
         println!(
             "binius64-sha256-ecdsa --r R --c C [--method binius64|binius64-ligerito] [--opener basefold|bitz]\n\
-            \x20   [--target 100|128] [--log-inv-rate 1|2|3] [--threads N] [--reps N] [--seed N] [--fixture PATH] [--self-test]\n\
-            Standard P-256, non-ZK; 3 <= R+C <= 16. --log-inv-rate selects rate 1/2 (1), 1/4 (2), or 1/8 (3) for either opener.\n\
+            \x20   [--curve p256|secp256k1] [--target 100|128] [--log-inv-rate 1|2|3] [--threads N] [--reps N]\n\
+            \x20   [--seed N] [--fixture PATH] [--export-fixture PATH] [--self-test]\n\
+            Standard ECDSA, non-ZK; 3 <= R+C <= 16. --log-inv-rate selects rate 1/2 (1), 1/4 (2), or 1/8 (3) for either opener.\n\
+            --curve p256 is the pinned fork's relation; secp256k1 composes the same statement against Binius64's native\n\
+            \x20   secp256k1 verifier (GLV endomorphism MSM, one-limb pseudo-Mersenne field), the curve it is optimized for.\n\
             --opener bitz (= --method binius64-ligerito) proves through the BitZ opener, round-by-round 100-bit gate.\n\
+            --export-fixture writes the derived instance for the selected curve and exits.\n\
             --build-info prints pinned source/build metadata."
         );
         return Ok(());
@@ -486,15 +665,22 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let args = Args::parse()?;
+    if let Some(path) = &args.export_fixture {
+        Fixture::generate(args.curve, args.exponent, args.seed)?.write(path)?;
+        return Ok(());
+    }
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
     observability::install()?;
     let fixture = match &args.fixture {
-        Some(path) => SignedFixture::read(path)?,
-        None => SignedFixture::generate(args.exponent, args.seed)?,
+        Some(path) => Fixture::read(args.curve, path)?,
+        None => Fixture::generate(args.curve, args.exponent, args.seed)?,
     };
-    if fixture.log_compressions != args.exponent || fixture.seed != args.seed {
+    if fixture.log_compressions() != args.exponent
+        || fixture.seed() != args.seed
+        || fixture.curve() != args.curve
+    {
         return Err("fixture configuration mismatch".into());
     }
     if args.method == "binius64-ligerito" {
@@ -511,6 +697,13 @@ mod vectors;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixture::SignedFixture;
+
+    /// These tests drive the P-256 relation directly; the measurement paths
+    /// take the curve-tagged wrapper.
+    fn wrap(fixture: &SignedFixture) -> Fixture {
+        Fixture::P256(fixture.clone())
+    }
 
     #[test]
     fn phase_keys_preserve_names_and_union_repeated_component_spans() {
@@ -688,7 +881,7 @@ mod tests {
             prover.prove(&witness, &mut transcript).unwrap();
             let bytes = transcript.finalize();
             drop(witness);
-            verify(&verifier, &fixture, bytes.clone()).unwrap();
+            verify(&verifier, &wrap(&fixture), bytes.clone()).unwrap();
             // Bypass fixture validation to exercise the native verifier's
             // binding of every public word, including the exponent and key.
             let expected = public_words(
@@ -715,14 +908,21 @@ mod tests {
                 .as_ref())
             .to_bytes()
             .into();
-            assert!(verify(&verifier, &other, bytes.clone()).is_err());
+            assert!(verify(&verifier, &wrap(&other), bytes.clone()).is_err());
             other = fixture.clone();
             other.log_compressions = 4;
-            assert!(verify(&verifier, &other, bytes.clone()).is_err());
+            assert!(verify(&verifier, &wrap(&other), bytes.clone()).is_err());
             let mut extra = bytes.clone();
             extra.push(0);
-            assert!(verify(&verifier, &fixture, extra).is_err());
-            assert!(verify(&verifier, &fixture, bytes[..bytes.len() - 1].to_vec()).is_err());
+            assert!(verify(&verifier, &wrap(&fixture), extra).is_err());
+            assert!(
+                verify(
+                    &verifier,
+                    &wrap(&fixture),
+                    bytes[..bytes.len() - 1].to_vec()
+                )
+                .is_err()
+            );
         }
     }
 
@@ -765,13 +965,117 @@ mod tests {
         let proof = prepared.prove(&witness).unwrap();
         let bytes = proof.to_bytes();
         drop(witness);
-        verify_bitz(&prepared, &fixture, &bytes).unwrap();
+        verify_bitz(&prepared, &wrap(&fixture), &bytes).unwrap();
         let mut other = fixture.clone();
         other.qx[31] ^= 1;
-        assert!(verify_bitz(&prepared, &other, &bytes).is_err());
-        assert!(verify_bitz(&prepared, &fixture, &bytes[..bytes.len() - 1]).is_err());
+        assert!(verify_bitz(&prepared, &wrap(&other), &bytes).is_err());
+        assert!(verify_bitz(&prepared, &wrap(&fixture), &bytes[..bytes.len() - 1]).is_err());
         let mut corrupt = bytes;
         corrupt[12] ^= 1;
-        assert!(verify_bitz(&prepared, &fixture, &corrupt).is_err());
+        assert!(verify_bitz(&prepared, &wrap(&fixture), &corrupt).is_err());
+    }
+
+    /// The secp256k1 relation must accept a valid instance and reject every
+    /// altered public word, exactly as the P-256 one does. This is the
+    /// correctness gate for the `--curve secp256k1` rows: an under-constrained
+    /// composition would otherwise prove and measure fast but mean nothing.
+    #[test]
+    fn secp256k1_relation_accepts_valid_and_rejects_altered_instances() {
+        let fixture = secp_fixture::SignedFixture::generate(3, 0).unwrap();
+        let builder = CircuitBuilder::new();
+        let relation = Sha256EcdsaSecp256k1::new(&builder, 3).unwrap();
+        let circuit = builder.build();
+        let mut filler = circuit.new_witness_filler();
+        relation
+            .populate(
+                &mut filler,
+                &fixture.message,
+                &fixture.qx,
+                &fixture.qy,
+                &fixture.r,
+                &fixture.s,
+            )
+            .unwrap();
+        circuit.populate_wire_witness(&mut filler).unwrap();
+        let witness = filler.into_value_vec();
+        circuit.constraint_system().verify(&witness).unwrap();
+        // The public statement is encoded exactly as the P-256 relation's.
+        let expected = public_words(
+            fixture.log_compressions,
+            &fixture.qx,
+            &fixture.qy,
+            &fixture.r,
+            &fixture.s,
+        );
+        assert!(witness.inout().iter().map(|w| w.0).eq(expected.iter().map(|w| w.0)));
+        for field in ["message", "qx", "qy", "r", "s"] {
+            let mut changed = fixture.clone();
+            match field {
+                "message" => changed.message[0] ^= 1,
+                "qx" => changed.qx[31] ^= 1,
+                "qy" => changed.qy[31] ^= 1,
+                "r" => changed.r[31] ^= 1,
+                _ => changed.s[31] ^= 1,
+            }
+            let mut filler = circuit.new_witness_filler();
+            // Hints are recomputed for the changed instance on purpose: the
+            // constraints, not the witness generator, must do the rejecting.
+            relation
+                .populate(
+                    &mut filler,
+                    &changed.message,
+                    &changed.qx,
+                    &changed.qy,
+                    &changed.r,
+                    &changed.s,
+                )
+                .unwrap();
+            if circuit.populate_wire_witness(&mut filler).is_ok() {
+                assert!(
+                    circuit
+                        .constraint_system()
+                        .verify(&filler.into_value_vec())
+                        .is_err(),
+                    "accepted changed {field}"
+                );
+            }
+        }
+    }
+
+    /// Both curves must build, prove and verify end to end through the
+    /// dispatching wrapper the measurement paths use.
+    #[test]
+    fn both_curves_round_trip_through_the_dispatcher() {
+        for curve in [Curve::P256, Curve::Secp256k1] {
+            let fixture = Fixture::generate(curve, 3, 0).unwrap();
+            assert_eq!(fixture.curve(), curve);
+            let builder = CircuitBuilder::new();
+            let relation = Relation::new(&builder, curve, 3).unwrap();
+            let circuit = builder.build();
+            let verifier = Verifier::<Sha256HashSuite>::setup_with_security_bits(
+                circuit.constraint_system().clone(),
+                1,
+                100,
+            )
+            .unwrap();
+            let prover =
+                Prover::<OptimalPackedB128, Sha256HashSuite>::setup(verifier.clone()).unwrap();
+            let mut filler = circuit.new_witness_filler();
+            relation.populate(&mut filler, &fixture).unwrap();
+            circuit.populate_wire_witness(&mut filler).unwrap();
+            let witness = filler.into_value_vec();
+            let mut transcript = ProverTranscript::new(StdChallenger::default());
+            prover.prove(&witness, &mut transcript).unwrap();
+            let bytes = transcript.finalize();
+            drop(witness);
+            verify(&verifier, &fixture, bytes.clone()).unwrap();
+            for which in 0..5 {
+                assert!(
+                    verify(&verifier, &fixture.mutated(which), bytes.clone()).is_err(),
+                    "{} accepted mutation {which}",
+                    curve.name()
+                );
+            }
+        }
     }
 }

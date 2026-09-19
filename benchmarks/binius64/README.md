@@ -37,6 +37,41 @@ python3 scripts/run_sha256_ecdsa_compare.py \
 Binius-family cases run at both rates by default (`--binius-rates 1 3`), the
 BitZ rows at both Ligerito profiles (`--bitz-profiles custom:1:4 custom:3:4`).
 
+### secp256k1
+
+`--curve secp256k1` swaps the signature for Binius64's own secp256k1 verifier
+(`binius_circuits::ecdsa::bitcoin_verify`), keeping the statement, the message
+and key derivation, and the SHA-256 chain subcircuit identical. It is composed
+in `src/secp256k1_relation.rs` from the pinned fork's public gadgets, so the
+Binius revision is untouched; `benches/support/sha256_ecdsa_secp_fixture.rs`
+(shared with the BitZ bench) signs with `k256` under the
+schema `bitz/sha256-ecdsa-fixture/standard-secp256k1/v1`, and rows carry
+`curve` plus the `sha256-chain-secp256k1/standard/v1` circuit profile.
+
+BitZ now carries both curves too (`prepare_sha256_ecdsa_on`), and on secp256k1
+it additionally takes a GLV path that removes ~20% of its ECDSA verifier, so
+`--curve secp256k1` is valid for every method except `spartan-mc`, whose demo
+relation is P-256 only. A Binius-only campaign still needs no BitZ bench — the
+worker exports fixtures for either curve, byte-identically.
+
+```sh
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --curve secp256k1 --methods bitz-split binius64 binius64-ligerito \
+  --exponents 4 5 6 7 --threads 1 10 --reps 3 \
+  --output bench_results/sha256-ecdsa-secp256k1
+```
+
+This is not a curve-only delta: secp256k1 is the curve Binius64 is optimized
+for, so the rows also pick up GLV endomorphism-split Straus MSM (128 doublings
+instead of 256) and a one-limb pseudo-Mersenne coordinate field against P-256's
+four-limb one. Measured on an M5 (2026-09-19, `bench_results/r0919-sha-ecdsa-*`,
+both curves in one thermal window): the ECDSA verifier is 281k gates and 44.3k
+IntMul constraints cheaper at every exponent, which is a 0.44–0.65x prover,
+0.43–0.67x verifier, 0.84–0.97x proof and ~0.45x peak RSS. Use it for "the
+cheapest SHA+ECDSA proof Binius64 can produce"; isolating the curve itself would
+instead mean re-pinning the fork with P-256's circuit shape on secp256k1's
+constants.
+
 The worker is optional. Default methods do not build or download its dependencies.
 Use `--offline` after dependencies and the pinned toolchain have been installed.
 For a prebuilt worker, pass `--binius64-binary PATH` alongside the `.build.json`
