@@ -42,10 +42,10 @@ pub const VERIFY_2KB_WITNESS_BITS: usize =
     SHA256_2KB_WITNESS_BITS + VERIFY_DIGEST_WITNESS_BITS - 256;
 
 /// Number of packed `M * w` bits, including the implicit constant one.
-pub const VERIFY_2KB_INTEGER_WITNESS_BITS: usize = 1_890_711;
+pub const VERIFY_2KB_INTEGER_WITNESS_BITS: usize = 1_743_712;
 
 /// Number of rank-1 constraints in the composed circuit.
-pub const VERIFY_2KB_R1CS_ROWS: usize = 13_133;
+pub const VERIFY_2KB_R1CS_ROWS: usize = 12_102;
 
 /// Hashes a 2 KiB message and verifies its P-256 ECDSA signature.
 ///

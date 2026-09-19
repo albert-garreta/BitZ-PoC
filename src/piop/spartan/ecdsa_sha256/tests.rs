@@ -60,7 +60,7 @@ fn map_matches_witness(exponent: u8) {
     let prepared = prepare_sha256_ecdsa(exponent as usize, 100, OuterMode::Split).unwrap();
     let (statement, message) = fixture_at(exponent);
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
-    assert_eq!(prepared.local.rows(), 7061);
+    assert_eq!(prepared.local.rows(), 6030);
     let mut mapped = vec![false; prepared.map.rows()];
     let mut nnz = 0;
     for c in 0..prepared.live_source_bits() {
@@ -210,8 +210,8 @@ fn secp256k1_proves_and_verifies_and_stays_separate_from_p256() {
     assert_eq!(secp.curve(), EcdsaCurve::Secp256k1);
     assert_ne!(secp.local.digest, nist.local.digest);
     // GLV shrinks the verifier; P-256 keeps its 7,061 rows.
-    assert_eq!(nist.local.rows(), 7061);
-    assert_eq!(secp.local.rows(), 6637);
+    assert_eq!(nist.local.rows(), 6030);
+    assert_eq!(secp.local.rows(), 5606);
     // The factored affine-tail plane engine needs an identity source map; a
     // non-identity map silently falls back to a dense ~19 MiB/chunk correction.
     assert!(
@@ -240,37 +240,37 @@ fn secp256k1_proves_and_verifies_and_stays_separate_from_p256() {
     )
     .unwrap();
 
-    // A P-256 instance must not verify against the secp256k1 relation. Witness
-    // generation does not check satisfaction, so the rejection has to surface
-    // at proving or verification, not earlier.
+    // A P-256 instance must not verify against the secp256k1 relation. The
+    // distinct-operand addition guard makes a bogus instance unwitnessable, and
+    // a failed hint panics rather than returning, so catch that too: either way
+    // the prover cannot produce an accepted proof.
     let (other, other_message) = fixture_at(6);
-    let rejected = match generate_sha256_ecdsa_witness(&secp, &other, &other_message) {
-        Err(_) => true,
-        Ok(bad) => match commit_sha256_ecdsa(&secp, &bad) {
-            Err(_) => true,
-            Ok(bad_hint) => {
-                match prove_sha256_ecdsa(
-                    &mut Blake3Transcript::new(),
-                    &secp,
-                    &other,
-                    &bad,
-                    &bad_hint,
-                    4,
-                ) {
-                    Err(_) => true,
-                    Ok(bad_proof) => verify_sha256_ecdsa(
-                        &mut Blake3Transcript::new(),
-                        &secp,
-                        &other,
-                        &bad_hint.commitment,
-                        &bad_proof,
-                    )
-                    .is_err(),
-                }
-            }
-        },
-    };
-    assert!(rejected, "secp256k1 accepted a P-256 instance");
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let bad = generate_sha256_ecdsa_witness(&secp, &other, &other_message)?;
+        let bad_hint = commit_sha256_ecdsa(&secp, &bad)?;
+        let bad_proof = prove_sha256_ecdsa(
+            &mut Blake3Transcript::new(),
+            &secp,
+            &other,
+            &bad,
+            &bad_hint,
+            4,
+        )?;
+        verify_sha256_ecdsa(
+            &mut Blake3Transcript::new(),
+            &secp,
+            &other,
+            &bad_hint.commitment,
+            &bad_proof,
+        )
+    }));
+    std::panic::set_hook(previous);
+    assert!(
+        !matches!(attempt, Ok(Ok(()))),
+        "secp256k1 accepted a P-256 instance"
+    );
 }
 
 #[test]

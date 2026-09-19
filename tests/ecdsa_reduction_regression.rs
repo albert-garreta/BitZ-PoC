@@ -63,20 +63,20 @@ fn proof_bytes_and_verifier_allocations() {
             // shared-codec or transcript changes.
             let (expected_digest, expected_challenge) = match (target, mode) {
                 (100, OuterMode::Split) => (
-                    "dd7914e068445d04c621181c115c5a2129430418ef6e150325e43bcd6d69067a",
-                    161748810141005428170281968810474012494,
+                    "c6df4554dda0480a4cf05c935443eec04830afc95f257514dca8caf0b242928c",
+                    297091395608428809527576424278876215040,
                 ),
                 (100, OuterMode::AllRows) => (
-                    "ad33c0eb4ab212a52b581e7e5e46e00ed106101f59d2a69242fa318a4fda6682",
-                    242733522091643991383879358049197793165,
+                    "146a9b37a07576107676e7fca1a3c3c89d18fa08e24c296a4b46acaf701f8ae5",
+                    63194987174164003940923341848144090108,
                 ),
                 (128, OuterMode::Split) => (
-                    "a600b6038c7226a643f27c2fc2d12543db3b60d94095e50f9153b408449d3911",
-                    237220613375296302577607028912355843102,
+                    "781d3eb594fbaf1186f0b5ef849e26ad9a77f19e09a279fccd27e1764c4b105c",
+                    40382681399174221331594612286671065927,
                 ),
                 (128, OuterMode::AllRows) => (
-                    "e3f508c1632914e532dc3c7076643dc426f7be0124832a5cdd542dbb1070ba7c",
-                    18240983802203675248285318561107227572,
+                    "9aa4fe3fecbfa61937da6aedb9159144c530a3a7edf7b394f1e52312f39ff15e",
+                    109026203495331847305993758901892716094,
                 ),
                 _ => unreachable!(),
             };

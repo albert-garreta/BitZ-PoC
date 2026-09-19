@@ -24,20 +24,20 @@ use crate::{
 pub const VERIFY_DIGEST_INPUT_BITS: usize = 7 * 256;
 
 /// Total Boolean witness size of the standalone verifier, including inputs.
-pub const VERIFY_DIGEST_WITNESS_BITS: usize = 1_215_662;
+pub const VERIFY_DIGEST_WITNESS_BITS: usize = 1_068_663;
 
 /// Number of packed `M * w` bits, including the implicit constant one.
-pub const VERIFY_DIGEST_INTEGER_WITNESS_BITS: usize = 1_215_663;
+pub const VERIFY_DIGEST_INTEGER_WITNESS_BITS: usize = 1_068_664;
 
 /// Number of rank-1 constraints.
-pub const VERIFY_DIGEST_R1CS_ROWS: usize = 7_061;
+pub const VERIFY_DIGEST_R1CS_ROWS: usize = 6_030;
 
 /// The same three dimensions over secp256k1, where [`joint_scalar_mul`] takes
 /// the GLV path: the doubling chain halves while additions and table lookups
 /// are unchanged, because the scalar material absorbed per round is the same.
-pub const SECP256K1_VERIFY_DIGEST_WITNESS_BITS: usize = 976_742;
-pub const SECP256K1_VERIFY_DIGEST_INTEGER_WITNESS_BITS: usize = 976_743;
-pub const SECP256K1_VERIFY_DIGEST_R1CS_ROWS: usize = 6_637;
+pub const SECP256K1_VERIFY_DIGEST_WITNESS_BITS: usize = 829_743;
+pub const SECP256K1_VERIFY_DIGEST_INTEGER_WITNESS_BITS: usize = 829_744;
+pub const SECP256K1_VERIFY_DIGEST_R1CS_ROWS: usize = 5_606;
 
 /// Signed width used by witness-oriented backends for P-256 intermediates.
 /// The widest values are products of 262-bit affine-formula operands.
@@ -100,6 +100,9 @@ pub struct Curve {
     base_inverse: OnceLock<PreparedOddInverse<4>>,
     scalar_inverse: OnceLock<PreparedOddInverse<4>>,
     generator_table: OnceLock<Vec<(Uint<4>, Uint<4>)>>,
+    /// `(R, -(2^128 R), -(2^256 R))`: the ladder's starting offset and the
+    /// corrections for the GLV and plain schedules. See [`Curve::offsets`].
+    offsets: OnceLock<[(Uint<4>, Uint<4>); 3]>,
 }
 
 /// NIST P-256 (secp256r1), `a = -3`.
@@ -290,6 +293,7 @@ impl Curve {
             base_inverse: OnceLock::new(),
             scalar_inverse: OnceLock::new(),
             generator_table: OnceLock::new(),
+            offsets: OnceLock::new(),
         }
     }
 
@@ -382,6 +386,72 @@ impl Curve {
             CoefficientA::Zero => scaled,
             CoefficientA::MinusThree => ring.sub(&scaled, &three),
         }
+    }
+
+    /// Native `k*G` by MSB-first double-and-add, for public constants only.
+    fn native_generator_multiple(
+        &self,
+        k: &Uint<4>,
+        ring: &ModRingCtx<4>,
+        inverse: &PreparedOddInverse<4>,
+    ) -> (Uint<4>, Uint<4>) {
+        let mut accumulator: Option<(Uint<4>, Uint<4>)> = None;
+        for bit in (0..256).rev() {
+            if let Some(point) = accumulator {
+                accumulator = Some(self.affine_add(&point, &point, ring, inverse));
+            }
+            if k.as_words()[bit / 64] >> (bit % 64) & 1 == 1 {
+                accumulator = Some(match accumulator {
+                    None => self.generator,
+                    Some(point) => self.affine_add(&point, &self.generator, ring, inverse),
+                });
+            }
+        }
+        accumulator.expect("offset scalar is nonzero")
+    }
+
+    /// `(R, -(2^128 R), -(2^256 R))`.
+    ///
+    /// The ladders start at `R` rather than the identity. Starting at the
+    /// identity walks the accumulator through *small* multiples of the bases,
+    /// and then a public key that is itself a small multiple of `G` makes
+    /// `acc = +-T` likely rather than a `2^-128` accident — which is what
+    /// [`add_distinct`] must exclude. `R` is a nothing-up-my-sleeve multiple of
+    /// `G`, so no honest instance lands in that regime.
+    ///
+    /// A schedule of `d` doublings leaves `2^d R` added to the true sum, so the
+    /// ladder finishes by adding the matching negated constant.
+    fn offsets(&'static self) -> &'static [(Uint<4>, Uint<4>); 3] {
+        self.offsets.get_or_init(|| {
+            let ring = ModRingCtx::new(self.base).expect("curve base modulus");
+            let inverse = self.base().inverse();
+            let seed = blake3::hash(
+                format!("bitz/ecdsa/accumulator-offset/v1/{}", self.name).as_bytes(),
+            );
+            let mut words = [0u64; 4];
+            for (index, word) in words.iter_mut().enumerate() {
+                *word = u64::from_le_bytes(
+                    seed.as_bytes()[index * 8..index * 8 + 8]
+                        .try_into()
+                        .expect("eight-byte limb"),
+                );
+            }
+            // Reduce into `[1, n)`; the scalar only has to be structureless.
+            let (_, scalar) = self.scalar().divisor().div_rem_ct(&Uint::from_words(words));
+            let base = self.native_generator_multiple(&scalar, &ring, &inverse);
+            let negate = |(x, y): (Uint<4>, Uint<4>)| {
+                (x, ring.to_integer(&ring.sub(&ring.from_integer(&Uint::<4>::ZERO), &ring.from_integer(&y))))
+            };
+            let mut point = base;
+            let mut corrections = Vec::with_capacity(2);
+            for doublings in 1..=256 {
+                point = self.affine_add(&point, &point, &ring, &inverse);
+                if doublings == 128 || doublings == 256 {
+                    corrections.push(negate(point));
+                }
+            }
+            [base, corrections[0], corrections[1]]
+        })
     }
 
     /// The public fixed-base table `i*G` for `i` in `[0, 256)`, built once.
@@ -1442,16 +1512,11 @@ fn assert_nonzero_when<CS: Circuit>(
 /// opposite, so the plain chord formula applies and the doubling and
 /// `P = -Q` case analysis can be dropped.
 ///
-/// NOT YET WIRED INTO THE LADDERS. Measured at 1,591 bits cheaper per addition
-/// (96 in-loop additions on either ladder, so -152,736 bits: -12.6% on P-256
-/// and -15.6% on secp256k1 with GLV). What blocks it is the completeness side:
-/// the accumulator starts at the identity and therefore passes through small
-/// multiples of the bases, so a public key that is itself a known small
-/// multiple of G makes `acc = +-T` likely rather than negligible. The repo's own
-/// `d = k = 1` fixtures are exactly that case. Offsetting the accumulator by a
-/// fixed public point -- and subtracting the corresponding public multiple at
-/// the end -- removes the small-multiple regime and is what this gadget waits
-/// on.
+/// The ladders satisfy that guarantee because they start at [`Curve::offsets`]'s
+/// point `R` instead of the identity: the accumulator is a structureless
+/// multiple from the first round, so it never sits in the small-multiple regime
+/// where a public key that is itself a small multiple of `G` would collide with
+/// a table entry.
 ///
 /// SOUNDNESS. The chord formula needs `x_P != x_Q`. It is not enough that a
 /// violation would give the wrong answer: the slope is pinned by
@@ -1467,7 +1532,15 @@ fn assert_nonzero_when<CS: Circuit>(
 /// multiple of the bases, so `acc = +-T` arises with probability about `2^-128`
 /// per addition. An adversarial public key can force it, but only to make its
 /// own proof impossible.
-#[allow(dead_code)]
+/// A public curve point as circuit constants; never the identity.
+fn constant_point<CS: Circuit>(point: &(Uint<4>, Uint<4>)) -> Point<CS> {
+    Point {
+        x: rep_constant(&point.0),
+        y: rep_constant(&point.1),
+        infinity: lc_u64::<CS>(0),
+    }
+}
+
 fn add_distinct<CS: Circuit>(
     circuit: &mut CS,
     curve: &'static Curve,
@@ -1901,7 +1974,8 @@ fn glv_scalar_mul<CS: Circuit>(
         .collect();
     let g_table = generator_coefficients::<CS>(curve);
     let phi_g_table = phi_generator_coefficients::<CS>(curve, endomorphism);
-    let mut accumulator = infinity();
+    let offsets = curve.offsets();
+    let mut accumulator = constant_point(&offsets[0]);
     for i in 0..16 {
         let d_g = sub_window(&g_half, 120 - 8 * i, 8);
         let d_phi_g = sub_window(&phi_g_half, 120 - 8 * i, 8);
@@ -1917,17 +1991,20 @@ fn glv_scalar_mul<CS: Circuit>(
         for _ in 0..4 {
             accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_complete(circuit, curve, accumulator, q_hi);
-        accumulator = add_complete(circuit, curve, accumulator, phi_hi);
+        accumulator = add_distinct(circuit, curve, accumulator, q_hi);
+        accumulator = add_distinct(circuit, curve, accumulator, phi_hi);
         for _ in 0..4 {
             accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_complete(circuit, curve, accumulator, q_lo);
-        accumulator = add_complete(circuit, curve, accumulator, phi_lo);
-        accumulator = add_complete(circuit, curve, accumulator, g);
-        accumulator = add_complete(circuit, curve, accumulator, phi_g);
+        accumulator = add_distinct(circuit, curve, accumulator, q_lo);
+        accumulator = add_distinct(circuit, curve, accumulator, phi_lo);
+        accumulator = add_distinct(circuit, curve, accumulator, g);
+        accumulator = add_distinct(circuit, curve, accumulator, phi_g);
     }
-    accumulator
+    // Sixteen rounds of eight doublings leave `2^128 R` on the accumulator.
+    // This last addition can legitimately be a doubling or land on the
+    // identity, so it stays complete.
+    add_complete(circuit, curve, accumulator, constant_point(&offsets[1]))
 }
 
 fn joint_scalar_mul<CS: Circuit>(
@@ -1939,7 +2016,8 @@ fn joint_scalar_mul<CS: Circuit>(
 ) -> Point<CS> {
     let q_table = materialize_multiples(circuit, curve, q);
     let g_table = generator_coefficients::<CS>(curve);
-    let mut accumulator = infinity();
+    let offsets = curve.offsets();
+    let mut accumulator = constant_point(&offsets[0]);
     for i in 0..32 {
         let d1 = scalar_window(&u1, 248 - 8 * i, 8);
         let d2_hi = scalar_window(&u2, 252 - 8 * i, 4);
@@ -1950,14 +2028,15 @@ fn joint_scalar_mul<CS: Circuit>(
         for _ in 0..4 {
             accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_complete(circuit, curve, accumulator, q_hi);
+        accumulator = add_distinct(circuit, curve, accumulator, q_hi);
         for _ in 0..4 {
             accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_complete(circuit, curve, accumulator, q_lo);
-        accumulator = add_complete(circuit, curve, accumulator, g);
+        accumulator = add_distinct(circuit, curve, accumulator, q_lo);
+        accumulator = add_distinct(circuit, curve, accumulator, g);
     }
-    accumulator
+    // Thirty-two rounds of eight doublings leave `2^256 R`.
+    add_complete(circuit, curve, accumulator, constant_point(&offsets[2]))
 }
 
 fn assert_on_curve<CS: Circuit>(
