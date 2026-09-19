@@ -43,18 +43,32 @@ pub enum EcdsaCurve {
     #[default]
     P256,
     Secp256k1,
+    /// secp256k1 on Binius64's scalar-multiplication schedule. A measurement
+    /// configuration for the matched comparison, not a deployable one: it is
+    /// strictly more expensive for us and inherits Binius64's completeness gap.
+    Secp256k1Matched,
 }
 
 impl EcdsaCurve {
     pub(crate) fn params(self) -> &'static p256::Curve {
         match self {
             Self::P256 => &p256::P256,
-            Self::Secp256k1 => &p256::SECP256K1,
+            Self::Secp256k1 | Self::Secp256k1Matched => &p256::SECP256K1,
+        }
+    }
+
+    pub(crate) fn profile(self) -> p256::LadderProfile {
+        match self {
+            Self::P256 | Self::Secp256k1 => p256::LadderProfile::Native,
+            Self::Secp256k1Matched => p256::LadderProfile::BiniusMatched,
         }
     }
 
     pub fn name(self) -> &'static str {
-        self.params().name()
+        match self {
+            Self::Secp256k1Matched => "secp256k1-matched",
+            other => other.params().name(),
+        }
     }
 }
 
@@ -228,7 +242,7 @@ fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaErr
 
     let mut generator = ConstraintGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
     let inputs = generator.inputs();
-    p256::verify_digest_circuit_on(&mut generator, curve.params(), &inputs);
+    p256::verify_digest_circuit_with(&mut generator, curve.params(), curve.profile(), &inputs);
     let p = generator.into_matrices();
     let mut public_h = [usize::MAX; 1024];
     for (h, row) in p.m.rows().enumerate() {
@@ -252,7 +266,12 @@ fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaErr
     drop(p);
     let mut tape_generator = WengertGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
     let tape_inputs = tape_generator.take_boxed_inputs::<{ p256::VERIFY_DIGEST_INPUT_BITS }>();
-    p256::verify_digest_circuit_on(&mut tape_generator, curve.params(), &tape_inputs);
+    p256::verify_digest_circuit_with(
+        &mut tape_generator,
+        curve.params(),
+        curve.profile(),
+        &tape_inputs,
+    );
     let tape = tape_generator.finish();
     if tape.row_count() != a.row_count() || tape.column_count() != tail.column_count() {
         return Err(error(
@@ -631,9 +650,12 @@ pub fn prepare_sha256_ecdsa_on(
     static P256_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> = OnceLock::new();
     static SECP256K1_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> =
         OnceLock::new();
+    static SECP256K1_MATCHED_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> =
+        OnceLock::new();
     let cache = match curve {
         EcdsaCurve::P256 => &P256_LOCAL,
         EcdsaCurve::Secp256k1 => &SECP256K1_LOCAL,
+        EcdsaCurve::Secp256k1Matched => &SECP256K1_MATCHED_LOCAL,
     };
     let local = cache
         .get_or_init(|| build_local(curve).map(Arc::new).map_err(|e| e.to_string()))

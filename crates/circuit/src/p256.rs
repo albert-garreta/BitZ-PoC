@@ -83,6 +83,22 @@ pub struct Endomorphism {
     phi_generator_table: OnceLock<Vec<(Uint<4>, Uint<4>)>>,
 }
 
+/// Which scalar-multiplication schedule the verifier uses.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum LadderProfile {
+    /// Our own schedule: an 8-bit window over the public constant generator
+    /// table, 4-bit windows over the committed variable-base tables, and an
+    /// offset accumulator.
+    #[default]
+    Native,
+    /// Mirrors Binius64's `msm_strauss_endo`: uniform 4-bit windows over all
+    /// four GLV bases, every table built in-circuit from a sign-negated base,
+    /// and an accumulator starting at the identity. Used only to measure the
+    /// two systems on a matched circuit; it is strictly worse for us, and it
+    /// inherits Binius64's completeness gap along with its schedule.
+    BiniusMatched,
+}
+
 /// A prime-order short-Weierstrass curve `y^2 = x^3 + a*x + b` over `F_p`,
 /// together with the prepared arithmetic and the public fixed-base table that
 /// witness generation needs. Both supported curves have a 256-bit `p` and `n`
@@ -1438,20 +1454,38 @@ fn assert_nonzero_when<CS: Circuit>(
     );
 }
 
+/// `a XOR b` for two flags, via one AND: `a + b - 2ab`.
+fn xor_bit<CS: Circuit>(circuit: &mut CS, a: Lc<CS>, b: Lc<CS>) -> Lc<CS> {
+    let both = and_bit(circuit, a.clone(), b.clone());
+    a.add(b).sub(both.clone()).sub(both)
+}
+
+/// A public curve point as circuit constants; never the identity.
+fn constant_point<CS: Circuit>(point: &(Uint<4>, Uint<4>)) -> Point<CS> {
+    Point {
+        x: rep_constant(&point.0),
+        y: rep_constant(&point.1),
+        infinity: lc_u64::<CS>(0),
+    }
+}
+
 /// `P + Q` where the caller guarantees the operands are never equal or
 /// opposite, so the plain chord formula applies and the doubling and
 /// `P = -Q` case analysis can be dropped.
 ///
-/// NOT YET WIRED INTO THE LADDERS. Measured at 1,591 bits cheaper per addition
-/// (96 in-loop additions on either ladder, so -152,736 bits: -12.6% on P-256
-/// and -15.6% on secp256k1 with GLV). What blocks it is the completeness side:
-/// the accumulator starts at the identity and therefore passes through small
-/// multiples of the bases, so a public key that is itself a known small
-/// multiple of G makes `acc = +-T` likely rather than negligible. The repo's own
-/// `d = k = 1` fixtures are exactly that case. Offsetting the accumulator by a
-/// fixed public point -- and subtracting the corresponding public multiple at
-/// the end -- removes the small-multiple regime and is what this gadget waits
-/// on.
+/// WIRED INTO THE BINIUS64-MATCHED LADDER ONLY. That profile reproduces
+/// Binius64's schedule for measurement, so it starts its accumulator at the
+/// identity and inherits their completeness gap along with it. Our own ladders
+/// keep complete addition. Measured at 1,591 bits cheaper per addition (96
+/// in-loop additions on either ladder, so -152,736 bits: -12.6% on P-256 and
+/// -15.6% on secp256k1 with GLV). What blocks adopting it there is the
+/// completeness side: the accumulator starts at the identity and therefore
+/// passes through small multiples of the bases, so a public key that is itself
+/// a known small multiple of G makes `acc = +-T` likely rather than negligible.
+/// The repo's own `d = k = 1` fixtures are exactly that case. Offsetting the
+/// accumulator by a fixed public point -- and subtracting the corresponding
+/// public multiple at the end -- removes the small-multiple regime and is what
+/// wiring this gadget into our own ladders waits on.
 ///
 /// SOUNDNESS. The chord formula needs `x_P != x_Q`. It is not enough that a
 /// violation would give the wrong answer: the slope is pinned by
@@ -1467,7 +1501,6 @@ fn assert_nonzero_when<CS: Circuit>(
 /// multiple of the bases, so `acc = +-T` arises with probability about `2^-128`
 /// per addition. An adversarial public key can force it, but only to make its
 /// own proof impossible.
-#[allow(dead_code)]
 fn add_distinct<CS: Circuit>(
     circuit: &mut CS,
     curve: &'static Curve,
@@ -1874,6 +1907,77 @@ fn phi_generator_coefficients<CS: Circuit>(
         .collect()
 }
 
+/// `u1*G + u2*Q` on Binius64's schedule, for a matched measurement.
+///
+/// Every difference from [`glv_scalar_mul`] mirrors `msm_strauss_endo`: all four
+/// GLV bases are treated alike with 4-bit windows, each base is sign-negated
+/// *before* its 16-entry table is built in-circuit (so the generator's table can
+/// no longer be public constants), the phi tables are derived entrywise and
+/// corrected by the relative sign, and the accumulator starts at the identity
+/// with the doublings skipped on the most significant window.
+///
+/// This inherits their completeness gap: with no offset the accumulator passes
+/// through small multiples, so a public key that is a small multiple of `G` can
+/// make `acc = +-T` likely. Benchmarks use random keys; this profile must not
+/// become a default path.
+fn glv_scalar_mul_binius_matched<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    endomorphism: &'static Endomorphism,
+    u1: ScalarElem<CS>,
+    u2: ScalarElem<CS>,
+    q: Point<CS>,
+) -> Point<CS> {
+    let (g_half, phi_g_half) = glv_decompose(circuit, curve, endomorphism, &u1);
+    let (q_half, phi_q_half) = glv_decompose(circuit, curve, endomorphism, &u2);
+
+    // Each base is negated before its table is built, which is what costs them
+    // the constant generator table.
+    let mut table_for = |circuit: &mut CS, base: Point<CS>, sign: &Lc<CS>, relative: Lc<CS>| {
+        let base = negate_y_if(circuit, curve, sign.clone(), base);
+        let table = materialize_multiples(circuit, curve, base);
+        let phi = phi_table(circuit, curve, endomorphism, &table);
+        let phi = phi
+            .into_iter()
+            .map(|point| negate_y_if(circuit, curve, relative.clone(), point))
+            .collect::<Vec<_>>();
+        (table, phi)
+    };
+    let g_relative = xor_bit(circuit, g_half.negate.clone(), phi_g_half.negate.clone());
+    let (g_table, phi_g_table) = table_for(
+        circuit,
+        constant_point(&curve.generator),
+        &g_half.negate,
+        g_relative,
+    );
+    let q_relative = xor_bit(circuit, q_half.negate.clone(), phi_q_half.negate.clone());
+    let (q_table, phi_q_table) = table_for(circuit, q, &q_half.negate, q_relative);
+
+    let bases = [
+        (&g_half, &g_table),
+        (&phi_g_half, &phi_g_table),
+        (&q_half, &q_table),
+        (&phi_q_half, &phi_q_table),
+    ];
+    let windows = 128 / 4;
+    let mut accumulator = infinity();
+    for window in (0..windows).rev() {
+        // Skipped on the most significant window so the result is not
+        // over-multiplied by 2^4.
+        if window + 1 != windows {
+            for _ in 0..4 {
+                accumulator = double_complete(circuit, curve, accumulator);
+            }
+        }
+        for (scalar, table) in bases {
+            let digit = sub_window(scalar, 4 * window, 4);
+            let point = lookup_point(circuit, digit, table);
+            accumulator = add_distinct(circuit, curve, accumulator, point);
+        }
+    }
+    accumulator
+}
+
 /// `u1*G + u2*Q` with both scalars GLV-split, so the shared doubling chain is
 /// 128 long instead of 256. Additions and table lookups are unchanged: the
 /// total scalar material absorbed per round is the same, only the accumulator
@@ -1990,10 +2094,20 @@ pub fn verify_digest_circuit<CS: Circuit>(
     verify_digest_circuit_on(circuit, &P256, inputs)
 }
 
-/// [`verify_digest_circuit`] over an explicit curve.
+/// [`verify_digest_circuit`] over an explicit curve, on our own schedule.
 pub fn verify_digest_circuit_on<CS: Circuit>(
     circuit: &mut CS,
     curve: &'static Curve,
+    inputs: &[CS::Bool; VERIFY_DIGEST_INPUT_BITS],
+) {
+    verify_digest_circuit_with(circuit, curve, LadderProfile::Native, inputs)
+}
+
+/// [`verify_digest_circuit_on`] with an explicit ladder schedule.
+pub fn verify_digest_circuit_with<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    profile: LadderProfile,
     inputs: &[CS::Bool; VERIFY_DIGEST_INPUT_BITS],
 ) {
     let words: [<CS::Bool as BoolWitness>::Repr<256, 4>; 7] = array::from_fn(|slot| {
@@ -2041,9 +2155,15 @@ pub fn verify_digest_circuit_on<CS: Circuit>(
     let u2 = lazy_reduce_scalar(circuit, curve.scalar(), of_elem(&u2_relaxed));
 
     let q = point_from_elems(&qx, &qy);
-    let sum = match &curve.endomorphism {
-        Some(endomorphism) => glv_scalar_mul(circuit, curve, endomorphism, u1, u2, q),
-        None => joint_scalar_mul(circuit, curve, u1, u2, q),
+    let sum = match (&curve.endomorphism, profile) {
+        (Some(endomorphism), LadderProfile::Native) => {
+            glv_scalar_mul(circuit, curve, endomorphism, u1, u2, q)
+        }
+        (Some(endomorphism), LadderProfile::BiniusMatched) => {
+            glv_scalar_mul_binius_matched(circuit, curve, endomorphism, u1, u2, q)
+        }
+        // Binius64 has no matched schedule without an endomorphism.
+        (None, _) => joint_scalar_mul(circuit, curve, u1, u2, q),
     };
     assert_zero(circuit, sum.infinity);
     let x_canonical = lazy_reduce(circuit, curve.base(), sum.x);
@@ -2175,6 +2295,29 @@ mod tests {
             rep_u64::<WitnessOnly>(0),
             lc_u64::<WitnessOnly>(0),
         );
+    }
+
+    /// What matching Binius64's schedule costs us: their uniform 4-bit windows
+    /// give up the public constant generator table and add 32 more in-loop
+    /// additions plus a second in-circuit table build.
+    #[test]
+    fn binius_matched_schedule_is_more_expensive_than_ours() {
+        let mut stats = Stats::new(VERIFY_DIGEST_INPUT_BITS);
+        verify_digest_circuit_with(
+            &mut stats,
+            &SECP256K1,
+            LadderProfile::BiniusMatched,
+            &[Dummy; VERIFY_DIGEST_INPUT_BITS],
+        );
+        let matched = stats.lean_stats();
+        println!(
+            "MATCHED secp256k1: m_rows={} r1cs_rows={} (native {} / {})",
+            matched.m_rows,
+            matched.r1cs_rows,
+            SECP256K1_VERIFY_DIGEST_INTEGER_WITNESS_BITS,
+            SECP256K1_VERIFY_DIGEST_R1CS_ROWS
+        );
+        assert!(matched.m_rows > SECP256K1_VERIFY_DIGEST_INTEGER_WITNESS_BITS);
     }
 
     /// secp256k1 costs less than P-256 only because of GLV. The moduli and `a`
