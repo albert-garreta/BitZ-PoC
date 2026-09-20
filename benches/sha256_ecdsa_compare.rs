@@ -434,8 +434,9 @@ fn result_record<'a, D>(
         fixture_profile: fixture.schema(),
         curve: &args.curve,
         circuit_profile: match args.ecdsa_curve() {
-            EcdsaCurve::P256 => "sha256-chain-p256/optimized/v1",
-            EcdsaCurve::P256Paper => "sha256-chain-p256/paper/v1",
+            // The native P-256 schedule is the paper's on this branch, so both
+            // tokens record the same circuit; they diverge only if it is optimized.
+            EcdsaCurve::P256 | EcdsaCurve::P256Paper => "sha256-chain-p256/paper/v1",
             EcdsaCurve::Secp256k1 => "sha256-chain-secp256k1/optimized/v1",
             EcdsaCurve::Secp256k1Matched => "sha256-chain-secp256k1/binius-matched/v1",
         },
