@@ -77,6 +77,17 @@ pub fn resolve_schedule(
         {
             Ok(ForestSchedule::L2)
         }
+        // Nor does it hold on Apple Silicon above four workers: there L8 costs
+        // large single-claim forests 19-37% of prover time for ~19% less peak
+        // RSS. Keep L4; the multi-claim path and explicit requests are unchanged.
+        (SchedulePolicy::Auto, ForestPath::Single)
+            if cfg!(all(target_arch = "aarch64", target_os = "macos"))
+                && threads > 4
+                && depth >= 13
+                && size >= 25 =>
+        {
+            Ok(ForestSchedule::L4)
+        }
         // Large, sufficiently deep forests benefit from the smaller stored chain.
         // With few workers, tall forests instead benefit from storing more levels.
         (SchedulePolicy::Auto, _)
@@ -161,16 +172,22 @@ mod tests {
     use super::*;
     #[test]
     fn automatic_policy_covers_measured_crossovers_and_multi_eligibility() {
+        // Apple Silicon keeps L4 where other platforms take the many-worker L8.
+        let many_worker_l8 = if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+            ForestSchedule::L4
+        } else {
+            ForestSchedule::L8
+        };
         for (row_vars, col_vars, word_bits, threads, path, expected) in [
             (15, 7, 1, 1, ForestPath::Single, ForestSchedule::L2),
             (12, 7, 8, 1, ForestPath::Single, ForestSchedule::L2),
             (17, 9, 1, 4, ForestPath::Single, ForestSchedule::L2),
-            (17, 9, 1, 10, ForestPath::Single, ForestSchedule::L8),
+            (17, 9, 1, 10, ForestPath::Single, many_worker_l8),
             (15, 7, 4, 8, ForestPath::Single, ForestSchedule::L4),
             (7, 15, 1, 1, ForestPath::Single, ForestSchedule::L4),
             (12, 15, 1, 10, ForestPath::Single, ForestSchedule::L4),
-            (13, 12, 1, 8, ForestPath::Single, ForestSchedule::L8),
-            (13, 14, 1, 10, ForestPath::Single, ForestSchedule::L8),
+            (13, 12, 1, 8, ForestPath::Single, many_worker_l8),
+            (13, 14, 1, 10, ForestPath::Single, many_worker_l8),
             (15, 7, 1, 1, ForestPath::Multi, ForestSchedule::L4),
         ] {
             let layout = IntegerMatrixLayout {
@@ -201,8 +218,46 @@ mod tests {
             (13, 15, 1, 1, ForestPath::Single, ForestSchedule::L8),
             (14, 13, 1, 1, ForestPath::Single, ForestSchedule::L8),
             (13, 13, 1, 2, ForestPath::Single, ForestSchedule::L8),
-            (13, 13, 1, 8, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 8, ForestPath::Single, ForestSchedule::L4),
             (13, 13, 1, 1, ForestPath::Multi, ForestSchedule::L8),
+        ] {
+            let layout = IntegerMatrixLayout {
+                row_vars: rows,
+                col_vars: cols,
+                word_bits: bits,
+            };
+            assert_eq!(
+                resolve_schedule(SchedulePolicy::Auto, &layout, path, threads),
+                Ok(if apple {
+                    apple_schedule
+                } else {
+                    ForestSchedule::L8
+                })
+            );
+            for (policy, expected) in [
+                (SchedulePolicy::L4, ForestSchedule::L4),
+                (SchedulePolicy::L8, ForestSchedule::L8),
+            ] {
+                assert_eq!(
+                    resolve_schedule(policy, &layout, path, threads),
+                    Ok(expected)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn apple_many_worker_crossover_falls_back_to_l4() {
+        let apple = cfg!(all(target_arch = "aarch64", target_os = "macos"));
+        for (rows, cols, bits, threads, path, apple_schedule) in [
+            (13, 12, 1, 5, ForestPath::Single, ForestSchedule::L4),
+            (13, 13, 1, 10, ForestPath::Single, ForestSchedule::L4),
+            (17, 9, 1, 10, ForestPath::Single, ForestSchedule::L4),
+            (21, 4, 1, 16, ForestPath::Single, ForestSchedule::L4),
+            // Four workers and the multi-claim path keep the L8 crossover.
+            (13, 13, 1, 4, ForestPath::Single, ForestSchedule::L8),
+            (13, 13, 1, 10, ForestPath::Multi, ForestSchedule::L8),
+            (17, 9, 1, 10, ForestPath::Multi, ForestSchedule::L8),
         ] {
             let layout = IntegerMatrixLayout {
                 row_vars: rows,
