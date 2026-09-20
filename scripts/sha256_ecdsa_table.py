@@ -292,7 +292,12 @@ def render(curve: str, by: dict, run_dirs: list, out: Path, label: str, regenera
 
     ref_th = max(threads)
     order_th = [ref_th] + [x for x in threads if x != ref_th]
-    lead = ([("$N$", "r")] if show_n else []) + ([("$\\lambda$ (bits)", "r")] if show_t else [])
+    # The size column names the message and, under it, the compression count -- the paper's own layout.
+    messages = {}
+    for key, row in by.items():
+        messages.setdefault(key[0], row["message_bytes"])
+    size_label = [lambda n: f"{messages[n]}\\,B", lambda n: f"$2^{{{n}}}$ comp."]
+    lead = ([("Message", "r")] if show_n else []) + ([("$\\lambda$ (bits)", "r")] if show_t else [])
     span = len(threads)
     thr = " & ".join(f"{x} thr" for x in threads)
     c0 = len(lead) + 3
@@ -333,19 +338,20 @@ def render(curve: str, by: dict, run_dirs: list, out: Path, label: str, regenera
                 vals = [grid[m][ci] for m in present if grid[m][ci] is not None]
                 best.append(f(min(vals)) if len(vals) > 1 else None)
             first_t = True
-            for m in present:
+            for index, m in enumerate(present):
                 cells = []
                 if show_n:
-                    cells.append(f"$2^{{{n}}}$" if first_n else "")
+                    cells.append(size_label[index](n) if first_n and index < len(size_label) else "")
                 if show_t:
                     cells.append(("$%d$" % t if t is not None else "n/a") if first_t else "")
-                first_n = first_t = False
+                first_t = False
                 cells.append(dict(SCHEMES)[m])
                 for ci, (_, _, f) in enumerate(cols):
                     v = grid[m][ci]
                     txt = PLACEHOLDER if v is None else f(v)
                     cells.append(f"\\textbf{{{txt}}}" if v is not None and best[ci] is not None and txt == best[ci] else txt)
                 lines.append("    " + " & ".join(cells) + " \\\\")
+            first_n = False  # the size column labels the first target group of a size, not every one
     lines += ["    \\bottomrule", "  \\end{tabular}"]
     if ratios:
         header += ["% Binius (UDR) over \\ftwoz-SNARK at equal rate, from the medians above: >1 favours \\ftwoz-SNARK, <1 favours Binius.",
