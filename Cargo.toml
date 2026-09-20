@@ -235,6 +235,11 @@ required-features = ["span-metrics", "bench-internals"]
 # BITZ_SHA_PRODUCT_TS.
 
 [[example]]
+name = "mul_corpus_export"
+# The operand corpus and assignment digest of one multiplication case, for
+# external workers (benchmarks/zinc-plus). No optional features needed.
+
+[[example]]
 name = "binius_probe"
 required-features = ["span-metrics", "hybrid"]
 

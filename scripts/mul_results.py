@@ -155,6 +155,10 @@ def load(directory: Path) -> list[Case]:
         required = {
             "standalone-proving": {"commit_ms", "online_prover_ms", "verify_ms", "proof_bytes"},
             "witness-to-proof": {"witness_ms", "commit_ms", "online_prover_ms", "witness_to_proof_ms", "verify_ms", "verified_trial_ms", "proof_bytes"},
+            # An external worker (scripts/zinc_plus_import.py) times its whole
+            # prover call; its commitment is inside online_prover_ms and it has
+            # no separate verified-trial scope.
+            "witness-to-proof-external": {"witness_ms", "online_prover_ms", "witness_to_proof_ms", "verify_ms", "proof_bytes"},
             "witness-generation": {"witness_ms"},
             "pcs-opening": {"materialize_ms", "commit_ms", "claim_ms", "opening_ms", "verify_ms", "verified_trial_ms", "pcs_ms", "commitment_bytes", "claim_bytes", "opening_bytes", "proof_bytes"},
             "whole-piop": {"piop_ms", "verify_ms", "analytical_piop_bytes"},
