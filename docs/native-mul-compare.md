@@ -139,8 +139,23 @@ u32 W=8 open directly; other configurations use virtual packing. Results record
 both committed and opening geometries, not just W. BabyBear and the fixed-prime
 PCS experiment retain W=1/split=0; PCS uses profile 100.
 
+The Zinc+ rows are measured outside this crate by `scripts/run_zinc_plus_campaign.py`
+(see `benchmarks/zinc-plus/README.md`) and imported as `mul-bench/v2` cases with the
+`witness-to-proof-external` boundary: their prover time is one number (commitment
+included) and their peak resident set is the whole worker process.
+
+Cells that exhaust the machine's memory are excluded, not measured while paging.
+`scripts/mul_memory_probe.py` runs one such cell alone under a small swap-growth
+guard, samples the process tree's peak resident set, and records the cell as
+`measured` or `excluded` (with the observed peak and the installed memory) in a
+JSON-lines file; `scripts/mul_table.py --exclusions` prints excluded cells as `--`
+and states the reason in the caption.
+
 Native proof backends are `bitz`, `binius64`, `binius64-ligerito`, `plonky3-fri`,
-`plonky3-whir`, and `limber`. Plonky3 native multiplication supports u32-mod32.
+`plonky3-whir`, and `limber`. Plonky3-FRI proves u32-mod32 through its wrapping
+AIR and u64/u128 through a full-product AIR over 16-bit limbs with a carry
+chain (`benches/mul/native/wide_mul_air.rs`, 382 and 813 trace columns, bit
+range checks like the u32 AIR); Plonky3-WHIR remains wired to u32-mod32 only.
 PCS backends are `bitz`, `plonky3-whir`, `binius64-basefold`, and
 `bitz-ligerito-binary`, on u32-full or BabyBear witnesses.
 

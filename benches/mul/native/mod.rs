@@ -9,6 +9,7 @@ mod limber;
 mod mod32_air;
 mod plonky3;
 mod plonky3_whir;
+mod wide_mul_air;
 #[path = "../../common/trace_capture.rs"]
 mod trace_capture;
 use bitz::observability::Interval as CapturedSpan;
@@ -54,9 +55,10 @@ impl Workload {
     }
     /// Backends with a native arithmetization of this workload.
     fn supports(self, backend: Backend) -> bool {
-        // Plonky3's AIR only decomposes 32-bit operands. The other adapters
-        // also support the u64 and u128 relations.
-        self == Self::U32 || !matches!(backend, Backend::Plonky3Fri | Backend::Plonky3Whir)
+        // Plonky3-FRI proves u32 through the wrapping AIR and u64/u128 through
+        // the full-product AIR; the WHIR adapter (not a campaign backend) is
+        // still wired to the u32 AIR only. Every other adapter covers all three.
+        self == Self::U32 || backend != Backend::Plonky3Whir
     }
     /// Whether the operands are 128-bit values (the `u128` workload) rather
     /// than `u64` values.
@@ -538,6 +540,9 @@ fn audit_backend(backend: Backend, corpus: &Corpus) -> WitnessAudit {
         Backend::Bitz => unreachable!("BitZ witnesses use the shared witness loop"),
         // The same Binius64 circuit and witness filler; only the opener differs.
         Backend::Binius | Backend::BiniusLigerito => binius::audit(corpus),
+        Backend::Plonky3Fri if corpus.workload != Workload::U32 => {
+            wide_mul_air::WideMulAir::for_workload(corpus.workload).audit(corpus)
+        }
         Backend::Plonky3Fri | Backend::Plonky3Whir => mod32_air::audit(corpus),
         Backend::Limber => limber::audit(corpus),
     }
