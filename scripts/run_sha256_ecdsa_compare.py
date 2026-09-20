@@ -66,8 +66,8 @@ def unsupported_methods(curve, methods):
         if circuit_profile(curve, method) is not None:
             continue
         if curve == "p256" and method.startswith("binius64"):
-            reasons.append(f"{method}: the pinned Binius64 fork has no P-256 verifier of its own "
-                           "(its P-256 gadget was added for this comparison), so P-256 is BitZ alone")
+            reasons.append(f"{method}: Binius64 has no P-256 verifier of its own (the P-256 gadget in the "
+                           "pinned snapshot was added for this comparison), so P-256 is BitZ alone")
         else:
             reasons.append(f"{method}: no {curve} circuit")
     return reasons

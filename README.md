@@ -123,8 +123,9 @@ same copy); edit the source file, then run the script.
 This file is the single source of the benchmark instructions. `README.md`
 carries a verbatim copy between its two `bench-campaigns` HTML-comment
 markers, refreshed by `python3 scripts/sync_readme_campaigns.py` and checked
-by `python3 -m unittest scripts/test_readme_sync.py`; the anonymised artifact
-workspace splices the same file into its README. Edit here, then sync.
+by `python3 -m unittest discover -s scripts -p test_readme_sync.py`; the
+anonymised artifact workspace splices its own filtered copy (without the
+Zinc+ campaign) into its README the same way. Edit here, then sync.
 
 Run the following commands from the repository root in **Bash**. They execute
 benchmarks and verify the generated proofs. Use a fresh `RUN_DIR` for each
@@ -230,10 +231,17 @@ through its wrapping AIR and u64/u128 through a full-product AIR over 16-bit
 limbs; Plonky3-WHIR remains a u32-mod32 direct experiment. Run one gated
 invocation per workload; the launcher gates each campaign itself, so omit
 `--no-gate` unless an outer gate already holds the lock. Cells whose prover
-exceeds the machine's memory are excluded, not measured while paging: run
-the large sizes of the heavy backends as separate invocations with a swap
-guard, and record every aborted cell with its observed peak in an
-exclusions file for the table (see "Tables and figures").
+exceeds the machine's memory are excluded, not measured while paging:
+`scripts/mul_memory_probe.py` runs one such cell alone under a small
+swap-growth guard and appends a record with the verdict, the observed peak
+and the installed memory to a JSONL file that the table generator reads (see
+"Tables and figures"), for example
+
+```bash
+python3 scripts/mul_memory_probe.py --workload u128 --backend binius64 --log-n 21 \
+  --threads 10 --log-inv-rate 1 --record "$RUN_DIR/mul-exclusions.jsonl" \
+  --output "$RUN_DIR/multiplication-probes/u128-binius64-rate2-t10-n21"
+```
 
 ```bash
 for workload in u32-mod32 u64 u128; do
@@ -443,10 +451,12 @@ python3 scripts/sha256_ecdsa_table.py "$RUN_DIR/sha256-ecdsa-p256" \
 
 # Multiplication: one table per workload from every campaign that measured it
 # (the launcher's directories and the imported Zinc+ campaign). Excluded cells
-# are listed in a JSON file with their reason, observed peak and machine memory.
+# come from the memory probe's JSONL records (or a JSON list) with their
+# reason, observed peak and machine memory; the file may be empty.
+touch "$RUN_DIR/mul-exclusions.jsonl"
 for workload in u32-mod32 u64 u128; do
   python3 scripts/mul_table.py "$RUN_DIR/multiplication-$workload" "$RUN_DIR/zinc-plus/campaign" \
-    --workload "$workload" --exclusions "$RUN_DIR/mul-exclusions.json" \
+    --workload "$workload" --exclusions "$RUN_DIR/mul-exclusions.jsonl" \
     --out "$RUN_DIR/native-mul-$workload-table.tex"
 done
 

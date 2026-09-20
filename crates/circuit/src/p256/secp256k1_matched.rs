@@ -3,8 +3,8 @@
 //! This circuit exists so that the SHA-256 + ECDSA head-to-head against
 //! Binius64 compares proof systems rather than circuit engineering. It
 //! follows the group-operation schedule and the completeness policy of the
-//! pinned Binius64 fork's stock verifier (`ecdsa::bitcoin_verify` over
-//! `msm_strauss_endo`, `crates/circuits/src/ecdsa/` at `bc73510`):
+//! pinned Binius64 checkout's stock verifier (`ecdsa::bitcoin_verify` over
+//! `msm_strauss_endo`, upstream `crates/circuits/src/ecdsa/`):
 //!
 //! * `u1 = z / s` and `u2 = r / s` in the scalar field, each one hinted
 //!   division checked by one integer relation;

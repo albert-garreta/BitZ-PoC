@@ -18,7 +18,7 @@ class ReadmeSyncTests(unittest.TestCase):
         block = readme[readme.index(sync.BEGIN) + len(sync.BEGIN):readme.index(sync.END)]
         self.assertIn("### 1. SHA-256 + ECDSA over secp256k1", block)
         self.assertIn("### 2. SHA-256 + ECDSA over P-256: BitZ alone", block)
-        self.assertIn("### 5. Multiplication: the Zinc+ rows", block)
+        self.assertIn("### 4. Multiplication comparisons", block)
         self.assertIn("### Tables and figures", block)
 
     def test_splice_is_idempotent_and_check_detects_drift(self):

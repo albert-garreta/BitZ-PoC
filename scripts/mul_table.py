@@ -10,14 +10,16 @@ per scheme, the medians of witness generation, the complete prover
 (commitment included) and the complete verifier at every thread count, plus
 the proof size and the worker's peak resident set.
 
-Cells a scheme could not measure are never dropped silently. A JSON
-exclusions file (`--exclusions`) lists them with the reason, the observed peak
-resident set and the machine's memory, and the table prints them as `--`
+Cells a scheme could not measure are never dropped silently. An exclusions
+file (`--exclusions`; a JSON list, or one JSON object per line as
+`scripts/mul_memory_probe.py` appends them, keeping the records whose `status`
+is `excluded`) lists them with the reason, the observed peak resident set and
+the machine's memory, and the table prints them as `--`
 with the reason in the caption and the header. Every measured row of one size
 must carry the same corpus digest, and every row must come from the same
 machine; the generator refuses otherwise.
 
-    python3 scripts/mul_table.py PerfRuns/cs-u64-* --workload u64 --exclusions PerfRuns/cs-mul-exclusions.json
+    python3 scripts/mul_table.py PerfRuns/cs-u64-* --workload u64 --exclusions PerfRuns/cs-mul-exclusions.jsonl
 """
 from __future__ import annotations
 
@@ -117,9 +119,15 @@ def load_rows(run_dirs, workload):
 def load_exclusions(path, workload):
     if path is None:
         return []
-    entries = json.loads(Path(path).read_text())
+    raw = Path(path).read_text()
+    if raw.lstrip().startswith("["):
+        entries = json.loads(raw)
+    else:
+        entries = [json.loads(line) for line in raw.splitlines() if line.strip()]
     out = []
     for entry in entries:
+        if entry.get("status", "excluded") != "excluded":
+            continue
         if WORKLOAD_ALIASES.get(entry["workload"], entry["workload"]) != workload:
             continue
         for field in ("scheme", "log_n", "reason"):
@@ -133,7 +141,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
     ap.add_argument("--workload", required=True, choices=["u32-mod32", "u32", "u64", "u128"])
-    ap.add_argument("--exclusions", type=Path, default=None, help="JSON list of excluded cells with reasons and observed peaks")
+    ap.add_argument("--exclusions", type=Path, default=None, help="excluded cells with reasons and observed peaks: a JSON list or the probe's JSONL")
     ap.add_argument("--exponents", default="", help="comma list or lo-hi of sizes to show; default every measured size")
     ap.add_argument("--out", type=Path, default=None, help="default paper/native-mul-<workload>-table.tex")
     ap.add_argument("--label", default=None, help="default tab:native-mul[-<workload>]")
