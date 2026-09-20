@@ -112,6 +112,9 @@ def import_logs(log_dir: Path, out: Path, provenance: dict):
             raise ValueError(f"{stem}: corpus manifest digest differs from the worker's input digest")
         config = {k: result[k] for k in ["row_len", "num_rows", "columns", "limb_bits", "inverse_rate", "column_openings",
                                           "security_bits", "prime_bits", "grinding_bits", "logup_bits", "checks", "parallel"]}
+        # Width of Zinc+'s integer combination ring (64 * LIMB_M); older
+        # result lines predate the field.
+        config["comb_ring_bits"] = result.get("comb_ring_bits")
         config.update(engine="Zinc+ (Zip+/IPRS over F65537, GKR-LogUp word range checks)",
                       statement={"u32-mod32": "8 int columns of 16-bit limbs; x·y = z + 2^32·w per row",
                                  "u64": "16 int columns of 16-bit limbs; x·y = z per row (z in 8 limbs)",

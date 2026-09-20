@@ -407,10 +407,12 @@ zinc_utils::define_modulus!(WideMulBenchSlot, FIELD_LIMBS);
 type F = Fp<WideMulBenchSlot, FIELD_LIMBS>;
 
 const LIMB_BITS: u32 = 16;
-/// Combination-ring limbs: 255 signed bits cover the 16-bit cells, 128-bit
-/// challenges and at most 32 columns with room to spare (the MultiSwap bench
-/// validates the same width over 512 columns).
-const LIMB_M: usize = 4;
+/// Combination-ring limbs, the width the repo's own 16-bit-limb statements
+/// (the u32 row and the MultiSwap bench) run with. Four limbs (255 signed
+/// bits) were enough for the 2^10 smoke test but overflowed in Zip+'s
+/// `prove_f_inner` from 2^15 on, where the committed matrix has 64 or more
+/// rows of 16-bit cells combined with 128-bit challenges.
+const LIMB_M: usize = 6;
 
 type LimbInt = i64;
 type LimbCw = i128;
@@ -775,7 +777,7 @@ fn run<const L: usize>(corpus: &Corpus, reps: usize) {
             r#"ZINC_RESULT {{"schema":"zinc-plus/wide-mul/v1","workload":"{}","exponent":{},"seed":{},"reps":{},"#,
             r#""threads":{},"parallel":{},"checks":{},"row_len":{},"num_rows":{},"columns":{},"#,
             r#""limb_bits":{},"inverse_rate":{},"column_openings":{},"security_bits":{},"#,
-            r#""prime_bits":{},"grinding_bits":{},"logup_bits":{:.2},"#,
+            r#""prime_bits":{},"grinding_bits":{},"logup_bits":{:.2},"comb_ring_bits":{},"#,
             r#""setup_ms":{:.4},"witness_ms":{:.4},"prove_ms":{:.4},"verify_ms":{:.4},"proof_bytes":{},"#,
             r#""peak_rss_bytes":{},"input_digest":"{}","witness_digest":"{}","proof_verified":true}}"#
         ),
@@ -796,6 +798,7 @@ fn run<const L: usize>(corpus: &Corpus, reps: usize) {
         64 * FIELD_LIMBS,
         GRINDING_BITS,
         logup_bits(4 * L, exponent),
+        64 * LIMB_M,
         setup_ms,
         witness_ms,
         median(prove_ms),

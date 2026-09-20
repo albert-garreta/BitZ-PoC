@@ -710,7 +710,7 @@ fn main() {
             r#"ZINC_RESULT {{"schema":"zinc-plus/u32-mod32/v1","exponent":{},"seed":{},"reps":{},"#,
             r#""threads":{},"parallel":{},"checks":{},"row_len":{},"num_rows":{},"columns":{},"#,
             r#""limb_bits":{},"inverse_rate":{},"column_openings":{},"security_bits":{},"#,
-            r#""prime_bits":{},"grinding_bits":{},"logup_bits":{:.2},"#,
+            r#""prime_bits":{},"grinding_bits":{},"logup_bits":{:.2},"comb_ring_bits":{},"#,
             r#""setup_ms":{:.4},"witness_ms":{:.4},"prove_ms":{:.4},"verify_ms":{:.4},"proof_bytes":{},"#,
             r#""input_digest":"{}","witness_digest":"{}","proof_verified":true}}"#
         ),
@@ -730,6 +730,7 @@ fn main() {
         64 * FIELD_LIMBS,
         0, // this revision has no proof-of-work grinding
         logup_bits(exponent),
+        64 * LIMB_M,
         setup_ms,
         witness_ms,
         median(prove_ms),
