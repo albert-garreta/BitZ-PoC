@@ -1,5 +1,5 @@
 //! Constructive vectors shared by native and Binius integration tests.
-use crate::fixture::SignedFixture;
+use crate::fixture::{Curve as FixtureCurve, SignedFixture};
 use p256::{
     NistP256, ProjectivePoint, PublicKey, Scalar,
     ecdsa::Signature,
@@ -13,7 +13,7 @@ use p256::{
 use sha2::{Digest, Sha256};
 
 pub fn vectors() -> Vec<SignedFixture> {
-    let original = SignedFixture::generate(3, 0).unwrap();
+    let original = SignedFixture::generate(FixtureCurve::P256, 3, 0).unwrap();
     let signature = Signature::from_scalars(original.r, original.s).unwrap();
     let mut alternate = original.clone();
     alternate.s = (-signature.s().as_ref()).to_bytes().into();

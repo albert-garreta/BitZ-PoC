@@ -27,6 +27,10 @@ struct Args {
     cargo: common::cli::CargoArgs,
     #[arg(long, value_parser = ["bitz-split", "bitz-all", "spartan-mc", "binius64", "binius64-ligerito"])]
     method: String,
+    /// The curve of the statement: `p256` runs the paper's P-256 circuit,
+    /// `secp256k1` the circuit matched to Binius64's verifier.
+    #[arg(long, default_value = "p256", value_parser = ["p256", "secp256k1"])]
+    curve: String,
     #[arg(long)]
     r: usize,
     #[arg(long)]
@@ -56,6 +60,12 @@ impl Args {
     fn exponent(&self) -> usize {
         self.r + self.c
     }
+    fn curve(&self) -> shared_fixture::Curve {
+        shared_fixture::Curve::parse(&self.curve).expect("validated by clap")
+    }
+    fn circuit(&self) -> EcdsaCircuit {
+        EcdsaCircuit::for_curve_token(&self.curve).expect("every curve has one BitZ circuit")
+    }
 }
 
 type Fixture = shared_fixture::SignedFixture;
@@ -63,9 +73,12 @@ type Fixture = shared_fixture::SignedFixture;
 fn fixture(args: &Args) -> Result<Fixture> {
     let fixture = match &args.fixture {
         Some(path) => Fixture::read(path)?,
-        None => Fixture::generate(args.exponent() as u8, args.seed)?,
+        None => Fixture::generate(args.curve(), args.exponent() as u8, args.seed)?,
     };
-    if fixture.log_compressions as usize != args.exponent() || fixture.seed != args.seed {
+    if fixture.log_compressions as usize != args.exponent()
+        || fixture.seed != args.seed
+        || fixture.curve != args.curve()
+    {
         return Err("fixture configuration mismatch".into());
     }
     Ok(fixture)
@@ -90,6 +103,8 @@ fn dispatch_binius(args: &Args) -> Result<()> {
     command.args([
         "--method",
         &args.method,
+        "--curve",
+        &args.curve,
         "--r",
         &args.r.to_string(),
         "--c",
@@ -309,8 +324,12 @@ struct ResultRecord<'a, D> {
     schema: &'static str,
     timing: Timing,
     method: &'a str,
+    /// The statement's curve and the exact verifier circuit this row ran,
+    /// so no two rows are compared without the runner checking both.
+    curve: &'a str,
+    circuit_profile: &'a str,
     zk: bool,
-    fixture_profile: &'static str,
+    fixture_profile: &'a str,
     trial: &'static str,
     sample: usize,
     log_compressions: usize,
@@ -336,6 +355,7 @@ struct ResultRecord<'a, D> {
 fn result_record<'a, D>(
     args: &'a Args,
     fixture: &'a Fixture,
+    circuit_profile: &'a str,
     trial: usize,
     row: Measurements<D>,
 ) -> ResultRecord<'a, D> {
@@ -343,8 +363,10 @@ fn result_record<'a, D>(
         schema: "bitz/sha256-ecdsa-compare/v1",
         timing: args.timing,
         method: &args.method,
+        curve: &args.curve,
+        circuit_profile,
         zk: false,
-        fixture_profile: shared_fixture::SCHEMA,
+        fixture_profile: &fixture.schema,
         trial: if trial == 0 { "warmup" } else { "sample" },
         sample: trial,
         log_compressions: args.exponent(),
@@ -367,21 +389,32 @@ fn result_record<'a, D>(
     }
 }
 
-fn emit<D: Serialize>(args: &Args, fixture: &Fixture, trial: usize, row: Measurements<D>) {
+fn emit<D: Serialize>(
+    args: &Args,
+    fixture: &Fixture,
+    circuit_profile: &str,
+    trial: usize,
+    row: Measurements<D>,
+) {
     println!(
         "{}",
-        serde_json::to_string(&result_record(args, fixture, trial, row))
+        serde_json::to_string(&result_record(args, fixture, circuit_profile, trial, row))
             .expect("serialize SHA/ECDSA result")
     );
 }
+
+/// The Spartan2 adapter's native P-256 circuit (Bellpepper SHA chunks and a
+/// T256 R1CS verifier); it exists for P-256 only.
+const SPARTAN_CIRCUIT_PROFILE: &str = "sha256-chain-p256/spartan2-t256/v1";
 fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let statement = statement(fixture);
     // The campaign runner selects the opener rate per case through
     // `BITZ_LIG_PROFILE`; record the request verbatim on every row.
     let ligerito_profile =
         std::env::var("BITZ_LIG_PROFILE").unwrap_or_else(|_| "default-by-target".into());
+    let circuit = args.circuit();
     let (prepared, setup_ms) = setup(args.timing, || {
-        prepare_sha256_ecdsa(args.exponent(), args.target, mode)
+        prepare_sha256_ecdsa_on(circuit, args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
     })?;
     let security = prepared.security()?;
@@ -451,6 +484,7 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
         emit(
             args,
             fixture,
+            circuit.profile(),
             trial,
             Measurements {
                 setup_ms,
@@ -476,7 +510,9 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                     security: json!({"model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(),
                     "statistical_bits_lower_bound": security.compute_statistical_security_bits(), "projection_bits": 113,
                     "ligerito": common::ligerito_report(prepared.ligerito_configuration(), prepared.ligerito_configuration().round0(args.target)?) }),
-                    circuit: json!({"nonlinear_rows": prepared.nonlinear_rows(), "linear_rows": prepared.linear_rows(),
+                    circuit: json!({"profile": circuit.profile(), "curve": circuit.curve().name,
+                    "verifier_witness_bits": circuit.witness_bits(), "verifier_rows": circuit.r1cs_rows(),
+                    "nonlinear_rows": prepared.nonlinear_rows(), "linear_rows": prepared.linear_rows(),
                     "outer_active_rows": prepared.outer_rows(), "outer_slots": prepared.outer_domain_size(),
                     "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits()}),
                 },
@@ -529,6 +565,7 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
         emit(
             args,
             fixture,
+            SPARTAN_CIRCUIT_PROFILE,
             trial,
             Measurements {
                 setup_ms,
@@ -570,8 +607,11 @@ fn main() -> Result<()> {
     if args.method == "binius64-ligerito" && args.target != 100 {
         return Err("the BitZ opener gate is fixed at 100 bits".into());
     }
+    if args.method == "spartan-mc" && args.curve != "p256" {
+        return Err("spartan-mc has a P-256 circuit only".into());
+    }
     if let Some(path) = &args.export_fixture {
-        return shared_fixture::SignedFixture::generate(args.exponent() as u8, args.seed)?
+        return shared_fixture::SignedFixture::generate(args.curve(), args.exponent() as u8, args.seed)?
             .write(path);
     }
     if args.method.starts_with("binius64") {
@@ -640,6 +680,7 @@ mod reporting_tests {
         let mut args = Args {
             cargo: Default::default(),
             method: "bitz-split".into(),
+            curve: "p256".into(),
             r: 1,
             c: 2,
             target: 100,
@@ -652,7 +693,7 @@ mod reporting_tests {
             log_inv_rate: 1,
             timing: Timing::Perfetto,
         };
-        let fixture = Fixture::generate(3, 0).unwrap();
+        let fixture = Fixture::generate(shared_fixture::Curve::P256, 3, 0).unwrap();
         let row = || Measurements {
             setup_ms: 1.0,
             witness_ms: 2.0,
@@ -678,8 +719,12 @@ mod reporting_tests {
                 circuit: json!({}),
             },
         };
-        let warmup = serde_json::to_value(result_record(&args, &fixture, 0, row())).unwrap();
+        let warmup =
+            serde_json::to_value(result_record(&args, &fixture, "profile/v1", 0, row())).unwrap();
         assert_eq!(warmup["trial"], "warmup");
+        assert_eq!(warmup["curve"], "p256");
+        assert_eq!(warmup["circuit_profile"], "profile/v1");
+        assert_eq!(warmup["fixture_profile"], shared_fixture::SCHEMA);
         assert_eq!(warmup["sample"], 0);
         assert_eq!(warmup["prove_ms"], 7.0);
         assert_eq!(warmup["witness_to_proof_ms"], 9.0);
@@ -690,7 +735,8 @@ mod reporting_tests {
         assert!(warmup.get("phases_ms").is_none());
         assert!(warmup["proof_object_bytes"].is_u64());
         args.method = "spartan-mc".into();
-        let sample = serde_json::to_value(result_record(&args, &fixture, 1, row())).unwrap();
+        let sample =
+            serde_json::to_value(result_record(&args, &fixture, "profile/v1", 1, row())).unwrap();
         assert_eq!(sample["trial"], "sample");
         assert_eq!(sample["sample"], 1);
         assert_eq!(sample["r"], 1);
@@ -726,6 +772,9 @@ mod cli_tests {
         for method in ["bitz-all", "binius64"] {
             assert_eq!(parse(&["--method", method]).unwrap().method, method);
         }
+        assert_eq!(parse(&[]).unwrap().curve, "p256");
+        assert_eq!(parse(&["--curve", "secp256k1"]).unwrap().curve, "secp256k1");
+        assert!(parse(&["--curve", "secp256r1"]).is_err());
     }
 
     #[test]

@@ -21,6 +21,7 @@ fn main() {
         "build.rs",
         "build.py",
         "src/main.rs",
+        "src/secp256k1.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
         "../../benches/common/output.rs",
         "../../benches/common/trace_capture.rs",

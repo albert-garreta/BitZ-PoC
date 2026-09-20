@@ -1,12 +1,23 @@
-# Binius64 SHA-chain/P-256 comparison
+# Binius64 SHA-chain/ECDSA comparison
 
-This isolated worker proves the same standard P-256 statement as BitZ and
-Spartan2, through either opener: Binius64's own ring switch + BaseFold
+This isolated worker proves the same SHA-chain + ECDSA statement as BitZ,
+through either opener: Binius64's own ring switch + BaseFold
 (`--method binius64`, `--log-inv-rate 1|3` selects rate 1/2 or 1/8) or the BitZ
 opener over the identical circuit and witness (`--method binius64-ligerito` /
-`--opener bitz`; `bitz::binius_ligerito::Prepared`, round-by-round 100-bit gate;
-the P-256 gadget's select gates lower to 45k BMUL constraints, covered by the
-adapter's BinMul reduction term).
+`--opener bitz`; `bitz::binius_ligerito::Prepared`, round-by-round 100-bit gate).
+
+`--curve secp256k1` (the head-to-head) composes the fork's fixed SHA-256 chain
+with the **upstream** secp256k1 verifier, `ecdsa::bitcoin_verify` over
+`msm_strauss_endo` (`src/secp256k1.rs`; profile
+`sha256-chain-secp256k1/binius64-bitcoin-verify/v1`). The wrapper only reduces
+the digest modulo `n` and asserts canonical key coordinates.
+
+`--curve p256` runs the fork-only `sha256_ecdsa::Sha256Ecdsa` gadget (complete
+arithmetic, no endomorphism, constant generator table), added by the fork's
+author in `938eadcd` for this comparison. It is not a Binius64 offering, so
+the campaign runner refuses to record it against BitZ; it remains runnable by
+hand for reference (the P-256 gadget's select gates lower to 45k BMUL
+constraints, covered by the adapter's BinMul reduction term).
 It uses the immutable Git revision in this workspace's manifest and
 lockfile, with its own Rust toolchain; the parent `bitz` crate is a path
 dependency pinned to the identical fork revision (its git revision and dirty
@@ -28,10 +39,10 @@ Albert's benchmark commit is preserved as `9e880ff4` after rebasing onto upstrea
 From the BitZ repository root:
 
 ```sh
-python3 scripts/run_sha256_ecdsa_compare.py \
+python3 scripts/run_sha256_ecdsa_compare.py --curve secp256k1 \
   --methods bitz-split binius64 binius64-ligerito \
-  --spartan-splits 3:0 --targets 100 --threads 1 10 --reps 3 \
-  --output bench_results/sha256-ecdsa-binius
+  --exponents 4 5 6 7 --targets 100 --threads 1 10 --reps 5 \
+  --output bench_results/sha256-ecdsa-secp256k1
 ```
 
 Binius-family cases run at both rates by default (`--binius-rates 1 3`), the
@@ -48,17 +59,18 @@ The Rust benchmark can also dispatch directly:
 
 ```sh
 cargo bench --features sha256-ecdsa-compare --bench sha256_ecdsa_compare -- \
-  --method binius64 --r 3 --c 0 --target 100 --threads 1 --reps 3 \
+  --method binius64 --curve secp256k1 --r 3 --c 0 --target 100 --threads 1 --reps 3 \
   --binius64-worker benchmarks/binius64/target/release/binius64-sha256-ecdsa
 ```
 
 ## Statement and timings
 
 Public: exponent `i` and canonical 32-byte BE integers `Qx,Qy,r,s` (129 logical
-bytes, encoded as 17 Binius u64 public words). Private: exactly `64*(2^i-1)`
-message bytes. Standard SHA-256 padding adds one block, for `2^i` compressions.
-The computed digest is wired into P-256 verification; no digest is public.
-Both valid s forms are accepted. Supported exponents are 3 through 16.
+bytes, encoded as 17 Binius u64 public words) on the selected curve. Private:
+exactly `64*(2^i-1)` message bytes. Standard SHA-256 padding adds one block,
+for `2^i` compressions. The computed digest is wired into ECDSA verification;
+no digest is public. Both valid s forms are accepted. Supported exponents are
+3 through 16.
 
 Proofs are explicitly non-ZK. The public-input/witness distinction specifies the
 relation; it does not promise witness privacy. The worker uses SHA-256 Merkle
