@@ -31,11 +31,11 @@ launch() { # label -- rust args
     proof --reps "$REPS" --warmups 1 --memory rss --skip-unsupported --threads 1,10 "$@" \
     2>&1 | tail -3
 }
-bitz()   { launch "$1-bitz-r$3" --workload "$1" --backends bitz --bitz-profile 100 --ligerito "custom:$3:4" --log-n "$2"; }
-binius() { launch "$1-binius64-r$3" --workload "$1" --backends binius64 --log-inv-rate "$3" --log-n "$2"; }
-lig()    { launch "$1-lig-rbr-r$3" --workload "$1" --backends binius64-ligerito --log-inv-rate "$3" --binius-ligerito-accounting rbr --log-n "$2"; }
-p3()     { launch "$1-plonky3-fri" --workload "$1" --backends plonky3-fri --log-inv-rate 1 --log-n "$2"; }
-limber() { launch "$1-limber" --workload "$1" --backends limber --limber-bits 100 --log-n "$2"; }
+bitz()   { launch "$1-bitz-r$3${EXT:-}" --workload "$1" --backends bitz --bitz-profile 100 --ligerito "custom:$3:4" --log-n "$2"; }
+binius() { launch "$1-binius64-r$3${EXT:-}" --workload "$1" --backends binius64 --log-inv-rate "$3" --log-n "$2"; }
+lig()    { launch "$1-lig-rbr-r$3${EXT:-}" --workload "$1" --backends binius64-ligerito --log-inv-rate "$3" --binius-ligerito-accounting rbr --log-n "$2"; }
+p3()     { launch "$1-plonky3-fri${EXT:-}" --workload "$1" --backends plonky3-fri --log-inv-rate 1 --log-n "$2"; }
+limber() { launch "$1-limber${EXT:-}" --workload "$1" --backends limber --limber-bits 100 --log-n "$2"; }
 
 probe() { # workload backend log_n threads rate [extra...]
   local w=$1 b=$2 n=$3 t=$4 r=$5; shift 5
@@ -59,15 +59,26 @@ if has grid; then
   done
 fi
 if has ext; then
-  # Larger sizes with headroom on 24 GiB.
+  # Larger sizes. The labels carry -ext so they never collide with the grid's
+  # directories (the first run of this script skipped the whole phase because
+  # they did). Cells whose 2^19 peak times four approaches the ~14 GiB a
+  # process can hold on this 24 GiB machine before macOS starts swapping
+  # (the Binius64 family at 2^21) go through the probe, one cell at a time,
+  # so a paging run is excluded instead of measured.
+  EXT=-ext
   bitz u32-mod32 21,23 1; bitz u32-mod32 21,23 3
   bitz u64 21 1;          bitz u64 21 3
   bitz u128 21 1;         bitz u128 21 3
-  binius u32-mod32 21 1;  binius u32-mod32 21 3
-  binius u64 21 1;        binius u64 21 3
-  lig u32-mod32 21 1;     lig u32-mod32 21 3
-  lig u64 21 1;           lig u64 21 3
   p3 u32-mod32 21
+  EXT=
+  for t in 10 1; do
+    for w in u32-mod32 u64; do
+      for r in 1 3; do
+        probe $w binius64 21 $t $r
+        probe $w binius64-ligerito 21 $t $r --binius-ligerito-accounting rbr
+      done
+    done
+  done
 fi
 if has probes; then
   # Cells that may exhaust memory: measured alone; excluded with the observed
