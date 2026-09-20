@@ -9,8 +9,9 @@ use circuit::integer_storage::IntegerTable;
 use circuit::linear_map::{CsrBuilder, CsrMatrix, IndexedCoefficients};
 use circuit::{
     constraints::ConstraintGenerator,
+    ecdsa::EcdsaCircuit,
     linear_map::circuit::{WengertGenerator, WengertTape},
-    p256, sha256,
+    sha256,
 };
 use field::{CtOrd, IntegerOps, Uint, WideMul, ZRef};
 
@@ -117,6 +118,8 @@ fn tail_columns(
 }
 
 pub(crate) struct LocalRelation {
+    /// The ECDSA verifier this relation runs after the SHA-256 chain.
+    pub circuit: EcdsaCircuit,
     pub sha_local: PreparedVirtualMap,
     pub sha_prev: PreparedVirtualMap,
     pub sha_first: PreparedVirtualMap,
@@ -159,7 +162,7 @@ fn bool_map(
     PreparedVirtualMap::new(CscMatrix::try_from_rows(columns, rows).map_err(error)?).map_err(error)
 }
 
-fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
+fn build_local(circuit: EcdsaCircuit) -> Result<LocalRelation, super::Sha256EcdsaError> {
     let mut generator = ConstraintGenerator::new(sha256::COMPRESSION_INPUT_BITS);
     let inputs = generator.inputs();
     let outputs = sha256::compression_circuit(&mut generator, &inputs);
@@ -202,9 +205,11 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
     let sha_c = interner.rows(&sha.c);
     drop(sha);
 
-    let mut generator = ConstraintGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
-    let inputs = generator.inputs();
-    p256::verify_digest_circuit(&mut generator, &inputs);
+    let mut generator = ConstraintGenerator::new(circuit.input_bits());
+    let inputs: Vec<_> = (0..circuit.input_bits())
+        .map(|index| generator.input(index))
+        .collect();
+    circuit.build(&mut generator, &inputs);
     let p = generator.into_matrices();
     let mut public_h = [usize::MAX; 1024];
     for (h, row) in p.m.rows().enumerate() {
@@ -215,7 +220,7 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
         }
     }
     if public_h.contains(&usize::MAX) {
-        return Err(error("public P-256 inputs have no direct lifts"));
+        return Err(error("public ECDSA inputs have no direct lifts"));
     }
     let p_map = bool_map(
         p.m.column_count(),
@@ -226,9 +231,9 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
     let c = interner.rows(&p.c);
     let tail = tail_columns(p.m.row_count(), [&a, &b, &c])?;
     drop(p);
-    let mut tape_generator = WengertGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
-    let tape_inputs = tape_generator.take_boxed_inputs::<{ p256::VERIFY_DIGEST_INPUT_BITS }>();
-    p256::verify_digest_circuit(&mut tape_generator, &tape_inputs);
+    let mut tape_generator = WengertGenerator::new(circuit.input_bits());
+    let tape_inputs = tape_generator.take_inputs();
+    circuit.build(&mut tape_generator, &tape_inputs);
     let tape = tape_generator.finish();
     if tape.row_count() != a.row_count() || tape.column_count() != tail.column_count() {
         return Err(error(
@@ -340,6 +345,7 @@ fn build_local() -> Result<LocalRelation, super::Sha256EcdsaError> {
         }
     }
     Ok(LocalRelation {
+        circuit,
         sha_local,
         sha_prev,
         sha_first,
@@ -509,6 +515,10 @@ impl PreparedSha256Ecdsa {
         Ok(self)
     }
 
+    /// The ECDSA verifier circuit this relation was prepared for.
+    pub fn circuit(&self) -> EcdsaCircuit {
+        self.local.circuit
+    }
     pub fn compressions(&self) -> usize {
         self.map.n
     }
@@ -579,7 +589,21 @@ pub(crate) fn padding(n: usize) -> [u32; 16] {
     words
 }
 
+/// The paper's relation: the SHA-256 chain followed by the P-256 verifier.
 pub fn prepare_sha256_ecdsa(
+    log_compressions: usize,
+    lambda: u32,
+    mode: OuterMode,
+) -> Result<PreparedSha256Ecdsa, super::Sha256EcdsaError> {
+    prepare_sha256_ecdsa_on(EcdsaCircuit::P256Paper, log_compressions, lambda, mode)
+}
+
+/// The SHA-256 chain followed by the selected ECDSA verifier. Each circuit's
+/// local relation is built once per process; the relation digest bound into
+/// every transcript covers the circuit's matrices, so a proof for one circuit
+/// never verifies under another.
+pub fn prepare_sha256_ecdsa_on(
+    circuit: EcdsaCircuit,
     log_compressions: usize,
     lambda: u32,
     mode: OuterMode,
@@ -587,9 +611,14 @@ pub fn prepare_sha256_ecdsa(
     if !(3..=16).contains(&log_compressions) || ![100, 128].contains(&lambda) {
         return Err(error("expected exponent 3..=16 and security 100 or 128"));
     }
-    static LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> = OnceLock::new();
-    let local = LOCAL
-        .get_or_init(|| build_local().map(Arc::new).map_err(|e| e.to_string()))
+    static LOCALS: [OnceLock<std::result::Result<Arc<LocalRelation>, String>>; 2] =
+        [const { OnceLock::new() }; 2];
+    let slot = EcdsaCircuit::ALL
+        .iter()
+        .position(|c| *c == circuit)
+        .expect("every circuit has a cache slot");
+    let local = LOCALS[slot]
+        .get_or_init(|| build_local(circuit).map(Arc::new).map_err(|e| e.to_string()))
         .as_ref()
         .map_err(error)?
         .clone();

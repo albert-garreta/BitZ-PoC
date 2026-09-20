@@ -48,19 +48,50 @@ pub(super) fn fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
     )
 }
 
+/// A third-party secp256k1 signature (RustCrypto `k256`) over the same
+/// message shape. The key is fixed but not a small multiple of the generator:
+/// the matched circuit, like Binius64's, asserts the doubling case away, and
+/// `Q = G` would collide inside the Strauss ladder.
+pub(super) fn secp256k1_fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
+    use k256::ecdsa::{Signature, SigningKey, signature::Signer};
+    let message: Vec<_> = (0..64 * ((1usize << exponent) - 1))
+        .map(|i| (i * 7 + 3) as u8)
+        .collect();
+    let key = SigningKey::from_bytes((&[23u8; 32]).into()).unwrap();
+    let signature: Signature = key.sign(&message);
+    let point = key.verifying_key().to_encoded_point(false);
+    let (r, s) = signature.split_bytes();
+    (
+        Sha256EcdsaStatement {
+            log_compressions: exponent,
+            qx: (*point.x().unwrap()).into(),
+            qy: (*point.y().unwrap()).into(),
+            r: r.into(),
+            s: s.into(),
+        },
+        message,
+    )
+}
+
 #[test]
 fn compact_map_matches_generated_witness_and_exact_constraints() {
     // Cover bit packing, tiles within columns, and tiles spanning columns.
     for exponent in [3, 6, 10] {
-        map_matches_witness(exponent);
+        let (statement, message) = fixture_at(exponent);
+        map_matches_witness(EcdsaCircuit::P256Paper, statement, &message);
+    }
+    for exponent in [3, 6] {
+        let (statement, message) = secp256k1_fixture_at(exponent);
+        map_matches_witness(EcdsaCircuit::Secp256k1BiniusMatched, statement, &message);
     }
 }
 
-fn map_matches_witness(exponent: u8) {
-    let prepared = prepare_sha256_ecdsa(exponent as usize, 100, OuterMode::Split).unwrap();
-    let (statement, message) = fixture_at(exponent);
-    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
-    assert_eq!(prepared.local.rows(), 7061);
+fn map_matches_witness(circuit: EcdsaCircuit, statement: Sha256EcdsaStatement, message: &[u8]) {
+    let exponent = statement.log_compressions;
+    let prepared = prepare_sha256_ecdsa_on(circuit, exponent as usize, 100, OuterMode::Split).unwrap();
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, message).unwrap();
+    assert_eq!(prepared.local.rows(), circuit.r1cs_rows());
+    assert_eq!(prepared.circuit(), circuit);
     let mut mapped = vec![false; prepared.map.rows()];
     let mut nnz = 0;
     for c in 0..prepared.live_source_bits() {
@@ -76,7 +107,7 @@ fn map_matches_witness(exponent: u8) {
         assert_eq!(
             bit,
             witness.h_bit(i, &prepared.h_layout) != 0,
-            "virtual bit {i}"
+            "{circuit:?} virtual bit {i}"
         );
     }
     let integer = |v: &[u64]| {
@@ -90,7 +121,7 @@ fn map_matches_witness(exponent: u8) {
         .zip(witness.products.c_mw.iter())
         .enumerate()
     {
-        assert_eq!(integer(a) * integer(b), integer(c), "P-256 row {i}");
+        assert_eq!(integer(a) * integer(b), integer(c), "{circuit:?} row {i}");
     }
     for bit in 0..1024 {
         assert_eq!(
@@ -315,8 +346,115 @@ fn split_and_all_rows_prove_verify_and_reject_tampering() {
 }
 
 #[test]
+fn secp256k1_matched_proves_verifies_and_is_bound_to_its_circuit() {
+    use crate::transcript::Blake3Transcript;
+    let circuit = EcdsaCircuit::Secp256k1BiniusMatched;
+    let (statement, message) = secp256k1_fixture_at(3);
+    let prepared = prepare_sha256_ecdsa_on(circuit, 3, 100, OuterMode::Split).unwrap();
+    assert_eq!(prepared.circuit(), circuit);
+    assert_eq!(prepared.nonlinear_rows() + prepared.local.linear.len(), circuit.r1cs_rows());
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
+    let proof = prove_sha256_ecdsa(
+        &mut Blake3Transcript::new(),
+        &prepared,
+        &statement,
+        &witness,
+        &hint,
+        4,
+    )
+    .unwrap();
+    let bytes = proof.to_bytes();
+    let proof = Sha256EcdsaProof::from_bytes(&bytes).unwrap();
+    verify_sha256_ecdsa(
+        &mut Blake3Transcript::new(),
+        &prepared,
+        &statement,
+        &hint.commitment,
+        &proof,
+    )
+    .unwrap();
+    for field in ["qx", "r", "s", "exponent"] {
+        let mut changed = statement.clone();
+        match field {
+            "qx" => changed.qx[31] ^= 1,
+            "r" => changed.r[31] ^= 1,
+            "s" => changed.s[31] ^= 1,
+            _ => changed.log_compressions += 1,
+        }
+        assert!(
+            verify_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &changed,
+                &hint.commitment,
+                &proof
+            )
+            .is_err(),
+            "accepted changed {field}"
+        );
+    }
+    // The relation digest differs per circuit: the paper's P-256 verifier
+    // rejects the secp256k1 proof, and its own fixture is not a secp256k1
+    // instance (the key is not on that curve, so witness generation fails
+    // or the proof is rejected).
+    let paper = prepare_sha256_ecdsa(3, 100, OuterMode::Split).unwrap();
+    assert!(
+        verify_sha256_ecdsa(
+            &mut Blake3Transcript::new(),
+            &paper,
+            &statement,
+            &hint.commitment,
+            &proof
+        )
+        .is_err()
+    );
+    let (p256_statement, p256_message) = fixture();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let witness = generate_sha256_ecdsa_witness(&prepared, &p256_statement, &p256_message)?;
+        let hint = commit_sha256_ecdsa(&prepared, &witness)?;
+        let proof = prove_sha256_ecdsa(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &p256_statement,
+            &witness,
+            &hint,
+            4,
+        )?;
+        verify_sha256_ecdsa(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &p256_statement,
+            &hint.commitment,
+            &proof,
+        )
+    }));
+    assert!(!matches!(outcome, Ok(Ok(()))), "the matched circuit accepted a P-256 instance");
+}
+
+#[test]
 fn security_profiles_cover_both_targets_for_all_shapes() {
-    for exponent in 3..=16 {
+    for circuit in EcdsaCircuit::ALL {
+        for exponent in 3..=16 {
+            for target in [100, 128] {
+                for mode in [OuterMode::Split, OuterMode::AllRows] {
+                    let prepared = prepare_sha256_ecdsa_on(circuit, exponent, target, mode).unwrap();
+                    let security = prepared.security().unwrap();
+                    assert!(security.compute_economic_security_bits() >= f64::from(target));
+                    assert!(
+                        security.compute_statistical_security_bits()
+                            < security.compute_economic_security_bits()
+                    );
+                    assert!(security.blocks.iter().all(|b| b.grinding_bits <= 32));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn security_profiles_cover_both_targets_for_all_shapes_legacy_entry_point() {
+    for exponent in [3, 16] {
         for target in [100, 128] {
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let prepared = prepare_sha256_ecdsa(exponent, target, mode).unwrap();
