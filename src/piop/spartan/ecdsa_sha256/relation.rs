@@ -42,6 +42,12 @@ pub enum OuterMode {
 pub enum EcdsaCurve {
     #[default]
     P256,
+    /// The P-256 schedule under the name the benchmark campaigns use for the
+    /// circuit the paper documents. An alias of [`EcdsaCurve::P256`] while the
+    /// native P-256 schedule *is* the paper's; kept separate so a campaign can
+    /// name it explicitly, and so the recorded circuit profile stays truthful
+    /// if the native schedule is ever optimized away from the paper's.
+    P256Paper,
     Secp256k1,
     /// secp256k1 on Binius64's scalar-multiplication schedule. A measurement
     /// configuration for the matched comparison, not a deployable one: it is
@@ -52,20 +58,21 @@ pub enum EcdsaCurve {
 impl EcdsaCurve {
     pub(crate) fn params(self) -> &'static p256::Curve {
         match self {
-            Self::P256 => &p256::P256,
+            Self::P256 | Self::P256Paper => &p256::P256,
             Self::Secp256k1 | Self::Secp256k1Matched => &p256::SECP256K1,
         }
     }
 
     pub(crate) fn profile(self) -> p256::LadderProfile {
         match self {
-            Self::P256 | Self::Secp256k1 => p256::LadderProfile::Native,
+            Self::P256 | Self::P256Paper | Self::Secp256k1 => p256::LadderProfile::Native,
             Self::Secp256k1Matched => p256::LadderProfile::BiniusMatched,
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::P256Paper => "p256-paper",
             Self::Secp256k1Matched => "secp256k1-matched",
             other => other.params().name(),
         }
@@ -653,7 +660,7 @@ pub fn prepare_sha256_ecdsa_on(
     static SECP256K1_MATCHED_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> =
         OnceLock::new();
     let cache = match curve {
-        EcdsaCurve::P256 => &P256_LOCAL,
+        EcdsaCurve::P256 | EcdsaCurve::P256Paper => &P256_LOCAL,
         EcdsaCurve::Secp256k1 => &SECP256K1_LOCAL,
         EcdsaCurve::Secp256k1Matched => &SECP256K1_MATCHED_LOCAL,
     };
