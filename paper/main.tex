@@ -2499,7 +2499,7 @@ The contents of this section should be taken as examples of how to instantiate \
 \bigskip
 
 
-\noindent We need that the round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_{\mathsf{OOD}}$ (if Round 0 is executed), $\kappa_0$ (if Round 1 is executed), $(\ksred_i)_{i}$ and $(\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$. We discuss how to ensure this.
+\noindent We need that the round-by-round knowledge soundness errors of \cref{c:core_iop} $\kappa_{\mathsf{OOD}}$ (if Round 0 is executed), $\kappa_0$ (if Round 1 is executed), $(\ksred_i)_{i}$ and $(\ksiopp_i)_{i}$ are all at most $2^{-\lambda}$. We discuss how to ensure this. We assume the proximity parameter is set to the Unique Decoding Radius, and discuss the general case later.
 %
 
  
@@ -2513,12 +2513,11 @@ The contents of this section should be taken as examples of how to instantiate \
 
 
 
-\paragraph{The errors $\kappa_{i,\iopp}$.} The ring switching step adds an error term of the form $7/|\comfield|$.  If targeting 128 bits of security, we use grinding  (\cref{s:IORs})  of $3$ bits in this round. The sumcheck before the ring switch adds similarly small error terms, which are handled with a few bits of grinding. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. We do not discuss this further since WHIR is a well-known IOP, and it  can achieve $128$ bits of security (in the Unique Decoding Radius) in $128$ bit fields when codewords have dimension approximately $2^{30}$ assuming an interleaved RS code (to reduce the correlated agreement error) and the use of grinding when needed.
+\paragraph{The errors $\kappa_{i,\iopp}$.} The ring switching step adds an error term of the form $7/|\comfield|$.  If targeting 128 bits of security, we use grinding  (\cref{s:IORs})  of $3$ bits in this round. The sumcheck before the ring switch adds similarly small error terms, which are handled with a few bits of grinding. WHIR is configured at any desired $\lambda\leq 128$ bits of security using $|\comfield|=2^{128}$ following \cite{stir-repo,whir-repo}. %We do not discuss this further since WHIR is a well-known IOP, and it  can achieve $128$ bits of security (in the Unique Decoding Radius) in $128$ bit fields when codewords have dimension approximately $2^{30}$ assuming an interleaved RS code (to reduce the correlated agreement error) and the use of grinding when needed.
 
+% hence Round 0 of  \cref{c:core_iop} is executed and contributes the error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP}). For a Reed--Solomon code of rate $\rho$ and $\delta=1-\sqrt{\rho}-\eta$, we have the list size bound \albert{review} $L_\delta \leq 1/(2\eta\sqrt{\rho})$. We select $\eta=??$, which leads to an error $\kappa_{\mathsf{OOD}}\leq **$, for which, if needed, we can attain 128 bits of security by grinding $??$ bits  
 
-\paragraph{The error $\kappa_{\mathsf{OOD}}$.} As mentioned, we instantiate $\Pi_\iopp$  as WHIR with the ring-switching techniques of \cite{binius2}. For $\lambda=100$ we use a proximity parameter $\delta$ up to the Johnson bound. For $\lambda=128$ we set $\delta$ up to the unique decoding radius, so that the Out Of Domain sampling step (Round 0) is skipped. % hence Round 0 of  \cref{c:core_iop} is executed and contributes the error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP}). For a Reed--Solomon code of rate $\rho$ and $\delta=1-\sqrt{\rho}-\eta$, we have the list size bound \albert{review} $L_\delta \leq 1/(2\eta\sqrt{\rho})$. We select $\eta=??$, which leads to an error $\kappa_{\mathsf{OOD}}\leq **$, for which, if needed, we can attain 128 bits of security by grinding $??$ bits  
-
-\paragraph{The errors $\kappa_{i,\red}$.}  The IOR $\Pi_{\red}$ is the GKR protocol for multiple grand product claims, as described in \cref{s:gkr_low_entropy}. The first round of \cref{s:gkr_low_entropy} has soundness error $\log\codedim_2 / |\comfield|$. The rest of the rounds are either a round of   sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\ksred_i\leq 3/|\comfield|$ for all $i$, except $\ksred_1 \leq \log \codedim_2/|\comfield|$ (for $\delta$ within the unique decoding radius; otherwise these bounds are multiplied by $L_\delta$, cf.\ \cref{l:gkr_grand_product}). This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do a small number of bits of grinding (\cref{s:IORs}) per round. 
+\paragraph{The errors $\kappa_{i,\red}$.}  The IOR $\Pi_{\red}$ is the GKR protocol for multiple grand product claims, as described in \cref{s:gkr_low_entropy}. The first round of \cref{s:gkr_low_entropy} has soundness error $\log\codedim_2 / |\comfield|$. The rest of the rounds are either a round of   sumcheck for a polynomial of degree $3$, or a unification of two evaluation claims of the same multilinear polynomial.  Accordingly we have $\ksred_i\leq 3/|\comfield|$ for all $i$, except $\ksred_1 \leq \log \codedim_2/|\comfield|$. This immediately guarantees $\lambda=100$ bits of security. To achieve $\lambda=128$ bits of security, one can do a small number of bits of grinding (\cref{s:IORs}) per round. 
 
 \paragraph{The error $\kappa_0$.}
  The error $\kappa_0$ is perhaps the most delicate, as it demands at the same time that  $|\cP|$ is large, while still satisfying $\max\cP < \fieldboundsizeexponent$.
@@ -2533,7 +2532,7 @@ The contents of this section should be taken as examples of how to instantiate \
 \noindent For the purposes of this discussion, we assume \ftwoz \ is used within a bigger proof system, as described in \cref{s:to_snark}, so that \ftwoz \ is used to prove an inner product claim for a committed witness, as the last phase of a bigger proving system where \albert{review what the technical overview exactly says} 1) first the initial constraint is projected to a finite field $\FF$, or, alternatively, this step is skipped if the constraint is  already over a finite field; and 2) a  PIOP is run over $\FF$ for the projected constraint, outputting an inner product claim on the projected witness. Now, this inner product claim is the input of \cref{c:core_iop}, and we aim to configure \cref{c:core_iop} at 128 bits of security for this setting. 
 
 
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18$--$19$ bits of grinding during each round of the PIOP (which adds $0.8$--$1.7$\,ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
+\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18$--$19$ bits of grinding during each round of the PIOP (which adds $0.6$--$1.1$\,ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
 
 Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}. 
 
@@ -2585,7 +2584,7 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     \end{aligned}
     \end{equation}
     %
-    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times in order to achieve $128$ bits of security for this initial step of \cref{c:core_iop}.  
+    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times required to  achieve $128$ bits of security for the step with error $\kappa_0$.  
 
     %We also include minima of $f(a)$ for other configurations where $R$ is a finite field of size between $2^{128}$ to $2^{256}$, not necessarily a prime field.
     
@@ -2640,6 +2639,10 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
     Overall, this method allows to use $\max\cP < |\comfield|-1$, meaning we can choose primes that are $\log(\codedim_1)$ bits larger than we otherwise would. This makes soundness errors smaller by this same amount of bits, which leads to small grinding requirements.  The cost is an extra batch of low entropy grand products. 
 \end{remark}
 
+
+\begin{remark}[Proximity parameter up to the Johnson bound]
+The error $\kappa_{\mathsf{OOD}}$. As mentioned, we instantiate $\Pi_\iopp$  as WHIR with the ring-switching techniques of \cite{binius2}. For $\lambda=100$ we use a proximity parameter $\delta$ up to the Johnson bound. For $\lambda=128$ we set $\delta$ up to the unique decoding radius, so that the Out Of Domain sampling step (Round 0) is skipped. 
+\end{remark}
 
 \begin{remark}[Projecting polynomial constraints to a $112$-$113$ bit prime field with $128$ bits of security]\label{r:first_projection_security}
     The error term of the projection step (also called fingerprinting) in \cite{zincplus,zinc,zaratan} is (for integer constraints) bounded by (cf.\ \cref{l:reduction_lemma} with $d=0$)
