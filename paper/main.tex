@@ -2446,192 +2446,6 @@ For more general matrices $L$, one needs to make sure that $L$ has enough struct
 
 
 \end{lncsappendix}
-\begin{lncsappendix}{instantiation}
-\iflncs\subsection{Instantiation and achieving 100 or 128 bits of soundness}\label{s:instantiation}\else\subsection{Instantiation and achieving 100 or 128 bits of soundness}\label{s:instantiation}\fi
-We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form (cf.\ \cref{s:gkr_low_entropy}). The IOP $\Pi_\iopp$ is taken to be the Ligerito \cite{Ligerito} implementation from Flock \cite{flock} with minimal modifications (see \cref{s:experiments}), with the ring switching step from \cite{binius2}. Note that the inner product claims to be proved when $\Pi_\iopp$ is called are not MLE evaluation claims. Since  the ring-switch implementation in \cite{flock} does not support arbitrary inner product claims,  we run a sumcheck to reduce those to MLE evaluation claims.  We instantiate \cref{c:core_iop,c:LinModFieldBin} with the following parameters:
-\begin{table}[H]
-    \centering
-    \begin{tabular}{c|c}
-        Parameter & Choices \\
-        \hline\hline
-        $R$ & A finite field (possibly non-prime)\\
-        \hline
-        $S$ &  Integers $\ZZ$\\
-        \hline
-        $\pi$ & Reduction mod $\Char(R)$\\
-        \hline
-        $\psi$ & Reduction mod $\Char(R)$\\
-        \hline
-        $\comfieldexp$ & $128$\\
-        \hline
-        $\cC$ & Reed-Solomon code over $\comfield$ of rate $1/2$ or $1/8$\\
-        \hline
-        Proximity parameter $\delta$ & Unique decoding radius, or up to the Johnson bound (\cref{r:johnson_instantiation})\\
-        \hline
-        $L$ & The standard bitification matrix (\cref{e:canonical_bitification_matrix})\\ 
-         \hline
-        $\cP$ & Set of primes. Discussed below.\\
-         \hline
-        $\cM_q=\{\pi_q\}$ & Reduction modulo $q$\\
-        \hline $\codedim_1,\codedim_2$ & $\codedim_1\in \range{\codedim^{0.5}}{\codedim^{0.6}}$, $\codedim_1\cdot\codedim_2=\codedim$
-    \end{tabular}
-    \caption{Parameter choices in our deployment of \cref{c:core_iop,c:LinModFieldBin}.}
-    \label{tab:instantiation_params}
-\end{table}
-
-
-
-
-
-%
-We observe experimentally that setting $\codedim_1 \approx \codedim^{0.6}$  is the optimal value for $\codedim_1$ in terms of prover speed and proof size. However choosing $\codedim_1\approx \codedim^{0.5}$ leads to smaller soundness errors, which can make a difference when  targeting $128$ bits of security.  Hence, depending on the security parameter and the rest of parameters, we select $\codedim_1$ in the range
-%
-\begin{equation}\label{e:codedim_1_proportion}
-\codedim_1 \in [\codedim^{0.5}, \codedim^{0.6}].
-\end{equation}
-%
-We next discuss how to achieve $\lambda=100$ or $128$ bits of round-by-round (rbr) knowledge soundness while using $\comfield=\FF_{2^{128}}$ (specifically, in GHASH form). This choice is crucial for efficiency, since the cost of the GKR batched grand product, the most expensive step of \ftwoz, is dominated by arithmetic in $\comfield$. Our experiments (\cref{s:experiments}) run at $\lambda=100$ (and at $\lambda=114$ in \cref{s:multiswap}), and achieving $\lambda=100$ is relatively straightforward via grinding. Achieving $\lambda=128$ requires a more careful choice of parameters, combined with grinding (\cref{s:IORs}); \cref{r:beyond_gridning} discusses alternatives requiring little or no grinding. The configurations below are examples. Other configurations may be perfectly plausible and practical. 
-\bigskip
-
-
-\noindent We need that the rbr knowledge soundness errors of \cref{c:core_iop}, namely $\kappa_{\mathsf{OOD}}$ (if Round 0 is executed), $\kappa_0$ (if Round 1 is executed), $(\ksred_i)_{i}$ and $(\ksiopp_i)_{i}$, are all at most $2^{-\lambda}$. We assume first that the proximity parameter $\delta$ is within the unique decoding radius, so that Round 0 is skipped and so the error $\kappa_{\mathsf{OOD}}$ is absent (\cref{t:thm_core_IOPP}). In \cref{r:johnson_instantiation} we discuss the regime where $\delta$ is larger.
-%
-
- 
-
-
-%
-%To ground our analysis, we two witness bounds $\codedim\leq2^{35}$ (so the witness consists of $\leq 2^{35}$ bits), say, and $\codedim_1 \leq 2^{21}$ following our rule of thumb.   
-
-
-
-
-
-
-\paragraph{The errors $\ksiopp_i$.} The preliminary sumcheck and the ring switch have rbr errors of the form $c/|\comfield|$ for a small constant $c$ (e.g.\ $7/|\comfield|$ for the ring switch). These are brought below $2^{-128}$ by a few bits of grinding per round. The remaining rounds are those of Ligerito (or WHIR), which is configured at the target $\lambda$ following  \cite{Ligerito,whir,stir}, as done in \cite{flock,whir-repo}. We only note that, in the unique decoding regime over a $128$-bit field, $\lambda=128$ requires up to roughly $25$ bits of grinding per folding round at the largest witness sizes of \cref{s:experiments} ($65$\,ms in our cf.\ \cref{tab:grinding-cost}). 
-
-\paragraph{The errors $\ksred_i$.} $\Pi_\red$ is the GKR protocol of \cref{s:gkr_low_entropy}. By \cref{l:gkr_grand_product}, $\ksred_1\leq \log\codedim_2/|\comfield|$, and every other round is either a sumcheck round for a polynomial of degree $3$ or a unification of two evaluation claims, with $\ksred_i\leq 3/|\comfield|$. This gives $\lambda=100$ directly, and $\lambda=128$ with $2$--$4$ bits of grinding per round. 
-
-\paragraph{The error $\kappa_0$.} The error $\kappa_0$ is the most delicate, as it demands at the same time that $|\cP|$ be large and that $\max\cP < \fieldboundsizeexponent$. Recall that Round 1, and with it $\kappa_0$, is skipped in many scenarios. We assume that \ftwoz\ is used as a PCS inside a larger proof system, as done in \cref{s:to_snark}. In \cref{s:to_snark} specifically, the initial constraint is projected to a finite field $\FF$ (unless it is already expressed over a finite field), then a PIOP over $\FF$  is executed, which outputs an inner product claim on the  witness projected onto $\FF$, and then this claim is proved with the \ftwoz\ PCS, \cref{c:core_iop,c:LinModFieldBin}. We aim to configure \cref{c:core_iop,c:LinModFieldBin} at $128$ bits of security in this setting. We discuss two strategies. 
-
-
-\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18$--$19$ bits of grinding during each round of the PIOP (which adds $0.6$--$1.1$\,ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
-
-Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}. 
-
-
-
-
-%in this case we may assume $R$  is a finite field of size $|R| \approx 2^{112}- 2^{113}$.  In this latter case, we do need to make sure that this projection step achieves 128 bits of security, while still being able to project to a $112$-$113$ bit field. We discuss this below in this section \cref{?}
-
-
-Let $q=|\FF|$. If
-%
-$$
-q < \fieldboundsizeexponent,
-$$
-then $\kappa_0$ is not present as an error term, and there is nothing to adjust. Since $|\comfield|=2^{128}$  and $q\approx 2^{113}, 2^{112}$, this occurs as long as $\codedim_1 \lessapprox 2^{15},2^{16}$, and using \eqref{e:codedim_1_proportion}, as long as 
-%
-$$
-\codedim\lessapprox 2^{25}, 2^{26} \qquad \text{if } \codedim_1\approx\codedim^{0.6}
-$$
- and
-$$
-\codedim\lessapprox 2^{30}, 2^{32} \qquad \text{if } \codedim_1\approx\codedim^{0.5}.
-$$
-%
-The specific upper bounds depend on how much grinding one is doing at the PIOP level. 
-
-%Belo only analyse the scenario where $R$ is a finite field, and thus do not consider the case $R=\ZZ$, which is unlikely to occur in practice, unless \ftwoz\ is used in isolation, and not as a step subsequent to a PIOP. 
-
-
-
-
-
-\paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0$ is present and  grinding is used during the first projection step (Round 1) of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0$, i.e.\ Round 1 of \cref{c:core_iop}.
-
-Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We use $\picanon: \ZZ[X]  \to \FF$ as in \cref{e:presentations}, so that $\picanon(h(X))= \pi_{\Char(\FF)}(h)(x)$ where $\pi_{\Char(\FF)}(h)$ is the polynomial $h$ after reducing its coefficients modulo $\Char(\FF)$, and  $x$ is a root of an irreducible polynomial defining $\FF_{q^d}$ (if $d=1$ and so $\FF_{q^d}$ is a prime field, then we can use a morphism $\picanon:\ZZ\to \FF_q$). We have $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$ (see \eqref{e:ring_theta_params} and the text below it for a definition of these quantities). We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
-    $$
-    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(2\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
-      $$
-    where $q$ is  the characteristic of $\FF$.
-
-%
-%
-    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b= 128 - \tau \cdot \log(\codedim)$,  $\codedim_1= 2^{\tau\cdot \log(\codedim)}$,  for a parameter $\tau \in \range{0.5}{0.6}$ and plugging these values into $\kappa_0$ we obtain
-     %
-     \begin{equation}\label{e:kappa_0_practical_upper_bound}
-     \begin{aligned}
-    \kappa_0&\lessapprox \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(2\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
-    b&\defeq 128 - r_1, \qquad r_1\defeq \tau\cdot \log(\codedim).
-    \end{aligned}
-    \end{equation}
-    %
-    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times required to  achieve $128$ bits of security for the step with error $\kappa_0$.  
-
-    %We also include minima of $f(a)$ for other configurations where $R$ is a finite field of size between $2^{128}$ to $2^{256}$, not necessarily a prime field.
-    
-   \begin{table}[H]
-  \centering
- \begin{tabular}{rrrrrrrrr}
-    \toprule
-    $\log |\FF|$ & $d$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0\leq$ & Bit-deficit to $128$ & Grinding time (ms) \\
-    \midrule
-    128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 3.4 \\
-    128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 25.9 \\
-    128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 11.9 \\
-    128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 98.1 \\
-    128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 25.9 \\
-    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.3}$ & 24 & 54.9 \\
-    \midrule
-    128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 1.8 \\
-    128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 11.9 \\
-    128 & 4 & 32 & 28 & 0.5 & 112 & $2^{-107.1}$ & 21 & 6.4 \\
-    128 & 4 & 32 & 28 & 0.6 & 109 & $2^{-104.4}$ & 24 & 54.9 \\
-    128 & 4 & 32 & 30 & 0.5 & 111 & $2^{-106.1}$ & 22 & 11.9 \\
-    128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 98.1 \\
-    128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 25.9 \\
-    \bottomrule
-  \end{tabular}  \caption{Minima for the upper bound of $\kappa_0$ in \eqref{e:kappa_0_practical_upper_bound} for different configurations of $\FF$ (of characteristic $q$ and  degree $d$ over its prime field), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ is bounded by the quantity in the $\kappa_0\leq$ column. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such an amount of bits on a MacBook Air M5 24\,GB multi-threaded, using Blake3 as hash function.}
-  \label{tab:min-f}
-\end{table}
-
-
-\begin{remark}[128 bits of security for larger witness sizes $\codedim$, without  or with minimal grinding]\label{r:beyond_gridning}
-    Grinding costs scale exponentially in the number of grinding bits. Because of this, we cannot resort to grinding for very large witness sizes $\codedim$. There are at least two ways to achieve $128$ bits of security (or more), in this case.
-
-    \medskip 
-    
-    \noindent \textbf{Method 1}: Use a larger binary field $\comfield$, i.e.\ simply take $\comfield$ with $|\comfield|$ comfortably larger, rather than $|\comfield|=2^{128}$.
- 
- \medskip
- 
- \noindent \textbf{Method 2}: We generalize an idea from \cite{binius64}, which relaxes the requirement $\max\cP< \fieldboundsizeexponent$ to $\max\cP<|\comfield|-1$ (and likewise the conditions under which Round 1 is skipped), so that the bound on $\cP$ no longer depends on the witness size and the primes gain $\log \codedim_1$ bits, which makes the soundness errors shrink by $\log \codedim_1$ too. Recall that Phase 3 of \cref{c:core_iop} proves the equalities $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$ ($j\in [\codedim_2]$) modulo $\mathsf{ord}(g)=|\comfield|-1$, which is why the entries of $\bm{\gamma}$ had to be smaller than $(|\comfield|-1)/\codedim_1$. If they are only smaller than $|\comfield|-1$, one can additionally prove the same equalities modulo $\codedim_1$. This works because, since$\codedim_1$ and $|\comfield|-1$ are coprime (because $\codedim_1$ is a power of two), by the CRT, if both equalities are true, then  $\langle\bm{\gamma}, \bff_{*j}\rangle -\mu_j$ is an integer multiple of $\codedim_1\cdot (|\comfield|-1)$. However, because the entries of $\bff$ are bits and the entries of $\bm{\gamma}$ are at most $|\comfield|-2$, this means that   $\langle \bm{\gamma}, \bff_{*j}\rangle = \mu_j$ as integers.
- 
- To prove the equality modulo $\codedim_1$, the prover sends $a_j\in \range{0}{\codedim_1-1}$ (this is range-checked by the verifier) and proves in the exponent the integer equality $\langle \bm{\gamma}', \bff_{*j}\rangle = \mu_j'  +  a_j\cdot \codedim_1$, where $\bm{\gamma}'$ and $\mu_j'$ are $\bm{\gamma}$ and $\mu_j$ reduced modulo $\codedim_1$.  Both sides of the equality are smaller than $\codedim_1^2$, and so no overflow occurs as long as $\codedim_1^2 < |\comfield|-1$. 
-
-  Note that if $\bm{\gamma}$ admits a tensor decomposition   $\bm{\gamma}=\bm{\gamma}^{(1)} \otimes \bm{\gamma}^{(2)}$, then we can take, instead of $\bm{\gamma}'$, the tensor-product $\bm{\gamma}^{(1)}{}' \otimes \bm{\gamma}^{(2)}{}'$, where  $\bm{\gamma}^{(i)}{}'$ denotes $\bm{\gamma}^{(i)}$ reduced modulo $\codedim_1$. This allows to use all of our ``low-entropy'' grand product optimizations from \cref{s:gkr_low_entropy}, though in this case the required bound becomes $2\cdot (\codedim_1^2+1)\cdot \codedim_1 < |\comfield|-1$.%\albert{Point here to some explanation saying that this is the best way to prove such inner product?}
-
-    Overall, this method allows to use $\max\cP < |\comfield|-1$, meaning we can choose primes that are $\log(\codedim_1)$ bits larger than we otherwise would. This makes soundness errors smaller by this same amount of bits, which leads to small grinding requirements.  The cost is an extra batch of low entropy grand products. 
-\end{remark}
-
-
-\begin{remark}[Proximity parameter up to the Johnson bound]\label{r:johnson_instantiation}
-For $\lambda=100$ we set $\delta=1-\sqrt{\rho}-\eta$ with $\eta=0.02$, so that $\cC$ is $(\delta,L_\delta)$-list-decodable with $L_\delta\leq 1/(2\eta\sqrt{\rho})$, i.e.\ $L_\delta\leq 71$ for $\rho=1/8$ and $L_\delta\leq 36$ for $\rho=1/2$. Round 0 is then executed and \cref{t:thm_core_IOPP_OOD} applies: the errors $\ksred_i$ get multiplied by $L_\delta$ (\cref{l:gkr_grand_product}), which keeps them below $2^{-100}$, and the additional error $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ is below $2^{\log\codedim-123.7}$ for $\rho=1/8$ and below $2^{\log\codedim-125.7}$ for $\rho=1/2$. This is at most $2^{-100}$ for $\codedim\leq 2^{23}$, resp.\ $\codedim\leq 2^{25}$; for larger witnesses the prover grinds $\lceil \log\codedim-23.7\rceil$, resp.\ $\lceil \log\codedim-25.7\rceil$, bits at Round 0, i.e.\ at most $7$ bits at $\codedim=2^{30}$ (our implementation grinds Round 0 up to $108$ bits). Ligerito is then itself run with proximity parameter up to the Johnson bound, with out-of-domain samples at its recursive levels, as in STIR and WHIR \cite{stir,whir}.
-\end{remark}
-
-\begin{remark}[Projecting polynomial constraints to a $112$-$113$ bit prime field with $128$ bits of security]\label{r:first_projection_security}
-    The error term of the projection step (also called fingerprinting) in \cite{zincplus,zinc,zaratan} is (for integer constraints) bounded by (cf.\ \cref{l:reduction_lemma} with $d=0$)
-    %
-    $$
-    \eps_{\mathsf{PIOP-proj}}\leq \frac{\log(N)}{|\cP'| \cdot \lfloor\log(q_{\min})\rfloor}
-    $$
-    where $\cP'$ is a set of primes; $q_{\min}$ is the smallest prime in $\cP'$; $N$ is the largest  absolute value that an unsatisfying constraint can attain. More precisely, assume integer witness entries $\ww$ are guaranteed to have at most a certain bit-size $B'$, and assume the constraints have the form $q_i(\xx,\ww)=0$ for all $i$, for $\xx$ a public input vector and $q_i$ constraint polynomials. Then $N$ is the maximum possible value of the form $|q_i(\xx,\ww)|$ among all $i$, all possible inputs $\xx$ and all  $\ww$ with entries having bit-size at most $B'$. 
-    
-    Using a similar analysis as in Strategy 2 above, where we let $\cP'$ be the set of primes in the interval $[2^{112}, 2^{113}]$,  we obtain that, as long as $\log(N)< 1.4\cdot 2^{6}\approx 90$ we have $   \eps_{\mathsf{PIOP-proj}}< 2^{-106}$. In that case we could attain $128$ bits of security during this projection step by performing $22$ bits of grinding ($12$\,ms on a MacBook Air M5).
-\end{remark}
-
-\end{lncsappendix}
 \begin{lncsappendix}[End-to-end SNARKs\label{a:end_to_end_snarks}]{snark}
 \iflncs\subsection{An end-to-end \ftwoz-based SNARK over  any finitely generated ring}\label{s:to_snark}\else\section{An end-to-end \ftwoz-based SNARK over  any finitely generated ring}\label{s:to_snark}\fi
 
@@ -2876,9 +2690,9 @@ The next lemma records the soundness errors of \cref{c:gkr_grand_product}.
 $(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$, whose verifier makes no oracle queries and whose prover outputs the witness $\bfg$ it received. 
 
 \cref{c:gkr_grand_product} also extends to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ in a natural way (see \cref{s:prelims_codes} for a definition of these relations). For every $\delta$ within the unique decoding radius of $\cC$, this latter IOR has round-by-round knowledge soundness with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\LIN(\comfield,\cC,\pack)^{\delta})$ with errors $r_2/|\comfield|$ in the
-first round, $3/|\comfield|$ in every sumcheck round and $1/|\comfield|$ in every unification step. If $\delta$ is beyond the unique decoding radius, the errors must be multiplied by $L_\delta$,  where $L_\delta$ is such that  $\cC$ is $(\delta,L_\delta)$-list-decodable. 
+first round, $3/|\comfield|$ in every sumcheck round and $1/|\comfield|$ in every unification step. 
 
-The same result holds for the relations $\PESAT^{\delta,\zeta,y}$ and $\LIN^{\delta,\zeta,y}$ of \cref{a:OOD}.
+Assume $\delta$ is beyond the unique decoding radius. Then \cref{c:gkr_grand_product} extends word-by-word to an IOR from  $\PESAT^{\delta,\zeta,y,\ast}$ to $\LIN^{\delta,\zeta,y,\ast}$ (see \cref{a:OOD}) with the same errors as above.
 %so given $\yy$ the verifier performs $O(\codedim_1+\codedim_2+r_1 r_2)$ field operations.
 \end{lemma}
 
@@ -3865,6 +3679,193 @@ We provide our supplementary material next. Its contents are indicated in the fo
 \iflncs\lncsfittables\fi
 \lncsappendixspine[prelims-rings,prelims-codes,prelims-mle,prelims-iors,iop,iop-costs,instantiation,snark,virtual,gkr,gkr-comparison,deferred-proofs,experiments]
 
+% [2026-09-20: the instantiation section moved here, to the appendix of the full version, at the author's request; the LNCS build places it through the spine list, unchanged]
+\begin{lncsappendix}{instantiation}
+\iflncs\subsection{Instantiation and achieving 100 or 128 bits of soundness}\label{s:instantiation}\else\section{Instantiation and achieving 100 or 128 bits of soundness}\label{s:instantiation}\fi
+We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an optimized GKR protocol for multiple grand product claims of certain form (cf.\ \cref{s:gkr_low_entropy}). The IOP $\Pi_\iopp$ is taken to be the Ligerito \cite{Ligerito} implementation from Flock \cite{flock} with minimal modifications (see \cref{s:experiments}), with the ring switching step from \cite{binius2}. Note that the inner product claims to be proved when $\Pi_\iopp$ is called are not MLE evaluation claims. Since  the ring-switch implementation in \cite{flock} does not support arbitrary inner product claims,  we run a sumcheck to reduce those to MLE evaluation claims.  We instantiate \cref{c:core_iop,c:LinModFieldBin} with the following parameters:
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c}
+        Parameter & Choices \\
+        \hline\hline
+        $R$ & A finite field (possibly non-prime)\\
+        \hline
+        $S$ &  Integers $\ZZ$\\
+        \hline
+        $\pi$ & Reduction mod $\Char(R)$\\
+        \hline
+        $\psi$ & Reduction mod $\Char(R)$\\
+        \hline
+        $\comfieldexp$ & $128$\\
+        \hline
+        $\cC$ & Reed-Solomon code over $\comfield$ of rate $1/2$ or $1/8$\\
+        \hline
+        Proximity parameter $\delta$ & Unique decoding radius, or up to the Johnson bound (\cref{r:johnson_instantiation})\\
+        \hline
+        $L$ & The standard bitification matrix (\cref{e:canonical_bitification_matrix})\\ 
+         \hline
+        $\cP$ & Set of primes. Discussed below.\\
+         \hline
+        $\cM_q=\{\pi_q\}$ & Reduction modulo $q$\\
+        \hline $\codedim_1,\codedim_2$ & $\codedim_1\in \range{\codedim^{0.5}}{\codedim^{0.6}}$, $\codedim_1\cdot\codedim_2=\codedim$
+    \end{tabular}
+    \caption{Parameter choices in our deployment of \cref{c:core_iop,c:LinModFieldBin}.}
+    \label{tab:instantiation_params}
+\end{table}
+
+
+
+
+
+%
+We observe experimentally that setting $\codedim_1 \approx \codedim^{0.6}$  is the optimal value for $\codedim_1$ in terms of prover speed and proof size. However choosing $\codedim_1\approx \codedim^{0.5}$ leads to smaller soundness errors, which can make a difference when  targeting $128$ bits of security.  Hence, depending on the security parameter and the rest of parameters, we select $\codedim_1$ in the range
+%
+\begin{equation}\label{e:codedim_1_proportion}
+\codedim_1 \in [\codedim^{0.5}, \codedim^{0.6}].
+\end{equation}
+%
+We next discuss how to achieve $\lambda=100$ or $128$ bits of round-by-round (rbr) knowledge soundness while using $\comfield=\FF_{2^{128}}$ (specifically, in GHASH form). This choice is crucial for efficiency, since the cost of the GKR batched grand product, the most expensive step of \ftwoz, is dominated by arithmetic in $\comfield$. Our experiments (\cref{s:experiments}) run at $\lambda=100$ (and at $\lambda=114$ in \cref{s:multiswap}), and achieving $\lambda=100$ is relatively straightforward via grinding. Achieving $\lambda=128$ requires a more careful choice of parameters, combined with grinding (\cref{s:IORs}); \cref{r:beyond_gridning} discusses alternatives requiring little or no grinding. The configurations below are examples. Other configurations may be perfectly plausible and practical. 
+\bigskip
+
+
+\noindent We need that the rbr knowledge soundness errors of \cref{c:core_iop}, namely $\kappa_{\mathsf{OOD}}$ (if Round 0 is executed), $\kappa_0$ (if Round 1 is executed), $(\ksred_i)_{i}$ and $(\ksiopp_i)_{i}$, are all at most $2^{-\lambda}$. We assume first that the proximity parameter $\delta$ is within the unique decoding radius, so that Round 0 is skipped and so the error $\kappa_{\mathsf{OOD}}$ is absent (\cref{t:thm_core_IOPP}). In \cref{r:johnson_instantiation} we discuss the regime where $\delta$ is larger.
+%
+
+ 
+
+
+%
+%To ground our analysis, we two witness bounds $\codedim\leq2^{35}$ (so the witness consists of $\leq 2^{35}$ bits), say, and $\codedim_1 \leq 2^{21}$ following our rule of thumb.   
+
+
+
+
+
+
+\paragraph{The errors $\ksiopp_i$.} The preliminary sumcheck and the ring switch have rbr errors of the form $c/|\comfield|$ for a small constant $c$ (e.g.\ $7/|\comfield|$ for the ring switch). These are brought below $2^{-128}$ by a few bits of grinding per round. The remaining rounds are those of Ligerito (or WHIR), which is configured at the target $\lambda$ following  \cite{Ligerito,whir,stir}, as done in \cite{flock,whir-repo}. 
+
+\paragraph{The errors $\ksred_i$.} $\Pi_\red$ is the GKR protocol of \cref{s:gkr_low_entropy}. By \cref{l:gkr_grand_product}, $\ksred_1\leq \log\codedim_2/|\comfield|$, and every other round is either a sumcheck round for a polynomial of degree $3$ or a unification of two evaluation claims, with $\ksred_i\leq 3/|\comfield|$. This gives $\lambda=100$ directly, and $\lambda=128$ with $2$--$4$ bits of grinding per round. 
+
+\paragraph{The error $\kappa_0$.} The error $\kappa_0$ is the most delicate, as it demands at the same time that $|\cP|$ be large and that $\max\cP < \fieldboundsizeexponent$. Recall that Round 1, and with it $\kappa_0$, is skipped in many scenarios. We assume that \ftwoz\ is used as a PCS inside a larger proof system, as done in \cref{s:to_snark}. In \cref{s:to_snark} specifically, the initial constraint is projected to a finite field $\FF$ (unless it is already expressed over a finite field), then a PIOP over $\FF$  is executed, which outputs an inner product claim on the  witness projected onto $\FF$, and then this claim is proved with the \ftwoz\ PCS, \cref{c:core_iop,c:LinModFieldBin}. We aim to configure \cref{c:core_iop,c:LinModFieldBin} at $128$ bits of security in this setting. We discuss two strategies. 
+
+
+\paragraph{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa_0$.} If allowing, say, $18$--$19$ bits of grinding during each round of the PIOP (which adds $0.6$--$1.1$\,ms per round, cf.\ \cref{tab:grinding-cost}), then, say, a Spartan-like PIOP will achieve $128$ bits of security if run on a field $\FF$ of size $\approx 2^{112}$ to  $2^{113}$  (since each one of its rounds is either a sumcheck round for a degree $\leq 3$ polynomial, or a step that batches some claims with error $1/|\FF|$). Hence, if the initial constraint is over $\ZZ$, then we may project it to a $112$-$113$ bit random prime field $\FF$ and run a PIOP over $\FF$. We study this case next. Our analysis also applies if the original constraint was already expressed over a prime field of such size.  
+
+Note that the projection of the constraint to $\FF$ also requires to be set up to 128 bits of security. We discuss this in \cref{r:first_projection_security}. 
+
+
+
+
+%in this case we may assume $R$  is a finite field of size $|R| \approx 2^{112}- 2^{113}$.  In this latter case, we do need to make sure that this projection step achieves 128 bits of security, while still being able to project to a $112$-$113$ bit field. We discuss this below in this section \cref{?}
+
+
+Let $q=|\FF|$. If
+%
+$$
+q < \fieldboundsizeexponent,
+$$
+then $\kappa_0$ is not present as an error term, and there is nothing to adjust. Since $|\comfield|=2^{128}$  and $q\approx 2^{113}, 2^{112}$, this occurs as long as $\codedim_1 \lessapprox 2^{15},2^{16}$, and using \eqref{e:codedim_1_proportion}, as long as 
+%
+$$
+\codedim\lessapprox 2^{25}, 2^{26} \qquad \text{if } \codedim_1\approx\codedim^{0.6}
+$$
+ and
+$$
+\codedim\lessapprox 2^{30}, 2^{32} \qquad \text{if } \codedim_1\approx\codedim^{0.5}.
+$$
+%
+The specific upper bounds depend on how much grinding one is doing at the PIOP level. 
+
+%Belo only analyse the scenario where $R$ is a finite field, and thus do not consider the case $R=\ZZ$, which is unlikely to occur in practice, unless \ftwoz\ is used in isolation, and not as a step subsequent to a PIOP. 
+
+
+
+
+
+\paragraph{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa_0$ is present and  grinding is used during the first projection step (Round 1) of \cref{c:core_iop}.} We now assume $\FF$ is either a prime field with  $|\FF|\geq \fieldboundsizeexponent$,  or a proper extension field. In this case  \cref{c:core_iop} goes through an initial projection step with soundness error  $\kappa_0$, i.e.\ Round 1 of \cref{c:core_iop}.
+
+Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We use $\picanon: \ZZ[X]  \to \FF$ as in \cref{e:presentations}, so that $\picanon(h(X))= \pi_{\Char(\FF)}(h)(x)$ where $\pi_{\Char(\FF)}(h)$ is the polynomial $h$ after reducing its coefficients modulo $\Char(\FF)$, and  $x$ is a root of an irreducible polynomial defining $\FF_{q^d}$ (if $d=1$ and so $\FF_{q^d}$ is a prime field, then we can use a morphism $\picanon:\ZZ\to \FF_q$). We have $D=d-1$, $T\leq d$, and $N_\FF\leq q-1$ (see \eqref{e:ring_theta_params} and the text below it for a definition of these quantities). We instantiate the morphism sets $\cM_q$ as in \cref{l:examples_morphisms}, i.e.\ $\pirand$ reduces coefficients modulo a sampled prime and evaluates $X_1$ at a random $\alpha\in \FF_q$. In this case, by \cref{l:examples_morphisms},
+    $$
+    \kappa_0 \leq \frac{2\cdot (d-1)}{q_{\min}} + \frac{\log\left(2\cdot d\cdot \codedim\cdot (q-1)^2\right)}{|\cP|\cdot \lfloor\log(q_{\min})\rfloor},
+      $$
+    where $q$ is  the characteristic of $\FF$.
+
+%
+%
+    We select $\cP$ to be the set of all primes in a range $[2^a, 2^b]$. There are approximately  $$|\cP|\approx (2^b/b - 2^a/a)/\log_e(2)$$ such primes.  Using $b= 128 - \tau \cdot \log(\codedim)$,  $\codedim_1= 2^{\tau\cdot \log(\codedim)}$,  for a parameter $\tau \in \range{0.5}{0.6}$ and plugging these values into $\kappa_0$ we obtain
+     %
+     \begin{equation}\label{e:kappa_0_practical_upper_bound}
+     \begin{aligned}
+    \kappa_0&\lessapprox \frac{2\cdot (d-1)}{2^a} + \frac{\log\left(2\cdot d\cdot \codedim\cdot (q-1)^2\right)\cdot \log_e(2)}{\frac{a}{b}\cdot 2^{b} - 2^a},\\
+    b&\defeq 128 - r_1, \qquad r_1\defeq \tau\cdot \log(\codedim).
+    \end{aligned}
+    \end{equation}
+    %
+    We calculate several minima for the right hand side of \eqref{e:kappa_0_practical_upper_bound} when $\FF$ is a  field of size $\approx 2^{128}$ (not necessarily a prime field), for varying values of $\codedim$ and $\tau \in \{0.5, 0.6\}$. We include the corresponding grinding times required to  achieve $128$ bits of security for the step with error $\kappa_0$.  
+
+    %We also include minima of $f(a)$ for other configurations where $R$ is a finite field of size between $2^{128}$ to $2^{256}$, not necessarily a prime field.
+    
+   \begin{table}[H]
+  \centering
+ \begin{tabular}{rrrrrrrrr}
+    \toprule
+    $\log |\FF|$ & $d$ & $\log q$ & $\log \codedim$ & $\tau$ & $a^{*}$ & $\kappa_0\leq$ & Bit-deficit to $128$ & Grinding time (ms) \\
+    \midrule
+    128 & 1 & 128 & 24 & 0.5 & 110 & $2^{-108.3}$ & 20 & 3.4 \\
+    128 & 1 & 128 & 24 & 0.6 & 107 & $2^{-105.9}$ & 23 & 25.9 \\
+    128 & 1 & 128 & 28 & 0.5 & 108 & $2^{-106.3}$ & 22 & 11.9 \\
+    128 & 1 & 128 & 28 & 0.6 & 105 & $2^{-103.5}$ & 25 & 98.1 \\
+    128 & 1 & 128 & 30 & 0.5 & 107 & $2^{-105.3}$ & 23 & 25.9 \\
+    128 & 1 & 128 & 32 & 0.5 & 106 & $2^{-104.3}$ & 24 & 54.9 \\
+    \midrule
+    128 & 4 & 32 & 24 & 0.5 & 114 & $2^{-109.2}$ & 19 & 1.8 \\
+    128 & 4 & 32 & 24 & 0.6 & 111 & $2^{-106.8}$ & 22 & 11.9 \\
+    128 & 4 & 32 & 28 & 0.5 & 112 & $2^{-107.1}$ & 21 & 6.4 \\
+    128 & 4 & 32 & 28 & 0.6 & 109 & $2^{-104.4}$ & 24 & 54.9 \\
+    128 & 4 & 32 & 30 & 0.5 & 111 & $2^{-106.1}$ & 22 & 11.9 \\
+    128 & 4 & 32 & 30 & 0.6 & 108 & $2^{-103.1}$ & 25 & 98.1 \\
+    128 & 4 & 32 & 32 & 0.5 & 110 & $2^{-105.1}$ & 23 & 25.9 \\
+    \bottomrule
+  \end{tabular}  \caption{Minima for the upper bound of $\kappa_0$ in \eqref{e:kappa_0_practical_upper_bound} for different configurations of $\FF$ (of characteristic $q$ and  degree $d$ over its prime field), witness sizes $\codedim$, and $\tau$ such that $\codedim_1=\codedim^\tau$.  By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa_0$ is bounded by the quantity in the $\kappa_0\leq$ column. We include the bits left required to achieve  $\kappa_0 < 1/2^{128}$ and the cost of grinding such an amount of bits on a MacBook Air M5 24\,GB multi-threaded, using Blake3 as hash function.}
+  \label{tab:min-f}
+\end{table}
+
+
+\begin{remark}[128 bits of security for larger witness sizes $\codedim$, without  or with minimal grinding]\label{r:beyond_gridning}
+    Grinding costs scale exponentially in the number of grinding bits. Because of this, we cannot resort to grinding for very large witness sizes $\codedim$. There are at least two ways to achieve $128$ bits of security (or more), in this case.
+
+    \medskip 
+    
+    \noindent \textbf{Method 1}: Use a larger binary field $\comfield$, i.e.\ simply take $\comfield$ with $|\comfield|$ comfortably larger, rather than $|\comfield|=2^{128}$.
+ 
+ \medskip
+ 
+ \noindent \textbf{Method 2}: We generalize an idea from \cite{binius64}, which relaxes the requirement $\max\cP< \fieldboundsizeexponent$ to $\max\cP<|\comfield|-1$ (and likewise the conditions under which Round 1 is skipped), so that the bound on $\cP$ no longer depends on the witness size and the primes gain $\log \codedim_1$ bits, which makes the soundness errors shrink by $\log \codedim_1$ too. Recall that Phase 3 of \cref{c:core_iop} proves the equalities $\langle \bm{\gamma}, \bff_{*j}\rangle =\mu_j$ ($j\in [\codedim_2]$) modulo $\mathsf{ord}(g)=|\comfield|-1$, which is why the entries of $\bm{\gamma}$ had to be smaller than $(|\comfield|-1)/\codedim_1$. If they are only smaller than $|\comfield|-1$, one can additionally prove the same equalities modulo $\codedim_1$. This works because, since$\codedim_1$ and $|\comfield|-1$ are coprime (because $\codedim_1$ is a power of two), by the CRT, if both equalities are true, then  $\langle\bm{\gamma}, \bff_{*j}\rangle -\mu_j$ is an integer multiple of $\codedim_1\cdot (|\comfield|-1)$. However, because the entries of $\bff$ are bits and the entries of $\bm{\gamma}$ are at most $|\comfield|-2$, this means that   $\langle \bm{\gamma}, \bff_{*j}\rangle = \mu_j$ as integers.
+ 
+ To prove the equality modulo $\codedim_1$, the prover sends $a_j\in \range{0}{\codedim_1-1}$ (this is range-checked by the verifier) and proves in the exponent the integer equality $\langle \bm{\gamma}', \bff_{*j}\rangle = \mu_j'  +  a_j\cdot \codedim_1$, where $\bm{\gamma}'$ and $\mu_j'$ are $\bm{\gamma}$ and $\mu_j$ reduced modulo $\codedim_1$.  Both sides of the equality are smaller than $\codedim_1^2$, and so no overflow occurs as long as $\codedim_1^2 < |\comfield|-1$. 
+
+  Note that if $\bm{\gamma}$ admits a tensor decomposition   $\bm{\gamma}=\bm{\gamma}^{(1)} \otimes \bm{\gamma}^{(2)}$, then we can take, instead of $\bm{\gamma}'$, the tensor-product $\bm{\gamma}^{(1)}{}' \otimes \bm{\gamma}^{(2)}{}'$, where  $\bm{\gamma}^{(i)}{}'$ denotes $\bm{\gamma}^{(i)}$ reduced modulo $\codedim_1$. This allows to use all of our ``low-entropy'' grand product optimizations from \cref{s:gkr_low_entropy}, though in this case the required bound becomes $2\cdot (\codedim_1^2+1)\cdot \codedim_1 < |\comfield|-1$.%\albert{Point here to some explanation saying that this is the best way to prove such inner product?}
+
+    Overall, this method allows to use $\max\cP < |\comfield|-1$, meaning we can choose primes that are $\log(\codedim_1)$ bits larger than we otherwise would. This makes soundness errors smaller by this same amount of bits, which leads to small grinding requirements.  The cost is an extra batch of low entropy grand products. 
+\end{remark}
+
+
+\begin{remark}[Proximity parameter up to the Johnson bound]\label{r:johnson_instantiation}
+For $\lambda=100$ we set the proximity parameter to $\delta=1-\sqrt{\rho}-\eta$ with $\eta=0.02$, i.e.\ slightly below the Johnson bound. By  \cite{GS99,stir}, $\cC$ is then $(\delta,L_\delta)$-list-decodable with $L_\delta\leq 1/(2\eta\sqrt{\rho})$, and so  $L_\delta\leq 71$  for $\rho=1/8$, and $L_\delta\leq 36$ for $\rho=1/2$. A naive analysis would then multiply every error term after the commitment by $L_\delta$, since the knowledge state function must account for every candidate witness in the list, losing up to $\log L_\delta\approx 6$ bits in every round. Round 0 avoids this loss: the out-of-domain sample singles out one element of the list, except with probability $\kappa_{\mathsf{OOD}}\leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$ (\cref{t:thm_core_IOPP_OOD}), and this event is charged once, so that all other errors are as within the unique decoding radius (the same argument is used in STIR and WHIR \cite{stir,whir}, and by Ligerito for its recursive levels). For $\rho=1/8$ (resp.\ $\rho=1/2$) we have $\kappa_{\mathsf{OOD}}<2^{\log\codedim-123.7}$ (resp.\ $2^{\log\codedim-125.7}$), which is at most $2^{-100}$ for $\codedim\leq 2^{23}$ (resp.\ $2^{25}$); for larger witnesses the prover grinds $\lceil \log\codedim-23.7\rceil$ (resp.\ $\lceil \log\codedim-25.7\rceil$) bits at Round 0, at most $7$ bits at $\codedim=2^{30}$ (our implementation grinds Round 0 up to $108$ bits).
+\end{remark}
+
+\begin{remark}[Projecting polynomial constraints to a $112$-$113$ bit prime field with $128$ bits of security]\label{r:first_projection_security}
+    The error term of the projection step (also called fingerprinting) in \cite{zincplus,zinc,zaratan} is (for integer constraints) bounded by (cf.\ \cref{l:reduction_lemma} with $d=0$)
+    %
+    $$
+    \eps_{\mathsf{PIOP-proj}}\leq \frac{\log(N)}{|\cP'| \cdot \lfloor\log(q_{\min})\rfloor}
+    $$
+    where $\cP'$ is a set of primes; $q_{\min}$ is the smallest prime in $\cP'$; $N$ is the largest  absolute value that an unsatisfying constraint can attain. More precisely, assume integer witness entries $\ww$ are guaranteed to have at most a certain bit-size $B'$, and assume the constraints have the form $q_i(\xx,\ww)=0$ for all $i$, for $\xx$ a public input vector and $q_i$ constraint polynomials. Then $N$ is the maximum possible value of the form $|q_i(\xx,\ww)|$ among all $i$, all possible inputs $\xx$ and all  $\ww$ with entries having bit-size at most $B'$. 
+    
+    Using a similar analysis as in Strategy 2 above, where we let $\cP'$ be the set of primes in the interval $[2^{112}, 2^{113}]$,  we obtain that, as long as $\log(N)< 1.4\cdot 2^{6}\approx 90$ we have $   \eps_{\mathsf{PIOP-proj}}< 2^{-106}$. In that case we could attain $128$ bits of security during this projection step by performing $22$ bits of grinding ($12$\,ms on a MacBook Air M5).
+\end{remark}
+
+\end{lncsappendix}
 \begin{lncsappendix}{deferred-proofs}% LNCS: a region of its own so that the spine can place it before the experiments (author request, 2026-09-17)
 \section{Deferred proofs}
 \iflncs
@@ -3907,16 +3908,16 @@ Let $\kstate_1$ be the knowledge state function of $\Pi_1$. Recall we defined it
 %At every verifier message after the first one, $\kstate$ coincides with $\kstate_1$ before and after the message and $\rbrextractor$ is the identity map, so the error of $\Pi_1'$ at that message is that of $\Pi_1$. 
 Let $\rho=(q,\pirand)$ be the first verifier message and $\tr=(\mu')$ the first prover message. Suppose  that $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)=1$ and $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww))=0$. We claim that then $(\inp',\oracle,\ww)$ is not in  $\Relation_{\mathsf{core}}^{\delta}$. Indeed, if it was, then $\ww\in\bits^{\codedim}$, hence  $\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)$ outputs $\bff_{\ww}$. Since   $(\inp',\oracle,\ww) \in \Relation_{\mathsf{core}}^{\delta}$, we have by \eqref{e:appendix_bitify}  that $(\inp,\oracle,\bff_\ww) \in \Relation_{\mathsf{gen}}^{\delta}$. By definition of $\kstate$ we then obtain  $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\bff_{\ww})=1$, contradicting the assumption $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww))=\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\bff_{\ww})=0$. Hence $(\inp',\oracle,\ww)\not\in\Relation_{\mathsf{core}}^{\delta}$. By  definition of $\kstate_1$, $\kstate_1(\inp',\oracle,\tr,\ww)=0$. On the other hand, $1=\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)=\kstate_1(\inp',\oracle,\tr\Vert\rho,\ww)$. The latter two conditions hold with probability at most $\kappa_0$ by the proof of \cref{t:thm_core_IOPP}. Hence the round-by-round knowledge error of $\Pi_1'$ at $\rho$ is at most $\kappa_0$.
 
-\albert{review} If Round 0 is executed, we must analyse the round-by-round knowledge soundness of $\Pi_1'$ with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$ (see \cref{a:OOD} for a definition). The arguments above apply almost verbatim: it suffices to let the extractor output $\bff_\ww$ when $\tr$ ends with the first verifier message in this case (the OOD sample) and $\ww\in\bits^{\codedim}$, and otherwise the extractor outputs $\ww$. The errors in this case are $(\kappa_{\mathsf{OOD}},\kappa_0,0)$ (cf.\ \cref{t:thm_core_IOPP_OOD}), with $\kappa_0$ and $0$ following from the same arguments as in the proof of \cref{t:thm_core_IOPP_OOD}, since after Round 0 $\Pi_1'$ proceeds exactly as $\Pi_1$, with $\kstate=\kstate_1$. % the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD}). 
+\albert{review} If Round 0 is executed, we must analyse the round-by-round knowledge soundness of $\Pi_1'$ with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y,\ast})$ (see \cref{a:OOD} for a definition). The arguments above apply almost verbatim: it suffices to let the extractor output $\bff_\ww$ when $\tr$ ends with the first verifier message in this case (the OOD sample) and $\ww\in\bits^{\codedim}$, and otherwise the extractor outputs $\ww$. The errors in this case are $(\kappa_{\mathsf{OOD}},\kappa_0,0)$ (cf.\ \cref{t:thm_core_IOPP_OOD}), with $\kappa_0$ and $0$ following from the same arguments as in the proof of \cref{t:thm_core_IOPP_OOD}, since after Round 0 $\Pi_1'$ proceeds exactly as $\Pi_1$, with $\kstate=\kstate_1$. % the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD}). 
 
 
 \subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}\label{a:OOD}
 
 % [LNCS-only verbatim copy of the Round 0 description from Construction c:core_iop (hidden in the LNCS body), 2026-09-16; please review]
-When $\delta$ exceeds the unique decoding radius of $\cC$, Round 0 of \cref{c:core_iop} is executed.\iflncs\ In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$\fi{} We modify \cref{t:thm_core_IOPP} to accommodate this.  Following the approach of \cite{whir} (see also \cite{stir}), we extend the relations we work with, adding the OOD evaluation claim to them as a constraint. Concretely, we define $\PESAT^{\zeta,y}$ as the set of the triples $((\inp, \zeta, y), \oracle, \wit)$ with $\zeta, y\in \comfield$, $(\inp,\oracle,\wit)\in \PESAT$ and $\mle{\pack(\wit)}(\bm{\zeta})=y$, where $\bm{\zeta}=(\zeta^{2^{i-1}})_{i\in [\log (\codedim/\comfieldexp)]}$ is the evaluation point of Round 0; $\LIN^{\zeta,y}$ is defined analogously, and $\PESAT^{\delta,\zeta,y}$, $\LIN^{\delta,\zeta,y}$ are obtained by replacing $\PESAT$, $\LIN$ with $\PESAT^\delta$, $\LIN^\delta$.
+When $\delta$ exceeds the unique decoding radius of $\cC$, Round 0 of \cref{c:core_iop} is executed.\iflncs\ In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with $$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$\fi{} We modify \cref{t:thm_core_IOPP} to accommodate this.  Following the approach of \cite{whir} (see also \cite{stir}), we extend the relations we work with, adding the OOD evaluation claim to them as a constraint. Concretely, we define $\PESAT^{\zeta,y}$ as the set of the triples $((\inp, \zeta, y), \oracle, \wit)$ with $\zeta, y\in \comfield$, $(\inp,\oracle,\wit)\in \PESAT$ and $\mle{\pack(\wit)}(\bm{\zeta})=y$, where $\bm{\zeta}=(\zeta^{2^{i-1}})_{i\in [\log (\codedim/\comfieldexp)]}$ is the evaluation point of Round 0; $\LIN^{\zeta,y}$ is defined analogously, and $\PESAT^{\delta,\zeta,y}$, $\LIN^{\delta,\zeta,y}$ are obtained by replacing $\PESAT$, $\LIN$ with $\PESAT^\delta$, $\LIN^\delta$. Finally, writing $\mathsf{Coll}(f,\zeta)$ for the collision event of \cref{l:ood_collision} below (two distinct codewords close to $f$ agree at the OOD point), we let $\PESAT^{\delta,\zeta,y,\ast}$ (resp.\ $\LIN^{\delta,\zeta,y,\ast}$) be $\PESAT^{\delta,\zeta,y}$ (resp.\ $\LIN^{\delta,\zeta,y}$) together with all triples $((\inp,\zeta,y),f,\wit)$ such that $\mathsf{Coll}(f,\zeta)$ holds. In words, once the OOD sample fails to single out one element of the list, nothing further is demanded of the prover; this event is charged once, in Round 0, so that the rounds after it do not lose a list-size factor (this is the argument of \cite{stir,whir}).
 
 \begin{theorem}[\Cref{t:thm_core_IOPP} when Round 0 is executed]\label{t:thm_core_IOPP_OOD}
-Let $\delta\in (0,1)$ and $L_\delta\geq 1$ be such that $\cC$ is $(\delta, L_\delta)$-list-decodable, let $\codedim/\comfieldexp$ be a power of two, and assume that Round 0 of \cref{c:core_iop} is executed and that the rest of the hypotheses of \cref{t:thm_core_IOPP} hold. Assume the hypotheses from \cref{t:thm_core_IOPP} placed on $\Pi_{\mathsf{red}}$ and $\Pi_{\iopp}$ hold when replacing the relations by $\PESAT^{\zeta,y}, \LIN^{\zeta,y}, \PESAT^{\delta,\zeta,y}, \LIN^{\delta,\zeta,y}$ (where $\Pi_{\mathsf{red}}$ copies $(\zeta,y)$ from its input instance to its output instance). Then the conclusion of \cref{t:thm_core_IOPP} holds with one more round and the additional first error term $\kappa_{\mathsf{OOD}} \leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$.
+Let $\delta\in (0,1)$ and $L_\delta\geq 1$ be such that $\cC$ is $(\delta, L_\delta)$-list-decodable, let $\codedim/\comfieldexp$ be a power of two, and assume that Round 0 of \cref{c:core_iop} is executed and that the rest of the hypotheses of \cref{t:thm_core_IOPP} hold. Assume the hypotheses from \cref{t:thm_core_IOPP} placed on $\Pi_{\mathsf{red}}$ and $\Pi_{\iopp}$ hold when replacing the relations by $\PESAT^{\zeta,y}, \LIN^{\zeta,y}, \PESAT^{\delta,\zeta,y,\ast}, \LIN^{\delta,\zeta,y,\ast}$ (where $\Pi_{\mathsf{red}}$ copies $(\zeta,y)$ from its input instance to its output instance). These hypotheses hold with the same errors as within the unique decoding radius, since at most one element of the list is consistent with $(\zeta,y)$ unless $\mathsf{Coll}(f,\zeta)$ holds, in which case the state functions may output $1$ (cf.\ \cref{l:gkr_grand_product}). Then the conclusion of \cref{t:thm_core_IOPP} holds with one more round and the additional first error term $\kappa_{\mathsf{OOD}} \leq \binom{L_\delta}{2}\cdot (\codedim/\comfieldexp-1)/|\comfield|$.
 \end{theorem}
 
 \begin{lemma}[OOD collision probability]\label{l:ood_collision}
@@ -3931,14 +3932,14 @@ Since $\Enc_{\cC}\circ \pack$ is injective, $|\mathsf{List}(f,\delta)|\leq L_\de
 \end{proof}
 
 \begin{proof}[Proof of \cref{t:thm_core_IOPP_OOD}]
- We explain how to modify the proof of \cref{t:thm_core_IOPP}. Define the IOR $\Pi_1$ as in the proof of \cref{t:thm_core_IOPP}, except that  now it consists of Rounds 0, 1 and 2, and outputs $\left(\inp'=(g^{\bm{\gamma}}, g^{\bm{\mu}},\ \zeta,\ y),\ \oracle'= f, \ \wit'=\picomfield(\bff)\right)$.  $\Pi_1$ is now a $3$-round IOR from $\LinBitsDual$ to $\PESAT^{\zeta,y}$, and it is perfectly complete because the original  $\Pi_1$ is perfectly complete, and the honest value $y$ equals $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})$. The IORs $\Pi_2$ and $\Pi_3$ are the variants of $\Pi_\red$ and $\Pi_\iopp$ for $\PESAT^{\zeta,y}$ and $\LIN^{\zeta,y}$ from the hypotheses. By the composition of IORs result \cref{r:ior_compositoin}, it is  enough to show that $\Pi_1$ has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta,\zeta,y})$ and errors $(\kappa_{\mathsf{OOD}}, \kappa_0, 0)$ (the last verifier message is empty and is merged with the first round of $\Pi_2$, as in the proof of \cref{t:thm_core_IOPP}).
+ We explain how to modify the proof of \cref{t:thm_core_IOPP}. Define the IOR $\Pi_1$ as in the proof of \cref{t:thm_core_IOPP}, except that  now it consists of Rounds 0, 1 and 2, and outputs $\left(\inp'=(g^{\bm{\gamma}}, g^{\bm{\mu}},\ \zeta,\ y),\ \oracle'= f, \ \wit'=\picomfield(\bff)\right)$.  $\Pi_1$ is now a $3$-round IOR from $\LinBitsDual$ to $\PESAT^{\zeta,y}$, and it is perfectly complete because the original  $\Pi_1$ is perfectly complete, and the honest value $y$ equals $\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta})$. The IORs $\Pi_2$ and $\Pi_3$ are the variants of $\Pi_\red$ and $\Pi_\iopp$ for $\PESAT^{\zeta,y}$ and $\LIN^{\zeta,y}$ from the hypotheses. By the composition of IORs result \cref{r:ior_compositoin}, it is  enough to show that $\Pi_1$ has round-by-round knowledge soundness with relaxation $(\LinBitsDual^{\delta}, \PESAT^{\delta,\zeta,y,\ast})$ and errors $(\kappa_{\mathsf{OOD}}, \kappa_0, 0)$ (the last verifier message is empty and is merged with the first round of $\Pi_2$, as in the proof of \cref{t:thm_core_IOPP}).
 
 Let $\kstate$ be the knowledge state function of the proof of \cref{t:thm_core_IOPP}, and for a transcript $\tr$ of $\Pi_1$ let $\bar{\tr}$ denote $\tr$ with the messages of Round 0 removed. Write $\mathsf{Ev}$ for the condition $\mle{\pack\circ\pi_2(\ww)}(\bm{\zeta})=y$ on $\ww$, and $\mathsf{Coll}$ for the event $\mathsf{Coll}(f,\zeta)$  of \cref{l:ood_collision}. We keep the identity extractor, i.e.\ $\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr, \ww) = \ww$.
 
 
-We define $\kstate'(\inp,\oracle,\tr,\ww)$ as follows (we omit the empty first prover message from transcripts): if $\tr$ contains no verifier message, it is defined as $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)$; if  $\tr=(\zeta)$, as $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)\vee \mathsf{Coll}$;  if $\tr=(\zeta, (y,\mu'))$ or $\tr=(\zeta, (y,\mu'), (q,\pirand))$, as $(\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)\wedge \mathsf{Ev})\vee \mathsf{Coll}$; if  $\tr=(\zeta, (y,\mu'), (q,\pirand),\bm{\mu})$, possibly followed by the empty last verifier message, as $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)\wedge \mathsf{Ev}$, which is $1$ if and only if the verifier accepts its checks and $(\inp', \oracle', \ww)\in \PESAT^{\delta, \zeta, y}$, where $(\inp',\oracle')=((g^{\bm{\gamma}}, g^{\bm{\mu}},\zeta,y),f)$ is the verifier's output  (if Round 1 is skipped, the same definition applies after removing $\mu'$ and $(q,\pirand)$ from the transcripts). 
+We define $\kstate'(\inp,\oracle,\tr,\ww)$ as follows (we omit the empty first prover message from transcripts): if $\tr$ contains no verifier message, it is defined as $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)$; if  $\tr=(\zeta)$, as $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)\vee \mathsf{Coll}$;  if $\tr=(\zeta, (y,\mu'))$ or $\tr=(\zeta, (y,\mu'), (q,\pirand))$, as $(\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)\wedge \mathsf{Ev})\vee \mathsf{Coll}$; if  $\tr=(\zeta, (y,\mu'), (q,\pirand),\bm{\mu})$, possibly followed by the empty last verifier message, as $(\kstate(\inp,\lncsbreak\oracle,\lncsbreak\bar{\tr},\ww)\wedge \mathsf{Ev})\vee(\mathsf{Acc}\wedge \mathsf{Coll})$, where $\mathsf{Acc}$ denotes that the verifier accepts its checks; this is $1$ if and only if the verifier accepts its checks and $(\inp', \oracle', \ww)\in \PESAT^{\delta, \zeta, y,\ast}$, where $(\inp',\oracle')=((g^{\bm{\gamma}}, g^{\bm{\mu}},\zeta,y),f)$ is the verifier's output  (if Round 1 is skipped, the same definition applies after removing $\mu'$ and $(q,\pirand)$ from the transcripts). 
 
-We prove that the conditions of \cref{def:knowledge-state-function}, which hold for $\kstate$, also hold for $\kstate'$:  the first one  (empty transcript) holds because $\bar{\tr}$ is empty. The third one (full transcript) holds because $\PESAT^{\delta,\zeta,y}$ is $\PESAT^{\delta}$ together with $\mathsf{Ev}$. We now argue  that the second one (prover moves)  holds: indeed,  $\kstate$ satisfies the second condition, and so $\kstate$ never changes from $0$ to $1$ after a prover sends a message. Hence  adding the condition $\mathsf{Ev}$ cannot make a $0$ state become $1$. Moreover, $\mathsf{Coll}$ depends only on $(f,\zeta)$, so it is unaffected by prover messages, and dropping the disjunctive $\mathsf{Coll}$ in the definition of $\kstate'$ for a full transcript cannot make a $0$ state become a $1$ state. 
+We prove that the conditions of \cref{def:knowledge-state-function}, which hold for $\kstate$, also hold for $\kstate'$:  the first one  (empty transcript) holds because $\bar{\tr}$ is empty. The third one (full transcript) holds because $\PESAT^{\delta,\zeta,y,\ast}$ is $\PESAT^{\delta}$ together with $\mathsf{Ev}$, or $\mathsf{Coll}$. We now argue  that the second one (prover moves)  holds: indeed,  $\kstate$ satisfies the second condition, and so $\kstate$ never changes from $0$ to $1$ after a prover sends a message. Hence  adding the condition $\mathsf{Ev}$ cannot make a $0$ state become $1$. Moreover, $\mathsf{Coll}$ depends only on $(f,\zeta)$, so it is unaffected by prover messages, and the conjunction with $\mathsf{Acc}$ at the last prover message can only turn a $1$ into a $0$. 
 
 
 At the first verifier message $\zeta$, $\kstate'$ can only change from $0$ to $1$ if $\mathsf{Coll}$ holds. Hence the first round knowledge soundness error  is at most $\Pr_{\zeta}[\mathsf{Coll}]\leq \kappa_{\mathsf{OOD}}$ by \cref{l:ood_collision}.  For the error for the second round where the verifier sends  $(q,\pirand)$ (assuming the round is executed), a witness $\ww$ such that $\kstate'(\inp,\oracle,(\zeta,(y,\mu')),\ww)=0$ and $\kstate'(\inp,\oracle,(\zeta,(y,\mu'),(q,\pirand)),\ww)=1$ satisfies $\neg\mathsf{Coll}$, $\mathsf{Ev}$, $(\inp,\oracle,\ww)\notin \LinBitsDual^{\delta}$ and $\kstate(\inp,\lncsbreak\oracle,\lncsbreak(\mu',(q,\pirand)),\ww)=1$. In particular $\pi_2(\ww)\in \mathsf{List}(f,\delta)$. Since $\mathsf{Coll}$ fails, $\pi_2(\ww)$ is the unique element $\bfg$ of the list with $\mle{\pack(\bfg)}(\bm{\zeta})=y$. Hence $\ww$, and with it the polynomial $h$ of the proof of \cref{t:thm_core_IOPP}, are determined by $(f,\zeta,y,\mu')$ before $(q,\pirand)$ is drawn. Finally, for this fixed $\ww$, the proof of \cref{t:thm_core_IOPP} bounds by $\kappa_0$ the probability over $(q,\pirand)$ that $\kstate(\inp,\lncsbreak\oracle,\lncsbreak(\mu',(q,\pirand)),\ww)=1$ and $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\mu',\ww)=0$ (the latter occurs if and only if $(\inp,\oracle,\ww)\not\in \LinBitsDual^{\delta}$).
