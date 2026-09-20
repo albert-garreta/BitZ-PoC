@@ -6,7 +6,7 @@
 %% without touching this line (they predefine \LNCS / \FULLVERSION).
 \newif\iflncs
 \lncsfalse
-\ifdefined\LNCS\lnc strue\fi \ifdefined\FULLVERSION\lncsfalse\fi % main-lncs.tex / main-full.tex force one or the other
+\ifdefined\LNCS\lncstrue\fi \ifdefined\FULLVERSION\lncsfalse\fi % main-lncs.tex / main-full.tex force one or the other
 \iflncs
   \documentclass[runningheads]{llncs}
   \let\proof\relax\let\endproof\relax % llncs' proof environment is replaced by amsthm's
@@ -129,7 +129,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 
 \begin{abstract}
-Test2 -- We introduce \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Moreover, given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
+We introduce \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Moreover, given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
 
 \ftwoz\ can thus be used as a PCS in essentially any proof system. We do so to build a SNARK, called \ftwoz-SNARK, for integer polynomial constraints, following the fingerprinting technique of Campanelli and Hall-Andersen, where one commits over $\ZZ$ and proves the constraints over a random prime field $\FF_q$, i.e.\ \ftwoz\ is deployed with $S=\ZZ$, $R=\FF_q$, and $\psi$ reduction modulo $q$. \ftwoz\ applies equally to other ring-based proof systems, or field-based ones.
 
@@ -254,7 +254,6 @@ The table below shows highlight benchmark results of our implementation of \ftwo
      For example, a proof system using a PCS that is not plausibly post-quantum secure, could replace its PCS with \ftwoz \ (which is plausibly post-quantum secure), regardless of the proof system's underlying field. %As mentioned above, the underlying rings barely affect \ftwoz's performance. 
      \item \textbf{``Free'' range checks.} \ftwoz\ provides range checks ``for free''. For example, when  committing  to integer witnesses, \ftwoz\ exposes a bit-size parameter $B$. Then, \ftwoz\ can be used to commit to integers of that bit-size, and it automatically guarantees that a malicious prover cannot commit to larger integers. This allows to omit many range checks that a standard proof system would need to enforce.
 \end{enumerate}
-
 
 
 
@@ -537,9 +536,9 @@ where we assume there is freedom to choose the lengths of $\vv^{(1)},\vv^{(2)}$ 
 
  \paragraph{Step 1: Commitment in $\comfield$.} Let $B\defeq \lceil \log q\rceil$ and let $\codedim\defeq B\cdot \codedim_0$. The prover creates a vector $\bitstext(\bff) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, obtained by bit-decomposing each entry $\bff_i$ of $\bff$ (a field element) into a vector of $B$ bits $(\bff_{i1}, \ldots, \bff_{iB})$ so that $\bff_i = \sum_{j\in [B]} \bff_{ij}\cdot 2^{j-1}$, and concatenating all such $B$-length vectors.
 
- Formally, we look at $\bitstext(\bff)$ as a vector of \emph{integer} bits. We write $\pi_q(\bitstext(\bff))$ and $\pi_2(\bitstext(\bff))$ for the same vetor seen in $\FF_q$ and $\FF_2$, respectively (in general, $\pi_n$ denotes reduction modulo $n$). 
+ Formally, we look at $\bitstext(\bff)$ as a vector of \emph{integer} bits. We write $\pi_q(\bitstext(\bff))$ and $\pi_2(\bitstext(\bff))$ for the same vetor seen in $\FF_q$ and $\FF_2$, respectively (in general, $\pi_n$ denotes reduction modulo $n$).  By $\pi^{-1}$ we denote the canonical representation of elements from $\FF_q$ as integers in the range $\range{0}{q-1}$.
 
-     Next, packs the vector  $\pi_2(\bitstext(\bff)) \subseteq  \FF_2^{\codedim}$ as a vector from $\comfield^{\codedim/\comfieldexp}$ (see below), and encodes the packed vector with a Reed-Solomon code $\cC$ (or any other code) over $\comfield$, and sends a Merkle root of the resulting codeword to the verifier.   To \emph{pack} $\pi_2(\bitstext(\bff))$, every consecutive $\comfieldexp$ bits $b_1, \ldots, b_\comfieldexp$ of $\bitstext(\bff)$ are joined together as a single field element $\sum_{i\in [\comfieldexp]} X^{i-1}\cdot \pi_2(b_i)$ from $\comfield$ (one can also use a different $\FF_2$-base than the monomial base $(X^i)_i$). We denote the encoded word by $f\in \comfield^{\codelength}$, with $\codelength$ being the length of the code.
+     Next, the prover packs the vector  $\pi_2(\bitstext(\bff)) \subseteq  \FF_2^{\codedim}$ as a vector from $\comfield^{\codedim/\comfieldexp}$ (see below), and encodes the packed vector with a Reed-Solomon code $\cC$ (or any other code) over $\comfield$, and sends a Merkle root of the resulting codeword to the verifier.   To \emph{pack} $\pi_2(\bitstext(\bff))$, every consecutive $\comfieldexp$ bits $b_1, \ldots, b_\comfieldexp$ of $\bitstext(\bff)$ are joined together as a single field element $\sum_{i\in [\comfieldexp]} X^{i-1}\cdot \pi_2(b_i)$ from $\comfield$ (one can also use a different $\FF_2$-base than the monomial base $(X^i)_i$). We denote the encoded word by $f\in \comfield^{\codelength}$, with $\codelength$ being the length of the code.
      
     From here on, the prover and verifier set out to prove an instance of the following relation, which we call LinBitsRings, and which takes a more general form in \cref{s:to_general_rings}:
 %
@@ -571,50 +570,52 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
  \paragraph{Step 3 (Optional):  Resampling of $\FF_q$.}  For soundness later, we need that $|\FF_q|< \fieldboundsizeexponent$ (because we will prove a collection of integer linear claims ``in the exponent'' of a generator of $\comfield^*$). If this condition is not met, we replace now $\FF_q$ by a smaller prime field via a randomized procedure. For now, we assume the condition holds, and we explain this procedure below in \cref{r:large_prime_field_in_BitZ_PCS}. 
 
 
- \paragraph{Step 4: Transformation of \eqref{e:intro_eq_2} into a batch of low-magnitude integer claims.} The prover organizes $\bitstext(\bff)$ into a $\codedim_1\times \codedim_2$ matrix with columns $\bitstext(\bff)_{*j}\in \bits^{\codedim_1}\subseteq \ZZ^{\codedim_1}$ ($j\in [\codedim_2]$). Then it publishes   $\mu_1,\ldots, \mu_{\codedim_2}\in  \ZZ$ defined as 
-         $\mu_j=\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$  in $\ZZ$, for all $j\in [\codedim_2]$.  
+ \paragraph{Step 4: Transformation of \eqref{e:intro_eq_2} into a batch of low-magnitude integer claims.} The prover organizes $\bitstext(\bff)$ into a $\codedim_1\times \codedim_2$ matrix with columns $\bitstext(\bff)_{*j}\in \bits^{\codedim_1}\subseteq \ZZ^{\codedim_1}$ ($j\in [\codedim_2]$). Then it computes and publishes   $\mu_1,\ldots, \mu_{\codedim_2}\in  \ZZ$ defined as 
+         $\mu_j\defeq\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle$  in $\ZZ$, for all $j\in [\codedim_2]$.  
          Then the verifier checks that $\mu_j\in \range{0}{(q-1)\cdot \codedim_1}$ for all $j\in [\codedim_2]$, and that 
          %
          \lncsmath{
         \sum_{j\in [\codedim_2]} \pi_q(\mu_j) \cdot \uu_j^{(2)} = \mu \qquad \text{in  } \FF_q,
          }
-         and \eqref{e:intro_eq_2} is replaced by the  claim that the prover knows a vector of bits $\bitstext(\bff)$ such that \begin{equation}\label{e:intro_eq_3}\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j \ \text{in  } \ZZ, \text{ for all } j\in [\codedim_2], \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
+         and \eqref{e:intro_eq_2} is replaced by the  claim that the prover knows a vector of bits $\bitstext(\bff)\in\bits^\codedim\subseteq\ZZ^\codedim$ such that \begin{equation}\label{e:intro_eq_3}\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j \ \text{in  } \ZZ, \text{ for all } j\in [\codedim_2], \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
         \end{equation} 
-        where $\pi^{-1}$ is the canonical representation of elements from $\FF_q$ as integers in the range $\range{0}{q-1}$.
+       
         
         
         
-        \paragraph{Step 5: Exponentiation in $\comfield$ and grand product in $\comfield$.}  Since we assumed $|\FF_q|< \fieldboundsizeexponent$, and since both sides of \eqref{e:intro_eq_3} lie in $\range{0}{(q-1)\cdot \codedim_1}$ (recall that $\bitstext(\bff)$ has bit entries, and that the verifier checked the range of each $\mu_j$), the first part of \eqref{e:intro_eq_3} is true if and only if 
+        \paragraph{Step 5: Exponentiation in $\comfield$ and grand product in $\comfield$.}  Let $g$ be a generator of the multiplicative subgroup of $\comfield$. Since we assumed $|\FF_q|< \fieldboundsizeexponent$, and since both sides of the first part of \eqref{e:intro_eq_3} lie in $\range{0}{(q-1)\cdot \codedim_1}$ (recall that $\bitstext(\bff)$ has bit entries, and that the verifier checked the range of each $\mu_j$), the first part of \eqref{e:intro_eq_3} is true if and only if 
           \begin{equation}\label{e:intro_eq_4}
           \begin{aligned}
           g^{\mu_j}  &= g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle}\\ &= g^{\sum_{i\in[\codedim_1]} \pi_q^{-1}(\uu_i^{(1)}) \cdot \bitstext(\bff)_{ij} } = \prod_{i\in [\codedim_1]} g^{ \pi_q^{-1}(\uu_i^{(1)}) \cdot \bitstext(\bff)_{ij} } 
-          \\ &= \prod_{i\in [\codedim_1]} \left(\left(g^{\pi_q^{-1}(\uu_i^{(1)})} -1\right)\cdot \pi_2(\bitstext(\bff)_{ij})  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
+          \\ &= \prod_{i\in [\codedim_1]} \left(\left(g^{\pi_q^{-1}(\uu_i^{(1)})} -1\right)\cdot \pi_2(\bitstext(\bff)_{ij})  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2].
           \end{aligned}
         \end{equation} 
-        where $g$ is a generator of the multiplicative subgroup of $\comfield$. %, and in the last expression, $\bitstext(\bff)_{ij}$ denotes the $i,j$-th entry (a bit) in $\bitstext(\bff)$ seen as an element of $\comfield$.
+       %, and in the last expression, $\bitstext(\bff)_{ij}$ denotes the $i,j$-th entry (a bit) in $\bitstext(\bff)$ seen as an element of $\comfield$.
 
-        The prover and verifier run  a batched grand product PIOP over the binary field $\comfield$ for the claim  \eqref{e:intro_eq_4} (see \cref{s:to_low_entropy_gkr}), obtaining as a result a new claim of the form
+        The prover and verifier run  a batched grand product PIOP over the binary field $\comfield$ for the claim  \eqref{e:intro_eq_4} (see \cref{s:to_low_entropy_gkr}), obtaining as a result the claim that the prover knows some vector of bits $\bitstext(\bff)$ satisfying
         \begin{equation}\label{e:intro_eq_5} \langle \zz, \pi_2(\bitstext(\bff)_{*j}) \rangle = c_j \ \text{in  } \comfield \ \text{for all } j\in [\codedim_2], \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),
         \end{equation} 
-        for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. In general, these claims can be batched to \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
-        However, in most instantiations this step may not be necessary, especially if using an interleaved code to commit to $\bitstext(\bff)$. %\albert{In the GKR grand product section of the main body I may need to mention batching?}. 
+        for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. %\albert{In the GKR grand product section of the main body I may need to mention batching?}. 
 
         
 
 
-        This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for grand products, for which we design novel, to our knowledge, prover optimizations, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi^{-1}(\uu^{(1)}_i)}-1)\cdot \bitstext(\bff)_{ij} +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that across $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors. % See \cref{?,s:gkr_low_entropy} for more details.
+        This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for batched grand products, for which we design novel, to our knowledge, prover optimizations, which do not modify the GKR  transcripts, i.e.\ they only optimize the GKR prover's algorithm, without changing the standard GKR protocol, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \pi_2(\bitstext(\bff)_{ij}) +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that among $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors (see \cref{s:why_the_tensor_split} for more reasons). % See \cref{?,s:gkr_low_entropy} for more details.
 \begin{comment}
 \begin{remark}[Other usages of the ``prove-in-the-exponent'' approach]
        There are other projects (e.g.\ Binius64 \cite{binius64} and Soukhanov's note \cite{lev}) that use exponentiation to prove integer (or mod $|\comfield|-1$) claims in binary fields, none of these (to our knowledge) is used or is usable in a context that results in the low entropy grand products of ours, where our optimizations apply.  We discuss this further in \cref{r:comparison_grand_product_binius_lev}.
       \end{remark}  
       \end{comment}
- \paragraph{Step 6: Proving linear claims on $\bitstext(\bff)$ over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it) via standard methods such as in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements we encoded, and then use WHIR or Ligerito \cite{whir,Ligerito} over $\comfield$ to prove these claims. 
+
+ The  $\codedim_2$ claims from \cref{e:intro_eq_5} can optionally be batched into  a single claim \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
+        However, in most instantiations this step may not be necessary, especially if using an interleaved code to commit to $\bitstext(\bff)$. 
+ \paragraph{Step 6: Proving linear claims on $\bitstext(\bff)$ over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5}  or (or the batched version of it \eqref{e:intro_eq_5_batched}) via known methods such as those in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements $\pack\circ\pi_2(\bitstext(\bff))$ we encoded, and then use WHIR or Ligerito \cite{whir,Ligerito} over $\comfield$ to prove these claims. 
 
 
 \bigskip       
 
  
-    In \cref{s:instantiation} we discuss how to efficiently instantiate \ftwoz \ with $\comfield=\FF_{2^{128}}$, and attain 128 bits of security.
+    In \cref{s:instantiation} we discuss how to efficiently instantiate \ftwoz \ with $\comfield=\FF_{2^{128}}$, and attain 100 or 128 bits of security.
 
 
 
@@ -623,10 +624,10 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 \begin{remark}[Description of Step 3]\label{r:large_prime_field_in_BitZ_PCS}
     Assume the condition $|\FF_q|< \fieldboundsizeexponent$ does not hold. Then, in Step 3, the prover sends an integer $\mu'\in \ZZ$ such that
     %
-    \lncsmath{\langle  \pi^{-1}(\uu^{(1)})\otimes \pi^{-1}(\uu^{(2)}), \bitstext(\bff)\rangle = \mu' \qquad \text{in } \ZZ,}    
-    The verifier checks that  $\pi(\mu')=\mu$, and responds with a random prime $q'$ from a public set $\cP$ of primes, all smaller than $\fieldboundsizeexponent$. Then, using the fingerprinting technique \cite{zaratan},  the prover and verifier project the above claim  to the field $\FF_{q'}$, so that it becomes
+    \lncsmath{\langle  \pi_q^{-1}(\uu^{(1)})\otimes \pi_q^{-1}(\uu^{(2)}), \bitstext(\bff)\rangle = \mu' \qquad \text{in } \ZZ,}    
+    The verifier checks that  $\pi_q(\mu')=\mu$, and responds with a random prime $q'$ from a public set $\cP$ of primes, all smaller than $\fieldboundsizeexponent$. Then, using the fingerprinting technique \cite{zaratan},  the prover and verifier project the above claim  to the field $\FF_{q'}$ (i.e.\ they apply $\pi_{q'}$ on both sides), so that it becomes
         \begin{equation}\label{e:to_projected_claim}\langle  \pi_{q'}\circ \pi^{-1}(\uu^{(1)})\otimes  \pi_{q'}\circ\pi^{-1}(\uu^{(2)}),  \pi_{q'}(\bitstext(\bff))\rangle = \pi_{q'}(\mu') \ \text{in } \FF_{q'}, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).\end{equation}  
-        Then the prover and verifier proceed to Step 4 after updating $\FF_{q} \gets \FF_{q'}$, $\pi\gets \pi_{q'}$, $\mu \gets \pi_{q'}(\mu')$, and $\uu\gets \pi_{q'}\circ \pi^{-1}(\uu^{(1)}) \otimes \pi_{q'}\circ \pi^{-1}(\uu^{(2)})$, where $\pi_{q'}$ denotes reduction modulo $q'$.
+        Then the prover and verifier proceed to Step 4 after updating $\FF_{q} \gets \FF_{q'}$, $\pi\gets \pi_{q'}$, $\mu \gets \pi_{q'}(\mu')$, and $\uu\gets \pi_{q'}\circ \pi^{-1}(\uu^{(1)}) \otimes \pi_{q'}\circ \pi^{-1}(\uu^{(2)})$.
         
     To ensure soundness of the projection step, the verifier checks that $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$  (see \cref{s:to_soundness_rings}).
 \end{remark}
@@ -641,11 +642,11 @@ Throughout the above construction, the verifier handles only vectors of size $\c
 \begin{lncsmove}{WhyTensor}
 \iflncs\begin{remark}[Why the tensor split]\label{s:why_the_tensor_split}\else\subsubsection{Why the tensor split}\label{s:why_the_tensor_split}\fi{} The claim $\langle \uu, \pi_q(\bitstext(\bff))\rangle = \mu$ (cf.\  \iflncs\eqref{e:core_bitz_eq_new_0}\else\eqref{e:intro_eq_2}\fi) over $\FF_q$ is split, in \iflncs Round 2\else Step 4\fi, into $\codedim_2$ claims over $\ZZ$ of the form 
 $
-\langle \pi^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j$ for all  $j\in [\codedim_2]$ (cf.\ \iflncs\eqref{e:tensored_equality}\else\eqref{e:intro_eq_3}\fi).  This pays off in three ways:
+\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j$ for all  $j\in [\codedim_2]$ (cf.\ \iflncs\eqref{e:tensored_equality}\else\eqref{e:intro_eq_3}\fi).  This pays off in three ways:
 \begin{itemize}[leftmargin=*,nosep]
-    \item All $\codedim_2$ grand products in \iflncs Phase 3 of \cref{c:core_iop}\else\eqref{e:intro_eq_4}\fi{} share the same $\codedim_1$ public values $g^{\pi^{-1}(\uu_i^{(1)})}$. In total, there are $\codedim$ factors, but at most $\codedim_1+1\approx \sqrt{\codedim}$ distinct values. This is crucial for performance when proving the grand products (see \cref{s:to_low_entropy_gkr}).
+    \item All $\codedim_2$ grand products in \iflncs Phase 3 of \cref{c:core_iop}\else\eqref{e:intro_eq_4}\fi{} share the same $\codedim_1$ public values $g^{\pi_q^{-1}(\uu_i^{(1)})}$. In total, there are $\codedim$ factors, but at most $\codedim_1+1\approx \sqrt{\codedim}$ distinct values. This is crucial for performance when proving the grand products (see \cref{s:to_low_entropy_gkr}).
     \item The verifier only handles vectors of length $\codedim_1 \approx \sqrt{\codedim}$ and $\codedim_2\approx \sqrt{\codedim}$, instead of vectors of length $\codedim$, allowing for succinctness. 
-    \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without overflow. This difference is important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\FF_{2^{128}}$, and not paying too much on grinding, cf.\ \cref{s:instantiation}. % \albert{Could be more detailed}
+    \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without overflow. This difference is important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield=\FF_{2^{128}}$, and not paying too much on grinding, cf.\ \cref{s:instantiation}. % \albert{Could be more detailed}
 \end{itemize}
 
 % [AI-drafted (Claude Fable 5.1), 2026-09-15: sentence explaining $D$ and $N_R$, at the author's request; please review]
@@ -661,11 +662,14 @@ $
 
 
 
-Let $S$ be a finitely generated ring. For example, $S$ could be a finite field extension, or the ring of integers $\ZZ$, or a cyclotomic ring.
 
-That $S$ is finitely generated means that  there exist elements $1, \eta_1, \ldots, \eta_k\in S$ such that every element $s\in S$ can be written as a polynomial expression $s =  \sum_{\aa} s_\aa \cdot \eta_1^{a_1}\cdots \eta_k^{a_k}$ in $\eta_1,\ldots,\eta_k$, for some elements $s_\aa \in \range{0}{\Char(S)-1}_S$ (for some integers $s_\aa$ if $\Char(S)=0$), where $\Char(S)$ is the characteristic of $S$\footnote{The characteristic of a ring with multiplicative unity $1$  is the minimum $n$ such that $1$ added together $n$ times equals $0$; or $\Char(S)=0$ if such $n$ does not exist.}.   For example, if $S$ is a field extension of size $q^e$ with $e> 1$, then $k_S=1$ and $\eta_1 = X$ (where we look at elements from the extension field as polynomials). If $S$ is a prime field or the integers $\ZZ$, then $k_S=0$ and the only generator is $1$. 
 
-Let $R$ be another finitely generated ring, and let \lncsmath{\psi: S\to R} be a ring homomorphism. For example, we could simply have $S=R$ be a finite field, and $\psi$ be the identity (this is the setting in the previous \cref{s:to_simple_bitz}).  Or, in the fingerprinting approach to proving integer constraints, one would take $S=\ZZ$, $R$ a prime field, and $\psi$ reduction modulo $q$. In \cite{zincplus}, $S$ is a polynomial ring, $R$ is a prime field, and $\psi$ is a certain projection. 
+\paragraph{Finitely generated rings.} A ring $S$ is \emph{finitely generated} if  there exist elements $1, \eta_1, \ldots, \eta_k\in S$ such that every element $s\in S$ can be written in the form \begin{equation}\label{e:f_g_ring_element}s =  \sum_{a_1,\ldots, a_k\geq 0} s_{a_1,\ldots, a_k} \cdot \eta_1^{a_1}\cdots \eta_k^{a_k}\end{equation}  for some elements $s_{a_1,\ldots, a_k} \in \range{0}{\Char(S)-1}_S$, where $\range{0}{\Char(S)-1}_S$  where $\Char(S)$ is the characteristic of $S$\footnote{The characteristic of a ring  is the minimum $n$ such that $1$ added together $n$ times equals $0$; or $\Char(S)=0$ if such $n$ does not exist.}, and for an integer $N\geq 0$, $\range{0}{N}_S$  is the set of elements from $S$ that can be obtained by adding $1$ together at most $N$ times.  If $N=0$ we convene that $\range{0}{N}_S=\ZZ$ . If $S$ is infinite then \eqref{e:f_g_ring_element} must have finite support (i.e.\ only a finite number of summands can be nonzero).
+
+
+For example, if $S$ is a field extension of size $q^e$ with $e> 1$, then $k_S=1$ and $\eta_1 = X$ (where we look at elements from the extension field as polynomials). If $S$ is a prime field or the integers $\ZZ$, then $k_S=0$ and the only generator is $1$. 
+
+\paragraph{\ftwoz, general construction,} Let $S$ be a finitely generated ring. For example, $S$ could be a finite field extension, or the ring of integers $\ZZ$, or a cyclotomic ring. Let $R$ be another finitely generated ring, and let \lncsmath{\psi: S\to R} be a ring homomorphism. For example, we could simply have $S=R$ be a finite field, and $\psi$ be the identity (this is the setting in the previous \cref{s:to_simple_bitz}).  Or, in the fingerprinting approach to proving integer constraints, one would take $S=\ZZ$, $R$ a prime field, and $\psi$ reduction modulo $q$. In Zinc+ \cite{zincplus}, $S$ is a polynomial ring, $R$ is a prime field, and $\psi$ is a certain projection. 
 
 Assume now that the prover claims knowledge of a vector $\bff\in S^{\codedim_0}$ such that
  \begin{equation}\label{e:new_to_0_rings}\langle \vv, \psi(\bff)\rangle =\mu \qquad \text{in  } R,
@@ -674,29 +678,29 @@ where $\vv\in R^{\codedim_0}, \mu\in R$ are public.
 
 
 
-\paragraph{Size bounds.} For soundness reasons\footnote{There are also formalization difficulties when allowing arbitrary witness elements in an infinite ring. For example, no polynomial time extractor can output an exponentially sized witness.}, when $S$ is infinite, we cannot allow a prover to use arbitrarily large witnesses, and we  restrict the set of allowable witnesses to a publicly specified subset of $S$ (this is standard practice, see e.g.\ \cite{zaratan,zinc,qaren,limber,zincplus}).  
+\paragraph{Size bounds.} For soundness reasons\footnote{There are also formalization difficulties when allowing arbitrary witness elements in an infinite ring. For example, no polynomial time extractor can output an exponentially sized witness.}, when $S$ is infinite, we cannot allow a prover to use arbitrarily large witnesses, and we  restrict the set of allowable witnesses to a publicly specified finite subset of $S$ (this is standard practice, see e.g.\ \cite{zaratan,zinc,qaren,limber,zincplus}). We explain how next. 
 
-Let $B,D>0$ be public size parameters.  Intuitively, we want the prover to prove knowledge of a witness that can be written as polynomial expressions on $\eta_1, \ldots, \eta_{k_S}$ of total degree less than $D$, with coefficients in $\range{0}{2^B-1}_S$, where $\range{0}{2^B-1}_S$ is the set of elements from $S$ that can be obtained by adding $1$ together less than $2^B$ times (and zero). We denote the set of such elements by $S_{\leq B}^{<D}$. Formally,
+Let $B,D>0$ be public size parameters.  Intuitively, we want the prover to prove knowledge of a witness that can be written as polynomial expressions on $\eta_1, \ldots, \eta_{k_S}$ of total degree less than $D$, with coefficients in $\range{0}{2^B-1}_S$. We denote the set of such elements by $S_{\leq B}^{<D}$. Formally,
  %
  $$
-S_{\leq B}^{<D}\defeq \left\{\left.\sum_{\substack{\aa\in \ZZ_{\geq 0}^k,\\  a_1+\ldots+a_k<D} } s_{\aa}\cdot \eta_1^{a_1}\cdots\eta_k^{a_k} \ \right| \ s_{\aa}\in \range{0}{2^B-1}_S\right\}
+S_{\leq B}^{<D}\defeq \left\{\left.\sum_{\substack{\aa\in \ZZ_{\geq 0}^k,\\  \aa_1+\ldots+\aa_k<D} } s_{\aa}\cdot \eta_1^{\aa_1}\cdots\eta_k^{\aa_k} \ \right| \ s_{\aa}\in \range{0}{2^B-1}_S\right\}
  $$
  % 
   If $S$ is finite to begin with, we can simply take $B,D$ so that $S_{\leq B}^{<D}=S$, or we may prefer to  restrict witnesses to a subset of $S$ anyway.
 
 
- \paragraph{Step 1: Commitment in $\comfield$.}  As before, the prover creates a vector $\bitstext(\bff) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, for some $\codedim$, with $\bitstext(\bff)$ being linearly related to $\bff$ in a manner we explain next. Given $s\in S_{\leq B}^{<D}$ with $s = \sum_{\aa} s_\aa \cdot \eta_1^{a_1}\cdots \eta_{k}^{a_k}$, where the sum runs over the set $I$ of tuples $\aa\in \ZZ_{\geq 0}^k$ with $a_1+\ldots+a_k<D$, write
+ \paragraph{Step 1: Commitment in $\comfield$.}  As before, the prover creates a vector $\bitstext(\bff) \in \bits^{\codedim} \subseteq \ZZ^{\codedim}$ of integer bits, for some $\codedim$, with $\bitstext(\bff)$ being linearly related to $\bff$ in a manner we explain next. Given $s\in S_{\leq B}^{<D}$ with $s = \sum_{\aa} s_\aa \cdot \eta_1^{a_1}\cdots \eta_{k}^{a_k}$, where the sum runs over the set $I$ of tuples $\aa\in \ZZ_{\geq 0}^k$ with $a_1+\ldots+a_k<D$, write $s_\aa =\sum_{i\in [B]} 2^{i-1}\cdot s_{\aa,i}$ for $s_{\aa,i}\in \{0,1\}$, so that
 %
 \lncsmath{
-s= \sum_{\aa\in I} \sum_{i\in [B]} s_{\aa,i}\cdot 2^{i-1}\cdot  \eta_1^{a_1}\cdots \eta_{k}^{a_k}, \qquad \text{for } s_{\aa,i}\in \{0,1\}.
+s= \sum_{\aa\in I} \sum_{i\in [B]} s_{\aa,i}\cdot 2^{i-1}\cdot  \eta_1^{a_1}\cdots \eta_{k}^{a_k}.
 }
 %
-Then define $\bitstext(s)=(s_{\aa,i})_{i \in [B], \aa\in I}$, where, abusing the notation, we look at $0$ and $1$ indistinctly as integers. Then $\bitstext(\bff)$ consists in applying $\bitstext$ entry-wise to $\bff$.  Note that 
+Then define $\bitstext(s)=(s_{\aa,i})_{i \in [B], \aa\in I}$, and we let $\bitstext(\bff)\in\bits^{\codedim}\subseteq \ZZ^\codedim$ be the vector obtained by concatenating $\bitstext(\bff_i)$ for $i\in [\codedim]$. We have $\codedim=\codedim_0\cdot B\cdot k$.  Note that 
 %
 \begin{equation}\label{e:new_to_linear_bits_to_f}
-\bff = L \cdot \bitstext(\bff)
+\bff = L \cdot \pi_{\Char(S)}(\bitstext(\bff))
 \end{equation}
-for certain matrix $L\in S^{\codedim_0 \times \codedim}$. Concretely, $L= \mathsf{Id}_{\codedim_0} \otimes (1, 2, \ldots, 2^{B-1}) \otimes (\eta_1^{a_1}\cdots \eta_k^{a_k})_{\aa\in I}$. Note that by definition of $S_{\leq B}^{<D}$ and $L$,  \begin{equation}\label{e:closure_bitification}L\cdot \bfg \in S_{\leq B}^{<D} \qquad \text{for all } \bfg \in \bits^{\codedim_0}.\end{equation} This is required to guarantee that extractors output vectors with entries in  $S_{\leq B}^{<D}$.
+for certain matrix $L\in S^{\codedim_0 \times \codedim}$, where $\pi_{\Char(S)}(\bitstext(\bff))$ means that we look at the bits in $\bitstext(\bff)$ as elements in $S$. Concretely, $L= \mathsf{Id}_{\codedim_0} \otimes (1, 2, \ldots, 2^{B-1}) \otimes (\eta_1^{a_1}\cdots \eta_k^{a_k})_{\aa\in I}$. Note that by definition of $S_{\leq B}^{<D}$ and $L$,  \begin{equation}\label{e:closure_bitification}L\cdot \bfg \in S_{\leq B}^{<D} \qquad \text{for all } \bfg \in \bits^{\codedim_0}.\end{equation} This is required to guarantee that extractors output vectors with entries in  $S_{\leq B}^{<D}$.
 
 We remark that this is not the only way one can transform $\bff$ into a vector of bits. Especially if $\bff$ contains elements with heterogeneous bit-sizes, a different bit-representation strategy is preferable, to avoid $\bitstext(\bff)$ being unnecessarily large, see \cref{r: non_uniform_bit_decomposition} for more comments on this bitification step. In any case, one always needs to make sure that a closure property such as \eqref{e:closure_bitification} is satisfied.
  
@@ -704,7 +708,7 @@ We remark that this is not the only way one can transform $\bff$ into a vector o
 
 \bigskip
 
-     \noindent Next, the prover commits to $\bitstext(\bff)$ in packed form exactly as in Step 1 of \cref{s:to_simple_bitz}. From here on, the prover and verifier set out to prove an instance of the following relation, which we call LinBitsRings, and which takes a more general form in \cref{s:general_LinBitsDual}:
+     \noindent Next, the prover commits to $\bitstext(\bff)$ in packed form exactly as in Step 1 of \cref{s:to_simple_bitz}. From here on, the prover and verifier set out to prove an instance of the following relation, which we call LinBitsRings:
 %
     \begin{align*}
  &\LinModFieldBin(S, R, \psi) = \left\{ \left(\begin{aligned} &\inp=(\mu, \vv)\in R  \times R^{ \codedim_0}, \\
@@ -720,13 +724,13 @@ We remark that this is not the only way one can transform $\bff$ into a vector o
 \iflncs\else % LNCS: hidden
     Moreover, it is possible to add other heterogeneous subset membership checks by using a non-standard bitification matrix, see \cref{r: non_uniform_bit_decomposition}. One, however, needs to make sure that $L$ admits sufficient tensor structure, for efficiency purposes.
 
-    The cost of these membership checks comes for free once one is willing to commit separately to the bits comprising the witness. See \cref{s:to_soundness_rings} for an explanation of how the extractor outputs witnesses satisfying the membership check.
+    The cost of these membership checks comes for free once one is willing to commit separately to the bits comprising the witness, as we do. See \cref{s:to_soundness_rings} for an explanation of how the extractor outputs witnesses satisfying the membership check.
 \fi
 \end{remark}
 
 \paragraph{Step 2: Bitification of the linear claim.} Similarly as in Step 2 of \cref{s:to_simple_bitz}, the claim \eqref{e:new_to_0_rings} is replaced by a claim of knowledge of a bit vector  $\bitstext(\bff)$ such that \begin{equation}\label{e:intro_eq_2_rings}\langle \uu, \psi(\bitstext(\bff))\rangle =\mu \ \text{in  } R, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
 \end{equation} 
-for a new $\uu\in R^{\codedim}$. This transformation is done using the linear expression from \eqref{e:new_to_linear_bits_to_f}. Concretely, we have $$\begin{aligned}\langle \vv, \psi(\bff)\rangle &= \langle \vv, \psi( L \cdot \bitstext(\bff)) \rangle = \langle \psi(L)^{\mathsf{T}}\cdot \vv, \psi(\bitstext(\bff)) \rangle = \langle \uu, \psi(\bitstext(\bff))\rangle, \\ \uu&\defeq \psi(L)^{\mathsf{T}}\cdot \vv.\end{aligned}$$ 
+for a new $\uu\in R^{\codedim}$. This transformation is done using the linear expression from \eqref{e:new_to_linear_bits_to_f}. Concretely, we have $$\begin{aligned}\langle \vv, \psi(\bff)\rangle &= \langle \vv, \psi( L \cdot \bitstext(\bff)) \rangle = \langle \psi(L)^{\mathsf{T}}\cdot \vv, \psi(\bitstext(\bff)) \rangle = \langle \uu, \psi(\bitstext(\bff))\rangle, \\ \uu&\defeq \psi(L)^{\mathsf{T}}\cdot \vv \in R^{\codedim}.\end{aligned}$$ 
 As before, it is important that $L$ is such that the new vector $\uu$ still admits a tensor decomposition $\uu=\uu^{(1)} \otimes \uu^{(2)}$ with, say, $\uu^{(1)}\in R^{\codedim_1}$ and $\uu^{(2)}\in R^{\codedim_2}$ and $\codedim_1\approx \sqrt{\codedim}$, $\codedim_2\approx \sqrt{\codedim}$. This is the case for the example $L$ given above. For such matrix $L$ we have
 %
 $$\begin{aligned} \uu&=\vv\otimes (1, 2, \ldots, 2^{B-1})\otimes (\psi(\eta_1^{a_1}\cdots \eta_k^{a_k}))_{\aa\in I},\end{aligned}$$ 
@@ -752,7 +756,7 @@ suppose $R$ is generated by $1, \gamma_1, \ldots, \gamma_{k'}$. The prover compu
 \begin{equation}\label{e:new_to_lifted_polring_claim}
 \langle \picanon^{-1}(\uu^{(1)}) \otimes \picanon^{-1}(\uu^{(2)}) , \bitstext(\bff) \rangle = \mu' \qquad \text{in } \ZZ[X_1, \ldots, X_{k'}].
 \end{equation}
-where $\picanon: \ZZ[X_1, \ldots, X_{k'}] \to R$ is a canonical ring homomorphism sending $X_i$ to $\gamma_i$ for all $i\in [k']$, and sending $1\in \ZZ$ to the multiplicative identity of $R$ (also denoted $1$). The inverse $\picanon^{-1}$ is a natural inverse of $\picanon$ (there are several ways to choose it), see \cref{e:presentations}.
+where $\picanon: \ZZ[X_1, \ldots, X_{k'}] \to R$ is the canonical ring homomorphism sending $X_i$ to $\gamma_i$ for all $i\in [k']$, and sending $1\in \ZZ$ to the multiplicative identity of $R$ (also denoted $1$). The inverse $\picanon^{-1}$ is a natural inverse of $\picanon$ (there are several ways to choose it), see \cref{e:presentations}.
 
 
 %of an element $r\in R$ is obtained as follows: write $r= p(\gamma_1,\ldots, \gamma_{k'})$ for some polynomial $p(X_1,\ldots, X_{k'})$ with coefficients in $\range{0}{\Char(R)-1}$. Then $\picanon^{-1}(r)= \pi^{-1}(p)(X_1,\ldots, X_{k'})$, where $\pi^{-1}(p)$ is obtained by lifting all coefficients of $p$ to the integers. 
@@ -762,13 +766,13 @@ The verifier checks that $\mu'$ has total degree at most $D_\ZZ$ and coefficient
 
 
 
-Now the idea is that the claim \eqref{e:new_to_lifted_polring_claim} implies the claim \eqref{e:intro_eq_2_rings}, since $\picanon(\mu')=\mu$. Hence, the prover and the verifier  proceed to certify  \eqref{e:new_to_lifted_polring_claim}. The constraint \eqref{e:new_to_lifted_polring_claim} is a polynomial constraint (in fact, a linear constraint) over the ring $\ZZ[X_1,\ldots, X_{k'}]$. We now generalize the fingerprinting technique for polynomial rings from Zinc+ \cite{zincplus} (which in turn generalizes that of \cite{zaratan}), so as to project \eqref{e:new_to_lifted_polring_claim} to a random ``small'' prime field.  
+Now the idea is that the claim \eqref{e:new_to_lifted_polring_claim} implies the claim \eqref{e:intro_eq_2_rings}, since $\picanon(\mu')=\mu$. Hence, the prover and the verifier  proceed to certify  \eqref{e:new_to_lifted_polring_claim}. The constraint \eqref{e:new_to_lifted_polring_claim} is a polynomial constraint (in fact, a linear constraint) over the ring $\ZZ[X_1,\ldots, X_{k'}]$. We now generalize the fingerprinting technique for polynomial rings from Zinc+ \cite{zincplus} (which in turn generalizes that of Zaratan \cite{zaratan}), so as to project \eqref{e:new_to_lifted_polring_claim} to a random ``small'' prime field.  
 
 Concretely,  the verifier samples a random prime $q$ and a random morphism
 %
 $
 \pirand : \ZZ[X_1, \ldots, X_{k'}] \to \FF_q
-$. The protocol specifies a public set $\cP$ of samplable primes, and for each $q\in \cP$ a public set of samplable morphisms $\cM_q$. We require that all samplable primes $q$ satisfy $q< \fieldboundsizeexponent$. In our instantiation we let $\cM_q$ be the set of homomorphisms of the form $\pi(h(X_1,\ldots, X_{k'})) = \pi_q(h)(\alpha_1, \ldots, \alpha_{k'})$.
+$. The protocol specifies a public set $\cP$ of samplable primes, and for each $q\in \cP$ a public set of samplable morphisms $\cM_q$. We require that all samplable primes $q$ satisfy $q< \fieldboundsizeexponent$. In our instantiation we let $\cM_q$ be the set of homomorphisms of the form $\pi(h(X_1,\ldots, X_{k'})) = \pi_q(h)(\alpha_1, \ldots, \alpha_{k'})$ for $\alpha_1,\ldots, \alpha_{k'}\in \FF_q$.
 
 Now, the claim \eqref{e:new_to_lifted_polring_claim}  is replaced by the claim
 %
@@ -791,34 +795,34 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \begin{lncsmove}{GKR}
 \subsection{GKR for low-entropy batched grand products}\label{s:to_low_entropy_gkr}
   In \iflncs Phase 3 of \cref{c:core_iop}\else Step 5 of \ftwoz \ (\cref{s:to_simple_bitz})\fi{} the prover must prove that \iflncs, for all $j\in [\codedim_2]$,\fi
-                    \begin{equation}\label{e:intro_eq_4_repeated}\iflncs\else g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} =\fi \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu^{(1)}_i)} -1\right)\cdot \bitstext(\bff)_{ij}  +1\right) =g^{\mu_j} \qquad \text{in  } \comfield \iflncs\else\qquad \text{for all } j\in [\codedim_2].\fi
+                    \begin{equation}\label{e:intro_eq_4_repeated}\iflncs\else g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} =\fi \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu^{(1)}_i)} -1\right)\cdot \pi_2(\bitstext(\bff))_{ij}  +1\right) =g^{\mu_j} \qquad \text{in  } \comfield \iflncs\else\qquad \text{for all } j\in [\codedim_2].\fi
         \end{equation} 
         %
-        As we mentioned, this is by far the most expensive step in \ftwoz. We next explain how we prove \eqref{e:intro_eq_4_repeated} in an efficient manner. We make the crucial  assumption that  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations). This assumption is relatively simple to attain, as we have discussed throughout \cref{s:intro,s:tech_overview}. At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for grand products \cite{thaler13}. Concretely, let $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
+        As we mentioned, this is by far the most expensive step in \ftwoz. We next explain how we prove \eqref{e:intro_eq_4_repeated} in an efficient manner. We make the crucial  assumption that  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations). This assumption is relatively simple to attain, as we have discussed throughout \cref{s:intro,s:tech_overview}. At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for batched grand products \cite{thaler13}. Assume $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$ are powers of two. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
         %
 \iflncs\begingroup\small\fi
                 $$
-        L_{r_1}(\bb,\cc) = \left(g^{\pi^{-1}(\uu^{(1)}_{\mathsf{int}(\bb)})} -1\right)\cdot \bitstext(\bff)_{\mathsf{int}(\bb),\mathsf{int}(\cc)}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
+        L_{r_1}(\bb,\cc) = \left(g^{\pi^{-1}(\uu^{(1)}_{\mathsf{int}(\bb)})} -1\right)\cdot \pi_2(\bitstext(\bff))_{\mathsf{int}(\bb),\mathsf{int}(\cc)}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
         $$
 \iflncs\endgroup\fi
         and, for $i=0,\ldots, r_1-1$
       \begin{equation}\label{e:to_gkr_polys}
   L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
     \end{equation}
-    We then use a series of sumchecks to certify \cref{e:to_gkr_polys} for all $i=0,\ldots, r_1-1$, and $L_{0}(\cc) = g^{\mu_{\mathsf{int}(\cc)}}$ for all $\cc\in \bits^{r_2}$.  
-    
-    
+    We then use a series of sumchecks to certify \cref{e:to_gkr_polys} for all $i=0,\ldots, r_1-1$, and $L_{0}(\cc) = g^{\mu_{\mathsf{int}(\cc)}}$ for all $\cc\in \bits^{r_2}$.  At the end of the $i$-th sumcheck we are left witht two evaluation claims for $L_{r_1-i}$ on different points. These two claims are transformed into a single claim via a ($1$-round) sumcheck.
+
+
     We emphasize again that, at a protocol level, this GKR scheme is completely standard. It is described in full detail in  \cref{s:gkr_low_entropy}. 
     
     
     At the end of the GKR grand product, the prover and verifier are left with MLE evaluation claims of the form:
     %
     \begin{equation}\label{e:intro_grand_product_eq_1}
-    \mle{g^{\pi_q^{-1}(\uu^{(1)})}}(\rr) = a,\qquad \mle{\bitstext(\bff)_{*j}}(\rr)=a_j \qquad \text{for all } j \in [\codedim_2]
+    \mle{g^{\pi_q^{-1}(\uu^{(1)})}}(\rr) = a,\qquad \mle{\pi_2(\bitstext(\bff)_{*j})}(\rr)=a_j \qquad \text{for all } j \in [\codedim_2] \quad \text{over } \comfield,
     \end{equation}
     for some $\rr\in \comfield^{r_1}$, where $\mle{*}$ denotes MLE, and $g^{\pi_q^{-1}(\uu^{(1)})}$ is the vector with entries $g^{\pi_q^{-1}(\uu^{(1)}_i)}$. 
     
-    Since $\uu$ is public, the verifier checks the first claim of \eqref{e:intro_grand_product_eq_1} on its own in time $O(\sqrt{\codedim})$, leveraging its tensor decomposition. \iflncs\else This is one among several reasons why the tensor split of $\uu=\uu^{(1)} \otimes \uu^{(2)}$ and splitting the original claim into a batch of $\codedim_2$ claims  pay off (see \cref{s:why_the_tensor_split}).\fi
+    Since $\uu$ is public, the verifier checks the first claim of \eqref{e:intro_grand_product_eq_1} on its own in time $O(\sqrt{\codedim})$, leveraging its tensor decomposition. \iflncs\else \fi
 
 
     
@@ -832,14 +836,14 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
     This property trickles down to different stages of the GKR protocol. For example, the above property implies that $L_{r_1-1}(\bb',\cc)$ as well can take only an $O(\sqrt{\codedim})$ amount of values (with worse constants now) across all $(\bb',\cc)\in \bits^{r_1-1}\times \bits^{r_2}$. Similarly, the coefficients of the first messages sent by the prover at the last stages of the GKR protocol (which involve the most expensive sumchecks), also benefit from a low entropy property. 
 
 
-            This allows the prover to compute small lookup tables that are kept in cache and reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses $4$ lookup tables to compute its first message, $5$ more tables to compute its second message, and one last table to compute its third message (see \cref{tab:gkr_tables}). Similarly, we build lookup tables for the first rounds of the second and third last sumchecks of the GKR protocol. This  configuration was found through an optimization process that was run with AI.
-\iflncs
+            This allows the prover to compute small lookup tables that are kept in cache and reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses $4$ lookup tables to compute its first message, $5$ more tables to compute its second message, and one last table to compute its third message (see \cref{tab:gkr_tables}). Similarly, we build lookup tables for the first rounds of the second and third last sumchecks of the GKR protocol. This  configuration was found through an optimization process that was run with AI.
+%\iflncs
 % [AI-drafted (Claude Fable 5.1), 2026-09-16, revised at 18:30 on top of the author's 18:15 edit: LNCS-only outline of the first prover message of the last GKR sumcheck, with the formulas of \cref{s:gkr_low_entropy} and the constant coefficient only, at the author's request; to be rewritten by the author and to be covered by the AI-usage paragraph; please review]
 \paragraph{Example usage.}  To illustrate the type of optimizations we apply, we discuss how we compute the last sumcheck of the GKR protocol. Further details are in \cref{s:gkr_low_entropy}. Such sumcheck certifies a claim of the form
 \[
 C=\sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc)\cdot L_{r_1}(\bb,1,\cc)\cdot \eq(\bb,\cc;\bm{\alpha}),
 \]
-where $\bm{\alpha}$ contains verifier challenges. 
+where $\bm{\alpha}\in \comfield^{r_1-1+r_2}$ contains verifier challenges. 
 %
 %Write the first variable of this sumcheck as $X$ and the remaining ones as $(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}$, and group the entries of $\bm{\alpha}$ accordingly as $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)$, with $\bm{\alpha}_1$ paired with $\bb$, so that $\eq(X,\bb,\cc;\bm{\alpha})=\eq(\bb;\bm{\alpha}_1)\cdot \eq(X,\cc;\bm{\alpha}_2)$. 
 %
@@ -847,39 +851,21 @@ The first prover message is the degree-$3$ polynomial
 $
 h_1(X)=\sum_{\cc\in \bits^{r_2}} h_{1,\cc}(X)\cdot \eq(X,\cc;\bm{\alpha}_2)$ where  \[h_{1,\cc}(X)\defeq \sum_{\bb\in \bits^{r_1-2}} L_{r_1}(X,\bb,0,\cc)\cdot L_{r_1}(X,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1),
 \]
-for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)$. We discuss how the prover computes the constant coefficient of $h_{1,\cc}(X)$. The other coefficients are handled similarly. The constant coefficient equals
+for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)\in \comfield^{r_1-1} \times \comfield^{r_2}$. We discuss how the prover computes the constant coefficient of $h_{1,\cc}(X)$. The other coefficients are handled similarly. The constant coefficient equals
 \[
-h_{1,\cc}(0)=\sum_{\bb\in \bits^{r_1-2}} A_0[\bb,\cc], \quad A_0[\bb,\cc]\defeq L_{r_1}(0,\bb,0,\cc)\cdot L_{r_1}(0,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
+h_{1,\cc}(0)=\sum_{\bb\in \bits^{r_1-2}} A_0[\bb,\cc], \quad \text{where} \quad A_0[\bb,\cc]\defeq L_{r_1}(0,\bb,0,\cc)\cdot L_{r_1}(0,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
 \]
-Write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Each factor $L_{r_1}(0,\bb,\eps,\cc)$ equals $y_{(0,\bb,\eps)}$ if the bit $\bitstext(\bff)_{\mathsf{int}(0,\bb,\eps),\mathsf{int}(\cc)}$ is $1$, and  it equals $1$ otherwise. Hence, for a fixed $\bb$, as $\cc$ ranges over $\bits^{r_2}$ the summand $A_0[\bb,\cc]$ takes one of at most $4$ values, selected by the two bits $x=\bitstext(\bff)_{\mathsf{int}(0,\bb,0),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(0,\bb,1),\mathsf{int}(\cc)}$. Hence $A_0[\bb,\cc]$ is the entry $T_{A_0}[\bb][x,x']$ of the lookup table
+Write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Each factor $L_{r_1}(0,\bb,\eps,\cc)$ equals $y_{(0,\bb,\eps)}$ if the bit $\bitstext(\bff)_{\mathsf{int}(0,\bb,\eps),\mathsf{int}(\cc)}$ is $1$, and  it equals $1$ otherwise, for $\eps\in\bits$. Hence, for a fixed $\bb\in \bits^{r_1-2}$, as $\cc$ ranges over $\bits^{r_2}$, the summand $A_0[\bb,\cc]$ takes one of at most $4$ values, depending on  the two bits $x=\bitstext(\bff)_{\mathsf{int}(0,\bb,0),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(0,\bb,1),\mathsf{int}(\cc)}$. Hence $A_0[\bb,\cc]$ is the entry $T_{A_0}[\bb][x,x']$ of the lookup table $T_{A_0}\in (\comfield^{2^{r_1-2}})^{4}$ having $\comfield^{2^{r_1-2}}$, with each entry being a vector of $4$ field elements. Concretely:
 \[
-T_{A_0}[\bb]\defeq \Big( y_{(0,\bb,0)}^{\,x}\cdot y_{(0,\bb,1)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2}\qquad \text{for } \bb\in \bits^{r_1-2}.
+T_{A_0}[\bb]\defeq \Big( y_{(0,\bb,0)}^{\,x}\cdot y_{(0,\bb,1)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2}.
 \]
- The prover precomputes this table with $2\codedim_1$ multiplications. Once the table is computed, the constant coefficients of all the $h_{1,\cc}(X)$ thus cost $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications. \cref{t:gkr_step1_costs} summarizes the cost of computing this and the rest of coefficients of $h_1(X)$ as explained in \cref{s:gkr_low_entropy}. The next prover messages of this sumcheck, and the first rounds of the second and third last sumchecks, are handled likewise with larger tables.
+ The prover precomputes this table with $\approx \codedim_1 \approx O(\sqrt{\codedim})$ multiplications over $\comfield$. Once the table is computed, the constant coefficients of all the $h_{1,\cc}(X)$ (for all $\cc\in \bits^{r_2}$) thus can be computed with $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications. \cref{t:gkr_step1_costs} summarizes the cost of computing this and the rest of coefficients of $h_1(X)$ as explained in \cref{s:gkr_low_entropy}. The next prover messages of this sumcheck, and the first rounds of the second and third last sumchecks, are handled likewise with larger tables.
 \lncsplace[\lncsfittables\lncsfloattables]{GkrRound1Costs}
-\fi
+%\fi
       
 
 
 
-\begin{comment}
-
-
-    Binius64 \cite{?}, a proof system for polynomial constraints over $\comfield$,  multiplication of integers modulo $m=|\comfield|-1$, say $x\cdot y = z \mod m$,  by proving $g^{x\cdot y} = g^z$. More concretely, given vectors $\ww_1,\ww_2,\ww_3\in \ZZ^n$, Binius64 proves $\ww_{3i}= \ww_{1i}\cdot \ww_{2i} \mod m$ for all $i\in [n]$ by proving \begin{equation}\label{e:to_binius_product}g^{\ww_{1i}\cdot \ww_{2i}} = g^{\ww_{3i}} \qquad \text{for all } i\in [n].\end{equation} Using $\comfield=\FF_{2^{128}}$, Binius64  is then able to prove \emph{integer} multiplication (without modular reduction) of $64$-bit integers, by mixing in a simple small constraint over $\comfield$. 
-
-    Intuitively, the main qualitative difference between Binius64 and our setting is that the former has elements of the form ``witness $\cdot$ witness'' in the exponent of $g$. On the other hand, our exponents contain linear combinations of elements of the form ``(public value) $\cdot$ witness``, and the public values split into a tensor product. This ultimately allows us to create $O(\sqrt{\codedim})$ grand products where the constant elements $g^{\uu_i}$ are publicly known and the same across all $O(\sqrt{\codedim})$ grand products, yielding the  low entropy property that our optimizations exploit. 
-    
-    In the Binius64 setting, on the other hand, this split is not available because the witness vector, in general, does not admit a tensor split \albert{ is it only because of that? or are there more reasons?}.  
-
-
-
-    Binius64 reduces proving \eqref{e:to_binius_product} to proving an MLE evaluation claim for the vector $(g^{\ww_{1i}\cdot \ww_{2i}})_i$. To do this, it uses a combination of LogUp* \cite{?}, a grand product PIOP, and the Frobenius automorphism. Concretely,  letting $\aa \defeq ( g^{\ww_{1i}})_i$ and writing $\ww_2=\sum_{j\in [64]} 2^{j-1} \cdot \ww_2^{(j)}$ with $\ww_2^{(j)}$ consisting of bits, 
-    \begin{equation}\label{e:to_binius_product}\aa_i^{2^{j-1}\cdot \ww_{2i}^{(j)}} = g^{\ww_{3i}} \qquad \text{for all } i\in [n], \ j\in [64].\end{equation}
-    
-    \eqref{e:to_binius_product} is replaced by 
-    \begin{equation}\label{e:to_binius_product}g^{\ww_{1i}\cdot \ww_{2i}} = g^{\ww_{3i}} \qquad \text{for all } i\in [n].\end{equation}
-    
-\end{comment}
 
 
 \end{lncsmove}
@@ -887,10 +873,18 @@ T_{A_0}[\bb]\defeq \Big( y_{(0,\bb,0)}^{\,x}\cdot y_{(0,\bb,1)}^{\,x'}\cdot \eq(
 \iflncs\section{Efficiency and comparison to other ``prove-in-the-exponent'' usages}\else\subsubsection{Efficiency and comparison to other ``prove-in-the-exponent'' usages}\fi\label{r:comparison_grand_product_binius_lev}
 
 
-We next discuss other existing approaches to proving foreign field statements in the exponent of a generator of $\comfield^*$ (the multiplicative subgroup of a binary field), in the context of hash-based SNARKs. Notice that elliptic curve-based PCS's usually perform commitments and opening proofs in the exponent of a generator of a large elliptic curve subgroup.  
+We next discuss other existing approaches to proving foreign field statements in the exponent of a generator of $\comfield^*$ (the multiplicative subgroup of a binary field), in the context of hash-based SNARKs. 
 
+\newcommand{\bfh}{\mathbf{h}}
    
-        \paragraph{Binius64} For example, \cite{binius64}  multiplies pairs of 64-bit integer witness elements in the exponent of $g$. This is substantially different from our setting where, when binary fields come into play, we are only interested in proving an integer claim about a linear combination of elements of the form ``(public values)$\cdot$ (witness elements)'', i.e.\ $\langle \vv, \ww\rangle = \mu$ in $\ZZ$, with the public values $\vv$ admitting a tensor split $\vv=\vv^{(1)} \otimes \vv^{(2)}$ (also \ftwoz \ can prove multiplication of all sorts of ring elements, not just 64-bit integers).   
+        \paragraph{Binius64} \cite{binius64} includes a protocol for proving statements of the form $\bff \circ \bfg = \bfh^{(1)} + 2^{64}\cdot \bfh{(2)}$ for $\bff,\bfg,\bfh^{(1)}, \bfh^{(2)}$ being \emph{witness} vectors of $64$-bit integers, and $\circ$ is the Hadamard product. This is proved  in the exponent of $g\in \comfield^*$ (together with a small additional constraint to address possible overflow). This is done through a combination of LogUp* \cite{logupstar}, a GKR grand product (for relatively small products of $128$ factors), and the Frobenius automorphism trick. 
+        
+        On the other hand, \ftwoz only proves, in the exponent of $g$, statements of the form ``(public values)$\cdot$ (witness elements)'', i.e.\ $\langle \vv, \ww\rangle = \mu$ in $\ZZ$, with the public values $\vv$ admitting a tensor split $\vv=\vv^{(1)} \otimes \vv^{(2)}$. In simple terms, Binius64 proves quadratic constraints in the exponent, while \ftwoz\ only proves linear constraints (with structured public values). Hence, \ftwoz\ allows to prove a much narrower set of integer constraints over $\comfield$ as compared to Binius64 (though note Binius64 only natively handles 64-bit integers, which is narrowing, but on a different axis), but with it gains substantial optimization opportunities, as described above. 
+        
+        A key observation of this work is that, \textbf{by running a PIOP over $\ZZ$ (or other rings), one can reduce any nonlinear constraint (over any ring) into a linear constraint over $\ZZ$, which can then be proved in the exponent of $g$, using the optimizations described above.} 
+        
+        
+
         This simpler setting is what allows us to use the low entropy optimizations designed in this work.  Crucially, \textbf{the reason why we only need to address this setting is because we start off with constraints and a PIOP over integers/fields/rings (Steps 2 to 4 inclusive), and only ever move to work on binary fields when we need to prove an MLE evaluation of the witness (a linear claim) over a ``small'' prime field (Step 5)}. 
 
         
@@ -3425,15 +3419,10 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 We experiment with proving the SHA-256 hash of a message of a few KB message followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). For the latter we compose two circuits in the Binius64 repo, one for SHA-256 and one for ECDSA signature verification.
 
 
-For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}).
-The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}.
-
-% [AI-drafted (Claude Opus 5), 2026-09-20, at the author's request: the two paragraphs below on the choice of curves and on the Zinc+ row, from the author's measurements; please review]
-We report the experiment on two curves, because the two answer different questions. Binius64 implements ECDSA over secp256k1 only, so secp256k1 is the curve on which a like-for-like comparison exists, and \cref{tab:sha256-ecdsa-secp256k1} is that comparison: there Binius64 runs its own scalar multiplication, and we run a circuit deliberately matched to Binius64's schedule, so that what is measured is the two proof systems rather than the two circuit engineerings. Matching their schedule costs us $8\%$ more witness bits and $43\%$ more constraints than our own schedule for that curve, so the comparison is conservative on our side. On P-256 we report \ftwoz-SNARK alone, in \cref{tab:sha256-ecdsa-p256}, on the arithmetization described above: Binius64 does not implement ECDSA over P-256, and a P-256 verifier written by us inside their framework would measure our arithmetization rather than their system.
+For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}). 
+The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}. 
 
 We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}
-
-We also report Zinc+ \cite{zincplus} at $2^7$ compressions, in \cref{tab:sha256-ecdsa-secp256k1}, since its ECDSA is also over secp256k1. Its statement is weaker than the one the other two systems prove, in four ways that all favour Zinc+: the SHA-256 digest is not bound to the ECDSA input inside the circuit, but read out of band by the verifier; of the checks modulo the group order, only the multi-scalar multiplication is proven; the message words are public columns, and padding is not enforced in-circuit; and the projecting prime is fixed rather than drawn from the transcript.
 
 \begin{table}[H]
   \centering
@@ -3476,9 +3465,7 @@ We also report Zinc+ \cite{zincplus} at $2^7$ compressions, in \cref{tab:sha256-
      & Zinc+ & -- & 4707 & 970 & 319 & 115 & 2432 & 2.03 \\
     \bottomrule
   \end{tabular}
-   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a secp256k1 ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.
-  % [AI-drafted (Claude Opus 5), 2026-09-20: the matched-circuit sentence and the peak-memory sentence; please review]
-  On this curve \ftwoz-SNARK runs the circuit matched to Binius64's scalar-multiplication schedule, so the comparison isolates the two proof systems; our own schedule for secp256k1 is cheaper. Binius64 is the more memory-frugal system here, by a factor between $2.0$ and $2.3$. The Zinc+ proof compresses to $915$\,KB with \texttt{zstd}, and its statement is weaker in the four ways listed above.}
+   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a secp256k1 ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
   \label{tab:sha256-ecdsa-secp256k1}
 \end{table}
 
