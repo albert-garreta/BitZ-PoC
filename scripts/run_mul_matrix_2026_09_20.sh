@@ -40,9 +40,9 @@ limber() { launch "$1-limber${EXT:-}" --workload "$1" --backends limber --limber
 probe() { # workload backend log_n threads rate [extra...]
   local w=$1 b=$2 n=$3 t=$4 r=$5; shift 5
   local label="$w-$b-r$r-2p$n-t$t"
-  local dir="$OUT-probe-$label"
-  if [ -d "$dir" ]; then echo "skip probe $label"; return 0; fi
-  echo "=== probe $label $(date)"
+  local dir="$OUT-${PROBE_PREFIX:-probe}-$label"
+  if [ -d "$dir" ]; then echo "skip ${PROBE_PREFIX:-probe} $label"; return 0; fi
+  echo "=== ${PROBE_PREFIX:-probe} $label $(date)"
   python3 scripts/mul_memory_probe.py --no-gate --output "$dir" --workload "$w" --backend "$b" \
     --log-n "$n" --threads "$t" --log-inv-rate "$r" --reps "$REPS" --record "$RECORD" "$@" 2>&1 | tail -1
 }
@@ -80,10 +80,7 @@ if has ext; then
     done
   done
 fi
-if has probes; then
-  # Cells that may exhaust memory: measured alone; excluded with the observed
-  # peak when the probe has to kill them. Ten threads first (the smaller
-  # working set), then one thread only if ten fit.
+probe_list() { # the cells that may exhaust memory, ten threads first
   for t in 10 1; do
     probe u64 bitz 23 $t 1 --bitz-profile custom:1:4
     probe u32-mod32 binius64 23 $t 1
@@ -95,5 +92,17 @@ if has probes; then
     probe u64 limber 21 $t 1
     probe u128 limber 21 $t 1
   done
+}
+if has probes; then
+  # Cells that may exhaust memory: measured alone; excluded with the observed
+  # peak when the probe has to kill them.
+  probe_list
+fi
+if has reprobe; then
+  # Second pass under the per-process criterion (the cell's own compressed
+  # pages and page-ins). The first pass keyed on system-wide swap-outs, which
+  # on this machine fire when other processes' cold pages are evicted, well
+  # before the measured process itself pages.
+  PROBE_PREFIX=probe2 probe_list
 fi
 echo "queue done $(date)"
