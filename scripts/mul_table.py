@@ -307,27 +307,28 @@ def main(argv=None) -> int:
     if any(s.startswith("bitz@") for s, _ in schemes):
         bitz_rows = [row for (s, _, _), row in by.items() if s.startswith("bitz@")]
         profiles = sorted({(row["case"]["bitz"]["ligerito"], row["case"]["bitz"]["bound"], row["case"]["bitz"]["profile"]) for row in bitz_rows})
-        clauses.append("\\ftwoz-SNARK (integer R1CS with $\\FF_2$-virtualization; Ligerito " + "; ".join(
-            f"profile \\texttt{{{p}}} ({b} bound, $\\lambda = {t}$)" for p, b, t in profiles) + ")")
+        clauses.append("\\ftwoz-SNARK (integer R1CS with $\\FF_2$-virtualization; Ligerito "
+                       + ", ".join(f"\\texttt{{{p}}}" for p, _, _ in profiles) + ", "
+                       + "/".join(sorted({b for _, b, _ in profiles})) + " bound, $\\lambda = "
+                       + "/".join(sorted({str(t) for _, _, t in profiles})) + "$)")
     binius_rows = [row for (s, _, _), row in by.items() if s.startswith("binius64@")]
     if binius_rows:
         rates = sorted({(int(row['case'].get('log_inv_rate') or 1), int((row['effective'].get('config') or {}).get('fri_queries') or 0)) for row in binius_rows})
-        clauses.append("Binius (UDR) (Binius64 with native multiplication, ring switching and BaseFold at " + " and ".join(
-            f"rate $1/{1 << r}$" + (f" with ${q}$ queries" if q else "") for r, q in rates) + " for $100$ bits)")
+        clauses.append("Binius (UDR) (Binius64, ring switching and BaseFold at " + " and ".join(
+            f"rate $1/{1 << r}$" + (f" (${q}$ queries)" if q else "") for r, q in rates) + " for $100$ bits)")
     if any(s.startswith("binius64-ligerito-rbr@") for s, _ in schemes):
-        clauses.append("Binius (Johnson) (the same Binius64 circuit and PIOP, every oracle committed and opened by ring switching and "
-                       "Johnson-regime Ligerito, every error term gated at $100$ bits round by round)")
+        clauses.append("Binius (Johnson) (the same circuit and PIOP, every oracle opened by Johnson-regime Ligerito, $100$ bits round by round)")
     fri_rows = config_of("plonky3-fri@1")
     if fri_rows:
         cfgs = [row["effective"].get("config") or {} for row in fri_rows]
         widths = sorted({int(c.get("trace_width", 0)) for c in cfgs})
         queries = sorted({int(c.get("num_queries", 0)) for c in cfgs})
-        clauses.append("Plonky3 (FRI) (Goldilocks univariate STARK, degree-$5$ extension, FRI at rate $1/2$ with the smallest query count clearing a proven "
-                       f"round-by-round $100$-bit report per size: ${queries[0]}$" + (f"--${queries[-1]}$" if len(queries) > 1 else "") + " queries; "
-                       + ("the wrapping u32 AIR" if workload == "u32-mod32" else "a full-product AIR over $16$-bit limbs with a carry chain")
-                       + f", every value bit-decomposed, ${widths[0]}$ trace columns)")
+        clauses.append("Plonky3 (FRI) (Goldilocks STARK, degree-$5$ extension, rate $1/2$, "
+                       f"${queries[0]}$" + (f"--${queries[-1]}$" if len(queries) > 1 else "") + " queries for a proven $100$-bit round-by-round report; "
+                       + ("the wrapping u32 AIR" if workload == "u32-mod32" else "a full-product AIR over $16$-bit limbs")
+                       + f", ${widths[0]}$ trace columns)")
     if config_of("limber"):
-        clauses.append("Limber (one independent integer-mod R1CS row per multiplication, IntEval/Brakedown at its $100$-bit column-open target)")
+        clauses.append("Limber (one integer-mod R1CS row per multiplication, IntEval/Brakedown, $100$-bit column-open target)")
     zinc_rows = config_of("zinc-plus@2")
     if zinc_rows:
         cfgs = [row["effective"].get("config") or {} for row in zinc_rows]
@@ -336,25 +337,38 @@ def main(argv=None) -> int:
         clauses.append("Zinc+ (" + {"u32-mod32": "one integer constraint $xy = z + 2^{32} w$ per multiplication over $8$",
                                   "u64": "one integer constraint $xy = z$ per multiplication over $16$",
                                   "u128": "one integer constraint $xy = z$ per multiplication over $32$"}[workload]
-                       + " int columns of $16$-bit limbs, every column range-checked by a GKR-LogUp word lookup; Zip+/IPRS over $\\FF_{65537}$ at rate $1/4$ with "
-                       + f"${'/'.join(one('column_openings'))}$ column openings for $100$ bits, a transcript-drawn ${'/'.join(one('prime_bits'))}$-bit projecting prime, "
-                       + f"the range-check term at least ${logup:.0f}$ bits; rows of ${'/'.join(one('row_len'))}$ columns; its peak memory is that of the whole worker process)")
-    exclusion_sentences = []
-    for entry in sorted(exclusions, key=lambda e: (e["log_n"], e["scheme"])):
-        where = f"{scheme_name(entry['scheme'])} at $2^{{{entry['log_n']}}}$" + (f" ({entry['threads']} threads)" if entry.get("threads") else "")
-        detail = entry["reason"].rstrip(".")
-        if entry.get("observed_peak_rss_bytes"):
-            detail += f"; observed peak resident set {entry['observed_peak_rss_bytes'] / 2**30:.1f}\\,GiB"
-            if entry.get("machine_ram_bytes"):
-                detail += f" against {entry['machine_ram_bytes'] / 2**30:.0f}\\,GiB installed"
-        exclusion_sentences.append(f"{where} is excluded: {detail}. ")
+                       + " int columns of $16$-bit limbs with GKR-LogUp range checks; Zip+/IPRS over $\\FF_{65537}$ at rate $1/4$, "
+                       + f"${'/'.join(one('column_openings'))}$ openings, a ${'/'.join(one('prime_bits'))}$-bit projecting prime, "
+                       + f"range-check term $\\geq {logup:.0f}$ bits; peak memory is the whole worker's)")
+    # The excluded cells go into a note under the table, not the caption: LaTeX
+    # measures a caption as one unbroken line first, and a caption that also
+    # carried every exclusion overflowed TeX's maximum dimension.
+    exclusion_notes = []
+    for entry in sorted(exclusions, key=lambda e: (e["log_n"], e["scheme"], e.get("threads") or 0)):
+        where = f"{scheme_name(entry['scheme'])} at $2^{{{entry['log_n']}}}$"
+        if entry.get("threads"):
+            where += f", {entry['threads']} thread" + ("s" if entry["threads"] != 1 else "")
+        if entry.get("observed_peak_rss_bytes") and entry.get("peak_compressed_bytes") is not None:
+            detail = (f"killed at {entry['observed_peak_rss_bytes'] / 2**30:.1f}\\,GiB resident with "
+                      f"{entry['peak_compressed_bytes'] / 2**30:.1f}\\,GiB of its own pages compressed out")
+        else:
+            detail = entry["reason"].rstrip(".")
+            if entry.get("observed_peak_rss_bytes"):
+                detail += f"; observed peak resident set {entry['observed_peak_rss_bytes'] / 2**30:.1f}\\,GiB"
+        if entry.get("machine_ram_bytes"):
+            detail += f" ({entry['machine_ram_bytes'] / 2**30:.0f}\\,GiB installed)"
+        exclusion_notes.append(f"{where}: {detail}")
     caption = (statement + "; ".join(clauses) + ". Native security targets are reported separately; these are not a uniform complete-protocol bound. "
                "\\emph{Witgen} is the native witness generation; \\emph{prover} is the complete prover call after witness generation, commitment included; "
                "\\emph{verifier} is the complete verification; \\emph{peak mem.} is the high-water resident set ($1$\\,GB $= 2^{30}$ bytes). "
                f"\\emph{{Witgen}} and \\emph{{peak mem.}} are from the {max(threads_list)}-thread runs; proof sizes do not depend on the thread count. "
-               + "".join(exclusion_sentences)
+               + ("Cells marked " + PLACEHOLDER + " did not fit the machine's memory; the note below the table gives each one's observed peak. " if exclusion_notes else "")
                + f"{cpu}; threads per run: {', '.join(map(str, threads_list))}; medians of {samples[0]} runs after one warm-up.")
-    lines += ["  \\caption{" + caption + "}", f"  \\label{{{args.label}}}", "\\end{table}", ""]
+    lines += ["  \\caption{" + caption + "}", f"  \\label{{{args.label}}}"]
+    if exclusion_notes:
+        lines += ["  \\par\\smallskip\\noindent{\\footnotesize Excluded cells (" + PLACEHOLDER + "), each stopped by the memory probe when its own "
+                  "working set no longer fit: " + "; ".join(exclusion_notes) + ".}"]
+    lines += ["\\end{table}", ""]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(header + lines))
     print(f"wrote {args.out} ({len(by)} rows, {len(exclusions)} exclusions)")
