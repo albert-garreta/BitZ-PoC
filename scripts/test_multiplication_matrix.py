@@ -19,7 +19,8 @@ class Matrix(unittest.TestCase):
         self.addCleanup(check.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # The launcher resolves --output; macOS temp dirs are /var -> /private/var symlinks.
+        self.root = Path(self.temp.name).resolve()
         self.output = self.root / "results"
         self.arguments = ["--workloads", "u64", "--backends", "bitz", "--threads", "1",
                           "--exponents", "15", "--reps", "2", "--no-gate",

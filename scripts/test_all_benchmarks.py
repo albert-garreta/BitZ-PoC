@@ -76,6 +76,10 @@ elif name == 'hybrid':
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
         scripts = [c for c in commands if c['name'] == 'python3' and c['args'][0].startswith('scripts/')]
+        # The wrapper samples peak RSS around each hybrid run on macOS only.
+        sampler = [c for c in scripts if c['args'][0] == 'scripts/rss_sampler.py']
+        self.assertEqual(len(sampler), 12 if sys.platform == 'darwin' else 0)
+        scripts = [c for c in scripts if c not in sampler]
         names = [c['args'][0] for c in scripts]
         self.assertEqual(names.count('scripts/bench_gate.py'), 1)
         self.assertEqual(names, [
