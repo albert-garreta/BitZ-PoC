@@ -185,8 +185,6 @@ In the vast majority of scenarios, $\Relation$ is defined over an algebraic obje
  \bigskip
  \fi
 
-
-% [AI-drafted (Claude Opus 5), 2026-09-18: availability footnote pointing at the anonymous artifact, at the author's request; please review]
 We implement \ftwoz\footnote{Our implementation is available as PoC at \iflncs the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}\else\url{https://github.com/albert-garreta/BitZ-pcs}, and as WIP production-grade in \url{https://github.com/worldfnd/BitZ}, see \cref{s:experiments} for the difference between the two.\fi.} and use it, among others (see below), to build a SNARK, called \ftwoz-SNARK, for proving R1CS constraints over the integers, following the \emph{fingerprinting} paradigm from Campanelli and Hall-Andersen \cite{zaratan}. Concretely, we commit to witnesses over the integers (setting $S=\ZZ$); then the verifier samples a random prime $q$; then the R1CS is projected to $\FF_q$ through the morphism $\pi_q$ consisting in reduction modulo $q$; then a PIOP is run on the resulting R1CS, yielding a linear claim (an MLE claim) on the projected witness $\pi_q(\bff)$ of the form $\langle \pi_q(\bff), \vv\rangle = \mu$; finally, this claim is proved with \ftwoz. The commitment is made before $q$ is sampled, which is required for the soundness of the fingerprinting technique. The PIOP may output its claim over a field extension of $\FF_q$, which \ftwoz\ can prove (\iflncs\cref{s: general_bitz}\else\cref{s:to_general_rings}\fi). An example end-to-end SNARK is described in \cref{s:to_snark}. 
 
 We also build a SNARK that can prove constraints simultaneously over the integers and binary fields, and which uses \ftwoz\ as PCS. This SNARK also supports \emph{virtualization} of $\FF_2$ addition (XOR) between integer witness, in the sense that it can commit to  vectors of integer bits, to be used as witness in a constraint over $\ZZ$, and at the same time prove MLE evaluation or inner product claims of the XOR of these vectors.  We discuss this further in \cref{s:intro_hybrid_proofs}.  
@@ -198,7 +196,6 @@ The table below shows highlight benchmark results of our implementation of \ftwo
 %Note that multiplication modulo $2^n$, say $x \cdot y = z \mod 2^n$, can be arithmetized over the integers as the constraint $x\cdot y = z + 2^n\cdot w $ with $w$ being a new witness element. We discuss proving SHA-256 below.
 
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns (SHA-256 + ECDSA and 2^19 groups; the RSA/Poseidon and hybrid groups are unchanged); please review]
  \begin{table}[H]
      \centering
      \small
@@ -374,9 +371,8 @@ A particularly interesting subclass of this relation is that obtained by setting
  Our arithmetization of SHA-256 + ECDSA signature verification is an instance of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$ (see \cref{tab:sha_arithmetization} and \cref{r:CM_is_NP_complete} in \cref{s:to_f2_virtual}). Concretely  we arithmetize SHA-256 with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}. However, if only seeking to prove a large amount of SHA-256 compressions, using a binary field is still preferable (see \cref{s:experiments_sha_modmul}).
 \else
 
-% [AI-drafted (Claude Opus 5), 2026-09-18, at the author's request: in the paragraph below, the sentence on SHA-256 + ECDSA as an R1CS-bits-virtual instance and the pointer to s:experiments_sha_modmul, both taken from the submission version; please review]
 In \cref{r:CM_is_NP_complete} we show that the CM relation is NP-complete. Our arithmetization of SHA-256 + ECDSA signature verification (\cref{tab:intro_table}) is an instance of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$. We arithmetize SHA-256 as an instance of the CM relation, with $4.4\times$ smaller witnesses than Binius64 \cite{binius64} and Flock \cite{flock} ($3.6\times$ smaller than the AI-optimized arithmetization), see \cref{tab:sha_arithmetization}.  
-% [AI-reworded (Claude Opus 5), 2026-09-16: previous sentence, was "we propose a proof system that can handle simultaneously constraints over integers (or other rings) and binary fields, and which uses \ftwoz\ as its PCS"; please review]
+
 \fi
 
 
@@ -416,7 +412,7 @@ We use this simple combination to prove SHA-256 compressions together with multi
 
 
 \iflncs
-% [AI-drafted (Claude Fable 5.1), 2026-09-15, revised by the author: LNCS-only compression of the five paragraphs below, which are unchanged in the full version]
+
 \paragraph{Proof systems over integers and other rings.} Campanelli and Hall-Andersen \cite{zaratan} propose proving polynomial constraints over the integers by projecting them onto a random prime field sampled by the verifier, a technique they call \emph{fingerprinting}. Subsequent works have adopted the same technique \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}. Zinc \cite{zinc} combines fingerprinting with a hash-based PCS over the rationals $\QQ$, providing the first relatively practical proof system over the integers, and addresses the subtle issues that arise when committing to \emph{integer} vectors with error correcting codes over rationals. Zinc+ \cite{zincplus} extends \cite{zinc} in two directions: it proposes a constraint system with polynomial constraints simultaneously over many types of rings\footnote{In the terminology of \cite{zincplus}, the constraints are over \emph{polynomial rings with ideal membership constraints}, for certain types of ideals (generated by a monic and non-constant polynomial, or zero). This is equivalent to saying the constraints are over different types of rings (within a certain class).} and fields, together with a method for constructing PIOPs for it that projects  all such rings and fields onto a random prime field. Zinc+ further improves the soundness analysis of the PCS of \cite{zinc}, and proposes the Integer Pseudo Reed-Solomon (IPRS) codes over $\ZZ$ or $\QQ$, obtained by ``lifting'' an FFT encoding algorithm over a small finite field to the integers. $\QQ$aren \cite{qaren} is a compiler that turns any PCS over a finite field of sufficiently large characteristic into a PCS for integer polynomials (more precisely, for rational polynomials close to the target integer polynomials, as in Zinc and Zinc+), yielding the first transparent and fully succinct PCS over integers/rationals. No implementation or performance reports are provided in \cite{qaren}. The concurrent work Limber \cite{limber} is a compiler of the same kind which only requires characteristic $q=\Omega(\lambda^2 \log^2 N)$, $N$ being the witness size (versus $\Omega(2^\lambda)$ in \cite{qaren}), compiles into strictly integer PCS (so that the ``almost integers'' issue does not arise), and is instantiated with the Hyrax and the Brakedown PCS. In \cref{s:experiments} we compare \ftwoz \ against Limber.
 \else % LNCS: the five paragraphs below are replaced by the compressed one above
 \paragraph{Proof systems over integers and other rings.} In \cite{zaratan}, Campanelli and Hall-Andersen propose proving polynomial constraints over integers, by projecting them onto a random prime field (sampled by the verifier), a technique which the authors call \emph{fingerprinting}. Subsequent works have adopted this idea \cite{zinc,qaren,zincplus,limber}. \cite{zaratan} also proposes a hidden-order group based PCS suitable for their PIOP, similar to the ones in \cite{DARK,BlockDARK}. The PCS is not implemented and so we do not compare against it.
@@ -479,7 +475,6 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 %The idea of exploiting their low entropy through lookup tables was arrived at during an interactive conversation with an AI. 
 %\bigskip
 
-% [LNCS, 2026-09-16: the sentence about the AI-drafted soundness overview is hidden in the LNCS build (that overview is not part of it); please review the disclosure wording]
 
 \paragraph{Usage and non-usage of AI.}  \emph{Implementation:} We crucially used AI in our implementation and experiments, in the way explained in \cref{s:experiments}.
 
@@ -642,7 +637,6 @@ $
     \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without overflow. This difference is important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield=\FF_{2^{128}}$, and not paying too much on grinding, cf.\ \cref{s:instantiation}. % 
 \end{itemize}
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-15: sentence explaining $D$ and $N_R$, at the author's request; please review]
 \Cref{t:core_iop_complexity} in the appendix records the concrete costs of this protocol\iflncs\else, stated for the general setting of \cref{s:to_general_rings}\fi.
 \iflncs\end{remark}\fi
 
@@ -1466,8 +1460,6 @@ Let $\Pi_1$ be a perfectly complete $k_1$-round IOR from $\Relation_1$ to $\Rela
 \lncsplace{ExpBinius}
 \lncsplace{ExpAI}
 \lncsplace[\lncsfittables]{ExpIntHighlights}
-
-% [AI-drafted (Claude Fable 5.1), 2026-09-16: LNCS-only appendix heading for what remains of this section in the supplementary material (notation table, cost paragraphs and tables); please review]
 \begin{lncsappendix}[More details about \ftwoz\label{a:more_details}]{iop}
     \iflncs We next discuss the costs of \ftwoz, and how to instantiate it using $\comfield=\FF_{2^{128}}$ as binary field while achieving 100 or 128 bits of round-by-round knowledge soundness.\else\fi
 \begin{lncsmove}{IopA}
@@ -1796,9 +1788,8 @@ Let $\basegenerator\in \comfield$ be a fixed generator of the multiplicative gro
 
 
 \begin{enumerate}[leftmargin=*] 
-% [LNCS pointer (Claude Fable 5.1), 2026-09-16: the multilinear-extension paragraph moved to the extended preliminaries is pointed to at its first use; please review]
-% [LNCS, 2026-09-16: the description of Round 0 is hidden in the LNCS body (one-line pointer, AI-drafted) and copied verbatim into the OOD appendix a:OOD; please review]
-% [LNCS pointer (Claude Fable 5.1), 2026-09-16: the multilinear-extension paragraph moved to the extended preliminaries is pointed to at its first use; please review]
+
+
 \item \textbf{Round 0 (optional): Out Of Domain (OOD) sample.} Optionally, the verifier sends a random point of a certain shape, and the prover replies with the MLE evaluation of $\pack\circ\pi_2(\bff)$ on the point.  This step is skipped if the proximity parameter $\delta$ is  set within the unique decoding radius of $\cC$ (cf.\ \iflncs\cref{a:prelims_codes}\else\cref{s:prelims_codes}\fi, and \cref{t:thm_core_IOPP}). Otherwise the step is executed (see \cref{a:OOD})\iflncs.\else. In that case, the verifier samples and sends a random $\zeta\in \comfield$, and the prover responds with \iflncs(where ``tilde'' denotes multilinear extension, cf.\ \cref{a:prelims_mle}\fi$$y=\mle{\pack\circ\pi_2(\bff)}(\bm{\zeta}), \qquad \text{where } \bm{\zeta}\defeq \left(\zeta^{2^0}, \zeta^{2^1}, \ldots, \zeta^{2^{\log (\codedim/\comfieldexp) -1}}\right).$$\fi
 \item \textbf{Round 1 (optional): replacing $R$ by a ``small'' prime field $\FF_q$.}
 This step can be skipped (i.e.\ prover and verifier move to Round 2 directly) if $R$ is a prime field $\FF_p$ and $p < \fieldboundsizeexponent$; in that case we set $q\defeq p$ in Round 2 and Phase 3. Otherwise the step is executed. %, or if $R=\ZZ$ and $\lVert \vv \rVert < \fieldboundsizeexponent$.
@@ -1834,7 +1825,7 @@ The prover and verifier now set to prove the updated claim
 \langle \vv^{(1)} \otimes \vv^{(2)}, \pi_q(\bff)\rangle = \mu \qquad \text{over } \FF_q.
 \end{equation}
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-16: LNCS-only one-line pointer replacing Remark r:skip_round_1_integers, which is copied verbatim into App. B; please review]
+
 \iflncs Round 1 can also be skipped when $R=\ZZ$ and $\lVert \vv\rVert_{\infty}$ is ``small'', see \cref{r:skip_round_1_integers}.\else
 \begin{remark}[Skipping Round 1 when $R=\ZZ$ and $\lVert \vv\rVert_{\infty}$ is ``small'']\label{r:skip_round_1_integers}
     This step can also be skipped when $R=\ZZ$ and all entries of $\vv^{(1)}$ are nonnegative and less than $\fieldboundsizeexponent$. In that case the claim to prove at the start of Round 2 is $\langle \vv^{(1)} \otimes \vv^{(2)}, \bff\rangle = \mu $ over $\ZZ$. In this case the map $\pi_q$ in Round 2 is simply replaced by the identity map, $\FF_q$ is replaced by $\ZZ$, and $q$ in the range checks of Round 2 denotes $\max_{i\in [\codedim_1]} \vv^{(1)}_i+1$. In Phase 3, $\bm{\gamma}$ is  $\vv^{(1)}$. 
@@ -1895,7 +1886,7 @@ Let  $\bm{\mu}\defeq (\mu_1,\ldots, \mu_{\codedim_2})$, $g^{\bm{\gamma}}\defeq (
 \iflncs\else\item\fi{} To prove \eqref{e:Q_F2Z_intermediate}, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}$\footnote{Recall that, in our instantiation, $\Pi_{\mathsf{red}}$ is the GKR protocol applied to multiple grand products, cf.\ \cref{s:gkr_low_entropy}.}   with input \iflncs$(\inp=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\allowbreak\ \oracle= f,\allowbreak\ \wit=\picomfield(\bff))$.\else\lncsmath{\left(\inp=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\  \oracle= f, \ \wit=\picomfield(\bff)\right).}\fi
 %
 %
-% [AI-drafted (Claude Fable 5.1), 2026-09-16: LNCS-only one-sentence gloss of the LIN relation, replacing its set-builder definition in the display below; please review]
+
  At the end of this IOR, they are left with the following claim to prove: 
 %
 \begin{equation}\label{e:iopp_mle_claims}
@@ -2027,7 +2018,6 @@ For readability, we temporarily denote $$\PESAT=\PESAT(\comfield, Q_{\mathbb{B}\
     %If  $\evalfield$ is a prime field, then \cref{c:core_iop} is a $t_\red+t_\iopp$-round IOP with round-by-round knowledge soundness with relaxation $(\LinBitsDual^\delta, \bot)$, with errors $(\ksred_i)_{i\in [t_\red]}, (\ksiopp_i)_{i\in [t_\iopp]}$.
 \end{theorem}
 \iflncs
-% [AI-drafted (Claude Fable 5.1), 2026-09-16, shortened at the author's request: LNCS-only proof sketch of \cref{t:thm_core_IOPP} saying how \cref{l:examples_morphisms,l:reduction_lemma} enter; condensed from \cref{a:core_iop_proofs}; to be rewritten by the author and to be covered by the AI-usage paragraph; please review]
 \begin{proof}  Deferred to \cref{a:core_iop_proofs}. In short, by the composition of IORs (\cref{r:ior_compositoin}) it suffices to analyze Rounds 1 and 2, which form an IOR from $\LinBitsDual$ to $\PESAT$ with errors $(\kappa_0,0)$.  In Round 1, a false claim $\langle\pi(\bff),\vv\rangle\neq\mu$ that passes the checks means that the nonzero polynomial $h\defeq \langle \picanon^{-1}(\vv^{(1)})\otimes\picanon^{-1}(\vv^{(2)}),\bff\rangle-\mu'\in \ZZ[X_1,\ldots,X_k]$ satisfies $\pirand(h)=0$. But $h$ has total degree at most $2\cdot D$ and $\lVert h\rVert_\infty\leq 2\cdot T\cdot\codedim\cdot N_R^2$ because of the verifier's checks, the bound on $\picanon^{-1}(\vv^{(i)})$, and the fact that $\bff$ has bit entries (which, intuitively speaking, is guaranteed by the PCS, which is a PCS used to commit to bit vectors). Hence, the event $\pirand(h)=0$ happens with probability at most $\theta(\cP,\cM,\codedim)=\kappa_0$ by \eqref{e:theta_def}. The specific expression of $\theta(\cP,\cM,\codedim)$ mentioned in the theorem follows from \cref{l:examples_morphisms}. 
 
     In Round 2 we only need to ensure that \eqref{e:tensored_equality} occurs if and only if \eqref{e:exponent_tensored_equality} occurs. Equivalently, we need to ensure that \eqref{e:tensored_equality} holds on the integers if and only if it holds modulo $|\comfield|-1$. This is the case because of the verifier checks on $\mu_j$,  $\max\cP<\fieldboundsizeexponent$,  and $\bff$ contains only bits. % exact because $\max\cP<\fieldboundsizeexponent$ keeps the exponents of $g$ below its order.
@@ -2195,7 +2185,7 @@ We set the following additional notation:
 \iflncs\else\begin{itemize}[leftmargin=*]\fi
  \iflncs\else\item\fi{} Let $S$ be a ring, possibly different from $R$, and let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying 
 \iflncs\else\item \fi
-% [AI-drafted formula (Claude Fable 5.1), 2026-09-16, at the author's request: the monomials written out; both versions; please review]
+
 Let $D_S\geq 1$ be a degree bound, let $1,\eta_1,\ldots,\eta_{k_S}$ be a generating set of $S$ (\cref{s:prelims_algebra}), and let $\gamma_1, \gamma_2,\ldots, \gamma_\moduledegree\in S$ be the distinct elements of the form \lncsmath{\eta_1^{a_1}\cdots \eta_{k_S}^{a_{k_S}}}  with $a_1,\ldots,a_{k_S}\geq 0$ and $a_1+\cdots+a_{k_S}< D_S$, i.e.\ the monomials of total degree less than $D_S$ in the generators, so that $\moduledegree$ is the number of such monomials. Concretely $\moduledegree\leq \binom{D_S-1+k_S}{k_S}$.
 \iflncs\else\item\fi{}  
 %\lncsnote{Could be shortened} 
@@ -3012,13 +3002,13 @@ We implement the \ftwoz\ PCS (\cref{c:LinModFieldBin}) and an end-to-end proof s
 
 
 
-% [AI edit (Claude Fable 5.1), 2026-09-21: the footnote gained a sentence on how the 100-bit level is set for the compared schemes; please review]
+
 Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$. Our own figure is a round-by-round bound that includes grinding ($16$ query bits and up to $9$ fold bits per level). For the schemes we compare against, we use each implementation\'s own $100$-bit setting, under its own soundness analysis (e.g.\ Binius64\'s $100$-bit target for the query phase of its Basefold opening).}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius. Further instantiation details are given in \cref{s:instantiation}.
 
 
-% [AI-drafted (Claude Opus 5), 2026-09-18: the anonymous-artifact sentence of the submission build, at the author's request; please review]
+
 
 
 
@@ -3028,18 +3018,16 @@ When targeting 100 bits of round-by-round soundness we use the Johnson bound as 
 \iflncs\else\paragraph{The Binius configuration suite.}\fi\label{s:binius_suite} When  comparing against Binius64 (commit \texttt{c28940a}, with local benchmarking patches), we use four configurations: Binius64 as in its repository, with rates $\rho=1/2$ and $\rho=1/8$ and with proximity parameter within the unique decoding radius. We call this ``Binius (UDR) $\rho$''. The original Binius64 repository uses Basefold \cite{basefold} as its PCS. We also experiment with Binius64 using the same Ligerito instantiation as the one we use in \ftwoz. In this case we use the Johnson bound as the proximity parameter, add out of domain sampling, and call the resulting scheme  ``Binius (Johnson) $\rho$''.
 
 \iflncs
-% [AI-drafted (Claude Fable 5.1), 2026-09-16: LNCS-only one-sentence pointer from the Experiments section to the appendix experiments, as requested; please review]
+
 We explain in \cref{s:further_experiments} why we do not include comparisons with Flock \cite{flock}, and anonymous credential proof systems like Longfellow \cite{longfellow} and Vega \cite{vega}. In short, for the first, \ftwoz \ is not a scheme designed to prove only large amounts of classic hashes: for that, a pure binary field approach like Flock's or Binius is better suited as of today. For the second, we do not support zero-knowledge in \ftwoz\ yet. This is ongoing work of ours.
 
 The remaining experiments, including those summarized in \cref{tab:intro_table,tab:int_highlights}, are reported in \cref{s:further_experiments}.
-% [AI-drafted (Claude Opus 5), 2026-09-16: LNCS-only one-sentence pointer to the Flock non-comparison paragraph, which moved to the start of the appendix experiments at the author's request; please review]
+
 \fi
 \end{lncsmove}
 
 \begin{lncstable}{ExpIntHighlights}
-% [AI-drafted (Claude Opus 5), 2026-09-17: rows copied from tab:f2z-u32-mul, tab:native-mul-u64 and tab:native-mul-u128 at the author's request (BitZ-SNARK at rate 1/8, Binius (UDR) at rates 1/2 and 1/8; sizes as in the former rows of the intro table, u128 at BitZ-SNARK's highest 10-thread prover throughput); the caption is AI-drafted apart from its last-but-one sentence, moved from the intro table; please review]
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; Zinc+ rows added for 64 and 128 bits; please review]
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns; please review]
+
 \begin{table}[H]
   \centering
   \small
@@ -3216,7 +3204,7 @@ For ECDSA over secp256k1, \ftwoz\  circuit matches mathematically the circuit in
 We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is in  general preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}. If one wishes for small proofs, or natural arithmetizations, one then may   arithmetize SHA as a $\mathsf{CM}$ instance (\cref{e:CM_rel}).
 
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns; please review]
+
 \begin{table}[H]
   \centering
   \small
@@ -3247,7 +3235,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
 
 
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns; the Zinc+ row is unchanged; please review]
 \begin{table}[H]
   \centering
   \small
@@ -3304,10 +3291,6 @@ Our end-to-end \ftwoz-SNARK is a hybrid construction combining the PIOP over $\Z
 
 We measure computations where the witness bits are evenly split between  SHA hashing and modular multiplication. Reducing the amount of modular multiplications while keeping the amount of hashing constant, would bring the two proof systems to become the same in theory (though implementation-wise, there currently are harnesses that prevent that from fully happening). Conversely, reducing the amount of hashes and keeping the amount of modular multiplication constant would bring the experiment closer to the one where we multiply 32 bit integers (in both \ftwoz\ and Binius, 32-bit integer multiplication and multiplication modulo $2^{32}$ is proved through essentially the same circuits, respectively).
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: one sentence on the equal-operation-count measurement (N = M, 2^9..2^14, same machine and protocol; table generated as bench_results/r0918c-tables/hybrid-equal-counts-table.tex, not included), following the benchmark review; please review]
-%At equal operation counts ($N = M$) the SHA-256 part dominates the witness and the comparison becomes one between SHA-256 provers: there, at equal code rate, \ftwoz-SNARK's prover is $1$--$2\times$ slower than Binius64's and its verifier up to $1.5\times$ slower, while its proofs remain $2.1$--$2.3\times$ smaller.
-
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-21 re-measurement campaign (bench_results/cs-20260921-hybrid, scripts/hybrid_table.py --variant witness); please review]
 \begin{table}[H]
   \centering
   \small
@@ -3418,10 +3401,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
  In the case of Limber (commit \texttt{853c6c4}, with some local patches for benchmarking), we use the integer multiplication benchmark that is already in its repository. This benchmark proves a chain of multiplications, i.e.\ each multiplication uses the output of the previous one. We modify it slightly so that the multiplications are independent from each other. We run Limber with its Brakedown PCS, set at $100$ bits of security for the column openings. In the case of Zinc+ \cite{zincplus} (commit \texttt{878fbd8}), we wrote the multiplication constraint ourselves using Zinc+'s constraint system. Here the witness is committed in $16$-bit limbs, and these are range checked via the lookup argument of Zinc+. These modifications were done with AI, and reviewed by us afterwards.
 
 
-
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; sizes above 2^19 re-measured; please review]
-% [AI edit (Claude Fable 5.1), 2026-09-21: the ``--'' sentence of this caption and of the u64 and u128 captions now states the criterion (the prover started paging); please review]
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns; please review]
 \begin{table}[H]
   \centering
   \small
@@ -3489,8 +3468,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 
 
 
-
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns; please review]
 \begin{table}[H]
   \centering
   \small
@@ -3543,7 +3520,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 \end{table}
 
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: BitZ rows re-measured with the `unchecked` build (cs-20260921u campaigns), competitor rows from the 2026-09-20 campaigns; please review]
 \begin{table}[H]
   \centering
   \small
@@ -3604,9 +3580,6 @@ We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS over the p
 
 
 
-
-
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-21 re-measurement campaign (PerfRuns/cs-20260921-fields-witch-suite/results.jsonl, rendered in the table's compact layout); please review]
 \begin{table}[H]
   \centering
   \small
@@ -3866,7 +3839,7 @@ Plugging in the values of $L_\delta$ above, we obtain $\kappa_{\mathsf{OOD}}<2^{
 \begin{lncsappendix}{deferred-proofs}% LNCS: a region of its own so that the spine can place it before the experiments (author request, 2026-09-17)
 \section{Deferred proofs}
 \iflncs
-% [AI-drafted (Claude Fable 5.1), 2026-09-16: LNCS-only subsection heading for the proofs moved here from the body's soundness subsection; please review]
+
 \subsection{Proof of \cref{t:thm_core_IOPP}}\label{a:core_iop_proofs}
 \fi
 \lncsplace[\renewcommand{\evalfield}{R}]{IopProofsB}
