@@ -1,0 +1,9 @@
+Output directory for the LNCS build.
+
+The pre-scan in lncs-switch.tex copies every marked block of main.tex into
+<jobname>-lncs-app-<name>.tex / <jobname>-lncs-stmt-<Name>.tex in this folder,
+regenerated at every run and safe to delete.  TeX cannot create the folder
+itself, so this file is tracked to keep it in git: without it the LNCS build
+stops with "I can't write on file `lncs-blocks/...'".
+
+The full (article) build does not use this folder.
