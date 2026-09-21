@@ -34,7 +34,6 @@ launch() { # label -- rust args
 bitz()   { launch "$1-bitz-r$3${EXT:-}" --workload "$1" --backends bitz --bitz-profile 100 --ligerito "custom:$3:4" --log-n "$2"; }
 binius() { launch "$1-binius64-r$3${EXT:-}" --workload "$1" --backends binius64 --log-inv-rate "$3" --log-n "$2"; }
 lig()    { launch "$1-lig-rbr-r$3${EXT:-}" --workload "$1" --backends binius64-ligerito --log-inv-rate "$3" --binius-ligerito-accounting rbr --log-n "$2"; }
-p3()     { launch "$1-plonky3-fri${EXT:-}" --workload "$1" --backends plonky3-fri --log-inv-rate 1 --log-n "$2"; }
 limber() { launch "$1-limber${EXT:-}" --workload "$1" --backends limber --limber-bits 100 --log-n "$2"; }
 
 probe() { # workload backend log_n threads rate [extra...]
@@ -54,7 +53,6 @@ if has grid; then
     bitz $w 15,17,19 1; bitz $w 15,17,19 3
     binius $w 15,17,19 1; binius $w 15,17,19 3
     lig $w 15,17,19 1; lig $w 15,17,19 3
-    p3 $w 15,17,19
     limber $w 15,17,19
   done
 fi
@@ -69,7 +67,6 @@ if has ext; then
   bitz u32-mod32 21,23 1; bitz u32-mod32 21,23 3
   bitz u64 21 1;          bitz u64 21 3
   bitz u128 21 1;         bitz u128 21 3
-  p3 u32-mod32 21
   EXT=
   for t in 10 1; do
     for w in u32-mod32 u64; do
@@ -84,8 +81,6 @@ probe_list() { # the cells that may exhaust memory, ten threads first
   for t in 10 1; do
     probe u64 bitz 23 $t 1 --bitz-profile custom:1:4
     probe u32-mod32 binius64 23 $t 1
-    probe u64 plonky3-fri 21 $t 1
-    probe u128 plonky3-fri 21 $t 1
     probe u128 binius64 21 $t 1
     probe u128 binius64-ligerito 21 $t 1 --binius-ligerito-accounting rbr
     probe u32-mod32 limber 21 $t 1

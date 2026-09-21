@@ -112,7 +112,7 @@ fn capabilities_reject_or_record_without_hiding_malformed_arguments() {
     let arguments = [
         "proof",
         "--workload",
-        "u64,u128",
+        "u32-full,u64",
         "--backends",
         "all",
         "--log-n",
@@ -124,12 +124,12 @@ fn capabilities_reject_or_record_without_hiding_malformed_arguments() {
     let mut args = parse(&arguments);
     args.skip_unsupported = true;
     let jobs = args.expand(true).unwrap();
-    assert_eq!(jobs.len(), 12);
-    // Only Plonky3-WHIR lacks the u64 and u128 relations; Plonky3-FRI proves
-    // them through its full-product AIR.
+    assert_eq!(jobs.len(), 8);
+    // The native comparisons prove u32-mod32, u64 and u128; only BitZ has a
+    // u32-full relation, so the other three backends are recorded as skipped.
     let skipped: Vec<_> = jobs.iter().filter(|j| j.skip.is_some()).collect();
-    assert_eq!(skipped.len(), 2);
-    assert!(skipped.iter().all(|j| j.case.backend == "plonky3-whir"));
+    assert_eq!(skipped.len(), 3);
+    assert!(skipped.iter().all(|j| j.case.backend != "bitz" && j.case.workload == mul::config::Workload::U32Full));
     for flags in [
         vec!["--w", "0"],
         vec!["--bitz-profile", "101"],
@@ -204,44 +204,6 @@ fn mode_defaults_and_packing_constraints() {
         profiles[0].case.bitz.as_ref().unwrap().bound.as_deref(),
         Some("unique")
     );
-}
-
-#[test]
-fn whir_configuration_is_applied_or_rejected() {
-    let args = [
-        "proof",
-        "--workload",
-        "u32-mod32",
-        "--backends",
-        "plonky3-whir",
-        "--log-n",
-        "15",
-        "--threads",
-        "1",
-    ];
-    let auto = parse(&args).expand(true).unwrap();
-    assert!(auto[0].case.log_inv_rate.is_none());
-    assert!(auto[0].case.whir.is_none());
-    let mut explicit = parse(&args);
-    explicit.log_inv_rate = Some(3);
-    assert_eq!(explicit.expand(true).unwrap()[0].case.log_inv_rate, Some(3));
-    explicit.whir_degree = Some(4);
-    assert!(explicit.expand(true).is_err());
-    let mut pcs = parse(&[
-        "pcs",
-        "--backends",
-        "plonky3-whir",
-        "--log-n",
-        "15",
-        "--threads",
-        "1",
-    ]);
-    let default = pcs.expand(true).unwrap()[0].case.whir.unwrap();
-    pcs.whir_degree = Some(if default.degree == 5 { 2 } else { 5 });
-    assert!(pcs.expand(true).is_err());
-    pcs.whir_degree = None;
-    pcs.whir_rate_cap = Some(2);
-    assert!(pcs.expand(true).is_err());
 }
 
 #[test]

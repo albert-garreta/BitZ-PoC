@@ -2,7 +2,7 @@
 # The 2026-09-13 bench-suite campaign queue (README.md, "Integer
 # multiplication"): integer-mult tables at odd exponents, every scheme at 1 and 10
 # threads, Binius suite under round-by-round accounting, Limber at the pinned
-# 100-bit Brakedown target, Plonky3-FRI at rate 1/2.
+# 100-bit Brakedown target.
 #
 # Every campaign is one fresh runner process, serialized through
 # scripts/bench_gate.py (machine lock + swap guard). Run

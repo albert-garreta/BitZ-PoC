@@ -78,7 +78,7 @@ shell may export `CARGO_TARGET_DIR`, and the runner otherwise builds into it.
 Use `--offline` when dependencies are cached. `CARGO_HOME`, `CARGO_TARGET_DIR`
 and compiler flags are inherited; `RUSTFLAGS` defaults to `-C target-cpu=native`.
 Selecting `binius64` additionally builds its isolated worker; the root comparison feature
-does not enable the root Binius, Plonky3, or Limber adapters.
+does not enable the root Binius or Limber adapters.
 
 For BitZ or Spartan results without Perfetto or `trace_processor_shell`, select
 `--timing wall-clock`:

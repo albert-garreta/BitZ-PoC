@@ -101,14 +101,12 @@ gate sha256-chain 12 python3 scripts/run_sha256_chain_compare.py \
   2>&1 | tee "$RUN_DIR/sha256-chain.log"
 ```
 
-## 4. Multiplication comparisons: BitZ, Binius64, Binius64-Ligerito, Plonky3-FRI, Limber
+## 4. Multiplication comparisons: BitZ, Binius64, Binius64-Ligerito, Limber
 
 The launcher builds once, validates every selection with the Rust case
 planner, runs one worker process per case, records a separate single-proof
 peak-RSS trial (`--memory rss`), and generates combined reports under
-`<output>/reports` (schema `mul-bench/v2`). Plonky3-FRI proves u32-mod32
-through its wrapping AIR and u64/u128 through a full-product AIR over 16-bit
-limbs; Plonky3-WHIR remains a u32-mod32 direct experiment. Run one gated
+`<output>/reports` (schema `mul-bench/v2`). Run one gated
 invocation per workload; the launcher gates each campaign itself, so omit
 `--no-gate` unless an outer gate already holds the lock. Cells whose prover
 exceeds the machine's memory are excluded, not measured while paging:
@@ -127,15 +125,15 @@ python3 scripts/mul_memory_probe.py --workload u128 --backend binius64 --log-n 2
 for workload in u32-mod32 u64 u128; do
   python3 scripts/run_multiplication_benchmarks.py compare \
     --output "$RUN_DIR/multiplication-$workload" -- \
-    proof --workload "$workload" --backends bitz,binius64,binius64-ligerito,plonky3-fri,limber \
+    proof --workload "$workload" --backends bitz,binius64,binius64-ligerito,limber \
     --log-n 15,17,19 --threads 1,10 --reps 5 --memory rss --skip-unsupported \
     --binius-ligerito-accounting rbr \
     2>&1 | tee "$RUN_DIR/multiplication-$workload.log"
 done
 ```
 
-Sizes above `2^19` are a per-backend decision on a 24 GiB machine: BitZ,
-Binius64 at rate 1/2 and Plonky3-FRI u32 reach `2^21`; BitZ reaches `2^23`
+Sizes above `2^19` are a per-backend decision on a 24 GiB machine: BitZ and
+Binius64 at rate 1/2 reach `2^21`; BitZ reaches `2^23`
 for u32 and u64; the others page first. Add `--log-n 21` (or `23`) runs for
 the backends that fit and record the rest as exclusions.
 

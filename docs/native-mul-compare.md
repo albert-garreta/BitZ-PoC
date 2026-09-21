@@ -151,34 +151,23 @@ guard, samples the process tree's peak resident set, and records the cell as
 JSON-lines file; `scripts/mul_table.py --exclusions` prints excluded cells as `--`
 and states the reason in the caption.
 
-Native proof backends are `bitz`, `binius64`, `binius64-ligerito`, `plonky3-fri`,
-`plonky3-whir`, and `limber`. Plonky3-FRI proves u32-mod32 through its wrapping
-AIR and u64/u128 through a full-product AIR over 16-bit limbs with a carry
-chain (`benches/mul/native/wide_mul_air.rs`, 382 and 813 trace columns, bit
-range checks like the u32 AIR); Plonky3-WHIR remains wired to u32-mod32 only.
-PCS backends are `bitz`, `plonky3-whir`, `binius64-basefold`, and
-`bitz-ligerito-binary`, on u32-full or BabyBear witnesses.
+Native proof backends are `bitz`, `binius64`, `binius64-ligerito`, and `limber`.
+PCS backends are `bitz`, `binius64-basefold`, and `bitz-ligerito-binary`, on
+u32-full or BabyBear witnesses.
 
 `--log-inv-rate` controls applicable competitor rates; `--limber-bits` controls
 Limber's Brakedown target (default 100). Binius retains its query-phase security
 scope; the Ligerito native adapter uses whole-protocol union-bound accounting.
 These scopes are recorded, not conflated into a common claimed security model.
 
-Native WHIR tunes eligible configurations when no override is supplied.
-`--tuning-reps` controls finalist trials. To choose/replay a configuration, use
-`--whir-degree 5 --whir-folding 4 --whir-pow 12 --log-inv-rate 1`, optionally
-`--whir-rate-cap 4`. All selected parameters and security schedules are recorded.
-PCS WHIR uses its compiled field extension and size-dependent folding default;
-unsupported degrees and `--whir-rate-cap` are rejected. Automatic native WHIR
-selection searches rates 1/2, 1/4, and 1/8 unless `--log-inv-rate` restricts it.
-Configuration ineligibility is an error unless `--skip-unsupported` is set;
-failed proofs always abort, including during tuning.
+All selected parameters and security schedules are recorded. Configuration
+ineligibility is an error unless `--skip-unsupported` is set; failed proofs
+always abort.
 
 ## Memory and results
 
 `--memory rss` adds an isolated one-proof worker to each latency case. It uses
-the exact resolved configuration, including the WHIR selection, without tuning
-or recording profiler buffers. RSS includes corpus construction, public setup,
+the exact resolved configuration without recording profiler buffers. RSS includes corpus construction, public setup,
 and verification. The parent rejects mismatching latency/memory configurations.
 
 Use a separate build and output directory for heap measurements:
@@ -190,8 +179,7 @@ cargo bench --bench mul_bitz --features span-metrics,bench-internals,bench-peak-
 
 Instrumented builds cannot emit latency samples. Heap peaks cover one verified
 trial after preparation, include its live baseline allocations, and exclude
-reporting. Native WHIR heap runs require explicit parameters from the latency
-campaign. Heap-only campaigns have memory records, not fabricated timings.
+reporting. Heap-only campaigns have memory records, not fabricated timings.
 
 Each new output directory contains `manifest.json`, `samples.jsonl`, and worker
 logs. Existing artifacts are never overwritten by the benchmark. The manifest
