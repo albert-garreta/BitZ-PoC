@@ -76,15 +76,18 @@ use bitz::piop::spartan::{
 /// Path dependencies have no Git revision in Cargo.lock.
 pub fn local_vendor_revision(package: &str) -> String {
     let revision = if package.starts_with("p3-") {
-        env!("PLONKY3_REVISION")
+        option_env!("PLONKY3_REVISION")
     } else if package.starts_with("binius-") {
-        env!("BINIUS64_REVISION")
+        option_env!("BINIUS64_REVISION")
     } else if package == "limber" {
-        env!("LIMBER_REVISION")
+        option_env!("LIMBER_REVISION")
     } else {
         panic!("unknown benchmark dependency {package}");
     };
-    revision.to_owned()
+    // These are git dependencies now, not path deps with no Cargo.lock
+    // revision: this fallback is only reached if a build.rs-style variable
+    // was never stamped, which is expected without that stamping step.
+    revision.unwrap_or("unknown").to_owned()
 }
 
 // ---------------------------------------------------------------------
