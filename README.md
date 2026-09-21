@@ -266,6 +266,12 @@ and `2^7` compressions.
 | `all-binius` | Both relations in Binius64, using BaseFold/FRI (paper: Binius UDR) |
 | `binius-ligerito` | Both relations in Binius64, using the BitZ/Ligerito opener (paper: Binius Johnson) |
 
+Every other BitZ benchmark in this document is built with the `unchecked`
+feature (release integer arithmetic, no overflow guards); the hybrid bench is
+the one exception: its constructor refuses `unchecked` because the hybrid
+proof relies on checked arithmetic and constraints, so it is built with
+`--features hybrid` alone and its rows are checked-arithmetic numbers.
+
 The sweep below runs all three modes at rates 1/2 and 1/8, with 1 and 10
 threads, one warmup and five measured iterations per shape. The BitZ hybrid
 checks a 100-bit whole-protocol union bound; the Binius/Ligerito mode uses
