@@ -137,7 +137,7 @@ Our approach decomposes the witness into a string of bits and commits to it over
 Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit that the factors across all the grand products have low entropy (i.e.\ they take a ``small'' amount of different values).   
 
 
- We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing; and integer multiplication, consistently obtaining better performance than prior approaches on most tasks. As an example, we prove a SHA-256 hash of an $8$\,kB ($2^7$ compressions) message followed by a p256 ECDSA signature verification with $74$\,ms and $3.9$\,ms prover and verifier time, respectively, and with a proof of $92$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only), at $100$ bits of round-by-round knowledge soundness. With $10$ threads the times are $27.1$\,ms and $3.5$\,ms.
+ We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5.3$ million proved 32-bit integer multiplications on a  MacBook Air M5 24\,GB (10 threads, CPU-only). We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only). With $10$ threads the times are $21$\,ms and $3.3$\,ms. 
 
 \end{abstract}
 
@@ -208,27 +208,26 @@ The table below shows highlight benchmark results of our implementation of \ftwo
          \cmidrule(lr){3-4} \cmidrule(lr){5-6}
          Computation & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
          \midrule
-         SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/2$ & 65.4 & \textbf{24.4} & 3.97 & 3.63 & 134 & 0.804 \\
-         \quad ($8$\,KB message) & \ftwoz-SNARK, rate $1/8$ & \textbf{65.1} & 25.1 & \textbf{3.74} & \textbf{3.28} & \textbf{91} & 0.805 \\
-         \quad  ($2^7$ compressions) & Binius64~\cite{binius64}, rate $1/2$ & 83.2 & 39.0 & 6.12 & 4.29 & 331 & \textbf{0.447} \\
-         \quad  (secp256k1) & Binius64, rate $1/8$ & 96.5 & 42.9 & 5.99 & 3.97 & 250 & 0.463 \\
-          & Zinc+ & 4707 & 970 & 319 & 115 & 2432 & 2.03 \\
+         $2^{21}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{1485} & \textbf{371} & 7.88 & 4.95 & 225 & \textbf{1.77} \\
+         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 1755 & 420 & \textbf{7.61} & \textbf{4.51} & \textbf{140} & 2.04 \\
+          & Binius64~\cite{binius64}, rate $1/2$ & 3466 & -- & 79.2 & -- & 559 & 14.7 \\
+          & Binius64, rate $1/8$ & -- & -- & -- & -- & -- & -- \\
+          & Limber~\cite{limber} & 18155 & 5471 & 990 & 815 & 36499 & 13.8 \\
+          & Zinc+~\cite{zincplus} & 11446 & 2951 & 35.7 & 16.1 & 5552 & 4.89 \\
+         \addlinespace
+         SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/2$ & \textbf{42.5} & \textbf{18.2} & 3.38 & 3.41 & 118 & 0.800 \\
+         \quad ($2$\,KB message) & \ftwoz-SNARK, rate $1/8$ & 43.6 & 19.0 & \textbf{3.24} & \textbf{3.33} & \textbf{75} & 0.804 \\
+         \quad  ($2^5$ compressions) & Binius64, rate $1/2$ & 76.7 & 37.0 & 5.01 & 3.52 & 331 & \textbf{0.409} \\
+         \quad  (secp256k1) & Binius64, rate $1/8$ & 90.0 & 40.5 & 4.86 & 3.37 & 250 & 0.416 \\
          \addlinespace
          RSA and & \ftwoz-SNARK, rate $1/8$ & \textbf{287} & \textbf{122} & \textbf{7.9} & \textbf{10.1} & \textbf{268} & -- \\
-         Poseidon \cite{limber} & Limber~\cite{limber} & 1048 & 527 & 38.3 & 37.5 & 5769 & -- \\
-          & Zinc+~\cite{zincplus} & 1876 & 523 & 16.1 & 12.1 & 1272 & -- \\
+         Poseidon \cite{limber} & Limber & 1048 & 527 & 38.3 & 37.5 & 5769 & -- \\
+          & Zinc+ & 1876 & 523 & 16.1 & 12.1 & 1272 & -- \\
          \addlinespace
          $2^{20}$ mult.\ mod $2^{32}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1132} & \textbf{287} & 51.1 & \textbf{15.7} & 303 & \textbf{5.30} \\
          and $2^{12}$ SHA-256 & \ftwoz-SNARK, rate $1/8$ & 1456 & 360 & \textbf{50.6} & 15.9 & \textbf{176} & 5.48 \\
           & Binius64, rate $1/2$ & 1995 & 617 & 87.5 & 27.3 & 569 & 12.7 \\
           & Binius64, rate $1/8$ & 2417 & 710 & 85.8 & 26.0 & 387 & 12.7 \\
-         \addlinespace
-         $2^{19}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{361} & \textbf{101} & 4.24 & 3.07 & 189 & \textbf{0.489} \\
-         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 421 & 114 & \textbf{4.23} & \textbf{2.95} & \textbf{116} & 0.546 \\
-          & Binius64, rate $1/2$ & 867 & 272 & 20.5 & 8.96 & 472 & 3.67 \\
-          & Binius64, rate $1/8$ & 1062 & 313 & 20.2 & 8.77 & 330 & 3.93 \\
-          & Limber & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
-          & Zinc+ & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
 
 
 
@@ -238,7 +237,7 @@ The table below shows highlight benchmark results of our implementation of \ftwo
        \end{tabular}
      \caption{  Performance of \ftwoz \ on  different  computations of practical interest that are costly to arithmetize over finite fields. 
      For each such computation, we also benchmark the performance of a selection of  prior state of the art protocols for each specific computation. 
-     All experiments were run on a MacBook Air M5 24\,GB, CPU-only, targeting $100$ bits of security (except for the RSA and Poseidon experiment, which targets $114$ bits). See \iflncs\cref{s:experiments,s:further_experiments}\else\cref{s:experiments}\fi{} for details on these and more experiments. % Cells with ``--'' indicate that the computer ran out of memory or that the value was not measured.
+     All experiments were run on a MacBook Air M5 24\,GB, CPU-only, targeting $100$ bits of security (except for the RSA and Poseidon experiment, which targets $114$ bits). See \iflncs\cref{s:experiments,s:further_experiments}\else\cref{s:experiments}\fi{} for details on these and more experiments. Cells with ``--'' indicate that the computer ran out of memory or that the value was not measured.
      %We mostly display $2^{17}$ multiplications because this is roughly the amount where Binius64 achieves its highest throughput. For different amounts, \ftwoz\ outperforms by a wider margin. For larger sizes Binius64 runs out of memory, as showcased in the $2^{21}$ multiplications row.
     }     \label{tab:intro_table}
  \end{table}
@@ -3011,6 +3010,7 @@ Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of r
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius. Further instantiation details are given in \cref{s:instantiation}.
 
+
 % [AI-drafted (Claude Opus 5), 2026-09-18: the anonymous-artifact sentence of the submission build, at the author's request; please review]
 
 
@@ -3189,15 +3189,52 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 \subsection{SHA-256 hashing followed by ECDSA signature verification}
 
 
-We experiment with proving the SHA-256 hash of a message of a few KB followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). For the latter we compose two circuits in the Binius64 repo, one for SHA-256 and one for ECDSA signature verification.
+We experiment with proving the SHA-256 hash of a message of a few KB followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}). 
+The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}.
+
+We benchmark \ftwoz\ both for proving ECDSA over the curve P-256 and over secp256k1. In the latter case, we compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). To do so, we compose two circuits in the Binius64 repository, one for SHA-256 and one for ECDSA (on the secp256k1 curve) signature verification. The repository does not include a circuit for ECDSA verficiation on P-256, and hence we do not benchmark it.
 
 
-For \ftwoz, we  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}). 
-The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}. 
+For ECDSA over secp256k1, \ftwoz\  circuit matches mathematically the circuit in Binius64, i.e.\ we prove the same sequence of secp251k1 operations, albeit these operations are arithmetized over $\ZZ$ in our case. This arithmetization was produced with AI, while the rest of SHA and ECDSA arithmetizations used by \ftwoz\ were obtained from a lean specification, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}
 
-We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}.
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns (BitZ on the circuit matched to Binius64's stock secp256k1 verifier; the Zinc+ row is unchanged); please review]
+%Similarly,  Further circuit optimizations could be applied. 
+
+ %We compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). For the latter we compose two circuits in the Binius64 repo, one for SHA-256 and one for ECDSA (on the secp256k1 curve) signature verification.
+
+We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul}, when seeking to prove a large amount of hashes, it is preferable to arithmetize the hash over a binary field and follow the approach described in \cref{s:experiments_sha_modmul}. Here we have instead arithmetized SHA-256 as a $\mathsf{CM}$ instance (\cref{e:CM_rel}).
+
+
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}rlrrrrrrr@{}}
+    \toprule
+     &  & Witgen & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
+    \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+    Message & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
+    \midrule
+    960\,B & \ftwoz-SNARK, rate $1/2$ & 2.41 & \textbf{46.0} & \textbf{19.0} & 3.54 & 3.67 & 117 & \textbf{0.792} \\
+    $2^{4}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.40} & 48.7 & 19.8 & \textbf{3.33} & \textbf{3.58} & \textbf{74} & 0.796 \\
+    \addlinespace
+    1984\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.48} & 51.1 & \textbf{20.7} & 3.51 & 3.60 & 119 & \textbf{0.795} \\
+    $2^{5}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.49 & \textbf{50.3} & 20.8 & \textbf{3.34} & \textbf{3.38} & \textbf{76} & 0.800 \\
+    \addlinespace
+    4032\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.25} & \textbf{54.9} & \textbf{22.3} & 3.99 & 3.86 & 126 & \textbf{0.790} \\
+    $2^{6}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.28 & 58.0 & 22.9 & \textbf{3.58} & \textbf{3.45} & \textbf{82} & 0.792 \\
+    \addlinespace
+    8128\,B & \ftwoz-SNARK, rate $1/2$ & 2.40 & \textbf{69.4} & \textbf{26.3} & 4.19 & 3.88 & 135 & \textbf{0.796} \\
+    $2^{7}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.35} & 73.8 & 27.3 & \textbf{4.04} & \textbf{3.61} & \textbf{92} & 0.799 \\
+    \bottomrule
+  \end{tabular}
+   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
+  \label{tab:sha256-ecdsa-p256}
+\end{table}
+
+
+
+
 \begin{table}[H]
   \centering
   \small
@@ -3243,33 +3280,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
   \label{tab:sha256-ecdsa-secp256k1}
 \end{table}
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; please review]
-\begin{table}[H]
-  \centering
-  \small
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{@{}rlrrrrrrr@{}}
-    \toprule
-     &  & Witgen & \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof & Peak mem. \\
-    \cmidrule(lr){4-5} \cmidrule(lr){6-7}
-    Message & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
-    \midrule
-    960\,B & \ftwoz-SNARK, rate $1/2$ & 2.41 & \textbf{46.0} & \textbf{19.0} & 3.54 & 3.67 & 117 & \textbf{0.792} \\
-    $2^{4}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.40} & 48.7 & 19.8 & \textbf{3.33} & \textbf{3.58} & \textbf{74} & 0.796 \\
-    \addlinespace
-    1984\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.48} & 51.1 & \textbf{20.7} & 3.51 & 3.60 & 119 & \textbf{0.795} \\
-    $2^{5}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.49 & \textbf{50.3} & 20.8 & \textbf{3.34} & \textbf{3.38} & \textbf{76} & 0.800 \\
-    \addlinespace
-    4032\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.25} & \textbf{54.9} & \textbf{22.3} & 3.99 & 3.86 & 126 & \textbf{0.790} \\
-    $2^{6}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.28 & 58.0 & 22.9 & \textbf{3.58} & \textbf{3.45} & \textbf{82} & 0.792 \\
-    \addlinespace
-    8128\,B & \ftwoz-SNARK, rate $1/2$ & 2.40 & \textbf{69.4} & \textbf{26.3} & 4.19 & 3.88 & 135 & \textbf{0.796} \\
-    $2^{7}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.35} & 73.8 & 27.3 & \textbf{4.04} & \textbf{3.61} & \textbf{92} & 0.799 \\
-    \bottomrule
-  \end{tabular}
-   \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest, for \ftwoz-SNARK alone: Binius64 does not implement ECDSA over P-256. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
-  \label{tab:sha256-ecdsa-p256}
-\end{table}
 
 
 
@@ -3393,7 +3403,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 
 
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; Plonky3-FRI rows filled, sizes above 2^19 re-measured; please review]
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; sizes above 2^19 re-measured; please review]
 \begin{table}[H]
   \centering
   \small
@@ -3410,7 +3420,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 0.59 & 76.2 & 36.1 & \textbf{1.52} & \textbf{1.50} & 243 & 0.287 \\
      & Binius (Johnson), rate $1/2$ & 0.55 & 71.6 & 35.9 & 2.68 & 2.76 & 345 & 0.290 \\
      & Binius (Johnson), rate $1/8$ & 0.55 & 83.0 & 38.4 & 2.18 & 2.24 & 180 & 0.289 \\
-     & Plonky3 (FRI), rate $1/2$ & 1.89 & 1409 & 239 & 16.0 & 16.9 & 622 & 0.107 \\
      & Limber (Brakedown) & 0.44 & 240 & 142 & 38.5 & 37.6 & 3364 & 0.340 \\
      & Zinc+, rate $1/4$ & 1.24 & 192 & 114 & 29.2 & 13.5 & 632 & 0.101 \\
     \addlinespace
@@ -3420,7 +3429,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 2.46 & 274 & 92.0 & 4.76 & 2.53 & 283 & 1.000 \\
      & Binius (Johnson), rate $1/2$ & 2.28 & 232 & 85.2 & 6.25 & 4.29 & 370 & 0.945 \\
      & Binius (Johnson), rate $1/8$ & 2.29 & 285 & 94.8 & 5.70 & 3.60 & 195 & 1.01 \\
-     & Plonky3 (FRI), rate $1/2$ & 7.40 & 5647 & 966 & 19.1 & 20.5 & 764 & 0.394 \\
      & Limber (Brakedown) & 1.68 & 1148 & 416 & 85.8 & 76.0 & 5493 & 1.04 \\
      & Zinc+, rate $1/4$ & 1.85 & 735 & 254 & 30.0 & 14.0 & 866 & 0.322 \\
     \addlinespace
@@ -3430,7 +3438,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 9.74 & 1062 & 313 & 20.2 & 8.77 & 330 & 3.93 \\
      & Binius (Johnson), rate $1/2$ & 9.15 & 892 & 286 & 21.3 & 10.2 & 404 & 3.75 \\
      & Binius (Johnson), rate $1/8$ & 9.17 & 1098 & 322 & 20.8 & 9.80 & 214 & 3.98 \\
-     & Plonky3 (FRI), rate $1/2$ & 28.7 & 22908 & 4011 & 23.2 & 25.2 & 938 & 1.55 \\
      & Limber (Brakedown) & 6.48 & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
      & Zinc+, rate $1/4$ & 7.20 & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
     \addlinespace
@@ -3440,7 +3447,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
-     & Plonky3 (FRI), rate $1/2$ & 115 & 92216 & 16849 & 26.9 & 29.0 & 1140 & 6.14 \\
      & Limber (Brakedown) & 24.5 & 18155 & 5471 & 990 & 815 & 36499 & 13.8 \\
      & Zinc+, rate $1/4$ & 28.8 & 11446 & 2951 & 35.7 & 16.1 & 5552 & 4.89 \\
     \addlinespace
@@ -3465,7 +3471,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 
 
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; Plonky3-FRI and Zinc+ rows added; please review]
+
 \begin{table}[H]
   \centering
   \small
@@ -3482,7 +3488,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 0.42 & 76.7 & 36.8 & \textbf{1.23} & \textbf{1.17} & 242 & 0.242 \\
      & Binius (Johnson), rate $1/2$ & 0.38 & 68.4 & 35.7 & 2.37 & 2.41 & 345 & 0.234 \\
      & Binius (Johnson), rate $1/8$ & 0.39 & 88.1 & 39.6 & 1.90 & 1.90 & 180 & 0.247 \\
-     & Plonky3 (FRI), rate $1/2$ & 30.2 & 3415 & 586 & 23.7 & 24.9 & 1027 & 0.228 \\
      & Limber (Brakedown) & 0.43 & 388 & 189 & 39.8 & 39.0 & 4064 & 0.477 \\
      & Zinc+, rate $1/4$ & 4.04 & 367 & 160 & 29.3 & 13.7 & 711 & 0.179 \\
     \addlinespace
@@ -3492,7 +3497,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 1.79 & 272 & 91.7 & \textbf{3.57} & \textbf{1.95} & 283 & 0.912 \\
      & Binius (Johnson), rate $1/2$ & 1.59 & 234 & 85.9 & 5.14 & 3.78 & 370 & 0.869 \\
      & Binius (Johnson), rate $1/8$ & 1.59 & 283 & 94.9 & 4.54 & 3.06 & 192 & 0.928 \\
-     & Plonky3 (FRI), rate $1/2$ & 121 & 13769 & 2409 & 26.8 & 29.6 & 1176 & 0.879 \\
      & Limber (Brakedown) & 1.66 & 1850 & 592 & 91.3 & 82.3 & 7277 & 1.42 \\
      & Zinc+, rate $1/4$ & 9.28 & 1400 & 410 & 30.2 & 14.1 & 1175 & 0.657 \\
     \addlinespace
@@ -3502,7 +3506,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 6.97 & 1063 & 313 & 15.4 & 7.13 & 330 & 3.41 \\
      & Binius (Johnson), rate $1/2$ & 6.39 & 891 & 282 & 16.9 & 9.07 & 404 & 3.28 \\
      & Binius (Johnson), rate $1/8$ & 6.46 & 1095 & 319 & 16.3 & 8.10 & 213 & 3.51 \\
-     & Plonky3 (FRI), rate $1/2$ & 477 & 55678 & 10155 & 30.7 & 33.9 & 1338 & 3.46 \\
      & Limber (Brakedown) & 6.59 & 7510 & 2062 & 334 & 247 & 19011 & 4.91 \\
      & Zinc+, rate $1/4$ & 37.0 & 5716 & 1414 & 32.5 & 14.8 & 3088 & 2.55 \\
     \addlinespace
@@ -3512,7 +3515,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 31.4 & 4195 & 1294 & 59.4 & 20.4 & 383 & 13.7 \\
      & Binius (Johnson), rate $1/2$ & 28.9 & 3498 & 1115 & 61.0 & 22.9 & 440 & 12.6 \\
      & Binius (Johnson), rate $1/8$ & 28.8 & 4359 & 1345 & 60.1 & 22.7 & 237 & 13.4 \\
-     & Plonky3 (FRI), rate $1/2$ & 1916 & 226488 & 44412 & 34.8 & 38.0 & 1530 & 13.8 \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
      & Zinc+, rate $1/4$ & 149 & 22823 & 5514 & 40.5 & 16.9 & 10470 & 10.1 \\
     \bottomrule
@@ -3521,7 +3523,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
   \label{tab:native-mul-u64}
 \end{table}
 
-% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; Plonky3-FRI and Zinc+ rows added, the paging Binius64 2^21 rows are excluded; please review]
+
 \begin{table}[H]
   \centering
   \small
@@ -3538,7 +3540,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 1.69 & 294 & 98.5 & 7.47 & 3.61 & 283 & 1.09 \\
      & Binius (Johnson), rate $1/2$ & 1.46 & 256 & 91.8 & 9.03 & 5.39 & 370 & 1.05 \\
      & Binius (Johnson), rate $1/8$ & 1.46 & 305 & 101 & 8.51 & 4.74 & 193 & 1.11 \\
-     & Plonky3 (FRI), rate $1/2$ & 132 & 6994 & 1212 & 37.1 & 40.4 & 1729 & 0.444 \\
      & Limber (Brakedown) & 0.97 & 1059 & 374 & 48.4 & 46.4 & 5491 & 0.787 \\
      & Zinc+, rate $1/4$ & 5.23 & 728 & 246 & 29.8 & 13.9 & 867 & 0.347 \\
     \addlinespace
@@ -3548,7 +3549,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 6.41 & 1144 & 330 & 30.9 & 11.3 & 331 & 4.18 \\
      & Binius (Johnson), rate $1/2$ & 6.07 & 983 & 302 & 33.2 & 13.3 & 404 & 4.06 \\
      & Binius (Johnson), rate $1/8$ & 6.14 & 1167 & 336 & 31.8 & 12.2 & 215 & 4.29 \\
-     & Plonky3 (FRI), rate $1/2$ & 474 & 28295 & 5053 & 41.4 & 45.5 & 1883 & 1.72 \\
      & Limber (Brakedown) & 3.79 & 4053 & 1202 & 116 & 103 & 12045 & 2.56 \\
      & Zinc+, rate $1/4$ & 20.8 & 2854 & 739 & 31.1 & 14.2 & 1792 & 1.32 \\
     \addlinespace
@@ -3558,7 +3558,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Binius (UDR), rate $1/8$ & 28.5 & 4519 & 1342 & 122 & 34.9 & 383 & 16.0 \\
      & Binius (Johnson), rate $1/2$ & 25.0 & 3892 & 1182 & 123 & 34.9 & 441 & 15.5 \\
      & Binius (Johnson), rate $1/8$ & 27.7 & 4723 & 1379 & 124 & 36.3 & 236 & 15.7 \\
-     & Plonky3 (FRI), rate $1/2$ & 2044 & 114595 & 21066 & 43.2 & 47.3 & 2046 & 6.84 \\
      & Limber (Brakedown) & 15.4 & 17144 & 4530 & 414 & 324 & 36678 & 9.47 \\
      & Zinc+, rate $1/4$ & 76.4 & 11384 & 2704 & 35.4 & 15.9 & 5548 & 4.51 \\
     \addlinespace
@@ -3566,7 +3565,6 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & \ftwoz-SNARK, rate $1/8$ & 2.94 & 8369 & 2582 & \textbf{25.6} & \textbf{10.9} & \textbf{163} & 7.04 \\
      & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
-     & Plonky3 (FRI), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
      & Zinc+, rate $1/4$ & 305 & 48154 & 13231 & 51.2 & 19.2 & 20303 & 16.2 \\
     \bottomrule
