@@ -39,7 +39,6 @@ p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49
 p3-commit = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-dft = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-field = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
-p3-fri = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-goldilocks = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-matrix = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-merkle-tree = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
@@ -48,7 +47,6 @@ p3-multilinear-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = 
 p3-sha256-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-sumcheck = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-symmetric = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
-p3-uni-stark = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-whir = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
@@ -328,27 +326,8 @@ plonky3-sha256-bench = [
     "dep:p3-sha256-air",
     "dep:p3-util",
 ]
-# Univariate Goldilocks STARK + FRI for independent wrapping u32 multiplication.
-plonky3-fri-bench = [
-    "dep:p3-air",
-    "dep:p3-challenger",
-    "dep:p3-commit",
-    "dep:p3-dft",
-    "dep:p3-field",
-    "dep:p3-fri",
-    "dep:p3-goldilocks",
-    "dep:p3-matrix",
-    "dep:p3-merkle-tree",
-    "dep:p3-symmetric",
-    "dep:p3-uni-stark",
-    "dep:postcard",
-]
 native-mul-compare = [
     "span-metrics",
-    "plonky3-fri-bench",
-    "plonky3-whir-bench",
-    "dep:p3-air",
-    "dep:p3-multi-stark",
     "binius64-bench",
     # Limber's own wrapping-multiplication rows, proved in process through
     # its Brakedown Mod-PCS engine (benches/mul/native/limber.rs).

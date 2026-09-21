@@ -95,7 +95,7 @@ def import_logs(log_dir: Path, out: Path, provenance: dict):
         case = dict(mode="proof", workload=meta["workload"], backend="zinc-plus", log_n=meta["log_n"],
                     seed=meta["seed"], threads=meta["threads"], log_inv_rate=meta["log_inv_rate"])
         job = dict(proof_fingerprints=False, id=identifier, case=case, reps=meta["reps"], warmups=0,
-                   memory="rss", skip=None, skip_unsupported=True, tuning_reps=0)
+                   memory="rss", skip=None, skip_unsupported=True)
         if meta.get("exit_code") != 0 or not (log_dir / f"{stem}.out").exists():
             cases.append(dict(job=job, status="skipped", effective={},
                               reason=meta.get("reason") or f"worker exited with {meta.get('exit_code')}"))

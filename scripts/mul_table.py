@@ -41,12 +41,11 @@ SCHEMES = [
     ("binius64@3", "Binius (UDR), rate $1/8$"),
     ("binius64-ligerito-rbr@1", "Binius (Johnson), rate $1/2$"),
     ("binius64-ligerito-rbr@3", "Binius (Johnson), rate $1/8$"),
-    ("plonky3-fri@1", "Plonky3 (FRI), rate $1/2$"),
     ("limber", "Limber (Brakedown)"),
     ("zinc-plus@2", "Zinc+, rate $1/4$"),
 ]
 NAMES = {"bitz": "\\ftwoz-SNARK", "binius64": "Binius (UDR)", "binius64-ligerito-rbr": "Binius (Johnson)",
-         "plonky3-fri": "Plonky3 (FRI)", "limber": "Limber", "zinc-plus": "Zinc+"}
+         "limber": "Limber", "zinc-plus": "Zinc+"}
 PLACEHOLDER = "--"
 WORKLOAD_ALIASES = {"u32": "u32-mod32"}
 
@@ -62,7 +61,7 @@ def scheme_key(case: dict) -> str:
     if backend == "binius64-ligerito":
         accounting = case.get("binius_ligerito_accounting") or "union"
         return f"binius64-ligerito-{accounting}@{int(case.get('log_inv_rate') or 1)}"
-    if backend in ("binius64", "plonky3-fri", "zinc-plus"):
+    if backend in ("binius64", "zinc-plus"):
         return f"{backend}@{int(case.get('log_inv_rate') or 1)}"
     return backend
 
@@ -318,15 +317,6 @@ def main(argv=None) -> int:
             f"rate $1/{1 << r}$" + (f" (${q}$ queries)" if q else "") for r, q in rates) + " for $100$ bits)")
     if any(s.startswith("binius64-ligerito-rbr@") for s, _ in schemes):
         clauses.append("Binius (Johnson) (the same circuit and PIOP, every oracle opened by Johnson-regime Ligerito, $100$ bits round by round)")
-    fri_rows = config_of("plonky3-fri@1")
-    if fri_rows:
-        cfgs = [row["effective"].get("config") or {} for row in fri_rows]
-        widths = sorted({int(c.get("trace_width", 0)) for c in cfgs})
-        queries = sorted({int(c.get("num_queries", 0)) for c in cfgs})
-        clauses.append("Plonky3 (FRI) (Goldilocks STARK, degree-$5$ extension, rate $1/2$, "
-                       f"${queries[0]}$" + (f"--${queries[-1]}$" if len(queries) > 1 else "") + " queries for a proven $100$-bit round-by-round report; "
-                       + ("the wrapping u32 AIR" if workload == "u32-mod32" else "a full-product AIR over $16$-bit limbs")
-                       + f", ${widths[0]}$ trace columns)")
     if config_of("limber"):
         clauses.append("Limber (one integer-mod R1CS row per multiplication, IntEval/Brakedown, $100$-bit column-open target)")
     zinc_rows = config_of("zinc-plus@2")

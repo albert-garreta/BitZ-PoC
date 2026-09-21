@@ -118,16 +118,6 @@ pub struct Args {
     pub log_inv_rate: Option<u8>,
     #[arg(long, default_value = "union", value_parser = ["union", "rbr"])]
     pub binius_ligerito_accounting: String,
-    #[arg(long)]
-    pub whir_degree: Option<usize>,
-    #[arg(long)]
-    pub whir_folding: Option<usize>,
-    #[arg(long)]
-    pub whir_pow: Option<usize>,
-    #[arg(long)]
-    pub whir_rate_cap: Option<usize>,
-    #[arg(long, default_value_t = 5, value_parser = crate::common::cli::positive)]
-    pub tuning_reps: usize,
     #[arg(long, default_value_t = 100)]
     pub limber_bits: usize,
     #[arg(long, value_enum, default_value = "none")]
@@ -156,14 +146,6 @@ pub struct BitzConfig {
     pub bound: Option<String>,
     pub ligerito: Option<String>,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WhirConfig {
-    pub degree: usize,
-    pub folding: usize,
-    pub log_inv_rate: usize,
-    pub max_pow_bits: usize,
-    pub max_round_log_inv_rate: Option<usize>,
-}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Case {
     pub mode: Mode,
@@ -184,8 +166,6 @@ pub struct Case {
     pub binius_ligerito_accounting: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limber_bits: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub whir: Option<WhirConfig>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
@@ -197,19 +177,15 @@ pub struct Job {
     pub memory: Memory,
     pub skip: Option<String>,
     pub skip_unsupported: bool,
-    pub tuning_reps: usize,
 }
 const PROOF_BACKENDS: &[&str] = &[
     "bitz",
     "binius64",
     "binius64-ligerito",
-    "plonky3-fri",
-    "plonky3-whir",
     "limber",
 ];
 const PCS_BACKENDS: &[&str] = &[
     "bitz",
-    "plonky3-whir",
     "binius64-basefold",
     "bitz-ligerito-binary",
 ];
@@ -327,22 +303,6 @@ impl Args {
         ensure!(
             cfg!(feature = "parallel") || threads == [1],
             "serial builds require --threads 1"
-        );
-        ensure!(
-            self.whir_degree.is_none_or(|n| [2, 4, 5].contains(&n)),
-            "WHIR degree must be 2, 4 or 5"
-        );
-        ensure!(
-            self.whir_folding.is_none_or(|n| (2..=12).contains(&n)),
-            "invalid WHIR folding"
-        );
-        ensure!(
-            self.whir_pow.is_none_or(|n| n <= 32),
-            "invalid WHIR PoW cap"
-        );
-        ensure!(
-            self.whir_rate_cap.is_none_or(|n| (1..=8).contains(&n)),
-            "invalid WHIR rate cap"
         );
         let ws = self.w.clone().unwrap_or_else(|| vec![1]);
         let splits = self.split.clone().unwrap_or_else(|| vec![0]);
@@ -507,17 +467,10 @@ impl Args {
                                     preset: (self.mode == Mode::Outer).then(|| self.preset.clone()),
                                     log_inv_rate: if self.mode == Mode::Witness {
                                         None
-                                    } else if backend == "plonky3-whir" && self.mode == Mode::Proof
-                                    {
-                                        self.log_inv_rate
                                     } else {
                                         matches!(
                                             backend,
-                                            "binius64"
-                                                | "binius64-ligerito"
-                                                | "binius64-basefold"
-                                                | "plonky3-fri"
-                                                | "plonky3-whir"
+                                            "binius64" | "binius64-ligerito" | "binius64-basefold"
                                         )
                                         .then_some(self.log_inv_rate.unwrap_or(1))
                                     },
@@ -526,37 +479,6 @@ impl Args {
                                         .then(|| self.binius_ligerito_accounting.clone()),
                                     limber_bits: (backend == "limber" && self.mode == Mode::Proof)
                                         .then_some(self.limber_bits),
-                                    whir: if backend == "plonky3-whir"
-                                        && self.mode != Mode::Witness
-                                        && (self.mode == Mode::Pcs
-                                            || self.whir_degree.is_some()
-                                            || self.whir_folding.is_some()
-                                            || self.whir_pow.is_some()
-                                            || self.whir_rate_cap.is_some())
-                                    {
-                                        Some(WhirConfig {
-                                            degree: self.whir_degree.unwrap_or(
-                                                if self.mode == Mode::Pcs {
-                                                    pcs_whir_degree(workload)
-                                                } else {
-                                                    5
-                                                },
-                                            ),
-                                            folding: self.whir_folding.unwrap_or(
-                                                if self.mode == Mode::Pcs {
-                                                    ((log_n as usize * 3 / 4).saturating_sub(5))
-                                                        .clamp(2, 12)
-                                                } else {
-                                                    4
-                                                },
-                                            ),
-                                            log_inv_rate: self.log_inv_rate.unwrap_or(1) as usize,
-                                            max_pow_bits: self.whir_pow.unwrap_or(12),
-                                            max_round_log_inv_rate: self.whir_rate_cap,
-                                        })
-                                    } else {
-                                        None
-                                    },
                                 };
                                 let skip = case.unsupported(compare);
                                 if let Some(reason) = &skip {
@@ -584,7 +506,6 @@ impl Args {
                                     memory: self.memory,
                                     skip,
                                     skip_unsupported: self.skip_unsupported,
-                                    tuning_reps: self.tuning_reps,
                                 });
                             }
                         }
@@ -594,17 +515,6 @@ impl Args {
         }
         ensure!(jobs.iter().any(|j| j.skip.is_none()), "no runnable cases");
         Ok(jobs)
-    }
-}
-fn pcs_whir_degree(workload: Workload) -> usize {
-    if workload == Workload::BabyBear && cfg!(feature = "plonky3-whir-degree4-bench") {
-        4
-    } else if workload == Workload::U32Full
-        && cfg!(feature = "plonky3-whir-goldilocks-degree2-bench")
-    {
-        2
-    } else {
-        5
     }
 }
 impl Case {
@@ -624,18 +534,6 @@ impl Case {
             "PCS supports u32-full and baby-bear"
         } else if self.mode == Mode::Pcs && !PCS_BACKENDS.contains(&self.backend.as_str()) {
             "backend has no PCS adapter"
-        } else if self.backend == "plonky3-whir"
-            && self.mode == Mode::Pcs
-            && self.whir.is_some_and(|p| {
-                p.degree != pcs_whir_degree(self.workload) || p.max_round_log_inv_rate.is_some()
-            })
-        {
-            "PCS WHIR uses its compiled extension degree and does not support --whir-rate-cap"
-        } else if self.backend == "plonky3-whir"
-            && self.mode == Mode::Proof
-            && self.whir.is_some_and(|p| p.degree == 4)
-        {
-            "native WHIR supports extension degrees 2 and 5"
         } else if self.mode == Mode::Piop && self.workload != Workload::U32Full {
             "whole PIOP experiment supports u32-full"
         } else if self.mode == Mode::Piop && self.variant.as_deref() == Some("zero") {
@@ -647,11 +545,6 @@ impl Case {
             && matches!(self.workload, Workload::BabyBear | Workload::U32Full)
         {
             "native comparisons use u32-mod32, u64, or u128"
-        } else if self.mode != Mode::Pcs
-            && self.workload != Workload::U32Mod32
-            && self.backend == "plonky3-whir"
-        {
-            "Plonky3-WHIR native multiplication supports u32-mod32 (Plonky3-FRI covers u64 and u128)"
         } else if self.mode != Mode::Pcs && !PROOF_BACKENDS.contains(&self.backend.as_str()) {
             "backend has no native proof adapter"
         } else if !compare && self.mode != Mode::Bounds && self.workload == Workload::U32Mod32 {

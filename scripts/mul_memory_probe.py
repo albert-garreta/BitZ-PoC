@@ -173,7 +173,7 @@ def scheme_of(args):
         return f"bitz@{args.log_inv_rate}"
     if args.backend == "binius64-ligerito":
         return f"binius64-ligerito-{args.binius_ligerito_accounting}@{args.log_inv_rate}"
-    if args.backend in ("binius64", "plonky3-fri"):
+    if args.backend == "binius64":
         return f"{args.backend}@{args.log_inv_rate}"
     return args.backend
 
@@ -210,7 +210,7 @@ def main(argv=None):
                   "--threads", str(args.threads), "--reps", str(args.reps), "--memory", "rss", "--skip-unsupported"]
     if args.backend == "bitz":
         experiment += ["--bitz-profile", "100", "--ligerito", args.bitz_profile or f"custom:{args.log_inv_rate}:4"]
-    if args.backend in ("binius64", "binius64-ligerito", "plonky3-fri"):
+    if args.backend in ("binius64", "binius64-ligerito"):
         experiment += ["--log-inv-rate", str(args.log_inv_rate)]
     if args.backend == "binius64-ligerito":
         experiment += ["--binius-ligerito-accounting", args.binius_ligerito_accounting]

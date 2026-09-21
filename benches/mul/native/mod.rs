@@ -6,10 +6,6 @@ use bitz::piop::spartan::mul::{MulLayout, MulWitness};
 mod binius;
 mod binius_ligerito;
 mod limber;
-mod mod32_air;
-mod plonky3;
-mod plonky3_whir;
-mod wide_mul_air;
 #[path = "../../common/trace_capture.rs"]
 mod trace_capture;
 use bitz::observability::Interval as CapturedSpan;
@@ -52,13 +48,6 @@ impl Workload {
             Self::U64 => "u64 multiplication",
             Self::U128 => "u128 multiplication",
         }
-    }
-    /// Backends with a native arithmetization of this workload.
-    fn supports(self, backend: Backend) -> bool {
-        // Plonky3-FRI proves u32 through the wrapping AIR and u64/u128 through
-        // the full-product AIR; the WHIR adapter (not a campaign backend) is
-        // still wired to the u32 AIR only. Every other adapter covers all three.
-        self == Self::U32 || backend != Backend::Plonky3Whir
     }
     /// Whether the operands are 128-bit values (the `u128` workload) rather
     /// than `u64` values.
@@ -351,8 +340,6 @@ fn captured<'a>(raw: &'a [CapturedSpan], name: &str, lo: u64, hi: u64) -> &'a Ca
 enum Context {
     Binius(binius::Context),
     BiniusLigerito(binius_ligerito::Context),
-    Plonky3Fri(plonky3::Context),
-    Plonky3Whir(plonky3_whir::Context),
     Limber(limber::Context),
 }
 impl Context {
@@ -363,7 +350,7 @@ impl Context {
         accounting: bitz::binius_ligerito::Accounting,
     ) -> anyhow::Result<Self> {
         Ok(match backend {
-            Backend::Bitz | Backend::Plonky3Whir => unreachable!("prepared separately"),
+            Backend::Bitz => unreachable!("prepared separately"),
             Backend::Binius => Self::Binius(binius::Context::setup_at_rate(corpus, rate)),
             Backend::BiniusLigerito => Self::BiniusLigerito(
                 binius_ligerito::Context::setup_at_rate(corpus, rate, accounting).map_err(
@@ -375,7 +362,6 @@ impl Context {
                     },
                 )?,
             ),
-            Backend::Plonky3Fri => Self::Plonky3Fri(plonky3::Context::setup_at_rate(corpus, rate)),
             Backend::Limber => Self::Limber(limber::Context::setup(corpus)),
         })
     }
@@ -383,8 +369,6 @@ impl Context {
         match self {
             Self::Binius(c) => c.run(),
             Self::BiniusLigerito(c) => c.run(),
-            Self::Plonky3Fri(c) => c.run(),
-            Self::Plonky3Whir(c) => c.run(),
             Self::Limber(c) => c.run(),
         }
     }
@@ -392,8 +376,6 @@ impl Context {
         match self {
             Self::Binius(c) => c.config(),
             Self::BiniusLigerito(c) => c.config(),
-            Self::Plonky3Fri(c) => c.config(),
-            Self::Plonky3Whir(c) => c.config(),
             Self::Limber(c) => c.config(),
         }
     }
@@ -406,8 +388,6 @@ enum Backend {
     Binius,
     #[value(name = "binius64-ligerito")]
     BiniusLigerito,
-    Plonky3Fri,
-    Plonky3Whir,
     Limber,
 }
 
@@ -417,8 +397,6 @@ impl Backend {
             Self::Bitz => "bitz",
             Self::Binius => "binius64",
             Self::BiniusLigerito => "binius64-ligerito",
-            Self::Plonky3Fri => "plonky3-fri",
-            Self::Plonky3Whir => "plonky3-whir",
             Self::Limber => "limber",
         }
     }
@@ -540,10 +518,6 @@ fn audit_backend(backend: Backend, corpus: &Corpus) -> WitnessAudit {
         Backend::Bitz => unreachable!("BitZ witnesses use the shared witness loop"),
         // The same Binius64 circuit and witness filler; only the opener differs.
         Backend::Binius | Backend::BiniusLigerito => binius::audit(corpus),
-        Backend::Plonky3Fri if corpus.workload != Workload::U32 => {
-            wide_mul_air::WideMulAir::for_workload(corpus.workload).audit(corpus)
-        }
-        Backend::Plonky3Fri | Backend::Plonky3Whir => mod32_air::audit(corpus),
         Backend::Limber => limber::audit(corpus),
     }
 }
@@ -580,12 +554,7 @@ mod witness_tests {
             for backend in [
                 Backend::Binius,
                 Backend::BiniusLigerito,
-                Backend::Plonky3Fri,
-                Backend::Plonky3Whir,
             ] {
-                if !workload.supports(backend) {
-                    continue;
-                }
                 assert_eq!(audit_backend(backend, &corpus).digest, corpus.digest);
             }
         }
@@ -640,85 +609,25 @@ pub(super) fn run(run: &mut Run) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-    let params = if backend == Backend::Plonky3Whir {
-        let selected = if let Some(p) = case.whir {
-            common::whir_tuning::Params {
-                extension_degree: p.degree,
-                folding: p.folding,
-                starting_log_inv_rate: p.log_inv_rate,
-                max_pow_bits: p.max_pow_bits,
-                max_round_log_inv_rate: p.max_round_log_inv_rate,
-            }
-        } else {
-            anyhow::ensure!(
-                run.latency(),
-                "heap-only WHIR requires explicit --whir-degree/--whir-folding/--whir-pow settings from the latency run"
-            );
-            let (params, report) = common::whir_tuning::tune_with_reps(
-                &[2, 5],
-                None,
-                run.job.tuning_reps,
-                |params| {
-                    if case
-                        .log_inv_rate
-                        .is_some_and(|rate| params.starting_log_inv_rate != rate as usize)
-                    {
-                        return Err("rate outside requested configuration".into());
-                    }
-                    plonky3_whir::Context::setup_with_params(Arc::clone(&corpus), params)
-                },
-                |c| c.run().metrics().witness_to_proof_ms,
-                plonky3_whir::Context::security,
-            )
-            .map_err(|error| {
-                if error.starts_with("no eligible WHIR configuration:") {
-                    anyhow::Error::new(super::Unsupported(error))
-                } else {
-                    anyhow::Error::msg(error)
-                }
-            })?;
-            run.tuning = Some(serde_json::to_value(report)?);
-            params
-        };
-        run.job.case.whir = Some(config::WhirConfig {
-            degree: selected.extension_degree,
-            folding: selected.folding,
-            log_inv_rate: selected.starting_log_inv_rate,
-            max_pow_bits: selected.max_pow_bits,
-            max_round_log_inv_rate: selected.max_round_log_inv_rate,
-        });
-        Some(selected)
-    } else {
-        None
-    };
     let started = std::time::Instant::now();
-    let context = if let Some(params) = params {
-        Context::Plonky3Whir(
-            plonky3_whir::Context::setup_with_params(Arc::clone(&corpus), params)
-                .map_err(super::Unsupported)?,
-        )
-    } else {
-        Context::setup(
-            backend,
-            Arc::clone(&corpus),
-            run.job.case.log_inv_rate.unwrap_or(1) as usize,
-            if run.job.case.binius_ligerito_accounting.as_deref() == Some("rbr") {
-                bitz::binius_ligerito::Accounting::RoundByRound
-            } else {
-                bitz::binius_ligerito::Accounting::UnionBound
-            },
-        )?
-    };
+    let context = Context::setup(
+        backend,
+        Arc::clone(&corpus),
+        run.job.case.log_inv_rate.unwrap_or(1) as usize,
+        if run.job.case.binius_ligerito_accounting.as_deref() == Some("rbr") {
+            bitz::binius_ligerito::Accounting::RoundByRound
+        } else {
+            bitz::binius_ligerito::Accounting::UnionBound
+        },
+    )?;
     let setup_ms = started.elapsed().as_secs_f64() * 1000.;
-    run.effective = json!({"config":context.config(),"corpus_digest":corpus.digest,"boundary":"witness-to-proof","whir_params":params});
+    run.effective = json!({"config":context.config(),"corpus_digest":corpus.digest,"boundary":"witness-to-proof"});
     for i in 0..run.trials() {
         run.begin_memory();
         if !run.latency() {
             let bytes = match &context {
                 Context::Binius(c) => c.prove_and_verify(),
                 Context::BiniusLigerito(c) => c.prove_and_verify(),
-                Context::Plonky3Fri(c) => c.prove_and_verify(),
-                Context::Plonky3Whir(c) => c.prove_and_verify(),
                 Context::Limber(c) => c.prove_and_verify(),
             };
             run.end_memory();

@@ -63,7 +63,7 @@ pub mod peak_memory;
 pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
-#[cfg(any(feature = "native-mul-compare", feature = "plonky3-sha256-bench"))]
+#[cfg(feature = "plonky3-sha256-bench")]
 pub mod whir_tuning;
 
 use clap::ValueEnum;
