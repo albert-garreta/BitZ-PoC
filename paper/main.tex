@@ -617,7 +617,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
         \begin{equation}\label{e:to_projected_claim}\langle  \pi_{q'}\circ \pi^{-1}(\uu^{(1)})\otimes  \pi_{q'}\circ\pi^{-1}(\uu^{(2)}),  \pi_{q'}(\bitstext(\bff))\rangle = \pi_{q'}(\mu') \ \text{in } \FF_{q'}, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).\end{equation}  
         Then the prover and verifier proceed to Step 4 after updating $\FF_{q} \gets \FF_{q'}$, $\pi\gets \pi_{q'}$, $\mu \gets \pi_{q'}(\mu')$, and $\uu\gets \pi_{q'}\circ \pi^{-1}(\uu^{(1)}) \otimes \pi_{q'}\circ \pi^{-1}(\uu^{(2)})$.
         
-    To ensure soundness of the projection step, the verifier checks that $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$  (see \cref{s:to_soundness_rings}).
+    To ensure soundness of the projection step, the verifier checks that $\mu'\in \range{0}{\codedim\cdot (q-1)^2}$  (see \cref{s:to_soundness_bits}).
 \end{remark}
 
 
@@ -637,7 +637,7 @@ $
     \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without overflow. This difference is important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield=\FF_{2^{128}}$, and not paying too much on grinding, cf.\ \cref{s:instantiation}. % 
 \end{itemize}
 
-\Cref{t:core_iop_complexity} in the appendix records the concrete costs of this protocol\iflncs\else, stated for the general setting of \cref{s:to_general_rings}\fi.
+\Cref{t:core_iop_complexity} \iflnvs in the appendix\else\fi records the concrete costs of this protocol\iflncs\else, stated for the general setting of \cref{s:to_general_rings}\fi.
 \iflncs\end{remark}\fi
 
 
@@ -866,15 +866,7 @@ We next discuss other existing approaches to proving foreign field statements in
         %The tensor split allows us to replace the claim into $\codedim_2=|\vv^{(2)}|$ claims $\langle \vv^{(1)}, \ww_{*j}\rangle = \eta_j$ in $\ZZ$ for all $j\in [\codedim_2]$. These claims are then each proved ``in the exponent''. Since $\vv^{(1)}$ is common across all claims, and $\ww$ is filled with bits, the resulting grand products are low entropy. 
         
       
-        \cite{binius64} on the other hand multiplies 64-bit integer witness in the exponent directly. More precisely, \cite{binius64} proves the identity $g^{\ww_{1i}\cdot \ww_{2i}} = g^{2^{64}\cdot \ww_{3i}} \cdot g^{\ww_{4i}}$ for $\ww_1, \ldots, \ww_4$ vectors of 64-bit integers (together with a small additional constraint to address possible overflow). This is done through a combination of LogUp* \cite{logupstar}, a GKR grand product (for relatively small products of $128$ factors), and the Frobenius automorphism trick. It does not seem possible to follow a similar optimization strategy to ours.
-       
-
-        We  emphasize again that \ftwoz \ supports proving operations of all kinds of ring elements (small and large integers, field elements, lattice ring elements, extension field elements), as opposed to \cite{binius64} where multiplication is limited to 64-bit integers.
-
-        In \cref{s:experiments} we compare the performance of \ftwoz \ and Binius64 when multiplying integers.  
-
-
-
+        
 
 
 
@@ -1553,7 +1545,7 @@ $$
  \iflncs\else\item\fi{}  Let $R$ be a finitely generated ring (typically $R$ is $\ZZ$, a finite field, not necessarily a prime field, or a quotient of a polynomial ring $\ZZ[X]$ or $\FF_q[X]$) and let $\pi:\ZZ \to R$  be the  homomorphism mapping an integer $a$ to $a\cdot 1\in R$ (i.e.\ reduction modulo the characteristic of $R$).
 \iflncs\else\end{itemize}\fi
 
-Next we define  a particular subclass of our target relation.
+Next we define  a particular subclass of our full target relation. The full target relation is defined later in \cref{d:general_linbitsrings}.
 
 \begin{definition} The \emph{Core LinBitsRings} relation  is defined as
 %
@@ -1613,7 +1605,9 @@ $$
 
 \subsection{Algebraic setup}\label{s:interleaved_setting}
 
- As discussed in \iflncs\cref{s:intro_nutshell}\else\cref{s:to_simple_bitz}\fi, \ftwoz \ crucially demands and uses a tensor decomposition of $\vv$. We next establish notation and basic definitions around it.
+ %As discussed in \iflncs\cref{s:intro_nutshell}\else\cref{s:to_simple_bitz}\fi, \ftwoz \ crucially demands and uses a tensor decomposition of $\vv$. We next establish notation and basic definitions around it.
+
+ Next we make some assumptions and provide notation required to discuss our IOP for $\LinBitsDual(\bits,\pi,R,\cC)$.
 
  Let $(\inp,\oracle,\wit)=((\mu,\vv), f, \bff) \in \LinBitsDual(\bits,\ringmorphism, R,\cC)$. We fix a tensor decomposition of the vector $\vv\in \moduletwo^\codedim$ as $$\vv = \vv^{(1)} \otimes \vv^{(2)} = \left(\vv_i^{(1)}\cdot \vv_j^{(2)}\right)_{i\in [\codedim_1], j\in [\codedim_2]}$$ for some $\vv^{(1)}\in \moduletwo^{\codedim_1}, \vv^{(2)}\in \moduletwo^{\codedim_2}$, with $\codedim_1 \cdot \codedim_2=\codedim$. Note that the trivial tensor decomposition is admitted, i.e.\ we may effectively not decompose $\vv$ by choosing $\codedim_1=\codedim$, $\codedim_2=1$, $\vv^{(1)}=\vv$, and $\vv^{(2)} = (1)$.
 
@@ -1716,7 +1710,24 @@ We provide an IOP for $\LinBitsDual$ next. We assume the notation from the previ
 
 
 
-\iflncs\else\item\fi{} Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is  WHIR or Ligerito  \cite{whir,Ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius2} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims. We set the proximity parameter  to the Johnson bound when targeting $100$ bits of round-by-round knowledge soundness, and to the unique decoding radius for higher security regimes.   
+\iflncs\else\item\fi{} 
+\item Let $\Pi_{\mathsf{red}}$ be an IOR  that reduces 
+%
+$
+\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack)$ to $\LIN(\comfield, \cC, \pack)$, where, recall, this latter relation has predicates of the form $\langle \bfg, \mathbf{z}\rangle = c$ with $\bfg\in \FF_2^{\codedim}$, $\mathbf{z}$ a vector over $\comfield$, $c\in \comfield$, and $f=\Enc_{\cC}\circ \pack(\bfg)$.   In our instantiation $\Pi_{\mathsf{red}}$ is an optimized GKR protocol for  grand products (cf.\ \cref{s:gkr_low_entropy}), which reduces the initial grand product claims to MLE evaluation claims of $\yy$ and $\bff$ over $\comfield$.
+
+%
+%
+We assume $\Pi_{\mathsf{red}}$ works so that the verifier never queries $\oracle$; and that, given an input
+%
+$$\left(\inp=(\yy,\bm{\mu}),\  \oracle= f, \ \wit=\picomfield(\bff)\right)\in \PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC, \pack),$$
+%
+$\Pi_{\mathsf{red}}$ outputs
+%
+\lncsmath{
+\left((\mathbf{z}, c), \ f, \ \picomfield(\bff)\right) \in \LIN( \comfield,\cC,\pack)} for some vector $\mathbf{z}\in \comfield^{\codedim}$ and field element $c\in \comfield$. In particular, $\Pi_{\red}$ outputs the same oracle $f$ and witness $\pi_2(\bff)$ as the oracle and witness it is given as inputs. 
+
+\item Let $\Pi_{\iopp}$ be an IOP for $\LIN(\comfield,\cC, \pack)$. In our instantiation, $\Pi_{\iopp}$ is  WHIR or Ligerito  \cite{whir,Ligerito} over binary fields as implemented in Flock \cite{flock}, with ring-switching \cite{binius2} and a preliminary sumcheck over $\comfield$ that transforms arbitrary inner products to MLE evaluation claims. We set the proximity parameter  to the Johnson bound when targeting $100$ bits of round-by-round knowledge soundness, and to the unique decoding radius for higher security regimes.   
 \iflncs\else\item \fi
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define 
 \begin{equation}\label{e:ring_theta_params}
@@ -1888,7 +1899,7 @@ Let  $\bm{\mu}\defeq (\mu_1,\ldots, \mu_{\codedim_2})$, $g^{\bm{\gamma}}\defeq (
 
 
 \end{lncsmove}
-\iflncs\paragraph{Costs of \cref{c:core_iop}.} \else In \cref{t:core_iop_complexity} we summarize the main costs of \cref{c:core_iop}.
+\iflncs\paragraph{Costs of \cref{c:core_iop}.} \else 
 
 
 \paragraph{Costs ($k\leq 1$).}\fi  In \Cref{t:core_iop_complexity} we summarize the costs of \cref{c:core_iop} beyond those of $\Pi_\red$ and $\Pi_\iopp$ (cf.\ \cref{s:gkr_low_entropy,s:instantiation}), for the specific case $k\leq 1$, corresponding to $R$ being of the form $\ZZ_n$ or $\ZZ_n[X]/(h(X))$ for some $n\geq 0$ and some $h(X)$. In our experiments we only use $k=0$, but future work of ours on proving lattice computations requires $k=1$. The number of rounds is  between $t_\red +t_\iopp$ and $2+t_\red +t_\iopp$, depending on whether Rounds 0 and 1 execute or not, where $t_\red, t_\iopp$ denote the number of rounds of $\Pi_\red,\Pi_\iopp$.
@@ -3858,7 +3869,7 @@ and the same holds for $\Relation_{\mathsf{core}}$ and $\Relation_{\mathsf{gen}}
 
 \bigskip
 
-\noindent \emph{\underline{Round-by-round knowledge soundness.}} We decompose \cref{c:LinModFieldBin} as we did with \cref{c:core_iop} in the proof of \cref{t:thm_core_IOPP}. The first IOR, which we call $\Pi_1'$, computes $\inp'$ from the input $(\mu,\vv)$, and then runs the IOR $\Pi_1$ from the mentioned proof (together with the OOD sampling step if Round 0, cf.\ \cref{a:OOD}). The other two IORs are $\Pi_\red$ and $\Pi_\iopp$, which are exactly as in the proof of \cref{t:thm_core_IOPP}. Note that $\Pi_1'$ is perfectly complete by \eqref{e:appendix_bitify}.
+\noindent \emph{\underline{Round-by-round knowledge soundness.}} We decompose \cref{c:LinModFieldBin} as we did with \cref{c:core_iop} in the proof of \cref{t:thm_core_IOPP}. The first IOR, which we call $\Pi_1'$, computes $\inp'$ from the input $(\mu,\vv)$, and then runs the IOR $\Pi_1$ from the mentioned proof (together with the OOD sampling step if Round 0 is executed, cf.\ \cref{a:OOD}). The other two IORs are $\Pi_\red$ and $\Pi_\iopp$, which are exactly as in the proof of \cref{t:thm_core_IOPP}. Note that $\Pi_1'$ is perfectly complete by \eqref{e:appendix_bitify}.
 To prove round-by-round knowledge soundness, assume first that Round 0 (OOD sampling) is not executed. By the IOR composition result \cref{r:ior_compositoin}, it suffices to prove that $\Pi_1'$ has round-by-round knowledge soundness with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta})$, and with the same errors as $\Pi_1$, i.e.\ $\kappa_0=\theta(\cP,\cM,\codedim)$. We also assume that Round 1 triggers, so that the verifier of $\Pi_1'$ sends a single challenge $\rho=(q,\pirand)$, with $q\in\cP$ and $\pirand\in\cM_q$ (if Round 1 does not trigger, the verifier sends no challenge at all, and the argument below applies equally after replacing $\rho$ by an empty message and $\kappa_0$ by $0$). Both $\Pi_1$ and $\Pi_1'$ have two rounds, with the last verifier message being empty.
 
 
