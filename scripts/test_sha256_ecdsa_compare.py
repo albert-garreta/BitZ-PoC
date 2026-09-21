@@ -33,7 +33,7 @@ class CampaignTests(unittest.TestCase):
                     self.assertEqual(campaign.peak_rss_bytes(linux, stderr), 1073741824)
 
     def setUp(self):
-        self.case = dict(method="bitz-split", log_compressions=3, r=None, c=None,
+        self.case = dict(method="bitz-split", curve="p256", log_compressions=3, r=None, c=None,
                          security_target=100, threads=1, seed=0)
         self.rows = []
         for sample in range(2):
@@ -41,29 +41,70 @@ class CampaignTests(unittest.TestCase):
                                   trial="sample" if sample else "warmup", compressions=8, message_bytes=448,
                                   signatures=1, statement_bytes=129, fixture_id="a"*64,
                                   spartan_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
-                                  curve="p256-paper",
-                                  circuit_profile="sha256-chain-p256/paper/v1",
+                                  circuit_profile=campaign.circuit_profile("p256", "bitz-split"),
                                   security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
     def test_bitz_is_not_duplicated_per_chunking(self):
-        cases = list(campaign.cases([(0, 3), (1, 2), (3, 0)], campaign.METHODS, [100, 128], [1], [0]))
-        # bitz-split/bitz-all: 2 targets x 2 profiles each; spartan: 3 splits;
-        # binius64: 2 targets x 2 rates; binius64-ligerito: fixed 100-bit gate x 2 rates.
-        self.assertEqual(len(cases), 4 + 4 + 3 + 4 + 2)
+        p256_methods = ["bitz-split", "bitz-all", "spartan-mc"]
+        cases = list(campaign.cases("p256", [(0, 3), (1, 2), (3, 0)], p256_methods, [100, 128], [1], [0]))
+        # bitz-split/bitz-all: 2 targets x 2 profiles each; spartan: 3 splits.
+        self.assertEqual(len(cases), 4 + 4 + 3)
         self.assertEqual(sum(c["method"] == "spartan-mc" for c in cases), 3)
-        binius = [c for c in cases if c["method"] == "binius64"]
+        self.assertTrue(all(c["curve"] == "p256" for c in cases))
+        bitz = [c for c in cases if c["method"] == "bitz-split"]
+        self.assertEqual({c["ligerito_profile"] for c in bitz}, {"custom:1:4", "custom:3:4"})
+        self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
+        secp = list(campaign.cases("secp256k1", [(3, 0)], campaign.DEFAULT_METHODS, [100, 128], [1], [0]))
+        # bitz-split: 2 targets x 2 profiles; binius64: 2 targets x 2 rates;
+        # binius64-ligerito: fixed 100-bit gate x 2 rates.
+        self.assertEqual(len(secp), 4 + 4 + 2)
+        binius = [c for c in secp if c["method"] == "binius64"]
         self.assertEqual(len(binius), 4)
         self.assertEqual({c["security_target"] for c in binius}, {100, 128})
         self.assertEqual({c["log_inv_rate"] for c in binius}, {1, 3})
-        opener = [c for c in cases if c["method"] == "binius64-ligerito"]
+        opener = [c for c in secp if c["method"] == "binius64-ligerito"]
         self.assertEqual({c["security_target"] for c in opener}, {100})
         self.assertEqual({c["log_inv_rate"] for c in opener}, {1, 3})
-        bitz = [c for c in cases if c["method"] == "bitz-split"]
-        self.assertEqual({c["ligerito_profile"] for c in bitz}, {"custom:1:4", "custom:3:4"})
+        self.assertTrue(all(c["curve"] == "secp256k1" for c in secp))
         self.assertNotIn("zkpassport-honk", campaign.METHODS)
-        self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
         self.assertEqual(campaign.DEFAULT_METHODS, ["bitz-split", "binius64", "binius64-ligerito"])
+
+    def test_binius_is_refused_on_p256_and_spartan_on_secp256k1(self):
+        # The pinned fork's P-256 gadget is not a Binius64 verifier: no row.
+        for method in ["binius64", "binius64-ligerito"]:
+            reasons = campaign.unsupported_methods("p256", ["bitz-split", method])
+            self.assertEqual(len(reasons), 1)
+            self.assertIn("no P-256 verifier of its own", reasons[0])
+            with self.assertRaises(ValueError):
+                list(campaign.cases("p256", [(3, 0)], ["bitz-split", method], [100], [1], [0]))
+        self.assertEqual(campaign.unsupported_methods("secp256k1", ["spartan-mc"]), ["spartan-mc: no secp256k1 circuit"])
+        self.assertEqual(campaign.unsupported_methods("secp256k1", campaign.DEFAULT_METHODS), [])
+        self.assertEqual(campaign.unsupported_methods("p256", ["bitz-split", "bitz-all", "spartan-mc"]), [])
+        # Every recordable pairing names exactly one circuit, distinct per curve.
+        self.assertNotEqual(campaign.circuit_profile("p256", "bitz-split"), campaign.circuit_profile("secp256k1", "bitz-split"))
+        self.assertEqual(campaign.circuit_profile("secp256k1", "binius64"), campaign.circuit_profile("secp256k1", "binius64-ligerito"))
+        self.assertIsNone(campaign.circuit_profile("p256", "binius64"))
+
+    def test_rows_must_name_the_curve_fixture_and_matched_circuit(self):
+        self.assertTrue(campaign.validate_rows(self.rows, self.case, 1))
+        for key, value in [("curve", "secp256k1"), ("fixture_profile", campaign.FIXTURE_SCHEMAS["secp256k1"]),
+                           ("circuit_profile", campaign.circuit_profile("secp256k1", "bitz-split")),
+                           ("circuit_profile", None)]:
+            rows = copy.deepcopy(self.rows)
+            rows[1][key] = value
+            self.assertFalse(campaign.validate_rows(rows, self.case, 1), key)
+        secp_case = dict(self.case, curve="secp256k1")
+        secp_rows = copy.deepcopy(self.rows)
+        for row in secp_rows:
+            row.update(curve="secp256k1", fixture_profile=campaign.FIXTURE_SCHEMAS["secp256k1"],
+                       circuit_profile=campaign.circuit_profile("secp256k1", "bitz-split"))
+        self.assertTrue(campaign.validate_rows(secp_rows, secp_case, 1))
+        # A P-256 paper-circuit row cannot be recorded into a secp256k1 case.
+        wrong = copy.deepcopy(secp_rows)
+        for row in wrong:
+            row["circuit_profile"] = campaign.circuit_profile("p256", "bitz-split")
+        self.assertFalse(campaign.validate_rows(wrong, secp_case, 1))
 
     def test_validation_requires_complete_verified_matched_samples(self):
         self.assertTrue(campaign.validate_rows(self.rows, self.case, 1))
@@ -119,14 +160,14 @@ class CampaignTests(unittest.TestCase):
         self.assertFalse(campaign.compatible_manifest(old, dict(old, ligerito_profile="udrg:3:4")))
 
     def test_binius_requires_matching_security_rate_and_its_own_revision(self):
-        case = dict(self.case, method="binius64", log_inv_rate=3)
+        case = dict(self.case, method="binius64", curve="secp256k1", log_inv_rate=3)
         rows = copy.deepcopy(self.rows)
         for row in rows:
             row.update(case, binius_revision="c"*40, spartan_revision=None,
-                       circuit_profile="sha256-chain-p256/standard/v1", curve="p256",
+                       fixture_profile=campaign.FIXTURE_SCHEMAS["secp256k1"],
+                       circuit_profile=campaign.circuit_profile("secp256k1", "binius64"),
                        security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
                                  "log_inv_rate":3})
-        # p256 is BitZ-only in campaigns; these rows exercise validate_rows alone.
         self.assertTrue(campaign.validate_rows(rows, case, 1))
         self.assertFalse(campaign.validate_rows(rows, case, 1, binius_log_inv_rate=2))
         for rate in (1, 2, 3):
@@ -137,8 +178,7 @@ class CampaignTests(unittest.TestCase):
                 row["security"]["log_inv_rate"] = rate
             self.assertTrue(campaign.validate_rows(rated_rows, rated_case, 1))
             self.assertTrue(campaign.validate_rows(rated_rows, rated_case, 1, binius_log_inv_rate=rate))
-        for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "secp256k1"),
-                           ("curve", "secp256k1"), ("curve", None),
+        for key, value in [("binius_revision", None), ("zk", True), ("circuit_profile", "sha256-chain-p256/standard/v1"),
                            ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":96, "log_inv_rate":3}),
                            ("security", {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100, "log_inv_rate":1}),
                            ("log_inv_rate", 1)]:
@@ -146,39 +186,16 @@ class CampaignTests(unittest.TestCase):
             bad[1][key] = value
             self.assertFalse(campaign.validate_rows(bad, case, 1), key)
 
-    def test_secp256k1_campaign_requires_its_own_curve_and_profiles(self):
-        """A secp256k1 campaign must not silently accept P-256 rows, or vice versa."""
-        case = dict(self.case, method="binius64", log_inv_rate=1)
-        security = {"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
-                    "log_inv_rate":1}
-        def rows_for(curve):
-            rows = copy.deepcopy(self.rows)
-            for row in rows:
-                row.update(case, binius_revision="c"*40, spartan_revision=None,
-                           curve=campaign.CURVES[curve]["binius_curve"],
-                           circuit_profile=campaign.CURVES[curve]["circuit_profile"],
-                           fixture_profile=campaign.CURVES[curve]["fixture_schema"],
-                           security=dict(security))
-            return rows
-        for curve in ("p256", "secp256k1"):
-            self.assertTrue(campaign.validate_rows(rows_for(curve), case, 1, curve=curve), curve)
-        self.assertFalse(campaign.validate_rows(rows_for("p256"), case, 1, curve="secp256k1"))
-        self.assertFalse(campaign.validate_rows(rows_for("secp256k1"), case, 1, curve="p256"))
-        # A row that only half-swaps (right curve tag, stale circuit) is rejected.
-        mixed = rows_for("secp256k1")
-        mixed[1]["circuit_profile"] = campaign.CURVES["p256"]["circuit_profile"]
-        self.assertFalse(campaign.validate_rows(mixed, case, 1, curve="secp256k1"))
-
     def test_opener_rows_require_the_round_by_round_gate(self):
-        case = dict(self.case, method="binius64-ligerito", log_inv_rate=1)
+        case = dict(self.case, method="binius64-ligerito", curve="secp256k1", log_inv_rate=1)
         rows = copy.deepcopy(self.rows)
         good = {"model":"Binius64 PIOP with the BitZ opener", "pcs":"BitZ-Ligerito",
                 "accounting":"round-by-round", "target_bits":100, "round_by_round_bits":100.4,
                 "union_bound_bits":97.2, "log_inv_rate":1}
         for row in rows:
             row.update(case, binius_revision="c"*40, spartan_revision=None,
-                       circuit_profile="sha256-chain-p256/standard/v1", curve="p256",
-                       security=dict(good))
+                       fixture_profile=campaign.FIXTURE_SCHEMAS["secp256k1"],
+                       circuit_profile=campaign.circuit_profile("secp256k1", "binius64-ligerito"), security=dict(good))
         self.assertTrue(campaign.validate_rows(rows, case, 1))
         for override in [dict(accounting="union-bound"), dict(round_by_round_bits=99.9),
                          dict(pcs="BaseFold"), dict(target_bits=96), dict(log_inv_rate=3)]:
@@ -213,8 +230,9 @@ class CampaignTests(unittest.TestCase):
 
     def test_resume_rejects_changed_binaries_fixtures_and_fork_revision(self):
         old = dict(binary_sha256="native", runner_sha256="runner", fixtures={"profile":campaign.FIXTURE_SCHEMA, "files":{"fixture":"hash"}},
-                   binius64={"binary_sha256":"binius", "binius_revision":"c"*40})
+                   binius64={"binary_sha256":"binius", "binius_revision":"c"*40}, curve="p256")
         self.assertTrue(campaign.compatible_manifest(old, copy.deepcopy(old)))
+        self.assertFalse(campaign.compatible_manifest(old, dict(old, curve="secp256k1")))
         self.assertFalse(campaign.compatible_manifest(dict(old, binius_log_inv_rate=1),
                                                       dict(old, binius_log_inv_rate=2)))
         for key, value in [("binary_sha256", "changed"), ("runner_sha256", "changed"), ("fixtures", {}), ("binius64", None)]:
@@ -237,7 +255,26 @@ class CampaignTests(unittest.TestCase):
             self.assertFalse(campaign.summarize(directory))
             summary = (directory / "summary.csv").read_text()
             self.assertIn("timeout", summary)
-            self.assertFalse(json.loads((directory / "comparison.json").read_text())["matched_fixtures"])
+            comparison = json.loads((directory / "comparison.json").read_text())
+            self.assertFalse(comparison["matched_fixtures"])
+            self.assertEqual(comparison["curve"], "p256")
+            self.assertTrue(comparison["matched_circuits"])
+            self.assertEqual(comparison["circuit_profiles"]["bitz-split"], [campaign.circuit_profile("p256", "bitz-split")])
+
+    def test_summary_flags_mixed_curves_or_circuits(self):
+        with tempfile.TemporaryDirectory() as path:
+            directory = Path(path)
+            for curve in ["p256", "secp256k1"]:
+                rows = copy.deepcopy(self.rows)
+                for row in rows:
+                    row.update(curve=curve, fixture_profile=campaign.FIXTURE_SCHEMAS[curve],
+                               circuit_profile=campaign.circuit_profile(curve, "bitz-split"))
+                result = dict(case=dict(self.case, curve=curve), rows=rows, status="complete", peak_rss_bytes=1)
+                (directory / f"{curve}.result.json").write_text(json.dumps(result))
+            self.assertFalse(campaign.summarize(directory))
+            comparison = json.loads((directory / "comparison.json").read_text())
+            self.assertEqual(comparison["curve"], ["p256", "secp256k1"])
+            self.assertFalse(comparison["matched_circuits"])
 
     def test_summary_uses_per_sample_totals(self):
         with tempfile.TemporaryDirectory() as path:

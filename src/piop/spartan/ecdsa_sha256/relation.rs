@@ -9,8 +9,9 @@ use circuit::integer_storage::IntegerTable;
 use circuit::linear_map::{CsrBuilder, CsrMatrix, IndexedCoefficients};
 use circuit::{
     constraints::ConstraintGenerator,
+    ecdsa::EcdsaCircuit,
     linear_map::circuit::{WengertGenerator, WengertTape},
-    p256, sha256,
+    sha256,
 };
 use field::{CtOrd, IntegerOps, Uint, WideMul, ZRef};
 
@@ -32,51 +33,6 @@ pub(crate) const P_INPUT_ALIAS: usize = 257;
 pub enum OuterMode {
     Split,
     AllRows,
-}
-
-/// Which curve the signature is over. This belongs to the RELATION, not the
-/// statement: the public words are the same shape on either curve, and what
-/// separates a P-256 proof from a secp256k1 one is `LocalRelation::digest`,
-/// which the transcript absorbs under `b"relation"`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum EcdsaCurve {
-    #[default]
-    P256,
-    /// The P-256 schedule under the name the benchmark campaigns use for the
-    /// circuit the paper documents. An alias of [`EcdsaCurve::P256`] while the
-    /// native P-256 schedule *is* the paper's; kept separate so a campaign can
-    /// name it explicitly, and so the recorded circuit profile stays truthful
-    /// if the native schedule is ever optimized away from the paper's.
-    P256Paper,
-    Secp256k1,
-    /// secp256k1 on Binius64's scalar-multiplication schedule. A measurement
-    /// configuration for the matched comparison, not a deployable one: it is
-    /// strictly more expensive for us and inherits Binius64's completeness gap.
-    Secp256k1Matched,
-}
-
-impl EcdsaCurve {
-    pub(crate) fn params(self) -> &'static p256::Curve {
-        match self {
-            Self::P256 | Self::P256Paper => &p256::P256,
-            Self::Secp256k1 | Self::Secp256k1Matched => &p256::SECP256K1,
-        }
-    }
-
-    pub(crate) fn profile(self) -> p256::LadderProfile {
-        match self {
-            Self::P256 | Self::P256Paper | Self::Secp256k1 => p256::LadderProfile::Native,
-            Self::Secp256k1Matched => p256::LadderProfile::BiniusMatched,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::P256Paper => "p256-paper",
-            Self::Secp256k1Matched => "secp256k1-matched",
-            other => other.params().name(),
-        }
-    }
 }
 
 /// Public values use fixed-width big-endian encodings. The message is a witness.
@@ -162,6 +118,8 @@ fn tail_columns(
 }
 
 pub(crate) struct LocalRelation {
+    /// The ECDSA verifier this relation runs after the SHA-256 chain.
+    pub circuit: EcdsaCircuit,
     pub sha_local: PreparedVirtualMap,
     pub sha_prev: PreparedVirtualMap,
     pub sha_first: PreparedVirtualMap,
@@ -204,7 +162,7 @@ fn bool_map(
     PreparedVirtualMap::new(CscMatrix::try_from_rows(columns, rows).map_err(error)?).map_err(error)
 }
 
-fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaError> {
+fn build_local(circuit: EcdsaCircuit) -> Result<LocalRelation, super::Sha256EcdsaError> {
     let mut generator = ConstraintGenerator::new(sha256::COMPRESSION_INPUT_BITS);
     let inputs = generator.inputs();
     let outputs = sha256::compression_circuit(&mut generator, &inputs);
@@ -247,9 +205,11 @@ fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaErr
     let sha_c = interner.rows(&sha.c);
     drop(sha);
 
-    let mut generator = ConstraintGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
-    let inputs = generator.inputs();
-    p256::verify_digest_circuit_with(&mut generator, curve.params(), curve.profile(), &inputs);
+    let mut generator = ConstraintGenerator::new(circuit.input_bits());
+    let inputs: Vec<_> = (0..circuit.input_bits())
+        .map(|index| generator.input(index))
+        .collect();
+    circuit.build(&mut generator, &inputs);
     let p = generator.into_matrices();
     let mut public_h = [usize::MAX; 1024];
     for (h, row) in p.m.rows().enumerate() {
@@ -260,7 +220,7 @@ fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaErr
         }
     }
     if public_h.contains(&usize::MAX) {
-        return Err(error("public P-256 inputs have no direct lifts"));
+        return Err(error("public ECDSA inputs have no direct lifts"));
     }
     let p_map = bool_map(
         p.m.column_count(),
@@ -271,14 +231,9 @@ fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaErr
     let c = interner.rows(&p.c);
     let tail = tail_columns(p.m.row_count(), [&a, &b, &c])?;
     drop(p);
-    let mut tape_generator = WengertGenerator::new(p256::VERIFY_DIGEST_INPUT_BITS);
-    let tape_inputs = tape_generator.take_boxed_inputs::<{ p256::VERIFY_DIGEST_INPUT_BITS }>();
-    p256::verify_digest_circuit_with(
-        &mut tape_generator,
-        curve.params(),
-        curve.profile(),
-        &tape_inputs,
-    );
+    let mut tape_generator = WengertGenerator::new(circuit.input_bits());
+    let tape_inputs = tape_generator.take_inputs();
+    circuit.build(&mut tape_generator, &tape_inputs);
     let tape = tape_generator.finish();
     if tape.row_count() != a.row_count() || tape.column_count() != tail.column_count() {
         return Err(error(
@@ -390,6 +345,7 @@ fn build_local(curve: EcdsaCurve) -> Result<LocalRelation, super::Sha256EcdsaErr
         }
     }
     Ok(LocalRelation {
+        circuit,
         sha_local,
         sha_prev,
         sha_first,
@@ -530,7 +486,6 @@ impl VirtualMap for Sha256EcdsaMap {
 
 /// Prepared public relation. No message or signature is retained here.
 pub struct PreparedSha256Ecdsa {
-    pub(crate) curve: EcdsaCurve,
     pub(crate) local: Arc<LocalRelation>,
     pub(crate) map: Sha256EcdsaMap,
     pub(crate) log_n: usize,
@@ -542,10 +497,6 @@ pub struct PreparedSha256Ecdsa {
 }
 
 impl PreparedSha256Ecdsa {
-    pub fn curve(&self) -> EcdsaCurve {
-        self.curve
-    }
-
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
         &self.ligerito
     }
@@ -564,6 +515,10 @@ impl PreparedSha256Ecdsa {
         Ok(self)
     }
 
+    /// The ECDSA verifier circuit this relation was prepared for.
+    pub fn circuit(&self) -> EcdsaCircuit {
+        self.local.circuit
+    }
     pub fn compressions(&self) -> usize {
         self.map.n
     }
@@ -634,38 +589,36 @@ pub(crate) fn padding(n: usize) -> [u32; 16] {
     words
 }
 
+/// The paper's relation: the SHA-256 chain followed by the P-256 verifier.
 pub fn prepare_sha256_ecdsa(
     log_compressions: usize,
     lambda: u32,
     mode: OuterMode,
 ) -> Result<PreparedSha256Ecdsa, super::Sha256EcdsaError> {
-    prepare_sha256_ecdsa_on(log_compressions, lambda, mode, EcdsaCurve::P256)
+    prepare_sha256_ecdsa_on(EcdsaCircuit::P256Paper, log_compressions, lambda, mode)
 }
 
-/// [`prepare_sha256_ecdsa`] over an explicit curve.
+/// The SHA-256 chain followed by the selected ECDSA verifier. Each circuit's
+/// local relation is built once per process; the relation digest bound into
+/// every transcript covers the circuit's matrices, so a proof for one circuit
+/// never verifies under another.
 pub fn prepare_sha256_ecdsa_on(
+    circuit: EcdsaCircuit,
     log_compressions: usize,
     lambda: u32,
     mode: OuterMode,
-    curve: EcdsaCurve,
 ) -> Result<PreparedSha256Ecdsa, super::Sha256EcdsaError> {
     if !(3..=16).contains(&log_compressions) || ![100, 128].contains(&lambda) {
         return Err(error("expected exponent 3..=16 and security 100 or 128"));
     }
-    // One cache per curve: a single global would let whichever curve was
-    // prepared first silently serve every later call in the process.
-    static P256_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> = OnceLock::new();
-    static SECP256K1_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> =
-        OnceLock::new();
-    static SECP256K1_MATCHED_LOCAL: OnceLock<std::result::Result<Arc<LocalRelation>, String>> =
-        OnceLock::new();
-    let cache = match curve {
-        EcdsaCurve::P256 | EcdsaCurve::P256Paper => &P256_LOCAL,
-        EcdsaCurve::Secp256k1 => &SECP256K1_LOCAL,
-        EcdsaCurve::Secp256k1Matched => &SECP256K1_MATCHED_LOCAL,
-    };
-    let local = cache
-        .get_or_init(|| build_local(curve).map(Arc::new).map_err(|e| e.to_string()))
+    static LOCALS: [OnceLock<std::result::Result<Arc<LocalRelation>, String>>; 2] =
+        [const { OnceLock::new() }; 2];
+    let slot = EcdsaCircuit::ALL
+        .iter()
+        .position(|c| *c == circuit)
+        .expect("every circuit has a cache slot");
+    let local = LOCALS[slot]
+        .get_or_init(|| build_local(circuit).map(Arc::new).map_err(|e| e.to_string()))
         .as_ref()
         .map_err(error)?
         .clone();
@@ -738,7 +691,6 @@ pub fn prepare_sha256_ecdsa_on(
     };
     map.aliases = array::from_fn(|c| map.p_source(c));
     Ok(PreparedSha256Ecdsa {
-        curve,
         local,
         map,
         log_n: log_compressions,

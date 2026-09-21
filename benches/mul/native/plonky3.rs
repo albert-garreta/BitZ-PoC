@@ -1,8 +1,11 @@
-//! Independent u32 wrapping multiplication through Plonky3's univariate STARK and FRI.
+//! Independent multiplication through Plonky3's univariate STARK and FRI: the
+//! u32 wrapping AIR of `mod32_air.rs`, and the u64/u128 full-product AIR of
+//! `wide_mul_air.rs`, both over Goldilocks with bit-decomposed 16-bit limbs.
 #[cfg(test)]
 use super::mod32_air::{LIMB_BASE, VALUE_COLUMNS, set_value};
 use super::mod32_air::{MulAir, TRACE_WIDTH, generate};
 use super::trace_capture::TrialScopes;
+use super::wide_mul_air::WideMulAir;
 use super::{Corpus, Timing, Workload, captured};
 use bitz::observability::Recording;
 use p3_air::symbolic::AirLayout;
@@ -44,10 +47,71 @@ type Challenger = DuplexChallenger<Val, Perm, 8, 4>;
 type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, ValMmcs, ChallengeMmcs>;
 type Config = StarkConfig<Pcs, Challenge, Challenger>;
 
+/// The AIR of a workload: the wrapping u32 relation or the full product.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum AirKind {
+    Wrapping(MulAir),
+    Wide(WideMulAir),
+}
+
+/// Runs `$body` with `$air` bound to the concrete AIR, so the generic
+/// Plonky3 entry points see one type per arm.
+macro_rules! with_air {
+    ($kind:expr, |$air:ident| $body:expr) => {
+        match $kind {
+            AirKind::Wrapping($air) => $body,
+            AirKind::Wide($air) => $body,
+        }
+    };
+}
+
+impl AirKind {
+    pub(super) fn for_workload(workload: Workload) -> Self {
+        match workload {
+            Workload::U32 => Self::Wrapping(MulAir),
+            Workload::U64 | Workload::U128 => Self::Wide(WideMulAir::for_workload(workload)),
+        }
+    }
+    pub(super) fn width(&self) -> usize {
+        match self {
+            Self::Wrapping(_) => TRACE_WIDTH,
+            Self::Wide(air) => air.width(),
+        }
+    }
+    fn generate(&self, corpus: &Corpus) -> p3_matrix::dense::RowMajorMatrix<Val> {
+        match self {
+            Self::Wrapping(_) => generate(corpus),
+            Self::Wide(air) => air.generate(corpus),
+        }
+    }
+    fn describe(&self) -> Value {
+        match self {
+            Self::Wrapping(_) => json!({"relation":"u32 wrapping product", "operand_limbs":2}),
+            Self::Wide(air) => json!({"relation":format!("u{} full product", 32 * air.limbs()),
+                "operand_limbs":air.limbs(), "product_limbs":2 * air.limbs(), "value_columns":air.value_columns()}),
+        }
+    }
+}
+
 fn configuration_at_rate(
+    air: &AirKind,
     trace_len: usize,
     log_blowup: usize,
 ) -> (Config, StarkSecurityParams, usize) {
+    with_air!(air, |concrete| configure(concrete, air.width(), trace_len, log_blowup))
+}
+
+fn configure<A>(
+    air: &A,
+    width: usize,
+    trace_len: usize,
+    log_blowup: usize,
+) -> (Config, StarkSecurityParams, usize)
+where
+    A: p3_air::Air<p3_air::symbolic::SymbolicAirBuilder<Val, Challenge>>
+        + p3_air::Air<p3_air::symbolic::SymbolicAirBuilder<Val>>
+        + p3_air::BaseAir<Val>,
+{
     assert!(
         (1..=3).contains(&log_blowup),
         "log inverse rate must be 1, 2, or 3"
@@ -55,8 +119,8 @@ fn configuration_at_rate(
     assert!(trace_len.is_power_of_two());
     let perm = default_goldilocks_poseidon2_8();
     let mmcs = ValMmcs::new(Hash::new(perm.clone()), Compress::new(perm.clone()), 0);
-    let layout = AirLayout::from_air::<Val>(&MulAir);
-    let quotient_chunks = 1 << get_log_num_quotient_chunks::<Val, _>(&MulAir, layout, trace_len, 0);
+    let layout = AirLayout::from_air::<Val>(air);
+    let quotient_chunks = 1 << get_log_num_quotient_chunks::<Val, _>(air, layout, trace_len, 0);
     let assemble = |num_queries: usize| {
         let fri = FriParameters {
             log_blowup,
@@ -71,13 +135,13 @@ fn configuration_at_rate(
         // includes AIR composition, DEEP-ALI, FRI and batched-opening terms.
         let mut security = StarkSecurityParams::from_air::<Val, Challenge, _>(
             fri.security_regime(),
-            &MulAir,
+            air,
             layout,
             319,
             127,
             1,
         );
-        security.num_batched_functions = TRACE_WIDTH + EXTENSION_DEGREE * quotient_chunks;
+        security.num_batched_functions = width + EXTENSION_DEGREE * quotient_chunks;
         (fri, security)
     };
     // Smallest query count whose proven round-by-round report clears the
@@ -114,6 +178,7 @@ fn require_security(security: ProvenSecurity) {
 
 pub(super) struct Context {
     corpus: Arc<Corpus>,
+    air: AirKind,
     config: Config,
     security: StarkSecurityParams,
     num_queries: usize,
@@ -124,14 +189,11 @@ impl Context {
         Self::setup_at_rate(corpus, 1)
     }
     pub(super) fn setup_at_rate(corpus: Arc<Corpus>, rate: usize) -> Self {
-        assert_eq!(
-            corpus.workload,
-            Workload::U32,
-            "Plonky3-FRI supports u32 only"
-        );
-        let (config, security, num_queries) = configuration_at_rate(corpus.len(), rate);
+        let air = AirKind::for_workload(corpus.workload);
+        let (config, security, num_queries) = configuration_at_rate(&air, corpus.len(), rate);
         Self {
             corpus,
+            air,
             config,
             security,
             num_queries,
@@ -147,9 +209,10 @@ impl Context {
             "list_decoding_bits":security.list_decoding_bits, "hash":"Poseidon2Goldilocks-width8",
             "log_inv_rate":self.security.fri_log_blowup, "num_queries":self.security.fri_num_queries, "max_log_arity":1,
             "log_final_poly_len":0, "commit_pow_bits":0, "query_pow_bits":0,
-            "trace_width":TRACE_WIDTH, "num_constraints":self.security.num_constraints,
+            "trace_width":self.air.width(), "num_constraints":self.security.num_constraints,
             "max_constraint_degree":self.security.air_max_constraint_degree,
             "num_batched_functions":self.security.num_batched_functions,
+            "air":self.air.describe(), "limb_bits":16, "range_checks":"bit decomposition",
             "revision":super::common::locked_git_revision("p3-fri"),
         })
     }
@@ -191,9 +254,9 @@ impl Context {
             tag_witness_generation = true
         )
         .entered();
-        let trace = generate(&self.corpus);
+        let trace = self.air.generate(&self.corpus);
         drop(witness_scope);
-        let proof: Proof<Config> = prove(&self.config, &MulAir, trace, &[]);
+        let proof: Proof<Config> = with_air!(&self.air, |air| prove(&self.config, air, trace, &[]));
         drop(proving);
         let bytes = postcard::to_allocvec(&proof).expect("encode Plonky3-FRI proof");
         assert_eq!(proof.degree_bits, self.corpus.len().ilog2() as usize);
@@ -205,7 +268,8 @@ impl Context {
             tag_verification = true
         )
         .entered();
-        verify(&self.config, &MulAir, &proof, &[]).expect("Plonky3-FRI full proof verifies");
+        with_air!(&self.air, |air| verify(&self.config, air, &proof, &[]))
+            .expect("Plonky3-FRI full proof verifies");
         drop(verification);
         drop(trial);
         let proof_bytes = bytes.len();
@@ -265,9 +329,10 @@ mod tests {
     }
     #[test]
     fn actual_air_and_every_supported_shape_reach_security_target() {
+        let wrapping = AirKind::for_workload(Workload::U32);
         for rate in 1..=3 {
             for exponent in 4..=29 {
-                let (_, params, num_queries) = configuration_at_rate(1 << exponent, rate);
+                let (_, params, num_queries) = configuration_at_rate(&wrapping, 1 << exponent, rate);
                 assert_eq!(params.num_constraints, 139);
                 assert_eq!(params.air_max_constraint_degree, 2);
                 assert_eq!(params.max_combo, 1);
@@ -276,12 +341,31 @@ mod tests {
                 require_security(ProvenSecurity::compute(&params, 1 << exponent));
             }
         }
+        // The full-product AIRs: one degree-2 quotient chunk, so the batched
+        // function count is the width plus the extension degree.
+        for (workload, width, constraints) in [(Workload::U64, 382, 382 + 7), (Workload::U128, 813, 813 + 15)] {
+            let air = AirKind::for_workload(workload);
+            let AirKind::Wide(wide) = air else { unreachable!() };
+            assert_eq!(air.width(), width, "{workload:?} width");
+            assert_eq!(wide.constraint_count(), constraints, "{workload:?} constraints");
+            for rate in 1..=3 {
+                for exponent in [4, 15, 17, 19, 21, 23, 29] {
+                    let (_, params, num_queries) = configuration_at_rate(&air, 1 << exponent, rate);
+                    assert_eq!(params.num_constraints, constraints);
+                    assert_eq!(params.air_max_constraint_degree, 2);
+                    assert_eq!(params.num_batched_functions, width + EXTENSION_DEGREE);
+                    assert!((1..=MAX_QUERIES).contains(&num_queries));
+                    require_security(ProvenSecurity::compute(&params, 1 << exponent));
+                }
+            }
+        }
     }
     #[test]
     fn fri_proof_roundtrip_and_opening_tamper_rejection() {
         for rate in 1..=3 {
             let corpus = boundary_corpus();
-            let (config, security, _) = configuration_at_rate(corpus.len(), rate);
+            let air = AirKind::for_workload(Workload::U32);
+            let (config, security, _) = configuration_at_rate(&air, corpus.len(), rate);
             let mut proof = prove(&config, &MulAir, generate(&corpus), &[]);
             verify(&config, &MulAir, &proof, &[]).unwrap();
             require_security(proof.proven_security(&security));
@@ -291,6 +375,23 @@ mod tests {
             verify(&config, &MulAir, &decoded, &[]).unwrap();
             proof.opened_values.trace_local[4] += Challenge::ONE;
             assert!(verify(&config, &MulAir, &proof, &[]).is_err());
+        }
+    }
+    #[test]
+    fn wide_fri_proofs_roundtrip_through_the_context() {
+        for (workload, seed) in [(Workload::U64, 3), (Workload::U128, 5)] {
+            let corpus = Arc::new(Corpus::new(workload, 4, seed));
+            let context = Context::setup_at_rate(Arc::clone(&corpus), 1);
+            assert!(context.prove_and_verify() > 0);
+            let AirKind::Wide(air) = context.air else { unreachable!() };
+            let mut proof = prove(&context.config, &air, air.generate(&corpus), &[]);
+            verify(&context.config, &air, &proof, &[]).unwrap();
+            require_security(proof.proven_security(&context.security));
+            proof.opened_values.trace_local[air.value_columns()] += Challenge::ONE;
+            assert!(verify(&context.config, &air, &proof, &[]).is_err());
+            let config = context.config();
+            assert_eq!(config["trace_width"], air.width());
+            assert_eq!(config["air"]["operand_limbs"], air.limbs());
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::piop::spartan::protocol::{FieldConfig as Config, SpartanBitzField as 
 use circuit::{
     integer_storage::IntegerTableView,
     matrix_products::IntegerProducts,
-    p256, sha256,
+    sha256,
     witgen::{PackedWitness, ProductWitgen, Witgen},
 };
 #[cfg(test)]
@@ -166,27 +166,6 @@ impl OuterRows for EcdsaOuterRows<'_> {
     fn c(&self, row: usize) -> Self::C {
         self.read(2, row)
     }
-}
-
-pub(crate) fn inverse(value: &[u8; 32]) -> Result<[u8; 32]> {
-    inverse_on(&p256::P256, value)
-}
-
-/// [`inverse`] against an explicit curve's scalar field.
-pub(crate) fn inverse_on(curve: &'static p256::Curve, value: &[u8; 32]) -> Result<[u8; 32]> {
-    use field::{CanonicalCodec, IntegerOps, Uint};
-    let mut bytes = *value;
-    bytes.reverse();
-    let scalar: Uint<4> = IntegerOps
-        .decode_public(&bytes)
-        .expect("fixed-width scalar encoding");
-    let inverse = p256::scalar_inverse_ct(curve, &scalar);
-    if !inverse.validity().declassify() {
-        return Err(error("signature scalar is not in 1..n"));
-    }
-    IntegerOps.encode_into(inverse.value(), &mut bytes);
-    bytes.reverse();
-    Ok(bytes)
 }
 
 fn pack_bits(
@@ -445,28 +424,17 @@ pub fn generate_sha256_ecdsa_witness(
 
     let digest: [u8; 32] =
         array::from_fn(|byte| states.last().unwrap()[byte / 4].to_be_bytes()[byte % 4]);
-    let curve = prepared.curve.params();
-    let rinv = inverse_on(curve, &statement.r)?;
-    let sinv = inverse_on(curve, &statement.s)?;
-    let words = [
-        &digest,
-        &statement.qx,
-        &statement.qy,
-        &statement.r,
-        &statement.s,
-        &rinv,
-        &sinv,
-    ];
-    let input: [bool; p256::VERIFY_DIGEST_INPUT_BITS] =
-        array::from_fn(|bit| words[bit / 256][31 - (bit % 256) / 8] >> (bit % 8) & 1 != 0);
-    let mut generator =
-        ProductWitgen::with_inputs_and_capacity(&input, prepared.local.p_map.rows() - 1);
-    p256::verify_digest_circuit_with(&mut generator, curve, prepared.curve.profile(), &input);
+    let circuit = prepared.circuit();
+    let input = circuit
+        .input_bits_from_words(&digest, &statement.qx, &statement.qy, &statement.r, &statement.s)
+        .map_err(error)?;
+    let mut generator = ProductWitgen::with_inputs_and_capacity(&input, circuit.witness_bits());
+    circuit.build(&mut generator, &input);
     let (p_f, p_h, products) = generator.into_parts();
     if p_h.bit_len() != prepared.local.p_map.rows()
         || p_f.bit_len() + 1 != prepared.local.p_map.cols()
     {
-        return Err(error("unexpected P-256 witness width"));
+        return Err(error("unexpected ECDSA witness width"));
     }
     let f_rows = pack_source(prepared, &shards, &p_f);
     let h_rows = pack_assignment(prepared, &shards, &p_h);

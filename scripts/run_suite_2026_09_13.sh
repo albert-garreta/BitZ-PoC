@@ -10,7 +10,7 @@
 # started elsewhere without the lock will still collide) and with the source
 # tree frozen — the runners reject tracked-source edits mid-campaign.
 #
-#   bash scripts/run_suite_2026_09_13.sh [u32] [u64] [u128] [multiswap]
+#   bash scripts/run_suite_2026_09_13.sh [sha-ecdsa] [sha-ecdsa-p256] [hybrid-counts] [hybrid-witness] [u32] [u64] [u128] [multiswap]
 #
 # No arguments = all phases in that order. Paging policy: cells known to page
 # are excluded, except the Binius64-family rows, which run under a raised swap
@@ -70,21 +70,21 @@ hybrid_phase() { # phase-name shapes
 }
 
 if has sha-ecdsa; then
-  # The head-to-head, on secp256k1: Binius64 runs its own stock upstream
-  # verifier, BitZ a circuit matched to that schedule, so the measurement
-  # isolates the proof systems rather than the circuit engineering.
-  # BitZ rho=1/2,1/8; Binius64 rho=1/2,1/8; opener rho=1/2,1/8 rbr; threads 1
-  # and 10; 2^4..2^7 compressions.
+  # The secp256k1 head-to-head: BitZ on the circuit matched to Binius64's
+  # stock verifier schedule (rho=1/2,1/8), Binius64 on that stock verifier
+  # (rho=1/2,1/8) and the opener (rho=1/2,1/8 rbr), at threads 1 and 10, over
+  # the message sizes the paper table groups by (2^4..2^7 compressions), one
+  # runner invocation. Table: scripts/sha256_ecdsa_table.py <output>.
   python3 scripts/bench_gate.py run --label sha-ecdsa --swap-grow-gb 12 -- \
     python3 scripts/run_sha256_ecdsa_compare.py --curve secp256k1 \
-      --output "bench_results/suite-sha256-ecdsa-$(date +%Y%m%d)" --exponents 4 5 6 7
+      --output "bench_results/suite-sha256-ecdsa-secp256k1-$(date +%Y%m%d)" --exponents 4 5 6 7
 fi
 if has sha-ecdsa-p256; then
-  # BitZ alone on P-256, using the circuit the paper documents. There is no
-  # Binius64 row: upstream implements ECDSA over secp256k1 only, and the fork's
-  # P-256 verifier was written for this comparison rather than by its authors.
+  # P-256 is BitZ alone on the paper's circuit (rho=1/2,1/8): the pinned
+  # Binius64 fork has no P-256 verifier of its own, and the runner refuses to
+  # record one. Same sizes and threads as the head-to-head.
   python3 scripts/bench_gate.py run --label sha-ecdsa-p256 --swap-grow-gb 12 -- \
-    python3 scripts/run_sha256_ecdsa_compare.py --curve p256 --methods bitz-split \
+    python3 scripts/run_sha256_ecdsa_compare.py --curve p256 \
       --output "bench_results/suite-sha256-ecdsa-p256-$(date +%Y%m%d)" --exponents 4 5 6 7
 fi
 if has hybrid-counts || has hybrid-witness; then

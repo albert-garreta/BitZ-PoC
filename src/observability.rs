@@ -351,7 +351,10 @@ const INTERVAL_QUERY: &str = r#"
 WITH records AS (
 SELECT json_object('record', 'status',
   'incomplete', (SELECT count(*) FROM slice WHERE dur < 0),
-  'errors', (SELECT count(*) FROM stats WHERE value != 0 AND severity IN ('error', 'data_loss'))
+  'errors', (SELECT count(*) FROM stats WHERE value != 0 AND severity IN ('error', 'data_loss')),
+  'unterminated', json((SELECT json_group_array(name) FROM (SELECT name FROM slice WHERE dur < 0 LIMIT 8))),
+  'lossy', json((SELECT json_group_array(json_object('stat', name, 'value', value))
+                 FROM stats WHERE value != 0 AND severity IN ('error', 'data_loss')))
 ) AS record
 UNION ALL
 SELECT json_object('record', 'span', 'id', id, 'parent', parent_id,
@@ -366,7 +369,14 @@ SELECT replace(record, '"', '""') AS record FROM records"#;
 #[derive(serde::Deserialize)]
 #[serde(tag = "record", rename_all = "snake_case")]
 enum QueryRecord {
-    Status { incomplete: u64, errors: u64 },
+    Status {
+        incomplete: u64,
+        errors: u64,
+        #[serde(default)]
+        unterminated: Vec<serde_json::Value>,
+        #[serde(default)]
+        lossy: Vec<serde_json::Value>,
+    },
     Span(Interval),
 }
 
@@ -381,10 +391,18 @@ fn decode_intervals(bytes: &[u8]) -> io::Result<Vec<Interval>> {
     for row in reader.records() {
         let row = row.map_err(io::Error::other)?;
         match serde_json::from_str::<QueryRecord>(&row[0]).map_err(io::Error::other)? {
-            QueryRecord::Status { incomplete, errors } if !status => {
+            QueryRecord::Status { incomplete, errors, unterminated, lossy } if !status => {
                 if incomplete != 0 || errors != 0 {
-                    return Err(invalid(
-                        "incomplete or lossy Perfetto capture; refusing timing metrics",
+                    // Name the cause: which stats the processor flagged and
+                    // which slices never closed, so a refused capture can be
+                    // acted on (buffer size, flush, a span crossing threads).
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "incomplete or lossy Perfetto capture; refusing timing metrics \
+                             ({incomplete} unterminated slices {unterminated:?}; {errors} error/data-loss stats {lossy})",
+                            lossy = serde_json::Value::Array(lossy),
+                        ),
                     ));
                 }
                 status = true;

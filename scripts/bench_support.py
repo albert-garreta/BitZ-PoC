@@ -36,8 +36,12 @@ def environment(env, prefixes=("BITZ_", "F2_", "OBLONG_"), keys=BUILD_ENV):
 
 
 def file_hash(path):
+    # Chunked rather than hashlib.file_digest (Python 3.11+); same digest.
+    digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def source_metadata(root=ROOT):

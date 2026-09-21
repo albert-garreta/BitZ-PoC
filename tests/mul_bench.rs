@@ -125,7 +125,11 @@ fn capabilities_reject_or_record_without_hiding_malformed_arguments() {
     args.skip_unsupported = true;
     let jobs = args.expand(true).unwrap();
     assert_eq!(jobs.len(), 12);
-    assert_eq!(jobs.iter().filter(|j| j.skip.is_some()).count(), 4);
+    // Only Plonky3-WHIR lacks the u64 and u128 relations; Plonky3-FRI proves
+    // them through its full-product AIR.
+    let skipped: Vec<_> = jobs.iter().filter(|j| j.skip.is_some()).collect();
+    assert_eq!(skipped.len(), 2);
+    assert!(skipped.iter().all(|j| j.case.backend == "plonky3-whir"));
     for flags in [
         vec!["--w", "0"],
         vec!["--bitz-profile", "101"],

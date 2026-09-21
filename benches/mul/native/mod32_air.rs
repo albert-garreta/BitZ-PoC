@@ -9,7 +9,7 @@ pub(super) const LIMB_BASE: u64 = 1 << 16;
 pub(super) const VALUE_COLUMNS: usize = 8;
 pub(super) const TRACE_WIDTH: usize = VALUE_COLUMNS + 7 * 16 + 17;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct MulAir;
 impl<F> BaseAir<F> for MulAir {
     fn width(&self) -> usize {

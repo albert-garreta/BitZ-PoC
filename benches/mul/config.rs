@@ -649,9 +649,9 @@ impl Case {
             "native comparisons use u32-mod32, u64, or u128"
         } else if self.mode != Mode::Pcs
             && self.workload != Workload::U32Mod32
-            && matches!(self.backend.as_str(), "plonky3-fri" | "plonky3-whir")
+            && self.backend == "plonky3-whir"
         {
-            "Plonky3 native multiplication supports u32-mod32"
+            "Plonky3-WHIR native multiplication supports u32-mod32 (Plonky3-FRI covers u64 and u128)"
         } else if self.mode != Mode::Pcs && !PROOF_BACKENDS.contains(&self.backend.as_str()) {
             "backend has no native proof adapter"
         } else if !compare && self.mode != Mode::Bounds && self.workload == Workload::U32Mod32 {

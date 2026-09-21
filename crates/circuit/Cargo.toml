@@ -24,11 +24,10 @@ rayon = "1.10"
 num-bigint = "0.4"
 # Independent Montgomery oracle for shared arithmetic tests.
 crypto-bigint = "=0.7.5"
+# Third-party secp256k1 signatures and the endomorphism check for the
+# Binius64-matched schedule's tests.
+k256 = { version = "0.13.4", features = ["ecdsa", "arithmetic"] }
 divan = "0.1.21"
-# Independent ECDSA oracles: the circuit must accept signatures produced by a
-# third-party implementation, not just instances built from its own constants.
-p256 = { version = "0.13.2", features = ["ecdsa"] }
-k256 = { version = "0.13.4", features = ["ecdsa"] }
 
 [[bench]]
 name = "sha256_matrix_products"

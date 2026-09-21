@@ -93,6 +93,7 @@ num-integer = "0.1"
 clap = { version = "4", features = ["derive", "env", "string"] }
 csv = "1.4"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
+# secp256k1 fixtures for the Binius64-matched SHA+ECDSA head-to-head.
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 sha2 = "0.10"
 tempfile = "3"
@@ -232,6 +233,11 @@ required-features = ["span-metrics", "bench-internals"]
 # Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
 # t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
 # BITZ_SHA_PRODUCT_TS.
+
+[[example]]
+name = "mul_corpus_export"
+# The operand corpus and assignment digest of one multiplication case, for
+# external workers (benchmarks/zinc-plus). No optional features needed.
 
 [[example]]
 name = "binius_probe"

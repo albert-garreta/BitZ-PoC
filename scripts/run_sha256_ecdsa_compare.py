@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Compare signed SHA-256 chains in fresh processes; retain failures and full samples."""
+"""Compare signed SHA-256 chains in fresh processes; retain failures and full samples.
+
+One campaign runs one curve. `--curve secp256k1` is the head-to-head: BitZ
+runs its circuit matched to Binius64's stock verifier schedule, Binius64 runs
+that stock verifier. `--curve p256` is BitZ alone on the paper's circuit: the
+pinned Binius64 fork has no P-256 verifier of its own (its P-256 gadget was
+written for this comparison), so the runner refuses to record one.
+"""
 from bench_support import cargo_executables, source_metadata, environment, file_hash, run_process, address_space_limit, write_json
 import argparse
 import csv
@@ -24,38 +31,46 @@ METHODS = ["bitz-split", "bitz-all", "spartan-mc", "binius64", "binius64-ligerit
 DEFAULT_BITZ_PROFILES = ["custom:1:4", "custom:3:4"]
 PROFILE_RATES = {"custom:1:4": 1, "custom:3:4": 3}
 DEFAULT_BINIUS_RATES = [1, 3]
-FIXTURE_SCHEMA = "bitz/sha256-ecdsa-fixture/standard-p256/v1"
-# Signature curve of the campaign. Both families now carry both curves: BitZ
-# through `prepare_sha256_ecdsa_on`, Binius through its worker's `--curve`. On
-# secp256k1 BitZ additionally takes the GLV path, so its circuit is ~20% smaller
-# there; Binius uses its own native secp256k1 verifier. Only spartan-mc is
-# P-256 only.
-# A campaign names a signature curve; each method then runs the circuit that
-# makes the comparison meaningful on it, which is not always the same circuit.
-#
-#   secp256k1  the head-to-head. Binius64 runs its own stock upstream verifier
-#              (ecdsa::bitcoin_verify + msm_strauss_endo); BitZ runs a circuit
-#              matched to that schedule, so the measurement isolates the proof
-#              systems rather than the circuit engineering.
-#   p256       BitZ alone, on the circuit the paper documents. Binius64 upstream
-#              implements ECDSA only over secp256k1, so there is no Binius P-256
-#              row to compare against.
-CURVES = {
-    "secp256k1": dict(
-        fixture_schema="bitz/sha256-ecdsa-fixture/standard-secp256k1/v1",
-        bitz_curve="secp256k1-matched",
-        binius_curve="secp256k1",
-        bitz_profile="sha256-chain-secp256k1/binius-matched/v1",
-        circuit_profile="sha256-chain-secp256k1/standard/v1",
-    ),
-    "p256": dict(
-        fixture_schema=FIXTURE_SCHEMA,
-        bitz_curve="p256-paper",
-        binius_curve="p256",
-        bitz_profile="sha256-chain-p256/paper/v1",
-        circuit_profile="sha256-chain-p256/standard/v1",
-    ),
+CURVES = ["p256", "secp256k1"]
+FIXTURE_SCHEMAS = {"p256": "bitz/sha256-ecdsa-fixture/standard-p256/v1",
+                   "secp256k1": "bitz/sha256-ecdsa-fixture/standard-secp256k1/v1"}
+FIXTURE_SCHEMA = FIXTURE_SCHEMAS["p256"]
+# The circuit every (curve, method family) row must report. A pairing absent
+# here cannot be requested, so no comparison between mismatched circuits is
+# ever recorded: on secp256k1 BitZ's circuit is matched to Binius64's stock
+# verifier; on P-256 only BitZ's paper circuit and the Spartan control exist.
+CIRCUIT_PROFILES = {
+    ("p256", "bitz"): "sha256-chain-p256/bitz-lean-port/v1",
+    ("p256", "spartan-mc"): "sha256-chain-p256/spartan2-t256/v1",
+    ("secp256k1", "bitz"): "sha256-chain-secp256k1/bitz-binius64-matched/v1",
+    ("secp256k1", "binius64"): "sha256-chain-secp256k1/binius64-bitcoin-verify/v1",
 }
+
+
+def method_family(method):
+    for family in ("bitz", "binius64"):
+        if method.startswith(family):
+            return family
+    return method
+
+
+def circuit_profile(curve, method):
+    """The circuit a row of this method must report on this curve, or None."""
+    return CIRCUIT_PROFILES.get((curve, method_family(method)))
+
+
+def unsupported_methods(curve, methods):
+    """Human-readable reason for each method that has no recordable circuit on the curve."""
+    reasons = []
+    for method in methods:
+        if circuit_profile(curve, method) is not None:
+            continue
+        if curve == "p256" and method.startswith("binius64"):
+            reasons.append(f"{method}: Binius64 has no P-256 verifier of its own (the P-256 gadget in the "
+                           "pinned snapshot was added for this comparison), so P-256 is BitZ alone")
+        else:
+            reasons.append(f"{method}: no {curve} circuit")
+    return reasons
 METRICS = ["setup_ms", "witness_ms", "commit_ms", "protocol_ms", "prove_ms",
            "witness_to_proof_ms", "e2e_prover_ms", "verify_ms", "codec_ms", "outer_ms", "inner_ms",
            "opening_ms", "folding_ms", "piop_ms", "iop_ms", "proof_object_bytes", "proof_material_bytes"]
@@ -77,36 +92,38 @@ def sample_metrics(row):
     return row
 
 
-def cases(spartan_splits, methods, targets, threads, seeds,
+def cases(curve, spartan_splits, methods, targets, threads, seeds,
           bitz_profiles=DEFAULT_BITZ_PROFILES, binius_rates=DEFAULT_BINIUS_RATES):
     """BitZ depends only on total work; emit it once for each exponent/target.
 
-    Every case carries its scheme configuration: BitZ methods a `ligerito_profile`
-    (the per-case `BITZ_LIG_PROFILE`), Binius-family methods a `log_inv_rate`.
-    The opener (`binius64-ligerito`) exists only at its fixed 100-bit gate.
+    Every case carries its curve and its scheme configuration: BitZ methods a
+    `ligerito_profile` (the per-case `BITZ_LIG_PROFILE`), Binius-family
+    methods a `log_inv_rate`. The opener (`binius64-ligerito`) exists only at
+    its fixed 100-bit gate. Methods without a circuit on the curve are an error.
     """
+    if unsupported_methods(curve, methods):
+        raise ValueError("; ".join(unsupported_methods(curve, methods)))
     work = sorted({r + c for r, c in spartan_splits})
     for method, workers, seed in itertools.product(methods, threads, seeds):
         if method == "spartan-mc":
             for r, c in sorted(set(spartan_splits)):
-                yield dict(method=method, log_compressions=r+c, r=r, c=c,
+                yield dict(method=method, curve=curve, log_compressions=r+c, r=r, c=c,
                            security_target=None, threads=workers, seed=seed)
         elif method.startswith("bitz"):
             for exponent, target, profile in itertools.product(work, targets, bitz_profiles):
-                yield dict(method=method, log_compressions=exponent, r=None, c=None,
+                yield dict(method=method, curve=curve, log_compressions=exponent, r=None, c=None,
                            security_target=target, threads=workers, seed=seed,
                            ligerito_profile=profile)
         else:
             method_targets = [100] if method == "binius64-ligerito" else targets
             for exponent, target, rate in itertools.product(work, method_targets, binius_rates):
-                yield dict(method=method, log_compressions=exponent, r=None, c=None,
+                yield dict(method=method, curve=curve, log_compressions=exponent, r=None, c=None,
                            security_target=target, threads=workers, seed=seed,
                            log_inv_rate=rate)
 
 
-def validate_rows(rows, case, reps, binius_log_inv_rate=None, curve="p256"):
+def validate_rows(rows, case, reps, binius_log_inv_rate=None):
     """Reject incomplete, mislabelled, unverified or fixture-changing workers."""
-    profiles = CURVES[curve]
     expected_rate = case.get("log_inv_rate", binius_log_inv_rate if binius_log_inv_rate is not None else 1)
     if binius_log_inv_rate is not None and "log_inv_rate" in case and expected_rate != binius_log_inv_rate:
         return False
@@ -127,6 +144,12 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None, curve="p256"):
             return False
         if any(row.get(k) != v for k, v in case.items()):
             return False
+        # The row must name the curve's fixture profile and exactly the
+        # circuit this method is allowed to run on this curve.
+        if row.get("fixture_profile") != FIXTURE_SCHEMAS.get(case.get("curve")):
+            return False
+        if row.get("circuit_profile") != circuit_profile(case["curve"], case["method"]):
+            return False
         if row.get("sample") != sample or row.get("trial") != ("warmup" if sample == 0 else "sample"):
             return False
         if row.get("compressions") != 1 << case["log_compressions"]:
@@ -139,7 +162,7 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None, curve="p256"):
             return False
         if not isinstance(row.get("security"), dict) or "model" not in row["security"]:
             return False
-        if row.get("zk") is not False or row.get("fixture_profile") != profiles["fixture_schema"]:
+        if row.get("zk") is not False:
             return False
         if case["method"].startswith("bitz"):
             from ligerito_results import validate_ligerito
@@ -162,13 +185,6 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None, curve="p256"):
         binius = case["method"].startswith("binius64")
         revision = row.get("binius_revision" if binius else "spartan_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
-            return False
-        expected_curve = profiles["binius_curve"] if binius else profiles["bitz_curve"]
-        if row.get("curve") != expected_curve:
-            return False
-        expected_circuit = (profiles["circuit_profile"] if binius
-                            else profiles["bitz_profile"])
-        if row.get("circuit_profile") != expected_circuit:
             return False
         if binius and row["security"].get("log_inv_rate") != expected_rate:
             return False
@@ -204,11 +220,12 @@ def summarize(directory):
     fields = ["method", "log_compressions", "r", "c", "security_target", "threads", "seed",
               "status", "samples", "peak_rss_bytes", "fixture_id", "security_model",
               "economic_bits", "statistical_bits_lower_bound", *METRICS,
-              "log_inv_rate", "ligerito_profile", "timing"]
+              "log_inv_rate", "ligerito_profile", "timing", "curve", "circuit_profile"]
     fixture_ids = {}
+    curves, profiles = set(), {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
                      "fixture_id", "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", "security_model", "economic_bits",
-                     "statistical_bits_lower_bound", *METRICS, "log_inv_rate", "ligerito_profile", "timing"]
+                     "statistical_bits_lower_bound", *METRICS, "log_inv_rate", "ligerito_profile", "timing", "curve", "circuit_profile"]
     with (directory / "summary.csv").open("w", newline="") as stream, \
             (directory / "samples.csv").open("w", newline="") as sample_stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -220,13 +237,16 @@ def summarize(directory):
             row.update(status=result["status"], peak_rss_bytes=result["peak_rss_bytes"],
                        timing=result["case"].get("timing", "perfetto"),
                        log_inv_rate=result["case"].get("log_inv_rate"),
-                       ligerito_profile=result["case"].get("ligerito_profile"))
+                       ligerito_profile=result["case"].get("ligerito_profile"),
+                       curve=result["case"].get("curve", "p256"))
             normalized = [sample_metrics(s) for s in result["rows"]]
+            if normalized:
+                row["circuit_profile"] = normalized[0].get("circuit_profile")
             for sample in normalized:
                 record = dict(row, source_file=path.name)
                 record.update({k: sample.get(k) for k in ["trial", "sample", "verified", "fixture_id",
                                                          "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", *METRICS,
-                                                         "log_inv_rate", "ligerito_profile"]})
+                                                         "log_inv_rate", "ligerito_profile", "circuit_profile"]})
                 security = sample.get("security")
                 if isinstance(security, dict):
                     record.update(security_model=security.get("model"), economic_bits=security.get("economic_bits"),
@@ -247,22 +267,34 @@ def summarize(directory):
             if result["status"] == "complete":
                 key = (row["log_compressions"], row["seed"])
                 fixture_ids.setdefault(key, set()).add(row["fixture_id"])
+                curves.add(row["curve"])
+                profiles.setdefault(row["method"], set()).add(row.get("circuit_profile"))
             writer.writerow(row)
     mismatches = [list(key) for key, ids in fixture_ids.items() if len(ids) != 1]
+    # One curve per campaign, and one circuit per method: the pairing table
+    # above is what makes a completed directory a like-for-like comparison.
+    matched_circuits = (len(curves) <= 1 and all(
+        profiles[m] == {circuit_profile(next(iter(curves)), m)} for m in profiles))
     (directory / "comparison.json").write_text(json.dumps({
         "all_recorded_cases_complete": all(r["status"] == "complete" for r in results),
         "matched_fixtures": not mismatches, "mismatched_exponent_seed_pairs": mismatches,
+        "curve": sorted(curves)[0] if len(curves) == 1 else sorted(curves),
+        "circuit_profiles": {m: sorted(p) for m, p in sorted(profiles.items())},
+        "matched_circuits": matched_circuits,
+        "circuit_note": ("secp256k1: BitZ runs the circuit matched to Binius64's stock verifier schedule and "
+                         "Binius64 runs that stock verifier; p256: BitZ alone on the paper's circuit (the pinned "
+                         "Binius64 fork has no P-256 verifier of its own)."),
         "security_note": "BitZ economic targets, Spartan group security, and Binius FRI query targets use different accounting; see each row.",
         "proof_size_note": "proof_material_bytes includes commitments and auxiliary inputs; statement bytes are separate.",
         "timing_note": "Per sample: IOP/PCS = opening_ms; PIOP/preparation = protocol_ms - opening_ms. e2e_prover_ms is independently measured from witness generation through proof completion, excluding reusable setup and codec. Historical unavailable measurements remain null.",
         "memory_note": "peak_rss_bytes is the whole worker maximum, including setup and all trials; repeated in samples.csv, not measured per proof.",
     }, indent=2) + "\n")
-    return not mismatches
+    return not mismatches and matched_circuits
 
 
 def print_summary(directory):
     """Print median timings and whole-worker peak memory, including resumed cases."""
-    columns = [("method", "Method"), ("status", "Status"), ("timing", "Timing"),
+    columns = [("method", "Method"), ("curve", "Curve"), ("status", "Status"), ("timing", "Timing"),
                ("log_compressions", "Exponent"), ("threads", "Threads"),
                ("ligerito_profile", "Profile"), ("setup_ms", "Setup ms"),
                ("witness_ms", "Witness ms"), ("prove_ms", "Prove ms"),
@@ -328,7 +360,7 @@ def case_config_token(case):
 
 def run_case(binary, case, args, directory):
     shape = f"r{case['r']}-c{case['c']}" if case["r"] is not None else "total"
-    name = (f"{case['method']}-i{case['log_compressions']}-{shape}-s{case['security_target']}"
+    name = (f"{case['method']}-{case['curve']}-i{case['log_compressions']}-{shape}-s{case['security_target']}"
             f"{case_config_token(case)}-t{case['threads']}-seed{case['seed']}-reps{args.reps}")
     path = directory / f"{name}.result.json"
     if path.exists():
@@ -340,10 +372,8 @@ def run_case(binary, case, args, directory):
     c = case["c"] if case["c"] is not None else 0
     binius = case["method"].startswith("binius64")
     worker = args.binius64_worker if binius else binary
-    command = [str(worker), "--method", case["method"], "--r", str(r), "--c", str(c),
+    command = [str(worker), "--method", case["method"], "--curve", case["curve"], "--r", str(r), "--c", str(c),
                "--threads", str(case["threads"]), "--reps", str(args.reps), "--seed", str(case["seed"])]
-    profiles = CURVES[args.curve]
-    command.extend(["--curve", profiles["binius_curve"] if binius else profiles["bitz_curve"]])
     if not binius:
         command.extend(["--timing", args.timing])
     if case["security_target"] is not None:
@@ -386,7 +416,7 @@ def run_case(binary, case, args, directory):
             continue
         if isinstance(row, dict) and row.get("schema") == SCHEMA:
             rows.append(row)
-    if (returncode == 0 and validate_rows(rows, case, args.reps, args.binius_log_inv_rate, args.curve)
+    if (returncode == 0 and validate_rows(rows, case, args.reps, args.binius_log_inv_rate)
             and all(row["fixture_id"] == expected_fixture for row in rows)
             and (not case["method"].startswith("binius64")
                  or all(row["binius_revision"] == args.binius64_info["binius_revision"] for row in rows))):
@@ -414,34 +444,18 @@ def peak_rss_bytes(linux_rss_path, stderr_path):
 
 
 def prepare_fixtures(args, directory, binary, splits):
-    """Derive one signed instance per (exponent, seed) for the campaign's curve.
-
-    Fixtures come from the BitZ bench whenever it takes part, since both method
-    families must consume the same instance. A Binius-only campaign has no BitZ
-    binary, so its worker exports them instead; both compile the same P-256
-    derivation, so the exported files — and their ids — are identical.
-    """
-    schema = CURVES[args.curve]["fixture_schema"]
     fixtures = directory / "fixtures"
     fixtures.mkdir(exist_ok=True)
     hashes = {}
     for exponent, seed in itertools.product(sorted({r+c for r,c in splits}), sorted(set(args.seeds))):
         path = fixtures / f"i{exponent}-seed{seed}.json"
         if not path.exists():
-            if binary is not None:
-                command = [str(binary), "--method", "bitz-split", "--r", str(exponent), "--c", "0",
-                           "--seed", str(seed), "--curve", CURVES[args.curve]["bitz_curve"],
-                           "--export-fixture", str(path)]
-            else:
-                command = [str(args.binius64_worker), "--r", str(exponent), "--c", "0",
-                           "--seed", str(seed), "--curve", CURVES[args.curve]["binius_curve"],
-                           "--export-fixture", str(path)]
-            subprocess.run(command, check=True)
-        if json.loads(path.read_text()).get("schema") != schema:
-            raise ValueError("Fixture profile does not match the campaign curve; "
-                             "regenerate fixtures in a new output directory")
+            subprocess.run([str(binary), "--method", "bitz-split", "--curve", args.curve, "--r", str(exponent),
+                            "--c", "0", "--seed", str(seed), "--export-fixture", str(path)], check=True)
+        if json.loads(path.read_text()).get("schema") != FIXTURE_SCHEMAS[args.curve]:
+            raise ValueError("Fixture profile is not this curve's: regenerate fixtures in a new output directory")
         hashes[path.name] = file_hash(path)
-    return dict(profile=schema, files=hashes)
+    return dict(profile=FIXTURE_SCHEMAS[args.curve], files=hashes)
 
 
 def prepare_binius(args, directory):
@@ -474,8 +488,8 @@ def prepare_binius(args, directory):
 
 def compatible_manifest(previous, current):
     return all(previous.get(key) == current.get(key) for key in
-               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile",
-                "binius_log_inv_rate", "timing", "curve"])
+               ["binary_sha256", "runner_sha256", "fixtures", "binius64", "ligerito_profile", "binius_log_inv_rate",
+                "timing", "curve"])
 
 
 def main():
@@ -490,9 +504,10 @@ def main():
                         help="Spartan r:c pairs: 2^r compressions per instance, 2^c instances; BitZ uses only i=r+c")
     shapes.add_argument("--exponents", nargs="+", type=int,
                         help="Total compression exponents i; sweep every Spartan r+c=i split, BitZ once per i; default 3 5 7")
-    parser.add_argument("--methods", nargs="+", choices=METHODS, default=DEFAULT_METHODS)
-    parser.add_argument("--curve", choices=sorted(CURVES), default="p256",
-                        help="signature curve; spartan-mc supports p256 only")
+    parser.add_argument("--curve", choices=CURVES, required=True,
+                        help="secp256k1: BitZ (matched circuit) vs Binius64 (stock verifier); p256: BitZ alone on the paper's circuit")
+    parser.add_argument("--methods", nargs="+", choices=METHODS, default=None,
+                        help="default: bitz-split binius64 binius64-ligerito on secp256k1, bitz-split on p256")
     parser.add_argument("--targets", nargs="+", type=int, choices=[100, 128], default=[100],
                         help="security targets; the binius64-ligerito gate is fixed at 100, so its cases exist only there")
     parser.add_argument("--bitz-profiles", nargs="+", choices=sorted(PROFILE_RATES), default=DEFAULT_BITZ_PROFILES,
@@ -510,17 +525,14 @@ def main():
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()
+    if args.methods is None:
+        args.methods = DEFAULT_METHODS if args.curve == "secp256k1" else ["bitz-split"]
+    for reason in unsupported_methods(args.curve, args.methods):
+        parser.error(reason)
     if args.binius_log_inv_rate is not None and args.binius_rates is not None:
         parser.error("select either --binius-log-inv-rate or --binius-rates")
     args.binius_rates = args.binius_rates or ([args.binius_log_inv_rate] if args.binius_log_inv_rate is not None else DEFAULT_BINIUS_RATES)
     args.with_binius64 = any(method.startswith("binius64") for method in args.methods)
-    if args.curve == "p256" and any(m.startswith("binius64") for m in args.methods):
-        parser.error("--curve p256 is a BitZ-only campaign: Binius64 upstream implements "
-                     "ECDSA over secp256k1 only, and the fork's P-256 verifier was written "
-                     "for this comparison rather than by the Binius authors")
-    if args.curve != "p256" and "spartan-mc" in args.methods:
-        parser.error(f"--curve {args.curve} is unsupported by spartan-mc, whose "
-                     "demo relation is P-256 only")
     if args.summarize_only:
         if not args.output.is_dir() or not any(args.output.glob("*.result.json")):
             parser.error("--summarize-only requires an output directory with recorded cases")
@@ -545,28 +557,19 @@ def main():
         parser.error("positive reps/threads/limits and unsigned 64-bit seeds required")
     args.output.mkdir(parents=True, exist_ok=True)
     directory = args.output.resolve()
-    # A Binius-only campaign runs entirely in the Binius worker, which also
-    # exports its own fixtures, so the BitZ bench is neither built nor measured.
-    binius_only = all(method.startswith("binius64") for method in args.methods)
-    if args.binary:
-        binary = args.binary.resolve(strict=True)
-    elif binius_only:
-        binary = None
-    else:
-        binary = build(args, directory)
-    # The worker must exist before fixtures on a Binius-only campaign.
-    binius_info = prepare_binius(args, directory) if args.with_binius64 else None
-    manifest = metadata(binary or args.binius64_worker)
+    binary = args.binary.resolve(strict=True) if args.binary else build(args, directory)
+    manifest = metadata(binary)
     manifest["timing"] = args.timing
     manifest["curve"] = args.curve
+    manifest["circuit_profiles"] = {m: circuit_profile(args.curve, m) for m in args.methods}
     # Profiles are pinned per case (recorded in each case and row); the
     # manifest-level value only guards resumption against runner-policy drift.
     manifest["ligerito_profile"] = "per-case:" + ",".join(args.bitz_profiles)
     manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
     if args.with_binius64:
-        manifest["binius64"] = binius_info
+        manifest["binius64"] = prepare_binius(args, directory)
         manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
-    manifest["campaign"] = dict(methods=args.methods, targets=args.targets, threads=args.threads,
+    manifest["campaign"] = dict(curve=args.curve, methods=args.methods, targets=args.targets, threads=args.threads,
                                 bitz_profiles=args.bitz_profiles, binius_rates=args.binius_rates,
                                 seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib,
                                 memory_cap_enforced=address_space_limit(args.memory_gib) is not None)
@@ -581,17 +584,17 @@ def main():
         (directory / "source.patch").write_bytes(patch)
         # Preserve this task's new source files, which git diff does not include.
         sources = ["benches/sha256_ecdsa_compare.rs", "scripts/run_sha256_ecdsa_compare.py",
-                   "benches/support/sha256_ecdsa_fixture.rs",
-                   "benches/support/sha256_ecdsa_secp_fixture.rs"]
+                   "benches/support/sha256_ecdsa_fixture.rs", "crates/circuit/src/ecdsa.rs",
+                   "crates/circuit/src/p256.rs", "crates/circuit/src/p256/secp256k1_matched.rs"]
         if args.with_binius64:
             sources += ["benchmarks/binius64/" + path for path in
-                        ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "build.py", "build.rs",
-                         "src/main.rs", "src/secp256k1_relation.rs"]]
+                        ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "build.py", "build.rs", "src/main.rs",
+                         "src/secp256k1.rs"]]
         for relative in sources:
             target = directory / "source" / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((ROOT / relative).read_bytes())
-    jobs = list(cases(spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
+    jobs = list(cases(args.curve, spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
                       bitz_profiles=args.bitz_profiles, binius_rates=sorted(set(args.binius_rates))))
     for case in jobs:
         if not case["method"].startswith("binius64"):
@@ -603,7 +606,7 @@ def main():
     matched = summarize(directory)
     print_summary(directory)
     if not matched:
-        print("ERROR: completed methods used different fixtures; see comparison.json", file=sys.stderr)
+        print("ERROR: completed methods used different fixtures or circuits; see comparison.json", file=sys.stderr)
     return 0 if complete and matched else 1
 
 
