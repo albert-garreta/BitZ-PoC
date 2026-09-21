@@ -225,7 +225,7 @@ struct BitzWire {
 }
 
 fn bitz_revision() -> Option<&'static str> {
-    Some(env!("BITZ_REVISION"))
+    option_env!("BITZ_REVISION")
 }
 
 #[derive(Serialize)]
