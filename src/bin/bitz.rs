@@ -1788,9 +1788,9 @@ fn probe_provenance() -> Provenance {
         date: probe("date", &["-u", "+%Y-%m-%d"]).unwrap_or_else(|| "unknown date".to_string()),
         commit: if Path::new(env!("CARGO_MANIFEST_DIR")).join(".git").exists() {
             probe("git", &["-C", env!("CARGO_MANIFEST_DIR"), "describe", "--always", "--dirty", "--abbrev=9"])
-                .unwrap_or_else(|| env!("BITZ_REVISION").to_owned())
+                .unwrap_or_else(|| option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned())
         } else {
-            env!("BITZ_REVISION").to_owned()
+            option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned()
         },
         rustc: probe("rustc", &["--version"]).unwrap_or_else(|| "rustc ?".to_string()),
     }
