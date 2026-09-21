@@ -124,7 +124,9 @@ def benchmark_environment(inherited):
 
 
 def build_command(args):
-    features = ["span-metrics", "bench-internals"]
+    # Every BitZ benchmark build carries `unchecked` (release arithmetic); the
+    # hybrid bench is the one exception and refuses it.
+    features = ["span-metrics", "bench-internals", "unchecked"]
     if args.target == "compare":
         features.append("native-mul-compare")
     features.extend(feature for group in args.features for feature in group.split(",") if feature)

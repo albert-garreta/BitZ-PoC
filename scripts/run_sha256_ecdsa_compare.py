@@ -325,7 +325,7 @@ def print_summary(directory):
 
 
 def build(args, directory):
-    command = ["cargo", "build", "--release", "--locked", "--features", "sha256-ecdsa-compare",
+    command = ["cargo", "build", "--release", "--locked", "--features", "sha256-ecdsa-compare,unchecked",
                "--bench", "sha256_ecdsa_compare", "--message-format=json-render-diagnostics"]
     if args.offline:
         command.append("--offline")
