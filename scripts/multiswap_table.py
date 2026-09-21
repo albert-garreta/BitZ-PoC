@@ -193,15 +193,18 @@ def render(run: Path, cells: dict, command: str) -> str:
             else:
                 header.append(f"%   {scheme} {threads} thr: MISSING")
     intro = []
-    b, l = cells["bitz"], cells["limber-brakedown"]
+    b, l, z = cells["bitz"], cells["limber-brakedown"], cells["zinc"]
     if all(b.get(t) for t in THREADS) and all(l.get(t) for t in THREADS):
-        intro = [
-            "% intro table rows (tab:intro_table), same medians:",
-            f"%   RSA and & \\ftwoz-SNARK, rate $1/8$ & {fmt_prove(b[1]['prove_ms'])} & {fmt_prove(b[10]['prove_ms'])} & "
-            f"{fmt_verify(b[1]['verify_ms'])} & {fmt_verify(b[10]['verify_ms'])} & {fmt_kb(b[1]['proof_bytes'])} & -- \\\\",
-            f"%   Poseidon \\cite{{limber}} & Limber & {fmt_prove(l[1]['prove_ms'])} & {fmt_prove(l[10]['prove_ms'])} & "
-            f"{fmt_verify(l[1]['verify_ms'])} & {fmt_verify(l[10]['verify_ms'])} & {fmt_kb(l[1]['proof_bytes'])} & -- \\\\",
-        ]
+        group = [("RSA and & \\ftwoz-SNARK, rate $1/8$", b), ("Poseidon \\cite{limber} & Limber", l)]
+        if all(z.get(t) for t in THREADS):
+            group.append((" & Zinc+", z))
+        printed = [[fmt_prove(c[1]["prove_ms"]), fmt_prove(c[10]["prove_ms"]), fmt_verify(c[1]["verify_ms"]),
+                    fmt_verify(c[10]["verify_ms"]), fmt_kb(c[1]["proof_bytes"])] for _, c in group]
+        best = [min(float(p[i]) for p in printed) for i in range(5)]
+        intro = ["% intro table rows (tab:intro_table), same medians; bold = best of the group as printed:"]
+        for (label, _), p in zip(group, printed):
+            tex_cells = " & ".join((r"\textbf{" + v + "}") if float(v) == best[i] else v for i, v in enumerate(p))
+            intro.append(f"%   {label} & {tex_cells} & -- \\\\")
     table = [
         r"\begin{table}[H]",
         r"  \centering",
