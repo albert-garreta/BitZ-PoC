@@ -114,10 +114,10 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 \author[4]{Shreyas Londhe}
 \author[2]{John Wu}
 
-\affil[1]{World Foundation}
-\affil[2]{Nethermind Research}
-\affil[3]{Reilabs}
-\affil[4]{Ivy Research}
+\affil[1]{World Foundation, \texttt{remco@world.org}}
+\affil[2]{Nethermind Research, \texttt{albert@nethermind.io}, \texttt{john.wu@nethermind.io}}
+\affil[3]{Reilabs, \texttt{marcin.kostrzewa@reilabs.io}}
+\affil[4]{Ivy Research, \texttt{shreyas@zk.email}}
 
 \date{\today}
 \fi
@@ -137,7 +137,8 @@ Our approach decomposes the witness into a string of bits and commits to it over
 Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit that the factors across all the grand products have low entropy (i.e.\ they take a ``small'' amount of different values).   
 
 
- We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5.3$ million proved 32-bit integer multiplications on a  MacBook Air M5 24\,GB (10 threads, CPU-only). We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only). With $10$ threads the times are $21$\,ms and $3.3$\,ms. 
+% [AI edit (Claude Fable 5.1), 2026-09-21: throughput restated as the measured peak of tab:f2z-u32-mul (2^21 multiplications, rate 1/2, 10 threads: 371 ms) and given per second; please review]
+ We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5.6$ million proved 32-bit integer multiplications per second on a  MacBook Air M5 24\,GB (10 threads, CPU-only). We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only). With $10$ threads the times are $21$\,ms and $3.3$\,ms. 
 
 \end{abstract}
 
@@ -958,7 +959,7 @@ Thus, \ftwoz\ can be expanded as a PCS in a larger proof system (like the one we
 \end{cases}
 \end{equation}
 %
-where  $\pp=(\pp_i)_{i\in [m]}$ is a collection of polynomials over $R$, and $\bitstext(\ww)$ and $\ww$ are related through a bitification matrix, as the witness in \cref{s:to_general_rings}. 
+where  $\pp=(\pp_i)_{i\in [m]}$ is a collection of polynomials over $R$, and $\bitstext(\ww)$ and $\ww$ are related through a bitification matrix, as the witness in \iflncs\cref{d:general_linbitsrings}\else\cref{s:to_general_rings}\fi. 
 
 A particularly interesting instantiation of this relation is the following R1CS-like relation over the integers, where $\ww$ is a vector of bits (hence $\ww=\bitstext(\ww)$) and $\ww= \pi_2^{-1}(M\cdot \bff)$:
 %
@@ -2822,7 +2823,8 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
 
 
 
- On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) \albert{which ones, exactly?}. Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.  The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and our implementation uses it: we send $2$ elements instead of the $3$ in each sumcheck round. 
+ On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) %\albert{which ones, exactly?}. 
+ Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}.  The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and our implementation uses it: we send $2$ elements instead of the $3$ in each sumcheck round. 
 
  
 
@@ -3006,7 +3008,8 @@ We implement the \ftwoz\ PCS (\cref{c:LinModFieldBin}) and an end-to-end proof s
 
 
 
-Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$.}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
+% [AI edit (Claude Fable 5.1), 2026-09-21: the footnote gained a sentence on how the 100-bit level is set for the compared schemes; please review]
+Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$. For the schemes we compare against, we use each implementation\'s own $100$-bit setting, under its own soundness analysis (e.g.\ Binius64\'s $100$-bit target for the query phase of its Basefold opening).}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius. Further instantiation details are given in \cref{s:instantiation}.
 
@@ -3072,6 +3075,9 @@ The remaining experiments, including those summarized in \cref{tab:intro_table,t
 
 
 \iflncs We next provide more information regarding each of the  experiments  in \cref{tab:intro_table,s:experiments}, and provide results for a larger amount of configurations and parameters.  \else\fi
+
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: measurement protocol and column definitions, collected from the generated table headers, following the benchmark review; please review]
+\paragraph{Measurement protocol.} All experiments were run on a MacBook Air M5 with $24$\,GB of memory, CPU only, with $1$ and $10$ threads. Every reported time is the median of at least five runs after a warm-up run, each scheme running in its own process on an otherwise idle machine, and every measured proof is verified. Unless a caption states otherwise, \emph{Prover} is the complete prover after witness generation, commitment included; \emph{Witgen} is the generation of each scheme's witness from the inputs (for \ftwoz-SNARK, the bit decomposition of the witness is part of the commitment and is counted in the prover time); \emph{Peak mem.} is the maximum resident set size of the process running the prover (in the integer multiplication tables, of a separate process running one proof, except for the Zinc+ rows, which report the whole benchmark process); and proof sizes are uncompressed, with $1$\,KB $= 1000$ bytes.
 
 \paragraph{Non-comparisons.} The recent paper Flock \cite{flock} builds upon the Binius64 scheme, and manages  to prove over 300k SHA-256 compressions (and other hashes) per second on ten cores of an Apple M4 Max. Several of the innovations and optimizations of Flock have already been incorporated in the Binius64 repository. Flock was built with the purpose of proving many hash compressions in mind, while Binius64 is  designed to prove much wider classes of computations. Because of this, we do not include comparisons with Flock, i.e.\ because Flock does not immediately support proving the computations we test \ftwoz\ on. 
 
@@ -3192,10 +3198,11 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 We experiment with proving the SHA-256 hash of a message of a few KB followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}). 
 The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}.
 
-We benchmark \ftwoz\ both for proving ECDSA over the curve P-256 and over secp256k1. In the latter case, we compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). To do so, we compose two circuits in the Binius64 repository, one for SHA-256 and one for ECDSA (on the secp256k1 curve) signature verification. The repository does not include a circuit for ECDSA verficiation on P-256, and hence we do not benchmark it.
+% [AI edit (Claude Fable 5.1), 2026-09-21: "upstream" added, since the pinned fork carries an unoptimized P-256 circuit written for this comparison, and a typo fixed; please review]
+We benchmark \ftwoz\ both for proving ECDSA over the curve P-256 and over secp256k1. In the latter case, we compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). To do so, we compose two circuits in the Binius64 repository, one for SHA-256 and one for ECDSA (on the secp256k1 curve) signature verification. The upstream repository does not include a circuit for ECDSA verification on P-256, and hence we do not benchmark it.
 
 
-For ECDSA over secp256k1, \ftwoz\  circuit matches mathematically the circuit in Binius64, i.e.\ we prove the same sequence of secp251k1 operations, albeit these operations are arithmetized over $\ZZ$ in our case. This arithmetization was produced with AI, while the rest of SHA and ECDSA arithmetizations used by \ftwoz\ were obtained from a lean specification, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}
+For ECDSA over secp256k1, \ftwoz\  circuit matches mathematically the circuit in Binius64, i.e.\ we prove the same sequence of secp256k1 operations, albeit these operations are arithmetized over $\ZZ$ in our case. This arithmetization was produced with AI, while the rest of SHA and ECDSA arithmetizations used by \ftwoz\ were obtained from a lean specification, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}
 
 
 %Similarly,  Further circuit optimizations could be applied. 
@@ -3272,8 +3279,6 @@ We emphasize that, as done in the next experiment \cref{s:experiments_sha_modmul
      & Binius (UDR), rate $1/8$ & 6.54 & 96.5 & 42.9 & 5.99 & 3.97 & 250 & 0.463 \\
      & Binius (Johnson), rate $1/2$ & 6.51 & 92.5 & 42.8 & 6.99 & 5.16 & 353 & 0.470 \\
      & Binius (Johnson), rate $1/8$ & 6.73 & 104 & 44.6 & 6.60 & 4.71 & 188 & 0.484 \\
-     % [AI-drafted (Claude Opus 5), 2026-09-18: the Zinc+ row, from the author's measurements; please review]
-     & Zinc+ & -- & 4707 & 970 & 319 & 115 & 2432 & 2.03 \\
     \bottomrule
   \end{tabular}
    \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a secp256k1 ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
@@ -3290,6 +3295,9 @@ We prove simultaneously a large chain of SHA-256 compressions, together with a l
 This is an artificial circuit. For example, the mod $2^{32}$ integers are not related in any manner to the SHA-256 compressions. We see it as a proxy of computations that require many bit operations and integer/modular multiplications, e.g.\ RISC-V derived computations. The cost of ``gluing'' witness elements between one type of computation and another, both in \ftwoz-SNARK and Binius64, is essentially non-existent, because  both schemes commit to all the bits of witness elements separately, and these can be interpreted as  integers or binary field elements freely.
 
 Our end-to-end \ftwoz-SNARK is a hybrid construction combining the PIOP over $\ZZ$ from \cref{s:to_snark}, together with the Binius64 PIOP over binary fields. The PCS opening proofs are eventually batched together, both of them being over binary fields.   To arithmetize modular multiplication in Binius64  we use an approach similar to that for multiplying 32-bit integers, explained in \cref{s:integer_exps}.
+
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: one sentence on the equal-operation-count measurement (N = M, 2^9..2^14, same machine and protocol; table generated as bench_results/r0918c-tables/hybrid-equal-counts-table.tex, not included), following the benchmark review; please review]
+At equal operation counts ($N = M$) the SHA-256 part dominates the witness and the comparison becomes one between SHA-256 provers: there, at equal code rate, \ftwoz-SNARK's prover is $1$--$2\times$ slower than Binius64's and its verifier up to $1.5\times$ slower, while its proofs remain $2.1$--$2.3\times$ smaller.
 
 \begin{table}[H]
   \centering
@@ -3395,15 +3403,18 @@ e of this could go to the intro?}
 
 
 
-We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. For 32-bit integer multiplication, we compare against the Binius suite and Limber. For the sake of brevity, for larger bit-sizes we compare only against the Binius suite.
+% [AI edit (Claude Fable 5.1), 2026-09-21: the tables now carry Limber and Zinc+ rows at every bit-size, so the sentence restricting the comparison was updated; please review]
+We measure the cost of proving $N$ integer multiplications of the form $x\cdot  y = z$, for $x,y$ random $t$-bit integers, and $z$ a $2\cdot t$-bit integer, for $t\in \{32,64,128\}$. This is proved via our implemented end-to-end proof system, called \ftwoz-SNARK for R1CS over the integers, with \ftwoz\ as its PCS, as described in \cref{s:to_snark}. We compare against the Binius suite (\cref{s:binius_suite}), Limber and Zinc+.
 
  Binius64 operates natively with $64$ bit words, and has  a native constraint for the product of two such words $x,y$. Its output is two $64$-bit words $z_1, z_2$ such that $x\cdot y = z_1 + 2^{64} \cdot z_2$. Our 64-bit multiplication in Binius64 uses this functionality.  For $32$ bit products we constrain the low word $z_1$ to be $x\cdot y$ and the high word $z_2$, as well as the upper $32$ bits of $x$ and $y$, to be zero. For $t=128$ we use the  multiplication circuit from the Binius64 repository \url{https://github.com/binius-zk/binius64/blob/e0ddeb91d3826457322e3b7434a8ca0625f2f56e/crates/circuits/src/bignum/mul.rs#L27-L42}. 
 
- For Limber we use the specific integer multiplication benchmark in Limber's repository. 
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: how the Limber rows are encoded (our adapter follows the int_mult example of the Limber repository, Brakedown, 100-bit column-opening target) and that the Zinc+ rows use constraints we wrote in its constraint system; please review]
+ For Limber (commit \texttt{853c6c4}, with local benchmarking patches) we follow the encoding of the integer multiplication example in its repository, namely one constraint $x\cdot y = z \mod 2^t$ per multiplication with the high half of the product as the quotient, instantiated with Limber's Brakedown commitment at a $100$-bit column-opening target. For Zinc+ \cite{zincplus} (commit \texttt{878fbd8}) we wrote the constraint ourselves in its constraint system, as one integer constraint per multiplication with the operands and the product committed as $16$-bit limbs that are range checked with Zinc+'s lookup argument, and we use its default code rate $1/4$. 
 
 
 
 % [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-20 campaigns; sizes above 2^19 re-measured; please review]
+% [AI edit (Claude Fable 5.1), 2026-09-21: the ``--'' sentence of this caption and of the u64 and u128 captions now states the criterion (the prover started paging); please review]
 \begin{table}[H]
   \centering
   \small
@@ -3456,7 +3467,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Zinc+, rate $1/4$ & 112 & 50498 & 15120 & 51.5 & 19.3 & 20325 & 15.3 \\
     \bottomrule
   \end{tabular}
-  \caption{ \ftwoz-SNARK cost of proving $N=2^n$ integer multiplications $x \cdot y = z$ for random $32$-bit non-negative integers $x, y$ (with $z$  a $64$-bit integer). Configured at $100$ bits of round-by-round knowledge soundness (cf.\ \cref{s:instantiation}). Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air  M5, 24\,GB. }
+  \caption{ \ftwoz-SNARK cost of proving $N=2^n$ integer multiplications $x \cdot y = z$ for random $32$-bit non-negative integers $x, y$ (with $z$  a $64$-bit integer). Configured at $100$ bits of round-by-round knowledge soundness (cf.\ \cref{s:instantiation}). Cells with ``--'' are cells whose prover did not fit in the machine's memory and started paging; we do not report paged timings. Ran on a MacBook Air  M5, 24\,GB. }
   \label{tab:f2z-u32-mul}
 \end{table}
 
@@ -3519,7 +3530,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Zinc+, rate $1/4$ & 149 & 22823 & 5514 & 40.5 & 16.9 & 10470 & 10.1 \\
     \bottomrule
   \end{tabular}
-  \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$-bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB, CPU-only.}
+  \caption{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$-bit nonnegative integers $x$ and $y$ (with $z$  a $128$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory and started paging; we do not report paged timings. Ran on a MacBook Air M5, 24\,GB, CPU-only.}
   \label{tab:native-mul-u64}
 \end{table}
 
@@ -3569,7 +3580,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Zinc+, rate $1/4$ & 305 & 48154 & 13231 & 51.2 & 19.2 & 20303 & 16.2 \\
     \bottomrule
   \end{tabular}
-  \caption{  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$-bit nonnegative integers $x$ and $y$ (with $z$  a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB, CPU only.}
+  \caption{  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$-bit nonnegative integers $x$ and $y$ (with $z$  a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory and started paging; we do not report paged timings. Ran on a MacBook Air M5, 24\,GB, CPU only.}
   \label{tab:native-mul-u128}
 \end{table}
 
@@ -3577,7 +3588,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 \subsection{Comparison with Fields-witch}\label{s:exp_fields_witch}
 
 
-We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{r:comparison_grand_product_binius_lev} for a discussion of \cite{lev} and a conceptual comparison of both.  The Fields-witch repository is available at \url{https://github.com/morgana-proofs/fields-witch} (commit \texttt{30cca8c}), and it uses Ligerito as its underlying binary-field PCS, configured at the unique decoding radius. 
+% [AI edit (Claude Fable 5.1), 2026-09-21: the sha2 assembly build of Fields-witch is now stated (its Merkle commitments are 3-4x faster than in its default build, and the table was measured with it); please review]
+We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{r:comparison_grand_product_binius_lev} for a discussion of \cite{lev} and a conceptual comparison of both.  The Fields-witch repository is available at \url{https://github.com/morgana-proofs/fields-witch} (commit \texttt{30cca8c}), and it uses Ligerito as its underlying binary-field PCS, configured at the unique decoding radius. We build Fields-witch with the assembly backend of its SHA-256 dependency, which its default build does not enable and which speeds up its Merkle commitments. 
 
 
 
@@ -3887,7 +3899,7 @@ Let $\kstate_1$ be the knowledge state function of $\Pi_1$. Recall we defined it
 %At every verifier message after the first one, $\kstate$ coincides with $\kstate_1$ before and after the message and $\rbrextractor$ is the identity map, so the error of $\Pi_1'$ at that message is that of $\Pi_1$. 
 Let $\rho=(q,\pirand)$ be the first verifier message and $\tr=(\mu')$ the first prover message. Suppose  that $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)=1$ and $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww))=0$. We claim that then $(\inp',\oracle,\ww)$ is not in  $\Relation_{\mathsf{core}}^{\delta}$. Indeed, if it was, then $\ww\in\bits^{\codedim}$, hence  $\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)$ outputs $\bff_{\ww}$. Since   $(\inp',\oracle,\ww) \in \Relation_{\mathsf{core}}^{\delta}$, we have by \eqref{e:appendix_bitify}  that $(\inp,\oracle,\bff_\ww) \in \Relation_{\mathsf{gen}}^{\delta}$. By definition of $\kstate$ we then obtain  $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\bff_{\ww})=1$, contradicting the assumption $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww))=\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\bff_{\ww})=0$. Hence $(\inp',\oracle,\ww)\not\in\Relation_{\mathsf{core}}^{\delta}$. By  definition of $\kstate_1$, $\kstate_1(\inp',\oracle,\tr,\ww)=0$. On the other hand, $1=\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)=\kstate_1(\inp',\oracle,\tr\Vert\rho,\ww)$. The latter two conditions hold with probability at most $\kappa_0$ by the proof of \cref{t:thm_core_IOPP}. Hence the round-by-round knowledge error of $\Pi_1'$ at $\rho$ is at most $\kappa_0$.
 
-\albert{review} If Round 0 is executed, we must analyze the round-by-round knowledge soundness of $\Pi_1'$ with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$ (see \cref{a:OOD} for a definition). The arguments above apply almost verbatim: it suffices to let the extractor output $\bff_\ww$ when $\tr$ ends with the first verifier message in this case (the OOD sample) and $\ww\in\bits^{\codedim}$, and otherwise the extractor outputs $\ww$. The errors in this case are $(\kappa_{\mathsf{OOD}},\kappa_0,0)$ (cf.\ \cref{t:thm_core_IOPP_OOD}), with $\kappa_0$ and $0$ following from the same arguments as in the proof of \cref{t:thm_core_IOPP_OOD}, since after Round 0 $\Pi_1'$ proceeds exactly as $\Pi_1$, with $\kstate=\kstate_1$. % the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD}). 
+ If Round 0 is executed, we must analyze the round-by-round knowledge soundness of $\Pi_1'$ with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$ (see \cref{a:OOD} for a definition). The arguments above apply almost verbatim: it suffices to let the extractor output $\bff_\ww$ when $\tr$ ends with the first verifier message in this case (the OOD sample) and $\ww\in\bits^{\codedim}$, and otherwise the extractor outputs $\ww$. The errors in this case are $(\kappa_{\mathsf{OOD}},\kappa_0,0)$ (cf.\ \cref{t:thm_core_IOPP_OOD}), with $\kappa_0$ and $0$ following from the same arguments as in the proof of \cref{t:thm_core_IOPP_OOD}, since after Round 0 $\Pi_1'$ proceeds exactly as $\Pi_1$, with $\kstate=\kstate_1$. % the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD}). 
 
 
 \subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}\label{a:OOD}
