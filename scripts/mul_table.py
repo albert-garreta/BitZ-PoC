@@ -202,7 +202,7 @@ def main(argv=None) -> int:
     dirs = " ".join(str(d) for d in args.run_dirs)
     ram = next((row["provenance"].get("ram_bytes") or (row["provenance"].get("machine") or {}).get("physical_memory_bytes") for row in by.values() if row["provenance"].get("ram_bytes") or (row["provenance"].get("machine") or {}).get("physical_memory_bytes")), None)
     statement = {
-        "u32-mod32": "Native end-to-end proofs of $N$ independent multiplications $z = xy \\bmod 2^{32}$, with $x,y,z$ unsigned $32$-bit integers: ",
+        "u32-mod32": "Native end-to-end proofs of $N$ independent multiplications $x \\cdot y = z$ of random $32$-bit integers ($z$ a $64$-bit integer, committed as its low and high $32$-bit limbs, i.e.\\ $x\\cdot y = z_0 + 2^{32} z_1$): ",
         "u64": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $64$-bit integers ($z$ a $128$-bit integer): ",
         "u128": "Native end-to-end proofs of $N$ multiplications $x \\cdot y = z$ of random $128$-bit integers ($z$ a $256$-bit integer): ",
     }[workload]
