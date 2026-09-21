@@ -129,7 +129,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 
 \begin{abstract}
-We introduce \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Moreover, given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
+We introduce \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
 
 \ftwoz\ can thus be used as a PCS in essentially any proof system. We do so to build a SNARK, called \ftwoz-SNARK, for integer polynomial constraints, following the fingerprinting technique of Campanelli and Hall-Andersen, where one commits over $\ZZ$ and proves the constraints over a random prime field $\FF_q$, i.e.\ \ftwoz\ is deployed with $S=\ZZ$, $R=\FF_q$, and $\psi$ reduction modulo $q$. \ftwoz\ applies equally to other ring-based proof systems, or field-based ones.
 
@@ -137,8 +137,8 @@ Our approach decomposes the witness into a string of bits and commits to it over
 Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit that the factors across all the grand products have low entropy (i.e.\ they take a ``small'' amount of different values).   
 
 
-% [AI edit (Claude Fable 5.1), 2026-09-21: throughput restated as the measured peak of tab:f2z-u32-mul (2^21 multiplications, rate 1/2, 10 threads: 371 ms) and given per second; please review]
- We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5.6$ million proved 32-bit integer multiplications per second on a  MacBook Air M5 24\,GB (10 threads, CPU-only). We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only). With $10$ threads the times are $21$\,ms and $3.3$\,ms. 
+ We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5$ million proved 32-bit integer multiplications per second on a  MacBook Air M5 24\,GB (10 threads, CPU-only) with proof sizes under $150$\,kB. We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only). With $10$ threads the times are $21$\,ms and $3.3$\,ms. 
+ 
 
 \end{abstract}
 
@@ -223,12 +223,12 @@ The table below shows highlight benchmark results of our implementation of \ftwo
          \addlinespace
          RSA and & \ftwoz-SNARK, rate $1/8$ & \textbf{226} & \textbf{76.6} & \textbf{7.8} & \textbf{10.0} & \textbf{268} & -- \\
          Poseidon \cite{limber} & Limber & 1051 & 548 & 38.7 & 37.9 & 5769 & -- \\
-          & Zinc+ & 1876 & 523 & 16.1 & 12.1 & 1272 & -- \\
+          & Zinc+ & 1874 & 545 & 16.1 & 12.0 & 1272 & -- \\
          \addlinespace
-         $2^{20}$ mult.\ mod $2^{32}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1132} & \textbf{287} & 51.1 & \textbf{15.7} & 303 & \textbf{5.30} \\
-         and $2^{12}$ SHA-256 & \ftwoz-SNARK, rate $1/8$ & 1456 & 360 & \textbf{50.6} & 15.9 & \textbf{176} & 5.48 \\
-          & Binius64, rate $1/2$ & 1995 & 617 & 87.5 & 27.3 & 569 & 12.7 \\
-          & Binius64, rate $1/8$ & 2417 & 710 & 85.8 & 26.0 & 387 & 12.7 \\
+         $2^{20}$ mult.\ mod $2^{32}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1120} & \textbf{297} & 50.7 & 16.3 & 303 & \textbf{5.29} \\
+         and $2^{12}$ SHA-256 & \ftwoz-SNARK, rate $1/8$ & 1444 & 349 & \textbf{50.5} & \textbf{15.3} & \textbf{176} & 5.46 \\
+          & Binius64, rate $1/2$ & 1980 & 632 & 85.2 & 26.5 & 519 & 11.1 \\
+          & Binius64, rate $1/8$ & 2405 & 714 & 86.5 & 25.1 & 356 & 11.9 \\
 
 
 
@@ -868,9 +868,7 @@ T_{A_0}[\bb]\defeq \Big( y_{(0,\bb,0)}^{\,x}\cdot y_{(0,\bb,1)}^{\,x'}\cdot \eq(
 We next discuss other existing approaches to proving foreign field statements in the exponent of a generator of $\comfield^*$ (the multiplicative subgroup of a binary field), in the context of hash-based SNARKs. Notice that elliptic curve-based PCSs usually perform commitments and opening proofs in the exponent of a generator of a large elliptic curve subgroup.  
 
    
-        \paragraph{Binius64} \cite{binius64}  multiplies pairs of 64-bit integer \emph{witness} elements in the exponent of $g$. This is substantially different from our setting where, when binary fields come into play, we are only interested in proving an integer claim about a linear combination of elements of the form ``(public values)$\cdot$ (witness elements)'', i.e.\ $\langle \vv, \ww\rangle = \mu$ in $\ZZ$, with the public values $\vv$ admitting a tensor split $\vv=\vv^{(1)} \otimes \vv^{(2)}$ (also \ftwoz \ can prove multiplication of all sorts of ring elements, not just 64-bit integers).   
-        This simpler setting is what allows us to use the low entropy optimizations designed in this work.  Crucially, \textbf{the reason why we only need to address this setting is because we start off with constraints and a PIOP over integers/fields/rings (Steps 2 to 4 inclusive), and only ever move to work on binary fields when we need to prove an MLE evaluation of the witness (a linear claim) over a ``small'' prime field (Step 5)}. 
-
+        
         
         
         %The tensor split allows us to replace the claim into $\codedim_2=|\vv^{(2)}|$ claims $\langle \vv^{(1)}, \ww_{*j}\rangle = \eta_j$ in $\ZZ$ for all $j\in [\codedim_2]$. These claims are then each proved ``in the exponent''. Since $\vv^{(1)}$ is common across all claims, and $\ww$ is filled with bits, the resulting grand products are low entropy. 
@@ -3299,6 +3297,7 @@ Our end-to-end \ftwoz-SNARK is a hybrid construction combining the PIOP over $\Z
 % [AI-drafted (Claude Fable 5.1), 2026-09-21: one sentence on the equal-operation-count measurement (N = M, 2^9..2^14, same machine and protocol; table generated as bench_results/r0918c-tables/hybrid-equal-counts-table.tex, not included), following the benchmark review; please review]
 At equal operation counts ($N = M$) the SHA-256 part dominates the witness and the comparison becomes one between SHA-256 provers: there, at equal code rate, \ftwoz-SNARK's prover is $1$--$2\times$ slower than Binius64's and its verifier up to $1.5\times$ slower, while its proofs remain $2.1$--$2.3\times$ smaller.
 
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-21 re-measurement campaign (bench_results/cs-20260921-hybrid, scripts/hybrid_table.py --variant witness); please review]
 \begin{table}[H]
   \centering
   \small
@@ -3344,12 +3343,12 @@ At equal operation counts ($N = M$) the SHA-256 part dominates the witness and t
      & & Binius (Johnson), rate $1/2$ & 1017 & 338 & 44.2 & 16.2 & 406 & 6.00 \\
      & & Binius (Johnson), rate $1/8$ & 1225 & 377 & 44.0 & 15.6 & 215 & 6.07 \\
     \addlinespace
-    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1132} & \textbf{287} & 51.1 & \textbf{15.7} & 303 & \textbf{5.30} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 1456 & 360 & \textbf{50.6} & 15.9 & \textbf{176} & 5.48 \\
-     & & Binius (UDR), rate $1/2$ & 1995 & 617 & 87.5 & 27.3 & 569 & 12.7 \\
-     & & Binius (UDR), rate $1/8$ & 2417 & 710 & 85.8 & 26.0 & 387 & 12.7 \\
-     & & Binius (Johnson), rate $1/2$ & 2031 & 628 & 87.8 & 27.9 & 418 & 12.7 \\
-     & & Binius (Johnson), rate $1/8$ & 2439 & 717 & 86.8 & 26.9 & 222 & 12.8 \\
+    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1120} & \textbf{297} & 50.7 & 16.3 & 303 & \textbf{5.29} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 1444 & 349 & \textbf{50.5} & \textbf{15.3} & \textbf{176} & 5.46 \\
+     & & Binius (UDR), rate $1/2$ & 1980 & 632 & 85.2 & 26.5 & 519 & 11.1 \\
+     & & Binius (UDR), rate $1/8$ & 2405 & 714 & 86.5 & 25.1 & 356 & 11.9 \\
+     & & Binius (Johnson), rate $1/2$ & 2011 & 643 & 85.5 & 26.7 & 419 & 11.6 \\
+     & & Binius (Johnson), rate $1/8$ & 2429 & 721 & 87.2 & 27.2 & 222 & 12.5 \\
     \bottomrule
   \end{tabular}
   \caption{Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$  chained SHA-256 compressions (equal packed witnesses for the two branches). Configured at $\lambda = 100$ bits of round-by-round knowledge soundness. \emph{Prover} includes witness synthesis and the commitments. The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Ran on a MacBook Air M5, 24\,GB, CPU only.}
@@ -3363,39 +3362,14 @@ At equal operation counts ($N = M$) the SHA-256 part dominates the witness and t
 
 
 
-\begin{comment}
 \subsection{SHA-256 hashing}\label{s:experiments_sha}
 
+% [AI-drafted (Claude Opus 5), 2026-09-21: this subsection and \cref{tab:sha256} replace the empty placeholder that stood here; numbers from the campaign of 2026-09-17 (bench_results/r0917-sha-chain), table generated as paper/sha256-table.tex by scripts/sha256_table.py; please review]
+We measure the cost of proving $N$ SHA-256 compressions on their own, with no integer constraints, against the Binius suite (\cref{s:binius_suite}). This is the workload \ftwoz-SNARK is least suited for --- the whole computation is native to $\comfield$, so none of the integer machinery of \cref{s:to_snark} is exercised --- and the comparison isolates the cost of running the \ftwoz\ IOP on a purely binary constraint system. We arithmetize SHA-256 as the $\mathsf{CM}$ instance of \cref{tab:sha_arithmetization}, committing $7144$ bits per compression; the $20456$ assignment cells of each compression are $\FF_2$-virtualized (\cref{s:to_f2_virtual}) and are never committed.
 
-We compare Binius64 \cite{binius64}, Flock \cite{flock},  and our \ftwoz-SNARK on proving SHA-256 hashing.  
+The smaller witness does not make for a faster prover. At every size of \cref{tab:sha256}, and at one and at ten threads alike, \ftwoz-SNARK is about $5\times$ slower than Binius (UDR) at the same rate. The reason is that our prover is dominated by the GKR forest over the grand-product tensor ($92\%$ of the prover at $N=2^{14}$), and the size of that tensor is the size of the virtualized assignment --- $2^{29}$ cells at $N=2^{14}$ --- and not that of the $2^{27}$ committed bits. What the small witness does buy is memory: at $N=2^{14}$ our prover peaks at $2.9$\,GB against $15.6$\,GB for Binius64, a $5.4\times$ reduction, and on a fixed machine it is the peak footprint, not the running time, that decides the largest batch one can prove at all. Proof sizes sit between the two Binius configurations: $1.4$--$1.5\times$ smaller than Binius (UDR) at equal rate, and $1.5\times$ larger than Binius (Johnson) at rate $1/8$, the configuration that runs Binius64's PIOP on the \ftwoz\ opener and gives the smallest proofs of the table. Witness generation is reported separately for every scheme; ours is a bit-by-bit reference implementation that we have not optimized.
 
-
-    Continue comparison when we have the numbers. Don't forget memory consumption}
-
-e of this could go to the intro?}
-    \begin{enumerate}[leftmargin=*]
-        \item  Run a PIOP that is composed of a PIOP for integer constraints (as in \cref{s:to_snark}) and a PIOP for binary field constraints (such as Binius64). This results in two MLE claims, one for (a projection of) $\ff_\ZZ$ over a finite field, and another for $\bff_2$ over a binary field.
-        \item Use \ftwoz\ to reduce the resulting MLE evaluation claim for (a projection of) $\bff_\ZZ$ to an MLE evaluation claim over a binary field;
-        \item Use WHIR or another PCS over binary fields to prove the above claim, together with (in a batched manner) the MLE evaluation claim for $\bff_2$.
-    \end{enumerate}
-\begin{table}[H]
-\centering
-  \begin{tabular}{@{}lrrr@{}}
-    \toprule
-    Scheme  & Prove & Verify & Proof \\
-     &   (ms) & (ms) & (KB) \\
-    \midrule
-    \ftwoz \ (this work)             &  &  &  \\
-    Zinc+ \cite{zincplus}    &            &          &  \\
-    Binius64  &            &        &  \\
-    ?            &           &           &  \\
-\bottomrule  
-\end{tabular}
-  \caption{}
-  \label{t:SHA_benches}
-\end{table}
-
-\end{comment} 
+\input{sha256-table}
 
 \subsection{Integer multiplication}\label{s:integer_exps}
 
@@ -3586,12 +3560,17 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 \subsection{Comparison with Fields-witch}\label{s:exp_fields_witch}
 
 
-% [AI edit (Claude Fable 5.1), 2026-09-21: the sha2 assembly build of Fields-witch is now stated (its Merkle commitments are 3-4x faster than in its default build, and the table was measured with it); please review]
-We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{r:comparison_grand_product_binius_lev} for a discussion of \cite{lev} and a conceptual comparison of both.  The Fields-witch repository is available at \url{https://github.com/morgana-proofs/fields-witch} (commit \texttt{30cca8c}), and it uses Ligerito as its underlying binary-field PCS, configured at the unique decoding radius. We build Fields-witch with the assembly backend of its SHA-256 dependency, which its default build does not enable and which speeds up its Merkle commitments. 
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: paragraph rewritten for clarity at the author's request (the four Fields-witch rows are now explained, and the SHA-256 build sentence reworded); the ratios quote tab:fields-witch as re-measured on 2026-09-21; please review]
+We compare \ftwoz\ experimentally with Fields-witch \cite{lev}, a PCS that commits its witness over the binary field $\FF_{2^{127}}$ and proves MLE evaluation claims over the prime field $\FF_{2^{127}-1}$; see \cref{r:comparison_grand_product_binius_lev} for a conceptual comparison. We use Soukhanov's implementation (\url{https://github.com/morgana-proofs/fields-witch}, commit \texttt{30cca8c}). The comparison is bit-matched: a vector of $2^{k}$ elements of $\FF_{2^{127}-1}$ occupies the same $2^{k+7}$ committed bits in both schemes ($n = k+7$ and $W = 1$ for \ftwoz).
+
+Fields-witch opens three binary-field commitments per proof: the committed vector, the ``tails'' that its exponent rounds produce, and the auxiliary table of its LogUp* argument. Each is opened with Fields-witch's own Ligerito instance, run in the unique-decoding regime (\cref{r:oracle_udr}). The rows labelled \emph{Fields-witch, rate $\rho$} run the implementation as published, with the initial Reed--Solomon rate of these instances set to $\rho$ (each deeper Ligerito level halves the rate). The rows labelled \emph{Fields-witch + \ftwoz\ opener} isolate the effect of the opener from that of the protocol around it: the two large openings, of the vector and of the tails, go through the \ftwoz\ opener instead, in exactly the configuration of the \ftwoz\ rows (Ligerito at rate $\rho$ in the Johnson regime with the out-of-domain round, \cref{r:johnson_instantiation}, $100$ bits of round-by-round soundness, BLAKE3 Merkle trees), while the LogUp* opening stays with Fields-witch's Ligerito, since its claims live in $\FF_{2^{127}}$ and cannot be opened by an $\FF_{2^{128}}$ opener. The swap shrinks Fields-witch's proofs by $1.2$--$1.5\times$ and changes its prover time by at most $10\%$ from $2^{25}$ bits on; the remaining gap to \ftwoz, whose proofs are $3.8$--$5.7\times$ smaller and whose prover is $1.3$--$2\times$ faster, is therefore due to the protocol itself, which needs a single opening and no exponent rounds. Fields-witch's polylogarithmic verifier overtakes ours only at $2^{29}$ bits.
+
+Both schemes hash with hardware instructions: \ftwoz\ uses BLAKE3, and Fields-witch's SHA-256 Merkle trees are built with the assembly backend of its SHA-256 dependency, which its default build leaves disabled and which makes its commitments $3$--$4\times$ faster than the portable implementation; \cref{tab:fields-witch} reports this faster build.
 
 
 
 
+% [AI-drafted (Claude Fable 5.1), 2026-09-21: rows regenerated from the 2026-09-21 re-measurement campaign (PerfRuns/cs-20260921-fields-witch-suite/results.jsonl, rendered in the table's compact layout); please review]
 \begin{table}[H]
   \centering
   \small
@@ -3602,40 +3581,40 @@ We compare experimentally \ftwoz\ with Fields-witch \cite{lev}, a PCS over the p
     \cmidrule(lr){3-4} \cmidrule(lr){5-6}
     Bits & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{15.3} & \textbf{8.79} & 1.52 & 1.64 & 108 & \textbf{0.04} \\
-     & \ftwoz-SNARK, rate $1/8$ & 21.6 & 10.6 & \textbf{1.35} & \textbf{1.45} & \textbf{66} & \textbf{0.04} \\
-     & Fields-Witch, rate $1/2$ & 23.5 & 18.5 & 6.14 & 6.83 & 430 & 0.08 \\
-     & Fields-Witch, rate $1/8$ & 25.5 & 18.9 & 5.62 & 6.23 & 370 & 0.08 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 28.8 & 20.8 & 6.14 & 6.83 & 368 & 0.08 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 29.5 & 20.4 & 5.67 & 6.30 & 279 & 0.09 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 17.2 & \textbf{9.31} & 1.32 & 1.57 & 109 & \textbf{0.04} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{16.6} & 9.62 & \textbf{1.11} & \textbf{1.37} & \textbf{65} & \textbf{0.04} \\
+     & Fields-Witch, rate $1/2$ & 23.6 & 18.9 & 6.14 & 6.80 & 430 & 0.08 \\
+     & Fields-Witch, rate $1/8$ & 25.6 & 19.1 & 5.63 & 6.23 & 370 & 0.09 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 32.2 & 21.1 & 6.07 & 6.61 & 369 & 0.09 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 31.1 & 21.2 & 5.64 & 6.27 & 278 & 0.09 \\
     \addlinespace
-    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{51.6} & \textbf{20.0} & 2.03 & 2.12 & 141 & \textbf{0.11} \\
-     & \ftwoz-SNARK, rate $1/8$ & 52.1 & 20.6 & \textbf{1.94} & \textbf{2.02} & \textbf{86} & 0.13 \\
-     & Fields-Witch, rate $1/2$ & 72.3 & 39.7 & 6.97 & 7.72 & 574 & 0.24 \\
-     & Fields-Witch, rate $1/8$ & 82.4 & 41.4 & 6.62 & 7.31 & 482 & 0.25 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 83.7 & 43.1 & 6.98 & 7.77 & 472 & 0.26 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 86.8 & 44.5 & 6.58 & 7.29 & 345 & 0.27 \\
+    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{46.5} & \textbf{20.5} & 1.77 & 2.24 & 140 & \textbf{0.11} \\
+     & \ftwoz-SNARK, rate $1/8$ & 53.2 & 21.9 & \textbf{1.51} & \textbf{1.87} & \textbf{86} & 0.12 \\
+     & Fields-Witch, rate $1/2$ & 72.6 & 40.5 & 6.99 & 7.75 & 574 & 0.26 \\
+     & Fields-Witch, rate $1/8$ & 83.2 & 42.3 & 6.61 & 7.33 & 482 & 0.27 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 83.1 & 43.1 & 7.37 & 7.82 & 470 & 0.27 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 90.8 & 45.8 & 6.49 & 7.20 & 345 & 0.29 \\
     \addlinespace
-    $2^{25}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{177} & \textbf{51.8} & 3.61 & 3.45 & 174 & \textbf{0.37} \\
-     & \ftwoz-SNARK, rate $1/8$ & 204 & 58.2 & \textbf{3.39} & \textbf{3.25} & \textbf{108} & 0.50 \\
-     & Fields-Witch, rate $1/2$ & 255 & 100 & 7.39 & 8.50 & 710 & 0.84 \\
-     & Fields-Witch, rate $1/8$ & 300 & 110 & 6.95 & 8.31 & 575 & 0.91 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 263 & 105 & 7.62 & 8.82 & 574 & 0.92 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 295 & 116 & 6.96 & 8.00 & 408 & 0.97 \\
+    $2^{25}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{166} & \textbf{56.4} & 2.82 & 3.47 & 174 & \textbf{0.42} \\
+     & \ftwoz-SNARK, rate $1/8$ & 184 & 57.3 & \textbf{2.54} & \textbf{2.98} & \textbf{108} & 0.46 \\
+     & Fields-Witch, rate $1/2$ & 284 & 103 & 9.11 & 8.51 & 710 & 0.91 \\
+     & Fields-Witch, rate $1/8$ & 303 & 116 & 7.01 & 8.10 & 575 & 0.97 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 266 & 107 & 7.74 & 8.88 & 573 & 0.95 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 293 & 115 & 7.01 & 8.04 & 409 & 1.01 \\
     \addlinespace
-    $2^{27}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{700} & \textbf{169} & 9.73 & 7.01 & 208 & \textbf{0.98} \\
-     & \ftwoz-SNARK, rate $1/8$ & 722 & 192 & 9.48 & \textbf{6.73} & \textbf{129} & 1.17 \\
-     & Fields-Witch, rate $1/2$ & 860 & 252 & 7.11 & 8.19 & 852 & 2.82 \\
-     & Fields-Witch, rate $1/8$ & 1053 & 292 & 6.62 & 7.89 & 687 & 3.06 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 857 & 263 & 7.31 & 8.41 & 674 & 3.09 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 968 & 300 & \textbf{6.59} & 7.86 & 473 & 3.32 \\
+    $2^{27}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{637} & \textbf{170} & 6.47 & 6.33 & 208 & \textbf{1.43} \\
+     & \ftwoz-SNARK, rate $1/8$ & 663 & 191 & \textbf{6.43} & \textbf{6.07} & \textbf{129} & 1.65 \\
+     & Fields-Witch, rate $1/2$ & 853 & 257 & 7.07 & 8.49 & 852 & 3.02 \\
+     & Fields-Witch, rate $1/8$ & 1050 & 292 & 6.63 & 7.86 & 687 & 3.28 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 855 & 264 & 7.33 & 8.76 & 675 & 3.18 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 961 & 303 & 6.55 & 7.89 & 472 & 3.43 \\
     \addlinespace
-    $2^{29}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2953} & \textbf{687} & 18.4 & 11.8 & 259 & \textbf{3.46} \\
-     & \ftwoz-SNARK, rate $1/8$ & 2971 & 793 & 18.4 & 11.4 & \textbf{167} & 4.46 \\
-     & Fields-Witch, rate $1/2$ & 3264 & 884 & 8.32 & 9.59 & 1004 & 10.5 \\
-     & Fields-Witch, rate $1/8$ & 4099 & 1049 & 7.86 & 9.14 & 808 & 11.4 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 3207 & 912 & 8.57 & 9.96 & 792 & 11.5 \\
-     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 3611 & 1079 & \textbf{7.62} & \textbf{8.93} & 554 & 12.5 \\
+    $2^{29}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2569} & \textbf{701} & 12.1 & 10.3 & 261 & \textbf{5.58} \\
+     & \ftwoz-SNARK, rate $1/8$ & 2722 & 773 & 12.1 & 9.70 & \textbf{168} & 6.52 \\
+     & Fields-Witch, rate $1/2$ & 3251 & 897 & 8.19 & 9.61 & 1004 & 11.2 \\
+     & Fields-Witch, rate $1/8$ & 4096 & 1092 & 7.78 & 9.21 & 808 & 12.3 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/2$ & 3186 & 917 & 8.52 & 9.97 & 791 & 11.8 \\
+     & Fields-Witch + \ftwoz\ opener, rate $1/8$ & 3686 & 1099 & \textbf{7.73} & \textbf{9.08} & 553 & 12.9 \\
     \bottomrule
   \end{tabular}
   \caption{Cost of proving an MLE claim for a vector of $2^{m-7}$ field elements from $\FF_{2^{127}-1}$, for $m \in \{ 21, 23,25,27,29\}$.  $100$ bits of security  with fields-witch (Soukhanov's implementation of \cite{lev}) and with \ftwoz. Ran on a MacBook Air  M5, 24\,GB.}
