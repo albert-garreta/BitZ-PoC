@@ -199,7 +199,7 @@ impl Trial {
 struct TraceWriter {
     output: JsonlWriter<BufWriter<File>>,
     git_rev: String,
-    git_dirty: bool,
+    git_dirty: Option<bool>,
     build_profile: String,
     cpu: String,
     threads: usize,
@@ -222,13 +222,8 @@ impl TraceWriter {
         let git_rev = env
             .git_rev
             .clone()
-            .unwrap_or_else(|| command_output("git", &["rev-parse", "--short", "HEAD"], "unknown"));
-        let git_dirty = Command::new("git")
-            .args(["status", "--porcelain", "--untracked-files=no"])
-            .output()
-            .map_or(true, |output| {
-                !output.status.success() || !output.stdout.is_empty()
-            });
+            .unwrap_or_else(|| common::environment::revision());
+        let git_dirty = common::environment::dirty();
         let cpu = env.cpu.clone().unwrap_or_else(|| {
             command_output(
                 "sysctl",

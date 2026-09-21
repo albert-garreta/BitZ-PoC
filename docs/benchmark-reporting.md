@@ -53,10 +53,9 @@ file opener remains outside `benches/common/output.rs`.
 | `benches/support/sha256_ecdsa_fixture.rs` | Validated compact JSON fixtures, including worker exports | Replace; no implicit parents |
 | `benches/hybrid_u32_sha256/runner.rs` (also hybrid binary) | Proof bytes, binary/text statement, configuration JSON; CSV on stdout | Replace; no implicit parents |
 | `benches/hybrid_u32_sha256/sweep.rs` | Run metadata, child CSV/log capture, combined CSV, configuration JSON | New results directory; replace files inside it |
-| `benchmarks/zkpassport/src/main.rs` | SRS cache | Replace temporary file, then rename; create cache directory |
 
 The Binius64 worker shares the fixture helper; its build-time source fingerprint
-includes the output module. Both worker manifests/lockfiles carry the serializer
+includes the output module. The worker manifest/lockfile carry the serializer
 dependencies. Root benchmarks use the dev dependency and the hybrid binary uses
 the optional `csv` dependency enabled by `hybrid`.
 
@@ -103,7 +102,6 @@ cargo test --bin hybrid-u32-sha256 --features hybrid
 cargo check --benches --bin hybrid-u32-sha256 \
   --features 'bench-internals,bench-peak-memory,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid'
 cargo check --manifest-path benchmarks/binius64/Cargo.toml
-cargo check --manifest-path benchmarks/zkpassport/Cargo.toml
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
@@ -112,16 +110,10 @@ benchmark entry points. They cover file policies, binary fidelity, stdout,
 write/flush errors, JSON field contracts, CSV exact output and invalid child
 records. Run only bounded smoke cases, not full campaigns, for I/O validation.
 
-On the development macOS/ARM host both worker compile checks pass. The zkpassport
-worker's Linux-native backend was not executed here. The unchanged Python suite
-currently has two existing `test_ligerito_results` errors because its historical
-fixture lacks `configuration.levels[].log_inv_rate`; the other 49 tests pass.
-
-Bounded end-to-end checks also passed: native multiplication with 16 operations,
-Plonky3 FRI, one warmup and one measured sample (including the isolated memory
-pass); and an all-Binius hybrid sweep with 512 multiplications, two chained SHA
-compressions and one measured sample. These exercised real proof verification,
-JSON/JSONL/CSV files, subprocess log capture and combined CSV output.
+For the vendor normalization change, only compile checks are performed. Use
+`bash scripts/compile_export.sh` to build and link the retained campaign targets
+and affected tests without running them. Tables default to `outputs/tables/`
+and figures to `outputs/figures/`; no root `paper/` directory is needed.
 
 ## Opt-in Perfetto interval capture
 

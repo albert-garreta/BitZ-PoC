@@ -21,12 +21,13 @@ before the knobs were recorded are rejected rather than mislabeled.
 Output: one row group per shape (N multiplications, M compressions),
 sub-grouped by thread count, one row per scheme; bold = best of the schemes in
 that (shape, threads) group and column; dagger = the case paged.
-`--variant witness` (M = N/256, paper/hybrid-table.tex) or
-`--variant counts` (M = N, paper/hybrid-table-equal-counts.tex).
+`--variant witness` (M = N/256, outputs/tables/hybrid-table.tex) or
+`--variant counts` (M = N, outputs/tables/hybrid-table-equal-counts.tex).
 """
 from __future__ import annotations
 
 import argparse
+from local_provenance import root_metadata
 import csv
 import datetime
 import json
@@ -49,14 +50,14 @@ ROWS = [
 
 SCHEMES = (
     r" \ftwoz-SNARK proves the multiplications with Spartan over a transcript-sampled prime and the SHA-256 chain with the Binius64 PIOP, and discharges both through one shared \ftwoz\ opening (Johnson-regime Ligerito with the out-of-domain Round~0, at the row's rate); its whole-protocol union bound is gated at $\lambda = 100$. Binius (UDR) proves the same SHA-256 chain and a native four-limb multiplication gadget in one Binius64 proof with ring switching and FRI at the row's rate and a $100$-bit query-phase target. Binius (Johnson) proves the same all-Binius circuit with Binius64's PIOP and the \ftwoz\ opener at the row's rate, every round-by-round error term gated at $100$ bits on its own."
-    r" \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes); $^{\dagger}$ marks cases that paged. Apple M5, 24\,GB; medians of the verified runs."
+    r" \emph{Prover} includes witness synthesis and the commitments; \emph{verifier} includes decoding; \emph{peak mem.} is the high-water resident set of the proving process ($1$\,GB $= 2^{30}$ bytes); $^{\dagger}$ marks cases that paged. Medians of the verified runs."
 )
 
 VARIANTS = {
     # Equal packed witnesses: one packed 128-bit word per multiplication,
     # 256 per compression, so M = N/256.
     "witness": {
-        "output": "paper/hybrid-table.tex",
+        "output": "outputs/tables/hybrid-table.tex",
         "label": "tab:hybrid-sha256-mul",
         "title": "Hybrid u32-multiplication + chained SHA-256 comparison",
         "caption": r"End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N/256$ chained SHA-256 compressions (equal packed witnesses for the two branches)."
@@ -65,7 +66,7 @@ VARIANTS = {
     # Equal operation counts: N = M, the SHA-256 branch's packed witness is
     # 256 times the multiplication branch's.
     "counts": {
-        "output": "paper/hybrid-table-equal-counts.tex",
+        "output": "outputs/tables/hybrid-table-equal-counts.tex",
         "label": "tab:hybrid-sha256-mul-equal-counts",
         "title": "Hybrid u32-multiplication + chained SHA-256 comparison at equal operation counts N = M",
         "caption": r"End-to-end proofs of $N$ multiplications $x \cdot y = z + 2^{32} w$ of $32$-bit integers together with $M = N$ chained SHA-256 compressions (equal operation counts; the packed SHA-256 witness is $256\times$ the multiplication witness, so the workload is dominated by the compressions)."
@@ -96,6 +97,12 @@ def decode_hex_json(encoded: str) -> dict:
     return json.loads(bytes.fromhex(encoded))
 
 
+def knob(meta: dict[str, str], name: str) -> str | None:
+    """A recorded knob; sweeps measured before the BitZ rename record F2Z_* names."""
+    value = meta.get(f"BITZ_{name}")
+    return value if value is not None else meta.get(f"F2Z_{name}")
+
+
 def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str]) -> None:
     """The recorded knobs must match the row key; unrecorded runs are rejected."""
     if mode not in meta.get("modes", ""):
@@ -107,7 +114,7 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
             "threads (runs must record an explicit thread count)"
         )
     if mode == "all-binius":
-        recorded = meta.get("BITZ_HYBRID_BINIUS_LOG_INV_RATE")
+        recorded = knob(meta, "HYBRID_BINIUS_LOG_INV_RATE")
         if recorded is None:
             raise RunError(
                 f"{base}: run.txt does not record BITZ_HYBRID_BINIUS_LOG_INV_RATE; "
@@ -116,8 +123,8 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
         if recorded != str(rate):
             raise RunError(f"{base}: all-Binius rate {recorded} does not match key rate {rate}")
     elif mode == "binius-ligerito":
-        recorded = meta.get("BITZ_BINIUS_LOG_INV_RATE")
-        accounting = meta.get("BITZ_BINIUS_LIGERITO_ACCOUNTING")
+        recorded = knob(meta, "BINIUS_LOG_INV_RATE")
+        accounting = knob(meta, "BINIUS_LIGERITO_ACCOUNTING")
         if recorded is None or accounting is None:
             raise RunError(
                 f"{base}: run.txt does not record the BitZ-opener knobs; re-measure with the updated sweep"
@@ -240,7 +247,7 @@ def main() -> None:
         help="one sweep directory per (scheme, threads), e.g. hybrid@1:10=PerfRuns/run-a",
     )
     parser.add_argument("--variant", choices=sorted(VARIANTS), default="witness", help="which table: equal packed witnesses (M = N/256) or equal operation counts (N = M)")
-    parser.add_argument("--output", type=Path, help="defaults to the variant's file under paper/")
+    parser.add_argument("--output", type=Path, help="defaults to the variant's file under outputs/tables/")
     args = parser.parse_args()
     if not args.row:
         parser.error("at least one --row MODE@RATE:THREADS=DIR is required")
@@ -259,8 +266,8 @@ def main() -> None:
         sources.append(f"{mode}@{rate}:{threads}={directory}")
     thread_counts = sorted({t for by in data.values() for t in by})
     shapes = sorted({shape for by in data.values() for rows in by.values() for shape in rows})
-    rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-    dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True).stdout.strip() != ""
+    source = root_metadata()
+    rev, dirty = source["revision"], source["git_dirty"]
     lines = [
         f"% {variant['title']} — GENERATED FILE, do not edit by hand.",
         f"% Generated by scripts/hybrid_table.py on {datetime.date.today()} at {rev}{'-dirty' if dirty else ''} from:",

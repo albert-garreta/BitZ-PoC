@@ -105,7 +105,7 @@ if has multiswap; then
   python3 scripts/bench_gate.py run --label multiswap-t10 --swap-grow-gb 10 -- \
     python3 scripts/run_matched_multiswap_campaign.py \
       --draft \
-      --limber-root /tmp/limber-matched114 \
+      --limber-root vendor/limber \
       --security-bits 114 \
       --batch-counts 1,2,4,8,16 \
       --all-threads 10 \

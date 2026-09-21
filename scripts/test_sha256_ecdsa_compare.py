@@ -40,16 +40,15 @@ class CampaignTests(unittest.TestCase):
             self.rows.append(dict(self.case, schema=campaign.SCHEMA, verified=True, sample=sample,
                                   trial="sample" if sample else "warmup", compressions=8, message_bytes=448,
                                   signatures=1, statement_bytes=129, fixture_id="a"*64,
-                                  spartan_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
+                                  bitz_revision="b"*40, zk=False, fixture_profile=campaign.FIXTURE_SCHEMA,
                                   security={"model": "round-by-round-economic", "ligerito": ligerito_report()},
                                   **dict.fromkeys(campaign.METRICS, 0)))
 
     def test_bitz_is_not_duplicated_per_chunking(self):
         cases = list(campaign.cases([(0, 3), (1, 2), (3, 0)], campaign.METHODS, [100, 128], [1], [0]))
-        # bitz-split/bitz-all: 2 targets x 2 profiles each; spartan: 3 splits;
+        # bitz-split/bitz-all: 2 targets x 2 profiles each;
         # binius64: 2 targets x 2 rates; binius64-ligerito: fixed 100-bit gate x 2 rates.
-        self.assertEqual(len(cases), 4 + 4 + 3 + 4 + 2)
-        self.assertEqual(sum(c["method"] == "spartan-mc" for c in cases), 3)
+        self.assertEqual(len(cases), 4 + 4 + 4 + 2)
         binius = [c for c in cases if c["method"] == "binius64"]
         self.assertEqual(len(binius), 4)
         self.assertEqual({c["security_target"] for c in binius}, {100, 128})
@@ -59,16 +58,14 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual({c["log_inv_rate"] for c in opener}, {1, 3})
         bitz = [c for c in cases if c["method"] == "bitz-split"]
         self.assertEqual({c["ligerito_profile"] for c in bitz}, {"custom:1:4", "custom:3:4"})
-        self.assertNotIn("zkpassport-honk", campaign.METHODS)
-        self.assertTrue(all(c["security_target"] is None for c in cases if c["method"] == "spartan-mc"))
         self.assertEqual(campaign.DEFAULT_METHODS, ["bitz-split", "binius64", "binius64-ligerito"])
 
     def test_validation_requires_complete_verified_matched_samples(self):
         self.assertTrue(campaign.validate_rows(self.rows, self.case, 1))
         for key, value in [("verified", False), ("message_bytes", 512), ("sample", 9),
-                           ("fixture_id", "b"*64), ("method", "spartan-mc"),
+                           ("fixture_id", "b"*64), ("method", "bitz-all"),
                            ("r", 3), ("prove_ms", 100), ("security", None),
-                           ("spartan_revision", None), ("verify_ms", float("nan")),
+                           ("bitz_revision", None), ("verify_ms", float("nan")),
                            ("opening_ms", 1), ("opening_ms", None), ("zk", True), ("fixture_profile", "low-s/v1"), ("e2e_prover_ms", None)]:
             rows = copy.deepcopy(self.rows)
             rows[1][key] = value
@@ -120,7 +117,7 @@ class CampaignTests(unittest.TestCase):
         case = dict(self.case, method="binius64", log_inv_rate=3)
         rows = copy.deepcopy(self.rows)
         for row in rows:
-            row.update(case, binius_revision="c"*40, spartan_revision=None,
+            row.update(case, binius_revision="c"*40, bitz_revision=None,
                        circuit_profile="sha256-chain-p256/standard/v1",
                        security={"model":"query target", "pcs":"BaseFold", "fri_query_target_bits":100,
                                  "log_inv_rate":3})
@@ -149,7 +146,7 @@ class CampaignTests(unittest.TestCase):
                 "accounting":"round-by-round", "target_bits":100, "round_by_round_bits":100.4,
                 "union_bound_bits":97.2, "log_inv_rate":1}
         for row in rows:
-            row.update(case, binius_revision="c"*40, spartan_revision=None,
+            row.update(case, binius_revision="c"*40, bitz_revision=None,
                        circuit_profile="sha256-chain-p256/standard/v1", security=dict(good))
         self.assertTrue(campaign.validate_rows(rows, case, 1))
         for override in [dict(accounting="union-bound"), dict(round_by_round_bits=99.9),
@@ -201,7 +198,7 @@ class CampaignTests(unittest.TestCase):
                     row.update(method=method, fixture_id=fixture_id)
                 result = dict(case=dict(self.case, method=method), rows=rows, status="complete", peak_rss_bytes=123)
                 (directory / f"{method}.result.json").write_text(json.dumps(result))
-            failed = dict(case=dict(self.case, method="spartan-mc"), rows=[], status="timeout", peak_rss_bytes=None)
+            failed = dict(case=dict(self.case, method="bitz-all"), rows=[], status="timeout", peak_rss_bytes=None)
             (directory / "failure.result.json").write_text(json.dumps(failed))
             malformed = dict(case=self.case, rows=[dict(self.rows[1], security=None)],
                              status="failed", peak_rss_bytes=None)
