@@ -153,6 +153,23 @@ impl BinaryPcs {
         component_bits: usize,
         log_inv_rate: usize,
     ) -> Result<Self, Error> {
+        Self::with_rate_and_batch(packed_log, log_inv_rate, LOG_BATCH_SIZE, component_bits, OOD_LAMBDA)
+    }
+
+    /// [`Self::with_rate`] at an explicit level-0 fold arity (interleaving)
+    /// `log_batch_size` ([`LOG_BATCH_SIZE`] = 5 is flock's 32 lanes, 4 the 16
+    /// lanes of BitZ's own `custom:<r>:4` profiles) and Round-0 target
+    /// `ood_lambda` ([`OOD_LAMBDA`] for a union-bound composition; the
+    /// component target for round-by-round accounting, as the BitZ CLI does).
+    /// The fields-witch comparison builds its BitZ-opener rows with this
+    /// constructor (16 lanes, Round 0 at the component target).
+    pub fn with_rate_and_batch(
+        packed_log: usize,
+        log_inv_rate: usize,
+        log_batch_size: usize,
+        component_bits: usize,
+        ood_lambda: u32,
+    ) -> Result<Self, Error> {
         if !(1..=3).contains(&log_inv_rate) {
             return Err(Error::Config("log inverse rate must be 1, 2, or 3".into()));
         }
@@ -163,7 +180,7 @@ impl BinaryPcs {
         }
         let m = packed_log + LOG_PACKING;
         let mut config =
-            custom_johnson_config_bits(m, log_inv_rate, LOG_BATCH_SIZE, Some(component_bits));
+            custom_johnson_config_bits(m, log_inv_rate, log_batch_size, Some(component_bits));
         config.hash = "blake3".into();
         config.validate().map_err(Error::Config)?;
         if config.levels.first().map(|level| level.log_inv_rate) != Some(log_inv_rate) {
@@ -172,7 +189,7 @@ impl BinaryPcs {
             ));
         }
         let (pc, vc) = config.to_prover_verifier_configs().map_err(Error::Config)?;
-        if pc.initial_k != LOG_BATCH_SIZE || pc.log_inv_rates[0] != log_inv_rate {
+        if pc.initial_k != log_batch_size || pc.log_inv_rates[0] != log_inv_rate {
             return Err(Error::Config(
                 "opener level 0 does not match the commitment".into(),
             ));
@@ -187,7 +204,7 @@ impl BinaryPcs {
         let ood_bits = ood_round_bits(&config, packed_log).ok_or_else(|| {
             Error::Config("the opener must run in the Johnson regime with Round 0".into())
         })?;
-        let ood = ood_round_params(&config, packed_log, OOD_LAMBDA)
+        let ood = ood_round_params(&config, packed_log, ood_lambda)
             .ok_or_else(|| Error::Config("Round 0 parameters".into()))?;
         if ood.grinding_bits > MAX_DERIVED_GRINDING_BITS {
             return Err(Error::Config(format!(
