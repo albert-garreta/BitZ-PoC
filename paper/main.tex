@@ -455,10 +455,6 @@ At the time of writing, two further works push the performance envelope of binar
 
 
 
-% especially Limber because it aims at reducing the characteristic 
-
-%\albert{more? Swirl, Frepack?}
-
 
 \iflncs\else % the acknowledgements identify the authors; hidden in the anonymous LNCS build
 \subsection{Acknowledgements}
@@ -562,9 +558,7 @@ Abusing the notation, we denote $\bfg$ by $\bitstext(\bff)$ (the bit vector used
 %
 If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decompositions, then $\uu$ can be tensor decomposed as $\uu= \uu^{(1)} \otimes \uu^{(2)} \in \FF_q^{\codedim_1 \cdot \codedim_2}$ with  $\codedim_1\approx \codedim_2\approx \sqrt{\codedim}$ (our instantiation takes $\codedim_1\in [\codedim^{0.5},\codedim^{0.6}]$, see \cref{s:instantiation}). 
 
-%Other choices of decompositions may lead to better efficiency later, especially if $\bff$ contains entries with heterogeneous bit-sizes.  % assume for the sake of efficiency later on that $\uu$ also admits a tensor decomposition $\uu=\uu_1\otimes \uu_2 \in \FF_q^{\codedim_1 \cdot \codedim_2}$. This is in general a free assumption, see \cref{r:tensor_dec_u} \albert{add a remark not in the main body?}.
- %\bigskip
-
+%Other choices of decompositions may lead to better efficiency later, especially if $\bff$ contains entries with heterogeneous bit-sizes.  % assume for the sake of efficiency later on that $\uu$ also admits a tensor decomposition $\uu=\uu_1\otimes \uu_2 \in \FF_q^{\codedim_1 \cdot \codedim_2}$. This is in general a free assumption, see \cref{r:tensor_dec_u} 
 
 
  \paragraph{Step 3 (Optional):  Resampling of $\FF_q$.}  For soundness later, we need that $|\FF_q|< \fieldboundsizeexponent$ (because we will prove a collection of integer linear claims ``in the exponent'' of a generator of $\comfield^*$). If this condition is not met, we replace now $\FF_q$ by a smaller prime field via a randomized procedure. For now, we assume the condition holds, and we explain this procedure below in \cref{r:large_prime_field_in_BitZ_PCS}. 
@@ -595,9 +589,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
         The prover and verifier run  a batched grand product PIOP over the binary field $\comfield$ for the claim  \eqref{e:intro_eq_4} (see \cref{s:to_low_entropy_gkr}), obtaining as a result the claim that the prover knows some vector of bits $\bitstext(\bff)$ satisfying
         \begin{equation}\label{e:intro_eq_5} \langle \zz, \pi_2(\bitstext(\bff)_{*j}) \rangle = c_j \ \text{in  } \comfield \ \text{for all } j\in [\codedim_2], \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),
         \end{equation} 
-        for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. %\albert{In the GKR grand product section of the main body I may need to mention batching?}. 
-
-        
+        for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. 
 
 
         This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for batched grand products, for which we design novel, to our knowledge, prover optimizations, which do not modify the GKR  transcripts, i.e.\ they only optimize the GKR prover's algorithm, without changing the standard GKR protocol, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \pi_2(\bitstext(\bff)_{ij}) +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that among $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors (see \cref{s:why_the_tensor_split} for more reasons). % See \cref{?,s:gkr_low_entropy} for more details.
@@ -646,7 +638,7 @@ $
 \begin{itemize}[leftmargin=*,nosep]
     \item All $\codedim_2$ grand products in \iflncs Phase 3 of \cref{c:core_iop}\else\eqref{e:intro_eq_4}\fi{} share the same $\codedim_1$ public values $g^{\pi_q^{-1}(\uu_i^{(1)})}$. In total, there are $\codedim$ factors, but at most $\codedim_1+1\approx \sqrt{\codedim}$ distinct values. This is crucial for performance when proving the grand products (see \cref{s:to_low_entropy_gkr}).
     \item The verifier only handles vectors of length $\codedim_1 \approx \sqrt{\codedim}$ and $\codedim_2\approx \sqrt{\codedim}$, instead of vectors of length $\codedim$, allowing for succinctness. 
-    \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without overflow. This difference is important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield=\FF_{2^{128}}$, and not paying too much on grinding, cf.\ \cref{s:instantiation}. % \albert{Could be more detailed}
+    \item Each $\mu_j$ belongs to the range $\range{0}{(q-1)\cdot \codedim_1}$ instead of $\range{0}{(q-1)\cdot \codedim}$. Hence prime fields of size up to $(|\comfield|-1)/\codedim_1$, instead of $(|\comfield|-1)/\codedim$, fit in the exponent of $g$ without overflow. This difference is important in practice when seeking to instantiate \ftwoz\ at 128 bits of security while using $\comfield=\FF_{2^{128}}$, and not paying too much on grinding, cf.\ \cref{s:instantiation}. % 
 \end{itemize}
 
 % [AI-drafted (Claude Fable 5.1), 2026-09-15: sentence explaining $D$ and $N_R$, at the author's request; please review]
@@ -967,7 +959,7 @@ Thus, \ftwoz\ can be expanded as a PCS in a larger proof system (like the one we
 \end{cases}
 \end{equation}
 %
-where  $\pp=(\pp_i)_{i\in [m]}$ is a collection of polynomials over $R$, and $\bitstext(\ww)$ and $\ww$ are related through a bitification matrix, as the witness in \cref{s:to_general_rings}. %\albert{I may have been loose about when $\bitstext(\ww)$ is in $\FF_2$ and when in integers during the technical overview, review}.  
+where  $\pp=(\pp_i)_{i\in [m]}$ is a collection of polynomials over $R$, and $\bitstext(\ww)$ and $\ww$ are related through a bitification matrix, as the witness in \cref{s:to_general_rings}. 
 
 A particularly interesting instantiation of this relation is the following R1CS-like relation over the integers, where $\ww$ is a vector of bits (hence $\ww=\bitstext(\ww)$) and $\ww= \pi_2^{-1}(M\cdot \bff)$:
 %
@@ -1033,9 +1025,6 @@ One can verify this last equivalence  by directly inspecting that it holds for t
 
 
 
-%\albert{Todo: Expressiveness result of Remco}
-
-
 \iflncs\subsection{\ftwoz \ for fully hybrid constraints over $\ZZ$ and $\comfield$}\label{s:hybrid_snark}\else\subsubsection{\ftwoz \ for fully hybrid constraints over $\ZZ$ and $\comfield$}\label{s:hybrid_snark}\fi
 
 
@@ -1052,8 +1041,7 @@ We want to prove that $(\inp_\ZZ, \bff_\ZZ)\in \Relation_\ZZ$ and $(\inp_{\FF_2}
         If necessary, the inner product claims can be reduced to MLE evaluation claims before, via a batched sumcheck.
     \end{enumerate}
 \bigskip
-\noindent We demonstrate the practicality of this approach by proving a large amount of chained SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. The results can be found in \cref{tab:intro_table} and in \cref{s:experiments_sha_modmul}. %\albert{Comment there's no link witness but it's irrelvant for performance}
-
+\noindent We demonstrate the practicality of this approach by proving a large amount of chained SHA-256 compressions, together with a large amount of multiplications modulo $2^{32}$. The results can be found in \cref{tab:intro_table} and in \cref{s:experiments_sha_modmul}. 
 
 
 
@@ -1339,8 +1327,7 @@ $$
 \end{definition}
 %
 % [LNCS pointer (Claude Fable 5.1), 2026-09-16: to the codes paragraph moved to the extended preliminaries; please review]
-Let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim'$ and blocklength $\codelength$ over $\FF$\iflncs\ (cf.\ \cref{a:prelims_codes})\fi.    Let $W\subseteq \FF^{\codedim}$ be a subset and let $T:W \to \FF^{\codedim'}$ be an arbitrary map (looking ahead, for us $T$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field, so that $W=\FF_2^{\codedim}\subseteq \FF^{\codedim}$).  We define the \emph{Encoded PESAT  relation} as: %\albert{No reason to expose the interleaving this early}
-%
+Let $\cC\subseteq \FF^{\codelength}$ be a linear code of dimension $\codedim'$ and blocklength $\codelength$ over $\FF$\iflncs\ (cf.\ \cref{a:prelims_codes})\fi.    Let $W\subseteq \FF^{\codedim}$ be a subset and let $T:W \to \FF^{\codedim'}$ be an arbitrary map (looking ahead, for us $T$ will be a packing map that packs elements from $\FF_2$ into elements of a larger binary field, so that $W=\FF_2^{\codedim}\subseteq \FF^{\codedim}$).  We define the \emph{Encoded PESAT  relation} as: 
 \iflncs
 % [LNCS, 2026-09-17: the Encoded PESAT definition inlined in the LNCS build (the same formula on one line); please review]
 $\PESAT(\FF, \pp, \cC, T) \defeq \{ (\inp=\xx\in \FF^\inplen,\ \oracle = f \in \FF^{\codelength},\ \wit= \bff\in W) \mid \Enc_{\cC}(T(\bff)) = f \ \wedge\ \pp_i(\xx, \bff) = 0 \text{ for all } i\in [\numrows]\}$.
@@ -1657,17 +1644,6 @@ Consider the relation  (cf.\ \cref{d:pesat}) $\PESAT(\comfield,\lncsbreak Q_{\ma
 Here $Q_{\mathbb{B}\text{it}\ZZ}$ consists of the $\codedim_2$ polynomials $\prod_{i=1}^{\codedim_1}((\yy_i-1)\cdot \bff_{ij}+1)-\bm{\mu}_j$, $j\in[\codedim_2]$.
 
 
-\begin{comment}
-\begin{remark}[Using interleaved codes] \albert{What is this remark for?} \label{r:interleaved_codes} In practice, one may use as code $\cC$ an $\codedim_2$ interleaving $\cC_1^{\equiv \codedim_2}$ of a code $\cC_1$ of dimension $\codedim_1/\comfieldexp$. Then, if $\comfieldexp$ divides $\codedim_1$ \albert{add as requirement somewhere},  then $$\pack\circ \picomfield(\ff)=(\pack\circ \picomfield(\ff_{*j}))_{j\in [\codedim_2]}$$
-%
-and 
- $$f = \Enc_{\cC_1^{\equiv \codedim_2}}\circ\pack\circ \picomfield(\bff) =  (\Enc_{\cC_1}\circ \pack\circ \picomfield(\bff_{*j}))_{j\in [\codedim_2]}\in \comfield^{\codelength}.$$
-%
- %\albert{If we do interleacing, the reason why we work with an interleaved $\PESAT(\comfield, Q_{\mathbb{B}\text{it}\ZZ},\cC_1^{\equiv \codedim_2}, \pack)$ rather than $\codedim_2$ copies of a non-interleaved PESAT is rather technical. It has to do with keeping the same distance parameter when doing the reduction from $\LinBitsDual$ to $\LIN$. If we simply considered separate encodings of $\pack(\bff_{*j})$, the proximity parameter in from $\LIN$ to $\LinBitsDual$ would grow by a factor of $\codedim_2$.}
-%
-\end{remark}
-\end{comment}
-   
 
 %
 We assume prover and verifier have access to an IOR $\Pi_{\mathsf{red}}$  that reduces 
@@ -1869,7 +1845,7 @@ Next, prover and verifier will focus on certifying that \eqref{e:tensored_equali
 %\item \textbf{Optional step: Projecting the integer claim to a prime field, and then lifting it back up to $\ZZ$.} The following step triggers in the following scenarios:
 %\begin{itemize}
 %    \item $\degevalfield>1$.
-%    \item $\degevalfield=1$ and $q\geq (|\comfield|-1)/(\codedim_1+1)$.  \albert{Review if I need the $+1$ in the denominator}
+%    \item $\degevalfield=1$ and $q\geq (|\comfield|-1)/(\codedim_1+1)$.  
 %\end{itemize} The verifier uniformly samples and sends a  prime $q'$ from $\cP$, and, if $\degevalfield>1$,  an element $\alpha\in \FF_{q'}$. Now update
 %
 %\begin{align*}
@@ -1911,8 +1887,6 @@ Let  $\bm{\mu}\defeq (\mu_1,\ldots, \mu_{\codedim_2})$, $g^{\bm{\gamma}}\defeq (
 % \ulrich{%
 % Suggestion: 
 % Maybe it is more clear, if we write in the above two equalities explicitly a $\bmod\: q$, or, add $\in \mathbb F_q$?
-% }%
-% \albert{See now. It's actually in $\comfield$}
 \iflncs\else\item\fi{} To prove \eqref{e:Q_F2Z_intermediate}, prover and verifier engage in the IOR $\Pi_{\mathsf{red}}$\footnote{Recall that, in our instantiation, $\Pi_{\mathsf{red}}$ is the GKR protocol applied to multiple grand products, cf.\ \cref{s:gkr_low_entropy}.}   with input \iflncs$(\inp=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\allowbreak\ \oracle= f,\allowbreak\ \wit=\picomfield(\bff))$.\else\lncsmath{\left(\inp=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\  \oracle= f, \ \wit=\picomfield(\bff)\right).}\fi
 %
 %
@@ -2091,7 +2065,7 @@ Let $h\in \ZZ[X_1,\ldots, X_{k}]$ be a polynomial of total degree at most $2\cdo
 
 \begin{proof}[Proof of \cref{t:thm_core_IOPP}] 
 %
-The completeness of \cref{c:core_iop} is clear from its description \albert{Review}.  Recall that, by hypothesis, Round 0 (OOD sampling) is skipped; the case where Round 0 is executed is treated in \cref{a:OOD}. 
+The completeness of \cref{c:core_iop} is clear from its description.  Recall that, by hypothesis, Round 0 (OOD sampling) is skipped; the case where Round 0 is executed is treated in \cref{a:OOD}. 
 
 We decompose  \cref{c:core_iop} into three IORs $\Pi_1, \Pi_2, \Pi_3$.  The first one, $\Pi_1$, is an IOR from $\LinBitsDual$ to $\PESAT$, and it consists of applying Rounds 1 and 2 of \cref{c:core_iop}, and outputting $$\left(\inp'=(g^{\bm{\gamma}}, g^{\bm{\mu}}),\  \oracle'= f, \ \wit'=\picomfield(\bff)\right),$$ as described in Phase 3 of \cref{c:core_iop}. Formally, $\Pi_1$ is a $2$-round IOR whose second verifier message is empty: the prover first sends $\mu'$, the verifier replies with $(q,\pirand)$, and the prover then sends $\bm{\mu}=(\mu_1,\ldots, \mu_{\codedim_2})$. The second IOR, $\Pi_2$, is simply $\Pi_{\mathsf{red}}$, reducing $\PESAT$ to $\LIN$. Finally, the third IOR, $\Pi_3$, is simply the IOP $\Pi_{\iopp}$ for $\LIN$.
 
@@ -2163,7 +2137,7 @@ $$
 Since $\picanon$ is a ring homomorphism satisfying $\picanon\circ \picanon^{-1}=\mathsf{id}$ and restricting to $\pi$ on $\ZZ$, the first condition in \eqref{e:core_iop_proof_eq1} gives $$\picanon(h) = \langle \pi(\bff), \vv^{(1)} \otimes \vv^{(2)} \rangle- \picanon(\mu') = \langle \pi(\bff), \vv\rangle - \mu,$$ which is nonzero by \eqref{e:break_soundness_2}. In particular $h\neq 0$. On the other hand, since $\pirand$ is a ring homomorphism restricting to $\pi_q$ on $\ZZ$, the second condition in \eqref{e:core_iop_proof_eq1} states precisely that $\pirand(h)=0$. We claim that $h$ has total degree at most $2\cdot D$ and satisfies $$\lVert h \rVert_{\infty}\leq 2\cdot T\cdot \codedim\cdot N_R^2.$$ Indeed, the lifts $\picanon^{-1}(\vv^{(1)}_i)$ and $\picanon^{-1}(\vv^{(2)}_j)$ have total degree at most $D$ and coefficients of absolute value at most $N_R$, so each product $\picanon^{-1}(\vv^{(1)}_i)\cdot \picanon^{-1}(\vv^{(2)}_j)$ has total degree at most $2\cdot D$ and coefficients of absolute value at most $T\cdot N_R^2$ by the definition of $T$. Further, by the verifier's checks in Round 1, $$\lVert \mu'\rVert_{\infty} \leq T\cdot \codedim\cdot N_R^2$$ and the total degree of $\mu'$ is at most $2\cdot D$. The claim follows now from the fact that the entries of $\bff$ are bits and there are $\codedim$ of them.
 
 
-Since additionally $\picanon(h)\neq 0$, the polynomial $h$ belongs to the class of polynomials over which $\theta(\cP,\cM,\codedim)$ is defined. Finally,  since $\delta$ is within the unique decoding radius of $\cC$, the code $\cC$ is $(\delta,1)$-list-decodable, and hence there is at most one $\ww$ such that \ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$.  Therefore  \albert{review} $$
+Since additionally $\picanon(h)\neq 0$, the polynomial $h$ belongs to the class of polynomials over which $\theta(\cP,\cM,\codedim)$ is defined. Finally,  since $\delta$ is within the unique decoding radius of $\cC$, the code $\cC$ is $(\delta,1)$-list-decodable, and hence there is at most one $\ww$ such that \ $\hamming(f,\Enc_{\cC}\circ\pack\circ \pi_2(\ww))< \delta$.  Therefore  $$
 \begin{aligned}
 &\Pr_{q,\pirand}[\exists \ww  \text{ such that } (\inp,\oracle,\ww)\notin \LinBitsDual^\delta \text{ and } \kstate(\inp,\lncsbreak\oracle,\lncsbreak(\mu', (q,\pirand)), \ww)=1]\\ \leq &\Pr_{q\gets \cP,\ \pirand\gets \cM_q}[\pirand(h)=0] \leq \theta(\cP,\cM,\codedim) = \kappa_0,
 \end{aligned}
@@ -2190,7 +2164,7 @@ Hence the second condition in \eqref{e:core_iop_proof_eq1} holds. The first cond
 
 
 
-\paragraph{The case where Round 1 is skipped.} \albert{Review that I'm not missing any important argument} In this case, the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and essentially the arguments above apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
+\paragraph{The case where Round 1 is skipped.}  In this case, the messages $\mu'$ and $(q,\pirand)$ and the error $\kappa_0$ disappear, and essentially the arguments above apply after replacing $\pirand\circ \picanon^{-1}$ with the identity map on $\FF_q$ or on $\ZZ$. In the latter case,  $\pi_q$ is also replaced by the identity map, cf.\ \cref{r:skip_round_1_integers}.
 
 \end{proof}
 \end{lncsmove}
@@ -2215,7 +2189,7 @@ We now proceed to describe the full relation we seek to work with in this sectio
 
 We set the following additional notation:
 \iflncs\else\begin{itemize}[leftmargin=*]\fi
- \iflncs\else\item\fi{} Let $S$ be a ring, possibly different from $R$, and let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying ring homomorphism $\ringmorphism$ \albert{terminology in preliminaries}).
+ \iflncs\else\item\fi{} Let $S$ be a ring, possibly different from $R$, and let $\psi:S \to R$ be a ring homomorphism. %Let $M$ be a $S$-module and  let $\psi: \moduleone \to R$ be a module homomorphism (with underlying 
 \iflncs\else\item \fi
 % [AI-drafted formula (Claude Fable 5.1), 2026-09-16, at the author's request: the monomials written out; both versions; please review]
 Let $D_S\geq 1$ be a degree bound, let $1,\eta_1,\ldots,\eta_{k_S}$ be a generating set of $S$ (\cref{s:prelims_algebra}), and let $\gamma_1, \gamma_2,\ldots, \gamma_\moduledegree\in S$ be the distinct elements of the form \lncsmath{\eta_1^{a_1}\cdots \eta_{k_S}^{a_{k_S}}}  with $a_1,\ldots,a_{k_S}\geq 0$ and $a_1+\cdots+a_{k_S}< D_S$, i.e.\ the monomials of total degree less than $D_S$ in the generators, so that $\moduledegree$ is the number of such monomials. Concretely $\moduledegree\leq \binom{D_S-1+k_S}{k_S}$.
@@ -2590,7 +2564,7 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
     L_0(\bm{\alpha}^{(0)})$ (note that $L_0$ is the multilinear extension of $\bm{\mu}$ over $\comfield$). 
     \item  For $i=0,\ldots, r_1-1$:
     \begin{enumerate}[leftmargin=*]
-        \item \textbf{$i$-th sumcheck.} The prover and verifier run the sumcheck protocol for the following claim: %\john{FYI: The current implementation constructs two sumchecks. One for b variables. A subsequent one for the c variables. It might be good to explore the difference between the two} \albert{I think it's the same. Any sumcheck with at least two rounds is a composition of two smaller sumchecks, that's what's happening in the implementation essentially. Maybe we should modify the implementation to avoid confusion}
+        \item \textbf{$i$-th sumcheck.} The prover and verifier run the sumcheck protocol for the following claim: %\john{FYI: The current implementation constructs two sumchecks. One for b variables. A subsequent one for the c variables. It might be good to explore the difference between the two}
     %
     $$
     C^{(i)} =  \sum_{(\bb,\cc)\in \bits^i \times \bits^{r_2}}  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1,\cc) \cdot \eq(\bb, \cc; \bm{\alpha}^{(i)}). 
@@ -2698,10 +2672,10 @@ Beyond the unique decoding radius, the same errors hold for the relations extend
 
  We omit the  proof of \cref{l:gkr_grand_product} since \cref{c:gkr_grand_product} is a well-known variation of the GKR protocol. Round-by-round soundness of GKR is shown in \cite{CCHLRRW19}. The knowledge version with relaxation follows as in \cite[proof of Lemma 6.6]{BCFW25}.
 
-\subsection{Prover optimization via lookup tables}% \albert{Mention somewhere that the optimization has something to do with the method of four russians?} 
+\subsection{Prover optimization via lookup tables}%  
 We optimize \cref{c:gkr_grand_product} as follows, when $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
 
-%\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } \albert{We mentioned above that we are indexing $[\codedim_1]$ and $[\codedim_2]$ with hypercube elements. Does this resolve the question?}
+%\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } 
 \paragraph{Setup.} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bfg_{\bb,\cc}\in \bits$, and so 
 %
 $$L_{r_1}(\bb,\cc)=\gkrpol(\yy_{\bb}, \bfg_{\bb,\cc})= 
@@ -2835,7 +2809,7 @@ The prover  proceeds as follows:
     (observe that $T_{A_0}$ allows to obtain the values $E_{00}^{(1)}[\bb,\cc]\cdot E_{01}^{(1)}[\bb,\cc]\cdot \omega[\bb]$).
     \item It computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
     \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
-    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total. %\albert{Discuss cost of other tables?}
+    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
     \item It obtains the values $A_1^{(1)}[\bb,\cc]$ via the identity \iflncs\begingroup\small\fi$$S_1^{(1)}[\bb,\cc] = A_0^{(1)}[\bb,\cc]+A_1^{(1)}[\bb,\cc]+A_2^{(1)}[\bb,\cc] \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}.$$\iflncs\endgroup\fi{} %so the prover accumulates the three sums $\sum_\bb A_0^{(1)}, \sum_\bb S_1^{(1)}, \sum_\bb A_2^{(1)}$ over the slots and recovers $\sum_\bb A_1^{(1)}$ with two additions per $\cc$.
 \end{itemize}
  Once the tables have been computed,  obtaining $h_{1,\cc}(X)$ for one $\cc\in \bits^{r_2}$ costs $3\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{S_1}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $3\cdot 2^{r_1-2} +2$ additions: this is the cost of adding together the values read at each table, providing $\sum_\bb A_0[\bb,\cc]$,  $\sum_\bb S_1[\bb,\cc]$,  $\sum_\bb A_2[\bb,\cc]$, and then doing two additions to obtain $\sum_\bb A_1[\bb,\cc] = \sum_\bb S_1[\bb,\cc] -\sum_\bb A_0[\bb,\cc] - \sum_\bb A_2[\bb,\cc]$. In total, this amounts to at most  
@@ -3016,9 +2990,6 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \end{comment}
 
 
-%\albert{More optimizations?}
-
-
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
 
@@ -3145,8 +3116,6 @@ In \cref{tab:f2z-raw-performance} we measure the performance of \cref{c:core_iop
 
  We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}). 
 
-
-%\albert{remove?} Recall (\cref{s:prelims_algebra})  that   $\bff_{\FF_{q^d}}$ denotes the vector obtained from $\bff$ by looking at $0,1$ as the zero and one elements from $\FF_{q^d}$. 
 
 
 \begin{table}[H]
@@ -3373,8 +3342,6 @@ Our end-to-end \ftwoz-SNARK is a hybrid construction combining the PIOP over $\Z
 
 
 %\subsubsection{Comparison with Hyrax}
-
-%\albert{Comparing with Hyrax may be more interesting than it sounds initially. Hyrax is pay-per-bit and opens on large prime fields: a profile that F2Z can adopt. Hence (maybe) projects using Hyrax could use  F2Z as a drop-in replacement which is PQ secure and more efficient }
 
 
 
@@ -3858,8 +3825,8 @@ Recall (\cref{t:thm_core_IOPP}) that $\kappa_0 = \theta(\cP,\cM,\codedim)$. We u
  
  To prove the equality modulo $\codedim_1$, the prover sends $a_j\in \range{0}{\codedim_1-1}$ (this is range-checked by the verifier) and proves in the exponent the integer equality $\langle \bm{\gamma}', \bff_{*j}\rangle = \mu_j'  +  a_j\cdot \codedim_1$, where $\bm{\gamma}'$ and $\mu_j'$ are $\bm{\gamma}$ and $\mu_j$ reduced modulo $\codedim_1$.  Both sides of the equality are smaller than $\codedim_1^2$, and so no overflow occurs as long as $\codedim_1^2 < |\comfield|-1$. 
 
-  Note that if $\bm{\gamma}$ admits a tensor decomposition   $\bm{\gamma}=\bm{\gamma}^{(1)} \otimes \bm{\gamma}^{(2)}$, then we can take, instead of $\bm{\gamma}'$, the tensor-product $\bm{\gamma}^{(1)}{}' \otimes \bm{\gamma}^{(2)}{}'$, where  $\bm{\gamma}^{(i)}{}'$ denotes $\bm{\gamma}^{(i)}$ reduced modulo $\codedim_1$. This allows to use all of our ``low-entropy'' grand product optimizations from \cref{s:gkr_low_entropy}, though in this case the required bound becomes $2\cdot (\codedim_1^2+1)\cdot \codedim_1 < |\comfield|-1$.%\albert{Point here to some explanation saying that this is the best way to prove such inner product?}
-
+  Note that if $\bm{\gamma}$ admits a tensor decomposition   $\bm{\gamma}=\bm{\gamma}^{(1)} \otimes \bm{\gamma}^{(2)}$, then we can take, instead of $\bm{\gamma}'$, the tensor-product $\bm{\gamma}^{(1)}{}' \otimes \bm{\gamma}^{(2)}{}'$, where  $\bm{\gamma}^{(i)}{}'$ denotes $\bm{\gamma}^{(i)}$ reduced modulo $\codedim_1$. This allows to use all of our ``low-entropy'' grand product optimizations from \cref{s:gkr_low_entropy}, though in this case the required bound becomes $2\cdot (\codedim_1^2+1)\cdot \codedim_1 < |\comfield|-1$.
+  
     Overall, this method allows to use $\max\cP < |\comfield|-1$, meaning we can choose primes that are $\log(\codedim_1)$ bits larger than we otherwise would. This makes soundness errors smaller by this same amount of bits, which leads to small grinding requirements.  The cost is an extra batch of low entropy grand products. 
 \end{remark}
 
@@ -3922,7 +3889,7 @@ Let $\kstate_1$ be the knowledge state function of $\Pi_1$. Recall we defined it
 %At every verifier message after the first one, $\kstate$ coincides with $\kstate_1$ before and after the message and $\rbrextractor$ is the identity map, so the error of $\Pi_1'$ at that message is that of $\Pi_1$. 
 Let $\rho=(q,\pirand)$ be the first verifier message and $\tr=(\mu')$ the first prover message. Suppose  that $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)=1$ and $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww))=0$. We claim that then $(\inp',\oracle,\ww)$ is not in  $\Relation_{\mathsf{core}}^{\delta}$. Indeed, if it was, then $\ww\in\bits^{\codedim}$, hence  $\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)$ outputs $\bff_{\ww}$. Since   $(\inp',\oracle,\ww) \in \Relation_{\mathsf{core}}^{\delta}$, we have by \eqref{e:appendix_bitify}  that $(\inp,\oracle,\bff_\ww) \in \Relation_{\mathsf{gen}}^{\delta}$. By definition of $\kstate$ we then obtain  $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\bff_{\ww})=1$, contradicting the assumption $\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\rbrextractor(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww))=\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr,\bff_{\ww})=0$. Hence $(\inp',\oracle,\ww)\not\in\Relation_{\mathsf{core}}^{\delta}$. By  definition of $\kstate_1$, $\kstate_1(\inp',\oracle,\tr,\ww)=0$. On the other hand, $1=\kstate(\inp,\lncsbreak\oracle,\lncsbreak\tr\Vert\rho,\ww)=\kstate_1(\inp',\oracle,\tr\Vert\rho,\ww)$. The latter two conditions hold with probability at most $\kappa_0$ by the proof of \cref{t:thm_core_IOPP}. Hence the round-by-round knowledge error of $\Pi_1'$ at $\rho$ is at most $\kappa_0$.
 
-\albert{review} If Round 0 is executed, we must analyse the round-by-round knowledge soundness of $\Pi_1'$ with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$ (see \cref{a:OOD} for a definition). The arguments above apply almost verbatim: it suffices to let the extractor output $\bff_\ww$ when $\tr$ ends with the first verifier message in this case (the OOD sample) and $\ww\in\bits^{\codedim}$, and otherwise the extractor outputs $\ww$. The errors in this case are $(\kappa_{\mathsf{OOD}},\kappa_0,0)$ (cf.\ \cref{t:thm_core_IOPP_OOD}), with $\kappa_0$ and $0$ following from the same arguments as in the proof of \cref{t:thm_core_IOPP_OOD}, since after Round 0 $\Pi_1'$ proceeds exactly as $\Pi_1$, with $\kstate=\kstate_1$. % the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD}). 
+\albert{review} If Round 0 is executed, we must analyze the round-by-round knowledge soundness of $\Pi_1'$ with relaxation $(\Relation_{\mathsf{gen}}^{\delta},\PESAT^{\delta,\zeta,y})$ (see \cref{a:OOD} for a definition). The arguments above apply almost verbatim: it suffices to let the extractor output $\bff_\ww$ when $\tr$ ends with the first verifier message in this case (the OOD sample) and $\ww\in\bits^{\codedim}$, and otherwise the extractor outputs $\ww$. The errors in this case are $(\kappa_{\mathsf{OOD}},\kappa_0,0)$ (cf.\ \cref{t:thm_core_IOPP_OOD}), with $\kappa_0$ and $0$ following from the same arguments as in the proof of \cref{t:thm_core_IOPP_OOD}, since after Round 0 $\Pi_1'$ proceeds exactly as $\Pi_1$, with $\kstate=\kstate_1$. % the same, with $\rho$ the OOD challenge $\zeta$ and $\kappa_0$ replaced by $\kappa_{\mathsf{OOD}}$ (cf.\ \cref{t:thm_core_IOPP_OOD}). 
 
 
 \subsection{Soundness of Out Of Domain Sampling (OOD) in \cref{c:core_iop}}\label{a:OOD}
