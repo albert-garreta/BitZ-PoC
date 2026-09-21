@@ -10967,7 +10967,7 @@ impl IntEvalRsLigExtProof {
 //
 // Pipeline (the paper's "run `c:core_iop` until Phase 3, then transpose",
 // closed by the ring switch for ARBITRARY inner products — the batching
-// protocol of appendix `a:ring_switch_remco` §"Extension openings",
+// protocol of the "Bilinear Embeddings" appendix §"Extension openings",
 // instantiated with the §"Coefficient projection" embedding):
 //
 //   1. Synthesis supplies `h`'s bit rows alongside `f`; the prover runs

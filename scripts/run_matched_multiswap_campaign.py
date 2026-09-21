@@ -11,6 +11,7 @@ from __future__ import annotations
 from bench_support import cpu_name as _cpu_name, command_text, filtered_environment, stream_logged
 
 import argparse
+from local_provenance import repository_metadata, source_patch, vendor_snapshots
 import hashlib
 import json
 import os
@@ -66,10 +67,10 @@ def detect_performance_cores() -> tuple[int, str]:
 
 
 def _git_metadata(root: Path) -> dict[str, Any]:
-    revision = _capture(["git", "rev-parse", "HEAD"], root)
-    status = _capture(["git", "status", "--porcelain", "--untracked-files=all"], root)
-    diff = subprocess.run(["git", "diff", "HEAD", "--binary"], cwd=root, capture_output=True).stdout if root.is_dir() else b""
-    untracked = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root, capture_output=True).stdout if root.is_dir() else b""
+    source = repository_metadata(root)
+    diff = source_patch(root) if source["source_kind"] == "checkout" else b""
+    untracked = (subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root)
+                 if source["source_kind"] == "checkout" else b"")
     untracked_hashes = {}
     for raw in untracked.split(b"\0"):
         if raw:
@@ -78,8 +79,9 @@ def _git_metadata(root: Path) -> dict[str, Any]:
                 untracked_hashes[os.fsdecode(raw)] = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "root": str(root),
-        "git_revision": revision,
-        "git_dirty": status is not None,
+        "git_revision": source["revision"],
+        "git_dirty": source["git_dirty"],
+        "source_kind": source["source_kind"],
         "diff_sha256": hashlib.sha256(diff).hexdigest(),
         "untracked_sha256": untracked_hashes,
     }
@@ -619,6 +621,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             k_values=k_values,
             expected_digests=expected_digests,
         )
+        manifest["vendor_snapshots"] = vendor_snapshots(bitz_root)
         manifest["security"] = {"target_bits": args.security_bits, "model": "per-check-round-minimum/v1"}
         manifest["validation"] = {
             "mode": "draft" if args.draft else "canonical",

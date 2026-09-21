@@ -10,6 +10,8 @@ import signal
 import subprocess
 import sys
 
+from local_provenance import root_metadata, source_patch
+
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_ENV = {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_HOME", "CARGO_TARGET_DIR", "RAYON_NUM_THREADS"}
 
@@ -36,14 +38,17 @@ def environment(env, prefixes=("BITZ_", "F2_", "OBLONG_"), keys=BUILD_ENV):
 
 
 def file_hash(path):
+    # Chunked rather than hashlib.file_digest (Python 3.11+); same digest.
+    digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def source_metadata(root=ROOT):
-    diff = subprocess.run(["git", "diff", "HEAD"], cwd=root, capture_output=True, check=True).stdout
-    return dict(revision=command_text("git", "rev-parse", "HEAD", cwd=root),
-                git_status=command_text("git", "status", "--short", cwd=root),
+    diff = source_patch(root)
+    return dict(**root_metadata(root),
                 tracked_diff_sha256=hashlib.sha256(diff).hexdigest(),
                 rustc=command_text("rustc", "-Vv", cwd=root), cpu=cpu_name(),
                 platform=platform.platform(), logical_cpus=os.cpu_count())

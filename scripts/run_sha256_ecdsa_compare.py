@@ -2,6 +2,7 @@
 """Compare signed SHA-256 chains in fresh processes; retain failures and full samples."""
 from bench_support import cargo_executables, source_metadata, environment, file_hash, run_process, address_space_limit, write_json
 import argparse
+from local_provenance import source_patch, vendor_snapshots
 import csv
 import hashlib
 import itertools
@@ -19,7 +20,7 @@ SCHEMA = "bitz/sha256-ecdsa-compare/v1"
 # The 2026-09-13 suite: BitZ at rates 1/2 and 1/8 (Ligerito profiles), Binius64
 # and Binius64-with-BitZ-opener each at rates 1/2 and 1/8 (round-by-round gate).
 DEFAULT_METHODS = ["bitz-split", "binius64", "binius64-ligerito"]
-METHODS = ["bitz-split", "bitz-all", "spartan-mc", "binius64", "binius64-ligerito"]
+METHODS = ["bitz-split", "bitz-all", "binius64", "binius64-ligerito"]
 # Ligerito profile per BitZ case: custom:1:4 = Johnson rate 1/2, custom:3:4 = rate 1/8.
 DEFAULT_BITZ_PROFILES = ["custom:1:4", "custom:3:4"]
 PROFILE_RATES = {"custom:1:4": 1, "custom:3:4": 3}
@@ -46,7 +47,7 @@ def sample_metrics(row):
     return row
 
 
-def cases(spartan_splits, methods, targets, threads, seeds,
+def cases(shapes, methods, targets, threads, seeds,
           bitz_profiles=DEFAULT_BITZ_PROFILES, binius_rates=DEFAULT_BINIUS_RATES):
     """BitZ depends only on total work; emit it once for each exponent/target.
 
@@ -54,13 +55,9 @@ def cases(spartan_splits, methods, targets, threads, seeds,
     (the per-case `BITZ_LIG_PROFILE`), Binius-family methods a `log_inv_rate`.
     The opener (`binius64-ligerito`) exists only at its fixed 100-bit gate.
     """
-    work = sorted({r + c for r, c in spartan_splits})
+    work = sorted({r + c for r, c in shapes})
     for method, workers, seed in itertools.product(methods, threads, seeds):
-        if method == "spartan-mc":
-            for r, c in sorted(set(spartan_splits)):
-                yield dict(method=method, log_compressions=r+c, r=r, c=c,
-                           security_target=None, threads=workers, seed=seed)
-        elif method.startswith("bitz"):
+        if method.startswith("bitz"):
             for exponent, target, profile in itertools.product(work, targets, bitz_profiles):
                 yield dict(method=method, log_compressions=exponent, r=None, c=None,
                            security_target=target, threads=workers, seed=seed,
@@ -128,7 +125,7 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None):
                 if expected_rate is not None and levels[0].get("log_inv_rate", 1) != expected_rate:
                     return False
         binius = case["method"].startswith("binius64")
-        revision = row.get("binius_revision" if binius else "spartan_revision")
+        revision = row.get("binius_revision" if binius else "bitz_revision")
         if not isinstance(revision, str) or len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
             return False
         if binius and (row["security"].get("log_inv_rate") != expected_rate
@@ -169,7 +166,7 @@ def summarize(directory):
               "log_inv_rate", "ligerito_profile", "timing"]
     fixture_ids = {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
-                     "fixture_id", "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", "security_model", "economic_bits",
+                     "fixture_id", "bitz_revision", "binius_revision", "artifact_id", "security_model", "economic_bits",
                      "statistical_bits_lower_bound", *METRICS, "log_inv_rate", "ligerito_profile", "timing"]
     with (directory / "summary.csv").open("w", newline="") as stream, \
             (directory / "samples.csv").open("w", newline="") as sample_stream:
@@ -187,7 +184,7 @@ def summarize(directory):
             for sample in normalized:
                 record = dict(row, source_file=path.name)
                 record.update({k: sample.get(k) for k in ["trial", "sample", "verified", "fixture_id",
-                                                         "spartan_revision", "binius_revision", "zkpassport_revision", "artifact_id", *METRICS,
+                                                         "bitz_revision", "binius_revision", "artifact_id", *METRICS,
                                                          "log_inv_rate", "ligerito_profile"]})
                 security = sample.get("security")
                 if isinstance(security, dict):
@@ -274,7 +271,7 @@ def metadata(binary):
                    binary.name.replace("sha256_ecdsa_compare-", "bitz-", 1) /
                    "test-bench-sha256_ecdsa_compare.json")
     build_info = json.loads(fingerprint.read_text()) if fingerprint.exists() else None
-    return dict(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+    return dict(vendor_snapshots=vendor_snapshots(ROOT), binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                 runner_sha256=file_hash(Path(__file__)), memory_limit_enforced=sys.platform.startswith("linux"),
                 **source_metadata(ROOT), build=build_info, runtime_env=environment(os.environ))
 
@@ -428,11 +425,8 @@ def main():
     parser.add_argument("--binius64-binary", type=Path, help="Prebuilt worker with its .build.json sidecar")
     parser.add_argument("--binius-log-inv-rate", type=int, choices=[1, 2, 3], default=None,
                         help="Binius64 initial code rate: 1=1/2, 2=1/4, 3=1/8")
-    shapes = parser.add_mutually_exclusive_group()
-    shapes.add_argument("--spartan-splits", nargs="+",
-                        help="Spartan r:c pairs: 2^r compressions per instance, 2^c instances; BitZ uses only i=r+c")
-    shapes.add_argument("--exponents", nargs="+", type=int,
-                        help="Total compression exponents i; sweep every Spartan r+c=i split, BitZ once per i; default 3 5 7")
+    parser.add_argument("--exponents", nargs="+", type=int, default=[3, 5, 7],
+                        help="Total compression exponents i (default: 3 5 7)")
     parser.add_argument("--methods", nargs="+", choices=METHODS, default=DEFAULT_METHODS)
     parser.add_argument("--targets", nargs="+", type=int, choices=[100, 128], default=[100],
                         help="security targets; the binius64-ligerito gate is fixed at 100, so its cases exist only there")
@@ -447,7 +441,7 @@ def main():
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--timing", choices=["perfetto", "wall-clock"], default="perfetto",
-                        help="wall-clock uses Rust timers without Perfetto; supported for BitZ and Spartan, with internal phase timings unavailable")
+                        help="wall-clock uses Rust timers without Perfetto; supported for BitZ, with internal phase timings unavailable")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()
@@ -464,16 +458,10 @@ def main():
     if os.environ.get("BITZ_LIG_PROFILE"):
         parser.error("unset BITZ_LIG_PROFILE: the runner selects it per case (--bitz-profiles)")
     if args.timing == "wall-clock" and args.with_binius64:
-        parser.error("--timing wall-clock supports --methods bitz-split bitz-all spartan-mc")
+        parser.error("--timing wall-clock supports --methods bitz-split bitz-all")
     if args.exponents and any(i not in range(3, 17) for i in args.exponents):
         parser.error("compression exponents must be in 3..16")
-    try:
-        spartan_splits = ([tuple(map(int, value.split(":"))) for value in args.spartan_splits] if args.spartan_splits else
-                         [(r, i-r) for i in (args.exponents or [3, 5, 7]) for r in range(i+1)])
-        if not spartan_splits or any(len(s) != 2 or min(s) < 0 or not 3 <= sum(s) <= 16 for s in spartan_splits):
-            raise ValueError()
-    except ValueError:
-        parser.error("expected Spartan r:c pairs with r,c >= 0 and 3 <= r+c <= 16")
+    shapes = [(i, 0) for i in args.exponents]
     if (args.reps < 1 or args.memory_gib < 1 or not math.isfinite(args.timeout) or args.timeout <= 0 or min(args.threads) < 1
             or any(not 0 <= seed < 2**64 for seed in args.seeds)):
         parser.error("positive reps/threads/limits and unsigned 64-bit seeds required")
@@ -485,7 +473,7 @@ def main():
     # Profiles are pinned per case (recorded in each case and row); the
     # manifest-level value only guards resumption against runner-policy drift.
     manifest["ligerito_profile"] = "per-case:" + ",".join(args.bitz_profiles)
-    manifest["fixtures"] = prepare_fixtures(args, directory, binary, spartan_splits)
+    manifest["fixtures"] = prepare_fixtures(args, directory, binary, shapes)
     if args.with_binius64:
         manifest["binius64"] = prepare_binius(args, directory)
         manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
@@ -500,7 +488,7 @@ def main():
             parser.error("output belongs to different binaries, circuits, or fixtures; choose a new output directory")
     else:
         manifest_path.write_text(json.dumps(manifest, indent=2)+"\n")
-        patch = subprocess.run(["git", "diff", "--binary", "HEAD"], cwd=ROOT, capture_output=True, check=True).stdout
+        patch = source_patch(ROOT)
         (directory / "source.patch").write_bytes(patch)
         # Preserve this task's new source files, which git diff does not include.
         sources = ["benches/sha256_ecdsa_compare.rs", "scripts/run_sha256_ecdsa_compare.py",
@@ -512,7 +500,7 @@ def main():
             target = directory / "source" / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((ROOT / relative).read_bytes())
-    jobs = list(cases(spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
+    jobs = list(cases(shapes, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
                       bitz_profiles=args.bitz_profiles, binius_rates=sorted(set(args.binius_rates))))
     for case in jobs:
         if not case["method"].startswith("binius64"):

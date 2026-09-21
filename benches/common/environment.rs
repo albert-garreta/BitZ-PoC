@@ -2,6 +2,35 @@
 use serde_json::{Value, json};
 use std::{fs, process::Command};
 
+fn root_git(args: &[&str]) -> Option<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    if !root.join(".git").exists() {
+        return None;
+    }
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// Use the exported revision when this source has no repository metadata.
+pub fn revision() -> String {
+    root_git(&["rev-parse", "HEAD"])
+        .or_else(|| option_env!("BITZ_REVISION").map(str::to_owned))
+        .unwrap_or_else(|| "unknown".to_owned())
+}
+
+/// Archive sources have no Git dirty state; report it as unknown.
+pub fn dirty() -> Option<bool> {
+    root_git(&["status", "--porcelain", "--untracked-files=no"]).map(|status| !status.is_empty())
+}
+
 fn command(program: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(program).args(args).output().ok()?;
     output
@@ -51,7 +80,8 @@ pub fn metadata(threads: usize) -> Value {
         "threads": threads, "requested_threads": std::env::var("RAYON_NUM_THREADS").ok(),
         "rustc": command("rustc", &["-Vv"]), "rustflags": std::env::var("RUSTFLAGS").ok(),
         "cargo_encoded_rustflags": std::env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
-        "git_revision": command("git", &["rev-parse", "HEAD"]),
-        "git_status": command("git", &["status", "--porcelain", "--untracked-files=no"]),
+        "vendor_provenance_toml": include_str!("../../provenance.toml"),
+        "git_revision": revision(),
+        "git_status": root_git(&["status", "--porcelain", "--untracked-files=no"]),
         "cargo_lock_blake3": blake3::hash(include_bytes!("../../Cargo.lock")).to_hex().to_string()})
 }

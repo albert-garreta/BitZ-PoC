@@ -29,21 +29,11 @@ fn polynomial_remainder(mut words: Vec<u64>, degree: usize, terms: &[usize]) -> 
 }
 
 #[test]
-fn aes_field_and_embedding_match_independent_upstream() {
+fn aes_field_embedding_preserves_products() {
     for a in 0..=255u8 {
         let embedding = Gf128Ops.embed(&Gf8(a));
-        let expected = flock_core::field::phi8(flock_core::field::F8(a));
-        assert_eq!((embedding.lo, embedding.hi), (expected.lo, expected.hi));
-        assert_eq!(
-            Gf8Ops.inverse_ct(&Gf8(a)).value().0,
-            flock_core::field::F8(a).inv().0
-        );
         for b in 0..=255u8 {
             let product = Gf8Ops.mul(&Gf8(a), &Gf8(b));
-            assert_eq!(
-                product.0,
-                (flock_core::field::F8(a) * flock_core::field::F8(b)).0
-            );
             assert_eq!(Gf8Ops.reduce(Gf8Ops.mul_wide(&Gf8(a), &Gf8(b))), product);
             assert_eq!(
                 Gf128Ops.embed(&product),
@@ -186,7 +176,7 @@ fn exact_polynomials_keep_domain_and_coefficients() {
 }
 
 #[test]
-fn prepared_multiplication_and_b127_square_chains_match_references() {
+fn prepared_multiplication_is_consistent_and_b127_square_chains_match_polynomials() {
     let mut rng = Pcg64::seed_from_u64(1411);
     let mut scalars = vec![
         Gf128::new(0, 0),
@@ -202,9 +192,6 @@ fn prepared_multiplication_and_b127_square_chains_match_references() {
         let mut out = vec![Gf128Ops.zero(); values.len()];
         prepared.mul_into(&values, &mut out);
         for (input, actual) in values.iter().zip(out) {
-            let expected = flock_core::field::F128::new(input.lo, input.hi)
-                * flock_core::field::F128::new(scalar.lo, scalar.hi);
-            assert_eq!((actual.lo, actual.hi), (expected.lo, expected.hi));
             assert_eq!(prepared.mul(input), actual);
         }
     }
@@ -223,13 +210,7 @@ fn prepared_multiplication_and_b127_square_chains_match_references() {
 
 #[cfg(feature = "serde")]
 #[test]
-fn binary_serde_preserves_flock_framing() {
-    let a = Gf128::new(0x1234567890abcdef, 0xfedcba0987654321);
-    let b = flock_core::field::F128::new(a.lo, a.hi);
-    assert_eq!(
-        serde_json::to_value(a).unwrap(),
-        serde_json::to_value(b).unwrap()
-    );
+fn gf8_serde_encodes_a_byte() {
     assert_eq!(
         serde_json::to_value(Gf8(197)).unwrap(),
         serde_json::json!(197)

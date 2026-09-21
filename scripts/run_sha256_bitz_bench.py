@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from local_provenance import root_metadata, vendor_snapshots
 import json
 import os
 import platform
@@ -68,9 +69,10 @@ def main() -> int:
         build.extend(["--bench", bench])
     if features:
         build.extend(["--features", ",".join(features)])
+    source = root_metadata(ROOT)
     metadata = {
-        "started_utc": started.isoformat(), "status": "running", "git_revision": command_text("git", "rev-parse", "HEAD"),
-        "git_status": command_text("git", "status", "--porcelain", "--untracked-files=no"),
+        "started_utc": started.isoformat(), "status": "running", "git_revision": source["revision"],
+        "git_status": source["git_status"], "vendor_snapshots": vendor_snapshots(ROOT),
         "rustc": command_text("rustc", "-Vv"), "cargo": command_text("cargo", "-V"),
         "cpu": cpu_name(), "os": platform.platform(), "architecture": platform.machine(),
         "workload": args.workload, "shapes": args.shapes, "threads": args.threads,

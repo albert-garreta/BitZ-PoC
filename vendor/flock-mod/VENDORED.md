@@ -1,15 +1,18 @@
-# Flock Ligerito initial-oracle adapter
+# Flock benchmark snapshot
 
-`flock-core` is copied from `https://github.com/albert-garreta/flock-mod` at
-`ed4c0cd9aceeae15248bf4f24a70d96fe37b2395`. Copyright notices and licenses
-are retained.
+The retained library source is materialized here. See the root provenance.toml
+for the upstream and customization commits; full upstream history is supplied
+in a separate bundle. Licenses and the upstream README are retained. The
+upstream README describes the full project: its standalone benchmark scripts,
+CUDA sources, examples, and development targets are outside this library
+snapshot. Use the root README for the supported release campaigns.
 
 Local changes let Ligerito authenticate its initial interleaved oracle using
 two existing Merkle trees. Recursive levels retain the ordinary single-root
 protocol. The initial layout fixes the lane placement, zero padding, leaf
 widths, position domain, and hash before any challenges are sampled.
 
-`flock-prover/src` is copied unchanged from the same revision for the SHA-256
+`flock-prover/src` retains the root-tracked field integration from the selected source snapshot for the SHA-256
 R1CS witness generator and chain-shift reduction. Its manifest omits upstream
 benches, examples, and development dependencies; the library uses the same
 local `flock-core`. This source is preparation for a future selectable Flock

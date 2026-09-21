@@ -8,54 +8,6 @@ mod vectors;
 use bitz::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 
 #[test]
-#[cfg(feature = "span-metrics")]
-#[ignore = "requires PERFETTO_TRACE_PROCESSOR; verifies real Spartan2 phase intervals"]
-fn spartan_phase_timings_come_from_perfetto() {
-    use bitz::observability::{self, Recording};
-    use spartan2::sha256_ecdsa::{Prepared, Statement};
-    use tracing_subscriber::prelude::*;
-
-    let prepared = Prepared::setup(2, 1).unwrap();
-    let fixture = fixture::SignedFixture::generate(3, 5).unwrap();
-    let statement = Statement {
-        log_compressions: 3,
-        qx: fixture.qx,
-        qy: fixture.qy,
-        r: fixture.r,
-        s: fixture.s,
-    };
-    tracing::subscriber::with_default(
-        tracing_subscriber::registry().with(observability::layer()),
-        || {
-            // One warmup and five bounded, independently queryable samples.
-            for trial in 0..6 {
-                let witness = prepared
-                    .generate_witness(&statement, &fixture.message)
-                    .unwrap();
-                let committed = prepared.commit(witness).unwrap();
-                let recording = Recording::start(Vec::new()).unwrap();
-                let proof = tracing::info_span!("protocol", trial, warmup = trial == 0)
-                    .in_scope(|| prepared.prove(&statement, &committed))
-                    .unwrap();
-                let intervals = recording.intervals().unwrap();
-                let protocol = observability::span(&intervals, "protocol").unwrap();
-                let mut previous_end = protocol.start_ns;
-                for phase in ["matrix", "folding", "outer", "inner", "opening"] {
-                    let span =
-                        observability::span(&intervals, &format!("spartan2.{phase}")).unwrap();
-                    assert_eq!(span.parent, Some(protocol.id));
-                    assert!(span.start_ns >= previous_end);
-                    assert!(span.end_ns <= protocol.end_ns);
-                    assert!(!span.duration().is_zero());
-                    previous_end = span.end_ns;
-                }
-                prepared.verify(&statement, &proof).unwrap();
-            }
-        },
-    );
-}
-
-#[test]
 fn both_s_forms_and_exceptional_nonce_verify_in_all_native_methods() {
     let fixtures = vectors::vectors();
     for mode in [OuterMode::Split, OuterMode::AllRows] {
@@ -111,22 +63,7 @@ fn both_s_forms_and_exceptional_nonce_verify_in_all_native_methods() {
             }
         }
     }
-    for (r, c) in [(3, 0), (1, 2)] {
-        let prepared = spartan2::sha256_ecdsa::Prepared::setup(r, c).unwrap();
-        for f in &fixtures {
-            let statement = spartan2::sha256_ecdsa::Statement {
-                log_compressions: 3,
-                qx: f.qx,
-                qy: f.qy,
-                r: f.r,
-                s: f.s,
-            };
-            let witness = prepared.generate_witness(&statement, &f.message).unwrap();
-            let committed = prepared.commit(witness).unwrap();
-            let proof = prepared.prove(&statement, &committed).unwrap();
-            prepared.verify(&statement, &proof).unwrap();
-        }
-    }
+
 }
 
 #[test]
