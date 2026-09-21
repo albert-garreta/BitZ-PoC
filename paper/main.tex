@@ -137,7 +137,7 @@ Our approach decomposes the witness into a string of bits and commits to it over
 Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit that the factors across all the grand products have low entropy (i.e.\ they take a ``small'' amount of different values).   
 
 
- We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing; and integer multiplication, consistently obtaining better performance than prior approaches on most tasks. As an example, we prove a SHA-256 hash of an $8$\,kB ($2^7$ compressions) message followed by a p256 ECDSA signature verification with $74$\,ms and $3.9$\,ms prover and verifier time, respectively, and with a proof of $92$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only), at $100$ bits of round-by-round knowledge soundness. With $10$ threads the times are $27.1$\,ms and $3.5$\,ms \albert{Weird that the verifier is more expensive}.
+ We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing; and integer multiplication, consistently obtaining better performance than prior approaches on most tasks. As an example, we prove a SHA-256 hash of an $8$\,kB ($2^7$ compressions) message followed by a p256 ECDSA signature verification with $74$\,ms and $3.9$\,ms prover and verifier time, respectively, and with a proof of $92$\,kB, single-threaded on a MacBook Air M5 24\,GB (CPU-only), at $100$ bits of round-by-round knowledge soundness. With $10$ threads the times are $27.1$\,ms and $3.5$\,ms.
 
 \end{abstract}
 
@@ -186,7 +186,7 @@ In the vast majority of scenarios, $\Relation$ is defined over an algebraic obje
 
 
 % [AI-drafted (Claude Opus 5), 2026-09-18: availability footnote pointing at the anonymous artifact, at the author's request; please review]
-We implement \ftwoz\footnote{Our implementation is available at \iflncs the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}\else\url{https://github.com/albert-garreta/BitZ-pcs}\fi.} and use it, among others (see below), to build a SNARK, called \ftwoz-SNARK, for proving R1CS constraints over the integers, following the \emph{fingerprinting} paradigm from Campanelli and Hall-Andersen \cite{zaratan}. Concretely, we commit to witnesses over the integers (setting $S=\ZZ$); then the verifier samples a random prime $q$; then the R1CS is projected to $\FF_q$ through the morphism $\pi_q$ consisting in reduction modulo $q$; then a PIOP is run on the resulting R1CS, yielding a linear claim (an MLE claim) on the projected witness $\pi_q(\bff)$ of the form $\langle \pi_q(\bff), \vv\rangle = \mu$; finally, this claim is proved with \ftwoz. The commitment is made before $q$ is sampled, which is required for the soundness of the fingerprinting technique. The PIOP may output its claim over a field extension of $\FF_q$, which \ftwoz\ can prove (\iflncs\cref{s: general_bitz}\else\cref{s:to_general_rings}\fi). An example end-to-end SNARK is described in \cref{s:to_snark}. 
+We implement \ftwoz\footnote{Our implementation is available as PoC at \iflncs the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}\else\url{https://github.com/albert-garreta/BitZ-pcs}, and as WIP production-grade in \url{https://github.com/worldfnd/BitZ}, see \cref{s:experiments} for the difference between the two.\fi.} and use it, among others (see below), to build a SNARK, called \ftwoz-SNARK, for proving R1CS constraints over the integers, following the \emph{fingerprinting} paradigm from Campanelli and Hall-Andersen \cite{zaratan}. Concretely, we commit to witnesses over the integers (setting $S=\ZZ$); then the verifier samples a random prime $q$; then the R1CS is projected to $\FF_q$ through the morphism $\pi_q$ consisting in reduction modulo $q$; then a PIOP is run on the resulting R1CS, yielding a linear claim (an MLE claim) on the projected witness $\pi_q(\bff)$ of the form $\langle \pi_q(\bff), \vv\rangle = \mu$; finally, this claim is proved with \ftwoz. The commitment is made before $q$ is sampled, which is required for the soundness of the fingerprinting technique. The PIOP may output its claim over a field extension of $\FF_q$, which \ftwoz\ can prove (\iflncs\cref{s: general_bitz}\else\cref{s:to_general_rings}\fi). An example end-to-end SNARK is described in \cref{s:to_snark}. 
 
 We also build a SNARK that can prove constraints simultaneously over the integers and binary fields, and which uses \ftwoz\ as PCS. This SNARK also supports \emph{virtualization} of $\FF_2$ addition (XOR) between integer witness, in the sense that it can commit to  vectors of integer bits, to be used as witness in a constraint over $\ZZ$, and at the same time prove MLE evaluation or inner product claims of the XOR of these vectors.  We discuss this further in \cref{s:intro_hybrid_proofs}.  
 
@@ -3016,7 +3016,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \end{comment}
 
 
-\albert{More optimizations?}
+%\albert{More optimizations?}
 
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
@@ -3032,11 +3032,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \begin{lncsmove}{ExpSetup}
 We implement the \ftwoz\ PCS (\cref{c:LinModFieldBin}) and an end-to-end proof system, called \ftwoz-SNARK, for integer R1CS constraints, as described in the introduction (\cref{s:intro_contributions}) and in \cref{s:to_snark} (note that \ftwoz \ can be used to prove much more general constraints, such as the ones in Zinc+ \cite{zincplus}, cf.\ \cref{s:to_general_bitz}). 
 
-\iflncs
-Our repository, together with instructions to reproduce our experiments, can be found in \url{https://github.com/bitzcodes/BitZ.git}.
-\else % the public repository identifies the authors
-Our repository can be found in \url{https://github.com/bitzcodes/BitZ.git}. 
-\fi
+
 
 
 
@@ -3117,10 +3113,17 @@ We make no claim that \ftwoz-SNARK is competitive with Flock or Binius64 for the
 %We also do not compare against Flock \cite{flock}, for the reasons explained in \iflncs\cref{s:further_experiments}\else\cref{s:experiments}\fi.
 \lncsplace{ExpRaw}
 
-\begin{lncsmove}{ExpAI}
-\paragraph{Usage of AI.} The scheme was initially implemented with AI. After that we thoroughly reviewed the verifier and, following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping the verifier unchanged. Subsequently we manually reviewed, refactored and further optimized both the prover and verifier. The reported benchmark results correspond to this PoC implementation, which is the one provided in the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}.
 
-Additionally, we are currently developing a parallel production-grade  handcrafted implementation,  using more conventional methods. 
+\paragraph{Repositories.} \iflncs
+Our repository, together with instructions to reproduce our experiments, can be found in \url{https://github.com/bitzcodes/BitZ.git}.
+\else % the public repository identifies the authors
+Our PoC repository can be found in \url{https://github.com/albert-garreta/BitZ-PoC}. Reported benchmark numbers correspond to this PoC implementatiton. Our WIP production-grade repository is at \url{https://github.com/worldfnd/BitZ}.
+\fi
+
+\begin{lncsmove}{ExpAI}
+\paragraph{Usage of AI.} The scheme was initially implemented with AI. After that we thoroughly reviewed the verifier and, following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping the verifier unchanged. Subsequently we manually reviewed, refactored and further optimized both the prover and verifier. The reported benchmark results correspond to this PoC implementation, which is the one provided \iflncs in the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}.\else \url{https://github.com/albert-garreta/BitZ-PoC}.\fi
+
+Additionally, we are currently developing a parallel production-grade  handcrafted implementation,  using more conventional methods. The repository is available at \url{https://github.com/worldfnd/BitZ}. 
 
 As an experiment, we asked an AI to take the \ftwoz-PCS prover of the production-grade implementation and optimize it (keeping the verifier unchanged). The resulting optimized prover reproduced or even significantly improved the performance of the \ftwoz-PCS in the PoC implementation discussed above.  This suggests that the published benchmark numbers still have room for improvement.
 
