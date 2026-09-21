@@ -208,12 +208,12 @@ The table below shows highlight benchmark results of our implementation of \ftwo
          \cmidrule(lr){3-4} \cmidrule(lr){5-6}
          Computation & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
          \midrule
-         $2^{21}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{1485} & \textbf{371} & 7.88 & 4.95 & 225 & \textbf{1.77} \\
-         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 1755 & 420 & \textbf{7.61} & \textbf{4.51} & \textbf{140} & 2.04 \\
-          & Binius64~\cite{binius64}, rate $1/2$ & 3466 & -- & 79.2 & -- & 559 & 14.7 \\
-          & Binius64, rate $1/8$ & -- & -- & -- & -- & -- & -- \\
-          & Limber~\cite{limber} & 18155 & 5471 & 990 & 815 & 36499 & 13.8 \\
-          & Zinc+~\cite{zincplus} & 11446 & 2951 & 35.7 & 16.1 & 5552 & 4.89 \\
+         $2^{19}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{361} & \textbf{101} & 4.24 & 3.07 & 189 & \textbf{0.489} \\
+         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 421 & 114 & \textbf{4.23} & \textbf{2.95} & \textbf{116} & 0.546 \\
+          & Binius64~\cite{binius64}, rate $1/2$ & 867 & 272 & 20.5 & 8.96 & 472 & 3.67 \\
+          & Binius64, rate $1/8$ & 1062 & 313 & 20.2 & 8.77 & 330 & 3.93 \\
+          & Limber~\cite{limber} & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
+          & Zinc+~\cite{zincplus} & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
          \addlinespace
          SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/2$ & \textbf{42.5} & \textbf{18.2} & 3.38 & 3.41 & 118 & 0.800 \\
          \quad ($2$\,KB message) & \ftwoz-SNARK, rate $1/8$ & 43.6 & 19.0 & \textbf{3.24} & \textbf{3.33} & \textbf{75} & 0.804 \\
@@ -237,7 +237,7 @@ The table below shows highlight benchmark results of our implementation of \ftwo
        \end{tabular}
      \caption{  Performance of \ftwoz \ on  different  computations of practical interest that are costly to arithmetize over finite fields. 
      For each such computation, we also benchmark the performance of a selection of  prior state of the art protocols for each specific computation. 
-     All experiments were run on a MacBook Air M5 24\,GB, CPU-only, targeting $100$ bits of security (except for the RSA and Poseidon experiment, which targets $114$ bits). See \iflncs\cref{s:experiments,s:further_experiments}\else\cref{s:experiments}\fi{} for details on these and more experiments. Cells with ``--'' indicate that the computer ran out of memory or that the value was not measured.
+     All experiments were run on a MacBook Air M5 24\,GB, CPU-only, targeting $100$ bits of security (except for the RSA and Poseidon experiment, which targets $114$ bits). See \iflncs\cref{s:experiments,s:further_experiments}\else\cref{s:experiments}\fi{} for details on these and more experiments. % Cells with ``--'' indicate that the computer ran out of memory or that the value was not measured.
      %We mostly display $2^{17}$ multiplications because this is roughly the amount where Binius64 achieves its highest throughput. For different amounts, \ftwoz\ outperforms by a wider margin. For larger sizes Binius64 runs out of memory, as showcased in the $2^{21}$ multiplications row.
     }     \label{tab:intro_table}
  \end{table}
@@ -591,7 +591,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
         for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. 
 
 
-        This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for batched grand products, for which we design novel, to our knowledge, prover optimizations, which do not modify the GKR  transcripts, i.e.\ they only optimize the GKR prover's algorithm, without changing the standard GKR protocol, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \pi_2(\bitstext(\bff)_{ij}) +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that among $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors (see \cref{s:why_the_tensor_split} for more reasons). % See \cref{?,s:gkr_low_entropy} for more details.
+        This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for batched grand products, for which we design prover optimizations, which do not modify the GKR  transcripts, i.e.\ they only optimize the GKR prover's algorithm, without changing the standard GKR protocol, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \pi_2(\bitstext(\bff)_{ij}) +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that among $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors (see \cref{s:why_the_tensor_split} for more reasons). % See \cref{?,s:gkr_low_entropy} for more details.
 \begin{comment}
 \begin{remark}[Other usages of the ``prove-in-the-exponent'' approach]
        There are other projects (e.g.\ Binius64 \cite{binius64} and Soukhanov's note \cite{lev}) that use exponentiation to prove integer (or mod $|\comfield|-1$) claims in binary fields, none of these (to our knowledge) is used or is usable in a context that results in the low entropy grand products of ours, where our optimizations apply.  We discuss this further in \cref{r:comparison_grand_product_binius_lev}.
@@ -817,7 +817,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 
 
     
-    We design novel (to our knowledge \albert{check}) prover optimizations for the GKR grand product (without altering the protocol itself), see \cref{s:gkr_low_entropy} for details. Namely, we exploit the following property, which is enabled, again, by the tensor split of $\uu=\uu^{(1)} \otimes \uu^{(2)}$ and splitting the original claim into a batch of $\codedim_2$ claims:
+    We design prover optimizations for the GKR grand product (without altering the protocol itself), see \cref{s:gkr_low_entropy} for details. These adapt known techniques (fixed-base windowed exponentiation, and sumcheck optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}) to the following property, which is enabled, again, by the tensor split of $\uu=\uu^{(1)} \otimes \uu^{(2)}$ and splitting the original claim into a batch of $\codedim_2$ claims:
     \medskip
 
     \begin{quote}\emph{\textbf{Low entropy grand products:}} There are at most $\codedim_1=O(\sqrt{\codedim})$ values that $L_{r_1}(\bb,\cc)$ can take on the hypercube of size $\codedim_1\cdot \codedim_2 = \codedim$. \end{quote}
