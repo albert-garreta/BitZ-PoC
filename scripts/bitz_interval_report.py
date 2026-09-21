@@ -16,14 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_PROFILER = (
-    Path.home()
-    / ".ai-agent-army"
-    / "skills"
-    / "zk-proof-profiler"
-    / "scripts"
-    / "zk_trace.py"
-)
+DEFAULT_PROFILER = Path(__file__).resolve().with_name("zk_trace.py")
 
 
 def load_profiler() -> Any:

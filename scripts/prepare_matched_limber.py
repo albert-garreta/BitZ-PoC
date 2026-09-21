@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Check out the published Limber revision pinned in BitZ's Cargo.toml."""
+"""Inspect the local Limber snapshot included in this workspace."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 from pathlib import Path
-import subprocess
-import tomllib
 import tempfile
+import tomllib
 
-DEFAULT_DESTINATION = Path("/tmp/limber-matched114")
+from local_provenance import ROOT, vendors, verify_patch, verify_vendor
+
+DEFAULT_DESTINATION = Path(__file__).resolve().parents[1] / "vendor/limber"
 
 
 def limber_dependency(bitz_root: Path) -> dict[str, object]:
@@ -51,18 +52,22 @@ def migrate_multiswap_domains(limber_root: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path, nargs="?", default=DEFAULT_DESTINATION)
-    parser.add_argument("--source", help="Git URL or existing local clone (default: Cargo.toml dependency)")
     args = parser.parse_args()
     destination = args.destination.resolve()
-    if destination.exists():
-        parser.error("destination already exists; choose an unused checkout path")
-    dependency = limber_dependency(Path(__file__).resolve().parents[1])
-    source = args.source or dependency["git"]
-    subprocess.run(["git", "clone", "--no-checkout", source, str(destination)], check=True)
-    subprocess.run(["git", "checkout", "--detach", dependency["rev"]], cwd=destination, check=True)
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination, text=True).strip()
-    domains = migrate_multiswap_domains(destination)
-    print(json.dumps({"path": str(destination), "source": source, "git_revision": revision,
+    record = vendors(ROOT)["limber"]
+    verify_patch(ROOT, "limber", record)
+    actual_record = dict(record, path=str(destination.relative_to(ROOT)))
+    verify_vendor(ROOT, "limber", actual_record)
+    revision = record["snapshot_commit"]
+    path = destination / "benches/multiswap_modp.rs"
+    source = path.read_text()
+    expected = ["bitz/multiswap/circuit-digest/v1", "bitz/multiswap/integer-assignment/v1",
+                "bitz-limber/multiswap-statement/v2"]
+    if not all(domain in source for domain in expected):
+        parser.error("Limber snapshot lacks the matched benchmark domains; rebuild its patch")
+    domains = {"namespace": "bitz", "path": "benches/multiswap_modp.rs",
+               "changed": False, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    print(json.dumps({"path": str(destination), "git_revision": revision,
                       "benchmark_domains": domains}, indent=2))
 
 

@@ -150,7 +150,7 @@ impl Context {
             "trace_width":TRACE_WIDTH, "num_constraints":self.security.num_constraints,
             "max_constraint_degree":self.security.air_max_constraint_degree,
             "num_batched_functions":self.security.num_batched_functions,
-            "revision":super::common::locked_git_revision("p3-fri"),
+            "revision":super::common::local_vendor_revision("p3-fri"),
         })
     }
     pub(super) fn run(&self) -> Timing {

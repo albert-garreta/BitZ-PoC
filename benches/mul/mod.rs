@@ -243,28 +243,43 @@ fn provenance() -> Result<Value> {
     value["executable_blake3"] = json!(blake3::hash(&executable).to_hex().to_string());
     value["compiled_features"] = json!({"parallel":cfg!(feature="parallel"),"span-metrics":cfg!(feature="span-metrics"),"bench-internals":cfg!(feature="bench-internals"),"native-mul-compare":cfg!(feature="native-mul-compare"),"bench-peak-memory":cfg!(feature="bench-peak-memory"),"unchecked":cfg!(feature="unchecked"),"bench-perfetto":cfg!(feature="bench-perfetto"),"plonky3-whir-degree4-bench":cfg!(feature="plonky3-whir-degree4-bench"),"plonky3-whir-goldilocks-degree2-bench":cfg!(feature="plonky3-whir-goldilocks-degree2-bench")});
     value["debug_assertions"] = json!(cfg!(debug_assertions));
-    let paths = Command::new("git")
-        .args([
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()?;
-    ensure!(paths.status.success(), "cannot fingerprint source tree");
-    let mut files: Vec<_> = paths
-        .stdout
-        .split(|&b| b == 0)
-        .filter(|p| !p.is_empty())
-        .collect();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files: Vec<String> = if root.join(".git").exists() {
+        let paths = Command::new("git")
+            .args([
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ])
+            .current_dir(root)
+            .output()?;
+        ensure!(paths.status.success(), "cannot fingerprint source tree");
+        std::str::from_utf8(&paths.stdout)?
+            .split('\0')
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned)
+            .collect()
+    } else {
+        fs::read_to_string(root.join("release-source-files.txt"))?
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    };
     files.sort();
     files.dedup();
     let mut hash = blake3::Hasher::new();
     for name in files {
-        let name = std::str::from_utf8(name)?;
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(name);
+        let relative = Path::new(&name);
+        ensure!(
+            !relative.is_absolute()
+                && !relative
+                    .components()
+                    .any(|p| matches!(p, std::path::Component::ParentDir)),
+            "invalid release source path"
+        );
+        let path = root.join(relative);
         if path.is_file()
             && (name.ends_with(".rs")
                 || name.ends_with(".toml")

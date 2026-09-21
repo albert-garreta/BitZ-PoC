@@ -1,5 +1,5 @@
 //! The GHASH dual-basis embedding of the paper's "Bilinear Embeddings"
-//! appendix (`a:ring_switch_remco`, §Coefficient projection): the triple
+//! appendix (§Coefficient projection): the triple
 //! `(W, A, H)` with `⟨w, a⟩_{F₂} = H(W(w)·A(a))` over
 //! `K = F₂[X]/(f)`, `f = X¹²⁸ + X⁷ + X² + X + 1`, instantiated as
 //!

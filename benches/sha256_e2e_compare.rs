@@ -1321,7 +1321,7 @@ struct TraceWriter {
     binius_git: String,
     plonky3_git: String,
     limber_git: String,
-    bitz_dirty: bool,
+    bitz_dirty: Option<bool>,
     environment: Value,
     threads: usize,
     campaign_id: String,
@@ -1353,11 +1353,11 @@ impl TraceWriter {
         Self {
             output,
             path,
-            bitz_git: command_output("git", &["rev-parse", "--short", "HEAD"], "unknown"),
-            binius_git: common::locked_git_revision("binius-verifier").to_owned(),
-            plonky3_git: common::locked_git_revision("p3-whir").to_owned(),
-            limber_git: common::locked_git_revision("limber").to_owned(),
-            bitz_dirty: git_dirty("."),
+            bitz_git: common::environment::revision(),
+            binius_git: common::local_vendor_revision("binius-verifier").to_owned(),
+            plonky3_git: common::local_vendor_revision("p3-whir").to_owned(),
+            limber_git: common::local_vendor_revision("limber").to_owned(),
+            bitz_dirty: common::environment::dirty(),
             environment: common::environment::metadata(threads),
             threads,
             campaign_id: format!(
@@ -1395,8 +1395,8 @@ impl TraceWriter {
         };
         let git_dirty = match metadata.backend {
             Backend::Bitz => self.bitz_dirty,
-            // External backends are built from the locked Git sources.
-            _ => false,
+            // Vendor source is verified against provenance before building.
+            _ => Some(false),
         };
         let run = json!({
             "schema": "zkperf.trace/v1",
@@ -2690,26 +2690,6 @@ fn humanize(label: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn command_output(program: &str, args: &[&str], fallback: &str) -> String {
-    Command::new(program)
-        .args(args)
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|output| output.trim().to_owned())
-        .filter(|output| !output.is_empty())
-        .unwrap_or_else(|| fallback.to_owned())
-}
-
-fn git_dirty(path: &str) -> bool {
-    Command::new("git")
-        .args(["-C", path, "status", "--porcelain"])
-        .output()
-        .map(|output| !output.stdout.is_empty())
-        .unwrap_or(true)
 }
 
 #[derive(Clone, Copy)]
