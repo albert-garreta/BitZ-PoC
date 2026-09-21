@@ -47,3 +47,9 @@ __pycache__/
 # Materialized dependencies are tracked; generated outputs are not.
 /vendor/**/target/
 /vendor/**/.git
+
+# Fetched via git dependency pins in Cargo.toml (see provenance.toml); never
+# vendored into this repository's history.
+/vendor/limber/
+/vendor/binius64/
+/vendor/plonky3/

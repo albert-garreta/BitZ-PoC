@@ -182,6 +182,7 @@ dependencies = [
 [[package]]
 name = "binius-circuits"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-core",
  "binius-frontend",
@@ -196,6 +197,7 @@ dependencies = [
 [[package]]
 name = "binius-compute"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "rayon",
 ]
@@ -203,6 +205,7 @@ dependencies = [
 [[package]]
 name = "binius-core"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-field",
  "binius-utils",
@@ -215,6 +218,7 @@ dependencies = [
 [[package]]
 name = "binius-field"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-utils",
  "bytemuck",
@@ -227,6 +231,7 @@ dependencies = [
 [[package]]
 name = "binius-frontend"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-compute",
  "binius-core",
@@ -245,6 +250,7 @@ dependencies = [
 [[package]]
 name = "binius-hash"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-utils",
  "blake3",
@@ -257,6 +263,7 @@ dependencies = [
 [[package]]
 name = "binius-hash-prover"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-compute",
  "binius-field",
@@ -276,6 +283,7 @@ dependencies = [
 [[package]]
 name = "binius-iop"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-core",
  "binius-field",
@@ -293,6 +301,7 @@ dependencies = [
 [[package]]
 name = "binius-iop-prover"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-compute",
  "binius-core",
@@ -315,6 +324,7 @@ dependencies = [
 [[package]]
 name = "binius-ip"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "array-util",
  "binius-core",
@@ -328,6 +338,7 @@ dependencies = [
 [[package]]
 name = "binius-ip-prover"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "auto_impl",
  "binius-compute",
@@ -345,6 +356,7 @@ dependencies = [
 [[package]]
 name = "binius-math"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-compute",
  "binius-field",
@@ -359,6 +371,7 @@ dependencies = [
 [[package]]
 name = "binius-prover"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-compute",
  "binius-core",
@@ -389,6 +402,7 @@ dependencies = [
 [[package]]
 name = "binius-spartan-frontend"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-field",
  "binius-utils",
@@ -399,6 +413,7 @@ dependencies = [
 [[package]]
 name = "binius-spartan-prover"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-compute",
  "binius-core",
@@ -424,6 +439,7 @@ dependencies = [
 [[package]]
 name = "binius-spartan-verifier"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-core",
  "binius-field",
@@ -441,6 +457,7 @@ dependencies = [
 [[package]]
 name = "binius-transcript"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "auto_impl",
  "binius-field",
@@ -454,6 +471,7 @@ dependencies = [
 [[package]]
 name = "binius-utils"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "array-util",
  "bytes",
@@ -467,6 +485,7 @@ dependencies = [
 [[package]]
 name = "binius-verifier"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/binius64.git?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510ed63bf47eec25d4d10ade84f1c1fe2790"
 dependencies = [
  "binius-core",
  "binius-field",
@@ -1451,6 +1470,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "limber"
 version = "0.1.0"
+source = "git+https://github.com/wu-s-john/limber-impl.git?rev=d9f3ae41c2a935ef9ae2ad45ae981d53d5c4bb06#d9f3ae41c2a935ef9ae2ad45ae981d53d5c4bb06"
 dependencies = [
  "bellpepper",
  "bellpepper-core",
@@ -1624,6 +1644,7 @@ dependencies = [
 [[package]]
 name = "p3-air"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-field",
  "p3-matrix",
@@ -1634,6 +1655,7 @@ dependencies = [
 [[package]]
 name = "p3-baby-bear"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-field",
  "p3-mds",
@@ -1647,6 +1669,7 @@ dependencies = [
 [[package]]
 name = "p3-challenger"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-field",
  "p3-maybe-rayon",
@@ -1658,6 +1681,7 @@ dependencies = [
 [[package]]
 name = "p3-commit"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-dft",
@@ -1671,6 +1695,7 @@ dependencies = [
 [[package]]
 name = "p3-dft"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-field",
@@ -1684,6 +1709,7 @@ dependencies = [
 [[package]]
 name = "p3-field"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "num-bigint 0.5.1",
@@ -1698,6 +1724,7 @@ dependencies = [
 [[package]]
 name = "p3-fri"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-challenger",
@@ -1718,6 +1745,7 @@ dependencies = [
 [[package]]
 name = "p3-goldilocks"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "num-bigint 0.5.1",
  "p3-dft",
@@ -1736,6 +1764,7 @@ dependencies = [
 [[package]]
 name = "p3-lookup"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "hashbrown 0.17.1",
  "itertools 0.15.0",
@@ -1753,6 +1782,7 @@ dependencies = [
 [[package]]
 name = "p3-matrix"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-field",
@@ -1766,6 +1796,7 @@ dependencies = [
 [[package]]
 name = "p3-maybe-rayon"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "rayon",
 ]
@@ -1773,6 +1804,7 @@ dependencies = [
 [[package]]
 name = "p3-mds"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-dft",
  "p3-field",
@@ -1784,6 +1816,7 @@ dependencies = [
 [[package]]
 name = "p3-merkle-tree"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-commit",
@@ -1802,6 +1835,7 @@ dependencies = [
 [[package]]
 name = "p3-monty-31"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "num-bigint 0.5.1",
@@ -1824,6 +1858,7 @@ dependencies = [
 [[package]]
 name = "p3-multi-stark"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-air",
@@ -1844,6 +1879,7 @@ dependencies = [
 [[package]]
 name = "p3-multilinear-util"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-field",
@@ -1858,6 +1894,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon1"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-field",
  "p3-mds",
@@ -1868,6 +1905,7 @@ dependencies = [
 [[package]]
 name = "p3-poseidon2"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-field",
  "p3-mds",
@@ -1879,6 +1917,7 @@ dependencies = [
 [[package]]
 name = "p3-security"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "libm",
  "p3-air",
@@ -1890,6 +1929,7 @@ dependencies = [
 [[package]]
 name = "p3-sha256-air"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-air",
  "p3-field",
@@ -1902,6 +1942,7 @@ dependencies = [
 [[package]]
 name = "p3-sumcheck"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-challenger",
@@ -1921,6 +1962,7 @@ dependencies = [
 [[package]]
 name = "p3-symmetric"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-field",
@@ -1931,6 +1973,7 @@ dependencies = [
 [[package]]
 name = "p3-uni-stark"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "libm",
@@ -1950,6 +1993,7 @@ dependencies = [
 [[package]]
 name = "p3-util"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "p3-maybe-rayon",
  "serde",
@@ -1958,6 +2002,7 @@ dependencies = [
 [[package]]
 name = "p3-whir"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "hashbrown 0.17.1",
  "itertools 0.15.0",
@@ -1985,6 +2030,7 @@ dependencies = [
 [[package]]
 name = "p3-zk-codes"
 version = "0.6.0"
+source = "git+https://github.com/wu-s-john/Plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
 dependencies = [
  "itertools 0.15.0",
  "p3-dft",
